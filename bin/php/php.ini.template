@@ -1,0 +1,6 @@
+[Date]
+date.timezone = {{TIMEZONE}}
+
+[opcache]
+opcache.enable=1
+opcache.memory_consumption=128
