@@ -21,7 +21,19 @@
 
 'use strict';
 
-// Заглушка — реализуется в Таске 6 (SQLite в AppData).
-const APP_USER_DATA = '';
+const { app } = require('electron');
+const path = require('path');
 
-module.exports = { APP_USER_DATA };
+const userDataDir = () => app.getPath('userData');
+const appRootDir  = () => path.join(__dirname, '..', 'app');
+
+module.exports = {
+    getUserDataDir:        userDataDir,
+    getDbPath:             () => path.join(userDataDir(), 'data.db'),
+    getMeilisearchDataDir: () => path.join(userDataDir(), 'meilisearch'),
+    getPhpIniDir:          () => userDataDir(),
+    getPhpIniPath:         () => path.join(userDataDir(), 'php.ini'),
+    getAppRootDir:         appRootDir,
+    getRuntimeDir:         () => path.join(userDataDir(), 'var'),
+    getMeilisearchKeyPath: () => path.join(userDataDir(), 'meilisearch-key.txt'),
+};

@@ -21,4 +21,22 @@
 
 'use strict';
 
-require('./lifecycle');
+const { app, dialog } = require('electron');
+const supervisor      = require('../supervisor');
+const { createWindow } = require('../window');
+
+app.whenReady().then(async () => {
+    try {
+        const { frankenphpPort } = await supervisor.start();
+        createWindow(frankenphpPort);
+    } catch (err) {
+        dialog.showErrorBox('Ошибка запуска', err.message);
+        app.quit();
+    }
+});
+
+app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') app.quit();
+});
+
+app.on('before-quit', () => supervisor.stop());
