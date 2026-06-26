@@ -24,7 +24,19 @@ anime-db-desktop/
 │   ├── tray/index.js
 │   └── lifecycle/index.js
 ├── app/         # Symfony: бизнес-логика, HTTP, шаблоны, сущности, плагины
-│   ├── src/, config/, templates/, migrations/
+│   ├── bin/console
+│   ├── config/
+│   ├── migrations/
+│   ├── public/index.php       # точка входа FrankenPHP (worker mode)
+│   ├── src/
+│   │   ├── Controller/
+│   │   │   └── HealthController.php  # GET /health → 200 OK
+│   │   ├── Entity/
+│   │   ├── Repository/
+│   │   ├── Plugin/            # плагинная система
+│   │   └── Kernel.php
+│   ├── templates/             # Twig + HTMX-фрагменты
+│   ├── var/                   # в продакшн → AppData/AnimeDB/var/ (APP_RUNTIME_DIR)
 │   └── composer.json
 ├── bin/         # .gitignore — тянутся download-bins.js при сборке
 │   ├── frankenphp/frankenphp.exe   # PHP 8.5 встроен
