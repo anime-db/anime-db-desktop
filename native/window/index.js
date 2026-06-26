@@ -21,4 +21,19 @@
 
 'use strict';
 
-require('./lifecycle');
+const { BrowserWindow } = require('electron');
+
+let win = null;
+
+/**
+ * Создаёт главное окно и загружает Symfony-приложение по порту.
+ *
+ * @param {number} port
+ */
+function createWindow(port) {
+    win = new BrowserWindow({ width: 1200, height: 800 });
+    win.loadURL(`http://127.0.0.1:${port}`);
+    win.on('closed', () => { win = null; });
+}
+
+module.exports = { createWindow };
