@@ -1,0 +1,20 @@
+# Node.js
+node_modules/
+
+# Binaries — тянутся через scripts/download-bins.js, не хранятся в git
+bin/frankenphp/
+bin/meilisearch/
+
+# Symfony
+app/vendor/
+app/var/
+app/.env.local
+app/.env.*.local
+
+# Electron build output
+dist/
+out/
+
+# OS
+.DS_Store
+Thumbs.db
