@@ -11,6 +11,35 @@ Entry point for Claude Code agents. For deeper reference see [`.claude-docs/`](.
 - **Лицензия**: GPLv3
 - **Ветка по умолчанию**: `master`
 
+## Структура репозитория
+
+```
+anime-db-desktop/
+├── native/      # Electron: OS-интеграция, процессы, окна, трей, lifecycle
+│   ├── index.js
+│   ├── paths.js
+│   ├── supervisor/
+│   │   ├── index.js, frankenphp.js, meilisearch.js, port.js, healthcheck.js
+│   ├── window/index.js
+│   ├── tray/index.js
+│   └── lifecycle/index.js
+├── app/         # Symfony: бизнес-логика, HTTP, шаблоны, сущности, плагины
+│   ├── src/, config/, templates/, migrations/
+│   └── composer.json
+├── bin/         # .gitignore — тянутся download-bins.js при сборке
+│   ├── frankenphp/frankenphp.exe   # PHP 8.5 встроен
+│   ├── meilisearch/meilisearch.exe
+│   └── php/php.ini.template        # под git; динамический ini пишется в AppData
+├── scripts/
+│   ├── download-bins.js            # качает бинарники под нужную архитектуру
+│   └── build.js
+└── package.json                    # корневой, electron-builder
+```
+
+**Граница `native/` ↔ `app/`**: `native/` не знает про бизнес-логику. Подробно: [`notes/desktop_native_layer.md`](../../notes/desktop_native_layer.md) в воркспейсе.
+
+**Сборка**: только x64 (FrankenPHP не имеет x32-сборки для Windows).
+
 ## Команды
 
 ```bash
