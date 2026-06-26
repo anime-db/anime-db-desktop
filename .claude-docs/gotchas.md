@@ -1,0 +1,45 @@
+---
+tags: [memory/repo, gotcha]
+---
+
+# Ловушки и неочевидные факты
+
+## FrankenPHP — PHP уже внутри, отдельный PHP не нужен
+
+FrankenPHP — Go-бинарник со **статически вкомпилированным** PHP 8.5. Папка `bin/php/` не содержит PHP-рантайма, DLL или расширений. Там только `php.ini.template`. Не устанавливай и не ищи отдельный PHP.
+
+## PHPRC — это путь к папке, не к файлу
+
+`PHPRC=AppData/AnimeDB` (папка), а не `AppData/AnimeDB/php.ini`. FrankenPHP ищет `php.ini` внутри папки, на которую указывает `PHPRC`. Если передать путь к файлу — настройки не применятся.
+
+## Meilisearch Enterprise несовместима с GPLv3
+
+Meilisearch выпускается в двух вариантах: Community (MIT) и Enterprise (BSL-1.1). BSL-1.1 несовместима с GPLv3. В `download-bins.js` явно указывать Community Edition. Бинарники называются по-разному — проверяй URL.
+
+## Meilisearch — только x64 Windows, нет x32
+
+`meilisearch-windows-amd64.exe` — единственная Windows-сборка. x32 не существует. Аналогично для FrankenPHP: `frankenphp-windows-x86_64.zip`, x32 нет и не будет.
+
+## app/var/ в продакшн — это AppData, не каталог установки
+
+В dev `app/var/` живёт рядом с кодом. В продакшн Electron передаёт `APP_RUNTIME_DIR=AppData/AnimeDB/var` в env FrankenPHP. Symfony пишет кэш и логи туда. В инсталлятор не нужно включать `app/var/` — она создаётся при первом запуске.
+
+## Meilisearch индекс несовместим между версиями
+
+LMDB-индекс от одной версии Meilisearch нельзя открыть другой. При обновлении бинарника — обязателен вайп `AppData/AnimeDB/meilisearch/` и переиндексация из SQLite. Это не баг — так работает Meilisearch. Механизм обнаружения: `versions.json` vs `meilisearch/VERSION`.
+
+## VC++ Runtime для Meilisearch на Windows
+
+Meilisearch скомпилирован с MSVC CRT (динамическая линковка). На системах без Visual C++ Redistributable он не запустится. Включить VC++ Redistributable в NSIS-инсталлер (Этап 1).
+
+## supervisor/, window/, tray/ не знают друг о друге
+
+Эти модули связываются только через `lifecycle/index.js`. Если нужно передать данные между ними (например, порт из supervisor в window) — делай это через `lifecycle/`, а не напрямую. Прямой импорт между ними нарушает архитектурную границу.
+
+## Backoff при рестарте FrankenPHP — порт не меняется
+
+При падении и перезапуске FrankenPHP используется тот же порт, что был найден при первом старте (`port` хранится в closure). Новый поиск порта не происходит. Порт освобождается при выходе процесса и немедленно переиспользуется.
+
+## Worker mode — PHP не перезагружается между запросами
+
+FrankenPHP в worker mode загружает `public/index.php` один раз. Symfony остаётся в памяти между запросами. Статические переменные, синглтоны и состояние сервисов **сохраняются между запросами**. Это отличается от стандартного PHP-поведения. Проектируй сервисы с учётом этого.

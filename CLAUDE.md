@@ -1,6 +1,13 @@
 # CLAUDE.md — anime-db-desktop
 
-Entry point for Claude Code agents. For deeper reference see [`.claude-docs/`](.claude-docs/index.md) (создаётся по мере наполнения).
+Entry point for Claude Code agents. For deeper reference see [`.claude-docs/`](.claude-docs/index.md).
+
+## Документация-индекс
+
+- [.claude-docs/index.md](.claude-docs/index.md) — таблица маршрутизации; начни отсюда
+- [.claude-docs/architecture.md](.claude-docs/architecture.md) — монорепо, native/app граница, FrankenPHP, Meilisearch, paths
+- [.claude-docs/decisions.md](.claude-docs/decisions.md) — принятые решения с обоснованием
+- [.claude-docs/gotchas.md](.claude-docs/gotchas.md) — нетривиальные ловушки
 
 ## О проекте
 
