@@ -58,11 +58,11 @@ anime-db-desktop/
 
 **FrankenPHP — Go-бинарник со встроенным PHP 8.5** (static-php-cli). Отдельного PHP-рантайма нет.
 
-| Параметр       | Значение                                        |
-|----------------|-------------------------------------------------|
-| PHP            | 8.5 (дефолт build-static.sh с v1.12.4)         |
-| Windows-сборка | `frankenphp-windows-x86_64.zip` — только x64   |
-| ZTS            | да (`--enable-zts`)                             |
+| Параметр       | Значение                                                                                       |
+|----------------|------------------------------------------------------------------------------------------------|
+| PHP            | 8.5 (дефолт build-static.sh с v1.12.4)                                                         |
+| Windows-сборка | `frankenphp-windows-x86_64.zip` — только x64                                                   |
+| ZTS            | да (`--enable-zts`)                                                                            |
 | Расширения     | статически вкомпилированы (pdo_sqlite, mbstring, curl, intl, opcache, gd, imagick, ~50 других) |
 
 **php.ini:** `bin/php/php.ini.template` под git. При первом запуске `frankenphp.js` копирует его в `AppData/AnimeDB/php.ini`, подставляя часовой пояс (`Intl.DateTimeFormat().resolvedOptions().timeZone`). FrankenPHP стартует с `PHPRC=AppData/AnimeDB` (путь к папке, не к файлу).
@@ -100,12 +100,12 @@ anime-db-desktop/
 
 ## Meilisearch
 
-| Параметр       | Значение                                         |
-|----------------|--------------------------------------------------|
-| Лицензия       | **Community Edition (MIT)** — обязательно        |
-| Windows-сборка | `meilisearch-windows-amd64.exe` — только x64     |
-| Язык           | Rust, таргет `x86_64-pc-windows-msvc`            |
-| Хранилище      | LMDB (AppData/AnimeDB/meilisearch/)              |
+| Параметр       | Значение                                        |
+|----------------|-------------------------------------------------|
+| Лицензия       | **Community Edition (MIT)** — обязательно       |
+| Windows-сборка | `meilisearch-windows-amd64.exe` — только x64    |
+| Язык           | Rust, таргет `x86_64-pc-windows-msvc`           |
+| Хранилище      | LMDB (AppData/AnimeDB/meilisearch/)             |
 | PHP SDK        | `meilisearch/meilisearch-php` v1.16.1, PHP ^8.1 |
 
 SQLite — источник истины. Meilisearch — поисковый индекс поверх него.
@@ -118,15 +118,15 @@ SQLite — источник истины. Meilisearch — поисковый и�
 
 Единственный источник всех путей. Импортируется напрямую из supervisor-модулей.
 
-| Функция                  | Путь                              |
-|--------------------------|-----------------------------------|
-| `getDbPath()`            | `AppData/AnimeDB/data.db`         |
-| `getMeilisearchDataDir()`| `AppData/AnimeDB/meilisearch/`    |
-| `getPhpIniPath()`        | `AppData/AnimeDB/php.ini`         |
-| `getPhpIniDir()`         | `AppData/AnimeDB/`                |
-| `getAppRootDir()`        | `<repo>/app/`                     |
-| `getRuntimeDir()`        | `AppData/AnimeDB/var/`            |
-| `getMeilisearchKeyPath()`| `AppData/AnimeDB/meilisearch-key.txt` |
+| Функция                   | Путь                                  |
+|---------------------------|---------------------------------------|
+| `getDbPath()`             | `AppData/AnimeDB/data.db`             |
+| `getMeilisearchDataDir()` | `AppData/AnimeDB/meilisearch/`        |
+| `getPhpIniPath()`         | `AppData/AnimeDB/php.ini`             |
+| `getPhpIniDir()`          | `AppData/AnimeDB/`                    |
+| `getAppRootDir()`         | `<repo>/app/`                         |
+| `getRuntimeDir()`         | `AppData/AnimeDB/var/`                |
+| `getMeilisearchKeyPath()` | `AppData/AnimeDB/meilisearch-key.txt` |
 
 ## supervisor — жизненный цикл дочерних процессов
 
