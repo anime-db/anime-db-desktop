@@ -70,3 +70,22 @@ HTTP-shutdown в Symfony не подходит: FrankenPHP — Go-процесс
 ## Чистый лист (не миграция из v1)
 
 Старый код (anime-db + app-bundle + catalog-bundle + monitor) используется только как справочник. Монорепо пишется с нуля.
+
+## Ротация логов (issue #16)
+
+### Symfony / Monolog
+
+- Обработчик: `rotating_file` (RotatingFileHandler Monolog) в prod-окружении.
+- Лимит файлов: **14** (две недели), имя — `app-YYYY-MM-DD.log`, `deprecation-YYYY-MM-DD.log`.
+- Путь: `%kernel.logs_dir%/app.log` → в prod это `APP_RUNTIME_DIR/log/app-YYYY-MM-DD.log`.
+- Ограничение по размеру: **не реализовано** — Monolog RotatingFileHandler не поддерживает, только по дате.
+- Оборачивается в `fingers_crossed` (пишет только при ошибке уровня error и выше).
+
+### Нативный слой (FrankenPHP, Meilisearch)
+
+- Реализация: общий модуль `native/supervisor/logrotate.js` — только встроенный Node.js `fs`.
+- Формат имён: `frankenphp-YYYY-MM-DD.log`, `meilisearch-YYYY-MM-DD.log`.
+- Лимит файлов: **7** (неделя) для каждого процесса.
+- Очистка: **при старте приложения** (`start()` в каждом supervisory-модуле), не в реальном времени.
+- Дата в имени файла — локальное время (по часовому поясу системы пользователя).
+- Файл открывается в режиме append (`flags: 'a'`); при перезапуске процесса через backoff — тот же поток.
