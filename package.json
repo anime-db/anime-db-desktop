@@ -1,0 +1,35 @@
+{
+    "name": "anime-db-desktop",
+    "version": "0.0.1",
+    "description": "AnimeDB Desktop Application v2",
+    "main": "native/index.js",
+    "scripts": {
+        "start": "electron .",
+        "build": "electron-builder",
+        "download-bins": "node scripts/download-bins.js"
+    },
+    "devDependencies": {
+        "electron": "^35.0.0",
+        "electron-builder": "^25.0.0"
+    },
+    "build": {
+        "appId": "org.anime-db.desktop",
+        "productName": "AnimeDB",
+        "copyright": "Copyright (c) 2026 Peter Gribanov",
+        "directories": {
+            "output": "dist"
+        },
+        "win": {
+            "target": "nsis",
+            "arch": ["x64"]
+        },
+        "files": [
+            "native/**",
+            "app/**",
+            "bin/**",
+            "!app/var/**",
+            "!app/vendor/**",
+            "!node_modules/**"
+        ]
+    }
+}
