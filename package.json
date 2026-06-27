@@ -2,6 +2,8 @@
     "name": "anime-db-desktop",
     "version": "0.0.1",
     "description": "AnimeDB Desktop Application v2",
+    "author": "Peter Gribanov <info@peter-gribanov.ru>",
+    "license": "GPL-3.0-or-later",
     "main": "native/index.js",
     "scripts": {
         "start": "electron .",
