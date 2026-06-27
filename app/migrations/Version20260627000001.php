@@ -6,9 +6,7 @@
  * @author    Peter Gribanov <info@peter-gribanov.ru>
  * @copyright Copyright (c) 2026, Peter Gribanov
  * @license   https://gnu.org GPL-3.0-or-later
- */
-
-/*
+ *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
@@ -25,23 +23,25 @@
 
 declare(strict_types=1);
 
-namespace App\Controller;
+namespace DoctrineMigrations;
 
-use Doctrine\DBAL\Connection;
-use Symfony\Component\HttpFoundation\JsonResponse;
-use Symfony\Component\Routing\Attribute\Route;
+use Doctrine\DBAL\Schema\Schema;
+use Doctrine\Migrations\AbstractMigration;
 
-final class HealthController
+final class Version20260627000001 extends AbstractMigration
 {
-    public function __construct(private readonly Connection $conn)
+    public function getDescription(): string
     {
+        return 'Create anime table with metadata JSON column';
     }
 
-    #[Route('/health', methods: ['GET'])]
-    public function health(): JsonResponse
+    public function up(Schema $schema): void
     {
-        $jsonResult = $this->conn->executeQuery("SELECT json_extract('{\"a\":1}', '$.a')")->fetchOne();
+        $this->addSql('CREATE TABLE anime (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, title VARCHAR(255) NOT NULL, metadata CLOB DEFAULT NULL)');
+    }
 
-        return new JsonResponse(['status' => 'ok', 'sqlite_json' => $jsonResult]);
+    public function down(Schema $schema): void
+    {
+        $this->addSql('DROP TABLE anime');
     }
 }
