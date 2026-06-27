@@ -1,6 +1,6 @@
 {
     "type": "project",
-    "license": "MIT",
+    "license": "GPL-3.0-or-later",
     "homepage": "http://anime-db.org",
     "description": "The application for making home collection anime",
     "authors": [
