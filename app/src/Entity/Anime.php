@@ -25,23 +25,48 @@
 
 declare(strict_types=1);
 
-namespace App\Controller;
+namespace App\Entity;
 
-use Doctrine\DBAL\Connection;
-use Symfony\Component\HttpFoundation\JsonResponse;
-use Symfony\Component\Routing\Attribute\Route;
+use Doctrine\ORM\Mapping as ORM;
 
-final class HealthController
+#[ORM\Entity]
+class Anime
 {
-    public function __construct(private readonly Connection $conn)
+    #[ORM\Id, ORM\GeneratedValue, ORM\Column]
+    private int $id;
+
+    #[ORM\Column]
+    private string $title;
+
+    #[ORM\Column(type: 'json', nullable: true)]
+    private ?array $metadata = null;
+
+    public function getId(): int
     {
+        return $this->id;
     }
 
-    #[Route('/health', methods: ['GET'])]
-    public function health(): JsonResponse
+    public function getTitle(): string
     {
-        $jsonResult = $this->conn->executeQuery("SELECT json_extract('{\"a\":1}', '$.a')")->fetchOne();
+        return $this->title;
+    }
 
-        return new JsonResponse(['status' => 'ok', 'sqlite_json' => $jsonResult]);
+    public function setTitle(string $title): self
+    {
+        $this->title = $title;
+
+        return $this;
+    }
+
+    public function getMetadata(): ?array
+    {
+        return $this->metadata;
+    }
+
+    public function setMetadata(?array $metadata): self
+    {
+        $this->metadata = $metadata;
+
+        return $this;
     }
 }
