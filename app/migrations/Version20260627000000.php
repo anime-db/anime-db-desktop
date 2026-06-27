@@ -6,9 +6,7 @@
  * @author    Peter Gribanov <info@peter-gribanov.ru>
  * @copyright Copyright (c) 2026, Peter Gribanov
  * @license   https://gnu.org GPL-3.0-or-later
- */
-
-/*
+ *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
@@ -25,38 +23,23 @@
 
 declare(strict_types=1);
 
-namespace App;
+namespace DoctrineMigrations;
 
-use Symfony\Bundle\FrameworkBundle\Kernel\MicroKernelTrait;
-use Symfony\Component\HttpKernel\Kernel as BaseKernel;
+use Doctrine\DBAL\Schema\Schema;
+use Doctrine\Migrations\AbstractMigration;
 
-class Kernel extends BaseKernel
+final class Version20260627000000 extends AbstractMigration
 {
-    use MicroKernelTrait;
-
-    public function getCacheDir(): string
+    public function getDescription(): string
     {
-        if ($runtimeDir = $_SERVER['APP_RUNTIME_DIR'] ?? null) {
-            return $runtimeDir . '/cache';
-        }
-
-        return parent::getCacheDir();
+        return 'Initial migration: verify migrations mechanism';
     }
 
-    public function getLogDir(): string
+    public function up(Schema $schema): void
     {
-        if ($runtimeDir = $_SERVER['APP_RUNTIME_DIR'] ?? null) {
-            return $runtimeDir . '/log';
-        }
-
-        return parent::getLogDir();
     }
 
-    /**
-     * @return list<string> An array of allowed values for APP_ENV
-     */
-    private function getAllowedEnvs(): array
+    public function down(Schema $schema): void
     {
-        return ['prod', 'dev', 'test'];
     }
 }
