@@ -55,16 +55,17 @@ function ensurePhpIni() {
     fs.writeFileSync(iniPath, ini, 'utf8');
 }
 
-function buildEnv(appPort) {
+function buildEnv(appPort, meiliPort, meiliKey) {
     return {
         ...process.env,
-        APP_PORT:        String(appPort),
-        APP_ROOT:        paths.getAppRootDir(),
-        APP_ENV:         'prod',
-        DATABASE_URL:    `sqlite:///${paths.getDbPath()}`,
-        PHPRC:           paths.getPhpIniDir(),
-        APP_RUNTIME_DIR: paths.getRuntimeDir(),
-        // MEILISEARCH_URL / MEILISEARCH_KEY добавляются в Таске 8
+        APP_PORT:         String(appPort),
+        APP_ROOT:         paths.getAppRootDir(),
+        APP_ENV:          'prod',
+        DATABASE_URL:     `sqlite:///${paths.getDbPath()}`,
+        PHPRC:            paths.getPhpIniDir(),
+        APP_RUNTIME_DIR:  paths.getRuntimeDir(),
+        MEILISEARCH_URL:  `http://127.0.0.1:${meiliPort}`,
+        MEILISEARCH_KEY:  meiliKey,
     };
 }
 
@@ -72,14 +73,14 @@ function buildEnv(appPort) {
  * Запускает FrankenPHP и при падении перезапускает с backoff.
  * Если stopping === true — молча прекращает перезапуски.
  */
-function spawnProcess(appPort, backoffIdx = 0) {
+function spawnProcess(appPort, meiliPort, meiliKey, backoffIdx = 0) {
     if (stopping) return;
 
     fs.mkdirSync(paths.getRuntimeDir(), { recursive: true });
 
     child = spawn(BINARY, ['run', '--config', CADDYFILE], {
         cwd: paths.getAppRootDir(),
-        env: buildEnv(appPort),
+        env: buildEnv(appPort, meiliPort, meiliKey),
         stdio: ['ignore', 'pipe', 'pipe'],
     });
 
@@ -90,7 +91,7 @@ function spawnProcess(appPort, backoffIdx = 0) {
         if (stopping) return;
         const delay = BACKOFF[Math.min(backoffIdx, BACKOFF.length - 1)];
         console.error(`[frankenphp] вышел с кодом ${code}, перезапуск через ${delay}ms`);
-        setTimeout(() => spawnProcess(appPort, backoffIdx + 1), delay);
+        setTimeout(() => spawnProcess(appPort, meiliPort, meiliKey, backoffIdx + 1), delay);
     });
 }
 
@@ -98,13 +99,15 @@ function spawnProcess(appPort, backoffIdx = 0) {
  * Запускает FrankenPHP: ищет порт → создаёт php.ini → спавнит процесс →
  * ждёт /health → возвращает порт.
  *
+ * @param {number} meiliPort  порт Meilisearch
+ * @param {string} meiliKey   master-key Meilisearch
  * @returns {Promise<number>}
  */
-async function start() {
+async function start(meiliPort, meiliKey) {
     stopping = false;
     ensurePhpIni();
     port = await findFreePort(8000);
-    spawnProcess(port);
+    spawnProcess(port, meiliPort, meiliKey);
     await waitForHealth(port);
     return port;
 }
