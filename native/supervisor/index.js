@@ -21,4 +21,26 @@
 
 'use strict';
 
-require('./lifecycle');
+const frankenphp = require('./frankenphp');
+// TODO Таск 8: const meilisearch = require('./meilisearch');
+
+/**
+ * Запускает все дочерние процессы и возвращает занятые ими порты.
+ *
+ * @returns {Promise<{ frankenphpPort: number }>}
+ */
+async function start() {
+    const frankenphpPort = await frankenphp.start();
+    // TODO Таск 8: const meiliPort = await meilisearch.start();
+    return { frankenphpPort };
+}
+
+/**
+ * Останавливает все дочерние процессы.
+ */
+function stop() {
+    frankenphp.stop();
+    // TODO Таск 8: meilisearch.stop();
+}
+
+module.exports = { start, stop };
