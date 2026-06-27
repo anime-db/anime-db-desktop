@@ -21,18 +21,19 @@
 
 'use strict';
 
-const frankenphp = require('./frankenphp');
-// TODO Таск 8: const meilisearch = require('./meilisearch');
+const frankenphp  = require('./frankenphp');
+const meilisearch = require('./meilisearch');
 
 /**
  * Запускает все дочерние процессы и возвращает занятые ими порты.
+ * Meilisearch стартует первым — его URL/key нужны FrankenPHP в env.
  *
- * @returns {Promise<{ frankenphpPort: number }>}
+ * @returns {Promise<{ frankenphpPort: number, meiliPort: number }>}
  */
 async function start() {
-    const frankenphpPort = await frankenphp.start();
-    // TODO Таск 8: const meiliPort = await meilisearch.start();
-    return { frankenphpPort };
+    const { port: meiliPort, key: meiliKey } = await meilisearch.start();
+    const frankenphpPort = await frankenphp.start(meiliPort, meiliKey);
+    return { frankenphpPort, meiliPort };
 }
 
 /**
@@ -40,7 +41,7 @@ async function start() {
  */
 function stop() {
     frankenphp.stop();
-    // TODO Таск 8: meilisearch.stop();
+    meilisearch.stop();
 }
 
 module.exports = { start, stop };
