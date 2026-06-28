@@ -43,7 +43,7 @@ final class WsController
     public function connect(Request $request): Response
     {
         $upgrade = strtolower($request->headers->get('Upgrade', ''));
-        $key     = $request->headers->get('Sec-Websocket-Key', '');
+        $key = $request->headers->get('Sec-Websocket-Key', '');
 
         if ($upgrade !== 'websocket' || $key === '') {
             return new Response('WebSocket upgrade required', Response::HTTP_UPGRADE_REQUIRED, [
@@ -62,8 +62,8 @@ final class WsController
             while (!connection_aborted()) {
                 $event = $publisher->next();
                 if ($event !== null) {
-                    $json  = json_encode($event, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE);
-                    $len   = strlen($json);
+                    $json = json_encode($event, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE);
+                    $len = strlen($json);
                     // WebSocket text frame (FIN=1, opcode=1), server-to-client (no mask)
                     $frame = "\x81";
                     if ($len <= 125) {
