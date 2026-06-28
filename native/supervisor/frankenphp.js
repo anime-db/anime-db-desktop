@@ -25,6 +25,7 @@ const { spawn }    = require('child_process');
 const fs           = require('fs');
 const path         = require('path');
 const paths        = require('../paths');
+const { getOrCreateAppSecret } = require('../config');
 const { findFreePort }    = require('./port');
 const { waitForHealth }   = require('./healthcheck');
 const { pruneOldLogs, openLogStream } = require('./logrotate');
@@ -66,6 +67,7 @@ function buildEnv(appPort, meiliPort, meiliKey) {
         APP_PORT:         String(appPort),
         APP_ROOT:         paths.getAppRootDir(),
         APP_ENV:          'prod',
+        APP_SECRET:       getOrCreateAppSecret(),
         DATABASE_URL:     `sqlite:///${paths.getDbPath()}`,
         PHPRC:            paths.getPhpIniDir(),
         APP_RUNTIME_DIR:  paths.getRuntimeDir(),
