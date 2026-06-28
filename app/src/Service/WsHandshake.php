@@ -29,7 +29,7 @@ namespace App\Service;
 
 use Symfony\Component\HttpFoundation\Request;
 
-final class WsHandshake
+class WsHandshake
 {
     private const MAGIC = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 
