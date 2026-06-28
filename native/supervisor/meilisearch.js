@@ -26,18 +26,23 @@ const crypto            = require('crypto');
 const fs                = require('fs');
 const path              = require('path');
 const paths             = require('../paths');
-const { findFreePort }  = require('./port');
-const { waitForHealth } = require('./healthcheck');
+const { findFreePort }        = require('./port');
+const { waitForHealth }       = require('./healthcheck');
+const { pruneOldLogs, openLogStream } = require('./logrotate');
 
 const BINARY   = path.join(__dirname, '..', '..', 'bin', 'meilisearch', 'meilisearch.exe');
 const VERSIONS = path.join(__dirname, '..', '..', 'scripts', 'versions.json');
 
+const LOG_PREFIX = 'meilisearch';
+const LOG_MAX    = 7;
+
 /** Задержки backoff при перезапуске: 1s, 2s, 4s, … до 30s. */
 const BACKOFF = [1000, 2000, 4000, 8000, 16000, 30000];
 
-let child    = null;
-let stopping = false;
-let port     = null;
+let child     = null;
+let stopping  = false;
+let port      = null;
+let logStream = null;
 
 /**
  * Читает master-key из файла или генерирует UUID и сохраняет.
@@ -95,8 +100,8 @@ function spawnProcess(appPort, masterKey, backoffIdx = 0) {
         stdio: ['ignore', 'pipe', 'pipe'],
     });
 
-    child.stdout.on('data', (d) => process.stdout.write(`[meilisearch] ${d}`));
-    child.stderr.on('data', (d) => process.stderr.write(`[meilisearch] ${d}`));
+    child.stdout.on('data', (d) => logStream.write(d));
+    child.stderr.on('data', (d) => logStream.write(d));
 
     child.on('exit', (code) => {
         if (stopping) return;
@@ -116,6 +121,11 @@ async function start() {
     stopping = false;
     const masterKey = ensureMasterKey();
     checkVersionAndWipe();
+
+    const logDir = path.join(paths.getRuntimeDir(), 'log');
+    pruneOldLogs(logDir, LOG_PREFIX, LOG_MAX);
+    logStream = openLogStream(logDir, LOG_PREFIX);
+
     port = await findFreePort(7700);
     spawnProcess(port, masterKey);
     await waitForHealth(port);
@@ -134,7 +144,13 @@ function stop() {
         if (child) child.kill('SIGKILL');
     }, 500);
 
-    child.on('exit', () => clearTimeout(timer));
+    child.on('exit', () => {
+        clearTimeout(timer);
+        if (logStream) {
+            logStream.end();
+            logStream = null;
+        }
+    });
     child = null;
 }
 
