@@ -6,9 +6,7 @@
  * @author    Peter Gribanov <info@peter-gribanov.ru>
  * @copyright Copyright (c) 2026, Peter Gribanov
  * @license   https://gnu.org GPL-3.0-or-later
- */
-
-/*
+ *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
@@ -25,38 +23,16 @@
 
 declare(strict_types=1);
 
-namespace App;
+$finder = PhpCsFixer\Finder::create()
+    ->in([__DIR__.'/src', __DIR__.'/tests'])
+    ->append([__FILE__]);
 
-use Symfony\Bundle\FrameworkBundle\Kernel\MicroKernelTrait;
-use Symfony\Component\HttpKernel\Kernel as BaseKernel;
-
-class Kernel extends BaseKernel
-{
-    use MicroKernelTrait;
-
-    public function getCacheDir(): string
-    {
-        if ($runtimeDir = $_SERVER['APP_RUNTIME_DIR'] ?? null) {
-            return $runtimeDir.'/cache';
-        }
-
-        return parent::getCacheDir();
-    }
-
-    public function getLogDir(): string
-    {
-        if ($runtimeDir = $_SERVER['APP_RUNTIME_DIR'] ?? null) {
-            return $runtimeDir.'/log';
-        }
-
-        return parent::getLogDir();
-    }
-
-    /**
-     * @return list<string> An array of allowed values for APP_ENV
-     */
-    private function getAllowedEnvs(): array
-    {
-        return ['prod', 'dev', 'test'];
-    }
-}
+return (new PhpCsFixer\Config())
+    ->setRiskyAllowed(true)
+    ->setRules([
+        '@Symfony' => true,
+        'declare_strict_types' => true,
+        // Yoda-условия отключены — читаемее обычный порядок ($x === null).
+        'yoda_style' => false,
+    ])
+    ->setFinder($finder);
