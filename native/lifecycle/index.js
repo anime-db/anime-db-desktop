@@ -22,15 +22,33 @@
 'use strict';
 
 const { app, dialog } = require('electron');
-const supervisor      = require('../supervisor');
+const supervisor       = require('../supervisor');
 const { createWindow } = require('../window');
+const { createSplash } = require('../window/splash');
 
 app.whenReady().then(async () => {
+    const splash = createSplash();
+
+    await new Promise(resolve => splash.once('ready-to-show', () => {
+        splash.show();
+        resolve();
+    }));
+
     try {
-        const { frankenphpPort } = await supervisor.start();
+        splash.webContents.send('splash-progress', { step: 0, text: 'Запуск Meilisearch...' });
+
+        const { frankenphpPort } = await supervisor.start((step, text) => {
+            if (!splash.isDestroyed()) {
+                splash.webContents.send('splash-progress', { step, text });
+            }
+        });
+
+        await new Promise(r => setTimeout(r, 400));
+        splash.close();
         createWindow(frankenphpPort);
     } catch (err) {
         dialog.showErrorBox('Ошибка запуска', err.message);
+        if (!splash.isDestroyed()) splash.close();
         app.quit();
     }
 });
