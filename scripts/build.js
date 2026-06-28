@@ -31,3 +31,10 @@ execSync('composer install --no-dev --optimize-autoloader', { cwd: appDir, stdio
 
 fs.rmSync(path.join(appDir, 'var', 'cache'), { recursive: true, force: true });
 fs.rmSync(path.join(appDir, 'var', 'log'), { recursive: true, force: true });
+
+const jsDir = path.join(appDir, 'public', 'js');
+fs.mkdirSync(jsDir, { recursive: true });
+fs.copyFileSync(
+    path.resolve(__dirname, '..', 'node_modules', 'htmx.org', 'dist', 'htmx.min.js'),
+    path.join(jsDir, 'htmx.min.js')
+);
