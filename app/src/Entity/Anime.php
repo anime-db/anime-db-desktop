@@ -33,15 +33,16 @@ use Doctrine\ORM\Mapping as ORM;
 class Anime
 {
     #[ORM\Id, ORM\GeneratedValue, ORM\Column]
-    private int $id;
+    private ?int $id = null;
 
     #[ORM\Column]
     private string $title;
 
+    /** @var array<string, mixed>|null */
     #[ORM\Column(type: 'json', nullable: true)]
     private ?array $metadata = null;
 
-    public function getId(): int
+    public function getId(): ?int
     {
         return $this->id;
     }
@@ -58,11 +59,13 @@ class Anime
         return $this;
     }
 
+    /** @return array<string, mixed>|null */
     public function getMetadata(): ?array
     {
         return $this->metadata;
     }
 
+    /** @param array<string, mixed>|null $metadata */
     public function setMetadata(?array $metadata): self
     {
         $this->metadata = $metadata;
