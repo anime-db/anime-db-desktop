@@ -16,3 +16,4 @@ tags: [memory/repo, index]
 | Работать с supervisor (FrankenPHP/Meilisearch)      | [architecture.md](architecture.md) §native/supervisor  |
 | Добавить плагин или работать с Plugin/              | [architecture.md](architecture.md) §app/               |
 | Понять обновление приложения и Meilisearch-миграцию | [decisions.md](decisions.md) §Обновление               |
+| Стиль PHP-кода, форматирование, php-cs-fixer        | [conventions.md](conventions.md)                       |
