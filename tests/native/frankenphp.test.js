@@ -31,6 +31,9 @@ jest.mock('../../native/paths', () => ({
     getMeilisearchKeyPath: jest.fn(() => '/fake/userData/meilisearch-key.txt'),
     getUserDataDir:        jest.fn(() => '/fake/userData'),
 }));
+jest.mock('../../native/config', () => ({
+    getOrCreateAppSecret: jest.fn(() => 'a'.repeat(64)),
+}));
 jest.mock('../../native/supervisor/logrotate', () => ({
     pruneOldLogs:   jest.fn(),
     openLogStream:  jest.fn(),
@@ -93,5 +96,11 @@ describe('buildEnv', () => {
     test('inherits existing process.env variables', () => {
         const env = buildEnv(8000, 7700, 'test-key');
         expect(env).toMatchObject(process.env);
+    });
+
+    test('includes APP_SECRET from getOrCreateAppSecret', () => {
+        const env = buildEnv(8000, 7700, 'test-key');
+        expect(env.APP_SECRET).toBe('a'.repeat(64));
+        expect(env.APP_SECRET).toHaveLength(64);
     });
 });
