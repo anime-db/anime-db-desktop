@@ -71,6 +71,22 @@ HTTP-shutdown в Symfony не подходит: FrankenPHP — Go-процесс
 
 Старый код (anime-db + app-bundle + catalog-bundle + monitor) используется только как справочник. Монорепо пишется с нуля.
 
+## APP_SECRET — генерация при первом запуске, хранение в AppData
+
+`APP_SECRET` генерируется Electron при первом запуске (`crypto.randomBytes(32).toString('hex')`), сохраняется в `AppData/AnimeDB/config.json`, передаётся в FrankenPHP через `buildEnv()`. Каждая установка получает свой уникальный секрет.
+
+**Отклонено:** генерация в NSIS-инсталлере — инсталлер не знает AppData конкретного пользователя Windows.
+
+## Бинарники — фиксированные версии, обновление только с релизом приложения
+
+FrankenPHP и Meilisearch скачиваются с официальных GitHub Releases (`dunglas/frankenphp`, `meilisearch/meilisearch`). Версии зафиксированы в `scripts/versions.json`. Обновление бинарников проходит через тестирование и поставляется только вместе с обновлением приложения — не автоматически.
+
+`download-bins.js` скачивает версии из `scripts/versions.json`, кладёт в `bin/frankenphp/` и `bin/meilisearch/`. Только x64 Windows (Community Edition для Meilisearch — MIT-лицензия).
+
+## Сборка дистрибутива — GitHub Actions, windows-latest
+
+`.exe`-инсталлер собирается в GitHub Actions на `windows-latest` runner. NSIS-инсталлер требует Windows. Сборка запускается вручную или по тегу релиза. Артефакт публикуется в GitHub Releases.
+
 ## Ротация логов (issue #16)
 
 ### Symfony / Monolog
