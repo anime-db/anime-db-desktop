@@ -4,3 +4,8 @@ date.timezone = {{TIMEZONE}}
 [opcache]
 opcache.enable=1
 opcache.memory_consumption=128
+
+[apcu]
+apc.enabled=1
+apc.enable_cli=1
+apc.shm_size=32M
