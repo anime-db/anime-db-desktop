@@ -21,20 +21,27 @@
 
 'use strict';
 
-const { BrowserWindow } = require('electron');
+const { Tray, Menu, nativeImage } = require('electron');
+const path = require('path');
 
-let win = null;
+let tray = null;
 
 /**
- * Создаёт главное окно и загружает Symfony-приложение по порту.
- *
- * @param {number} port
+ * @param {import('electron').BrowserWindow} mainWindow
+ * @param {Function} onQuit
  */
-function createWindow(port) {
-    win = new BrowserWindow({ width: 1200, height: 800 });
-    win.loadURL(`http://127.0.0.1:${port}`);
-    win.on('closed', () => { win = null; });
-    return win;
+function create(mainWindow, onQuit) {
+    const icon = nativeImage.createFromPath(path.join(__dirname, '..', '..', 'resources', 'favicon.ico'));
+    tray = new Tray(icon);
+    tray.setToolTip('AnimeDB');
+
+    const menu = Menu.buildFromTemplate([
+        { label: 'Открыть', click: () => mainWindow.show() },
+        { type: 'separator' },
+        { label: 'Выход', click: onQuit },
+    ]);
+    tray.setContextMenu(menu);
+    tray.on('double-click', () => mainWindow.show());
 }
 
-module.exports = { createWindow };
+module.exports = { create };
