@@ -28,11 +28,14 @@ const meilisearch = require('./meilisearch');
  * Запускает все дочерние процессы и возвращает занятые ими порты.
  * Meilisearch стартует первым — его URL/key нужны FrankenPHP в env.
  *
+ * @param {((step: number, text: string) => void) | undefined} onProgress
  * @returns {Promise<{ frankenphpPort: number, meiliPort: number }>}
  */
-async function start() {
+async function start(onProgress) {
     const { port: meiliPort, key: meiliKey } = await meilisearch.start();
+    if (onProgress) onProgress(1, 'Запуск FrankenPHP...');
     const frankenphpPort = await frankenphp.start(meiliPort, meiliKey);
+    if (onProgress) onProgress(2, 'Готово');
     return { frankenphpPort, meiliPort };
 }
 

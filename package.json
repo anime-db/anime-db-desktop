@@ -38,6 +38,7 @@
             "native/**",
             "app/**",
             "bin/**",
+            "resources/**",
             "!app/var/**",
             "!app/vendor/**",
             "!node_modules/**"
