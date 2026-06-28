@@ -40,8 +40,6 @@ final class WsPublisher
 
     /**
      * Enqueues an event for all connected WebSocket clients.
-     *
-     * @param mixed $data
      */
     public function publish(string $event, mixed $data): void
     {
@@ -51,8 +49,8 @@ final class WsPublisher
 
         $success = false;
         /** @var list<array{event: string, data: mixed}> $queue */
-        $queue   = apcu_fetch(self::QUEUE_KEY, $success);
-        $queue   = $success ? $queue : [];
+        $queue = apcu_fetch(self::QUEUE_KEY, $success);
+        $queue = $success ? $queue : [];
         $queue[] = ['event' => $event, 'data' => $data];
         apcu_store(self::QUEUE_KEY, $queue);
     }
