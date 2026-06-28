@@ -45,6 +45,19 @@ npm run lint      # проверить без изменений
 npm run lint:fix  # применить автоисправления
 ```
 
+## Статический анализ PHP
+
+**Инструмент**: `phpstan/phpstan` ^2.0, конфиг: `app/phpstan.dist.neon`.
+
+**Расширения**: `phpstan-symfony` (Symfony-специфичный анализ), `phpstan-doctrine` (ORM-сущности).
+
+**Уровень**: 8 (максимальная строгость по задаче #20, не понижать).
+
+**Команда** (запускать из `app/`):
+```bash
+composer phpstan    # phpstan analyse по конфигу phpstan.dist.neon
+```
+
 ## Git / коммиты
 
 Сообщения коммитов — на английском языке.
