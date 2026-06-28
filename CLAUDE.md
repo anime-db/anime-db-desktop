@@ -8,6 +8,7 @@ Entry point for Claude Code agents. For deeper reference see [`.claude-docs/`](.
 - [.claude-docs/architecture.md](.claude-docs/architecture.md) — монорепо, native/app граница, FrankenPHP, Meilisearch, paths
 - [.claude-docs/decisions.md](.claude-docs/decisions.md) — принятые решения с обоснованием
 - [.claude-docs/gotchas.md](.claude-docs/gotchas.md) — нетривиальные ловушки
+- [.claude-docs/conventions.md](.claude-docs/conventions.md) — стиль кода, форматирование, команды
 
 ## О проекте
 
