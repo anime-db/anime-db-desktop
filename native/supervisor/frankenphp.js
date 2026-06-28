@@ -144,4 +144,4 @@ function stop() {
     child = null;
 }
 
-module.exports = { start, stop };
+module.exports = { start, stop, buildEnv };
