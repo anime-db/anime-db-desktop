@@ -49,57 +49,63 @@ const { buildEnv } = require('../../native/supervisor/frankenphp');
 
 describe('buildEnv', () => {
     test('includes APP_PORT as a string', () => {
-        const env = buildEnv(8000, 7700, 'test-key');
+        const env = buildEnv(8000, 9000, 7700, 'test-key');
         expect(env.APP_PORT).toBe('8000');
         expect(typeof env.APP_PORT).toBe('string');
     });
 
+    test('includes WS_PORT as a string', () => {
+        const env = buildEnv(8000, 9000, 7700, 'test-key');
+        expect(env.WS_PORT).toBe('9000');
+        expect(typeof env.WS_PORT).toBe('string');
+    });
+
     test('includes APP_ROOT pointing to the app directory', () => {
-        const env = buildEnv(8000, 7700, 'test-key');
+        const env = buildEnv(8000, 9000, 7700, 'test-key');
         expect(env.APP_ROOT).toBe('/fake/app');
     });
 
     test('includes APP_ENV set to prod', () => {
-        const env = buildEnv(8000, 7700, 'test-key');
+        const env = buildEnv(8000, 9000, 7700, 'test-key');
         expect(env.APP_ENV).toBe('prod');
     });
 
     test('includes DATABASE_URL as a sqlite:// URL', () => {
-        const env = buildEnv(8000, 7700, 'test-key');
+        const env = buildEnv(8000, 9000, 7700, 'test-key');
         expect(env.DATABASE_URL).toMatch(/^sqlite:\/\/\//);
         expect(env.DATABASE_URL).toContain('data.db');
     });
 
     test('includes PHPRC pointing to the php.ini directory', () => {
-        const env = buildEnv(8000, 7700, 'test-key');
+        const env = buildEnv(8000, 9000, 7700, 'test-key');
         expect(env.PHPRC).toBe('/fake/userData');
     });
 
     test('includes APP_RUNTIME_DIR pointing to the runtime dir', () => {
-        const env = buildEnv(8000, 7700, 'test-key');
+        const env = buildEnv(8000, 9000, 7700, 'test-key');
         expect(env.APP_RUNTIME_DIR).toBe('/fake/userData/var');
     });
 
     test('includes MEILISEARCH_URL using the given meiliPort', () => {
-        const env = buildEnv(8000, 7700, 'test-key');
+        const env = buildEnv(8000, 9000, 7700, 'test-key');
         expect(env.MEILISEARCH_URL).toBe('http://127.0.0.1:7700');
 
-        const env2 = buildEnv(8000, 8888, 'test-key');
+        const env2 = buildEnv(8000, 9000, 8888, 'test-key');
         expect(env2.MEILISEARCH_URL).toBe('http://127.0.0.1:8888');
     });
 
     test('includes MEILISEARCH_KEY matching the provided key', () => {
-        const env = buildEnv(8000, 7700, 'my-secret-key');
+        const env = buildEnv(8000, 9000, 7700, 'my-secret-key');
         expect(env.MEILISEARCH_KEY).toBe('my-secret-key');
     });
 
     test('inherits existing process.env variables', () => {
-        const env = buildEnv(8000, 7700, 'test-key');
+        const env = buildEnv(8000, 9000, 7700, 'test-key');
         expect(env).toMatchObject(process.env);
     });
 
     test('includes APP_SECRET from getOrCreateAppSecret', () => {
-        const env = buildEnv(8000, 7700, 'test-key');
+        const env = buildEnv(8000, 9000, 7700, 'test-key');
         expect(env.APP_SECRET).toBe('a'.repeat(64));
         expect(env.APP_SECRET).toHaveLength(64);
     });

@@ -26,6 +26,7 @@ const supervisor       = require('../supervisor');
 const { createWindow } = require('../window');
 const { createSplash } = require('../window/splash');
 const tray             = require('../tray');
+const wsClient         = require('../ws-client');
 
 let quitting = false;
 
@@ -45,11 +46,13 @@ app.whenReady().then(async () => {
     try {
         splash.webContents.send('splash-progress', { step: 0, text: 'Запуск Meilisearch...' });
 
-        const { frankenphpPort } = await supervisor.start((step, text) => {
+        const { frankenphpPort, wsPort } = await supervisor.start((step, text) => {
             if (!splash.isDestroyed()) {
                 splash.webContents.send('splash-progress', { step, text });
             }
         });
+
+        wsClient.connect(wsPort);
 
         await new Promise(r => setTimeout(r, 400));
         splash.close();
@@ -74,5 +77,6 @@ app.whenReady().then(async () => {
 app.on('before-quit', (event) => {
     quitting = true;
     event.preventDefault();
+    wsClient.disconnect();
     supervisor.stop().then(() => app.exit(0));
 });
