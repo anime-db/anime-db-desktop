@@ -37,11 +37,14 @@ async function start() {
 }
 
 /**
- * Останавливает все дочерние процессы.
+ * Останавливает все дочерние процессы в правильном порядке:
+ * сначала FrankenPHP (нет новых запросов), затем Meilisearch.
+ *
+ * @returns {Promise<void>}
  */
-function stop() {
-    frankenphp.stop();
-    meilisearch.stop();
+async function stop() {
+    await frankenphp.stop();
+    await meilisearch.stop();
 }
 
 module.exports = { start, stop };

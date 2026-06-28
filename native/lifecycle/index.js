@@ -39,4 +39,7 @@ app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') app.quit();
 });
 
-app.on('before-quit', () => supervisor.stop());
+app.on('before-quit', (event) => {
+    event.preventDefault();
+    supervisor.stop().then(() => app.exit(0));
+});

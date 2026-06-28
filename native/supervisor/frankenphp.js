@@ -126,24 +126,30 @@ async function start(meiliPort, meiliKey) {
 
 /**
  * Graceful shutdown: SIGTERM → 500ms → SIGKILL.
+ *
+ * @returns {Promise<void>}
  */
 function stop() {
     stopping = true;
-    if (!child) return;
+    if (!child) return Promise.resolve();
 
-    child.kill('SIGTERM');
-    const timer = setTimeout(() => {
-        if (child) child.kill('SIGKILL');
-    }, 500);
-
-    child.on('exit', () => {
-        clearTimeout(timer);
-        if (logStream) {
-            logStream.end();
-            logStream = null;
-        }
-    });
+    const proc = child;
     child = null;
+
+    return new Promise((resolve) => {
+        const timer = setTimeout(() => proc.kill('SIGKILL'), 500);
+
+        proc.on('exit', () => {
+            clearTimeout(timer);
+            if (logStream) {
+                logStream.end();
+                logStream = null;
+            }
+            resolve();
+        });
+
+        proc.kill('SIGTERM');
+    });
 }
 
 module.exports = { start, stop, buildEnv };
