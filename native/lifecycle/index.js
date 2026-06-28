@@ -25,6 +25,14 @@ const { app, dialog } = require('electron');
 const supervisor       = require('../supervisor');
 const { createWindow } = require('../window');
 const { createSplash } = require('../window/splash');
+const tray             = require('../tray');
+
+let quitting = false;
+
+function onQuit() {
+    quitting = true;
+    app.quit();
+}
 
 app.whenReady().then(async () => {
     const splash = createSplash();
@@ -45,7 +53,17 @@ app.whenReady().then(async () => {
 
         await new Promise(r => setTimeout(r, 400));
         splash.close();
-        createWindow(frankenphpPort);
+
+        const mainWindow = createWindow(frankenphpPort);
+
+        mainWindow.on('close', (e) => {
+            if (!quitting) {
+                e.preventDefault();
+                mainWindow.hide();
+            }
+        });
+
+        tray.create(mainWindow, onQuit);
     } catch (err) {
         dialog.showErrorBox('Ошибка запуска', err.message);
         if (!splash.isDestroyed()) splash.close();
@@ -53,11 +71,8 @@ app.whenReady().then(async () => {
     }
 });
 
-app.on('window-all-closed', () => {
-    if (process.platform !== 'darwin') app.quit();
-});
-
 app.on('before-quit', (event) => {
+    quitting = true;
     event.preventDefault();
     supervisor.stop().then(() => app.exit(0));
 });
