@@ -11,6 +11,9 @@ app/var/
 app/.env.local
 app/.env.*.local
 
+# Frontend assets — генерируются при сборке, не хранятся в git
+app/public/js/htmx.min.js
+
 # Electron build output
 dist/
 out/
