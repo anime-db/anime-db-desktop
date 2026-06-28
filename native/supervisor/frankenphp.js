@@ -25,19 +25,24 @@ const { spawn }    = require('child_process');
 const fs           = require('fs');
 const path         = require('path');
 const paths        = require('../paths');
-const { findFreePort }  = require('./port');
-const { waitForHealth } = require('./healthcheck');
+const { findFreePort }    = require('./port');
+const { waitForHealth }   = require('./healthcheck');
+const { pruneOldLogs, openLogStream } = require('./logrotate');
 
 const BINARY = path.join(__dirname, '..', '..', 'bin', 'frankenphp', 'frankenphp.exe');
 const CADDYFILE = path.join(__dirname, '..', '..', 'app', 'Caddyfile');
 const PHP_INI_TEMPLATE = path.join(__dirname, '..', '..', 'bin', 'php', 'php.ini.template');
 
+const LOG_PREFIX  = 'frankenphp';
+const LOG_MAX     = 7;
+
 /** Задержки backoff при перезапуске: 1s, 2s, 4s, … до 30s. */
 const BACKOFF = [1000, 2000, 4000, 8000, 16000, 30000];
 
-let child    = null;
-let stopping = false;
-let port     = null;
+let child     = null;
+let stopping  = false;
+let port      = null;
+let logStream = null;
 
 /**
  * Создаёт php.ini в AppData, если его ещё нет.
@@ -84,8 +89,8 @@ function spawnProcess(appPort, meiliPort, meiliKey, backoffIdx = 0) {
         stdio: ['ignore', 'pipe', 'pipe'],
     });
 
-    child.stdout.on('data', (d) => process.stdout.write(`[frankenphp] ${d}`));
-    child.stderr.on('data', (d) => process.stderr.write(`[frankenphp] ${d}`));
+    child.stdout.on('data', (d) => logStream.write(d));
+    child.stderr.on('data', (d) => logStream.write(d));
 
     child.on('exit', (code) => {
         if (stopping) return;
@@ -106,6 +111,11 @@ function spawnProcess(appPort, meiliPort, meiliKey, backoffIdx = 0) {
 async function start(meiliPort, meiliKey) {
     stopping = false;
     ensurePhpIni();
+
+    const logDir = path.join(paths.getRuntimeDir(), 'log');
+    pruneOldLogs(logDir, LOG_PREFIX, LOG_MAX);
+    logStream = openLogStream(logDir, LOG_PREFIX);
+
     port = await findFreePort(8000);
     spawnProcess(port, meiliPort, meiliKey);
     await waitForHealth(port);
@@ -124,7 +134,13 @@ function stop() {
         if (child) child.kill('SIGKILL');
     }, 500);
 
-    child.on('exit', () => clearTimeout(timer));
+    child.on('exit', () => {
+        clearTimeout(timer);
+        if (logStream) {
+            logStream.end();
+            logStream = null;
+        }
+    });
     child = null;
 }
 
