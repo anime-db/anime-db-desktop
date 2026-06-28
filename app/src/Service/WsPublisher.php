@@ -34,7 +34,7 @@ namespace App\Service;
  * FrankenPHP). The WsController worker polls next() in its streaming loop;
  * other workers call publish() to enqueue events.
  */
-final class WsPublisher
+class WsPublisher
 {
     private const QUEUE_KEY = 'ws_events';
 

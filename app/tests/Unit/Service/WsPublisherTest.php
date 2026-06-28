@@ -71,6 +71,10 @@ final class WsPublisherTest extends TestCase
         $first = $this->publisher->next();
         $second = $this->publisher->next();
 
+        if (null === $first || null === $second) {
+            $this->fail('Expected two events in queue');
+        }
+
         $this->assertSame('event.one', $first['event']);
         $this->assertSame('event.two', $second['event']);
         $this->assertNull($this->publisher->next());
@@ -82,9 +86,17 @@ final class WsPublisherTest extends TestCase
         $this->publisher->publish('second', 2);
         $this->publisher->publish('third', 3);
 
-        $this->assertSame('first', $this->publisher->next()['event']);
-        $this->assertSame('second', $this->publisher->next()['event']);
-        $this->assertSame('third', $this->publisher->next()['event']);
+        $first = $this->publisher->next();
+        $second = $this->publisher->next();
+        $third = $this->publisher->next();
+
+        if (null === $first || null === $second || null === $third) {
+            $this->fail('Expected three events in queue');
+        }
+
+        $this->assertSame('first', $first['event']);
+        $this->assertSame('second', $second['event']);
+        $this->assertSame('third', $third['event']);
     }
 
     public function testPublishAcceptsNullData(): void
