@@ -27,6 +27,8 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
+use App\Service\WsFrameEncoder;
+use App\Service\WsHandshake;
 use App\Service\WsPublisher;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -35,27 +37,28 @@ use Symfony\Component\Routing\Attribute\Route;
 
 final class WsController
 {
-    public function __construct(private readonly WsPublisher $publisher)
-    {
+    public function __construct(
+        private readonly WsPublisher $publisher,
+        private readonly WsHandshake $handshake,
+        private readonly WsFrameEncoder $encoder,
+    ) {
     }
 
     #[Route('/ws')]
     public function connect(Request $request): Response
     {
-        $upgrade = strtolower($request->headers->get('Upgrade', ''));
-        $key = $request->headers->get('Sec-Websocket-Key', '');
+        $acceptKey = $this->handshake->validate($request);
 
-        if ($upgrade !== 'websocket' || $key === '') {
+        if ($acceptKey === null) {
             return new Response('WebSocket upgrade required', Response::HTTP_UPGRADE_REQUIRED, [
                 'Upgrade' => 'websocket',
             ]);
         }
 
-        $accept = base64_encode(sha1($key . '258EAFA5-E914-47DA-95CA-C5AB0DC85B11', true));
-
         $publisher = $this->publisher;
+        $encoder = $this->encoder;
 
-        $response = new StreamedResponse(static function () use ($publisher): void {
+        $response = new StreamedResponse(static function () use ($publisher, $encoder): void {
             ignore_user_abort(false);
             set_time_limit(0);
 
@@ -63,17 +66,7 @@ final class WsController
                 $event = $publisher->next();
                 if ($event !== null) {
                     $json = json_encode($event, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE);
-                    $len = strlen($json);
-                    // WebSocket text frame (FIN=1, opcode=1), server-to-client (no mask)
-                    $frame = "\x81";
-                    if ($len <= 125) {
-                        $frame .= chr($len);
-                    } elseif ($len <= 0xFFFF) {
-                        $frame .= "\x7e" . pack('n', $len);
-                    } else {
-                        $frame .= "\x7f" . pack('J', $len);
-                    }
-                    echo $frame . $json;
+                    echo $encoder->encode($json);
                     flush();
                 } else {
                     usleep(50_000);
@@ -84,7 +77,7 @@ final class WsController
         $response->setStatusCode(101);
         $response->headers->set('Upgrade', 'websocket');
         $response->headers->set('Connection', 'Upgrade');
-        $response->headers->set('Sec-WebSocket-Accept', $accept);
+        $response->headers->set('Sec-WebSocket-Accept', $acceptKey);
         $response->headers->remove('Content-Type');
 
         return $response;
