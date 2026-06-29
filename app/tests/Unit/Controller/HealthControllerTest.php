@@ -36,10 +36,10 @@ final class HealthControllerTest extends TestCase
 {
     public function testHealthReturnsOkStatus(): void
     {
-        $result = $this->createMock(Result::class);
+        $result = $this->createStub(Result::class);
         $result->method('fetchOne')->willReturn('1');
 
-        $conn = $this->createMock(Connection::class);
+        $conn = $this->createStub(Connection::class);
         $conn->method('executeQuery')->willReturn($result);
 
         $controller = new HealthController($conn);
@@ -50,10 +50,10 @@ final class HealthControllerTest extends TestCase
 
     public function testHealthResponseContainsOkStatus(): void
     {
-        $result = $this->createMock(Result::class);
+        $result = $this->createStub(Result::class);
         $result->method('fetchOne')->willReturn('1');
 
-        $conn = $this->createMock(Connection::class);
+        $conn = $this->createStub(Connection::class);
         $conn->method('executeQuery')->willReturn($result);
 
         $controller = new HealthController($conn);
@@ -65,10 +65,10 @@ final class HealthControllerTest extends TestCase
 
     public function testHealthResponseContainsSqliteJsonResult(): void
     {
-        $result = $this->createMock(Result::class);
+        $result = $this->createStub(Result::class);
         $result->method('fetchOne')->willReturn('1');
 
-        $conn = $this->createMock(Connection::class);
+        $conn = $this->createStub(Connection::class);
         $conn->method('executeQuery')->willReturn($result);
 
         $controller = new HealthController($conn);
@@ -80,7 +80,7 @@ final class HealthControllerTest extends TestCase
 
     public function testHealthExecutesJsonExtractQuery(): void
     {
-        $result = $this->createMock(Result::class);
+        $result = $this->createStub(Result::class);
         $result->method('fetchOne')->willReturn('1');
 
         $conn = $this->createMock(Connection::class);
