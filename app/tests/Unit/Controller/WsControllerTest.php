@@ -39,9 +39,9 @@ final class WsControllerTest extends TestCase
 {
     public function testReturnsUpgradeRequiredWhenHandshakeFails(): void
     {
-        $publisher = $this->createMock(WsPublisher::class);
-        $handshake = $this->createMock(WsHandshake::class);
-        $encoder = $this->createMock(WsFrameEncoder::class);
+        $publisher = $this->createStub(WsPublisher::class);
+        $handshake = $this->createStub(WsHandshake::class);
+        $encoder = $this->createStub(WsFrameEncoder::class);
         $handshake->method('validate')->willReturn(null);
 
         $controller = new WsController($publisher, $handshake, $encoder);
@@ -52,9 +52,9 @@ final class WsControllerTest extends TestCase
 
     public function testUpgradeRequiredResponseIncludesWebSocketHeader(): void
     {
-        $publisher = $this->createMock(WsPublisher::class);
-        $handshake = $this->createMock(WsHandshake::class);
-        $encoder = $this->createMock(WsFrameEncoder::class);
+        $publisher = $this->createStub(WsPublisher::class);
+        $handshake = $this->createStub(WsHandshake::class);
+        $encoder = $this->createStub(WsFrameEncoder::class);
         $handshake->method('validate')->willReturn(null);
 
         $controller = new WsController($publisher, $handshake, $encoder);
@@ -65,9 +65,9 @@ final class WsControllerTest extends TestCase
 
     public function testReturnsSwitchingProtocolsForValidHandshake(): void
     {
-        $publisher = $this->createMock(WsPublisher::class);
-        $handshake = $this->createMock(WsHandshake::class);
-        $encoder = $this->createMock(WsFrameEncoder::class);
+        $publisher = $this->createStub(WsPublisher::class);
+        $handshake = $this->createStub(WsHandshake::class);
+        $encoder = $this->createStub(WsFrameEncoder::class);
         $handshake->method('validate')->willReturn('test-accept-key');
 
         $controller = new WsController($publisher, $handshake, $encoder);
@@ -78,9 +78,9 @@ final class WsControllerTest extends TestCase
 
     public function testSwitchingProtocolsResponseHasCorrectHeaders(): void
     {
-        $publisher = $this->createMock(WsPublisher::class);
-        $handshake = $this->createMock(WsHandshake::class);
-        $encoder = $this->createMock(WsFrameEncoder::class);
+        $publisher = $this->createStub(WsPublisher::class);
+        $handshake = $this->createStub(WsHandshake::class);
+        $encoder = $this->createStub(WsFrameEncoder::class);
         $handshake->method('validate')->willReturn('s3pPLMBiTxaQ9kYGzzhZRbK+xOo=');
 
         $controller = new WsController($publisher, $handshake, $encoder);
@@ -93,9 +93,9 @@ final class WsControllerTest extends TestCase
 
     public function testHandshakeIsCalledWithRequest(): void
     {
-        $publisher = $this->createMock(WsPublisher::class);
+        $publisher = $this->createStub(WsPublisher::class);
         $handshake = $this->createMock(WsHandshake::class);
-        $encoder = $this->createMock(WsFrameEncoder::class);
+        $encoder = $this->createStub(WsFrameEncoder::class);
         $request = new Request();
 
         $handshake->expects($this->once())
