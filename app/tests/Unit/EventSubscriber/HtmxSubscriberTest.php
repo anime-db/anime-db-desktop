@@ -55,7 +55,7 @@ final class HtmxSubscriberTest extends TestCase
         $request = new Request();
         $request->headers->set('HX-Request', 'true');
 
-        $event = $this->createMock(RequestEvent::class);
+        $event = $this->createStub(RequestEvent::class);
         $event->method('getRequest')->willReturn($request);
 
         $this->subscriber->onKernelRequest($event);
@@ -67,7 +67,7 @@ final class HtmxSubscriberTest extends TestCase
     {
         $request = new Request();
 
-        $event = $this->createMock(RequestEvent::class);
+        $event = $this->createStub(RequestEvent::class);
         $event->method('getRequest')->willReturn($request);
 
         $this->subscriber->onKernelRequest($event);
