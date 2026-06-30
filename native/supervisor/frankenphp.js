@@ -43,6 +43,7 @@ const BACKOFF = [1000, 2000, 4000, 8000, 16000, 30000];
 let child     = null;
 let stopping  = false;
 let port      = null;
+let wsPort    = null;
 let logStream = null;
 
 /**
@@ -61,10 +62,11 @@ function ensurePhpIni() {
     fs.writeFileSync(iniPath, ini, 'utf8');
 }
 
-function buildEnv(appPort, meiliPort, meiliKey) {
+function buildEnv(appPort, wsPort, meiliPort, meiliKey) {
     return {
         ...process.env,
         APP_PORT:         String(appPort),
+        WS_PORT:          String(wsPort),
         APP_ROOT:         paths.getAppRootDir(),
         APP_ENV:          'prod',
         APP_SECRET:       getOrCreateAppSecret(),
@@ -80,14 +82,14 @@ function buildEnv(appPort, meiliPort, meiliKey) {
  * Запускает FrankenPHP и при падении перезапускает с backoff.
  * Если stopping === true — молча прекращает перезапуски.
  */
-function spawnProcess(appPort, meiliPort, meiliKey, backoffIdx = 0) {
+function spawnProcess(appPort, wsPort, meiliPort, meiliKey, backoffIdx = 0) {
     if (stopping) return;
 
     fs.mkdirSync(paths.getRuntimeDir(), { recursive: true });
 
     child = spawn(BINARY, ['run', '--config', CADDYFILE], {
         cwd: paths.getAppRootDir(),
-        env: buildEnv(appPort, meiliPort, meiliKey),
+        env: buildEnv(appPort, wsPort, meiliPort, meiliKey),
         stdio: ['ignore', 'pipe', 'pipe'],
     });
 
@@ -98,17 +100,17 @@ function spawnProcess(appPort, meiliPort, meiliKey, backoffIdx = 0) {
         if (stopping) return;
         const delay = BACKOFF[Math.min(backoffIdx, BACKOFF.length - 1)];
         console.error(`[frankenphp] вышел с кодом ${code}, перезапуск через ${delay}ms`);
-        setTimeout(() => spawnProcess(appPort, meiliPort, meiliKey, backoffIdx + 1), delay);
+        setTimeout(() => spawnProcess(appPort, wsPort, meiliPort, meiliKey, backoffIdx + 1), delay);
     });
 }
 
 /**
- * Запускает FrankenPHP: ищет порт → создаёт php.ini → спавнит процесс →
- * ждёт /health → возвращает порт.
+ * Запускает FrankenPHP: ищет порты → создаёт php.ini → спавнит процесс →
+ * ждёт /health → возвращает порты.
  *
  * @param {number} meiliPort  порт Meilisearch
  * @param {string} meiliKey   master-key Meilisearch
- * @returns {Promise<number>}
+ * @returns {Promise<{ httpPort: number, wsPort: number }>}
  */
 async function start(meiliPort, meiliKey) {
     stopping = false;
@@ -118,10 +120,11 @@ async function start(meiliPort, meiliKey) {
     pruneOldLogs(logDir, LOG_PREFIX, LOG_MAX);
     logStream = openLogStream(logDir, LOG_PREFIX);
 
-    port = await findFreePort(8000);
-    spawnProcess(port, meiliPort, meiliKey);
+    port   = await findFreePort(8000);
+    wsPort = await findFreePort(port + 1);
+    spawnProcess(port, wsPort, meiliPort, meiliKey);
     await waitForHealth(port);
-    return port;
+    return { httpPort: port, wsPort };
 }
 
 /**
