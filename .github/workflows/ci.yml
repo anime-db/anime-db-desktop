@@ -18,6 +18,8 @@ jobs:
           php-version: '8.4'
           tools: composer
           coverage: none
+          extensions: apcu
+          ini-values: apc.enable_cli=1
 
       - name: Install dependencies
         run: composer install --no-interaction --prefer-dist

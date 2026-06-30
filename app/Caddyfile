@@ -9,3 +9,9 @@
         worker ./public/index.php
     }
 }
+
+127.0.0.1:{env.WS_PORT} {
+    php_server {
+        worker ./public/index.php
+    }
+}
