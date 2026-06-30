@@ -38,7 +38,6 @@ final class WsPublisherTest extends TestCase
 
     protected function setUp(): void
     {
-        ini_set('apc.enable_cli', '1');
         apcu_clear_cache();
         $this->publisher = new WsPublisher();
     }
