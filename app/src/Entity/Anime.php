@@ -258,17 +258,17 @@ class Anime
 
     /**
      * Marks the next episode as watched, capping at episodes_count and moving
-     * watch_status from plan to watching (or to completed on the last episode).
+     * watch_status to watching (or to completed on the last episode), regardless
+     * of the previous status: the user may be resuming a dropped/on-hold title
+     * or rewatching a completed one.
      */
     public function watchNextEpisode(): self
     {
         $this->setWatchedEpisodes(($this->watchedEpisodes ?? 0) + 1);
 
-        if (null !== $this->episodesCount && $this->watchedEpisodes === $this->episodesCount) {
-            $this->watchStatus = WatchStatus::Completed;
-        } elseif (WatchStatus::Plan === $this->watchStatus) {
-            $this->watchStatus = WatchStatus::Watching;
-        }
+        $this->watchStatus = (null !== $this->episodesCount && $this->watchedEpisodes === $this->episodesCount)
+            ? WatchStatus::Completed
+            : WatchStatus::Watching;
 
         return $this;
     }
