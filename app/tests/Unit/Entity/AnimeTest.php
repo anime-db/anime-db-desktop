@@ -410,6 +410,28 @@ final class AnimeTest extends TestCase
         $this->assertSame(WatchStatus::Watching, $anime->getWatchStatus());
     }
 
+    public function testSetWatchedEpisodesMovesToWatchingDirectly(): void
+    {
+        $anime = new Anime();
+        $anime->setEpisodesCount(12);
+        $anime->setWatchStatus(WatchStatus::Plan);
+
+        $anime->setWatchedEpisodes(3);
+
+        $this->assertSame(WatchStatus::Watching, $anime->getWatchStatus());
+    }
+
+    public function testSetWatchedEpisodesMovesToCompletedDirectly(): void
+    {
+        $anime = new Anime();
+        $anime->setEpisodesCount(12);
+        $anime->setWatchStatus(WatchStatus::Watching);
+
+        $anime->setWatchedEpisodes(12);
+
+        $this->assertSame(WatchStatus::Completed, $anime->getWatchStatus());
+    }
+
     public function testWatchNextEpisodeRejectsGoingPastEpisodesCount(): void
     {
         $anime = new Anime();
