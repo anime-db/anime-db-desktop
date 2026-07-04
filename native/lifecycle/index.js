@@ -67,6 +67,12 @@ app.whenReady().then(async () => {
         });
 
         tray.create(mainWindow, onQuit);
+
+        wsClient.on('backend-event', ({ event, data }) => {
+            if (event === 'backend.status') tray.setState(data.state);
+        });
+
+        supervisor.events.on('exit', () => tray.setState('error'));
     } catch (err) {
         dialog.showErrorBox('Ошибка запуска', err.message);
         if (!splash.isDestroyed()) splash.close();

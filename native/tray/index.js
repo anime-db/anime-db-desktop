@@ -26,12 +26,18 @@ const path = require('path');
 
 let tray = null;
 
+const ICONS = {
+    idle:  path.join(__dirname, '..', '..', 'resources', 'tray-idle.ico'),
+    busy:  path.join(__dirname, '..', '..', 'resources', 'tray-busy.ico'),
+    error: path.join(__dirname, '..', '..', 'resources', 'tray-error.ico'),
+};
+
 /**
  * @param {import('electron').BrowserWindow} mainWindow
  * @param {Function} onQuit
  */
 function create(mainWindow, onQuit) {
-    const icon = nativeImage.createFromPath(path.join(__dirname, '..', '..', 'resources', 'favicon.ico'));
+    const icon = nativeImage.createFromPath(ICONS.idle);
     tray = new Tray(icon);
     tray.setToolTip('AnimeDB');
 
@@ -44,4 +50,16 @@ function create(mainWindow, onQuit) {
     tray.on('double-click', () => mainWindow.show());
 }
 
-module.exports = { create };
+/**
+ * Меняет иконку трея в соответствии с состоянием бэкенда.
+ *
+ * @param {'idle' | 'busy' | 'error'} state
+ */
+function setState(state) {
+    const iconPath = ICONS[state];
+    if (!tray || !iconPath) return;
+
+    tray.setImage(nativeImage.createFromPath(iconPath));
+}
+
+module.exports = { create, setState };
