@@ -27,20 +27,132 @@ declare(strict_types=1);
 
 namespace App\Entity;
 
+use App\Entity\Enum\AnimeNameType;
+use App\Entity\Enum\AnimeType;
+use App\Entity\Enum\GenreCode;
+use App\Entity\Enum\ProductionStatus;
+use App\Entity\Enum\WatchStatus;
+use App\Entity\Exception\InvalidDateRangeException;
+use App\Entity\Exception\InvalidEpisodeCountException;
+use Doctrine\Common\Collections\ArrayCollection;
+use Doctrine\Common\Collections\Collection;
 use Doctrine\ORM\Mapping as ORM;
 
 #[ORM\Entity]
 class Anime
 {
+    /**
+     * Fallback locale for getSummary() when the requested UI locale has no description.
+     */
+    private const FALLBACK_LOCALE = 'en';
+
     #[ORM\Id, ORM\GeneratedValue, ORM\Column]
     private ?int $id = null;
 
-    #[ORM\Column]
+    /**
+     * Primary display title (fallback while the anime_name records are not filled in yet).
+     */
+    #[ORM\Column(length: 256)]
     private string $title;
 
-    /** @var array<string, mixed>|null */
+    #[ORM\Column(type: 'unix_timestamp', nullable: true)]
+    private ?\DateTimeImmutable $datePremiere = null;
+
+    #[ORM\Column(type: 'unix_timestamp', nullable: true)]
+    private ?\DateTimeImmutable $dateEnd = null;
+
+    /**
+     * Duration of a single watch unit: an episode for a series, the whole runtime for type=movie.
+     */
+    #[ORM\Column(nullable: true)]
+    private ?int $durationMinutes = null;
+
+    #[ORM\Column(nullable: true)]
+    private ?int $episodesCount = null;
+
+    /**
+     * Number of the last watched episode. There is no separate "episode" entity.
+     */
+    #[ORM\Column(nullable: true)]
+    private ?int $watchedEpisodes = null;
+
+    #[ORM\Column(length: 16, enumType: WatchStatus::class)]
+    private WatchStatus $watchStatus;
+
+    #[ORM\Column(nullable: true)]
+    private ?int $userRating = null;
+
+    #[ORM\Column(type: 'text', nullable: true)]
+    private ?string $notes = null;
+
+    #[ORM\Column(length: 16, enumType: AnimeType::class)]
+    private AnimeType $type;
+
+    /** @var list<string>|null ISO 3166-1 alpha-2 codes */
+    #[ORM\Column(type: 'json', nullable: true)]
+    private ?array $countries = null;
+
+    /**
+     * Relative path to the cover file on disk, resolved via $storage + app-media:// (separate task).
+     */
+    #[ORM\Column(length: 256, nullable: true)]
+    private ?string $cover = null;
+
+    #[ORM\ManyToOne(targetEntity: Storage::class)]
+    #[ORM\JoinColumn(name: 'storage_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
+    private ?Storage $storage = null;
+
+    /** @var array<string, mixed>|null raw plugin data, including descriptions{} used by getSummary() */
     #[ORM\Column(type: 'json', nullable: true)]
     private ?array $metadata = null;
+
+    #[ORM\Column(type: 'unix_timestamp')]
+    private \DateTimeImmutable $dateAdd;
+
+    #[ORM\Column(type: 'unix_timestamp')]
+    private \DateTimeImmutable $dateUpdate;
+
+    /** @var Collection<int, AnimeGenre> */
+    #[ORM\OneToMany(mappedBy: 'anime', targetEntity: AnimeGenre::class, cascade: ['persist', 'remove'], orphanRemoval: true)]
+    private Collection $genres;
+
+    /** @var Collection<int, Studio> */
+    #[ORM\ManyToMany(targetEntity: Studio::class, inversedBy: 'animes')]
+    #[ORM\JoinTable(name: 'anime_studios')]
+    #[ORM\JoinColumn(name: 'anime_id', referencedColumnName: 'id', onDelete: 'CASCADE')]
+    #[ORM\InverseJoinColumn(name: 'studio_id', referencedColumnName: 'id', onDelete: 'RESTRICT')]
+    private Collection $studios;
+
+    /** @var Collection<int, Label> */
+    #[ORM\ManyToMany(targetEntity: Label::class, inversedBy: 'animes')]
+    #[ORM\JoinTable(name: 'anime_labels')]
+    #[ORM\JoinColumn(name: 'anime_id', referencedColumnName: 'id', onDelete: 'CASCADE')]
+    #[ORM\InverseJoinColumn(name: 'label_id', referencedColumnName: 'id', onDelete: 'CASCADE')]
+    private Collection $labels;
+
+    /** @var Collection<int, AnimeName> */
+    #[ORM\OneToMany(mappedBy: 'anime', targetEntity: AnimeName::class, cascade: ['persist', 'remove'], orphanRemoval: true)]
+    private Collection $names;
+
+    /** @var Collection<int, AnimeImage> */
+    #[ORM\OneToMany(mappedBy: 'anime', targetEntity: AnimeImage::class, cascade: ['persist', 'remove'], orphanRemoval: true)]
+    private Collection $images;
+
+    /** @var Collection<int, AnimeSource> */
+    #[ORM\OneToMany(mappedBy: 'anime', targetEntity: AnimeSource::class, cascade: ['persist', 'remove'], orphanRemoval: true)]
+    private Collection $sources;
+
+    public function __construct()
+    {
+        $this->genres = new ArrayCollection();
+        $this->studios = new ArrayCollection();
+        $this->labels = new ArrayCollection();
+        $this->names = new ArrayCollection();
+        $this->images = new ArrayCollection();
+        $this->sources = new ArrayCollection();
+        $this->dateAdd = new \DateTimeImmutable();
+        $this->dateUpdate = new \DateTimeImmutable();
+    }
 
     public function getId(): ?int
     {
@@ -59,6 +171,194 @@ class Anime
         return $this;
     }
 
+    public function getDatePremiere(): ?\DateTimeImmutable
+    {
+        return $this->datePremiere;
+    }
+
+    public function setDatePremiere(?\DateTimeImmutable $datePremiere): self
+    {
+        $this->assertDateRange($datePremiere, $this->dateEnd);
+        $this->datePremiere = $datePremiere;
+
+        return $this;
+    }
+
+    public function getDateEnd(): ?\DateTimeImmutable
+    {
+        return $this->dateEnd;
+    }
+
+    public function setDateEnd(?\DateTimeImmutable $dateEnd): self
+    {
+        $this->assertDateRange($this->datePremiere, $dateEnd);
+        $this->dateEnd = $dateEnd;
+
+        return $this;
+    }
+
+    private function assertDateRange(?\DateTimeImmutable $datePremiere, ?\DateTimeImmutable $dateEnd): void
+    {
+        if (null !== $datePremiere && null !== $dateEnd && $dateEnd < $datePremiere) {
+            throw new InvalidDateRangeException('date_end must not be earlier than date_premiere');
+        }
+    }
+
+    public function getDurationMinutes(): ?int
+    {
+        return $this->durationMinutes;
+    }
+
+    public function setDurationMinutes(?int $durationMinutes): self
+    {
+        $this->durationMinutes = $durationMinutes;
+
+        return $this;
+    }
+
+    public function getEpisodesCount(): ?int
+    {
+        return $this->episodesCount;
+    }
+
+    public function setEpisodesCount(?int $episodesCount): self
+    {
+        $this->episodesCount = $episodesCount;
+
+        return $this;
+    }
+
+    public function getWatchedEpisodes(): ?int
+    {
+        return $this->watchedEpisodes;
+    }
+
+    public function setWatchedEpisodes(?int $watchedEpisodes): self
+    {
+        $this->assertEpisodeCount($watchedEpisodes);
+        $this->watchedEpisodes = $watchedEpisodes;
+
+        if (null !== $watchedEpisodes) {
+            $this->watchStatus = (null !== $this->episodesCount && $watchedEpisodes === $this->episodesCount)
+                ? WatchStatus::Completed
+                : WatchStatus::Watching;
+        }
+
+        return $this;
+    }
+
+    private function assertEpisodeCount(?int $watchedEpisodes): void
+    {
+        if (null === $watchedEpisodes) {
+            return;
+        }
+
+        if ($watchedEpisodes < 0) {
+            throw new InvalidEpisodeCountException('watched_episodes must not be negative');
+        }
+
+        if (null !== $this->episodesCount && $watchedEpisodes > $this->episodesCount) {
+            throw new InvalidEpisodeCountException('watched_episodes must not exceed episodes_count');
+        }
+    }
+
+    /**
+     * Marks the next episode as watched, capping at episodes_count and moving
+     * watch_status to watching (or to completed on the last episode) via
+     * setWatchedEpisodes(), regardless of the previous status: the user may be
+     * resuming a dropped/on-hold title or rewatching a completed one.
+     */
+    public function watchNextEpisode(): self
+    {
+        return $this->setWatchedEpisodes(($this->watchedEpisodes ?? 0) + 1);
+    }
+
+    public function getWatchStatus(): WatchStatus
+    {
+        return $this->watchStatus;
+    }
+
+    public function setWatchStatus(WatchStatus $watchStatus): self
+    {
+        $this->watchStatus = $watchStatus;
+
+        return $this;
+    }
+
+    public function getUserRating(): ?int
+    {
+        return $this->userRating;
+    }
+
+    public function setUserRating(?int $userRating): self
+    {
+        $this->userRating = $userRating;
+
+        return $this;
+    }
+
+    public function getNotes(): ?string
+    {
+        return $this->notes;
+    }
+
+    public function setNotes(?string $notes): self
+    {
+        $this->notes = $notes;
+
+        return $this;
+    }
+
+    public function getType(): AnimeType
+    {
+        return $this->type;
+    }
+
+    public function setType(AnimeType $type): self
+    {
+        $this->type = $type;
+
+        return $this;
+    }
+
+    /** @return list<string>|null */
+    public function getCountries(): ?array
+    {
+        return $this->countries;
+    }
+
+    /** @param list<string>|null $countries */
+    public function setCountries(?array $countries): self
+    {
+        $this->countries = $countries;
+
+        return $this;
+    }
+
+    public function getCover(): ?string
+    {
+        return $this->cover;
+    }
+
+    public function setCover(?string $cover): self
+    {
+        $this->cover = $cover;
+
+        return $this;
+    }
+
+    public function getStorage(): ?Storage
+    {
+        return $this->storage;
+    }
+
+    public function setStorage(?Storage $storage): self
+    {
+        $this->storage = $storage;
+
+        return $this;
+    }
+
     /** @return array<string, mixed>|null */
     public function getMetadata(): ?array
     {
@@ -71,5 +371,218 @@ class Anime
         $this->metadata = $metadata;
 
         return $this;
+    }
+
+    public function getDateAdd(): \DateTimeImmutable
+    {
+        return $this->dateAdd;
+    }
+
+    public function getDateUpdate(): \DateTimeImmutable
+    {
+        return $this->dateUpdate;
+    }
+
+    #[ORM\PreUpdate]
+    public function onPreUpdate(): void
+    {
+        $this->dateUpdate = new \DateTimeImmutable();
+    }
+
+    /** @return Collection<int, AnimeGenre> */
+    public function getGenres(): Collection
+    {
+        return $this->genres;
+    }
+
+    /** @return list<GenreCode> */
+    public function getGenreCodes(): array
+    {
+        return array_values(array_map(
+            static fn (AnimeGenre $genre): GenreCode => $genre->code,
+            $this->genres->toArray(),
+        ));
+    }
+
+    public function addGenre(GenreCode $code): self
+    {
+        if (\in_array($code, $this->getGenreCodes(), true)) {
+            return $this;
+        }
+        $this->genres->add(new AnimeGenre($this, $code));
+
+        return $this;
+    }
+
+    public function removeGenre(GenreCode $code): self
+    {
+        foreach ($this->genres as $genre) {
+            if ($genre->code === $code) {
+                $this->genres->removeElement($genre);
+                break;
+            }
+        }
+
+        return $this;
+    }
+
+    /** @return Collection<int, Studio> */
+    public function getStudios(): Collection
+    {
+        return $this->studios;
+    }
+
+    public function addStudio(Studio $studio): self
+    {
+        if (!$this->studios->contains($studio)) {
+            $this->studios->add($studio);
+            $studio->addAnime($this);
+        }
+
+        return $this;
+    }
+
+    public function removeStudio(Studio $studio): self
+    {
+        if ($this->studios->removeElement($studio)) {
+            $studio->removeAnime($this);
+        }
+
+        return $this;
+    }
+
+    /** @return Collection<int, Label> */
+    public function getLabels(): Collection
+    {
+        return $this->labels;
+    }
+
+    public function addLabel(Label $label): self
+    {
+        if (!$this->labels->contains($label)) {
+            $this->labels->add($label);
+            $label->addAnime($this);
+        }
+
+        return $this;
+    }
+
+    public function removeLabel(Label $label): self
+    {
+        if ($this->labels->removeElement($label)) {
+            $label->removeAnime($this);
+        }
+
+        return $this;
+    }
+
+    /** @return Collection<int, AnimeName> */
+    public function getNames(): Collection
+    {
+        return $this->names;
+    }
+
+    public function addName(string $name, AnimeNameType $type): self
+    {
+        $this->names->add(new AnimeName($this, $name, $type));
+
+        return $this;
+    }
+
+    public function removeName(AnimeName $name): self
+    {
+        $this->names->removeElement($name);
+
+        return $this;
+    }
+
+    /** @return Collection<int, AnimeImage> */
+    public function getImages(): Collection
+    {
+        return $this->images;
+    }
+
+    public function addImage(string $source): self
+    {
+        $this->images->add(new AnimeImage($this, $source));
+
+        return $this;
+    }
+
+    public function removeImage(AnimeImage $image): self
+    {
+        $this->images->removeElement($image);
+
+        return $this;
+    }
+
+    /** @return Collection<int, AnimeSource> */
+    public function getSources(): Collection
+    {
+        return $this->sources;
+    }
+
+    public function addSource(string $url): self
+    {
+        $this->sources->add(new AnimeSource($this, $url));
+
+        return $this;
+    }
+
+    public function removeSource(AnimeSource $source): self
+    {
+        $this->sources->removeElement($source);
+
+        return $this;
+    }
+
+    /**
+     * Computed from datePremiere/dateEnd, not a persisted column. Compared against the
+     * current moment (not the start of today) so the status is accurate right after a
+     * release happens, not only from the next day. Order of checks matters: dateEnd in
+     * the past wins over an ongoing premiere; datePremiere == now counts as ongoing.
+     */
+    public function getProductionStatus(): ProductionStatus
+    {
+        $now = new \DateTimeImmutable();
+
+        if (null !== $this->dateEnd && $this->dateEnd <= $now) {
+            return ProductionStatus::Released;
+        }
+
+        if (null !== $this->datePremiere && $this->datePremiere <= $now
+            && (null === $this->dateEnd || $this->dateEnd > $now)) {
+            return ProductionStatus::Ongoing;
+        }
+
+        return ProductionStatus::Announced;
+    }
+
+    /**
+     * Resolves metadata.descriptions{} (e.g. {"ru": "...", "en": "..."}) for the given UI locale:
+     * preferred locale -> en -> any available -> empty string.
+     */
+    public function getSummary(string $locale): string
+    {
+        $descriptions = $this->metadata['descriptions'] ?? null;
+        if (!\is_array($descriptions) || [] === $descriptions) {
+            return '';
+        }
+
+        if (isset($descriptions[$locale]) && \is_string($descriptions[$locale])) {
+            return $descriptions[$locale];
+        }
+
+        if (isset($descriptions[self::FALLBACK_LOCALE]) && \is_string($descriptions[self::FALLBACK_LOCALE])) {
+            return $descriptions[self::FALLBACK_LOCALE];
+        }
+
+        foreach ($descriptions as $value) {
+            if (\is_string($value)) {
+                return $value;
+            }
+        }
+
+        return '';
     }
 }
