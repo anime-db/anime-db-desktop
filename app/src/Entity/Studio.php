@@ -76,6 +76,28 @@ class Studio
     }
 
     /**
+     * Inverse-side sync only, called from Anime::addStudio(). Not meant to be called directly.
+     */
+    public function addAnime(Anime $anime): self
+    {
+        if (!$this->animes->contains($anime)) {
+            $this->animes->add($anime);
+        }
+
+        return $this;
+    }
+
+    /**
+     * Inverse-side sync only, called from Anime::removeStudio(). Not meant to be called directly.
+     */
+    public function removeAnime(Anime $anime): self
+    {
+        $this->animes->removeElement($anime);
+
+        return $this;
+    }
+
+    /**
      * Must be checked before deleting a Studio: the DB enforces ON DELETE RESTRICT
      * on anime_studios.studio_id, so removing a studio still linked to an Anime
      * throws a raw FK-violation exception instead of a user-friendly error.

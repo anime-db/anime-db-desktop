@@ -33,6 +33,8 @@ use App\Entity\Enum\AnimeType;
 use App\Entity\Enum\GenreCode;
 use App\Entity\Enum\ProductionStatus;
 use App\Entity\Enum\WatchStatus;
+use App\Entity\Exception\InvalidDateRangeException;
+use App\Entity\Exception\InvalidEpisodeCountException;
 use App\Entity\Label;
 use App\Entity\Storage;
 use App\Entity\Studio;
@@ -113,7 +115,7 @@ final class AnimeTest extends TestCase
         $anime = new Anime();
         $anime->setDatePremiere(new \DateTimeImmutable('2026-06-01'));
 
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(InvalidDateRangeException::class);
         $anime->setDateEnd(new \DateTimeImmutable('2026-01-01'));
     }
 
@@ -122,7 +124,7 @@ final class AnimeTest extends TestCase
         $anime = new Anime();
         $anime->setDateEnd(new \DateTimeImmutable('2026-01-01'));
 
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(InvalidDateRangeException::class);
         $anime->setDatePremiere(new \DateTimeImmutable('2026-06-01'));
     }
 
@@ -338,5 +340,58 @@ final class AnimeTest extends TestCase
         $anime->onPreUpdate();
 
         $this->assertGreaterThan($before, $anime->getDateUpdate());
+    }
+
+    public function testSetWatchedEpisodesRejectsNegativeValue(): void
+    {
+        $anime = new Anime();
+
+        $this->expectException(InvalidEpisodeCountException::class);
+        $anime->setWatchedEpisodes(-1);
+    }
+
+    public function testSetWatchedEpisodesRejectsValueAboveEpisodesCount(): void
+    {
+        $anime = new Anime();
+        $anime->setEpisodesCount(12);
+
+        $this->expectException(InvalidEpisodeCountException::class);
+        $anime->setWatchedEpisodes(13);
+    }
+
+    public function testWatchNextEpisodeIncrementsWatchedEpisodes(): void
+    {
+        $anime = new Anime();
+        $anime->setEpisodesCount(12);
+        $anime->setWatchStatus(WatchStatus::Plan);
+
+        $anime->watchNextEpisode();
+
+        $this->assertSame(1, $anime->getWatchedEpisodes());
+        $this->assertSame(WatchStatus::Watching, $anime->getWatchStatus());
+    }
+
+    public function testWatchNextEpisodeMovesToCompletedOnLastEpisode(): void
+    {
+        $anime = new Anime();
+        $anime->setEpisodesCount(2);
+        $anime->setWatchStatus(WatchStatus::Watching);
+        $anime->setWatchedEpisodes(1);
+
+        $anime->watchNextEpisode();
+
+        $this->assertSame(2, $anime->getWatchedEpisodes());
+        $this->assertSame(WatchStatus::Completed, $anime->getWatchStatus());
+    }
+
+    public function testWatchNextEpisodeRejectsGoingPastEpisodesCount(): void
+    {
+        $anime = new Anime();
+        $anime->setEpisodesCount(1);
+        $anime->setWatchStatus(WatchStatus::Completed);
+        $anime->setWatchedEpisodes(1);
+
+        $this->expectException(InvalidEpisodeCountException::class);
+        $anime->watchNextEpisode();
     }
 }

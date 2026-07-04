@@ -71,4 +71,26 @@ class Label
     {
         return $this->animes;
     }
+
+    /**
+     * Inverse-side sync only, called from Anime::addLabel(). Not meant to be called directly.
+     */
+    public function addAnime(Anime $anime): self
+    {
+        if (!$this->animes->contains($anime)) {
+            $this->animes->add($anime);
+        }
+
+        return $this;
+    }
+
+    /**
+     * Inverse-side sync only, called from Anime::removeLabel(). Not meant to be called directly.
+     */
+    public function removeAnime(Anime $anime): self
+    {
+        $this->animes->removeElement($anime);
+
+        return $this;
+    }
 }

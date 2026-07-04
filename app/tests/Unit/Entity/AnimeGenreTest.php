@@ -39,7 +39,7 @@ final class AnimeGenreTest extends TestCase
         $anime = new Anime();
         $genre = new AnimeGenre($anime, GenreCode::Action);
 
-        $this->assertSame($anime, $genre->getAnime());
-        $this->assertSame(GenreCode::Action, $genre->getCode());
+        $this->assertSame($anime, $genre->anime);
+        $this->assertSame(GenreCode::Action, $genre->code);
     }
 }

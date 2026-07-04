@@ -36,7 +36,8 @@ use PHPUnit\Framework\TestCase;
  * Exercises the ON DELETE behaviours of the catalog schema (see Version20260704000000
  * and issue #48, bug B-20) directly against a real SQLite connection. This is the only
  * reliable way to prove the constraints work: SQLite ignores foreign key actions unless
- * "PRAGMA foreign_keys = ON" is set on the connection (see SqliteForeignKeysListener).
+ * "PRAGMA foreign_keys = ON" is set on the connection (see the doctrine.middleware-tagged
+ * Doctrine\DBAL\Driver\AbstractSQLiteDriver\Middleware\EnableForeignKeys in services.yaml).
  */
 final class CatalogSchemaTest extends TestCase
 {
@@ -62,8 +63,8 @@ final class CatalogSchemaTest extends TestCase
         $this->connection->executeStatement('CREATE TABLE anime (
             id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
             title VARCHAR(256) NOT NULL,
-            date_premiere DATE DEFAULT NULL,
-            date_end DATE DEFAULT NULL,
+            date_premiere INTEGER DEFAULT NULL,
+            date_end INTEGER DEFAULT NULL,
             watch_status VARCHAR(16) NOT NULL,
             type VARCHAR(16) NOT NULL,
             storage_id INTEGER DEFAULT NULL,
@@ -150,17 +151,20 @@ final class CatalogSchemaTest extends TestCase
     {
         $this->expectException(DbalException::class);
 
+        $datePremiere = (new \DateTimeImmutable('2026-06-01'))->getTimestamp();
+        $dateEnd = (new \DateTimeImmutable('2026-01-01'))->getTimestamp();
         $this->connection->executeStatement(
-            "INSERT INTO anime (title, watch_status, type, date_premiere, date_end) "
-            ."VALUES ('Trigun', 'plan', 'tv', '2026-06-01', '2026-01-01')",
+            'INSERT INTO anime (title, watch_status, type, date_premiere, date_end) '
+            ."VALUES ('Trigun', 'plan', 'tv', {$datePremiere}, {$dateEnd})",
         );
     }
 
     public function testDateEndEqualToDatePremiereIsAccepted(): void
     {
+        $date = (new \DateTimeImmutable('2026-06-01'))->getTimestamp();
         $this->connection->executeStatement(
-            "INSERT INTO anime (title, watch_status, type, date_premiere, date_end) "
-            ."VALUES ('Trigun', 'plan', 'tv', '2026-06-01', '2026-06-01')",
+            'INSERT INTO anime (title, watch_status, type, date_premiere, date_end) '
+            ."VALUES ('Trigun', 'plan', 'tv', {$date}, {$date})",
         );
 
         $this->assertSame(1, (int) $this->connection->fetchOne('SELECT COUNT(*) FROM anime'));

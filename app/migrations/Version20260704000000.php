@@ -40,13 +40,15 @@ final class Version20260704000000 extends AbstractMigration
         // The Stage-0 anime placeholder (id, title, metadata) is replaced by the full catalog schema below.
         $this->addSql('DROP TABLE anime');
 
+        // date_update/file_modified/date_premiere/date_end/date_add are stored as Unix
+        // timestamps (INTEGER), not DATE/DATETIME, to avoid timezone-dependent string parsing.
         $this->addSql('CREATE TABLE storage (
             id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
             name VARCHAR(256) NOT NULL,
             type VARCHAR(16) NOT NULL CHECK (type IN (\'folder\', \'external\', \'external-r\', \'video\')),
             path VARCHAR(1024) NOT NULL,
-            date_update DATETIME DEFAULT NULL,
-            file_modified DATETIME DEFAULT NULL
+            date_update INTEGER DEFAULT NULL,
+            file_modified INTEGER DEFAULT NULL
         )');
 
         $this->addSql('CREATE TABLE studio (
@@ -62,8 +64,8 @@ final class Version20260704000000 extends AbstractMigration
         $this->addSql('CREATE TABLE anime (
             id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
             title VARCHAR(256) NOT NULL,
-            date_premiere DATE DEFAULT NULL,
-            date_end DATE DEFAULT NULL,
+            date_premiere INTEGER DEFAULT NULL,
+            date_end INTEGER DEFAULT NULL,
             duration_minutes INTEGER DEFAULT NULL,
             episodes_count INTEGER DEFAULT NULL,
             watched_episodes INTEGER DEFAULT NULL,
@@ -75,8 +77,8 @@ final class Version20260704000000 extends AbstractMigration
             cover VARCHAR(256) DEFAULT NULL,
             storage_id INTEGER DEFAULT NULL,
             metadata CLOB DEFAULT NULL,
-            date_add DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            date_update DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            date_add INTEGER NOT NULL,
+            date_update INTEGER NOT NULL,
             CHECK (date_end IS NULL OR date_premiere IS NULL OR date_end >= date_premiere),
             CONSTRAINT FK_ANIME_STORAGE FOREIGN KEY (storage_id) REFERENCES storage (id) ON DELETE SET NULL NOT DEFERRABLE INITIALLY IMMEDIATE
         )');

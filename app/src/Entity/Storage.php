@@ -45,10 +45,10 @@ class Storage
     #[ORM\Column(length: 1024)]
     private string $path;
 
-    #[ORM\Column(type: 'datetime_immutable', nullable: true)]
+    #[ORM\Column(type: 'unix_timestamp', nullable: true)]
     private ?\DateTimeImmutable $dateUpdate = null;
 
-    #[ORM\Column(type: 'datetime_immutable', nullable: true)]
+    #[ORM\Column(type: 'unix_timestamp', nullable: true)]
     private ?\DateTimeImmutable $fileModified = null;
 
     public function getId(): ?int
