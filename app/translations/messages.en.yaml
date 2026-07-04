@@ -1,0 +1,68 @@
+genre:
+    action: Action
+    adventure: Adventure
+    comedy: Comedy
+    drama: Drama
+    fantasy: Fantasy
+    horror: Horror
+    mecha: Mecha
+    music: Music
+    mystery: Mystery
+    psychological: Psychological
+    romance: Romance
+    sci-fi: Sci-Fi
+    slice-of-life: Slice of Life
+    sports: Sports
+    supernatural: Supernatural
+    thriller: Thriller
+    ecchi: Ecchi
+    harem: Harem
+    isekai: Isekai
+    magic: Magic
+    martial-arts: Martial Arts
+    military: Military
+    historical: Historical
+    parody: Parody
+    school: School
+    shounen: Shounen
+    shoujo: Shoujo
+    seinen: Seinen
+    josei: Josei
+    super-power: Super Power
+    vampire: Vampire
+    demons: Demons
+    game: Game
+    kids: Kids
+    dementia: Dementia
+
+anime_type:
+    tv: TV Series
+    movie: Movie
+    ova: OVA
+    ona: ONA
+    special: Special
+    music: Music Video
+
+watch_status:
+    plan: Plan to Watch
+    watching: Watching
+    completed: Completed
+    dropped: Dropped
+    on_hold: On Hold
+
+anime_name_type:
+    original: Original
+    english: English
+    russian: Russian
+    synonym: Synonym
+
+storage_type:
+    folder: Folder
+    external: External
+    external-r: External (read-only)
+    video: Video
+
+production_status:
+    announced: Announced
+    ongoing: Ongoing
+    released: Released
