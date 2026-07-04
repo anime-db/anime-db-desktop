@@ -27,6 +27,7 @@ declare(strict_types=1);
 
 namespace App\Doctrine\Type;
 
+use App\Doctrine\Type\Exception\InvalidUnixTimestampValueException;
 use Doctrine\DBAL\ParameterType;
 use Doctrine\DBAL\Platforms\AbstractPlatform;
 use Doctrine\DBAL\Types\Type;
@@ -52,8 +53,8 @@ final class UnixTimestampType extends Type
             return null;
         }
 
-        if (!$value instanceof \DateTimeImmutable) {
-            throw new \InvalidArgumentException(\sprintf('Expected %s, got %s.', \DateTimeImmutable::class, get_debug_type($value)));
+        if (!$value instanceof \DateTimeInterface) {
+            throw new InvalidUnixTimestampValueException(\sprintf('Expected %s, got %s.', \DateTimeInterface::class, get_debug_type($value)));
         }
 
         return $value->getTimestamp();
