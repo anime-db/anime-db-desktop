@@ -55,3 +55,7 @@ FrankenPHP в worker mode загружает `public/index.php` один раз.
 ## Monolog RotatingFileHandler не ограничивает размер файла
 
 `RotatingFileHandler` ротирует только по дате. Ограничения по размеру (10 MB из issue) не поддерживаются стандартным Monolog без внешних пакетов. Для size-based ротации нужен `SizeRotatingFileHandler` (сторонний пакет). Принято решение: только дата.
+
+## SQLite игнорирует ON DELETE CASCADE/RESTRICT/SET NULL без PRAGMA foreign_keys
+
+`PRAGMA foreign_keys = ON` — настройка уровня **соединения**, а не файла БД: она не сохраняется в самой базе и должна выставляться заново при каждом новом подключении. Без неё все `ON DELETE ...`-конструкции в DDL (например, `anime_studios.studio_id` → `RESTRICT`, задача #48, баг B-20) объявлены в схеме, но SQLite их молча не применяет — `DELETE` просто проходит. Решение: `App\EventListener\SqliteForeignKeysListener` (подписка на `Doctrine\DBAL\Events::postConnect`) выставляет `PRAGMA foreign_keys = ON` на каждое новое соединение. В тестах, поднимающих отдельное DBAL-соединение к `sqlite::memory:` (см. `tests/Unit/Migrations/CatalogSchemaTest.php`), эту прагму нужно выставлять вручную — слушатель на такое соединение не подписан.

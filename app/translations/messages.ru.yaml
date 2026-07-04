@@ -1,0 +1,68 @@
+genre:
+    action: Экшен
+    adventure: Приключения
+    comedy: Комедия
+    drama: Драма
+    fantasy: Фэнтези
+    horror: Ужасы
+    mecha: Меха
+    music: Музыка
+    mystery: Детектив
+    psychological: Психология
+    romance: Романтика
+    sci-fi: Фантастика
+    slice-of-life: Повседневность
+    sports: Спорт
+    supernatural: Сверхъестественное
+    thriller: Триллер
+    ecchi: Этти
+    harem: Гарем
+    isekai: Исекай
+    magic: Магия
+    martial-arts: Боевые искусства
+    military: Военное
+    historical: Историческое
+    parody: Пародия
+    school: Школа
+    shounen: Сёнэн
+    shoujo: Сёдзё
+    seinen: Сэйнэн
+    josei: Дзёсэй
+    super-power: Сверхспособности
+    vampire: Вампиры
+    demons: Демоны
+    game: Игры
+    kids: Детское
+    dementia: Психоделика
+
+anime_type:
+    tv: ТВ-сериал
+    movie: Фильм
+    ova: OVA
+    ona: ONA
+    special: Спешл
+    music: Клип
+
+watch_status:
+    plan: В планах
+    watching: Смотрю
+    completed: Просмотрено
+    dropped: Брошено
+    on_hold: Отложено
+
+anime_name_type:
+    original: Оригинальное
+    english: Английское
+    russian: Русское
+    synonym: Синоним
+
+storage_type:
+    folder: Папка
+    external: Внешний носитель
+    external-r: Внешний носитель (только чтение)
+    video: Видеофайл
+
+production_status:
+    announced: Анонс
+    ongoing: Онгоинг
+    released: Вышло
