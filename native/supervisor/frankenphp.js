@@ -22,6 +22,7 @@
 'use strict';
 
 const { spawn }    = require('child_process');
+const { EventEmitter } = require('events');
 const fs           = require('fs');
 const path         = require('path');
 const paths        = require('../paths');
@@ -29,6 +30,8 @@ const { getOrCreateAppSecret } = require('../config');
 const { findFreePort }    = require('./port');
 const { waitForHealth }   = require('./healthcheck');
 const { pruneOldLogs, openLogStream } = require('./logrotate');
+
+const events = new EventEmitter();
 
 const BINARY = path.join(__dirname, '..', '..', 'bin', 'frankenphp', 'frankenphp.exe');
 const CADDYFILE = path.join(__dirname, '..', '..', 'app', 'Caddyfile');
@@ -98,6 +101,7 @@ function spawnProcess(appPort, wsPort, meiliPort, meiliKey, backoffIdx = 0) {
 
     child.on('exit', (code) => {
         if (stopping) return;
+        events.emit('exit', code);
         const delay = BACKOFF[Math.min(backoffIdx, BACKOFF.length - 1)];
         console.error(`[frankenphp] вышел с кодом ${code}, перезапуск через ${delay}ms`);
         setTimeout(() => spawnProcess(appPort, wsPort, meiliPort, meiliKey, backoffIdx + 1), delay);
@@ -155,4 +159,4 @@ function stop() {
     });
 }
 
-module.exports = { start, stop, buildEnv };
+module.exports = { start, stop, buildEnv, events };

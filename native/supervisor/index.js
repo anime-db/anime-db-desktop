@@ -50,4 +50,4 @@ async function stop() {
     await meilisearch.stop();
 }
 
-module.exports = { start, stop };
+module.exports = { start, stop, events: frankenphp.events };
