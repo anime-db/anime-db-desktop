@@ -21,3 +21,10 @@ services:
 
     # add more service definitions when explicit configuration is needed
     # please note that last definitions always *replace* previous ones
+
+    # SQLite ignores ON DELETE RESTRICT/CASCADE/SET NULL unless "PRAGMA foreign_keys = ON" is
+    # set on every new connection (see issue #48, bug B-20). Doctrine DBAL ships a middleware
+    # for exactly this; it just needs to be registered for our connection.
+    Doctrine\DBAL\Driver\AbstractSQLiteDriver\Middleware\EnableForeignKeys:
+        tags:
+            - { name: 'doctrine.middleware' }

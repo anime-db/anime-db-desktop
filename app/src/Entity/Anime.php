@@ -32,6 +32,8 @@ use App\Entity\Enum\AnimeType;
 use App\Entity\Enum\GenreCode;
 use App\Entity\Enum\ProductionStatus;
 use App\Entity\Enum\WatchStatus;
+use App\Entity\Exception\InvalidDateRangeException;
+use App\Entity\Exception\InvalidEpisodeCountException;
 use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
 use Doctrine\ORM\Mapping as ORM;
@@ -39,6 +41,11 @@ use Doctrine\ORM\Mapping as ORM;
 #[ORM\Entity]
 class Anime
 {
+    /**
+     * Fallback locale for getSummary() when the requested UI locale has no description.
+     */
+    private const FALLBACK_LOCALE = 'en';
+
     #[ORM\Id, ORM\GeneratedValue, ORM\Column]
     private ?int $id = null;
 
@@ -48,10 +55,10 @@ class Anime
     #[ORM\Column(length: 256)]
     private string $title;
 
-    #[ORM\Column(type: 'date_immutable', nullable: true)]
+    #[ORM\Column(type: 'unix_timestamp', nullable: true)]
     private ?\DateTimeImmutable $datePremiere = null;
 
-    #[ORM\Column(type: 'date_immutable', nullable: true)]
+    #[ORM\Column(type: 'unix_timestamp', nullable: true)]
     private ?\DateTimeImmutable $dateEnd = null;
 
     /**
@@ -99,10 +106,10 @@ class Anime
     #[ORM\Column(type: 'json', nullable: true)]
     private ?array $metadata = null;
 
-    #[ORM\Column(type: 'datetime_immutable')]
+    #[ORM\Column(type: 'unix_timestamp')]
     private \DateTimeImmutable $dateAdd;
 
-    #[ORM\Column(type: 'datetime_immutable')]
+    #[ORM\Column(type: 'unix_timestamp')]
     private \DateTimeImmutable $dateUpdate;
 
     /** @var Collection<int, AnimeGenre> */
@@ -193,7 +200,7 @@ class Anime
     private function assertDateRange(?\DateTimeImmutable $datePremiere, ?\DateTimeImmutable $dateEnd): void
     {
         if (null !== $datePremiere && null !== $dateEnd && $dateEnd < $datePremiere) {
-            throw new \InvalidArgumentException('date_end must not be earlier than date_premiere');
+            throw new InvalidDateRangeException('date_end must not be earlier than date_premiere');
         }
     }
 
@@ -228,7 +235,40 @@ class Anime
 
     public function setWatchedEpisodes(?int $watchedEpisodes): self
     {
+        $this->assertEpisodeCount($watchedEpisodes);
         $this->watchedEpisodes = $watchedEpisodes;
+
+        return $this;
+    }
+
+    private function assertEpisodeCount(?int $watchedEpisodes): void
+    {
+        if (null === $watchedEpisodes) {
+            return;
+        }
+
+        if ($watchedEpisodes < 0) {
+            throw new InvalidEpisodeCountException('watched_episodes must not be negative');
+        }
+
+        if (null !== $this->episodesCount && $watchedEpisodes > $this->episodesCount) {
+            throw new InvalidEpisodeCountException('watched_episodes must not exceed episodes_count');
+        }
+    }
+
+    /**
+     * Marks the next episode as watched, capping at episodes_count and moving
+     * watch_status from plan to watching (or to completed on the last episode).
+     */
+    public function watchNextEpisode(): self
+    {
+        $this->setWatchedEpisodes(($this->watchedEpisodes ?? 0) + 1);
+
+        if (null !== $this->episodesCount && $this->watchedEpisodes === $this->episodesCount) {
+            $this->watchStatus = WatchStatus::Completed;
+        } elseif (WatchStatus::Plan === $this->watchStatus) {
+            $this->watchStatus = WatchStatus::Watching;
+        }
 
         return $this;
     }
@@ -359,7 +399,7 @@ class Anime
     public function getGenreCodes(): array
     {
         return array_values(array_map(
-            static fn (AnimeGenre $genre): GenreCode => $genre->getCode(),
+            static fn (AnimeGenre $genre): GenreCode => $genre->code,
             $this->genres->toArray(),
         ));
     }
@@ -377,7 +417,7 @@ class Anime
     public function removeGenre(GenreCode $code): self
     {
         foreach ($this->genres as $genre) {
-            if ($genre->getCode() === $code) {
+            if ($genre->code === $code) {
                 $this->genres->removeElement($genre);
                 break;
             }
@@ -396,6 +436,7 @@ class Anime
     {
         if (!$this->studios->contains($studio)) {
             $this->studios->add($studio);
+            $studio->addAnime($this);
         }
 
         return $this;
@@ -403,7 +444,9 @@ class Anime
 
     public function removeStudio(Studio $studio): self
     {
-        $this->studios->removeElement($studio);
+        if ($this->studios->removeElement($studio)) {
+            $studio->removeAnime($this);
+        }
 
         return $this;
     }
@@ -418,6 +461,7 @@ class Anime
     {
         if (!$this->labels->contains($label)) {
             $this->labels->add($label);
+            $label->addAnime($this);
         }
 
         return $this;
@@ -425,7 +469,9 @@ class Anime
 
     public function removeLabel(Label $label): self
     {
-        $this->labels->removeElement($label);
+        if ($this->labels->removeElement($label)) {
+            $label->removeAnime($this);
+        }
 
         return $this;
     }
@@ -491,19 +537,21 @@ class Anime
     }
 
     /**
-     * Computed from datePremiere/dateEnd, not a persisted column. Order of checks matters:
-     * dateEnd in the past wins over an ongoing premiere; datePremiere == today counts as ongoing.
+     * Computed from datePremiere/dateEnd, not a persisted column. Compared against the
+     * current moment (not the start of today) so the status is accurate right after a
+     * release happens, not only from the next day. Order of checks matters: dateEnd in
+     * the past wins over an ongoing premiere; datePremiere == now counts as ongoing.
      */
     public function getProductionStatus(): ProductionStatus
     {
-        $today = new \DateTimeImmutable('today');
+        $now = new \DateTimeImmutable();
 
-        if (null !== $this->dateEnd && $this->dateEnd <= $today) {
+        if (null !== $this->dateEnd && $this->dateEnd <= $now) {
             return ProductionStatus::Released;
         }
 
-        if (null !== $this->datePremiere && $this->datePremiere <= $today
-            && (null === $this->dateEnd || $this->dateEnd > $today)) {
+        if (null !== $this->datePremiere && $this->datePremiere <= $now
+            && (null === $this->dateEnd || $this->dateEnd > $now)) {
             return ProductionStatus::Ongoing;
         }
 
@@ -525,8 +573,8 @@ class Anime
             return $descriptions[$locale];
         }
 
-        if (isset($descriptions['en']) && \is_string($descriptions['en'])) {
-            return $descriptions['en'];
+        if (isset($descriptions[self::FALLBACK_LOCALE]) && \is_string($descriptions[self::FALLBACK_LOCALE])) {
+            return $descriptions[self::FALLBACK_LOCALE];
         }
 
         foreach ($descriptions as $value) {

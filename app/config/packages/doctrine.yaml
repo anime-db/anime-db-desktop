@@ -2,6 +2,8 @@ doctrine:
     dbal:
         url: '%env(DATABASE_URL)%'
         driver: pdo_sqlite
+        types:
+            unix_timestamp: App\Doctrine\Type\UnixTimestampType
     orm:
         naming_strategy: doctrine.orm.naming_strategy.underscore_number_aware
         auto_mapping: true

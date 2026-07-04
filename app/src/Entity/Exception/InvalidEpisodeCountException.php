@@ -25,31 +25,12 @@
 
 declare(strict_types=1);
 
-namespace App\Entity;
-
-use App\Entity\Enum\GenreCode;
-use Doctrine\ORM\Mapping as ORM;
+namespace App\Entity\Exception;
 
 /**
- * Row of the anime_genres join table. There is no standalone "genre" table:
- * the code list is a fixed dictionary enforced by GenreCode + a DB CHECK constraint.
+ * Thrown when Anime::watchNextEpisode()/setWatchedEpisodes() would put watched_episodes
+ * out of the [0, episodes_count] range.
  */
-#[ORM\Entity]
-#[ORM\Table(name: 'anime_genres')]
-class AnimeGenre
+final class InvalidEpisodeCountException extends \InvalidArgumentException
 {
-    #[ORM\Id]
-    #[ORM\ManyToOne(targetEntity: Anime::class, inversedBy: 'genres')]
-    #[ORM\JoinColumn(name: 'anime_id', referencedColumnName: 'id', nullable: false, onDelete: 'CASCADE')]
-    public readonly Anime $anime;
-
-    #[ORM\Id]
-    #[ORM\Column(name: 'genre_code', length: 32, enumType: GenreCode::class)]
-    public readonly GenreCode $code;
-
-    public function __construct(Anime $anime, GenreCode $code)
-    {
-        $this->anime = $anime;
-        $this->code = $code;
-    }
 }
