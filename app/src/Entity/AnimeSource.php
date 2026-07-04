@@ -1,0 +1,75 @@
+<?php
+
+/**
+ * AnimeDb package.
+ *
+ * @author    Peter Gribanov <info@peter-gribanov.ru>
+ * @copyright Copyright (c) 2026, Peter Gribanov
+ * @license   https://gnu.org GPL-3.0-or-later
+ */
+
+/*
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://gnu.org>.
+ */
+
+declare(strict_types=1);
+
+namespace App\Entity;
+
+use Doctrine\ORM\Mapping as ORM;
+
+/**
+ * External reference link (e.g. Shikimori/MAL page) the catalog entry was sourced from.
+ */
+#[ORM\Entity]
+class AnimeSource
+{
+    #[ORM\Id, ORM\GeneratedValue, ORM\Column]
+    private ?int $id = null;
+
+    #[ORM\ManyToOne(targetEntity: Anime::class, inversedBy: 'sources')]
+    #[ORM\JoinColumn(name: 'anime_id', referencedColumnName: 'id', nullable: false, onDelete: 'CASCADE')]
+    private Anime $anime;
+
+    #[ORM\Column(length: 512)]
+    private string $url;
+
+    public function __construct(Anime $anime, string $url)
+    {
+        $this->anime = $anime;
+        $this->url = $url;
+    }
+
+    public function getId(): ?int
+    {
+        return $this->id;
+    }
+
+    public function getAnime(): Anime
+    {
+        return $this->anime;
+    }
+
+    public function getUrl(): string
+    {
+        return $this->url;
+    }
+
+    public function setUrl(string $url): self
+    {
+        $this->url = $url;
+
+        return $this;
+    }
+}
