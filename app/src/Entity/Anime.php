@@ -32,8 +32,12 @@ use App\Entity\Enum\AnimeType;
 use App\Entity\Enum\GenreCode;
 use App\Entity\Enum\ProductionStatus;
 use App\Entity\Enum\WatchStatus;
+use App\Entity\Exception\InvalidCountryCodeException;
 use App\Entity\Exception\InvalidDateRangeException;
+use App\Entity\Exception\InvalidDurationException;
 use App\Entity\Exception\InvalidEpisodeCountException;
+use App\Entity\Exception\InvalidNameException;
+use App\Entity\Exception\InvalidWatchStatusException;
 use App\Entity\ValueObject\PluginId;
 use App\Entity\ValueObject\Rating;
 use Doctrine\Common\Collections\ArrayCollection;
@@ -49,7 +53,7 @@ class Anime
     private const FALLBACK_LOCALE = 'en';
 
     #[ORM\Id, ORM\GeneratedValue, ORM\Column]
-    private ?int $id = null;
+    public private(set) ?int $id = null;
 
     /**
      * Primary display title (fallback while the anime_name records are not filled in yet).
@@ -156,11 +160,6 @@ class Anime
         $this->dateUpdate = new \DateTimeImmutable();
     }
 
-    public function getId(): ?int
-    {
-        return $this->id;
-    }
-
     public function getTitle(): string
     {
         return $this->title;
@@ -168,6 +167,11 @@ class Anime
 
     public function setTitle(string $title): self
     {
+        $title = trim($title);
+        if ('' === $title) {
+            throw new InvalidNameException('title must not be empty');
+        }
+
         $this->title = $title;
 
         return $this;
@@ -213,6 +217,10 @@ class Anime
 
     public function setDurationMinutes(?int $durationMinutes): self
     {
+        if (null !== $durationMinutes && $durationMinutes <= 0) {
+            throw new InvalidDurationException('duration_minutes must be greater than zero');
+        }
+
         $this->durationMinutes = $durationMinutes;
 
         return $this;
@@ -242,7 +250,9 @@ class Anime
         $this->watchedEpisodes = $watchedEpisodes;
 
         if (null !== $watchedEpisodes) {
-            $this->watchStatus = (null !== $this->episodesCount && $watchedEpisodes === $this->episodesCount)
+            $this->watchStatus = (null !== $this->episodesCount
+                    && $watchedEpisodes === $this->episodesCount
+                    && $this->getProductionStatus() === ProductionStatus::Released)
                 ? WatchStatus::Completed
                 : WatchStatus::Watching;
         }
@@ -273,9 +283,10 @@ class Anime
 
     /**
      * Marks the next episode as watched, capping at episodes_count and moving
-     * watch_status to watching (or to completed on the last episode) via
-     * setWatchedEpisodes(), regardless of the previous status: the user may be
-     * resuming a dropped/on-hold title or rewatching a completed one.
+     * watch_status to watching (or to completed on the last episode, but only once
+     * production_status is released) via setWatchedEpisodes(), regardless of the
+     * previous status: the user may be resuming a dropped/on-hold title or rewatching
+     * a completed one.
      */
     public function watchNextEpisode(): self
     {
@@ -289,7 +300,16 @@ class Anime
 
     public function setWatchStatus(WatchStatus $watchStatus): self
     {
+        if ($watchStatus === WatchStatus::Completed
+            && $this->getProductionStatus() !== ProductionStatus::Released) {
+            throw new InvalidWatchStatusException('Cannot mark as completed while the anime is still airing or announced');
+        }
+
         $this->watchStatus = $watchStatus;
+
+        if ($watchStatus === WatchStatus::Completed) {
+            $this->watchedEpisodes = $this->episodesCount;
+        }
 
         return $this;
     }
@@ -339,6 +359,14 @@ class Anime
     /** @param list<string>|null $countries */
     public function setCountries(?array $countries): self
     {
+        if (null !== $countries) {
+            foreach ($countries as $code) {
+                if (1 !== preg_match('/^[A-Z]{2}$/', $code)) {
+                    throw new InvalidCountryCodeException(\sprintf('country code "%s" must be two uppercase ASCII letters', $code));
+                }
+            }
+        }
+
         $this->countries = $countries;
 
         return $this;

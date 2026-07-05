@@ -36,7 +36,7 @@ use Doctrine\ORM\Mapping as ORM;
 class Label
 {
     #[ORM\Id, ORM\GeneratedValue, ORM\Column]
-    private ?int $id = null;
+    public private(set) ?int $id = null;
 
     #[ORM\Column(length: 32)]
     public private(set) string $name;
@@ -48,11 +48,6 @@ class Label
     public function __construct()
     {
         $this->animes = new ArrayCollection();
-    }
-
-    public function getId(): ?int
-    {
-        return $this->id;
     }
 
     public function rename(string $name): void

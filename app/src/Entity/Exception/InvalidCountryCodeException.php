@@ -25,29 +25,12 @@
 
 declare(strict_types=1);
 
-namespace App\Entity;
-
-use Doctrine\ORM\Mapping as ORM;
+namespace App\Entity\Exception;
 
 /**
- * External reference link (e.g. Shikimori/MAL page) the catalog entry was sourced from.
+ * Thrown when Anime::setCountries() receives an entry that is not two uppercase
+ * ASCII letters. Existence of the code in the real ISO 3166-1 alpha-2 list is not checked.
  */
-#[ORM\Entity]
-class AnimeSource
+final class InvalidCountryCodeException extends \InvalidArgumentException
 {
-    #[ORM\Id, ORM\GeneratedValue, ORM\Column]
-    public private(set) ?int $id = null;
-
-    #[ORM\ManyToOne(targetEntity: Anime::class, inversedBy: 'sources')]
-    #[ORM\JoinColumn(name: 'anime_id', referencedColumnName: 'id', nullable: false, onDelete: 'CASCADE')]
-    public readonly Anime $anime;
-
-    #[ORM\Column(length: 512)]
-    public readonly string $url;
-
-    public function __construct(Anime $anime, string $url)
-    {
-        $this->anime = $anime;
-        $this->url = $url;
-    }
 }

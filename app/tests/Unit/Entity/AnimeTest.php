@@ -33,8 +33,12 @@ use App\Entity\Enum\AnimeType;
 use App\Entity\Enum\GenreCode;
 use App\Entity\Enum\ProductionStatus;
 use App\Entity\Enum\WatchStatus;
+use App\Entity\Exception\InvalidCountryCodeException;
 use App\Entity\Exception\InvalidDateRangeException;
+use App\Entity\Exception\InvalidDurationException;
 use App\Entity\Exception\InvalidEpisodeCountException;
+use App\Entity\Exception\InvalidNameException;
+use App\Entity\Exception\InvalidWatchStatusException;
 use App\Entity\Label;
 use App\Entity\Storage;
 use App\Entity\Studio;
@@ -399,6 +403,7 @@ final class AnimeTest extends TestCase
     public function testWatchNextEpisodeMovesToCompletedOnLastEpisode(): void
     {
         $anime = new Anime();
+        $anime->setDateEnd(new \DateTimeImmutable('-1 day'));
         $anime->setEpisodesCount(2);
         $anime->setWatchStatus(WatchStatus::Watching);
         $anime->setWatchedEpisodes(1);
@@ -407,6 +412,20 @@ final class AnimeTest extends TestCase
 
         $this->assertSame(2, $anime->getWatchedEpisodes());
         $this->assertSame(WatchStatus::Completed, $anime->getWatchStatus());
+    }
+
+    public function testWatchNextEpisodeStaysWatchingWhenOngoingSeriesCatchesUp(): void
+    {
+        $anime = new Anime();
+        $anime->setDatePremiere(new \DateTimeImmutable('-1 day'));
+        $anime->setEpisodesCount(2);
+        $anime->setWatchStatus(WatchStatus::Watching);
+        $anime->setWatchedEpisodes(1);
+
+        $anime->watchNextEpisode();
+
+        $this->assertSame(2, $anime->getWatchedEpisodes());
+        $this->assertSame(WatchStatus::Watching, $anime->getWatchStatus());
     }
 
     public function testWatchNextEpisodeMovesToWatchingWhenResumingDropped(): void
@@ -425,6 +444,7 @@ final class AnimeTest extends TestCase
     public function testWatchNextEpisodeMovesToWatchingWhenRewatchingCompleted(): void
     {
         $anime = new Anime();
+        $anime->setDateEnd(new \DateTimeImmutable('-1 day'));
         $anime->setEpisodesCount(12);
         $anime->setWatchStatus(WatchStatus::Completed);
         $anime->setWatchedEpisodes(0);
@@ -449,6 +469,7 @@ final class AnimeTest extends TestCase
     public function testSetWatchedEpisodesMovesToCompletedDirectly(): void
     {
         $anime = new Anime();
+        $anime->setDateEnd(new \DateTimeImmutable('-1 day'));
         $anime->setEpisodesCount(12);
         $anime->setWatchStatus(WatchStatus::Watching);
 
@@ -457,9 +478,22 @@ final class AnimeTest extends TestCase
         $this->assertSame(WatchStatus::Completed, $anime->getWatchStatus());
     }
 
+    public function testSetWatchedEpisodesStaysWatchingWhenOngoingSeriesCatchesUp(): void
+    {
+        $anime = new Anime();
+        $anime->setDatePremiere(new \DateTimeImmutable('-1 day'));
+        $anime->setEpisodesCount(12);
+        $anime->setWatchStatus(WatchStatus::Watching);
+
+        $anime->setWatchedEpisodes(12);
+
+        $this->assertSame(WatchStatus::Watching, $anime->getWatchStatus());
+    }
+
     public function testWatchNextEpisodeRejectsGoingPastEpisodesCount(): void
     {
         $anime = new Anime();
+        $anime->setDateEnd(new \DateTimeImmutable('-1 day'));
         $anime->setEpisodesCount(1);
         $anime->setWatchStatus(WatchStatus::Completed);
         $anime->setWatchedEpisodes(1);
@@ -502,5 +536,120 @@ final class AnimeTest extends TestCase
         $anime->setUserRating($rating);
 
         $this->assertSame($rating, $anime->getUserRating());
+    }
+
+    public function testSetTitleTrimsWhitespace(): void
+    {
+        $anime = new Anime();
+        $anime->setTitle('  Cowboy Bebop  ');
+
+        $this->assertSame('Cowboy Bebop', $anime->getTitle());
+    }
+
+    public function testSetTitleRejectsEmptyString(): void
+    {
+        $anime = new Anime();
+
+        $this->expectException(InvalidNameException::class);
+        $anime->setTitle('');
+    }
+
+    public function testSetTitleRejectsWhitespaceOnlyString(): void
+    {
+        $anime = new Anime();
+
+        $this->expectException(InvalidNameException::class);
+        $anime->setTitle('   ');
+    }
+
+    public function testSetDurationMinutesRejectsZero(): void
+    {
+        $anime = new Anime();
+
+        $this->expectException(InvalidDurationException::class);
+        $anime->setDurationMinutes(0);
+    }
+
+    public function testSetDurationMinutesRejectsNegativeValue(): void
+    {
+        $anime = new Anime();
+
+        $this->expectException(InvalidDurationException::class);
+        $anime->setDurationMinutes(-1);
+    }
+
+    public function testSetDurationMinutesAllowsNull(): void
+    {
+        $anime = new Anime();
+        $anime->setDurationMinutes(24);
+        $anime->setDurationMinutes(null);
+
+        $this->assertNull($anime->getDurationMinutes());
+    }
+
+    public function testSetCountriesAcceptsValidCodes(): void
+    {
+        $anime = new Anime();
+        $anime->setCountries(['JP', 'US']);
+
+        $this->assertSame(['JP', 'US'], $anime->getCountries());
+    }
+
+    public function testSetCountriesRejectsLowercaseCode(): void
+    {
+        $anime = new Anime();
+
+        $this->expectException(InvalidCountryCodeException::class);
+        $anime->setCountries(['jp']);
+    }
+
+    public function testSetCountriesRejectsWrongLength(): void
+    {
+        $anime = new Anime();
+
+        $this->expectException(InvalidCountryCodeException::class);
+        $anime->setCountries(['JPN']);
+    }
+
+    public function testSetWatchStatusCompletedThrowsWhenAnnounced(): void
+    {
+        $anime = new Anime();
+
+        $this->expectException(InvalidWatchStatusException::class);
+        $anime->setWatchStatus(WatchStatus::Completed);
+    }
+
+    public function testSetWatchStatusCompletedThrowsWhenOngoing(): void
+    {
+        $anime = new Anime();
+        $anime->setDatePremiere(new \DateTimeImmutable('-1 day'));
+
+        $this->assertSame(ProductionStatus::Ongoing, $anime->getProductionStatus());
+        $this->expectException(InvalidWatchStatusException::class);
+        $anime->setWatchStatus(WatchStatus::Completed);
+    }
+
+    public function testSetWatchStatusCompletedAllowedWhenReleased(): void
+    {
+        $anime = new Anime();
+        $anime->setDateEnd(new \DateTimeImmutable('-1 day'));
+        $anime->setEpisodesCount(12);
+        $anime->setWatchedEpisodes(5);
+
+        $anime->setWatchStatus(WatchStatus::Completed);
+
+        $this->assertSame(WatchStatus::Completed, $anime->getWatchStatus());
+        $this->assertSame(12, $anime->getWatchedEpisodes());
+    }
+
+    public function testSetWatchStatusCompletedSetsWatchedEpisodesToNullWhenEpisodesCountUnknown(): void
+    {
+        $anime = new Anime();
+        $anime->setDateEnd(new \DateTimeImmutable('-1 day'));
+
+        $anime->setWatchStatus(WatchStatus::Completed);
+
+        $this->assertSame(WatchStatus::Completed, $anime->getWatchStatus());
+        $this->assertNull($anime->getWatchedEpisodes());
     }
 }

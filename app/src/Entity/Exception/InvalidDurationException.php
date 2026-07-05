@@ -25,29 +25,12 @@
 
 declare(strict_types=1);
 
-namespace App\Entity;
-
-use Doctrine\ORM\Mapping as ORM;
+namespace App\Entity\Exception;
 
 /**
- * External reference link (e.g. Shikimori/MAL page) the catalog entry was sourced from.
+ * Thrown when Anime::setDurationMinutes() receives a non-null value that is not
+ * strictly greater than zero.
  */
-#[ORM\Entity]
-class AnimeSource
+final class InvalidDurationException extends \InvalidArgumentException
 {
-    #[ORM\Id, ORM\GeneratedValue, ORM\Column]
-    public private(set) ?int $id = null;
-
-    #[ORM\ManyToOne(targetEntity: Anime::class, inversedBy: 'sources')]
-    #[ORM\JoinColumn(name: 'anime_id', referencedColumnName: 'id', nullable: false, onDelete: 'CASCADE')]
-    public readonly Anime $anime;
-
-    #[ORM\Column(length: 512)]
-    public readonly string $url;
-
-    public function __construct(Anime $anime, string $url)
-    {
-        $this->anime = $anime;
-        $this->url = $url;
-    }
 }
