@@ -27,8 +27,8 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Entity;
 
-use App\Entity\Anime;
 use App\Entity\Exception\InvalidNameException;
+use App\Entity\SeriesAnime;
 use App\Entity\Studio;
 use PHPUnit\Framework\TestCase;
 
@@ -68,7 +68,7 @@ final class StudioTest extends TestCase
     public function testIsNotRemovableWhenAnimeIsLinked(): void
     {
         $studio = new Studio();
-        $anime = new Anime();
+        $anime = new SeriesAnime();
         $anime->addStudio($studio);
 
         $this->assertFalse($studio->isRemovable());

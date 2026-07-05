@@ -25,22 +25,19 @@
 
 declare(strict_types=1);
 
-namespace App\Tests\Unit\Entity;
+namespace App\Entity;
 
-use App\Entity\AnimeName;
-use App\Entity\Enum\AnimeNameType;
-use App\Entity\SeriesAnime;
-use PHPUnit\Framework\TestCase;
+use App\Entity\Enum\AnimeType;
+use Doctrine\ORM\Mapping as ORM;
 
-final class AnimeNameTest extends TestCase
+/**
+ * A single-episode anime: no episodesCount/watchedEpisodes/watchNextEpisode(), unlike SeriesAnime.
+ */
+#[ORM\Entity]
+class MovieAnime extends Anime
 {
-    public function testConstructorSetsFields(): void
+    public function getType(): AnimeType
     {
-        $anime = new SeriesAnime();
-        $name = new AnimeName($anime, 'Cowboy Bebop', AnimeNameType::English);
-
-        $this->assertSame($anime, $name->anime);
-        $this->assertSame('Cowboy Bebop', $name->name);
-        $this->assertSame(AnimeNameType::English, $name->type);
+        return AnimeType::Movie;
     }
 }
