@@ -25,20 +25,20 @@
 
 declare(strict_types=1);
 
-namespace App\Tests\Unit\Entity;
+namespace App\Entity;
 
-use App\Entity\AnimeImage;
-use App\Entity\TvAnime;
-use PHPUnit\Framework\TestCase;
+use App\Entity\Enum\AnimeType;
+use Doctrine\ORM\Mapping as ORM;
 
-final class AnimeImageTest extends TestCase
+/**
+ * A special episode. Empty marker: no business rule distinguishes it from
+ * the other SeriesAnime subtypes yet.
+ */
+#[ORM\Entity]
+class SpecialAnime extends SeriesAnime
 {
-    public function testConstructorSetsFields(): void
+    public function getType(): AnimeType
     {
-        $anime = new TvAnime();
-        $image = new AnimeImage($anime, 'images/frame1.jpg');
-
-        $this->assertSame($anime, $image->anime);
-        $this->assertSame('images/frame1.jpg', $image->source);
+        return AnimeType::Special;
     }
 }

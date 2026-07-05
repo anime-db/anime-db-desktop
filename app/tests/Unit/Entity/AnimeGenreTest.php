@@ -27,16 +27,16 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Entity;
 
-use App\Entity\Anime;
 use App\Entity\AnimeGenre;
 use App\Entity\Enum\GenreCode;
+use App\Entity\TvAnime;
 use PHPUnit\Framework\TestCase;
 
 final class AnimeGenreTest extends TestCase
 {
     public function testConstructorSetsFields(): void
     {
-        $anime = new Anime();
+        $anime = new TvAnime();
         $genre = new AnimeGenre($anime, GenreCode::Action);
 
         $this->assertSame($anime, $genre->anime);

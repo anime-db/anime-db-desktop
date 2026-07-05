@@ -35,7 +35,6 @@ use App\Entity\Enum\WatchStatus;
 use App\Entity\Exception\InvalidCountryCodeException;
 use App\Entity\Exception\InvalidDateRangeException;
 use App\Entity\Exception\InvalidDurationException;
-use App\Entity\Exception\InvalidEpisodeCountException;
 use App\Entity\Exception\InvalidNameException;
 use App\Entity\Exception\InvalidWatchStatusException;
 use App\Entity\ValueObject\PluginId;
@@ -45,7 +44,17 @@ use Doctrine\Common\Collections\Collection;
 use Doctrine\ORM\Mapping as ORM;
 
 #[ORM\Entity]
-class Anime
+#[ORM\InheritanceType('SINGLE_TABLE')]
+#[ORM\DiscriminatorColumn(name: 'type', length: 16, enumType: AnimeType::class)]
+#[ORM\DiscriminatorMap([
+    'movie' => MovieAnime::class,
+    'tv' => TvAnime::class,
+    'ova' => OvaAnime::class,
+    'ona' => OnaAnime::class,
+    'special' => SpecialAnime::class,
+    'music' => MusicAnime::class,
+])]
+abstract class Anime
 {
     /**
      * Fallback locale for getSummary() when the requested UI locale has no description.
@@ -68,19 +77,10 @@ class Anime
     private ?\DateTimeImmutable $dateEnd = null;
 
     /**
-     * Duration of a single watch unit: an episode for a series, the whole runtime for type=movie.
+     * Duration of a single watch unit: an episode's length on SeriesAnime, the whole runtime on MovieAnime.
      */
     #[ORM\Column(nullable: true)]
     private ?int $durationMinutes = null;
-
-    #[ORM\Column(nullable: true)]
-    private ?int $episodesCount = null;
-
-    /**
-     * Number of the last watched episode. There is no separate "episode" entity.
-     */
-    #[ORM\Column(nullable: true)]
-    private ?int $watchedEpisodes = null;
 
     #[ORM\Column(length: 16, enumType: WatchStatus::class)]
     private WatchStatus $watchStatus;
@@ -90,9 +90,6 @@ class Anime
 
     #[ORM\Column(type: 'text', nullable: true)]
     private ?string $notes = null;
-
-    #[ORM\Column(length: 16, enumType: AnimeType::class)]
-    private AnimeType $type;
 
     /** @var list<string>|null ISO 3166-1 alpha-2 codes */
     #[ORM\Column(type: 'json', nullable: true)]
@@ -226,73 +223,6 @@ class Anime
         return $this;
     }
 
-    public function getEpisodesCount(): ?int
-    {
-        return $this->episodesCount;
-    }
-
-    public function setEpisodesCount(?int $episodesCount): self
-    {
-        $this->assertEpisodeCount($this->watchedEpisodes, $episodesCount);
-        $this->episodesCount = $episodesCount;
-
-        return $this;
-    }
-
-    public function getWatchedEpisodes(): ?int
-    {
-        return $this->watchedEpisodes;
-    }
-
-    public function setWatchedEpisodes(?int $watchedEpisodes): self
-    {
-        $this->assertEpisodeCount($watchedEpisodes, $this->episodesCount);
-        $this->watchedEpisodes = $watchedEpisodes;
-
-        if (null !== $watchedEpisodes) {
-            $this->watchStatus = (null !== $this->episodesCount
-                    && $watchedEpisodes === $this->episodesCount
-                    && $this->getProductionStatus() === ProductionStatus::Released)
-                ? WatchStatus::Completed
-                : WatchStatus::Watching;
-        }
-
-        return $this;
-    }
-
-    /**
-     * Keeps watched_episodes <= episodes_count in both directions: called from
-     * setWatchedEpisodes() when the watched count changes, and from setEpisodesCount()
-     * when the total is corrected after the fact (e.g. a plugin lowers episodes_count
-     * below an already-recorded watched_episodes).
-     */
-    private function assertEpisodeCount(?int $watchedEpisodes, ?int $episodesCount): void
-    {
-        if (null === $watchedEpisodes) {
-            return;
-        }
-
-        if ($watchedEpisodes < 0) {
-            throw new InvalidEpisodeCountException('watched_episodes must not be negative');
-        }
-
-        if (null !== $episodesCount && $watchedEpisodes > $episodesCount) {
-            throw new InvalidEpisodeCountException('watched_episodes must not exceed episodes_count');
-        }
-    }
-
-    /**
-     * Marks the next episode as watched, capping at episodes_count and moving
-     * watch_status to watching (or to completed on the last episode, but only once
-     * production_status is released) via setWatchedEpisodes(), regardless of the
-     * previous status: the user may be resuming a dropped/on-hold title or rewatching
-     * a completed one.
-     */
-    public function watchNextEpisode(): self
-    {
-        return $this->setWatchedEpisodes(($this->watchedEpisodes ?? 0) + 1);
-    }
-
     public function getWatchStatus(): WatchStatus
     {
         return $this->watchStatus;
@@ -306,10 +236,6 @@ class Anime
         }
 
         $this->watchStatus = $watchStatus;
-
-        if ($watchStatus === WatchStatus::Completed) {
-            $this->watchedEpisodes = $this->episodesCount;
-        }
 
         return $this;
     }
@@ -338,17 +264,7 @@ class Anime
         return $this;
     }
 
-    public function getType(): AnimeType
-    {
-        return $this->type;
-    }
-
-    public function setType(AnimeType $type): self
-    {
-        $this->type = $type;
-
-        return $this;
-    }
+    abstract public function getType(): AnimeType;
 
     /** @return list<string>|null */
     public function getCountries(): ?array
