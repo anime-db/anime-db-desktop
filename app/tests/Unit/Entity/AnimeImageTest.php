@@ -27,15 +27,15 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Entity;
 
-use App\Entity\Anime;
 use App\Entity\AnimeImage;
+use App\Entity\SeriesAnime;
 use PHPUnit\Framework\TestCase;
 
 final class AnimeImageTest extends TestCase
 {
     public function testConstructorSetsFields(): void
     {
-        $anime = new Anime();
+        $anime = new SeriesAnime();
         $image = new AnimeImage($anime, 'images/frame1.jpg');
 
         $this->assertSame($anime, $image->anime);
