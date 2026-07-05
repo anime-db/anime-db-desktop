@@ -160,11 +160,6 @@ class Anime
         $this->dateUpdate = new \DateTimeImmutable();
     }
 
-    public function getId(): ?int
-    {
-        return $this->id;
-    }
-
     public function getTitle(): string
     {
         return $this->title;
@@ -257,7 +252,7 @@ class Anime
         if (null !== $watchedEpisodes) {
             $this->watchStatus = (null !== $this->episodesCount
                     && $watchedEpisodes === $this->episodesCount
-                    && ProductionStatus::Released === $this->getProductionStatus())
+                    && $this->getProductionStatus() === ProductionStatus::Released)
                 ? WatchStatus::Completed
                 : WatchStatus::Watching;
         }
@@ -305,14 +300,14 @@ class Anime
 
     public function setWatchStatus(WatchStatus $watchStatus): self
     {
-        if (WatchStatus::Completed === $watchStatus
-            && ProductionStatus::Released !== $this->getProductionStatus()) {
+        if ($watchStatus === WatchStatus::Completed
+            && $this->getProductionStatus() !== ProductionStatus::Released) {
             throw new InvalidWatchStatusException('Cannot mark as completed while the anime is still airing or announced');
         }
 
         $this->watchStatus = $watchStatus;
 
-        if (WatchStatus::Completed === $watchStatus) {
+        if ($watchStatus === WatchStatus::Completed) {
             $this->watchedEpisodes = $this->episodesCount;
         }
 

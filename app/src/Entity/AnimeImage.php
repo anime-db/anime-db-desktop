@@ -53,9 +53,4 @@ class AnimeImage
         $this->anime = $anime;
         $this->source = $source;
     }
-
-    public function getId(): ?int
-    {
-        return $this->id;
-    }
 }

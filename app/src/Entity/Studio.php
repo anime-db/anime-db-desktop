@@ -53,11 +53,6 @@ class Studio
         $this->animes = new ArrayCollection();
     }
 
-    public function getId(): ?int
-    {
-        return $this->id;
-    }
-
     public function rename(string $name): void
     {
         $name = trim($name);

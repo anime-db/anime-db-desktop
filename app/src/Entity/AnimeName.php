@@ -57,9 +57,4 @@ class AnimeName
         $this->name = $name;
         $this->type = $type;
     }
-
-    public function getId(): ?int
-    {
-        return $this->id;
-    }
 }

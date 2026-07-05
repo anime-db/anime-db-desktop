@@ -51,11 +51,6 @@ class Storage
     #[ORM\Column(type: 'unix_timestamp', nullable: true)]
     private ?\DateTimeImmutable $fileModified = null;
 
-    public function getId(): ?int
-    {
-        return $this->id;
-    }
-
     public function getName(): string
     {
         return $this->name;
