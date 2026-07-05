@@ -97,22 +97,19 @@ class Storage
         return $this->dateUpdate;
     }
 
-    public function setDateUpdate(?\DateTimeImmutable $dateUpdate): self
-    {
-        $this->dateUpdate = $dateUpdate;
-
-        return $this;
-    }
-
     public function getFileModified(): ?\DateTimeImmutable
     {
         return $this->fileModified;
     }
 
-    public function setFileModified(?\DateTimeImmutable $fileModified): self
+    /**
+     * Records the result of a storage scan: dateUpdate is always "now" (when the scan
+     * ran), fileModified is what the scanner observed on disk. A single method keeps
+     * the two fields from drifting apart (e.g. updating one and forgetting the other).
+     */
+    public function markScanned(\DateTimeImmutable $fileModified): void
     {
+        $this->dateUpdate = new \DateTimeImmutable();
         $this->fileModified = $fileModified;
-
-        return $this;
     }
 }

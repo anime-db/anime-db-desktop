@@ -25,20 +25,28 @@
 
 declare(strict_types=1);
 
-namespace App\Tests\Unit\Entity;
+namespace App\Entity\ValueObject;
 
-use App\Entity\Anime;
-use App\Entity\AnimeImage;
-use PHPUnit\Framework\TestCase;
+use App\Entity\ValueObject\Exception\InvalidRatingException;
 
-final class AnimeImageTest extends TestCase
+/**
+ * User rating of an anime. There is no "not rated" value within Rating itself: absence
+ * of a rating is expressed by Anime holding a null ?Rating, the same way it already
+ * expresses other optional facts (datePremiere, dateEnd, cover, notes).
+ */
+final class Rating
 {
-    public function testConstructorSetsFields(): void
-    {
-        $anime = new Anime();
-        $image = new AnimeImage($anime, 'images/frame1.jpg');
+    private const MIN = 1;
+    private const MAX = 5;
 
-        $this->assertSame($anime, $image->anime);
-        $this->assertSame('images/frame1.jpg', $image->source);
+    public readonly int $value;
+
+    public function __construct(int $value)
+    {
+        if ($value < self::MIN || $value > self::MAX) {
+            throw new InvalidRatingException(\sprintf('Rating must be between %d and %d, got %d.', self::MIN, self::MAX, $value));
+        }
+
+        $this->value = $value;
     }
 }

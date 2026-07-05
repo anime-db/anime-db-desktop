@@ -4,6 +4,7 @@ doctrine:
         driver: pdo_sqlite
         types:
             unix_timestamp: App\Doctrine\Type\UnixTimestampType
+            rating: App\Doctrine\Type\RatingType
     orm:
         naming_strategy: doctrine.orm.naming_strategy.underscore_number_aware
         auto_mapping: true

@@ -40,13 +40,13 @@ class AnimeImage
 
     #[ORM\ManyToOne(targetEntity: Anime::class, inversedBy: 'images')]
     #[ORM\JoinColumn(name: 'anime_id', referencedColumnName: 'id', nullable: false, onDelete: 'CASCADE')]
-    private Anime $anime;
+    public readonly Anime $anime;
 
     /**
      * Relative path to the file on disk, same semantics as Anime::$cover.
      */
     #[ORM\Column(length: 256)]
-    private string $source;
+    public readonly string $source;
 
     public function __construct(Anime $anime, string $source)
     {
@@ -57,22 +57,5 @@ class AnimeImage
     public function getId(): ?int
     {
         return $this->id;
-    }
-
-    public function getAnime(): Anime
-    {
-        return $this->anime;
-    }
-
-    public function getSource(): string
-    {
-        return $this->source;
-    }
-
-    public function setSource(string $source): self
-    {
-        $this->source = $source;
-
-        return $this;
     }
 }

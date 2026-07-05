@@ -25,20 +25,11 @@
 
 declare(strict_types=1);
 
-namespace App\Tests\Unit\Entity;
+namespace App\Entity\ValueObject\Exception;
 
-use App\Entity\Anime;
-use App\Entity\AnimeImage;
-use PHPUnit\Framework\TestCase;
-
-final class AnimeImageTest extends TestCase
+/**
+ * Thrown when PluginId receives a value that does not match the vendor-name slug format.
+ */
+final class InvalidPluginIdException extends \InvalidArgumentException
 {
-    public function testConstructorSetsFields(): void
-    {
-        $anime = new Anime();
-        $image = new AnimeImage($anime, 'images/frame1.jpg');
-
-        $this->assertSame($anime, $image->anime);
-        $this->assertSame('images/frame1.jpg', $image->source);
-    }
 }
