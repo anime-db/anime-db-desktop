@@ -27,15 +27,15 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Entity;
 
-use App\Entity\Anime;
 use App\Entity\AnimeSource;
+use App\Entity\TvAnime;
 use PHPUnit\Framework\TestCase;
 
 final class AnimeSourceTest extends TestCase
 {
     public function testConstructorSetsFields(): void
     {
-        $anime = new Anime();
+        $anime = new TvAnime();
         $source = new AnimeSource($anime, 'https://shikimori.one/animes/1');
 
         $this->assertSame($anime, $source->anime);
