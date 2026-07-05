@@ -28,7 +28,8 @@ declare(strict_types=1);
 namespace App\Entity\Exception;
 
 /**
- * Thrown when Studio::rename()/Label::rename() receives an empty (or all-whitespace) name.
+ * Thrown when Studio::rename()/Label::rename()/Anime::setTitle() receives an empty
+ * (or all-whitespace) name.
  */
 final class InvalidNameException extends \InvalidArgumentException
 {

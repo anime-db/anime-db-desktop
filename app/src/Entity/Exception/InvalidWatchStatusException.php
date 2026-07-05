@@ -25,37 +25,12 @@
 
 declare(strict_types=1);
 
-namespace App\Entity;
-
-use Doctrine\ORM\Mapping as ORM;
+namespace App\Entity\Exception;
 
 /**
- * Additional gallery images (screenshots/frames), not alternative covers.
+ * Thrown when Anime::setWatchStatus() is called with WatchStatus::Completed while
+ * getProductionStatus() is not ProductionStatus::Released.
  */
-#[ORM\Entity]
-class AnimeImage
+final class InvalidWatchStatusException extends \InvalidArgumentException
 {
-    #[ORM\Id, ORM\GeneratedValue, ORM\Column]
-    public private(set) ?int $id = null;
-
-    #[ORM\ManyToOne(targetEntity: Anime::class, inversedBy: 'images')]
-    #[ORM\JoinColumn(name: 'anime_id', referencedColumnName: 'id', nullable: false, onDelete: 'CASCADE')]
-    public readonly Anime $anime;
-
-    /**
-     * Relative path to the file on disk, same semantics as Anime::$cover.
-     */
-    #[ORM\Column(length: 256)]
-    public readonly string $source;
-
-    public function __construct(Anime $anime, string $source)
-    {
-        $this->anime = $anime;
-        $this->source = $source;
-    }
-
-    public function getId(): ?int
-    {
-        return $this->id;
-    }
 }

@@ -39,7 +39,7 @@ use Doctrine\ORM\Mapping as ORM;
 class Studio
 {
     #[ORM\Id, ORM\GeneratedValue, ORM\Column]
-    private ?int $id = null;
+    public private(set) ?int $id = null;
 
     #[ORM\Column(length: 256)]
     public private(set) string $name;

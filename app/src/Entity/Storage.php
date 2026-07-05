@@ -34,7 +34,7 @@ use Doctrine\ORM\Mapping as ORM;
 class Storage
 {
     #[ORM\Id, ORM\GeneratedValue, ORM\Column]
-    private ?int $id = null;
+    public private(set) ?int $id = null;
 
     #[ORM\Column(length: 256)]
     private string $name;

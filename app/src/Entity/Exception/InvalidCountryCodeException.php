@@ -25,37 +25,12 @@
 
 declare(strict_types=1);
 
-namespace App\Entity;
-
-use Doctrine\ORM\Mapping as ORM;
+namespace App\Entity\Exception;
 
 /**
- * Additional gallery images (screenshots/frames), not alternative covers.
+ * Thrown when Anime::setCountries() receives an entry that is not two uppercase
+ * ASCII letters. Existence of the code in the real ISO 3166-1 alpha-2 list is not checked.
  */
-#[ORM\Entity]
-class AnimeImage
+final class InvalidCountryCodeException extends \InvalidArgumentException
 {
-    #[ORM\Id, ORM\GeneratedValue, ORM\Column]
-    public private(set) ?int $id = null;
-
-    #[ORM\ManyToOne(targetEntity: Anime::class, inversedBy: 'images')]
-    #[ORM\JoinColumn(name: 'anime_id', referencedColumnName: 'id', nullable: false, onDelete: 'CASCADE')]
-    public readonly Anime $anime;
-
-    /**
-     * Relative path to the file on disk, same semantics as Anime::$cover.
-     */
-    #[ORM\Column(length: 256)]
-    public readonly string $source;
-
-    public function __construct(Anime $anime, string $source)
-    {
-        $this->anime = $anime;
-        $this->source = $source;
-    }
-
-    public function getId(): ?int
-    {
-        return $this->id;
-    }
 }

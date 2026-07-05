@@ -39,7 +39,7 @@ use Doctrine\ORM\Mapping as ORM;
 class AnimeName
 {
     #[ORM\Id, ORM\GeneratedValue, ORM\Column]
-    private ?int $id = null;
+    public private(set) ?int $id = null;
 
     #[ORM\ManyToOne(targetEntity: Anime::class, inversedBy: 'names')]
     #[ORM\JoinColumn(name: 'anime_id', referencedColumnName: 'id', nullable: false, onDelete: 'CASCADE')]
