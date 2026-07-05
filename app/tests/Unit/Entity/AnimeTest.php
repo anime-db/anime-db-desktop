@@ -38,6 +38,8 @@ use App\Entity\Exception\InvalidEpisodeCountException;
 use App\Entity\Label;
 use App\Entity\Storage;
 use App\Entity\Studio;
+use App\Entity\ValueObject\PluginId;
+use App\Entity\ValueObject\Rating;
 use PHPUnit\Framework\TestCase;
 
 final class AnimeTest extends TestCase
@@ -64,34 +66,55 @@ final class AnimeTest extends TestCase
         $this->assertSame($anime, $anime->setTitle('Trigun'));
     }
 
-    public function testSetAndGetMetadata(): void
+    public function testPutPluginDataStoresUnderPluginNamespace(): void
     {
-        $metadata = [
-            'mal_id' => 1,
-            'studios' => ['Sunrise'],
-            'external_ids' => ['shikimori' => 1],
-        ];
-
         $anime = new Anime();
-        $anime->setMetadata($metadata);
+        $anime->putPluginData(new PluginId('animedb-shikimori'), ['mal_id' => 1]);
 
-        $this->assertSame($metadata, $anime->getMetadata());
+        $this->assertSame(['mal_id' => 1], $anime->getPluginData(new PluginId('animedb-shikimori')));
     }
 
-    public function testSetMetadataToNull(): void
+    public function testPutPluginDataMergesWithoutTouchingOtherPlugins(): void
     {
         $anime = new Anime();
-        $anime->setMetadata(['mal_id' => 1]);
-        $anime->setMetadata(null);
+        $anime->putPluginData(new PluginId('animedb-shikimori'), ['mal_id' => 1]);
+        $anime->putPluginData(new PluginId('animedb-mal'), ['mal_id' => 2]);
+        $anime->putPluginData(new PluginId('animedb-shikimori'), ['rating' => 8.5]);
 
-        $this->assertNull($anime->getMetadata());
+        $this->assertSame(['mal_id' => 1, 'rating' => 8.5], $anime->getPluginData(new PluginId('animedb-shikimori')));
+        $this->assertSame(['mal_id' => 2], $anime->getPluginData(new PluginId('animedb-mal')));
     }
 
-    public function testSetMetadataReturnsSelf(): void
+    public function testGetPluginDataDefaultsToEmptyArray(): void
     {
         $anime = new Anime();
 
-        $this->assertSame($anime, $anime->setMetadata(null));
+        $this->assertSame([], $anime->getPluginData(new PluginId('animedb-shikimori')));
+    }
+
+    public function testPutPluginDataReturnsSelf(): void
+    {
+        $anime = new Anime();
+
+        $this->assertSame($anime, $anime->putPluginData(new PluginId('animedb-shikimori'), []));
+    }
+
+    public function testSetDescriptionIsReadByGetSummary(): void
+    {
+        $anime = new Anime();
+        $anime->setDescription('ru', 'Описание');
+
+        $this->assertSame('Описание', $anime->getSummary('ru'));
+    }
+
+    public function testSetDescriptionDoesNotTouchPluginData(): void
+    {
+        $anime = new Anime();
+        $anime->putPluginData(new PluginId('animedb-shikimori'), ['mal_id' => 1]);
+        $anime->setDescription('ru', 'Описание');
+
+        $this->assertSame(['mal_id' => 1], $anime->getPluginData(new PluginId('animedb-shikimori')));
+        $this->assertSame('Описание', $anime->getSummary('ru'));
     }
 
     public function testSetAndGetWatchStatus(): void
@@ -190,7 +213,8 @@ final class AnimeTest extends TestCase
     public function testGetSummaryReturnsPreferredLocale(): void
     {
         $anime = new Anime();
-        $anime->setMetadata(['descriptions' => ['ru' => 'Описание', 'en' => 'Description']]);
+        $anime->setDescription('ru', 'Описание');
+        $anime->setDescription('en', 'Description');
 
         $this->assertSame('Описание', $anime->getSummary('ru'));
     }
@@ -198,7 +222,8 @@ final class AnimeTest extends TestCase
     public function testGetSummaryFallsBackToEnglish(): void
     {
         $anime = new Anime();
-        $anime->setMetadata(['descriptions' => ['en' => 'Description', 'de' => 'Beschreibung']]);
+        $anime->setDescription('en', 'Description');
+        $anime->setDescription('de', 'Beschreibung');
 
         $this->assertSame('Description', $anime->getSummary('ru'));
     }
@@ -206,7 +231,7 @@ final class AnimeTest extends TestCase
     public function testGetSummaryFallsBackToAnyAvailableLocale(): void
     {
         $anime = new Anime();
-        $anime->setMetadata(['descriptions' => ['de' => 'Beschreibung']]);
+        $anime->setDescription('de', 'Beschreibung');
 
         $this->assertSame('Beschreibung', $anime->getSummary('ru'));
     }
@@ -250,7 +275,7 @@ final class AnimeTest extends TestCase
     {
         $anime = new Anime();
         $studio = new Studio();
-        $studio->setName('Sunrise');
+        $studio->rename('Sunrise');
 
         $anime->addStudio($studio);
 
@@ -261,7 +286,7 @@ final class AnimeTest extends TestCase
     {
         $anime = new Anime();
         $label = new Label();
-        $label->setName('favorite');
+        $label->rename('favorite');
 
         $anime->addLabel($label);
 
@@ -280,8 +305,8 @@ final class AnimeTest extends TestCase
         if (false === $name) {
             $this->fail('Expected one name');
         }
-        $this->assertSame($anime, $name->getAnime());
-        $this->assertSame('Cowboy Bebop', $name->getName());
+        $this->assertSame($anime, $name->anime);
+        $this->assertSame('Cowboy Bebop', $name->name);
     }
 
     public function testAddImageCreatesAnimeImageOwnedByAnime(): void
@@ -295,7 +320,7 @@ final class AnimeTest extends TestCase
         if (false === $image) {
             $this->fail('Expected one image');
         }
-        $this->assertSame('images/frame1.jpg', $image->getSource());
+        $this->assertSame('images/frame1.jpg', $image->source);
     }
 
     public function testAddSourceCreatesAnimeSourceOwnedByAnime(): void
@@ -309,7 +334,7 @@ final class AnimeTest extends TestCase
         if (false === $source) {
             $this->fail('Expected one source');
         }
-        $this->assertSame('https://shikimori.one/animes/1', $source->getUrl());
+        $this->assertSame('https://shikimori.one/animes/1', $source->url);
     }
 
     public function testSetStorage(): void
@@ -441,5 +466,41 @@ final class AnimeTest extends TestCase
 
         $this->expectException(InvalidEpisodeCountException::class);
         $anime->watchNextEpisode();
+    }
+
+    public function testSetEpisodesCountRejectsLoweringBelowWatchedEpisodes(): void
+    {
+        $anime = new Anime();
+        $anime->setEpisodesCount(12);
+        $anime->setWatchedEpisodes(10);
+
+        $this->expectException(InvalidEpisodeCountException::class);
+        $anime->setEpisodesCount(5);
+    }
+
+    public function testSetEpisodesCountAllowsRaisingAboveWatchedEpisodes(): void
+    {
+        $anime = new Anime();
+        $anime->setEpisodesCount(12);
+        $anime->setWatchedEpisodes(10);
+        $anime->setEpisodesCount(24);
+
+        $this->assertSame(24, $anime->getEpisodesCount());
+    }
+
+    public function testUserRatingDefaultsToNull(): void
+    {
+        $anime = new Anime();
+
+        $this->assertNull($anime->getUserRating());
+    }
+
+    public function testSetAndGetUserRating(): void
+    {
+        $anime = new Anime();
+        $rating = new Rating(5);
+        $anime->setUserRating($rating);
+
+        $this->assertSame($rating, $anime->getUserRating());
     }
 }

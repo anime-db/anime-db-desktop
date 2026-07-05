@@ -34,6 +34,8 @@ use App\Entity\Enum\ProductionStatus;
 use App\Entity\Enum\WatchStatus;
 use App\Entity\Exception\InvalidDateRangeException;
 use App\Entity\Exception\InvalidEpisodeCountException;
+use App\Entity\ValueObject\PluginId;
+use App\Entity\ValueObject\Rating;
 use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
 use Doctrine\ORM\Mapping as ORM;
@@ -79,8 +81,8 @@ class Anime
     #[ORM\Column(length: 16, enumType: WatchStatus::class)]
     private WatchStatus $watchStatus;
 
-    #[ORM\Column(nullable: true)]
-    private ?int $userRating = null;
+    #[ORM\Column(type: 'rating', nullable: true)]
+    private ?Rating $userRating = null;
 
     #[ORM\Column(type: 'text', nullable: true)]
     private ?string $notes = null;
@@ -223,6 +225,7 @@ class Anime
 
     public function setEpisodesCount(?int $episodesCount): self
     {
+        $this->assertEpisodeCount($this->watchedEpisodes, $episodesCount);
         $this->episodesCount = $episodesCount;
 
         return $this;
@@ -235,7 +238,7 @@ class Anime
 
     public function setWatchedEpisodes(?int $watchedEpisodes): self
     {
-        $this->assertEpisodeCount($watchedEpisodes);
+        $this->assertEpisodeCount($watchedEpisodes, $this->episodesCount);
         $this->watchedEpisodes = $watchedEpisodes;
 
         if (null !== $watchedEpisodes) {
@@ -247,7 +250,13 @@ class Anime
         return $this;
     }
 
-    private function assertEpisodeCount(?int $watchedEpisodes): void
+    /**
+     * Keeps watched_episodes <= episodes_count in both directions: called from
+     * setWatchedEpisodes() when the watched count changes, and from setEpisodesCount()
+     * when the total is corrected after the fact (e.g. a plugin lowers episodes_count
+     * below an already-recorded watched_episodes).
+     */
+    private function assertEpisodeCount(?int $watchedEpisodes, ?int $episodesCount): void
     {
         if (null === $watchedEpisodes) {
             return;
@@ -257,7 +266,7 @@ class Anime
             throw new InvalidEpisodeCountException('watched_episodes must not be negative');
         }
 
-        if (null !== $this->episodesCount && $watchedEpisodes > $this->episodesCount) {
+        if (null !== $episodesCount && $watchedEpisodes > $episodesCount) {
             throw new InvalidEpisodeCountException('watched_episodes must not exceed episodes_count');
         }
     }
@@ -285,12 +294,12 @@ class Anime
         return $this;
     }
 
-    public function getUserRating(): ?int
+    public function getUserRating(): ?Rating
     {
         return $this->userRating;
     }
 
-    public function setUserRating(?int $userRating): self
+    public function setUserRating(?Rating $userRating): self
     {
         $this->userRating = $userRating;
 
@@ -365,9 +374,37 @@ class Anime
         return $this->metadata;
     }
 
-    /** @param array<string, mixed>|null $metadata */
-    public function setMetadata(?array $metadata): self
+    /**
+     * Merges $data into this plugin's own namespaced slice of metadata, leaving the data
+     * of every other plugin (and descriptions{}) untouched.
+     *
+     * @param array<string, mixed> $data
+     */
+    public function putPluginData(PluginId $pluginId, array $data): self
     {
+        $metadata = $this->metadata ?? [];
+        $existing = $metadata['plugins'][(string) $pluginId] ?? [];
+        $metadata['plugins'][(string) $pluginId] = [...(\is_array($existing) ? $existing : []), ...$data];
+        $this->metadata = $metadata;
+
+        return $this;
+    }
+
+    /** @return array<string, mixed> */
+    public function getPluginData(PluginId $pluginId): array
+    {
+        $data = $this->metadata['plugins'][(string) $pluginId] ?? [];
+
+        return \is_array($data) ? $data : [];
+    }
+
+    /**
+     * Writes metadata.descriptions[$locale], the value getSummary() reads.
+     */
+    public function setDescription(string $locale, string $text): self
+    {
+        $metadata = $this->metadata ?? [];
+        $metadata['descriptions'][$locale] = $text;
         $this->metadata = $metadata;
 
         return $this;

@@ -39,26 +39,8 @@ final class AnimeNameTest extends TestCase
         $anime = new Anime();
         $name = new AnimeName($anime, 'Cowboy Bebop', AnimeNameType::English);
 
-        $this->assertSame($anime, $name->getAnime());
-        $this->assertSame('Cowboy Bebop', $name->getName());
-        $this->assertSame(AnimeNameType::English, $name->getType());
-    }
-
-    public function testSetName(): void
-    {
-        $anime = new Anime();
-        $name = new AnimeName($anime, 'Cowboy Bebop', AnimeNameType::English);
-        $name->setName('Kaubohi Bibappu');
-
-        $this->assertSame('Kaubohi Bibappu', $name->getName());
-    }
-
-    public function testSetType(): void
-    {
-        $anime = new Anime();
-        $name = new AnimeName($anime, 'Cowboy Bebop', AnimeNameType::English);
-        $name->setType(AnimeNameType::Synonym);
-
-        $this->assertSame(AnimeNameType::Synonym, $name->getType());
+        $this->assertSame($anime, $name->anime);
+        $this->assertSame('Cowboy Bebop', $name->name);
+        $this->assertSame(AnimeNameType::English, $name->type);
     }
 }
