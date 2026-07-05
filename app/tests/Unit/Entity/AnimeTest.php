@@ -39,9 +39,9 @@ use App\Entity\Exception\InvalidEpisodeCountException;
 use App\Entity\Exception\InvalidNameException;
 use App\Entity\Exception\InvalidWatchStatusException;
 use App\Entity\Label;
-use App\Entity\SeriesAnime;
 use App\Entity\Storage;
 use App\Entity\Studio;
+use App\Entity\TvAnime;
 use App\Entity\ValueObject\PluginId;
 use App\Entity\ValueObject\Rating;
 use PHPUnit\Framework\TestCase;
@@ -50,14 +50,14 @@ final class AnimeTest extends TestCase
 {
     public function testMetadataDefaultsToNull(): void
     {
-        $anime = new SeriesAnime();
+        $anime = new TvAnime();
 
         $this->assertNull($anime->getMetadata());
     }
 
     public function testSetAndGetTitle(): void
     {
-        $anime = new SeriesAnime();
+        $anime = new TvAnime();
         $anime->setTitle('Cowboy Bebop');
 
         $this->assertSame('Cowboy Bebop', $anime->getTitle());
@@ -65,14 +65,14 @@ final class AnimeTest extends TestCase
 
     public function testSetTitleReturnsSelf(): void
     {
-        $anime = new SeriesAnime();
+        $anime = new TvAnime();
 
         $this->assertSame($anime, $anime->setTitle('Trigun'));
     }
 
     public function testPutPluginDataStoresUnderPluginNamespace(): void
     {
-        $anime = new SeriesAnime();
+        $anime = new TvAnime();
         $anime->putPluginData(new PluginId('animedb-shikimori'), ['mal_id' => 1]);
 
         $this->assertSame(['mal_id' => 1], $anime->getPluginData(new PluginId('animedb-shikimori')));
@@ -80,7 +80,7 @@ final class AnimeTest extends TestCase
 
     public function testPutPluginDataMergesWithoutTouchingOtherPlugins(): void
     {
-        $anime = new SeriesAnime();
+        $anime = new TvAnime();
         $anime->putPluginData(new PluginId('animedb-shikimori'), ['mal_id' => 1]);
         $anime->putPluginData(new PluginId('animedb-mal'), ['mal_id' => 2]);
         $anime->putPluginData(new PluginId('animedb-shikimori'), ['rating' => 8.5]);
@@ -91,21 +91,21 @@ final class AnimeTest extends TestCase
 
     public function testGetPluginDataDefaultsToEmptyArray(): void
     {
-        $anime = new SeriesAnime();
+        $anime = new TvAnime();
 
         $this->assertSame([], $anime->getPluginData(new PluginId('animedb-shikimori')));
     }
 
     public function testPutPluginDataReturnsSelf(): void
     {
-        $anime = new SeriesAnime();
+        $anime = new TvAnime();
 
         $this->assertSame($anime, $anime->putPluginData(new PluginId('animedb-shikimori'), []));
     }
 
     public function testSetDescriptionIsReadByGetSummary(): void
     {
-        $anime = new SeriesAnime();
+        $anime = new TvAnime();
         $anime->setDescription('ru', 'Описание');
 
         $this->assertSame('Описание', $anime->getSummary('ru'));
@@ -113,7 +113,7 @@ final class AnimeTest extends TestCase
 
     public function testSetDescriptionDoesNotTouchPluginData(): void
     {
-        $anime = new SeriesAnime();
+        $anime = new TvAnime();
         $anime->putPluginData(new PluginId('animedb-shikimori'), ['mal_id' => 1]);
         $anime->setDescription('ru', 'Описание');
 
@@ -123,7 +123,7 @@ final class AnimeTest extends TestCase
 
     public function testSetAndGetWatchStatus(): void
     {
-        $anime = new SeriesAnime();
+        $anime = new TvAnime();
         $anime->setWatchStatus(WatchStatus::Watching);
 
         $this->assertSame(WatchStatus::Watching, $anime->getWatchStatus());
@@ -131,14 +131,14 @@ final class AnimeTest extends TestCase
 
     public function testGetType(): void
     {
-        $anime = new SeriesAnime();
+        $anime = new TvAnime();
 
         $this->assertSame(AnimeType::Tv, $anime->getType());
     }
 
     public function testDateEndEarlierThanDatePremiereIsRejectedViaSetDateEnd(): void
     {
-        $anime = new SeriesAnime();
+        $anime = new TvAnime();
         $anime->setDatePremiere(new \DateTimeImmutable('2026-06-01'));
 
         $this->expectException(InvalidDateRangeException::class);
@@ -147,7 +147,7 @@ final class AnimeTest extends TestCase
 
     public function testDateEndEarlierThanDatePremiereIsRejectedViaSetDatePremiere(): void
     {
-        $anime = new SeriesAnime();
+        $anime = new TvAnime();
         $anime->setDateEnd(new \DateTimeImmutable('2026-01-01'));
 
         $this->expectException(InvalidDateRangeException::class);
@@ -156,7 +156,7 @@ final class AnimeTest extends TestCase
 
     public function testDateEndEqualToDatePremiereIsAllowed(): void
     {
-        $anime = new SeriesAnime();
+        $anime = new TvAnime();
         $anime->setDatePremiere(new \DateTimeImmutable('2026-06-01'));
         $anime->setDateEnd(new \DateTimeImmutable('2026-06-01'));
 
@@ -165,14 +165,14 @@ final class AnimeTest extends TestCase
 
     public function testProductionStatusIsAnnouncedWithoutDates(): void
     {
-        $anime = new SeriesAnime();
+        $anime = new TvAnime();
 
         $this->assertSame(ProductionStatus::Announced, $anime->getProductionStatus());
     }
 
     public function testProductionStatusIsOngoingWhenPremiereIsTodayAndNoEnd(): void
     {
-        $anime = new SeriesAnime();
+        $anime = new TvAnime();
         $anime->setDatePremiere(new \DateTimeImmutable('today'));
 
         $this->assertSame(ProductionStatus::Ongoing, $anime->getProductionStatus());
@@ -180,7 +180,7 @@ final class AnimeTest extends TestCase
 
     public function testProductionStatusIsOngoingWhenPremierePastAndEndInFuture(): void
     {
-        $anime = new SeriesAnime();
+        $anime = new TvAnime();
         $anime->setDatePremiere(new \DateTimeImmutable('-1 day'));
         $anime->setDateEnd(new \DateTimeImmutable('+1 day'));
 
@@ -189,7 +189,7 @@ final class AnimeTest extends TestCase
 
     public function testProductionStatusIsReleasedWhenEndIsToday(): void
     {
-        $anime = new SeriesAnime();
+        $anime = new TvAnime();
         $anime->setDatePremiere(new \DateTimeImmutable('-1 day'));
         $anime->setDateEnd(new \DateTimeImmutable('today'));
 
@@ -198,7 +198,7 @@ final class AnimeTest extends TestCase
 
     public function testProductionStatusIsReleasedWhenEndIsInThePast(): void
     {
-        $anime = new SeriesAnime();
+        $anime = new TvAnime();
         $anime->setDatePremiere(new \DateTimeImmutable('-2 days'));
         $anime->setDateEnd(new \DateTimeImmutable('-1 day'));
 
@@ -207,7 +207,7 @@ final class AnimeTest extends TestCase
 
     public function testProductionStatusIsAnnouncedWhenPremiereIsInTheFuture(): void
     {
-        $anime = new SeriesAnime();
+        $anime = new TvAnime();
         $anime->setDatePremiere(new \DateTimeImmutable('+1 day'));
 
         $this->assertSame(ProductionStatus::Announced, $anime->getProductionStatus());
@@ -215,7 +215,7 @@ final class AnimeTest extends TestCase
 
     public function testGetSummaryReturnsPreferredLocale(): void
     {
-        $anime = new SeriesAnime();
+        $anime = new TvAnime();
         $anime->setDescription('ru', 'Описание');
         $anime->setDescription('en', 'Description');
 
@@ -224,7 +224,7 @@ final class AnimeTest extends TestCase
 
     public function testGetSummaryFallsBackToEnglish(): void
     {
-        $anime = new SeriesAnime();
+        $anime = new TvAnime();
         $anime->setDescription('en', 'Description');
         $anime->setDescription('de', 'Beschreibung');
 
@@ -233,7 +233,7 @@ final class AnimeTest extends TestCase
 
     public function testGetSummaryFallsBackToAnyAvailableLocale(): void
     {
-        $anime = new SeriesAnime();
+        $anime = new TvAnime();
         $anime->setDescription('de', 'Beschreibung');
 
         $this->assertSame('Beschreibung', $anime->getSummary('ru'));
@@ -241,14 +241,14 @@ final class AnimeTest extends TestCase
 
     public function testGetSummaryReturnsEmptyStringWithoutMetadata(): void
     {
-        $anime = new SeriesAnime();
+        $anime = new TvAnime();
 
         $this->assertSame('', $anime->getSummary('ru'));
     }
 
     public function testAddAndGetGenreCodes(): void
     {
-        $anime = new SeriesAnime();
+        $anime = new TvAnime();
         $anime->addGenre(GenreCode::Action);
         $anime->addGenre(GenreCode::Drama);
 
@@ -257,7 +257,7 @@ final class AnimeTest extends TestCase
 
     public function testAddGenreIsIdempotent(): void
     {
-        $anime = new SeriesAnime();
+        $anime = new TvAnime();
         $anime->addGenre(GenreCode::Action);
         $anime->addGenre(GenreCode::Action);
 
@@ -266,7 +266,7 @@ final class AnimeTest extends TestCase
 
     public function testRemoveGenre(): void
     {
-        $anime = new SeriesAnime();
+        $anime = new TvAnime();
         $anime->addGenre(GenreCode::Action);
         $anime->addGenre(GenreCode::Drama);
         $anime->removeGenre(GenreCode::Action);
@@ -276,7 +276,7 @@ final class AnimeTest extends TestCase
 
     public function testAddAndGetStudios(): void
     {
-        $anime = new SeriesAnime();
+        $anime = new TvAnime();
         $studio = new Studio();
         $studio->rename('Sunrise');
 
@@ -287,7 +287,7 @@ final class AnimeTest extends TestCase
 
     public function testAddAndGetLabels(): void
     {
-        $anime = new SeriesAnime();
+        $anime = new TvAnime();
         $label = new Label();
         $label->rename('favorite');
 
@@ -298,7 +298,7 @@ final class AnimeTest extends TestCase
 
     public function testAddNameCreatesAnimeNameOwnedByAnime(): void
     {
-        $anime = new SeriesAnime();
+        $anime = new TvAnime();
         $anime->addName('Cowboy Bebop', AnimeNameType::English);
 
         $names = $anime->getNames();
@@ -314,7 +314,7 @@ final class AnimeTest extends TestCase
 
     public function testAddImageCreatesAnimeImageOwnedByAnime(): void
     {
-        $anime = new SeriesAnime();
+        $anime = new TvAnime();
         $anime->addImage('images/frame1.jpg');
 
         $this->assertCount(1, $anime->getImages());
@@ -328,7 +328,7 @@ final class AnimeTest extends TestCase
 
     public function testAddSourceCreatesAnimeSourceOwnedByAnime(): void
     {
-        $anime = new SeriesAnime();
+        $anime = new TvAnime();
         $anime->addSource('https://shikimori.one/animes/1');
 
         $this->assertCount(1, $anime->getSources());
@@ -342,7 +342,7 @@ final class AnimeTest extends TestCase
 
     public function testSetStorage(): void
     {
-        $anime = new SeriesAnime();
+        $anime = new TvAnime();
         $storage = new Storage();
         $storage->setName('Main folder');
 
@@ -353,7 +353,7 @@ final class AnimeTest extends TestCase
 
     public function testDateAddAndDateUpdateAreInitialized(): void
     {
-        $anime = new SeriesAnime();
+        $anime = new TvAnime();
 
         $this->assertInstanceOf(\DateTimeImmutable::class, $anime->getDateAdd());
         $this->assertInstanceOf(\DateTimeImmutable::class, $anime->getDateUpdate());
@@ -361,7 +361,7 @@ final class AnimeTest extends TestCase
 
     public function testPreUpdateRefreshesDateUpdate(): void
     {
-        $anime = new SeriesAnime();
+        $anime = new TvAnime();
         $before = $anime->getDateUpdate();
 
         usleep(1000);
@@ -372,7 +372,7 @@ final class AnimeTest extends TestCase
 
     public function testSetWatchedEpisodesRejectsNegativeValue(): void
     {
-        $anime = new SeriesAnime();
+        $anime = new TvAnime();
 
         $this->expectException(InvalidEpisodeCountException::class);
         $anime->setWatchedEpisodes(-1);
@@ -380,7 +380,7 @@ final class AnimeTest extends TestCase
 
     public function testSetWatchedEpisodesRejectsValueAboveEpisodesCount(): void
     {
-        $anime = new SeriesAnime();
+        $anime = new TvAnime();
         $anime->setEpisodesCount(12);
 
         $this->expectException(InvalidEpisodeCountException::class);
@@ -389,7 +389,7 @@ final class AnimeTest extends TestCase
 
     public function testWatchNextEpisodeIncrementsWatchedEpisodes(): void
     {
-        $anime = new SeriesAnime();
+        $anime = new TvAnime();
         $anime->setEpisodesCount(12);
         $anime->setWatchStatus(WatchStatus::Plan);
 
@@ -401,7 +401,7 @@ final class AnimeTest extends TestCase
 
     public function testWatchNextEpisodeMovesToCompletedOnLastEpisode(): void
     {
-        $anime = new SeriesAnime();
+        $anime = new TvAnime();
         $anime->setDateEnd(new \DateTimeImmutable('-1 day'));
         $anime->setEpisodesCount(2);
         $anime->setWatchStatus(WatchStatus::Watching);
@@ -415,7 +415,7 @@ final class AnimeTest extends TestCase
 
     public function testWatchNextEpisodeStaysWatchingWhenOngoingSeriesCatchesUp(): void
     {
-        $anime = new SeriesAnime();
+        $anime = new TvAnime();
         $anime->setDatePremiere(new \DateTimeImmutable('-1 day'));
         $anime->setEpisodesCount(2);
         $anime->setWatchStatus(WatchStatus::Watching);
@@ -429,7 +429,7 @@ final class AnimeTest extends TestCase
 
     public function testWatchNextEpisodeMovesToWatchingWhenResumingDropped(): void
     {
-        $anime = new SeriesAnime();
+        $anime = new TvAnime();
         $anime->setEpisodesCount(12);
         $anime->setWatchStatus(WatchStatus::Dropped);
         $anime->setWatchedEpisodes(3);
@@ -442,7 +442,7 @@ final class AnimeTest extends TestCase
 
     public function testWatchNextEpisodeMovesToWatchingWhenRewatchingCompleted(): void
     {
-        $anime = new SeriesAnime();
+        $anime = new TvAnime();
         $anime->setDateEnd(new \DateTimeImmutable('-1 day'));
         $anime->setEpisodesCount(12);
         $anime->setWatchStatus(WatchStatus::Completed);
@@ -456,7 +456,7 @@ final class AnimeTest extends TestCase
 
     public function testSetWatchedEpisodesMovesToWatchingDirectly(): void
     {
-        $anime = new SeriesAnime();
+        $anime = new TvAnime();
         $anime->setEpisodesCount(12);
         $anime->setWatchStatus(WatchStatus::Plan);
 
@@ -467,7 +467,7 @@ final class AnimeTest extends TestCase
 
     public function testSetWatchedEpisodesMovesToCompletedDirectly(): void
     {
-        $anime = new SeriesAnime();
+        $anime = new TvAnime();
         $anime->setDateEnd(new \DateTimeImmutable('-1 day'));
         $anime->setEpisodesCount(12);
         $anime->setWatchStatus(WatchStatus::Watching);
@@ -479,7 +479,7 @@ final class AnimeTest extends TestCase
 
     public function testSetWatchedEpisodesStaysWatchingWhenOngoingSeriesCatchesUp(): void
     {
-        $anime = new SeriesAnime();
+        $anime = new TvAnime();
         $anime->setDatePremiere(new \DateTimeImmutable('-1 day'));
         $anime->setEpisodesCount(12);
         $anime->setWatchStatus(WatchStatus::Watching);
@@ -491,7 +491,7 @@ final class AnimeTest extends TestCase
 
     public function testWatchNextEpisodeRejectsGoingPastEpisodesCount(): void
     {
-        $anime = new SeriesAnime();
+        $anime = new TvAnime();
         $anime->setDateEnd(new \DateTimeImmutable('-1 day'));
         $anime->setEpisodesCount(1);
         $anime->setWatchStatus(WatchStatus::Completed);
@@ -503,7 +503,7 @@ final class AnimeTest extends TestCase
 
     public function testSetEpisodesCountRejectsLoweringBelowWatchedEpisodes(): void
     {
-        $anime = new SeriesAnime();
+        $anime = new TvAnime();
         $anime->setEpisodesCount(12);
         $anime->setWatchedEpisodes(10);
 
@@ -513,7 +513,7 @@ final class AnimeTest extends TestCase
 
     public function testSetEpisodesCountAllowsRaisingAboveWatchedEpisodes(): void
     {
-        $anime = new SeriesAnime();
+        $anime = new TvAnime();
         $anime->setEpisodesCount(12);
         $anime->setWatchedEpisodes(10);
         $anime->setEpisodesCount(24);
@@ -523,14 +523,14 @@ final class AnimeTest extends TestCase
 
     public function testUserRatingDefaultsToNull(): void
     {
-        $anime = new SeriesAnime();
+        $anime = new TvAnime();
 
         $this->assertNull($anime->getUserRating());
     }
 
     public function testSetAndGetUserRating(): void
     {
-        $anime = new SeriesAnime();
+        $anime = new TvAnime();
         $rating = new Rating(5);
         $anime->setUserRating($rating);
 
@@ -539,7 +539,7 @@ final class AnimeTest extends TestCase
 
     public function testSetTitleTrimsWhitespace(): void
     {
-        $anime = new SeriesAnime();
+        $anime = new TvAnime();
         $anime->setTitle('  Cowboy Bebop  ');
 
         $this->assertSame('Cowboy Bebop', $anime->getTitle());
@@ -547,7 +547,7 @@ final class AnimeTest extends TestCase
 
     public function testSetTitleRejectsEmptyString(): void
     {
-        $anime = new SeriesAnime();
+        $anime = new TvAnime();
 
         $this->expectException(InvalidNameException::class);
         $anime->setTitle('');
@@ -555,7 +555,7 @@ final class AnimeTest extends TestCase
 
     public function testSetTitleRejectsWhitespaceOnlyString(): void
     {
-        $anime = new SeriesAnime();
+        $anime = new TvAnime();
 
         $this->expectException(InvalidNameException::class);
         $anime->setTitle('   ');
@@ -563,7 +563,7 @@ final class AnimeTest extends TestCase
 
     public function testSetDurationMinutesRejectsZero(): void
     {
-        $anime = new SeriesAnime();
+        $anime = new TvAnime();
 
         $this->expectException(InvalidDurationException::class);
         $anime->setDurationMinutes(0);
@@ -571,7 +571,7 @@ final class AnimeTest extends TestCase
 
     public function testSetDurationMinutesRejectsNegativeValue(): void
     {
-        $anime = new SeriesAnime();
+        $anime = new TvAnime();
 
         $this->expectException(InvalidDurationException::class);
         $anime->setDurationMinutes(-1);
@@ -579,7 +579,7 @@ final class AnimeTest extends TestCase
 
     public function testSetDurationMinutesAllowsNull(): void
     {
-        $anime = new SeriesAnime();
+        $anime = new TvAnime();
         $anime->setDurationMinutes(24);
         $anime->setDurationMinutes(null);
 
@@ -588,7 +588,7 @@ final class AnimeTest extends TestCase
 
     public function testSetCountriesAcceptsValidCodes(): void
     {
-        $anime = new SeriesAnime();
+        $anime = new TvAnime();
         $anime->setCountries(['JP', 'US']);
 
         $this->assertSame(['JP', 'US'], $anime->getCountries());
@@ -596,7 +596,7 @@ final class AnimeTest extends TestCase
 
     public function testSetCountriesRejectsLowercaseCode(): void
     {
-        $anime = new SeriesAnime();
+        $anime = new TvAnime();
 
         $this->expectException(InvalidCountryCodeException::class);
         $anime->setCountries(['jp']);
@@ -604,7 +604,7 @@ final class AnimeTest extends TestCase
 
     public function testSetCountriesRejectsWrongLength(): void
     {
-        $anime = new SeriesAnime();
+        $anime = new TvAnime();
 
         $this->expectException(InvalidCountryCodeException::class);
         $anime->setCountries(['JPN']);
@@ -612,7 +612,7 @@ final class AnimeTest extends TestCase
 
     public function testSetWatchStatusCompletedThrowsWhenAnnounced(): void
     {
-        $anime = new SeriesAnime();
+        $anime = new TvAnime();
 
         $this->expectException(InvalidWatchStatusException::class);
         $anime->setWatchStatus(WatchStatus::Completed);
@@ -620,7 +620,7 @@ final class AnimeTest extends TestCase
 
     public function testSetWatchStatusCompletedThrowsWhenOngoing(): void
     {
-        $anime = new SeriesAnime();
+        $anime = new TvAnime();
         $anime->setDatePremiere(new \DateTimeImmutable('-1 day'));
 
         $this->assertSame(ProductionStatus::Ongoing, $anime->getProductionStatus());
@@ -630,7 +630,7 @@ final class AnimeTest extends TestCase
 
     public function testSetWatchStatusCompletedAllowedWhenReleased(): void
     {
-        $anime = new SeriesAnime();
+        $anime = new TvAnime();
         $anime->setDateEnd(new \DateTimeImmutable('-1 day'));
         $anime->setEpisodesCount(12);
         $anime->setWatchedEpisodes(5);
@@ -643,7 +643,7 @@ final class AnimeTest extends TestCase
 
     public function testSetWatchStatusCompletedSetsWatchedEpisodesToNullWhenEpisodesCountUnknown(): void
     {
-        $anime = new SeriesAnime();
+        $anime = new TvAnime();
         $anime->setDateEnd(new \DateTimeImmutable('-1 day'));
 
         $anime->setWatchStatus(WatchStatus::Completed);

@@ -27,17 +27,18 @@ declare(strict_types=1);
 
 namespace App\Entity;
 
-use App\Entity\Enum\AnimeType;
 use App\Entity\Enum\ProductionStatus;
 use App\Entity\Enum\WatchStatus;
 use App\Entity\Exception\InvalidEpisodeCountException;
 use Doctrine\ORM\Mapping as ORM;
 
 /**
- * A multi-episode anime (TV/OVA/ONA/Special/Music).
+ * A multi-episode anime (TV/OVA/ONA/Special/Music). Concrete subtype is one
+ * of TvAnime/OvaAnime/OnaAnime/SpecialAnime/MusicAnime; they are currently
+ * empty markers because no business rule distinguishes them yet.
  */
 #[ORM\Entity]
-class SeriesAnime extends Anime
+abstract class SeriesAnime extends Anime
 {
     #[ORM\Column(nullable: true)]
     private ?int $episodesCount = null;
@@ -47,11 +48,6 @@ class SeriesAnime extends Anime
      */
     #[ORM\Column(nullable: true)]
     private ?int $watchedEpisodes = null;
-
-    public function getType(): AnimeType
-    {
-        return AnimeType::Tv;
-    }
 
     public function getEpisodesCount(): ?int
     {

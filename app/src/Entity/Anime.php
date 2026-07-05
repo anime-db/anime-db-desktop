@@ -48,11 +48,11 @@ use Doctrine\ORM\Mapping as ORM;
 #[ORM\DiscriminatorColumn(name: 'type', length: 16, enumType: AnimeType::class)]
 #[ORM\DiscriminatorMap([
     'movie' => MovieAnime::class,
-    'ova' => SeriesAnime::class,
-    'ona' => SeriesAnime::class,
-    'special' => SeriesAnime::class,
-    'music' => SeriesAnime::class,
-    'tv' => SeriesAnime::class,
+    'tv' => TvAnime::class,
+    'ova' => OvaAnime::class,
+    'ona' => OnaAnime::class,
+    'special' => SpecialAnime::class,
+    'music' => MusicAnime::class,
 ])]
 abstract class Anime
 {
