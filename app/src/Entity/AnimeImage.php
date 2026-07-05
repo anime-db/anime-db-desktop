@@ -36,7 +36,7 @@ use Doctrine\ORM\Mapping as ORM;
 class AnimeImage
 {
     #[ORM\Id, ORM\GeneratedValue, ORM\Column]
-    private ?int $id = null;
+    public private(set) ?int $id = null;
 
     #[ORM\ManyToOne(targetEntity: Anime::class, inversedBy: 'images')]
     #[ORM\JoinColumn(name: 'anime_id', referencedColumnName: 'id', nullable: false, onDelete: 'CASCADE')]
@@ -52,10 +52,5 @@ class AnimeImage
     {
         $this->anime = $anime;
         $this->source = $source;
-    }
-
-    public function getId(): ?int
-    {
-        return $this->id;
     }
 }

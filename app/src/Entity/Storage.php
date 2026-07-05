@@ -34,7 +34,7 @@ use Doctrine\ORM\Mapping as ORM;
 class Storage
 {
     #[ORM\Id, ORM\GeneratedValue, ORM\Column]
-    private ?int $id = null;
+    public private(set) ?int $id = null;
 
     #[ORM\Column(length: 256)]
     private string $name;
@@ -50,11 +50,6 @@ class Storage
 
     #[ORM\Column(type: 'unix_timestamp', nullable: true)]
     private ?\DateTimeImmutable $fileModified = null;
-
-    public function getId(): ?int
-    {
-        return $this->id;
-    }
 
     public function getName(): string
     {
