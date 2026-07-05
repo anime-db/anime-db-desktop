@@ -28,17 +28,34 @@ declare(strict_types=1);
 namespace App\Tests\Unit\Entity;
 
 use App\Entity\Anime;
+use App\Entity\Exception\InvalidNameException;
 use App\Entity\Studio;
 use PHPUnit\Framework\TestCase;
 
 final class StudioTest extends TestCase
 {
-    public function testSetAndGetName(): void
+    public function testRenameSetsName(): void
     {
         $studio = new Studio();
-        $studio->setName('Sunrise');
+        $studio->rename('Sunrise');
 
-        $this->assertSame('Sunrise', $studio->getName());
+        $this->assertSame('Sunrise', $studio->name);
+    }
+
+    public function testRenameTrimsName(): void
+    {
+        $studio = new Studio();
+        $studio->rename('  Sunrise  ');
+
+        $this->assertSame('Sunrise', $studio->name);
+    }
+
+    public function testRenameRejectsEmptyName(): void
+    {
+        $studio = new Studio();
+
+        $this->expectException(InvalidNameException::class);
+        $studio->rename('   ');
     }
 
     public function testIsRemovableWhenNoAnimeIsLinked(): void

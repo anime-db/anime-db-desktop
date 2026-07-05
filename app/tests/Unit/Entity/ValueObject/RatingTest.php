@@ -25,20 +25,37 @@
 
 declare(strict_types=1);
 
-namespace App\Tests\Unit\Entity;
+namespace App\Tests\Unit\Entity\ValueObject;
 
-use App\Entity\Anime;
-use App\Entity\AnimeImage;
+use App\Entity\ValueObject\Exception\InvalidRatingException;
+use App\Entity\ValueObject\Rating;
 use PHPUnit\Framework\TestCase;
 
-final class AnimeImageTest extends TestCase
+final class RatingTest extends TestCase
 {
-    public function testConstructorSetsFields(): void
+    public function testAcceptsMinimumValue(): void
     {
-        $anime = new Anime();
-        $image = new AnimeImage($anime, 'images/frame1.jpg');
+        $rating = new Rating(1);
 
-        $this->assertSame($anime, $image->anime);
-        $this->assertSame('images/frame1.jpg', $image->source);
+        $this->assertSame(1, $rating->value);
+    }
+
+    public function testAcceptsMaximumValue(): void
+    {
+        $rating = new Rating(5);
+
+        $this->assertSame(5, $rating->value);
+    }
+
+    public function testRejectsValueBelowMinimum(): void
+    {
+        $this->expectException(InvalidRatingException::class);
+        new Rating(0);
+    }
+
+    public function testRejectsValueAboveMaximum(): void
+    {
+        $this->expectException(InvalidRatingException::class);
+        new Rating(6);
     }
 }

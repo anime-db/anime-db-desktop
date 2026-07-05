@@ -43,13 +43,13 @@ class AnimeName
 
     #[ORM\ManyToOne(targetEntity: Anime::class, inversedBy: 'names')]
     #[ORM\JoinColumn(name: 'anime_id', referencedColumnName: 'id', nullable: false, onDelete: 'CASCADE')]
-    private Anime $anime;
+    public readonly Anime $anime;
 
     #[ORM\Column(length: 256)]
-    private string $name;
+    public readonly string $name;
 
     #[ORM\Column(length: 16, enumType: AnimeNameType::class)]
-    private AnimeNameType $type;
+    public readonly AnimeNameType $type;
 
     public function __construct(Anime $anime, string $name, AnimeNameType $type)
     {
@@ -61,34 +61,5 @@ class AnimeName
     public function getId(): ?int
     {
         return $this->id;
-    }
-
-    public function getAnime(): Anime
-    {
-        return $this->anime;
-    }
-
-    public function getName(): string
-    {
-        return $this->name;
-    }
-
-    public function setName(string $name): self
-    {
-        $this->name = $name;
-
-        return $this;
-    }
-
-    public function getType(): AnimeNameType
-    {
-        return $this->type;
-    }
-
-    public function setType(AnimeNameType $type): self
-    {
-        $this->type = $type;
-
-        return $this;
     }
 }
