@@ -50,9 +50,4 @@ class AnimeSource
         $this->anime = $anime;
         $this->url = $url;
     }
-
-    public function getId(): ?int
-    {
-        return $this->id;
-    }
 }
