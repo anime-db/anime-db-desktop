@@ -28,17 +28,34 @@ declare(strict_types=1);
 namespace App\Tests\Unit\Entity;
 
 use App\Entity\Anime;
+use App\Entity\Exception\InvalidNameException;
 use App\Entity\Label;
 use PHPUnit\Framework\TestCase;
 
 final class LabelTest extends TestCase
 {
-    public function testSetAndGetName(): void
+    public function testRenameSetsName(): void
     {
         $label = new Label();
-        $label->setName('favorite');
+        $label->rename('favorite');
 
-        $this->assertSame('favorite', $label->getName());
+        $this->assertSame('favorite', $label->name);
+    }
+
+    public function testRenameTrimsName(): void
+    {
+        $label = new Label();
+        $label->rename('  favorite  ');
+
+        $this->assertSame('favorite', $label->name);
+    }
+
+    public function testRenameRejectsEmptyName(): void
+    {
+        $label = new Label();
+
+        $this->expectException(InvalidNameException::class);
+        $label->rename('   ');
     }
 
     public function testGetAnimesDefaultsToEmpty(): void

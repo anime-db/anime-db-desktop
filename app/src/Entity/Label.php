@@ -27,6 +27,7 @@ declare(strict_types=1);
 
 namespace App\Entity;
 
+use App\Entity\Exception\InvalidNameException;
 use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
 use Doctrine\ORM\Mapping as ORM;
@@ -38,7 +39,7 @@ class Label
     private ?int $id = null;
 
     #[ORM\Column(length: 32)]
-    private string $name;
+    public private(set) string $name;
 
     /** @var Collection<int, Anime> */
     #[ORM\ManyToMany(targetEntity: Anime::class, mappedBy: 'labels')]
@@ -54,16 +55,14 @@ class Label
         return $this->id;
     }
 
-    public function getName(): string
+    public function rename(string $name): void
     {
-        return $this->name;
-    }
+        $name = trim($name);
+        if ('' === $name) {
+            throw new InvalidNameException('name must not be empty');
+        }
 
-    public function setName(string $name): self
-    {
         $this->name = $name;
-
-        return $this;
     }
 
     /** @return Collection<int, Anime> */

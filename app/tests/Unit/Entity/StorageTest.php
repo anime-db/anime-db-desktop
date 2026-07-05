@@ -71,12 +71,21 @@ final class StorageTest extends TestCase
         $this->assertNull($storage->getFileModified());
     }
 
-    public function testSetAndGetDateUpdate(): void
+    public function testMarkScannedSetsFileModified(): void
     {
         $storage = new Storage();
-        $date = new \DateTimeImmutable('2026-07-01 12:00:00');
-        $storage->setDateUpdate($date);
+        $fileModified = new \DateTimeImmutable('2026-07-01 12:00:00');
+        $storage->markScanned($fileModified);
 
-        $this->assertSame($date, $storage->getDateUpdate());
+        $this->assertSame($fileModified, $storage->getFileModified());
+    }
+
+    public function testMarkScannedSetsDateUpdateToNow(): void
+    {
+        $storage = new Storage();
+        $before = new \DateTimeImmutable();
+        $storage->markScanned(new \DateTimeImmutable('2026-07-01 12:00:00'));
+
+        $this->assertGreaterThanOrEqual($before, $storage->getDateUpdate());
     }
 }

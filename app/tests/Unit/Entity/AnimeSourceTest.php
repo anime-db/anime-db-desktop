@@ -38,16 +38,7 @@ final class AnimeSourceTest extends TestCase
         $anime = new Anime();
         $source = new AnimeSource($anime, 'https://shikimori.one/animes/1');
 
-        $this->assertSame($anime, $source->getAnime());
-        $this->assertSame('https://shikimori.one/animes/1', $source->getUrl());
-    }
-
-    public function testSetUrl(): void
-    {
-        $anime = new Anime();
-        $source = new AnimeSource($anime, 'https://shikimori.one/animes/1');
-        $source->setUrl('https://myanimelist.net/anime/1');
-
-        $this->assertSame('https://myanimelist.net/anime/1', $source->getUrl());
+        $this->assertSame($anime, $source->anime);
+        $this->assertSame('https://shikimori.one/animes/1', $source->url);
     }
 }

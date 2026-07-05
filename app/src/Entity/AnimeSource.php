@@ -40,10 +40,10 @@ class AnimeSource
 
     #[ORM\ManyToOne(targetEntity: Anime::class, inversedBy: 'sources')]
     #[ORM\JoinColumn(name: 'anime_id', referencedColumnName: 'id', nullable: false, onDelete: 'CASCADE')]
-    private Anime $anime;
+    public readonly Anime $anime;
 
     #[ORM\Column(length: 512)]
-    private string $url;
+    public readonly string $url;
 
     public function __construct(Anime $anime, string $url)
     {
@@ -54,22 +54,5 @@ class AnimeSource
     public function getId(): ?int
     {
         return $this->id;
-    }
-
-    public function getAnime(): Anime
-    {
-        return $this->anime;
-    }
-
-    public function getUrl(): string
-    {
-        return $this->url;
-    }
-
-    public function setUrl(string $url): self
-    {
-        $this->url = $url;
-
-        return $this;
     }
 }
