@@ -29,7 +29,7 @@ namespace App\Tests\Unit\Entity;
 
 use App\Entity\Exception\InvalidNameException;
 use App\Entity\Label;
-use App\Entity\SeriesAnime;
+use App\Entity\TvAnime;
 use PHPUnit\Framework\TestCase;
 
 final class LabelTest extends TestCase
@@ -68,7 +68,7 @@ final class LabelTest extends TestCase
     public function testGetAnimesReflectsAnimeSideAssociation(): void
     {
         $label = new Label();
-        $anime = new SeriesAnime();
+        $anime = new TvAnime();
         $anime->addLabel($label);
 
         $this->assertTrue($label->getAnimes()->contains($anime));

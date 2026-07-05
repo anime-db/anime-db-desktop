@@ -29,14 +29,14 @@ namespace App\Tests\Unit\Entity;
 
 use App\Entity\AnimeGenre;
 use App\Entity\Enum\GenreCode;
-use App\Entity\SeriesAnime;
+use App\Entity\TvAnime;
 use PHPUnit\Framework\TestCase;
 
 final class AnimeGenreTest extends TestCase
 {
     public function testConstructorSetsFields(): void
     {
-        $anime = new SeriesAnime();
+        $anime = new TvAnime();
         $genre = new AnimeGenre($anime, GenreCode::Action);
 
         $this->assertSame($anime, $genre->anime);
