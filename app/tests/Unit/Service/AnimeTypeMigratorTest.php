@@ -110,6 +110,20 @@ final class AnimeTypeMigratorTest extends TestCase
         $this->assertSame(124, $target->getDurationMinutes());
     }
 
+    public function testMigrateFromSeriesToMovieCarriesDurationMinutesOverWithoutReset(): void
+    {
+        $source = new TvAnime();
+        $source->setTitle('Trigun')->setDurationMinutes(24)->setWatchStatus(WatchStatus::Plan);
+        $source->setEpisodesCount(26);
+
+        $entityManager = $this->createStub(EntityManagerInterface::class);
+        $migrator = new AnimeTypeMigrator($entityManager);
+
+        $target = $migrator->migrate($source, AnimeType::Movie);
+
+        $this->assertSame(24, $target->getDurationMinutes());
+    }
+
     public function testMigrateTransfersGenresStudiosLabelsNamesImagesAndSources(): void
     {
         $studio = new Studio();
