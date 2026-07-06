@@ -89,6 +89,16 @@ final class AnimeTest extends TestCase
         $this->assertSame(['mal_id' => 2], $anime->getPluginData(new PluginId('animedb-mal')));
     }
 
+    public function testSetMetadataOverwritesWholeBlob(): void
+    {
+        $anime = new TvAnime();
+        $anime->putPluginData(new PluginId('animedb-shikimori'), ['mal_id' => 1]);
+
+        $anime->setMetadata(['descriptions' => ['ru' => 'Описание']]);
+
+        $this->assertSame(['descriptions' => ['ru' => 'Описание']], $anime->getMetadata());
+    }
+
     public function testGetPluginDataDefaultsToEmptyArray(): void
     {
         $anime = new TvAnime();
