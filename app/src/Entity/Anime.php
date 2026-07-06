@@ -279,23 +279,20 @@ abstract class Anime
 
     /**
      * Recreates $source under a different concrete class, the only mechanism available for
-     * changing type across the Movie/Series boundary: that is the only boundary where the
-     * persisted field set actually differs (episodesCount/watchedEpisodes exist only on
-     * SeriesAnime), so Doctrine's single-table discriminator alone cannot express it.
+     * changing type: Doctrine's single-table discriminator is fixed per row, so switching
+     * class requires a new row (a fresh PK) rather than an in-place discriminator update.
      *
-     * Switching between SeriesAnime leaves (Tv/Ova/Ona/Special/Music), including a no-op
-     * migration to the source's own type (e.g. Tv => Tv), is a same-row discriminator change
-     * with no field-set difference and is intentionally out of scope here, see issue #63.
-     * The branch check below rejects both cases: it only lets a call through when exactly one
-     * side of the comparison is MovieAnime.
+     * A no-op migration to the source's own type (e.g. Tv => Tv) is rejected below; any
+     * other target, whether crossing the Movie/Series boundary or between SeriesAnime
+     * leaves (e.g. Tv => Ova), is allowed.
      *
      * Only builds and returns the replacement; persisting the result and removing $this
      * is infrastructure work left to the caller (see AnimeTypeMigrator).
      */
     public function migrate(AnimeType $targetType): self
     {
-        if (($this instanceof MovieAnime) === (AnimeType::Movie === $targetType)) {
-            throw new InvalidAnimeTypeMigrationException('Type migration is only allowed between the Movie and Series branches');
+        if ($this->getType() === $targetType) {
+            throw new InvalidAnimeTypeMigrationException('Type migration to the same type is not allowed');
         }
 
         if (ProductionStatus::Announced !== $this->getProductionStatus()) {
@@ -339,6 +336,11 @@ abstract class Anime
 
         foreach ($this->getSources() as $link) {
             $target->addSource($link->url);
+        }
+
+        if ($this instanceof SeriesAnime && $target instanceof SeriesAnime) {
+            $target->setEpisodesCount($this->getEpisodesCount());
+            $target->setWatchedEpisodes($this->getWatchedEpisodes());
         }
 
         return $target;

@@ -45,7 +45,7 @@ final class AnimeTypeMigrator
     }
 
     /**
-     * @param AnimeType $targetType must be on the opposite side of the Movie/Series boundary from $source
+     * @param AnimeType $targetType must differ from $source->getType()
      */
     public function migrate(Anime $source, AnimeType $targetType): Anime
     {
@@ -53,8 +53,7 @@ final class AnimeTypeMigrator
 
         // Persist the copy (and its cascaded genres/names/images/sources) before removing
         // the source, so the ON DELETE CASCADE on anime_id never fires against data we
-        // still need: watchedEpisodes/episodesCount are not transferred here on purpose,
-        // they are guaranteed empty on the Series side while production status is announced.
+        // still need.
         $this->entityManager->persist($target);
         $this->entityManager->remove($source);
         $this->entityManager->flush();
