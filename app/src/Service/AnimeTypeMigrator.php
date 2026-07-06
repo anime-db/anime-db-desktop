@@ -39,8 +39,12 @@ use Doctrine\ORM\EntityManagerInterface;
  */
 final class AnimeTypeMigrator
 {
+    private const MAX_MEDIA_RENAME_ATTEMPTS = 3;
+    private const MEDIA_RENAME_RETRY_DELAY_MICROSECONDS = 100_000;
+
     public function __construct(
         private readonly EntityManagerInterface $entityManager,
+        private readonly string $mediaDir,
     ) {
     }
 
@@ -49,15 +53,51 @@ final class AnimeTypeMigrator
      */
     public function migrate(Anime $source, AnimeType $targetType): Anime
     {
-        $target = $source->migrate($targetType);
+        $sourceId = $source->id;
 
-        // Persist the copy (and its cascaded genres/names/images/sources) before removing
-        // the source, so the ON DELETE CASCADE on anime_id never fires against data we
-        // still need.
-        $this->entityManager->persist($target);
-        $this->entityManager->remove($source);
-        $this->entityManager->flush();
+        return $this->entityManager->wrapInTransaction(function () use ($source, $targetType, $sourceId): Anime {
+            $target = $source->migrate($targetType);
 
-        return $target;
+            // Persist the copy (and its cascaded genres/names/images/sources) before removing
+            // the source, so the ON DELETE CASCADE on anime_id never fires against data we
+            // still need.
+            $this->entityManager->persist($target);
+            $this->entityManager->remove($source);
+            $this->entityManager->flush();
+
+            if ($sourceId !== null && $target->id !== null && $sourceId !== $target->id) {
+                // The migrated entity got a new autoincrement id, so its media directory
+                // (%AppData%/media/{id}/) has to move along with it. This runs inside the
+                // same transaction as the entity swap above: if the move can't be completed
+                // after retries, the exception below rolls the whole migration back instead
+                // of leaving the new entity pointing at a media directory that doesn't exist.
+                $this->renameMediaDirectory($sourceId, $target->id);
+            }
+
+            return $target;
+        });
+    }
+
+    private function renameMediaDirectory(int $sourceId, int $targetId): void
+    {
+        $sourceDir = rtrim($this->mediaDir, '/\\').'/'.$sourceId;
+        if (!is_dir($sourceDir)) {
+            // Anime without a cover/images never got a media directory in the first place.
+            return;
+        }
+
+        $targetDir = rtrim($this->mediaDir, '/\\').'/'.$targetId;
+
+        for ($attempt = 1; $attempt <= self::MAX_MEDIA_RENAME_ATTEMPTS; ++$attempt) {
+            if (@rename($sourceDir, $targetDir)) {
+                return;
+            }
+
+            if ($attempt < self::MAX_MEDIA_RENAME_ATTEMPTS) {
+                usleep(self::MEDIA_RENAME_RETRY_DELAY_MICROSECONDS);
+            }
+        }
+
+        throw new \RuntimeException(sprintf('Failed to move anime media directory from "%s" to "%s" after %d attempts.', $sourceDir, $targetDir, self::MAX_MEDIA_RENAME_ATTEMPTS));
     }
 }
