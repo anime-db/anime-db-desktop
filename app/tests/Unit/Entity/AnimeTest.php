@@ -27,7 +27,6 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Entity;
 
-use App\Entity\Anime;
 use App\Entity\Enum\AnimeNameType;
 use App\Entity\Enum\AnimeType;
 use App\Entity\Enum\GenreCode;
@@ -98,7 +97,7 @@ final class AnimeTest extends TestCase
             ->setWatchStatus(WatchStatus::Plan)
             ->setDescription('ru', 'Описание');
 
-        $target = Anime::migrate($source, AnimeType::Tv);
+        $target = $source->migrate(AnimeType::Tv);
 
         $this->assertSame(['descriptions' => ['ru' => 'Описание']], $target->getMetadata());
     }

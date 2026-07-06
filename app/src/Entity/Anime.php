@@ -287,55 +287,55 @@ abstract class Anime
      * discriminator change with no field-set difference and is intentionally out of scope
      * here, see issue #63.
      *
-     * Only builds and returns the replacement; persisting the result and removing $source
+     * Only builds and returns the replacement; persisting the result and removing $this
      * is infrastructure work left to the caller (see AnimeTypeMigrator).
      */
-    public static function migrate(self $source, AnimeType $targetType): self
+    public function migrate(AnimeType $targetType): self
     {
-        if (($source instanceof MovieAnime) === (AnimeType::Movie === $targetType)) {
+        if (($this instanceof MovieAnime) === (AnimeType::Movie === $targetType)) {
             throw new InvalidAnimeTypeMigrationException('Type migration is only allowed between the Movie and Series branches');
         }
 
-        if (ProductionStatus::Announced !== $source->getProductionStatus()) {
+        if (ProductionStatus::Announced !== $this->getProductionStatus()) {
             throw new InvalidAnimeTypeMigrationException('Type migration is only allowed while production status is announced');
         }
 
         $targetClass = self::CLASS_BY_TYPE[$targetType->value];
         $target = new $targetClass();
 
-        $target->setTitle($source->title)
-            ->setDatePremiere($source->datePremiere)
-            ->setDateEnd($source->dateEnd)
-            ->setDurationMinutes($source->durationMinutes)
-            ->setNotes($source->notes)
-            ->setUserRating($source->userRating)
-            ->setCover($source->cover)
-            ->setStorage($source->storage)
-            ->setCountries($source->countries)
-            ->setWatchStatus($source->watchStatus);
-        $target->assignMetadataFrom($source);
+        $target->setTitle($this->title)
+            ->setDatePremiere($this->datePremiere)
+            ->setDateEnd($this->dateEnd)
+            ->setDurationMinutes($this->durationMinutes)
+            ->setNotes($this->notes)
+            ->setUserRating($this->userRating)
+            ->setCover($this->cover)
+            ->setStorage($this->storage)
+            ->setCountries($this->countries)
+            ->setWatchStatus($this->watchStatus);
+        $target->assignMetadataFrom($this);
 
-        foreach ($source->getGenreCodes() as $code) {
+        foreach ($this->getGenreCodes() as $code) {
             $target->addGenre($code);
         }
 
-        foreach ($source->getStudios() as $studio) {
+        foreach ($this->getStudios() as $studio) {
             $target->addStudio($studio);
         }
 
-        foreach ($source->getLabels() as $label) {
+        foreach ($this->getLabels() as $label) {
             $target->addLabel($label);
         }
 
-        foreach ($source->getNames() as $name) {
+        foreach ($this->getNames() as $name) {
             $target->addName($name->name, $name->type);
         }
 
-        foreach ($source->getImages() as $image) {
+        foreach ($this->getImages() as $image) {
             $target->addImage($image->source);
         }
 
-        foreach ($source->getSources() as $link) {
+        foreach ($this->getSources() as $link) {
             $target->addSource($link->url);
         }
 
