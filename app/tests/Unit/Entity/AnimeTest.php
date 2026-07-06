@@ -39,6 +39,7 @@ use App\Entity\Exception\InvalidEpisodeCountException;
 use App\Entity\Exception\InvalidNameException;
 use App\Entity\Exception\InvalidWatchStatusException;
 use App\Entity\Label;
+use App\Entity\MovieAnime;
 use App\Entity\Storage;
 use App\Entity\Studio;
 use App\Entity\TvAnime;
@@ -87,6 +88,18 @@ final class AnimeTest extends TestCase
 
         $this->assertSame(['mal_id' => 1, 'rating' => 8.5], $anime->getPluginData(new PluginId('animedb-shikimori')));
         $this->assertSame(['mal_id' => 2], $anime->getPluginData(new PluginId('animedb-mal')));
+    }
+
+    public function testMigrateCarriesMetadataOverAsTheWholeBlob(): void
+    {
+        $source = new MovieAnime();
+        $source->setTitle('Cowboy Bebop: The Movie')
+            ->setWatchStatus(WatchStatus::Plan)
+            ->setDescription('ru', 'Описание');
+
+        $target = $source->migrate(AnimeType::Tv);
+
+        $this->assertSame(['descriptions' => ['ru' => 'Описание']], $target->getMetadata());
     }
 
     public function testGetPluginDataDefaultsToEmptyArray(): void
