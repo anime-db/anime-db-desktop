@@ -22,6 +22,7 @@
 'use strict';
 
 const { app, dialog } = require('electron');
+require('../protocols/app-media');
 const supervisor       = require('../supervisor');
 const { createWindow } = require('../window');
 const { createSplash } = require('../window/splash');
