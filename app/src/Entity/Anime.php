@@ -283,9 +283,11 @@ abstract class Anime
      * persisted field set actually differs (episodesCount/watchedEpisodes exist only on
      * SeriesAnime), so Doctrine's single-table discriminator alone cannot express it.
      *
-     * Switching between SeriesAnime leaves (Tv/Ova/Ona/Special/Music) is a same-row
-     * discriminator change with no field-set difference and is intentionally out of scope
-     * here, see issue #63.
+     * Switching between SeriesAnime leaves (Tv/Ova/Ona/Special/Music), including a no-op
+     * migration to the source's own type (e.g. Tv => Tv), is a same-row discriminator change
+     * with no field-set difference and is intentionally out of scope here, see issue #63.
+     * The branch check below rejects both cases: it only lets a call through when exactly one
+     * side of the comparison is MovieAnime.
      *
      * Only builds and returns the replacement; persisting the result and removing $this
      * is infrastructure work left to the caller (see AnimeTypeMigrator).
