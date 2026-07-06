@@ -28,9 +28,9 @@ declare(strict_types=1);
 namespace App\Entity\Exception;
 
 /**
- * Thrown by AnimeTypeMigrator::migrate() when the requested target class is not a
- * migratable Anime leaf, the migration does not cross the Movie/Series boundary,
- * or the source anime's production status is no longer "announced".
+ * Thrown by AnimeTypeMigrator::migrate() when the migration does not cross the
+ * Movie/Series boundary, or the source anime's production status is no longer
+ * "announced".
  */
 final class InvalidAnimeTypeMigrationException extends \InvalidArgumentException
 {
