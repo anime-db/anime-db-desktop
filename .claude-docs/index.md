@@ -17,3 +17,4 @@ tags: [memory/repo, index]
 | Добавить плагин или работать с Plugin/              | [architecture.md](architecture.md) §app/               |
 | Понять обновление приложения и Meilisearch-миграцию | [decisions.md](decisions.md) §Обновление               |
 | Стиль PHP-кода, форматирование, php-cs-fixer        | [conventions.md](conventions.md)                       |
+| Лицензионная шапка файла — шаблон, диапазон дат     | [license-header.md](license-header.md)                 |

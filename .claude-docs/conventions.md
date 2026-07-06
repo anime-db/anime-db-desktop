@@ -23,13 +23,13 @@ composer cs-check  # проверить без изменений (dry-run + dif
 
 ## Лицензионные шапки
 
-Каждый PHP-файл начинается с двухчастной лицензионной шапки:
+Каждый исходный файл начинается с двухчастной лицензионной шапки:
 1. `/** @author ... @copyright ... @license ... */` (docblock)
 2. `/* This program is free software... */` (GPL-текст)
 
-Далее — `declare(strict_types=1);`.
+Для PHP далее — `declare(strict_types=1);`.
 
-Диапазон в `@copyright`: год создания файла — год последнего изменения. Один год — без диапазона.
+Полные шаблоны по языкам и правило диапазона дат в `@copyright`: [license-header.md](license-header.md).
 
 ## Стиль JS-кода (native/)
 
