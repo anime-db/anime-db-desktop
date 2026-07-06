@@ -34,6 +34,7 @@ use App\Entity\Enum\WatchStatus;
 use App\Entity\Exception\InvalidAnimeTypeMigrationException;
 use App\Entity\Label;
 use App\Entity\MovieAnime;
+use App\Entity\OvaAnime;
 use App\Entity\Storage;
 use App\Entity\Studio;
 use App\Entity\TvAnime;
@@ -173,15 +174,21 @@ final class AnimeTypeMigratorTest extends TestCase
         (new AnimeTypeMigrator($entityManager))->migrate($source, AnimeType::Movie);
     }
 
-    public function testMigrateThrowsWhenTargetIsSameBranchAsSeries(): void
+    public function testMigrateBetweenSeriesLeavesCarriesEpisodeFields(): void
     {
         $source = new TvAnime();
         $source->setTitle('Trigun')->setWatchStatus(WatchStatus::Plan);
+        $source->setEpisodesCount(26);
 
         $entityManager = $this->createStub(EntityManagerInterface::class);
+        $migrator = new AnimeTypeMigrator($entityManager);
 
-        $this->expectException(InvalidAnimeTypeMigrationException::class);
-        (new AnimeTypeMigrator($entityManager))->migrate($source, AnimeType::Ova);
+        $target = $migrator->migrate($source, AnimeType::Ova);
+
+        $this->assertInstanceOf(OvaAnime::class, $target);
+        $this->assertSame('Trigun', $target->getTitle());
+        $this->assertSame(26, $target->getEpisodesCount());
+        $this->assertNull($target->getWatchedEpisodes());
     }
 
     public function testMigrateThrowsWhenTargetIsTheSourceTypeItself(): void
