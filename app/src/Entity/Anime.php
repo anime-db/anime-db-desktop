@@ -32,6 +32,7 @@ use App\Entity\Enum\AnimeType;
 use App\Entity\Enum\GenreCode;
 use App\Entity\Enum\ProductionStatus;
 use App\Entity\Enum\WatchStatus;
+use App\Entity\Exception\InvalidAnimeTypeMigrationException;
 use App\Entity\Exception\InvalidCountryCodeException;
 use App\Entity\Exception\InvalidDateRangeException;
 use App\Entity\Exception\InvalidDurationException;
@@ -60,6 +61,16 @@ abstract class Anime
      * Fallback locale for getSummary() when the requested UI locale has no description.
      */
     private const FALLBACK_LOCALE = 'en';
+
+    /** @var array<value-of<AnimeType>, class-string<self>> */
+    private const CLASS_BY_TYPE = [
+        AnimeType::Movie->value => MovieAnime::class,
+        AnimeType::Tv->value => TvAnime::class,
+        AnimeType::Ova->value => OvaAnime::class,
+        AnimeType::Ona->value => OnaAnime::class,
+        AnimeType::Special->value => SpecialAnime::class,
+        AnimeType::Music->value => MusicAnime::class,
+    ];
 
     #[ORM\Id, ORM\GeneratedValue, ORM\Column]
     public private(set) ?int $id = null;
@@ -266,6 +277,71 @@ abstract class Anime
 
     abstract public function getType(): AnimeType;
 
+    /**
+     * Recreates $source under a different concrete class, the only mechanism available for
+     * changing type across the Movie/Series boundary: that is the only boundary where the
+     * persisted field set actually differs (episodesCount/watchedEpisodes exist only on
+     * SeriesAnime), so Doctrine's single-table discriminator alone cannot express it.
+     *
+     * Switching between SeriesAnime leaves (Tv/Ova/Ona/Special/Music) is a same-row
+     * discriminator change with no field-set difference and is intentionally out of scope
+     * here, see issue #63.
+     *
+     * Only builds and returns the replacement; persisting the result and removing $source
+     * is infrastructure work left to the caller (see AnimeTypeMigrator).
+     */
+    public static function migrate(self $source, AnimeType $targetType): self
+    {
+        if (($source instanceof MovieAnime) === (AnimeType::Movie === $targetType)) {
+            throw new InvalidAnimeTypeMigrationException('Type migration is only allowed between the Movie and Series branches');
+        }
+
+        if (ProductionStatus::Announced !== $source->getProductionStatus()) {
+            throw new InvalidAnimeTypeMigrationException('Type migration is only allowed while production status is announced');
+        }
+
+        $targetClass = self::CLASS_BY_TYPE[$targetType->value];
+        $target = new $targetClass();
+
+        $target->setTitle($source->title)
+            ->setDatePremiere($source->datePremiere)
+            ->setDateEnd($source->dateEnd)
+            ->setDurationMinutes($source->durationMinutes)
+            ->setNotes($source->notes)
+            ->setUserRating($source->userRating)
+            ->setCover($source->cover)
+            ->setStorage($source->storage)
+            ->setCountries($source->countries)
+            ->setWatchStatus($source->watchStatus);
+        $target->assignMetadataFrom($source);
+
+        foreach ($source->getGenreCodes() as $code) {
+            $target->addGenre($code);
+        }
+
+        foreach ($source->getStudios() as $studio) {
+            $target->addStudio($studio);
+        }
+
+        foreach ($source->getLabels() as $label) {
+            $target->addLabel($label);
+        }
+
+        foreach ($source->getNames() as $name) {
+            $target->addName($name->name, $name->type);
+        }
+
+        foreach ($source->getImages() as $image) {
+            $target->addImage($image->source);
+        }
+
+        foreach ($source->getSources() as $link) {
+            $target->addSource($link->url);
+        }
+
+        return $target;
+    }
+
     /** @return list<string>|null */
     public function getCountries(): ?array
     {
@@ -320,27 +396,13 @@ abstract class Anime
 
     /**
      * Overwrites the whole metadata blob at once, unlike putPluginData()/setDescription()
-     * which merge into a namespaced slice. Kept protected so no caller outside this class
-     * can clobber another plugin's data or descriptions{}; copyMetadataFrom() below is the
-     * only entry point allowed to invoke it, for the Movie<->Series migration use case
-     * (see AnimeTypeMigrator).
-     *
-     * @param array<string, mixed>|null $metadata
+     * which merge into a namespaced slice. Private (not just protected) and used only by
+     * migrate() above: no caller, including subclasses, has a reason to clobber another
+     * plugin's data or descriptions{} wholesale outside of that use case.
      */
-    protected function setMetadata(?array $metadata): self
+    private function assignMetadataFrom(self $source): void
     {
-        $this->metadata = $metadata;
-
-        return $this;
-    }
-
-    /**
-     * Copies the metadata blob as-is from another Anime, used only when recreating this
-     * anime under a different concrete class (see AnimeTypeMigrator).
-     */
-    public function copyMetadataFrom(self $source): self
-    {
-        return $this->setMetadata($source->getMetadata());
+        $this->metadata = $source->metadata;
     }
 
     /**

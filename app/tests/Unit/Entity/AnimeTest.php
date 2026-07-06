@@ -27,6 +27,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Entity;
 
+use App\Entity\Anime;
 use App\Entity\Enum\AnimeNameType;
 use App\Entity\Enum\AnimeType;
 use App\Entity\Enum\GenreCode;
@@ -90,17 +91,16 @@ final class AnimeTest extends TestCase
         $this->assertSame(['mal_id' => 2], $anime->getPluginData(new PluginId('animedb-mal')));
     }
 
-    public function testCopyMetadataFromOverwritesWholeBlob(): void
+    public function testMigrateCarriesMetadataOverAsTheWholeBlob(): void
     {
-        $anime = new TvAnime();
-        $anime->putPluginData(new PluginId('animedb-shikimori'), ['mal_id' => 1]);
-
         $source = new MovieAnime();
-        $source->setDescription('ru', 'Описание');
+        $source->setTitle('Cowboy Bebop: The Movie')
+            ->setWatchStatus(WatchStatus::Plan)
+            ->setDescription('ru', 'Описание');
 
-        $anime->copyMetadataFrom($source);
+        $target = Anime::migrate($source, AnimeType::Tv);
 
-        $this->assertSame(['descriptions' => ['ru' => 'Описание']], $anime->getMetadata());
+        $this->assertSame(['descriptions' => ['ru' => 'Описание']], $target->getMetadata());
     }
 
     public function testGetPluginDataDefaultsToEmptyArray(): void

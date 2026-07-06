@@ -29,38 +29,15 @@ namespace App\Service;
 
 use App\Entity\Anime;
 use App\Entity\Enum\AnimeType;
-use App\Entity\Enum\ProductionStatus;
-use App\Entity\Exception\InvalidAnimeTypeMigrationException;
-use App\Entity\MovieAnime;
-use App\Entity\MusicAnime;
-use App\Entity\OnaAnime;
-use App\Entity\OvaAnime;
-use App\Entity\SpecialAnime;
-use App\Entity\TvAnime;
 use Doctrine\ORM\EntityManagerInterface;
 
 /**
- * Recreates an Anime under a different concrete class, the only mechanism available
- * for changing type across the Movie/Series boundary: that is the only boundary where
- * the persisted field set actually differs (episodesCount/watchedEpisodes exist only
- * on SeriesAnime), so Doctrine's single-table discriminator alone cannot express it.
- *
- * Switching between SeriesAnime leaves (Tv/Ova/Ona/Special/Music) is a same-row
- * discriminator change with no field-set difference and is intentionally out of scope
- * here, see issue #63.
+ * Infrastructure side of an Anime type migration: the actual field-copying and validation
+ * live on Anime::migrate() (domain logic belongs on the entity, not here), this class only
+ * wires that up to Doctrine.
  */
 final class AnimeTypeMigrator
 {
-    /** @var array<value-of<AnimeType>, class-string<Anime>> */
-    private const CLASS_BY_TYPE = [
-        AnimeType::Movie->value => MovieAnime::class,
-        AnimeType::Tv->value => TvAnime::class,
-        AnimeType::Ova->value => OvaAnime::class,
-        AnimeType::Ona->value => OnaAnime::class,
-        AnimeType::Special->value => SpecialAnime::class,
-        AnimeType::Music->value => MusicAnime::class,
-    ];
-
     public function __construct(
         private readonly EntityManagerInterface $entityManager,
     ) {
@@ -71,46 +48,7 @@ final class AnimeTypeMigrator
      */
     public function migrate(Anime $source, AnimeType $targetType): Anime
     {
-        $this->assertMigrationAllowed($source, $targetType);
-
-        $targetClass = self::CLASS_BY_TYPE[$targetType->value];
-        $target = new $targetClass();
-
-        $target->setTitle($source->getTitle())
-            ->setDatePremiere($source->getDatePremiere())
-            ->setDateEnd($source->getDateEnd())
-            ->setDurationMinutes($source->getDurationMinutes())
-            ->setNotes($source->getNotes())
-            ->setUserRating($source->getUserRating())
-            ->copyMetadataFrom($source)
-            ->setCover($source->getCover())
-            ->setStorage($source->getStorage())
-            ->setCountries($source->getCountries())
-            ->setWatchStatus($source->getWatchStatus());
-
-        foreach ($source->getGenreCodes() as $code) {
-            $target->addGenre($code);
-        }
-
-        foreach ($source->getStudios() as $studio) {
-            $target->addStudio($studio);
-        }
-
-        foreach ($source->getLabels() as $label) {
-            $target->addLabel($label);
-        }
-
-        foreach ($source->getNames() as $name) {
-            $target->addName($name->name, $name->type);
-        }
-
-        foreach ($source->getImages() as $image) {
-            $target->addImage($image->source);
-        }
-
-        foreach ($source->getSources() as $link) {
-            $target->addSource($link->url);
-        }
+        $target = Anime::migrate($source, $targetType);
 
         // Persist the copy (and its cascaded genres/names/images/sources) before removing
         // the source, so the ON DELETE CASCADE on anime_id never fires against data we
@@ -121,16 +59,5 @@ final class AnimeTypeMigrator
         $this->entityManager->flush();
 
         return $target;
-    }
-
-    private function assertMigrationAllowed(Anime $source, AnimeType $targetType): void
-    {
-        if (($source instanceof MovieAnime) === (AnimeType::Movie === $targetType)) {
-            throw new InvalidAnimeTypeMigrationException('Type migration is only allowed between the Movie and Series branches');
-        }
-
-        if (ProductionStatus::Announced !== $source->getProductionStatus()) {
-            throw new InvalidAnimeTypeMigrationException('Type migration is only allowed while production status is announced');
-        }
     }
 }
