@@ -184,6 +184,17 @@ final class AnimeTypeMigratorTest extends TestCase
         (new AnimeTypeMigrator($entityManager))->migrate($source, AnimeType::Ova);
     }
 
+    public function testMigrateThrowsWhenTargetIsTheSourceTypeItself(): void
+    {
+        $source = new TvAnime();
+        $source->setTitle('Trigun')->setWatchStatus(WatchStatus::Plan);
+
+        $entityManager = $this->createStub(EntityManagerInterface::class);
+
+        $this->expectException(InvalidAnimeTypeMigrationException::class);
+        (new AnimeTypeMigrator($entityManager))->migrate($source, AnimeType::Tv);
+    }
+
     public function testMigrateThrowsWhenProductionStatusIsOngoing(): void
     {
         $source = new MovieAnime();
