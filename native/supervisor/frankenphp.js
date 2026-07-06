@@ -76,6 +76,7 @@ function buildEnv(appPort, wsPort, meiliPort, meiliKey) {
         DATABASE_URL:     `sqlite:///${paths.getDbPath()}`,
         PHPRC:            paths.getPhpIniDir(),
         APP_RUNTIME_DIR:  paths.getRuntimeDir(),
+        MEDIA_DIR:        paths.getMediaDir(),
         MEILISEARCH_URL:  `http://127.0.0.1:${meiliPort}`,
         MEILISEARCH_KEY:  meiliKey,
     };

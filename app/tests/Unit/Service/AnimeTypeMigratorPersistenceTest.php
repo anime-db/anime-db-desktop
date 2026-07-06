@@ -61,6 +61,7 @@ use PHPUnit\Framework\TestCase;
 final class AnimeTypeMigratorPersistenceTest extends TestCase
 {
     private EntityManager $entityManager;
+    private string $mediaDir;
 
     protected function setUp(): void
     {
@@ -79,6 +80,32 @@ final class AnimeTypeMigratorPersistenceTest extends TestCase
 
         $schemaTool = new SchemaTool($this->entityManager);
         $schemaTool->createSchema($this->entityManager->getMetadataFactory()->getAllMetadata());
+
+        $this->mediaDir = sys_get_temp_dir().'/anime-media-test-'.uniqid();
+        mkdir($this->mediaDir, 0o777, true);
+    }
+
+    protected function tearDown(): void
+    {
+        $this->removeDirectory($this->mediaDir);
+    }
+
+    private function removeDirectory(string $dir): void
+    {
+        if (!is_dir($dir)) {
+            return;
+        }
+
+        foreach (scandir($dir) ?: [] as $entry) {
+            if ($entry === '.' || $entry === '..') {
+                continue;
+            }
+
+            $path = $dir.'/'.$entry;
+            is_dir($path) ? $this->removeDirectory($path) : unlink($path);
+        }
+
+        rmdir($dir);
     }
 
     public function testMigrateFromSeriesToMovieRemovesOldRowAndKeepsChildren(): void
@@ -91,7 +118,7 @@ final class AnimeTypeMigratorPersistenceTest extends TestCase
 
         $sourceId = $this->persistSourceWithChildren($source);
 
-        $migrator = new AnimeTypeMigrator($this->entityManager);
+        $migrator = new AnimeTypeMigrator($this->entityManager, $this->mediaDir);
         $target = $migrator->migrate($source, AnimeType::Movie);
         $targetId = $target->id;
 
@@ -108,7 +135,7 @@ final class AnimeTypeMigratorPersistenceTest extends TestCase
 
         $sourceId = $this->persistSourceWithChildren($source);
 
-        $migrator = new AnimeTypeMigrator($this->entityManager);
+        $migrator = new AnimeTypeMigrator($this->entityManager, $this->mediaDir);
         $target = $migrator->migrate($source, AnimeType::Tv);
         $targetId = $target->id;
 
@@ -193,5 +220,84 @@ final class AnimeTypeMigratorPersistenceTest extends TestCase
         $labelAnime = $labelAnimes->first();
         $this->assertNotFalse($labelAnime);
         $this->assertSame($targetId, $labelAnime->id);
+    }
+
+    public function testMigrateRenamesMediaDirectoryToNewId(): void
+    {
+        $source = new MovieAnime();
+        $source->setTitle('Akira')->setWatchStatus(WatchStatus::Plan)->setCover('cover.jpg');
+
+        $this->entityManager->persist($source);
+        $this->entityManager->flush();
+        $sourceId = $source->id;
+        $this->assertNotNull($sourceId);
+
+        $sourceDir = $this->mediaDir.'/'.$sourceId;
+        mkdir($sourceDir, 0o777, true);
+        file_put_contents($sourceDir.'/cover.jpg', 'fake-cover-bytes');
+
+        $migrator = new AnimeTypeMigrator($this->entityManager, $this->mediaDir);
+        $target = $migrator->migrate($source, AnimeType::Tv);
+        $targetId = $target->id;
+        $this->assertNotNull($targetId);
+        $this->assertNotSame($sourceId, $targetId);
+
+        $this->assertDirectoryDoesNotExist($sourceDir);
+        $targetDir = $this->mediaDir.'/'.$targetId;
+        $this->assertDirectoryExists($targetDir);
+        $this->assertFileExists($targetDir.'/cover.jpg');
+        $this->assertSame('fake-cover-bytes', file_get_contents($targetDir.'/cover.jpg'));
+        $this->assertSame('cover.jpg', $target->getCover());
+    }
+
+    public function testMigrateSucceedsWhenAnimeHasNoMediaDirectory(): void
+    {
+        $source = new MovieAnime();
+        $source->setTitle('Akira')->setWatchStatus(WatchStatus::Plan);
+
+        $this->entityManager->persist($source);
+        $this->entityManager->flush();
+
+        $migrator = new AnimeTypeMigrator($this->entityManager, $this->mediaDir);
+        $target = $migrator->migrate($source, AnimeType::Tv);
+
+        $this->assertInstanceOf(TvAnime::class, $target);
+        $this->assertDirectoryDoesNotExist($this->mediaDir.'/'.$target->id);
+    }
+
+    public function testMigrateRollsBackWhenMediaDirectoryCannotBeMoved(): void
+    {
+        $source = new MovieAnime();
+        $source->setTitle('Akira')->setWatchStatus(WatchStatus::Plan)->setCover('cover.jpg');
+
+        $this->entityManager->persist($source);
+        $this->entityManager->flush();
+        $sourceId = $source->id;
+        $this->assertNotNull($sourceId);
+
+        $sourceDir = $this->mediaDir.'/'.$sourceId;
+        mkdir($sourceDir, 0o777, true);
+        file_put_contents($sourceDir.'/cover.jpg', 'fake-cover-bytes');
+
+        // Occupy every id the new row could plausibly get with a plain file, so
+        // rename(directory, existing-non-directory) fails on every retry.
+        for ($id = $sourceId + 1; $id <= $sourceId + 5; ++$id) {
+            file_put_contents($this->mediaDir.'/'.$id, 'occupied');
+        }
+
+        $connection = $this->entityManager->getConnection();
+        $migrator = new AnimeTypeMigrator($this->entityManager, $this->mediaDir);
+
+        try {
+            $migrator->migrate($source, AnimeType::Tv);
+            $this->fail('Expected migration to throw when the media directory move fails.');
+        } catch (\RuntimeException) {
+            // expected
+        }
+
+        $this->assertSame(1, (int) $connection->fetchOne('SELECT COUNT(*) FROM anime'));
+        $this->assertSame($sourceId, (int) $connection->fetchOne('SELECT id FROM anime'));
+        $this->assertDirectoryExists($sourceDir);
+        $this->assertFileExists($sourceDir.'/cover.jpg');
     }
 }
