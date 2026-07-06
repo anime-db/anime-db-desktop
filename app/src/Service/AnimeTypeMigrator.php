@@ -28,6 +28,7 @@ declare(strict_types=1);
 namespace App\Service;
 
 use App\Entity\Anime;
+use App\Entity\Enum\AnimeType;
 use App\Entity\Enum\ProductionStatus;
 use App\Entity\Exception\InvalidAnimeTypeMigrationException;
 use App\Entity\MovieAnime;
@@ -50,14 +51,14 @@ use Doctrine\ORM\EntityManagerInterface;
  */
 final class AnimeTypeMigrator
 {
-    /** @var list<class-string<Anime>> */
-    private const MIGRATABLE_CLASSES = [
-        MovieAnime::class,
-        TvAnime::class,
-        OvaAnime::class,
-        OnaAnime::class,
-        SpecialAnime::class,
-        MusicAnime::class,
+    /** @var array<value-of<AnimeType>, class-string<Anime>> */
+    private const CLASS_BY_TYPE = [
+        AnimeType::Movie->value => MovieAnime::class,
+        AnimeType::Tv->value => TvAnime::class,
+        AnimeType::Ova->value => OvaAnime::class,
+        AnimeType::Ona->value => OnaAnime::class,
+        AnimeType::Special->value => SpecialAnime::class,
+        AnimeType::Music->value => MusicAnime::class,
     ];
 
     public function __construct(
@@ -66,13 +67,13 @@ final class AnimeTypeMigrator
     }
 
     /**
-     * @param class-string<Anime> $targetClass one of the classes listed in self::MIGRATABLE_CLASSES,
-     *                                         on the opposite side of the Movie/Series boundary from $source
+     * @param AnimeType $targetType must be on the opposite side of the Movie/Series boundary from $source
      */
-    public function migrate(Anime $source, string $targetClass): Anime
+    public function migrate(Anime $source, AnimeType $targetType): Anime
     {
-        $this->assertMigrationAllowed($source, $targetClass);
+        $this->assertMigrationAllowed($source, $targetType);
 
+        $targetClass = self::CLASS_BY_TYPE[$targetType->value];
         $target = new $targetClass();
 
         $target->setTitle($source->getTitle())
@@ -122,13 +123,9 @@ final class AnimeTypeMigrator
         return $target;
     }
 
-    private function assertMigrationAllowed(Anime $source, string $targetClass): void
+    private function assertMigrationAllowed(Anime $source, AnimeType $targetType): void
     {
-        if (!\in_array($targetClass, self::MIGRATABLE_CLASSES, true)) {
-            throw new InvalidAnimeTypeMigrationException(\sprintf('"%s" is not a migratable anime type', $targetClass));
-        }
-
-        if (($source instanceof MovieAnime) === (MovieAnime::class === $targetClass)) {
+        if (($source instanceof MovieAnime) === (AnimeType::Movie === $targetType)) {
             throw new InvalidAnimeTypeMigrationException('Type migration is only allowed between the Movie and Series branches');
         }
 

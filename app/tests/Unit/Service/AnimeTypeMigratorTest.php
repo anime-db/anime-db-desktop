@@ -28,13 +28,12 @@ declare(strict_types=1);
 namespace App\Tests\Unit\Service;
 
 use App\Entity\Enum\AnimeNameType;
+use App\Entity\Enum\AnimeType;
 use App\Entity\Enum\GenreCode;
 use App\Entity\Enum\WatchStatus;
 use App\Entity\Exception\InvalidAnimeTypeMigrationException;
 use App\Entity\Label;
 use App\Entity\MovieAnime;
-use App\Entity\OvaAnime;
-use App\Entity\SeriesAnime;
 use App\Entity\Storage;
 use App\Entity\Studio;
 use App\Entity\TvAnime;
@@ -67,7 +66,7 @@ final class AnimeTypeMigratorTest extends TestCase
         $entityManager = $this->createStub(EntityManagerInterface::class);
         $migrator = new AnimeTypeMigrator($entityManager);
 
-        $target = $migrator->migrate($source, TvAnime::class);
+        $target = $migrator->migrate($source, AnimeType::Tv);
 
         $this->assertInstanceOf(TvAnime::class, $target);
         $this->assertSame('Cowboy Bebop: The Movie', $target->getTitle());
@@ -91,7 +90,7 @@ final class AnimeTypeMigratorTest extends TestCase
         $entityManager = $this->createStub(EntityManagerInterface::class);
         $migrator = new AnimeTypeMigrator($entityManager);
 
-        $target = $migrator->migrate($source, MovieAnime::class);
+        $target = $migrator->migrate($source, AnimeType::Movie);
 
         $this->assertInstanceOf(MovieAnime::class, $target);
         $this->assertSame('Trigun', $target->getTitle());
@@ -105,7 +104,7 @@ final class AnimeTypeMigratorTest extends TestCase
         $entityManager = $this->createStub(EntityManagerInterface::class);
         $migrator = new AnimeTypeMigrator($entityManager);
 
-        $target = $migrator->migrate($source, TvAnime::class);
+        $target = $migrator->migrate($source, AnimeType::Tv);
 
         $this->assertSame(124, $target->getDurationMinutes());
     }
@@ -130,7 +129,7 @@ final class AnimeTypeMigratorTest extends TestCase
         $entityManager = $this->createStub(EntityManagerInterface::class);
         $migrator = new AnimeTypeMigrator($entityManager);
 
-        $target = $migrator->migrate($source, TvAnime::class);
+        $target = $migrator->migrate($source, AnimeType::Tv);
 
         $this->assertSame([GenreCode::Action], $target->getGenreCodes());
         $this->assertTrue($target->getStudios()->contains($studio));
@@ -160,7 +159,7 @@ final class AnimeTypeMigratorTest extends TestCase
         $entityManager->expects($this->once())->method('remove')->with($source);
         $entityManager->expects($this->once())->method('flush');
 
-        (new AnimeTypeMigrator($entityManager))->migrate($source, TvAnime::class);
+        (new AnimeTypeMigrator($entityManager))->migrate($source, AnimeType::Tv);
     }
 
     public function testMigrateThrowsWhenTargetIsSameBranchAsMovie(): void
@@ -171,7 +170,7 @@ final class AnimeTypeMigratorTest extends TestCase
         $entityManager = $this->createStub(EntityManagerInterface::class);
 
         $this->expectException(InvalidAnimeTypeMigrationException::class);
-        (new AnimeTypeMigrator($entityManager))->migrate($source, MovieAnime::class);
+        (new AnimeTypeMigrator($entityManager))->migrate($source, AnimeType::Movie);
     }
 
     public function testMigrateThrowsWhenTargetIsSameBranchAsSeries(): void
@@ -182,18 +181,7 @@ final class AnimeTypeMigratorTest extends TestCase
         $entityManager = $this->createStub(EntityManagerInterface::class);
 
         $this->expectException(InvalidAnimeTypeMigrationException::class);
-        (new AnimeTypeMigrator($entityManager))->migrate($source, OvaAnime::class);
-    }
-
-    public function testMigrateThrowsWhenTargetClassIsNotMigratable(): void
-    {
-        $source = new MovieAnime();
-        $source->setTitle('Akira')->setWatchStatus(WatchStatus::Plan);
-
-        $entityManager = $this->createStub(EntityManagerInterface::class);
-
-        $this->expectException(InvalidAnimeTypeMigrationException::class);
-        (new AnimeTypeMigrator($entityManager))->migrate($source, SeriesAnime::class);
+        (new AnimeTypeMigrator($entityManager))->migrate($source, AnimeType::Ova);
     }
 
     public function testMigrateThrowsWhenProductionStatusIsOngoing(): void
@@ -206,7 +194,7 @@ final class AnimeTypeMigratorTest extends TestCase
         $entityManager = $this->createStub(EntityManagerInterface::class);
 
         $this->expectException(InvalidAnimeTypeMigrationException::class);
-        (new AnimeTypeMigrator($entityManager))->migrate($source, TvAnime::class);
+        (new AnimeTypeMigrator($entityManager))->migrate($source, AnimeType::Tv);
     }
 
     public function testMigrateThrowsWhenProductionStatusIsReleased(): void
@@ -220,6 +208,6 @@ final class AnimeTypeMigratorTest extends TestCase
         $entityManager = $this->createStub(EntityManagerInterface::class);
 
         $this->expectException(InvalidAnimeTypeMigrationException::class);
-        (new AnimeTypeMigrator($entityManager))->migrate($source, TvAnime::class);
+        (new AnimeTypeMigrator($entityManager))->migrate($source, AnimeType::Tv);
     }
 }
