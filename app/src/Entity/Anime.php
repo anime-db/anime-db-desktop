@@ -319,6 +319,20 @@ abstract class Anime
     }
 
     /**
+     * Overwrites the whole metadata blob at once, unlike putPluginData()/setDescription()
+     * which merge into a namespaced slice. Needed to carry metadata as-is across a
+     * Movie<->Series type migration (see AnimeTypeMigrator).
+     *
+     * @param array<string, mixed>|null $metadata
+     */
+    public function setMetadata(?array $metadata): self
+    {
+        $this->metadata = $metadata;
+
+        return $this;
+    }
+
+    /**
      * Merges $data into this plugin's own namespaced slice of metadata, leaving the data
      * of every other plugin (and descriptions{}) untouched.
      *
