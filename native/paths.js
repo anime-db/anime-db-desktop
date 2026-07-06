@@ -36,4 +36,5 @@ module.exports = {
     getAppRootDir:         appRootDir,
     getRuntimeDir:         () => path.join(userDataDir(), 'var'),
     getMeilisearchKeyPath: () => path.join(userDataDir(), 'meilisearch-key.txt'),
+    getMediaDir:           () => path.join(userDataDir(), 'media'),
 };
