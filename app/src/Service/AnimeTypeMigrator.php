@@ -33,8 +33,9 @@ use Doctrine\ORM\EntityManagerInterface;
 
 /**
  * Infrastructure side of an Anime type migration: the actual field-copying and validation
- * live on Anime::migrate() (domain logic belongs on the entity, not here), this class only
- * wires that up to Doctrine.
+ * live on Anime::migrate() (domain logic belongs on the entity, not here), so migration is
+ * driven from the source entity itself ($source->migrate($targetType)) rather than a static
+ * factory call; this class only wires that up to Doctrine.
  */
 final class AnimeTypeMigrator
 {
@@ -48,7 +49,7 @@ final class AnimeTypeMigrator
      */
     public function migrate(Anime $source, AnimeType $targetType): Anime
     {
-        $target = Anime::migrate($source, $targetType);
+        $target = $source->migrate($targetType);
 
         // Persist the copy (and its cascaded genres/names/images/sources) before removing
         // the source, so the ON DELETE CASCADE on anime_id never fires against data we
