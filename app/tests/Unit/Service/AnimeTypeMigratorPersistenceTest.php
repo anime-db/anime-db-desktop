@@ -96,6 +96,7 @@ final class AnimeTypeMigratorPersistenceTest extends TestCase
         $targetId = $target->id;
 
         $this->assertOldRowGoneAndChildrenIntact($sourceId, $targetId, MovieAnime::class);
+        $this->assertSame(24, $target->getDurationMinutes());
     }
 
     public function testMigrateFromMovieToExplicitSeriesClassRemovesOldRowAndKeepsChildren(): void
