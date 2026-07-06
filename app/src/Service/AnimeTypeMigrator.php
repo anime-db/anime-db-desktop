@@ -81,7 +81,7 @@ final class AnimeTypeMigrator
             ->setDurationMinutes($source->getDurationMinutes())
             ->setNotes($source->getNotes())
             ->setUserRating($source->getUserRating())
-            ->setMetadata($source->getMetadata())
+            ->copyMetadataFrom($source)
             ->setCover($source->getCover())
             ->setStorage($source->getStorage())
             ->setCountries($source->getCountries())

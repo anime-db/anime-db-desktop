@@ -39,6 +39,7 @@ use App\Entity\Exception\InvalidEpisodeCountException;
 use App\Entity\Exception\InvalidNameException;
 use App\Entity\Exception\InvalidWatchStatusException;
 use App\Entity\Label;
+use App\Entity\MovieAnime;
 use App\Entity\Storage;
 use App\Entity\Studio;
 use App\Entity\TvAnime;
@@ -89,12 +90,15 @@ final class AnimeTest extends TestCase
         $this->assertSame(['mal_id' => 2], $anime->getPluginData(new PluginId('animedb-mal')));
     }
 
-    public function testSetMetadataOverwritesWholeBlob(): void
+    public function testCopyMetadataFromOverwritesWholeBlob(): void
     {
         $anime = new TvAnime();
         $anime->putPluginData(new PluginId('animedb-shikimori'), ['mal_id' => 1]);
 
-        $anime->setMetadata(['descriptions' => ['ru' => 'Описание']]);
+        $source = new MovieAnime();
+        $source->setDescription('ru', 'Описание');
+
+        $anime->copyMetadataFrom($source);
 
         $this->assertSame(['descriptions' => ['ru' => 'Описание']], $anime->getMetadata());
     }

@@ -320,16 +320,27 @@ abstract class Anime
 
     /**
      * Overwrites the whole metadata blob at once, unlike putPluginData()/setDescription()
-     * which merge into a namespaced slice. Needed to carry metadata as-is across a
-     * Movie<->Series type migration (see AnimeTypeMigrator).
+     * which merge into a namespaced slice. Kept protected so no caller outside this class
+     * can clobber another plugin's data or descriptions{}; copyMetadataFrom() below is the
+     * only entry point allowed to invoke it, for the Movie<->Series migration use case
+     * (see AnimeTypeMigrator).
      *
      * @param array<string, mixed>|null $metadata
      */
-    public function setMetadata(?array $metadata): self
+    protected function setMetadata(?array $metadata): self
     {
         $this->metadata = $metadata;
 
         return $this;
+    }
+
+    /**
+     * Copies the metadata blob as-is from another Anime, used only when recreating this
+     * anime under a different concrete class (see AnimeTypeMigrator).
+     */
+    public function copyMetadataFrom(self $source): self
+    {
+        return $this->setMetadata($source->getMetadata());
     }
 
     /**
