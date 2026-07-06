@@ -9,6 +9,10 @@
 /vendor/
 ###< symfony/framework-bundle ###
 
+###> app.media_dir dev default ###
+/public/media/
+###< app.media_dir dev default ###
+
 ###> phpunit/phpunit ###
 /phpunit.xml
 /.phpunit.cache/

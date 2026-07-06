@@ -10,7 +10,7 @@ parameters:
     # In production Electron passes MEDIA_DIR (see native/supervisor/frankenphp.js), pointing
     # at %AppData%/media/ — the directory native/protocols/app-media.js serves covers/images
     # from. This default only applies in dev, where there's no Electron process around it.
-    app.media_dir.dev_default: '%kernel.project_dir%/var/media'
+    app.media_dir.dev_default: '%kernel.project_dir%/public/media'
     app.media_dir: '%env(default:app.media_dir.dev_default:MEDIA_DIR)%'
 
 services:
