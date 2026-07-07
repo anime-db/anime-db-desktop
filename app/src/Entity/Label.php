@@ -45,9 +45,13 @@ class Label
     #[ORM\ManyToMany(targetEntity: Anime::class, mappedBy: 'labels')]
     private Collection $animes;
 
-    public function __construct()
+    public function __construct(?string $name = null)
     {
         $this->animes = new ArrayCollection();
+
+        if (null !== $name) {
+            $this->rename($name);
+        }
     }
 
     public function rename(string $name): void

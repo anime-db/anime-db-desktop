@@ -1,0 +1,70 @@
+{#
+ # AnimeDb package.
+ #
+ # @author    Peter Gribanov <info@peter-gribanov.ru>
+ # @copyright Copyright (c) 2026, Peter Gribanov
+ # @license   https://gnu.org GPL-3.0-or-later
+ #
+ # This program is free software: you can redistribute it and/or modify
+ # it under the terms of the GNU General Public License as published by
+ # the Free Software Foundation, either version 3 of the License, or
+ # (at your option) any later version.
+ #
+ # This program is distributed in the hope that it will be useful,
+ # but WITHOUT ANY WARRANTY; without even the implied warranty of
+ # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ # GNU General Public License for more details.
+ #
+ # You should have received a copy of the GNU General Public License
+ # along with this program. If not, see <https://gnu.org>.
+ #}
+{% extends 'base.html.twig' %}
+
+{% block title %}Метки — Настройки — AnimeDB{% endblock %}
+
+{% block body %}
+    <p><a href="{{ path('settings_index') }}">← Настройки</a></p>
+    <h1>Метки</h1>
+
+    {% if error == 'empty_name' %}
+        <p class="error">Имя метки не может быть пустым.</p>
+    {% endif %}
+
+    <form method="post" action="{{ path('settings_labels_add') }}">
+        <input type="hidden" name="_token" value="{{ csrf_token('settings_labels_add') }}">
+        <input type="text" name="name" maxlength="32" required placeholder="Название метки">
+        <button type="submit">Добавить</button>
+    </form>
+
+    {% if labels is empty %}
+        <p>Меток пока нет.</p>
+    {% else %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Название</th>
+                    <th>Действия</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for label in labels %}
+                    <tr>
+                        <td>
+                            <form method="post" action="{{ path('settings_labels_rename', {id: label.id}) }}">
+                                <input type="hidden" name="_token" value="{{ csrf_token('settings_labels_rename_' ~ label.id) }}">
+                                <input type="text" name="name" value="{{ label.name }}" maxlength="32" required>
+                                <button type="submit">Сохранить</button>
+                            </form>
+                        </td>
+                        <td>
+                            <form method="post" action="{{ path('settings_labels_delete', {id: label.id}) }}" onsubmit="return confirm('Удалить метку «{{ label.name|e('js') }}»?');">
+                                <input type="hidden" name="_token" value="{{ csrf_token('settings_labels_delete_' ~ label.id) }}">
+                                <button type="submit">Удалить</button>
+                            </form>
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% endif %}
+{% endblock %}
