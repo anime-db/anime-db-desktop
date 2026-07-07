@@ -66,10 +66,8 @@ final class LabelController
     {
         $this->assertValidCsrfToken('settings_labels_add', $request);
 
-        $label = new Label();
-
         try {
-            $label->rename((string) $request->request->get('name', ''));
+            $label = new Label((string) $request->request->get('name', ''));
         } catch (InvalidNameException) {
             return new RedirectResponse($this->urlGenerator->generate('settings_labels_index', ['error' => 'empty_name']));
         }
