@@ -48,7 +48,6 @@ use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\EntityManager;
 use Doctrine\ORM\ORMSetup;
 use Doctrine\ORM\Tools\SchemaTool;
-use Doctrine\Persistence\ManagerRegistry;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -85,9 +84,7 @@ final class AnimeRepositoryTest extends TestCase
         $schemaTool = new SchemaTool($this->entityManager);
         $schemaTool->createSchema($this->entityManager->getMetadataFactory()->getAllMetadata());
 
-        $registry = $this->createStub(ManagerRegistry::class);
-        $registry->method('getManagerForClass')->willReturn($this->entityManager);
-        $this->repository = new AnimeRepository($registry);
+        $this->repository = new AnimeRepository($this->entityManager);
 
         $this->seedFixtures();
     }

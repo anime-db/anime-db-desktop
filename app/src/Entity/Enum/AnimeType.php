@@ -27,6 +27,14 @@ declare(strict_types=1);
 
 namespace App\Entity\Enum;
 
+use App\Entity\Anime;
+use App\Entity\MovieAnime;
+use App\Entity\MusicAnime;
+use App\Entity\OnaAnime;
+use App\Entity\OvaAnime;
+use App\Entity\SpecialAnime;
+use App\Entity\TvAnime;
+
 enum AnimeType: string
 {
     case Tv = 'tv';
@@ -35,4 +43,22 @@ enum AnimeType: string
     case Ona = 'ona';
     case Special = 'special';
     case Music = 'music';
+
+    /**
+     * Single source of truth for the type-to-class mapping: both Anime::migrate() and
+     * AnimeRepository need it, and it must not drift between the two (issue #74 review).
+     *
+     * @return class-string<Anime>
+     */
+    public function entityClass(): string
+    {
+        return match ($this) {
+            self::Tv => TvAnime::class,
+            self::Movie => MovieAnime::class,
+            self::Ova => OvaAnime::class,
+            self::Ona => OnaAnime::class,
+            self::Special => SpecialAnime::class,
+            self::Music => MusicAnime::class,
+        };
+    }
 }

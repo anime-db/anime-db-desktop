@@ -30,17 +30,9 @@ namespace App\Repository;
 use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
 use App\Entity\Anime;
-use App\Entity\Enum\AnimeType;
-use App\Entity\MovieAnime;
-use App\Entity\MusicAnime;
-use App\Entity\OnaAnime;
-use App\Entity\OvaAnime;
-use App\Entity\SpecialAnime;
-use App\Entity\TvAnime;
 use App\Entity\ValueObject\Rating;
-use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
+use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\QueryBuilder;
-use Doctrine\Persistence\ManagerRegistry;
 
 /**
  * Low-level query builder for the anime list (issue #74). It never accepts a raw column
@@ -49,22 +41,14 @@ use Doctrine\Persistence\ManagerRegistry;
  *
  * countByFilter() and findByFilter() both build on createFilteredQueryBuilder() so the
  * "total" and "select" queries can never drift apart on which rows match the filter.
+ *
+ * A plain service, not a Doctrine entity repository (see LabelRepository for the same
+ * pattern): Anime is not bound to it via #[ORM\Entity(repositoryClass: ...)].
  */
-class AnimeRepository extends ServiceEntityRepository
+class AnimeRepository
 {
-    /** @var array<value-of<AnimeType>, class-string<Anime>> */
-    private const TYPE_CLASS = [
-        AnimeType::Movie->value => MovieAnime::class,
-        AnimeType::Tv->value => TvAnime::class,
-        AnimeType::Ova->value => OvaAnime::class,
-        AnimeType::Ona->value => OnaAnime::class,
-        AnimeType::Special->value => SpecialAnime::class,
-        AnimeType::Music->value => MusicAnime::class,
-    ];
-
-    public function __construct(ManagerRegistry $registry)
+    public function __construct(private readonly EntityManagerInterface $entityManager)
     {
-        parent::__construct($registry, Anime::class);
     }
 
     public function countByFilter(AnimeListFilter $filter): int
@@ -90,12 +74,12 @@ class AnimeRepository extends ServiceEntityRepository
 
     private function createFilteredQueryBuilder(AnimeListFilter $filter): QueryBuilder
     {
-        $qb = $this->createQueryBuilder('a')
+        $qb = $this->entityManager->getRepository(Anime::class)->createQueryBuilder('a')
             ->andWhere('a.watchStatus = :watchStatus')
             ->setParameter('watchStatus', $filter->watchStatus);
 
         if (null !== $filter->type) {
-            $qb->andWhere($qb->expr()->isInstanceOf('a', self::TYPE_CLASS[$filter->type->value]));
+            $qb->andWhere($qb->expr()->isInstanceOf('a', $filter->type->entityClass()));
         }
 
         if (null !== $filter->country) {

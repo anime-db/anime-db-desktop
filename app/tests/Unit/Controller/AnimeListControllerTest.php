@@ -35,6 +35,7 @@ use App\Entity\Enum\WatchStatus;
 use App\Entity\MovieAnime;
 use App\Entity\TvAnime;
 use App\Repository\AnimeRepository;
+use App\Service\AnimeListRequestParser;
 use App\Service\AnimeListSortResolver;
 use App\Service\AppSettingsProvider;
 use Doctrine\DBAL\DriverManager;
@@ -42,7 +43,6 @@ use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\EntityManager;
 use Doctrine\ORM\ORMSetup;
 use Doctrine\ORM\Tools\SchemaTool;
-use Doctrine\Persistence\ManagerRegistry;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
@@ -76,12 +76,15 @@ final class AnimeListControllerTest extends TestCase
         $schemaTool = new SchemaTool($this->entityManager);
         $schemaTool->createSchema($this->entityManager->getMetadataFactory()->getAllMetadata());
 
-        $registry = $this->createStub(ManagerRegistry::class);
-        $registry->method('getManagerForClass')->willReturn($this->entityManager);
-        $repository = new AnimeRepository($registry);
+        $repository = new AnimeRepository($this->entityManager);
 
         $configPath = sys_get_temp_dir().'/anime-config-test-'.uniqid().'.json';
-        $this->controller = new AnimeListController($repository, new AnimeListSortResolver(), new AppSettingsProvider($configPath));
+        $this->controller = new AnimeListController(
+            $repository,
+            new AnimeListRequestParser(),
+            new AnimeListSortResolver(),
+            new AppSettingsProvider($configPath),
+        );
 
         for ($i = 1; $i <= 5; ++$i) {
             $tv = new TvAnime();

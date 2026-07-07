@@ -40,12 +40,11 @@ use App\Entity\Exception\InvalidNameException;
 use App\Entity\Exception\InvalidWatchStatusException;
 use App\Entity\ValueObject\PluginId;
 use App\Entity\ValueObject\Rating;
-use App\Repository\AnimeRepository;
 use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
 use Doctrine\ORM\Mapping as ORM;
 
-#[ORM\Entity(repositoryClass: AnimeRepository::class)]
+#[ORM\Entity]
 #[ORM\InheritanceType('SINGLE_TABLE')]
 #[ORM\DiscriminatorColumn(name: 'type', length: 16, enumType: AnimeType::class)]
 #[ORM\DiscriminatorMap([
@@ -62,16 +61,6 @@ abstract class Anime
      * Fallback locale for getSummary() when the requested UI locale has no description.
      */
     private const FALLBACK_LOCALE = 'en';
-
-    /** @var array<value-of<AnimeType>, class-string<self>> */
-    private const CLASS_BY_TYPE = [
-        AnimeType::Movie->value => MovieAnime::class,
-        AnimeType::Tv->value => TvAnime::class,
-        AnimeType::Ova->value => OvaAnime::class,
-        AnimeType::Ona->value => OnaAnime::class,
-        AnimeType::Special->value => SpecialAnime::class,
-        AnimeType::Music->value => MusicAnime::class,
-    ];
 
     #[ORM\Id, ORM\GeneratedValue, ORM\Column]
     public private(set) ?int $id = null;
@@ -300,7 +289,7 @@ abstract class Anime
             throw new InvalidAnimeTypeMigrationException('Type migration is only allowed while production status is announced');
         }
 
-        $targetClass = self::CLASS_BY_TYPE[$targetType->value];
+        $targetClass = $targetType->entityClass();
         $target = new $targetClass();
 
         $target->setTitle($this->title)
