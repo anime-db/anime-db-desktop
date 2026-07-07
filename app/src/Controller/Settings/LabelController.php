@@ -82,7 +82,7 @@ final class LabelController
     {
         $this->assertValidCsrfToken('settings_labels_delete', $label, $request);
 
-        foreach ($label->getAnimes()->toArray() as $anime) {
+        foreach ($label->getAnimes() as $anime) {
             $anime->removeLabel($label);
         }
 
