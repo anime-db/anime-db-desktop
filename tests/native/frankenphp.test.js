@@ -28,6 +28,7 @@ jest.mock('../../native/paths', () => ({
     getPhpIniPath:         jest.fn(() => '/fake/userData/php.ini'),
     getRuntimeDir:         jest.fn(() => '/fake/userData/var'),
     getMediaDir:           jest.fn(() => '/fake/userData/media'),
+    getConfigPath:         jest.fn(() => '/fake/userData/config.json'),
     getMeilisearchDataDir: jest.fn(() => '/fake/userData/meilisearch'),
     getMeilisearchKeyPath: jest.fn(() => '/fake/userData/meilisearch-key.txt'),
     getUserDataDir:        jest.fn(() => '/fake/userData'),
@@ -90,6 +91,11 @@ describe('buildEnv', () => {
     test('includes MEDIA_DIR pointing to the media dir', () => {
         const env = buildEnv(8000, 9000, 7700, 'test-key');
         expect(env.MEDIA_DIR).toBe('/fake/userData/media');
+    });
+
+    test('includes CONFIG_PATH pointing to config.json', () => {
+        const env = buildEnv(8000, 9000, 7700, 'test-key');
+        expect(env.CONFIG_PATH).toBe('/fake/userData/config.json');
     });
 
     test('includes MEILISEARCH_URL using the given meiliPort', () => {

@@ -40,11 +40,12 @@ use App\Entity\Exception\InvalidNameException;
 use App\Entity\Exception\InvalidWatchStatusException;
 use App\Entity\ValueObject\PluginId;
 use App\Entity\ValueObject\Rating;
+use App\Repository\AnimeRepository;
 use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
 use Doctrine\ORM\Mapping as ORM;
 
-#[ORM\Entity]
+#[ORM\Entity(repositoryClass: AnimeRepository::class)]
 #[ORM\InheritanceType('SINGLE_TABLE')]
 #[ORM\DiscriminatorColumn(name: 'type', length: 16, enumType: AnimeType::class)]
 #[ORM\DiscriminatorMap([

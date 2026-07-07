@@ -69,6 +69,10 @@ test('getMeilisearchKeyPath returns meilisearch-key.txt inside userData', () => 
     expect(paths.getMeilisearchKeyPath()).toBe(path.join(USER_DATA, 'meilisearch-key.txt'));
 });
 
+test('getConfigPath returns config.json inside userData', () => {
+    expect(paths.getConfigPath()).toBe(path.join(USER_DATA, 'config.json'));
+});
+
 test('all path functions reflect a different userData value (fallback scenario)', () => {
     const OTHER = '/other/AppData/AnimeDB';
     app.getPath.mockReturnValue(OTHER);

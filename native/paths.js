@@ -37,4 +37,5 @@ module.exports = {
     getRuntimeDir:         () => path.join(userDataDir(), 'var'),
     getMeilisearchKeyPath: () => path.join(userDataDir(), 'meilisearch-key.txt'),
     getMediaDir:           () => path.join(userDataDir(), 'media'),
+    getConfigPath:         () => path.join(userDataDir(), 'config.json'),
 };
