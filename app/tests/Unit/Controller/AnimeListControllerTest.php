@@ -32,6 +32,7 @@ use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
 use App\Entity\Enum\GenreCode;
 use App\Entity\Enum\WatchStatus;
+use App\Entity\Label;
 use App\Entity\MovieAnime;
 use App\Entity\TvAnime;
 use App\Repository\AnimeRepository;
@@ -139,6 +140,23 @@ final class AnimeListControllerTest extends TestCase
 
         $expectedPages = (int) ceil($data['total'] / $data['limit']);
         $this->assertSame(3, $expectedPages);
+    }
+
+    public function testSerializesLabelNamesForListCard(): void
+    {
+        $label = new Label('Family favourite');
+        $this->entityManager->persist($label);
+
+        $movie = new MovieAnime();
+        $movie->setTitle('Labelled Movie')->setWatchStatus(WatchStatus::Watching)->addLabel($label);
+        $this->entityManager->persist($movie);
+        $this->entityManager->flush();
+
+        $response = $this->controller->list(new Request(['watch_status' => 'watching']));
+        $data = json_decode((string) $response->getContent(), true);
+
+        $labelled = array_values(array_filter($data['items'], static fn (array $item): bool => 'Labelled Movie' === $item['title']));
+        $this->assertSame(['Family favourite'], $labelled[0]['labels']);
     }
 
     public function testDefaultsToInfiniteScrollPaginationMode(): void
