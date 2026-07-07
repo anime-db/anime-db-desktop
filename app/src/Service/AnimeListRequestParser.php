@@ -190,13 +190,13 @@ final class AnimeListRequestParser
         return $date;
     }
 
-    private function assertScalarParam(Request $request, string $name): string|int|float|bool|null
+    /**
+     * Request::query is an InputBag: it already rejects a non-scalar value (throwing
+     * Symfony's own BadRequestException) before this method ever sees it, so it can only
+     * ever return a string or null.
+     */
+    private function assertScalarParam(Request $request, string $name): ?string
     {
-        $raw = $request->query->get($name);
-        if (\is_array($raw)) {
-            throw new BadRequestHttpException(\sprintf('"%s" must be a single value, not a list', $name));
-        }
-
-        return $raw;
+        return $request->query->get($name);
     }
 }

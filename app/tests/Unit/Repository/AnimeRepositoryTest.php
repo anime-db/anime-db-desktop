@@ -144,9 +144,21 @@ final class AnimeRepositoryTest extends TestCase
         $this->entityManager->clear();
 
         // Re-fetch the managed studio/label instances after clear() so filters below can use their ids.
-        $this->sunrise = $this->entityManager->getRepository(Studio::class)->findOneBy(['name' => 'Sunrise']);
-        $this->toei = $this->entityManager->getRepository(Studio::class)->findOneBy(['name' => 'Toei']);
-        $this->favorite = $this->entityManager->getRepository(Label::class)->findOneBy(['name' => 'favorite']);
+        $this->sunrise = $this->entityManager->getRepository(Studio::class)->findOneBy(['name' => 'Sunrise'])
+            ?? throw new \LogicException('Sunrise studio fixture must exist after flush()');
+        $this->toei = $this->entityManager->getRepository(Studio::class)->findOneBy(['name' => 'Toei'])
+            ?? throw new \LogicException('Toei studio fixture must exist after flush()');
+        $this->favorite = $this->entityManager->getRepository(Label::class)->findOneBy(['name' => 'favorite'])
+            ?? throw new \LogicException('favorite label fixture must exist after flush()');
+    }
+
+    /**
+     * Studio/Label ids are nullable at the type level (unset before persist); the fixtures
+     * above are always persisted and flushed first, so this narrows the type for the filters below.
+     */
+    private static function requireId(Studio|Label $entity): int
+    {
+        return $entity->id ?? throw new \LogicException('entity id must be set after persisting');
     }
 
     private function defaultSort(): AnimeListSort
@@ -204,18 +216,18 @@ final class AnimeRepositoryTest extends TestCase
     {
         $filter = new AnimeListFilter(
             watchStatus: WatchStatus::Watching,
-            studioIds: [$this->sunrise->id, $this->toei->id],
+            studioIds: [self::requireId($this->sunrise), self::requireId($this->toei)],
         );
 
         $this->assertEqualsCanonicalizing(['Trigun', 'A Comedy Movie', 'Drama Series'], $this->titlesOf($filter));
 
-        $sunriseOnly = new AnimeListFilter(watchStatus: WatchStatus::Watching, studioIds: [$this->sunrise->id]);
+        $sunriseOnly = new AnimeListFilter(watchStatus: WatchStatus::Watching, studioIds: [self::requireId($this->sunrise)]);
         $this->assertSame(['Trigun'], $this->titlesOf($sunriseOnly));
     }
 
     public function testFilterByLabelsUsesOrSemantics(): void
     {
-        $filter = new AnimeListFilter(watchStatus: WatchStatus::Watching, labelIds: [$this->favorite->id]);
+        $filter = new AnimeListFilter(watchStatus: WatchStatus::Watching, labelIds: [self::requireId($this->favorite)]);
 
         $this->assertEqualsCanonicalizing(['Trigun', 'Drama Series'], $this->titlesOf($filter));
     }
