@@ -89,6 +89,53 @@ final class LabelControllerTest extends TestCase
         $this->assertSame(200, $response->getStatusCode());
     }
 
+    public function testAddCreatesAndPersistsLabel(): void
+    {
+        $entityManager = $this->createMock(EntityManagerInterface::class);
+        $entityManager->expects($this->once())->method('persist')->with($this->isInstanceOf(Label::class));
+        $entityManager->expects($this->once())->method('flush');
+
+        $controller = $this->createController(entityManager: $entityManager);
+        $request = Request::create('/settings/labels', 'POST', ['name' => 'new-label', '_token' => 'token']);
+
+        $controller->add($request);
+    }
+
+    public function testAddWithEmptyNameDoesNotPersistAndRedirectsWithError(): void
+    {
+        $entityManager = $this->createMock(EntityManagerInterface::class);
+        $entityManager->expects($this->never())->method('persist');
+        $entityManager->expects($this->never())->method('flush');
+
+        $router = $this->createMock(UrlGeneratorInterface::class);
+        $router->expects($this->once())
+            ->method('generate')
+            ->with('settings_labels_index', ['error' => 'empty_name'])
+            ->willReturn('/settings/labels?error=empty_name');
+
+        $controller = $this->createController(entityManager: $entityManager, urlGenerator: $router);
+        $request = Request::create('/settings/labels', 'POST', ['name' => '   ', '_token' => 'token']);
+
+        $response = $controller->add($request);
+
+        $this->assertSame('/settings/labels?error=empty_name', $response->getTargetUrl());
+    }
+
+    public function testAddRejectsInvalidCsrfToken(): void
+    {
+        $csrf = $this->createStub(CsrfTokenManagerInterface::class);
+        $csrf->method('isTokenValid')->willReturn(false);
+
+        $entityManager = $this->createMock(EntityManagerInterface::class);
+        $entityManager->expects($this->never())->method('persist');
+
+        $controller = $this->createController(entityManager: $entityManager, csrfTokenManager: $csrf);
+        $request = Request::create('/settings/labels', 'POST', ['name' => 'new-label', '_token' => 'bad']);
+
+        $this->expectException(BadRequestHttpException::class);
+        $controller->add($request);
+    }
+
     public function testRenameUpdatesLabelName(): void
     {
         $label = new Label();

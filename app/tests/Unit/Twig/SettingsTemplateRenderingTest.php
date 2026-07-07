@@ -90,6 +90,7 @@ final class SettingsTemplateRenderingTest extends KernelTestCase
     public function testLabelIndexRendersEmptyStateWithoutErrors(): void
     {
         self::bootKernel();
+        $this->pushRequestWithSession();
 
         /** @var Environment $twig */
         $twig = self::getContainer()->get('twig');

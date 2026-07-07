@@ -61,10 +61,29 @@ final class LabelController
         ]));
     }
 
+    #[Route('/settings/labels', name: 'settings_labels_add', methods: ['POST'])]
+    public function add(Request $request): RedirectResponse
+    {
+        $this->assertValidCsrfToken('settings_labels_add', $request);
+
+        $label = new Label();
+
+        try {
+            $label->rename((string) $request->request->get('name', ''));
+        } catch (InvalidNameException) {
+            return new RedirectResponse($this->urlGenerator->generate('settings_labels_index', ['error' => 'empty_name']));
+        }
+
+        $this->entityManager->persist($label);
+        $this->entityManager->flush();
+
+        return new RedirectResponse($this->urlGenerator->generate('settings_labels_index'));
+    }
+
     #[Route('/settings/labels/{id}/rename', name: 'settings_labels_rename', methods: ['POST'])]
     public function rename(Label $label, Request $request): RedirectResponse
     {
-        $this->assertValidCsrfToken('settings_labels_rename', $label, $request);
+        $this->assertValidCsrfToken('settings_labels_rename_'.$label->id, $request);
 
         try {
             $label->rename((string) $request->request->get('name', ''));
@@ -80,7 +99,7 @@ final class LabelController
     #[Route('/settings/labels/{id}/delete', name: 'settings_labels_delete', methods: ['POST'])]
     public function delete(Label $label, Request $request): RedirectResponse
     {
-        $this->assertValidCsrfToken('settings_labels_delete', $label, $request);
+        $this->assertValidCsrfToken('settings_labels_delete_'.$label->id, $request);
 
         foreach ($label->getAnimes() as $anime) {
             $anime->removeLabel($label);
@@ -92,9 +111,9 @@ final class LabelController
         return new RedirectResponse($this->urlGenerator->generate('settings_labels_index'));
     }
 
-    private function assertValidCsrfToken(string $tokenId, Label $label, Request $request): void
+    private function assertValidCsrfToken(string $tokenId, Request $request): void
     {
-        $token = new CsrfToken($tokenId.'_'.$label->id, (string) $request->request->get('_token'));
+        $token = new CsrfToken($tokenId, (string) $request->request->get('_token'));
         if (!$this->csrfTokenManager->isTokenValid($token)) {
             throw new BadRequestHttpException('Invalid CSRF token.');
         }
