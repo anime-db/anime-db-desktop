@@ -29,6 +29,29 @@ jobs:
         run: vendor/bin/phpunit
         working-directory: app
 
+  translations-consistency:
+    name: Translations consistency
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          tools: composer
+          coverage: none
+          extensions: apcu
+          ini-values: apc.enable_cli=1
+
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist
+        working-directory: app
+
+      - name: Check ru/en translation keys match
+        run: vendor/bin/phpunit --filter CatalogTranslationsTest
+        working-directory: app
+
   php-cs-fixer:
     name: PHP-CS-Fixer
     runs-on: ubuntu-latest
