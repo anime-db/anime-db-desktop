@@ -27,6 +27,7 @@
         "doctrine/doctrine-migrations-bundle": "^4.0",
         "doctrine/orm": "^3.3",
         "meilisearch/meilisearch-php": "^1.10",
+        "symfony/asset": "8.1.*",
         "symfony/console": "8.1.*",
         "symfony/dotenv": "8.1.*",
         "symfony/flex": "^2",
@@ -34,6 +35,7 @@
         "symfony/http-client": "8.1.*",
         "symfony/monolog-bundle": "^4.0",
         "symfony/runtime": "8.1.*",
+        "symfony/twig-bundle": "8.1.*",
         "symfony/yaml": "8.1.*"
     },
     "require-dev": {
