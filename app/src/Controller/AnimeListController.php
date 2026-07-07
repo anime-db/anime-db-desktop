@@ -28,6 +28,7 @@ declare(strict_types=1);
 namespace App\Controller;
 
 use App\Entity\Anime;
+use App\Entity\Label;
 use App\Entity\ValueObject\Exception\InvalidRatingException;
 use App\Repository\AnimeRepository;
 use App\Service\AnimeListRequestParser;
@@ -92,6 +93,7 @@ final class AnimeListController
             'date_premiere' => $anime->getDatePremiere()?->format('Y-m-d'),
             'date_end' => $anime->getDateEnd()?->format('Y-m-d'),
             'cover' => $anime->getCover(),
+            'labels' => array_map(static fn (Label $label): string => $label->name, $anime->getLabels()->toArray()),
         ];
     }
 }

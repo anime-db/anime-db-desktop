@@ -1,0 +1,43 @@
+{#
+ # AnimeDb package.
+ #
+ # @author    Peter Gribanov <info@peter-gribanov.ru>
+ # @copyright Copyright (c) 2026, Peter Gribanov
+ # @license   https://gnu.org GPL-3.0-or-later
+ #
+ # This program is free software: you can redistribute it and/or modify
+ # it under the terms of the GNU General Public License as published by
+ # the Free Software Foundation, either version 3 of the License, or
+ # (at your option) any later version.
+ #
+ # This program is distributed in the hope that it will be useful,
+ # but WITHOUT ANY WARRANTY; without even the implied warranty of
+ # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ # GNU General Public License for more details.
+ #
+ # You should have received a copy of the GNU General Public License
+ # along with this program. If not, see <https://gnu.org>.
+ #}
+{% extends 'base.html.twig' %}
+
+{% block title %}Список — AnimeDB{% endblock %}
+
+{% block stylesheets %}
+    <link rel="stylesheet" href="{{ asset('css/anime-list.css') }}">
+{% endblock %}
+
+{% block body %}
+    <main class="anime-list">
+        <div class="anime-list__grid" id="anime-list-grid"></div>
+
+        <p class="anime-list__empty" id="anime-list-empty" hidden>Список пуст.</p>
+        <p class="anime-list__error" id="anime-list-error" hidden>Не удалось загрузить список.</p>
+
+        <nav class="anime-list__pagination" id="anime-list-pagination" hidden></nav>
+        <div class="anime-list__sentinel" id="anime-list-sentinel" hidden></div>
+    </main>
+{% endblock %}
+
+{% block javascripts %}
+    <script src="{{ asset('js/anime-list.js') }}"></script>
+{% endblock %}
