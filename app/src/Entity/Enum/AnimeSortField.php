@@ -27,38 +27,30 @@ declare(strict_types=1);
 
 namespace App\Entity\Enum;
 
-use App\Entity\Anime;
-use App\Entity\MovieAnime;
-use App\Entity\MusicAnime;
-use App\Entity\OnaAnime;
-use App\Entity\OvaAnime;
-use App\Entity\SpecialAnime;
-use App\Entity\TvAnime;
-
-enum AnimeType: string
+/**
+ * Whitelist of columns the anime list may be sorted by. AnimeListSortResolver is the
+ * only place allowed to turn a raw request string into one of these cases; AnimeRepository
+ * never accepts a raw column name from the caller (see issue #74).
+ */
+enum AnimeSortField: string
 {
-    case Tv = 'tv';
-    case Movie = 'movie';
-    case Ova = 'ova';
-    case Ona = 'ona';
-    case Special = 'special';
-    case Music = 'music';
+    case Name = 'name';
+    case DateUpdate = 'date_update';
+    case UserRating = 'user_rating';
+    case DatePremiere = 'date_premiere';
+    case DateEnd = 'date_end';
 
     /**
-     * Single source of truth for the type-to-class mapping: both Anime::migrate() and
-     * AnimeRepository need it, and it must not drift between the two (issue #74 review).
-     *
-     * @return class-string<Anime>
+     * DQL property path on the Anime alias "a", not a raw SQL column name.
      */
-    public function entityClass(): string
+    public function toDqlField(): string
     {
         return match ($this) {
-            self::Tv => TvAnime::class,
-            self::Movie => MovieAnime::class,
-            self::Ova => OvaAnime::class,
-            self::Ona => OnaAnime::class,
-            self::Special => SpecialAnime::class,
-            self::Music => MusicAnime::class,
+            self::Name => 'a.title',
+            self::DateUpdate => 'a.dateUpdate',
+            self::UserRating => 'a.userRating',
+            self::DatePremiere => 'a.datePremiere',
+            self::DateEnd => 'a.dateEnd',
         };
     }
 }

@@ -62,16 +62,6 @@ abstract class Anime
      */
     private const FALLBACK_LOCALE = 'en';
 
-    /** @var array<value-of<AnimeType>, class-string<self>> */
-    private const CLASS_BY_TYPE = [
-        AnimeType::Movie->value => MovieAnime::class,
-        AnimeType::Tv->value => TvAnime::class,
-        AnimeType::Ova->value => OvaAnime::class,
-        AnimeType::Ona->value => OnaAnime::class,
-        AnimeType::Special->value => SpecialAnime::class,
-        AnimeType::Music->value => MusicAnime::class,
-    ];
-
     #[ORM\Id, ORM\GeneratedValue, ORM\Column]
     public private(set) ?int $id = null;
 
@@ -299,7 +289,7 @@ abstract class Anime
             throw new InvalidAnimeTypeMigrationException('Type migration is only allowed while production status is announced');
         }
 
-        $targetClass = self::CLASS_BY_TYPE[$targetType->value];
+        $targetClass = $targetType->entityClass();
         $target = new $targetClass();
 
         $target->setTitle($this->title)
