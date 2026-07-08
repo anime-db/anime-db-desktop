@@ -24,6 +24,8 @@ parameters:
     # between requests, so a glob() there would mean disk I/O per request for no benefit — the
     # core locale set doesn't change at runtime, and a plugin's locales won't live in this
     # directory anyway). Extend this list when adding a core locale.
+    # Also drives the settings page's language switcher (issue #86): plugin-provided locales are
+    # out of scope until the plugin translation registration mechanism is designed.
     app.locales: ['en', 'ru']
 
 services:

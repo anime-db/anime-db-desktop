@@ -66,3 +66,9 @@ production_status:
     announced: Анонс
     ongoing: Онгоинг
     released: Вышло
+
+settings:
+    language_label: Язык интерфейса
+    locale:
+        ru: Русский
+        en: English
