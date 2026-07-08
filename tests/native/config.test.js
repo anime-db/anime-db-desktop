@@ -25,11 +25,21 @@ jest.mock('../../native/paths', () => ({
     getUserDataDir: jest.fn(),
 }));
 
+jest.mock('electron', () => ({
+    app: { getLocale: jest.fn() },
+}));
+
 const os    = require('os');
 const path  = require('path');
 const fs    = require('fs');
 const paths = require('../../native/paths');
-const { getOrCreateAppSecret } = require('../../native/config');
+const { app } = require('electron');
+const {
+    getOrCreateAppSecret,
+    getOrCreateLocale,
+    getLocale,
+    mapOsLocaleToAppLocale,
+} = require('../../native/config');
 
 let tmpDir;
 
@@ -89,5 +99,83 @@ describe('getOrCreateAppSecret', () => {
 
         expect(() => getOrCreateAppSecret()).not.toThrow();
         expect(fs.existsSync(path.join(nested, 'config.json'))).toBe(true);
+    });
+});
+
+describe('mapOsLocaleToAppLocale', () => {
+    test.each([
+        ['ru-RU', 'ru'],
+        ['ru-BY', 'ru'],
+        ['ru', 'ru'],
+        ['RU-ru', 'ru'],
+        ['en-US', 'en'],
+        ['en', 'en'],
+        ['de-DE', 'en'],
+        ['fr', 'en'],
+    ])('maps %s to %s', (osLocale, expected) => {
+        expect(mapOsLocaleToAppLocale(osLocale)).toBe(expected);
+    });
+});
+
+describe('getOrCreateLocale', () => {
+    test('derives the locale from app.getLocale() on first run', () => {
+        app.getLocale.mockReturnValue('ru-RU');
+        expect(getOrCreateLocale()).toBe('ru');
+    });
+
+    test('falls back to "en" for a non-Russian OS locale', () => {
+        app.getLocale.mockReturnValue('en-US');
+        expect(getOrCreateLocale()).toBe('en');
+    });
+
+    test('persists the locale to config.json', () => {
+        app.getLocale.mockReturnValue('ru-RU');
+        getOrCreateLocale();
+
+        const configPath = path.join(tmpDir, 'config.json');
+        const stored = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+        expect(stored.locale).toBe('ru');
+    });
+
+    test('does not overwrite an already persisted locale', () => {
+        const configPath = path.join(tmpDir, 'config.json');
+        fs.writeFileSync(configPath, JSON.stringify({ locale: 'en' }), 'utf8');
+        app.getLocale.mockReturnValue('ru-RU');
+
+        expect(getOrCreateLocale()).toBe('en');
+    });
+
+    test('preserves other fields in config.json', () => {
+        app.getLocale.mockReturnValue('ru-RU');
+        getOrCreateAppSecret();
+        getOrCreateLocale();
+
+        const configPath = path.join(tmpDir, 'config.json');
+        const stored = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+        expect(stored.appSecret).toMatch(/^[0-9a-f]{64}$/);
+        expect(stored.locale).toBe('ru');
+    });
+});
+
+describe('getLocale', () => {
+    test('reads the locale persisted by getOrCreateLocale', () => {
+        app.getLocale.mockReturnValue('ru-RU');
+        getOrCreateLocale();
+
+        expect(getLocale()).toBe('ru');
+    });
+
+    test('falls back to mapping the current OS locale when config.json has none yet', () => {
+        app.getLocale.mockReturnValue('en-US');
+        expect(getLocale()).toBe('en');
+    });
+
+    test('reflects a locale changed directly in config.json, without a restart', () => {
+        const configPath = path.join(tmpDir, 'config.json');
+        fs.writeFileSync(configPath, JSON.stringify({ locale: 'en' }), 'utf8');
+        expect(getLocale()).toBe('en');
+
+        fs.writeFileSync(configPath, JSON.stringify({ locale: 'ru' }), 'utf8');
+        expect(getLocale()).toBe('ru');
     });
 });
