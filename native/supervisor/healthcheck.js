@@ -52,4 +52,29 @@ function waitForHealth(port, { intervalMs = 200, timeoutMs = 30000 } = {}) {
     });
 }
 
-module.exports = { waitForHealth };
+/**
+ * Waits graceMs and resolves if the process is still alive by then — used for processes
+ * without an HTTP endpoint to catch immediate startup failures (e.g. wrong CLI arguments).
+ * Rejects early if the process exits before the grace period elapses.
+ *
+ * @param {import('child_process').ChildProcess} child
+ * @param {number} graceMs
+ * @returns {Promise<void>}
+ */
+function waitForProcessAlive(child, graceMs = 1000) {
+    return new Promise((resolve, reject) => {
+        const onExit = (code) => {
+            clearTimeout(timer);
+            reject(new Error(`процесс завершился до истечения проверки готовности (код ${code})`));
+        };
+
+        const timer = setTimeout(() => {
+            child.removeListener('exit', onExit);
+            resolve();
+        }, graceMs);
+
+        child.once('exit', onExit);
+    });
+}
+
+module.exports = { waitForHealth, waitForProcessAlive };

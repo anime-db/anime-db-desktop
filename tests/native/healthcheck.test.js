@@ -23,8 +23,9 @@
 
 jest.mock('http');
 
+const { EventEmitter } = require('events');
 const http = require('http');
-const { waitForHealth } = require('../../native/supervisor/healthcheck');
+const { waitForHealth, waitForProcessAlive } = require('../../native/supervisor/healthcheck');
 
 describe('waitForHealth', () => {
     test('resolves with the port when /health returns 200', async () => {
@@ -60,5 +61,19 @@ describe('waitForHealth', () => {
         await expect(
             waitForHealth(4002, { intervalMs: 1, timeoutMs: 10 })
         ).rejects.toThrow('/health не ответил');
+    });
+});
+
+describe('waitForProcessAlive', () => {
+    test('resolves when the process is still alive after the grace period', async () => {
+        const child = new EventEmitter();
+        await expect(waitForProcessAlive(child, 10)).resolves.toBeUndefined();
+    });
+
+    test('rejects when the process exits before the grace period elapses', async () => {
+        const child = new EventEmitter();
+        const promise = waitForProcessAlive(child, 1000);
+        child.emit('exit', 1);
+        await expect(promise).rejects.toThrow('процесс завершился до истечения проверки готовности');
     });
 });
