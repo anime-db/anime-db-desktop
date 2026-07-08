@@ -57,3 +57,7 @@ services:
     # autowiring, not TranslatorBagInterface::getCatalogue() (needed by TranslationController,
     # issue #87) — add it explicitly so the interface stays autowireable.
     Symfony\Component\Translation\TranslatorBagInterface: '@translator'
+
+    # The app only ships for Windows (see .claude-docs/architecture.md) — a single
+    # ProcessLivenessChecker implementation is all JobLockService (issue #98) needs.
+    App\Service\JobLock\ProcessLivenessChecker: '@App\Service\JobLock\WindowsProcessLivenessChecker'
