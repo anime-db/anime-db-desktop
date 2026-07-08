@@ -114,3 +114,6 @@ anime_detail:
     field_notes: Заметка
     duration_minutes_suffix: мин.
     empty_value: —
+    open_folder_button: Перейти к файлам
+    path_unavailable_tooltip: Путь не доступен
+    sources_heading: Внешние источники

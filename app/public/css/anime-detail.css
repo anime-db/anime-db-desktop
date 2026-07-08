@@ -129,3 +129,31 @@
     color: #666;
     font-size: 0.85em;
 }
+
+.anime-detail__open-folder-button {
+    margin-left: 8px;
+    padding: 2px 10px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    background: #f5f5f5;
+    cursor: pointer;
+}
+
+.anime-detail__open-folder-button:disabled {
+    color: #999;
+    cursor: not-allowed;
+}
+
+.anime-detail__source-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.anime-detail__source-icon {
+    width: 24px;
+    height: 24px;
+}

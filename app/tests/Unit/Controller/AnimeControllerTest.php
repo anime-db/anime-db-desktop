@@ -46,7 +46,7 @@ final class AnimeControllerTest extends TestCase
         $studio->rename('MAPPA');
 
         $storage = new Storage();
-        $storage->setName('Local')->setType(StorageType::Folder)->setPath('/anime/aot');
+        $storage->setName('Local')->setType(StorageType::Folder)->setPath(sys_get_temp_dir());
 
         $anime = new TvAnime();
         $anime->setTitle('Shingeki no Kyojin')
@@ -56,13 +56,14 @@ final class AnimeControllerTest extends TestCase
             ->setStorage($storage)
             ->addStudio($studio)
             ->addGenre(GenreCode::Action)
-            ->addName('進撃の巨人', AnimeNameType::Original);
+            ->addName('進撃の巨人', AnimeNameType::Original)
+            ->addSource('https://shikimori.one/animes/16498');
         $anime->setEpisodesCount(25);
 
         $twig = $this->createMock(Environment::class);
         $twig->expects($this->once())
             ->method('render')
-            ->with('anime/show.html.twig', $this->callback(static function (array $params) {
+            ->with('anime/show.html.twig', $this->callback(function (array $params) use ($storage) {
                 $view = $params['anime'];
 
                 return 'Shingeki no Kyojin' === $view['title']
@@ -71,10 +72,16 @@ final class AnimeControllerTest extends TestCase
                     && 24 === $view['duration_minutes']
                     && ['MAPPA'] === $view['studios']
                     && ['JP'] === $view['countries']
-                    && ['name' => 'Local', 'type' => 'folder', 'path' => '/anime/aot'] === $view['storage']
+                    && [
+                        'name' => 'Local',
+                        'type' => 'folder',
+                        'path' => $storage->getPath(),
+                        'path_available' => true,
+                    ] === $view['storage']
                     && [['name' => '進撃の巨人', 'type' => 'original']] === $view['names']
                     && ['action'] === $view['genres']
-                    && 'Rewatch before the finale.' === $view['notes'];
+                    && 'Rewatch before the finale.' === $view['notes']
+                    && [['url' => 'https://shikimori.one/animes/16498', 'domain' => 'shikimori.one']] === $view['sources'];
             }))
             ->willReturn('<html></html>');
 
@@ -101,7 +108,8 @@ final class AnimeControllerTest extends TestCase
                     && [] === $view['countries']
                     && [] === $view['names']
                     && [] === $view['genres']
-                    && null === $view['notes'];
+                    && null === $view['notes']
+                    && [] === $view['sources'];
             }))
             ->willReturn('<html></html>');
 
