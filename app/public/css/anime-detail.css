@@ -59,7 +59,8 @@
 }
 
 .anime-detail__editable,
-.anime-detail__reference {
+.anime-detail__reference,
+.anime-detail__labels {
     padding: 16px;
     border: 1px solid #ddd;
     border-radius: 6px;
@@ -73,6 +74,93 @@
 .anime-detail__placeholder {
     margin: 0;
     color: #666;
+}
+
+.anime-detail__editable-error {
+    margin: 0 0 12px;
+    padding: 6px 10px;
+    border-radius: 4px;
+    background: #f2dede;
+    color: #a94442;
+    font-size: 0.85em;
+}
+
+.anime-detail__editable-value {
+    padding: 2px 8px;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.anime-detail__editable-value:hover {
+    border-color: #ccc;
+    background: #f5f5f5;
+}
+
+.anime-detail__watch-status-badge--plan {
+    background: #eee;
+    color: #333;
+}
+
+.anime-detail__watch-status-badge--watching {
+    background: #d9edf7;
+    color: #31708f;
+}
+
+.anime-detail__watch-status-badge--completed {
+    background: #dff0d8;
+    color: #3c763d;
+}
+
+.anime-detail__watch-status-badge--dropped {
+    background: #f2dede;
+    color: #a94442;
+}
+
+.anime-detail__watch-status-badge--on_hold {
+    background: #fcf8e3;
+    color: #8a6d3b;
+}
+
+.anime-detail__inline-form {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.anime-detail__inline-form--notes {
+    flex-direction: column;
+    align-items: stretch;
+}
+
+.anime-detail__progress {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.anime-detail__progress-count {
+    font-weight: bold;
+}
+
+.anime-detail__progress-increment-form {
+    display: inline-flex;
+}
+
+.anime-detail__progress-increment {
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: 1px solid #ccc;
+    border-radius: 50%;
+    background: #f5f5f5;
+    cursor: pointer;
+    line-height: 1;
 }
 
 .anime-detail__status-badge {
@@ -130,10 +218,6 @@
     font-size: 0.85em;
 }
 
-.anime-detail__labels {
-    margin-top: 16px;
-}
-
 .anime-detail__labels-header {
     display: flex;
     align-items: center;
@@ -158,6 +242,29 @@
     display: flex;
     flex-wrap: wrap;
     gap: 6px 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.anime-detail__open-folder-button {
+    margin-left: 8px;
+    padding: 2px 10px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    background: #f5f5f5;
+    cursor: pointer;
+}
+
+.anime-detail__open-folder-button:disabled {
+    color: #999;
+    cursor: not-allowed;
+}
+
+.anime-detail__source-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
     margin: 0;
     padding: 0;
     list-style: none;
@@ -261,4 +368,9 @@
 .anime-detail__labels-actions {
     display: flex;
     gap: 8px;
+}
+
+.anime-detail__source-icon {
+    width: 24px;
+    height: 24px;
 }

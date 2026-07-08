@@ -1,0 +1,173 @@
+{#
+ # AnimeDb package.
+ #
+ # @author    Peter Gribanov <info@peter-gribanov.ru>
+ # @copyright Copyright (c) 2026, Peter Gribanov
+ # @license   https://gnu.org GPL-3.0-or-later
+ #
+ # This program is free software: you can redistribute it and/or modify
+ # it under the terms of the GNU General Public License as published by
+ # the Free Software Foundation, either version 3 of the License, or
+ # (at your option) any later version.
+ #
+ # This program is distributed in the hope that it will be useful,
+ # but WITHOUT ANY WARRANTY; without even the implied warranty of
+ # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ # GNU General Public License for more details.
+ #
+ # You should have received a copy of the GNU General Public License
+ # along with this program. If not, see <https://gnu.org>.
+ #}
+{#
+ # Rendered both by anime/show.html.twig (initial load, editing = null) and by every
+ # AnimeEditableController action (HTMX fragment swap, issue #103). "editing" names the
+ # single field currently shown as a form instead of its read-only value; it is always
+ # null on the initial full-page load, so watch_statuses/csrf_token() for the "*_edit"
+ # forms below are never evaluated there.
+ #}
+<section class="anime-detail__editable" id="anime-editable-{{ anime.id }}">
+    <h2 class="anime-detail__section-heading">{{ 'anime_detail.editable_heading'|trans }}</h2>
+
+    {% if error %}
+        <p class="anime-detail__editable-error">{{ error|trans }}</p>
+    {% endif %}
+
+    <dl class="anime-detail__fields">
+        {% if anime.is_series %}
+            <dt>{{ 'anime_detail.field_progress'|trans }}</dt>
+            <dd class="anime-detail__progress">
+                {% if editing == 'watched_episodes' %}
+                    <form class="anime-detail__inline-form"
+                          hx-post="{{ path('anime_editable_update_watched_episodes', {id: anime.id}) }}"
+                          hx-target="#anime-editable-{{ anime.id }}" hx-swap="outerHTML">
+                        <input type="hidden" name="_token" value="{{ csrf_token('anime_editable_watched_episodes_' ~ anime.id) }}">
+                        <input
+                            type="number"
+                            name="watched_episodes"
+                            min="0"
+                            {%- if anime.episodes_count is not null %} max="{{ anime.episodes_count }}"{% endif %}
+                            value="{{ anime.watched_episodes ?: 0 }}"
+                        >
+                        <span>/ {{ anime.episodes_count ?: '?' }}</span>
+                        <button type="submit">{{ 'anime_detail.save_button'|trans }}</button>
+                        <button
+                            type="button"
+                            hx-get="{{ path('anime_editable_view', {id: anime.id}) }}"
+                            hx-target="#anime-editable-{{ anime.id }}" hx-swap="outerHTML"
+                        >{{ 'anime_detail.cancel_button'|trans }}</button>
+                    </form>
+                {% else %}
+                    <button
+                        type="button"
+                        class="anime-detail__editable-value anime-detail__progress-count"
+                        hx-get="{{ path('anime_editable_edit', {id: anime.id, field: 'watched_episodes'}) }}"
+                        hx-target="#anime-editable-{{ anime.id }}" hx-swap="outerHTML"
+                    >{{ anime.watched_episodes ?: 0 }} / {{ anime.episodes_count ?: '?' }}</button>
+
+                    {% if anime.episodes_count is null or (anime.watched_episodes ?: 0) < anime.episodes_count %}
+                        <form class="anime-detail__progress-increment-form"
+                              hx-post="{{ path('anime_editable_increment_watched_episodes', {id: anime.id}) }}"
+                              hx-target="#anime-editable-{{ anime.id }}" hx-swap="outerHTML">
+                            <input type="hidden" name="_token" value="{{ csrf_token('anime_editable_increment_watched_episodes_' ~ anime.id) }}">
+                            <button
+                                type="submit"
+                                class="anime-detail__progress-increment"
+                                title="{{ 'anime_detail.increment_episode_button'|trans }}"
+                            >+</button>
+                        </form>
+                    {% endif %}
+                {% endif %}
+            </dd>
+        {% endif %}
+
+        <dt>{{ 'anime_detail.field_watch_status'|trans }}</dt>
+        <dd>
+            {% if editing == 'watch_status' %}
+                <form class="anime-detail__inline-form"
+                      hx-post="{{ path('anime_editable_update_watch_status', {id: anime.id}) }}"
+                      hx-target="#anime-editable-{{ anime.id }}" hx-swap="outerHTML">
+                    <input type="hidden" name="_token" value="{{ csrf_token('anime_editable_watch_status_' ~ anime.id) }}">
+                    <select name="watch_status">
+                        {% for status in watch_statuses %}
+                            <option
+                                value="{{ status }}"
+                                {%- if status == anime.watch_status %} selected{% endif %}
+                                {%- if status == 'completed' and anime.production_status != 'released' %} disabled{% endif %}
+                            >{{ ('watch_status.' ~ status)|trans }}</option>
+                        {% endfor %}
+                    </select>
+                    <button type="submit">{{ 'anime_detail.save_button'|trans }}</button>
+                    <button
+                        type="button"
+                        hx-get="{{ path('anime_editable_view', {id: anime.id}) }}"
+                        hx-target="#anime-editable-{{ anime.id }}" hx-swap="outerHTML"
+                    >{{ 'anime_detail.cancel_button'|trans }}</button>
+                </form>
+            {% else %}
+                <button
+                    type="button"
+                    class="anime-detail__editable-value anime-detail__watch-status-badge anime-detail__watch-status-badge--{{ anime.watch_status }}"
+                    hx-get="{{ path('anime_editable_edit', {id: anime.id, field: 'watch_status'}) }}"
+                    hx-target="#anime-editable-{{ anime.id }}" hx-swap="outerHTML"
+                >{{ ('watch_status.' ~ anime.watch_status)|trans }}</button>
+            {% endif %}
+        </dd>
+
+        <dt>{{ 'anime_detail.field_user_rating'|trans }}</dt>
+        <dd>
+            {% if editing == 'user_rating' %}
+                <form class="anime-detail__inline-form"
+                      hx-post="{{ path('anime_editable_update_user_rating', {id: anime.id}) }}"
+                      hx-target="#anime-editable-{{ anime.id }}" hx-swap="outerHTML">
+                    <input type="hidden" name="_token" value="{{ csrf_token('anime_editable_user_rating_' ~ anime.id) }}">
+                    <select name="user_rating">
+                        <option value=""{% if anime.user_rating is null %} selected{% endif %}>{{ 'anime_detail.rating_not_rated'|trans }}</option>
+                        {% for value in 1..5 %}
+                            <option value="{{ value }}"{% if value == anime.user_rating %} selected{% endif %}>{{ value }}</option>
+                        {% endfor %}
+                    </select>
+                    <button type="submit">{{ 'anime_detail.save_button'|trans }}</button>
+                    <button
+                        type="button"
+                        hx-get="{{ path('anime_editable_view', {id: anime.id}) }}"
+                        hx-target="#anime-editable-{{ anime.id }}" hx-swap="outerHTML"
+                    >{{ 'anime_detail.cancel_button'|trans }}</button>
+                </form>
+            {% else %}
+                <button
+                    type="button"
+                    class="anime-detail__editable-value"
+                    hx-get="{{ path('anime_editable_edit', {id: anime.id, field: 'user_rating'}) }}"
+                    hx-target="#anime-editable-{{ anime.id }}" hx-swap="outerHTML"
+                >{{ anime.user_rating is not null ? anime.user_rating : ('anime_detail.rating_not_rated'|trans) }}</button>
+            {% endif %}
+        </dd>
+
+        <dt>{{ 'anime_detail.field_notes'|trans }}</dt>
+        <dd>
+            {% if editing == 'notes' %}
+                <form class="anime-detail__inline-form anime-detail__inline-form--notes"
+                      hx-post="{{ path('anime_editable_update_notes', {id: anime.id}) }}"
+                      hx-target="#anime-editable-{{ anime.id }}" hx-swap="outerHTML">
+                    <input type="hidden" name="_token" value="{{ csrf_token('anime_editable_notes_' ~ anime.id) }}">
+                    <textarea name="notes" rows="3">{{ anime.notes }}</textarea>
+                    <div>
+                        <button type="submit">{{ 'anime_detail.save_button'|trans }}</button>
+                        <button
+                            type="button"
+                            hx-get="{{ path('anime_editable_view', {id: anime.id}) }}"
+                            hx-target="#anime-editable-{{ anime.id }}" hx-swap="outerHTML"
+                        >{{ 'anime_detail.cancel_button'|trans }}</button>
+                    </div>
+                </form>
+            {% else %}
+                <button
+                    type="button"
+                    class="anime-detail__editable-value anime-detail__editable-value--notes"
+                    hx-get="{{ path('anime_editable_edit', {id: anime.id, field: 'notes'}) }}"
+                    hx-target="#anime-editable-{{ anime.id }}" hx-swap="outerHTML"
+                >{{ anime.notes ?: ('anime_detail.empty_value'|trans) }}</button>
+            {% endif %}
+        </dd>
+    </dl>
+</section>

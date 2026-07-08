@@ -236,3 +236,15 @@
 
     document.querySelectorAll('[data-labels-widget]').forEach(initWidget);
 })();
+
+(function () {
+    document.querySelectorAll('[data-open-folder-path]').forEach((button) => {
+        button.addEventListener('click', () => {
+            if (button.disabled || !window.animeDb) {
+                return;
+            }
+
+            window.animeDb.openPath(button.dataset.openFolderPath);
+        });
+    });
+})();

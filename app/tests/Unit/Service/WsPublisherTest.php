@@ -28,23 +28,17 @@ declare(strict_types=1);
 namespace App\Tests\Unit\Service;
 
 use App\Service\WsPublisher;
-use PHPUnit\Framework\Attributes\RequiresPhpExtension;
+use Doctrine\DBAL\DriverManager;
 use PHPUnit\Framework\TestCase;
 
-#[RequiresPhpExtension('apcu')]
 final class WsPublisherTest extends TestCase
 {
     private WsPublisher $publisher;
 
     protected function setUp(): void
     {
-        apcu_clear_cache();
-        $this->publisher = new WsPublisher();
-    }
-
-    protected function tearDown(): void
-    {
-        apcu_clear_cache();
+        $connection = DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]);
+        $this->publisher = new WsPublisher($connection);
     }
 
     public function testNextReturnsNullWhenQueueIsEmpty(): void
@@ -105,5 +99,34 @@ final class WsPublisherTest extends TestCase
 
         $this->assertNotNull($event);
         $this->assertNull($event['data']);
+    }
+
+    /**
+     * Regression guard for issue #94: the queue must live in the shared SQLite file, not in
+     * per-connection memory, so an event published on one connection (e.g. the consumer
+     * process, issue #97) is visible to a WsPublisher on a different connection to the same
+     * file (e.g. the HTTP process serving WsController).
+     */
+    public function testEventPublishedOnOneConnectionIsVisibleOnAnother(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'ws_events_');
+        $this->assertIsString($path);
+
+        try {
+            $publisherConnection = DriverManager::getConnection(['driver' => 'pdo_sqlite', 'path' => $path]);
+            $consumerConnection = DriverManager::getConnection(['driver' => 'pdo_sqlite', 'path' => $path]);
+
+            $publisherSide = new WsPublisher($publisherConnection);
+            $consumerSide = new WsPublisher($consumerConnection);
+
+            $consumerSide->publish('scan.progress', ['percent' => 42]);
+            $event = $publisherSide->next();
+
+            $this->assertNotNull($event);
+            $this->assertSame('scan.progress', $event['event']);
+            $this->assertSame(['percent' => 42], $event['data']);
+        } finally {
+            unlink($path);
+        }
     }
 }

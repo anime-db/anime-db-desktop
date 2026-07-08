@@ -100,7 +100,6 @@ anime_detail:
     title: '%title% — AnimeDB'
     no_cover: Нет обложки
     editable_heading: Управление
-    editable_placeholder: Здесь появятся статус просмотра, оценка и заметки.
     reference_heading: Справочная информация
     field_type: Тип
     field_episodes_count: Количество серий
@@ -112,6 +111,9 @@ anime_detail:
     field_names: Альтернативные названия
     field_genres: Жанры
     field_notes: Заметка
+    field_progress: Прогресс просмотра
+    field_watch_status: Статус просмотра
+    field_user_rating: Оценка
     duration_minutes_suffix: мин.
     empty_value: —
     labels_heading: Метки
@@ -120,3 +122,14 @@ anime_detail:
     labels_save_button: Сохранить
     labels_cancel_button: Отмена
     labels_save_error: Не удалось сохранить метки.
+    open_folder_button: Перейти к файлам
+    path_unavailable_tooltip: Путь не доступен
+    sources_heading: Внешние источники
+    save_button: Сохранить
+    cancel_button: Отмена
+    rating_not_rated: Без оценки
+    increment_episode_button: Отметить следующую серию просмотренной
+    error_watch_status_invalid: Недопустимый статус просмотра.
+    error_watch_status_not_released: Нельзя отметить как «Просмотрено», пока аниме не вышло.
+    error_user_rating_invalid: Оценка должна быть от 1 до 5.
+    error_watched_episodes_invalid: Некорректное количество просмотренных серий.

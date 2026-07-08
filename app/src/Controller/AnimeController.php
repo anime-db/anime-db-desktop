@@ -28,77 +28,32 @@ declare(strict_types=1);
 namespace App\Controller;
 
 use App\Entity\Anime;
-use App\Entity\AnimeName;
-use App\Entity\Label;
-use App\Entity\SeriesAnime;
-use App\Entity\Storage;
-use App\Entity\Studio;
+use App\Service\AnimeViewFactory;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
 use Twig\Environment;
 
 /**
- * Anime detail page (issue #101): the skeleton layout and the read-only reference block,
- * plus the label list (issue #104, view side only — editing goes through
- * AnimeLabelController). Watch status/rating/notes editing and the cover/gallery are
- * separate parts of the same decomposition (see the two-column body in anime/show.html.twig).
- *
- * The view is handed a plain array, not the Anime entity directly: Twig's
- * strict_variables is enabled in the test env, and SeriesAnime-only accessors like
- * getEpisodesCount() do not exist on MovieAnime, so the type-dependent fields are
- * resolved here instead of via instanceof checks in the template.
+ * Anime detail page: the skeleton layout, the read-only reference block (issue #101), the
+ * external sources block and the "open storage folder" button (issue #105). Watch status,
+ * rating, notes and episode progress are rendered by the same anime/_editable.html.twig
+ * fragment that AnimeEditableController swaps in place via HTMX (issue #103). Labels
+ * (issue #104, view side only — editing goes through AnimeLabelController) and the
+ * cover/gallery are separate parts of the same decomposition.
  */
 final class AnimeController
 {
-    public function __construct(private readonly Environment $twig)
-    {
+    public function __construct(
+        private readonly Environment $twig,
+        private readonly AnimeViewFactory $viewFactory,
+    ) {
     }
 
     #[Route('/anime/{id}', name: 'anime_show', methods: ['GET'])]
     public function show(Anime $anime): Response
     {
         return new Response($this->twig->render('anime/show.html.twig', [
-            'anime' => $this->serializeAnime($anime),
+            'anime' => $this->viewFactory->serialize($anime),
         ]));
-    }
-
-    /** @return array<string, mixed> */
-    private function serializeAnime(Anime $anime): array
-    {
-        return [
-            'id' => $anime->id,
-            'title' => $anime->getTitle(),
-            'type' => $anime->getType()->value,
-            'production_status' => $anime->getProductionStatus()->value,
-            'episodes_count' => $anime instanceof SeriesAnime ? $anime->getEpisodesCount() : null,
-            'duration_minutes' => $anime->getDurationMinutes(),
-            'studios' => array_map(static fn (Studio $studio): string => $studio->name, $anime->getStudios()->toArray()),
-            'countries' => $anime->getCountries() ?? [],
-            'storage' => $this->serializeStorage($anime->getStorage()),
-            'names' => array_map(
-                static fn (AnimeName $name): array => ['name' => $name->name, 'type' => $name->type->value],
-                $anime->getNames()->toArray(),
-            ),
-            'genres' => array_map(static fn ($code): string => $code->value, $anime->getGenreCodes()),
-            'notes' => $anime->getNotes(),
-            'labels' => array_map(
-                static fn (Label $label): array => ['id' => $label->id, 'name' => $label->name],
-                $anime->getLabels()->toArray(),
-            ),
-        ];
-    }
-
-    /** @return array{name: string, type: string, path: string}|null */
-    private function serializeStorage(?Storage $storage): ?array
-    {
-        if ($storage === null) {
-            return null;
-        }
-
-        return [
-            'name' => $storage->getName(),
-            'type' => $storage->getType()->value,
-            'path' => $storage->getPath(),
-        ];
     }
 }

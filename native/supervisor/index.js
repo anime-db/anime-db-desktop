@@ -21,12 +21,18 @@
 
 'use strict';
 
-const frankenphp  = require('./frankenphp');
-const meilisearch = require('./meilisearch');
+const { EventEmitter } = require('events');
+const frankenphp        = require('./frankenphp');
+const meilisearch       = require('./meilisearch');
+const messengerConsumer = require('./messenger-consumer');
+
+const events = new EventEmitter();
+frankenphp.events.on('exit', (code) => events.emit('exit', code));
+messengerConsumer.events.on('exit', (code) => events.emit('exit', code));
 
 /**
  * Запускает все дочерние процессы и возвращает занятые ими порты.
- * Meilisearch стартует первым — его URL/key нужны FrankenPHP в env.
+ * Meilisearch стартует первым — его URL/key нужны FrankenPHP и messenger-consumer в env.
  *
  * @param {((step: number, text: string) => void) | undefined} onProgress
  * @returns {Promise<{ frankenphpPort: number, wsPort: number, meiliPort: number }>}
@@ -35,19 +41,22 @@ async function start(onProgress) {
     const { port: meiliPort, key: meiliKey } = await meilisearch.start();
     if (onProgress) onProgress(1, 'Запуск FrankenPHP...');
     const { httpPort: frankenphpPort, wsPort } = await frankenphp.start(meiliPort, meiliKey);
-    if (onProgress) onProgress(2, 'Готово');
+    if (onProgress) onProgress(2, 'Запуск обработчика фоновых задач...');
+    await messengerConsumer.start(meiliPort, meiliKey);
+    if (onProgress) onProgress(3, 'Готово');
     return { frankenphpPort, wsPort, meiliPort };
 }
 
 /**
  * Останавливает все дочерние процессы в правильном порядке:
- * сначала FrankenPHP (нет новых запросов), затем Meilisearch.
+ * сначала messenger-consumer и FrankenPHP (нет новых запросов и задач), затем Meilisearch.
  *
  * @returns {Promise<void>}
  */
 async function stop() {
+    await messengerConsumer.stop();
     await frankenphp.stop();
     await meilisearch.stop();
 }
 
-module.exports = { start, stop, events: frankenphp.events };
+module.exports = { start, stop, events };

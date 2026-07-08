@@ -45,15 +45,20 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
             'title' => 'Shingeki no Kyojin',
             'type' => 'tv',
             'production_status' => 'ongoing',
+            'watch_status' => 'watching',
+            'user_rating' => null,
+            'is_series' => true,
             'episodes_count' => 25,
+            'watched_episodes' => 5,
             'duration_minutes' => 24,
             'studios' => ['MAPPA'],
             'countries' => ['JP'],
-            'storage' => ['name' => 'Local', 'type' => 'folder', 'path' => '/anime/aot'],
+            'storage' => ['name' => 'Local', 'type' => 'folder', 'path' => '/anime/aot', 'path_available' => true],
             'names' => [['name' => '進撃の巨人', 'type' => 'original']],
             'genres' => ['action', 'drama'],
             'notes' => 'Rewatch before the finale.',
             'labels' => [['id' => 3, 'name' => 'favorite']],
+            'sources' => [['url' => 'https://shikimori.one/animes/16498', 'domain' => 'shikimori.one']],
         ];
     }
 
@@ -65,7 +70,11 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
             'title' => 'A Silent Voice',
             'type' => 'movie',
             'production_status' => 'released',
+            'watch_status' => 'plan',
+            'user_rating' => null,
+            'is_series' => false,
             'episodes_count' => null,
+            'watched_episodes' => null,
             'duration_minutes' => null,
             'studios' => [],
             'countries' => [],
@@ -74,13 +83,16 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
             'genres' => [],
             'notes' => null,
             'labels' => [],
+            'sources' => [],
         ];
     }
 
     /**
-     * csrf_token() reads/writes the CSRF token through the session of the current request, so
-     * rendering a template that calls it outside a real HTTP request-response cycle needs one
-     * pushed onto the request stack manually.
+     * csrf_token() (used by the always-visible episode-increment form and by the labels
+     * editor) reads/writes the CSRF token through the session of the current request, so
+     * rendering the editable fragment outside a real HTTP request-response cycle needs one
+     * pushed onto the request stack manually (see SettingsTemplateRenderingTest for the same
+     * pattern).
      */
     private function pushRequestWithSession(string $uri): void
     {
@@ -119,6 +131,10 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
         $this->assertStringContainsString('anime-detail__status-badge--ongoing', $html);
         $this->assertStringContainsString('favorite', $html);
         $this->assertStringContainsString('/?labels=3', $html);
+        $this->assertStringContainsString('data-open-folder-path="/anime/aot"', $html);
+        $this->assertStringNotContainsString('disabled', $html);
+        $this->assertStringContainsString('https://shikimori.one/favicon.ico', $html);
+        $this->assertStringContainsString('https://shikimori.one/animes/16498', $html);
     }
 
     public function testShowRendersAnimeWithoutOptionalFieldsWithoutErrors(): void
@@ -138,5 +154,27 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
         $this->assertStringContainsString('Фильм', $html);
         $this->assertStringContainsString('Вышло', $html);
         $this->assertStringNotContainsString('anime_detail.field_episodes_count', $html);
+        $this->assertStringNotContainsString('data-open-folder-path', $html);
+        $this->assertStringNotContainsString('anime-detail__sources', $html);
+    }
+
+    public function testShowRendersDisabledOpenFolderButtonWhenStoragePathIsUnavailable(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession('/anime/3');
+
+        /** @var LocaleSwitcher $localeSwitcher */
+        $localeSwitcher = self::getContainer()->get(LocaleSwitcher::class);
+        $localeSwitcher->setLocale('ru');
+
+        $anime = $this->fullyPopulatedAnime();
+        $anime['storage']['path_available'] = false;
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('anime/show.html.twig', ['anime' => $anime]);
+
+        $this->assertStringContainsString('disabled', $html);
+        $this->assertStringContainsString('Путь не доступен', $html);
     }
 }
