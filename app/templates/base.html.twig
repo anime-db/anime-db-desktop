@@ -19,7 +19,7 @@
  # along with this program. If not, see <https://gnu.org>.
  #}
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="{{ app.request.locale }}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -29,6 +29,7 @@
 <body>
     {% block body %}{% endblock %}
     <script src="{{ asset('js/htmx.min.js') }}"></script>
+    <script src="{{ asset('js/translations.js') }}"></script>
     {% block javascripts %}{% endblock %}
 </body>
 </html>
