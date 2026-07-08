@@ -69,6 +69,12 @@ final class AppSettingsProvider
         $config = $this->readConfig();
         $config['locale'] = $locale;
 
+        $this->writeConfig($config);
+    }
+
+    /** @param array<string, mixed> $config */
+    private function writeConfig(array $config): void
+    {
         $directory = \dirname($this->configPath);
         if (!is_dir($directory)) {
             mkdir($directory, recursive: true);
