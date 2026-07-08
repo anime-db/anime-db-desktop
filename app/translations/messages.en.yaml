@@ -68,7 +68,30 @@ production_status:
     released: Released
 
 settings:
+    title: Settings — AnimeDB
+    heading: Settings
+    labels_link: Labels
     language_label: Interface language
     locale:
         ru: Русский
         en: English
+
+settings_labels:
+    title: Labels — Settings — AnimeDB
+    back_link: ← Settings
+    heading: Labels
+    empty_name_error: Label name cannot be empty.
+    name_placeholder: Label name
+    add_button: Add
+    empty: No labels yet.
+    name_column: Name
+    actions_column: Actions
+    save_button: Save
+    delete_confirm: Delete label "%name%"?
+    delete_button: Delete
+
+anime_list:
+    title: List — AnimeDB
+    empty: The list is empty.
+    error: Failed to load the list.
+    no_cover: No cover

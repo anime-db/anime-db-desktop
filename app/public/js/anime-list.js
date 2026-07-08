@@ -28,23 +28,6 @@
     const DEFAULT_WATCH_STATUS = 'watching';
     const PAGE_SIZE = 20;
 
-    const WATCH_STATUS_LABELS = {
-        plan: 'В планах',
-        watching: 'Смотрю',
-        completed: 'Просмотрено',
-        dropped: 'Брошено',
-        on_hold: 'Отложено',
-    };
-
-    const TYPE_LABELS = {
-        tv: 'ТВ',
-        movie: 'Фильм',
-        ova: 'OVA',
-        ona: 'ONA',
-        special: 'Спешл',
-        music: 'Клип',
-    };
-
     const grid = document.getElementById('anime-list-grid');
     const emptyMessage = document.getElementById('anime-list-empty');
     const errorMessage = document.getElementById('anime-list-error');
@@ -52,6 +35,14 @@
     const sentinel = document.getElementById('anime-list-sentinel');
 
     let sentinelObserver = null;
+    // Populated once from GET /translations/{locale}.json (issue #87) before the first render;
+    // watch_status.*/anime_type.* keys already exist in the messages catalogue, so there is no
+    // separate JS dictionary to keep in sync with them.
+    let messages = {};
+
+    function trans(key, fallback) {
+        return Object.prototype.hasOwnProperty.call(messages, key) ? messages[key] : fallback;
+    }
 
     function buildCard(anime) {
         const card = document.createElement('article');
@@ -67,7 +58,7 @@
         } else {
             const placeholder = document.createElement('div');
             placeholder.className = 'anime-card__thumb anime-card__thumb--placeholder';
-            placeholder.textContent = 'Нет обложки';
+            placeholder.textContent = trans('anime_list.no_cover', 'anime_list.no_cover');
             card.appendChild(placeholder);
         }
 
@@ -81,13 +72,13 @@
 
         const badge = document.createElement('span');
         badge.className = `anime-card__badge anime-card__badge--${anime.watch_status}`;
-        badge.textContent = WATCH_STATUS_LABELS[anime.watch_status] || anime.watch_status;
+        badge.textContent = trans(`watch_status.${anime.watch_status}`, anime.watch_status);
         body.appendChild(badge);
 
         const meta = document.createElement('p');
         meta.className = 'anime-card__meta';
         const year = anime.date_premiere ? anime.date_premiere.slice(0, 4) : '—';
-        meta.textContent = `${TYPE_LABELS[anime.type] || anime.type} · ${year}`;
+        meta.textContent = `${trans(`anime_type.${anime.type}`, anime.type)} · ${year}`;
         body.appendChild(meta);
 
         if (Array.isArray(anime.labels) && anime.labels.length > 0) {
@@ -202,5 +193,15 @@
         }
     }
 
-    loadPage(0, true);
+    async function init() {
+        try {
+            messages = await window.AppTranslations.getCatalogue();
+        } catch {
+            messages = {};
+        }
+
+        loadPage(0, true);
+    }
+
+    init();
 })();
