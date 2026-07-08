@@ -95,3 +95,22 @@ anime_list:
     empty: Список пуст.
     error: Не удалось загрузить список.
     no_cover: Нет обложки
+
+anime_detail:
+    title: '%title% — AnimeDB'
+    no_cover: Нет обложки
+    editable_heading: Управление
+    editable_placeholder: Здесь появятся статус просмотра, оценка, заметки и метки.
+    reference_heading: Справочная информация
+    field_type: Тип
+    field_episodes_count: Количество серий
+    field_duration_minutes: Длительность
+    field_studios: Студия
+    field_countries: Страна
+    field_storage: Хранилище
+    field_storage_path: Путь к файлу
+    field_names: Альтернативные названия
+    field_genres: Жанры
+    field_notes: Заметка
+    duration_minutes_suffix: мин.
+    empty_value: —
