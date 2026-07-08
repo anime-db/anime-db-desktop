@@ -52,3 +52,8 @@ services:
     Doctrine\DBAL\Driver\AbstractSQLiteDriver\Middleware\EnableForeignKeys:
         tags:
             - { name: 'doctrine.middleware' }
+
+    # FrameworkBundle only aliases Symfony\Contracts\Translation\TranslatorInterface for
+    # autowiring, not TranslatorBagInterface::getCatalogue() (needed by TranslationController,
+    # issue #87) — add it explicitly so the interface stays autowireable.
+    Symfony\Component\Translation\TranslatorBagInterface: '@translator'

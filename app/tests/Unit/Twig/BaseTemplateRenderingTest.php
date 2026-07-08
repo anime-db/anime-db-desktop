@@ -28,6 +28,8 @@ declare(strict_types=1);
 namespace App\Tests\Unit\Twig;
 
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\RequestStack;
 use Twig\Environment;
 
 final class BaseTemplateRenderingTest extends KernelTestCase
@@ -36,11 +38,16 @@ final class BaseTemplateRenderingTest extends KernelTestCase
     {
         self::bootKernel();
 
+        /** @var RequestStack $requestStack */
+        $requestStack = self::getContainer()->get('request_stack');
+        $requestStack->push(Request::create('/'));
+
         /** @var Environment $twig */
         $twig = self::getContainer()->get('twig');
         $html = $twig->render('base.html.twig');
 
         $this->assertStringContainsString('<!DOCTYPE html>', $html);
         $this->assertStringContainsString('AnimeDB', $html);
+        $this->assertStringContainsString('<html lang="en">', $html);
     }
 }
