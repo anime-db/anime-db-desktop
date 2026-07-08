@@ -30,6 +30,8 @@ namespace App\Tests\Unit\Twig;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RequestStack;
+use Symfony\Component\HttpFoundation\Session\Session;
+use Symfony\Component\HttpFoundation\Session\Storage\MockArraySessionStorage;
 use Symfony\Component\Translation\LocaleSwitcher;
 use Twig\Environment;
 
@@ -39,10 +41,15 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
     private function fullyPopulatedAnime(): array
     {
         return [
+            'id' => 1,
             'title' => 'Shingeki no Kyojin',
             'type' => 'tv',
             'production_status' => 'ongoing',
+            'watch_status' => 'watching',
+            'user_rating' => null,
+            'is_series' => true,
             'episodes_count' => 25,
+            'watched_episodes' => 5,
             'duration_minutes' => 24,
             'studios' => ['MAPPA'],
             'countries' => ['JP'],
@@ -58,10 +65,15 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
     private function minimalAnime(): array
     {
         return [
+            'id' => 2,
             'title' => 'A Silent Voice',
             'type' => 'movie',
             'production_status' => 'released',
+            'watch_status' => 'plan',
+            'user_rating' => null,
+            'is_series' => false,
             'episodes_count' => null,
+            'watched_episodes' => null,
             'duration_minutes' => null,
             'studios' => [],
             'countries' => [],
@@ -73,13 +85,26 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
         ];
     }
 
-    public function testShowRendersFullyPopulatedAnimeWithoutErrors(): void
+    /**
+     * csrf_token() (used by the always-visible episode-increment form) reads/writes the CSRF
+     * token through the session of the current request, so rendering the editable fragment
+     * outside a real HTTP request-response cycle needs one pushed onto the request stack
+     * manually (see SettingsTemplateRenderingTest for the same pattern).
+     */
+    private function pushRequestWithSession(string $uri): void
     {
-        self::bootKernel();
+        $request = Request::create($uri);
+        $request->setSession(new Session(new MockArraySessionStorage()));
 
         /** @var RequestStack $requestStack */
         $requestStack = self::getContainer()->get('request_stack');
-        $requestStack->push(Request::create('/anime/1'));
+        $requestStack->push($request);
+    }
+
+    public function testShowRendersFullyPopulatedAnimeWithoutErrors(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession('/anime/1');
 
         /** @var LocaleSwitcher $localeSwitcher */
         $localeSwitcher = self::getContainer()->get(LocaleSwitcher::class);
@@ -110,10 +135,7 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
     public function testShowRendersAnimeWithoutOptionalFieldsWithoutErrors(): void
     {
         self::bootKernel();
-
-        /** @var RequestStack $requestStack */
-        $requestStack = self::getContainer()->get('request_stack');
-        $requestStack->push(Request::create('/anime/2'));
+        $this->pushRequestWithSession('/anime/2');
 
         /** @var LocaleSwitcher $localeSwitcher */
         $localeSwitcher = self::getContainer()->get(LocaleSwitcher::class);
@@ -134,10 +156,7 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
     public function testShowRendersDisabledOpenFolderButtonWhenStoragePathIsUnavailable(): void
     {
         self::bootKernel();
-
-        /** @var RequestStack $requestStack */
-        $requestStack = self::getContainer()->get('request_stack');
-        $requestStack->push(Request::create('/anime/3'));
+        $this->pushRequestWithSession('/anime/3');
 
         /** @var LocaleSwitcher $localeSwitcher */
         $localeSwitcher = self::getContainer()->get(LocaleSwitcher::class);

@@ -100,7 +100,6 @@ anime_detail:
     title: '%title% — AnimeDB'
     no_cover: No cover
     editable_heading: Management
-    editable_placeholder: Watch status, rating, notes and labels will appear here.
     reference_heading: Reference information
     field_type: Type
     field_episodes_count: Episode count
@@ -112,8 +111,19 @@ anime_detail:
     field_names: Alternative titles
     field_genres: Genres
     field_notes: Notes
+    field_progress: Watch progress
+    field_watch_status: Watch status
+    field_user_rating: Rating
     duration_minutes_suffix: min
     empty_value: —
     open_folder_button: Open files
     path_unavailable_tooltip: Path is unavailable
     sources_heading: External sources
+    save_button: Save
+    cancel_button: Cancel
+    rating_not_rated: Not rated
+    increment_episode_button: Mark next episode as watched
+    error_watch_status_invalid: Invalid watch status.
+    error_watch_status_not_released: Cannot mark as Completed while the anime has not been released yet.
+    error_user_rating_invalid: Rating must be between 1 and 5.
+    error_watched_episodes_invalid: Invalid watched episode count.

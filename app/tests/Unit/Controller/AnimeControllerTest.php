@@ -31,10 +31,12 @@ use App\Controller\AnimeController;
 use App\Entity\Enum\AnimeNameType;
 use App\Entity\Enum\GenreCode;
 use App\Entity\Enum\StorageType;
+use App\Entity\Enum\WatchStatus;
 use App\Entity\MovieAnime;
 use App\Entity\Storage;
 use App\Entity\Studio;
 use App\Entity\TvAnime;
+use App\Service\AnimeViewFactory;
 use PHPUnit\Framework\TestCase;
 use Twig\Environment;
 
@@ -57,7 +59,8 @@ final class AnimeControllerTest extends TestCase
             ->addStudio($studio)
             ->addGenre(GenreCode::Action)
             ->addName('進撃の巨人', AnimeNameType::Original)
-            ->addSource('https://shikimori.one/animes/16498');
+            ->addSource('https://shikimori.one/animes/16498')
+            ->setWatchStatus(WatchStatus::Watching);
         $anime->setEpisodesCount(25);
 
         $twig = $this->createMock(Environment::class);
@@ -68,7 +71,11 @@ final class AnimeControllerTest extends TestCase
 
                 return 'Shingeki no Kyojin' === $view['title']
                     && 'tv' === $view['type']
+                    && true === $view['is_series']
+                    && 'watching' === $view['watch_status']
+                    && null === $view['user_rating']
                     && 25 === $view['episodes_count']
+                    && null === $view['watched_episodes']
                     && 24 === $view['duration_minutes']
                     && ['MAPPA'] === $view['studios']
                     && ['JP'] === $view['countries']
@@ -85,7 +92,7 @@ final class AnimeControllerTest extends TestCase
             }))
             ->willReturn('<html></html>');
 
-        $controller = new AnimeController($twig);
+        $controller = new AnimeController($twig, new AnimeViewFactory());
         $response = $controller->show($anime);
 
         $this->assertSame(200, $response->getStatusCode());
@@ -94,7 +101,7 @@ final class AnimeControllerTest extends TestCase
     public function testShowOmitsEpisodesCountAndStorageForAMovieWithoutThem(): void
     {
         $anime = new MovieAnime();
-        $anime->setTitle('A Silent Voice');
+        $anime->setTitle('A Silent Voice')->setWatchStatus(WatchStatus::Plan);
 
         $twig = $this->createMock(Environment::class);
         $twig->expects($this->once())
@@ -102,7 +109,11 @@ final class AnimeControllerTest extends TestCase
             ->with('anime/show.html.twig', $this->callback(static function (array $params) {
                 $view = $params['anime'];
 
-                return null === $view['episodes_count']
+                return false === $view['is_series']
+                    && 'plan' === $view['watch_status']
+                    && null === $view['user_rating']
+                    && null === $view['episodes_count']
+                    && null === $view['watched_episodes']
                     && null === $view['storage']
                     && [] === $view['studios']
                     && [] === $view['countries']
@@ -113,7 +124,7 @@ final class AnimeControllerTest extends TestCase
             }))
             ->willReturn('<html></html>');
 
-        $controller = new AnimeController($twig);
+        $controller = new AnimeController($twig, new AnimeViewFactory());
         $controller->show($anime);
     }
 }
