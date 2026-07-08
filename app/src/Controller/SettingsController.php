@@ -28,7 +28,6 @@ declare(strict_types=1);
 namespace App\Controller;
 
 use App\Service\AppSettingsProvider;
-use App\Service\AvailableLocaleProvider;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
@@ -39,8 +38,14 @@ use Twig\Environment;
 
 final class SettingsController
 {
+    /**
+     * @param list<string> $locales same app.locales container parameter LocaleSubscriber
+     *                              negotiates against (issue #84) — plugin-provided locales are
+     *                              out of scope until the plugin translation registration
+     *                              mechanism is designed (issue #86 discussion)
+     */
     public function __construct(
-        private readonly AvailableLocaleProvider $availableLocales,
+        private readonly array $locales,
         private readonly AppSettingsProvider $settings,
         private readonly CsrfTokenManagerInterface $csrfTokenManager,
         private readonly Environment $twig,
@@ -64,7 +69,7 @@ final class SettingsController
         $this->assertValidCsrfToken('settings_set_locale', $request);
 
         $locale = (string) $request->request->get('locale', '');
-        if (!\in_array($locale, $this->availableLocales->getAvailableLocales(), true)) {
+        if (!\in_array($locale, $this->locales, true)) {
             throw new BadRequestHttpException('Unknown locale.');
         }
 
@@ -75,11 +80,9 @@ final class SettingsController
 
     private function renderIndex(): Response
     {
-        $availableLocales = $this->availableLocales->getAvailableLocales();
-
         return new Response($this->twig->render('settings/index.html.twig', [
-            'availableLocales' => $availableLocales,
-            'currentLocale' => $this->settings->getLocale() ?? ($availableLocales[0] ?? null),
+            'availableLocales' => $this->locales,
+            'currentLocale' => $this->settings->getLocale() ?? ($this->locales[0] ?? null),
         ]));
     }
 

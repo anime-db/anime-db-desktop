@@ -29,7 +29,6 @@ namespace App\Tests\Unit\Controller;
 
 use App\Controller\SettingsController;
 use App\Service\AppSettingsProvider;
-use App\Service\AvailableLocaleProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -40,26 +39,15 @@ use Twig\Environment;
 
 final class SettingsControllerTest extends TestCase
 {
-    private string $translationsDir;
     private string $configPath;
 
     protected function setUp(): void
     {
-        $this->translationsDir = sys_get_temp_dir().'/anime-translations-test-'.uniqid();
-        mkdir($this->translationsDir);
-        file_put_contents($this->translationsDir.'/messages.en.yaml', '');
-        file_put_contents($this->translationsDir.'/messages.ru.yaml', '');
-
         $this->configPath = sys_get_temp_dir().'/anime-config-test-'.uniqid().'.json';
     }
 
     protected function tearDown(): void
     {
-        foreach (glob($this->translationsDir.'/*') ?: [] as $file) {
-            unlink($file);
-        }
-        rmdir($this->translationsDir);
-
         if (is_file($this->configPath)) {
             unlink($this->configPath);
         }
@@ -75,7 +63,7 @@ final class SettingsControllerTest extends TestCase
         }
 
         return new SettingsController(
-            new AvailableLocaleProvider($this->translationsDir),
+            ['en', 'ru'],
             new AppSettingsProvider($this->configPath),
             $csrfTokenManager,
             $twig ?? $this->createStub(Environment::class),
