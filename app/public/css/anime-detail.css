@@ -1,0 +1,131 @@
+/**
+ * AnimeDb package.
+ *
+ * @author    Peter Gribanov <info@peter-gribanov.ru>
+ * @copyright Copyright (c) 2026, Peter Gribanov
+ * @license   https://gnu.org GPL-3.0-or-later
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://gnu.org>.
+ */
+
+.anime-detail {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    gap: 24px;
+    padding: 16px;
+}
+
+.anime-detail__media {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.anime-detail__cover {
+    width: 100%;
+    aspect-ratio: 2 / 3;
+    border-radius: 6px;
+    background: #eee;
+}
+
+.anime-detail__cover--placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #999;
+    font-size: 0.85em;
+}
+
+.anime-detail__title {
+    margin: 0;
+    font-size: 1.4em;
+}
+
+.anime-detail__content {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+
+.anime-detail__editable,
+.anime-detail__reference {
+    padding: 16px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+}
+
+.anime-detail__section-heading {
+    margin: 0 0 12px;
+    font-size: 1.1em;
+}
+
+.anime-detail__placeholder {
+    margin: 0;
+    color: #666;
+}
+
+.anime-detail__status-badge {
+    display: inline-block;
+    margin-bottom: 12px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background: #eee;
+    color: #333;
+    font-size: 0.85em;
+}
+
+.anime-detail__status-badge--announced {
+    background: #f2dede;
+    color: #a94442;
+}
+
+.anime-detail__status-badge--ongoing {
+    background: #d9edf7;
+    color: #31708f;
+}
+
+.anime-detail__status-badge--released {
+    background: #dff0d8;
+    color: #3c763d;
+}
+
+.anime-detail__fields {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 6px 12px;
+    margin: 0;
+}
+
+.anime-detail__fields dt {
+    color: #666;
+    font-weight: bold;
+}
+
+.anime-detail__fields dd {
+    margin: 0;
+}
+
+.anime-detail__names {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.anime-detail__name-type {
+    color: #666;
+    font-size: 0.85em;
+}

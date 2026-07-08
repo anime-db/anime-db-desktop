@@ -95,3 +95,22 @@ anime_list:
     empty: The list is empty.
     error: Failed to load the list.
     no_cover: No cover
+
+anime_detail:
+    title: '%title% — AnimeDB'
+    no_cover: No cover
+    editable_heading: Management
+    editable_placeholder: Watch status, rating, notes and labels will appear here.
+    reference_heading: Reference information
+    field_type: Type
+    field_episodes_count: Episode count
+    field_duration_minutes: Duration
+    field_studios: Studio
+    field_countries: Country
+    field_storage: Storage
+    field_storage_path: File path
+    field_names: Alternative titles
+    field_genres: Genres
+    field_notes: Notes
+    duration_minutes_suffix: min
+    empty_value: —
