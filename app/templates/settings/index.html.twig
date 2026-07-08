@@ -24,6 +24,18 @@
 
 {% block body %}
     <h1>Настройки</h1>
+
+    {% set localeNames = {'ru': 'Русский', 'en': 'English'} %}
+    <form method="post" action="{{ path('settings_set_locale') }}">
+        <input type="hidden" name="_token" value="{{ csrf_token('settings_set_locale') }}">
+        <label for="locale">{{ 'settings.language_label'|trans({}, null, currentLocale) }}</label>
+        <select id="locale" name="locale" onchange="this.form.submit()">
+            {% for locale in availableLocales %}
+                <option value="{{ locale }}"{% if locale == currentLocale %} selected{% endif %}>{{ localeNames[locale] ?? locale|upper }}</option>
+            {% endfor %}
+        </select>
+    </form>
+
     <ul>
         <li><a href="{{ path('settings_labels_index') }}">Метки</a></li>
     </ul>

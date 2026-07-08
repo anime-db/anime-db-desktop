@@ -89,4 +89,56 @@ final class AppSettingsProviderTest extends TestCase
 
         $this->assertSame(PaginationMode::Classic, $provider->getPaginationMode());
     }
+
+    public function testGetLocaleReturnsNullWhenFileIsMissing(): void
+    {
+        $provider = new AppSettingsProvider($this->configPath);
+
+        $this->assertNull($provider->getLocale());
+    }
+
+    public function testGetLocaleReadsValueFromConfig(): void
+    {
+        file_put_contents($this->configPath, json_encode(['locale' => 'ru']));
+
+        $provider = new AppSettingsProvider($this->configPath);
+
+        $this->assertSame('ru', $provider->getLocale());
+    }
+
+    public function testSetLocaleCreatesConfigFileWhenMissing(): void
+    {
+        $provider = new AppSettingsProvider($this->configPath);
+
+        $provider->setLocale('en');
+
+        $this->assertSame('en', $provider->getLocale());
+    }
+
+    public function testSetLocaleOverwritesOnlyTheLocaleKey(): void
+    {
+        file_put_contents($this->configPath, json_encode(['appSecret' => 'abc', 'locale' => 'en']));
+
+        $provider = new AppSettingsProvider($this->configPath);
+        $provider->setLocale('ru');
+
+        $data = json_decode((string) file_get_contents($this->configPath), true);
+
+        $this->assertSame('abc', $data['appSecret']);
+        $this->assertSame('ru', $data['locale']);
+    }
+
+    public function testSetLocaleCreatesMissingParentDirectory(): void
+    {
+        $configPath = sys_get_temp_dir().'/anime-config-test-'.uniqid().'/nested/config.json';
+        $provider = new AppSettingsProvider($configPath);
+
+        $provider->setLocale('ru');
+
+        $this->assertSame('ru', $provider->getLocale());
+
+        unlink($configPath);
+        rmdir(\dirname($configPath));
+        rmdir(\dirname($configPath, 2));
+    }
 }

@@ -64,13 +64,33 @@ final class SettingsTemplateRenderingTest extends KernelTestCase
     public function testSettingsIndexRendersWithoutErrors(): void
     {
         self::bootKernel();
+        $this->pushRequestWithSession();
 
         /** @var Environment $twig */
         $twig = self::getContainer()->get('twig');
-        $html = $twig->render('settings/index.html.twig');
+        $html = $twig->render('settings/index.html.twig', [
+            'availableLocales' => ['en', 'ru'],
+            'currentLocale' => 'ru',
+        ]);
 
         $this->assertStringContainsString('Настройки', $html);
         $this->assertStringContainsString('/settings/labels', $html);
+    }
+
+    public function testSettingsIndexRendersLocaleSwitcherWithCurrentLocaleSelected(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession();
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('settings/index.html.twig', [
+            'availableLocales' => ['en', 'ru'],
+            'currentLocale' => 'en',
+        ]);
+
+        $this->assertStringContainsString('<option value="en" selected>English</option>', $html);
+        $this->assertStringContainsString('<option value="ru">Русский</option>', $html);
     }
 
     public function testLabelIndexRendersLabelsWithoutErrors(): void

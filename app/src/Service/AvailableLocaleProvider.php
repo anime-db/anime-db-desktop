@@ -1,0 +1,59 @@
+<?php
+
+/**
+ * AnimeDb package.
+ *
+ * @author    Peter Gribanov <info@peter-gribanov.ru>
+ * @copyright Copyright (c) 2026, Peter Gribanov
+ * @license   https://gnu.org GPL-3.0-or-later
+ */
+
+/*
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://gnu.org>.
+ */
+
+declare(strict_types=1);
+
+namespace App\Service;
+
+/**
+ * Builds the settings page's language switcher options by scanning app/translations/ for
+ * messages.{locale}.yaml files, rather than hardcoding the list. Unlike the app.locales container
+ * parameter LocaleSubscriber negotiates against (kept static for performance, see services.yaml),
+ * this provider is only touched while rendering or submitting the settings page, so the extra
+ * filesystem scan is negligible.
+ */
+final class AvailableLocaleProvider
+{
+    public function __construct(private readonly string $translationsDir)
+    {
+    }
+
+    /** @return list<string> */
+    public function getAvailableLocales(): array
+    {
+        $files = glob($this->translationsDir.'/messages.*.yaml') ?: [];
+
+        $locales = [];
+        foreach ($files as $file) {
+            if (preg_match('/^messages\.([a-z]{2}(?:_[A-Z]{2})?)\.yaml$/', basename($file), $matches)) {
+                $locales[] = $matches[1];
+            }
+        }
+
+        sort($locales);
+
+        return $locales;
+    }
+}

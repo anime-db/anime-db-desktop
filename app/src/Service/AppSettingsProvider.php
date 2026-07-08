@@ -30,9 +30,10 @@ namespace App\Service;
 use App\Entity\Enum\PaginationMode;
 
 /**
- * Reads user-facing app settings from %AppData%/config.json, the same file
- * native/config.js writes appSecret to. Missing file/key/unreadable JSON all fall back to
- * the documented default (infinite scroll, issue #74) rather than failing the request.
+ * Reads and writes user-facing app settings in %AppData%/config.json, the same file
+ * native/config.js writes appSecret and locale (issue #85) to. Missing file/key/unreadable JSON
+ * all fall back to the documented default (infinite scroll, issue #74) rather than failing the
+ * request.
  */
 final class AppSettingsProvider
 {
@@ -50,6 +51,33 @@ final class AppSettingsProvider
         }
 
         return PaginationMode::tryFrom($mode) ?? PaginationMode::InfiniteScroll;
+    }
+
+    public function getLocale(): ?string
+    {
+        $locale = $this->readConfig()['locale'] ?? null;
+
+        return \is_string($locale) ? $locale : null;
+    }
+
+    /**
+     * Overwrites the locale field in place, keeping every other key (appSecret, paginationMode,
+     * ...) untouched — the same read-modify-write pattern native/config.js uses.
+     */
+    public function setLocale(string $locale): void
+    {
+        $config = $this->readConfig();
+        $config['locale'] = $locale;
+
+        $directory = \dirname($this->configPath);
+        if (!is_dir($directory)) {
+            mkdir($directory, recursive: true);
+        }
+
+        file_put_contents(
+            $this->configPath,
+            json_encode($config, \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE),
+        );
     }
 
     /** @return array<string, mixed> */

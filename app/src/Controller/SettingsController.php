@@ -27,19 +27,67 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
+use App\Service\AppSettingsProvider;
+use App\Service\AvailableLocaleProvider;
+use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\Routing\Attribute\Route;
+use Symfony\Component\Security\Csrf\CsrfToken;
+use Symfony\Component\Security\Csrf\CsrfTokenManagerInterface;
 use Twig\Environment;
 
 final class SettingsController
 {
-    public function __construct(private readonly Environment $twig)
-    {
+    public function __construct(
+        private readonly AvailableLocaleProvider $availableLocales,
+        private readonly AppSettingsProvider $settings,
+        private readonly CsrfTokenManagerInterface $csrfTokenManager,
+        private readonly Environment $twig,
+    ) {
     }
 
     #[Route('/settings', name: 'settings_index', methods: ['GET'])]
     public function index(): Response
     {
-        return new Response($this->twig->render('settings/index.html.twig'));
+        return $this->renderIndex();
+    }
+
+    /**
+     * Persists the chosen locale to %AppData%/config.json and re-renders the settings page in
+     * place — no redirect to another URL, so the switch reads as an instant page refresh rather
+     * than a navigation.
+     */
+    #[Route('/settings', name: 'settings_set_locale', methods: ['POST'])]
+    public function setLocale(Request $request): Response
+    {
+        $this->assertValidCsrfToken('settings_set_locale', $request);
+
+        $locale = (string) $request->request->get('locale', '');
+        if (!\in_array($locale, $this->availableLocales->getAvailableLocales(), true)) {
+            throw new BadRequestHttpException('Unknown locale.');
+        }
+
+        $this->settings->setLocale($locale);
+
+        return $this->renderIndex();
+    }
+
+    private function renderIndex(): Response
+    {
+        $availableLocales = $this->availableLocales->getAvailableLocales();
+
+        return new Response($this->twig->render('settings/index.html.twig', [
+            'availableLocales' => $availableLocales,
+            'currentLocale' => $this->settings->getLocale() ?? ($availableLocales[0] ?? null),
+        ]));
+    }
+
+    private function assertValidCsrfToken(string $tokenId, Request $request): void
+    {
+        $token = new CsrfToken($tokenId, (string) $request->request->get('_token'));
+        if (!$this->csrfTokenManager->isTokenValid($token)) {
+            throw new BadRequestHttpException('Invalid CSRF token.');
+        }
     }
 }

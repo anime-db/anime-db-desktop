@@ -26,6 +26,12 @@ parameters:
     # directory anyway). Extend this list when adding a core locale.
     app.locales: ['en', 'ru']
 
+    # Used by AvailableLocaleProvider to build the settings page's language switcher options.
+    # Unlike app.locales above, this one *is* meant to scan the filesystem: it's only read while
+    # rendering/submitting the settings page, not on every main request, so the I/O cost the
+    # LocaleSubscriber comment warns about doesn't apply here.
+    app.translations_dir: '%kernel.project_dir%/translations'
+
 services:
     # default configuration for services in *this* file
     _defaults:
@@ -35,6 +41,7 @@ services:
             $mediaDir: '%app.media_dir%'
             $configPath: '%app.config_path%'
             $locales: '%app.locales%'
+            $translationsDir: '%app.translations_dir%'
 
     # makes classes in src/ available to be used as services
     # this creates a service per class whose id is the fully-qualified class name

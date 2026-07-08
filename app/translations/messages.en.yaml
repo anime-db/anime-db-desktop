@@ -66,3 +66,6 @@ production_status:
     announced: Announced
     ongoing: Ongoing
     released: Released
+
+settings:
+    language_label: Interface language
