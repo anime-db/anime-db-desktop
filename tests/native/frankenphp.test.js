@@ -24,6 +24,7 @@
 jest.mock('../../native/paths', () => ({
     getAppRootDir:         jest.fn(() => '/fake/app'),
     getDbPath:             jest.fn(() => '/fake/userData/data.db'),
+    getQueueDbPath:        jest.fn(() => '/fake/userData/queue.db'),
     getPhpIniDir:          jest.fn(() => '/fake/userData'),
     getPhpIniPath:         jest.fn(() => '/fake/userData/php.ini'),
     getRuntimeDir:         jest.fn(() => '/fake/userData/var'),
@@ -76,6 +77,18 @@ describe('buildEnv', () => {
         const env = buildEnv(8000, 9000, 7700, 'test-key');
         expect(env.DATABASE_URL).toMatch(/^sqlite:\/\/\//);
         expect(env.DATABASE_URL).toContain('data.db');
+    });
+
+    test('includes QUEUE_DATABASE_URL as a sqlite:// URL pointing to a different file than DATABASE_URL', () => {
+        const env = buildEnv(8000, 9000, 7700, 'test-key');
+        expect(env.QUEUE_DATABASE_URL).toMatch(/^sqlite:\/\/\//);
+        expect(env.QUEUE_DATABASE_URL).toContain('queue.db');
+        expect(env.QUEUE_DATABASE_URL).not.toBe(env.DATABASE_URL);
+    });
+
+    test('includes MESSENGER_TRANSPORT_DSN pointing to the queue connection', () => {
+        const env = buildEnv(8000, 9000, 7700, 'test-key');
+        expect(env.MESSENGER_TRANSPORT_DSN).toBe('doctrine://queue?auto_setup=0');
     });
 
     test('includes PHPRC pointing to the php.ini directory', () => {

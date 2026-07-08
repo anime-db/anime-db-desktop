@@ -1,0 +1,19 @@
+framework:
+    messenger:
+        # failure_transport deliberately not configured — single-user desktop app, nobody to
+        # manually triage `messenger:failed:*` on a schedule.
+        transports:
+            # Backed by the dedicated `queue` connection (data/queue.db, see doctrine.yaml) —
+            # isolated from user data. The messenger_messages table is created explicitly via
+            # `bin/console messenger:setup-transports`.
+            async:
+                dsn: '%env(MESSENGER_TRANSPORT_DSN)%'
+                retry_strategy:
+                    max_retries: 3
+                    delay: 1000
+                    multiplier: 2
+                    max_delay: 0
+
+        routing:
+            # Route your messages to the transports
+            # 'App\Message\YourMessage': async

@@ -11,6 +11,9 @@ app/var/
 app/.env.local
 app/.env.*.local
 
+# Dev-режим SQLite (data.db, queue.db) — в продакшн живёт в AppData, не в репозитории
+data/
+
 # Frontend assets — генерируются при сборке, не хранятся в git
 app/public/js/htmx.min.js
 

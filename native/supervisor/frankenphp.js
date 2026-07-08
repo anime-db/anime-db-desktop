@@ -68,18 +68,20 @@ function ensurePhpIni() {
 function buildEnv(appPort, wsPort, meiliPort, meiliKey) {
     return {
         ...process.env,
-        APP_PORT:         String(appPort),
-        WS_PORT:          String(wsPort),
-        APP_ROOT:         paths.getAppRootDir(),
-        APP_ENV:          'prod',
-        APP_SECRET:       getOrCreateAppSecret(),
-        DATABASE_URL:     `sqlite:///${paths.getDbPath()}`,
-        PHPRC:            paths.getPhpIniDir(),
-        APP_RUNTIME_DIR:  paths.getRuntimeDir(),
-        MEDIA_DIR:        paths.getMediaDir(),
-        CONFIG_PATH:      paths.getConfigPath(),
-        MEILISEARCH_URL:  `http://127.0.0.1:${meiliPort}`,
-        MEILISEARCH_KEY:  meiliKey,
+        APP_PORT:                String(appPort),
+        WS_PORT:                 String(wsPort),
+        APP_ROOT:                paths.getAppRootDir(),
+        APP_ENV:                 'prod',
+        APP_SECRET:              getOrCreateAppSecret(),
+        DATABASE_URL:            `sqlite:///${paths.getDbPath()}`,
+        QUEUE_DATABASE_URL:      `sqlite:///${paths.getQueueDbPath()}`,
+        MESSENGER_TRANSPORT_DSN: 'doctrine://queue?auto_setup=0',
+        PHPRC:                   paths.getPhpIniDir(),
+        APP_RUNTIME_DIR:         paths.getRuntimeDir(),
+        MEDIA_DIR:               paths.getMediaDir(),
+        CONFIG_PATH:             paths.getConfigPath(),
+        MEILISEARCH_URL:         `http://127.0.0.1:${meiliPort}`,
+        MEILISEARCH_KEY:         meiliKey,
     };
 }
 
