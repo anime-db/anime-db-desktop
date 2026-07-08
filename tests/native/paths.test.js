@@ -43,6 +43,10 @@ test('getDbPath returns data.db inside userData', () => {
     expect(paths.getDbPath()).toBe(path.join(USER_DATA, 'data.db'));
 });
 
+test('getQueueDbPath returns queue.db inside userData', () => {
+    expect(paths.getQueueDbPath()).toBe(path.join(USER_DATA, 'queue.db'));
+});
+
 test('getMeilisearchDataDir returns meilisearch/ inside userData', () => {
     expect(paths.getMeilisearchDataDir()).toBe(path.join(USER_DATA, 'meilisearch'));
 });
@@ -78,6 +82,7 @@ test('all path functions reflect a different userData value (fallback scenario)'
     app.getPath.mockReturnValue(OTHER);
     expect(paths.getUserDataDir()).toBe(OTHER);
     expect(paths.getDbPath()).toBe(path.join(OTHER, 'data.db'));
+    expect(paths.getQueueDbPath()).toBe(path.join(OTHER, 'queue.db'));
     expect(paths.getRuntimeDir()).toBe(path.join(OTHER, 'var'));
     expect(paths.getMeilisearchDataDir()).toBe(path.join(OTHER, 'meilisearch'));
     expect(paths.getMeilisearchKeyPath()).toBe(path.join(OTHER, 'meilisearch-key.txt'));

@@ -1,7 +1,17 @@
 doctrine:
     dbal:
-        url: '%env(DATABASE_URL)%'
-        driver: pdo_sqlite
+        default_connection: default
+        connections:
+            default:
+                url: '%env(resolve:DATABASE_URL)%'
+                driver: pdo_sqlite
+            # Dedicated connection for the Messenger `async` transport (data/queue.db) — kept
+            # separate from the main data.db because queue data is disposable (unlike user data)
+            # and a separate SQLite file avoids lock contention between the FrankenPHP HTTP
+            # worker and the future consumer process.
+            queue:
+                url: '%env(resolve:QUEUE_DATABASE_URL)%'
+                driver: pdo_sqlite
         types:
             unix_timestamp: App\Doctrine\Type\UnixTimestampType
             rating: App\Doctrine\Type\RatingType

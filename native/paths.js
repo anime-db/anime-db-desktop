@@ -30,6 +30,7 @@ const appRootDir  = () => path.join(__dirname, '..', 'app');
 module.exports = {
     getUserDataDir:        userDataDir,
     getDbPath:             () => path.join(userDataDir(), 'data.db'),
+    getQueueDbPath:        () => path.join(userDataDir(), 'queue.db'),
     getMeilisearchDataDir: () => path.join(userDataDir(), 'meilisearch'),
     getPhpIniDir:          () => userDataDir(),
     getPhpIniPath:         () => path.join(userDataDir(), 'php.ini'),

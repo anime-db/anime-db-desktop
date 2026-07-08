@@ -167,6 +167,15 @@ FrankenPHP завершается первым — новых HTTP-запрос�
 - Валидность локали при записи проверяется по списку `app.locales`, инжектируемому в контроллер тем же биндом `$locales`, что и в `LocaleSubscriber`.
 - Названия языков в `<select>` (эндонимы: «Русский», «English») хранятся в `messages.ru.yaml`/`messages.en.yaml` под ключами `settings.locale.ru`/`settings.locale.en` — с одинаковыми значениями в обоих файлах, поскольку название языка не зависит от текущей локали интерфейса. Шаблон обращается к ним через `('settings.locale.'~locale)|trans({}, null, currentLocale)`, а не хардкодит карту в Twig.
 
+## Symfony Messenger — отдельное соединение и транспорт для очереди (issue #97)
+
+- Второе DBAL-соединение `queue` (`config/packages/doctrine.yaml`, `dbal.connections.queue`) указывает на `data/queue.db` — отдельный от `data/data.db` файл. Причина: ценность потери разная (очередь эфемерна, пользовательские данные — нет), плюс отдельный файл SQLite снимает конкуренцию по локам между HTTP-воркером FrankenPHP и будущим consumer-процессом (issue про supervisor вынесен отдельно, вне объёма).
+- Единственный транспорт `async` (`config/packages/messenger.yaml`) сидит на DSN `doctrine://queue?auto_setup=0` — `auto_setup=0` осознанно: таблица `messenger_messages` создаётся явно через `bin/console messenger:setup-transports`, а не неявно при первом подключении.
+- `retry_strategy` транспорта `async` задан явно (`max_retries: 3, delay: 1000, multiplier: 2, max_delay: 0`), хотя эти значения совпадают с дефолтом Symfony — сделано намеренно, чтобы поведение не менялось незаметно при апгрейде Symfony. Конкретные хендлеры могут переопределять поведение поштучно через `UnrecoverableMessageHandlingException`.
+- `failure_transport` сознательно не заводится — desktop-приложение с одним конечным пользователем, некому вручную разбирать `messenger:failed:*` по расписанию.
+- В продакшн `QUEUE_DATABASE_URL` и `MESSENGER_TRANSPORT_DSN` передаются через `buildEnv()` в `native/supervisor/frankenphp.js` (по аналогии с `DATABASE_URL`), путь — `paths.getQueueDbPath()` (`AppData/AnimeDB/queue.db`, плоско, как и `data.db`, без вложенной папки `data/` — это только dev-соглашение из `.env`).
+- **Не входит в объём**: защита от конкурентного выполнения задач (`job_locks`), supervisor-процесс consumer'а в Electron, реальная бизнес-логика обработчиков — всё отдельными issue.
+
 ## JSON-эндпоинт переводов для JS (issue #87)
 
 - `App\Controller\TranslationController` (`GET /translations/{locale}.json`) отдаёт `TranslatorBagInterface::getCatalogue($locale)->all('messages')` как JSON. `{locale}` валидируется по тому же `app.locales`, что и `LocaleSubscriber`/`SettingsController` — неизвестная локаль (проходящая regex-требование маршрута `[a-zA-Z]{2}`, но отсутствующая в списке) даёт `404`, а не тихий пустой каталог.
