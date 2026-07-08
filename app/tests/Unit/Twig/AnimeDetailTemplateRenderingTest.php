@@ -46,10 +46,11 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
             'duration_minutes' => 24,
             'studios' => ['MAPPA'],
             'countries' => ['JP'],
-            'storage' => ['name' => 'Local', 'type' => 'folder', 'path' => '/anime/aot'],
+            'storage' => ['name' => 'Local', 'type' => 'folder', 'path' => '/anime/aot', 'path_available' => true],
             'names' => [['name' => '進撃の巨人', 'type' => 'original']],
             'genres' => ['action', 'drama'],
             'notes' => 'Rewatch before the finale.',
+            'sources' => [['url' => 'https://shikimori.one/animes/16498', 'domain' => 'shikimori.one']],
         ];
     }
 
@@ -68,6 +69,7 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
             'names' => [],
             'genres' => [],
             'notes' => null,
+            'sources' => [],
         ];
     }
 
@@ -99,6 +101,10 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
         $this->assertStringContainsString('Экшен', $html);
         $this->assertStringContainsString('Rewatch before the finale.', $html);
         $this->assertStringContainsString('anime-detail__status-badge--ongoing', $html);
+        $this->assertStringContainsString('data-open-folder-path="/anime/aot"', $html);
+        $this->assertStringNotContainsString('disabled', $html);
+        $this->assertStringContainsString('https://shikimori.one/favicon.ico', $html);
+        $this->assertStringContainsString('https://shikimori.one/animes/16498', $html);
     }
 
     public function testShowRendersAnimeWithoutOptionalFieldsWithoutErrors(): void
@@ -121,5 +127,30 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
         $this->assertStringContainsString('Фильм', $html);
         $this->assertStringContainsString('Вышло', $html);
         $this->assertStringNotContainsString('anime_detail.field_episodes_count', $html);
+        $this->assertStringNotContainsString('data-open-folder-path', $html);
+        $this->assertStringNotContainsString('anime-detail__sources', $html);
+    }
+
+    public function testShowRendersDisabledOpenFolderButtonWhenStoragePathIsUnavailable(): void
+    {
+        self::bootKernel();
+
+        /** @var RequestStack $requestStack */
+        $requestStack = self::getContainer()->get('request_stack');
+        $requestStack->push(Request::create('/anime/3'));
+
+        /** @var LocaleSwitcher $localeSwitcher */
+        $localeSwitcher = self::getContainer()->get(LocaleSwitcher::class);
+        $localeSwitcher->setLocale('ru');
+
+        $anime = $this->fullyPopulatedAnime();
+        $anime['storage']['path_available'] = false;
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('anime/show.html.twig', ['anime' => $anime]);
+
+        $this->assertStringContainsString('disabled', $html);
+        $this->assertStringContainsString('Путь не доступен', $html);
     }
 }

@@ -29,6 +29,7 @@ namespace App\Controller;
 
 use App\Entity\Anime;
 use App\Entity\AnimeName;
+use App\Entity\AnimeSource;
 use App\Entity\SeriesAnime;
 use App\Entity\Storage;
 use App\Entity\Studio;
@@ -37,9 +38,10 @@ use Symfony\Component\Routing\Attribute\Route;
 use Twig\Environment;
 
 /**
- * Anime detail page (issue #101): the skeleton layout and the read-only reference block
- * only. Watch status/rating/notes/labels editing and the cover/gallery are separate parts
- * of the same decomposition (see the two-column body in anime/show.html.twig).
+ * Anime detail page: the skeleton layout, the read-only reference block (issue #101), the
+ * external sources block and the "open storage folder" button (issue #105). Watch
+ * status/rating/notes/labels editing and the cover/gallery are separate parts of the same
+ * decomposition (see the two-column body in anime/show.html.twig).
  *
  * The view is handed a plain array, not the Anime entity directly: Twig's
  * strict_variables is enabled in the test env, and SeriesAnime-only accessors like
@@ -78,10 +80,14 @@ final class AnimeController
             ),
             'genres' => array_map(static fn ($code): string => $code->value, $anime->getGenreCodes()),
             'notes' => $anime->getNotes(),
+            'sources' => array_map(
+                static fn (AnimeSource $source): array => ['url' => $source->url, 'domain' => (string) parse_url($source->url, PHP_URL_HOST)],
+                $anime->getSources()->toArray(),
+            ),
         ];
     }
 
-    /** @return array{name: string, type: string, path: string}|null */
+    /** @return array{name: string, type: string, path: string, path_available: bool}|null */
     private function serializeStorage(?Storage $storage): ?array
     {
         if ($storage === null) {
@@ -92,6 +98,10 @@ final class AnimeController
             'name' => $storage->getName(),
             'type' => $storage->getType()->value,
             'path' => $storage->getPath(),
+            // Checked here (server-side, at page load), not on button click: FrankenPHP runs
+            // locally on the same machine as the user's files, so this is a real filesystem
+            // check, not a network round-trip.
+            'path_available' => is_readable($storage->getPath()),
         ];
     }
 }

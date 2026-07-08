@@ -114,3 +114,6 @@ anime_detail:
     field_notes: Notes
     duration_minutes_suffix: min
     empty_value: —
+    open_folder_button: Open files
+    path_unavailable_tooltip: Path is unavailable
+    sources_heading: External sources
