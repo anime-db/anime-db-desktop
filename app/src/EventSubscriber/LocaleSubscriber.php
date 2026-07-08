@@ -34,13 +34,17 @@ use Symfony\Component\HttpKernel\KernelEvents;
 /**
  * Negotiates the request locale from the Accept-Language header.
  *
- * The list of available locales is not hardcoded: it is derived from the translation files
- * present in $translationsDir (domain.locale.format, e.g. messages.ru.yaml), so a locale added
- * later - including by a plugin - is picked up without a code change.
+ * The available locales come from the app.locales container parameter (services.yaml), not from
+ * scanning app/translations/ on every request: the subscriber is a singleton that survives
+ * between requests in FrankenPHP worker mode, so a filesystem scan there would be per-request I/O
+ * for a locale set that never changes at runtime.
  */
 final class LocaleSubscriber implements EventSubscriberInterface
 {
-    public function __construct(private readonly string $translationsDir)
+    /**
+     * @param list<string> $locales
+     */
+    public function __construct(private readonly array $locales)
     {
     }
 
@@ -57,34 +61,14 @@ final class LocaleSubscriber implements EventSubscriberInterface
             return;
         }
 
-        $locales = $this->getAvailableLocales();
-        if ([] === $locales) {
+        if ([] === $this->locales) {
             return;
         }
 
         $request = $event->getRequest();
-        $preferredLocale = $request->getPreferredLanguage($locales);
+        $preferredLocale = $request->getPreferredLanguage($this->locales);
         if (null !== $preferredLocale) {
             $request->setLocale($preferredLocale);
         }
-    }
-
-    /**
-     * @return list<string>
-     */
-    private function getAvailableLocales(): array
-    {
-        $files = glob($this->translationsDir.'/*.*.*') ?: [];
-
-        $locales = [];
-        foreach ($files as $file) {
-            // translation file name format is "domain.locale.format", e.g. "messages.ru.yaml"
-            $parts = explode('.', basename($file));
-            if (\count($parts) >= 3) {
-                $locales[] = $parts[\count($parts) - 2];
-            }
-        }
-
-        return array_values(array_unique($locales));
     }
 }

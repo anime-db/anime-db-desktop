@@ -19,9 +19,12 @@ parameters:
     app.config_path.dev_default: '%kernel.project_dir%/var/config.json'
     app.config_path: '%env(default:app.config_path.dev_default:CONFIG_PATH)%'
 
-    # Same directory as framework.translator.default_path (config/packages/framework.yaml) —
-    # LocaleSubscriber scans it to discover available locales without hardcoding them.
-    app.translations_dir: '%kernel.project_dir%/translations'
+    # Locales LocaleSubscriber negotiates against. Kept as an explicit list rather than scanning
+    # app/translations/ on every request (FrankenPHP worker mode keeps the subscriber alive
+    # between requests, so a glob() there would mean disk I/O per request for no benefit — the
+    # core locale set doesn't change at runtime, and a plugin's locales won't live in this
+    # directory anyway). Extend this list when adding a core locale.
+    app.locales: ['en', 'ru']
 
 services:
     # default configuration for services in *this* file
@@ -31,7 +34,7 @@ services:
         bind:
             $mediaDir: '%app.media_dir%'
             $configPath: '%app.config_path%'
-            $translationsDir: '%app.translations_dir%'
+            $locales: '%app.locales%'
 
     # makes classes in src/ available to be used as services
     # this creates a service per class whose id is the fully-qualified class name

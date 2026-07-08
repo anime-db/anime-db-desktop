@@ -35,22 +35,6 @@ use Symfony\Component\HttpKernel\KernelEvents;
 
 final class LocaleSubscriberTest extends TestCase
 {
-    private string $translationsDir;
-
-    protected function setUp(): void
-    {
-        $this->translationsDir = sys_get_temp_dir().'/locale-subscriber-test-'.uniqid();
-        mkdir($this->translationsDir);
-    }
-
-    protected function tearDown(): void
-    {
-        foreach (glob($this->translationsDir.'/*') ?: [] as $file) {
-            unlink($file);
-        }
-        rmdir($this->translationsDir);
-    }
-
     public function testGetSubscribedEvents(): void
     {
         $events = LocaleSubscriber::getSubscribedEvents();
@@ -61,59 +45,54 @@ final class LocaleSubscriberTest extends TestCase
 
     public function testOnKernelRequestSetsLocaleMatchingAcceptLanguage(): void
     {
-        touch($this->translationsDir.'/messages.en.yaml');
-        touch($this->translationsDir.'/messages.ru.yaml');
-
         $request = new Request();
         $request->headers->set('Accept-Language', 'ru,en;q=0.5');
 
-        $this->dispatch($request);
+        $this->dispatch($request, ['en', 'ru']);
 
         $this->assertSame('ru', $request->getLocale());
     }
 
     public function testOnKernelRequestFallsBackToFirstAvailableLocaleWhenNoneMatches(): void
     {
-        touch($this->translationsDir.'/messages.en.yaml');
-        touch($this->translationsDir.'/messages.ru.yaml');
-
         $request = new Request();
         $request->headers->set('Accept-Language', 'fr');
 
-        $this->dispatch($request);
+        $this->dispatch($request, ['en', 'ru']);
 
         $this->assertSame('en', $request->getLocale());
     }
 
-    public function testOnKernelRequestKeepsDefaultLocaleWhenNoTranslationFilesExist(): void
+    public function testOnKernelRequestKeepsDefaultLocaleWhenNoLocalesConfigured(): void
     {
         $defaultLocale = (new Request())->getLocale();
 
         $request = new Request();
         $request->headers->set('Accept-Language', 'ru');
 
-        $this->dispatch($request);
+        $this->dispatch($request, []);
 
         $this->assertSame($defaultLocale, $request->getLocale());
     }
 
     public function testOnKernelRequestIgnoresNonMainRequest(): void
     {
-        touch($this->translationsDir.'/messages.ru.yaml');
-
         $defaultLocale = (new Request())->getLocale();
 
         $request = new Request();
         $request->headers->set('Accept-Language', 'ru');
 
-        $this->dispatch($request, isMainRequest: false);
+        $this->dispatch($request, ['en', 'ru'], isMainRequest: false);
 
         $this->assertSame($defaultLocale, $request->getLocale());
     }
 
-    private function dispatch(Request $request, bool $isMainRequest = true): void
+    /**
+     * @param list<string> $locales
+     */
+    private function dispatch(Request $request, array $locales, bool $isMainRequest = true): void
     {
-        $subscriber = new LocaleSubscriber($this->translationsDir);
+        $subscriber = new LocaleSubscriber($locales);
 
         $event = $this->createStub(RequestEvent::class);
         $event->method('getRequest')->willReturn($request);
