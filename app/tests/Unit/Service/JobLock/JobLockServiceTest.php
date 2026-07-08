@@ -178,6 +178,18 @@ final class JobLockServiceTest extends TestCase
         $this->assertFalse($this->fetchLock());
     }
 
+    public function testReleaseDoesNotDeleteALockOwnedByAnotherPid(): void
+    {
+        $this->insertLock(pid: 424242, heartbeatAt: 1000, startedAt: 1000);
+
+        $service = $this->createService($this->createStub(ProcessLivenessChecker::class));
+        $service->release(self::JOB_KEY);
+
+        $lock = $this->fetchLock();
+        $this->assertNotFalse($lock);
+        $this->assertSame(424242, $lock['pid']);
+    }
+
     public function testLocksForDifferentJobKeysDoNotInterfere(): void
     {
         $livenessChecker = $this->createStub(ProcessLivenessChecker::class);

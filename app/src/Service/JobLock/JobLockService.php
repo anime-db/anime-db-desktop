@@ -109,13 +109,18 @@ final class JobLockService
     }
 
     /**
-     * Releases the lock for $jobKey. Safe to call even if it's not held.
+     * Releases the lock for $jobKey if this process currently owns it. No-op if it doesn't
+     * (e.g. already released, or taken over by another process) — prevents a stale owner from
+     * deleting a lock a different process has since legitimately taken over.
      */
     public function release(string $jobKey): void
     {
         $this->ensureSchemaExists();
 
-        $this->connection->executeStatement('DELETE FROM job_locks WHERE job_key = :jobKey', ['jobKey' => $jobKey]);
+        $this->connection->executeStatement(
+            'DELETE FROM job_locks WHERE job_key = :jobKey AND pid = :pid',
+            ['jobKey' => $jobKey, 'pid' => $this->currentPid()],
+        );
     }
 
     private function tryInsertLock(string $jobKey): bool
