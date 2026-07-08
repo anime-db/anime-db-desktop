@@ -100,7 +100,7 @@ anime_detail:
     title: '%title% — AnimeDB'
     no_cover: No cover
     editable_heading: Management
-    editable_placeholder: Watch status, rating, notes and labels will appear here.
+    editable_placeholder: Watch status, rating and notes will appear here.
     reference_heading: Reference information
     field_type: Type
     field_episodes_count: Episode count
@@ -114,3 +114,9 @@ anime_detail:
     field_notes: Notes
     duration_minutes_suffix: min
     empty_value: —
+    labels_heading: Labels
+    labels_edit_button: Edit labels
+    labels_input_placeholder: Type a label name and press comma or Enter
+    labels_save_button: Save
+    labels_cancel_button: Cancel
+    labels_save_error: Failed to save labels.

@@ -29,6 +29,7 @@ namespace App\Controller;
 
 use App\Entity\Anime;
 use App\Entity\AnimeName;
+use App\Entity\Label;
 use App\Entity\SeriesAnime;
 use App\Entity\Storage;
 use App\Entity\Studio;
@@ -37,9 +38,10 @@ use Symfony\Component\Routing\Attribute\Route;
 use Twig\Environment;
 
 /**
- * Anime detail page (issue #101): the skeleton layout and the read-only reference block
- * only. Watch status/rating/notes/labels editing and the cover/gallery are separate parts
- * of the same decomposition (see the two-column body in anime/show.html.twig).
+ * Anime detail page (issue #101): the skeleton layout and the read-only reference block,
+ * plus the label list (issue #104, view side only — editing goes through
+ * AnimeLabelController). Watch status/rating/notes editing and the cover/gallery are
+ * separate parts of the same decomposition (see the two-column body in anime/show.html.twig).
  *
  * The view is handed a plain array, not the Anime entity directly: Twig's
  * strict_variables is enabled in the test env, and SeriesAnime-only accessors like
@@ -64,6 +66,7 @@ final class AnimeController
     private function serializeAnime(Anime $anime): array
     {
         return [
+            'id' => $anime->id,
             'title' => $anime->getTitle(),
             'type' => $anime->getType()->value,
             'production_status' => $anime->getProductionStatus()->value,
@@ -78,6 +81,10 @@ final class AnimeController
             ),
             'genres' => array_map(static fn ($code): string => $code->value, $anime->getGenreCodes()),
             'notes' => $anime->getNotes(),
+            'labels' => array_map(
+                static fn (Label $label): array => ['id' => $label->id, 'name' => $label->name],
+                $anime->getLabels()->toArray(),
+            ),
         ];
     }
 

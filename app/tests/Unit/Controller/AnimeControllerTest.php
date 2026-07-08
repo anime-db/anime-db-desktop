@@ -31,6 +31,7 @@ use App\Controller\AnimeController;
 use App\Entity\Enum\AnimeNameType;
 use App\Entity\Enum\GenreCode;
 use App\Entity\Enum\StorageType;
+use App\Entity\Label;
 use App\Entity\MovieAnime;
 use App\Entity\Storage;
 use App\Entity\Studio;
@@ -48,6 +49,8 @@ final class AnimeControllerTest extends TestCase
         $storage = new Storage();
         $storage->setName('Local')->setType(StorageType::Folder)->setPath('/anime/aot');
 
+        $label = new Label('favorite');
+
         $anime = new TvAnime();
         $anime->setTitle('Shingeki no Kyojin')
             ->setDurationMinutes(24)
@@ -56,7 +59,8 @@ final class AnimeControllerTest extends TestCase
             ->setStorage($storage)
             ->addStudio($studio)
             ->addGenre(GenreCode::Action)
-            ->addName('進撃の巨人', AnimeNameType::Original);
+            ->addName('進撃の巨人', AnimeNameType::Original)
+            ->addLabel($label);
         $anime->setEpisodesCount(25);
 
         $twig = $this->createMock(Environment::class);
@@ -74,7 +78,8 @@ final class AnimeControllerTest extends TestCase
                     && ['name' => 'Local', 'type' => 'folder', 'path' => '/anime/aot'] === $view['storage']
                     && [['name' => '進撃の巨人', 'type' => 'original']] === $view['names']
                     && ['action'] === $view['genres']
-                    && 'Rewatch before the finale.' === $view['notes'];
+                    && 'Rewatch before the finale.' === $view['notes']
+                    && [['id' => null, 'name' => 'favorite']] === $view['labels'];
             }))
             ->willReturn('<html></html>');
 
@@ -101,7 +106,8 @@ final class AnimeControllerTest extends TestCase
                     && [] === $view['countries']
                     && [] === $view['names']
                     && [] === $view['genres']
-                    && null === $view['notes'];
+                    && null === $view['notes']
+                    && [] === $view['labels'];
             }))
             ->willReturn('<html></html>');
 

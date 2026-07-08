@@ -27,6 +27,9 @@
     // separate future task, so this is a placeholder default rather than a real choice.
     const DEFAULT_WATCH_STATUS = 'watching';
     const PAGE_SIZE = 20;
+    // A label click on the anime detail page (issue #104) links here with ?labels=<id> — the
+    // only filter this page currently understands from the URL, ahead of the full filter UI.
+    const labelFilter = new URLSearchParams(window.location.search).get('labels');
 
     const grid = document.getElementById('anime-list-grid');
     const emptyMessage = document.getElementById('anime-list-empty');
@@ -112,6 +115,10 @@
             limit: String(PAGE_SIZE),
             offset: String(offset),
         });
+
+        if (labelFilter) {
+            params.set('labels', labelFilter);
+        }
 
         return `${API_URL}?${params.toString()}`;
     }

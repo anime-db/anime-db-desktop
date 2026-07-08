@@ -100,7 +100,7 @@ anime_detail:
     title: '%title% — AnimeDB'
     no_cover: Нет обложки
     editable_heading: Управление
-    editable_placeholder: Здесь появятся статус просмотра, оценка, заметки и метки.
+    editable_placeholder: Здесь появятся статус просмотра, оценка и заметки.
     reference_heading: Справочная информация
     field_type: Тип
     field_episodes_count: Количество серий
@@ -114,3 +114,9 @@ anime_detail:
     field_notes: Заметка
     duration_minutes_suffix: мин.
     empty_value: —
+    labels_heading: Метки
+    labels_edit_button: Редактировать метки
+    labels_input_placeholder: Введите название метки и нажмите запятую или Enter
+    labels_save_button: Сохранить
+    labels_cancel_button: Отмена
+    labels_save_error: Не удалось сохранить метки.

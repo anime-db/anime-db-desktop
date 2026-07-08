@@ -25,25 +25,32 @@
 
 declare(strict_types=1);
 
-namespace App\Repository;
+namespace App\Controller;
 
 use App\Entity\Label;
-use Doctrine\ORM\EntityManagerInterface;
+use App\Repository\LabelRepository;
+use Symfony\Component\HttpFoundation\JsonResponse;
+use Symfony\Component\Routing\Attribute\Route;
 
-class LabelRepository
+/**
+ * Autocomplete source for the anime detail label tag-input (issue #104): the whole label
+ * catalogue is small enough for a desktop, single-user collection that filtering happens
+ * client-side, so this endpoint just lists every known label rather than taking a search term.
+ */
+final class LabelController
 {
-    public function __construct(private readonly EntityManagerInterface $entityManager)
+    public function __construct(private readonly LabelRepository $labels)
     {
     }
 
-    /** @return Label[] */
-    public function findAllOrderedByName(): array
+    #[Route('/labels', name: 'labels_index', methods: ['GET'])]
+    public function index(): JsonResponse
     {
-        return $this->entityManager->getRepository(Label::class)->findBy([], ['name' => 'ASC']);
-    }
-
-    public function findOneByName(string $name): ?Label
-    {
-        return $this->entityManager->getRepository(Label::class)->findOneBy(['name' => $name]);
+        return new JsonResponse([
+            'labels' => array_map(
+                static fn (Label $label): array => ['id' => $label->id, 'name' => $label->name],
+                $this->labels->findAllOrderedByName(),
+            ),
+        ]);
     }
 }
