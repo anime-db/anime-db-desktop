@@ -27,32 +27,42 @@ declare(strict_types=1);
 
 namespace App\Service;
 
+use Doctrine\DBAL\Connection;
+use Symfony\Component\DependencyInjection\Attribute\Target;
+
 /**
  * Queues backend events for delivery to connected WebSocket clients.
  *
- * Uses APCu shared memory for inter-worker IPC (statically compiled into
- * FrankenPHP). The WsController worker polls next() in its streaming loop;
- * other workers call publish() to enqueue events.
+ * Backed by the `ws_events` table on the dedicated `queue` connection (data/queue.db, see
+ * issue #94) — a plain SQLite file, not process memory, so publish() and next() see the same
+ * queue regardless of which OS process calls them (the FrankenPHP HTTP worker running
+ * WsController, or the separate messenger:consume process, see issue #97).
+ *
+ * The table is created lazily (CREATE TABLE IF NOT EXISTS) rather than through a Doctrine
+ * migration, following the same precedent as JobLockService::ensureSchemaExists() (issue #98):
+ * migrations only track the "default" connection.
  */
 class WsPublisher
 {
-    private const QUEUE_KEY = 'ws_events';
+    private bool $schemaEnsured = false;
+
+    public function __construct(
+        #[Target('queue.connection')]
+        private readonly Connection $connection,
+    ) {
+    }
 
     /**
      * Enqueues an event for all connected WebSocket clients.
      */
     public function publish(string $event, mixed $data): void
     {
-        if (!function_exists('apcu_fetch')) {
-            return;
-        }
+        $this->ensureSchemaExists();
 
-        $success = false;
-        /** @var list<array{event: string, data: mixed}> $queue */
-        $queue = apcu_fetch(self::QUEUE_KEY, $success);
-        $queue = $success ? $queue : [];
-        $queue[] = ['event' => $event, 'data' => $data];
-        apcu_store(self::QUEUE_KEY, $queue);
+        $this->connection->insert('ws_events', [
+            'event' => $event,
+            'data' => json_encode($data, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE),
+        ]);
     }
 
     /**
@@ -62,20 +72,34 @@ class WsPublisher
      */
     public function next(): ?array
     {
-        if (!function_exists('apcu_fetch')) {
+        $this->ensureSchemaExists();
+
+        $row = $this->connection->fetchAssociative('SELECT id, event, data FROM ws_events ORDER BY id LIMIT 1');
+        if ($row === false) {
             return null;
         }
 
-        $success = false;
-        /** @var list<array{event: string, data: mixed}> $queue */
-        $queue = apcu_fetch(self::QUEUE_KEY, $success);
-        if (!$success || empty($queue)) {
-            return null;
+        $this->connection->delete('ws_events', ['id' => $row['id']]);
+
+        return [
+            'event' => $row['event'],
+            'data' => json_decode((string) $row['data'], true, flags: JSON_THROW_ON_ERROR),
+        ];
+    }
+
+    private function ensureSchemaExists(): void
+    {
+        if ($this->schemaEnsured) {
+            return;
         }
 
-        $event = array_shift($queue);
-        apcu_store(self::QUEUE_KEY, $queue);
+        $this->connection->executeStatement('CREATE TABLE IF NOT EXISTS ws_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            event TEXT NOT NULL,
+            data TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )');
 
-        return $event;
+        $this->schemaEnsured = true;
     }
 }
