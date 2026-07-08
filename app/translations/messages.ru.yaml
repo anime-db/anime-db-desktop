@@ -69,3 +69,6 @@ production_status:
 
 settings:
     language_label: Язык интерфейса
+    locale:
+        ru: Русский
+        en: English
