@@ -20,30 +20,30 @@
  #}
 {% extends 'base.html.twig' %}
 
-{% block title %}Метки — Настройки — AnimeDB{% endblock %}
+{% block title %}{{ 'settings_labels.title'|trans }}{% endblock %}
 
 {% block body %}
-    <p><a href="{{ path('settings_index') }}">← Настройки</a></p>
-    <h1>Метки</h1>
+    <p><a href="{{ path('settings_index') }}">{{ 'settings_labels.back_link'|trans }}</a></p>
+    <h1>{{ 'settings_labels.heading'|trans }}</h1>
 
     {% if error == 'empty_name' %}
-        <p class="error">Имя метки не может быть пустым.</p>
+        <p class="error">{{ 'settings_labels.empty_name_error'|trans }}</p>
     {% endif %}
 
     <form method="post" action="{{ path('settings_labels_add') }}">
         <input type="hidden" name="_token" value="{{ csrf_token('settings_labels_add') }}">
-        <input type="text" name="name" maxlength="32" required placeholder="Название метки">
-        <button type="submit">Добавить</button>
+        <input type="text" name="name" maxlength="32" required placeholder="{{ 'settings_labels.name_placeholder'|trans }}">
+        <button type="submit">{{ 'settings_labels.add_button'|trans }}</button>
     </form>
 
     {% if labels is empty %}
-        <p>Меток пока нет.</p>
+        <p>{{ 'settings_labels.empty'|trans }}</p>
     {% else %}
         <table>
             <thead>
                 <tr>
-                    <th>Название</th>
-                    <th>Действия</th>
+                    <th>{{ 'settings_labels.name_column'|trans }}</th>
+                    <th>{{ 'settings_labels.actions_column'|trans }}</th>
                 </tr>
             </thead>
             <tbody>
@@ -53,13 +53,13 @@
                             <form method="post" action="{{ path('settings_labels_rename', {id: label.id}) }}">
                                 <input type="hidden" name="_token" value="{{ csrf_token('settings_labels_rename_' ~ label.id) }}">
                                 <input type="text" name="name" value="{{ label.name }}" maxlength="32" required>
-                                <button type="submit">Сохранить</button>
+                                <button type="submit">{{ 'settings_labels.save_button'|trans }}</button>
                             </form>
                         </td>
                         <td>
-                            <form method="post" action="{{ path('settings_labels_delete', {id: label.id}) }}" onsubmit="return confirm('Удалить метку «{{ label.name|e('js') }}»?');">
+                            <form method="post" action="{{ path('settings_labels_delete', {id: label.id}) }}" onsubmit="return confirm('{{ ('settings_labels.delete_confirm'|trans({'%name%': label.name}))|e('js') }}');">
                                 <input type="hidden" name="_token" value="{{ csrf_token('settings_labels_delete_' ~ label.id) }}">
-                                <button type="submit">Удалить</button>
+                                <button type="submit">{{ 'settings_labels.delete_button'|trans }}</button>
                             </form>
                         </td>
                     </tr>

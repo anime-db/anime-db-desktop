@@ -20,7 +20,7 @@
  #}
 {% extends 'base.html.twig' %}
 
-{% block title %}Список — AnimeDB{% endblock %}
+{% block title %}{{ 'anime_list.title'|trans }}{% endblock %}
 
 {% block stylesheets %}
     <link rel="stylesheet" href="{{ asset('css/anime-list.css') }}">
@@ -30,8 +30,8 @@
     <main class="anime-list">
         <div class="anime-list__grid" id="anime-list-grid"></div>
 
-        <p class="anime-list__empty" id="anime-list-empty" hidden>Список пуст.</p>
-        <p class="anime-list__error" id="anime-list-error" hidden>Не удалось загрузить список.</p>
+        <p class="anime-list__empty" id="anime-list-empty" hidden>{{ 'anime_list.empty'|trans }}</p>
+        <p class="anime-list__error" id="anime-list-error" hidden>{{ 'anime_list.error'|trans }}</p>
 
         <nav class="anime-list__pagination" id="anime-list-pagination" hidden></nav>
         <div class="anime-list__sentinel" id="anime-list-sentinel" hidden></div>

@@ -20,10 +20,10 @@
  #}
 {% extends 'base.html.twig' %}
 
-{% block title %}Настройки — AnimeDB{% endblock %}
+{% block title %}{{ 'settings.title'|trans({}, null, currentLocale) }}{% endblock %}
 
 {% block body %}
-    <h1>Настройки</h1>
+    <h1>{{ 'settings.heading'|trans({}, null, currentLocale) }}</h1>
 
     <form method="post" action="{{ path('settings_set_locale') }}">
         <input type="hidden" name="_token" value="{{ csrf_token('settings_set_locale') }}">
@@ -36,6 +36,6 @@
     </form>
 
     <ul>
-        <li><a href="{{ path('settings_labels_index') }}">Метки</a></li>
+        <li><a href="{{ path('settings_labels_index') }}">{{ 'settings.labels_link'|trans({}, null, currentLocale) }}</a></li>
     </ul>
 {% endblock %}

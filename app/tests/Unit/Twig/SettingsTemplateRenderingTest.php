@@ -33,6 +33,7 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\HttpFoundation\Session\Session;
 use Symfony\Component\HttpFoundation\Session\Storage\MockArraySessionStorage;
+use Symfony\Component\Translation\LocaleSwitcher;
 use Twig\Environment;
 
 final class SettingsTemplateRenderingTest extends KernelTestCase
@@ -111,6 +112,12 @@ final class SettingsTemplateRenderingTest extends KernelTestCase
     {
         self::bootKernel();
         $this->pushRequestWithSession();
+        // Direct Twig::render() bypasses kernel.request, so the built-in LocaleAwareListener
+        // never syncs the translator locale from the request the way it does on a real request
+        // (see LocaleSubscriber, issue #84) — set it explicitly to assert a specific locale.
+        /** @var LocaleSwitcher $localeSwitcher */
+        $localeSwitcher = self::getContainer()->get(LocaleSwitcher::class);
+        $localeSwitcher->setLocale('ru');
 
         /** @var Environment $twig */
         $twig = self::getContainer()->get('twig');

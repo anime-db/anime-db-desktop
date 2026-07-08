@@ -68,7 +68,30 @@ production_status:
     released: Вышло
 
 settings:
+    title: Настройки — AnimeDB
+    heading: Настройки
+    labels_link: Метки
     language_label: Язык интерфейса
     locale:
         ru: Русский
         en: English
+
+settings_labels:
+    title: Метки — Настройки — AnimeDB
+    back_link: ← Настройки
+    heading: Метки
+    empty_name_error: Имя метки не может быть пустым.
+    name_placeholder: Название метки
+    add_button: Добавить
+    empty: Меток пока нет.
+    name_column: Название
+    actions_column: Действия
+    save_button: Сохранить
+    delete_confirm: Удалить метку «%name%»?
+    delete_button: Удалить
+
+anime_list:
+    title: Список — AnimeDB
+    empty: Список пуст.
+    error: Не удалось загрузить список.
+    no_cover: Нет обложки
