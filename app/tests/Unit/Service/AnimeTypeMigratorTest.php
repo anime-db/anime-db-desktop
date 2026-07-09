@@ -30,6 +30,7 @@ namespace App\Tests\Unit\Service;
 use App\Entity\Enum\AnimeNameType;
 use App\Entity\Enum\AnimeType;
 use App\Entity\Enum\GenreCode;
+use App\Entity\Enum\StorageType;
 use App\Entity\Enum\WatchStatus;
 use App\Entity\Exception\InvalidAnimeTypeMigrationException;
 use App\Entity\Label;
@@ -58,8 +59,7 @@ final class AnimeTypeMigratorTest extends TestCase
 
     public function testMigrateFromMovieToSeriesCopiesCommonFields(): void
     {
-        $storage = new Storage();
-        $storage->setName('Main folder');
+        $storage = new Storage('Main folder', self::MEDIA_DIR, StorageType::Folder);
 
         $source = new MovieAnime();
         $source->setTitle('Cowboy Bebop: The Movie')

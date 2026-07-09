@@ -28,11 +28,22 @@ declare(strict_types=1);
 namespace App\Entity;
 
 use App\Entity\Enum\StorageType;
+use App\Entity\Exception\InvalidNameException;
+use App\Entity\Exception\InvalidPathException;
 use Doctrine\ORM\Mapping as ORM;
 
 #[ORM\Entity]
 class Storage
 {
+    /**
+     * Windows drive-letter root ("D:\"), UNC share ("\\server\share"), or POSIX root
+     * ("/..."). The shipped app is Windows-only, but the test suite runs on
+     * ubuntu-latest CI (see .github/workflows/ci.yml) and exercises real filesystem
+     * paths (e.g. sys_get_temp_dir()) — this only checks the root shape, not the
+     * full path, and accepts both so tests keep working on either platform.
+     */
+    private const ABSOLUTE_PATH_PATTERN = '/^(?:[A-Za-z]:\\\\|\\\\\\\\[^\\\\]+\\\\[^\\\\]+|\/)/';
+
     #[ORM\Id, ORM\GeneratedValue, ORM\Column]
     public private(set) ?int $id = null;
 
@@ -51,13 +62,25 @@ class Storage
     #[ORM\Column(type: 'unix_timestamp', nullable: true)]
     private ?\DateTimeImmutable $fileModified = null;
 
+    public function __construct(string $name, string $path, StorageType $type)
+    {
+        $this->rename($name);
+        $this->relocate($path);
+        $this->type = $type;
+    }
+
     public function getName(): string
     {
         return $this->name;
     }
 
-    public function setName(string $name): self
+    public function rename(string $name): self
     {
+        $name = trim($name);
+        if ('' === $name) {
+            throw new InvalidNameException('name must not be empty');
+        }
+
         $this->name = $name;
 
         return $this;
@@ -80,8 +103,21 @@ class Storage
         return $this->path;
     }
 
-    public function setPath(string $path): self
+    /**
+     * Only validates the path's shape (non-empty, absolute) — not that it exists on
+     * disk right now. Existence is a point-in-time filesystem fact, not an entity
+     * invariant: removable media can be offline while the Storage row stays valid
+     * (see AnimeViewFactory::serializeStorage()'s path_available check), and a
+     * relocate() must also work when reconnecting a storage whose drive letter
+     * changed (desktop.ini marker match) before the new path has been confirmed reachable.
+     */
+    public function relocate(string $path): self
     {
+        $path = trim($path);
+        if ('' === $path || 1 !== preg_match(self::ABSOLUTE_PATH_PATTERN, $path)) {
+            throw new InvalidPathException(\sprintf('path must be an absolute Windows path, got "%s"', $path));
+        }
+
         $this->path = $path;
 
         return $this;
