@@ -106,6 +106,36 @@ final class AnimeControllerTest extends TestCase
         $this->assertSame(200, $response->getStatusCode());
     }
 
+    public function testShowComposesStoragePathFromStorageRootAndAnimeStoragePath(): void
+    {
+        $storageRoot = sys_get_temp_dir();
+        $storage = new Storage('Local', $storageRoot, StorageType::Folder);
+
+        $anime = new MovieAnime();
+        $anime->setTitle('A Silent Voice')
+            ->setWatchStatus(WatchStatus::Plan)
+            ->setStorage($storage)
+            ->setStoragePath('A Silent Voice.mkv');
+
+        $expectedPath = rtrim($storageRoot, '\\/').\DIRECTORY_SEPARATOR.'A Silent Voice.mkv';
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('anime/show.html.twig', $this->callback(static function (array $params) use ($expectedPath) {
+                $view = $params['anime'];
+
+                // The composed path points at a nonexistent file, so path_available must be false —
+                // this is what makes the "open folder" button disabled for it, not for the storage root.
+                return $expectedPath === $view['storage']['path']
+                    && false === $view['storage']['path_available'];
+            }))
+            ->willReturn('<html></html>');
+
+        $controller = new AnimeController($twig, new AnimeViewFactory());
+        $controller->show($anime);
+    }
+
     public function testShowOmitsEpisodesCountAndStorageForAMovieWithoutThem(): void
     {
         $anime = new MovieAnime();

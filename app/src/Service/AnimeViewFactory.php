@@ -61,7 +61,7 @@ final class AnimeViewFactory
             'duration_minutes' => $anime->getDurationMinutes(),
             'studios' => array_map(static fn (Studio $studio): string => $studio->name, $anime->getStudios()->toArray()),
             'countries' => $anime->getCountries() ?? [],
-            'storage' => $this->serializeStorage($anime->getStorage()),
+            'storage' => $this->serializeStorage($anime->getStorage(), $anime->getStoragePath()),
             'cover' => $anime->getCover(),
             'images' => array_map(static fn (AnimeImage $image): string => $image->source, $anime->getImages()->toArray()),
             'names' => array_map(
@@ -81,21 +81,35 @@ final class AnimeViewFactory
         ];
     }
 
-    /** @return array{name: string, type: string, path: string, path_available: bool}|null */
-    private function serializeStorage(?Storage $storage): ?array
+    /**
+     * 'path' is the anime's own file/folder path (template label: "Путь к файлу"), not
+     * the storage's root — composed from storage.path + Anime::$storagePath (the
+     * top-level entry the scanner linked this anime to, Таск 3). Falls back to the bare
+     * storage root only when $storagePath is null (anime added before the scanner ran,
+     * or never linked to a specific file). This is the only current caller of
+     * serializeStorage(); a future storage-management screen listing Storage rows on
+     * their own would need the plain root path and should not reuse this method as-is.
+     *
+     * @return array{name: string, type: string, path: string, path_available: bool}|null
+     */
+    private function serializeStorage(?Storage $storage, ?string $storagePath): ?array
     {
         if ($storage === null) {
             return null;
         }
 
+        $path = null === $storagePath
+            ? $storage->getPath()
+            : rtrim($storage->getPath(), '\\/').\DIRECTORY_SEPARATOR.$storagePath;
+
         return [
             'name' => $storage->getName(),
             'type' => $storage->getType()->value,
-            'path' => $storage->getPath(),
+            'path' => $path,
             // Checked here (server-side, at page load), not on button click: FrankenPHP runs
             // locally on the same machine as the user's files, so this is a real filesystem
             // check, not a network round-trip.
-            'path_available' => is_readable($storage->getPath()),
+            'path_available' => is_readable($path),
         ];
     }
 }

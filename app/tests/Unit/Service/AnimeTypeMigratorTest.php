@@ -70,6 +70,7 @@ final class AnimeTypeMigratorTest extends TestCase
             ->setUserRating(new Rating(5))
             ->setCover('cover.jpg')
             ->setStorage($storage)
+            ->setStoragePath('Cowboy Bebop The Movie')
             ->setCountries(['JP'])
             ->setWatchStatus(WatchStatus::Plan)
             ->putPluginData(new PluginId('animedb-shikimori'), ['mal_id' => 1]);
@@ -88,6 +89,7 @@ final class AnimeTypeMigratorTest extends TestCase
         $this->assertEquals(new Rating(5), $target->getUserRating());
         $this->assertSame('cover.jpg', $target->getCover());
         $this->assertSame($storage, $target->getStorage());
+        $this->assertSame('Cowboy Bebop The Movie', $target->getStoragePath());
         $this->assertSame(['JP'], $target->getCountries());
         $this->assertSame(WatchStatus::Plan, $target->getWatchStatus());
         $this->assertSame(['mal_id' => 1], $target->getPluginData(new PluginId('animedb-shikimori')));

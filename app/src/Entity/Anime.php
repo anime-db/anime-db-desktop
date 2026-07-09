@@ -106,6 +106,16 @@ abstract class Anime
     #[ORM\JoinColumn(name: 'storage_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
     private ?Storage $storage = null;
 
+    /**
+     * Name of the top-level file or folder inside $storage->getPath() that this anime is
+     * linked to (the scanner only ever looks one level deep — see Таск 3). Not a full
+     * path: $storage->getPath() can change (drive letter/device swap), so the full path
+     * is composed at render time as $storage->getPath() . $storagePath, the same relative
+     * scheme already used by $cover/AnimeImage::$source under %AppData%/media/{id}/.
+     */
+    #[ORM\Column(length: 1024, nullable: true)]
+    private ?string $storagePath = null;
+
     /** @var array<string, mixed>|null raw plugin data, including descriptions{} used by getSummary() */
     #[ORM\Column(type: 'json', nullable: true)]
     private ?array $metadata = null;
@@ -300,6 +310,7 @@ abstract class Anime
             ->setUserRating($this->userRating)
             ->setCover($this->cover)
             ->setStorage($this->storage)
+            ->setStoragePath($this->storagePath)
             ->setCountries($this->countries)
             ->setWatchStatus($this->watchStatus);
         $target->assignMetadataFrom($this);
@@ -378,6 +389,18 @@ abstract class Anime
     public function setStorage(?Storage $storage): self
     {
         $this->storage = $storage;
+
+        return $this;
+    }
+
+    public function getStoragePath(): ?string
+    {
+        return $this->storagePath;
+    }
+
+    public function setStoragePath(?string $storagePath): self
+    {
+        $this->storagePath = $storagePath;
 
         return $this;
     }
