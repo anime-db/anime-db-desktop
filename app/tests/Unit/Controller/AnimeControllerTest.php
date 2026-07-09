@@ -48,8 +48,7 @@ final class AnimeControllerTest extends TestCase
         $studio = new Studio();
         $studio->rename('MAPPA');
 
-        $storage = new Storage();
-        $storage->setName('Local')->setType(StorageType::Folder)->setPath(sys_get_temp_dir());
+        $storage = new Storage('Local', sys_get_temp_dir(), StorageType::Folder);
 
         $label = new Label('favorite');
 

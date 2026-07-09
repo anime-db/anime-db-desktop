@@ -31,6 +31,7 @@ use App\Entity\Enum\AnimeNameType;
 use App\Entity\Enum\AnimeType;
 use App\Entity\Enum\GenreCode;
 use App\Entity\Enum\ProductionStatus;
+use App\Entity\Enum\StorageType;
 use App\Entity\Enum\WatchStatus;
 use App\Entity\Exception\InvalidCountryCodeException;
 use App\Entity\Exception\InvalidDateRangeException;
@@ -355,8 +356,7 @@ final class AnimeTest extends TestCase
     public function testSetStorage(): void
     {
         $anime = new MovieAnime();
-        $storage = new Storage();
-        $storage->setName('Main folder');
+        $storage = new Storage('Main folder', 'D:\\Anime', StorageType::Folder);
 
         $anime->setStorage($storage);
 
