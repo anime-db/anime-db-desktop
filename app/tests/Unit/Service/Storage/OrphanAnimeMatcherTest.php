@@ -27,6 +27,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Service\Storage;
 
+use App\Doctrine\Query\ReplaceFunction;
 use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
 use App\Entity\Enum\AnimeNameType;
@@ -35,6 +36,7 @@ use App\Entity\Enum\WatchStatus;
 use App\Entity\MovieAnime;
 use App\Entity\Storage;
 use App\Entity\TvAnime;
+use App\Repository\AnimeRepository;
 use App\Service\Storage\OrphanAnimeMatcher;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Types\Type;
@@ -64,6 +66,7 @@ final class OrphanAnimeMatcherTest extends TestCase
 
         $config = ORMSetup::createAttributeMetadataConfig([\dirname(__DIR__, 4).'/src/Entity'], true);
         $config->enableNativeLazyObjects(true);
+        $config->addCustomStringFunction('REPLACE', ReplaceFunction::class);
 
         $connection = DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true], $config);
         $this->entityManager = new EntityManager($connection, $config);
@@ -71,7 +74,7 @@ final class OrphanAnimeMatcherTest extends TestCase
         $schemaTool = new SchemaTool($this->entityManager);
         $schemaTool->createSchema($this->entityManager->getMetadataFactory()->getAllMetadata());
 
-        $this->matcher = new OrphanAnimeMatcher($this->entityManager);
+        $this->matcher = new OrphanAnimeMatcher(new AnimeRepository($this->entityManager));
     }
 
     public function testMatchesByTitleCaseAndWhitespaceInsensitively(): void

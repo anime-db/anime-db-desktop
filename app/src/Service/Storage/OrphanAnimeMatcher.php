@@ -28,7 +28,7 @@ declare(strict_types=1);
 namespace App\Service\Storage;
 
 use App\Entity\Anime;
-use Doctrine\ORM\EntityManagerInterface;
+use App\Repository\AnimeRepository;
 
 /**
  * Finds Anime records that could match a cleaned scan filename (see FilenameCleaner)
@@ -41,45 +41,19 @@ use Doctrine\ORM\EntityManagerInterface;
  * one being set already means the row is linked to a file and must not be offered again.
  *
  * Matching is intentionally simple (case/whitespace-insensitive exact comparison), not a
- * weighted fuzzy search — the same approach v1 used when matching by basename.
+ * weighted fuzzy search — the same approach v1 used when matching by basename. The actual
+ * lookup and comparison happen in AnimeRepository as a single database query.
  */
 final class OrphanAnimeMatcher
 {
-    public function __construct(private readonly EntityManagerInterface $entityManager)
+    public function __construct(private readonly AnimeRepository $animeRepository)
     {
     }
 
     /** @return list<Anime> */
     public function findCandidates(string $cleanedName): array
     {
-        $needle = $this->normalize($cleanedName);
-
-        /** @var list<Anime> $orphans */
-        $orphans = $this->entityManager->getRepository(Anime::class)->createQueryBuilder('a')
-            ->andWhere('a.storage IS NULL')
-            ->andWhere('a.storagePath IS NULL')
-            ->getQuery()
-            ->getResult();
-
-        return array_values(array_filter(
-            $orphans,
-            fn (Anime $anime): bool => $this->matches($anime, $needle),
-        ));
-    }
-
-    private function matches(Anime $anime, string $needle): bool
-    {
-        if ($this->normalize($anime->getTitle()) === $needle) {
-            return true;
-        }
-
-        foreach ($anime->getNames() as $name) {
-            if ($this->normalize($name->name) === $needle) {
-                return true;
-            }
-        }
-
-        return false;
+        return $this->animeRepository->findOrphanCandidatesByNormalizedName($this->normalize($cleanedName));
     }
 
     private function normalize(string $value): string
