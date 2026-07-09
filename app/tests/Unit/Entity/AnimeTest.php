@@ -363,6 +363,21 @@ final class AnimeTest extends TestCase
         $this->assertSame($storage, $anime->getStorage());
     }
 
+    public function testStoragePathDefaultsToNull(): void
+    {
+        $anime = new MovieAnime();
+
+        $this->assertNull($anime->getStoragePath());
+    }
+
+    public function testSetAndGetStoragePath(): void
+    {
+        $anime = new MovieAnime();
+        $anime->setStoragePath('A Silent Voice.mkv');
+
+        $this->assertSame('A Silent Voice.mkv', $anime->getStoragePath());
+    }
+
     public function testDateAddAndDateUpdateAreInitialized(): void
     {
         $anime = new MovieAnime();
