@@ -64,6 +64,8 @@ final class AnimeControllerTest extends TestCase
             ->addName('進撃の巨人', AnimeNameType::Original)
             ->addLabel($label)
             ->addSource('https://shikimori.one/animes/16498')
+            ->addImage('screenshot_1720273812345.webp')
+            ->setCover('cover_1720273812345.webp')
             ->setWatchStatus(WatchStatus::Watching);
         $anime->setEpisodesCount(25);
 
@@ -93,7 +95,9 @@ final class AnimeControllerTest extends TestCase
                     && ['action'] === $view['genres']
                     && 'Rewatch before the finale.' === $view['notes']
                     && [['id' => null, 'name' => 'favorite']] === $view['labels']
-                    && [['url' => 'https://shikimori.one/animes/16498', 'domain' => 'shikimori.one']] === $view['sources'];
+                    && [['url' => 'https://shikimori.one/animes/16498', 'domain' => 'shikimori.one']] === $view['sources']
+                    && 'cover_1720273812345.webp' === $view['cover']
+                    && ['screenshot_1720273812345.webp'] === $view['images'];
             }))
             ->willReturn('<html></html>');
 
@@ -126,7 +130,9 @@ final class AnimeControllerTest extends TestCase
                     && [] === $view['genres']
                     && null === $view['notes']
                     && [] === $view['labels']
-                    && [] === $view['sources'];
+                    && [] === $view['sources']
+                    && null === $view['cover']
+                    && [] === $view['images'];
             }))
             ->willReturn('<html></html>');
 

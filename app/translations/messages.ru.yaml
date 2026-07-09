@@ -125,6 +125,7 @@ anime_detail:
     open_folder_button: Перейти к файлам
     path_unavailable_tooltip: Путь не доступен
     sources_heading: Внешние источники
+    gallery_heading: Галерея
     save_button: Сохранить
     cancel_button: Отмена
     rating_not_rated: Без оценки

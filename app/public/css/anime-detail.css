@@ -37,6 +37,7 @@
     aspect-ratio: 2 / 3;
     border-radius: 6px;
     background: #eee;
+    object-fit: cover;
 }
 
 .anime-detail__cover--placeholder {
@@ -373,4 +374,20 @@
 .anime-detail__source-icon {
     width: 24px;
     height: 24px;
+}
+
+.anime-detail__gallery-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.anime-detail__gallery-image {
+    width: 120px;
+    height: 120px;
+    border-radius: 6px;
+    object-fit: cover;
 }

@@ -28,6 +28,7 @@ declare(strict_types=1);
 namespace App\Service;
 
 use App\Entity\Anime;
+use App\Entity\AnimeImage;
 use App\Entity\AnimeName;
 use App\Entity\AnimeSource;
 use App\Entity\Label;
@@ -61,6 +62,8 @@ final class AnimeViewFactory
             'studios' => array_map(static fn (Studio $studio): string => $studio->name, $anime->getStudios()->toArray()),
             'countries' => $anime->getCountries() ?? [],
             'storage' => $this->serializeStorage($anime->getStorage()),
+            'cover' => $anime->getCover(),
+            'images' => array_map(static fn (AnimeImage $image): string => $image->source, $anime->getImages()->toArray()),
             'names' => array_map(
                 static fn (AnimeName $name): array => ['name' => $name->name, 'type' => $name->type->value],
                 $anime->getNames()->toArray(),
