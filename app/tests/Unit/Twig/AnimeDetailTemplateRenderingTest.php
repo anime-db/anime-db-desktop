@@ -59,6 +59,8 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
             'notes' => 'Rewatch before the finale.',
             'labels' => [['id' => 3, 'name' => 'favorite']],
             'sources' => [['url' => 'https://shikimori.one/animes/16498', 'domain' => 'shikimori.one']],
+            'cover' => 'cover_1720273812345.webp',
+            'images' => ['screenshot_1720273812345.webp'],
         ];
     }
 
@@ -84,6 +86,8 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
             'notes' => null,
             'labels' => [],
             'sources' => [],
+            'cover' => null,
+            'images' => [],
         ];
     }
 
@@ -135,6 +139,8 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
         $this->assertStringNotContainsString('disabled', $html);
         $this->assertStringContainsString('https://shikimori.one/favicon.ico', $html);
         $this->assertStringContainsString('https://shikimori.one/animes/16498', $html);
+        $this->assertStringContainsString('app-media://anime/1/cover_1720273812345.webp', $html);
+        $this->assertStringContainsString('app-media://anime/1/screenshot_1720273812345.webp', $html);
     }
 
     public function testShowRendersAnimeWithoutOptionalFieldsWithoutErrors(): void
@@ -156,6 +162,8 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
         $this->assertStringNotContainsString('anime_detail.field_episodes_count', $html);
         $this->assertStringNotContainsString('data-open-folder-path', $html);
         $this->assertStringNotContainsString('anime-detail__sources', $html);
+        $this->assertStringNotContainsString('anime-detail__gallery', $html);
+        $this->assertStringContainsString('anime-detail__cover--placeholder', $html);
     }
 
     public function testShowRendersDisabledOpenFolderButtonWhenStoragePathIsUnavailable(): void

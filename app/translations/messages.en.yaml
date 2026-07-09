@@ -125,6 +125,7 @@ anime_detail:
     open_folder_button: Open files
     path_unavailable_tooltip: Path is unavailable
     sources_heading: External sources
+    gallery_heading: Gallery
     save_button: Save
     cancel_button: Cancel
     rating_not_rated: Not rated
