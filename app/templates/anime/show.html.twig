@@ -40,6 +40,42 @@
         <div class="anime-detail__content">
             {{ include('anime/_editable.html.twig', {anime: anime, editing: null, error: null}) }}
 
+            <section class="anime-detail__labels"
+                     data-labels-widget
+                     data-labels="{{ anime.labels|json_encode }}"
+                     data-update-url="{{ path('anime_labels_update', {id: anime.id}) }}"
+                     data-search-url="{{ path('labels_index') }}"
+                     data-csrf-token="{{ csrf_token('anime_labels_update_' ~ anime.id) }}">
+                <div class="anime-detail__labels-header">
+                    <h2 class="anime-detail__labels-heading">{{ 'anime_detail.labels_heading'|trans }}</h2>
+                    <button type="button" class="anime-detail__labels-edit-button" data-labels-edit
+                            title="{{ 'anime_detail.labels_edit_button'|trans }}"
+                            aria-label="{{ 'anime_detail.labels_edit_button'|trans }}">&#9998;</button>
+                </div>
+
+                <ul class="anime-detail__labels-list" data-labels-view>
+                    {% for label in anime.labels %}
+                        <li><a class="anime-detail__label-link" href="{{ path('home_index', {labels: label.id}) }}">{{ label.name }}</a></li>
+                    {% else %}
+                        <li class="anime-detail__labels-empty" data-labels-empty>{{ 'anime_detail.empty_value'|trans }}</li>
+                    {% endfor %}
+                </ul>
+
+                <div class="anime-detail__labels-editor" data-labels-editor hidden>
+                    <ul class="anime-detail__labels-chips" data-labels-chips></ul>
+                    <input type="text" class="anime-detail__labels-input" data-labels-input
+                           placeholder="{{ 'anime_detail.labels_input_placeholder'|trans }}"
+                           aria-label="{{ 'anime_detail.labels_input_placeholder'|trans }}"
+                           autocomplete="off">
+                    <ul class="anime-detail__labels-suggestions" data-labels-suggestions hidden></ul>
+                    <p class="anime-detail__labels-error" data-labels-error hidden>{{ 'anime_detail.labels_save_error'|trans }}</p>
+                    <div class="anime-detail__labels-actions">
+                        <button type="button" class="anime-detail__labels-save-button" data-labels-save>{{ 'anime_detail.labels_save_button'|trans }}</button>
+                        <button type="button" class="anime-detail__labels-cancel-button" data-labels-cancel>{{ 'anime_detail.labels_cancel_button'|trans }}</button>
+                    </div>
+                </div>
+            </section>
+
             <section class="anime-detail__reference">
                 <h2 class="anime-detail__section-heading">{{ 'anime_detail.reference_heading'|trans }}</h2>
 

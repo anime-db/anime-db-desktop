@@ -116,6 +116,12 @@ anime_detail:
     field_user_rating: Rating
     duration_minutes_suffix: min
     empty_value: —
+    labels_heading: Labels
+    labels_edit_button: Edit labels
+    labels_input_placeholder: Type a label name and press comma or Enter
+    labels_save_button: Save
+    labels_cancel_button: Cancel
+    labels_save_error: Failed to save labels.
     open_folder_button: Open files
     path_unavailable_tooltip: Path is unavailable
     sources_heading: External sources

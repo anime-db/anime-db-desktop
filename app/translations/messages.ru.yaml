@@ -116,6 +116,12 @@ anime_detail:
     field_user_rating: Оценка
     duration_minutes_suffix: мин.
     empty_value: —
+    labels_heading: Метки
+    labels_edit_button: Редактировать метки
+    labels_input_placeholder: Введите название метки и нажмите запятую или Enter
+    labels_save_button: Сохранить
+    labels_cancel_button: Отмена
+    labels_save_error: Не удалось сохранить метки.
     open_folder_button: Перейти к файлам
     path_unavailable_tooltip: Путь не доступен
     sources_heading: Внешние источники

@@ -57,6 +57,7 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
             'names' => [['name' => '進撃の巨人', 'type' => 'original']],
             'genres' => ['action', 'drama'],
             'notes' => 'Rewatch before the finale.',
+            'labels' => [['id' => 3, 'name' => 'favorite']],
             'sources' => [['url' => 'https://shikimori.one/animes/16498', 'domain' => 'shikimori.one']],
         ];
     }
@@ -81,15 +82,17 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
             'names' => [],
             'genres' => [],
             'notes' => null,
+            'labels' => [],
             'sources' => [],
         ];
     }
 
     /**
-     * csrf_token() (used by the always-visible episode-increment form) reads/writes the CSRF
-     * token through the session of the current request, so rendering the editable fragment
-     * outside a real HTTP request-response cycle needs one pushed onto the request stack
-     * manually (see SettingsTemplateRenderingTest for the same pattern).
+     * csrf_token() (used by the always-visible episode-increment form and by the labels
+     * editor) reads/writes the CSRF token through the session of the current request, so
+     * rendering the editable fragment outside a real HTTP request-response cycle needs one
+     * pushed onto the request stack manually (see SettingsTemplateRenderingTest for the same
+     * pattern).
      */
     private function pushRequestWithSession(string $uri): void
     {
@@ -126,6 +129,8 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
         $this->assertStringContainsString('Экшен', $html);
         $this->assertStringContainsString('Rewatch before the finale.', $html);
         $this->assertStringContainsString('anime-detail__status-badge--ongoing', $html);
+        $this->assertStringContainsString('favorite', $html);
+        $this->assertStringContainsString('/?labels=3', $html);
         $this->assertStringContainsString('data-open-folder-path="/anime/aot"', $html);
         $this->assertStringNotContainsString('disabled', $html);
         $this->assertStringContainsString('https://shikimori.one/favicon.ico', $html);

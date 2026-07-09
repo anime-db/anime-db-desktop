@@ -30,6 +30,7 @@ namespace App\Service;
 use App\Entity\Anime;
 use App\Entity\AnimeName;
 use App\Entity\AnimeSource;
+use App\Entity\Label;
 use App\Entity\SeriesAnime;
 use App\Entity\Storage;
 use App\Entity\Studio;
@@ -69,6 +70,10 @@ final class AnimeViewFactory
             'sources' => array_map(
                 static fn (AnimeSource $source): array => ['url' => $source->url, 'domain' => (string) parse_url($source->url, PHP_URL_HOST)],
                 $anime->getSources()->toArray(),
+            ),
+            'labels' => array_map(
+                static fn (Label $label): array => ['id' => $label->id, 'name' => $label->name],
+                $anime->getLabels()->toArray(),
             ),
         ];
     }

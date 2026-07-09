@@ -38,7 +38,8 @@ use Twig\Environment;
  * external sources block and the "open storage folder" button (issue #105). Watch status,
  * rating, notes and episode progress are rendered by the same anime/_editable.html.twig
  * fragment that AnimeEditableController swaps in place via HTMX (issue #103). Labels
- * editing and the cover/gallery are separate parts of the same decomposition.
+ * (issue #104, view side only — editing goes through AnimeLabelController) and the
+ * cover/gallery are separate parts of the same decomposition.
  */
 final class AnimeController
 {

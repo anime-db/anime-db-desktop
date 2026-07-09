@@ -32,6 +32,7 @@ use App\Entity\Enum\AnimeNameType;
 use App\Entity\Enum\GenreCode;
 use App\Entity\Enum\StorageType;
 use App\Entity\Enum\WatchStatus;
+use App\Entity\Label;
 use App\Entity\MovieAnime;
 use App\Entity\Storage;
 use App\Entity\Studio;
@@ -50,6 +51,8 @@ final class AnimeControllerTest extends TestCase
         $storage = new Storage();
         $storage->setName('Local')->setType(StorageType::Folder)->setPath(sys_get_temp_dir());
 
+        $label = new Label('favorite');
+
         $anime = new TvAnime();
         $anime->setTitle('Shingeki no Kyojin')
             ->setDurationMinutes(24)
@@ -59,6 +62,7 @@ final class AnimeControllerTest extends TestCase
             ->addStudio($studio)
             ->addGenre(GenreCode::Action)
             ->addName('進撃の巨人', AnimeNameType::Original)
+            ->addLabel($label)
             ->addSource('https://shikimori.one/animes/16498')
             ->setWatchStatus(WatchStatus::Watching);
         $anime->setEpisodesCount(25);
@@ -88,6 +92,7 @@ final class AnimeControllerTest extends TestCase
                     && [['name' => '進撃の巨人', 'type' => 'original']] === $view['names']
                     && ['action'] === $view['genres']
                     && 'Rewatch before the finale.' === $view['notes']
+                    && [['id' => null, 'name' => 'favorite']] === $view['labels']
                     && [['url' => 'https://shikimori.one/animes/16498', 'domain' => 'shikimori.one']] === $view['sources'];
             }))
             ->willReturn('<html></html>');
@@ -120,6 +125,7 @@ final class AnimeControllerTest extends TestCase
                     && [] === $view['names']
                     && [] === $view['genres']
                     && null === $view['notes']
+                    && [] === $view['labels']
                     && [] === $view['sources'];
             }))
             ->willReturn('<html></html>');
