@@ -30,6 +30,7 @@ namespace App\Repository;
 use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
 use App\Entity\Anime;
+use App\Entity\Storage;
 use App\Entity\ValueObject\Rating;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\QueryBuilder;
@@ -91,6 +92,25 @@ class AnimeRepository
             ->andWhere('a.normalizedTitle = :needle OR n.normalizedName = :needle')
             ->setParameter('needle', $normalizedName)
             ->distinct()
+            ->orderBy('a.id', 'ASC');
+
+        /* @var list<Anime> */
+        return $qb->getQuery()->getResult();
+    }
+
+    /**
+     * Anime already linked to $storage (both Anime::$storage and Anime::$storagePath set) —
+     * what a storage scan (App\Service\Storage\ScanStorageService) compares found top-level
+     * names against to tell "already known" from "new" files.
+     *
+     * @return list<Anime>
+     */
+    public function findByStorage(Storage $storage): array
+    {
+        $qb = $this->entityManager->getRepository(Anime::class)->createQueryBuilder('a')
+            ->andWhere('a.storage = :storage')
+            ->andWhere('a.storagePath IS NOT NULL')
+            ->setParameter('storage', $storage)
             ->orderBy('a.id', 'ASC');
 
         /* @var list<Anime> */

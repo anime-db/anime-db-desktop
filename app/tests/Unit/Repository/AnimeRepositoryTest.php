@@ -34,9 +34,11 @@ use App\Entity\Enum\AnimeSortField;
 use App\Entity\Enum\AnimeType;
 use App\Entity\Enum\GenreCode;
 use App\Entity\Enum\SortDirection;
+use App\Entity\Enum\StorageType;
 use App\Entity\Enum\WatchStatus;
 use App\Entity\Label;
 use App\Entity\MovieAnime;
+use App\Entity\Storage;
 use App\Entity\Studio;
 use App\Entity\TvAnime;
 use App\Entity\ValueObject\Rating;
@@ -272,5 +274,35 @@ final class AnimeRepositoryTest extends TestCase
         // Every page returned a distinct row, and paging exactly $total times exhausted the result set.
         $this->assertCount($total, array_unique($seenIds));
         $this->assertCount(0, $this->repository->findByFilter($filter, $this->defaultSort(), 1, $total));
+    }
+
+    public function testFindByStorageOnlyReturnsAnimeLinkedToThatStorageWithAStoragePath(): void
+    {
+        $storage = new Storage('Main folder', sys_get_temp_dir(), StorageType::Folder);
+        $otherStorage = new Storage('Other folder', sys_get_temp_dir(), StorageType::Folder);
+        $this->entityManager->persist($storage);
+        $this->entityManager->persist($otherStorage);
+
+        $linked = new TvAnime();
+        $linked->setTitle('Trigun')->setWatchStatus(WatchStatus::Plan);
+        $linked->setStorage($storage)->setStoragePath('Trigun');
+
+        $linkedToOtherStorage = new TvAnime();
+        $linkedToOtherStorage->setTitle('Bleach')->setWatchStatus(WatchStatus::Plan);
+        $linkedToOtherStorage->setStorage($otherStorage)->setStoragePath('Bleach');
+
+        $storageWithoutPath = new TvAnime();
+        $storageWithoutPath->setTitle('Naruto')->setWatchStatus(WatchStatus::Plan);
+        $storageWithoutPath->setStorage($storage);
+
+        $orphan = new TvAnime();
+        $orphan->setTitle('Cowboy Bebop')->setWatchStatus(WatchStatus::Plan);
+
+        foreach ([$linked, $linkedToOtherStorage, $storageWithoutPath, $orphan] as $anime) {
+            $this->entityManager->persist($anime);
+        }
+        $this->entityManager->flush();
+
+        $this->assertSame([$linked], $this->repository->findByStorage($storage));
     }
 }
