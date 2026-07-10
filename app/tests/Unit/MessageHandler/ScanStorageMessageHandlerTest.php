@@ -115,7 +115,7 @@ final class ScanStorageMessageHandlerTest extends TestCase
         $this->insertLock(\sprintf('scan:storage:%d', $storageId), pid: 424242, heartbeatAt: 1000);
 
         $livenessChecker = $this->createStub(ProcessLivenessChecker::class);
-        $livenessChecker->method('isRunning')->willReturn(true);
+        $livenessChecker->method('getStartedAt')->willReturn(new \DateTimeImmutable('@1000'));
 
         $wsPublisher = $this->newWsPublisher();
         $handler = $this->newHandler($livenessChecker, $wsPublisher);

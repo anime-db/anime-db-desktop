@@ -25,20 +25,13 @@
 
 declare(strict_types=1);
 
-namespace App\Service\JobLock;
+namespace App\Service\JobLock\Exception;
 
-use App\Service\JobLock\Exception\ProcessLivenessCheckException;
-
-interface ProcessLivenessChecker
+/**
+ * Thrown when ProcessLivenessChecker::getStartedAt() cannot determine whether a process with
+ * the given PID exists at all (e.g. the underlying OS command failed to run) — distinct from
+ * a successful check that found no such process (which returns null instead).
+ */
+final class ProcessLivenessCheckException extends \RuntimeException
 {
-    /**
-     * Returns the start time of the process currently running with the given PID, or null if
-     * no such process exists.
-     *
-     * @throws ProcessLivenessCheckException if the check itself could not be performed (e.g.
-     *                                       the underlying OS command failed to run) — this is
-     *                                       not the same as "no such process" and must not be
-     *                                       collapsed into a null return.
-     */
-    public function getStartedAt(int $pid): ?\DateTimeImmutable;
 }

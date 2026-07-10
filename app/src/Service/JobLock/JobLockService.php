@@ -27,6 +27,7 @@ declare(strict_types=1);
 
 namespace App\Service\JobLock;
 
+use App\Service\JobLock\Exception\ProcessLivenessCheckException;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Psr\Clock\ClockInterface;
@@ -87,7 +88,7 @@ final class JobLockService
         $ownerPid = (int) $lock['pid'];
         $heartbeatAt = (int) $lock['heartbeat_at'];
 
-        if ($this->livenessChecker->isRunning($ownerPid) && !$this->isHeartbeatStale($heartbeatAt)) {
+        if ($this->isSameProcess($ownerPid, $heartbeatAt) && !$this->isHeartbeatStale($heartbeatAt)) {
             return false;
         }
 
@@ -163,6 +164,26 @@ final class JobLockService
         );
 
         return (int) $affected === 1;
+    }
+
+    /**
+     * Windows reuses PID numbers, so a process currently running under $ownerPid is only
+     * guaranteed to be the lock's original owner if it started no later than the last recorded
+     * heartbeat — a process cannot send a heartbeat before it exists. If it started later (or
+     * doesn't exist at all), the OS has handed this PID to an unrelated process since the
+     * owner's last heartbeat, and the owner must be treated as dead regardless of staleness.
+     */
+    private function isSameProcess(int $ownerPid, int $heartbeatAt): bool
+    {
+        try {
+            $startedAt = $this->livenessChecker->getStartedAt($ownerPid);
+        } catch (ProcessLivenessCheckException) {
+            // The check itself failed — we can't tell PID reuse from a live owner here, so fall
+            // back to trusting the heartbeat staleness check alone, as before this guard existed.
+            return true;
+        }
+
+        return $startedAt !== null && $startedAt->getTimestamp() <= $heartbeatAt;
     }
 
     private function isHeartbeatStale(int $heartbeatAt): bool

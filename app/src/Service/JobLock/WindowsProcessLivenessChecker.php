@@ -27,33 +27,42 @@ declare(strict_types=1);
 
 namespace App\Service\JobLock;
 
+use App\Service\JobLock\Exception\ProcessLivenessCheckException;
+
 /**
  * The application only ships for Windows (see .claude-docs/architecture.md), where POSIX
- * kill($pid, 0) is unavailable. `tasklist` is the standard way to query a process by PID there.
+ * kill($pid, 0) is unavailable. PowerShell's Get-Process is used instead of `wmic` — Microsoft
+ * removes wmic by default starting with Windows 11 24H2, while powershell.exe has shipped
+ * since Windows 7, safely below our minimum supported version (Windows 10).
  */
 final class WindowsProcessLivenessChecker implements ProcessLivenessChecker
 {
-    public function isRunning(int $pid): bool
+    public function getStartedAt(int $pid): ?\DateTimeImmutable
     {
-        exec(sprintf('tasklist /FI "PID eq %d" /FO CSV /NH', $pid), $output, $resultCode);
+        exec(
+            sprintf(
+                'powershell -NoProfile -Command "$p = Get-Process -Id %d -ErrorAction SilentlyContinue; if ($p) { $p.StartTime.ToString(\'o\') }"',
+                $pid,
+            ),
+            $output,
+            $resultCode,
+        );
 
-        // A non-zero exit code means the tasklist command itself failed (disabled exec(),
-        // missing binary, etc.) — not that the process doesn't exist (tasklist exits 0 with
-        // an empty/INFO output for that). Treat this as "unknown" and default to "alive": the
-        // heartbeat staleness check in JobLockService::acquire() is the intended safety net for
-        // an actually-dead owner, and a false "dead" here would bypass it entirely.
+        // A non-zero exit code means the powershell command itself failed to run (disabled
+        // exec(), missing binary, etc.) — not that the process doesn't exist (that case exits 0
+        // with empty output). This must not be collapsed into "no such process": the caller
+        // relies on the heartbeat staleness check as the safety net when the check is unknown,
+        // and a false "dead" here would bypass it entirely.
         if ($resultCode !== 0) {
-            return true;
+            throw new ProcessLivenessCheckException(sprintf('Failed to query process %d, exit code %d.', $pid, $resultCode));
         }
 
-        foreach ($output as $line) {
-            $fields = str_getcsv($line);
+        $startedAt = trim(implode('', $output));
 
-            if (isset($fields[1]) && (int) $fields[1] === $pid) {
-                return true;
-            }
+        if ($startedAt === '') {
+            return null;
         }
 
-        return false;
+        return new \DateTimeImmutable($startedAt);
     }
 }
