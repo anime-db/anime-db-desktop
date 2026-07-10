@@ -190,3 +190,10 @@ FrankenPHP завершается первым — новых HTTP-запрос�
 - `App\Service\JobLock\ProcessLivenessChecker` — интерфейс, единственная реализация `WindowsProcessLivenessChecker` (`tasklist /FI "PID eq <pid>" /FO CSV /NH`, парсинг CSV вместо grep по строке — устойчивее к случайному совпадению PID с частью другого поля). Приложение только под Windows (см. architecture.md), второй реализации не будет, пока это не изменится.
 - Часы — `Psr\Clock\ClockInterface` (автовайрится Symfony на `NativeClock` из коробки, `symfony/clock` тянется прод-зависимостью `symfony/messenger`), не `time()` напрямую — тесты подставляют `Symfony\Component\Clock\MockClock`.
 - Не входит в объём (см. issue): использование сервиса в реальном хендлере скана хранилища — придёт вместе с самим сканом; периодичность вызова `heartbeat()` во время выполнения задачи — тоже ответственность будущего хендлера, сервис только предоставляет примитив.
+
+## Точка расширения для Этапа 4 (плагины поиска) — issue #121
+
+- `App\Service\Storage\Search\SearchByPluginInterface` — контракт «первое совпадение»: `find(string $name): ?SearchByPluginCandidate` (не коллекция). Единственная текущая реализация — `NullSearchByPlugin`, всегда возвращает `null`.
+- `App\Service\Storage\Search\SearchByPluginChain` пробует зарегистрированные реализации по очереди и останавливается на первом непустом результате — дальше по цепочке не идёт и не сравнивает, что вернули бы остальные (см. критерии issue).
+- DI-механизм: интерфейс размечен атрибутом `#[AutoconfigureTag('app.search_by_plugin')]`, поэтому **любой** класс, реализующий `SearchByPluginInterface` (включая будущие плагины Этапа 4), автоматически попадает в тег без правок `services.yaml`. `SearchByPluginChain` получает список через `#[AutowireIterator('app.search_by_plugin')]` на параметре конструктора. Этап 4 подключается, просто реализовав интерфейс — ни `SearchByPluginChain`, ни код скана (часть 5) не меняются.
+- `SearchByPluginCandidate` намеренно минимален (`PluginId $pluginId`, `string $name`) — схема того, что реально возвращает внешний источник (ссылка, метаданные и т.п.), не проектируется здесь, это решение Этапа 4.
