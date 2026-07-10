@@ -48,8 +48,9 @@ use Symfony\Component\Finder\SplFileInfo;
  * service that connects the desktop.ini marker (StorageMarkerService, Таск 3 часть 1), name
  * cleaning (FilenameCleaner, часть 2), the local-catalog orphan search (OrphanAnimeMatcher,
  * часть 3) and the plugin search chain (SearchByPluginChain, часть 4) into one pure, synchronous
- * algorithm (Таск 3 часть 5). No Messenger/progress (часть 6) and no UI (часть 7) here — this is
- * the domain logic those layers call into.
+ * algorithm (Таск 3 часть 5), with an optional progress callback for the Messenger handler that
+ * wraps it into a background job (ScanStorageMessageHandler, часть 6). No UI (часть 7) here —
+ * this is the domain logic those layers call into.
  */
 final class ScanStorageService
 {
@@ -66,7 +67,13 @@ final class ScanStorageService
     ) {
     }
 
-    public function scan(Storage $storage): ScanResult
+    /**
+     * @param ?callable(int, int): void $onProgress called with (processed, total) after each
+     *                                              top-level entry — lets the caller (the
+     *                                              Messenger handler, Таск 3 часть 6) publish
+     *                                              a percentage and refresh its job-lock heartbeat
+     */
+    public function scan(Storage $storage, ?callable $onProgress = null): ScanResult
     {
         if (!\in_array($storage->getType(), self::SCANNABLE_TYPES, true)) {
             return ScanResult::items([]);
@@ -86,7 +93,10 @@ final class ScanStorageService
 
         $items = [];
 
-        foreach ($this->findTopLevelEntries($path) as $file) {
+        $entries = iterator_to_array($this->findTopLevelEntries($path), preserve_keys: false);
+        $total = \count($entries);
+
+        foreach ($entries as $index => $file) {
             $name = $file->getFilename();
 
             if (isset($remainingLinked[$name])) {
@@ -96,11 +106,13 @@ final class ScanStorageService
                 if ($anime->getDateUpdate()->getTimestamp() < $file->getMTime()) {
                     $items[] = ScanResultItem::updated($anime, $name);
                 }
-
-                continue;
+            } else {
+                $items[] = $this->matchNewEntry($storage, $name);
             }
 
-            $items[] = $this->matchNewEntry($storage, $name);
+            if ($onProgress !== null) {
+                $onProgress($index + 1, $total);
+            }
         }
 
         foreach ($remainingLinked as $storagePath => $anime) {
