@@ -373,7 +373,7 @@ final class ScanStorageServiceTest extends TestCase
         $this->entityManager->flush();
         $orphanId = $orphan->id;
 
-        $candidate = new SearchByPluginCandidate(new PluginId('animedb-test'), 'Trigun the Movie');
+        $candidate = new SearchByPluginCandidate(new PluginId('animedb-test'), 'Trigun');
         $service = $this->newService($this->pluginChainReturning($candidate));
 
         $result = $service->scan($storage);
@@ -388,6 +388,33 @@ final class ScanStorageServiceTest extends TestCase
         $reloaded = $this->entityManager->find(Anime::class, $orphanId);
         $this->assertSame($storage->id, $reloaded->getStorage()?->id);
         $this->assertSame('Trigun.mkv', $reloaded->getStoragePath());
+    }
+
+    public function testExactlyOneOrphanDisagreeingWithExactlyOnePluginMatchRequiresConfirmation(): void
+    {
+        $dir = $this->makeStorageDir();
+        $this->touchFile($dir.'/Trigun.mkv');
+
+        $storage = new Storage('Main folder', $dir, StorageType::Folder);
+        $this->entityManager->persist($storage);
+
+        $orphan = new TvAnime();
+        $orphan->setTitle('Trigun')->setWatchStatus(WatchStatus::Plan);
+        $this->entityManager->persist($orphan);
+        $this->entityManager->flush();
+
+        // Same orphan-lookup result as the "confirmed" case above, but the plugin actually
+        // found a different title this time — that must not be treated as agreement.
+        $candidate = new SearchByPluginCandidate(new PluginId('animedb-test'), 'Trigun the Movie');
+        $service = $this->newService($this->pluginChainReturning($candidate));
+
+        $result = $service->scan($storage);
+
+        $this->assertCount(1, $result->items);
+        $item = $result->items[0];
+        $this->assertSame(ScanItemType::NeedsConfirmation, $item->type);
+        $this->assertCount(2, $item->candidates);
+        $this->assertNull($orphan->getStorage());
     }
 
     public function testMultipleOrphanCandidatesRequireConfirmation(): void

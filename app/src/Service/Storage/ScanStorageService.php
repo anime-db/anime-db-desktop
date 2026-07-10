@@ -30,12 +30,14 @@ namespace App\Service\Storage;
 use App\Entity\Anime;
 use App\Entity\Enum\StorageType;
 use App\Entity\Enum\WatchStatus;
+use App\Entity\NameNormalizer;
 use App\Entity\Storage;
 use App\Entity\TvAnime;
 use App\Repository\AnimeRepository;
 use App\Service\Storage\Scan\ScanCandidate;
 use App\Service\Storage\Scan\ScanResult;
 use App\Service\Storage\Scan\ScanResultItem;
+use App\Service\Storage\Search\SearchByPluginCandidate;
 use App\Service\Storage\Search\SearchByPluginChain;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\Finder\Finder;
@@ -140,7 +142,10 @@ final class ScanStorageService
         // Exactly one orphan and exactly one plugin match agree on the same file — that is
         // one identification confirmed twice, not two competing candidates. Only an orphan
         // count of 2+ (regardless of the plugin) is a genuine conflict that needs the user.
-        if (\count($orphans) === 1 && $pluginCandidate !== null) {
+        // "Agree" must be checked explicitly: a lone orphan plus a lone plugin match are two
+        // independent lookups that happen to both return one result each, not proof they
+        // found the same title — the plugin candidate has to actually name the orphan.
+        if (\count($orphans) === 1 && $pluginCandidate !== null && $this->orphanMatchesPluginCandidate($orphans[0], $pluginCandidate)) {
             return ScanResultItem::autoLinked($this->autoLink($storage, $name, ScanCandidate::fromOrphan($orphans[0])), $name);
         }
 
@@ -154,6 +159,24 @@ final class ScanStorageService
             1 => ScanResultItem::autoLinked($this->autoLink($storage, $name, $candidates[0]), $name),
             default => ScanResultItem::needsConfirmation($name, $cleanedName, $candidates),
         };
+    }
+
+    /** Whether the plugin match names the same title as the orphan (its Anime::title or one of its AnimeName entries). */
+    private function orphanMatchesPluginCandidate(Anime $orphan, SearchByPluginCandidate $plugin): bool
+    {
+        $normalizedPluginName = NameNormalizer::normalize($plugin->name);
+
+        if (NameNormalizer::normalize($orphan->getTitle()) === $normalizedPluginName) {
+            return true;
+        }
+
+        foreach ($orphan->getNames() as $name) {
+            if ($name->normalizedName === $normalizedPluginName) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function autoLink(Storage $storage, string $name, ScanCandidate $candidate): Anime
