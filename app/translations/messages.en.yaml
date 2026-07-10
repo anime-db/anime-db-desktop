@@ -108,6 +108,23 @@ storage_list:
     never_scanned: Never scanned
     scan_button: Scan
     scan_started: Scan started.
+    scan_heading: Scan results
+    scan_progress_text: '%processed%/%total% (%percent%%)'
+    scan_failed_marker_conflict: 'Scan failed: the storage marker is owned by another storage.'
+    scan_failed_exception: 'Scan failed: %message%'
+    scan_result_empty: Nothing found.
+    group_updated: Updated
+    group_files_missing: Files missing
+    group_auto_linked: Added automatically
+    group_needs_manual_entry: Needs a new entry
+    group_needs_confirmation: Needs confirmation
+    updated_text: '%title% (%path%)'
+    files_missing_text: '%title% (%path%)'
+    auto_linked_text: 'Added automatically: %title%'
+    create_entry_link: 'Create entry: %title%'
+    confirm_button: Confirm
+    confirm_error: Failed to confirm the selection.
+    confirmed_text: 'Confirmed: %title%'
 
 anime_detail:
     title: '%title% — AnimeDB'
