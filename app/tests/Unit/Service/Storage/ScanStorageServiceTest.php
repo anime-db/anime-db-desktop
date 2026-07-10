@@ -39,6 +39,7 @@ use App\Entity\ValueObject\PluginId;
 use App\Repository\AnimeRepository;
 use App\Service\Storage\FilenameCleaner;
 use App\Service\Storage\OrphanAnimeMatcher;
+use App\Service\Storage\Scan\ScanCandidate;
 use App\Service\Storage\Scan\ScanItemType;
 use App\Service\Storage\ScanStorageService;
 use App\Service\Storage\Search\NullSearchByPlugin;
@@ -527,6 +528,51 @@ final class ScanStorageServiceTest extends TestCase
         $this->assertSame(ScanItemType::AutoLinked, $item->type);
         $this->assertNotNull($item->anime);
         $this->assertSame('Trigun', $item->anime->getTitle());
+    }
+
+    public function testLinkToChosenCandidateWithOrphanUpdatesTheExistingAnime(): void
+    {
+        $storage = new Storage('Main folder', $this->makeStorageDir(), StorageType::Folder);
+        $this->entityManager->persist($storage);
+
+        $orphan = new TvAnime();
+        $orphan->setTitle('Trigun')->setWatchStatus(WatchStatus::Plan);
+        $this->entityManager->persist($orphan);
+        $this->entityManager->flush();
+        $orphanId = $orphan->id;
+
+        $anime = $this->newService()->linkToChosenCandidate($storage, 'Trigun.mkv', ScanCandidate::fromOrphan($orphan));
+        $this->entityManager->flush();
+
+        $this->assertSame($orphan, $anime);
+
+        $this->entityManager->clear();
+        /** @var Anime $reloaded */
+        $reloaded = $this->entityManager->find(Anime::class, $orphanId);
+        $this->assertSame($storage->id, $reloaded->getStorage()?->id);
+        $this->assertSame('Trigun.mkv', $reloaded->getStoragePath());
+    }
+
+    public function testLinkToChosenCandidateWithPluginCandidateCreatesANewAnime(): void
+    {
+        $storage = new Storage('Main folder', $this->makeStorageDir(), StorageType::Folder);
+        $this->entityManager->persist($storage);
+        $this->entityManager->flush();
+
+        $candidate = ScanCandidate::fromPlugin(new SearchByPluginCandidate(new PluginId('animedb-test'), 'Trigun'));
+
+        $anime = $this->newService()->linkToChosenCandidate($storage, 'Trigun.mkv', $candidate);
+        $this->entityManager->flush();
+
+        $this->assertSame('Trigun', $anime->getTitle());
+        $this->assertSame($storage->id, $anime->getStorage()?->id);
+        $this->assertSame('Trigun.mkv', $anime->getStoragePath());
+
+        $animeId = $anime->id;
+        $this->entityManager->clear();
+        /** @var Anime $reloaded */
+        $reloaded = $this->entityManager->find(Anime::class, $animeId);
+        $this->assertSame('Trigun', $reloaded->getTitle());
     }
 
     public function testSuccessfulScanRecordsStorageScanTimestamps(): void

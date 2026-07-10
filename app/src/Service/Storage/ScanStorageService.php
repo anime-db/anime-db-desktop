@@ -155,7 +155,7 @@ final class ScanStorageService
 
         return match (\count($candidates)) {
             0 => ScanResultItem::needsManualEntry($name, $cleanedName),
-            1 => ScanResultItem::autoLinked($this->autoLink($storage, $name, $candidates[0]), $name),
+            1 => ScanResultItem::autoLinked($this->linkToChosenCandidate($storage, $name, $candidates[0]), $name),
             default => ScanResultItem::needsConfirmation($name, $cleanedName, $candidates),
         };
     }
@@ -222,11 +222,18 @@ final class ScanStorageService
         return false;
     }
 
-    private function autoLink(Storage $storage, string $name, ScanCandidate $candidate): Anime
+    /**
+     * Binds $storagePath to $candidate: either of the two sources a ScanCandidate can carry
+     * (see its docblock). Called both by the internal 0/1/>1 rule in matchNewEntry() when
+     * exactly one candidate was found, and directly by the user-confirmation controller action
+     * (issue #138, Таск 3 часть 7.3) when the scan reported ScanItemType::NeedsConfirmation and
+     * the user picked one of the offered candidates — no re-run of that rule in that case.
+     */
+    public function linkToChosenCandidate(Storage $storage, string $storagePath, ScanCandidate $candidate): Anime
     {
         $orphan = $candidate->orphan;
         if ($orphan !== null) {
-            $orphan->setStorage($storage)->setStoragePath($name);
+            $orphan->setStorage($storage)->setStoragePath($storagePath);
 
             return $orphan;
         }
@@ -241,7 +248,7 @@ final class ScanStorageService
         $anime->setTitle($plugin->name)
             ->setWatchStatus(WatchStatus::Plan)
             ->setStorage($storage)
-            ->setStoragePath($name);
+            ->setStoragePath($storagePath);
         $this->entityManager->persist($anime);
 
         return $anime;
