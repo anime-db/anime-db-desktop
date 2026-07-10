@@ -27,7 +27,6 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Service\Storage;
 
-use App\Doctrine\Query\ReplaceFunction;
 use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
 use App\Entity\Enum\AnimeNameType;
@@ -66,7 +65,6 @@ final class OrphanAnimeMatcherTest extends TestCase
 
         $config = ORMSetup::createAttributeMetadataConfig([\dirname(__DIR__, 4).'/src/Entity'], true);
         $config->enableNativeLazyObjects(true);
-        $config->addCustomStringFunction('REPLACE', ReplaceFunction::class);
 
         $connection = DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true], $config);
         $this->entityManager = new EntityManager($connection, $config);
@@ -85,6 +83,21 @@ final class OrphanAnimeMatcherTest extends TestCase
         $this->entityManager->flush();
 
         $candidates = $this->matcher->findCandidates('cowboy bebop');
+
+        $this->assertSame([$anime], $candidates);
+    }
+
+    public function testMatchesTitleWithUppercasedNonAsciiLetter(): void
+    {
+        // SQLite's LOWER() only folds ASCII letters, so this would miss a title starting
+        // with an uppercased macron'd romaji vowel if matching relied on SQL-side LOWER()
+        // instead of the mb_strtolower()-based NameNormalizer applied at write time.
+        $anime = new TvAnime();
+        $anime->setTitle('Ōkami')->setWatchStatus(WatchStatus::Plan);
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+
+        $candidates = $this->matcher->findCandidates('ōkami');
 
         $this->assertSame([$anime], $candidates);
     }

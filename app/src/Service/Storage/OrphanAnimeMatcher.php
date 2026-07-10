@@ -28,6 +28,7 @@ declare(strict_types=1);
 namespace App\Service\Storage;
 
 use App\Entity\Anime;
+use App\Entity\NameNormalizer;
 use App\Repository\AnimeRepository;
 
 /**
@@ -42,7 +43,9 @@ use App\Repository\AnimeRepository;
  *
  * Matching is intentionally simple (case/whitespace-insensitive exact comparison), not a
  * weighted fuzzy search — the same approach v1 used when matching by basename. The actual
- * lookup and comparison happen in AnimeRepository as a single database query.
+ * lookup happens in AnimeRepository against the denormalized Anime::$normalizedTitle and
+ * AnimeName::$normalizedName columns, so $cleanedName must go through the same
+ * NameNormalizer::normalize() used to populate those columns before comparing.
  */
 final class OrphanAnimeMatcher
 {
@@ -53,11 +56,6 @@ final class OrphanAnimeMatcher
     /** @return list<Anime> */
     public function findCandidates(string $cleanedName): array
     {
-        return $this->animeRepository->findOrphanCandidatesByNormalizedName($this->normalize($cleanedName));
-    }
-
-    private function normalize(string $value): string
-    {
-        return trim((string) preg_replace('/\s+/u', ' ', mb_strtolower($value)));
+        return $this->animeRepository->findOrphanCandidatesByNormalizedName(NameNormalizer::normalize($cleanedName));
     }
 }

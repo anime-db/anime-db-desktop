@@ -74,16 +74,11 @@ class AnimeRepository
 
     /**
      * Anime with neither $storage nor $storagePath set ("orphans", see OrphanAnimeMatcher)
-     * whose title or one of its AnimeName records matches $normalizedName case- and
-     * space-insensitively. $normalizedName must already be lowercased, trimmed and
-     * whitespace-collapsed by the caller (see OrphanAnimeMatcher::normalize()) — the same
-     * normalization is applied to a.title/n.name here via SQL so the comparison happens
-     * in the database instead of loading every orphan into PHP to filter it there.
-     *
-     * SQLite's LOWER() only folds ASCII letters (no ICU extension loaded), so a title/name
-     * starting with an uppercased non-ASCII letter (e.g. a macron'd romaji vowel) would not
-     * match here even though it would have under the old PHP-side mb_strtolower() comparison.
-     * Accepted trade-off for moving the comparison into the database query.
+     * whose Anime::$normalizedTitle or one of its AnimeName::$normalizedName records equals
+     * $normalizedName. Both columns are kept normalized at write time (Anime::setTitle(),
+     * AnimeName::__construct()) via the same App\Entity\NameNormalizer::normalize() the
+     * caller must have already applied to $normalizedName, so this is a plain indexed
+     * column comparison rather than normalizing title/name in SQL on every query.
      *
      * @return list<Anime>
      */
@@ -93,32 +88,13 @@ class AnimeRepository
             ->leftJoin('a.names', 'n')
             ->andWhere('a.storage IS NULL')
             ->andWhere('a.storagePath IS NULL')
-            ->andWhere(sprintf(
-                '%s = :needle OR %s = :needle',
-                $this->normalizedComparisonExpression('a.title'),
-                $this->normalizedComparisonExpression('n.name'),
-            ))
+            ->andWhere('a.normalizedTitle = :needle OR n.normalizedName = :needle')
             ->setParameter('needle', $normalizedName)
             ->distinct()
             ->orderBy('a.id', 'ASC');
 
         /* @var list<Anime> */
         return $qb->getQuery()->getResult();
-    }
-
-    /**
-     * Collapses runs of the space character down to a single space via 4 nested REPLACE()
-     * calls (each pass halves the length of a run, so 4 passes fully collapse anything up
-     * to 16 consecutive spaces — far more than any real title/name will contain).
-     */
-    private function normalizedComparisonExpression(string $dqlField): string
-    {
-        $expression = "LOWER({$dqlField})";
-        for ($i = 0; $i < 4; ++$i) {
-            $expression = "REPLACE({$expression}, '  ', ' ')";
-        }
-
-        return "TRIM({$expression})";
     }
 
     private function createFilteredQueryBuilder(AnimeListFilter $filter): QueryBuilder

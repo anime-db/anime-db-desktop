@@ -48,6 +48,10 @@ class AnimeName
     #[ORM\Column(length: 256)]
     public readonly string $name;
 
+    /** NameNormalizer::normalize($name), computed once here since $name is readonly. */
+    #[ORM\Column(length: 256)]
+    public readonly string $normalizedName;
+
     #[ORM\Column(length: 16, enumType: AnimeNameType::class)]
     public readonly AnimeNameType $type;
 
@@ -55,6 +59,7 @@ class AnimeName
     {
         $this->anime = $anime;
         $this->name = $name;
+        $this->normalizedName = NameNormalizer::normalize($name);
         $this->type = $type;
     }
 }
