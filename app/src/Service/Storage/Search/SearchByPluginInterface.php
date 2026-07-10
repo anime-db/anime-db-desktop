@@ -31,12 +31,15 @@ use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 
 /**
  * Extension point for Stage 4's plugin system (v1 equivalent: `Plugin\Fill\Search\SearchInterface`).
- * Looks up a cleaned storage item name against an external source and reports at most one match —
- * this is a "first match wins" contract, not a ranked collection. Every implementation is
- * auto-tagged for {@see SearchByPluginChain}, which is the only intended caller.
+ * Looks up a cleaned storage item name against an external source and reports every match it
+ * found — an empty list means "not found", one entry means an unambiguous match, and 2+ entries
+ * means the external source itself is ambiguous (e.g. TV/movie/OVA all sharing a similar title)
+ * and the caller must decide, not the plugin. Every implementation is auto-tagged for
+ * {@see SearchByPluginChain}, which is the only intended caller.
  */
 #[AutoconfigureTag('app.search_by_plugin')]
 interface SearchByPluginInterface
 {
-    public function find(string $name): ?SearchByPluginCandidate;
+    /** @return list<SearchByPluginCandidate> */
+    public function find(string $name): array;
 }

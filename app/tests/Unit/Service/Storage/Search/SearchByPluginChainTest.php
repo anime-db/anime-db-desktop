@@ -50,22 +50,52 @@ final class SearchByPluginChainTest extends TestCase
     }
 
     #[DataProvider('provideNames')]
-    public function testFindReturnsNullWhenOnlyNoOpPluginIsRegistered(string $name): void
+    public function testFindReturnsEmptyListWhenOnlyNoOpPluginIsRegistered(string $name): void
     {
         $chain = new SearchByPluginChain([new NullSearchByPlugin()]);
 
-        $this->assertNull($chain->find($name));
+        $this->assertSame([], $chain->find($name));
     }
 
-    public function testFindReturnsFirstMatchAndSkipsRemainingPlugins(): void
+    public function testFindReturnsFirstNonEmptyListAndSkipsRemainingPlugins(): void
     {
-        $expected = new SearchByPluginCandidate(new PluginId('animedb-shikimori'), 'Bleach');
+        $expected = [new SearchByPluginCandidate(new PluginId('animedb-shikimori'), 'Bleach')];
 
         $first = $this->createStub(SearchByPluginInterface::class);
         $first->method('find')->willReturn($expected);
 
         $second = $this->createMock(SearchByPluginInterface::class);
         $second->expects($this->never())->method('find');
+
+        $chain = new SearchByPluginChain([$first, $second]);
+
+        $this->assertSame($expected, $chain->find('Bleach'));
+    }
+
+    public function testFindReturnsAllCandidatesFromTheWinningPlugin(): void
+    {
+        $expected = [
+            new SearchByPluginCandidate(new PluginId('animedb-shikimori'), 'Bleach'),
+            new SearchByPluginCandidate(new PluginId('animedb-shikimori'), 'Bleach: Thousand-Year Blood War'),
+        ];
+
+        $plugin = $this->createStub(SearchByPluginInterface::class);
+        $plugin->method('find')->willReturn($expected);
+
+        $chain = new SearchByPluginChain([$plugin]);
+
+        $this->assertSame($expected, $chain->find('Bleach'));
+    }
+
+    public function testFindSkipsPluginsReturningAnEmptyListAndTriesTheNextOne(): void
+    {
+        $expected = [new SearchByPluginCandidate(new PluginId('animedb-shikimori'), 'Bleach')];
+
+        $first = $this->createStub(SearchByPluginInterface::class);
+        $first->method('find')->willReturn([]);
+
+        $second = $this->createStub(SearchByPluginInterface::class);
+        $second->method('find')->willReturn($expected);
 
         $chain = new SearchByPluginChain([$first, $second]);
 

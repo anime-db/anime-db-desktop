@@ -34,8 +34,8 @@ namespace App\Service\Storage\Search;
  */
 final class NullSearchByPlugin implements SearchByPluginInterface
 {
-    public function find(string $name): ?SearchByPluginCandidate
+    public function find(string $name): array
     {
-        return null;
+        return [];
     }
 }
