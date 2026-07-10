@@ -134,13 +134,18 @@ final class ScanStorageService
     {
         $cleanedName = $this->filenameCleaner->clean($name);
 
-        $candidates = array_map(
-            ScanCandidate::fromOrphan(...),
-            $this->orphanMatcher->findCandidates($cleanedName),
-        );
-
+        $orphans = $this->orphanMatcher->findCandidates($cleanedName);
         $pluginCandidate = $this->pluginChain->find($cleanedName);
-        if (null !== $pluginCandidate) {
+
+        // Exactly one orphan and exactly one plugin match agree on the same file — that is
+        // one identification confirmed twice, not two competing candidates. Only an orphan
+        // count of 2+ (regardless of the plugin) is a genuine conflict that needs the user.
+        if (\count($orphans) === 1 && $pluginCandidate !== null) {
+            return ScanResultItem::autoLinked($this->autoLink($storage, $name, ScanCandidate::fromOrphan($orphans[0])), $name);
+        }
+
+        $candidates = array_map(ScanCandidate::fromOrphan(...), $orphans);
+        if ($pluginCandidate !== null) {
             $candidates[] = ScanCandidate::fromPlugin($pluginCandidate);
         }
 

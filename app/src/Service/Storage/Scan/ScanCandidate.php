@@ -33,9 +33,9 @@ use App\Service\Storage\Search\SearchByPluginCandidate;
 /**
  * A single suggestion for a new storage file/folder, from either of the two sources
  * ScanStorageService combines: an existing orphan Anime found by OrphanAnimeMatcher, or a
- * match reported by SearchByPluginChain. Exactly one of the two is ever set — the same match
- * reported by both sources still counts as two distinct candidates (see Таск 3 часть 5,
- * "конфликт двух источников считается двумя кандидатами").
+ * match reported by SearchByPluginChain. Exactly one of the two is ever set. ScanStorageService
+ * only ever builds a list of these when the sources disagree — a lone orphan confirmed by a
+ * lone plugin match is resolved to a single auto-link before candidates are built at all.
  */
 final class ScanCandidate
 {

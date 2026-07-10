@@ -359,7 +359,7 @@ final class ScanStorageServiceTest extends TestCase
         $this->assertSame('Trigun', $reloaded->getTitle());
     }
 
-    public function testConflictingCandidatesFromBothSourcesRequireConfirmation(): void
+    public function testExactlyOneOrphanConfirmedByExactlyOnePluginMatchIsAutoLinkedToTheOrphan(): void
     {
         $dir = $this->makeStorageDir();
         $this->touchFile($dir.'/Trigun.mkv');
@@ -371,6 +371,7 @@ final class ScanStorageServiceTest extends TestCase
         $orphan->setTitle('Trigun')->setWatchStatus(WatchStatus::Plan);
         $this->entityManager->persist($orphan);
         $this->entityManager->flush();
+        $orphanId = $orphan->id;
 
         $candidate = new SearchByPluginCandidate(new PluginId('animedb-test'), 'Trigun the Movie');
         $service = $this->newService($this->pluginChainReturning($candidate));
@@ -379,13 +380,14 @@ final class ScanStorageServiceTest extends TestCase
 
         $this->assertCount(1, $result->items);
         $item = $result->items[0];
-        $this->assertSame(ScanItemType::NeedsConfirmation, $item->type);
-        $this->assertCount(2, $item->candidates);
-        $this->assertSame($orphan, $item->candidates[0]->orphan);
-        $this->assertSame($candidate, $item->candidates[1]->plugin);
+        $this->assertSame(ScanItemType::AutoLinked, $item->type);
+        $this->assertSame($orphan, $item->anime);
 
-        // Neither the orphan nor a new Anime should have been touched while awaiting confirmation.
-        $this->assertNull($orphan->getStorage());
+        $this->entityManager->clear();
+        /** @var Anime $reloaded */
+        $reloaded = $this->entityManager->find(Anime::class, $orphanId);
+        $this->assertSame($storage->id, $reloaded->getStorage()?->id);
+        $this->assertSame('Trigun.mkv', $reloaded->getStoragePath());
     }
 
     public function testMultipleOrphanCandidatesRequireConfirmation(): void
@@ -411,6 +413,38 @@ final class ScanStorageServiceTest extends TestCase
         $item = $result->items[0];
         $this->assertSame(ScanItemType::NeedsConfirmation, $item->type);
         $this->assertCount(2, $item->candidates);
+    }
+
+    public function testMultipleOrphanCandidatesWithAPluginMatchStillRequireConfirmation(): void
+    {
+        $dir = $this->makeStorageDir();
+        $this->touchFile($dir.'/Trigun.mkv');
+
+        $storage = new Storage('Main folder', $dir, StorageType::Folder);
+        $this->entityManager->persist($storage);
+
+        $first = new TvAnime();
+        $first->setTitle('Trigun')->setWatchStatus(WatchStatus::Plan);
+        $second = new TvAnime();
+        $second->setTitle('Trigun the Other One')->setWatchStatus(WatchStatus::Plan);
+        $second->addName('Trigun', AnimeNameType::Synonym);
+        $this->entityManager->persist($first);
+        $this->entityManager->persist($second);
+        $this->entityManager->flush();
+
+        $candidate = new SearchByPluginCandidate(new PluginId('animedb-test'), 'Trigun the Movie');
+        $service = $this->newService($this->pluginChainReturning($candidate));
+
+        $result = $service->scan($storage);
+
+        $this->assertCount(1, $result->items);
+        $item = $result->items[0];
+        $this->assertSame(ScanItemType::NeedsConfirmation, $item->type);
+        $this->assertCount(3, $item->candidates);
+
+        // None of the orphans should have been touched while awaiting confirmation.
+        $this->assertNull($first->getStorage());
+        $this->assertNull($second->getStorage());
     }
 
     public function testSuccessfulScanRecordsStorageScanTimestamps(): void
