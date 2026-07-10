@@ -70,7 +70,7 @@ final class ScanStorageService
             return ScanResult::items([]);
         }
 
-        if (StorageMarkerResult::Conflict === $this->markerService->reconcile($storage)) {
+        if ($this->markerService->reconcile($storage) === StorageMarkerResult::Conflict) {
             return ScanResult::conflict();
         }
 
@@ -106,7 +106,7 @@ final class ScanStorageService
         }
 
         $fileModified = filemtime($path);
-        $storage->markScanned(new \DateTimeImmutable('@'.(false !== $fileModified ? $fileModified : time())));
+        $storage->markScanned(new \DateTimeImmutable('@'.($fileModified !== false ? $fileModified : time())));
         $this->entityManager->flush();
 
         return ScanResult::items($items);
@@ -154,7 +154,7 @@ final class ScanStorageService
     private function autoLink(Storage $storage, string $name, ScanCandidate $candidate): Anime
     {
         $orphan = $candidate->orphan;
-        if (null !== $orphan) {
+        if ($orphan !== null) {
             $orphan->setStorage($storage)->setStoragePath($name);
 
             return $orphan;
