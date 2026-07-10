@@ -147,3 +147,12 @@ anime_detail:
     error_watch_status_not_released: Cannot mark as Completed while the anime has not been released yet.
     error_user_rating_invalid: Rating must be between 1 and 5.
     error_watched_episodes_invalid: Invalid watched episode count.
+
+anime_new:
+    title: New Anime — AnimeDB
+    heading: New Anime
+    field_title: Title
+    field_type: Type
+    field_watch_status: Watch status
+    submit_button: Create
+    error_invalid: Fill in the title and choose a type and watch status.

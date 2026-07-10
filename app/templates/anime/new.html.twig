@@ -1,0 +1,62 @@
+{#
+ # AnimeDb package.
+ #
+ # @author    Peter Gribanov <info@peter-gribanov.ru>
+ # @copyright Copyright (c) 2026, Peter Gribanov
+ # @license   https://gnu.org GPL-3.0-or-later
+ #
+ # This program is free software: you can redistribute it and/or modify
+ # it under the terms of the GNU General Public License as published by
+ # the Free Software Foundation, either version 3 of the License, or
+ # (at your option) any later version.
+ #
+ # This program is distributed in the hope that it will be useful,
+ # but WITHOUT ANY WARRANTY; without even the implied warranty of
+ # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ # GNU General Public License for more details.
+ #
+ # You should have received a copy of the GNU General Public License
+ # along with this program. If not, see <https://gnu.org>.
+ #}
+{% extends 'base.html.twig' %}
+
+{% block title %}{{ 'anime_new.title'|trans }}{% endblock %}
+
+{% block body %}
+    <main class="anime-new">
+        <h1>{{ 'anime_new.heading'|trans }}</h1>
+
+        {% if error %}
+            <p class="anime-new__error">{{ error|trans }}</p>
+        {% endif %}
+
+        <form method="post" action="{{ path('anime_create') }}" class="anime-new__form">
+            <input type="hidden" name="_token" value="{{ csrf_token('anime_new') }}">
+            {% if storage_id is not null %}
+                <input type="hidden" name="storage_id" value="{{ storage_id }}">
+            {% endif %}
+            {% if storage_path is not null %}
+                <input type="hidden" name="storage_path" value="{{ storage_path }}">
+            {% endif %}
+
+            <label for="anime-new-title">{{ 'anime_new.field_title'|trans }}</label>
+            <input type="text" id="anime-new-title" name="title" value="{{ title }}" required>
+
+            <label for="anime-new-type">{{ 'anime_new.field_type'|trans }}</label>
+            <select id="anime-new-type" name="type">
+                {% for value in types %}
+                    <option value="{{ value }}"{% if value == type %} selected{% endif %}>{{ ('anime_type.' ~ value)|trans }}</option>
+                {% endfor %}
+            </select>
+
+            <label for="anime-new-watch-status">{{ 'anime_new.field_watch_status'|trans }}</label>
+            <select id="anime-new-watch-status" name="watch_status">
+                {% for value in watch_statuses %}
+                    <option value="{{ value }}"{% if value == watch_status %} selected{% endif %}>{{ ('watch_status.' ~ value)|trans }}</option>
+                {% endfor %}
+            </select>
+
+            <button type="submit">{{ 'anime_new.submit_button'|trans }}</button>
+        </form>
+    </main>
+{% endblock %}
