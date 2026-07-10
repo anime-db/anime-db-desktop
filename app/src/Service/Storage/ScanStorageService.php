@@ -137,28 +137,59 @@ final class ScanStorageService
         $cleanedName = $this->filenameCleaner->clean($name);
 
         $orphans = $this->orphanMatcher->findCandidates($cleanedName);
-        $pluginCandidate = $this->pluginChain->find($cleanedName);
+        $pluginCandidates = $this->pluginChain->find($cleanedName);
 
-        // Exactly one orphan and exactly one plugin match agree on the same file — that is
-        // one identification confirmed twice, not two competing candidates. Only an orphan
-        // count of 2+ (regardless of the plugin) is a genuine conflict that needs the user.
-        // "Agree" must be checked explicitly: a lone orphan plus a lone plugin match are two
-        // independent lookups that happen to both return one result each, not proof they
-        // found the same title — the plugin candidate has to actually name the orphan.
-        if (\count($orphans) === 1 && $pluginCandidate !== null && $this->orphanMatchesPluginCandidate($orphans[0], $pluginCandidate)) {
-            return ScanResultItem::autoLinked($this->autoLink($storage, $name, ScanCandidate::fromOrphan($orphans[0])), $name);
-        }
-
-        $candidates = array_map(ScanCandidate::fromOrphan(...), $orphans);
-        if ($pluginCandidate !== null) {
-            $candidates[] = ScanCandidate::fromPlugin($pluginCandidate);
-        }
+        $candidates = $this->mergeCandidates($orphans, $pluginCandidates);
 
         return match (\count($candidates)) {
             0 => ScanResultItem::needsManualEntry($name, $cleanedName),
             1 => ScanResultItem::autoLinked($this->autoLink($storage, $name, $candidates[0]), $name),
             default => ScanResultItem::needsConfirmation($name, $cleanedName, $candidates),
         };
+    }
+
+    /**
+     * Combines orphans and plugin matches into one candidate list, collapsing entries that name
+     * the same title (by normalized name) into a single candidate instead of counting them as
+     * two independent identifications. Two lone lookups that happen to each return one result
+     * are not proof they found the same title on their own — agreement has to be checked
+     * explicitly, which is what makes a genuinely ambiguous 2+ count meaningful downstream.
+     *
+     * @param list<Anime>                   $orphans
+     * @param list<SearchByPluginCandidate> $pluginCandidates
+     *
+     * @return list<ScanCandidate>
+     */
+    private function mergeCandidates(array $orphans, array $pluginCandidates): array
+    {
+        $candidates = array_map(ScanCandidate::fromOrphan(...), $orphans);
+
+        foreach ($pluginCandidates as $pluginCandidate) {
+            $agreesWithExisting = false;
+            foreach ($candidates as $candidate) {
+                if ($this->candidateAgreesWithPlugin($candidate, $pluginCandidate)) {
+                    $agreesWithExisting = true;
+                    break;
+                }
+            }
+
+            if (!$agreesWithExisting) {
+                $candidates[] = ScanCandidate::fromPlugin($pluginCandidate);
+            }
+        }
+
+        return $candidates;
+    }
+
+    private function candidateAgreesWithPlugin(ScanCandidate $candidate, SearchByPluginCandidate $plugin): bool
+    {
+        if ($candidate->orphan !== null) {
+            return $this->orphanMatchesPluginCandidate($candidate->orphan, $plugin);
+        }
+
+        $existingPlugin = $candidate->plugin ?? throw new \LogicException('ScanCandidate must carry either an orphan or a plugin match');
+
+        return NameNormalizer::normalize($existingPlugin->name) === NameNormalizer::normalize($plugin->name);
     }
 
     /** Whether the plugin match names the same title as the orphan (its Anime::title or one of its AnimeName entries). */

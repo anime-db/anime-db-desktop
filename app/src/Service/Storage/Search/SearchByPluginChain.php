@@ -31,10 +31,12 @@ use Symfony\Component\DependencyInjection\Attribute\AutowireIterator;
 
 /**
  * Tries registered {@see SearchByPluginInterface} implementations in order and stops at the
- * first match — the remaining implementations are never consulted, so callers must not assume
- * a "better" match further down the chain would have been considered. Currently resolves to a
- * chain of one ({@see NullSearchByPlugin}); Stage 4 plugins join by implementing the interface,
- * with no change needed here or in the storage scan that calls this service.
+ * first one that reports anything at all — the remaining implementations are never consulted,
+ * so callers must not assume a "better" match further down the chain would have been considered.
+ * That first non-empty list is returned as-is, ambiguity and all: this chain only picks which
+ * plugin to trust, it does not resolve how many candidates that plugin found. Currently resolves
+ * to a chain of one ({@see NullSearchByPlugin}); Stage 4 plugins join by implementing the
+ * interface, with no change needed here or in the storage scan that calls this service.
  */
 final class SearchByPluginChain
 {
@@ -45,16 +47,17 @@ final class SearchByPluginChain
     ) {
     }
 
-    public function find(string $name): ?SearchByPluginCandidate
+    /** @return list<SearchByPluginCandidate> */
+    public function find(string $name): array
     {
         foreach ($this->plugins as $plugin) {
-            $candidate = $plugin->find($name);
+            $candidates = $plugin->find($name);
 
-            if ($candidate !== null) {
-                return $candidate;
+            if ($candidates !== []) {
+                return $candidates;
             }
         }
 
-        return null;
+        return [];
     }
 }

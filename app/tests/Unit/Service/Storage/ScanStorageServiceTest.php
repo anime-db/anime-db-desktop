@@ -140,10 +140,16 @@ final class ScanStorageServiceTest extends TestCase
         );
     }
 
-    private function pluginChainReturning(?SearchByPluginCandidate $candidate): SearchByPluginChain
+    private function pluginChainReturning(SearchByPluginCandidate $candidate): SearchByPluginChain
+    {
+        return $this->pluginChainReturningAll([$candidate]);
+    }
+
+    /** @param list<SearchByPluginCandidate> $candidates */
+    private function pluginChainReturningAll(array $candidates): SearchByPluginChain
     {
         $plugin = $this->createStub(SearchByPluginInterface::class);
-        $plugin->method('find')->willReturn($candidate);
+        $plugin->method('find')->willReturn($candidates);
 
         return new SearchByPluginChain([$plugin]);
     }
@@ -472,6 +478,55 @@ final class ScanStorageServiceTest extends TestCase
         // None of the orphans should have been touched while awaiting confirmation.
         $this->assertNull($first->getStorage());
         $this->assertNull($second->getStorage());
+    }
+
+    public function testSinglePluginReturningAmbiguousCandidatesRequiresConfirmation(): void
+    {
+        $dir = $this->makeStorageDir();
+        $this->touchFile($dir.'/Trigun.mkv');
+
+        $storage = new Storage('Main folder', $dir, StorageType::Folder);
+        $this->entityManager->persist($storage);
+        $this->entityManager->flush();
+
+        // A single plugin call to an external source (e.g. Shikimori) can itself come back
+        // ambiguous — here the TV series and its movie spin-off both matched "Trigun".
+        $candidates = [
+            new SearchByPluginCandidate(new PluginId('animedb-test'), 'Trigun'),
+            new SearchByPluginCandidate(new PluginId('animedb-test'), 'Trigun: Badlands Rumble'),
+        ];
+        $service = $this->newService($this->pluginChainReturningAll($candidates));
+
+        $result = $service->scan($storage);
+
+        $this->assertCount(1, $result->items);
+        $item = $result->items[0];
+        $this->assertSame(ScanItemType::NeedsConfirmation, $item->type);
+        $this->assertCount(2, $item->candidates);
+    }
+
+    public function testPluginCandidatesAgreeingWithEachOtherCollapseIntoOne(): void
+    {
+        $dir = $this->makeStorageDir();
+        $this->touchFile($dir.'/Trigun.mkv');
+
+        $storage = new Storage('Main folder', $dir, StorageType::Folder);
+        $this->entityManager->persist($storage);
+        $this->entityManager->flush();
+
+        $candidates = [
+            new SearchByPluginCandidate(new PluginId('animedb-test'), 'Trigun'),
+            new SearchByPluginCandidate(new PluginId('animedb-test'), 'trigun'),
+        ];
+        $service = $this->newService($this->pluginChainReturningAll($candidates));
+
+        $result = $service->scan($storage);
+
+        $this->assertCount(1, $result->items);
+        $item = $result->items[0];
+        $this->assertSame(ScanItemType::AutoLinked, $item->type);
+        $this->assertNotNull($item->anime);
+        $this->assertSame('Trigun', $item->anime->getTitle());
     }
 
     public function testSuccessfulScanRecordsStorageScanTimestamps(): void
