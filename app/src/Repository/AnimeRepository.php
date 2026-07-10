@@ -72,6 +72,31 @@ class AnimeRepository
         return $qb->getQuery()->getResult();
     }
 
+    /**
+     * Anime with neither $storage nor $storagePath set ("orphans", see OrphanAnimeMatcher)
+     * whose Anime::$normalizedTitle or one of its AnimeName::$normalizedName records equals
+     * $normalizedName. Both columns are kept normalized at write time (Anime::setTitle(),
+     * AnimeName::__construct()) via the same App\Entity\NameNormalizer::normalize() the
+     * caller must have already applied to $normalizedName, so this is a plain indexed
+     * column comparison rather than normalizing title/name in SQL on every query.
+     *
+     * @return list<Anime>
+     */
+    public function findOrphanCandidatesByNormalizedName(string $normalizedName): array
+    {
+        $qb = $this->entityManager->getRepository(Anime::class)->createQueryBuilder('a')
+            ->leftJoin('a.names', 'n')
+            ->andWhere('a.storage IS NULL')
+            ->andWhere('a.storagePath IS NULL')
+            ->andWhere('a.normalizedTitle = :needle OR n.normalizedName = :needle')
+            ->setParameter('needle', $normalizedName)
+            ->distinct()
+            ->orderBy('a.id', 'ASC');
+
+        /* @var list<Anime> */
+        return $qb->getQuery()->getResult();
+    }
+
     private function createFilteredQueryBuilder(AnimeListFilter $filter): QueryBuilder
     {
         $qb = $this->entityManager->getRepository(Anime::class)->createQueryBuilder('a')

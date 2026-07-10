@@ -71,6 +71,14 @@ abstract class Anime
     #[ORM\Column(length: 256)]
     private string $title;
 
+    /**
+     * NameNormalizer::normalize($title), kept in sync by setTitle(). Persisted (not
+     * computed on read) so AnimeRepository can match against it with a plain indexed
+     * column comparison instead of normalizing title/name in SQL on every query.
+     */
+    #[ORM\Column(length: 256)]
+    private string $normalizedTitle;
+
     #[ORM\Column(type: 'unix_timestamp', nullable: true)]
     private ?\DateTimeImmutable $datePremiere = null;
 
@@ -181,6 +189,7 @@ abstract class Anime
         }
 
         $this->title = $title;
+        $this->normalizedTitle = NameNormalizer::normalize($title);
 
         return $this;
     }
