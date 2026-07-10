@@ -147,3 +147,12 @@ anime_detail:
     error_watch_status_not_released: Нельзя отметить как «Просмотрено», пока аниме не вышло.
     error_user_rating_invalid: Оценка должна быть от 1 до 5.
     error_watched_episodes_invalid: Некорректное количество просмотренных серий.
+
+anime_new:
+    title: Новая запись — AnimeDB
+    heading: Новая запись
+    field_title: Название
+    field_type: Тип
+    field_watch_status: Статус просмотра
+    submit_button: Создать
+    error_invalid: Заполните название и выберите тип и статус просмотра.
