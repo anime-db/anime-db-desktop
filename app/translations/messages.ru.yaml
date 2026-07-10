@@ -96,6 +96,19 @@ anime_list:
     error: Не удалось загрузить список.
     no_cover: Нет обложки
 
+storage_list:
+    title: Хранилища — AnimeDB
+    heading: Хранилища
+    empty: Хранилищ пока нет.
+    name_column: Название
+    type_column: Тип
+    path_column: Путь
+    last_scan_column: Последний скан
+    actions_column: Действия
+    never_scanned: Ещё не сканировалось
+    scan_button: Скан
+    scan_started: Скан запущен.
+
 anime_detail:
     title: '%title% — AnimeDB'
     no_cover: Нет обложки

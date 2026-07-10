@@ -1,0 +1,65 @@
+{#
+ # AnimeDb package.
+ #
+ # @author    Peter Gribanov <info@peter-gribanov.ru>
+ # @copyright Copyright (c) 2026, Peter Gribanov
+ # @license   https://gnu.org GPL-3.0-or-later
+ #
+ # This program is free software: you can redistribute it and/or modify
+ # it under the terms of the GNU General Public License as published by
+ # the Free Software Foundation, either version 3 of the License, or
+ # (at your option) any later version.
+ #
+ # This program is distributed in the hope that it will be useful,
+ # but WITHOUT ANY WARRANTY; without even the implied warranty of
+ # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ # GNU General Public License for more details.
+ #
+ # You should have received a copy of the GNU General Public License
+ # along with this program. If not, see <https://gnu.org>.
+ #}
+{% extends 'base.html.twig' %}
+
+{% block title %}{{ 'storage_list.title'|trans }}{% endblock %}
+
+{% block body %}
+    <main class="storage-list">
+        <h1>{{ 'storage_list.heading'|trans }}</h1>
+
+        {% if scanned %}
+            <p class="storage-list__notice">{{ 'storage_list.scan_started'|trans }}</p>
+        {% endif %}
+
+        {% if storages is empty %}
+            <p>{{ 'storage_list.empty'|trans }}</p>
+        {% else %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>{{ 'storage_list.name_column'|trans }}</th>
+                        <th>{{ 'storage_list.type_column'|trans }}</th>
+                        <th>{{ 'storage_list.path_column'|trans }}</th>
+                        <th>{{ 'storage_list.last_scan_column'|trans }}</th>
+                        <th>{{ 'storage_list.actions_column'|trans }}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for storage in storages %}
+                        <tr>
+                            <td>{{ storage.name }}</td>
+                            <td>{{ ('storage_type.' ~ storage.type.value)|trans }}</td>
+                            <td>{{ storage.path }}</td>
+                            <td>{{ storage.dateUpdate ? storage.dateUpdate|date('Y-m-d H:i') : ('storage_list.never_scanned'|trans) }}</td>
+                            <td>
+                                <form method="post" action="{{ path('storage_scan', {id: storage.id}) }}">
+                                    <input type="hidden" name="_token" value="{{ csrf_token('storage_scan_' ~ storage.id) }}">
+                                    <button type="submit">{{ 'storage_list.scan_button'|trans }}</button>
+                                </form>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% endif %}
+    </main>
+{% endblock %}

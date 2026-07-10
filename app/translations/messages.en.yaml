@@ -96,6 +96,19 @@ anime_list:
     error: Failed to load the list.
     no_cover: No cover
 
+storage_list:
+    title: Storage — AnimeDB
+    heading: Storage
+    empty: No storage yet.
+    name_column: Name
+    type_column: Type
+    path_column: Path
+    last_scan_column: Last scan
+    actions_column: Actions
+    never_scanned: Never scanned
+    scan_button: Scan
+    scan_started: Scan started.
+
 anime_detail:
     title: '%title% — AnimeDB'
     no_cover: No cover
