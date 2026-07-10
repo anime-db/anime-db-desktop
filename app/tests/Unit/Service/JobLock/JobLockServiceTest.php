@@ -27,6 +27,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Service\JobLock;
 
+use App\Service\JobLock\Exception\ProcessLivenessCheckException;
 use App\Service\JobLock\JobLockService;
 use App\Service\JobLock\ProcessLivenessChecker;
 use Doctrine\DBAL\Connection;
@@ -52,7 +53,7 @@ final class JobLockServiceTest extends TestCase
     public function testAcquiresLockWhenNoneExists(): void
     {
         $livenessChecker = $this->createMock(ProcessLivenessChecker::class);
-        $livenessChecker->expects($this->never())->method('isRunning');
+        $livenessChecker->expects($this->never())->method('getStartedAt');
 
         $service = $this->createService($livenessChecker);
 
@@ -70,7 +71,7 @@ final class JobLockServiceTest extends TestCase
         $this->insertLock(pid: 424242, heartbeatAt: 1000, startedAt: 1000);
 
         $livenessChecker = $this->createStub(ProcessLivenessChecker::class);
-        $livenessChecker->method('isRunning')->willReturn(true);
+        $livenessChecker->method('getStartedAt')->willReturn(new \DateTimeImmutable('@1000'));
 
         $service = $this->createService($livenessChecker);
         $this->clock->modify('+10 seconds');
@@ -87,7 +88,7 @@ final class JobLockServiceTest extends TestCase
         $this->insertLock(pid: 424242, heartbeatAt: 1000, startedAt: 1000);
 
         $livenessChecker = $this->createStub(ProcessLivenessChecker::class);
-        $livenessChecker->method('isRunning')->willReturn(false);
+        $livenessChecker->method('getStartedAt')->willReturn(null);
 
         $service = $this->createService($livenessChecker);
         $this->clock->modify('+5 seconds');
@@ -101,12 +102,31 @@ final class JobLockServiceTest extends TestCase
         $this->assertSame(1005, $lock['started_at']);
     }
 
+    public function testTakesOverLockWhenSamePidStartedAfterHeartbeatEvenThoughItIsAlive(): void
+    {
+        $this->insertLock(pid: 424242, heartbeatAt: 1000, startedAt: 1000);
+
+        $livenessChecker = $this->createStub(ProcessLivenessChecker::class);
+        // The OS reused PID 424242 for an unrelated process after the original owner's last
+        // heartbeat — it cannot be the same process, regardless of it being "alive" now.
+        $livenessChecker->method('getStartedAt')->willReturn(new \DateTimeImmutable('@1001'));
+
+        $service = $this->createService($livenessChecker);
+        $this->clock->modify('+5 seconds');
+
+        $this->assertTrue($service->acquire(self::JOB_KEY));
+
+        $lock = $this->fetchLock();
+        $this->assertNotFalse($lock);
+        $this->assertSame(getmypid(), $lock['pid']);
+    }
+
     public function testTakesOverLockWhenHeartbeatIsStaleEvenIfOwnerPidIsAlive(): void
     {
         $this->insertLock(pid: 424242, heartbeatAt: 1000, startedAt: 1000);
 
         $livenessChecker = $this->createStub(ProcessLivenessChecker::class);
-        $livenessChecker->method('isRunning')->willReturn(true);
+        $livenessChecker->method('getStartedAt')->willReturn(new \DateTimeImmutable('@1000'));
 
         $service = $this->createService($livenessChecker);
         // One second past the stale threshold (interval * missed heartbeats).
@@ -124,12 +144,29 @@ final class JobLockServiceTest extends TestCase
         $this->insertLock(pid: 424242, heartbeatAt: 1000, startedAt: 1000);
 
         $livenessChecker = $this->createStub(ProcessLivenessChecker::class);
-        $livenessChecker->method('isRunning')->willReturn(true);
+        $livenessChecker->method('getStartedAt')->willReturn(new \DateTimeImmutable('@1000'));
 
         $service = $this->createService($livenessChecker);
         $this->clock->modify('+'.(self::HEARTBEAT_INTERVAL_SECONDS * self::STALE_AFTER_MISSED_HEARTBEATS).' seconds');
 
         $this->assertFalse($service->acquire(self::JOB_KEY));
+    }
+
+    public function testDoesNotAcquireLockWhenLivenessCheckFailsAndHeartbeatIsFresh(): void
+    {
+        $this->insertLock(pid: 424242, heartbeatAt: 1000, startedAt: 1000);
+
+        $livenessChecker = $this->createStub(ProcessLivenessChecker::class);
+        $livenessChecker->method('getStartedAt')->willThrowException(new ProcessLivenessCheckException('powershell unavailable'));
+
+        $service = $this->createService($livenessChecker);
+        $this->clock->modify('+10 seconds');
+
+        $this->assertFalse($service->acquire(self::JOB_KEY));
+
+        $lock = $this->fetchLock();
+        $this->assertNotFalse($lock);
+        $this->assertSame(424242, $lock['pid']);
     }
 
     public function testHeartbeatRefreshesTimestampForOwningPid(): void
@@ -193,7 +230,7 @@ final class JobLockServiceTest extends TestCase
     public function testLocksForDifferentJobKeysDoNotInterfere(): void
     {
         $livenessChecker = $this->createStub(ProcessLivenessChecker::class);
-        $livenessChecker->method('isRunning')->willReturn(true);
+        $livenessChecker->method('getStartedAt')->willReturn(new \DateTimeImmutable('@1000'));
 
         $service = $this->createService($livenessChecker);
 
