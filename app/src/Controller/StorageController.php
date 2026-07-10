@@ -44,9 +44,9 @@ use Twig\Environment;
 /**
  * Minimal storage list and scan trigger (issue #136, Таск 3 часть 7.1): lists every known
  * Storage (name, type, path, last scan time) and dispatches ScanStorageMessage on the async
- * transport for a background scan. WS progress/result screens are a separate part (7.4/7.5) —
- * this only starts the job and redirects back with a query-param flash, same convention as
- * Settings\LabelController.
+ * transport for a background scan. The redirect carries the scanned storage's id so the
+ * template (issue #140, Таск 3 часть 7.5) can attach ScanWatcher (app/public/js/scan.js) to
+ * that storage_id and render its live progress/result screen without a page reload.
  */
 final class StorageController
 {
@@ -65,6 +65,7 @@ final class StorageController
         return new Response($this->twig->render('storage/list.html.twig', [
             'storages' => $this->storages->findAllOrderedByName(),
             'scanned' => $request->query->getBoolean('scanned'),
+            'scannedStorageId' => $request->query->get('storage_id'),
         ]));
     }
 
@@ -77,7 +78,7 @@ final class StorageController
 
         $this->messageBus->dispatch(new ScanStorageMessage($storageId));
 
-        return new RedirectResponse($this->urlGenerator->generate('storage_index', ['scanned' => 1]));
+        return new RedirectResponse($this->urlGenerator->generate('storage_index', ['scanned' => 1, 'storage_id' => $storageId]));
     }
 
     private function assertValidCsrfToken(string $tokenId, Request $request): void

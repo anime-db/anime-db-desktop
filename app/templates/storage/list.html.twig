@@ -30,6 +30,26 @@
             <p class="storage-list__notice">{{ 'storage_list.scan_started'|trans }}</p>
         {% endif %}
 
+        {% if scannedStorageId is not null %}
+            <section class="storage-scan"
+                     id="storage-scan"
+                     data-storage-id="{{ scannedStorageId }}"
+                     data-confirm-url="{{ path('storage_scan_confirm', {id: scannedStorageId}) }}"
+                     data-confirm-token="{{ csrf_token('storage_scan_confirm_' ~ scannedStorageId) }}"
+                     data-anime-new-url="{{ path('anime_new') }}">
+                <h2>{{ 'storage_list.scan_heading'|trans }}</h2>
+
+                <div class="storage-scan__progress" id="storage-scan-progress">
+                    <progress id="storage-scan-progress-bar" max="100" value="0"></progress>
+                    <span id="storage-scan-progress-text"></span>
+                </div>
+
+                <p class="storage-scan__error" id="storage-scan-error" hidden></p>
+
+                <div class="storage-scan__results" id="storage-scan-results" hidden></div>
+            </section>
+        {% endif %}
+
         {% if storages is empty %}
             <p>{{ 'storage_list.empty'|trans }}</p>
         {% else %}
@@ -62,4 +82,9 @@
             </table>
         {% endif %}
     </main>
+{% endblock %}
+
+{% block javascripts %}
+    <script src="{{ asset('js/scan.js') }}"></script>
+    <script src="{{ asset('js/storage-scan.js') }}"></script>
 {% endblock %}

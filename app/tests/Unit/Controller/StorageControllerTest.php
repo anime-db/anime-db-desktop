@@ -87,7 +87,9 @@ final class StorageControllerTest extends TestCase
         $twig->expects($this->once())
             ->method('render')
             ->with('storage/list.html.twig', $this->callback(
-                static fn (array $params): bool => [$storage] === $params['storages'] && $params['scanned'] === false,
+                static fn (array $params): bool => [$storage] === $params['storages']
+                    && $params['scanned'] === false
+                    && $params['scannedStorageId'] === null,
             ))
             ->willReturn('<html></html>');
 
@@ -113,15 +115,15 @@ final class StorageControllerTest extends TestCase
         $router = $this->createMock(UrlGeneratorInterface::class);
         $router->expects($this->once())
             ->method('generate')
-            ->with('storage_index', ['scanned' => 1])
-            ->willReturn('/storage?scanned=1');
+            ->with('storage_index', ['scanned' => 1, 'storage_id' => 42])
+            ->willReturn('/storage?scanned=1&storage_id=42');
 
         $controller = $this->createController(messageBus: $messageBus, urlGenerator: $router);
         $request = Request::create('/storage/42/scan', 'POST', ['_token' => 'token']);
 
         $response = $controller->scan($storage, $request);
 
-        $this->assertSame('/storage?scanned=1', $response->getTargetUrl());
+        $this->assertSame('/storage?scanned=1&storage_id=42', $response->getTargetUrl());
     }
 
     public function testScanRejectsInvalidCsrfToken(): void

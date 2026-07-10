@@ -108,6 +108,23 @@ storage_list:
     never_scanned: Ещё не сканировалось
     scan_button: Скан
     scan_started: Скан запущен.
+    scan_heading: Результаты скана
+    scan_progress_text: '%processed%/%total% (%percent%%)'
+    scan_failed_marker_conflict: 'Скан не выполнен: маркер хранилища занят другим хранилищем.'
+    scan_failed_exception: 'Скан завершился ошибкой: %message%'
+    scan_result_empty: Изменений не найдено.
+    group_updated: Обновлено
+    group_files_missing: Файлы отсутствуют
+    group_auto_linked: Добавлено автоматически
+    group_needs_manual_entry: Требуется создание записи
+    group_needs_confirmation: Требуется подтверждение
+    updated_text: '%title% (%path%)'
+    files_missing_text: '%title% (%path%)'
+    auto_linked_text: 'Добавлено автоматически: %title%'
+    create_entry_link: 'Создать запись: %title%'
+    confirm_button: Подтвердить
+    confirm_error: Не удалось подтвердить выбор.
+    confirmed_text: 'Подтверждено: %title%'
 
 anime_detail:
     title: '%title% — AnimeDB'
