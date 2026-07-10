@@ -36,11 +36,13 @@ final class FilenameCleaner
 {
     /**
      * Video file extensions to strip before cleaning. A folder name never
-     * matches one of these, so it is left as is.
+     * matches one of these, so it is left as is. Also the whitelist ScanStorageService
+     * filters top-level files by, so a file with an unrecognized extension is never
+     * treated as a scannable item in the first place.
      *
      * @var string[]
      */
-    private const EXTENSIONS = [
+    public const EXTENSIONS = [
         'avi', 'mkv', 'm1v', 'm2v', 'm4v', 'mov', 'qt', 'mpeg', 'mpg', 'mpe',
         'ogg', 'rm', 'wmv', 'asf', 'wm', 'm2ts', 'mts', 'm2t', 'mp4', '3gp',
         '3g2', 'k3g', 'mp2', 'mpv2', 'mod', 'vob', 'f4v', 'ismv', 'webm', 'ts',
