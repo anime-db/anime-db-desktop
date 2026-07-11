@@ -180,6 +180,27 @@ final class ScanStorageServiceTest extends TestCase
         $this->assertSame((string) $owner->id, $sections['AnimeDB']['id']);
     }
 
+    public function testRelocatesStorageWhenScannedAtPathWhereItsOwnMarkerHasMoved(): void
+    {
+        $oldDir = $this->makeStorageDir();
+        $newDir = $this->makeStorageDir();
+        $this->touchFile($newDir.'/New.mkv');
+
+        $storage = new Storage('Main folder', $oldDir, StorageType::Folder);
+        $this->entityManager->persist($storage);
+        $this->entityManager->flush();
+
+        file_put_contents($newDir.'/desktop.ini', "[AnimeDB]\nid={$storage->id}\n");
+
+        $result = $this->newService()->scan($storage, atPath: $newDir);
+
+        $this->assertFalse($result->conflicted);
+        $this->assertSame($newDir, $storage->getPath());
+        $this->assertCount(1, $result->items);
+        $this->assertSame(ScanItemType::NeedsManualEntry, $result->items[0]->type);
+        $this->assertCount(1, $this->entityManager->getRepository(Storage::class)->findAll());
+    }
+
     public function testNonScannableStorageTypeIsSkippedWithoutTouchingTheFilesystem(): void
     {
         $dir = $this->makeStorageDir();
