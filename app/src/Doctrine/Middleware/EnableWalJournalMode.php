@@ -35,10 +35,11 @@ use Doctrine\DBAL\Driver\Middleware\AbstractDriverMiddleware;
 
 /**
  * Enables SQLite's WAL journal mode on connect. Scoped to the `queue` connection (data/queue.db,
- * see issue #94): that file is polled every 50ms by WsController::next() inside a long-lived
- * streaming HTTP response while the Messenger transport (issue #97) and job locks (issue #98)
- * write to it from other requests/processes — WAL reduces lock contention between readers and
- * writers compared to the default rollback-journal mode.
+ * see issue #94): that file is polled every 50ms by WsController::connect() (via
+ * WsPublisher::since(), issue #146) inside a long-lived streaming HTTP response while the
+ * Messenger transport (issue #97) and job locks (issue #98) write to it from other
+ * requests/processes — WAL reduces lock contention between readers and writers compared to the
+ * default rollback-journal mode.
  */
 #[AsMiddleware(connections: ['queue'])]
 final class EnableWalJournalMode implements Middleware

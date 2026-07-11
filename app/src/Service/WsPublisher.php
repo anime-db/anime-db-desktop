@@ -31,12 +31,18 @@ use Doctrine\DBAL\Connection;
 use Symfony\Component\DependencyInjection\Attribute\Target;
 
 /**
- * Queues backend events for delivery to connected WebSocket clients.
+ * Broadcasts backend events to every connected WebSocket client.
  *
  * Backed by the `ws_events` table on the dedicated `queue` connection (data/queue.db, see
- * issue #94) — a plain SQLite file, not process memory, so publish() and next() see the same
- * queue regardless of which OS process calls them (the FrankenPHP HTTP worker running
+ * issue #94) — a plain SQLite file, not process memory, so publish() and since() see the same
+ * events regardless of which OS process calls them (the FrankenPHP HTTP worker running
  * WsController, or the separate messenger:consume process, see issue #97).
+ *
+ * Rows are never deleted on read: each connection tracks its own "last seen id" cursor and
+ * calls since() with it, so every connection observes every event exactly once, regardless of
+ * how many other connections are reading concurrently (issue #146 — the previous next(), which
+ * deleted the row it returned, meant only one of several concurrent WebSocket connections would
+ * ever see a given event). Rows are instead pruned by age in publish(), see TTL_SECONDS.
  *
  * The table is created lazily (CREATE TABLE IF NOT EXISTS) rather than through a Doctrine
  * migration, following the same precedent as JobLockService::ensureSchemaExists() (issue #98):
@@ -44,6 +50,18 @@ use Symfony\Component\DependencyInjection\Attribute\Target;
  */
 class WsPublisher
 {
+    /**
+     * Events older than this are pruned from ws_events on every publish() — the table is a
+     * short-lived broadcast log, not a durable event store.
+     */
+    private const TTL_SECONDS = 300;
+
+    /**
+     * How far back initialLastId() looks so a connection that only just finished its handshake
+     * doesn't miss an event published a moment earlier.
+     */
+    private const INITIAL_LOOKBACK_SECONDS = 5;
+
     private bool $schemaEnsured = false;
 
     public function __construct(
@@ -53,7 +71,8 @@ class WsPublisher
     }
 
     /**
-     * Enqueues an event for all connected WebSocket clients.
+     * Enqueues an event for all connected WebSocket clients and prunes events older than
+     * TTL_SECONDS.
      */
     public function publish(string $event, mixed $data): void
     {
@@ -63,28 +82,52 @@ class WsPublisher
             'event' => $event,
             'data' => json_encode($data, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE),
         ]);
+
+        $this->connection->executeStatement(
+            \sprintf("DELETE FROM ws_events WHERE created_at < datetime('now', '-%d seconds')", self::TTL_SECONDS),
+        );
     }
 
     /**
-     * Returns and removes the next queued event, or null if the queue is empty.
+     * Returns all events published after $lastId, oldest first, without removing them — callers
+     * keep polling with the highest id they have already seen (see since()'s return value).
      *
-     * @return array{event: string, data: mixed}|null
+     * @return list<array{id: int, event: string, data: mixed}>
      */
-    public function next(): ?array
+    public function since(int $lastId): array
     {
         $this->ensureSchemaExists();
 
-        $row = $this->connection->fetchAssociative('SELECT id, event, data FROM ws_events ORDER BY id LIMIT 1');
-        if ($row === false) {
-            return null;
-        }
+        $rows = $this->connection->fetchAllAssociative(
+            'SELECT id, event, data FROM ws_events WHERE id > :lastId ORDER BY id',
+            ['lastId' => $lastId],
+        );
 
-        $this->connection->delete('ws_events', ['id' => $row['id']]);
-
-        return [
+        return array_map(static fn (array $row): array => [
+            'id' => (int) $row['id'],
             'event' => $row['event'],
             'data' => json_decode((string) $row['data'], true, flags: JSON_THROW_ON_ERROR),
-        ];
+        ], $rows);
+    }
+
+    /**
+     * Returns the cursor a freshly connected client should start since() from: the id of the
+     * newest event older than INITIAL_LOOKBACK_SECONDS, so the first since() call still picks
+     * up anything published in the last few seconds (e.g. between the WebSocket handshake and
+     * the first poll), rather than replaying the entire un-pruned backlog.
+     */
+    public function initialLastId(): int
+    {
+        $this->ensureSchemaExists();
+
+        $maxId = $this->connection->fetchOne(
+            \sprintf(
+                "SELECT MAX(id) FROM ws_events WHERE created_at < datetime('now', '-%d seconds')",
+                self::INITIAL_LOOKBACK_SECONDS,
+            ),
+        );
+
+        return $maxId !== null ? (int) $maxId : 0;
     }
 
     private function ensureSchemaExists(): void

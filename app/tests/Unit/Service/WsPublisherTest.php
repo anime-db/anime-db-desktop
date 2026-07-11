@@ -28,77 +28,139 @@ declare(strict_types=1);
 namespace App\Tests\Unit\Service;
 
 use App\Service\WsPublisher;
+use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DriverManager;
 use PHPUnit\Framework\TestCase;
 
 final class WsPublisherTest extends TestCase
 {
+    private Connection $connection;
     private WsPublisher $publisher;
 
     protected function setUp(): void
     {
-        $connection = DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]);
-        $this->publisher = new WsPublisher($connection);
+        $this->connection = DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]);
+        $this->publisher = new WsPublisher($this->connection);
     }
 
-    public function testNextReturnsNullWhenQueueIsEmpty(): void
+    public function testSinceReturnsEmptyArrayWhenQueueIsEmpty(): void
     {
-        $this->assertNull($this->publisher->next());
+        $this->assertSame([], $this->publisher->since(0));
     }
 
-    public function testPublishAndNextCycle(): void
+    public function testPublishAndSinceCycle(): void
     {
         $this->publisher->publish('test.event', ['key' => 'value']);
-        $event = $this->publisher->next();
+        $events = $this->publisher->since(0);
 
-        $this->assertNotNull($event);
-        $this->assertSame('test.event', $event['event']);
-        $this->assertSame(['key' => 'value'], $event['data']);
+        $this->assertCount(1, $events);
+        $this->assertSame('test.event', $events[0]['event']);
+        $this->assertSame(['key' => 'value'], $events[0]['data']);
     }
 
-    public function testNextRemovesEventFromQueue(): void
+    public function testSinceDoesNotRemoveEventsFromQueue(): void
     {
         $this->publisher->publish('event.one', null);
         $this->publisher->publish('event.two', null);
 
-        $first = $this->publisher->next();
-        $second = $this->publisher->next();
+        $events = $this->publisher->since(0);
 
-        if (null === $first || null === $second) {
-            $this->fail('Expected two events in queue');
-        }
+        $this->assertCount(2, $events);
+        $this->assertSame('event.one', $events[0]['event']);
+        $this->assertSame('event.two', $events[1]['event']);
 
-        $this->assertSame('event.one', $first['event']);
-        $this->assertSame('event.two', $second['event']);
-        $this->assertNull($this->publisher->next());
+        // Reading again with the same cursor sees the same events — since() never deletes.
+        $this->assertSame($events, $this->publisher->since(0));
     }
 
-    public function testQueueIsFirstInFirstOut(): void
+    public function testSinceReturnsOnlyEventsAfterGivenCursor(): void
     {
         $this->publisher->publish('first', 1);
         $this->publisher->publish('second', 2);
         $this->publisher->publish('third', 3);
 
-        $first = $this->publisher->next();
-        $second = $this->publisher->next();
-        $third = $this->publisher->next();
+        $all = $this->publisher->since(0);
+        $this->assertCount(3, $all);
 
-        if (null === $first || null === $second || null === $third) {
-            $this->fail('Expected three events in queue');
-        }
+        $remaining = $this->publisher->since($all[0]['id']);
 
-        $this->assertSame('first', $first['event']);
-        $this->assertSame('second', $second['event']);
-        $this->assertSame('third', $third['event']);
+        $this->assertCount(2, $remaining);
+        $this->assertSame('second', $remaining[0]['event']);
+        $this->assertSame('third', $remaining[1]['event']);
     }
 
     public function testPublishAcceptsNullData(): void
     {
         $this->publisher->publish('null.event', null);
-        $event = $this->publisher->next();
+        $events = $this->publisher->since(0);
 
-        $this->assertNotNull($event);
-        $this->assertNull($event['data']);
+        $this->assertCount(1, $events);
+        $this->assertNull($events[0]['data']);
+    }
+
+    /**
+     * Regression guard for issue #146: the previous next() deleted the row it returned, so of
+     * two concurrent WebSocket connections polling the same queue, only one would ever observe
+     * a given event. Each connection now tracks its own cursor via since(), so both observe the
+     * same publish independently.
+     */
+    public function testTwoConsumersBothSeeTheSamePublishedEvent(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'ws_events_');
+        $this->assertIsString($path);
+
+        try {
+            $publisherConnection = DriverManager::getConnection(['driver' => 'pdo_sqlite', 'path' => $path]);
+            $firstConsumerConnection = DriverManager::getConnection(['driver' => 'pdo_sqlite', 'path' => $path]);
+            $secondConsumerConnection = DriverManager::getConnection(['driver' => 'pdo_sqlite', 'path' => $path]);
+
+            $publisher = new WsPublisher($publisherConnection);
+            $firstConsumer = new WsPublisher($firstConsumerConnection);
+            $secondConsumer = new WsPublisher($secondConsumerConnection);
+
+            $publisher->publish('scan.progress', ['percent' => 42]);
+
+            // Two independent connections, each with its own cursor — mirrors two concurrent
+            // /ws connections (e.g. native/ws-client.js and the storage scan page, issue #146).
+            $firstConsumerEvents = $firstConsumer->since(0);
+            $secondConsumerEvents = $secondConsumer->since(0);
+
+            $this->assertCount(1, $firstConsumerEvents);
+            $this->assertCount(1, $secondConsumerEvents);
+            $this->assertSame('scan.progress', $firstConsumerEvents[0]['event']);
+            $this->assertSame('scan.progress', $secondConsumerEvents[0]['event']);
+            $this->assertSame(['percent' => 42], $firstConsumerEvents[0]['data']);
+            $this->assertSame(['percent' => 42], $secondConsumerEvents[0]['data']);
+        } finally {
+            unlink($path);
+        }
+    }
+
+    public function testPublishPrunesEventsOlderThanTtl(): void
+    {
+        $this->publisher->publish('warm.up', null); // ensures the table exists before we backdate a row
+        $this->connection->update('ws_events', ['created_at' => '2000-01-01 00:00:00'], ['event' => 'warm.up']);
+
+        $this->publisher->publish('recent.event', null);
+
+        $events = $this->publisher->since(0);
+
+        $this->assertCount(1, $events);
+        $this->assertSame('recent.event', $events[0]['event']);
+    }
+
+    public function testInitialLastIdSkipsOldBacklogButKeepsRecentEvents(): void
+    {
+        $this->publisher->publish('old.event', null);
+        $this->connection->update('ws_events', ['created_at' => '2000-01-01 00:00:00'], ['event' => 'old.event']);
+
+        $this->publisher->publish('recent.event', null);
+
+        $lastId = $this->publisher->initialLastId();
+        $events = $this->publisher->since($lastId);
+
+        $this->assertCount(1, $events);
+        $this->assertSame('recent.event', $events[0]['event']);
     }
 
     /**
@@ -120,11 +182,11 @@ final class WsPublisherTest extends TestCase
             $consumerSide = new WsPublisher($consumerConnection);
 
             $consumerSide->publish('scan.progress', ['percent' => 42]);
-            $event = $publisherSide->next();
+            $events = $publisherSide->since(0);
 
-            $this->assertNotNull($event);
-            $this->assertSame('scan.progress', $event['event']);
-            $this->assertSame(['percent' => 42], $event['data']);
+            $this->assertCount(1, $events);
+            $this->assertSame('scan.progress', $events[0]['event']);
+            $this->assertSame(['percent' => 42], $events[0]['data']);
         } finally {
             unlink($path);
         }
