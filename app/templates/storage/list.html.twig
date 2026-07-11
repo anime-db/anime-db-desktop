@@ -78,6 +78,10 @@
                                     <input type="hidden" name="_token" value="{{ csrf_token('storage_scan_' ~ storage.id) }}">
                                     <button type="submit">{{ 'storage_list.scan_button'|trans }}</button>
                                 </form>
+                                <form method="post" action="{{ path('storage_delete', {id: storage.id}) }}" onsubmit="return confirm('{{ ('storage_list.delete_confirm'|trans({'%name%': storage.name}))|e('js') }}');">
+                                    <input type="hidden" name="_token" value="{{ csrf_token('storage_delete_' ~ storage.id) }}">
+                                    <button type="submit">{{ 'storage_list.delete_button'|trans }}</button>
+                                </form>
                             </td>
                         </tr>
                     {% endfor %}

@@ -32,6 +32,7 @@ use App\Entity\Enum\StorageType;
 use App\Entity\Storage;
 use App\Message\ScanStorageMessage;
 use App\Repository\StorageRepository;
+use Doctrine\ORM\EntityManagerInterface;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
@@ -46,6 +47,7 @@ final class StorageControllerTest extends TestCase
     private function createController(
         ?StorageRepository $storages = null,
         ?MessageBusInterface $messageBus = null,
+        ?EntityManagerInterface $entityManager = null,
         ?CsrfTokenManagerInterface $csrfTokenManager = null,
         ?UrlGeneratorInterface $urlGenerator = null,
         ?Environment $twig = null,
@@ -70,6 +72,7 @@ final class StorageControllerTest extends TestCase
         return new StorageController(
             $storages ?? $this->createStub(StorageRepository::class),
             $messageBus,
+            $entityManager ?? $this->createStub(EntityManagerInterface::class),
             $csrfTokenManager,
             $urlGenerator,
             $twig ?? $this->createStub(Environment::class),
@@ -142,6 +145,47 @@ final class StorageControllerTest extends TestCase
 
         $this->expectException(BadRequestHttpException::class);
         $controller->scan($storage, $request);
+    }
+
+    public function testDeleteRemovesStorageAndRedirects(): void
+    {
+        $storage = new Storage('Main folder', 'D:\\Anime', StorageType::Folder);
+        $this->setStorageId($storage, 42);
+
+        $entityManager = $this->createMock(EntityManagerInterface::class);
+        $entityManager->expects($this->once())->method('remove')->with($storage);
+        $entityManager->expects($this->once())->method('flush');
+
+        $router = $this->createMock(UrlGeneratorInterface::class);
+        $router->expects($this->once())
+            ->method('generate')
+            ->with('storage_index')
+            ->willReturn('/storage');
+
+        $controller = $this->createController(entityManager: $entityManager, urlGenerator: $router);
+        $request = Request::create('/storage/42/delete', 'POST', ['_token' => 'token']);
+
+        $response = $controller->delete($storage, $request);
+
+        $this->assertSame('/storage', $response->getTargetUrl());
+    }
+
+    public function testDeleteRejectsInvalidCsrfToken(): void
+    {
+        $storage = new Storage('Main folder', 'D:\\Anime', StorageType::Folder);
+        $this->setStorageId($storage, 42);
+
+        $csrf = $this->createStub(CsrfTokenManagerInterface::class);
+        $csrf->method('isTokenValid')->willReturn(false);
+
+        $entityManager = $this->createMock(EntityManagerInterface::class);
+        $entityManager->expects($this->never())->method('remove');
+
+        $controller = $this->createController(entityManager: $entityManager, csrfTokenManager: $csrf);
+        $request = Request::create('/storage/42/delete', 'POST', ['_token' => 'bad']);
+
+        $this->expectException(BadRequestHttpException::class);
+        $controller->delete($storage, $request);
     }
 
     private function setStorageId(Storage $storage, int $id): void

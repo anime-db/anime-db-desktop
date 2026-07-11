@@ -30,6 +30,7 @@ namespace App\Controller;
 use App\Entity\Storage;
 use App\Message\ScanStorageMessage;
 use App\Repository\StorageRepository;
+use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -47,12 +48,15 @@ use Twig\Environment;
  * transport for a background scan. The redirect carries the scanned storage's id so the
  * template (issue #140, Таск 3 часть 7.5) can attach ScanWatcher (app/public/js/scan.js) to
  * that storage_id and render its live progress/result screen without a page reload.
+ *
+ * Also handles storage deletion (issue #169, Таск 3 часть 8/CRUD 5).
  */
 final class StorageController
 {
     public function __construct(
         private readonly StorageRepository $storages,
         private readonly MessageBusInterface $messageBus,
+        private readonly EntityManagerInterface $entityManager,
         private readonly CsrfTokenManagerInterface $csrfTokenManager,
         private readonly UrlGeneratorInterface $urlGenerator,
         private readonly Environment $twig,
@@ -79,6 +83,27 @@ final class StorageController
         $this->messageBus->dispatch(new ScanStorageMessage($storageId));
 
         return new RedirectResponse($this->urlGenerator->generate('storage_index', ['scanned' => 1, 'storage_id' => $storageId]));
+    }
+
+    /**
+     * Anime.storage_id is ON DELETE SET NULL (Version20260704000000, verified by
+     * CatalogSchemaTest::testDeletingStorageSetsAnimeStorageIdToNull()), so removing the
+     * Storage row here only detaches linked Anime records — it never deletes them. Any
+     * desktop.ini marker left on disk becomes unlinked and is handled by the "Reclaimed"
+     * branch of StorageMarkerService::reconcile() on the next scan of that path — no
+     * separate cleanup is needed here.
+     */
+    #[Route('/storage/{id}/delete', name: 'storage_delete', methods: ['POST'])]
+    public function delete(Storage $storage, Request $request): RedirectResponse
+    {
+        $storageId = $storage->id ?? throw new \LogicException('Storage must be persisted before it can be deleted.');
+
+        $this->assertValidCsrfToken('storage_delete_'.$storageId, $request);
+
+        $this->entityManager->remove($storage);
+        $this->entityManager->flush();
+
+        return new RedirectResponse($this->urlGenerator->generate('storage_index'));
     }
 
     private function assertValidCsrfToken(string $tokenId, Request $request): void

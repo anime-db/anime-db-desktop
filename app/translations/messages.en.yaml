@@ -107,6 +107,8 @@ storage_list:
     last_scan_column: Last scan
     actions_column: Actions
     edit_button: Edit
+    delete_button: Delete
+    delete_confirm: 'Delete storage "%name%"?'
     never_scanned: Never scanned
     scan_button: Scan
     scan_started: Scan started.
