@@ -50,7 +50,13 @@
     const errorBox = document.getElementById('storage-scan-error');
     const resultsBox = document.getElementById('storage-scan-results');
 
+    // Guards against a scan that finished (or is still running) before this page managed to
+    // subscribe: without it a missed scan.progress/scan.done leaves the progress bar stuck at
+    // 0% forever with no feedback (issue #156).
+    const NO_RESPONSE_TIMEOUT_MS = 15000;
+
     let messages = {};
+    let noResponseTimer = setTimeout(onNoResponse, NO_RESPONSE_TIMEOUT_MS);
 
     function trans(key, fallback) {
         return Object.prototype.hasOwnProperty.call(messages, key) ? messages[key] : fallback;
@@ -63,7 +69,25 @@
         );
     }
 
+    function clearNoResponseTimer() {
+        if (noResponseTimer !== null) {
+            clearTimeout(noResponseTimer);
+            noResponseTimer = null;
+        }
+    }
+
+    function onNoResponse() {
+        noResponseTimer = null;
+        progressBox.hidden = true;
+        errorBox.hidden = false;
+        errorBox.textContent = trans(
+            'storage_list.scan_no_response',
+            'The scan is still running or no response was received.',
+        );
+    }
+
     function onProgress(data) {
+        clearNoResponseTimer();
         const percent = data.percent ?? 0;
         progressBar.value = percent;
         progressText.textContent = format(
@@ -73,6 +97,7 @@
     }
 
     function onFailed(data) {
+        clearNoResponseTimer();
         progressBox.hidden = true;
         errorBox.hidden = false;
         errorBox.textContent = data.reason === 'marker_conflict'
@@ -235,6 +260,7 @@
     }
 
     function onDone(data) {
+        clearNoResponseTimer();
         progressBox.hidden = true;
         resultsBox.hidden = false;
         resultsBox.replaceChildren();
@@ -256,13 +282,16 @@
     }
 
     async function init() {
+        // Subscribe first: window.AppTranslations.getCatalogue() below is a network round-trip
+        // and scan.progress/scan.done may already be on the bus by the time it resolves. The
+        // catalogue is only needed to render text, not to receive events (issue #156).
+        window.ScanWatcher.watch(storageId, { onProgress, onDone, onFailed });
+
         try {
             messages = await window.AppTranslations.getCatalogue();
         } catch {
             messages = {};
         }
-
-        window.ScanWatcher.watch(storageId, { onProgress, onDone, onFailed });
     }
 
     init();
