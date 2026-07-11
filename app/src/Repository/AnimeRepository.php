@@ -117,6 +117,24 @@ class AnimeRepository
         return $qb->getQuery()->getResult();
     }
 
+    /**
+     * The Anime (if any) already linked to $storagePath within $storage — used by
+     * ScanStorageService::linkToChosenCandidate() (issue #147) to reject a confirm that
+     * would otherwise silently steal an already-occupied storage_path from another Anime.
+     */
+    public function findByStorageAndPath(Storage $storage, string $storagePath): ?Anime
+    {
+        $qb = $this->entityManager->getRepository(Anime::class)->createQueryBuilder('a')
+            ->andWhere('a.storage = :storage')
+            ->andWhere('a.storagePath = :storagePath')
+            ->setParameter('storage', $storage)
+            ->setParameter('storagePath', $storagePath)
+            ->setMaxResults(1);
+
+        /* @var ?Anime */
+        return $qb->getQuery()->getOneOrNullResult();
+    }
+
     private function createFilteredQueryBuilder(AnimeListFilter $filter): QueryBuilder
     {
         $qb = $this->entityManager->getRepository(Anime::class)->createQueryBuilder('a')

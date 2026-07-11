@@ -30,6 +30,7 @@ namespace App\Controller;
 use App\Entity\Anime;
 use App\Entity\Storage;
 use App\Entity\ValueObject\PluginId;
+use App\Service\Storage\Exception\StoragePathConflictException;
 use App\Service\Storage\Scan\ScanCandidate;
 use App\Service\Storage\ScanStorageService;
 use App\Service\Storage\Search\SearchByPluginCandidate;
@@ -37,6 +38,7 @@ use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
+use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Security\Csrf\CsrfToken;
@@ -92,7 +94,11 @@ final class StorageScanConfirmController
 
         $candidate = $this->resolveCandidate($payload['anime_id'] ?? null, $payload['name'] ?? null);
 
-        $anime = $this->scanStorageService->linkToChosenCandidate($storage, $storagePath, $candidate);
+        try {
+            $anime = $this->scanStorageService->linkToChosenCandidate($storage, $storagePath, $candidate);
+        } catch (StoragePathConflictException $e) {
+            throw new ConflictHttpException($e->getMessage(), $e);
+        }
         $this->entityManager->flush();
 
         return new JsonResponse([
