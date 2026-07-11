@@ -32,6 +32,7 @@ use App\Entity\Enum\StorageType;
 use App\Entity\Storage;
 use App\Message\ScanStorageMessage;
 use App\Repository\StorageRepository;
+use App\Service\Storage\StorageMarkerService;
 use Doctrine\ORM\EntityManagerInterface;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\Request;
@@ -44,6 +45,31 @@ use Twig\Environment;
 
 final class StorageControllerTest extends TestCase
 {
+    /** @var list<string> */
+    private array $dirsToClean = [];
+
+    protected function tearDown(): void
+    {
+        foreach ($this->dirsToClean as $dir) {
+            $marker = $dir.\DIRECTORY_SEPARATOR.'desktop.ini';
+            if (is_file($marker)) {
+                unlink($marker);
+            }
+            if (is_dir($dir)) {
+                rmdir($dir);
+            }
+        }
+    }
+
+    private function makeDir(): string
+    {
+        $dir = sys_get_temp_dir().'/storage-delete-test-'.uniqid();
+        mkdir($dir, recursive: true);
+        $this->dirsToClean[] = $dir;
+
+        return $dir;
+    }
+
     private function createController(
         ?StorageRepository $storages = null,
         ?MessageBusInterface $messageBus = null,
@@ -51,6 +77,7 @@ final class StorageControllerTest extends TestCase
         ?CsrfTokenManagerInterface $csrfTokenManager = null,
         ?UrlGeneratorInterface $urlGenerator = null,
         ?Environment $twig = null,
+        ?StorageMarkerService $storageMarker = null,
     ): StorageController {
         if ($csrfTokenManager === null) {
             $csrfTokenManager = $this->createStub(CsrfTokenManagerInterface::class);
@@ -69,6 +96,12 @@ final class StorageControllerTest extends TestCase
             );
         }
 
+        if ($storageMarker === null) {
+            $markerEntityManager = $this->createStub(EntityManagerInterface::class);
+            $markerEntityManager->method('find')->willReturn(null);
+            $storageMarker = new StorageMarkerService($markerEntityManager);
+        }
+
         return new StorageController(
             $storages ?? $this->createStub(StorageRepository::class),
             $messageBus,
@@ -76,6 +109,7 @@ final class StorageControllerTest extends TestCase
             $csrfTokenManager,
             $urlGenerator,
             $twig ?? $this->createStub(Environment::class),
+            $storageMarker,
         );
     }
 
@@ -168,6 +202,25 @@ final class StorageControllerTest extends TestCase
         $response = $controller->delete($storage, $request);
 
         $this->assertSame('/storage', $response->getTargetUrl());
+    }
+
+    public function testDeleteRemovesMarkerFile(): void
+    {
+        $dir = $this->makeDir();
+        file_put_contents($dir.\DIRECTORY_SEPARATOR.'desktop.ini', "[AnimeDB]\nid=42\n");
+        $storage = new Storage('Main folder', $dir, StorageType::Folder);
+        $this->setStorageId($storage, 42);
+
+        $entityManager = $this->createMock(EntityManagerInterface::class);
+        $entityManager->expects($this->once())->method('remove')->with($storage);
+        $entityManager->expects($this->once())->method('flush');
+
+        $controller = $this->createController(entityManager: $entityManager);
+        $request = Request::create('/storage/42/delete', 'POST', ['_token' => 'token']);
+
+        $controller->delete($storage, $request);
+
+        $this->assertFileDoesNotExist($dir.\DIRECTORY_SEPARATOR.'desktop.ini');
     }
 
     public function testDeleteRejectsInvalidCsrfToken(): void

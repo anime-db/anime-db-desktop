@@ -30,6 +30,7 @@ namespace App\Controller;
 use App\Entity\Storage;
 use App\Message\ScanStorageMessage;
 use App\Repository\StorageRepository;
+use App\Service\Storage\StorageMarkerService;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -60,6 +61,7 @@ final class StorageController
         private readonly CsrfTokenManagerInterface $csrfTokenManager,
         private readonly UrlGeneratorInterface $urlGenerator,
         private readonly Environment $twig,
+        private readonly StorageMarkerService $storageMarker,
     ) {
     }
 
@@ -88,10 +90,10 @@ final class StorageController
     /**
      * Anime.storage_id is ON DELETE SET NULL (Version20260704000000, verified by
      * CatalogSchemaTest::testDeletingStorageSetsAnimeStorageIdToNull()), so removing the
-     * Storage row here only detaches linked Anime records — it never deletes them. Any
-     * desktop.ini marker left on disk becomes unlinked and is handled by the "Reclaimed"
-     * branch of StorageMarkerService::reconcile() on the next scan of that path — no
-     * separate cleanup is needed here.
+     * Storage row here only detaches linked Anime records — it never deletes them. The
+     * desktop.ini marker's [AnimeDB] id record is removed via StorageMarkerService::forget()
+     * so the path is immediately free, rather than waiting for the "Reclaimed" branch of
+     * StorageMarkerService::reconcile() on some future scan.
      */
     #[Route('/storage/{id}/delete', name: 'storage_delete', methods: ['POST'])]
     public function delete(Storage $storage, Request $request): RedirectResponse
@@ -100,6 +102,7 @@ final class StorageController
 
         $this->assertValidCsrfToken('storage_delete_'.$storageId, $request);
 
+        $this->storageMarker->forget($storage);
         $this->entityManager->remove($storage);
         $this->entityManager->flush();
 

@@ -156,6 +156,52 @@ final class StorageMarkerServiceTest extends TestCase
         $this->assertSame('5', $sections['AnimeDB']['id']);
     }
 
+    public function testForgetDeletesMarkerFileWhenItOnlyOwnsTheAnimeDbSection(): void
+    {
+        file_put_contents($this->storageDir.'/desktop.ini', "[AnimeDB]\nid=5\n");
+        $storage = $this->storageWithId(5, $this->storageDir);
+        $service = new StorageMarkerService($this->stubEntityManager());
+
+        $service->forget($storage);
+
+        $this->assertFileDoesNotExist($this->storageDir.'/desktop.ini');
+    }
+
+    public function testForgetPreservesUnrelatedSectionsAndKeepsTheFile(): void
+    {
+        file_put_contents($this->storageDir.'/desktop.ini', "[.ShellClassInfo]\nIconResource=icon.ico,0\n\n[AnimeDB]\nid=5\n");
+        $storage = $this->storageWithId(5, $this->storageDir);
+        $service = new StorageMarkerService($this->stubEntityManager());
+
+        $service->forget($storage);
+
+        $sections = $this->readMarkerSections($this->storageDir);
+        $this->assertSame('icon.ico,0', $sections['.ShellClassInfo']['IconResource']);
+        $this->assertArrayNotHasKey('AnimeDB', $sections);
+    }
+
+    public function testForgetDoesNothingWhenMarkerOwnedByAnotherStorage(): void
+    {
+        file_put_contents($this->storageDir.'/desktop.ini', "[AnimeDB]\nid=999\n");
+        $storage = $this->storageWithId(5, $this->storageDir);
+        $service = new StorageMarkerService($this->stubEntityManager());
+
+        $service->forget($storage);
+
+        $sections = $this->readMarkerSections($this->storageDir);
+        $this->assertSame('999', $sections['AnimeDB']['id']);
+    }
+
+    public function testForgetDoesNothingWhenNoMarkerExists(): void
+    {
+        $storage = $this->storageWithId(5, $this->storageDir);
+        $service = new StorageMarkerService($this->stubEntityManager());
+
+        $service->forget($storage);
+
+        $this->assertFileDoesNotExist($this->storageDir.'/desktop.ini');
+    }
+
     public function testRelocateIfMarkerMovedUpdatesPathWhenMarkerMatchesElsewhere(): void
     {
         file_put_contents($this->otherDir.'/desktop.ini', "[AnimeDB]\nid=5\n");
