@@ -50,6 +50,7 @@ use Doctrine\ORM\Tools\SchemaTool;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
+use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\Security\Csrf\CsrfTokenManagerInterface;
 
@@ -207,6 +208,53 @@ final class StorageScanConfirmControllerTest extends TestCase
         $controller->confirm($storage, $this->jsonRequest([
             'token' => 'token',
             'storage_path' => 'Trigun.mkv',
+        ]));
+    }
+
+    public function testConfirmRejectsASecondRequestConfirmingADifferentCandidateForTheSameStoragePath(): void
+    {
+        $storage = $this->persistStorage();
+        $controller = $this->createController();
+
+        // First tab confirms a plugin candidate for the file...
+        $first = $controller->confirm($storage, $this->jsonRequest([
+            'token' => 'token',
+            'storage_path' => 'Trigun.mkv',
+            'name' => 'Trigun',
+        ]));
+        $this->assertSame(200, $first->getStatusCode());
+
+        // ...a second tab, still showing the stale scan.done result, confirms a different
+        // candidate for the very same storage_path (issue #147) and must be rejected, not
+        // silently steal the file from the Anime the first request just created.
+        $this->expectException(ConflictHttpException::class);
+        $controller->confirm($storage, $this->jsonRequest([
+            'token' => 'token',
+            'storage_path' => 'Trigun.mkv',
+            'name' => 'Trigun the Movie',
+        ]));
+    }
+
+    public function testConfirmRejectsAnOrphanAlreadyLinkedToADifferentStoragePathByAnotherRequest(): void
+    {
+        $storage = $this->persistStorage();
+
+        $orphan = new TvAnime();
+        $orphan->setTitle('Trigun')->setWatchStatus(WatchStatus::Plan);
+        // Simulates another request already having linked this orphan elsewhere between the
+        // frontend receiving scan.done and the user clicking confirm.
+        $orphan->setStorage($storage)->setStoragePath('Trigun (2026).mkv');
+        $this->entityManager->persist($orphan);
+        $this->entityManager->flush();
+        $orphanId = $orphan->id;
+
+        $controller = $this->createController();
+
+        $this->expectException(ConflictHttpException::class);
+        $controller->confirm($storage, $this->jsonRequest([
+            'token' => 'token',
+            'storage_path' => 'Trigun.mkv',
+            'anime_id' => $orphanId,
         ]));
     }
 

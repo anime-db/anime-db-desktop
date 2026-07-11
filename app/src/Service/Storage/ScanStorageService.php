@@ -34,6 +34,7 @@ use App\Entity\NameNormalizer;
 use App\Entity\Storage;
 use App\Entity\TvAnime;
 use App\Repository\AnimeRepository;
+use App\Service\Storage\Exception\StoragePathConflictException;
 use App\Service\Storage\Scan\ScanCandidate;
 use App\Service\Storage\Scan\ScanResult;
 use App\Service\Storage\Scan\ScanResultItem;
@@ -233,10 +234,14 @@ final class ScanStorageService
     {
         $orphan = $candidate->orphan;
         if ($orphan !== null) {
+            $this->assertOrphanIsFreeToLink($orphan, $storage, $storagePath);
+            $this->assertStoragePathIsFree($storage, $storagePath, $orphan);
             $orphan->setStorage($storage)->setStoragePath($storagePath);
 
             return $orphan;
         }
+
+        $this->assertStoragePathIsFree($storage, $storagePath, null);
 
         $plugin = $candidate->plugin ?? throw new \LogicException('ScanCandidate must carry either an orphan or a plugin match');
 
@@ -252,5 +257,41 @@ final class ScanStorageService
         $this->entityManager->persist($anime);
 
         return $anime;
+    }
+
+    /**
+     * Rejects a candidate orphan that is already linked to a storage_path other than the one
+     * being requested (issue #147): the orphan matcher only ever returns Anime with both
+     * $storage and $storagePath null (see AnimeRepository::findOrphanCandidatesByNormalizedName()),
+     * so a non-null value here means another confirm request won the race between the scan
+     * result being computed and the user's click. Re-confirming the exact same storage/path
+     * the orphan already carries is treated as a harmless no-op rather than a conflict.
+     */
+    private function assertOrphanIsFreeToLink(Anime $orphan, Storage $storage, string $storagePath): void
+    {
+        if ($orphan->getStorage() === null && $orphan->getStoragePath() === null) {
+            return;
+        }
+
+        if ($orphan->getStorage()?->id === $storage->id && $orphan->getStoragePath() === $storagePath) {
+            return;
+        }
+
+        throw new StoragePathConflictException(\sprintf('Anime #%d is already linked to storage_path "%s" and cannot be re-linked to "%s".', $orphan->id ?? 0, $orphan->getStoragePath() ?? '', $storagePath));
+    }
+
+    /**
+     * Rejects binding $storagePath when another Anime (other than $exclude, which covers the
+     * idempotent re-confirm case above) is already linked to it within $storage (issue #147) —
+     * the race where two confirm requests for the same file pick different candidates.
+     */
+    private function assertStoragePathIsFree(Storage $storage, string $storagePath, ?Anime $exclude): void
+    {
+        $existing = $this->animeRepository->findByStorageAndPath($storage, $storagePath);
+        if ($existing === null || $existing === $exclude) {
+            return;
+        }
+
+        throw new StoragePathConflictException(\sprintf('storage_path "%s" is already linked to Anime #%d.', $storagePath, $existing->id ?? 0));
     }
 }

@@ -37,6 +37,7 @@ use App\Entity\Storage;
 use App\Entity\TvAnime;
 use App\Entity\ValueObject\PluginId;
 use App\Repository\AnimeRepository;
+use App\Service\Storage\Exception\StoragePathConflictException;
 use App\Service\Storage\FilenameCleaner;
 use App\Service\Storage\OrphanAnimeMatcher;
 use App\Service\Storage\Scan\ScanCandidate;
@@ -612,6 +613,76 @@ final class ScanStorageServiceTest extends TestCase
         /** @var Anime $reloaded */
         $reloaded = $this->entityManager->find(Anime::class, $animeId);
         $this->assertSame('Trigun', $reloaded->getTitle());
+    }
+
+    public function testLinkToChosenCandidateRejectsAStoragePathAlreadyLinkedToAnotherAnime(): void
+    {
+        $storage = new Storage('Main folder', $this->makeStorageDir(), StorageType::Folder);
+        $this->entityManager->persist($storage);
+
+        $existing = new TvAnime();
+        $existing->setTitle('Trigun')->setWatchStatus(WatchStatus::Plan);
+        $existing->setStorage($storage)->setStoragePath('Trigun.mkv');
+        $this->entityManager->persist($existing);
+        $this->entityManager->flush();
+
+        // A second, different candidate loses the race for the same storage_path.
+        $challenger = ScanCandidate::fromPlugin(new SearchByPluginCandidate(new PluginId('animedb-test'), 'Trigun the Movie'));
+
+        $this->expectException(StoragePathConflictException::class);
+        $this->newService()->linkToChosenCandidate($storage, 'Trigun.mkv', $challenger);
+    }
+
+    public function testLinkToChosenCandidateRejectsAnOrphanConfirmedByOneRequestForAPathAnotherRequestAlreadyClaimed(): void
+    {
+        $storage = new Storage('Main folder', $this->makeStorageDir(), StorageType::Folder);
+        $this->entityManager->persist($storage);
+
+        $existing = new TvAnime();
+        $existing->setTitle('Trigun')->setWatchStatus(WatchStatus::Plan);
+        $existing->setStorage($storage)->setStoragePath('Trigun.mkv');
+        $this->entityManager->persist($existing);
+
+        $orphan = new TvAnime();
+        $orphan->setTitle('Trigun the Other One')->setWatchStatus(WatchStatus::Plan);
+        $this->entityManager->persist($orphan);
+        $this->entityManager->flush();
+
+        $this->expectException(StoragePathConflictException::class);
+        $this->newService()->linkToChosenCandidate($storage, 'Trigun.mkv', ScanCandidate::fromOrphan($orphan));
+    }
+
+    public function testLinkToChosenCandidateRejectsAnOrphanAlreadyLinkedToADifferentStoragePath(): void
+    {
+        $storage = new Storage('Main folder', $this->makeStorageDir(), StorageType::Folder);
+        $this->entityManager->persist($storage);
+
+        // Already linked by another request between scan.done and this user's click.
+        $orphan = new TvAnime();
+        $orphan->setTitle('Trigun')->setWatchStatus(WatchStatus::Plan);
+        $orphan->setStorage($storage)->setStoragePath('Trigun (2026).mkv');
+        $this->entityManager->persist($orphan);
+        $this->entityManager->flush();
+
+        $this->expectException(StoragePathConflictException::class);
+        $this->newService()->linkToChosenCandidate($storage, 'Trigun.mkv', ScanCandidate::fromOrphan($orphan));
+    }
+
+    public function testLinkToChosenCandidateReconfirmingTheSameOrphanAndPathIsANoOp(): void
+    {
+        $storage = new Storage('Main folder', $this->makeStorageDir(), StorageType::Folder);
+        $this->entityManager->persist($storage);
+
+        $orphan = new TvAnime();
+        $orphan->setTitle('Trigun')->setWatchStatus(WatchStatus::Plan);
+        $orphan->setStorage($storage)->setStoragePath('Trigun.mkv');
+        $this->entityManager->persist($orphan);
+        $this->entityManager->flush();
+
+        $anime = $this->newService()->linkToChosenCandidate($storage, 'Trigun.mkv', ScanCandidate::fromOrphan($orphan));
+
+        $this->assertSame($orphan, $anime);
+        $this->assertSame('Trigun.mkv', $anime->getStoragePath());
     }
 
     public function testSuccessfulScanRecordsStorageScanTimestamps(): void
