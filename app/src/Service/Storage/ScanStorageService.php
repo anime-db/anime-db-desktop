@@ -28,7 +28,6 @@ declare(strict_types=1);
 namespace App\Service\Storage;
 
 use App\Entity\Anime;
-use App\Entity\Enum\StorageType;
 use App\Entity\Enum\WatchStatus;
 use App\Entity\NameNormalizer;
 use App\Entity\Storage;
@@ -55,9 +54,6 @@ use Symfony\Component\Finder\SplFileInfo;
  */
 final class ScanStorageService
 {
-    /** @var list<StorageType> */
-    private const SCANNABLE_TYPES = [StorageType::Folder, StorageType::External];
-
     public function __construct(
         private readonly StorageMarkerService $markerService,
         private readonly FilenameCleaner $filenameCleaner,
@@ -84,7 +80,7 @@ final class ScanStorageService
      */
     public function scan(Storage $storage, ?callable $onProgress = null, ?string $atPath = null): ScanResult
     {
-        if (!\in_array($storage->getType(), self::SCANNABLE_TYPES, true)) {
+        if (!$storage->getType()->isWritable()) {
             return ScanResult::items([]);
         }
 
