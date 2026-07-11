@@ -21,9 +21,26 @@
 
 'use strict';
 
-const { contextBridge, ipcRenderer } = require('electron');
+jest.mock('electron', () => ({
+    ipcMain: { handle: jest.fn() },
+    dialog:  { showOpenDialog: jest.fn() },
+}));
 
-contextBridge.exposeInMainWorld('animeDb', {
-    openPath:   (targetPath) => ipcRenderer.invoke('shell:open-path', targetPath),
-    pickFolder: () => ipcRenderer.invoke('dialog:pick-folder'),
+const { ipcMain, dialog } = require('electron');
+const { pickFolder } = require('../../native/dialog');
+
+test('registers the dialog:pick-folder IPC handler on module load', () => {
+    expect(ipcMain.handle).toHaveBeenCalledWith('dialog:pick-folder', pickFolder);
+});
+
+test('pickFolder returns the selected path', async () => {
+    dialog.showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: ['/anime/aot'] });
+
+    await expect(pickFolder()).resolves.toBe('/anime/aot');
+});
+
+test('pickFolder returns null when the dialog is canceled', async () => {
+    dialog.showOpenDialog.mockResolvedValueOnce({ canceled: true, filePaths: [] });
+
+    await expect(pickFolder()).resolves.toBeNull();
 });

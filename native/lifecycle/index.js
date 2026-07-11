@@ -25,6 +25,7 @@ const { app, dialog } = require('electron');
 require('../protocols/app-media');
 require('../accept-language');
 require('../shell');
+require('../dialog');
 const supervisor       = require('../supervisor');
 const { createWindow } = require('../window');
 const { createSplash } = require('../window/splash');
