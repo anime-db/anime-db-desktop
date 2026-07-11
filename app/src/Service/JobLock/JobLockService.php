@@ -124,6 +124,27 @@ final class JobLockService
         );
     }
 
+    /**
+     * Whether any job in the table still counts as actively running. A row whose heartbeat has
+     * gone stale doesn't count — the same staleness threshold acquire() uses to decide a lock is
+     * abandoned and free to take over, so a crashed job that never reached release() doesn't
+     * keep the caller (e.g. the tray "busy" indicator) stuck forever.
+     */
+    public function hasActiveLocks(): bool
+    {
+        $this->ensureSchemaExists();
+
+        $heartbeats = $this->connection->fetchFirstColumn('SELECT heartbeat_at FROM job_locks');
+
+        foreach ($heartbeats as $heartbeatAt) {
+            if (!$this->isHeartbeatStale((int) $heartbeatAt)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private function tryInsertLock(string $jobKey): bool
     {
         $now = $this->now();

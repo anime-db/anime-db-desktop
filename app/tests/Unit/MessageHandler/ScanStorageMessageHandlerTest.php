@@ -151,9 +151,13 @@ final class ScanStorageMessageHandlerTest extends TestCase
         $handler(new ScanStorageMessage($storageId));
 
         $events = $wsPublisher->since(0);
-        $this->assertCount(2, $events);
+        $this->assertCount(4, $events);
 
-        $progress = $events[0];
+        $busy = $events[0];
+        $this->assertSame('backend.status', $busy['event']);
+        $this->assertSame(['state' => 'busy'], $busy['data']);
+
+        $progress = $events[1];
         $this->assertSame('scan.progress', $progress['event']);
         $this->assertSame([
             'storage_id' => $storageId,
@@ -162,15 +166,47 @@ final class ScanStorageMessageHandlerTest extends TestCase
             'percent' => 100,
         ], $progress['data']);
 
-        $done = $events[1];
+        $done = $events[2];
         $this->assertSame('scan.done', $done['event']);
         $this->assertSame($storageId, $done['data']['storage_id']);
         $this->assertCount(1, $done['data']['items']);
         $this->assertSame('NeedsManualEntry', $done['data']['items'][0]['type']);
         $this->assertSame('Trigun.mkv', $done['data']['items'][0]['storage_path']);
 
+        $idle = $events[3];
+        $this->assertSame('backend.status', $idle['event']);
+        $this->assertSame(['state' => 'idle'], $idle['data']);
+
         $this->assertNotNull($storage->getDateUpdate());
         $this->assertJobLockReleased($storageId);
+    }
+
+    public function testBackendStatusStaysBusyWhileAnotherStorageScanIsStillHoldingItsLock(): void
+    {
+        $dir = $this->makeStorageDir();
+        $this->touchFile($dir.'/Trigun.mkv');
+
+        $storage = new Storage('Main folder', $dir, StorageType::Folder);
+        $this->entityManager->persist($storage);
+        $this->entityManager->flush();
+        $storageId = $this->requireId($storage);
+
+        // Another storage's scan is still running (its own, independent job_locks row).
+        $this->insertLock('scan:storage:other', pid: 424242, heartbeatAt: 1000);
+
+        $livenessChecker = $this->createStub(ProcessLivenessChecker::class);
+        $livenessChecker->method('getStartedAt')->willReturn(new \DateTimeImmutable('@1000'));
+
+        $wsPublisher = $this->newWsPublisher();
+        $handler = $this->newHandler($livenessChecker, $wsPublisher);
+
+        $handler(new ScanStorageMessage($storageId));
+
+        $events = $wsPublisher->since(0);
+        $statusEvents = array_values(array_filter($events, static fn (array $event): bool => $event['event'] === 'backend.status'));
+
+        $this->assertCount(1, $statusEvents);
+        $this->assertSame(['state' => 'busy'], $statusEvents[0]['data']);
     }
 
     public function testMarkerConflictPublishesScanFailedWithoutThrowing(): void
@@ -195,12 +231,20 @@ final class ScanStorageMessageHandlerTest extends TestCase
         $handler(new ScanStorageMessage($storageId));
 
         $events = $wsPublisher->since(0);
-        $this->assertCount(1, $events);
+        $this->assertCount(3, $events);
 
-        $failed = $events[0];
+        $busy = $events[0];
+        $this->assertSame('backend.status', $busy['event']);
+        $this->assertSame(['state' => 'busy'], $busy['data']);
+
+        $failed = $events[1];
         $this->assertSame('scan.failed', $failed['event']);
         $this->assertSame($storageId, $failed['data']['storage_id']);
         $this->assertSame('marker_conflict', $failed['data']['reason']);
+
+        $idle = $events[2];
+        $this->assertSame('backend.status', $idle['event']);
+        $this->assertSame(['state' => 'idle'], $idle['data']);
 
         $this->assertJobLockReleased($storageId);
     }
