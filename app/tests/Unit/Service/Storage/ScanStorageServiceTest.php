@@ -481,6 +481,45 @@ final class ScanStorageServiceTest extends TestCase
         $this->assertNull($second->getStorage());
     }
 
+    public function testTwoDifferentOrphansWithPluginAgreeingWithOnlyOneStillYieldTwoCandidates(): void
+    {
+        $dir = $this->makeStorageDir();
+        // Both orphans below are found as candidates for this same file: $first through its
+        // 'Vash' synonym, $second through its 'Vash' title.
+        $this->touchFile($dir.'/Vash.mkv');
+
+        $storage = new Storage('Main folder', $dir, StorageType::Folder);
+        $this->entityManager->persist($storage);
+
+        $first = new TvAnime();
+        $first->setTitle('Trigun')->setWatchStatus(WatchStatus::Plan);
+        $first->addName('Vash', AnimeNameType::Synonym);
+        $second = new TvAnime();
+        $second->setTitle('Vash')->setWatchStatus(WatchStatus::Plan);
+        $this->entityManager->persist($first);
+        $this->entityManager->persist($second);
+        $this->entityManager->flush();
+
+        // The plugin's name only matches $first's title ('Trigun'), not $second's ('Vash') —
+        // the two orphans must not collapse into each other, and the agreeing pair must not
+        // spawn a third, separate candidate.
+        $candidate = new SearchByPluginCandidate(new PluginId('animedb-test'), 'Trigun');
+        $service = $this->newService($this->pluginChainReturning($candidate));
+
+        $result = $service->scan($storage);
+
+        $this->assertCount(1, $result->items);
+        $item = $result->items[0];
+        $this->assertSame(ScanItemType::NeedsConfirmation, $item->type);
+        $this->assertCount(2, $item->candidates);
+        $this->assertSame($first, $item->candidates[0]->orphan);
+        $this->assertSame($second, $item->candidates[1]->orphan);
+
+        // Neither orphan should have been touched while awaiting confirmation.
+        $this->assertNull($first->getStorage());
+        $this->assertNull($second->getStorage());
+    }
+
     public function testSinglePluginReturningAmbiguousCandidatesRequiresConfirmation(): void
     {
         $dir = $this->makeStorageDir();
