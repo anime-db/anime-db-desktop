@@ -227,6 +227,31 @@ final class JobLockServiceTest extends TestCase
         $this->assertSame(424242, $lock['pid']);
     }
 
+    public function testHasActiveLocksIsFalseWhenTableIsEmpty(): void
+    {
+        $service = $this->createService($this->createStub(ProcessLivenessChecker::class));
+
+        $this->assertFalse($service->hasActiveLocks());
+    }
+
+    public function testHasActiveLocksIsTrueWhileAFreshLockExists(): void
+    {
+        $service = $this->createService($this->createStub(ProcessLivenessChecker::class));
+        $service->acquire(self::JOB_KEY);
+
+        $this->assertTrue($service->hasActiveLocks());
+    }
+
+    public function testHasActiveLocksIsFalseWhenTheOnlyRemainingLockHasGoneStale(): void
+    {
+        $this->insertLock(pid: 424242, heartbeatAt: 1000, startedAt: 1000);
+
+        $service = $this->createService($this->createStub(ProcessLivenessChecker::class));
+        $this->clock->modify('+'.(self::HEARTBEAT_INTERVAL_SECONDS * self::STALE_AFTER_MISSED_HEARTBEATS + 1).' seconds');
+
+        $this->assertFalse($service->hasActiveLocks());
+    }
+
     public function testLocksForDifferentJobKeysDoNotInterfere(): void
     {
         $livenessChecker = $this->createStub(ProcessLivenessChecker::class);

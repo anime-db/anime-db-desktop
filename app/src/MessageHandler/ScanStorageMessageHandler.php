@@ -42,7 +42,9 @@ use Symfony\Component\Messenger\Exception\UnrecoverableMessageHandlingException;
 /**
  * Wraps ScanStorageService::scan() (Таск 3 часть 5) into a real background job (часть 6):
  * guards it with a job_locks entry so two workers can't scan the same storage at once, reports
- * progress and outcome over the ws_events queue, and turns any failure of its own into an
+ * progress and outcome over the ws_events queue, publishes backend.status busy/idle for the
+ * tray icon (issue #152) — idle only once no other storage scan still holds a lock, since locks
+ * are per-storage rather than global — and turns any failure of its own into an
  * UnrecoverableMessageHandlingException — this project's queue has no failure_transport (see
  * messenger.yaml), so a message Symfony would otherwise retry forever on a permanent error
  * (e.g. a storage row that no longer exists) has to opt out of retries explicitly instead
@@ -80,6 +82,7 @@ final class ScanStorageMessageHandler
                 return;
             }
             $lockAcquired = true;
+            $this->wsPublisher->publish('backend.status', ['state' => 'busy']);
 
             $result = $this->scanStorageService->scan(
                 $storage,
@@ -119,6 +122,12 @@ final class ScanStorageMessageHandler
         } finally {
             if ($lockAcquired) {
                 $this->jobLockService->release($jobKey);
+
+                // Scans of different storages hold independent per-storage locks, so this one
+                // finishing doesn't necessarily mean the backend is idle overall.
+                if (!$this->jobLockService->hasActiveLocks()) {
+                    $this->wsPublisher->publish('backend.status', ['state' => 'idle']);
+                }
             }
         }
     }
