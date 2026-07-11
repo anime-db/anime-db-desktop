@@ -44,14 +44,14 @@ use Twig\Environment;
 /**
  * Manual creation of a new Anime record (issue #137, Таск 3 часть 7.2): there was no way to
  * add a record to the catalog other than through the storage scanner's auto-link path
- * (ScanStorageService::autoLink()). The form only covers title, type and watch_status —
+ * (ScanStorageService::linkToChosenCandidate()). The form only covers title, type and watch_status —
  * every other field (genres, studios, dates, ...) is edited afterwards through the existing
  * inline mechanism (#101/#103).
  *
  * Also serves the "0 candidates -> create manually" step of the scan flow (часть 7.5, not
  * built yet): the optional title/storage_id/storage_path query params prefill the form, and
  * when both storage params are present on submit the new record is linked to that file the
- * same way ScanStorageService::autoLink() links a plugin candidate.
+ * same way ScanStorageService::linkToChosenCandidate() links a plugin candidate.
  */
 final class AnimeNewController
 {
