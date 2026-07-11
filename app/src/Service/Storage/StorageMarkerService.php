@@ -42,8 +42,18 @@ final class StorageMarkerService
     private const MARKER_FILENAME = 'desktop.ini';
     private const SECTION = 'AnimeDB';
 
-    public function __construct(private readonly EntityManagerInterface $entityManager)
-    {
+    /**
+     * @param ?iterable<string> $driveRoots overrides the drives searched by findByMarker() —
+     *                                      tests inject a list of temp directories here, since
+     *                                      real drive letters don't exist on the ubuntu-latest
+     *                                      CI runner (see the app-only-ships-for-Windows note
+     *                                      on writeMarker()); left null in production, where
+     *                                      findByMarker() enumerates `A:\`-`Z:\` itself
+     */
+    public function __construct(
+        private readonly EntityManagerInterface $entityManager,
+        private readonly ?iterable $driveRoots = null,
+    ) {
     }
 
     /**
@@ -95,6 +105,34 @@ final class StorageMarkerService
         $storage->relocate($path);
 
         return true;
+    }
+
+    /**
+     * Searches every existing drive root for a desktop.ini marker naming $storageId — for when
+     * a Storage's own path became unreadable (drive reassigned a new letter, external drive
+     * reconnected elsewhere) and there is no candidate path to check yet, unlike
+     * relocateIfMarkerMoved() above, which only confirms one already-known candidate.
+     */
+    public function findByMarker(int $storageId): ?string
+    {
+        foreach ($this->driveRoots ?? $this->existingDriveRoots() as $root) {
+            if ($this->readMarkerId($root) === $storageId) {
+                return $root;
+            }
+        }
+
+        return null;
+    }
+
+    /** @return iterable<string> */
+    private function existingDriveRoots(): iterable
+    {
+        foreach (range('A', 'Z') as $letter) {
+            $root = "$letter:\\";
+            if (is_dir($root)) {
+                yield $root;
+            }
+        }
     }
 
     private function readMarkerId(string $storagePath): ?int

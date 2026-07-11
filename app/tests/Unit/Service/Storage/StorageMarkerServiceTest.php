@@ -38,18 +38,21 @@ final class StorageMarkerServiceTest extends TestCase
 {
     private string $storageDir;
     private string $otherDir;
+    private string $thirdDir;
 
     protected function setUp(): void
     {
         $this->storageDir = sys_get_temp_dir().'/storage-marker-test-'.uniqid();
         $this->otherDir = sys_get_temp_dir().'/storage-marker-test-other-'.uniqid();
+        $this->thirdDir = sys_get_temp_dir().'/storage-marker-test-third-'.uniqid();
         mkdir($this->storageDir, recursive: true);
         mkdir($this->otherDir, recursive: true);
+        mkdir($this->thirdDir, recursive: true);
     }
 
     protected function tearDown(): void
     {
-        foreach ([$this->storageDir, $this->otherDir] as $dir) {
+        foreach ([$this->storageDir, $this->otherDir, $this->thirdDir] as $dir) {
             $marker = $dir.'/desktop.ini';
             if (is_file($marker)) {
                 unlink($marker);
@@ -186,5 +189,36 @@ final class StorageMarkerServiceTest extends TestCase
         $relocated = $service->relocateIfMarkerMoved($storage, $this->storageDir);
 
         $this->assertFalse($relocated);
+    }
+
+    public function testFindByMarkerReturnsRootWhenMarkerFoundOnAnotherRoot(): void
+    {
+        file_put_contents($this->otherDir.'/desktop.ini', "[AnimeDB]\nid=5\n");
+        $service = new StorageMarkerService($this->stubEntityManager(), [$this->storageDir, $this->otherDir]);
+
+        $found = $service->findByMarker(5);
+
+        $this->assertSame($this->otherDir, $found);
+    }
+
+    public function testFindByMarkerReturnsNullWhenNoRootHasAMatchingMarker(): void
+    {
+        file_put_contents($this->otherDir.'/desktop.ini', "[AnimeDB]\nid=999\n");
+        $service = new StorageMarkerService($this->stubEntityManager(), [$this->storageDir, $this->otherDir]);
+
+        $found = $service->findByMarker(5);
+
+        $this->assertNull($found);
+    }
+
+    public function testFindByMarkerReturnsOnlyTheRootWhoseMarkerMatchesAmongSeveralCandidates(): void
+    {
+        file_put_contents($this->otherDir.'/desktop.ini', "[AnimeDB]\nid=999\n");
+        file_put_contents($this->thirdDir.'/desktop.ini', "[AnimeDB]\nid=5\n");
+        $service = new StorageMarkerService($this->stubEntityManager(), [$this->storageDir, $this->otherDir, $this->thirdDir]);
+
+        $found = $service->findByMarker(5);
+
+        $this->assertSame($this->thirdDir, $found);
     }
 }
