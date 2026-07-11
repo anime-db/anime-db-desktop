@@ -112,6 +112,7 @@ storage_list:
     scan_progress_text: '%processed%/%total% (%percent%%)'
     scan_failed_marker_conflict: 'Скан не выполнен: маркер хранилища занят другим хранилищем.'
     scan_failed_exception: 'Скан завершился ошибкой: %message%'
+    scan_no_response: Сканирование ещё выполняется или результат не получен.
     scan_result_empty: Изменений не найдено.
     group_updated: Обновлено
     group_files_missing: Файлы отсутствуют

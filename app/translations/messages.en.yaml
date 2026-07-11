@@ -112,6 +112,7 @@ storage_list:
     scan_progress_text: '%processed%/%total% (%percent%%)'
     scan_failed_marker_conflict: 'Scan failed: the storage marker is owned by another storage.'
     scan_failed_exception: 'Scan failed: %message%'
+    scan_no_response: The scan is still running or no response was received.
     scan_result_empty: Nothing found.
     group_updated: Updated
     group_files_missing: Files missing
