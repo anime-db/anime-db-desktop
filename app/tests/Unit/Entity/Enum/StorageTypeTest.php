@@ -25,21 +25,26 @@
 
 declare(strict_types=1);
 
-namespace App\Entity\Enum;
+namespace App\Tests\Unit\Entity\Enum;
 
-enum StorageType: string
+use App\Entity\Enum\StorageType;
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\TestCase;
+
+final class StorageTypeTest extends TestCase
 {
-    case Folder = 'folder';
-    case External = 'external';
-    case ExternalR = 'external-r';
-    case Video = 'video';
-
-    /** Whether the storage type allows writing a desktop.ini marker and can be scanned for files. */
-    public function isWritable(): bool
+    /** @return iterable<string, array{StorageType, bool}> */
+    public static function types(): iterable
     {
-        return match ($this) {
-            self::Folder, self::External => true,
-            self::ExternalR, self::Video => false,
-        };
+        yield 'folder' => [StorageType::Folder, true];
+        yield 'external' => [StorageType::External, true];
+        yield 'external-r' => [StorageType::ExternalR, false];
+        yield 'video' => [StorageType::Video, false];
+    }
+
+    #[DataProvider('types')]
+    public function testIsWritable(StorageType $type, bool $expected): void
+    {
+        $this->assertSame($expected, $type->isWritable());
     }
 }
