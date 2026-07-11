@@ -99,6 +99,7 @@ anime_list:
 storage_list:
     title: Storage — AnimeDB
     heading: Storage
+    new_button: Add storage
     empty: No storage yet.
     name_column: Name
     type_column: Type
@@ -174,3 +175,13 @@ anime_new:
     field_watch_status: Watch status
     submit_button: Create
     error_invalid: Fill in the title and choose a type and watch status.
+
+storage_new:
+    title: New Storage — AnimeDB
+    heading: New Storage
+    field_name: Name
+    field_type: Type
+    field_path: Path
+    pick_folder_button: Choose folder…
+    submit_button: Create
+    error_invalid: Enter a valid name, path, and storage type.

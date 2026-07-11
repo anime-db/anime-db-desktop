@@ -1,0 +1,59 @@
+{#
+ # AnimeDb package.
+ #
+ # @author    Peter Gribanov <info@peter-gribanov.ru>
+ # @copyright Copyright (c) 2026, Peter Gribanov
+ # @license   https://gnu.org GPL-3.0-or-later
+ #
+ # This program is free software: you can redistribute it and/or modify
+ # it under the terms of the GNU General Public License as published by
+ # the Free Software Foundation, either version 3 of the License, or
+ # (at your option) any later version.
+ #
+ # This program is distributed in the hope that it will be useful,
+ # but WITHOUT ANY WARRANTY; without even the implied warranty of
+ # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ # GNU General Public License for more details.
+ #
+ # You should have received a copy of the GNU General Public License
+ # along with this program. If not, see <https://gnu.org>.
+ #}
+{% extends 'base.html.twig' %}
+
+{% block title %}{{ 'storage_new.title'|trans }}{% endblock %}
+
+{% block body %}
+    <main class="storage-new">
+        <h1>{{ 'storage_new.heading'|trans }}</h1>
+
+        {% if error %}
+            <p class="storage-new__error">{{ error|trans }}</p>
+        {% endif %}
+
+        <form method="post" action="{{ path('storage_create') }}" class="storage-new__form">
+            <input type="hidden" name="_token" value="{{ csrf_token('storage_new') }}">
+
+            <label for="storage-new-name">{{ 'storage_new.field_name'|trans }}</label>
+            <input type="text" id="storage-new-name" name="name" value="{{ name }}" required>
+
+            <label for="storage-new-type">{{ 'storage_new.field_type'|trans }}</label>
+            <select id="storage-new-type" name="type" data-writable-types="{{ writable_types|join(',') }}">
+                {% for value in types %}
+                    <option value="{{ value }}"{% if value == type %} selected{% endif %}>{{ ('storage_type.' ~ value)|trans }}</option>
+                {% endfor %}
+            </select>
+
+            <label for="storage-new-path">{{ 'storage_new.field_path'|trans }}</label>
+            <div class="storage-new__path-row">
+                <input type="text" id="storage-new-path" name="path" value="{{ path }}" required>
+                <button type="button" id="storage-new-pick-folder" hidden>{{ 'storage_new.pick_folder_button'|trans }}</button>
+            </div>
+
+            <button type="submit">{{ 'storage_new.submit_button'|trans }}</button>
+        </form>
+    </main>
+{% endblock %}
+
+{% block javascripts %}
+    <script src="{{ asset('js/storage-new.js') }}"></script>
+{% endblock %}
