@@ -186,9 +186,11 @@ final class ScanStorageMessageHandlerTest extends TestCase
         $relocatedDir = $this->makeStorageDir();
         $this->touchFile($relocatedDir.'/Trigun.mkv');
 
-        // Never created on disk, so is_readable() reports it unreadable — the drive-letter-
-        // reassigned / drive-disconnected case (issue #162).
-        $staleDir = sys_get_temp_dir().'/scan-storage-handler-test-stale-'.uniqid();
+        // A drive-root path never created on disk, so is_readable() reports it unreadable —
+        // the drive-letter-reassigned / drive-disconnected case (issue #162). Deliberately a
+        // drive root ("Z:\", not "Z:\Anime") so the marker search degenerates to checking each
+        // candidate root directly — see StorageMarkerServiceTest for the subfolder-tail case.
+        $staleDir = 'Z:\\';
 
         $storage = new Storage('Main folder', $staleDir, StorageType::Folder);
         $this->entityManager->persist($storage);

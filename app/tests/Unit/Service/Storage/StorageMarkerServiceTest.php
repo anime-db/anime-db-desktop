@@ -194,9 +194,10 @@ final class StorageMarkerServiceTest extends TestCase
     public function testFindByMarkerReturnsRootWhenMarkerFoundOnAnotherRoot(): void
     {
         file_put_contents($this->otherDir.'/desktop.ini', "[AnimeDB]\nid=5\n");
+        $storage = $this->storageWithId(5, 'C:\\');
         $service = new StorageMarkerService($this->stubEntityManager(), [$this->storageDir, $this->otherDir]);
 
-        $found = $service->findByMarker(5);
+        $found = $service->findByMarker($storage);
 
         $this->assertSame($this->otherDir, $found);
     }
@@ -204,9 +205,10 @@ final class StorageMarkerServiceTest extends TestCase
     public function testFindByMarkerReturnsNullWhenNoRootHasAMatchingMarker(): void
     {
         file_put_contents($this->otherDir.'/desktop.ini', "[AnimeDB]\nid=999\n");
+        $storage = $this->storageWithId(5, 'C:\\');
         $service = new StorageMarkerService($this->stubEntityManager(), [$this->storageDir, $this->otherDir]);
 
-        $found = $service->findByMarker(5);
+        $found = $service->findByMarker($storage);
 
         $this->assertNull($found);
     }
@@ -215,10 +217,43 @@ final class StorageMarkerServiceTest extends TestCase
     {
         file_put_contents($this->otherDir.'/desktop.ini', "[AnimeDB]\nid=999\n");
         file_put_contents($this->thirdDir.'/desktop.ini', "[AnimeDB]\nid=5\n");
+        $storage = $this->storageWithId(5, 'C:\\');
         $service = new StorageMarkerService($this->stubEntityManager(), [$this->storageDir, $this->otherDir, $this->thirdDir]);
 
-        $found = $service->findByMarker(5);
+        $found = $service->findByMarker($storage);
 
         $this->assertSame($this->thirdDir, $found);
+    }
+
+    public function testFindByMarkerReappliesTheStoragesOwnSubpathTailToEachCandidateRoot(): void
+    {
+        // The storage's own path is "D:\Anime" (a subfolder, not the drive root itself) — a
+        // drive reconnecting under a different letter keeps this same subfolder structure, so
+        // the marker search must look for "{root}\Anime" on every candidate, not "{root}" alone.
+        $subdir = $this->thirdDir.'/Anime';
+        mkdir($subdir);
+        file_put_contents($subdir.'/desktop.ini', "[AnimeDB]\nid=5\n");
+        $storage = $this->storageWithId(5, 'D:\\Anime');
+        $service = new StorageMarkerService($this->stubEntityManager(), [$this->thirdDir]);
+
+        try {
+            $found = $service->findByMarker($storage);
+
+            $this->assertSame($subdir, $found);
+        } finally {
+            unlink($subdir.'/desktop.ini');
+            rmdir($subdir);
+        }
+    }
+
+    public function testFindByMarkerReturnsNullForUncPathsWithoutSearchingAnyRoot(): void
+    {
+        file_put_contents($this->storageDir.'/desktop.ini', "[AnimeDB]\nid=5\n");
+        $storage = $this->storageWithId(5, '\\\\server\\share\\Anime');
+        $service = new StorageMarkerService($this->stubEntityManager(), [$this->storageDir]);
+
+        $found = $service->findByMarker($storage);
+
+        $this->assertNull($found);
     }
 }

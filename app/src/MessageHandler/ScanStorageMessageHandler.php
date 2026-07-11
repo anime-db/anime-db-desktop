@@ -91,7 +91,7 @@ final class ScanStorageMessageHandler
 
             $atPath = is_readable($storage->getPath())
                 ? null
-                : $this->storageMarkerService->findByMarker($storage->id ?? throw new \LogicException('Storage must be persisted before it can be scanned'));
+                : $this->storageMarkerService->findByMarker($storage);
 
             $result = $this->scanStorageService->scan(
                 $storage,

@@ -108,16 +108,30 @@ final class StorageMarkerService
     }
 
     /**
-     * Searches every existing drive root for a desktop.ini marker naming $storageId — for when
-     * a Storage's own path became unreadable (drive reassigned a new letter, external drive
+     * Searches every existing drive root for a desktop.ini marker naming $storage — for when
+     * $storage's own path became unreadable (drive reassigned a new letter, external drive
      * reconnected elsewhere) and there is no candidate path to check yet, unlike
-     * relocateIfMarkerMoved() above, which only confirms one already-known candidate.
+     * relocateIfMarkerMoved() above, which only confirms one already-known candidate. $storage's
+     * path is rarely a drive root itself (e.g. "D:\Anime\", not "D:\") — reconnecting the same
+     * physical drive under a new letter keeps its internal folder structure, so the search
+     * re-applies $storage's own tail ("Anime\") to each candidate root instead of only checking
+     * the root itself. Gives up immediately (returns null) for UNC paths and any other path
+     * shape without a drive letter to reassign, since there is nothing to search across.
      */
-    public function findByMarker(int $storageId): ?string
+    public function findByMarker(Storage $storage): ?string
     {
+        $storageId = $storage->id ?? throw new \LogicException('Storage must be persisted before its marker can be searched for');
+        $tail = $this->relativeTail($storage->getPath());
+
+        if ($tail === null) {
+            return null;
+        }
+
         foreach ($this->driveRoots ?? $this->existingDriveRoots() as $root) {
-            if ($this->readMarkerId($root) === $storageId) {
-                return $root;
+            $candidate = rtrim($root, '\\/').($tail === '' ? '' : \DIRECTORY_SEPARATOR.$tail);
+
+            if ($this->readMarkerId($candidate) === $storageId) {
+                return $candidate;
             }
         }
 
@@ -133,6 +147,22 @@ final class StorageMarkerService
                 yield $root;
             }
         }
+    }
+
+    /**
+     * Strips the drive letter off a Windows path ("D:\Anime\" -> "Anime"), the part that
+     * doesn't survive a drive-letter reassignment. Returns null for UNC paths
+     * ("\\server\share\...", no drive letter to reassign) and any other path shape (e.g. a
+     * POSIX path, only ever seen in this test suite) findByMarker() has no candidate roots to
+     * search across for.
+     */
+    private function relativeTail(string $storagePath): ?string
+    {
+        if (preg_match('#^[A-Za-z]:[\\\\/]?(.*)$#', $storagePath, $matches) !== 1) {
+            return null;
+        }
+
+        return rtrim($matches[1], '\\/');
     }
 
     private function readMarkerId(string $storagePath): ?int
