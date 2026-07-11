@@ -86,7 +86,7 @@ final class StorageScanConfirmController
         }
 
         $storagePath = $payload['storage_path'] ?? null;
-        if (!\is_string($storagePath) || '' === $storagePath) {
+        if (!\is_string($storagePath) || $storagePath === '') {
             throw new BadRequestHttpException('"storage_path" is required.');
         }
 
@@ -103,7 +103,7 @@ final class StorageScanConfirmController
 
     private function resolveCandidate(mixed $animeId, mixed $name): ScanCandidate
     {
-        if (null !== $animeId) {
+        if ($animeId !== null) {
             if (!\is_int($animeId)) {
                 throw new BadRequestHttpException('"anime_id" must be an integer.');
             }
@@ -116,7 +116,7 @@ final class StorageScanConfirmController
             return ScanCandidate::fromOrphan($anime);
         }
 
-        if (\is_string($name) && '' !== $name) {
+        if (\is_string($name) && $name !== '') {
             return ScanCandidate::fromPlugin(new SearchByPluginCandidate(new PluginId(self::CONFIRMED_PLUGIN_ID), $name));
         }
 

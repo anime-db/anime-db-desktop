@@ -84,7 +84,7 @@ final class AnimeNewController
         $storageId = $request->request->get('storage_id');
         $storagePath = $request->request->get('storage_path');
 
-        if ('' === $title || null === $type || null === $watchStatus) {
+        if ($title === '' || $type === null || $watchStatus === null) {
             return $this->renderForm(
                 title: $title,
                 type: $type,
@@ -99,7 +99,7 @@ final class AnimeNewController
         $anime = new $entityClass();
         $anime->setTitle($title)->setWatchStatus($watchStatus);
 
-        if (\is_string($storageId) && '' !== $storageId && \is_string($storagePath) && '' !== $storagePath) {
+        if (\is_string($storageId) && $storageId !== '' && \is_string($storagePath) && $storagePath !== '') {
             $storage = $this->entityManager->find(Storage::class, $storageId);
             if ($storage instanceof Storage) {
                 $anime->setStorage($storage)->setStoragePath($storagePath);
