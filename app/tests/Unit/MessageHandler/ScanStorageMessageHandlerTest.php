@@ -181,6 +181,41 @@ final class ScanStorageMessageHandlerTest extends TestCase
         $this->assertJobLockReleased($storageId);
     }
 
+    public function testScanRelocatesStorageToThePathFoundByMarkerWhenTheCurrentPathIsUnreadable(): void
+    {
+        $relocatedDir = $this->makeStorageDir();
+        $this->touchFile($relocatedDir.'/Trigun.mkv');
+
+        // A drive-root path never created on disk, so is_readable() reports it unreadable —
+        // the drive-letter-reassigned / drive-disconnected case (issue #162). Deliberately a
+        // drive root ("Z:\", not "Z:\Anime") so the marker search degenerates to checking each
+        // candidate root directly — see StorageMarkerServiceTest for the subfolder-tail case.
+        $staleDir = 'Z:\\';
+
+        $storage = new Storage('Main folder', $staleDir, StorageType::Folder);
+        $this->entityManager->persist($storage);
+        $this->entityManager->flush();
+        $storageId = $this->requireId($storage);
+
+        file_put_contents($relocatedDir.'/desktop.ini', "[AnimeDB]\nid={$storageId}\n");
+
+        $wsPublisher = $this->newWsPublisher();
+        $handler = $this->newHandler($this->createStub(ProcessLivenessChecker::class), $wsPublisher, [$relocatedDir]);
+
+        $handler(new ScanStorageMessage($storageId));
+
+        $events = $wsPublisher->since(0);
+        $this->assertCount(4, $events);
+
+        $done = $events[2];
+        $this->assertSame('scan.done', $done['event']);
+        $this->assertCount(1, $done['data']['items']);
+        $this->assertSame('Trigun.mkv', $done['data']['items'][0]['storage_path']);
+
+        $this->assertSame($relocatedDir, $storage->getPath());
+        $this->assertNotNull($storage->getDateUpdate());
+    }
+
     public function testBackendStatusStaysBusyWhileAnotherStorageScanIsStillHoldingItsLock(): void
     {
         $dir = $this->makeStorageDir();
@@ -286,12 +321,14 @@ final class ScanStorageMessageHandlerTest extends TestCase
         return $storage->id ?? throw new \LogicException('Storage must be persisted before use in this test.');
     }
 
-    private function newHandler(ProcessLivenessChecker $livenessChecker, WsPublisher $wsPublisher): ScanStorageMessageHandler
+    /** @param ?iterable<string> $driveRoots */
+    private function newHandler(ProcessLivenessChecker $livenessChecker, WsPublisher $wsPublisher, ?iterable $driveRoots = null): ScanStorageMessageHandler
     {
         $animeRepository = new AnimeRepository($this->entityManager);
+        $storageMarkerService = new StorageMarkerService($this->entityManager, $driveRoots);
 
         $scanStorageService = new ScanStorageService(
-            new StorageMarkerService($this->entityManager),
+            $storageMarkerService,
             new FilenameCleaner(),
             new OrphanAnimeMatcher($animeRepository),
             new SearchByPluginChain([new NullSearchByPlugin()]),
@@ -311,6 +348,7 @@ final class ScanStorageMessageHandlerTest extends TestCase
             $this->entityManager,
             $jobLockService,
             $scanStorageService,
+            $storageMarkerService,
             $wsPublisher,
             new NullLogger(),
         );

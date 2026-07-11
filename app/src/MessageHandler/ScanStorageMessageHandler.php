@@ -33,6 +33,7 @@ use App\Service\JobLock\JobLockService;
 use App\Service\Storage\Scan\ScanCandidate;
 use App\Service\Storage\Scan\ScanResultItem;
 use App\Service\Storage\ScanStorageService;
+use App\Service\Storage\StorageMarkerService;
 use App\Service\WsPublisher;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Log\LoggerInterface;
@@ -48,7 +49,10 @@ use Symfony\Component\Messenger\Exception\UnrecoverableMessageHandlingException;
  * UnrecoverableMessageHandlingException — this project's queue has no failure_transport (see
  * messenger.yaml), so a message Symfony would otherwise retry forever on a permanent error
  * (e.g. a storage row that no longer exists) has to opt out of retries explicitly instead
- * (same convention as every other queue handler, issue #97).
+ * (same convention as every other queue handler, issue #97). Also the only caller that can ever
+ * supply scan()'s $atPath (issue #162): when the storage's own path is unreadable (drive letter
+ * reassigned, external drive reconnected elsewhere), it searches for the storage's desktop.ini
+ * marker under every other drive root before giving up.
  */
 #[AsMessageHandler]
 final class ScanStorageMessageHandler
@@ -57,6 +61,7 @@ final class ScanStorageMessageHandler
         private readonly EntityManagerInterface $entityManager,
         private readonly JobLockService $jobLockService,
         private readonly ScanStorageService $scanStorageService,
+        private readonly StorageMarkerService $storageMarkerService,
         private readonly WsPublisher $wsPublisher,
         private readonly LoggerInterface $logger,
     ) {
@@ -84,6 +89,10 @@ final class ScanStorageMessageHandler
             $lockAcquired = true;
             $this->wsPublisher->publish('backend.status', ['state' => 'busy']);
 
+            $atPath = is_readable($storage->getPath())
+                ? null
+                : $this->storageMarkerService->findByMarker($storage);
+
             $result = $this->scanStorageService->scan(
                 $storage,
                 function (int $processed, int $total) use ($message, $jobKey): void {
@@ -95,6 +104,7 @@ final class ScanStorageMessageHandler
                         'percent' => $total > 0 ? (int) round($processed / $total * 100) : 100,
                     ]);
                 },
+                $atPath,
             );
 
             if ($result->conflicted) {

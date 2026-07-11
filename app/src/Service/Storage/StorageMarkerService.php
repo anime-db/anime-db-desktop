@@ -42,8 +42,18 @@ final class StorageMarkerService
     private const MARKER_FILENAME = 'desktop.ini';
     private const SECTION = 'AnimeDB';
 
-    public function __construct(private readonly EntityManagerInterface $entityManager)
-    {
+    /**
+     * @param ?iterable<string> $driveRoots overrides the drives searched by findByMarker() —
+     *                                      tests inject a list of temp directories here, since
+     *                                      real drive letters don't exist on the ubuntu-latest
+     *                                      CI runner (see the app-only-ships-for-Windows note
+     *                                      on writeMarker()); left null in production, where
+     *                                      findByMarker() enumerates `A:\`-`Z:\` itself
+     */
+    public function __construct(
+        private readonly EntityManagerInterface $entityManager,
+        private readonly ?iterable $driveRoots = null,
+    ) {
     }
 
     /**
@@ -95,6 +105,64 @@ final class StorageMarkerService
         $storage->relocate($path);
 
         return true;
+    }
+
+    /**
+     * Searches every existing drive root for a desktop.ini marker naming $storage — for when
+     * $storage's own path became unreadable (drive reassigned a new letter, external drive
+     * reconnected elsewhere) and there is no candidate path to check yet, unlike
+     * relocateIfMarkerMoved() above, which only confirms one already-known candidate. $storage's
+     * path is rarely a drive root itself (e.g. "D:\Anime\", not "D:\") — reconnecting the same
+     * physical drive under a new letter keeps its internal folder structure, so the search
+     * re-applies $storage's own tail ("Anime\") to each candidate root instead of only checking
+     * the root itself. Gives up immediately (returns null) for UNC paths and any other path
+     * shape without a drive letter to reassign, since there is nothing to search across.
+     */
+    public function findByMarker(Storage $storage): ?string
+    {
+        $storageId = $storage->id ?? throw new \LogicException('Storage must be persisted before its marker can be searched for');
+        $tail = $this->relativeTail($storage->getPath());
+
+        if ($tail === null) {
+            return null;
+        }
+
+        foreach ($this->driveRoots ?? $this->existingDriveRoots() as $root) {
+            $candidate = rtrim($root, '\\/').($tail === '' ? '' : \DIRECTORY_SEPARATOR.$tail);
+
+            if ($this->readMarkerId($candidate) === $storageId) {
+                return $candidate;
+            }
+        }
+
+        return null;
+    }
+
+    /** @return iterable<string> */
+    private function existingDriveRoots(): iterable
+    {
+        foreach (range('A', 'Z') as $letter) {
+            $root = "$letter:\\";
+            if (is_dir($root)) {
+                yield $root;
+            }
+        }
+    }
+
+    /**
+     * Strips the drive letter off a Windows path ("D:\Anime\" -> "Anime"), the part that
+     * doesn't survive a drive-letter reassignment. Returns null for UNC paths
+     * ("\\server\share\...", no drive letter to reassign) and any other path shape (e.g. a
+     * POSIX path, only ever seen in this test suite) findByMarker() has no candidate roots to
+     * search across for.
+     */
+    private function relativeTail(string $storagePath): ?string
+    {
+        if (preg_match('#^[A-Za-z]:[\\\\/]?(.*)$#', $storagePath, $matches) !== 1) {
+            return null;
+        }
+
+        return rtrim($matches[1], '\\/');
     }
 
     private function readMarkerId(string $storagePath): ?int
