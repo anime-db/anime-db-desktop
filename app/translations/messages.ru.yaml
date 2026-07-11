@@ -106,6 +106,7 @@ storage_list:
     path_column: Путь
     last_scan_column: Последний скан
     actions_column: Действия
+    edit_button: Редактировать
     never_scanned: Ещё не сканировалось
     scan_button: Скан
     scan_started: Скан запущен.
@@ -185,3 +186,11 @@ storage_new:
     pick_folder_button: Выбрать папку…
     submit_button: Создать
     error_invalid: Укажите корректные название, путь и тип хранилища.
+
+storage_edit:
+    title: Редактирование хранилища — AnimeDB
+    heading: Редактирование хранилища
+    field_name: Название
+    field_type: Тип
+    submit_button: Сохранить
+    error_invalid: Укажите корректные название и тип хранилища.

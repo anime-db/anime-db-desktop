@@ -73,6 +73,7 @@
                             <td>{{ storage.path }}</td>
                             <td>{{ storage.dateUpdate ? storage.dateUpdate|date('Y-m-d H:i') : ('storage_list.never_scanned'|trans) }}</td>
                             <td>
+                                <a href="{{ path('storage_edit', {id: storage.id}) }}">{{ 'storage_list.edit_button'|trans }}</a>
                                 <form method="post" action="{{ path('storage_scan', {id: storage.id}) }}">
                                     <input type="hidden" name="_token" value="{{ csrf_token('storage_scan_' ~ storage.id) }}">
                                     <button type="submit">{{ 'storage_list.scan_button'|trans }}</button>
