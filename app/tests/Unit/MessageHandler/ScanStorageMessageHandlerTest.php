@@ -123,7 +123,7 @@ final class ScanStorageMessageHandlerTest extends TestCase
         $handler(new ScanStorageMessage($storageId));
 
         // No progress/done/failed event — the scan was skipped entirely, not just its output discarded.
-        $this->assertNull($wsPublisher->next());
+        $this->assertSame([], $wsPublisher->since(0));
         $this->assertNull($storage->getDateUpdate());
 
         // The other process's lock is untouched — this call never took it over.
@@ -150,8 +150,10 @@ final class ScanStorageMessageHandlerTest extends TestCase
 
         $handler(new ScanStorageMessage($storageId));
 
-        $progress = $wsPublisher->next();
-        $this->assertNotNull($progress);
+        $events = $wsPublisher->since(0);
+        $this->assertCount(2, $events);
+
+        $progress = $events[0];
         $this->assertSame('scan.progress', $progress['event']);
         $this->assertSame([
             'storage_id' => $storageId,
@@ -160,15 +162,13 @@ final class ScanStorageMessageHandlerTest extends TestCase
             'percent' => 100,
         ], $progress['data']);
 
-        $done = $wsPublisher->next();
-        $this->assertNotNull($done);
+        $done = $events[1];
         $this->assertSame('scan.done', $done['event']);
         $this->assertSame($storageId, $done['data']['storage_id']);
         $this->assertCount(1, $done['data']['items']);
         $this->assertSame('NeedsManualEntry', $done['data']['items'][0]['type']);
         $this->assertSame('Trigun.mkv', $done['data']['items'][0]['storage_path']);
 
-        $this->assertNull($wsPublisher->next());
         $this->assertNotNull($storage->getDateUpdate());
         $this->assertJobLockReleased($storageId);
     }
@@ -194,13 +194,14 @@ final class ScanStorageMessageHandlerTest extends TestCase
 
         $handler(new ScanStorageMessage($storageId));
 
-        $failed = $wsPublisher->next();
-        $this->assertNotNull($failed);
+        $events = $wsPublisher->since(0);
+        $this->assertCount(1, $events);
+
+        $failed = $events[0];
         $this->assertSame('scan.failed', $failed['event']);
         $this->assertSame($storageId, $failed['data']['storage_id']);
         $this->assertSame('marker_conflict', $failed['data']['reason']);
 
-        $this->assertNull($wsPublisher->next());
         $this->assertJobLockReleased($storageId);
     }
 
@@ -216,8 +217,10 @@ final class ScanStorageMessageHandlerTest extends TestCase
             // expected
         }
 
-        $failed = $wsPublisher->next();
-        $this->assertNotNull($failed);
+        $events = $wsPublisher->since(0);
+        $this->assertCount(1, $events);
+
+        $failed = $events[0];
         $this->assertSame('scan.failed', $failed['event']);
         $this->assertSame(999, $failed['data']['storage_id']);
         $this->assertSame('exception', $failed['data']['reason']);

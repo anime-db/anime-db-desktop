@@ -62,14 +62,25 @@ final class WsController
             ignore_user_abort(false);
             set_time_limit(0);
 
+            $lastId = $publisher->initialLastId();
+
             while (!connection_aborted()) {
-                $event = $publisher->next();
-                if ($event !== null) {
-                    $json = json_encode($event, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE);
+                $events = $publisher->since($lastId);
+
+                if ($events === []) {
+                    usleep(50_000);
+                    continue;
+                }
+
+                foreach ($events as $event) {
+                    $lastId = $event['id'];
+
+                    $json = json_encode(
+                        ['event' => $event['event'], 'data' => $event['data']],
+                        JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE,
+                    );
                     echo $encoder->encode($json);
                     flush();
-                } else {
-                    usleep(50_000);
                 }
             }
         });
