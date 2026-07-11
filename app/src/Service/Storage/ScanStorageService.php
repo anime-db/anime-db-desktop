@@ -72,11 +72,23 @@ final class ScanStorageService
      *                                              top-level entry — lets the caller (the
      *                                              Messenger handler, Таск 3 часть 6) publish
      *                                              a percentage and refresh its job-lock heartbeat
+     * @param ?string                   $atPath     the path $storage was actually found at, if that
+     *                                              differs from Storage::getPath() — e.g. a reconnected
+     *                                              external drive that came back under a different
+     *                                              letter. When its desktop.ini marker still carries
+     *                                              $storage's id (StorageMarkerService::relocateIfMarkerMoved(),
+     *                                              issue #118 вопрос 9), $storage is relocated to $atPath
+     *                                              before it is scanned, instead of leaving it stuck at
+     *                                              its stale path
      */
-    public function scan(Storage $storage, ?callable $onProgress = null): ScanResult
+    public function scan(Storage $storage, ?callable $onProgress = null, ?string $atPath = null): ScanResult
     {
         if (!\in_array($storage->getType(), self::SCANNABLE_TYPES, true)) {
             return ScanResult::items([]);
+        }
+
+        if ($atPath !== null) {
+            $this->markerService->relocateIfMarkerMoved($storage, $atPath);
         }
 
         if ($this->markerService->reconcile($storage) === StorageMarkerResult::Conflict) {
