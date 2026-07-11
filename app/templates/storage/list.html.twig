@@ -26,6 +26,8 @@
     <main class="storage-list">
         <h1>{{ 'storage_list.heading'|trans }}</h1>
 
+        <p><a href="{{ path('storage_new') }}">{{ 'storage_list.new_button'|trans }}</a></p>
+
         {% if scanned %}
             <p class="storage-list__notice">{{ 'storage_list.scan_started'|trans }}</p>
         {% endif %}

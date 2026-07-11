@@ -99,6 +99,7 @@ anime_list:
 storage_list:
     title: Хранилища — AnimeDB
     heading: Хранилища
+    new_button: Добавить хранилище
     empty: Хранилищ пока нет.
     name_column: Название
     type_column: Тип
@@ -174,3 +175,13 @@ anime_new:
     field_watch_status: Статус просмотра
     submit_button: Создать
     error_invalid: Заполните название и выберите тип и статус просмотра.
+
+storage_new:
+    title: Новое хранилище — AnimeDB
+    heading: Новое хранилище
+    field_name: Название
+    field_type: Тип
+    field_path: Путь
+    pick_folder_button: Выбрать папку…
+    submit_button: Создать
+    error_invalid: Укажите корректные название, путь и тип хранилища.
