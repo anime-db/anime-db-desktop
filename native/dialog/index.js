@@ -21,9 +21,20 @@
 
 'use strict';
 
-const { contextBridge, ipcRenderer } = require('electron');
+const { ipcMain, dialog } = require('electron');
 
-contextBridge.exposeInMainWorld('animeDb', {
-    openPath:   (targetPath) => ipcRenderer.invoke('shell:open-path', targetPath),
-    pickFolder: () => ipcRenderer.invoke('dialog:pick-folder'),
-});
+/**
+ * Открывает нативный диалог выбора папки для последующего использования её как пути
+ * хранилища аниме (Storage::path).
+ *
+ * @returns {Promise<string|null>}
+ */
+async function pickFolder() {
+    const result = await dialog.showOpenDialog({ properties: ['openDirectory'] });
+
+    return result.canceled ? null : result.filePaths[0];
+}
+
+ipcMain.handle('dialog:pick-folder', pickFolder);
+
+module.exports = { pickFolder };
