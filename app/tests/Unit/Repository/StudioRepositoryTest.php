@@ -99,8 +99,20 @@ final class StudioRepositoryTest extends TestCase
         $this->entityManager->persist($this->createStudio('Madhouse'));
         $this->entityManager->flush();
 
-        $names = array_map(static fn (Studio $studio): string => $studio->name, $this->repository->findAllOrderedByName());
+        $names = array_map(static fn (Studio $studio): string => $studio->name, $this->repository->findAllOrderedByName(10));
 
         $this->assertSame(['Bones', 'Madhouse', 'Sunrise'], $names);
+    }
+
+    public function testFindAllOrderedByNameRespectsLimitAndOffset(): void
+    {
+        $this->entityManager->persist($this->createStudio('Sunrise'));
+        $this->entityManager->persist($this->createStudio('Bones'));
+        $this->entityManager->persist($this->createStudio('Madhouse'));
+        $this->entityManager->flush();
+
+        $names = array_map(static fn (Studio $studio): string => $studio->name, $this->repository->findAllOrderedByName(1, 1));
+
+        $this->assertSame(['Madhouse'], $names);
     }
 }

@@ -36,10 +36,16 @@ class StudioRepository
     {
     }
 
-    /** @return Studio[] */
-    public function findAllOrderedByName(): array
+    /** @return list<Studio> */
+    public function findAllOrderedByName(int $limit, int $offset = 0): array
     {
-        return $this->entityManager->getRepository(Studio::class)->findBy([], ['name' => 'ASC']);
+        /* @var list<Studio> */
+        return $this->entityManager->getRepository(Studio::class)->createQueryBuilder('s')
+            ->orderBy('s.name', 'ASC')
+            ->setMaxResults($limit)
+            ->setFirstResult($offset)
+            ->getQuery()
+            ->getResult();
     }
 
     public function findOneByName(string $name): ?Studio
