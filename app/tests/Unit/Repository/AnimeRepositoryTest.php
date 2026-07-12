@@ -30,6 +30,7 @@ namespace App\Tests\Unit\Repository;
 use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
 use App\Entity\Anime;
+use App\Entity\Enum\AnimeNameType;
 use App\Entity\Enum\AnimeSortField;
 use App\Entity\Enum\AnimeType;
 use App\Entity\Enum\GenreCode;
@@ -85,10 +86,55 @@ final class AnimeRepositoryTest extends TestCase
 
         $schemaTool = new SchemaTool($this->entityManager);
         $schemaTool->createSchema($this->entityManager->getMetadataFactory()->getAllMetadata());
+        $this->createAnimeFtsSchema();
 
         $this->repository = new AnimeRepository($this->entityManager);
 
         $this->seedFixtures();
+    }
+
+    /**
+     * SchemaTool builds the schema from Doctrine entity metadata only, so it has no concept
+     * of the anime_fts FTS5 virtual table/triggers created by the raw-SQL Version20260713000000
+     * migration (issue #195) — it must be created by hand here, same as in AnimeFtsSchemaTest.
+     */
+    private function createAnimeFtsSchema(): void
+    {
+        $connection = $this->entityManager->getConnection();
+
+        $connection->executeStatement('CREATE VIRTUAL TABLE anime_fts USING fts5(name, anime_id UNINDEXED)');
+
+        $connection->executeStatement('
+            CREATE TRIGGER anime_fts_ai_anime AFTER INSERT ON anime BEGIN
+                INSERT INTO anime_fts(rowid, anime_id, name) VALUES (new.id, new.id, new.title);
+            END
+        ');
+        $connection->executeStatement('
+            CREATE TRIGGER anime_fts_au_anime AFTER UPDATE OF title ON anime BEGIN
+                UPDATE anime_fts SET name = new.title WHERE rowid = new.id;
+            END
+        ');
+        $connection->executeStatement('
+            CREATE TRIGGER anime_fts_ad_anime AFTER DELETE ON anime BEGIN
+                DELETE FROM anime_fts WHERE rowid = old.id;
+            END
+        ');
+
+        $connection->executeStatement('
+            CREATE TRIGGER anime_fts_ai_anime_name AFTER INSERT ON anime_name BEGIN
+                INSERT INTO anime_fts(rowid, anime_id, name) VALUES (-new.id, new.anime_id, new.name);
+            END
+        ');
+        $connection->executeStatement('
+            CREATE TRIGGER anime_fts_au_anime_name AFTER UPDATE OF name ON anime_name BEGIN
+                UPDATE anime_fts SET name = new.name WHERE rowid = -new.id;
+            END
+        ');
+        $connection->executeStatement('
+            CREATE TRIGGER anime_fts_ad_anime_name AFTER DELETE ON anime_name BEGIN
+                DELETE FROM anime_fts WHERE rowid = -old.id;
+            END
+        ');
     }
 
     private function seedFixtures(): void
@@ -112,6 +158,7 @@ final class AnimeRepositoryTest extends TestCase
             ->setUserRating(new Rating(5))
             ->setDatePremiere(new \DateTimeImmutable('2020-01-01'));
         $a1->addGenre(GenreCode::Action)->addStudio($this->sunrise)->addLabel($this->favorite);
+        $a1->addName('Toraiga', AnimeNameType::Synonym);
 
         // Watching, US, rating 3, Comedy, Toei, no label, premiered 2021.
         $a2 = new MovieAnime();
@@ -201,6 +248,30 @@ final class AnimeRepositoryTest extends TestCase
         $filter = new AnimeListFilter(watchStatus: WatchStatus::Watching, country: 'US');
 
         $this->assertEqualsCanonicalizing(['A Comedy Movie', 'Drama Series'], $this->titlesOf($filter));
+    }
+
+    public function testFilterByNameMatchesTheMainTitle(): void
+    {
+        $filter = new AnimeListFilter(watchStatus: WatchStatus::Watching, name: 'Trigun');
+
+        $this->assertSame(['Trigun'], $this->titlesOf($filter));
+    }
+
+    public function testFilterByNameMatchesAnAlternativeName(): void
+    {
+        // 'Toraiga' is only in Trigun's anime_name records, never in Anime::$title.
+        $filter = new AnimeListFilter(watchStatus: WatchStatus::Watching, name: 'Toraiga');
+
+        $this->assertSame(['Trigun'], $this->titlesOf($filter));
+    }
+
+    public function testFilterByNameDoesNotAffectTheQueryWhenEmpty(): void
+    {
+        $withoutName = new AnimeListFilter(watchStatus: WatchStatus::Watching);
+        $withNullName = new AnimeListFilter(watchStatus: WatchStatus::Watching, name: null);
+
+        $this->assertSame($this->repository->countByFilter($withoutName), $this->repository->countByFilter($withNullName));
+        $this->assertEqualsCanonicalizing($this->titlesOf($withoutName), $this->titlesOf($withNullName));
     }
 
     public function testFilterByGenresUsesOrSemantics(): void
