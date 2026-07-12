@@ -274,6 +274,22 @@ final class SampleAnimeSeederTest extends TestCase
         $this->assertSame('2024-03-31', $anime->getDateEnd()?->format('Y-m-d'));
     }
 
+    public function testSeedSetsEnglishAndRussianDescriptionsForEverySample(): void
+    {
+        $this->createSeeder()->seed();
+
+        foreach ($this->entityManager->getRepository(Anime::class)->findAll() as $anime) {
+            $this->assertNotSame('', $anime->getSummary('en'));
+            $this->assertNotSame('', $anime->getSummary('ru'));
+            $this->assertNotSame($anime->getSummary('en'), $anime->getSummary('ru'));
+        }
+
+        $animes = $this->entityManager->getRepository(Anime::class)->findBy(['title' => 'Spirited Away']);
+        $this->assertCount(1, $animes);
+        $this->assertStringContainsString('Chihiro', $animes[0]->getSummary('en'));
+        $this->assertStringContainsString('Тихиро', $animes[0]->getSummary('ru'));
+    }
+
     public function testSeedCopiesCoverIntoMediaDirWhenSourceFileExists(): void
     {
         file_put_contents($this->sampleCoversDir.'/spirited-away.webp', 'fake-cover-bytes');

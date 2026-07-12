@@ -73,6 +73,7 @@ class SampleAnimeSeeder
      *     datePremiere: string,
      *     dateEnd: string,
      *     countries: list<string>,
+     *     descriptions: array<string, string>,
      * }>
      */
     private const SAMPLES = [
@@ -104,6 +105,16 @@ class SampleAnimeSeeder
             'datePremiere' => '2009-04-05',
             'dateEnd' => '2010-07-04',
             'countries' => ['JP'],
+            'descriptions' => [
+                'en' => 'After a failed attempt to resurrect their dead mother, brothers Edward and Alphonse Elric '.
+                    'sacrifice parts of their bodies to alchemy. Now Edward, a state alchemist known as the '.
+                    "Fullmetal Alchemist, and Alphonse search for the legendary Philosopher's Stone to restore ".
+                    'what they lost, while uncovering a conspiracy reaching the highest levels of their country.',
+                'ru' => 'После неудачной попытки воскресить умершую мать братья Эдвард и Альфонс Элрики '.
+                    'жертвуют алхимии частями своих тел. Эдвард, ставший государственным алхимиком по прозвищу '.
+                    'Стальной, вместе с братом ищет легендарный Философский камень, чтобы вернуть утраченное, '.
+                    'попутно раскрывая заговор, пронизывающий власть их страны.',
+            ],
         ],
         [
             'title' => 'Spirited Away',
@@ -132,6 +143,14 @@ class SampleAnimeSeeder
             'datePremiere' => '2001-07-20',
             'dateEnd' => '2001-07-20',
             'countries' => ['JP'],
+            'descriptions' => [
+                'en' => 'Ten-year-old Chihiro and her parents stumble into an abandoned amusement park that turns '.
+                    'out to be a bathhouse for spirits. When her parents are transformed into pigs, Chihiro must '.
+                    'work for the witch Yubaba to survive, save her family, and find a way back to the human world.',
+                'ru' => 'Десятилетняя Тихиро и её родители случайно попадают в заброшенный парк развлечений, '.
+                    'который оказывается баней для духов. После того как её родителей превращают в свиней, '.
+                    'Тихиро вынуждена работать на колдунью Юбабу, чтобы выжить, спасти семью и вернуться в мир людей.',
+            ],
         ],
         [
             'title' => 'Gintama',
@@ -161,6 +180,14 @@ class SampleAnimeSeeder
             'datePremiere' => '2006-04-04',
             'dateEnd' => '2010-03-25',
             'countries' => ['JP'],
+            'descriptions' => [
+                'en' => 'In an Edo-era Japan conquered by aliens who have outlawed swords, former samurai Gintoki '.
+                    'Sakata scrapes together a living as an odd-jobs freelancer alongside his eccentric friends, '.
+                    'taking on absurd requests that swing between slapstick comedy and heartfelt drama.',
+                'ru' => 'В эпоху Эдо, захваченную инопланетянами, запретившими самураям носить мечи, бывший '.
+                    'самурай Гинтоки Саката подрабатывает мастером на все руки вместе со своими эксцентричными '.
+                    'друзьями, берясь за нелепые поручения, где грубоватый юмор соседствует с искренней драмой.',
+            ],
         ],
         [
             'title' => 'Hellsing Ultimate',
@@ -187,6 +214,14 @@ class SampleAnimeSeeder
             'datePremiere' => '2006-02-10',
             'dateEnd' => '2012-12-26',
             'countries' => ['JP'],
+            'descriptions' => [
+                'en' => 'The Hellsing Organization, led by Integra Hellsing, wages a secret war against vampires '.
+                    'and other undead threatening England, spearheaded by its ultimate weapon: the ancient and '.
+                    'merciless vampire Alucard, alongside his newly turned servant Seras Victoria.',
+                'ru' => 'Организация «Хеллсинг» во главе с Интегрой Хеллсинг ведёт тайную войну против вампиров '.
+                    'и прочей нежити, угрожающей Англии. Главное оружие организации — древний и беспощадный '.
+                    'вампир Алукард, а также его новообращённая служанка Серас Виктория.',
+            ],
         ],
         [
             'title' => 'Sousou no Frieren',
@@ -215,6 +250,16 @@ class SampleAnimeSeeder
             'datePremiere' => '2023-09-29',
             'dateEnd' => '2024-03-22',
             'countries' => ['JP'],
+            'descriptions' => [
+                'en' => "After the hero's party defeats the Demon King and returns home, elven mage Frieren ".
+                    'realizes how little she truly understood her short-lived human companions during their '.
+                    'decade-long journey. Decades later, she sets out on a new journey to come to terms with '.
+                    'mortality and the meaning of the time she spent with them.',
+                'ru' => 'После того как отряд героя побеждает Короля демонов и возвращается домой, '.
+                    'эльфийка-волшебница Фрирен понимает, как мало она на самом деле знала о своих недолговечных '.
+                    'человеческих спутниках за десять лет странствий. Десятилетия спустя она отправляется в новое '.
+                    'путешествие, чтобы осмыслить смертность и значение проведённого с ними времени.',
+            ],
         ],
         [
             'title' => 'One Punch Man',
@@ -242,6 +287,14 @@ class SampleAnimeSeeder
             'datePremiere' => '2015-10-05',
             'dateEnd' => '2015-12-21',
             'countries' => ['JP'],
+            'descriptions' => [
+                'en' => 'Saitama is a superhero who, after three years of relentless training, has become so '.
+                    'powerful that he can defeat any opponent with a single punch, leaving him bored and '.
+                    'searching for a worthy challenge, while struggling to get the recognition he deserves.',
+                'ru' => 'Сайтама — супергерой, который после трёх лет изнурительных тренировок стал настолько '.
+                    'силён, что побеждает любого противника одним ударом. Из-за этого он смертельно скучает '.
+                    'в поисках достойного соперника и никак не может добиться признания, которого заслуживает.',
+            ],
         ],
         [
             'title' => 'Solo Leveling',
@@ -271,6 +324,16 @@ class SampleAnimeSeeder
             'datePremiere' => '2024-01-07',
             'dateEnd' => '2024-03-31',
             'countries' => ['JP', 'KR'],
+            'descriptions' => [
+                'en' => 'In a world where portals connect to deadly dungeons and only "Hunters" with '.
+                    'supernatural abilities can fight the monsters within, Sung Jinwoo, the weakest Hunter of '.
+                    'all mankind, gains a mysterious power that lets him grow stronger without limit after '.
+                    'barely surviving a deadly double dungeon.',
+                'ru' => 'В мире, где порталы ведут в смертоносные подземелья, а сражаться с чудовищами внутри '.
+                    'способны лишь «Охотники» со сверхспособностями, Сон Джинву — слабейший Охотник среди людей '.
+                    '— после того как еле выживает в смертельно опасном двойном подземелье, получает таинственную '.
+                    'силу, позволяющую бесконечно расти.',
+            ],
         ],
     ];
 
@@ -320,8 +383,8 @@ class SampleAnimeSeeder
     }
 
     /**
-     * @param array{title: string, type: AnimeType, episodesCount: ?int, durationMinutes: ?int, studios: list<string>, genres: list<GenreCode>, themes: list<ThemeCode>, demographic: ?Demographic, cover: string, altNames: list<array{type: AnimeNameType, name: string}>, sources: list<string>, datePremiere: string, dateEnd: string, countries: list<string>} $sample
-     * @param list<Studio>                                                                                                                                                                                                                                                                                                                                          $studios
+     * @param array{title: string, type: AnimeType, episodesCount: ?int, durationMinutes: ?int, studios: list<string>, genres: list<GenreCode>, themes: list<ThemeCode>, demographic: ?Demographic, cover: string, altNames: list<array{type: AnimeNameType, name: string}>, sources: list<string>, datePremiere: string, dateEnd: string, countries: list<string>, descriptions: array<string, string>} $sample
+     * @param list<Studio>                                                                                                                                                                                                                                                                                                                                                                               $studios
      */
     private function buildAnime(array $sample, array $studios): Anime
     {
@@ -361,6 +424,10 @@ class SampleAnimeSeeder
 
         foreach ($sample['sources'] as $url) {
             $anime->addSource($url);
+        }
+
+        foreach ($sample['descriptions'] as $locale => $text) {
+            $anime->setDescription($locale, $text);
         }
 
         return $anime;
