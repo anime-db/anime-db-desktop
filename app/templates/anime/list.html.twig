@@ -33,7 +33,10 @@
                 <h2>{{ 'onboarding.heading'|trans }}</h2>
                 <p>{{ 'onboarding.description'|trans }}</p>
                 <a href="{{ path('storage_new') }}">{{ 'onboarding.add_storage_button'|trans }}</a>
-                <button type="button" disabled>{{ 'onboarding.load_demo_button'|trans }}</button>
+                <form method="post" action="{{ path('onboarding_seed_demo') }}" class="onboarding-banner__demo-form">
+                    <input type="hidden" name="_token" value="{{ csrf_token('onboarding_seed_demo') }}">
+                    <button type="submit">{{ 'onboarding.load_demo_button'|trans }}</button>
+                </form>
             </section>
         {% endif %}
 

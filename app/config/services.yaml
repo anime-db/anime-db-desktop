@@ -28,6 +28,10 @@ parameters:
     # out of scope until the plugin translation registration mechanism is designed.
     app.locales: ['en', 'ru']
 
+    # Source cover images for SampleAnimeSeeder (issue #181) — shipped under public/ like
+    # css/js/index.php, not under AppData, since they are app assets, not user data.
+    app.sample_covers_dir: '%kernel.project_dir%/public/sample'
+
 services:
     # default configuration for services in *this* file
     _defaults:
@@ -37,6 +41,7 @@ services:
             $mediaDir: '%app.media_dir%'
             $configPath: '%app.config_path%'
             $locales: '%app.locales%'
+            $sampleCoversDir: '%app.sample_covers_dir%'
 
     # makes classes in src/ available to be used as services
     # this creates a service per class whose id is the fully-qualified class name
