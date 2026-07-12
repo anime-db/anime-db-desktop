@@ -25,29 +25,30 @@
 
 declare(strict_types=1);
 
-namespace App\Repository;
+namespace App\Tests\Unit\Controller;
 
+use App\Controller\StorageScanPromptController;
+use App\Entity\Enum\StorageType;
 use App\Entity\Storage;
-use Doctrine\ORM\EntityManagerInterface;
+use PHPUnit\Framework\TestCase;
+use Twig\Environment;
 
-class StorageRepository
+final class StorageScanPromptControllerTest extends TestCase
 {
-    public function __construct(private readonly EntityManagerInterface $entityManager)
+    public function testPromptRendersFormWithStorage(): void
     {
-    }
+        $storage = new Storage('Main folder', 'D:\\Anime', StorageType::Folder);
+        (new \ReflectionProperty(Storage::class, 'id'))->setValue($storage, 7);
 
-    /** @return Storage[] */
-    public function findAllOrderedByName(): array
-    {
-        return $this->entityManager->getRepository(Storage::class)->findBy([], ['name' => 'ASC']);
-    }
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('storage/scan_prompt.html.twig', ['storage' => $storage])
+            ->willReturn('<html></html>');
 
-    public function hasAny(): bool
-    {
-        $qb = $this->entityManager->getRepository(Storage::class)->createQueryBuilder('s')
-            ->select('COUNT(s.id)')
-            ->setMaxResults(1);
+        $controller = new StorageScanPromptController($twig);
+        $response = $controller->prompt($storage);
 
-        return (int) $qb->getQuery()->getSingleScalarResult() > 0;
+        $this->assertSame(200, $response->getStatusCode());
     }
 }

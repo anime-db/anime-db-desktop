@@ -28,6 +28,15 @@
 
 {% block body %}
     <main class="anime-list">
+        {% if showOnboarding %}
+            <section class="onboarding-banner">
+                <h2>{{ 'onboarding.heading'|trans }}</h2>
+                <p>{{ 'onboarding.description'|trans }}</p>
+                <a href="{{ path('storage_new') }}">{{ 'onboarding.add_storage_button'|trans }}</a>
+                <button type="button" disabled>{{ 'onboarding.load_demo_button'|trans }}</button>
+            </section>
+        {% endif %}
+
         <div class="anime-list__grid" id="anime-list-grid"></div>
 
         <p class="anime-list__empty" id="anime-list-empty" hidden>{{ 'anime_list.empty'|trans }}</p>

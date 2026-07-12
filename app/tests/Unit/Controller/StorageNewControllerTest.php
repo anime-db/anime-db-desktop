@@ -160,6 +160,32 @@ final class StorageNewControllerTest extends TestCase
         $this->assertSame('7', $marker['AnimeDB']['id']);
     }
 
+    public function testCreateRedirectsToScanPromptWithNewStorageId(): void
+    {
+        $dir = $this->makeDir();
+        $persistedStorage = null;
+        $entityManager = $this->entityManagerAssigningId(11, $persistedStorage);
+
+        $router = $this->createMock(UrlGeneratorInterface::class);
+        $router->expects($this->once())
+            ->method('generate')
+            ->with('storage_scan_prompt', ['id' => 11])
+            ->willReturn('/storage/11/scan-prompt');
+
+        $controller = $this->createController(entityManager: $entityManager, urlGenerator: $router);
+        $request = Request::create('/storage/new', 'POST', [
+            'name' => 'Main folder',
+            'path' => $dir,
+            'type' => 'folder',
+            '_token' => 'token',
+        ]);
+
+        $response = $controller->create($request);
+
+        $this->assertInstanceOf(RedirectResponse::class, $response);
+        $this->assertSame('/storage/11/scan-prompt', $response->getTargetUrl());
+    }
+
     public function testCreateDoesNotWriteMarkerForNonWritableType(): void
     {
         $dir = $this->makeDir();

@@ -94,7 +94,9 @@ final class StorageNewController
             $this->markerService->reconcile($storage);
         }
 
-        return new RedirectResponse($this->urlGenerator->generate('storage_index'));
+        $storageId = $storage->id ?? throw new \LogicException('Storage must be assigned an id right after flush().');
+
+        return new RedirectResponse($this->urlGenerator->generate('storage_scan_prompt', ['id' => $storageId]));
     }
 
     private function renderForm(

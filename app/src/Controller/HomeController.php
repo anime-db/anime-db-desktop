@@ -27,6 +27,8 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
+use App\Repository\AnimeRepository;
+use App\Repository\StorageRepository;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
 use Twig\Environment;
@@ -35,16 +37,28 @@ use Twig\Environment;
  * Renders the anime list page shell (issue #76): the grid and its pagination controls are
  * populated client-side by anime-list.js, which fetches AnimeListController's JSON endpoint
  * (issue #74). This controller only needs to hand the page its static markup.
+ *
+ * Also decides whether to show the onboarding banner (issue #179, Таск 2 шаг 5): there is no
+ * dedicated "installed" flag (see decisions.md — Вопросы 6/7), so "wizard not completed" is
+ * inferred purely from the catalog being empty (no Storage and no Anime rows). Both "skip"
+ * actions leave the catalog empty, so the banner simply reappears on the next visit.
  */
 final class HomeController
 {
-    public function __construct(private readonly Environment $twig)
-    {
+    public function __construct(
+        private readonly Environment $twig,
+        private readonly StorageRepository $storages,
+        private readonly AnimeRepository $animeRepository,
+    ) {
     }
 
     #[Route('/', name: 'home_index', methods: ['GET'])]
     public function index(): Response
     {
-        return new Response($this->twig->render('anime/list.html.twig'));
+        $showOnboarding = !$this->storages->hasAny() && !$this->animeRepository->hasAny();
+
+        return new Response($this->twig->render('anime/list.html.twig', [
+            'showOnboarding' => $showOnboarding,
+        ]));
     }
 }

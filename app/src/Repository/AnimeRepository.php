@@ -60,6 +60,15 @@ class AnimeRepository
         return (int) $qb->getQuery()->getSingleScalarResult();
     }
 
+    public function hasAny(): bool
+    {
+        $qb = $this->entityManager->getRepository(Anime::class)->createQueryBuilder('a')
+            ->select('COUNT(a.id)')
+            ->setMaxResults(1);
+
+        return (int) $qb->getQuery()->getSingleScalarResult() > 0;
+    }
+
     /** @return list<Anime> */
     public function findByFilter(AnimeListFilter $filter, AnimeListSort $sort, int $limit, int $offset): array
     {

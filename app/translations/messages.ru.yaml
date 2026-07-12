@@ -188,6 +188,20 @@ storage_new:
     pick_folder_button: Выбрать папку…
     submit_button: Создать
     error_invalid: Укажите корректные название, путь и тип хранилища.
+    skip_link: Пропустить
+
+storage_scan_prompt:
+    title: Запустить сканирование? — AnimeDB
+    heading: 'Хранилище «%name%» создано'
+    description: Запустить сканирование сейчас, чтобы найти аниме в этом хранилище?
+    scan_button: Запустить сканирование
+    skip_link: Пропустить
+
+onboarding:
+    heading: Добро пожаловать в AnimeDB
+    description: Каталог пуст. Добавьте хранилище с файлами аниме или загрузите демо-данные, чтобы начать.
+    add_storage_button: Добавить хранилище
+    load_demo_button: Загрузить демо-данные
 
 storage_edit:
     title: Редактирование хранилища — AnimeDB

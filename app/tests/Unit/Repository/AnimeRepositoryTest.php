@@ -154,6 +154,11 @@ final class AnimeRepositoryTest extends TestCase
             ?? throw new \LogicException('favorite label fixture must exist after flush()');
     }
 
+    public function testHasAnyReturnsTrueWhenAnimeExists(): void
+    {
+        $this->assertTrue($this->repository->hasAny());
+    }
+
     /**
      * Studio/Label ids are nullable at the type level (unset before persist); the fixtures
      * above are always persisted and flushed first, so this narrows the type for the filters below.
