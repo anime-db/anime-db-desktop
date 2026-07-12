@@ -30,6 +30,13 @@ theme:
     super-power: Super Power
     vampire: Vampire
 
+demographic:
+    shounen: Shounen
+    shoujo: Shoujo
+    seinen: Seinen
+    josei: Josei
+    kids: Kids
+
 anime_type:
     tv: TV Series
     movie: Movie

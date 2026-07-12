@@ -30,6 +30,13 @@ theme:
     super-power: Суперсила
     vampire: Вампиры
 
+demographic:
+    shounen: Сёнэн
+    shoujo: Сёдзё
+    seinen: Сэйнэн
+    josei: Дзёсэй
+    kids: Детское
+
 anime_type:
     tv: ТВ-сериал
     movie: Фильм

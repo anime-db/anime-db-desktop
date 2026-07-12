@@ -29,6 +29,7 @@ namespace App\Entity;
 
 use App\Entity\Enum\AnimeNameType;
 use App\Entity\Enum\AnimeType;
+use App\Entity\Enum\Demographic;
 use App\Entity\Enum\GenreCode;
 use App\Entity\Enum\ProductionStatus;
 use App\Entity\Enum\ThemeCode;
@@ -125,6 +126,13 @@ abstract class Anime
      */
     #[ORM\Column(length: 1024, nullable: true)]
     private ?string $storagePath = null;
+
+    /**
+     * Unlike $genres/$themes, MAL/Shikimori titles carry at most one demographic in
+     * practice, so this is a plain nullable field, not a collection (see Demographic).
+     */
+    #[ORM\Column(length: 16, enumType: Demographic::class, nullable: true)]
+    private ?Demographic $demographic = null;
 
     /** @var array<string, mixed>|null raw plugin data, including descriptions{} used by getSummary() */
     #[ORM\Column(type: 'json', nullable: true)]
@@ -327,6 +335,7 @@ abstract class Anime
             ->setCover($this->cover)
             ->setStorage($this->storage)
             ->setStoragePath($this->storagePath)
+            ->setDemographic($this->demographic)
             ->setCountries($this->countries)
             ->setWatchStatus($this->watchStatus);
         $target->assignMetadataFrom($this);
@@ -421,6 +430,18 @@ abstract class Anime
     public function setStoragePath(?string $storagePath): self
     {
         $this->storagePath = $storagePath;
+
+        return $this;
+    }
+
+    public function getDemographic(): ?Demographic
+    {
+        return $this->demographic;
+    }
+
+    public function setDemographic(?Demographic $demographic): self
+    {
+        $this->demographic = $demographic;
 
         return $this;
     }
