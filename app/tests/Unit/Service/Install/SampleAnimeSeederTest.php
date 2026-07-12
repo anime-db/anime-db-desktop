@@ -150,6 +150,32 @@ final class SampleAnimeSeederTest extends TestCase
         $this->assertCount(3, $studios[0]->getAnimes());
     }
 
+    public function testSeedSetsMultipleStudiosOnHellsingUltimate(): void
+    {
+        $this->createSeeder()->seed();
+
+        $animes = $this->entityManager->getRepository(Anime::class)->findBy(['title' => 'Hellsing Ultimate']);
+        $this->assertCount(1, $animes);
+
+        $names = array_map(static fn (Studio $studio): string => $studio->name, $animes[0]->getStudios()->toArray());
+        $this->assertSame(['Madhouse', 'Satelight', 'Graphinica'], $names);
+    }
+
+    public function testSeedFillsAltNamesSourcesDatesAndCountries(): void
+    {
+        $this->createSeeder()->seed();
+
+        $animes = $this->entityManager->getRepository(Anime::class)->findBy(['title' => 'Sousou no Frieren']);
+        $this->assertCount(1, $animes);
+        $anime = $animes[0];
+
+        $this->assertCount(2, $anime->getNames());
+        $this->assertCount(1, $anime->getSources());
+        $this->assertSame('2023-09-29', $anime->getDatePremiere()?->format('Y-m-d'));
+        $this->assertSame('2024-03-22', $anime->getDateEnd()?->format('Y-m-d'));
+        $this->assertSame(['JP'], $anime->getCountries());
+    }
+
     public function testSeedSetsEpisodesCountOnSeriesAndDurationOnMovie(): void
     {
         $this->createSeeder()->seed();
@@ -166,6 +192,7 @@ final class SampleAnimeSeederTest extends TestCase
         $series = $byTitle['Gintama'];
         $this->assertInstanceOf(SeriesAnime::class, $series);
         $this->assertSame(201, $series->getEpisodesCount());
+        $this->assertSame(24, $series->getDurationMinutes());
     }
 
     public function testSeedCopiesCoverIntoMediaDirWhenSourceFileExists(): void
