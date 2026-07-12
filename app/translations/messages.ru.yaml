@@ -14,6 +14,22 @@ genre:
     supernatural: Сверхъестественное
     suspense: Саспенс
 
+theme:
+    harem: Гарем
+    historical: Исторический
+    isekai: Исекай
+    martial-arts: Боевые искусства
+    mecha: Меха
+    military: Военный
+    music: Музыка
+    mythology: Мифология
+    parody: Пародия
+    psychological: Психологический
+    school: Школа
+    strategy-game: Стратегическая игра
+    super-power: Суперсила
+    vampire: Вампиры
+
 anime_type:
     tv: ТВ-сериал
     movie: Фильм

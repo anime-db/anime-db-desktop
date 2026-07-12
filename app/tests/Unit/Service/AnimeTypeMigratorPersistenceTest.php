@@ -34,9 +34,11 @@ use App\Entity\AnimeGenre;
 use App\Entity\AnimeImage;
 use App\Entity\AnimeName;
 use App\Entity\AnimeSource;
+use App\Entity\AnimeTheme;
 use App\Entity\Enum\AnimeNameType;
 use App\Entity\Enum\AnimeType;
 use App\Entity\Enum\GenreCode;
+use App\Entity\Enum\ThemeCode;
 use App\Entity\Enum\WatchStatus;
 use App\Entity\Label;
 use App\Entity\MovieAnime;
@@ -151,6 +153,7 @@ final class AnimeTypeMigratorPersistenceTest extends TestCase
         $label->rename('favorite');
 
         $source->addGenre(GenreCode::Action)
+            ->addTheme(ThemeCode::Isekai)
             ->addStudio($studio)
             ->addLabel($label)
             ->addName('Trigun', AnimeNameType::English)
@@ -181,6 +184,9 @@ final class AnimeTypeMigratorPersistenceTest extends TestCase
 
         $this->assertSame([GenreCode::Action], $target->getGenreCodes());
         $this->assertCount(1, $this->entityManager->getRepository(AnimeGenre::class)->findAll());
+
+        $this->assertSame([ThemeCode::Isekai], $target->getThemeCodes());
+        $this->assertCount(1, $this->entityManager->getRepository(AnimeTheme::class)->findAll());
 
         $names = $target->getNames();
         $this->assertCount(1, $names);

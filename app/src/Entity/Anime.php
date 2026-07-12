@@ -31,6 +31,7 @@ use App\Entity\Enum\AnimeNameType;
 use App\Entity\Enum\AnimeType;
 use App\Entity\Enum\GenreCode;
 use App\Entity\Enum\ProductionStatus;
+use App\Entity\Enum\ThemeCode;
 use App\Entity\Enum\WatchStatus;
 use App\Entity\Exception\InvalidAnimeTypeMigrationException;
 use App\Entity\Exception\InvalidCountryCodeException;
@@ -139,6 +140,10 @@ abstract class Anime
     #[ORM\OneToMany(mappedBy: 'anime', targetEntity: AnimeGenre::class, cascade: ['persist', 'remove'], orphanRemoval: true)]
     private Collection $genres;
 
+    /** @var Collection<int, AnimeTheme> */
+    #[ORM\OneToMany(mappedBy: 'anime', targetEntity: AnimeTheme::class, cascade: ['persist', 'remove'], orphanRemoval: true)]
+    private Collection $themes;
+
     /** @var Collection<int, Studio> */
     #[ORM\ManyToMany(targetEntity: Studio::class, inversedBy: 'animes')]
     #[ORM\JoinTable(name: 'anime_studios')]
@@ -168,6 +173,7 @@ abstract class Anime
     public function __construct()
     {
         $this->genres = new ArrayCollection();
+        $this->themes = new ArrayCollection();
         $this->studios = new ArrayCollection();
         $this->labels = new ArrayCollection();
         $this->names = new ArrayCollection();
@@ -327,6 +333,10 @@ abstract class Anime
 
         foreach ($this->getGenreCodes() as $code) {
             $target->addGenre($code);
+        }
+
+        foreach ($this->getThemeCodes() as $code) {
+            $target->addTheme($code);
         }
 
         foreach ($this->getStudios() as $studio) {
@@ -514,6 +524,43 @@ abstract class Anime
         foreach ($this->genres as $genre) {
             if ($genre->code === $code) {
                 $this->genres->removeElement($genre);
+                break;
+            }
+        }
+
+        return $this;
+    }
+
+    /** @return Collection<int, AnimeTheme> */
+    public function getThemes(): Collection
+    {
+        return $this->themes;
+    }
+
+    /** @return list<ThemeCode> */
+    public function getThemeCodes(): array
+    {
+        return array_values(array_map(
+            static fn (AnimeTheme $theme): ThemeCode => $theme->code,
+            $this->themes->toArray(),
+        ));
+    }
+
+    public function addTheme(ThemeCode $code): self
+    {
+        if (\in_array($code, $this->getThemeCodes(), true)) {
+            return $this;
+        }
+        $this->themes->add(new AnimeTheme($this, $code));
+
+        return $this;
+    }
+
+    public function removeTheme(ThemeCode $code): self
+    {
+        foreach ($this->themes as $theme) {
+            if ($theme->code === $code) {
+                $this->themes->removeElement($theme);
                 break;
             }
         }

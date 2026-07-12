@@ -32,6 +32,7 @@ use App\Entity\Enum\AnimeType;
 use App\Entity\Enum\GenreCode;
 use App\Entity\Enum\ProductionStatus;
 use App\Entity\Enum\StorageType;
+use App\Entity\Enum\ThemeCode;
 use App\Entity\Enum\WatchStatus;
 use App\Entity\Exception\InvalidCountryCodeException;
 use App\Entity\Exception\InvalidDateRangeException;
@@ -285,6 +286,34 @@ final class AnimeTest extends TestCase
         $anime->removeGenre(GenreCode::Action);
 
         $this->assertSame([GenreCode::Drama], $anime->getGenreCodes());
+    }
+
+    public function testAddAndGetThemeCodes(): void
+    {
+        $anime = new MovieAnime();
+        $anime->addTheme(ThemeCode::Harem);
+        $anime->addTheme(ThemeCode::Isekai);
+
+        $this->assertSame([ThemeCode::Harem, ThemeCode::Isekai], $anime->getThemeCodes());
+    }
+
+    public function testAddThemeIsIdempotent(): void
+    {
+        $anime = new MovieAnime();
+        $anime->addTheme(ThemeCode::Harem);
+        $anime->addTheme(ThemeCode::Harem);
+
+        $this->assertCount(1, $anime->getThemeCodes());
+    }
+
+    public function testRemoveTheme(): void
+    {
+        $anime = new MovieAnime();
+        $anime->addTheme(ThemeCode::Harem);
+        $anime->addTheme(ThemeCode::Isekai);
+        $anime->removeTheme(ThemeCode::Harem);
+
+        $this->assertSame([ThemeCode::Isekai], $anime->getThemeCodes());
     }
 
     public function testAddAndGetStudios(): void
