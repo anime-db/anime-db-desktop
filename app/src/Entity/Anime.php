@@ -105,7 +105,8 @@ abstract class Anime
     private ?array $countries = null;
 
     /**
-     * Relative path to the cover file on disk, resolved via $storage + app-media:// (separate task).
+     * Relative path to the cover file under %AppData%/media/{id}/, resolved via app-media://
+     * (issue #68). Unrelated to $storage/$storagePath, which point at the source video file.
      */
     #[ORM\Column(length: 256, nullable: true)]
     private ?string $cover = null;
