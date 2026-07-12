@@ -188,6 +188,20 @@ storage_new:
     pick_folder_button: Choose folder…
     submit_button: Create
     error_invalid: Enter a valid name, path, and storage type.
+    skip_link: Skip
+
+storage_scan_prompt:
+    title: Run a scan? — AnimeDB
+    heading: 'Storage "%name%" created'
+    description: Run a scan now to find anime in this storage?
+    scan_button: Run scan
+    skip_link: Skip
+
+onboarding:
+    heading: Welcome to AnimeDB
+    description: The catalog is empty. Add a storage with your anime files or load demo data to get started.
+    add_storage_button: Add storage
+    load_demo_button: Load demo data
 
 storage_edit:
     title: Edit Storage — AnimeDB
