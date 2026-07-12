@@ -41,10 +41,20 @@ use App\Entity\Studio;
 use App\Entity\TvAnime;
 use App\Service\AnimeViewFactory;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\RequestStack;
 use Twig\Environment;
 
 final class AnimeControllerTest extends TestCase
 {
+    private function createViewFactory(): AnimeViewFactory
+    {
+        $requestStack = new RequestStack();
+        $requestStack->push(new Request());
+
+        return new AnimeViewFactory($requestStack);
+    }
+
     public function testShowPassesFullyPopulatedReferenceFieldsToTemplate(): void
     {
         $studio = new Studio();
@@ -106,7 +116,7 @@ final class AnimeControllerTest extends TestCase
             }))
             ->willReturn('<html></html>');
 
-        $controller = new AnimeController($twig, new AnimeViewFactory());
+        $controller = new AnimeController($twig, $this->createViewFactory());
         $response = $controller->show($anime);
 
         $this->assertSame(200, $response->getStatusCode());
@@ -138,7 +148,7 @@ final class AnimeControllerTest extends TestCase
             }))
             ->willReturn('<html></html>');
 
-        $controller = new AnimeController($twig, new AnimeViewFactory());
+        $controller = new AnimeController($twig, $this->createViewFactory());
         $controller->show($anime);
     }
 
@@ -173,7 +183,7 @@ final class AnimeControllerTest extends TestCase
             }))
             ->willReturn('<html></html>');
 
-        $controller = new AnimeController($twig, new AnimeViewFactory());
+        $controller = new AnimeController($twig, $this->createViewFactory());
         $controller->show($anime);
     }
 }

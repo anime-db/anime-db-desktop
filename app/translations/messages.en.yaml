@@ -179,6 +179,7 @@ anime_detail:
     title: '%title% — AnimeDB'
     no_cover: No cover
     editable_heading: Management
+    field_summary: Description
     reference_heading: Reference information
     field_type: Type
     field_episodes_count: Episode count

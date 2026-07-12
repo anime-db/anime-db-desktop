@@ -179,6 +179,7 @@ anime_detail:
     title: '%title% — AnimeDB'
     no_cover: Нет обложки
     editable_heading: Управление
+    field_summary: Описание
     reference_heading: Справочная информация
     field_type: Тип
     field_episodes_count: Количество серий
