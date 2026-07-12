@@ -29,6 +29,7 @@ namespace App\Tests\Unit\Service;
 
 use App\Entity\Enum\AnimeNameType;
 use App\Entity\Enum\AnimeType;
+use App\Entity\Enum\Demographic;
 use App\Entity\Enum\GenreCode;
 use App\Entity\Enum\StorageType;
 use App\Entity\Enum\ThemeCode;
@@ -137,7 +138,7 @@ final class AnimeTypeMigratorTest extends TestCase
         $this->assertSame(24, $target->getDurationMinutes());
     }
 
-    public function testMigrateTransfersGenresThemesStudiosLabelsNamesImagesAndSources(): void
+    public function testMigrateTransfersGenresThemesDemographicStudiosLabelsNamesImagesAndSources(): void
     {
         $studio = new Studio();
         $studio->rename('Sunrise');
@@ -149,6 +150,7 @@ final class AnimeTypeMigratorTest extends TestCase
             ->setWatchStatus(WatchStatus::Plan)
             ->addGenre(GenreCode::Action)
             ->addTheme(ThemeCode::Isekai)
+            ->setDemographic(Demographic::Seinen)
             ->addStudio($studio)
             ->addLabel($label)
             ->addName('Cowboy Bebop', AnimeNameType::English)
@@ -162,6 +164,7 @@ final class AnimeTypeMigratorTest extends TestCase
 
         $this->assertSame([GenreCode::Action], $target->getGenreCodes());
         $this->assertSame([ThemeCode::Isekai], $target->getThemeCodes());
+        $this->assertSame(Demographic::Seinen, $target->getDemographic());
         $this->assertTrue($target->getStudios()->contains($studio));
         $this->assertTrue($target->getLabels()->contains($label));
 

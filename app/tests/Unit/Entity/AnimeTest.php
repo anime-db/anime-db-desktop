@@ -29,6 +29,7 @@ namespace App\Tests\Unit\Entity;
 
 use App\Entity\Enum\AnimeNameType;
 use App\Entity\Enum\AnimeType;
+use App\Entity\Enum\Demographic;
 use App\Entity\Enum\GenreCode;
 use App\Entity\Enum\ProductionStatus;
 use App\Entity\Enum\StorageType;
@@ -405,6 +406,21 @@ final class AnimeTest extends TestCase
         $anime->setStoragePath('A Silent Voice.mkv');
 
         $this->assertSame('A Silent Voice.mkv', $anime->getStoragePath());
+    }
+
+    public function testDemographicDefaultsToNull(): void
+    {
+        $anime = new MovieAnime();
+
+        $this->assertNull($anime->getDemographic());
+    }
+
+    public function testSetAndGetDemographic(): void
+    {
+        $anime = new MovieAnime();
+        $anime->setDemographic(Demographic::Shounen);
+
+        $this->assertSame(Demographic::Shounen, $anime->getDemographic());
     }
 
     public function testDateAddAndDateUpdateAreInitialized(): void

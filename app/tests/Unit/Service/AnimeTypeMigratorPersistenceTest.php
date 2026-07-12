@@ -37,6 +37,7 @@ use App\Entity\AnimeSource;
 use App\Entity\AnimeTheme;
 use App\Entity\Enum\AnimeNameType;
 use App\Entity\Enum\AnimeType;
+use App\Entity\Enum\Demographic;
 use App\Entity\Enum\GenreCode;
 use App\Entity\Enum\ThemeCode;
 use App\Entity\Enum\WatchStatus;
@@ -154,6 +155,7 @@ final class AnimeTypeMigratorPersistenceTest extends TestCase
 
         $source->addGenre(GenreCode::Action)
             ->addTheme(ThemeCode::Isekai)
+            ->setDemographic(Demographic::Shounen)
             ->addStudio($studio)
             ->addLabel($label)
             ->addName('Trigun', AnimeNameType::English)
@@ -187,6 +189,8 @@ final class AnimeTypeMigratorPersistenceTest extends TestCase
 
         $this->assertSame([ThemeCode::Isekai], $target->getThemeCodes());
         $this->assertCount(1, $this->entityManager->getRepository(AnimeTheme::class)->findAll());
+
+        $this->assertSame(Demographic::Shounen, $target->getDemographic());
 
         $names = $target->getNames();
         $this->assertCount(1, $names);

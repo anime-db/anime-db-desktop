@@ -68,6 +68,8 @@ final class CatalogSchemaTest extends TestCase
             watch_status VARCHAR(16) NOT NULL,
             type VARCHAR(16) NOT NULL,
             storage_id INTEGER DEFAULT NULL,
+            demographic VARCHAR(16) DEFAULT NULL
+                CHECK (demographic IS NULL OR demographic IN (\'shounen\', \'shoujo\', \'seinen\', \'josei\', \'kids\')),
             CHECK (date_end IS NULL OR date_premiere IS NULL OR date_end >= date_premiere),
             FOREIGN KEY (storage_id) REFERENCES storage (id) ON DELETE SET NULL
         )');
@@ -188,6 +190,24 @@ final class CatalogSchemaTest extends TestCase
             0,
             (int) $this->connection->fetchOne('SELECT COUNT(*) FROM anime_themes WHERE anime_id = ?', [$animeId]),
         );
+    }
+
+    public function testInvalidDemographicIsRejectedByCheckConstraint(): void
+    {
+        $this->expectException(DbalException::class);
+
+        $this->connection->executeStatement(
+            "INSERT INTO anime (title, watch_status, type, demographic) VALUES ('Trigun', 'plan', 'tv', 'not-a-demographic')",
+        );
+    }
+
+    public function testNullDemographicIsAccepted(): void
+    {
+        $this->connection->executeStatement(
+            "INSERT INTO anime (title, watch_status, type) VALUES ('Trigun', 'plan', 'tv')",
+        );
+
+        $this->assertSame(1, (int) $this->connection->fetchOne('SELECT COUNT(*) FROM anime'));
     }
 
     public function testDateEndEarlierThanDatePremiereIsRejectedByCheckConstraint(): void
