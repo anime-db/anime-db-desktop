@@ -66,15 +66,26 @@ function getOrCreateAppSecret() {
 }
 
 /**
+ * OS locale prefixes (BCP 47 primary language subtag) that map to the "ru" app locale.
+ * Besides "ru" itself, this covers post-Soviet states where Russian is a widely understood
+ * second language: Belarus (be), Kazakhstan (kk), Kyrgyzstan (ky), Tajikistan (tg),
+ * Uzbekistan (uz), Armenia (hy), Azerbaijan (az).
+ *
+ * @type {string[]}
+ */
+const RU_PREFERRED_PREFIXES = ['ru', 'be', 'kk', 'ky', 'tg', 'uz', 'hy', 'az'];
+
+/**
  * Maps a BCP 47 OS locale (e.g. ru-RU, ru-BY, en-US) to one of the app's supported locales.
- * No language whitelist: any ru-* locale (or bare "ru") maps to "ru", everything else falls back
- * to "en".
+ * Any locale whose primary language subtag is in RU_PREFERRED_PREFIXES maps to "ru", everything
+ * else falls back to "en".
  *
  * @param {string} osLocale
  * @returns {'ru' | 'en'}
  */
 function mapOsLocaleToAppLocale(osLocale) {
-    return /^ru(-|$)/i.test(osLocale) ? 'ru' : 'en';
+    const prefix = osLocale.split('-')[0].toLowerCase();
+    return RU_PREFERRED_PREFIXES.includes(prefix) ? 'ru' : 'en';
 }
 
 /**
