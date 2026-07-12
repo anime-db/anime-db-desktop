@@ -2,9 +2,13 @@ genre:
     action: Экшен
     adventure: Приключения
     avant-garde: Авангард
+    award-winning: Отмеченное наградами
+    boys-love: Boys Love
     comedy: Комедия
     drama: Драма
     fantasy: Фэнтези
+    girls-love: Girls Love
+    gourmet: Гурман
     horror: Ужасы
     mystery: Детектив
     romance: Романтика
@@ -15,20 +19,58 @@ genre:
     suspense: Саспенс
 
 theme:
+    adult-cast: Взрослые персонажи
+    anthropomorphic: Антропоморфизм
+    cgdct: Милые девушки вместе
+    childcare: Забота о детях
+    combat-sports: Единоборства
+    crossdressing: Кроссдрессинг
+    delinquents: Хулиганы
+    detective: Детектив
+    educational: Образовательное
+    gag-humor: Гэг-юмор
+    gore: Жестокость
     harem: Гарем
+    high-stakes-game: Игра на высокие ставки
     historical: Исторический
+    idols-female: Айдолы (девушки)
+    idols-male: Айдолы (парни)
     isekai: Исекай
+    iyashikei: Ияшикей
+    love-polygon: Любовный многоугольник
+    love-status-quo: Неизменные отношения
+    magical-sex-shift: Смена пола магией
+    mahou-shoujo: Махо-сёдзё
     martial-arts: Боевые искусства
     mecha: Меха
+    medical: Медицина
     military: Военный
     music: Музыка
     mythology: Мифология
+    organized-crime: Организованная преступность
+    otaku-culture: Культура отаку
     parody: Пародия
+    performing-arts: Исполнительское искусство
+    pets: Питомцы
     psychological: Психологический
+    racing: Гонки
+    reincarnation: Реинкарнация
+    reverse-harem: Обратный гарем
+    samurai: Самураи
     school: Школа
+    showbiz: Шоу-бизнес
+    space: Космос
     strategy-game: Стратегическая игра
     super-power: Суперсила
+    survival: Выживание
+    team-sports: Командный спорт
+    time-travel: Путешествия во времени
+    urban-fantasy: Городское фэнтези
     vampire: Вампиры
+    video-game: Видеоигры
+    villainess: Злодейка
+    visual-arts: Изобразительное искусство
+    workplace: Рабочее место
 
 demographic:
     shounen: Сёнэн
