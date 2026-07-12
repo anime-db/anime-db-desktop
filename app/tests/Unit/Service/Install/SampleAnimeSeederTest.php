@@ -169,8 +169,8 @@ final class SampleAnimeSeederTest extends TestCase
         $this->assertCount(1, $animes);
         $anime = $animes[0];
 
-        $this->assertCount(2, $anime->getNames());
-        $this->assertCount(1, $anime->getSources());
+        $this->assertCount(3, $anime->getNames());
+        $this->assertCount(2, $anime->getSources());
         $this->assertSame('2023-09-29', $anime->getDatePremiere()?->format('Y-m-d'));
         $this->assertSame('2024-03-22', $anime->getDateEnd()?->format('Y-m-d'));
         $this->assertSame(['JP'], $anime->getCountries());

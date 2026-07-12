@@ -82,9 +82,13 @@ class SampleAnimeSeeder
             'cover' => 'fullmetal-alchemist-brotherhood.webp',
             'altNames' => [
                 ['type' => AnimeNameType::Original, 'name' => '鋼の錬金術師 FULLMETAL ALCHEMIST'],
+                ['type' => AnimeNameType::English, 'name' => 'Fullmetal Alchemist: Brotherhood'],
                 ['type' => AnimeNameType::Russian, 'name' => 'Стальной алхимик: Братство'],
             ],
-            'sources' => ['https://myanimelist.net/anime/5114/Fullmetal_Alchemist__Brotherhood'],
+            'sources' => [
+                'https://myanimelist.net/anime/5114/Fullmetal_Alchemist__Brotherhood',
+                'https://shikimori.io/animes/z5114-fullmetal-alchemist-brotherhood',
+            ],
             'datePremiere' => '2009-04-05',
             'dateEnd' => '2010-07-04',
             'countries' => ['JP'],
@@ -99,9 +103,13 @@ class SampleAnimeSeeder
             'cover' => 'spirited-away.webp',
             'altNames' => [
                 ['type' => AnimeNameType::Original, 'name' => '千と千尋の神隠し'],
+                ['type' => AnimeNameType::English, 'name' => 'Spirited Away'],
                 ['type' => AnimeNameType::Russian, 'name' => 'Унесённые призраками'],
             ],
-            'sources' => ['https://myanimelist.net/anime/199/Sen_to_Chihiro_no_Kamikakushi'],
+            'sources' => [
+                'https://myanimelist.net/anime/199/Sen_to_Chihiro_no_Kamikakushi',
+                'https://shikimori.io/animes/z199-sen-to-chihiro-no-kamikakushi',
+            ],
             'datePremiere' => '2001-07-20',
             'dateEnd' => '2001-07-20',
             'countries' => ['JP'],
@@ -116,9 +124,13 @@ class SampleAnimeSeeder
             'cover' => 'gintama.webp',
             'altNames' => [
                 ['type' => AnimeNameType::Original, 'name' => '銀魂'],
+                ['type' => AnimeNameType::English, 'name' => 'Gintama'],
                 ['type' => AnimeNameType::Russian, 'name' => 'Гинтама'],
             ],
-            'sources' => ['https://myanimelist.net/anime/918/Gintama'],
+            'sources' => [
+                'https://myanimelist.net/anime/918/Gintama',
+                'https://shikimori.io/animes/z918-gintama',
+            ],
             'datePremiere' => '2006-04-04',
             'dateEnd' => '2010-03-25',
             'countries' => ['JP'],
@@ -133,9 +145,13 @@ class SampleAnimeSeeder
             'cover' => 'hellsing-ultimate.webp',
             'altNames' => [
                 ['type' => AnimeNameType::Original, 'name' => 'ヘルシングOVA'],
+                ['type' => AnimeNameType::English, 'name' => 'Hellsing Ultimate'],
                 ['type' => AnimeNameType::Russian, 'name' => 'Хеллсинг: Ультимат'],
             ],
-            'sources' => ['https://myanimelist.net/anime/1119/Hellsing_Ultimate'],
+            'sources' => [
+                'https://myanimelist.net/anime/1119/Hellsing_Ultimate',
+                'https://shikimori.io/animes/777-hellsing-ultimate',
+            ],
             'datePremiere' => '2006-02-10',
             'dateEnd' => '2012-12-27',
             'countries' => ['JP'],
@@ -150,9 +166,13 @@ class SampleAnimeSeeder
             'cover' => 'sousou-no-frieren.webp',
             'altNames' => [
                 ['type' => AnimeNameType::Original, 'name' => '葬送のフリーレン'],
+                ['type' => AnimeNameType::English, 'name' => 'Sousou no Frieren'],
                 ['type' => AnimeNameType::Russian, 'name' => 'Провожающая в последний путь Фрирен'],
             ],
-            'sources' => ['https://myanimelist.net/anime/52991/Sousou_no_Frieren'],
+            'sources' => [
+                'https://myanimelist.net/anime/52991/Sousou_no_Frieren',
+                'https://shikimori.io/animes/52991-sousou-no-frieren',
+            ],
             'datePremiere' => '2023-09-29',
             'dateEnd' => '2024-03-22',
             'countries' => ['JP'],
@@ -167,9 +187,13 @@ class SampleAnimeSeeder
             'cover' => 'one-punch-man.webp',
             'altNames' => [
                 ['type' => AnimeNameType::Original, 'name' => 'ワンパンマン'],
+                ['type' => AnimeNameType::English, 'name' => 'One Punch Man'],
                 ['type' => AnimeNameType::Russian, 'name' => 'Ванпанчмен'],
             ],
-            'sources' => ['https://myanimelist.net/anime/30276/One_Punch_Man'],
+            'sources' => [
+                'https://myanimelist.net/anime/30276/One_Punch_Man',
+                'https://shikimori.io/animes/z30276-one-punch-man',
+            ],
             'datePremiere' => '2015-10-05',
             'dateEnd' => '2015-12-21',
             'countries' => ['JP'],
@@ -184,9 +208,13 @@ class SampleAnimeSeeder
             'cover' => 'solo-leveling.webp',
             'altNames' => [
                 ['type' => AnimeNameType::Original, 'name' => '俺だけレベルアップな件'],
+                ['type' => AnimeNameType::English, 'name' => 'Solo Leveling'],
                 ['type' => AnimeNameType::Russian, 'name' => 'Поднятие уровня в одиночку'],
             ],
-            'sources' => ['https://myanimelist.net/anime/52299/Ore_dake_Level_Up_na_Ken'],
+            'sources' => [
+                'https://myanimelist.net/anime/52299/Ore_dake_Level_Up_na_Ken',
+                'https://shikimori.io/animes/52299-ore-dake-level-up-na-ken',
+            ],
             'datePremiere' => '2024-01-06',
             'dateEnd' => '2024-03-30',
             'countries' => ['JP', 'KR'],
