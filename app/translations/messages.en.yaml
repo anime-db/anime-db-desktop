@@ -2,9 +2,13 @@ genre:
     action: Action
     adventure: Adventure
     avant-garde: Avant Garde
+    award-winning: Award Winning
+    boys-love: Boys Love
     comedy: Comedy
     drama: Drama
     fantasy: Fantasy
+    girls-love: Girls Love
+    gourmet: Gourmet
     horror: Horror
     mystery: Mystery
     romance: Romance
@@ -15,20 +19,58 @@ genre:
     suspense: Suspense
 
 theme:
+    adult-cast: Adult Cast
+    anthropomorphic: Anthropomorphic
+    cgdct: CGDCT
+    childcare: Childcare
+    combat-sports: Combat Sports
+    crossdressing: Crossdressing
+    delinquents: Delinquents
+    detective: Detective
+    educational: Educational
+    gag-humor: Gag Humor
+    gore: Gore
     harem: Harem
+    high-stakes-game: High Stakes Game
     historical: Historical
+    idols-female: Idols (Female)
+    idols-male: Idols (Male)
     isekai: Isekai
+    iyashikei: Iyashikei
+    love-polygon: Love Polygon
+    love-status-quo: Love Status Quo
+    magical-sex-shift: Magical Sex Shift
+    mahou-shoujo: Mahou Shoujo
     martial-arts: Martial Arts
     mecha: Mecha
+    medical: Medical
     military: Military
     music: Music
     mythology: Mythology
+    organized-crime: Organized Crime
+    otaku-culture: Otaku Culture
     parody: Parody
+    performing-arts: Performing Arts
+    pets: Pets
     psychological: Psychological
+    racing: Racing
+    reincarnation: Reincarnation
+    reverse-harem: Reverse Harem
+    samurai: Samurai
     school: School
+    showbiz: Showbiz
+    space: Space
     strategy-game: Strategy Game
     super-power: Super Power
+    survival: Survival
+    team-sports: Team Sports
+    time-travel: Time Travel
+    urban-fantasy: Urban Fantasy
     vampire: Vampire
+    video-game: Video Game
+    villainess: Villainess
+    visual-arts: Visual Arts
+    workplace: Workplace
 
 demographic:
     shounen: Shounen

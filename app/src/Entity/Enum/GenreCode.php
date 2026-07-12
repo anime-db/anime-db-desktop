@@ -38,9 +38,13 @@ enum GenreCode: string
     case Action = 'action';
     case Adventure = 'adventure';
     case AvantGarde = 'avant-garde';
+    case AwardWinning = 'award-winning';
+    case BoysLove = 'boys-love';
     case Comedy = 'comedy';
     case Drama = 'drama';
     case Fantasy = 'fantasy';
+    case GirlsLove = 'girls-love';
+    case Gourmet = 'gourmet';
     case Horror = 'horror';
     case Mystery = 'mystery';
     case Romance = 'romance';
