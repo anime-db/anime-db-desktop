@@ -31,6 +31,7 @@ use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
 use App\Entity\Anime;
 use App\Entity\Enum\Demographic;
+use App\Entity\Enum\GenreCode;
 use App\Entity\Enum\ThemeCode;
 use App\Entity\Enum\WatchStatus;
 use App\Entity\Label;
@@ -146,27 +147,39 @@ final class SampleAnimeSeederTest extends TestCase
         $this->assertSame(Demographic::Shounen, $fma->getDemographic());
 
         $spiritedAway = $byTitle['Spirited Away'];
-        $this->assertSame([], $spiritedAway->getThemeCodes());
+        $this->assertSame([GenreCode::Adventure, GenreCode::AwardWinning, GenreCode::Fantasy], $spiritedAway->getGenreCodes());
+        $this->assertSame([ThemeCode::Mythology], $spiritedAway->getThemeCodes());
         $this->assertNull($spiritedAway->getDemographic());
 
         $gintama = $byTitle['Gintama'];
-        $this->assertSame([ThemeCode::Historical, ThemeCode::Parody], $gintama->getThemeCodes());
+        $this->assertSame(
+            [ThemeCode::Historical, ThemeCode::Parody, ThemeCode::GagHumor, ThemeCode::Samurai],
+            $gintama->getThemeCodes(),
+        );
         $this->assertSame(Demographic::Shounen, $gintama->getDemographic());
 
         $hellsing = $byTitle['Hellsing Ultimate'];
-        $this->assertSame([ThemeCode::Vampire], $hellsing->getThemeCodes());
+        $this->assertSame(
+            [ThemeCode::Military, ThemeCode::Vampire, ThemeCode::AdultCast, ThemeCode::Gore],
+            $hellsing->getThemeCodes(),
+        );
         $this->assertSame(Demographic::Seinen, $hellsing->getDemographic());
 
         $frieren = $byTitle['Sousou no Frieren'];
+        $this->assertSame(
+            [GenreCode::Adventure, GenreCode::AwardWinning, GenreCode::Drama, GenreCode::Fantasy],
+            $frieren->getGenreCodes(),
+        );
         $this->assertSame([], $frieren->getThemeCodes());
         $this->assertSame(Demographic::Shounen, $frieren->getDemographic());
 
         $opm = $byTitle['One Punch Man'];
-        $this->assertSame([ThemeCode::SuperPower], $opm->getThemeCodes());
+        $this->assertSame([GenreCode::Action, GenreCode::Comedy], $opm->getGenreCodes());
+        $this->assertSame([ThemeCode::Parody, ThemeCode::SuperPower, ThemeCode::AdultCast], $opm->getThemeCodes());
         $this->assertSame(Demographic::Seinen, $opm->getDemographic());
 
         $soloLeveling = $byTitle['Solo Leveling'];
-        $this->assertSame([], $soloLeveling->getThemeCodes());
+        $this->assertSame([ThemeCode::AdultCast, ThemeCode::UrbanFantasy], $soloLeveling->getThemeCodes());
         $this->assertNull($soloLeveling->getDemographic());
     }
 
@@ -209,8 +222,8 @@ final class SampleAnimeSeederTest extends TestCase
         $this->assertCount(1, $animes);
         $anime = $animes[0];
 
-        $this->assertCount(3, $anime->getNames());
-        $this->assertCount(2, $anime->getSources());
+        $this->assertCount(5, $anime->getNames());
+        $this->assertCount(5, $anime->getSources());
         $this->assertSame('2023-09-29', $anime->getDatePremiere()?->format('Y-m-d'));
         $this->assertSame('2024-03-22', $anime->getDateEnd()?->format('Y-m-d'));
         $this->assertSame(['JP'], $anime->getCountries());
@@ -227,12 +240,54 @@ final class SampleAnimeSeederTest extends TestCase
         }
 
         $movie = $byTitle['Spirited Away'];
-        $this->assertSame(125, $movie->getDurationMinutes());
+        $this->assertSame(124, $movie->getDurationMinutes());
 
         $series = $byTitle['Gintama'];
         $this->assertInstanceOf(SeriesAnime::class, $series);
         $this->assertSame(201, $series->getEpisodesCount());
         $this->assertSame(24, $series->getDurationMinutes());
+    }
+
+    public function testSeedFixesHellsingUltimateMalSourceIdAndDateEnd(): void
+    {
+        $this->createSeeder()->seed();
+
+        $animes = $this->entityManager->getRepository(Anime::class)->findBy(['title' => 'Hellsing Ultimate']);
+        $this->assertCount(1, $animes);
+        $anime = $animes[0];
+
+        $urls = array_map(static fn ($source): string => $source->url, $anime->getSources()->toArray());
+        $this->assertContains('https://myanimelist.net/anime/777/Hellsing_Ultimate', $urls);
+        $this->assertNotContains('https://myanimelist.net/anime/1119/Hellsing_Ultimate', $urls);
+        $this->assertSame('2012-12-26', $anime->getDateEnd()?->format('Y-m-d'));
+    }
+
+    public function testSeedSetsCorrectedSoloLevelingPremiereAndEndDates(): void
+    {
+        $this->createSeeder()->seed();
+
+        $animes = $this->entityManager->getRepository(Anime::class)->findBy(['title' => 'Solo Leveling']);
+        $this->assertCount(1, $animes);
+        $anime = $animes[0];
+
+        $this->assertSame('2024-01-07', $anime->getDatePremiere()?->format('Y-m-d'));
+        $this->assertSame('2024-03-31', $anime->getDateEnd()?->format('Y-m-d'));
+    }
+
+    public function testSeedSetsEnglishAndRussianDescriptionsForEverySample(): void
+    {
+        $this->createSeeder()->seed();
+
+        foreach ($this->entityManager->getRepository(Anime::class)->findAll() as $anime) {
+            $this->assertNotSame('', $anime->getSummary('en'));
+            $this->assertNotSame('', $anime->getSummary('ru'));
+            $this->assertNotSame($anime->getSummary('en'), $anime->getSummary('ru'));
+        }
+
+        $animes = $this->entityManager->getRepository(Anime::class)->findBy(['title' => 'Spirited Away']);
+        $this->assertCount(1, $animes);
+        $this->assertStringContainsString('Chihiro', $animes[0]->getSummary('en'));
+        $this->assertStringContainsString('Тихиро', $animes[0]->getSummary('ru'));
     }
 
     public function testSeedCopiesCoverIntoMediaDirWhenSourceFileExists(): void
