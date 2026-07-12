@@ -30,6 +30,8 @@ namespace App\Tests\Unit\Service\Install;
 use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
 use App\Entity\Anime;
+use App\Entity\Enum\Demographic;
+use App\Entity\Enum\ThemeCode;
 use App\Entity\Enum\WatchStatus;
 use App\Entity\Label;
 use App\Entity\SeriesAnime;
@@ -128,6 +130,44 @@ final class SampleAnimeSeederTest extends TestCase
         $this->assertContains('Fullmetal Alchemist: Brotherhood', $titles);
         $this->assertContains('Spirited Away', $titles);
         $this->assertContains('Solo Leveling', $titles);
+    }
+
+    public function testSeedDistributesThemesAndDemographicAcrossTheGenreAxes(): void
+    {
+        $this->createSeeder()->seed();
+
+        $byTitle = [];
+        foreach ($this->entityManager->getRepository(Anime::class)->findAll() as $anime) {
+            $byTitle[$anime->getTitle()] = $anime;
+        }
+
+        $fma = $byTitle['Fullmetal Alchemist: Brotherhood'];
+        $this->assertSame([ThemeCode::Military], $fma->getThemeCodes());
+        $this->assertSame(Demographic::Shounen, $fma->getDemographic());
+
+        $spiritedAway = $byTitle['Spirited Away'];
+        $this->assertSame([], $spiritedAway->getThemeCodes());
+        $this->assertNull($spiritedAway->getDemographic());
+
+        $gintama = $byTitle['Gintama'];
+        $this->assertSame([ThemeCode::Historical, ThemeCode::Parody], $gintama->getThemeCodes());
+        $this->assertSame(Demographic::Shounen, $gintama->getDemographic());
+
+        $hellsing = $byTitle['Hellsing Ultimate'];
+        $this->assertSame([ThemeCode::Vampire], $hellsing->getThemeCodes());
+        $this->assertSame(Demographic::Seinen, $hellsing->getDemographic());
+
+        $frieren = $byTitle['Sousou no Frieren'];
+        $this->assertSame([], $frieren->getThemeCodes());
+        $this->assertSame(Demographic::Shounen, $frieren->getDemographic());
+
+        $opm = $byTitle['One Punch Man'];
+        $this->assertSame([ThemeCode::SuperPower], $opm->getThemeCodes());
+        $this->assertSame(Demographic::Seinen, $opm->getDemographic());
+
+        $soloLeveling = $byTitle['Solo Leveling'];
+        $this->assertSame([], $soloLeveling->getThemeCodes());
+        $this->assertNull($soloLeveling->getDemographic());
     }
 
     public function testSeedTagsEveryAnimeWithSampleLabel(): void

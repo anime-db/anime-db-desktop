@@ -159,6 +159,24 @@
                             {{- 'anime_detail.empty_value'|trans }}
                         {%- endif %}
                     </dd>
+
+                    <dt>{{ 'anime_detail.field_themes'|trans }}</dt>
+                    <dd>
+                        {%- if anime.themes is not empty %}
+                            {%- for code in anime.themes %}{{ ('theme.' ~ code)|trans }}{% if not loop.last %}, {% endif %}{% endfor %}
+                        {%- else %}
+                            {{- 'anime_detail.empty_value'|trans }}
+                        {%- endif %}
+                    </dd>
+
+                    <dt>{{ 'anime_detail.field_demographic'|trans }}</dt>
+                    <dd>
+                        {%- if anime.demographic is not null %}
+                            {{- ('demographic.' ~ anime.demographic)|trans }}
+                        {%- else %}
+                            {{- 'anime_detail.empty_value'|trans }}
+                        {%- endif %}
+                    </dd>
                 </dl>
             </section>
 
