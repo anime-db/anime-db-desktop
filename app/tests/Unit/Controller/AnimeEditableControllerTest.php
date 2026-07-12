@@ -36,6 +36,7 @@ use App\Service\AnimeViewFactory;
 use Doctrine\ORM\EntityManagerInterface;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\Security\Csrf\CsrfTokenManagerInterface;
 use Twig\Environment;
@@ -52,10 +53,13 @@ final class AnimeEditableControllerTest extends TestCase
             $csrfTokenManager->method('isTokenValid')->willReturn(true);
         }
 
+        $requestStack = new RequestStack();
+        $requestStack->push(new Request());
+
         return new AnimeEditableController(
             $entityManager ?? $this->createStub(EntityManagerInterface::class),
             $csrfTokenManager,
-            new AnimeViewFactory(),
+            new AnimeViewFactory($requestStack),
             $twig ?? $this->createStub(Environment::class),
         );
     }

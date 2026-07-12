@@ -80,6 +80,13 @@
                 </div>
             </section>
 
+            <section class="anime-detail__summary">
+                <h2 class="anime-detail__section-heading">{{ 'anime_detail.field_summary'|trans }}</h2>
+                <p class="anime-detail__summary-text">
+                    {{- anime.summary is not empty ? anime.summary : ('anime_detail.empty_value'|trans) -}}
+                </p>
+            </section>
+
             <section class="anime-detail__reference">
                 <h2 class="anime-detail__section-heading">{{ 'anime_detail.reference_heading'|trans }}</h2>
 

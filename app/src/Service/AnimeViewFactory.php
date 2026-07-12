@@ -35,6 +35,7 @@ use App\Entity\Label;
 use App\Entity\SeriesAnime;
 use App\Entity\Storage;
 use App\Entity\Studio;
+use Symfony\Component\HttpFoundation\RequestStack;
 
 /**
  * Turns an Anime entity into a plain array for Twig. Twig's strict_variables is enabled in
@@ -45,12 +46,19 @@ use App\Entity\Studio;
  */
 final class AnimeViewFactory
 {
+    private const DEFAULT_LOCALE = 'en';
+
+    public function __construct(private readonly RequestStack $requestStack)
+    {
+    }
+
     /** @return array<string, mixed> */
     public function serialize(Anime $anime): array
     {
         return [
             'id' => $anime->id,
             'title' => $anime->getTitle(),
+            'summary' => $anime->getSummary($this->resolveLocale()),
             'type' => $anime->getType()->value,
             'production_status' => $anime->getProductionStatus()->value,
             'watch_status' => $anime->getWatchStatus()->value,
@@ -81,6 +89,15 @@ final class AnimeViewFactory
                 $anime->getLabels()->toArray(),
             ),
         ];
+    }
+
+    /**
+     * Same locale source as the {% trans %} tags in the templates (app.request.locale,
+     * negotiated by LocaleSubscriber from the Accept-Language header, issue #87).
+     */
+    private function resolveLocale(): string
+    {
+        return $this->requestStack->getCurrentRequest()?->getLocale() ?? self::DEFAULT_LOCALE;
     }
 
     /**

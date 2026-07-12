@@ -43,6 +43,7 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
         return [
             'id' => 1,
             'title' => 'Shingeki no Kyojin',
+            'summary' => 'Humanity fights for survival against man-eating Titans.',
             'type' => 'tv',
             'production_status' => 'ongoing',
             'watch_status' => 'watching',
@@ -72,6 +73,7 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
         return [
             'id' => 2,
             'title' => 'A Silent Voice',
+            'summary' => '',
             'type' => 'movie',
             'production_status' => 'released',
             'watch_status' => 'plan',
@@ -126,6 +128,7 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
         $html = $twig->render('anime/show.html.twig', ['anime' => $this->fullyPopulatedAnime()]);
 
         $this->assertStringContainsString('Shingeki no Kyojin', $html);
+        $this->assertStringContainsString('Humanity fights for survival against man-eating Titans.', $html);
         $this->assertStringContainsString('ТВ-сериал', $html);
         $this->assertStringContainsString('Онгоинг', $html);
         $this->assertStringContainsString('25', $html);

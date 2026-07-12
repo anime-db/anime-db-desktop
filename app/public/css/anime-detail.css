@@ -61,7 +61,8 @@
 
 .anime-detail__editable,
 .anime-detail__reference,
-.anime-detail__labels {
+.anime-detail__labels,
+.anime-detail__summary {
     padding: 16px;
     border: 1px solid #ddd;
     border-radius: 6px;
@@ -70,6 +71,11 @@
 .anime-detail__section-heading {
     margin: 0 0 12px;
     font-size: 1.1em;
+}
+
+.anime-detail__summary-text {
+    margin: 0;
+    white-space: pre-line;
 }
 
 .anime-detail__placeholder {
