@@ -1,39 +1,18 @@
 genre:
     action: Action
     adventure: Adventure
+    avant-garde: Avant Garde
     comedy: Comedy
     drama: Drama
     fantasy: Fantasy
     horror: Horror
-    mecha: Mecha
-    music: Music
     mystery: Mystery
-    psychological: Psychological
     romance: Romance
     sci-fi: Sci-Fi
     slice-of-life: Slice of Life
     sports: Sports
     supernatural: Supernatural
-    thriller: Thriller
-    ecchi: Ecchi
-    harem: Harem
-    isekai: Isekai
-    magic: Magic
-    martial-arts: Martial Arts
-    military: Military
-    historical: Historical
-    parody: Parody
-    school: School
-    shounen: Shounen
-    shoujo: Shoujo
-    seinen: Seinen
-    josei: Josei
-    super-power: Super Power
-    vampire: Vampire
-    demons: Demons
-    game: Game
-    kids: Kids
-    dementia: Dementia
+    suspense: Suspense
 
 anime_type:
     tv: TV Series

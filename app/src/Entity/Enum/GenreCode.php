@@ -28,44 +28,25 @@ declare(strict_types=1);
 namespace App\Entity\Enum;
 
 /**
- * Starter list is the public Shikimori/MAL genre taxonomy.
+ * The genre axis of MAL's 4-axis taxonomy (genres/explicit_genres/themes/demographics,
+ * see GET /v4/genres/anime on the Jikan API) — themes and demographics are separate axes,
+ * implemented as their own enums in later issues, not values here.
  * Extend by adding a new case here and a matching migration adding the value to the CHECK constraint.
  */
 enum GenreCode: string
 {
     case Action = 'action';
     case Adventure = 'adventure';
+    case AvantGarde = 'avant-garde';
     case Comedy = 'comedy';
     case Drama = 'drama';
     case Fantasy = 'fantasy';
     case Horror = 'horror';
-    case Mecha = 'mecha';
-    case Music = 'music';
     case Mystery = 'mystery';
-    case Psychological = 'psychological';
     case Romance = 'romance';
     case SciFi = 'sci-fi';
     case SliceOfLife = 'slice-of-life';
     case Sports = 'sports';
     case Supernatural = 'supernatural';
-    case Thriller = 'thriller';
-    case Ecchi = 'ecchi';
-    case Harem = 'harem';
-    case Isekai = 'isekai';
-    case Magic = 'magic';
-    case MartialArts = 'martial-arts';
-    case Military = 'military';
-    case Historical = 'historical';
-    case Parody = 'parody';
-    case School = 'school';
-    case Shounen = 'shounen';
-    case Shoujo = 'shoujo';
-    case Seinen = 'seinen';
-    case Josei = 'josei';
-    case SuperPower = 'super-power';
-    case Vampire = 'vampire';
-    case Demons = 'demons';
-    case Game = 'game';
-    case Kids = 'kids';
-    case Dementia = 'dementia';
+    case Suspense = 'suspense';
 }

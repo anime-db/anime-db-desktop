@@ -78,7 +78,7 @@ class SampleAnimeSeeder
             'episodesCount' => 64,
             'durationMinutes' => 24,
             'studios' => ['Bones'],
-            'genres' => [GenreCode::Action, GenreCode::Adventure, GenreCode::Drama, GenreCode::Fantasy, GenreCode::Military, GenreCode::Shounen],
+            'genres' => [GenreCode::Action, GenreCode::Adventure, GenreCode::Drama, GenreCode::Fantasy],
             'cover' => 'fullmetal-alchemist-brotherhood.webp',
             'altNames' => [
                 ['type' => AnimeNameType::Original, 'name' => '鋼の錬金術師 FULLMETAL ALCHEMIST'],
@@ -120,7 +120,7 @@ class SampleAnimeSeeder
             'episodesCount' => 201,
             'durationMinutes' => 24,
             'studios' => ['Sunrise'],
-            'genres' => [GenreCode::Action, GenreCode::Comedy, GenreCode::Historical, GenreCode::Parody, GenreCode::SciFi, GenreCode::Shounen],
+            'genres' => [GenreCode::Action, GenreCode::Comedy, GenreCode::SciFi],
             'cover' => 'gintama.webp',
             'altNames' => [
                 ['type' => AnimeNameType::Original, 'name' => '銀魂'],
@@ -141,7 +141,7 @@ class SampleAnimeSeeder
             'episodesCount' => 10,
             'durationMinutes' => 49,
             'studios' => ['Madhouse', 'Satelight', 'Graphinica'],
-            'genres' => [GenreCode::Action, GenreCode::Horror, GenreCode::Supernatural, GenreCode::Vampire, GenreCode::Seinen],
+            'genres' => [GenreCode::Action, GenreCode::Horror, GenreCode::Supernatural],
             'cover' => 'hellsing-ultimate.webp',
             'altNames' => [
                 ['type' => AnimeNameType::Original, 'name' => 'ヘルシングOVA'],
@@ -162,7 +162,7 @@ class SampleAnimeSeeder
             'episodesCount' => 28,
             'durationMinutes' => 24,
             'studios' => ['Madhouse'],
-            'genres' => [GenreCode::Adventure, GenreCode::Drama, GenreCode::Fantasy, GenreCode::Shounen],
+            'genres' => [GenreCode::Adventure, GenreCode::Drama, GenreCode::Fantasy],
             'cover' => 'sousou-no-frieren.webp',
             'altNames' => [
                 ['type' => AnimeNameType::Original, 'name' => '葬送のフリーレン'],
@@ -183,7 +183,7 @@ class SampleAnimeSeeder
             'episodesCount' => 12,
             'durationMinutes' => 24,
             'studios' => ['Madhouse'],
-            'genres' => [GenreCode::Action, GenreCode::Comedy, GenreCode::SciFi, GenreCode::SuperPower, GenreCode::Seinen],
+            'genres' => [GenreCode::Action, GenreCode::Comedy, GenreCode::SciFi],
             'cover' => 'one-punch-man.webp',
             'altNames' => [
                 ['type' => AnimeNameType::Original, 'name' => 'ワンパンマン'],
