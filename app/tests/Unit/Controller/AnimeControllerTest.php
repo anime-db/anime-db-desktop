@@ -29,8 +29,10 @@ namespace App\Tests\Unit\Controller;
 
 use App\Controller\AnimeController;
 use App\Entity\Enum\AnimeNameType;
+use App\Entity\Enum\Demographic;
 use App\Entity\Enum\GenreCode;
 use App\Entity\Enum\StorageType;
+use App\Entity\Enum\ThemeCode;
 use App\Entity\Enum\WatchStatus;
 use App\Entity\Label;
 use App\Entity\MovieAnime;
@@ -60,6 +62,8 @@ final class AnimeControllerTest extends TestCase
             ->setStorage($storage)
             ->addStudio($studio)
             ->addGenre(GenreCode::Action)
+            ->addTheme(ThemeCode::Military)
+            ->setDemographic(Demographic::Shounen)
             ->addName('進撃の巨人', AnimeNameType::Original)
             ->addLabel($label)
             ->addSource('https://shikimori.one/animes/16498')
@@ -92,6 +96,8 @@ final class AnimeControllerTest extends TestCase
                     ] === $view['storage']
                     && [['name' => '進撃の巨人', 'type' => 'original']] === $view['names']
                     && ['action'] === $view['genres']
+                    && ['military'] === $view['themes']
+                    && 'shounen' === $view['demographic']
                     && 'Rewatch before the finale.' === $view['notes']
                     && [['id' => null, 'name' => 'favorite']] === $view['labels']
                     && [['url' => 'https://shikimori.one/animes/16498', 'domain' => 'shikimori.one']] === $view['sources']
@@ -157,6 +163,8 @@ final class AnimeControllerTest extends TestCase
                     && [] === $view['countries']
                     && [] === $view['names']
                     && [] === $view['genres']
+                    && [] === $view['themes']
+                    && null === $view['demographic']
                     && null === $view['notes']
                     && [] === $view['labels']
                     && [] === $view['sources']

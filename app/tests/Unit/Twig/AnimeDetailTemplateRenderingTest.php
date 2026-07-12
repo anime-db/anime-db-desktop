@@ -56,6 +56,8 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
             'storage' => ['name' => 'Local', 'type' => 'folder', 'path' => '/anime/aot', 'path_available' => true],
             'names' => [['name' => '進撃の巨人', 'type' => 'original']],
             'genres' => ['action', 'drama'],
+            'themes' => ['military'],
+            'demographic' => 'shounen',
             'notes' => 'Rewatch before the finale.',
             'labels' => [['id' => 3, 'name' => 'favorite']],
             'sources' => [['url' => 'https://shikimori.one/animes/16498', 'domain' => 'shikimori.one']],
@@ -83,6 +85,8 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
             'storage' => null,
             'names' => [],
             'genres' => [],
+            'themes' => [],
+            'demographic' => null,
             'notes' => null,
             'labels' => [],
             'sources' => [],
@@ -131,6 +135,8 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
         $this->assertStringContainsString('/anime/aot', $html);
         $this->assertStringContainsString('進撃の巨人', $html);
         $this->assertStringContainsString('Экшен', $html);
+        $this->assertStringContainsString('Военный', $html);
+        $this->assertStringContainsString('Сёнэн', $html);
         $this->assertStringContainsString('Rewatch before the finale.', $html);
         $this->assertStringContainsString('anime-detail__status-badge--ongoing', $html);
         $this->assertStringContainsString('favorite', $html);

@@ -147,6 +147,8 @@ anime_detail:
     field_storage_path: Путь к файлу
     field_names: Альтернативные названия
     field_genres: Жанры
+    field_themes: Темы
+    field_demographic: Демография
     field_notes: Заметка
     field_progress: Прогресс просмотра
     field_watch_status: Статус просмотра

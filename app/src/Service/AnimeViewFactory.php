@@ -69,6 +69,8 @@ final class AnimeViewFactory
                 $anime->getNames()->toArray(),
             ),
             'genres' => array_map(static fn ($code): string => $code->value, $anime->getGenreCodes()),
+            'themes' => array_map(static fn ($code): string => $code->value, $anime->getThemeCodes()),
+            'demographic' => $anime->getDemographic()?->value,
             'notes' => $anime->getNotes(),
             'sources' => array_map(
                 static fn (AnimeSource $source): array => ['url' => $source->url, 'domain' => (string) parse_url($source->url, PHP_URL_HOST)],

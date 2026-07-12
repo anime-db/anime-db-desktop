@@ -30,7 +30,9 @@ namespace App\Service\Install;
 use App\Entity\Anime;
 use App\Entity\Enum\AnimeNameType;
 use App\Entity\Enum\AnimeType;
+use App\Entity\Enum\Demographic;
 use App\Entity\Enum\GenreCode;
+use App\Entity\Enum\ThemeCode;
 use App\Entity\Enum\WatchStatus;
 use App\Entity\Label;
 use App\Entity\SeriesAnime;
@@ -63,6 +65,8 @@ class SampleAnimeSeeder
      *     durationMinutes: ?int,
      *     studios: list<string>,
      *     genres: list<GenreCode>,
+     *     themes: list<ThemeCode>,
+     *     demographic: ?Demographic,
      *     cover: string,
      *     altNames: list<array{type: AnimeNameType, name: string}>,
      *     sources: list<string>,
@@ -79,6 +83,8 @@ class SampleAnimeSeeder
             'durationMinutes' => 24,
             'studios' => ['Bones'],
             'genres' => [GenreCode::Action, GenreCode::Adventure, GenreCode::Drama, GenreCode::Fantasy],
+            'themes' => [ThemeCode::Military],
+            'demographic' => Demographic::Shounen,
             'cover' => 'fullmetal-alchemist-brotherhood.webp',
             'altNames' => [
                 ['type' => AnimeNameType::Original, 'name' => '鋼の錬金術師 FULLMETAL ALCHEMIST'],
@@ -100,6 +106,8 @@ class SampleAnimeSeeder
             'durationMinutes' => 125,
             'studios' => ['Studio Ghibli'],
             'genres' => [GenreCode::Adventure, GenreCode::Drama, GenreCode::Fantasy, GenreCode::Supernatural],
+            'themes' => [],
+            'demographic' => null,
             'cover' => 'spirited-away.webp',
             'altNames' => [
                 ['type' => AnimeNameType::Original, 'name' => '千と千尋の神隠し'],
@@ -121,6 +129,8 @@ class SampleAnimeSeeder
             'durationMinutes' => 24,
             'studios' => ['Sunrise'],
             'genres' => [GenreCode::Action, GenreCode::Comedy, GenreCode::SciFi],
+            'themes' => [ThemeCode::Historical, ThemeCode::Parody],
+            'demographic' => Demographic::Shounen,
             'cover' => 'gintama.webp',
             'altNames' => [
                 ['type' => AnimeNameType::Original, 'name' => '銀魂'],
@@ -142,6 +152,8 @@ class SampleAnimeSeeder
             'durationMinutes' => 49,
             'studios' => ['Madhouse', 'Satelight', 'Graphinica'],
             'genres' => [GenreCode::Action, GenreCode::Horror, GenreCode::Supernatural],
+            'themes' => [ThemeCode::Vampire],
+            'demographic' => Demographic::Seinen,
             'cover' => 'hellsing-ultimate.webp',
             'altNames' => [
                 ['type' => AnimeNameType::Original, 'name' => 'ヘルシングOVA'],
@@ -163,6 +175,8 @@ class SampleAnimeSeeder
             'durationMinutes' => 24,
             'studios' => ['Madhouse'],
             'genres' => [GenreCode::Adventure, GenreCode::Drama, GenreCode::Fantasy],
+            'themes' => [],
+            'demographic' => Demographic::Shounen,
             'cover' => 'sousou-no-frieren.webp',
             'altNames' => [
                 ['type' => AnimeNameType::Original, 'name' => '葬送のフリーレン'],
@@ -184,6 +198,8 @@ class SampleAnimeSeeder
             'durationMinutes' => 24,
             'studios' => ['Madhouse'],
             'genres' => [GenreCode::Action, GenreCode::Comedy, GenreCode::SciFi],
+            'themes' => [ThemeCode::SuperPower],
+            'demographic' => Demographic::Seinen,
             'cover' => 'one-punch-man.webp',
             'altNames' => [
                 ['type' => AnimeNameType::Original, 'name' => 'ワンパンマン'],
@@ -205,6 +221,8 @@ class SampleAnimeSeeder
             'durationMinutes' => 23,
             'studios' => ['A-1 Pictures'],
             'genres' => [GenreCode::Action, GenreCode::Adventure, GenreCode::Fantasy],
+            'themes' => [],
+            'demographic' => null,
             'cover' => 'solo-leveling.webp',
             'altNames' => [
                 ['type' => AnimeNameType::Original, 'name' => '俺だけレベルアップな件'],
@@ -267,8 +285,8 @@ class SampleAnimeSeeder
     }
 
     /**
-     * @param array{title: string, type: AnimeType, episodesCount: ?int, durationMinutes: ?int, studios: list<string>, genres: list<GenreCode>, cover: string, altNames: list<array{type: AnimeNameType, name: string}>, sources: list<string>, datePremiere: string, dateEnd: string, countries: list<string>} $sample
-     * @param list<Studio>                                                                                                                                                                                                                                                                                      $studios
+     * @param array{title: string, type: AnimeType, episodesCount: ?int, durationMinutes: ?int, studios: list<string>, genres: list<GenreCode>, themes: list<ThemeCode>, demographic: ?Demographic, cover: string, altNames: list<array{type: AnimeNameType, name: string}>, sources: list<string>, datePremiere: string, dateEnd: string, countries: list<string>} $sample
+     * @param list<Studio>                                                                                                                                                                                                                                                                                                                                          $studios
      */
     private function buildAnime(array $sample, array $studios): Anime
     {
@@ -295,6 +313,12 @@ class SampleAnimeSeeder
         foreach ($sample['genres'] as $code) {
             $anime->addGenre($code);
         }
+
+        foreach ($sample['themes'] as $code) {
+            $anime->addTheme($code);
+        }
+
+        $anime->setDemographic($sample['demographic']);
 
         foreach ($sample['altNames'] as $altName) {
             $anime->addName($altName['name'], $altName['type']);
