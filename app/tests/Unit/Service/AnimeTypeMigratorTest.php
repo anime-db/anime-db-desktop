@@ -31,6 +31,7 @@ use App\Entity\Enum\AnimeNameType;
 use App\Entity\Enum\AnimeType;
 use App\Entity\Enum\GenreCode;
 use App\Entity\Enum\StorageType;
+use App\Entity\Enum\ThemeCode;
 use App\Entity\Enum\WatchStatus;
 use App\Entity\Exception\InvalidAnimeTypeMigrationException;
 use App\Entity\Label;
@@ -136,7 +137,7 @@ final class AnimeTypeMigratorTest extends TestCase
         $this->assertSame(24, $target->getDurationMinutes());
     }
 
-    public function testMigrateTransfersGenresStudiosLabelsNamesImagesAndSources(): void
+    public function testMigrateTransfersGenresThemesStudiosLabelsNamesImagesAndSources(): void
     {
         $studio = new Studio();
         $studio->rename('Sunrise');
@@ -147,6 +148,7 @@ final class AnimeTypeMigratorTest extends TestCase
         $source->setTitle('Cowboy Bebop: The Movie')
             ->setWatchStatus(WatchStatus::Plan)
             ->addGenre(GenreCode::Action)
+            ->addTheme(ThemeCode::Isekai)
             ->addStudio($studio)
             ->addLabel($label)
             ->addName('Cowboy Bebop', AnimeNameType::English)
@@ -159,6 +161,7 @@ final class AnimeTypeMigratorTest extends TestCase
         $target = $migrator->migrate($source, AnimeType::Tv);
 
         $this->assertSame([GenreCode::Action], $target->getGenreCodes());
+        $this->assertSame([ThemeCode::Isekai], $target->getThemeCodes());
         $this->assertTrue($target->getStudios()->contains($studio));
         $this->assertTrue($target->getLabels()->contains($label));
 

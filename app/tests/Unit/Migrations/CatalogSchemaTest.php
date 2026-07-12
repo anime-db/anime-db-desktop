@@ -79,6 +79,16 @@ final class CatalogSchemaTest extends TestCase
             FOREIGN KEY (anime_id) REFERENCES anime (id) ON DELETE CASCADE,
             FOREIGN KEY (studio_id) REFERENCES studio (id) ON DELETE RESTRICT
         )');
+
+        $this->connection->executeStatement('CREATE TABLE anime_themes (
+            anime_id INTEGER NOT NULL,
+            theme_code VARCHAR(32) NOT NULL CHECK (theme_code IN (
+                \'harem\', \'historical\', \'isekai\', \'martial-arts\', \'mecha\', \'military\', \'music\',
+                \'mythology\', \'parody\', \'psychological\', \'school\', \'strategy-game\', \'super-power\', \'vampire\'
+            )),
+            PRIMARY KEY (anime_id, theme_code),
+            FOREIGN KEY (anime_id) REFERENCES anime (id) ON DELETE CASCADE
+        )');
     }
 
     public function testDeletingStorageSetsAnimeStorageIdToNull(): void
@@ -144,6 +154,39 @@ final class CatalogSchemaTest extends TestCase
         $this->assertSame(
             0,
             (int) $this->connection->fetchOne('SELECT COUNT(*) FROM studio WHERE id = ?', [$studioId]),
+        );
+    }
+
+    public function testInvalidThemeCodeIsRejectedByCheckConstraint(): void
+    {
+        $this->connection->executeStatement(
+            "INSERT INTO anime (title, watch_status, type) VALUES ('Trigun', 'plan', 'tv')",
+        );
+        $animeId = (int) $this->connection->lastInsertId();
+
+        $this->expectException(DbalException::class);
+
+        $this->connection->executeStatement(
+            "INSERT INTO anime_themes (anime_id, theme_code) VALUES ({$animeId}, 'not-a-theme')",
+        );
+    }
+
+    public function testDeletingAnimeCascadesToItsThemes(): void
+    {
+        $this->connection->executeStatement(
+            "INSERT INTO anime (title, watch_status, type) VALUES ('Trigun', 'plan', 'tv')",
+        );
+        $animeId = (int) $this->connection->lastInsertId();
+
+        $this->connection->executeStatement(
+            "INSERT INTO anime_themes (anime_id, theme_code) VALUES ({$animeId}, 'isekai')",
+        );
+
+        $this->connection->executeStatement("DELETE FROM anime WHERE id = {$animeId}");
+
+        $this->assertSame(
+            0,
+            (int) $this->connection->fetchOne('SELECT COUNT(*) FROM anime_themes WHERE anime_id = ?', [$animeId]),
         );
     }
 
