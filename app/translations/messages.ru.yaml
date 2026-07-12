@@ -107,6 +107,8 @@ storage_list:
     last_scan_column: Последний скан
     actions_column: Действия
     edit_button: Редактировать
+    delete_button: Удалить
+    delete_confirm: Удалить хранилище «%name%»?
     never_scanned: Ещё не сканировалось
     scan_button: Скан
     scan_started: Скан запущен.

@@ -108,6 +108,35 @@ final class StorageMarkerService
     }
 
     /**
+     * Removes the marker's [AnimeDB] id record when $storage is deleted, so a stale id doesn't
+     * linger on disk until a future scan of that path reclaims it (see reconcile()'s Reclaimed
+     * case). Does nothing if the marker is missing or no longer names $storage (path was already
+     * reclaimed by another storage). Any unrelated [.ShellClassInfo] section is preserved; the
+     * marker file itself is only deleted once no sections remain.
+     */
+    public function forget(Storage $storage): void
+    {
+        $id = $storage->id ?? throw new \LogicException('Storage must be persisted before its marker can be forgotten');
+        $path = $storage->getPath();
+
+        if ($this->readMarkerId($path) !== $id) {
+            return;
+        }
+
+        $markerPath = $this->markerPath($path);
+        $sections = $this->readSections($markerPath);
+        unset($sections[self::SECTION]);
+
+        if ($sections === []) {
+            unlink($markerPath);
+
+            return;
+        }
+
+        file_put_contents($markerPath, $this->serializeIni($sections));
+    }
+
+    /**
      * Searches every existing drive root for a desktop.ini marker naming $storage — for when
      * $storage's own path became unreadable (drive reassigned a new letter, external drive
      * reconnected elsewhere) and there is no candidate path to check yet, unlike
