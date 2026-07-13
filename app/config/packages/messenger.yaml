@@ -16,3 +16,5 @@ framework:
 
         routing:
             'App\Message\ScanStorageMessage': async
+            'App\Message\IndexAnimeMessage': async
+            'App\Message\DeleteFromIndexMessage': async
