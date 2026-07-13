@@ -29,6 +29,7 @@ namespace App\Service\Search;
 
 use App\Entity\Anime;
 use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\ORM\Tools\Pagination\Paginator;
 
 /**
  * Full catalog reindex (issue #198), shared by bin/console app:search:reindex and the
@@ -37,6 +38,14 @@ use Doctrine\ORM\EntityManagerInterface;
  * Anime is fetched page by page (LIMIT/OFFSET) rather than in one query so a large personal
  * catalog is never fully materialized in memory at once; EntityManager::clear() after each
  * page releases the previous page's entities from the identity map.
+ *
+ * AnimeSearchIndexer::toDocument() reads five *-to-many collections (names, genres, themes,
+ * studios, labels) per Anime, so the page query fetch-joins all five (issue #207) instead of
+ * letting each be lazy-loaded per row (N+1). A plain LEFT JOIN FETCH on multiple *-to-many
+ * associations combined with setFirstResult/setMaxResults would corrupt pagination (the SQL
+ * LIMIT applies to joined rows, not distinct Anime rows), so Doctrine's Paginator is used
+ * instead: it hydrates each page in two queries (page of Anime ids, then those ids with the
+ * joins) regardless of how many rows the joins fan out to.
  */
 final class AnimeReindexService
 {
@@ -56,13 +65,19 @@ final class AnimeReindexService
         $offset = 0;
 
         do {
-            /** @var list<Anime> $page */
-            $page = $this->entityManager->getRepository(Anime::class)->createQueryBuilder('a')
+            $query = $this->entityManager->getRepository(Anime::class)->createQueryBuilder('a')
+                ->leftJoin('a.names', 'names')->addSelect('names')
+                ->leftJoin('a.genres', 'genres')->addSelect('genres')
+                ->leftJoin('a.themes', 'themes')->addSelect('themes')
+                ->leftJoin('a.studios', 'studios')->addSelect('studios')
+                ->leftJoin('a.labels', 'labels')->addSelect('labels')
                 ->orderBy('a.id', 'ASC')
                 ->setFirstResult($offset)
                 ->setMaxResults(self::PAGE_SIZE)
-                ->getQuery()
-                ->getResult();
+                ->getQuery();
+
+            /** @var list<Anime> $page */
+            $page = [...new Paginator($query, fetchJoinCollection: true)];
 
             foreach ($page as $anime) {
                 $this->indexer->index($anime);

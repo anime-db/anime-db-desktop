@@ -29,11 +29,17 @@ namespace App\Tests\Unit\Service\Search;
 
 use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
+use App\Entity\Enum\AnimeNameType;
+use App\Entity\Enum\GenreCode;
+use App\Entity\Enum\ThemeCode;
 use App\Entity\Enum\WatchStatus;
+use App\Entity\Label;
 use App\Entity\MovieAnime;
+use App\Entity\Studio;
 use App\Service\Search\AnimeReindexService;
 use App\Service\Search\AnimeSearchIndexer;
 use Doctrine\DBAL\DriverManager;
+use Doctrine\DBAL\Logging\Middleware;
 use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\EntityManager;
 use Doctrine\ORM\ORMSetup;
@@ -52,6 +58,14 @@ final class AnimeReindexServiceTest extends TestCase
 
     protected function setUp(): void
     {
+        [$this->entityManager] = $this->createEntityManager();
+    }
+
+    /**
+     * @return array{EntityManager, QueryCountingLogger}
+     */
+    private function createEntityManager(): array
+    {
         if (!Type::hasType(UnixTimestampType::NAME)) {
             Type::addType(UnixTimestampType::NAME, UnixTimestampType::class);
         }
@@ -62,11 +76,16 @@ final class AnimeReindexServiceTest extends TestCase
         $config = ORMSetup::createAttributeMetadataConfig([\dirname(__DIR__, 4).'/src/Entity'], true);
         $config->enableNativeLazyObjects(true);
 
-        $connection = DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true], $config);
-        $this->entityManager = new EntityManager($connection, $config);
+        $queryLogger = new QueryCountingLogger();
+        $config->setMiddlewares([new Middleware($queryLogger)]);
 
-        $schemaTool = new SchemaTool($this->entityManager);
-        $schemaTool->createSchema($this->entityManager->getMetadataFactory()->getAllMetadata());
+        $connection = DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true], $config);
+        $entityManager = new EntityManager($connection, $config);
+
+        $schemaTool = new SchemaTool($entityManager);
+        $schemaTool->createSchema($entityManager->getMetadataFactory()->getAllMetadata());
+
+        return [$entityManager, $queryLogger];
     }
 
     public function testConfiguresTheIndexAndReindexesEveryAnime(): void
@@ -134,5 +153,82 @@ final class AnimeReindexServiceTest extends TestCase
         }
 
         $this->entityManager->flush();
+    }
+
+    /**
+     * Regression test for issue #207: each of the five *-to-many collections
+     * (AnimeSearchIndexer::toDocument() reads names/genres/themes/studios/labels) is
+     * populated so lazy-loading them per row would produce a query count that scales with
+     * the number of anime on the page. The fetch-joined page query must keep the number of
+     * executed SQL statements constant instead, regardless of how many anime it contains.
+     */
+    public function testDoesNotIssueANQueryPerAnimeWhenLoadingAPage(): void
+    {
+        $queriesForTwoAnime = $this->countQueriesToReindex(2);
+        $queriesForFiveAnime = $this->countQueriesToReindex(5);
+
+        $this->assertSame(
+            $queriesForTwoAnime,
+            $queriesForFiveAnime,
+            'query count for one page must not grow with the number of anime on it',
+        );
+    }
+
+    private function countQueriesToReindex(int $animeCount): int
+    {
+        [$entityManager, $queryLogger] = $this->createEntityManager();
+        $this->populateCollections($entityManager, $animeCount);
+
+        $index = $this->createMock(Indexes::class);
+        $index->method('updateSettings')->willReturn(['taskUid' => 1]);
+        $index->expects($this->exactly($animeCount))->method('addDocuments')->willReturn(['taskUid' => 2]);
+        $index->method('waitForTask');
+
+        $client = $this->createMock(Client::class);
+        $client->method('index')->with('anime')->willReturn($index);
+
+        $service = new AnimeReindexService($entityManager, new AnimeSearchIndexer($client));
+
+        $queryLogger->reset();
+        $service->reindexAll();
+
+        return $queryLogger->getCount();
+    }
+
+    /**
+     * Persists $animeCount anime, each with two rows in every one of the five collections
+     * AnimeSearchIndexer::toDocument() reads, then clears the identity map so the subsequent
+     * reindex is forced to load them from the database rather than reuse in-memory objects.
+     */
+    private function populateCollections(EntityManager $entityManager, int $animeCount): void
+    {
+        $studios = [new Studio(), new Studio()];
+        $labels = [new Label('label-a'), new Label('label-b')];
+
+        foreach ($studios as $i => $studio) {
+            $studio->rename('Studio '.$i);
+            $entityManager->persist($studio);
+        }
+        foreach ($labels as $label) {
+            $entityManager->persist($label);
+        }
+
+        for ($i = 0; $i < $animeCount; ++$i) {
+            $anime = new MovieAnime();
+            $anime->setTitle('Anime '.$i)->setWatchStatus(WatchStatus::Plan);
+            $anime->addName('Name A', AnimeNameType::English)->addName('Name B', AnimeNameType::Russian);
+            $anime->addGenre(GenreCode::Action)->addGenre(GenreCode::Adventure);
+            $anime->addTheme(ThemeCode::AdultCast)->addTheme(ThemeCode::Anthropomorphic);
+            foreach ($studios as $studio) {
+                $anime->addStudio($studio);
+            }
+            foreach ($labels as $label) {
+                $anime->addLabel($label);
+            }
+            $entityManager->persist($anime);
+        }
+
+        $entityManager->flush();
+        $entityManager->clear();
     }
 }
