@@ -72,6 +72,7 @@ final class SettingsTemplateRenderingTest extends KernelTestCase
         $html = $twig->render('settings/index.html.twig', [
             'availableLocales' => ['en', 'ru'],
             'currentLocale' => 'ru',
+            'reindexStatus' => null,
         ]);
 
         $this->assertStringContainsString('Настройки', $html);
@@ -88,10 +89,51 @@ final class SettingsTemplateRenderingTest extends KernelTestCase
         $html = $twig->render('settings/index.html.twig', [
             'availableLocales' => ['en', 'ru'],
             'currentLocale' => 'en',
+            'reindexStatus' => null,
         ]);
 
         $this->assertStringContainsString('<option value="en" selected>English</option>', $html);
         $this->assertStringContainsString('<option value="ru">Русский</option>', $html);
+    }
+
+    public function testSettingsIndexRendersReindexSuccessMessage(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession();
+
+        /** @var LocaleSwitcher $localeSwitcher */
+        $localeSwitcher = self::getContainer()->get(LocaleSwitcher::class);
+        $localeSwitcher->setLocale('ru');
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('settings/index.html.twig', [
+            'availableLocales' => ['en', 'ru'],
+            'currentLocale' => 'ru',
+            'reindexStatus' => 'success',
+        ]);
+
+        $this->assertStringContainsString('Поисковый индекс успешно перестроен.', $html);
+    }
+
+    public function testSettingsIndexRendersReindexErrorMessage(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession();
+
+        /** @var LocaleSwitcher $localeSwitcher */
+        $localeSwitcher = self::getContainer()->get(LocaleSwitcher::class);
+        $localeSwitcher->setLocale('ru');
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('settings/index.html.twig', [
+            'availableLocales' => ['en', 'ru'],
+            'currentLocale' => 'ru',
+            'reindexStatus' => 'error',
+        ]);
+
+        $this->assertStringContainsString('Не удалось перестроить поисковый индекс.', $html);
     }
 
     public function testLabelIndexRendersLabelsWithoutErrors(): void

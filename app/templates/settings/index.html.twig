@@ -38,4 +38,17 @@
     <ul>
         <li><a href="{{ path('settings_labels_index') }}">{{ 'settings.labels_link'|trans({}, null, currentLocale) }}</a></li>
     </ul>
+
+    <h2>{{ 'settings.search_reindex_heading'|trans({}, null, currentLocale) }}</h2>
+
+    {% if reindexStatus == 'success' %}
+        <p class="success">{{ 'settings.search_reindex_success'|trans({}, null, currentLocale) }}</p>
+    {% elseif reindexStatus == 'error' %}
+        <p class="error">{{ 'settings.search_reindex_error'|trans({}, null, currentLocale) }}</p>
+    {% endif %}
+
+    <form method="post" action="{{ path('settings_search_reindex') }}">
+        <input type="hidden" name="_token" value="{{ csrf_token('settings_search_reindex') }}">
+        <button type="submit">{{ 'settings.search_reindex_button'|trans({}, null, currentLocale) }}</button>
+    </form>
 {% endblock %}
