@@ -65,6 +65,7 @@ final class AnimeListRequestParserTest extends TestCase
             'watch_status' => 'watching',
             'type' => 'movie',
             'countries' => 'JP',
+            'name' => 'Trigun',
             'genres' => [GenreCode::Action->value, GenreCode::Comedy->value],
             'studios' => ['1', '2'],
             'labels' => ['3'],
@@ -77,6 +78,7 @@ final class AnimeListRequestParserTest extends TestCase
         $this->assertSame(WatchStatus::Watching, $filter->watchStatus);
         $this->assertSame(AnimeType::Movie, $filter->type);
         $this->assertSame('JP', $filter->country);
+        $this->assertSame('Trigun', $filter->name);
         $this->assertSame([GenreCode::Action, GenreCode::Comedy], $filter->genres);
         $this->assertSame([1, 2], $filter->studioIds);
         $this->assertSame([3], $filter->labelIds);

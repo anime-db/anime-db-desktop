@@ -51,6 +51,7 @@ final class AnimeListFilter
         public readonly WatchStatus $watchStatus,
         public readonly ?AnimeType $type = null,
         public readonly ?string $country = null,
+        public readonly ?string $name = null,
         public readonly array $genres = [],
         public readonly array $studioIds = [],
         public readonly array $labelIds = [],

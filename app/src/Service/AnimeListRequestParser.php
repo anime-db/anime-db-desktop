@@ -58,10 +58,14 @@ final class AnimeListRequestParser
         $country = $this->assertScalarParam($request, 'countries');
         $country = \is_string($country) && '' !== $country ? $country : null;
 
+        $name = $this->assertScalarParam($request, 'name');
+        $name = \is_string($name) && '' !== $name ? $name : null;
+
         return new AnimeListFilter(
             watchStatus: $watchStatus,
             type: $type,
             country: $country,
+            name: $name,
             genres: $this->parseEnumListParam($request, 'genres', GenreCode::tryFrom(...)),
             studioIds: $this->parseIntListParam($request, 'studios'),
             labelIds: $this->parseIntListParam($request, 'labels'),

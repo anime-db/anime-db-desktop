@@ -159,6 +159,12 @@ class AnimeRepository
                 ->setParameter('country', '%"'.$filter->country.'"%');
         }
 
+        if (null !== $filter->name) {
+            $ftsAnimeIds = $this->matchAnimeIdsByName($filter->name);
+            $qb->andWhere('a.id IN (:ftsAnimeIds)')
+                ->setParameter('ftsAnimeIds', [] !== $ftsAnimeIds ? $ftsAnimeIds : [0]);
+        }
+
         if ([] !== $filter->genres) {
             $qb->innerJoin('a.genres', 'g')
                 ->andWhere('g.code IN (:genres)')
@@ -192,6 +198,31 @@ class AnimeRepository
         $this->applyDateRange($qb, 'a.dateAdd', $filter->dateAddFrom, $filter->dateAddTo, 'dateAdd');
 
         return $qb;
+    }
+
+    /**
+     * anime_fts (issue #195) is a plain SQLite FTS5 virtual table, not a mapped Doctrine
+     * entity, so it cannot be DQL-joined like a.genres/a.studios above. Instead this runs a
+     * native MATCH query first and folds the result into an "a.id IN (...)" DQL clause — same
+     * final row set as a JOIN, without requiring a NativeQuery ResultSetMapping for the rest
+     * of createFilteredQueryBuilder(). $name is wrapped as a quoted FTS5 phrase with a
+     * trailing prefix wildcard ("foo bar"*) so it matches quick-filter-style incremental
+     * typing and never throws on user input containing FTS5 operator characters.
+     *
+     * @return list<int>
+     */
+    private function matchAnimeIdsByName(string $name): array
+    {
+        $needle = '"'.str_replace('"', '""', $name).'"*';
+
+        /* @var list<int> */
+        return array_map(
+            intval(...),
+            $this->entityManager->getConnection()->fetchFirstColumn(
+                'SELECT DISTINCT anime_id FROM anime_fts WHERE anime_fts MATCH ?',
+                [$needle],
+            ),
+        );
     }
 
     private function applyDateRange(
