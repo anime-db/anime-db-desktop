@@ -119,6 +119,10 @@ settings:
     locale:
         ru: Русский
         en: English
+    search_reindex_heading: Поисковый индекс
+    search_reindex_button: Переиндексировать
+    search_reindex_success: Поисковый индекс успешно перестроен.
+    search_reindex_error: Не удалось перестроить поисковый индекс. Убедитесь, что Meilisearch запущен.
 
 settings_labels:
     title: Метки — Настройки — AnimeDB

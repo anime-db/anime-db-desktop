@@ -28,6 +28,8 @@ declare(strict_types=1);
 namespace App\Controller;
 
 use App\Service\AppSettingsProvider;
+use App\Service\Search\AnimeReindexService;
+use Meilisearch\Exceptions\ExceptionInterface as MeilisearchExceptionInterface;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
@@ -49,6 +51,7 @@ final class SettingsController
         private readonly AppSettingsProvider $settings,
         private readonly CsrfTokenManagerInterface $csrfTokenManager,
         private readonly Environment $twig,
+        private readonly AnimeReindexService $reindexService,
     ) {
     }
 
@@ -78,11 +81,31 @@ final class SettingsController
         return $this->renderIndex();
     }
 
-    private function renderIndex(): Response
+    /**
+     * Runs the same catalog reindex as bin/console app:search:reindex (issue #198), so a user
+     * hitting a stale/broken search index has a recovery option that doesn't require the CLI.
+     */
+    #[Route('/settings/search/reindex', name: 'settings_search_reindex', methods: ['POST'])]
+    public function reindexSearch(Request $request): Response
+    {
+        $this->assertValidCsrfToken('settings_search_reindex', $request);
+
+        try {
+            $this->reindexService->reindexAll();
+            $reindexStatus = 'success';
+        } catch (MeilisearchExceptionInterface) {
+            $reindexStatus = 'error';
+        }
+
+        return $this->renderIndex($reindexStatus);
+    }
+
+    private function renderIndex(?string $reindexStatus = null): Response
     {
         return new Response($this->twig->render('settings/index.html.twig', [
             'availableLocales' => $this->locales,
             'currentLocale' => $this->settings->getLocale() ?? ($this->locales[0] ?? null),
+            'reindexStatus' => $reindexStatus,
         ]));
     }
 
