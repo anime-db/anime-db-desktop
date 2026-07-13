@@ -32,6 +32,11 @@ parameters:
     # css/js/index.php, not under AppData, since they are app assets, not user data.
     app.sample_covers_dir: '%kernel.project_dir%/public/sample'
 
+    # Meilisearch process endpoint (native/supervisor/meilisearch.js) and its master key,
+    # both already provisioned in production by Electron (issue #8) — see .env for dev defaults.
+    app.meilisearch.url: '%env(MEILISEARCH_URL)%'
+    app.meilisearch.key: '%env(MEILISEARCH_KEY)%'
+
 services:
     # default configuration for services in *this* file
     _defaults:
@@ -66,3 +71,10 @@ services:
     # The app only ships for Windows (see .claude-docs/architecture.md) — a single
     # ProcessLivenessChecker implementation is all JobLockService (issue #98) needs.
     App\Service\JobLock\ProcessLivenessChecker: '@App\Service\JobLock\WindowsProcessLivenessChecker'
+
+    # meilisearch/meilisearch-php's Client is not autowireable as-is: its constructor takes
+    # plain url/apiKey strings, not services (see AnimeSearchIndexer, issue #196).
+    Meilisearch\Client:
+        arguments:
+            $url: '%app.meilisearch.url%'
+            $apiKey: '%app.meilisearch.key%'
