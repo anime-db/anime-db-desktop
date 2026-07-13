@@ -45,6 +45,9 @@
     let sentinelObserver = null;
     let searchDebounceTimer = null;
     let searchQuery = '';
+    // Guards against the response race (issue #208): a slow scroll-append response arriving
+    // after a faster search response would otherwise splice stale cards into the fresh grid.
+    let pendingRequest = null;
     // Populated once from GET /translations/{locale}.json (issue #87) before the first render;
     // watch_status.*/anime_type.* keys already exist in the messages catalogue, so there is no
     // separate JS dictionary to keep in sync with them.
@@ -134,8 +137,8 @@
         return `${API_URL}?${params.toString()}`;
     }
 
-    async function fetchPage(offset) {
-        const response = await fetch(buildQuery(offset));
+    async function fetchPage(offset, signal) {
+        const response = await fetch(buildQuery(offset), { signal });
         if (!response.ok) {
             throw new Error(`Anime list request failed with status ${response.status}`);
         }
@@ -194,10 +197,19 @@
         disconnectSentinel();
         errorMessage.hidden = true;
 
+        if (pendingRequest) {
+            pendingRequest.abort();
+        }
+        const controller = new AbortController();
+        pendingRequest = controller;
+
         let data;
         try {
-            data = await fetchPage(offset);
-        } catch {
+            data = await fetchPage(offset, controller.signal);
+        } catch (error) {
+            if (error.name === 'AbortError') {
+                return;
+            }
             errorMessage.hidden = false;
             return;
         }
