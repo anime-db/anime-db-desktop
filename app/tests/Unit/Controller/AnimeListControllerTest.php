@@ -39,6 +39,7 @@ use App\Repository\AnimeRepository;
 use App\Service\AnimeListRequestParser;
 use App\Service\AnimeListSortResolver;
 use App\Service\AppSettingsProvider;
+use App\Service\Search\AnimeSearchResolver;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\EntityManager;
@@ -79,12 +80,19 @@ final class AnimeListControllerTest extends TestCase
 
         $repository = new AnimeRepository($this->entityManager);
 
+        // No test in this file sets "name" (that would need the anime_fts virtual table, see
+        // AnimeRepositoryTest), so a resolver stub that never resolves anything is enough here
+        // — the search-specific wiring is covered by AnimeListSearchControllerTest.
+        $searchResolver = $this->createStub(AnimeSearchResolver::class);
+        $searchResolver->method('tryResolveIds')->willReturn(null);
+
         $configPath = sys_get_temp_dir().'/anime-config-test-'.uniqid().'.json';
         $this->controller = new AnimeListController(
             $repository,
             new AnimeListRequestParser(),
             new AnimeListSortResolver(),
             new AppSettingsProvider($configPath),
+            $searchResolver,
         );
 
         for ($i = 1; $i <= 5; ++$i) {

@@ -46,6 +46,9 @@ final class AnimeListFilter
      * @param list<GenreCode> $genres    OR-matched: any of the given genres is enough
      * @param list<int>       $studioIds OR-matched: any of the given studios is enough
      * @param list<int>       $labelIds  OR-matched: any of the given labels is enough
+     * @param list<int>|null  $ids       when set (issue #199), restricts the result to exactly
+     *                                   these ids and takes precedence over $name — see
+     *                                   AnimeRepository::createFilteredQueryBuilder()
      */
     public function __construct(
         public readonly WatchStatus $watchStatus,
@@ -63,6 +66,32 @@ final class AnimeListFilter
         public readonly ?\DateTimeImmutable $dateEndTo = null,
         public readonly ?\DateTimeImmutable $dateAddFrom = null,
         public readonly ?\DateTimeImmutable $dateAddTo = null,
+        public readonly ?array $ids = null,
     ) {
+    }
+
+    /**
+     * @param list<int> $ids anime ids already resolved by AnimeSearchResolver (issue #199)
+     */
+    public function withIds(array $ids): self
+    {
+        return new self(
+            watchStatus: $this->watchStatus,
+            type: $this->type,
+            country: $this->country,
+            name: $this->name,
+            genres: $this->genres,
+            studioIds: $this->studioIds,
+            labelIds: $this->labelIds,
+            userRatingFrom: $this->userRatingFrom,
+            userRatingTo: $this->userRatingTo,
+            datePremiereFrom: $this->datePremiereFrom,
+            datePremiereTo: $this->datePremiereTo,
+            dateEndFrom: $this->dateEndFrom,
+            dateEndTo: $this->dateEndTo,
+            dateAddFrom: $this->dateAddFrom,
+            dateAddTo: $this->dateAddTo,
+            ids: $ids,
+        );
     }
 }

@@ -30,14 +30,21 @@
     // A label click on the anime detail page (issue #104) links here with ?labels=<id> — the
     // only filter this page currently understands from the URL, ahead of the full filter UI.
     const labelFilter = new URLSearchParams(window.location.search).get('labels');
+    // Debounce the search box (issue #199) so a full request isn't fired on every keystroke —
+    // AnimeListController resolves this as "name" against Meilisearch, falling back to the
+    // FTS5 quick-filter server-side when it is unavailable.
+    const SEARCH_DEBOUNCE_MS = 300;
 
     const grid = document.getElementById('anime-list-grid');
     const emptyMessage = document.getElementById('anime-list-empty');
     const errorMessage = document.getElementById('anime-list-error');
     const pagination = document.getElementById('anime-list-pagination');
     const sentinel = document.getElementById('anime-list-sentinel');
+    const searchInput = document.getElementById('anime-list-search');
 
     let sentinelObserver = null;
+    let searchDebounceTimer = null;
+    let searchQuery = '';
     // Populated once from GET /translations/{locale}.json (issue #87) before the first render;
     // watch_status.*/anime_type.* keys already exist in the messages catalogue, so there is no
     // separate JS dictionary to keep in sync with them.
@@ -120,6 +127,10 @@
             params.set('labels', labelFilter);
         }
 
+        if (searchQuery) {
+            params.set('name', searchQuery);
+        }
+
         return `${API_URL}?${params.toString()}`;
     }
 
@@ -200,6 +211,20 @@
         }
     }
 
+    function setupSearchInput() {
+        if (!searchInput) {
+            return;
+        }
+
+        searchInput.addEventListener('input', () => {
+            clearTimeout(searchDebounceTimer);
+            searchDebounceTimer = setTimeout(() => {
+                searchQuery = searchInput.value.trim();
+                loadPage(0, true);
+            }, SEARCH_DEBOUNCE_MS);
+        });
+    }
+
     async function init() {
         try {
             messages = await window.AppTranslations.getCatalogue();
@@ -207,6 +232,7 @@
             messages = {};
         }
 
+        setupSearchInput();
         loadPage(0, true);
     }
 

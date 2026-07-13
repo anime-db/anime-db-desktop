@@ -40,6 +40,16 @@
             </section>
         {% endif %}
 
+        <div class="anime-list__toolbar">
+            <input
+                type="search"
+                id="anime-list-search"
+                class="anime-list__search"
+                placeholder="{{ 'anime_list.search_placeholder'|trans }}"
+                aria-label="{{ 'anime_list.search_placeholder'|trans }}"
+            >
+        </div>
+
         <div class="anime-list__grid" id="anime-list-grid"></div>
 
         <p class="anime-list__empty" id="anime-list-empty" hidden>{{ 'anime_list.empty'|trans }}</p>

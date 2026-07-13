@@ -143,6 +143,7 @@ anime_list:
     empty: Список пуст.
     error: Не удалось загрузить список.
     no_cover: Нет обложки
+    search_placeholder: Поиск по названию…
 
 storage_list:
     title: Хранилища — AnimeDB

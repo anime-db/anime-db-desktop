@@ -159,7 +159,12 @@ class AnimeRepository
                 ->setParameter('country', '%"'.$filter->country.'"%');
         }
 
-        if (null !== $filter->name) {
+        if (null !== $filter->ids) {
+            // Already resolved by AnimeSearchResolver (issue #199), via Meilisearch — takes
+            // precedence over $name and skips the FTS5 quick-filter below entirely.
+            $qb->andWhere('a.id IN (:searchAnimeIds)')
+                ->setParameter('searchAnimeIds', [] !== $filter->ids ? $filter->ids : [0]);
+        } elseif (null !== $filter->name) {
             $ftsAnimeIds = $this->matchAnimeIdsByName($filter->name);
             $qb->andWhere('a.id IN (:ftsAnimeIds)')
                 ->setParameter('ftsAnimeIds', [] !== $ftsAnimeIds ? $ftsAnimeIds : [0]);

@@ -72,9 +72,25 @@ services:
     # ProcessLivenessChecker implementation is all JobLockService (issue #98) needs.
     App\Service\JobLock\ProcessLivenessChecker: '@App\Service\JobLock\WindowsProcessLivenessChecker'
 
+    # Left to its default PSR-18 client discovery, Meilisearch\Client would inherit whatever
+    # timeout that client defaults to — potentially none. The list search box (issue #199)
+    # needs a fast, bounded failure when Meilisearch is unreachable so it can fall back to the
+    # FTS5 quick-filter (#195) instead of hanging the request.
+    app.meilisearch.http_client:
+        class: Symfony\Component\HttpClient\Psr18Client
+        arguments:
+            $client: '@app.meilisearch.symfony_http_client'
+
+    app.meilisearch.symfony_http_client:
+        class: Symfony\Contracts\HttpClient\HttpClientInterface
+        factory: ['Symfony\Component\HttpClient\HttpClient', 'create']
+        arguments:
+            - { timeout: 2, max_duration: 3 }
+
     # meilisearch/meilisearch-php's Client is not autowireable as-is: its constructor takes
     # plain url/apiKey strings, not services (see AnimeSearchIndexer, issue #196).
     Meilisearch\Client:
         arguments:
             $url: '%app.meilisearch.url%'
             $apiKey: '%app.meilisearch.key%'
+            $httpClient: '@app.meilisearch.http_client'
