@@ -34,6 +34,7 @@ use App\Repository\AnimeRepository;
 use App\Service\AnimeListRequestParser;
 use App\Service\AnimeListSortResolver;
 use App\Service\AppSettingsProvider;
+use App\Service\Search\AnimeSearchResolver;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
@@ -44,6 +45,11 @@ use Symfony\Component\Routing\Attribute\Route;
  * LIMIT/OFFSET pagination. Serves both the classic and infinite-scroll frontends with the
  * same response shape — only the frontend load-more trigger differs, left to a later part
  * of the same decomposition.
+ *
+ * The list search box (issue #199) reuses the existing "name" filter parameter: when set,
+ * this controller first tries to resolve it to concrete anime ids via Meilisearch
+ * (AnimeSearchResolver); only if Meilisearch is unreachable does it leave AnimeListFilter::
+ * $name untouched, which makes AnimeRepository fall back to the FTS5 quick-filter (#195).
  */
 final class AnimeListController
 {
@@ -52,6 +58,7 @@ final class AnimeListController
         private readonly AnimeListRequestParser $requestParser,
         private readonly AnimeListSortResolver $sortResolver,
         private readonly AppSettingsProvider $settings,
+        private readonly AnimeSearchResolver $searchResolver,
     ) {
     }
 
@@ -59,6 +66,13 @@ final class AnimeListController
     public function list(Request $request): JsonResponse
     {
         $filter = $this->requestParser->parseFilter($request);
+        if (null !== $filter->name) {
+            $ids = $this->searchResolver->tryResolveIds($filter->name);
+            if (null !== $ids) {
+                $filter = $filter->withIds($ids);
+            }
+        }
+
         $sort = $this->sortResolver->resolve(
             $this->requestParser->parseOptionalString($request, 'sort'),
             $this->requestParser->parseOptionalString($request, 'direction'),

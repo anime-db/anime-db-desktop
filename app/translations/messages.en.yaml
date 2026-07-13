@@ -143,6 +143,7 @@ anime_list:
     empty: The list is empty.
     error: Failed to load the list.
     no_cover: No cover
+    search_placeholder: Search by title…
 
 storage_list:
     title: Storage — AnimeDB
