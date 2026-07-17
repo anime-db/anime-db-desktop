@@ -1,0 +1,109 @@
+<?php
+
+/**
+ * AnimeDb package.
+ *
+ * @author    Peter Gribanov <info@peter-gribanov.ru>
+ * @copyright Copyright (c) 2026, Peter Gribanov
+ * @license   https://gnu.org GPL-3.0-or-later
+ */
+
+/*
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://gnu.org>.
+ */
+
+declare(strict_types=1);
+
+namespace App\Service\Plugin;
+
+use AnimeDb\PluginContracts\FillerInterface;
+use App\Entity\ValueObject\PluginId;
+use Symfony\Component\DependencyInjection\Attribute\AutowireIterator;
+
+/**
+ * Lists installed, active {@see FillerInterface} plugins for two callers: the per-field
+ * "fill in from source" dropdown on the anime edit form (several plugins may support the same
+ * field) and the bulk-fill flow, which already knows which plugin to use (chosen by the
+ * storage scan or by the user) and just needs that one instance, not a scan of all of them.
+ *
+ * `FillerInterface` lives in the read-only `anime-db/plugin-contracts` package, so it cannot
+ * carry `#[AutoconfigureTag]` the way the local {@see \App\Service\Storage\Search\SearchByPluginInterface}
+ * does — tagging is done declaratively in services.yaml instead, via `_instanceof`.
+ *
+ * `indexAttribute: 'id'` keys the injected iterable by each filler's own DI service id.
+ * Neither `PluginInterface` nor `FillerInterface` exposes a way to ask an arbitrary instance
+ * for its own {@see PluginId} — the closest thing, `resolveExternalId()`, resolves an id on an
+ * external source from catalog URLs, not the plugin's own identity. The tag itself carries no
+ * `id` attribute (see services.yaml), so Symfony falls back to indexing by service id; the
+ * plugin manager (issues #218/#220-224, not implemented yet), which is what will actually
+ * register a real plugin's Filler service into the container, is expected to register it under
+ * a service id equal to its `PluginId` (e.g. "animedb-shikimori"), matching the same string
+ * {@see PluginsConfigStore} already keys `plugins.json` by. Until then this iterable is simply
+ * empty in production — Stage 4 plugins join by implementing FillerInterface, no change needed
+ * here.
+ */
+final class FillerRegistry
+{
+    /** @param iterable<string, FillerInterface> $fillers */
+    public function __construct(
+        #[AutowireIterator('app.filler', indexAttribute: 'id')]
+        private readonly iterable $fillers,
+        private readonly PluginsConfigStore $pluginsConfigStore,
+    ) {
+    }
+
+    /**
+     * @return list<FillerInterface> active plugins that report $field among getFillableFields()
+     */
+    public function findByField(string $field): array
+    {
+        $result = [];
+        foreach ($this->fillers as $id => $filler) {
+            if ($this->isActive((string) $id) && \in_array($field, $filler->getFillableFields(), true)) {
+                $result[] = $filler;
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * Resolves a single, already-known plugin without the caller having to enumerate every
+     * registered filler itself. Returns null both when no filler is registered under this id
+     * and when the matching plugin is installed but disabled (features.filler false).
+     */
+    public function findByPluginId(PluginId $pluginId): ?FillerInterface
+    {
+        foreach ($this->fillers as $id => $filler) {
+            if ((string) $id === (string) $pluginId) {
+                return $this->isActive((string) $id) ? $filler : null;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * A plugin without recorded settings yet (freshly installed, never configured) is treated
+     * as active: plugins.json only ever records an explicit "false" once the user turns a
+     * feature off, so the key's absence is not a signal that it should be excluded.
+     */
+    private function isActive(string $id): bool
+    {
+        $settings = $this->pluginsConfigStore->getPluginSettings(new PluginId($id));
+        $features = $settings['features'] ?? [];
+
+        return (bool) ($features['filler'] ?? true);
+    }
+}
