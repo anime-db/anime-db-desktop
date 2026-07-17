@@ -85,13 +85,10 @@ final class FillerRegistry
      */
     public function findByPluginId(PluginId $pluginId): ?FillerInterface
     {
-        foreach ($this->fillers as $id => $filler) {
-            if ((string) $id === (string) $pluginId) {
-                return $this->isActive((string) $id) ? $filler : null;
-            }
-        }
+        $id = (string) $pluginId;
+        $filler = iterator_to_array($this->fillers)[$id] ?? null;
 
-        return null;
+        return $filler !== null && $this->isActive($id) ? $filler : null;
     }
 
     /**
