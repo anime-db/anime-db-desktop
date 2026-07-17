@@ -27,6 +27,7 @@ declare(strict_types=1);
 
 namespace App\Entity;
 
+use AnimeDb\PluginContracts\PluginInterface;
 use App\Entity\Enum\AnimeNameType;
 use App\Entity\Enum\AnimeType;
 use App\Entity\Enum\Demographic;
@@ -485,6 +486,34 @@ abstract class Anime
         $data = $this->metadata['plugins'][(string) $pluginId] ?? [];
 
         return \is_array($data) ? $data : [];
+    }
+
+    /**
+     * Resolves and caches the external id this plugin uses for the anime, e.g. the
+     * Shikimori id parsed from a shikimori.one source URL.
+     *
+     * Cached under metadata['external_id'][$pluginId], a separate top-level key from
+     * metadata['plugins'][$pluginId] (see putPluginData()/getPluginData() above): a
+     * future overwrite of that plugin's raw filler data must not accidentally clobber
+     * an already-resolved id.
+     */
+    public function getExternalId(PluginId $pluginId, PluginInterface $plugin): ?string
+    {
+        $cached = $this->metadata['external_id'][(string) $pluginId] ?? null;
+        if (null !== $cached) {
+            return $cached;
+        }
+
+        $urls = array_map(static fn (AnimeSource $source): string => $source->url, $this->getSources()->toArray());
+        $id = $plugin->resolveExternalId($urls);
+
+        if (null !== $id) {
+            $metadata = $this->metadata ?? [];
+            $metadata['external_id'][(string) $pluginId] = $id;
+            $this->metadata = $metadata;
+        }
+
+        return $id;
     }
 
     /**

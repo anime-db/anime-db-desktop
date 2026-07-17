@@ -27,6 +27,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Entity;
 
+use AnimeDb\PluginContracts\PluginInterface;
 use App\Entity\Enum\AnimeNameType;
 use App\Entity\Enum\AnimeType;
 use App\Entity\Enum\Demographic;
@@ -557,5 +558,53 @@ final class AnimeTest extends TestCase
         $anime->setWatchStatus(WatchStatus::Completed);
 
         $this->assertSame(WatchStatus::Completed, $anime->getWatchStatus());
+    }
+
+    public function testGetExternalIdReturnsCachedValueWithoutCallingPlugin(): void
+    {
+        $anime = new MovieAnime();
+        $anime->addSource('https://shikimori.one/animes/1-cowboy-bebop');
+        $pluginId = new PluginId('animedb-shikimori');
+        $seedingPlugin = $this->createStub(PluginInterface::class);
+        $seedingPlugin->method('resolveExternalId')->willReturn('1');
+        $anime->getExternalId($pluginId, $seedingPlugin);
+
+        $plugin = $this->createMock(PluginInterface::class);
+        $plugin->expects($this->never())->method('resolveExternalId');
+
+        $this->assertSame('1', $anime->getExternalId($pluginId, $plugin));
+    }
+
+    public function testGetExternalIdResolvesAndCachesFromPlugin(): void
+    {
+        $anime = new MovieAnime();
+        $anime->addSource('https://shikimori.one/animes/1-cowboy-bebop');
+        $pluginId = new PluginId('animedb-shikimori');
+
+        $plugin = $this->createMock(PluginInterface::class);
+        $plugin->expects($this->once())
+            ->method('resolveExternalId')
+            ->with(['https://shikimori.one/animes/1-cowboy-bebop'])
+            ->willReturn('1');
+
+        $id = $anime->getExternalId($pluginId, $plugin);
+
+        $this->assertSame('1', $id);
+        $this->assertSame(['external_id' => ['animedb-shikimori' => '1']], $anime->getMetadata());
+    }
+
+    public function testGetExternalIdReturnsNullWithoutCachingWhenPluginCannotResolve(): void
+    {
+        $anime = new MovieAnime();
+        $anime->addSource('https://myanimelist.net/anime/1');
+        $pluginId = new PluginId('animedb-shikimori');
+
+        $plugin = $this->createStub(PluginInterface::class);
+        $plugin->method('resolveExternalId')->willReturn(null);
+
+        $id = $anime->getExternalId($pluginId, $plugin);
+
+        $this->assertNull($id);
+        $this->assertNull($anime->getMetadata());
     }
 }
