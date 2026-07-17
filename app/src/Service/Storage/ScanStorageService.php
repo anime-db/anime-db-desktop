@@ -33,6 +33,7 @@ use App\Entity\NameNormalizer;
 use App\Entity\Storage;
 use App\Entity\TvAnime;
 use App\Repository\AnimeRepository;
+use App\Service\Plugin\Filler\BulkFillerService;
 use App\Service\Storage\Exception\StoragePathConflictException;
 use App\Service\Storage\Scan\ScanCandidate;
 use App\Service\Storage\Scan\ScanResult;
@@ -61,6 +62,7 @@ final class ScanStorageService
         private readonly SearchByPluginChain $pluginChain,
         private readonly AnimeRepository $animeRepository,
         private readonly EntityManagerInterface $entityManager,
+        private readonly BulkFillerService $bulkFillerService,
     ) {
     }
 
@@ -253,15 +255,14 @@ final class ScanStorageService
 
         $plugin = $candidate->plugin ?? throw new \LogicException('ScanCandidate must carry either an orphan or a plugin match');
 
-        // Stage 4 plugins don't exist yet (SearchByPluginChain currently always resolves to
-        // NullSearchByPlugin), so a plugin candidate only ever carries a name — not enough to
-        // pick a concrete AnimeType. TvAnime is the placeholder default until a real plugin
-        // implementation can report the type it found.
-        $anime = new TvAnime();
-        $anime->setTitle($plugin->name)
-            ->setWatchStatus(WatchStatus::Plan)
-            ->setStorage($storage)
-            ->setStoragePath($storagePath);
+        // BulkFillerService (issue #227) tries the same plugin's FillerInterface, if it has one,
+        // to create an already-filled-in Anime. No concrete plugin ships in this repository yet
+        // (same status as SearchByPluginChain's search plugins), so this currently always falls
+        // back to the title-only placeholder below.
+        $anime = $this->bulkFillerService->fillNewFromPlugin($plugin->pluginId, $plugin->name)
+            ?? (new TvAnime())->setTitle($plugin->name)->setWatchStatus(WatchStatus::Plan);
+
+        $anime->setStorage($storage)->setStoragePath($storagePath);
         $this->entityManager->persist($anime);
 
         return $anime;

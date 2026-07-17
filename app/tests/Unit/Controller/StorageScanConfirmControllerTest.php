@@ -36,6 +36,11 @@ use App\Entity\Enum\WatchStatus;
 use App\Entity\Storage;
 use App\Entity\TvAnime;
 use App\Repository\AnimeRepository;
+use App\Repository\StudioRepository;
+use App\Service\Plugin\Filler\AnimeFillApplier;
+use App\Service\Plugin\Filler\BulkFillerService;
+use App\Service\Plugin\Filler\FillerRegistry;
+use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Storage\FilenameCleaner;
 use App\Service\Storage\OrphanAnimeMatcher;
 use App\Service\Storage\ScanStorageService;
@@ -97,6 +102,11 @@ final class StorageScanConfirmControllerTest extends TestCase
             new SearchByPluginChain([new NullSearchByPlugin()]),
             $animeRepository,
             $this->entityManager,
+            new BulkFillerService(
+                new FillerRegistry([], new PluginsConfigStore('')),
+                new AnimeFillApplier(new StudioRepository($this->entityManager), $this->entityManager),
+                $this->entityManager,
+            ),
         );
 
         return new StorageScanConfirmController($scanStorageService, $this->entityManager, $csrfTokenManager);
