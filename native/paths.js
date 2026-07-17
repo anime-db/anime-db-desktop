@@ -39,4 +39,5 @@ module.exports = {
     getMeilisearchKeyPath: () => path.join(userDataDir(), 'meilisearch-key.txt'),
     getMediaDir:           () => path.join(userDataDir(), 'media'),
     getConfigPath:         () => path.join(userDataDir(), 'config.json'),
+    getPluginsConfigPath:  () => path.join(userDataDir(), 'plugins.json'),
 };
