@@ -21,6 +21,9 @@ jobs:
           extensions: apcu
           ini-values: apc.enable_cli=1
 
+      - name: Configure Composer auth for private repos
+        run: composer config --global github-oauth.github.com ${{ secrets.COMPOSER_GITHUB_TOKEN }}
+
       - name: Install dependencies
         run: composer install --no-interaction --prefer-dist
         working-directory: app
@@ -44,6 +47,9 @@ jobs:
           extensions: apcu
           ini-values: apc.enable_cli=1
 
+      - name: Configure Composer auth for private repos
+        run: composer config --global github-oauth.github.com ${{ secrets.COMPOSER_GITHUB_TOKEN }}
+
       - name: Install dependencies
         run: composer install --no-interaction --prefer-dist
         working-directory: app
@@ -65,6 +71,9 @@ jobs:
           tools: composer
           coverage: none
 
+      - name: Configure Composer auth for private repos
+        run: composer config --global github-oauth.github.com ${{ secrets.COMPOSER_GITHUB_TOKEN }}
+
       - name: Install dependencies
         run: composer install --no-interaction --prefer-dist
         working-directory: app
@@ -85,6 +94,9 @@ jobs:
           php-version: '8.4'
           tools: composer
           coverage: none
+
+      - name: Configure Composer auth for private repos
+        run: composer config --global github-oauth.github.com ${{ secrets.COMPOSER_GITHUB_TOKEN }}
 
       - name: Install dependencies
         run: composer install --no-interaction --prefer-dist
