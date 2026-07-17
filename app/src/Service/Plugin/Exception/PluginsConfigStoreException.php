@@ -28,7 +28,7 @@ declare(strict_types=1);
 namespace App\Service\Plugin\Exception;
 
 /**
- * Thrown when PluginsConfigStore cannot open or lock %AppData%/plugins.json for writing.
+ * Thrown when PluginsConfigStore cannot open, lock, encode or write %AppData%/plugins.json.
  */
 final class PluginsConfigStoreException extends \RuntimeException
 {

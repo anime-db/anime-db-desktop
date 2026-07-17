@@ -28,6 +28,7 @@ declare(strict_types=1);
 namespace App\Tests\Unit\Service\Plugin;
 
 use App\Entity\ValueObject\PluginId;
+use App\Service\Plugin\Exception\PluginsConfigStoreException;
 use App\Service\Plugin\PluginsConfigStore;
 use PHPUnit\Framework\TestCase;
 
@@ -159,5 +160,56 @@ final class PluginsConfigStoreTest extends TestCase
         );
 
         $this->assertFileDoesNotExist($this->path.'.tmp');
+    }
+
+    public function testUpdatePluginSettingsThrowsAndKeepsOriginalFileWhenSettingsAreNotEncodableAsJson(): void
+    {
+        file_put_contents($this->path, json_encode(['animedb-shikimori' => ['refreshToken' => 'old']]));
+
+        $store = new PluginsConfigStore($this->path);
+
+        $this->expectException(PluginsConfigStoreException::class);
+
+        try {
+            $store->updatePluginSettings(
+                new PluginId('animedb-shikimori'),
+                // "\xB1\x31" is not valid UTF-8, so json_encode() fails for it.
+                static fn (array $settings): array => ['refreshToken' => "\xB1\x31"],
+            );
+        } finally {
+            $this->assertSame(
+                ['refreshToken' => 'old'],
+                $store->getPluginSettings(new PluginId('animedb-shikimori')),
+            );
+        }
+    }
+
+    public function testUpdatePluginSettingsThrowsWhenTempFileCannotBeWritten(): void
+    {
+        file_put_contents($this->path, json_encode(['animedb-shikimori' => ['refreshToken' => 'old']]));
+        // Pre-create the temp path as a directory so file_put_contents() cannot write to it.
+        mkdir($this->path.'.tmp');
+
+        $store = new PluginsConfigStore($this->path);
+
+        $this->expectException(PluginsConfigStoreException::class);
+
+        // file_put_contents() also emits a PHP warning for this expected failure; silence it so
+        // it doesn't pollute test output.
+        set_error_handler(static fn (): bool => true, \E_WARNING);
+
+        try {
+            $store->updatePluginSettings(
+                new PluginId('animedb-shikimori'),
+                static fn (array $settings): array => ['refreshToken' => 'new'],
+            );
+        } finally {
+            restore_error_handler();
+            $this->assertSame(
+                ['refreshToken' => 'old'],
+                $store->getPluginSettings(new PluginId('animedb-shikimori')),
+            );
+            rmdir($this->path.'.tmp');
+        }
     }
 }

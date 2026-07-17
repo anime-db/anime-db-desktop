@@ -127,13 +127,18 @@ final class PluginsConfigStore
 
             $plugins = $modifier($this->read());
 
+            $encoded = json_encode($plugins, \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE);
+            if (false === $encoded) {
+                throw new PluginsConfigStoreException(\sprintf('Unable to encode "%s" as JSON.', $this->pluginsConfigPath));
+            }
+
             // rename() on Windows overwrites an existing destination (unlike a bare POSIX
             // rename() pre-8.0), so this stays atomic on the app's only supported platform.
             $tmpPath = $this->pluginsConfigPath.'.tmp';
-            file_put_contents(
-                $tmpPath,
-                json_encode($plugins, \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE),
-            );
+            if (false === file_put_contents($tmpPath, $encoded)) {
+                throw new PluginsConfigStoreException(\sprintf('Unable to write "%s".', $tmpPath));
+            }
+
             rename($tmpPath, $this->pluginsConfigPath);
         } finally {
             flock($lockHandle, \LOCK_UN);
