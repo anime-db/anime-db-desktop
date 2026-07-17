@@ -7,5 +7,10 @@ parameters:
     paths:
         - src
         - tests
+    # Standalone CLI worker script spawned as a child process by PluginsConfigStoreConcurrencyTest
+    # (via Symfony\Component\Process), not a PHPUnit test class — relies on $argv like any CLI
+    # entry point (bin/console), which PHPStan can't see outside a real CLI invocation.
+    excludePaths:
+        - tests/Fixtures/Plugin/increment-counter.php
     bootstrapFiles:
         - tests/bootstrap.php

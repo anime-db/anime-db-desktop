@@ -19,6 +19,14 @@ parameters:
     app.config_path.dev_default: '%kernel.project_dir%/var/config.json'
     app.config_path: '%env(default:app.config_path.dev_default:CONFIG_PATH)%'
 
+    # In production Electron passes PLUGINS_CONFIG_PATH (see native/paths.js,
+    # native/supervisor/frankenphp.js, native/supervisor/messenger-consumer.js), pointing at
+    # %AppData%/plugins.json — one shared file for every installed plugin's settings/credentials
+    # (OAuth refresh tokens, endpoint config, feature flags), read/written by both the HTTP
+    # worker and the background messenger consumer (issue #219).
+    app.plugins_config_path.dev_default: '%kernel.project_dir%/var/plugins.json'
+    app.plugins_config_path: '%env(default:app.plugins_config_path.dev_default:PLUGINS_CONFIG_PATH)%'
+
     # Locales LocaleSubscriber negotiates against. Kept as an explicit list rather than scanning
     # app/translations/ on every request (FrankenPHP worker mode keeps the subscriber alive
     # between requests, so a glob() there would mean disk I/O per request for no benefit — the
@@ -45,6 +53,7 @@ services:
         bind:
             $mediaDir: '%app.media_dir%'
             $configPath: '%app.config_path%'
+            $pluginsConfigPath: '%app.plugins_config_path%'
             $locales: '%app.locales%'
             $sampleCoversDir: '%app.sample_covers_dir%'
 

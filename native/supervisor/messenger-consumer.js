@@ -59,6 +59,7 @@ function buildEnv(meiliPort, meiliKey) {
         APP_RUNTIME_DIR:         paths.getRuntimeDir(),
         MEDIA_DIR:               paths.getMediaDir(),
         CONFIG_PATH:             paths.getConfigPath(),
+        PLUGINS_CONFIG_PATH:     paths.getPluginsConfigPath(),
         MEILISEARCH_URL:         `http://127.0.0.1:${meiliPort}`,
         MEILISEARCH_KEY:         meiliKey,
     };

@@ -77,6 +77,10 @@ test('getConfigPath returns config.json inside userData', () => {
     expect(paths.getConfigPath()).toBe(path.join(USER_DATA, 'config.json'));
 });
 
+test('getPluginsConfigPath returns plugins.json inside userData', () => {
+    expect(paths.getPluginsConfigPath()).toBe(path.join(USER_DATA, 'plugins.json'));
+});
+
 test('all path functions reflect a different userData value (fallback scenario)', () => {
     const OTHER = '/other/AppData/AnimeDB';
     app.getPath.mockReturnValue(OTHER);
