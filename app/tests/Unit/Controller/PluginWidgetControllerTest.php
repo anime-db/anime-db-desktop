@@ -81,7 +81,7 @@ final class PluginWidgetControllerTest extends TestCase
 
         $widget = $this->createMock(EntryWidgetInterface::class);
         $widget->method('resolveExternalId')->with(['https://shikimori.one/animes/52991'])->willReturn('52991');
-        $widget->expects($this->once())->method('render')->with((string) $anime->id)->willReturn('<div>Related</div>');
+        $widget->expects($this->once())->method('render')->with('52991')->willReturn('<div>Related</div>');
 
         $entryWidgets = new EntryWidgetRegistry(['animedb-shikimori:related' => $widget], new PluginsConfigStore(''));
 
@@ -102,26 +102,21 @@ final class PluginWidgetControllerTest extends TestCase
         $this->assertSame(300, $response->getMaxAge());
     }
 
-    public function testRenderReturnsUnavailableFragmentWhenExternalIdIsNull(): void
+    public function testRenderPassesNullExternalIdToWidgetWhenSourceIsNotLinked(): void
     {
         $anime = $this->anime();
 
         $widget = $this->createMock(EntryWidgetInterface::class);
         $widget->method('resolveExternalId')->willReturn(null);
-        $widget->expects($this->never())->method('render');
+        $widget->expects($this->once())->method('render')->with(null)->willReturn('<p>no data</p>');
 
         $entryWidgets = new EntryWidgetRegistry(['animedb-shikimori:related' => $widget], new PluginsConfigStore(''));
 
         $entityManager = $this->createMock(EntityManagerInterface::class);
         $entityManager->method('find')->willReturn($anime);
+        $entityManager->expects($this->once())->method('flush');
 
-        $twig = $this->createMock(Environment::class);
-        $twig->expects($this->once())
-            ->method('render')
-            ->with('plugin/_widget_unavailable.html.twig', ['pluginId' => 'animedb-shikimori'])
-            ->willReturn('<p>no data</p>');
-
-        $controller = $this->createController($entryWidgets, $this->emptyCatalogWidgets(), entityManager: $entityManager, twig: $twig);
+        $controller = $this->createController($entryWidgets, $this->emptyCatalogWidgets(), entityManager: $entityManager);
         $response = $controller->render(
             'animedb-shikimori',
             'related',

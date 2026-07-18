@@ -52,9 +52,8 @@ use Twig\Environment;
  * The response depends only on the three URL parameters (pluginId, widgetName, entryId) and
  * reads no session/cookie state, so it is a plain cacheable GET; successful responses carry a
  * short-lived Cache-Control so a reload does not immediately re-hit the plugin's own API through
- * render(). Failure responses (unavailable/error fragments) are not cached — an unavailable
- * "no external id yet" state or a transient plugin error must not be pinned past the request that
- * observed it.
+ * render(). The error fragment is not cached — a transient plugin error must not be pinned past
+ * the request that observed it.
  */
 final class PluginWidgetController
 {
@@ -106,14 +105,8 @@ final class PluginWidgetController
         $externalId = $anime->getExternalId($pluginId, $widget);
         $this->entityManager->flush();
 
-        if (null === $externalId) {
-            return new Response($this->twig->render('plugin/_widget_unavailable.html.twig', [
-                'pluginId' => (string) $pluginId,
-            ]));
-        }
-
         try {
-            $html = $widget->render((string) $anime->id);
+            $html = $widget->render($externalId);
         } catch (\Throwable $e) {
             return $this->renderWidgetError($pluginId, $request, $e);
         }

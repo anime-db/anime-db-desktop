@@ -265,6 +265,5 @@ storage_edit:
 
 plugin_widget:
     loading: Loading…
-    no_data: 'No data from "%source%".'
     error: 'Failed to load the "%source%" widget.'
     retry_button: Retry

@@ -166,12 +166,13 @@ read-only, `#[AutoconfigureTag]` там не повесить), а `EntryWidgetR
 (не общий флаг `features.widget`).
 
 Для entry-виджета контроллер сначала резолвит внешний id через `Anime::getExternalId($pluginId, $widget)`
-(issue #211) — это одновременно и прогрев кэша, и проверка «применим ли источник к этой записи»:
-`render()` вызывается, только если id нашёлся, иначе отдаётся фрагмент-заглушка
-(`plugin/_widget_unavailable.html.twig`), без похода в API плагина. Контракт `render(string $localId): string`
-внешний id как параметр не принимает — им, при необходимости, распоряжается сам плагин.
-Исключение из `render()` не пробрасывается — контроллер логирует его и отдаёт
-`plugin/_widget_error.html.twig` (200, с кнопкой retry на тот же URL через `hx-get`).
+(issue #211) — это одновременно и прогрев кэша, и получение параметра для `render()`. Контракт
+`render(?string $externalId): string` (`anime-db/plugin-contracts` v0.3, issue #21 в этом пакете)
+принимает резолвнутый id напрямую, включая `null`, когда источник к записи не привязан; localId
+записи виджет не получает вовсе. Empty-state при `null` — забота самого виджета (пустая строка
+скрывает слот, либо, например, CTA), контроллер такое решение не принимает и хост-заглушки для
+этого случая больше нет. Исключение из `render()` не пробрасывается — контроллер логирует его и
+отдаёт `plugin/_widget_error.html.twig` (200, с кнопкой retry на тот же URL через `hx-get`).
 
 **`plugin/_widget_list.html.twig`** — необязательный хелпер для частого случая «виджет = список
 записей», переиспользующий классы `.anime-card` из `css/anime-list.css` для визуальной
@@ -182,8 +183,8 @@ read-only, `#[AutoconfigureTag]` там не повесить), а `EntryWidgetR
 `anime/show.html.twig`).
 
 Ответ виджета — обычный кэшируемый GET, полностью определяемый URL (`pluginId`, `widgetName`,
-`entryId`), без сессии/cookie; успешный ответ несёт `Cache-Control: public, max-age=300`,
-фрагменты unavailable/error — без кэша.
+`entryId`), без сессии/cookie; успешный ответ (включая `null`-externalId, отрендеренный самим
+виджетом) несёт `Cache-Control: public, max-age=300`, фрагмент error — без кэша.
 
 ## Платформы
 

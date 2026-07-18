@@ -265,6 +265,5 @@ storage_edit:
 
 plugin_widget:
     loading: Загрузка…
-    no_data: 'Нет данных из источника «%source%».'
     error: 'Не удалось загрузить виджет источника «%source%».'
     retry_button: Повторить
