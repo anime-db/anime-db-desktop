@@ -144,6 +144,29 @@ final class InstalledPluginsRegistryTest extends TestCase
         $this->assertSame(['animedb-shikimori'], $this->ids($registry->all()));
     }
 
+    public function testReadIndexSkipsEntryWithInvalidPluginIdAndKeepsOthers(): void
+    {
+        $this->writeManifest('animedb-shikimori');
+
+        $registry = new InstalledPluginsRegistry($this->pluginsDir, $this->configStore(), new NullLogger());
+        $registry->reconcile();
+
+        // Simulates a persistent index entry written by a pre-0.4.0 plugin-contracts version,
+        // before the manifest parser validated the "id" format on reconcile.
+        $this->appendBrokenIndexEntry('not_a_valid_id');
+
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->exactly(2))->method('error')->with(
+            $this->stringContains('invalid index entry'),
+            $this->callback(static fn (array $context): bool => $context['pluginId'] === 'not_a_valid_id'),
+        );
+
+        $registry = new InstalledPluginsRegistry($this->pluginsDir, $this->configStore(), $logger);
+
+        $this->assertSame(['animedb-shikimori'], $this->ids($registry->all()));
+        $this->assertSame(['animedb-shikimori'], $this->ids($registry->enabled()));
+    }
+
     public function testGetReturnsMatchingPlugin(): void
     {
         $this->writeManifest('animedb-shikimori');
@@ -186,6 +209,35 @@ final class InstalledPluginsRegistryTest extends TestCase
     private function configStore(): PluginsConfigStore
     {
         return new PluginsConfigStore($this->pluginsDir.'/plugins.json');
+    }
+
+    /**
+     * Directly rewrites `installed-plugins.php` to inject an entry with an invalid "id" next to
+     * whatever is already there, bypassing {@see InstalledPluginsRegistry::reconcile()} (which
+     * would reject it) to simulate a persisted index written by an older, less strict parser.
+     */
+    private function appendBrokenIndexEntry(string $brokenId): void
+    {
+        $indexPath = $this->pluginsDir.'/installed-plugins.php';
+        $entries = require $indexPath;
+
+        $entries[$brokenId] = [
+            'installPath' => $this->pluginsDir.'/animedb-broken',
+            'manifest' => [
+                'id' => $brokenId,
+                'name' => 'Broken',
+                'version' => '1.0.0',
+                'type' => 'integration',
+                'require' => ['core' => '>=2.0.0', 'php' => '>=8.2', 'pluginContracts' => '>=0.4.0'],
+                'description' => null,
+                'author' => null,
+                'features' => [],
+                'locales' => [],
+                'updateUrl' => null,
+            ],
+        ];
+
+        file_put_contents($indexPath, "<?php\n\nreturn ".var_export($entries, true).";\n");
     }
 
     private function writeManifest(string $pluginId, string $version = '1.0.0'): void
