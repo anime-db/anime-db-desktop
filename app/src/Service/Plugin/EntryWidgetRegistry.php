@@ -49,6 +49,8 @@ use Symfony\Component\DependencyInjection\Attribute\AutowireIterator;
  */
 final class EntryWidgetRegistry
 {
+    use WidgetActiveTrait;
+
     /** @param iterable<string, EntryWidgetInterface> $widgets keyed by "{pluginId}:{widgetName}" */
     public function __construct(
         #[AutowireIterator('app.entry_widget', indexAttribute: 'id')]
@@ -90,18 +92,5 @@ final class EntryWidgetRegistry
     private static function key(PluginId $pluginId, string $widgetName): string
     {
         return $pluginId.':'.$widgetName;
-    }
-
-    /**
-     * A widget without a recorded settings entry yet is treated as active, same convention as
-     * FillerRegistry::isActive(): plugins.json only ever records an explicit "false" once the
-     * user turns a feature off.
-     */
-    private function isActive(PluginId $pluginId, string $widgetName): bool
-    {
-        $settings = $this->pluginsConfigStore->getPluginSettings($pluginId);
-        $features = $settings['features'] ?? [];
-
-        return (bool) ($features[$widgetName] ?? true);
     }
 }

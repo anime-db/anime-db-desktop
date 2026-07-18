@@ -39,6 +39,8 @@ use Symfony\Component\DependencyInjection\Attribute\AutowireIterator;
  */
 final class CatalogWidgetRegistry
 {
+    use WidgetActiveTrait;
+
     /** @param iterable<string, CatalogWidgetInterface> $widgets keyed by "{pluginId}:{widgetName}" */
     public function __construct(
         #[AutowireIterator('app.catalog_widget', indexAttribute: 'id')]
@@ -53,17 +55,5 @@ final class CatalogWidgetRegistry
         $widget = iterator_to_array($this->widgets)[$key] ?? null;
 
         return $widget !== null && $this->isActive($pluginId, $widgetName) ? $widget : null;
-    }
-
-    /**
-     * A widget without a recorded settings entry yet is treated as active, same convention as
-     * FillerRegistry::isActive().
-     */
-    private function isActive(PluginId $pluginId, string $widgetName): bool
-    {
-        $settings = $this->pluginsConfigStore->getPluginSettings($pluginId);
-        $features = $settings['features'] ?? [];
-
-        return (bool) ($features[$widgetName] ?? true);
     }
 }
