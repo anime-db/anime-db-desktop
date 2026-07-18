@@ -37,12 +37,22 @@ use App\Service\Plugin\Exception\PluginAlreadyInstalledException;
 use App\Service\Plugin\Exception\PluginInstallException;
 
 /**
- * Installs a plugin from an uploaded ZIP archive: unpacks it into a private temporary directory
+ * Installs a plugin from an uploaded ZIP archive: unpacks it into a private staging directory
  * first, validates its `manifest.json` there, and only then moves it into
  * `%app.plugins_dir%/<pluginId>/` and re-runs {@see InstalledPluginsRegistry::reconcile()} to
  * pick it up. Any failure along the way — a corrupt archive, a missing/invalid manifest, an id
  * collision, or a filesystem error moving the unpacked directory into place — rolls back
  * whatever was created, so a failed install never leaves a partial plugin behind.
+ *
+ * The staging directory lives at `dirname(%app.plugins_dir%)/.plugin-install-tmp/<random>`,
+ * i.e. a sibling of `%app.plugins_dir%` rather than the system temp directory
+ * ({@see self::stagingRootDir()}). Two constraints drive that: it must be outside
+ * `%app.plugins_dir%` itself so {@see InstalledPluginsRegistry::reconcile()} never scans a
+ * half-unpacked directory as a plugin candidate, and it must be on the *same filesystem* as
+ * `%app.plugins_dir%` so the final `rename()` into place is a same-volume move — `rename()`
+ * fails with EXDEV across filesystem boundaries (e.g. a tmpfs `/tmp` next to a persistent
+ * `%app.plugins_dir%` on Linux, or `%TEMP%` and `%AppData%` on different drives on Windows),
+ * which the system temp directory does not guarantee.
  *
  * Deliberately out of scope here (see issue #248): compatibility/lint checks on the manifest
  * beyond {@see ManifestParser::parse()}'s own validation, any UI, and activation/cache warm-up
@@ -51,6 +61,8 @@ use App\Service\Plugin\Exception\PluginInstallException;
  */
 final class ZipPluginInstaller
 {
+    private const STAGING_DIR_NAME = '.plugin-install-tmp';
+
     public function __construct(
         private readonly string $pluginsDir,
         private readonly InstalledPluginsRegistry $registry,
@@ -71,7 +83,8 @@ final class ZipPluginInstaller
 
         try {
             $this->extract($zipPath, $tmpDir);
-            $manifest = $this->parseManifest($tmpDir);
+            $pluginRoot = $this->resolvePluginRoot($tmpDir);
+            $manifest = $this->parseManifest($pluginRoot);
             $pluginId = new PluginId($manifest->id);
             $targetDir = $this->pluginsDir.\DIRECTORY_SEPARATOR.$pluginId;
 
@@ -80,24 +93,30 @@ final class ZipPluginInstaller
             }
 
             $moveStarted = true;
-            $this->move($tmpDir, $targetDir);
+            $this->move($pluginRoot, $targetDir);
 
             $this->registry->reconcile();
 
             return $pluginId;
         } catch (\Throwable $exception) {
-            $this->removeDirectory($tmpDir);
             if ($moveStarted && null !== $targetDir) {
                 $this->removeDirectory($targetDir);
             }
 
             throw $exception;
+        } finally {
+            $this->removeDirectory($tmpDir);
         }
+    }
+
+    private function stagingRootDir(): string
+    {
+        return \dirname($this->pluginsDir).\DIRECTORY_SEPARATOR.self::STAGING_DIR_NAME;
     }
 
     private function createTmpDir(): string
     {
-        $tmpDir = sys_get_temp_dir().\DIRECTORY_SEPARATOR.'anime-db-plugin-install-'.bin2hex(random_bytes(8));
+        $tmpDir = $this->stagingRootDir().\DIRECTORY_SEPARATOR.'anime-db-plugin-install-'.bin2hex(random_bytes(8));
 
         if (!mkdir($tmpDir, recursive: true) && !is_dir($tmpDir)) {
             throw new PluginInstallException(\sprintf('Unable to create temporary directory "%s".', $tmpDir));
@@ -115,12 +134,66 @@ final class ZipPluginInstaller
         }
 
         try {
+            $this->assertSafeEntryNames($zip, $zipPath);
+
             if (!$zip->extractTo($targetDir)) {
                 throw new PluginInstallException(\sprintf('Unable to extract ZIP archive "%s".', $zipPath));
             }
         } finally {
             $zip->close();
         }
+    }
+
+    /**
+     * Defence in depth against zip-slip: an untrusted archive (this is a custom-upload path, not
+     * only the CI-packaged marketplace flow from issue #220) could contain entry names with `..`
+     * segments or absolute paths designed to write outside the staging directory. Modern
+     * {@see \ZipArchive::extractTo()} already rejects those, but that behaviour is not part of
+     * its documented contract, so entry names are validated explicitly before extraction rather
+     * than relying on it.
+     *
+     * @throws PluginInstallException
+     */
+    private function assertSafeEntryNames(\ZipArchive $zip, string $zipPath): void
+    {
+        for ($i = 0; $i < $zip->numFiles; ++$i) {
+            $name = $zip->getNameIndex($i);
+            if (false === $name) {
+                continue;
+            }
+
+            $isAbsolute = str_starts_with($name, '/') || str_starts_with($name, '\\') || 1 === preg_match('#^[A-Za-z]:#', $name);
+            $hasParentTraversal = \in_array('..', explode('/', str_replace('\\', '/', $name)), true);
+
+            if ($isAbsolute || $hasParentTraversal) {
+                throw new PluginInstallException(\sprintf('ZIP archive "%s" contains an unsafe entry path "%s".', $zipPath, $name));
+            }
+        }
+    }
+
+    /**
+     * Locates the directory that should actually contain `manifest.json`. A ZIP created by
+     * packaging a directory directly (Windows Explorer, `zip -r plugin.zip plugin/`) commonly
+     * wraps everything in one top-level directory instead of putting `manifest.json` at the
+     * archive root; this descends into it transparently. Anything else (no top-level wrapper, or
+     * more than one top-level entry) is left as-is and surfaces as a missing-manifest error from
+     * {@see self::parseManifest()}, since there is no unambiguous root to pick.
+     */
+    private function resolvePluginRoot(string $tmpDir): string
+    {
+        if (is_file($tmpDir.\DIRECTORY_SEPARATOR.'manifest.json')) {
+            return $tmpDir;
+        }
+
+        $entries = array_values(array_diff((array) scandir($tmpDir), ['.', '..']));
+        if (1 === \count($entries)) {
+            $nested = $tmpDir.\DIRECTORY_SEPARATOR.$entries[0];
+            if (is_dir($nested) && is_file($nested.\DIRECTORY_SEPARATOR.'manifest.json')) {
+                return $nested;
+            }
+        }
+
+        return $tmpDir;
     }
 
     /**

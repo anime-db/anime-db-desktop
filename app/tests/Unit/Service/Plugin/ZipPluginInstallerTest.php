@@ -39,13 +39,18 @@ use Psr\Log\NullLogger;
 
 final class ZipPluginInstallerTest extends TestCase
 {
+    private string $rootDir;
     private string $pluginsDir;
     private string $fixturesDir;
     private InstalledPluginsRegistry $registry;
 
     protected function setUp(): void
     {
-        $this->pluginsDir = sys_get_temp_dir().'/anime-zip-installer-test-'.uniqid();
+        // pluginsDir is nested one level inside rootDir (rather than being sys_get_temp_dir()
+        // itself) so tests can tell "staged as a sibling of pluginsDir" apart from "staged
+        // anywhere under the system temp directory" — see testStagingDirectoryIsSiblingOfPluginsDir().
+        $this->rootDir = sys_get_temp_dir().'/anime-zip-installer-test-'.uniqid();
+        $this->pluginsDir = $this->rootDir.'/plugins';
         mkdir($this->pluginsDir, recursive: true);
 
         $this->fixturesDir = sys_get_temp_dir().'/anime-zip-installer-fixtures-'.uniqid();
@@ -60,7 +65,7 @@ final class ZipPluginInstallerTest extends TestCase
 
     protected function tearDown(): void
     {
-        $this->removeDirectory($this->pluginsDir);
+        $this->removeDirectory($this->rootDir);
         $this->removeDirectory($this->fixturesDir);
     }
 
@@ -190,6 +195,66 @@ final class ZipPluginInstallerTest extends TestCase
         }
     }
 
+    /**
+     * Regression test for the EXDEV cross-filesystem rename() failure: the final move into
+     * %app.plugins_dir% is only atomic if staging happens on the same volume. Actually mounting
+     * a second filesystem is not portable in a unit test, so this asserts the location decision
+     * that makes same-volume staging true by construction — a sibling of pluginsDir, not the
+     * system temp directory.
+     */
+    public function testStagingDirectoryIsSiblingOfPluginsDir(): void
+    {
+        $installer = $this->installer();
+
+        $method = new \ReflectionMethod($installer, 'stagingRootDir');
+
+        $this->assertSame($this->rootDir.'/.plugin-install-tmp', $method->invoke($installer));
+    }
+
+    public function testInstallDescendsIntoSingleTopLevelWrapperDirectory(): void
+    {
+        // Packaging a directory directly (Explorer / `zip -r plugin.zip plugin/`) wraps
+        // everything in one top-level directory instead of putting manifest.json at the root.
+        $zipPath = $this->createZip([
+            'animedb-shikimori/manifest.json' => $this->validManifestJson('animedb-shikimori'),
+            'animedb-shikimori/src/Plugin.php' => '<?php // plugin entry point',
+        ]);
+
+        $installer = $this->installer();
+        $pluginId = $installer->install($zipPath);
+
+        $this->assertSame('animedb-shikimori', (string) $pluginId);
+
+        $targetDir = $this->pluginsDir.'/animedb-shikimori';
+        $this->assertFileExists($targetDir.'/manifest.json');
+        $this->assertFileExists($targetDir.'/src/Plugin.php');
+        $this->assertDirectoryDoesNotExist($targetDir.'/animedb-shikimori');
+
+        $this->assertNoLeftoverTempDirectories();
+    }
+
+    public function testInstallRejectsZipWithPathTraversalEntry(): void
+    {
+        $zipPath = $this->fixturesDir.'/'.uniqid('plugin-', true).'.zip';
+        $zip = new \ZipArchive();
+        $zip->open($zipPath, \ZipArchive::CREATE);
+        $zip->addFromString('manifest.json', $this->validManifestJson('animedb-shikimori'));
+        $zip->addFromString('../escaped.txt', 'zip-slip payload');
+        $zip->close();
+
+        $installer = $this->installer();
+
+        $this->expectException(PluginInstallException::class);
+
+        try {
+            $installer->install($zipPath);
+        } finally {
+            $this->assertSame([], array_values(array_diff((array) scandir($this->pluginsDir), ['.', '..'])));
+            $this->assertFileDoesNotExist(\dirname($this->pluginsDir).'/escaped.txt');
+            $this->assertNoLeftoverTempDirectories();
+        }
+    }
+
     private function installer(): ZipPluginInstaller
     {
         return new ZipPluginInstaller($this->pluginsDir, $this->registry);
@@ -225,18 +290,16 @@ final class ZipPluginInstallerTest extends TestCase
     }
 
     /**
-     * Confirms the installer never leaves its own working directories behind in the system
-     * temp directory, regardless of whether install() succeeded or rolled back.
+     * Confirms the installer never leaves its own staging directories behind, regardless of
+     * whether install() succeeded or rolled back.
      */
     private function assertNoLeftoverTempDirectories(): void
     {
-        $entries = scandir(sys_get_temp_dir());
-        $leftovers = array_filter(
-            false === $entries ? [] : $entries,
-            static fn (string $entry): bool => str_starts_with($entry, 'anime-db-plugin-install-'),
-        );
+        $stagingRoot = $this->rootDir.'/.plugin-install-tmp';
+        $entries = is_dir($stagingRoot) ? scandir($stagingRoot) : [];
+        $leftovers = array_values(array_diff(false === $entries ? [] : $entries, ['.', '..']));
 
-        $this->assertSame([], array_values($leftovers));
+        $this->assertSame([], $leftovers);
     }
 
     private function removeDirectory(string $dir): void
