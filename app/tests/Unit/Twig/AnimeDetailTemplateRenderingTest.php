@@ -125,7 +125,7 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
 
         /** @var Environment $twig */
         $twig = self::getContainer()->get('twig');
-        $html = $twig->render('anime/show.html.twig', ['anime' => $this->fullyPopulatedAnime()]);
+        $html = $twig->render('anime/show.html.twig', ['anime' => $this->fullyPopulatedAnime(), 'widgets' => []]);
 
         $this->assertStringContainsString('Shingeki no Kyojin', $html);
         $this->assertStringContainsString('Humanity fights for survival against man-eating Titans.', $html);
@@ -163,7 +163,7 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
 
         /** @var Environment $twig */
         $twig = self::getContainer()->get('twig');
-        $html = $twig->render('anime/show.html.twig', ['anime' => $this->minimalAnime()]);
+        $html = $twig->render('anime/show.html.twig', ['anime' => $this->minimalAnime(), 'widgets' => []]);
 
         $this->assertStringContainsString('A Silent Voice', $html);
         $this->assertStringContainsString('Фильм', $html);
@@ -189,7 +189,7 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
 
         /** @var Environment $twig */
         $twig = self::getContainer()->get('twig');
-        $html = $twig->render('anime/show.html.twig', ['anime' => $anime]);
+        $html = $twig->render('anime/show.html.twig', ['anime' => $anime, 'widgets' => []]);
 
         $this->assertStringContainsString('disabled', $html);
         $this->assertStringContainsString('Путь не доступен', $html);

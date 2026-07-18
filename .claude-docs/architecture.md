@@ -147,6 +147,45 @@ FrankenPHP стартует `public/index.php` в **worker mode** — PHP заг
 
 `src/Plugin/` — плагинная система. Один плагин на вендора, функции включаются/выключаются через настройки плагина. Плагины не имеют доступа к основной схеме SQLite — работают через `plugin_data` или отдельный SQLite-файл.
 
+### Виджеты плагинов (issue #212)
+
+Виджет плагина (`AnimeDb\PluginContracts\EntryWidgetInterface`/`CatalogWidgetInterface`) грузится
+асинхронно через HTMX: `anime/show.html.twig` рендерит один `<div hx-get hx-trigger="load">` на
+каждый активный виджет из `App\Service\Plugin\EntryWidgetRegistry::findAllActive()`, а
+`App\Controller\PluginWidgetController` отвечает на `GET /plugin/{pluginId}/widget/{widgetName}?entryId=`
+отдельным запросом на виджет — сбой одного виджета не блокирует страницу и другие виджеты.
+
+Регистрация виджетов — тот же паттерн, что `FillerRegistry`: `_instanceof` в `services.yaml`
+тэгирует `EntryWidgetInterface`/`CatalogWidgetInterface` (пакет `anime-db/plugin-contracts`
+read-only, `#[AutoconfigureTag]` там не повесить), а `EntryWidgetRegistry`/`CatalogWidgetRegistry`
+собирают их через `#[AutowireIterator(..., indexAttribute: 'id')]`. В отличие от Filler (один
+класс на плагин), у виджетов один класс на виджет, поэтому индексный ключ — составной
+`"{pluginId}:{widgetName}"`, а не просто `PluginId`; будущий plugin manager (issues
+#218/#220-224) должен регистрировать сервис виджета под таким id. До тех пор оба реестра пусты в
+проде. Каждый виджет переключается независимо через `features.{widgetName}` в `plugins.json`
+(не общий флаг `features.widget`).
+
+Для entry-виджета контроллер сначала резолвит внешний id через `Anime::getExternalId($pluginId, $widget)`
+(issue #211) — это одновременно и прогрев кэша, и получение параметра для `render()`. Контракт
+`render(?string $externalId): string` (`anime-db/plugin-contracts` v0.3, issue #21 в этом пакете)
+принимает резолвнутый id напрямую, включая `null`, когда источник к записи не привязан; localId
+записи виджет не получает вовсе. Empty-state при `null` — забота самого виджета (пустая строка
+скрывает слот, либо, например, CTA), контроллер такое решение не принимает и хост-заглушки для
+этого случая больше нет. Исключение из `render()` не пробрасывается — контроллер логирует его и
+отдаёт `plugin/_widget_error.html.twig` (200, с кнопкой retry на тот же URL через `hx-get`).
+
+**`plugin/_widget_list.html.twig`** — необязательный хелпер для частого случая «виджет = список
+записей», переиспользующий классы `.anime-card` из `css/anime-list.css` для визуальной
+консистентности с каталогом. Официальные плагины (не обязаны) рендерят его сами через
+`Twig\Environment`, если тянут в контейнер. Контракт: переменная `items` — список
+`{thumbnail: string|null, title: string, subtitle: string|null, url: string}`. Любая страница,
+включающая ответ виджета, должна сама подключить `css/anime-list.css` (так уже сделано в
+`anime/show.html.twig`).
+
+Ответ виджета — обычный кэшируемый GET, полностью определяемый URL (`pluginId`, `widgetName`,
+`entryId`), без сессии/cookie; успешный ответ (включая `null`-externalId, отрендеренный самим
+виджетом) несёт `Cache-Control: public, max-age=300`, фрагмент error — без кэша.
+
 ## Платформы
 
 Только Windows x64. macOS/Linux не поддерживаются (FrankenPHP не даёт x32 Windows, ЦА только Windows).

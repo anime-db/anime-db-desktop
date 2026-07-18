@@ -397,3 +397,28 @@
     border-radius: 6px;
     object-fit: cover;
 }
+
+.plugin-widget {
+    min-height: 1.5em;
+    color: #555;
+}
+
+.plugin-widget--error {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.plugin-widget__error-text {
+    margin: 0;
+    color: #a94442;
+}
+
+.plugin-widget__list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 16px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
