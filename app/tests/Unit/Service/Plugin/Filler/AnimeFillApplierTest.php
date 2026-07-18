@@ -168,6 +168,27 @@ final class AnimeFillApplierTest extends TestCase
         );
     }
 
+    public function testApplyReusesNewlyCreatedStudioAcrossCallsBeforeFlush(): void
+    {
+        $data = new PluginAnimeData(title: 'Bleach', studios: ['Studio Pierrot']);
+
+        $first = $this->newAnime();
+        $this->applier->apply($first, $data, ['studios']);
+        $this->entityManager->persist($first);
+
+        $second = $this->newAnime();
+        $this->applier->apply($second, $data, ['studios']);
+        $this->entityManager->persist($second);
+
+        $this->entityManager->flush();
+
+        $this->assertSame(
+            $first->getStudios()->toArray()[0]->id,
+            $second->getStudios()->toArray()[0]->id,
+        );
+        $this->assertCount(1, $this->entityManager->getRepository(\App\Entity\Studio::class)->findAll());
+    }
+
     public function testApplyUnionsCountriesWithoutDuplicates(): void
     {
         $anime = $this->newAnime();

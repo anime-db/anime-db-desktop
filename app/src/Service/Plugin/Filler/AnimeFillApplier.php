@@ -61,6 +61,18 @@ use Doctrine\ORM\EntityManagerInterface;
  */
 final class AnimeFillApplier
 {
+    /**
+     * Keyed by studio name, populated across every apply() call for the lifetime of this
+     * (Symfony-shared) service instance. Doctrine's repository query cannot see a Studio
+     * persisted earlier in the same unflushed unit of work, so without this cache two new
+     * Anime records with the same new studio, filled in the same scan before the caller's
+     * single flush(), would each create their own duplicate Studio row. Same pattern as
+     * {@see \App\Service\Install\SampleAnimeSeeder::findOrCreateStudio()}.
+     *
+     * @var array<string, Studio>
+     */
+    private array $studioCache = [];
+
     public function __construct(
         private readonly StudioRepository $studioRepository,
         private readonly EntityManagerInterface $entityManager,
@@ -149,7 +161,7 @@ final class AnimeFillApplier
     private function applyStudios(Anime $anime, array $studios): void
     {
         foreach ($studios as $name) {
-            $anime->addStudio($this->resolveStudio($name));
+            $anime->addStudio($this->studioCache[$name] ??= $this->resolveStudio($name));
         }
     }
 
