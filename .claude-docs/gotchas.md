@@ -119,3 +119,15 @@ PHPUnit не может создать test double (`createStub`/`createMock`) �
 ## `matchingStrategy` — параметр поискового запроса, а не настройка индекса Meilisearch
 
 `PATCH /indexes/{uid}/settings` (и, соответственно, `Indexes::updateSettings()` в `meilisearch/meilisearch-php`) **отклоняет** ключ `matchingStrategy` с `400 Unknown field` — проверено эмпирически на реальном бинарнике 1.13.0 (issue #196). Это не персистентная настройка индекса, а параметр конкретного вызова `POST /indexes/{uid}/search` (тело запроса, наравне с `q`/`filter`). `App\Service\Search\AnimeSearchIndexer::configureIndex()` его сознательно не устанавливает — вместо этого `matchingStrategy: "frequency"` должен передавать любой код, который реально шлёт поисковый запрос (обоснование выбора `frequency` вместо дефолтного `last` — `context/tech_decisions.md` в `anime-db-workspace`, issue #196: дефолт `last` даёт 0 результатов на фразах с предлогами вроде «о тетради смерти»).
+
+## Свежий чекаут — `vendor/` не установлен
+
+Перед `vendor/bin/phpunit`, `composer cs-check`/`cs-fix`, `composer phpstan` внутри `app/` нужно сначала выполнить `composer install --no-interaction --prefer-dist` — свежий чекаут этого не делает автоматически. Без этого `vendor/bin/phpunit: No such file or directory`.
+
+## `App\Service\Plugin\Filler\PluginAnimeDataMerger` — переименован из `AnimeFillApplier`
+
+Сервис, изначально введённый как `AnimeFillApplier` (bulk-fill при скане хранилища), переименован в `PluginAnimeDataMerger` при реализации issue #231 и расширен: теперь также обрабатывает `title` (overwrite) и `cover`/`images` — через новый `PluginMediaDownloaderInterface` → `HttpPluginMediaDownloader` (скачивание по URL в `%AppData%/media/{anime id}/`), а не голым присваиванием URL-строки в колонку. `BulkFillerService` по-прежнему исключает `cover`/`images` из полей, которые передаёт мерджеру — у ещё не персистентной `Anime` нет `id`, а значит нет и директории на диске, куда скачивать (см. `PluginAnimeDataMerger::applyCover()`/`applyImages()`).
+
+## `app-media://` — протокол *чтения*, а не пайплайн скачивания
+
+`native/protocols/app-media.js` (issue #68) только отдаёт уже лежащие на диске файлы из `%AppData%/media/{id}/` по схеме `app-media://anime/{id}/{filename}`. Сервиса, который скачивает внешние (плагинские) URL в этот каталог, до issue #231 в кодовой базе не существовало вообще — не было даже выделенного HTTP-клиента под эту задачу (только `symfony/http-client` как composer-зависимость, использовавшаяся исключительно для Meilisearch). Формулировка «через существующий app-media pipeline» в тексте issue относится не к протоколу чтения, а к самому факту хранения файла в `%AppData%/media/{id}/`, откуда протокол потом его отдаёт — скачивание пришлось реализовывать с нуля (`HttpPluginMediaDownloader`).

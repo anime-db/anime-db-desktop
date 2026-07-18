@@ -46,8 +46,9 @@ use Doctrine\ORM\EntityManagerInterface;
  * the title-only placeholder that was the only option before this issue.
  *
  * "Bulk" here specifically means the create path: this service never touches an already
- * existing Anime, so the merge-vs-overwrite distinction AnimeFillApplier enforces never risks
- * clobbering user data — every field it writes lands on a row that did not exist a moment ago.
+ * existing Anime, so the merge-vs-overwrite distinction PluginAnimeDataMerger enforces never
+ * risks clobbering user data — every field it writes lands on a row that did not exist a moment
+ * ago.
  * The one plugin used is whichever one produced the match in the first place — the issue's
  * "priority or explicitly user-chosen" plugin selection has no config surface to choose from yet
  * (no plugin management UI exists), so re-using the plugin that already found the title is the
@@ -60,7 +61,7 @@ final class BulkFillerService
 
     public function __construct(
         private readonly FillerRegistry $fillerRegistry,
-        private readonly AnimeFillApplier $applier,
+        private readonly PluginAnimeDataMerger $merger,
         private readonly EntityManagerInterface $entityManager,
     ) {
     }
@@ -88,10 +89,11 @@ final class BulkFillerService
         $anime->setTitle($data->title)->setWatchStatus(WatchStatus::Plan);
         $anime->rememberExternalId($pluginId, $externalId);
 
-        // title/type are already applied above; cover/images need a download step this service
-        // does not implement yet (see AnimeFillApplier's docblock).
+        // title/type are already applied above; cover/images stay out of the bulk create path —
+        // downloading them needs the anime's own database id (see PluginAnimeDataMerger::applyCover()),
+        // which this brand-new, not-yet-persisted Anime does not have yet.
         $fields = array_diff($filler->getFillableFields(), ['title', 'type', 'cover', 'images']);
-        $this->applier->apply($anime, $data, $fields);
+        $this->merger->apply($anime, $data, $fields);
 
         $this->entityManager->persist($anime);
 
