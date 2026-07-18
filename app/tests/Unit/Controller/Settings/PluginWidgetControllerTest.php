@@ -114,12 +114,12 @@ final class PluginWidgetControllerTest extends TestCase
             ->with('settings/plugin/widgets.html.twig', $this->callback(static function (array $params): bool {
                 self::assertSame(
                     [
-                        ['pluginId' => 'animedb-shikimori', 'widgetName' => 'related', 'active' => true, 'pluginName' => 'Shikimori'],
-                        ['pluginId' => 'zzz-plugin', 'widgetName' => 'teaser', 'active' => true, 'pluginName' => 'Zzz Plugin'],
+                        ['pluginId' => 'animedb-shikimori', 'widgetName' => 'related', 'active' => false, 'pluginName' => 'Shikimori'],
+                        ['pluginId' => 'zzz-plugin', 'widgetName' => 'teaser', 'active' => false, 'pluginName' => 'Zzz Plugin'],
                     ],
                     $params['entryWidgets'],
                 );
-                self::assertSame(2, $params['entryActiveCount']);
+                self::assertSame(0, $params['entryActiveCount']);
                 self::assertSame(5, $params['hardLimit']);
                 self::assertSame(2, $params['recommendedLimit']);
 
@@ -180,7 +180,9 @@ final class PluginWidgetControllerTest extends TestCase
         foreach (['w1', 'w2', 'w3', 'w4', 'w5', 'w6'] as $name) {
             $widgets["animedb-shikimori:{$name}"] = $this->createStub(EntryWidgetInterface::class);
         }
-        file_put_contents($this->configPath, json_encode(['animedb-shikimori' => ['features' => ['w6' => false]]]));
+        file_put_contents($this->configPath, json_encode([
+            'animedb-shikimori' => ['features' => ['w1' => true, 'w2' => true, 'w3' => true, 'w4' => true, 'w5' => true]],
+        ]));
 
         $entryWidgets = new EntryWidgetRegistry($widgets, new PluginsConfigStore($this->configPath));
 

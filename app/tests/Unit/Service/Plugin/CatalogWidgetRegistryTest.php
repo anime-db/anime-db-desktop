@@ -54,6 +54,10 @@ final class CatalogWidgetRegistryTest extends TestCase
 
     public function testFindReturnsTheMatchingWidgetForACompoundPluginAndWidgetNameKey(): void
     {
+        file_put_contents($this->path, json_encode([
+            'animedb-shikimori' => ['features' => ['new_releases' => true]],
+        ]));
+
         $newReleases = $this->createStub(CatalogWidgetInterface::class);
 
         $registry = new CatalogWidgetRegistry(
@@ -89,6 +93,7 @@ final class CatalogWidgetRegistryTest extends TestCase
     {
         file_put_contents($this->path, json_encode([
             'animedb-shikimori' => ['features' => ['new_releases' => false]],
+            'animedb-anilist' => ['features' => ['trending' => true]],
         ]));
 
         $registry = new CatalogWidgetRegistry(
@@ -129,17 +134,19 @@ final class CatalogWidgetRegistryTest extends TestCase
             new PluginsConfigStore($this->path),
         );
 
-        $registry->setActive(new PluginId('animedb-shikimori'), 'new_releases', false);
         $this->assertNull($registry->find(new PluginId('animedb-shikimori'), 'new_releases'));
 
         $registry->setActive(new PluginId('animedb-shikimori'), 'new_releases', true);
         $this->assertNotNull($registry->find(new PluginId('animedb-shikimori'), 'new_releases'));
+
+        $registry->setActive(new PluginId('animedb-shikimori'), 'new_releases', false);
+        $this->assertNull($registry->find(new PluginId('animedb-shikimori'), 'new_releases'));
     }
 
     public function testSetActiveThrowsWhenEnablingAWidgetWouldExceedTheHardLimit(): void
     {
         file_put_contents($this->path, json_encode([
-            'animedb-shikimori' => ['features' => ['w6' => false]],
+            'animedb-shikimori' => ['features' => ['w1' => true, 'w2' => true, 'w3' => true, 'w4' => true, 'w5' => true]],
         ]));
 
         $widgets = [];

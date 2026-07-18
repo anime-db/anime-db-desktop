@@ -48,16 +48,17 @@ trait WidgetActiveTrait
     private readonly PluginsConfigStore $pluginsConfigStore;
 
     /**
-     * A widget without a recorded settings entry yet is treated as active, same convention as
-     * FillerRegistry::isActive(): plugins.json only ever records an explicit "false" once the
-     * user turns a feature off.
+     * A widget without a recorded settings entry yet is treated as inactive: the user must opt
+     * in explicitly. This keeps {@see self::HARD_LIMIT} meaningful for placements with more than
+     * {@see self::HARD_LIMIT} installed widgets — a default-on widget would bypass the cap simply
+     * by never being toggled.
      */
     private function isActive(PluginId $pluginId, string $widgetName): bool
     {
         $settings = $this->pluginsConfigStore->getPluginSettings($pluginId);
         $features = $settings['features'] ?? [];
 
-        return (bool) ($features[$widgetName] ?? true);
+        return (bool) ($features[$widgetName] ?? false);
     }
 
     /**

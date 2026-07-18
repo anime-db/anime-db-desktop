@@ -46,6 +46,32 @@ use Twig\Environment;
 
 final class PluginWidgetControllerTest extends TestCase
 {
+    private string $configPath;
+
+    protected function setUp(): void
+    {
+        $this->configPath = sys_get_temp_dir().'/anime-plugin-widget-test-'.uniqid().'.json';
+    }
+
+    protected function tearDown(): void
+    {
+        foreach ([$this->configPath, $this->configPath.'.tmp', $this->configPath.'.lock'] as $file) {
+            if (is_file($file)) {
+                unlink($file);
+            }
+        }
+    }
+
+    /**
+     * @param array<string, bool> $features
+     */
+    private function activeWidgets(string $pluginId, array $features): PluginsConfigStore
+    {
+        file_put_contents($this->configPath, json_encode([$pluginId => ['features' => $features]]));
+
+        return new PluginsConfigStore($this->configPath);
+    }
+
     private function createController(
         EntryWidgetRegistry $entryWidgets,
         CatalogWidgetRegistry $catalogWidgets,
@@ -83,7 +109,10 @@ final class PluginWidgetControllerTest extends TestCase
         $widget->method('resolveExternalId')->with(['https://shikimori.one/animes/52991'])->willReturn('52991');
         $widget->expects($this->once())->method('render')->with('52991')->willReturn('<div>Related</div>');
 
-        $entryWidgets = new EntryWidgetRegistry(['animedb-shikimori:related' => $widget], new PluginsConfigStore(''));
+        $entryWidgets = new EntryWidgetRegistry(
+            ['animedb-shikimori:related' => $widget],
+            $this->activeWidgets('animedb-shikimori', ['related' => true]),
+        );
 
         $entityManager = $this->createMock(EntityManagerInterface::class);
         $entityManager->method('find')->with(Anime::class, 5)->willReturn($anime);
@@ -110,7 +139,10 @@ final class PluginWidgetControllerTest extends TestCase
         $widget->method('resolveExternalId')->willReturn(null);
         $widget->expects($this->once())->method('render')->with(null)->willReturn('<p>no data</p>');
 
-        $entryWidgets = new EntryWidgetRegistry(['animedb-shikimori:related' => $widget], new PluginsConfigStore(''));
+        $entryWidgets = new EntryWidgetRegistry(
+            ['animedb-shikimori:related' => $widget],
+            $this->activeWidgets('animedb-shikimori', ['related' => true]),
+        );
 
         $entityManager = $this->createMock(EntityManagerInterface::class);
         $entityManager->method('find')->willReturn($anime);
@@ -135,7 +167,10 @@ final class PluginWidgetControllerTest extends TestCase
         $widget->method('resolveExternalId')->willReturn('52991');
         $widget->method('render')->willThrowException(new \RuntimeException('API unreachable'));
 
-        $entryWidgets = new EntryWidgetRegistry(['animedb-shikimori:related' => $widget], new PluginsConfigStore(''));
+        $entryWidgets = new EntryWidgetRegistry(
+            ['animedb-shikimori:related' => $widget],
+            $this->activeWidgets('animedb-shikimori', ['related' => true]),
+        );
 
         $entityManager = $this->createMock(EntityManagerInterface::class);
         $entityManager->method('find')->willReturn($anime);
@@ -170,7 +205,10 @@ final class PluginWidgetControllerTest extends TestCase
         $widget->method('resolveExternalId')->willThrowException(new \RuntimeException('source lookup timed out'));
         $widget->expects($this->never())->method('render');
 
-        $entryWidgets = new EntryWidgetRegistry(['animedb-shikimori:related' => $widget], new PluginsConfigStore(''));
+        $entryWidgets = new EntryWidgetRegistry(
+            ['animedb-shikimori:related' => $widget],
+            $this->activeWidgets('animedb-shikimori', ['related' => true]),
+        );
 
         $entityManager = $this->createMock(EntityManagerInterface::class);
         $entityManager->method('find')->willReturn($anime);
@@ -201,7 +239,10 @@ final class PluginWidgetControllerTest extends TestCase
     public function testRenderThrowsBadRequestWhenEntryIdIsMissing(): void
     {
         $widget = $this->createStub(EntryWidgetInterface::class);
-        $entryWidgets = new EntryWidgetRegistry(['animedb-shikimori:related' => $widget], new PluginsConfigStore(''));
+        $entryWidgets = new EntryWidgetRegistry(
+            ['animedb-shikimori:related' => $widget],
+            $this->activeWidgets('animedb-shikimori', ['related' => true]),
+        );
 
         $controller = $this->createController($entryWidgets, $this->emptyCatalogWidgets());
 
@@ -212,7 +253,10 @@ final class PluginWidgetControllerTest extends TestCase
     public function testRenderThrowsNotFoundWhenAnimeDoesNotExist(): void
     {
         $widget = $this->createStub(EntryWidgetInterface::class);
-        $entryWidgets = new EntryWidgetRegistry(['animedb-shikimori:related' => $widget], new PluginsConfigStore(''));
+        $entryWidgets = new EntryWidgetRegistry(
+            ['animedb-shikimori:related' => $widget],
+            $this->activeWidgets('animedb-shikimori', ['related' => true]),
+        );
 
         $entityManager = $this->createMock(EntityManagerInterface::class);
         $entityManager->method('find')->willReturn(null);
@@ -254,7 +298,10 @@ final class PluginWidgetControllerTest extends TestCase
         $widget = $this->createMock(CatalogWidgetInterface::class);
         $widget->expects($this->once())->method('render')->with()->willReturn('<div>New releases</div>');
 
-        $catalogWidgets = new CatalogWidgetRegistry(['animedb-shikimori:new_releases' => $widget], new PluginsConfigStore(''));
+        $catalogWidgets = new CatalogWidgetRegistry(
+            ['animedb-shikimori:new_releases' => $widget],
+            $this->activeWidgets('animedb-shikimori', ['new_releases' => true]),
+        );
 
         $entityManager = $this->createMock(EntityManagerInterface::class);
         $entityManager->expects($this->never())->method('find');
