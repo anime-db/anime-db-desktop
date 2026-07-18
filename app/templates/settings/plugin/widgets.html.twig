@@ -1,0 +1,83 @@
+{#
+ # AnimeDb package.
+ #
+ # @author    Peter Gribanov <info@peter-gribanov.ru>
+ # @copyright Copyright (c) 2026, Peter Gribanov
+ # @license   https://gnu.org GPL-3.0-or-later
+ #
+ # This program is free software: you can redistribute it and/or modify
+ # it under the terms of the GNU General Public License as published by
+ # the Free Software Foundation, either version 3 of the License, or
+ # (at your option) any later version.
+ #
+ # This program is distributed in the hope that it will be useful,
+ # but WITHOUT ANY WARRANTY; without even the implied warranty of
+ # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ # GNU General Public License for more details.
+ #
+ # You should have received a copy of the GNU General Public License
+ # along with this program. If not, see <https://gnu.org>.
+ #}
+{% extends 'base.html.twig' %}
+
+{% block title %}{{ 'settings_plugin_widgets.title'|trans }}{% endblock %}
+
+{% macro section(placement, widgets, activeCount, hardLimit, recommendedLimit) %}
+    {% if widgets is empty %}
+        <p>{{ ('settings_plugin_widgets.'~placement~'.empty')|trans }}</p>
+    {% else %}
+        <p class="settings-plugin-widgets__count">
+            {{ 'settings_plugin_widgets.active_count'|trans({'%count%': activeCount, '%limit%': hardLimit}) }}
+        </p>
+        {% if activeCount > recommendedLimit %}
+            <p class="warning">{{ 'settings_plugin_widgets.recommendation_warning'|trans({'%limit%': recommendedLimit}) }}</p>
+        {% endif %}
+        <table>
+            <thead>
+                <tr>
+                    <th>{{ 'settings_plugin_widgets.plugin_column'|trans }}</th>
+                    <th>{{ 'settings_plugin_widgets.widget_column'|trans }}</th>
+                    <th>{{ 'settings_plugin_widgets.active_column'|trans }}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for widget in widgets %}
+                    <tr>
+                        <td>{{ widget.pluginName }}</td>
+                        <td><code>{{ widget.widgetName }}</code></td>
+                        <td>
+                            <form method="post" action="{{ path('settings_plugin_widgets_toggle', {pluginId: widget.pluginId, widgetName: widget.widgetName}) }}">
+                                <input type="hidden" name="_token" value="{{ csrf_token('settings_plugin_widgets_toggle_'~widget.pluginId~'_'~widget.widgetName) }}">
+                                <input type="hidden" name="placement" value="{{ placement }}">
+                                <input type="hidden" name="active" value="0">
+                                <input
+                                    type="checkbox"
+                                    name="active"
+                                    value="1"
+                                    onchange="this.form.submit()"
+                                    {% if widget.active %}checked{% endif %}
+                                    {% if not widget.active and activeCount >= hardLimit %}disabled title="{{ 'settings_plugin_widgets.hard_limit_reached'|trans({'%limit%': hardLimit}) }}"{% endif %}
+                                >
+                            </form>
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% endif %}
+{% endmacro %}
+
+{% block body %}
+    <p><a href="{{ path('settings_index') }}">{{ 'settings_plugin_widgets.back_link'|trans }}</a></p>
+    <h1>{{ 'settings_plugin_widgets.heading'|trans }}</h1>
+
+    {% if error == 'hard_limit_exceeded' %}
+        <p class="error">{{ 'settings_plugin_widgets.hard_limit_error'|trans({'%limit%': hardLimit}) }}</p>
+    {% endif %}
+
+    <h2>{{ 'settings_plugin_widgets.entry.heading'|trans }}</h2>
+    {{ _self.section('entry', entryWidgets, entryActiveCount, hardLimit, recommendedLimit) }}
+
+    <h2>{{ 'settings_plugin_widgets.catalog.heading'|trans }}</h2>
+    {{ _self.section('catalog', catalogWidgets, catalogActiveCount, hardLimit, recommendedLimit) }}
+{% endblock %}

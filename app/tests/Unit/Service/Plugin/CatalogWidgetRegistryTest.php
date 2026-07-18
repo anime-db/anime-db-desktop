@@ -30,6 +30,7 @@ namespace App\Tests\Unit\Service\Plugin;
 use AnimeDb\PluginContracts\CatalogWidgetInterface;
 use App\Entity\ValueObject\PluginId;
 use App\Service\Plugin\CatalogWidgetRegistry;
+use App\Service\Plugin\Exception\WidgetHardLimitExceededException;
 use App\Service\Plugin\PluginsConfigStore;
 use PHPUnit\Framework\TestCase;
 
@@ -53,6 +54,10 @@ final class CatalogWidgetRegistryTest extends TestCase
 
     public function testFindReturnsTheMatchingWidgetForACompoundPluginAndWidgetNameKey(): void
     {
+        file_put_contents($this->path, json_encode([
+            'animedb-shikimori' => ['features' => ['new_releases' => true]],
+        ]));
+
         $newReleases = $this->createStub(CatalogWidgetInterface::class);
 
         $registry = new CatalogWidgetRegistry(
@@ -82,5 +87,76 @@ final class CatalogWidgetRegistryTest extends TestCase
         );
 
         $this->assertNull($registry->find(new PluginId('animedb-shikimori'), 'new_releases'));
+    }
+
+    public function testFindAllActiveListsOnlyEnabledWidgets(): void
+    {
+        file_put_contents($this->path, json_encode([
+            'animedb-shikimori' => ['features' => ['new_releases' => false]],
+            'animedb-anilist' => ['features' => ['trending' => true]],
+        ]));
+
+        $registry = new CatalogWidgetRegistry(
+            [
+                'animedb-shikimori:new_releases' => $this->createStub(CatalogWidgetInterface::class),
+                'animedb-anilist:trending' => $this->createStub(CatalogWidgetInterface::class),
+            ],
+            new PluginsConfigStore($this->path),
+        );
+
+        $this->assertSame(
+            [['pluginId' => 'animedb-anilist', 'widgetName' => 'trending']],
+            $registry->findAllActive(),
+        );
+    }
+
+    public function testListAllIncludesBothActiveAndInactiveWidgets(): void
+    {
+        file_put_contents($this->path, json_encode([
+            'animedb-shikimori' => ['features' => ['new_releases' => false]],
+        ]));
+
+        $registry = new CatalogWidgetRegistry(
+            ['animedb-shikimori:new_releases' => $this->createStub(CatalogWidgetInterface::class)],
+            new PluginsConfigStore($this->path),
+        );
+
+        $this->assertSame(
+            [['pluginId' => 'animedb-shikimori', 'widgetName' => 'new_releases', 'active' => false]],
+            $registry->listAll(),
+        );
+    }
+
+    public function testSetActiveTurnsAWidgetOnAndOff(): void
+    {
+        $registry = new CatalogWidgetRegistry(
+            ['animedb-shikimori:new_releases' => $this->createStub(CatalogWidgetInterface::class)],
+            new PluginsConfigStore($this->path),
+        );
+
+        $this->assertNull($registry->find(new PluginId('animedb-shikimori'), 'new_releases'));
+
+        $registry->setActive(new PluginId('animedb-shikimori'), 'new_releases', true);
+        $this->assertNotNull($registry->find(new PluginId('animedb-shikimori'), 'new_releases'));
+
+        $registry->setActive(new PluginId('animedb-shikimori'), 'new_releases', false);
+        $this->assertNull($registry->find(new PluginId('animedb-shikimori'), 'new_releases'));
+    }
+
+    public function testSetActiveThrowsWhenEnablingAWidgetWouldExceedTheHardLimit(): void
+    {
+        file_put_contents($this->path, json_encode([
+            'animedb-shikimori' => ['features' => ['w1' => true, 'w2' => true, 'w3' => true, 'w4' => true, 'w5' => true]],
+        ]));
+
+        $widgets = [];
+        foreach (['w1', 'w2', 'w3', 'w4', 'w5', 'w6'] as $name) {
+            $widgets["animedb-shikimori:{$name}"] = $this->createStub(CatalogWidgetInterface::class);
+        }
+
+        $registry = new CatalogWidgetRegistry($widgets, new PluginsConfigStore($this->path));
+
+        $this->expectException(WidgetHardLimitExceededException::class);
+        $registry->setActive(new PluginId('animedb-shikimori'), 'w6', true);
     }
 }

@@ -33,9 +33,10 @@ use Symfony\Component\DependencyInjection\Attribute\AutowireIterator;
 
 /**
  * Resolves the {@see CatalogWidgetInterface} instance a single `/plugin/{pluginId}/widget/{widgetName}`
- * request (issue #212) is for. Same compound "{pluginId}:{widgetName}" service-id convention as
- * {@see EntryWidgetRegistry} — see that class for why. Empty in production until the plugin
- * manager (issues #218/#220-224) exists.
+ * request (issue #212) is for, and lists the widgets (active or not) for the settings UI (issue
+ * #213). Same compound "{pluginId}:{widgetName}" service-id convention as {@see EntryWidgetRegistry}
+ * — see that class for why. Empty in production until the plugin manager (issues #218/#220-224)
+ * exists.
  */
 final class CatalogWidgetRegistry
 {
@@ -51,9 +52,64 @@ final class CatalogWidgetRegistry
 
     public function find(PluginId $pluginId, string $widgetName): ?CatalogWidgetInterface
     {
-        $key = $pluginId.':'.$widgetName;
-        $widget = iterator_to_array($this->widgets)[$key] ?? null;
+        $widget = $this->all()[self::key($pluginId, $widgetName)] ?? null;
 
         return $widget !== null && $this->isActive($pluginId, $widgetName) ? $widget : null;
+    }
+
+    /**
+     * @return list<array{pluginId: string, widgetName: string}> active widget identifiers
+     */
+    public function findAllActive(): array
+    {
+        $result = [];
+        foreach ($this->listAll() as $widget) {
+            if ($widget['active']) {
+                $result[] = ['pluginId' => $widget['pluginId'], 'widgetName' => $widget['widgetName']];
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * @return list<array{pluginId: string, widgetName: string, active: bool}> every registered
+     *                                                                         widget, active or not, for the settings UI (issue #213)
+     */
+    public function listAll(): array
+    {
+        $result = [];
+        foreach (array_keys($this->all()) as $key) {
+            [$pluginId, $widgetName] = explode(':', $key, 2);
+            $result[] = [
+                'pluginId' => $pluginId,
+                'widgetName' => $widgetName,
+                'active' => $this->isActive(new PluginId($pluginId), $widgetName),
+            ];
+        }
+
+        return $result;
+    }
+
+    /**
+     * Enables or disables a single catalog widget, enforcing the placement's hard limit of
+     * simultaneously active widgets (issue #213).
+     *
+     * @throws Exception\WidgetHardLimitExceededException
+     */
+    public function setActive(PluginId $pluginId, string $widgetName, bool $active): void
+    {
+        $this->changeActive($pluginId, $widgetName, $active, \count($this->findAllActive()));
+    }
+
+    /** @return array<string, CatalogWidgetInterface> */
+    private function all(): array
+    {
+        return iterator_to_array($this->widgets);
+    }
+
+    private static function key(PluginId $pluginId, string $widgetName): string
+    {
+        return $pluginId.':'.$widgetName;
     }
 }

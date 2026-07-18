@@ -73,14 +73,43 @@ final class EntryWidgetRegistry
     public function findAllActive(): array
     {
         $result = [];
-        foreach (array_keys($this->all()) as $key) {
-            [$pluginId, $widgetName] = explode(':', $key, 2);
-            if ($this->isActive(new PluginId($pluginId), $widgetName)) {
-                $result[] = ['pluginId' => $pluginId, 'widgetName' => $widgetName];
+        foreach ($this->listAll() as $widget) {
+            if ($widget['active']) {
+                $result[] = ['pluginId' => $widget['pluginId'], 'widgetName' => $widget['widgetName']];
             }
         }
 
         return $result;
+    }
+
+    /**
+     * @return list<array{pluginId: string, widgetName: string, active: bool}> every registered
+     *                                                                         widget, active or not, for the settings UI (issue #213)
+     */
+    public function listAll(): array
+    {
+        $result = [];
+        foreach (array_keys($this->all()) as $key) {
+            [$pluginId, $widgetName] = explode(':', $key, 2);
+            $result[] = [
+                'pluginId' => $pluginId,
+                'widgetName' => $widgetName,
+                'active' => $this->isActive(new PluginId($pluginId), $widgetName),
+            ];
+        }
+
+        return $result;
+    }
+
+    /**
+     * Enables or disables a single entry widget, enforcing the placement's hard limit of
+     * simultaneously active widgets (issue #213).
+     *
+     * @throws Exception\WidgetHardLimitExceededException
+     */
+    public function setActive(PluginId $pluginId, string $widgetName, bool $active): void
+    {
+        $this->changeActive($pluginId, $widgetName, $active, \count($this->findAllActive()));
     }
 
     /** @return array<string, EntryWidgetInterface> */

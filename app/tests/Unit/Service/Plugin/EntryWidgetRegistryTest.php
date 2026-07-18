@@ -30,6 +30,7 @@ namespace App\Tests\Unit\Service\Plugin;
 use AnimeDb\PluginContracts\EntryWidgetInterface;
 use App\Entity\ValueObject\PluginId;
 use App\Service\Plugin\EntryWidgetRegistry;
+use App\Service\Plugin\Exception\WidgetHardLimitExceededException;
 use App\Service\Plugin\PluginsConfigStore;
 use PHPUnit\Framework\TestCase;
 
@@ -53,6 +54,10 @@ final class EntryWidgetRegistryTest extends TestCase
 
     public function testFindReturnsTheMatchingWidgetForACompoundPluginAndWidgetNameKey(): void
     {
+        file_put_contents($this->path, json_encode([
+            'animedb-shikimori' => ['features' => ['related' => true, 'recommended' => true]],
+        ]));
+
         $related = $this->createStub(EntryWidgetInterface::class);
         $recommended = $this->createStub(EntryWidgetInterface::class);
 
@@ -75,7 +80,7 @@ final class EntryWidgetRegistryTest extends TestCase
     public function testFindReturnsNullWhenTheWidgetIsDisabledIndependentlyOfOtherWidgets(): void
     {
         file_put_contents($this->path, json_encode([
-            'animedb-shikimori' => ['features' => ['related' => false]],
+            'animedb-shikimori' => ['features' => ['related' => false, 'recommended' => true]],
         ]));
 
         $related = $this->createStub(EntryWidgetInterface::class);
@@ -93,7 +98,8 @@ final class EntryWidgetRegistryTest extends TestCase
     public function testFindAllActiveListsOnlyEnabledWidgets(): void
     {
         file_put_contents($this->path, json_encode([
-            'animedb-shikimori' => ['features' => ['related' => false]],
+            'animedb-shikimori' => ['features' => ['related' => false, 'recommended' => true]],
+            'animedb-anilist' => ['features' => ['related' => true]],
         ]));
 
         $registry = new EntryWidgetRegistry(
@@ -112,5 +118,99 @@ final class EntryWidgetRegistryTest extends TestCase
             ],
             $registry->findAllActive(),
         );
+    }
+
+    public function testListAllIncludesBothActiveAndInactiveWidgets(): void
+    {
+        file_put_contents($this->path, json_encode([
+            'animedb-shikimori' => ['features' => ['related' => false, 'recommended' => true]],
+        ]));
+
+        $registry = new EntryWidgetRegistry(
+            [
+                'animedb-shikimori:related' => $this->createStub(EntryWidgetInterface::class),
+                'animedb-shikimori:recommended' => $this->createStub(EntryWidgetInterface::class),
+            ],
+            new PluginsConfigStore($this->path),
+        );
+
+        $this->assertSame(
+            [
+                ['pluginId' => 'animedb-shikimori', 'widgetName' => 'related', 'active' => false],
+                ['pluginId' => 'animedb-shikimori', 'widgetName' => 'recommended', 'active' => true],
+            ],
+            $registry->listAll(),
+        );
+    }
+
+    public function testSetActiveTurnsAWidgetOnAndOff(): void
+    {
+        $registry = new EntryWidgetRegistry(
+            ['animedb-shikimori:related' => $this->createStub(EntryWidgetInterface::class)],
+            new PluginsConfigStore($this->path),
+        );
+
+        $this->assertNull($registry->find(new PluginId('animedb-shikimori'), 'related'));
+
+        $registry->setActive(new PluginId('animedb-shikimori'), 'related', true);
+        $this->assertNotNull($registry->find(new PluginId('animedb-shikimori'), 'related'));
+
+        $registry->setActive(new PluginId('animedb-shikimori'), 'related', false);
+        $this->assertNull($registry->find(new PluginId('animedb-shikimori'), 'related'));
+    }
+
+    public function testSetActiveThrowsWhenEnablingAWidgetWouldExceedTheHardLimit(): void
+    {
+        file_put_contents($this->path, json_encode([
+            'animedb-shikimori' => ['features' => ['w1' => true, 'w2' => true, 'w3' => true, 'w4' => true, 'w5' => true]],
+        ]));
+
+        $widgets = [];
+        foreach (['w1', 'w2', 'w3', 'w4', 'w5', 'w6'] as $name) {
+            $widgets["animedb-shikimori:{$name}"] = $this->createStub(EntryWidgetInterface::class);
+        }
+
+        $registry = new EntryWidgetRegistry($widgets, new PluginsConfigStore($this->path));
+
+        $this->assertSame(5, \count($registry->findAllActive()));
+
+        $this->expectException(WidgetHardLimitExceededException::class);
+        $registry->setActive(new PluginId('animedb-shikimori'), 'w6', true);
+    }
+
+    public function testSetActiveAllowsDisablingAWidgetEvenAtTheHardLimit(): void
+    {
+        file_put_contents($this->path, json_encode([
+            'animedb-shikimori' => ['features' => ['w1' => true, 'w2' => true, 'w3' => true, 'w4' => true, 'w5' => true]],
+        ]));
+
+        $widgets = [];
+        foreach (['w1', 'w2', 'w3', 'w4', 'w5'] as $name) {
+            $widgets["animedb-shikimori:{$name}"] = $this->createStub(EntryWidgetInterface::class);
+        }
+
+        $registry = new EntryWidgetRegistry($widgets, new PluginsConfigStore($this->path));
+
+        $registry->setActive(new PluginId('animedb-shikimori'), 'w1', false);
+
+        $this->assertSame(4, \count($registry->findAllActive()));
+    }
+
+    public function testSetActiveAllowsReenablingAnAlreadyActiveWidgetAtTheHardLimit(): void
+    {
+        file_put_contents($this->path, json_encode([
+            'animedb-shikimori' => ['features' => ['w1' => true, 'w2' => true, 'w3' => true, 'w4' => true, 'w5' => true]],
+        ]));
+
+        $widgets = [];
+        foreach (['w1', 'w2', 'w3', 'w4', 'w5'] as $name) {
+            $widgets["animedb-shikimori:{$name}"] = $this->createStub(EntryWidgetInterface::class);
+        }
+
+        $registry = new EntryWidgetRegistry($widgets, new PluginsConfigStore($this->path));
+
+        $registry->setActive(new PluginId('animedb-shikimori'), 'w1', true);
+
+        $this->assertSame(5, \count($registry->findAllActive()));
     }
 }
