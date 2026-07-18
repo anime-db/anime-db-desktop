@@ -245,8 +245,17 @@ final class InstalledPluginsRegistry
                 continue;
             }
 
-            $manifest = $this->manifestFromArray($entry['manifest']);
-            $plugins[$id] = new InstalledPlugin($manifest, $entry['installPath'], $this->isEnabled($id));
+            try {
+                $manifest = $this->manifestFromArray($entry['manifest']);
+                $plugins[$id] = new InstalledPlugin($manifest, $entry['installPath'], $this->isEnabled($id));
+            } catch (\Throwable $exception) {
+                $this->logger->error('Skipping installed plugin with an invalid index entry.', [
+                    'pluginId' => $id,
+                    'exception' => $exception,
+                ]);
+
+                continue;
+            }
         }
 
         return $plugins;
