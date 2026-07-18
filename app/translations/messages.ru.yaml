@@ -115,6 +115,7 @@ settings:
     title: Настройки — AnimeDB
     heading: Настройки
     labels_link: Метки
+    plugin_widgets_link: Виджеты плагинов
     language_label: Язык интерфейса
     locale:
         ru: Русский
@@ -137,6 +138,24 @@ settings_labels:
     save_button: Сохранить
     delete_confirm: Удалить метку «%name%»?
     delete_button: Удалить
+
+settings_plugin_widgets:
+    title: Виджеты плагинов — Настройки — AnimeDB
+    back_link: ← Настройки
+    heading: Виджеты плагинов
+    hard_limit_error: Достигнут жёсткий лимит в %limit% активных виджетов для этого размещения.
+    plugin_column: Плагин
+    widget_column: Виджет
+    active_column: Включён
+    active_count: 'Активно виджетов: %count% из %limit%.'
+    recommendation_warning: Рекомендуется не более %limit% активных виджетов — большее количество может перегрузить интерфейс и снизить производительность.
+    hard_limit_reached: Достигнут жёсткий лимит в %limit% активных виджетов для этого размещения.
+    entry:
+        heading: Страница записи
+        empty: Нет доступных виджетов для страницы записи.
+    catalog:
+        heading: Каталог
+        empty: Нет доступных виджетов для каталога.
 
 anime_list:
     title: Список — AnimeDB

@@ -115,6 +115,7 @@ settings:
     title: Settings — AnimeDB
     heading: Settings
     labels_link: Labels
+    plugin_widgets_link: Plugin widgets
     language_label: Interface language
     locale:
         ru: Русский
@@ -137,6 +138,24 @@ settings_labels:
     save_button: Save
     delete_confirm: Delete label "%name%"?
     delete_button: Delete
+
+settings_plugin_widgets:
+    title: Plugin widgets — Settings — AnimeDB
+    back_link: ← Settings
+    heading: Plugin widgets
+    hard_limit_error: The hard limit of %limit% active widgets for this placement has been reached.
+    plugin_column: Plugin
+    widget_column: Widget
+    active_column: Active
+    active_count: 'Active widgets: %count% of %limit%.'
+    recommendation_warning: More than %limit% active widgets is not recommended — it may clutter the UI and hurt performance.
+    hard_limit_reached: The hard limit of %limit% active widgets for this placement has been reached.
+    entry:
+        heading: Anime detail page
+        empty: No widgets available for the anime detail page.
+    catalog:
+        heading: Catalog
+        empty: No widgets available for the catalog.
 
 anime_list:
     title: List — AnimeDB
