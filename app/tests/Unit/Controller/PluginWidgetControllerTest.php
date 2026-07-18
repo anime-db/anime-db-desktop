@@ -98,7 +98,7 @@ final class PluginWidgetControllerTest extends TestCase
 
         $this->assertSame(200, $response->getStatusCode());
         $this->assertSame('<div>Related</div>', $response->getContent());
-        $this->assertTrue($response->isCacheable());
+        $this->assertTrue($response->headers->getCacheControlDirective('private'));
         $this->assertSame(300, $response->getMaxAge());
     }
 

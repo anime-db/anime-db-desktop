@@ -137,10 +137,15 @@ final class PluginWidgetController
         ]));
     }
 
+    /**
+     * Private, not public: an entry widget can reflect the plugin's own account/credential
+     * state from plugins.json, so the response must not be reusable across users/sessions by
+     * a shared cache — even though this desktop app has no such shared cache in practice.
+     */
     private function cacheableResponse(string $html): Response
     {
         $response = new Response($html);
-        $response->setPublic();
+        $response->setPrivate();
         $response->setMaxAge(self::CACHE_MAX_AGE_SECONDS);
 
         return $response;
