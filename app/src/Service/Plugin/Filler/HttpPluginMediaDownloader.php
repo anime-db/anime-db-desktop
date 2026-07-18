@@ -43,6 +43,9 @@ final class HttpPluginMediaDownloader implements PluginMediaDownloaderInterface
 
     private const ALLOWED_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
 
+    /** Followed manually (not via the client's own redirect handling) so each hop can be re-validated against SSRF. */
+    private const MAX_REDIRECTS = 5;
+
     public function __construct(
         private readonly HttpClientInterface $httpClient,
         private readonly string $mediaDir,
@@ -51,18 +54,24 @@ final class HttpPluginMediaDownloader implements PluginMediaDownloaderInterface
 
     public function download(int $animeId, string $url): ?string
     {
+        $targetDir = rtrim($this->mediaDir, '/\\').'/'.$animeId;
+        $filename = sha1($url).$this->guessExtension($url);
+        $targetPath = $targetDir.'/'.$filename;
+
+        if (is_file($targetPath)) {
+            return $filename;
+        }
+
         $content = $this->fetch($url);
         if (null === $content || '' === $content) {
             return null;
         }
 
-        $targetDir = rtrim($this->mediaDir, '/\\').'/'.$animeId;
-        if (!is_dir($targetDir) && !mkdir($targetDir, 0o777, true) && !is_dir($targetDir)) {
+        if (!is_dir($targetDir) && !mkdir($targetDir, 0o755, true) && !is_dir($targetDir)) {
             return null;
         }
 
-        $filename = sha1($url).$this->guessExtension($url);
-        if (false === file_put_contents($targetDir.'/'.$filename, $content)) {
+        if (false === file_put_contents($targetPath, $content)) {
             return null;
         }
 
@@ -72,23 +81,73 @@ final class HttpPluginMediaDownloader implements PluginMediaDownloaderInterface
     private function fetch(string $url): ?string
     {
         try {
-            $response = $this->httpClient->request('GET', $url);
-            if (200 !== $response->getStatusCode()) {
-                return null;
-            }
-
-            $content = '';
-            foreach ($this->httpClient->stream($response) as $chunk) {
-                $content .= $chunk->getContent();
-                if (\strlen($content) > self::MAX_BYTES) {
+            for ($redirect = 0; $redirect <= self::MAX_REDIRECTS; ++$redirect) {
+                if (!$this->isUrlAllowed($url)) {
                     return null;
                 }
+
+                $response = $this->httpClient->request('GET', $url, ['max_redirects' => 0]);
+                $statusCode = $response->getStatusCode();
+
+                if (\in_array($statusCode, [301, 302, 303, 307, 308], true)) {
+                    $location = $response->getHeaders(false)['location'][0] ?? null;
+                    // Relative Location headers are rejected rather than resolved against $url,
+                    // so every hop we follow has already gone through isUrlAllowed() as an absolute URL.
+                    if (null === $location || !\in_array(strtolower((string) (parse_url($location, PHP_URL_SCHEME) ?? '')), ['http', 'https'], true)) {
+                        return null;
+                    }
+
+                    $url = $location;
+
+                    continue;
+                }
+
+                if (200 !== $statusCode) {
+                    return null;
+                }
+
+                $content = '';
+                foreach ($this->httpClient->stream($response) as $chunk) {
+                    $content .= $chunk->getContent();
+                    if (\strlen($content) > self::MAX_BYTES) {
+                        return null;
+                    }
+                }
+
+                return $content;
             }
 
-            return $content;
+            return null;
         } catch (ExceptionInterface) {
             return null;
         }
+    }
+
+    /** Blocks anything but plain http(s) to a public host, so a plugin (or a plugin-relayed API response) can't be used to probe internal/link-local infrastructure. */
+    private function isUrlAllowed(string $url): bool
+    {
+        $scheme = strtolower((string) (parse_url($url, PHP_URL_SCHEME) ?? ''));
+        if (!\in_array($scheme, ['http', 'https'], true)) {
+            return false;
+        }
+
+        $host = parse_url($url, PHP_URL_HOST);
+        if (!\is_string($host) || '' === $host) {
+            return false;
+        }
+
+        $ips = filter_var($host, FILTER_VALIDATE_IP) ? [$host] : (gethostbynamel($host) ?: []);
+        if ([] === $ips) {
+            return false;
+        }
+
+        foreach ($ips as $ip) {
+            if (!filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private function guessExtension(string $url): string
