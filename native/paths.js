@@ -40,4 +40,5 @@ module.exports = {
     getMediaDir:           () => path.join(userDataDir(), 'media'),
     getConfigPath:         () => path.join(userDataDir(), 'config.json'),
     getPluginsConfigPath:  () => path.join(userDataDir(), 'plugins.json'),
+    getPluginsDir:         () => path.join(userDataDir(), 'plugins'),
 };
