@@ -70,15 +70,6 @@ services:
     App\:
         resource: '../src/'
 
-    # anime-db/plugin-contracts interfaces are vendor-owned, so they cannot carry an app-defined
-    # #[AutoconfigureTag] attribute the way App\Service\Storage\Search\SearchByPluginInterface
-    # does — _instanceof: is the equivalent for a third-party interface. A concrete FillerInterface
-    # plugin service must still add its own `plugin_id` tag attribute (see FillerRegistry,
-    # issue #227): the interface has no way to report a plugin's own id.
-    _instanceof:
-        AnimeDb\PluginContracts\FillerInterface:
-            tags: ['app.filler']
-
     # add more service definitions when explicit configuration is needed
     # please note that last definitions always *replace* previous ones
 

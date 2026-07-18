@@ -38,7 +38,7 @@ use App\Entity\ValueObject\PluginId;
 use App\Repository\StudioRepository;
 use App\Service\Plugin\Filler\AnimeFillApplier;
 use App\Service\Plugin\Filler\BulkFillerService;
-use App\Service\Plugin\Filler\FillerRegistry;
+use App\Service\Plugin\FillerRegistry;
 use App\Service\Plugin\PluginsConfigStore;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Types\Type;

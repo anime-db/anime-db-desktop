@@ -39,7 +39,7 @@ use App\Service\JobLock\JobLockService;
 use App\Service\JobLock\ProcessLivenessChecker;
 use App\Service\Plugin\Filler\AnimeFillApplier;
 use App\Service\Plugin\Filler\BulkFillerService;
-use App\Service\Plugin\Filler\FillerRegistry;
+use App\Service\Plugin\FillerRegistry;
 use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Storage\FilenameCleaner;
 use App\Service\Storage\OrphanAnimeMatcher;

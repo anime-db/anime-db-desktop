@@ -35,6 +35,7 @@ use App\Entity\Enum\AnimeType;
 use App\Entity\Enum\WatchStatus;
 use App\Entity\TvAnime;
 use App\Entity\ValueObject\PluginId;
+use App\Service\Plugin\FillerRegistry;
 use Doctrine\ORM\EntityManagerInterface;
 
 /**
@@ -71,7 +72,7 @@ final class BulkFillerService
      */
     public function fillNewFromPlugin(PluginId $pluginId, string $name): ?Anime
     {
-        $filler = $this->fillerRegistry->get($pluginId);
+        $filler = $this->fillerRegistry->findByPluginId($pluginId);
         if ($filler === null) {
             return null;
         }
