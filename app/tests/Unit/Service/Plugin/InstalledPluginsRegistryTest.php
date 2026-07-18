@@ -1,0 +1,236 @@
+<?php
+
+/**
+ * AnimeDb package.
+ *
+ * @author    Peter Gribanov <info@peter-gribanov.ru>
+ * @copyright Copyright (c) 2026, Peter Gribanov
+ * @license   https://gnu.org GPL-3.0-or-later
+ */
+
+/*
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://gnu.org>.
+ */
+
+declare(strict_types=1);
+
+namespace App\Tests\Unit\Service\Plugin;
+
+use AnimeDb\PluginContracts\Manifest\PluginType;
+use App\Entity\ValueObject\PluginId;
+use App\Service\Plugin\InstalledPlugin;
+use App\Service\Plugin\InstalledPluginsRegistry;
+use App\Service\Plugin\PluginsConfigStore;
+use PHPUnit\Framework\TestCase;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
+
+final class InstalledPluginsRegistryTest extends TestCase
+{
+    private string $pluginsDir;
+
+    protected function setUp(): void
+    {
+        $this->pluginsDir = sys_get_temp_dir().'/anime-installed-plugins-test-'.uniqid();
+        mkdir($this->pluginsDir, recursive: true);
+    }
+
+    protected function tearDown(): void
+    {
+        $this->removeDirectory($this->pluginsDir);
+    }
+
+    public function testAllReturnsEmptyListWhenPluginsDirectoryDoesNotExist(): void
+    {
+        $registry = new InstalledPluginsRegistry(
+            $this->pluginsDir.'/does-not-exist',
+            $this->configStore(),
+            new NullLogger(),
+        );
+
+        $this->assertSame([], $registry->all());
+    }
+
+    public function testReconcileOnEmptyDirectoryProducesEmptyRegistry(): void
+    {
+        $registry = new InstalledPluginsRegistry($this->pluginsDir, $this->configStore(), new NullLogger());
+
+        $registry->reconcile();
+
+        $this->assertSame([], $registry->all());
+    }
+
+    public function testReconcileEnumeratesMultipleValidPlugins(): void
+    {
+        $this->writeManifest('animedb-shikimori');
+        $this->writeManifest('animedb-anilist');
+
+        $registry = new InstalledPluginsRegistry($this->pluginsDir, $this->configStore(), new NullLogger());
+        $registry->reconcile();
+
+        $this->assertSame(['animedb-anilist', 'animedb-shikimori'], $this->ids($registry->all()));
+    }
+
+    public function testAllExposesManifestAndInstallPath(): void
+    {
+        $this->writeManifest('animedb-shikimori', '1.2.3');
+
+        $registry = new InstalledPluginsRegistry($this->pluginsDir, $this->configStore(), new NullLogger());
+        $registry->reconcile();
+
+        $plugin = $registry->all()[0];
+
+        $this->assertSame('animedb-shikimori', $plugin->manifest->id);
+        $this->assertSame('1.2.3', $plugin->manifest->version);
+        $this->assertSame(PluginType::Integration, $plugin->manifest->type);
+        $this->assertSame($this->pluginsDir.'/animedb-shikimori', $plugin->installPath);
+        $this->assertTrue($plugin->enabled);
+    }
+
+    public function testEnabledFiltersOutPluginsDisabledInPluginsConfigStore(): void
+    {
+        $this->writeManifest('animedb-shikimori');
+        $this->writeManifest('animedb-anilist');
+
+        $configPath = $this->pluginsDir.'/plugins.json';
+        file_put_contents($configPath, json_encode(['animedb-anilist' => ['enabled' => false]]));
+
+        $registry = new InstalledPluginsRegistry($this->pluginsDir, new PluginsConfigStore($configPath), new NullLogger());
+        $registry->reconcile();
+
+        $this->assertSame(['animedb-shikimori'], $this->ids($registry->enabled()));
+        $this->assertSame(['animedb-anilist', 'animedb-shikimori'], $this->ids($registry->all()));
+    }
+
+    public function testReconcileSkipsDirectoryWithInvalidManifestJsonAndKeepsOthers(): void
+    {
+        $this->writeManifest('animedb-shikimori');
+
+        $brokenDir = $this->pluginsDir.'/animedb-broken';
+        mkdir($brokenDir, recursive: true);
+        file_put_contents($brokenDir.'/manifest.json', '{not valid json');
+
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->once())->method('error')->with(
+            $this->stringContains('invalid manifest.json'),
+            $this->callback(static fn (array $context): bool => $context['pluginDir'] === $brokenDir),
+        );
+
+        $registry = new InstalledPluginsRegistry($this->pluginsDir, $this->configStore(), $logger);
+        $registry->reconcile();
+
+        $this->assertSame(['animedb-shikimori'], $this->ids($registry->all()));
+    }
+
+    public function testReconcileSkipsDirectoryMissingManifestFile(): void
+    {
+        $this->writeManifest('animedb-shikimori');
+        mkdir($this->pluginsDir.'/animedb-no-manifest', recursive: true);
+
+        $registry = new InstalledPluginsRegistry($this->pluginsDir, $this->configStore(), new NullLogger());
+        $registry->reconcile();
+
+        $this->assertSame(['animedb-shikimori'], $this->ids($registry->all()));
+    }
+
+    public function testGetReturnsMatchingPlugin(): void
+    {
+        $this->writeManifest('animedb-shikimori');
+
+        $registry = new InstalledPluginsRegistry($this->pluginsDir, $this->configStore(), new NullLogger());
+        $registry->reconcile();
+
+        $plugin = $registry->get(new PluginId('animedb-shikimori'));
+
+        $this->assertNotNull($plugin);
+        $this->assertSame('animedb-shikimori', $plugin->manifest->id);
+    }
+
+    public function testGetReturnsNullForUnknownPlugin(): void
+    {
+        $registry = new InstalledPluginsRegistry($this->pluginsDir, $this->configStore(), new NullLogger());
+        $registry->reconcile();
+
+        $this->assertNull($registry->get(new PluginId('animedb-unknown')));
+    }
+
+    public function testHasReturnsTrueForInstalledPlugin(): void
+    {
+        $this->writeManifest('animedb-shikimori');
+
+        $registry = new InstalledPluginsRegistry($this->pluginsDir, $this->configStore(), new NullLogger());
+        $registry->reconcile();
+
+        $this->assertTrue($registry->has(new PluginId('animedb-shikimori')));
+    }
+
+    public function testHasReturnsFalseForUnknownPlugin(): void
+    {
+        $registry = new InstalledPluginsRegistry($this->pluginsDir, $this->configStore(), new NullLogger());
+        $registry->reconcile();
+
+        $this->assertFalse($registry->has(new PluginId('animedb-unknown')));
+    }
+
+    private function configStore(): PluginsConfigStore
+    {
+        return new PluginsConfigStore($this->pluginsDir.'/plugins.json');
+    }
+
+    private function writeManifest(string $pluginId, string $version = '1.0.0'): void
+    {
+        $dir = $this->pluginsDir.'/'.$pluginId;
+        mkdir($dir, recursive: true);
+        file_put_contents($dir.'/manifest.json', (string) json_encode([
+            'id' => $pluginId,
+            'name' => ucfirst($pluginId),
+            'version' => $version,
+            'type' => 'integration',
+            'features' => ['filler' => true],
+            'require' => ['core' => '>=2.0.0', 'php' => '>=8.2'],
+        ]));
+    }
+
+    /**
+     * @param list<InstalledPlugin> $plugins
+     *
+     * @return list<string>
+     */
+    private function ids(array $plugins): array
+    {
+        $ids = array_map(static fn (InstalledPlugin $plugin): string => (string) $plugin->id, $plugins);
+        sort($ids);
+
+        return $ids;
+    }
+
+    private function removeDirectory(string $dir): void
+    {
+        if (!is_dir($dir)) {
+            return;
+        }
+
+        $entries = scandir($dir);
+        foreach (false === $entries ? [] : $entries as $entry) {
+            if ('.' === $entry || '..' === $entry) {
+                continue;
+            }
+
+            $path = $dir.'/'.$entry;
+            is_dir($path) ? $this->removeDirectory($path) : unlink($path);
+        }
+
+        rmdir($dir);
+    }
+}

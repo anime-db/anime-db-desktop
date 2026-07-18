@@ -27,6 +27,14 @@ parameters:
     app.plugins_config_path.dev_default: '%kernel.project_dir%/var/plugins.json'
     app.plugins_config_path: '%env(default:app.plugins_config_path.dev_default:PLUGINS_CONFIG_PATH)%'
 
+    # In production Electron passes PLUGINS_DIR (see native/paths.js, native/supervisor/frankenphp.js),
+    # pointing at %AppData%/plugins/ — the directory installed plugins are unpacked into, one
+    # subdirectory per PluginId holding that plugin's manifest.json plus the rest of its archive
+    # (issue #241). InstalledPluginsRegistry::reconcile() scans it and writes its own
+    # installed-plugins.php index next to it.
+    app.plugins_dir.dev_default: '%kernel.project_dir%/var/plugins'
+    app.plugins_dir: '%env(default:app.plugins_dir.dev_default:PLUGINS_DIR)%'
+
     # Locales LocaleSubscriber negotiates against. Kept as an explicit list rather than scanning
     # app/translations/ on every request (FrankenPHP worker mode keeps the subscriber alive
     # between requests, so a glob() there would mean disk I/O per request for no benefit — the
@@ -54,6 +62,7 @@ services:
             $mediaDir: '%app.media_dir%'
             $configPath: '%app.config_path%'
             $pluginsConfigPath: '%app.plugins_config_path%'
+            $pluginsDir: '%app.plugins_dir%'
             $locales: '%app.locales%'
             $sampleCoversDir: '%app.sample_covers_dir%'
 
