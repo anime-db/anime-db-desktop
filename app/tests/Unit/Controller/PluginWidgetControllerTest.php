@@ -162,6 +162,42 @@ final class PluginWidgetControllerTest extends TestCase
         $this->assertSame('<div>error</div>', $response->getContent());
     }
 
+    public function testRenderReturnsErrorFragmentAndLogsWhenResolveExternalIdThrows(): void
+    {
+        $anime = $this->anime();
+
+        $widget = $this->createMock(EntryWidgetInterface::class);
+        $widget->method('resolveExternalId')->willThrowException(new \RuntimeException('source lookup timed out'));
+        $widget->expects($this->never())->method('render');
+
+        $entryWidgets = new EntryWidgetRegistry(['animedb-shikimori:related' => $widget], new PluginsConfigStore(''));
+
+        $entityManager = $this->createMock(EntityManagerInterface::class);
+        $entityManager->method('find')->willReturn($anime);
+        $entityManager->expects($this->never())->method('flush');
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('plugin/_widget_error.html.twig', $this->callback(
+                static fn (array $params): bool => 'animedb-shikimori' === $params['pluginId'] && \is_string($params['retryUrl']),
+            ))
+            ->willReturn('<div>error</div>');
+
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->once())->method('error');
+
+        $controller = $this->createController($entryWidgets, $this->emptyCatalogWidgets(), entityManager: $entityManager, twig: $twig, logger: $logger);
+        $response = $controller->render(
+            'animedb-shikimori',
+            'related',
+            Request::create('/plugin/animedb-shikimori/widget/related', 'GET', ['entryId' => '5']),
+        );
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertSame('<div>error</div>', $response->getContent());
+    }
+
     public function testRenderThrowsBadRequestWhenEntryIdIsMissing(): void
     {
         $widget = $this->createStub(EntryWidgetInterface::class);

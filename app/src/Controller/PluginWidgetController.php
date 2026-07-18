@@ -102,10 +102,9 @@ final class PluginWidgetController
             throw new NotFoundHttpException(\sprintf('Catalog record #%s not found.', $entryId));
         }
 
-        $externalId = $anime->getExternalId($pluginId, $widget);
-        $this->entityManager->flush();
-
         try {
+            $externalId = $anime->getExternalId($pluginId, $widget);
+            $this->entityManager->flush();
             $html = $widget->render($externalId);
         } catch (\Throwable $e) {
             return $this->renderWidgetError($pluginId, $request, $e);
