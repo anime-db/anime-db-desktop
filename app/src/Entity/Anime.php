@@ -517,6 +517,23 @@ abstract class Anime
     }
 
     /**
+     * Caches an external id obtained without a resolveExternalId() round trip — e.g. from
+     * FillerInterface::find() during bulk fill-in (issue #227), where the id comes back
+     * directly from the plugin's search result instead of being parsed from a source URL.
+     * Writes the same metadata['external_id'][$pluginId] slot getExternalId() reads/writes,
+     * so a later getExternalId() call for this plugin returns the cached value without
+     * re-resolving it.
+     */
+    public function rememberExternalId(PluginId $pluginId, string $externalId): self
+    {
+        $metadata = $this->metadata ?? [];
+        $metadata['external_id'][(string) $pluginId] = $externalId;
+        $this->metadata = $metadata;
+
+        return $this;
+    }
+
+    /**
      * Writes metadata.descriptions[$locale], the value getSummary() reads.
      */
     public function setDescription(string $locale, string $text): self

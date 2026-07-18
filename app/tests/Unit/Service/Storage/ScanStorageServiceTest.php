@@ -37,6 +37,11 @@ use App\Entity\Storage;
 use App\Entity\TvAnime;
 use App\Entity\ValueObject\PluginId;
 use App\Repository\AnimeRepository;
+use App\Repository\StudioRepository;
+use App\Service\Plugin\Filler\AnimeFillApplier;
+use App\Service\Plugin\Filler\BulkFillerService;
+use App\Service\Plugin\FillerRegistry;
+use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Storage\Exception\StoragePathConflictException;
 use App\Service\Storage\FilenameCleaner;
 use App\Service\Storage\OrphanAnimeMatcher;
@@ -138,6 +143,16 @@ final class ScanStorageServiceTest extends TestCase
             new OrphanAnimeMatcher($this->animeRepository),
             $pluginChain ?? new SearchByPluginChain([new NullSearchByPlugin()]),
             $this->animeRepository,
+            $this->entityManager,
+            $this->newBulkFillerService(),
+        );
+    }
+
+    private function newBulkFillerService(): BulkFillerService
+    {
+        return new BulkFillerService(
+            new FillerRegistry([], new PluginsConfigStore('')),
+            new AnimeFillApplier(new StudioRepository($this->entityManager), $this->entityManager),
             $this->entityManager,
         );
     }
