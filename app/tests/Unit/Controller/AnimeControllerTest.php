@@ -40,6 +40,8 @@ use App\Entity\Storage;
 use App\Entity\Studio;
 use App\Entity\TvAnime;
 use App\Service\AnimeViewFactory;
+use App\Service\Plugin\EntryWidgetRegistry;
+use App\Service\Plugin\PluginsConfigStore;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RequestStack;
@@ -53,6 +55,11 @@ final class AnimeControllerTest extends TestCase
         $requestStack->push(new Request());
 
         return new AnimeViewFactory($requestStack);
+    }
+
+    private function createEntryWidgetRegistry(): EntryWidgetRegistry
+    {
+        return new EntryWidgetRegistry([], new PluginsConfigStore(''));
     }
 
     public function testShowPassesFullyPopulatedReferenceFieldsToTemplate(): void
@@ -116,7 +123,7 @@ final class AnimeControllerTest extends TestCase
             }))
             ->willReturn('<html></html>');
 
-        $controller = new AnimeController($twig, $this->createViewFactory());
+        $controller = new AnimeController($twig, $this->createViewFactory(), $this->createEntryWidgetRegistry());
         $response = $controller->show($anime);
 
         $this->assertSame(200, $response->getStatusCode());
@@ -148,7 +155,7 @@ final class AnimeControllerTest extends TestCase
             }))
             ->willReturn('<html></html>');
 
-        $controller = new AnimeController($twig, $this->createViewFactory());
+        $controller = new AnimeController($twig, $this->createViewFactory(), $this->createEntryWidgetRegistry());
         $controller->show($anime);
     }
 
@@ -183,7 +190,7 @@ final class AnimeControllerTest extends TestCase
             }))
             ->willReturn('<html></html>');
 
-        $controller = new AnimeController($twig, $this->createViewFactory());
+        $controller = new AnimeController($twig, $this->createViewFactory(), $this->createEntryWidgetRegistry());
         $controller->show($anime);
     }
 }

@@ -23,6 +23,7 @@
 {% block title %}{{ 'anime_detail.title'|trans({'%title%': anime.title}) }}{% endblock %}
 
 {% block stylesheets %}
+    <link rel="stylesheet" href="{{ asset('css/anime-list.css') }}">
     <link rel="stylesheet" href="{{ asset('css/anime-detail.css') }}">
 {% endblock %}
 
@@ -216,6 +217,20 @@
                     </ul>
                 </section>
             {% endif %}
+
+            {% for widget in widgets %}
+                {# Async-loaded plugin widget (issue #212): the placeholder loads independently
+                 # via HTMX right after the page appears, so a slow or failing plugin never
+                 # blocks the rest of the detail page. #}
+                <section class="anime-detail__widget">
+                    <div
+                        class="plugin-widget"
+                        hx-get="{{ path('plugin_widget', {pluginId: widget.pluginId, widgetName: widget.widgetName, entryId: anime.id}) }}"
+                        hx-trigger="load"
+                        hx-swap="innerHTML"
+                    >{{ 'plugin_widget.loading'|trans }}</div>
+                </section>
+            {% endfor %}
         </div>
     </main>
 {% endblock %}

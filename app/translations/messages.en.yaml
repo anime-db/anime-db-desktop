@@ -262,3 +262,9 @@ storage_edit:
     field_type: Type
     submit_button: Save
     error_invalid: Enter a valid name and storage type.
+
+plugin_widget:
+    loading: Loading…
+    no_data: 'No data from "%source%".'
+    error: 'Failed to load the "%source%" widget.'
+    retry_button: Retry

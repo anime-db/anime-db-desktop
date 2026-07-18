@@ -29,6 +29,7 @@ namespace App\Controller;
 
 use App\Entity\Anime;
 use App\Service\AnimeViewFactory;
+use App\Service\Plugin\EntryWidgetRegistry;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
 use Twig\Environment;
@@ -40,12 +41,17 @@ use Twig\Environment;
  * fragment that AnimeEditableController swaps in place via HTMX (issue #103). Labels
  * (issue #104, view side only — editing goes through AnimeLabelController) and the
  * cover/gallery are separate parts of the same decomposition.
+ *
+ * Plugin widgets (issue #212) render as HTMX placeholders here — one `hx-get` per active
+ * {@see EntryWidgetRegistry} entry, loaded by PluginWidgetController after the page itself is
+ * already on screen, so a slow or failing plugin API never blocks the initial render.
  */
 final class AnimeController
 {
     public function __construct(
         private readonly Environment $twig,
         private readonly AnimeViewFactory $viewFactory,
+        private readonly EntryWidgetRegistry $entryWidgets,
     ) {
     }
 
@@ -54,6 +60,7 @@ final class AnimeController
     {
         return new Response($this->twig->render('anime/show.html.twig', [
             'anime' => $this->viewFactory->serialize($anime),
+            'widgets' => $this->entryWidgets->findAllActive(),
         ]));
     }
 }

@@ -1,0 +1,116 @@
+<?php
+
+/**
+ * AnimeDb package.
+ *
+ * @author    Peter Gribanov <info@peter-gribanov.ru>
+ * @copyright Copyright (c) 2026, Peter Gribanov
+ * @license   https://gnu.org GPL-3.0-or-later
+ */
+
+/*
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://gnu.org>.
+ */
+
+declare(strict_types=1);
+
+namespace App\Tests\Unit\Service\Plugin;
+
+use AnimeDb\PluginContracts\EntryWidgetInterface;
+use App\Entity\ValueObject\PluginId;
+use App\Service\Plugin\EntryWidgetRegistry;
+use App\Service\Plugin\PluginsConfigStore;
+use PHPUnit\Framework\TestCase;
+
+final class EntryWidgetRegistryTest extends TestCase
+{
+    private string $path;
+
+    protected function setUp(): void
+    {
+        $this->path = sys_get_temp_dir().'/anime-widgets-test-'.uniqid().'.json';
+    }
+
+    protected function tearDown(): void
+    {
+        foreach ([$this->path, $this->path.'.tmp', $this->path.'.lock'] as $file) {
+            if (is_file($file)) {
+                unlink($file);
+            }
+        }
+    }
+
+    public function testFindReturnsTheMatchingWidgetForACompoundPluginAndWidgetNameKey(): void
+    {
+        $related = $this->createStub(EntryWidgetInterface::class);
+        $recommended = $this->createStub(EntryWidgetInterface::class);
+
+        $registry = new EntryWidgetRegistry(
+            ['animedb-shikimori:related' => $related, 'animedb-shikimori:recommended' => $recommended],
+            new PluginsConfigStore($this->path),
+        );
+
+        $this->assertSame($related, $registry->find(new PluginId('animedb-shikimori'), 'related'));
+        $this->assertSame($recommended, $registry->find(new PluginId('animedb-shikimori'), 'recommended'));
+    }
+
+    public function testFindReturnsNullWhenNoWidgetIsRegisteredUnderThatKey(): void
+    {
+        $registry = new EntryWidgetRegistry([], new PluginsConfigStore($this->path));
+
+        $this->assertNull($registry->find(new PluginId('animedb-shikimori'), 'related'));
+    }
+
+    public function testFindReturnsNullWhenTheWidgetIsDisabledIndependentlyOfOtherWidgets(): void
+    {
+        file_put_contents($this->path, json_encode([
+            'animedb-shikimori' => ['features' => ['related' => false]],
+        ]));
+
+        $related = $this->createStub(EntryWidgetInterface::class);
+        $recommended = $this->createStub(EntryWidgetInterface::class);
+
+        $registry = new EntryWidgetRegistry(
+            ['animedb-shikimori:related' => $related, 'animedb-shikimori:recommended' => $recommended],
+            new PluginsConfigStore($this->path),
+        );
+
+        $this->assertNull($registry->find(new PluginId('animedb-shikimori'), 'related'));
+        $this->assertSame($recommended, $registry->find(new PluginId('animedb-shikimori'), 'recommended'));
+    }
+
+    public function testFindAllActiveListsOnlyEnabledWidgets(): void
+    {
+        file_put_contents($this->path, json_encode([
+            'animedb-shikimori' => ['features' => ['related' => false]],
+        ]));
+
+        $registry = new EntryWidgetRegistry(
+            [
+                'animedb-shikimori:related' => $this->createStub(EntryWidgetInterface::class),
+                'animedb-shikimori:recommended' => $this->createStub(EntryWidgetInterface::class),
+                'animedb-anilist:related' => $this->createStub(EntryWidgetInterface::class),
+            ],
+            new PluginsConfigStore($this->path),
+        );
+
+        $this->assertSame(
+            [
+                ['pluginId' => 'animedb-shikimori', 'widgetName' => 'recommended'],
+                ['pluginId' => 'animedb-anilist', 'widgetName' => 'related'],
+            ],
+            $registry->findAllActive(),
+        );
+    }
+}

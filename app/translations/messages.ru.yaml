@@ -262,3 +262,9 @@ storage_edit:
     field_type: Тип
     submit_button: Сохранить
     error_invalid: Укажите корректные название и тип хранилища.
+
+plugin_widget:
+    loading: Загрузка…
+    no_data: 'Нет данных из источника «%source%».'
+    error: 'Не удалось загрузить виджет источника «%source%».'
+    retry_button: Повторить
