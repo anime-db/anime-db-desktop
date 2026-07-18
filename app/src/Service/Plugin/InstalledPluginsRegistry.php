@@ -133,28 +133,25 @@ final class InstalledPluginsRegistry
     }
 
     /**
-     * @return list<string> absolute paths of plugin directories
+     * @return iterable<string> absolute paths of plugin directories
      */
-    private function scanPluginDirectories(): array
+    private function scanPluginDirectories(): iterable
     {
         if (!is_dir($this->pluginsDir)) {
-            return [];
+            return;
         }
 
         $entries = scandir($this->pluginsDir);
         if (false === $entries) {
-            return [];
+            return;
         }
 
-        $directories = [];
         foreach ($entries as $entry) {
             $path = $this->pluginsDir.\DIRECTORY_SEPARATOR.$entry;
             if ('.' !== $entry && '..' !== $entry && is_dir($path)) {
-                $directories[] = $path;
+                yield $path;
             }
         }
-
-        return $directories;
     }
 
     /**
