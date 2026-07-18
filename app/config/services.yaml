@@ -57,6 +57,14 @@ services:
             $locales: '%app.locales%'
             $sampleCoversDir: '%app.sample_covers_dir%'
 
+    # AnimeDb\PluginContracts\FillerInterface lives in the read-only anime-db/plugin-contracts
+    # package, so it cannot carry #[AutoconfigureTag] itself the way the local
+    # App\Service\Storage\Search\SearchByPluginInterface does — _instanceof tags it here
+    # instead, for App\Service\Plugin\FillerRegistry to autowire via #[AutowireIterator].
+    _instanceof:
+        AnimeDb\PluginContracts\FillerInterface:
+            tags: ['app.filler']
+
     # makes classes in src/ available to be used as services
     # this creates a service per class whose id is the fully-qualified class name
     App\:
