@@ -163,8 +163,8 @@ final class AnimeFillApplierTest extends TestCase
         $this->applier->apply($second, $data, ['studios']);
 
         $this->assertSame(
-            $first->getStudios()->first()->id,
-            $second->getStudios()->first()->id,
+            $first->getStudios()->toArray()[0]->id,
+            $second->getStudios()->toArray()[0]->id,
         );
     }
 

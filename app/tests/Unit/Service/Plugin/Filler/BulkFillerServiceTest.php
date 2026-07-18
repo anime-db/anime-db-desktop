@@ -70,6 +70,9 @@ final class BulkFillerServiceTest extends TestCase
         $schemaTool->createSchema($this->entityManager->getMetadataFactory()->getAllMetadata());
     }
 
+    /**
+     * @param iterable<string, FillerInterface> $fillers
+     */
     private function newService(iterable $fillers): BulkFillerService
     {
         return new BulkFillerService(
