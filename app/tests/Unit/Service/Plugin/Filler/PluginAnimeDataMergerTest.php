@@ -37,9 +37,11 @@ use App\Entity\Enum\Demographic;
 use App\Entity\Enum\GenreCode;
 use App\Entity\Enum\ThemeCode;
 use App\Entity\Enum\WatchStatus;
+use App\Entity\MovieAnime;
 use App\Entity\TvAnime;
 use App\Repository\StudioRepository;
-use App\Service\Plugin\Filler\AnimeFillApplier;
+use App\Service\Plugin\Filler\PluginAnimeDataMerger;
+use App\Service\Plugin\Filler\PluginMediaDownloaderInterface;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\EntityManager;
@@ -52,10 +54,9 @@ use PHPUnit\Framework\TestCase;
  * find-or-creates Studio rows through StudioRepository, which is not meaningfully mockable
  * without re-implementing its query.
  */
-final class AnimeFillApplierTest extends TestCase
+final class PluginAnimeDataMergerTest extends TestCase
 {
     private EntityManager $entityManager;
-    private AnimeFillApplier $applier;
 
     protected function setUp(): void
     {
@@ -74,8 +75,17 @@ final class AnimeFillApplierTest extends TestCase
 
         $schemaTool = new SchemaTool($this->entityManager);
         $schemaTool->createSchema($this->entityManager->getMetadataFactory()->getAllMetadata());
+    }
 
-        $this->applier = new AnimeFillApplier(new StudioRepository($this->entityManager), $this->entityManager);
+    /** @param array<string, string|null> $downloads url => returned filename (or null for a failed download) */
+    private function newMerger(array $downloads = []): PluginAnimeDataMerger
+    {
+        $downloader = $this->createStub(PluginMediaDownloaderInterface::class);
+        $downloader->method('download')->willReturnCallback(
+            static fn (int $animeId, string $url): ?string => $downloads[$url] ?? null,
+        );
+
+        return new PluginAnimeDataMerger(new StudioRepository($this->entityManager), $this->entityManager, $downloader);
     }
 
     private function newAnime(): TvAnime
@@ -84,6 +94,23 @@ final class AnimeFillApplierTest extends TestCase
         $anime->setTitle('Placeholder')->setWatchStatus(WatchStatus::Plan);
 
         return $anime;
+    }
+
+    private function persistAndFlush(\App\Entity\Anime $anime): void
+    {
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+    }
+
+    public function testApplyOverwritesTitle(): void
+    {
+        $anime = $this->newAnime();
+
+        $data = new PluginAnimeData(title: 'Bleach: Memories of Nobody');
+
+        $this->newMerger()->apply($anime, $data, ['title']);
+
+        $this->assertSame('Bleach: Memories of Nobody', $anime->getTitle());
     }
 
     public function testApplyUnionsAlternativeNamesWithoutDuplicatingExisting(): void
@@ -96,7 +123,7 @@ final class AnimeFillApplierTest extends TestCase
             alternativeNames: ['Existing Synonym', 'New Synonym'],
         );
 
-        $this->applier->apply($anime, $data, ['alternativeNames']);
+        $this->newMerger()->apply($anime, $data, ['alternativeNames']);
 
         $names = array_map(static fn ($n): string => $n->name, $anime->getNames()->toArray());
         $this->assertSame(['Existing Synonym', 'New Synonym'], $names);
@@ -109,7 +136,7 @@ final class AnimeFillApplierTest extends TestCase
 
         $data = new PluginAnimeData(title: 'Bleach', descriptions: ['ru' => 'Русское описание']);
 
-        $this->applier->apply($anime, $data, ['descriptions']);
+        $this->newMerger()->apply($anime, $data, ['descriptions']);
 
         $this->assertSame('English summary', $anime->getSummary('en'));
         $this->assertSame('Русское описание', $anime->getSummary('ru'));
@@ -122,7 +149,7 @@ final class AnimeFillApplierTest extends TestCase
 
         $data = new PluginAnimeData(title: 'Bleach', genres: [ContractsGenreCode::Action, ContractsGenreCode::Comedy]);
 
-        $this->applier->apply($anime, $data, ['genres']);
+        $this->newMerger()->apply($anime, $data, ['genres']);
 
         $this->assertSame([GenreCode::Comedy, GenreCode::Action], $anime->getGenreCodes());
     }
@@ -133,7 +160,7 @@ final class AnimeFillApplierTest extends TestCase
 
         $data = new PluginAnimeData(title: 'Bleach', themes: [ContractsThemeCode::Isekai]);
 
-        $this->applier->apply($anime, $data, ['themes']);
+        $this->newMerger()->apply($anime, $data, ['themes']);
 
         $this->assertSame([ThemeCode::Isekai], $anime->getThemeCodes());
     }
@@ -145,22 +172,23 @@ final class AnimeFillApplierTest extends TestCase
 
         $data = new PluginAnimeData(title: 'Bleach', demographic: ContractsDemographic::Shounen);
 
-        $this->applier->apply($anime, $data, ['demographic']);
+        $this->newMerger()->apply($anime, $data, ['demographic']);
 
         $this->assertSame(Demographic::Shounen, $anime->getDemographic());
     }
 
-    public function testApplyCreatesStudioOnFirstUseAndReusesItOnSecondCall(): void
+    public function testApplyUnionsStudiosCreatingStudioOnFirstUseAndReusingItOnSecondCall(): void
     {
         $data = new PluginAnimeData(title: 'Bleach', studios: ['Studio Pierrot']);
+        $merger = $this->newMerger();
 
         $first = $this->newAnime();
-        $this->applier->apply($first, $data, ['studios']);
+        $merger->apply($first, $data, ['studios']);
         $this->entityManager->persist($first);
         $this->entityManager->flush();
 
         $second = $this->newAnime();
-        $this->applier->apply($second, $data, ['studios']);
+        $merger->apply($second, $data, ['studios']);
 
         $this->assertSame(
             $first->getStudios()->toArray()[0]->id,
@@ -171,13 +199,14 @@ final class AnimeFillApplierTest extends TestCase
     public function testApplyReusesNewlyCreatedStudioAcrossCallsBeforeFlush(): void
     {
         $data = new PluginAnimeData(title: 'Bleach', studios: ['Studio Pierrot']);
+        $merger = $this->newMerger();
 
         $first = $this->newAnime();
-        $this->applier->apply($first, $data, ['studios']);
+        $merger->apply($first, $data, ['studios']);
         $this->entityManager->persist($first);
 
         $second = $this->newAnime();
-        $this->applier->apply($second, $data, ['studios']);
+        $merger->apply($second, $data, ['studios']);
         $this->entityManager->persist($second);
 
         $this->entityManager->flush();
@@ -196,7 +225,7 @@ final class AnimeFillApplierTest extends TestCase
 
         $data = new PluginAnimeData(title: 'Bleach', countries: ['JP', 'US']);
 
-        $this->applier->apply($anime, $data, ['countries']);
+        $this->newMerger()->apply($anime, $data, ['countries']);
 
         $this->assertSame(['JP', 'US'], $anime->getCountries());
     }
@@ -212,7 +241,7 @@ final class AnimeFillApplierTest extends TestCase
             durationMinutes: 24,
         );
 
-        $this->applier->apply($anime, $data, ['datePremiere', 'dateEnd', 'durationMinutes']);
+        $this->newMerger()->apply($anime, $data, ['datePremiere', 'dateEnd', 'durationMinutes']);
 
         $this->assertEquals(new \DateTimeImmutable('2004-10-05'), $anime->getDatePremiere());
         $this->assertEquals(new \DateTimeImmutable('2005-03-27'), $anime->getDateEnd());
@@ -226,9 +255,92 @@ final class AnimeFillApplierTest extends TestCase
 
         $data = new PluginAnimeData(title: 'Bleach', durationMinutes: null);
 
-        $this->applier->apply($anime, $data, ['durationMinutes']);
+        $this->newMerger()->apply($anime, $data, ['durationMinutes']);
 
         $this->assertSame(24, $anime->getDurationMinutes());
+    }
+
+    public function testApplyOverwritesEpisodesCountOnSeriesAnime(): void
+    {
+        $anime = $this->newAnime();
+
+        $data = new PluginAnimeData(title: 'Bleach', episodesCount: 366);
+
+        $this->newMerger()->apply($anime, $data, ['episodesCount']);
+
+        $this->assertSame(366, $anime->getEpisodesCount());
+    }
+
+    public function testApplyIgnoresEpisodesCountOnMovieAnime(): void
+    {
+        $anime = new MovieAnime();
+        $anime->setTitle('Placeholder')->setWatchStatus(WatchStatus::Plan);
+
+        $data = new PluginAnimeData(title: 'Bleach', episodesCount: 1);
+
+        // MovieAnime has no setEpisodesCount() at all — reaching for it would be a fatal error,
+        // so simply not throwing here already proves the field was skipped.
+        $this->newMerger()->apply($anime, $data, ['episodesCount']);
+
+        $this->addToAssertionCount(1);
+    }
+
+    public function testApplyOverwritesCoverThroughMediaDownloader(): void
+    {
+        $anime = $this->newAnime();
+        $this->persistAndFlush($anime);
+
+        $data = new PluginAnimeData(title: 'Bleach', cover: 'https://example.test/cover.jpg');
+
+        $this->newMerger(['https://example.test/cover.jpg' => 'abc123.jpg'])
+            ->apply($anime, $data, ['cover']);
+
+        $this->assertSame('abc123.jpg', $anime->getCover());
+    }
+
+    public function testApplyLeavesCoverUntouchedWhenDownloadFails(): void
+    {
+        $anime = $this->newAnime();
+        $anime->setCover('existing.jpg');
+        $this->persistAndFlush($anime);
+
+        $data = new PluginAnimeData(title: 'Bleach', cover: 'https://example.test/broken.jpg');
+
+        $this->newMerger()->apply($anime, $data, ['cover']);
+
+        $this->assertSame('existing.jpg', $anime->getCover());
+    }
+
+    public function testApplySkipsCoverWhenAnimeIsNotYetPersisted(): void
+    {
+        $anime = $this->newAnime();
+
+        $data = new PluginAnimeData(title: 'Bleach', cover: 'https://example.test/cover.jpg');
+
+        $this->newMerger(['https://example.test/cover.jpg' => 'abc123.jpg'])
+            ->apply($anime, $data, ['cover']);
+
+        $this->assertNull($anime->getCover());
+    }
+
+    public function testApplyUnionsImagesThroughMediaDownloaderWithoutDuplicating(): void
+    {
+        $anime = $this->newAnime();
+        $this->persistAndFlush($anime);
+        $anime->addImage('existing.jpg');
+
+        $data = new PluginAnimeData(title: 'Bleach', images: [
+            'https://example.test/1.jpg',
+            'https://example.test/2.jpg',
+        ]);
+
+        $this->newMerger([
+            'https://example.test/1.jpg' => 'existing.jpg',
+            'https://example.test/2.jpg' => 'new.jpg',
+        ])->apply($anime, $data, ['images']);
+
+        $sources = array_map(static fn ($image): string => $image->source, $anime->getImages()->toArray());
+        $this->assertSame(['existing.jpg', 'new.jpg'], $sources);
     }
 
     public function testApplyIgnoresUnknownFieldNames(): void
@@ -237,7 +349,7 @@ final class AnimeFillApplierTest extends TestCase
 
         $data = new PluginAnimeData(title: 'Bleach');
 
-        $this->applier->apply($anime, $data, ['title', 'type', 'cover', 'images']);
+        $this->newMerger()->apply($anime, $data, ['type']);
 
         $this->assertSame('Placeholder', $anime->getTitle());
     }

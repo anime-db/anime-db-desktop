@@ -32,6 +32,7 @@ use AnimeDb\PluginContracts\GenreCode as ContractsGenreCode;
 use AnimeDb\PluginContracts\PluginAnimeData;
 use AnimeDb\PluginContracts\ThemeCode as ContractsThemeCode;
 use App\Entity\Anime;
+use App\Entity\AnimeImage;
 use App\Entity\AnimeName;
 use App\Entity\Enum\AnimeNameType;
 use App\Entity\Enum\Demographic;
@@ -46,20 +47,18 @@ use Doctrine\ORM\EntityManagerInterface;
 /**
  * Applies a plugin-supplied {@see PluginAnimeData} onto an {@see Anime}, one field at a time,
  * enforcing the merge-vs-overwrite rule the issue requires to live on the host's schema rather
- * than in the plugin: collection fields (alternative names, descriptions, genres, themes,
- * studios, countries) are unioned via Anime's own add*()/set-with-existing methods, which
- * already de-duplicate or merge by key — nothing that already exists is lost. Scalar fields
- * (date_premiere, date_end, duration_minutes, demographic, episodes_count) are overwritten
- * outright via Anime's plain setters.
+ * than in the plugin (issue #231): collection fields (alternative names, descriptions, genres,
+ * themes, studios, countries, images) are unioned via Anime's own add*()/set-with-existing
+ * methods, which already de-duplicate or merge by key — nothing that already exists is lost.
+ * Scalar fields (title, date_premiere, date_end, duration_minutes, demographic,
+ * episodes_count, cover) are overwritten outright.
  *
- * `title` and `type` are deliberately not handled here: title is always overwritten in the
- * bulk scenario regardless of $fields (see BulkFillerService), and type can only be chosen at
- * entity-construction time (Anime::migrate() is the only way to change it after the fact, and
- * that is out of scope for an automated fill-in). `cover`/`images` are not applied here either
- * — turning a plugin-supplied URL into a local file under %AppData%/media/{id}/ needs its own
- * download step (network I/O, MIME/size validation), left for a follow-up issue.
+ * `type` is deliberately not handled here: Doctrine's single-table discriminator is fixed per
+ * row, so it can only be chosen at entity-construction time (BulkFillerService::instantiate())
+ * or through Anime::migrate() — neither is a "merge one field onto an already-persisted row"
+ * operation this class performs.
  */
-final class AnimeFillApplier
+final class PluginAnimeDataMerger
 {
     /**
      * Keyed by studio name, populated across every apply() call for the lifetime of this
@@ -76,6 +75,7 @@ final class AnimeFillApplier
     public function __construct(
         private readonly StudioRepository $studioRepository,
         private readonly EntityManagerInterface $entityManager,
+        private readonly PluginMediaDownloaderInterface $mediaDownloader,
     ) {
     }
 
@@ -90,6 +90,7 @@ final class AnimeFillApplier
     {
         foreach ($fields as $field) {
             match ($field) {
+                'title' => $anime->setTitle($data->title),
                 'alternativeNames' => $this->applyAlternativeNames($anime, $data->alternativeNames ?? []),
                 'descriptions' => $this->applyDescriptions($anime, $data->descriptions ?? []),
                 'genres' => $this->applyGenres($anime, $data->genres ?? []),
@@ -101,7 +102,9 @@ final class AnimeFillApplier
                 'durationMinutes' => $data->durationMinutes !== null ? $anime->setDurationMinutes($data->durationMinutes) : null,
                 'episodesCount' => $this->applyEpisodesCount($anime, $data->episodesCount),
                 'countries' => $this->applyCountries($anime, $data->countries ?? []),
-                default => null, // title/type/cover/images: handled by the caller, or unknown to this applier
+                'cover' => $this->applyCover($anime, $data->cover),
+                'images' => $this->applyImages($anime, $data->images ?? []),
+                default => null, // type: not applicable to an already-constructed entity, see class docblock
             };
         }
     }
@@ -192,5 +195,45 @@ final class AnimeFillApplier
         }
 
         $anime->setCountries(array_values(array_unique([...($anime->getCountries() ?? []), ...$countries])));
+    }
+
+    /**
+     * Downloading needs %AppData%/media/{$anime->id}/ to exist as a path, which is only true
+     * once the entity has a database id — silently skipped for a not-yet-persisted Anime (the
+     * bulk fill-in scenario, which does not pass 'cover' in $fields for exactly this reason,
+     * see BulkFillerService).
+     */
+    private function applyCover(Anime $anime, ?string $url): void
+    {
+        if ($url === null || $anime->id === null) {
+            return;
+        }
+
+        $filename = $this->mediaDownloader->download($anime->id, $url);
+        if ($filename !== null) {
+            $anime->setCover($filename);
+        }
+    }
+
+    /**
+     * @param string[] $urls
+     *
+     * @see applyCover() for why a not-yet-persisted Anime is skipped
+     */
+    private function applyImages(Anime $anime, array $urls): void
+    {
+        if ($anime->id === null || $urls === []) {
+            return;
+        }
+
+        $existing = array_map(static fn (AnimeImage $image): string => $image->source, $anime->getImages()->toArray());
+
+        foreach ($urls as $url) {
+            $filename = $this->mediaDownloader->download($anime->id, $url);
+            if ($filename !== null && !\in_array($filename, $existing, true)) {
+                $anime->addImage($filename);
+                $existing[] = $filename;
+            }
+        }
     }
 }

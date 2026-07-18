@@ -110,6 +110,22 @@ services:
         arguments:
             - { timeout: 2, max_duration: 3 }
 
+    # Used by HttpPluginMediaDownloader (issue #231) to fetch a plugin-supplied cover/gallery
+    # image URL. A separate client from app.meilisearch.symfony_http_client above: covers/images
+    # come from arbitrary external hosts, not a local, always-up Meilisearch process, so this one
+    # allows a longer timeout.
+    app.plugin_media.http_client:
+        class: Symfony\Contracts\HttpClient\HttpClientInterface
+        factory: ['Symfony\Component\HttpClient\HttpClient', 'create']
+        arguments:
+            - { timeout: 5, max_duration: 15 }
+
+    App\Service\Plugin\Filler\HttpPluginMediaDownloader:
+        arguments:
+            $httpClient: '@app.plugin_media.http_client'
+
+    App\Service\Plugin\Filler\PluginMediaDownloaderInterface: '@App\Service\Plugin\Filler\HttpPluginMediaDownloader'
+
     # meilisearch/meilisearch-php's Client is not autowireable as-is: its constructor takes
     # plain url/apiKey strings, not services (see AnimeSearchIndexer, issue #196).
     Meilisearch\Client:

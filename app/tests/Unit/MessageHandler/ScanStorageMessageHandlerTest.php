@@ -37,8 +37,9 @@ use App\Repository\AnimeRepository;
 use App\Repository\StudioRepository;
 use App\Service\JobLock\JobLockService;
 use App\Service\JobLock\ProcessLivenessChecker;
-use App\Service\Plugin\Filler\AnimeFillApplier;
 use App\Service\Plugin\Filler\BulkFillerService;
+use App\Service\Plugin\Filler\PluginAnimeDataMerger;
+use App\Service\Plugin\Filler\PluginMediaDownloaderInterface;
 use App\Service\Plugin\FillerRegistry;
 use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Storage\FilenameCleaner;
@@ -341,7 +342,11 @@ final class ScanStorageMessageHandlerTest extends TestCase
             $this->entityManager,
             new BulkFillerService(
                 new FillerRegistry([], new PluginsConfigStore('')),
-                new AnimeFillApplier(new StudioRepository($this->entityManager), $this->entityManager),
+                new PluginAnimeDataMerger(
+                    new StudioRepository($this->entityManager),
+                    $this->entityManager,
+                    $this->createStub(PluginMediaDownloaderInterface::class),
+                ),
                 $this->entityManager,
             ),
         );

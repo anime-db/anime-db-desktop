@@ -38,8 +38,9 @@ use App\Entity\TvAnime;
 use App\Entity\ValueObject\PluginId;
 use App\Repository\AnimeRepository;
 use App\Repository\StudioRepository;
-use App\Service\Plugin\Filler\AnimeFillApplier;
 use App\Service\Plugin\Filler\BulkFillerService;
+use App\Service\Plugin\Filler\PluginAnimeDataMerger;
+use App\Service\Plugin\Filler\PluginMediaDownloaderInterface;
 use App\Service\Plugin\FillerRegistry;
 use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Storage\Exception\StoragePathConflictException;
@@ -152,7 +153,11 @@ final class ScanStorageServiceTest extends TestCase
     {
         return new BulkFillerService(
             new FillerRegistry([], new PluginsConfigStore('')),
-            new AnimeFillApplier(new StudioRepository($this->entityManager), $this->entityManager),
+            new PluginAnimeDataMerger(
+                new StudioRepository($this->entityManager),
+                $this->entityManager,
+                $this->createStub(PluginMediaDownloaderInterface::class),
+            ),
             $this->entityManager,
         );
     }

@@ -36,8 +36,9 @@ use App\Doctrine\Type\UnixTimestampType;
 use App\Entity\MovieAnime;
 use App\Entity\ValueObject\PluginId;
 use App\Repository\StudioRepository;
-use App\Service\Plugin\Filler\AnimeFillApplier;
 use App\Service\Plugin\Filler\BulkFillerService;
+use App\Service\Plugin\Filler\PluginAnimeDataMerger;
+use App\Service\Plugin\Filler\PluginMediaDownloaderInterface;
 use App\Service\Plugin\FillerRegistry;
 use App\Service\Plugin\PluginsConfigStore;
 use Doctrine\DBAL\DriverManager;
@@ -77,7 +78,11 @@ final class BulkFillerServiceTest extends TestCase
     {
         return new BulkFillerService(
             new FillerRegistry($fillers, new PluginsConfigStore(sys_get_temp_dir().'/anime-bulk-filler-test-'.uniqid().'.json')),
-            new AnimeFillApplier(new StudioRepository($this->entityManager), $this->entityManager),
+            new PluginAnimeDataMerger(
+                new StudioRepository($this->entityManager),
+                $this->entityManager,
+                $this->createStub(PluginMediaDownloaderInterface::class),
+            ),
             $this->entityManager,
         );
     }
