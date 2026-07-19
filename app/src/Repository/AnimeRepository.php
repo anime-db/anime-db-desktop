@@ -238,6 +238,30 @@ class AnimeRepository
     }
 
     /**
+     * Resolves a potential-duplicate cluster's stored ids (issue #269) back to entities for
+     * display, keyed by id like indexByExternalId() so a caller can look up each requested id
+     * without caring that findBy() doesn't preserve the requested order.
+     *
+     * @param list<int> $ids
+     *
+     * @return array<int, Anime>
+     */
+    public function findByIds(array $ids): array
+    {
+        if ([] === $ids) {
+            return [];
+        }
+
+        $animeById = [];
+        foreach ($this->entityManager->getRepository(Anime::class)->findBy(['id' => $ids]) as $candidate) {
+            /* @var Anime $candidate */
+            $animeById[(int) $candidate->id] = $candidate;
+        }
+
+        return $animeById;
+    }
+
+    /**
      * SQLite JSON1 path into metadata['external_id'][$pluginId]. $pluginId is quoted as a
      * path object key (rather than a bare identifier segment) because PluginId::FORMAT
      * allows hyphens, which bare JSON path identifiers don't. Only PluginId::FORMAT-validated

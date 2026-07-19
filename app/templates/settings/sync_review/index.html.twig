@@ -1,0 +1,52 @@
+{#
+ # AnimeDb package.
+ #
+ # @author    Peter Gribanov <info@peter-gribanov.ru>
+ # @copyright Copyright (c) 2026, Peter Gribanov
+ # @license   https://gnu.org GPL-3.0-or-later
+ #
+ # This program is free software: you can redistribute it and/or modify
+ # it under the terms of the GNU General Public License as published by
+ # the Free Software Foundation, either version 3 of the License, or
+ # (at your option) any later version.
+ #
+ # This program is distributed in the hope that it will be useful,
+ # but WITHOUT ANY WARRANTY; without even the implied warranty of
+ # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ # GNU General Public License for more details.
+ #
+ # You should have received a copy of the GNU General Public License
+ # along with this program. If not, see <https://gnu.org>.
+ #}
+{% extends 'base.html.twig' %}
+
+{% block title %}{{ 'settings_sync_review.title'|trans }}{% endblock %}
+
+{% block body %}
+    <p><a href="{{ path('settings_index') }}">{{ 'settings_sync_review.back_link'|trans }}</a></p>
+    <h1>{{ 'settings_sync_review.heading'|trans }}</h1>
+
+    {% if items is empty %}
+        <p>{{ 'settings_sync_review.empty'|trans }}</p>
+    {% else %}
+        <ul>
+            {% for item in items %}
+                <li>
+                    {% if duplicateClusters[item.id] is not empty %}
+                        <p>{{ 'settings_sync_review.kind_potential_duplicate'|trans }}</p>
+                        <ul>
+                            {% for anime in duplicateClusters[item.id] %}
+                                <li><a href="{{ path('anime_show', {id: anime.id}) }}">{{ anime.title }}</a></li>
+                            {% endfor %}
+                        </ul>
+                    {% endif %}
+
+                    <form method="post" action="{{ path('settings_sync_review_resolve', {id: item.id}) }}">
+                        <input type="hidden" name="_token" value="{{ csrf_token('settings_sync_review_resolve_' ~ item.id) }}">
+                        <button type="submit">{{ 'settings_sync_review.resolve_button'|trans }}</button>
+                    </form>
+                </li>
+            {% endfor %}
+        </ul>
+    {% endif %}
+{% endblock %}

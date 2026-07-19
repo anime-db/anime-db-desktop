@@ -27,7 +27,11 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Twig;
 
+use App\Entity\Anime;
+use App\Entity\Enum\SyncReviewItemKind;
 use App\Entity\Label;
+use App\Entity\SyncReviewItem;
+use App\Entity\TvAnime;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RequestStack;
@@ -167,5 +171,47 @@ final class SettingsTemplateRenderingTest extends KernelTestCase
 
         $this->assertStringContainsString('Меток пока нет.', $html);
         $this->assertStringContainsString('Имя метки не может быть пустым.', $html);
+    }
+
+    public function testSyncReviewIndexRendersEmptyStateWithoutErrors(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession();
+        /** @var LocaleSwitcher $localeSwitcher */
+        $localeSwitcher = self::getContainer()->get(LocaleSwitcher::class);
+        $localeSwitcher->setLocale('ru');
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('settings/sync_review/index.html.twig', ['items' => [], 'duplicateClusters' => []]);
+
+        $this->assertStringContainsString('Нет элементов, требующих внимания.', $html);
+    }
+
+    public function testSyncReviewIndexRendersDuplicateClusterWithLinksToAnimeCards(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession();
+        /** @var LocaleSwitcher $localeSwitcher */
+        $localeSwitcher = self::getContainer()->get(LocaleSwitcher::class);
+        $localeSwitcher->setLocale('ru');
+
+        $item = new SyncReviewItem(SyncReviewItemKind::PotentialDuplicate, ['anime_ids' => [1, 2]]);
+        (new \ReflectionProperty(SyncReviewItem::class, 'id'))->setValue($item, 1);
+
+        $anime = new TvAnime();
+        $anime->setTitle('Trigun');
+        (new \ReflectionProperty(Anime::class, 'id'))->setValue($anime, 1);
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('settings/sync_review/index.html.twig', [
+            'items' => [$item],
+            'duplicateClusters' => [1 => [$anime]],
+        ]);
+
+        $this->assertStringContainsString('Trigun', $html);
+        $this->assertStringContainsString('/anime/1', $html);
+        $this->assertStringContainsString('Возможный дубликат', $html);
     }
 }

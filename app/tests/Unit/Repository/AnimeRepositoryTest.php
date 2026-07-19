@@ -438,4 +438,29 @@ final class AnimeRepositoryTest extends TestCase
 
         $this->assertSame(['1' => $trigun, '2' => $bleach], $index);
     }
+
+    public function testFindByIdsReturnsAnimeIndexedById(): void
+    {
+        $trigun = new TvAnime();
+        $trigun->setTitle('Trigun')->setWatchStatus(WatchStatus::Watching);
+
+        $bleach = new TvAnime();
+        $bleach->setTitle('Bleach')->setWatchStatus(WatchStatus::Watching);
+
+        $this->entityManager->persist($trigun);
+        $this->entityManager->persist($bleach);
+        $this->entityManager->flush();
+
+        $trigunId = $trigun->id ?? throw new \LogicException('entity id must be set after persisting');
+        $bleachId = $bleach->id ?? throw new \LogicException('entity id must be set after persisting');
+
+        $index = $this->repository->findByIds([$trigunId, $bleachId]);
+
+        $this->assertSame([$trigunId => $trigun, $bleachId => $bleach], $index);
+    }
+
+    public function testFindByIdsReturnsEmptyArrayForEmptyInput(): void
+    {
+        $this->assertSame([], $this->repository->findByIds([]));
+    }
 }

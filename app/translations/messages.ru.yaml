@@ -121,6 +121,7 @@ settings:
     labels_link: Метки
     plugins_link: Плагины
     plugin_widgets_link: Виджеты плагинов
+    sync_review_link: Требует внимания
     language_label: Язык интерфейса
     locale:
         ru: Русский
@@ -161,6 +162,14 @@ settings_plugin_widgets:
     catalog:
         heading: Каталог
         empty: Нет доступных виджетов для каталога.
+
+settings_sync_review:
+    title: Требует внимания — Настройки — AnimeDB
+    back_link: ← Настройки
+    heading: Требует внимания
+    empty: Нет элементов, требующих внимания.
+    kind_potential_duplicate: Возможный дубликат
+    resolve_button: Разобрано
 
 settings_plugins:
     title: Плагины — Настройки — AnimeDB
