@@ -28,10 +28,13 @@ declare(strict_types=1);
 namespace App\Service\Plugin;
 
 use AnimeDb\PluginContracts\SyncInterface;
+use App\Entity\Anime;
 use App\Entity\Exception\InvalidWatchStatusException;
 use App\Entity\ValueObject\PluginId;
 use App\Repository\AnimeRepository;
 use App\Service\Plugin\Filler\BulkFillerService;
+use App\Service\Plugin\Pull\PullDeletionNotice;
+use App\Service\Plugin\Pull\PullDeletionReason;
 use Doctrine\ORM\EntityManagerInterface;
 
 /**
@@ -63,8 +66,16 @@ use Doctrine\ORM\EntityManagerInterface;
  * Where/when this runs (periodic job, manual trigger, ...) is out of scope here — a future
  * caller is expected to invoke pull() once per SyncRegistry::allActive() entry, mirroring how
  * PushSyncMessageHandler consumes that same registry for the push direction (issue #214).
- * Cross-vendor dedup (issue #216) and source-side removal (issue #217) are separate concerns
- * layered on top of this.
+ * Cross-vendor dedup (issue #216) is a separate concern layered on top of this.
+ *
+ * Source-side removal (issue #217) is handled here, at the end of the same run: a local Anime
+ * that used to carry $pluginId's external id (present in the up-front index below) but is no
+ * longer in $sync->pull()'s list is never deleted automatically — the risk of silently losing a
+ * user's notes/rating is not worth it, and "gone from one source's list" cannot be told apart
+ * automatically from "still tracked deliberately on another source" (see detectDeletions()). A
+ * PullDeletionNotice is raised instead, for a future batch "requires attention" surface (issue
+ * #216) to actually present to the user — pull() itself only detects and returns these, it does
+ * not persist or display them anywhere yet.
  */
 final class PullSyncService
 {
@@ -72,14 +83,19 @@ final class PullSyncService
         private readonly EntityManagerInterface $entityManager,
         private readonly AnimeRepository $animeRepository,
         private readonly BulkFillerService $bulkFillerService,
+        private readonly SyncRegistry $syncRegistry,
     ) {
     }
 
-    public function pull(PluginId $pluginId, SyncInterface $sync): void
+    /** @return list<PullDeletionNotice> */
+    public function pull(PluginId $pluginId, SyncInterface $sync): array
     {
         $byExternalId = $this->animeRepository->indexByExternalId($pluginId);
+        $previousExternalIds = array_keys($byExternalId);
+        $seenExternalIds = [];
 
         foreach ($sync->pull() as $item) {
+            $seenExternalIds[$item->externalId] = true;
             $anime = $byExternalId[$item->externalId] ?? null;
 
             if ($anime === null) {
@@ -106,6 +122,63 @@ final class PullSyncService
             }
         }
 
+        $notices = $this->detectDeletions($pluginId, $byExternalId, $previousExternalIds, $seenExternalIds);
+
         $this->entityManager->flush();
+
+        return $notices;
+    }
+
+    /**
+     * @param array<string, Anime> $byExternalId        indexByExternalId()'s result, possibly
+     *                                                  grown (never shrunk) by the pull() loop
+     *                                                  above with this run's newly created items
+     * @param list<string>         $previousExternalIds $byExternalId's keys as they were before
+     *                                                  that loop ran — the only ones that can be
+     *                                                  "missing now", a newly created item can't
+     * @param array<string, true>  $seenExternalIds     every external id this run's $sync->pull()
+     *                                                  actually returned
+     *
+     * @return list<PullDeletionNotice>
+     */
+    private function detectDeletions(
+        PluginId $pluginId,
+        array $byExternalId,
+        array $previousExternalIds,
+        array $seenExternalIds,
+    ): array {
+        $activePluginIds = array_keys(iterator_to_array($this->syncRegistry->allActive()));
+
+        $notices = [];
+        foreach ($previousExternalIds as $externalId) {
+            if (isset($seenExternalIds[$externalId])) {
+                continue;
+            }
+
+            $anime = $byExternalId[$externalId];
+
+            // Hard protection, no exceptions (issue #217): a title linked to downloaded files is
+            // never even a candidate for the "requires attention" list, regardless of what the
+            // source reports — gone from a tracker's list is not "delete the local copy".
+            if ($anime->getStorage() !== null) {
+                continue;
+            }
+
+            $stillPresentOn = [];
+            foreach (array_keys($anime->getMetadata()['external_id'] ?? []) as $linkedPluginId) {
+                if ($linkedPluginId !== (string) $pluginId && \in_array($linkedPluginId, $activePluginIds, true)) {
+                    $stillPresentOn[] = new PluginId($linkedPluginId);
+                }
+            }
+
+            $notices[] = new PullDeletionNotice(
+                $anime,
+                [] !== $stillPresentOn ? PullDeletionReason::ConflictDeletedSourceButPresentOther : PullDeletionReason::DeletedFromSource,
+                $pluginId,
+                $stillPresentOn,
+            );
+        }
+
+        return $notices;
     }
 }

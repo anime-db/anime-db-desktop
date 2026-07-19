@@ -36,7 +36,9 @@ use AnimeDb\PluginContracts\SyncStatus;
 use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
 use App\Entity\Anime;
+use App\Entity\Enum\StorageType;
 use App\Entity\Enum\WatchStatus;
+use App\Entity\Storage;
 use App\Entity\TvAnime;
 use App\Entity\ValueObject\PluginId;
 use App\Repository\AnimeRepository;
@@ -46,7 +48,9 @@ use App\Service\Plugin\Filler\PluginAnimeDataMerger;
 use App\Service\Plugin\Filler\PluginMediaDownloaderInterface;
 use App\Service\Plugin\FillerRegistry;
 use App\Service\Plugin\PluginsConfigStore;
+use App\Service\Plugin\Pull\PullDeletionReason;
 use App\Service\Plugin\PullSyncService;
+use App\Service\Plugin\SyncRegistry;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\EntityManager;
@@ -89,7 +93,8 @@ final class PullSyncServiceTest extends TestCase
         $this->pluginId = new PluginId('animedb-shikimori');
     }
 
-    private function newService(EntityManager $entityManager, AnimeRepository $animeRepository): PullSyncService
+    /** @param list<string> $activePluginIds other sync plugins to report as active via SyncRegistry::allActive() */
+    private function newService(EntityManager $entityManager, AnimeRepository $animeRepository, array $activePluginIds = []): PullSyncService
     {
         $bulkFillerService = new BulkFillerService(
             // Never consulted by fillNewFrom() — it works off the sync plugin instance directly.
@@ -103,7 +108,27 @@ final class PullSyncServiceTest extends TestCase
             new NullLogger(),
         );
 
-        return new PullSyncService($entityManager, $animeRepository, $bulkFillerService);
+        return new PullSyncService($entityManager, $animeRepository, $bulkFillerService, $this->syncRegistry($activePluginIds));
+    }
+
+    /**
+     * A SyncRegistry reporting exactly $activePluginIds as active (features.sync = true) — the
+     * only thing detectDeletions()'s $stillPresentOn check reads from it. The registered sync
+     * instances themselves are never invoked, so a bare stub is enough for each one.
+     *
+     * @param list<string> $activePluginIds
+     */
+    private function syncRegistry(array $activePluginIds): SyncRegistry
+    {
+        $pluginsConfigStore = new PluginsConfigStore(sys_get_temp_dir().'/anime-pull-sync-test-'.uniqid().'.json');
+        $syncs = [];
+        foreach ($activePluginIds as $id) {
+            $pluginId = new PluginId($id);
+            $pluginsConfigStore->updatePluginSettings($pluginId, static fn (array $settings): array => [...$settings, 'features' => ['sync' => true]]);
+            $syncs[$id] = $this->createStub(SyncInterface::class);
+        }
+
+        return new SyncRegistry($syncs, $pluginsConfigStore);
     }
 
     /**
@@ -284,6 +309,113 @@ final class PullSyncServiceTest extends TestCase
         $service->pull($this->pluginId, $sync);
 
         $this->assertCount(0, $this->allAnime());
+    }
+
+    /**
+     * Hard protection, no exceptions (issue #217): an Anime linked to downloaded files is never
+     * even a candidate for the "requires attention" list, regardless of what the source reports
+     * — it is neither deleted nor flagged when it drops out of the pull() list.
+     */
+    public function testNeverFlagsAnAnimeLinkedToStorageEvenWhenItDropsOutOfTheSourceList(): void
+    {
+        $storage = new Storage('Main folder', sys_get_temp_dir(), StorageType::Folder);
+        $this->entityManager->persist($storage);
+
+        $anime = new TvAnime();
+        $anime->setTitle('Cowboy Bebop')->setWatchStatus(WatchStatus::Watching);
+        $anime->rememberExternalId($this->pluginId, '1');
+        $anime->setStorage($storage)->setStoragePath('Cowboy Bebop');
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+
+        $sync = $this->createMock(SyncInterface::class);
+        $sync->expects($this->once())->method('pull')->willReturn([]);
+
+        $notices = $this->service->pull($this->pluginId, $sync);
+
+        $this->assertSame([], $notices);
+        $this->assertCount(1, $this->allAnime());
+    }
+
+    /**
+     * No other active sync plugin has a recorded link to this Anime, so its disappearance from
+     * $pluginId's list is reported as a plain single-source removal — never auto-deleted, only
+     * flagged (issue #217).
+     */
+    public function testFlagsAnUnlinkedAnimeAsDeletedFromSourceWhenItDropsOutOfTheSourceList(): void
+    {
+        $anime = new TvAnime();
+        $anime->setTitle('Cowboy Bebop')->setWatchStatus(WatchStatus::Watching);
+        $anime->rememberExternalId($this->pluginId, '1');
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+
+        $sync = $this->createMock(SyncInterface::class);
+        $sync->expects($this->once())->method('pull')->willReturn([]);
+
+        $notices = $this->service->pull($this->pluginId, $sync);
+
+        $this->assertCount(1, $notices);
+        $this->assertSame($anime, $notices[0]->anime);
+        $this->assertSame(PullDeletionReason::DeletedFromSource, $notices[0]->reason);
+        $this->assertSame($this->pluginId, $notices[0]->deletedFrom);
+        $this->assertSame([], $notices[0]->stillPresentOn);
+        $this->assertCount(1, $this->allAnime());
+    }
+
+    /**
+     * The Anime is still linked to another currently active sync plugin, so its disappearance
+     * from $pluginId's list is a conflict, not a plain removal — the two sources disagree, and
+     * only the user can say which one is right (issue #217).
+     */
+    public function testFlagsAConflictWhenTheAnimeIsStillLinkedToAnotherActiveSyncPlugin(): void
+    {
+        $otherPluginId = new PluginId('animedb-anilist');
+
+        $anime = new TvAnime();
+        $anime->setTitle('Cowboy Bebop')->setWatchStatus(WatchStatus::Watching);
+        $anime->rememberExternalId($this->pluginId, '1');
+        $anime->rememberExternalId($otherPluginId, '99');
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+
+        $service = $this->newService($this->entityManager, new AnimeRepository($this->entityManager), [(string) $otherPluginId]);
+
+        $sync = $this->createMock(SyncInterface::class);
+        $sync->expects($this->once())->method('pull')->willReturn([]);
+
+        $notices = $service->pull($this->pluginId, $sync);
+
+        $this->assertCount(1, $notices);
+        $this->assertSame(PullDeletionReason::ConflictDeletedSourceButPresentOther, $notices[0]->reason);
+        $this->assertEquals([$otherPluginId], $notices[0]->stillPresentOn);
+    }
+
+    /**
+     * The Anime's link to the other plugin is only informational once that plugin is no longer
+     * an active sync source (uninstalled/disabled) — it cannot possibly still be "in its list",
+     * so it must not suppress the deleted_from_source flag into a conflict (issue #217).
+     */
+    public function testDoesNotCountALinkToAnInactivePluginAsStillPresent(): void
+    {
+        $otherPluginId = new PluginId('animedb-anilist');
+
+        $anime = new TvAnime();
+        $anime->setTitle('Cowboy Bebop')->setWatchStatus(WatchStatus::Watching);
+        $anime->rememberExternalId($this->pluginId, '1');
+        $anime->rememberExternalId($otherPluginId, '99');
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+
+        $sync = $this->createMock(SyncInterface::class);
+        $sync->expects($this->once())->method('pull')->willReturn([]);
+
+        // Note: no [(string) $otherPluginId] passed to newService() — $otherPluginId stays inactive.
+        $notices = $this->service->pull($this->pluginId, $sync);
+
+        $this->assertCount(1, $notices);
+        $this->assertSame(PullDeletionReason::DeletedFromSource, $notices[0]->reason);
+        $this->assertSame([], $notices[0]->stillPresentOn);
     }
 
     /** @return list<Anime> */
