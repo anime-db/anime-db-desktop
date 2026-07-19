@@ -35,6 +35,17 @@ parameters:
     app.plugins_dir.dev_default: '%kernel.project_dir%/var/plugins'
     app.plugins_dir: '%env(default:app.plugins_dir.dev_default:PLUGINS_DIR)%'
 
+    # In production Electron passes CORE_VERSION (see native/supervisor/frankenphp.js,
+    # native/supervisor/messenger-consumer.js), the app's own package.json "version" — there is
+    # no separately versioned core component, so app.getVersion() *is* the core version. Used by
+    # the plugin ZIP installer's compat check (issue #249) to enforce manifest.require.core.
+    # The dev default is deliberately a high placeholder rather than a copy of package.json's
+    # current version (which would need updating here on every release bump): dev/CI runs
+    # without Electron have no real core version to check against, so the compat check is made
+    # a no-op there instead of spuriously blocking every plugin install.
+    app.core_version.dev_default: '99.99.99'
+    app.core_version: '%env(default:app.core_version.dev_default:CORE_VERSION)%'
+
     # Locales LocaleSubscriber negotiates against. Kept as an explicit list rather than scanning
     # app/translations/ on every request (FrankenPHP worker mode keeps the subscriber alive
     # between requests, so a glob() there would mean disk I/O per request for no benefit — the
@@ -63,6 +74,7 @@ services:
             $configPath: '%app.config_path%'
             $pluginsConfigPath: '%app.plugins_config_path%'
             $pluginsDir: '%app.plugins_dir%'
+            $coreVersion: '%app.core_version%'
             $locales: '%app.locales%'
             $sampleCoversDir: '%app.sample_covers_dir%'
 

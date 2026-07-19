@@ -21,6 +21,7 @@
 
 'use strict';
 
+const { app }      = require('electron');
 const { spawn }    = require('child_process');
 const { EventEmitter } = require('events');
 const fs           = require('fs');
@@ -73,6 +74,7 @@ function buildEnv(appPort, wsPort, meiliPort, meiliKey) {
         APP_ROOT:                paths.getAppRootDir(),
         APP_ENV:                 'prod',
         APP_SECRET:              getOrCreateAppSecret(),
+        CORE_VERSION:            app.getVersion(),
         DATABASE_URL:            `sqlite:///${paths.getDbPath()}`,
         QUEUE_DATABASE_URL:      `sqlite:///${paths.getQueueDbPath()}`,
         MESSENGER_TRANSPORT_DSN: 'doctrine://queue?auto_setup=0',

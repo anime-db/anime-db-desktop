@@ -28,6 +28,7 @@ declare(strict_types=1);
 namespace App\Tests\Unit\Service\Plugin;
 
 use App\Entity\ValueObject\PluginId;
+use App\Service\Plugin\Exception\IncompatiblePluginCoreVersionException;
 use App\Service\Plugin\Exception\InvalidInstalledPluginException;
 use App\Service\Plugin\Exception\PluginAlreadyInstalledException;
 use App\Service\Plugin\Exception\PluginInstallException;
@@ -39,6 +40,8 @@ use Psr\Log\NullLogger;
 
 final class ZipPluginInstallerTest extends TestCase
 {
+    private const CORE_VERSION = '2.5.0';
+
     private string $rootDir;
     private string $pluginsDir;
     private string $fixturesDir;
@@ -255,9 +258,42 @@ final class ZipPluginInstallerTest extends TestCase
         }
     }
 
+    public function testInstallSucceedsWhenCoreVersionSatisfiesRequirement(): void
+    {
+        $zipPath = $this->createZip([
+            'manifest.json' => $this->validManifestJson('animedb-shikimori', requireCore: '>='.self::CORE_VERSION),
+        ]);
+
+        $installer = $this->installer();
+        $pluginId = $installer->install($zipPath);
+
+        $this->assertSame('animedb-shikimori', (string) $pluginId);
+    }
+
+    public function testInstallBlocksWhenRequiredCoreVersionIsHigherThanCurrent(): void
+    {
+        $zipPath = $this->createZip([
+            'manifest.json' => $this->validManifestJson('animedb-shikimori', requireCore: '>=99.0.0'),
+        ]);
+
+        $installer = $this->installer();
+
+        try {
+            $installer->install($zipPath);
+            $this->fail('Expected IncompatiblePluginCoreVersionException to be thrown.');
+        } catch (IncompatiblePluginCoreVersionException $exception) {
+            $this->assertSame('>=99.0.0', $exception->requiredCore);
+            $this->assertSame(self::CORE_VERSION, $exception->currentCore);
+        } finally {
+            $this->assertSame([], array_values(array_diff((array) scandir($this->pluginsDir), ['.', '..'])));
+            $this->assertFalse($this->registry->has(new PluginId('animedb-shikimori')));
+            $this->assertNoLeftoverTempDirectories();
+        }
+    }
+
     private function installer(): ZipPluginInstaller
     {
-        return new ZipPluginInstaller($this->pluginsDir, $this->registry);
+        return new ZipPluginInstaller($this->pluginsDir, self::CORE_VERSION, $this->registry);
     }
 
     /**
@@ -277,7 +313,7 @@ final class ZipPluginInstallerTest extends TestCase
         return $zipPath;
     }
 
-    private function validManifestJson(string $pluginId, string $version = '1.0.0'): string
+    private function validManifestJson(string $pluginId, string $version = '1.0.0', string $requireCore = '>=2.0.0'): string
     {
         return (string) json_encode([
             'id' => $pluginId,
@@ -285,7 +321,7 @@ final class ZipPluginInstallerTest extends TestCase
             'version' => $version,
             'type' => 'integration',
             'features' => ['filler' => true],
-            'require' => ['core' => '>=2.0.0', 'php' => '>=8.2'],
+            'require' => ['core' => $requireCore, 'php' => '>=8.2'],
         ]);
     }
 

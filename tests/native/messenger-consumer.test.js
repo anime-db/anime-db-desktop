@@ -21,6 +21,9 @@
 
 'use strict';
 
+jest.mock('electron', () => ({
+    app: { getVersion: jest.fn(() => '1.2.3') },
+}));
 jest.mock('../../native/paths', () => ({
     getAppRootDir:         jest.fn(() => '/fake/app'),
     getDbPath:             jest.fn(() => '/fake/userData/data.db'),
@@ -63,6 +66,11 @@ describe('buildEnv', () => {
     test('includes APP_ENV set to prod', () => {
         const env = buildEnv(7700, 'test-key');
         expect(env.APP_ENV).toBe('prod');
+    });
+
+    test('includes CORE_VERSION from app.getVersion()', () => {
+        const env = buildEnv(7700, 'test-key');
+        expect(env.CORE_VERSION).toBe('1.2.3');
     });
 
     test('includes DATABASE_URL as a sqlite:// URL', () => {

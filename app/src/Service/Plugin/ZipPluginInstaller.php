@@ -32,9 +32,11 @@ use AnimeDb\PluginContracts\Manifest\InvalidManifestJsonException;
 use AnimeDb\PluginContracts\Manifest\Manifest;
 use AnimeDb\PluginContracts\Manifest\ManifestParser;
 use App\Entity\ValueObject\PluginId;
+use App\Service\Plugin\Exception\IncompatiblePluginCoreVersionException;
 use App\Service\Plugin\Exception\InvalidInstalledPluginException;
 use App\Service\Plugin\Exception\PluginAlreadyInstalledException;
 use App\Service\Plugin\Exception\PluginInstallException;
+use Composer\Semver\Semver;
 
 /**
  * Installs a plugin from an uploaded ZIP archive: unpacks it into a private staging directory
@@ -54,10 +56,15 @@ use App\Service\Plugin\Exception\PluginInstallException;
  * `%app.plugins_dir%` on Linux, or `%TEMP%` and `%AppData%` on different drives on Windows),
  * which the system temp directory does not guarantee.
  *
- * Deliberately out of scope here (see issue #248): compatibility/lint checks on the manifest
- * beyond {@see ManifestParser::parse()}'s own validation, any UI, and activation/cache warm-up
- * (issue #222) — this service only gets as far as "files are in place and the index is
- * up to date".
+ * Also runs a blocking compatibility check (issue #249) right after the manifest is parsed:
+ * the manifest's `require.core` lower-bound constraint (e.g. `">=2.0.0"`) is checked against
+ * the current `%app.core_version%` via {@see Semver::satisfies()}, before anything is moved
+ * into place — see {@see IncompatiblePluginCoreVersionException}.
+ *
+ * Deliberately still out of scope here (see issue #248): lint checks on the manifest beyond
+ * {@see ManifestParser::parse()}'s own validation and the core-version compat check above, any
+ * UI, and activation/cache warm-up (issue #222) — this service only gets as far as "files are
+ * in place and the index is up to date".
  */
 final class ZipPluginInstaller
 {
@@ -65,15 +72,18 @@ final class ZipPluginInstaller
 
     public function __construct(
         private readonly string $pluginsDir,
+        private readonly string $coreVersion,
         private readonly InstalledPluginsRegistry $registry,
         private readonly ManifestParser $manifestParser = new ManifestParser(),
     ) {
     }
 
     /**
-     * @throws InvalidInstalledPluginException if manifest.json is missing or invalid
-     * @throws PluginAlreadyInstalledException if the manifest's plugin id is already installed
-     * @throws PluginInstallException          if the archive cannot be unpacked or moved into place
+     * @throws InvalidInstalledPluginException        if manifest.json is missing or invalid
+     * @throws IncompatiblePluginCoreVersionException if the current core version does not satisfy
+     *                                                the manifest's `require.core` lower bound
+     * @throws PluginAlreadyInstalledException        if the manifest's plugin id is already installed
+     * @throws PluginInstallException                 if the archive cannot be unpacked or moved into place
      */
     public function install(string $zipPath): PluginId
     {
@@ -85,6 +95,7 @@ final class ZipPluginInstaller
             $this->extract($zipPath, $tmpDir);
             $pluginRoot = $this->resolvePluginRoot($tmpDir);
             $manifest = $this->parseManifest($pluginRoot);
+            $this->assertCoreVersionCompatible($manifest);
             $pluginId = new PluginId($manifest->id);
             $targetDir = $this->pluginsDir.\DIRECTORY_SEPARATOR.$pluginId;
 
@@ -214,6 +225,16 @@ final class ZipPluginInstaller
             throw new InvalidInstalledPluginException($dir, $exception->errors, $exception);
         } catch (InvalidManifestJsonException $exception) {
             throw new InvalidInstalledPluginException($dir, [], $exception);
+        }
+    }
+
+    /**
+     * @throws IncompatiblePluginCoreVersionException
+     */
+    private function assertCoreVersionCompatible(Manifest $manifest): void
+    {
+        if (!Semver::satisfies($this->coreVersion, $manifest->require->core)) {
+            throw new IncompatiblePluginCoreVersionException($manifest->require->core, $this->coreVersion);
         }
     }
 
