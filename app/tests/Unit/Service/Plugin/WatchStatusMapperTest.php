@@ -50,4 +50,10 @@ final class WatchStatusMapperTest extends TestCase
     {
         $this->assertSame($expected, WatchStatusMapper::toSyncStatus($watchStatus));
     }
+
+    #[DataProvider('statusPairs')]
+    public function testMapsEverySyncStatusBackToItsMatchingWatchStatus(WatchStatus $expected, SyncStatus $status): void
+    {
+        $this->assertSame($expected, WatchStatusMapper::toWatchStatus($status));
+    }
 }

@@ -42,6 +42,7 @@ use App\Entity\MovieAnime;
 use App\Entity\Storage;
 use App\Entity\Studio;
 use App\Entity\TvAnime;
+use App\Entity\ValueObject\PluginId;
 use App\Entity\ValueObject\Rating;
 use App\Repository\AnimeListFilter;
 use App\Repository\AnimeListSort;
@@ -380,5 +381,31 @@ final class AnimeRepositoryTest extends TestCase
         $this->entityManager->flush();
 
         $this->assertSame([$linked], $this->repository->findByStorage($storage));
+    }
+
+    public function testFindByExternalIdMatchesOnlyTheGivenPluginAndId(): void
+    {
+        $shikimori = new PluginId('animedb-shikimori');
+        $mal = new PluginId('animedb-mal');
+
+        $synced = new TvAnime();
+        $synced->setTitle('Trigun')->setWatchStatus(WatchStatus::Watching);
+        $synced->rememberExternalId($shikimori, '1');
+
+        $otherPlugin = new TvAnime();
+        $otherPlugin->setTitle('Bleach')->setWatchStatus(WatchStatus::Watching);
+        $otherPlugin->rememberExternalId($mal, '1');
+
+        $noMetadata = new TvAnime();
+        $noMetadata->setTitle('Naruto')->setWatchStatus(WatchStatus::Watching);
+
+        foreach ([$synced, $otherPlugin, $noMetadata] as $anime) {
+            $this->entityManager->persist($anime);
+        }
+        $this->entityManager->flush();
+
+        $this->assertSame($synced, $this->repository->findByExternalId($shikimori, '1'));
+        $this->assertNull($this->repository->findByExternalId($shikimori, '2'));
+        $this->assertNull($this->repository->findByExternalId(new PluginId('animedb-anilist'), '1'));
     }
 }

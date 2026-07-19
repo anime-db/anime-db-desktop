@@ -31,6 +31,7 @@ use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
 use App\Entity\Anime;
 use App\Entity\Storage;
+use App\Entity\ValueObject\PluginId;
 use App\Entity\ValueObject\Rating;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\QueryBuilder;
@@ -142,6 +143,35 @@ class AnimeRepository
 
         /* @var ?Anime */
         return $qb->getQuery()->getOneOrNullResult();
+    }
+
+    /**
+     * Reverse lookup for pull-sync idempotency (issue #257): the Anime, if any, already
+     * carrying $externalId under metadata['external_id'][$pluginId] (see
+     * Anime::getExternalId()/rememberExternalId()). Used both to fold an already-synced
+     * SyncItem onto its known local Anime and to detect a "new" SyncItem that in fact
+     * already has a local match, so a repeated pull of the same plugin never creates a
+     * duplicate.
+     *
+     * metadata is a plain JSON column with no index on this path (accepted risk, issue
+     * #257): a personal catalog of hundreds to low thousands of rows keeps this scan fast
+     * enough; a generated column/index or a dedicated lookup table would be needed if the
+     * catalog grew by orders of magnitude, which is out of scope here.
+     */
+    public function findByExternalId(PluginId $pluginId, string $externalId): ?Anime
+    {
+        $qb = $this->entityManager->getRepository(Anime::class)->createQueryBuilder('a')
+            ->andWhere('a.metadata IS NOT NULL')
+            ->orderBy('a.id', 'ASC');
+
+        foreach ($qb->getQuery()->getResult() as $candidate) {
+            /* @var Anime $candidate */
+            if (($candidate->getMetadata()['external_id'][(string) $pluginId] ?? null) === $externalId) {
+                return $candidate;
+            }
+        }
+
+        return null;
     }
 
     private function createFilteredQueryBuilder(AnimeListFilter $filter): QueryBuilder
