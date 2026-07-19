@@ -25,6 +25,11 @@
 // disabled, a ZIP picked in the file input reveals the "third-party source" warning, and only
 // clicking its own confirm button re-enables submit. Picking a different file resets the gate,
 // so a user cannot swap the archive after confirming without acknowledging the warning again.
+//
+// The file is also validated client-side (selected + .zip extension) before the warning gate is
+// shown at all: the server's own no_file check (PluginController::install()) is only a fallback
+// for a POST without a valid file and cannot tell "nothing picked" apart from an upload that was
+// rejected for exceeding upload_max_filesize, so it is not a reliable source of a precise message.
 (function () {
     const form = document.getElementById('plugin-install-form');
     if (!form) {
@@ -32,20 +37,56 @@
     }
 
     const fileInput = document.getElementById('plugin-install-file');
+    const clientError = document.getElementById('plugin-install-client-error');
     const warning = document.getElementById('plugin-install-warning');
     const confirmButton = document.getElementById('plugin-install-confirm-button');
     const submitButton = document.getElementById('plugin-install-submit-button');
 
-    function resetGate() {
-        submitButton.disabled = true;
-        warning.hidden = fileInput.files.length === 0;
+    let messages = {};
+    window.AppTranslations.getCatalogue().then((catalogue) => {
+        messages = catalogue;
+    }).catch(() => {});
+
+    function trans(key, fallback) {
+        return Object.prototype.hasOwnProperty.call(messages, key) ? messages[key] : fallback;
     }
 
-    fileInput.addEventListener('change', resetGate);
+    function isZipFile(file) {
+        return /\.zip$/i.test(file.name);
+    }
+
+    function hideGate() {
+        submitButton.disabled = true;
+        clientError.hidden = true;
+        warning.hidden = true;
+    }
+
+    function validateFile() {
+        hideGate();
+
+        const file = fileInput.files[0] ?? null;
+        if (!file) {
+            clientError.hidden = false;
+            clientError.textContent = trans('settings_plugins.install_error_no_file', 'Choose a ZIP archive of the plugin to install.');
+
+            return;
+        }
+
+        if (!isZipFile(file)) {
+            clientError.hidden = false;
+            clientError.textContent = trans('settings_plugins.install_error_not_zip', 'Choose a file with the .zip extension.');
+
+            return;
+        }
+
+        warning.hidden = false;
+    }
+
+    fileInput.addEventListener('change', validateFile);
 
     confirmButton.addEventListener('click', () => {
         submitButton.disabled = false;
     });
 
-    resetGate();
+    hideGate();
 })();

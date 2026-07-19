@@ -87,6 +87,8 @@
         <label for="plugin-install-file">{{ 'settings_plugins.install_file_label'|trans }}</label>
         <input type="file" id="plugin-install-file" name="plugin_zip" accept=".zip" required>
 
+        <p class="error" id="plugin-install-client-error" hidden></p>
+
         <div class="settings-plugins__warning" id="plugin-install-warning" hidden>
             <p class="warning">{{ 'settings_plugins.third_party_warning'|trans }}</p>
             <button type="button" id="plugin-install-confirm-button">{{ 'settings_plugins.confirm_button'|trans }}</button>

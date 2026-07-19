@@ -116,11 +116,8 @@ final class PluginController
                 installError: 'settings_plugins.install_error_invalid_manifest',
                 manifestErrors: $exception->errors,
             );
-        } catch (PluginInstallException $exception) {
-            return $this->renderIndex(
-                installError: 'settings_plugins.install_error_generic',
-                installErrorParams: ['%message%' => $exception->getMessage()],
-            );
+        } catch (PluginInstallException) {
+            return $this->renderIndex(installError: 'settings_plugins.install_error_generic');
         } finally {
             @unlink($file->getPathname());
         }

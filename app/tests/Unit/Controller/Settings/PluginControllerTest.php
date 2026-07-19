@@ -364,7 +364,7 @@ final class PluginControllerTest extends TestCase
             ->method('render')
             ->with('settings/plugins/index.html.twig', $this->callback(static function (array $params): bool {
                 self::assertSame('settings_plugins.install_error_generic', $params['installError']);
-                self::assertArrayHasKey('%message%', $params['installErrorParams']);
+                self::assertSame([], $params['installErrorParams']);
 
                 return true;
             }))

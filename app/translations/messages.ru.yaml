@@ -180,11 +180,12 @@ settings_plugins:
     install_button: Установить
     install_success: 'Плагин «%pluginId%» успешно установлен.'
     install_error_no_file: Выберите ZIP-архив плагина для установки.
+    install_error_not_zip: Выберите файл с расширением .zip.
     install_error_incompatible_core: 'Плагин требует версию ядра "%requiredCore%", установлена версия "%currentCore%".'
     install_error_syntax: 'Установка прервана: в PHP-файлах плагина есть синтаксические ошибки:'
     install_error_already_installed: 'Плагин «%pluginId%» уже установлен.'
     install_error_invalid_manifest: Некорректный или отсутствующий manifest.json в архиве.
-    install_error_generic: 'Не удалось установить плагин: %message%'
+    install_error_generic: Не удалось распаковать или установить архив. Убедитесь, что это корректный ZIP-архив плагина.
 
 anime_list:
     title: Список — AnimeDB

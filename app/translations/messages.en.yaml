@@ -180,11 +180,12 @@ settings_plugins:
     install_button: Install
     install_success: 'Plugin "%pluginId%" has been installed.'
     install_error_no_file: Choose a ZIP archive of the plugin to install.
+    install_error_not_zip: Choose a file with the .zip extension.
     install_error_incompatible_core: 'The plugin requires core version "%requiredCore%", the installed core version is "%currentCore%".'
     install_error_syntax: 'Installation aborted: the plugin''s PHP files contain syntax errors:'
     install_error_already_installed: 'Plugin "%pluginId%" is already installed.'
     install_error_invalid_manifest: Invalid or missing manifest.json in the archive.
-    install_error_generic: 'Failed to install the plugin: %message%'
+    install_error_generic: Failed to unpack or install the archive. Make sure it is a valid plugin ZIP archive.
 
 anime_list:
     title: List — AnimeDB
