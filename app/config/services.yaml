@@ -79,15 +79,17 @@ services:
             $sampleCoversDir: '%app.sample_covers_dir%'
 
     # AnimeDb\PluginContracts\FillerInterface lives in the read-only anime-db/plugin-contracts
-    # package, so it cannot carry #[AutoconfigureTag] itself the way the local
-    # App\Service\Storage\Search\SearchByPluginInterface does — _instanceof tags it here
-    # instead, for App\Service\Plugin\FillerRegistry to autowire via #[AutowireIterator].
-    # EntryWidgetInterface/CatalogWidgetInterface (issue #212) and SyncInterface (issue #256)
-    # are tagged the same way, for App\Service\Plugin\EntryWidgetRegistry/CatalogWidgetRegistry/
-    # SyncRegistry.
+    # package, so it cannot carry #[AutoconfigureTag] itself the way a local interface does —
+    # _instanceof tags it here instead, for App\Service\Plugin\FillerRegistry to autowire via
+    # #[AutowireIterator]. EntryWidgetInterface/CatalogWidgetInterface (issue #212),
+    # SyncInterface (issue #256) and SearchByPluginInterface (issue #233, for
+    # App\Service\Storage\Search\SearchByPluginChain — FillerInterface extends it, so a Filler
+    # plugin gets both tags) are tagged the same way.
     _instanceof:
         AnimeDb\PluginContracts\FillerInterface:
             tags: ['app.filler']
+        AnimeDb\PluginContracts\SearchByPluginInterface:
+            tags: ['app.search_by_plugin']
         AnimeDb\PluginContracts\EntryWidgetInterface:
             tags: ['app.entry_widget']
         AnimeDb\PluginContracts\CatalogWidgetInterface:

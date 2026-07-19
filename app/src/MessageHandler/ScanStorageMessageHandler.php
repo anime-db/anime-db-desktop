@@ -166,6 +166,6 @@ final class ScanStorageMessageHandler
 
         $plugin = $candidate->plugin ?? throw new \LogicException('ScanCandidate must carry either an orphan or a plugin match');
 
-        return ['anime_id' => null, 'title' => $plugin->name];
+        return ['anime_id' => null, 'title' => $plugin->getName()];
     }
 }
