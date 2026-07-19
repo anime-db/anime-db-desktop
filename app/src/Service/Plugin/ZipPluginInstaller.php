@@ -264,7 +264,7 @@ final class ZipPluginInstaller
             $process->run();
 
             if (!$process->isSuccessful()) {
-                $errors[] = new PluginSyntaxError($file->getRelativePathname(), $this->parseSyntaxErrorMessage($process->getErrorOutput()));
+                $errors[] = new PluginSyntaxError($file->getRelativePathname(), $this->parseSyntaxErrorMessage($process->getErrorOutput(), $process->getOutput()));
             }
         }
 
@@ -276,14 +276,21 @@ final class ZipPluginInstaller
     /**
      * `php -l` writes its parse error to stderr as e.g. `PHP Parse error:  syntax error, ...
      * in /abs/path/file.php on line 5`, followed by an `Errors parsing /abs/path/file.php` line on
-     * stdout. Only the first stderr line carries the actual message, so that is all this keeps —
-     * the file itself is already known to the caller via {@see PluginSyntaxError::$relativePath}.
+     * stdout. Only the first line carries the actual message, so that is all this keeps. Whether the
+     * message lands on stderr or stdout depends on the `display_errors`/`log_errors` ini settings
+     * (ours are loaded from a native-supplied `PHPRC`, which may differ from the CLI defaults), so
+     * stdout is used as a fallback when stderr is empty. The trailing ` in /abs/path/file.php` is
+     * stripped since the file is already known to the caller via {@see PluginSyntaxError::$relativePath}
+     * and the temp staging path it contains would be meaningless to the user — the line number is kept.
      */
-    private function parseSyntaxErrorMessage(string $errorOutput): string
+    private function parseSyntaxErrorMessage(string $errorOutput, string $standardOutput): string
     {
-        $firstLine = strtok(trim($errorOutput), "\n");
+        $firstLine = strtok(trim('' !== trim($errorOutput) ? $errorOutput : $standardOutput), "\n");
+        if (false === $firstLine) {
+            return 'Unknown syntax error.';
+        }
 
-        return false !== $firstLine ? $firstLine : 'Unknown syntax error.';
+        return preg_replace('/ in .+( on line \d+)$/', '$1', $firstLine) ?? $firstLine;
     }
 
     private function move(string $source, string $destination): void

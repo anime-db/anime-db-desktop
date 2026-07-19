@@ -323,6 +323,8 @@ final class ZipPluginInstallerTest extends TestCase
             $this->assertCount(1, $exception->errors);
             $this->assertSame('src/Plugin.php', $exception->errors[0]->relativePath);
             $this->assertNotSame('', $exception->errors[0]->message);
+            $this->assertStringContainsString('on line', $exception->errors[0]->message);
+            $this->assertStringNotContainsString('.plugin-install-tmp', $exception->errors[0]->message);
             $this->assertStringContainsString('src/Plugin.php', $exception->getMessage());
         } finally {
             $this->assertSame([], array_values(array_diff((array) scandir($this->pluginsDir), ['.', '..'])));
