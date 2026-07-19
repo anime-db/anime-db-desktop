@@ -198,4 +198,41 @@ final class BulkFillerServiceTest extends TestCase
 
         $this->assertNull($service->fillNewFromPlugin($pluginId, 'Bleach', '104'));
     }
+
+    /**
+     * fillNewFrom() (issue #257 review, pull-sync) resolves directly by external id — no
+     * find()-by-title round trip — and works off a filler instance the caller already has in
+     * hand, bypassing FillerRegistry entirely: the empty registry below proves that.
+     */
+    public function testFillNewFromResolvesByExternalIdWithoutGoingThroughTheFillerRegistry(): void
+    {
+        $pluginId = new PluginId('animedb-shikimori');
+        $data = new PluginAnimeData(title: 'Bleach: Memories of Nobody', type: ContractsAnimeType::Movie, durationMinutes: 91);
+
+        $filler = $this->createMock(FillerInterface::class);
+        $filler->expects($this->never())->method('find');
+        $filler->expects($this->once())->method('findById')->with('104')->willReturn($data);
+        $filler->method('getFillableFields')->willReturn(['title', 'type', 'durationMinutes']);
+
+        $service = $this->newService([]);
+
+        $anime = $service->fillNewFrom($filler, $pluginId, '104');
+
+        $this->assertInstanceOf(MovieAnime::class, $anime);
+        $this->assertSame('Bleach: Memories of Nobody', $anime->getTitle());
+        $this->assertSame(91, $anime->getDurationMinutes());
+        $this->assertSame('104', $anime->getExternalId($pluginId, $filler));
+    }
+
+    public function testFillNewFromReturnsNullWhenTheFillerCannotResolveTheExternalId(): void
+    {
+        $pluginId = new PluginId('animedb-shikimori');
+
+        $filler = $this->createStub(FillerInterface::class);
+        $filler->method('findById')->willReturn(null);
+
+        $service = $this->newService([]);
+
+        $this->assertNull($service->fillNewFrom($filler, $pluginId, '104'));
+    }
 }
