@@ -532,12 +532,14 @@ final class AnimeTest extends TestCase
         $anime->setCountries(['JPN']);
     }
 
-    public function testSetWatchStatusCompletedThrowsWhenAnnounced(): void
+    public function testSetWatchStatusCompletedAllowedWhenAnnounced(): void
     {
         $anime = new MovieAnime();
 
-        $this->expectException(InvalidWatchStatusException::class);
+        $this->assertSame(ProductionStatus::Announced, $anime->getProductionStatus());
         $anime->setWatchStatus(WatchStatus::Completed);
+
+        $this->assertSame(WatchStatus::Completed, $anime->getWatchStatus());
     }
 
     public function testSetWatchStatusCompletedThrowsWhenOngoing(): void

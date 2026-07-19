@@ -266,9 +266,15 @@ abstract class Anime
 
     public function setWatchStatus(WatchStatus $watchStatus): self
     {
+        // Only Ongoing is blocked: a title that's actually airing right now can't already be
+        // fully watched. Announced isn't a reliable "not released yet" signal — it's what a
+        // title with no datePremiere/dateEnd falls back to (see getProductionStatus()), which
+        // includes freshly created sync placeholders that carry no dates at all. Rejecting
+        // Completed for those would silently downgrade a source's "completed" report during
+        // pull sync (see PullSyncService) into Plan.
         if ($watchStatus === WatchStatus::Completed
-            && $this->getProductionStatus() !== ProductionStatus::Released) {
-            throw new InvalidWatchStatusException('Cannot mark as completed while the anime is still airing or announced');
+            && $this->getProductionStatus() === ProductionStatus::Ongoing) {
+            throw new InvalidWatchStatusException('Cannot mark as completed while the anime is still airing');
         }
 
         $this->watchStatus = $watchStatus;
