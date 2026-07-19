@@ -408,4 +408,34 @@ final class AnimeRepositoryTest extends TestCase
         $this->assertNull($this->repository->findByExternalId($shikimori, '2'));
         $this->assertNull($this->repository->findByExternalId(new PluginId('animedb-anilist'), '1'));
     }
+
+    public function testIndexByExternalIdKeysOnlyThatPluginsIdsAndSkipsAnimeWithoutOne(): void
+    {
+        $shikimori = new PluginId('animedb-shikimori');
+        $mal = new PluginId('animedb-mal');
+
+        $trigun = new TvAnime();
+        $trigun->setTitle('Trigun')->setWatchStatus(WatchStatus::Watching);
+        $trigun->rememberExternalId($shikimori, '1');
+
+        $bleach = new TvAnime();
+        $bleach->setTitle('Bleach')->setWatchStatus(WatchStatus::Watching);
+        $bleach->rememberExternalId($shikimori, '2');
+
+        $otherPlugin = new TvAnime();
+        $otherPlugin->setTitle('Naruto')->setWatchStatus(WatchStatus::Watching);
+        $otherPlugin->rememberExternalId($mal, '3');
+
+        $noMetadata = new TvAnime();
+        $noMetadata->setTitle('One Piece')->setWatchStatus(WatchStatus::Watching);
+
+        foreach ([$trigun, $bleach, $otherPlugin, $noMetadata] as $anime) {
+            $this->entityManager->persist($anime);
+        }
+        $this->entityManager->flush();
+
+        $index = $this->repository->indexByExternalId($shikimori);
+
+        $this->assertSame(['1' => $trigun, '2' => $bleach], $index);
+    }
 }

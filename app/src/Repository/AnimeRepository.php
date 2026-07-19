@@ -174,6 +174,35 @@ class AnimeRepository
         return null;
     }
 
+    /**
+     * One-shot index of every Anime already linked to $pluginId via
+     * metadata['external_id'][$pluginId], keyed by that external id. Built with a single
+     * query and a single scan, so a caller resolving a whole pull() list — PullSyncService —
+     * can look each item up in memory instead of repeating findByExternalId()'s scan per
+     * item: O(M) once instead of O(N×M) for N pulled items against an M-row catalog. Same
+     * accepted unindexed-metadata risk as findByExternalId() (issue #257); that method stays
+     * around for the point lookups cross-vendor dedup (issue #216) needs.
+     *
+     * @return array<string, Anime>
+     */
+    public function indexByExternalId(PluginId $pluginId): array
+    {
+        $qb = $this->entityManager->getRepository(Anime::class)->createQueryBuilder('a')
+            ->andWhere('a.metadata IS NOT NULL')
+            ->orderBy('a.id', 'ASC');
+
+        $index = [];
+        foreach ($qb->getQuery()->getResult() as $candidate) {
+            /* @var Anime $candidate */
+            $externalId = $candidate->getMetadata()['external_id'][(string) $pluginId] ?? null;
+            if ($externalId !== null) {
+                $index[$externalId] = $candidate;
+            }
+        }
+
+        return $index;
+    }
+
     private function createFilteredQueryBuilder(AnimeListFilter $filter): QueryBuilder
     {
         $qb = $this->entityManager->getRepository(Anime::class)->createQueryBuilder('a')

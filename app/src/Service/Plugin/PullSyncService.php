@@ -40,16 +40,18 @@ use Doctrine\ORM\EntityManagerInterface;
  * SyncInterface::pull() list to the local catalog idempotently, so a periodic re-run of the
  * same plugin never duplicates an already-known title.
  *
- * For every SyncItem, AnimeRepository::findByExternalId() performs the reverse lookup by
- * metadata['external_id'][$pluginId] (see that method's docblock for the accepted risk of
- * scanning the unindexed metadata JSON column) — this single lookup covers both cases the
- * issue describes: an already-synced item resolves to its known local Anime, and a "new"
- * item that in fact already has a local match (e.g. added by another plugin, or by a
- * previous pull under a stale id) is folded onto it instead of duplicated. Only when no
- * match exists is a brand-new title placeholder created, the same title-only pattern
+ * AnimeRepository::indexByExternalId() builds the reverse lookup by metadata['external_id']
+ * [$pluginId] once, up front (see that method's docblock for the accepted risk of scanning
+ * the unindexed metadata JSON column) — resolving every pulled item against that in-memory
+ * map, rather than repeating the scan per item, covers both cases the issue describes: an
+ * already-synced item resolves to its known local Anime, and a "new" item that in fact
+ * already has a local match (e.g. added by another plugin, or by a previous pull under a
+ * stale id) is folded onto it instead of duplicated. Only when no match exists is a
+ * brand-new title placeholder created, the same title-only pattern
  * ScanStorageService/BulkFillerService use when the plugin doesn't resolve to something
  * richer: a TvAnime, since SyncItem carries no anime type to pick a more specific subclass
- * from.
+ * from — the placeholder is also added to the in-memory map, so a source that repeats the
+ * same external id within one pull() list folds onto it too instead of duplicating.
  *
  * Where/when this runs (periodic job, manual trigger, ...) is out of scope here — a future
  * caller is expected to invoke pull() once per SyncRegistry::allActive() entry, mirroring how
@@ -67,8 +69,10 @@ final class PullSyncService
 
     public function pull(PluginId $pluginId, SyncInterface $sync): void
     {
+        $byExternalId = $this->animeRepository->indexByExternalId($pluginId);
+
         foreach ($sync->pull() as $item) {
-            $anime = $this->animeRepository->findByExternalId($pluginId, $item->externalId);
+            $anime = $byExternalId[$item->externalId] ?? null;
 
             if ($anime === null) {
                 // WatchStatus has no default (see Anime::$watchStatus) — Plan is the same
@@ -77,18 +81,19 @@ final class PullSyncService
                 $anime = (new TvAnime())->setTitle($item->title)->setWatchStatus(WatchStatus::Plan);
                 $anime->rememberExternalId($pluginId, $item->externalId);
                 $this->entityManager->persist($anime);
+                $byExternalId[$item->externalId] = $anime;
             }
 
             try {
                 $anime->setWatchStatus(WatchStatusMapper::toWatchStatus($item->status));
             } catch (InvalidWatchStatusException) {
-                // The source considers the title completed, but this Anime's own
-                // production status (from datePremiere/dateEnd) isn't Released yet — likely
-                // because no filler has run for it locally. Same invariant
+                // The source considers the title completed, but this Anime's own production
+                // status (from datePremiere/dateEnd) is Ongoing — it's genuinely airing right
+                // now locally, so it can't already be fully watched. Same invariant
                 // AnimeEditableController::updateWatchStatus() enforces for a user-driven
                 // edit; here there's no form to reject, so this single item's status is
-                // skipped for this run rather than failing the whole pull. It resolves
-                // itself once the local production status catches up (filler run or a
+                // skipped for this run rather than failing the whole pull. It resolves itself
+                // once the local production status catches up (dateEnd gets filled in, or a
                 // later pull once the source itself no longer reports it as completed).
             }
         }

@@ -126,14 +126,15 @@ final class PullSyncServiceTest extends TestCase
     }
 
     /**
-     * A source can report "completed" for a title whose local production status isn't
-     * Released yet (no filler has run for this brand-new placeholder, so it defaults to
-     * ProductionStatus::Announced) — Anime::setWatchStatus() rejects that combination (same
-     * invariant AnimeEditableController::updateWatchStatus() enforces for a user edit). pull()
-     * must not let that single item's rejection abort the run: the title is still created and
-     * linked to its externalId, just left at the Plan status it was created with.
+     * A brand-new placeholder has no datePremiere/dateEnd yet, so its production status
+     * defaults to ProductionStatus::Announced (Anime::getProductionStatus()) — not a
+     * trustworthy "not actually released" signal, just "no data". Anime::setWatchStatus()
+     * only rejects Completed while the anime is genuinely Ongoing, so the source's
+     * "completed" report must go through even for a dateless placeholder: this is the main
+     * first-import scenario (issue #257 review) — most of an external list is already
+     * completed and not yet known locally.
      */
-    public function testSkipsTheStatusUpdateWhenTheLocalProductionStatusIsNotReleasedYet(): void
+    public function testAppliesCompletedStatusToANewPlaceholderEvenThoughItHasNoDatesYet(): void
     {
         $sync = $this->createMock(SyncInterface::class);
         $sync->expects($this->once())->method('pull')->willReturn([new SyncItem('42', SyncStatus::Completed, 'Trigun')]);
@@ -142,8 +143,59 @@ final class PullSyncServiceTest extends TestCase
 
         $created = $this->allAnime();
         $this->assertCount(1, $created);
-        $this->assertSame(WatchStatus::Plan, $created[0]->getWatchStatus());
+        $this->assertSame(WatchStatus::Completed, $created[0]->getWatchStatus());
         $this->assertSame('42', $created[0]->getMetadata()['external_id'][(string) $this->pluginId] ?? null);
+    }
+
+    /**
+     * Unlike a dateless placeholder above, an Anime that's genuinely airing right now
+     * (datePremiere in the past, no dateEnd yet) has a reliable Ongoing production status —
+     * Anime::setWatchStatus() still rejects Completed for that case, and pull() must skip
+     * just this item's status update rather than aborting the run (same as before this fix).
+     */
+    public function testSkipsTheStatusUpdateWhenTheLocalAnimeIsActuallyOngoing(): void
+    {
+        $anime = new TvAnime();
+        $anime->setTitle('Trigun')->setWatchStatus(WatchStatus::Watching);
+        $anime->setDatePremiere(new \DateTimeImmutable('-1 day'));
+        $anime->rememberExternalId($this->pluginId, '42');
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+
+        $sync = $this->createMock(SyncInterface::class);
+        $sync->expects($this->once())->method('pull')->willReturn([new SyncItem('42', SyncStatus::Completed, 'Trigun')]);
+
+        $this->service->pull($this->pluginId, $sync);
+
+        $this->assertSame(WatchStatus::Watching, $anime->getWatchStatus());
+    }
+
+    /**
+     * Regression guard for the pull()-wide O(N×M) reload the review flagged (issue #257):
+     * every item in the source list must resolve against the single up-front
+     * indexByExternalId() catalog scan, never against a per-item findByExternalId() call.
+     */
+    public function testResolvesAWholeListThroughASingleUpFrontIndexRatherThanPerItemLookups(): void
+    {
+        $repository = $this->createMock(AnimeRepository::class);
+        $repository->expects($this->once())
+            ->method('indexByExternalId')
+            ->with($this->pluginId)
+            ->willReturn([]);
+        $repository->expects($this->never())->method('findByExternalId');
+
+        $service = new PullSyncService($this->entityManager, $repository);
+
+        $sync = $this->createMock(SyncInterface::class);
+        $sync->expects($this->once())->method('pull')->willReturn([
+            new SyncItem('1', SyncStatus::Watching, 'Cowboy Bebop'),
+            new SyncItem('2', SyncStatus::Plan, 'Trigun'),
+            new SyncItem('3', SyncStatus::Plan, 'Bleach'),
+        ]);
+
+        $service->pull($this->pluginId, $sync);
+
+        $this->assertCount(3, $this->allAnime());
     }
 
     /** @return list<Anime> */
