@@ -82,8 +82,9 @@ services:
     # package, so it cannot carry #[AutoconfigureTag] itself the way the local
     # App\Service\Storage\Search\SearchByPluginInterface does — _instanceof tags it here
     # instead, for App\Service\Plugin\FillerRegistry to autowire via #[AutowireIterator].
-    # EntryWidgetInterface/CatalogWidgetInterface (issue #212) are tagged the same way, for
-    # App\Service\Plugin\EntryWidgetRegistry/CatalogWidgetRegistry.
+    # EntryWidgetInterface/CatalogWidgetInterface (issue #212) and SyncInterface (issue #256)
+    # are tagged the same way, for App\Service\Plugin\EntryWidgetRegistry/CatalogWidgetRegistry/
+    # SyncRegistry.
     _instanceof:
         AnimeDb\PluginContracts\FillerInterface:
             tags: ['app.filler']
@@ -91,6 +92,8 @@ services:
             tags: ['app.entry_widget']
         AnimeDb\PluginContracts\CatalogWidgetInterface:
             tags: ['app.catalog_widget']
+        AnimeDb\PluginContracts\SyncInterface:
+            tags: ['app.sync']
 
     # makes classes in src/ available to be used as services
     # this creates a service per class whose id is the fully-qualified class name
