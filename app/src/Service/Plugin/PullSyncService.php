@@ -28,10 +28,12 @@ declare(strict_types=1);
 namespace App\Service\Plugin;
 
 use AnimeDb\PluginContracts\SyncInterface;
+use App\Entity\Anime;
 use App\Entity\Exception\InvalidWatchStatusException;
 use App\Entity\ValueObject\PluginId;
 use App\Repository\AnimeRepository;
 use App\Service\Plugin\Filler\BulkFillerService;
+use App\Service\Sync\CrossVendorDuplicateDetector;
 use Doctrine\ORM\EntityManagerInterface;
 
 /**
@@ -63,8 +65,15 @@ use Doctrine\ORM\EntityManagerInterface;
  * Where/when this runs (periodic job, manual trigger, ...) is out of scope here — a future
  * caller is expected to invoke pull() once per SyncRegistry::allActive() entry, mirroring how
  * PushSyncMessageHandler consumes that same registry for the push direction (issue #214).
- * Cross-vendor dedup (issue #216) and source-side removal (issue #217) are separate concerns
- * layered on top of this.
+ * Source-side removal (issue #217) is a separate concern layered on top of this.
+ *
+ * Cross-vendor dedup (issue #216/#268): a pulled item that indexByExternalId() could not match
+ * is exactly the case a title independently added on two sources produces — the second source's
+ * external_id was never cross-referenced against the first, so it looks "new" here even though a
+ * matching row may already exist under the other vendor's id. CrossVendorDuplicateDetector is run
+ * against every such freshly-created Anime, once the flush below has given it an id, so it never
+ * flags $anime against itself. Only genuinely new rows go through it: an item that already
+ * resolved via $byExternalId is a known, previously-reviewed title, not a fresh dedup candidate.
  */
 final class PullSyncService
 {
@@ -72,12 +81,15 @@ final class PullSyncService
         private readonly EntityManagerInterface $entityManager,
         private readonly AnimeRepository $animeRepository,
         private readonly BulkFillerService $bulkFillerService,
+        private readonly CrossVendorDuplicateDetector $duplicateDetector,
     ) {
     }
 
     public function pull(PluginId $pluginId, SyncInterface $sync): void
     {
         $byExternalId = $this->animeRepository->indexByExternalId($pluginId);
+        /** @var list<Anime> $newlyCreated */
+        $newlyCreated = [];
 
         foreach ($sync->pull() as $item) {
             $anime = $byExternalId[$item->externalId] ?? null;
@@ -89,6 +101,7 @@ final class PullSyncService
                 }
 
                 $byExternalId[$item->externalId] = $anime;
+                $newlyCreated[] = $anime;
             }
 
             try {
@@ -107,5 +120,9 @@ final class PullSyncService
         }
 
         $this->entityManager->flush();
+
+        foreach ($newlyCreated as $anime) {
+            $this->duplicateDetector->detect($anime);
+        }
     }
 }

@@ -37,16 +37,22 @@ use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
 use App\Entity\Anime;
 use App\Entity\Enum\WatchStatus;
+use App\Entity\SyncReviewItem;
 use App\Entity\TvAnime;
 use App\Entity\ValueObject\PluginId;
 use App\Repository\AnimeRepository;
 use App\Repository\StudioRepository;
+use App\Repository\SyncReviewItemRepository;
 use App\Service\Plugin\Filler\BulkFillerService;
 use App\Service\Plugin\Filler\PluginAnimeDataMerger;
 use App\Service\Plugin\Filler\PluginMediaDownloaderInterface;
 use App\Service\Plugin\FillerRegistry;
 use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Plugin\PullSyncService;
+use App\Service\Search\AnimeSearchMatch;
+use App\Service\Search\AnimeSearchResolver;
+use App\Service\Sync\CrossVendorDuplicateDetector;
+use App\Service\Sync\SyncReviewService;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\EntityManager;
@@ -103,7 +109,15 @@ final class PullSyncServiceTest extends TestCase
             new NullLogger(),
         );
 
-        return new PullSyncService($entityManager, $animeRepository, $bulkFillerService);
+        // A stub AnimeSearchResolver::tryResolveMatches() defaults to returning null (its
+        // nullable-array return type), the same "search unavailable" signal CrossVendorDuplicateDetector
+        // treats as skip-without-raising — dedup detection is exercised in its own test class, not here.
+        $duplicateDetector = new CrossVendorDuplicateDetector(
+            $this->createStub(AnimeSearchResolver::class),
+            new SyncReviewService(new SyncReviewItemRepository($entityManager)),
+        );
+
+        return new PullSyncService($entityManager, $animeRepository, $bulkFillerService, $duplicateDetector);
     }
 
     /**
@@ -209,6 +223,60 @@ final class PullSyncServiceTest extends TestCase
         $this->assertSame('Trigun', $created[0]->getTitle());
         $this->assertSame(WatchStatus::Completed, $created[0]->getWatchStatus());
         $this->assertSame('42', $created[0]->getMetadata()['external_id'][(string) $this->pluginId] ?? null);
+    }
+
+    /**
+     * Wiring check for the cross-vendor dedup heuristic (issue #268): a genuinely new Anime
+     * created via fillNewFrom() is run through CrossVendorDuplicateDetector once flush() has
+     * given it an id — case-by-case threshold/skip behavior belongs to
+     * CrossVendorDuplicateDetectorTest, this only confirms pull() actually invokes it for a
+     * newly created row (not for one resolved through $byExternalId) and that the resulting
+     * SyncReviewItem lands in the same entity manager pull() itself used.
+     */
+    public function testANewlyCreatedAnimeIsRunThroughTheCrossVendorDuplicateDetector(): void
+    {
+        $existing = new TvAnime();
+        $existing->setTitle('Trigun')->setWatchStatus(WatchStatus::Plan);
+        $this->entityManager->persist($existing);
+        $this->entityManager->flush();
+        $existingId = $existing->id ?? throw new \LogicException('id must be set after flush');
+
+        $resolver = $this->createMock(AnimeSearchResolver::class);
+        $resolver->expects($this->once())
+            ->method('tryResolveMatches')
+            ->with('Trigun')
+            ->willReturn([new AnimeSearchMatch($existingId, 0.95)]);
+
+        $bulkFillerService = new BulkFillerService(
+            new FillerRegistry([], new PluginsConfigStore(sys_get_temp_dir().'/anime-pull-sync-test-'.uniqid().'.json')),
+            new PluginAnimeDataMerger(
+                new StudioRepository($this->entityManager),
+                $this->entityManager,
+                $this->createStub(PluginMediaDownloaderInterface::class),
+            ),
+            $this->entityManager,
+            new NullLogger(),
+        );
+        $duplicateDetector = new CrossVendorDuplicateDetector(
+            $resolver,
+            new SyncReviewService(new SyncReviewItemRepository($this->entityManager)),
+        );
+        $service = new PullSyncService($this->entityManager, new AnimeRepository($this->entityManager), $bulkFillerService, $duplicateDetector);
+
+        $sync = $this->syncFillerStub(
+            [new SyncItem('42', SyncStatus::Plan, 'Trigun')],
+            data: new PluginAnimeData(title: 'Trigun', type: ContractsAnimeType::Tv),
+            fillableFields: ['title', 'type'],
+        );
+
+        $service->pull($this->pluginId, $sync);
+
+        $created = array_values(array_filter($this->allAnime(), static fn (Anime $a): bool => $a->id !== $existing->id));
+        $this->assertCount(1, $created);
+
+        $items = $this->entityManager->getRepository(SyncReviewItem::class)->findAll();
+        $this->assertCount(1, $items);
+        $this->assertSame(['anime_ids' => [$existing->id, $created[0]->id]], $items[0]->payload);
     }
 
     public function testRepeatedPullOfTheSameListNeverDuplicatesARow(): void

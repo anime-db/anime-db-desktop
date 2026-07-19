@@ -27,6 +27,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Service\Search;
 
+use App\Service\Search\AnimeSearchMatch;
 use App\Service\Search\AnimeSearchResolver;
 use Meilisearch\Client;
 use Nyholm\Psr7\Factory\Psr17Factory;
@@ -52,7 +53,7 @@ final class AnimeSearchResolverTest extends TestCase
             200,
             ['Content-Type' => 'application/json'],
             json_encode([
-                'hits' => [['id' => 3], ['id' => 7]],
+                'hits' => [['id' => 3, '_rankingScore' => 0.95], ['id' => 7, '_rankingScore' => 0.5]],
                 'offset' => 0,
                 'limit' => 10_000,
                 'estimatedTotalHits' => 2,
@@ -100,6 +101,48 @@ final class AnimeSearchResolverTest extends TestCase
         $resolver = new AnimeSearchResolver($this->createClient($httpClient), new NullLogger());
 
         $this->assertNull($resolver->tryResolveIds('trigun'));
+    }
+
+    public function testResolvesMatchesWithTheirRankingScoreFromAShowRankingScoreResponse(): void
+    {
+        $httpClient = new FakeHttpClient(fn (): Response => new Response(
+            200,
+            ['Content-Type' => 'application/json'],
+            json_encode([
+                'hits' => [
+                    ['id' => 3, '_rankingScore' => 0.95],
+                    ['id' => 7, '_rankingScore' => 0.42],
+                ],
+                'offset' => 0,
+                'limit' => 10_000,
+                'estimatedTotalHits' => 2,
+                'processingTimeMs' => 1,
+                'query' => 'trigun',
+            ], \JSON_THROW_ON_ERROR),
+        ));
+
+        $resolver = new AnimeSearchResolver($this->createClient($httpClient), new NullLogger());
+
+        $this->assertEquals(
+            [new AnimeSearchMatch(3, 0.95), new AnimeSearchMatch(7, 0.42)],
+            $resolver->tryResolveMatches('trigun'),
+        );
+    }
+
+    public function testTryResolveMatchesReturnsNullInsteadOfThrowingWhenMeilisearchIsUnreachable(): void
+    {
+        $httpClient = new FakeHttpClient(function (): never {
+            throw new class('connection refused') extends \RuntimeException implements NetworkExceptionInterface {
+                public function getRequest(): RequestInterface
+                {
+                    return (new Psr17Factory())->createRequest('POST', 'http://127.0.0.1:1/indexes/anime/search');
+                }
+            };
+        });
+
+        $resolver = new AnimeSearchResolver($this->createClient($httpClient), new NullLogger());
+
+        $this->assertNull($resolver->tryResolveMatches('trigun'));
     }
 
     private function createClient(ClientInterface $httpClient): Client

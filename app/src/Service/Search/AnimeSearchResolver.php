@@ -62,11 +62,28 @@ class AnimeSearchResolver
     /** @return list<int>|null */
     public function tryResolveIds(string $query): ?array
     {
+        $matches = $this->tryResolveMatches($query);
+
+        return $matches === null
+            ? null
+            : array_map(static fn (AnimeSearchMatch $match): int => $match->id, $matches);
+    }
+
+    /**
+     * Same search as {@see tryResolveIds()}, but with `showRankingScore` turned on and the
+     * `_rankingScore` Meilisearch attaches to every hit carried through — the cross-vendor
+     * duplicate heuristic (issue #268) thresholds on it, which a bare id list can't support.
+     *
+     * @return list<AnimeSearchMatch>|null
+     */
+    public function tryResolveMatches(string $query): ?array
+    {
         try {
             $hits = $this->client->index(self::INDEX_UID)->search($query, [
                 'attributesToRetrieve' => ['id'],
                 'matchingStrategy' => 'frequency',
                 'limit' => self::MAX_HITS,
+                'showRankingScore' => true,
             ])->getHits();
         } catch (ExceptionInterface $e) {
             $this->logger->warning('Meilisearch search failed, falling back to the FTS5 quick-filter.', [
@@ -77,6 +94,9 @@ class AnimeSearchResolver
             return null;
         }
 
-        return array_values(array_map(static fn (array $hit): int => (int) $hit['id'], $hits));
+        return array_values(array_map(
+            static fn (array $hit): AnimeSearchMatch => new AnimeSearchMatch((int) $hit['id'], (float) $hit['_rankingScore']),
+            $hits,
+        ));
     }
 }
