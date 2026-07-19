@@ -121,35 +121,10 @@ final class AnimeEditableControllerTest extends TestCase
         $this->assertSame(WatchStatus::Watching, $anime->getWatchStatus());
     }
 
-    /**
-     * Intentional side effect of loosening Anime::setWatchStatus() for pull sync (issue
-     * #257 review): a title with no datePremiere/dateEnd falls back to
-     * ProductionStatus::Announced, which is no longer a reliable "not released" signal, so
-     * marking it Completed by hand is now allowed too — same as it already is via pull().
-     */
-    public function testUpdateWatchStatusAcceptsCompletedForAnAnnouncedAnimeWithNoDates(): void
-    {
-        $anime = new TvAnime();
-        $anime->setTitle('Frieren')->setWatchStatus(WatchStatus::Plan);
-
-        $entityManager = $this->createMock(EntityManagerInterface::class);
-        $entityManager->expects($this->once())->method('flush');
-
-        $request = Request::create('/anime/1/editable/watch_status', 'POST', ['watch_status' => 'completed', '_token' => 'token']);
-
-        $this->createController(entityManager: $entityManager)->updateWatchStatus($anime, $request);
-
-        $this->assertSame(WatchStatus::Completed, $anime->getWatchStatus());
-    }
-
     public function testUpdateWatchStatusRejectsCompletedWhileNotReleased(): void
     {
-        // Anime::setWatchStatus() only rejects Completed while genuinely Ongoing, not merely
-        // Announced (see its docblock) — datePremiere in the past with no dateEnd makes this
-        // one reliably Ongoing rather than falling back to Announced for lack of dates.
         $anime = new TvAnime();
         $anime->setTitle('Frieren')->setWatchStatus(WatchStatus::Watching);
-        $anime->setDatePremiere(new \DateTimeImmutable('-1 day'));
 
         $entityManager = $this->createMock(EntityManagerInterface::class);
         $entityManager->expects($this->never())->method('flush');
