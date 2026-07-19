@@ -121,6 +121,7 @@ settings:
     labels_link: Labels
     plugins_link: Plugins
     plugin_widgets_link: Plugin widgets
+    sync_review_link: Requires attention
     language_label: Interface language
     locale:
         ru: Русский
@@ -161,6 +162,14 @@ settings_plugin_widgets:
     catalog:
         heading: Catalog
         empty: No widgets available for the catalog.
+
+settings_sync_review:
+    title: Requires attention — Settings — AnimeDB
+    back_link: ← Settings
+    heading: Requires attention
+    empty: Nothing needs attention right now.
+    kind_potential_duplicate: Potential duplicate
+    resolve_button: Resolve
 
 settings_plugins:
     title: Plugins — Settings — AnimeDB
