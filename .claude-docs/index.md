@@ -18,3 +18,7 @@ tags: [memory/repo, index]
 | Понять обновление приложения и Meilisearch-миграцию | [decisions.md](decisions.md) §Обновление               |
 | Стиль PHP-кода, форматирование, php-cs-fixer        | [conventions.md](conventions.md)                       |
 | Лицензионная шапка файла — шаблон, диапазон дат     | [license-header.md](license-header.md)                 |
+| Сделать типовую задачу по образцу — рецепты         | [cookbook.md](cookbook.md)                             |
+| Добавить settings-страницу / entity+миграцию        | [cookbook.md](cookbook.md)                             |
+| Добавить Messenger-job / Doctrine-листенер          | [cookbook.md](cookbook.md)                             |
+| Реестр плагин-возможности (тег _instanceof)         | [cookbook.md](cookbook.md)                             |
