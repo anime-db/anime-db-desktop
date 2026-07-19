@@ -27,7 +27,6 @@ declare(strict_types=1);
 
 namespace App\Service\Plugin;
 
-use AnimeDb\PluginContracts\FillerInterface;
 use AnimeDb\PluginContracts\SyncInterface;
 use App\Entity\Exception\InvalidWatchStatusException;
 use App\Entity\ValueObject\PluginId;
@@ -52,16 +51,14 @@ use Doctrine\ORM\EntityManagerInterface;
  * placeholder can never legitimately reach Completed under Anime::setWatchStatus()'s
  * invariant, and a record carrying only a title is clutter that looks like a bug. Instead a
  * new item is created through the full BulkFillerService fill-in path, using the sync
- * plugin's own filler capability — SyncInterface is expected to extend FillerInterface once
- * anime-db-plugin-contracts#25 lands; until then this checks `$sync instanceof
- * FillerInterface` defensively, since the installed contract (^0.4) does not guarantee it
- * yet. BulkFillerService::fillNewFrom() is used rather than fillNewFromPlugin(): the external
- * id is already known from SyncItem, so there is no need to search by title, and going
- * through the sync plugin instance directly (instead of FillerRegistry::findByPluginId())
+ * plugin's own filler capability — SyncInterface extends FillerInterface (contract ^0.5,
+ * anime-db-plugin-contracts#25), so every sync plugin is guaranteed to be one, no runtime
+ * check needed. BulkFillerService::fillNewFrom() is used rather than fillNewFromPlugin(): the
+ * external id is already known from SyncItem, so there is no need to search by title, and
+ * going through the sync plugin instance directly (instead of FillerRegistry::findByPluginId())
  * means enrichment does not depend on that plugin's unrelated features.filler toggle. If
- * $sync isn't a FillerInterface, or its findById() can't resolve the id, the item is skipped
- * entirely for this run — it will be created once the source data is actually available on a
- * later pull.
+ * $sync's findById() can't resolve the id, the item is skipped entirely for this run — it
+ * will be created once the source data is actually available on a later pull.
  *
  * Where/when this runs (periodic job, manual trigger, ...) is out of scope here — a future
  * caller is expected to invoke pull() once per SyncRegistry::allActive() entry, mirroring how
@@ -86,10 +83,6 @@ final class PullSyncService
             $anime = $byExternalId[$item->externalId] ?? null;
 
             if ($anime === null) {
-                if (!$sync instanceof FillerInterface) {
-                    continue;
-                }
-
                 $anime = $this->bulkFillerService->fillNewFrom($sync, $pluginId, $item->externalId);
                 if ($anime === null) {
                     continue;

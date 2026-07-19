@@ -53,6 +53,7 @@ use Doctrine\ORM\EntityManager;
 use Doctrine\ORM\ORMSetup;
 use Doctrine\ORM\Tools\SchemaTool;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
 
 /**
  * Verifies the pull() core logic (issue #257): an already-known SyncItem updates its local
@@ -99,6 +100,7 @@ final class PullSyncServiceTest extends TestCase
                 $this->createStub(PluginMediaDownloaderInterface::class),
             ),
             $entityManager,
+            new NullLogger(),
         );
 
         return new PullSyncService($entityManager, $animeRepository, $bulkFillerService);
@@ -174,16 +176,6 @@ final class PullSyncServiceTest extends TestCase
 
         $this->assertCount(1, $this->allAnime());
         $this->assertSame(WatchStatus::Watching, $anime->getWatchStatus());
-    }
-
-    public function testSkipsAnUnknownExternalIdWhenTheSyncPluginIsNotAFiller(): void
-    {
-        $sync = $this->createMock(SyncInterface::class);
-        $sync->expects($this->once())->method('pull')->willReturn([new SyncItem('42', SyncStatus::Watching, 'Trigun')]);
-
-        $this->service->pull($this->pluginId, $sync);
-
-        $this->assertCount(0, $this->allAnime());
     }
 
     public function testSkipsAnUnknownExternalIdWhenTheFillerCannotResolveIt(): void
@@ -267,8 +259,9 @@ final class PullSyncServiceTest extends TestCase
      * Regression guard for the pull()-wide O(N×M) reload the review flagged (issue #257):
      * every item in the source list must resolve against the single up-front
      * indexByExternalId() catalog scan, never against a per-item findByExternalId() call.
-     * None of these three items has a local match and the sync mock isn't a FillerInterface,
-     * so all three are skipped — the point of this test is the single index call, not creation.
+     * None of these three items has a local match, and the sync mock's inherited findById()
+     * default-returns null, so all three are skipped — the point of this test is the single
+     * index call, not creation.
      */
     public function testResolvesAWholeListThroughASingleUpFrontIndexRatherThanPerItemLookups(): void
     {
