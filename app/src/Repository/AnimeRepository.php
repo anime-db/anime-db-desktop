@@ -31,6 +31,7 @@ use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
 use App\Entity\Anime;
 use App\Entity\Storage;
+use App\Entity\ValueObject\PluginId;
 use App\Entity\ValueObject\Rating;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\QueryBuilder;
@@ -142,6 +143,86 @@ class AnimeRepository
 
         /* @var ?Anime */
         return $qb->getQuery()->getOneOrNullResult();
+    }
+
+    /**
+     * Reverse lookup for pull-sync idempotency (issue #257): the Anime, if any, already
+     * carrying $externalId under metadata['external_id'][$pluginId] (see
+     * Anime::getExternalId()/rememberExternalId()). Used both to fold an already-synced
+     * SyncItem onto its known local Anime and to detect a "new" SyncItem that in fact
+     * already has a local match, so a repeated pull of the same plugin never creates a
+     * duplicate.
+     *
+     * The candidate id is resolved via a native json_extract() query (SQLite JSON1, same
+     * extension HealthController's readiness probe exercises) instead of loading every
+     * metadata-bearing row into PHP and scanning there: the filtering happens in SQLite, not
+     * in the application. Still an unindexed full-table scan without a generated column/index
+     * on this JSON path (accepted risk, issue #257) — a personal catalog of hundreds to low
+     * thousands of rows keeps it fast enough; a dedicated lookup table is out of scope here.
+     * The id is then re-fetched through the EntityManager so the caller gets back a
+     * managed entity (pull() mutates it and flushes), not a detached row from the raw query.
+     */
+    public function findByExternalId(PluginId $pluginId, string $externalId): ?Anime
+    {
+        $id = $this->entityManager->getConnection()->fetchOne(
+            'SELECT id FROM anime WHERE json_extract(metadata, ?) = ? LIMIT 1',
+            [self::externalIdJsonPath($pluginId), $externalId],
+        );
+
+        return false !== $id ? $this->entityManager->find(Anime::class, $id) : null;
+    }
+
+    /**
+     * One-shot index of every Anime already linked to $pluginId via
+     * metadata['external_id'][$pluginId], keyed by that external id. The (id, externalId)
+     * pairs are resolved in SQLite via json_extract() — same reasoning as findByExternalId()
+     * above, but here the win matters more: a caller resolving a whole pull() list —
+     * PullSyncService — no longer hydrates every metadata-bearing row into PHP just to
+     * discard the ones without this plugin's id, only the ids that already match are loaded
+     * as managed entities. Same accepted unindexed-metadata risk as findByExternalId() (issue
+     * #257); that method stays around for the point lookups cross-vendor dedup (issue #216)
+     * needs.
+     *
+     * @return array<string, Anime>
+     */
+    public function indexByExternalId(PluginId $pluginId): array
+    {
+        $path = self::externalIdJsonPath($pluginId);
+
+        $rows = $this->entityManager->getConnection()->fetchAllAssociative(
+            'SELECT id, json_extract(metadata, ?) AS external_id FROM anime WHERE json_extract(metadata, ?) IS NOT NULL',
+            [$path, $path],
+        );
+
+        if ([] === $rows) {
+            return [];
+        }
+
+        $animeById = [];
+        foreach ($this->entityManager->getRepository(Anime::class)->findBy(['id' => array_column($rows, 'id')]) as $candidate) {
+            /* @var Anime $candidate */
+            $animeById[(int) $candidate->id] = $candidate;
+        }
+
+        $index = [];
+        foreach ($rows as $row) {
+            $index[$row['external_id']] = $animeById[(int) $row['id']];
+        }
+
+        return $index;
+    }
+
+    /**
+     * SQLite JSON1 path into metadata['external_id'][$pluginId]. $pluginId is quoted as a
+     * path object key (rather than a bare identifier segment) because PluginId::FORMAT
+     * allows hyphens, which bare JSON path identifiers don't. Only PluginId::FORMAT-validated
+     * values ever reach here (lowercase alnum + hyphen), so this is safe to build as a plain
+     * string rather than a bind parameter — SQLite has no separate placeholder syntax for a
+     * json_extract() path segment anyway.
+     */
+    private static function externalIdJsonPath(PluginId $pluginId): string
+    {
+        return \sprintf('$.external_id."%s"', $pluginId);
     }
 
     private function createFilteredQueryBuilder(AnimeListFilter $filter): QueryBuilder

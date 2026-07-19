@@ -109,6 +109,31 @@ final class BulkFillerService
 
         [$externalId, $data] = $resolved;
 
+        return $this->build($filler, $pluginId, $externalId, $data);
+    }
+
+    /**
+     * Same create-and-fill-in as {@see fillNewFromPlugin()}, but for a caller that already
+     * knows both the external id and the filler instance to use — pull-sync (issue #257
+     * review), which gets $externalId straight from SyncItem and, per the sync-plugin-is-also-
+     * a-filler contract (anime-db-plugin-contracts#25), already has the filler instance in
+     * hand as the sync plugin itself. Deliberately bypasses FillerRegistry::findByPluginId():
+     * that lookup also gates on the plugin's own features.filler toggle, which has nothing to
+     * do with a sync plugin's built-in ability to enrich the very list item it just pulled.
+     *
+     * @return Anime|null null when $filler's own findById() could not resolve $externalId to
+     *                    anything — the caller is expected to skip the item entirely rather
+     *                    than fall back to a title-only placeholder (issue #257 review)
+     */
+    public function fillNewFrom(FillerInterface $filler, PluginId $pluginId, string $externalId): ?Anime
+    {
+        $data = $this->findById($filler, $externalId);
+
+        return $data === null ? null : $this->build($filler, $pluginId, $externalId, $data);
+    }
+
+    private function build(FillerInterface $filler, PluginId $pluginId, string $externalId, PluginAnimeData $data): Anime
+    {
         $anime = $this->instantiate($data->type);
         $anime->setTitle($data->title)->setWatchStatus(WatchStatus::Plan);
         $anime->rememberExternalId($pluginId, $externalId);

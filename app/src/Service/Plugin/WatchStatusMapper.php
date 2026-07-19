@@ -49,4 +49,19 @@ final class WatchStatusMapper
             WatchStatus::OnHold => SyncStatus::OnHold,
         };
     }
+
+    /**
+     * Reverse of toSyncStatus(), used by the pull direction of sync (issue #257) to translate
+     * a plugin's SyncItem::$status back into this application's own WatchStatus.
+     */
+    public static function toWatchStatus(SyncStatus $status): WatchStatus
+    {
+        return match ($status) {
+            SyncStatus::Plan => WatchStatus::Plan,
+            SyncStatus::Watching => WatchStatus::Watching,
+            SyncStatus::Completed => WatchStatus::Completed,
+            SyncStatus::Dropped => WatchStatus::Dropped,
+            SyncStatus::OnHold => WatchStatus::OnHold,
+        };
+    }
 }
