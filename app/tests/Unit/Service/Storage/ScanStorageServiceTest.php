@@ -64,6 +64,8 @@ use Doctrine\ORM\EntityManager;
 use Doctrine\ORM\ORMSetup;
 use Doctrine\ORM\Tools\SchemaTool;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 
 /**
  * Exercises ScanStorageService end to end (real EntityManager/SQLite connection, real
@@ -140,7 +142,7 @@ final class ScanStorageServiceTest extends TestCase
         touch($path, $mtime ?? time());
     }
 
-    private function newService(?SearchByPluginChain $pluginChain = null, ?BulkFillerService $bulkFillerService = null): ScanStorageService
+    private function newService(?SearchByPluginChain $pluginChain = null, ?BulkFillerService $bulkFillerService = null, ?LoggerInterface $logger = null): ScanStorageService
     {
         return new ScanStorageService(
             new StorageMarkerService($this->entityManager),
@@ -150,6 +152,7 @@ final class ScanStorageServiceTest extends TestCase
             $this->animeRepository,
             $this->entityManager,
             $bulkFillerService ?? $this->newBulkFillerService([]),
+            $logger ?? new NullLogger(),
         );
     }
 
@@ -164,6 +167,7 @@ final class ScanStorageServiceTest extends TestCase
                 $this->createStub(PluginMediaDownloaderInterface::class),
             ),
             $this->entityManager,
+            new NullLogger(),
         );
     }
 
@@ -474,9 +478,62 @@ final class ScanStorageServiceTest extends TestCase
         $filler->method('findById')->willThrowException(new \RuntimeException('external source unreachable'));
 
         $candidate = new SearchByPluginCandidate((string) $pluginId, 'Trigun', '104');
+
+        // The exception is caught (and logged, see BulkFillerServiceTest) inside
+        // BulkFillerService itself, so it never reaches ScanStorageService's own catch — this
+        // test only needs to prove the fallback to a title-only placeholder still happens.
+        $bulkFillerLogger = $this->createMock(LoggerInterface::class);
+        $bulkFillerLogger->expects($this->once())->method('warning')->with(
+            $this->stringContains('bulk-fill'),
+            $this->callback(static fn (array $context): bool => $context['pluginId'] === (string) $pluginId
+                && $context['exception'] instanceof \RuntimeException),
+        );
+
         $service = $this->newService(
             $this->pluginChainReturning($candidate),
-            $this->newBulkFillerService([(string) $pluginId => $filler]),
+            new BulkFillerService(
+                new FillerRegistry([(string) $pluginId => $filler], new PluginsConfigStore('')),
+                new PluginAnimeDataMerger(
+                    new StudioRepository($this->entityManager),
+                    $this->entityManager,
+                    $this->createStub(PluginMediaDownloaderInterface::class),
+                ),
+                $this->entityManager,
+                $bulkFillerLogger,
+            ),
+        );
+
+        $result = $service->scan($storage);
+
+        $this->assertCount(1, $result->items);
+        $item = $result->items[0];
+        $this->assertSame(ScanItemType::AutoLinked, $item->type);
+        $this->assertInstanceOf(TvAnime::class, $item->anime);
+        $this->assertSame('Trigun', $item->anime->getTitle());
+    }
+
+    public function testNewFileWithPluginCandidateCarryingAMalformedPluginIdFallsBackToTitleOnlyPlaceholderAndLogsIt(): void
+    {
+        $dir = $this->makeStorageDir();
+        $this->touchFile($dir.'/Trigun.mkv');
+
+        $storage = new Storage('Main folder', $dir, StorageType::Folder);
+        $this->entityManager->persist($storage);
+        $this->entityManager->flush();
+
+        // Not a valid "vendor-name" slug (see PluginId::FORMAT) — simulates a misbehaving
+        // plugin reporting its own id incorrectly.
+        $candidate = new SearchByPluginCandidate('Not A Valid Plugin Id', 'Trigun', '104');
+
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->once())->method('warning')->with(
+            $this->stringContains('bulk-fill'),
+            $this->arrayHasKey('exception'),
+        );
+
+        $service = $this->newService(
+            $this->pluginChainReturning($candidate),
+            logger: $logger,
         );
 
         $result = $service->scan($storage);

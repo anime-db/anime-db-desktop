@@ -54,6 +54,7 @@ use Doctrine\ORM\EntityManager;
 use Doctrine\ORM\ORMSetup;
 use Doctrine\ORM\Tools\SchemaTool;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
@@ -111,7 +112,9 @@ final class StorageScanConfirmControllerTest extends TestCase
                     $this->createStub(PluginMediaDownloaderInterface::class),
                 ),
                 $this->entityManager,
+                new NullLogger(),
             ),
+            new NullLogger(),
         );
 
         return new StorageScanConfirmController($scanStorageService, $this->entityManager, $csrfTokenManager);

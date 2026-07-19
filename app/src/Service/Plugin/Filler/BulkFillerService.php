@@ -37,6 +37,7 @@ use App\Entity\TvAnime;
 use App\Entity\ValueObject\PluginId;
 use App\Service\Plugin\FillerRegistry;
 use Doctrine\ORM\EntityManagerInterface;
+use Psr\Log\LoggerInterface;
 
 /**
  * Bulk fill-in scenario (issue #227): a Storage scan matched a top-level entry only through a
@@ -69,6 +70,7 @@ final class BulkFillerService
         private readonly FillerRegistry $fillerRegistry,
         private readonly PluginAnimeDataMerger $merger,
         private readonly EntityManagerInterface $entityManager,
+        private readonly LoggerInterface $logger,
     ) {
     }
 
@@ -92,7 +94,12 @@ final class BulkFillerService
             $resolved = $externalId !== null && $externalId !== ''
                 ? $this->resolveKnownExternalId($filler, $externalId)
                 : $this->resolve($filler, $name);
-        } catch (\Throwable) {
+        } catch (\Throwable $e) {
+            $this->logger->warning('Plugin find()/findById() failed during bulk-fill, falling back to a title-only placeholder.', [
+                'pluginId' => (string) $pluginId,
+                'exception' => $e,
+            ]);
+
             return null;
         }
 

@@ -42,6 +42,7 @@ use App\Service\Storage\Scan\ScanResult;
 use App\Service\Storage\Scan\ScanResultItem;
 use App\Service\Storage\Search\SearchByPluginChain;
 use Doctrine\ORM\EntityManagerInterface;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\Finder\Finder;
 use Symfony\Component\Finder\SplFileInfo;
 
@@ -64,6 +65,7 @@ final class ScanStorageService
         private readonly AnimeRepository $animeRepository,
         private readonly EntityManagerInterface $entityManager,
         private readonly BulkFillerService $bulkFillerService,
+        private readonly LoggerInterface $logger,
     ) {
     }
 
@@ -284,7 +286,12 @@ final class ScanStorageService
                 $plugin->getName(),
                 $plugin->getExternalId(),
             );
-        } catch (\Throwable) {
+        } catch (\Throwable $e) {
+            $this->logger->warning('Plugin bulk-fill failed, falling back to a title-only placeholder.', [
+                'pluginId' => $plugin->getPluginId(),
+                'exception' => $e,
+            ]);
+
             return null;
         }
     }
