@@ -63,9 +63,21 @@ anime-db-desktop/
 
 ## Команды
 
+Из `app/` (если не указано иное):
+
 ```bash
-# TODO: заполнить по мере настройки окружения
+vendor/bin/phpunit                              # весь набор тестов
+vendor/bin/phpunit --filter <TestClassOrMethod> # один тест (при итерации)
+vendor/bin/phpunit tests/Unit/Path/SomeTest.php # один файл (при итерации)
+composer phpstan                                # PHPStan level 8
+composer cs-check   # / cs-fix                  # php-cs-fixer (проверка / автофикс)
 ```
+
+JS (из корня репозитория): `npm run lint` / `npm run lint:fix`.
+
+### Верификация при работе (важно для стоимости прогона)
+
+Во время итерации гоняй **только затронутые тесты** (`--filter` или путь к файлу), а **полный `vendor/bin/phpunit` + `composer phpstan` — один раз перед коммитом** (обязательно: до коммита рабочее дерево должно быть зелёным по полному набору). Полный прогон 600+ тестов на каждой мелкой правке дорог и не нужен — CI на PR всё равно прогоняет весь набор. Детали и обоснование — [.claude-docs/conventions.md](.claude-docs/conventions.md#верификация-при-итерации).
 
 ## Границы
 
