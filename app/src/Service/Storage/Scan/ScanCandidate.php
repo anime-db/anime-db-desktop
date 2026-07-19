@@ -27,8 +27,8 @@ declare(strict_types=1);
 
 namespace App\Service\Storage\Scan;
 
+use AnimeDb\PluginContracts\SearchByPluginCandidate;
 use App\Entity\Anime;
-use App\Service\Storage\Search\SearchByPluginCandidate;
 
 /**
  * A single suggestion for a new storage file/folder, from either of the two sources

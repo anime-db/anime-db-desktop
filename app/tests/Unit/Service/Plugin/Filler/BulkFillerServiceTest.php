@@ -47,6 +47,8 @@ use Doctrine\ORM\EntityManager;
 use Doctrine\ORM\ORMSetup;
 use Doctrine\ORM\Tools\SchemaTool;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 
 final class BulkFillerServiceTest extends TestCase
 {
@@ -74,7 +76,7 @@ final class BulkFillerServiceTest extends TestCase
     /**
      * @param iterable<string, FillerInterface> $fillers
      */
-    private function newService(iterable $fillers): BulkFillerService
+    private function newService(iterable $fillers, ?LoggerInterface $logger = null): BulkFillerService
     {
         return new BulkFillerService(
             new FillerRegistry($fillers, new PluginsConfigStore(sys_get_temp_dir().'/anime-bulk-filler-test-'.uniqid().'.json')),
@@ -84,6 +86,7 @@ final class BulkFillerServiceTest extends TestCase
                 $this->createStub(PluginMediaDownloaderInterface::class),
             ),
             $this->entityManager,
+            $logger ?? new NullLogger(),
         );
     }
 
@@ -138,5 +141,61 @@ final class BulkFillerServiceTest extends TestCase
 
         $service->fillNewFromPlugin($pluginId, 'Bleach');
         $service->fillNewFromPlugin($pluginId, 'Bleach');
+    }
+
+    public function testFillNewFromPluginSkipsFindWhenExternalIdIsAlreadyKnown(): void
+    {
+        $pluginId = new PluginId('animedb-shikimori');
+        $data = new PluginAnimeData(title: 'Bleach: Memories of Nobody', type: ContractsAnimeType::Movie, durationMinutes: 91);
+
+        $filler = $this->createMock(FillerInterface::class);
+        $filler->expects($this->never())->method('find');
+        $filler->expects($this->once())->method('findById')->with('104')->willReturn($data);
+        $filler->method('getFillableFields')->willReturn(['title', 'type', 'durationMinutes']);
+
+        $service = $this->newService([(string) $pluginId => $filler]);
+
+        $anime = $service->fillNewFromPlugin($pluginId, 'Bleach: Memories of Nobody', '104');
+
+        $this->assertInstanceOf(MovieAnime::class, $anime);
+        $this->assertSame('104', $anime->getExternalId($pluginId, $filler));
+    }
+
+    public function testFillNewFromPluginReturnsNullAndLogsAWarningWhenFindThrows(): void
+    {
+        $pluginId = new PluginId('animedb-shikimori');
+
+        $filler = $this->createStub(FillerInterface::class);
+        $filler->method('find')->willThrowException(new \RuntimeException('external source unreachable'));
+
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->once())->method('warning')->with(
+            $this->stringContains('bulk-fill'),
+            $this->callback(static fn (array $context): bool => $context['pluginId'] === (string) $pluginId
+                && $context['exception'] instanceof \RuntimeException),
+        );
+
+        $service = $this->newService([(string) $pluginId => $filler], $logger);
+
+        $this->assertNull($service->fillNewFromPlugin($pluginId, 'Bleach'));
+    }
+
+    public function testFillNewFromPluginReturnsNullAndLogsAWarningWhenFindByIdThrowsForAnAlreadyKnownExternalId(): void
+    {
+        $pluginId = new PluginId('animedb-shikimori');
+
+        $filler = $this->createStub(FillerInterface::class);
+        $filler->method('findById')->willThrowException(new \RuntimeException('external source unreachable'));
+
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->once())->method('warning')->with(
+            $this->stringContains('bulk-fill'),
+            $this->callback(static fn (array $context): bool => $context['pluginId'] === (string) $pluginId
+                && $context['exception'] instanceof \RuntimeException),
+        );
+
+        $service = $this->newService([(string) $pluginId => $filler], $logger);
+
+        $this->assertNull($service->fillNewFromPlugin($pluginId, 'Bleach', '104'));
     }
 }

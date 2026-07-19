@@ -37,6 +37,7 @@ use App\Entity\TvAnime;
 use App\Entity\ValueObject\PluginId;
 use App\Service\Plugin\FillerRegistry;
 use Doctrine\ORM\EntityManagerInterface;
+use Psr\Log\LoggerInterface;
 
 /**
  * Bulk fill-in scenario (issue #227): a Storage scan matched a top-level entry only through a
@@ -53,6 +54,12 @@ use Doctrine\ORM\EntityManagerInterface;
  * "priority or explicitly user-chosen" plugin selection has no config surface to choose from yet
  * (no plugin management UI exists), so re-using the plugin that already found the title is the
  * only selection available today.
+ *
+ * A caller that already has an externalId for that plugin (e.g. SearchByPluginChain's own
+ * find() call during the storage scan, issue #233) passes it in to skip a redundant find()
+ * round trip — findById() is called directly instead. A plugin's find()/findById() throwing is
+ * treated the same as it returning nothing: this service falls back to null rather than letting
+ * a misbehaving plugin abort the caller's whole operation.
  */
 final class BulkFillerService
 {
@@ -63,22 +70,39 @@ final class BulkFillerService
         private readonly FillerRegistry $fillerRegistry,
         private readonly PluginAnimeDataMerger $merger,
         private readonly EntityManagerInterface $entityManager,
+        private readonly LoggerInterface $logger,
     ) {
     }
 
     /**
-     * @return Anime|null null when no active filler is registered for $pluginId, or the plugin's
-     *                    own find()/findById() could not resolve $name to anything — the caller
-     *                    falls back to its own title-only placeholder in that case
+     * @param ?string $externalId already-known external id for $pluginId (e.g. from a
+     *                            SearchByPluginChain candidate) — when given (non-empty),
+     *                            find() is skipped and findById() is called directly instead
+     *
+     * @return Anime|null null when no active filler is registered for $pluginId, the plugin's
+     *                    own find()/findById() could not resolve anything, or either call threw
+     *                    — the caller falls back to its own title-only placeholder in that case
      */
-    public function fillNewFromPlugin(PluginId $pluginId, string $name): ?Anime
+    public function fillNewFromPlugin(PluginId $pluginId, string $name, ?string $externalId = null): ?Anime
     {
         $filler = $this->fillerRegistry->findByPluginId($pluginId);
         if ($filler === null) {
             return null;
         }
 
-        $resolved = $this->resolve($filler, $name);
+        try {
+            $resolved = $externalId !== null && $externalId !== ''
+                ? $this->resolveKnownExternalId($filler, $externalId)
+                : $this->resolve($filler, $name);
+        } catch (\Throwable $e) {
+            $this->logger->warning('Plugin find()/findById() failed during bulk-fill, falling back to a title-only placeholder.', [
+                'pluginId' => (string) $pluginId,
+                'exception' => $e,
+            ]);
+
+            return null;
+        }
+
         if ($resolved === null) {
             return null;
         }
@@ -108,7 +132,12 @@ final class BulkFillerService
             return null;
         }
 
-        $externalId = $candidates[0]->getExternalId();
+        return $this->resolveKnownExternalId($filler, $candidates[0]->getExternalId());
+    }
+
+    /** @return array{0: string, 1: PluginAnimeData}|null */
+    private function resolveKnownExternalId(FillerInterface $filler, string $externalId): ?array
+    {
         $data = $this->findById($filler, $externalId);
 
         return $data === null ? null : [$externalId, $data];

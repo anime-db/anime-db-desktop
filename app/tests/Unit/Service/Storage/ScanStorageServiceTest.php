@@ -27,12 +27,18 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Service\Storage;
 
+use AnimeDb\PluginContracts\AnimeType as ContractsAnimeType;
+use AnimeDb\PluginContracts\FillerInterface;
+use AnimeDb\PluginContracts\PluginAnimeData;
+use AnimeDb\PluginContracts\SearchByPluginCandidate;
+use AnimeDb\PluginContracts\SearchByPluginInterface;
 use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
 use App\Entity\Anime;
 use App\Entity\Enum\AnimeNameType;
 use App\Entity\Enum\StorageType;
 use App\Entity\Enum\WatchStatus;
+use App\Entity\MovieAnime;
 use App\Entity\Storage;
 use App\Entity\TvAnime;
 use App\Entity\ValueObject\PluginId;
@@ -50,9 +56,7 @@ use App\Service\Storage\Scan\ScanCandidate;
 use App\Service\Storage\Scan\ScanItemType;
 use App\Service\Storage\ScanStorageService;
 use App\Service\Storage\Search\NullSearchByPlugin;
-use App\Service\Storage\Search\SearchByPluginCandidate;
 use App\Service\Storage\Search\SearchByPluginChain;
-use App\Service\Storage\Search\SearchByPluginInterface;
 use App\Service\Storage\StorageMarkerService;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Types\Type;
@@ -60,6 +64,8 @@ use Doctrine\ORM\EntityManager;
 use Doctrine\ORM\ORMSetup;
 use Doctrine\ORM\Tools\SchemaTool;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 
 /**
  * Exercises ScanStorageService end to end (real EntityManager/SQLite connection, real
@@ -136,7 +142,7 @@ final class ScanStorageServiceTest extends TestCase
         touch($path, $mtime ?? time());
     }
 
-    private function newService(?SearchByPluginChain $pluginChain = null): ScanStorageService
+    private function newService(?SearchByPluginChain $pluginChain = null, ?BulkFillerService $bulkFillerService = null, ?LoggerInterface $logger = null): ScanStorageService
     {
         return new ScanStorageService(
             new StorageMarkerService($this->entityManager),
@@ -145,20 +151,23 @@ final class ScanStorageServiceTest extends TestCase
             $pluginChain ?? new SearchByPluginChain([new NullSearchByPlugin()]),
             $this->animeRepository,
             $this->entityManager,
-            $this->newBulkFillerService(),
+            $bulkFillerService ?? $this->newBulkFillerService([]),
+            $logger ?? new NullLogger(),
         );
     }
 
-    private function newBulkFillerService(): BulkFillerService
+    /** @param iterable<string, FillerInterface> $fillers */
+    private function newBulkFillerService(iterable $fillers = []): BulkFillerService
     {
         return new BulkFillerService(
-            new FillerRegistry([], new PluginsConfigStore('')),
+            new FillerRegistry($fillers, new PluginsConfigStore('')),
             new PluginAnimeDataMerger(
                 new StudioRepository($this->entityManager),
                 $this->entityManager,
                 $this->createStub(PluginMediaDownloaderInterface::class),
             ),
             $this->entityManager,
+            new NullLogger(),
         );
     }
 
@@ -388,7 +397,7 @@ final class ScanStorageServiceTest extends TestCase
         $this->entityManager->persist($storage);
         $this->entityManager->flush();
 
-        $candidate = new SearchByPluginCandidate(new PluginId('animedb-test'), 'Trigun');
+        $candidate = new SearchByPluginCandidate('animedb-test', 'Trigun', '');
         $service = $this->newService($this->pluginChainReturning($candidate));
 
         $result = $service->scan($storage);
@@ -408,6 +417,134 @@ final class ScanStorageServiceTest extends TestCase
         $this->assertSame('Trigun', $reloaded->getTitle());
     }
 
+    /**
+     * End-to-end path for issue #233: SearchByPluginChain's contract candidate already carries
+     * an externalId, so ScanStorageService's plugin branch bulk-fills the new Anime from that
+     * plugin's FillerInterface (picking the subtype from PluginAnimeData::$type and caching the
+     * externalId immediately) instead of the title-only placeholder — and does so without a
+     * second find() call, since the externalId is already known.
+     */
+    public function testNewFileWithPluginCandidateCarryingExternalIdBulkFillsFromThatPluginWithoutASecondSearch(): void
+    {
+        $dir = $this->makeStorageDir();
+        $this->touchFile($dir.'/Bleach.mkv');
+
+        $storage = new Storage('Main folder', $dir, StorageType::Folder);
+        $this->entityManager->persist($storage);
+        $this->entityManager->flush();
+
+        $pluginId = new PluginId('animedb-shikimori');
+        $data = new PluginAnimeData(title: 'Bleach: Memories of Nobody', type: ContractsAnimeType::Movie, durationMinutes: 91);
+
+        $filler = $this->createMock(FillerInterface::class);
+        $filler->expects($this->never())->method('find');
+        $filler->method('findById')->with('104')->willReturn($data);
+        $filler->method('getFillableFields')->willReturn(['title', 'type', 'durationMinutes']);
+
+        $candidate = new SearchByPluginCandidate((string) $pluginId, 'Bleach: Memories of Nobody', '104');
+        $service = $this->newService(
+            $this->pluginChainReturning($candidate),
+            $this->newBulkFillerService([(string) $pluginId => $filler]),
+        );
+
+        $result = $service->scan($storage);
+
+        $this->assertCount(1, $result->items);
+        $item = $result->items[0];
+        $this->assertSame(ScanItemType::AutoLinked, $item->type);
+        $anime = $item->anime;
+        $this->assertInstanceOf(MovieAnime::class, $anime);
+        $this->assertSame('Bleach: Memories of Nobody', $anime->getTitle());
+        $this->assertSame(91, $anime->getDurationMinutes());
+        $this->assertSame('104', $anime->getExternalId($pluginId, $filler));
+    }
+
+    /**
+     * A plugin's find()/findById() throwing must not abort the whole storage scan (issue #233)
+     * — the entry falls back to the same title-only placeholder used when no filler is
+     * registered at all.
+     */
+    public function testNewFileWithPluginCandidateWhosePluginThrowsFallsBackToTitleOnlyPlaceholder(): void
+    {
+        $dir = $this->makeStorageDir();
+        $this->touchFile($dir.'/Trigun.mkv');
+
+        $storage = new Storage('Main folder', $dir, StorageType::Folder);
+        $this->entityManager->persist($storage);
+        $this->entityManager->flush();
+
+        $pluginId = new PluginId('animedb-shikimori');
+        $filler = $this->createStub(FillerInterface::class);
+        $filler->method('findById')->willThrowException(new \RuntimeException('external source unreachable'));
+
+        $candidate = new SearchByPluginCandidate((string) $pluginId, 'Trigun', '104');
+
+        // The exception is caught (and logged, see BulkFillerServiceTest) inside
+        // BulkFillerService itself, so it never reaches ScanStorageService's own catch — this
+        // test only needs to prove the fallback to a title-only placeholder still happens.
+        $bulkFillerLogger = $this->createMock(LoggerInterface::class);
+        $bulkFillerLogger->expects($this->once())->method('warning')->with(
+            $this->stringContains('bulk-fill'),
+            $this->callback(static fn (array $context): bool => $context['pluginId'] === (string) $pluginId
+                && $context['exception'] instanceof \RuntimeException),
+        );
+
+        $service = $this->newService(
+            $this->pluginChainReturning($candidate),
+            new BulkFillerService(
+                new FillerRegistry([(string) $pluginId => $filler], new PluginsConfigStore('')),
+                new PluginAnimeDataMerger(
+                    new StudioRepository($this->entityManager),
+                    $this->entityManager,
+                    $this->createStub(PluginMediaDownloaderInterface::class),
+                ),
+                $this->entityManager,
+                $bulkFillerLogger,
+            ),
+        );
+
+        $result = $service->scan($storage);
+
+        $this->assertCount(1, $result->items);
+        $item = $result->items[0];
+        $this->assertSame(ScanItemType::AutoLinked, $item->type);
+        $this->assertInstanceOf(TvAnime::class, $item->anime);
+        $this->assertSame('Trigun', $item->anime->getTitle());
+    }
+
+    public function testNewFileWithPluginCandidateCarryingAMalformedPluginIdFallsBackToTitleOnlyPlaceholderAndLogsIt(): void
+    {
+        $dir = $this->makeStorageDir();
+        $this->touchFile($dir.'/Trigun.mkv');
+
+        $storage = new Storage('Main folder', $dir, StorageType::Folder);
+        $this->entityManager->persist($storage);
+        $this->entityManager->flush();
+
+        // Not a valid "vendor-name" slug (see PluginId::FORMAT) — simulates a misbehaving
+        // plugin reporting its own id incorrectly.
+        $candidate = new SearchByPluginCandidate('Not A Valid Plugin Id', 'Trigun', '104');
+
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->once())->method('warning')->with(
+            $this->stringContains('bulk-fill'),
+            $this->arrayHasKey('exception'),
+        );
+
+        $service = $this->newService(
+            $this->pluginChainReturning($candidate),
+            logger: $logger,
+        );
+
+        $result = $service->scan($storage);
+
+        $this->assertCount(1, $result->items);
+        $item = $result->items[0];
+        $this->assertSame(ScanItemType::AutoLinked, $item->type);
+        $this->assertInstanceOf(TvAnime::class, $item->anime);
+        $this->assertSame('Trigun', $item->anime->getTitle());
+    }
+
     public function testExactlyOneOrphanConfirmedByExactlyOnePluginMatchIsAutoLinkedToTheOrphan(): void
     {
         $dir = $this->makeStorageDir();
@@ -422,7 +559,7 @@ final class ScanStorageServiceTest extends TestCase
         $this->entityManager->flush();
         $orphanId = $orphan->id;
 
-        $candidate = new SearchByPluginCandidate(new PluginId('animedb-test'), 'Trigun');
+        $candidate = new SearchByPluginCandidate('animedb-test', 'Trigun', '');
         $service = $this->newService($this->pluginChainReturning($candidate));
 
         $result = $service->scan($storage);
@@ -454,7 +591,7 @@ final class ScanStorageServiceTest extends TestCase
 
         // Same orphan-lookup result as the "confirmed" case above, but the plugin actually
         // found a different title this time — that must not be treated as agreement.
-        $candidate = new SearchByPluginCandidate(new PluginId('animedb-test'), 'Trigun the Movie');
+        $candidate = new SearchByPluginCandidate('animedb-test', 'Trigun the Movie', '');
         $service = $this->newService($this->pluginChainReturning($candidate));
 
         $result = $service->scan($storage);
@@ -508,7 +645,7 @@ final class ScanStorageServiceTest extends TestCase
         $this->entityManager->persist($second);
         $this->entityManager->flush();
 
-        $candidate = new SearchByPluginCandidate(new PluginId('animedb-test'), 'Trigun the Movie');
+        $candidate = new SearchByPluginCandidate('animedb-test', 'Trigun the Movie', '');
         $service = $this->newService($this->pluginChainReturning($candidate));
 
         $result = $service->scan($storage);
@@ -545,7 +682,7 @@ final class ScanStorageServiceTest extends TestCase
         // The plugin's name only matches $first's title ('Trigun'), not $second's ('Vash') —
         // the two orphans must not collapse into each other, and the agreeing pair must not
         // spawn a third, separate candidate.
-        $candidate = new SearchByPluginCandidate(new PluginId('animedb-test'), 'Trigun');
+        $candidate = new SearchByPluginCandidate('animedb-test', 'Trigun', '');
         $service = $this->newService($this->pluginChainReturning($candidate));
 
         $result = $service->scan($storage);
@@ -574,8 +711,8 @@ final class ScanStorageServiceTest extends TestCase
         // A single plugin call to an external source (e.g. Shikimori) can itself come back
         // ambiguous — here the TV series and its movie spin-off both matched "Trigun".
         $candidates = [
-            new SearchByPluginCandidate(new PluginId('animedb-test'), 'Trigun'),
-            new SearchByPluginCandidate(new PluginId('animedb-test'), 'Trigun: Badlands Rumble'),
+            new SearchByPluginCandidate('animedb-test', 'Trigun', ''),
+            new SearchByPluginCandidate('animedb-test', 'Trigun: Badlands Rumble', ''),
         ];
         $service = $this->newService($this->pluginChainReturningAll($candidates));
 
@@ -597,8 +734,8 @@ final class ScanStorageServiceTest extends TestCase
         $this->entityManager->flush();
 
         $candidates = [
-            new SearchByPluginCandidate(new PluginId('animedb-test'), 'Trigun'),
-            new SearchByPluginCandidate(new PluginId('animedb-test'), 'trigun'),
+            new SearchByPluginCandidate('animedb-test', 'Trigun', ''),
+            new SearchByPluginCandidate('animedb-test', 'trigun', ''),
         ];
         $service = $this->newService($this->pluginChainReturningAll($candidates));
 
@@ -640,7 +777,7 @@ final class ScanStorageServiceTest extends TestCase
         $this->entityManager->persist($storage);
         $this->entityManager->flush();
 
-        $candidate = ScanCandidate::fromPlugin(new SearchByPluginCandidate(new PluginId('animedb-test'), 'Trigun'));
+        $candidate = ScanCandidate::fromPlugin(new SearchByPluginCandidate('animedb-test', 'Trigun', ''));
 
         $anime = $this->newService()->linkToChosenCandidate($storage, 'Trigun.mkv', $candidate);
         $this->entityManager->flush();
@@ -668,7 +805,7 @@ final class ScanStorageServiceTest extends TestCase
         $this->entityManager->flush();
 
         // A second, different candidate loses the race for the same storage_path.
-        $challenger = ScanCandidate::fromPlugin(new SearchByPluginCandidate(new PluginId('animedb-test'), 'Trigun the Movie'));
+        $challenger = ScanCandidate::fromPlugin(new SearchByPluginCandidate('animedb-test', 'Trigun the Movie', ''));
 
         $this->expectException(StoragePathConflictException::class);
         $this->newService()->linkToChosenCandidate($storage, 'Trigun.mkv', $challenger);

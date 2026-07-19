@@ -27,6 +27,9 @@ declare(strict_types=1);
 
 namespace App\Service\Storage\Search;
 
+use AnimeDb\PluginContracts\SearchByPluginCandidate;
+use AnimeDb\PluginContracts\SearchByPluginInterface;
+
 /**
  * Stands in for Stage 4's plugin implementations, which don't exist yet. Always reports
  * "not found" so the storage scan (Stage 3) has a real, working search chain to call into
@@ -34,8 +37,14 @@ namespace App\Service\Storage\Search;
  */
 final class NullSearchByPlugin implements SearchByPluginInterface
 {
-    public function find(string $name): array
+    /** @return list<SearchByPluginCandidate> */
+    public function find(string $name, ?callable $onHeartbeat = null): array
     {
         return [];
+    }
+
+    public function resolveExternalId(array $urls): ?string
+    {
+        return null;
     }
 }

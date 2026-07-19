@@ -348,7 +348,9 @@ final class ScanStorageMessageHandlerTest extends TestCase
                     $this->createStub(PluginMediaDownloaderInterface::class),
                 ),
                 $this->entityManager,
+                new NullLogger(),
             ),
+            new NullLogger(),
         );
 
         $jobLockService = new JobLockService(

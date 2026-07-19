@@ -27,20 +27,22 @@ declare(strict_types=1);
 
 namespace App\Service\Storage;
 
+use AnimeDb\PluginContracts\SearchByPluginCandidate;
 use App\Entity\Anime;
 use App\Entity\Enum\WatchStatus;
 use App\Entity\NameNormalizer;
 use App\Entity\Storage;
 use App\Entity\TvAnime;
+use App\Entity\ValueObject\PluginId;
 use App\Repository\AnimeRepository;
 use App\Service\Plugin\Filler\BulkFillerService;
 use App\Service\Storage\Exception\StoragePathConflictException;
 use App\Service\Storage\Scan\ScanCandidate;
 use App\Service\Storage\Scan\ScanResult;
 use App\Service\Storage\Scan\ScanResultItem;
-use App\Service\Storage\Search\SearchByPluginCandidate;
 use App\Service\Storage\Search\SearchByPluginChain;
 use Doctrine\ORM\EntityManagerInterface;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\Finder\Finder;
 use Symfony\Component\Finder\SplFileInfo;
 
@@ -63,6 +65,7 @@ final class ScanStorageService
         private readonly AnimeRepository $animeRepository,
         private readonly EntityManagerInterface $entityManager,
         private readonly BulkFillerService $bulkFillerService,
+        private readonly LoggerInterface $logger,
     ) {
     }
 
@@ -212,13 +215,13 @@ final class ScanStorageService
 
         $existingPlugin = $candidate->plugin ?? throw new \LogicException('ScanCandidate must carry either an orphan or a plugin match');
 
-        return NameNormalizer::normalize($existingPlugin->name) === NameNormalizer::normalize($plugin->name);
+        return NameNormalizer::normalize($existingPlugin->getName()) === NameNormalizer::normalize($plugin->getName());
     }
 
     /** Whether the plugin match names the same title as the orphan (its Anime::title or one of its AnimeName entries). */
     private function orphanMatchesPluginCandidate(Anime $orphan, SearchByPluginCandidate $plugin): bool
     {
-        $normalizedPluginName = NameNormalizer::normalize($plugin->name);
+        $normalizedPluginName = NameNormalizer::normalize($plugin->getName());
 
         if (NameNormalizer::normalize($orphan->getTitle()) === $normalizedPluginName) {
             return true;
@@ -256,16 +259,41 @@ final class ScanStorageService
         $plugin = $candidate->plugin ?? throw new \LogicException('ScanCandidate must carry either an orphan or a plugin match');
 
         // BulkFillerService (issue #227) tries the same plugin's FillerInterface, if it has one,
-        // to create an already-filled-in Anime. No concrete plugin ships in this repository yet
-        // (same status as SearchByPluginChain's search plugins), so this currently always falls
-        // back to the title-only placeholder below.
-        $anime = $this->bulkFillerService->fillNewFromPlugin($plugin->pluginId, $plugin->name)
-            ?? (new TvAnime())->setTitle($plugin->name)->setWatchStatus(WatchStatus::Plan);
+        // to create an already-filled-in Anime, passing the externalId already resolved by
+        // SearchByPluginChain's find() call above so it doesn't have to search again (issue #233).
+        // No concrete plugin ships in this repository yet, so this currently always falls back to
+        // the title-only placeholder below.
+        $anime = $this->fillFromPlugin($plugin)
+            ?? (new TvAnime())->setTitle($plugin->getName())->setWatchStatus(WatchStatus::Plan);
 
         $anime->setStorage($storage)->setStoragePath($storagePath);
         $this->entityManager->persist($anime);
 
         return $anime;
+    }
+
+    /**
+     * A malformed plugin id or a plugin's own find()/findById() throwing must not abort the
+     * whole storage scan over one bad entry (issue #233) — both are treated the same as
+     * BulkFillerService reporting "nothing to fill in", falling back to the title-only
+     * placeholder in linkToChosenCandidate().
+     */
+    private function fillFromPlugin(SearchByPluginCandidate $plugin): ?Anime
+    {
+        try {
+            return $this->bulkFillerService->fillNewFromPlugin(
+                new PluginId($plugin->getPluginId()),
+                $plugin->getName(),
+                $plugin->getExternalId(),
+            );
+        } catch (\Throwable $e) {
+            $this->logger->warning('Plugin bulk-fill failed, falling back to a title-only placeholder.', [
+                'pluginId' => $plugin->getPluginId(),
+                'exception' => $e,
+            ]);
+
+            return null;
+        }
     }
 
     /**

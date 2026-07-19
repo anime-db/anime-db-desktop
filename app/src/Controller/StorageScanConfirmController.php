@@ -27,13 +27,12 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
+use AnimeDb\PluginContracts\SearchByPluginCandidate;
 use App\Entity\Anime;
 use App\Entity\Storage;
-use App\Entity\ValueObject\PluginId;
 use App\Service\Storage\Exception\StoragePathConflictException;
 use App\Service\Storage\Scan\ScanCandidate;
 use App\Service\Storage\ScanStorageService;
-use App\Service\Storage\Search\SearchByPluginCandidate;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -59,9 +58,10 @@ final class StorageScanConfirmController
 {
     /**
      * Placeholder plugin id for a candidate confirmed straight from the user rather than found
-     * by a real plugin. Only ScanCandidate::$plugin->name ever survives into the Anime record
-     * created by ScanStorageService::linkToChosenCandidate() — the plugin id itself is never
-     * persisted or otherwise inspected, so any well-formed value is fine here.
+     * by a real plugin. No installed filler is ever registered under this id, so
+     * BulkFillerService::fillNewFromPlugin() always reports "nothing to fill in" for it and
+     * ScanStorageService::linkToChosenCandidate() falls back to its title-only placeholder —
+     * this id only needs to be well-formed, not resolvable to anything real.
      */
     private const CONFIRMED_PLUGIN_ID = 'storage-scan-confirmed';
 
@@ -123,7 +123,7 @@ final class StorageScanConfirmController
         }
 
         if (\is_string($name) && $name !== '') {
-            return ScanCandidate::fromPlugin(new SearchByPluginCandidate(new PluginId(self::CONFIRMED_PLUGIN_ID), $name));
+            return ScanCandidate::fromPlugin(new SearchByPluginCandidate(self::CONFIRMED_PLUGIN_ID, $name, ''));
         }
 
         throw new BadRequestHttpException('Either "anime_id" or "name" must be provided.');

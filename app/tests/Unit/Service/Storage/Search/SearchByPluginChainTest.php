@@ -27,11 +27,10 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Service\Storage\Search;
 
-use App\Entity\ValueObject\PluginId;
+use AnimeDb\PluginContracts\SearchByPluginCandidate;
+use AnimeDb\PluginContracts\SearchByPluginInterface;
 use App\Service\Storage\Search\NullSearchByPlugin;
-use App\Service\Storage\Search\SearchByPluginCandidate;
 use App\Service\Storage\Search\SearchByPluginChain;
-use App\Service\Storage\Search\SearchByPluginInterface;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
@@ -59,7 +58,7 @@ final class SearchByPluginChainTest extends TestCase
 
     public function testFindReturnsFirstNonEmptyListAndSkipsRemainingPlugins(): void
     {
-        $expected = [new SearchByPluginCandidate(new PluginId('animedb-shikimori'), 'Bleach')];
+        $expected = [new SearchByPluginCandidate('animedb-shikimori', 'Bleach', '104')];
 
         $first = $this->createStub(SearchByPluginInterface::class);
         $first->method('find')->willReturn($expected);
@@ -75,8 +74,8 @@ final class SearchByPluginChainTest extends TestCase
     public function testFindReturnsAllCandidatesFromTheWinningPlugin(): void
     {
         $expected = [
-            new SearchByPluginCandidate(new PluginId('animedb-shikimori'), 'Bleach'),
-            new SearchByPluginCandidate(new PluginId('animedb-shikimori'), 'Bleach: Thousand-Year Blood War'),
+            new SearchByPluginCandidate('animedb-shikimori', 'Bleach', '104'),
+            new SearchByPluginCandidate('animedb-shikimori', 'Bleach: Thousand-Year Blood War', '205'),
         ];
 
         $plugin = $this->createStub(SearchByPluginInterface::class);
@@ -89,7 +88,7 @@ final class SearchByPluginChainTest extends TestCase
 
     public function testFindSkipsPluginsReturningAnEmptyListAndTriesTheNextOne(): void
     {
-        $expected = [new SearchByPluginCandidate(new PluginId('animedb-shikimori'), 'Bleach')];
+        $expected = [new SearchByPluginCandidate('animedb-shikimori', 'Bleach', '104')];
 
         $first = $this->createStub(SearchByPluginInterface::class);
         $first->method('find')->willReturn([]);
