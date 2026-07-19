@@ -32,6 +32,7 @@ use App\Service\Plugin\Exception\IncompatiblePluginCoreVersionException;
 use App\Service\Plugin\Exception\InvalidInstalledPluginException;
 use App\Service\Plugin\Exception\PluginAlreadyInstalledException;
 use App\Service\Plugin\Exception\PluginInstallException;
+use App\Service\Plugin\Exception\PluginSyntaxErrorException;
 use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Plugin\ZipPluginInstaller;
@@ -284,6 +285,45 @@ final class ZipPluginInstallerTest extends TestCase
         } catch (IncompatiblePluginCoreVersionException $exception) {
             $this->assertSame('>=99.0.0', $exception->requiredCore);
             $this->assertSame(self::CORE_VERSION, $exception->currentCore);
+        } finally {
+            $this->assertSame([], array_values(array_diff((array) scandir($this->pluginsDir), ['.', '..'])));
+            $this->assertFalse($this->registry->has(new PluginId('animedb-shikimori')));
+            $this->assertNoLeftoverTempDirectories();
+        }
+    }
+
+    public function testInstallSucceedsWhenAllPhpFilesAreSyntacticallyValid(): void
+    {
+        $zipPath = $this->createZip([
+            'manifest.json' => $this->validManifestJson('animedb-shikimori'),
+            'src/Plugin.php' => "<?php\n\nfinal class Plugin\n{\n}\n",
+            'src/Helper.php' => "<?php\n\nfunction helper(): void\n{\n}\n",
+        ]);
+
+        $installer = $this->installer();
+        $pluginId = $installer->install($zipPath);
+
+        $this->assertSame('animedb-shikimori', (string) $pluginId);
+        $this->assertNoLeftoverTempDirectories();
+    }
+
+    public function testInstallBlocksWhenPluginContainsPhpSyntaxError(): void
+    {
+        $zipPath = $this->createZip([
+            'manifest.json' => $this->validManifestJson('animedb-shikimori'),
+            'src/Plugin.php' => "<?php\n\nfinal class Plugin\n{\n", // unclosed class body
+        ]);
+
+        $installer = $this->installer();
+
+        try {
+            $installer->install($zipPath);
+            $this->fail('Expected PluginSyntaxErrorException to be thrown.');
+        } catch (PluginSyntaxErrorException $exception) {
+            $this->assertCount(1, $exception->errors);
+            $this->assertSame('src/Plugin.php', $exception->errors[0]->relativePath);
+            $this->assertNotSame('', $exception->errors[0]->message);
+            $this->assertStringContainsString('src/Plugin.php', $exception->getMessage());
         } finally {
             $this->assertSame([], array_values(array_diff((array) scandir($this->pluginsDir), ['.', '..'])));
             $this->assertFalse($this->registry->has(new PluginId('animedb-shikimori')));
