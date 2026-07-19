@@ -42,7 +42,7 @@ final class Version20260719000000 extends AbstractMigration
     {
         $this->addSql("CREATE TABLE sync_review_item (
             id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-            kind VARCHAR(32) NOT NULL CHECK (kind IN ('potential_duplicate')),
+            kind VARCHAR(32) NOT NULL,
             payload CLOB NOT NULL,
             created_at INTEGER NOT NULL,
             resolved_at INTEGER DEFAULT NULL
