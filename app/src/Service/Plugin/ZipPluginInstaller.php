@@ -36,7 +36,10 @@ use App\Service\Plugin\Exception\IncompatiblePluginCoreVersionException;
 use App\Service\Plugin\Exception\InvalidInstalledPluginException;
 use App\Service\Plugin\Exception\PluginAlreadyInstalledException;
 use App\Service\Plugin\Exception\PluginInstallException;
+use App\Service\Plugin\Exception\PluginSyntaxErrorException;
 use Composer\Semver\Semver;
+use Symfony\Component\Finder\Finder;
+use Symfony\Component\Process\Process;
 
 /**
  * Installs a plugin from an uploaded ZIP archive: unpacks it into a private staging directory
@@ -61,10 +64,13 @@ use Composer\Semver\Semver;
  * the current `%app.core_version%` via {@see Semver::satisfies()}, before anything is moved
  * into place — see {@see IncompatiblePluginCoreVersionException}.
  *
- * Deliberately still out of scope here (see issue #248): lint checks on the manifest beyond
- * {@see ManifestParser::parse()}'s own validation and the core-version compat check above, any
- * UI, and activation/cache warm-up (issue #222) — this service only gets as far as "files are
- * in place and the index is up to date".
+ * Also lints every unpacked `*.php` file with `php -l` (issue #250), still before anything is
+ * moved into place — see {@see self::assertNoSyntaxErrors()}. This is specific to the custom
+ * (untrusted ZIP upload) path: marketplace plugins are linted on the registry side (issue #220)
+ * and never go through this service.
+ *
+ * Deliberately still out of scope here: any UI, and activation/cache warm-up (issue #222) — this
+ * service only gets as far as "files are in place and the index is up to date".
  */
 final class ZipPluginInstaller
 {
@@ -82,6 +88,7 @@ final class ZipPluginInstaller
      * @throws InvalidInstalledPluginException        if manifest.json is missing or invalid
      * @throws IncompatiblePluginCoreVersionException if the current core version does not satisfy
      *                                                the manifest's `require.core` lower bound
+     * @throws PluginSyntaxErrorException             if any `*.php` file in the archive has a PHP syntax error
      * @throws PluginAlreadyInstalledException        if the manifest's plugin id is already installed
      * @throws PluginInstallException                 if the archive cannot be unpacked or moved into place
      */
@@ -96,6 +103,7 @@ final class ZipPluginInstaller
             $pluginRoot = $this->resolvePluginRoot($tmpDir);
             $manifest = $this->parseManifest($pluginRoot);
             $this->assertCoreVersionCompatible($manifest);
+            $this->assertNoSyntaxErrors($pluginRoot);
             $pluginId = new PluginId($manifest->id);
             $targetDir = $this->pluginsDir.\DIRECTORY_SEPARATOR.$pluginId;
 
@@ -236,6 +244,53 @@ final class ZipPluginInstaller
         if (!Semver::satisfies($this->coreVersion, $manifest->require->core)) {
             throw new IncompatiblePluginCoreVersionException($manifest->require->core, $this->coreVersion);
         }
+    }
+
+    /**
+     * Lints every `*.php` file under the unpacked plugin with `php -l` (issue #250). Custom-upload
+     * path only: marketplace plugins are already linted on the registry side (issue #220), so this
+     * check has no equivalent there. Collects every syntax error found instead of stopping at the
+     * first one, so a single failed install reports the full picture.
+     *
+     * @throws PluginSyntaxErrorException
+     */
+    private function assertNoSyntaxErrors(string $pluginRoot): void
+    {
+        $files = (new Finder())->files()->in($pluginRoot)->name('*.php');
+
+        $errors = [];
+        foreach ($files as $file) {
+            $process = new Process([\PHP_BINARY, '-l', $file->getRealPath()]);
+            $process->run();
+
+            if (!$process->isSuccessful()) {
+                $errors[] = new PluginSyntaxError($file->getRelativePathname(), $this->parseSyntaxErrorMessage($process->getErrorOutput(), $process->getOutput()));
+            }
+        }
+
+        if ([] !== $errors) {
+            throw new PluginSyntaxErrorException($errors);
+        }
+    }
+
+    /**
+     * `php -l` writes its parse error to stderr as e.g. `PHP Parse error:  syntax error, ...
+     * in /abs/path/file.php on line 5`, followed by an `Errors parsing /abs/path/file.php` line on
+     * stdout. Only the first line carries the actual message, so that is all this keeps. Whether the
+     * message lands on stderr or stdout depends on the `display_errors`/`log_errors` ini settings
+     * (ours are loaded from a native-supplied `PHPRC`, which may differ from the CLI defaults), so
+     * stdout is used as a fallback when stderr is empty. The trailing ` in /abs/path/file.php` is
+     * stripped since the file is already known to the caller via {@see PluginSyntaxError::$relativePath}
+     * and the temp staging path it contains would be meaningless to the user — the line number is kept.
+     */
+    private function parseSyntaxErrorMessage(string $errorOutput, string $standardOutput): string
+    {
+        $firstLine = strtok(trim('' !== trim($errorOutput) ? $errorOutput : $standardOutput), "\n");
+        if (false === $firstLine) {
+            return 'Unknown syntax error.';
+        }
+
+        return preg_replace('/ in .+( on line \d+)$/', '$1', $firstLine) ?? $firstLine;
     }
 
     private function move(string $source, string $destination): void
