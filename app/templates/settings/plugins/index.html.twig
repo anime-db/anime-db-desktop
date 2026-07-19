@@ -1,0 +1,101 @@
+{#
+ # AnimeDb package.
+ #
+ # @author    Peter Gribanov <info@peter-gribanov.ru>
+ # @copyright Copyright (c) 2026, Peter Gribanov
+ # @license   https://gnu.org GPL-3.0-or-later
+ #
+ # This program is free software: you can redistribute it and/or modify
+ # it under the terms of the GNU General Public License as published by
+ # the Free Software Foundation, either version 3 of the License, or
+ # (at your option) any later version.
+ #
+ # This program is distributed in the hope that it will be useful,
+ # but WITHOUT ANY WARRANTY; without even the implied warranty of
+ # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ # GNU General Public License for more details.
+ #
+ # You should have received a copy of the GNU General Public License
+ # along with this program. If not, see <https://gnu.org>.
+ #}
+{% extends 'base.html.twig' %}
+
+{% block title %}{{ 'settings_plugins.title'|trans }}{% endblock %}
+
+{% block body %}
+    <p><a href="{{ path('settings_index') }}">{{ 'settings_plugins.back_link'|trans }}</a></p>
+    <h1>{{ 'settings_plugins.heading'|trans }}</h1>
+
+    <p><a href="{{ path('settings_plugin_widgets_index') }}">{{ 'settings_plugins.widgets_link'|trans }}</a></p>
+
+    {% if installedPluginId is not null %}
+        <p class="success">{{ 'settings_plugins.install_success'|trans({'%pluginId%': installedPluginId}) }}</p>
+    {% endif %}
+
+    {% if installError is not null %}
+        <p class="error">{{ installError|trans(installErrorParams) }}</p>
+
+        {% if syntaxErrors is not empty %}
+            <ul class="settings-plugins__error-list">
+                {% for syntaxError in syntaxErrors %}
+                    <li>{{ syntaxError.relativePath }}: {{ syntaxError.message }}</li>
+                {% endfor %}
+            </ul>
+        {% endif %}
+
+        {% if manifestErrors is not empty %}
+            <ul class="settings-plugins__error-list">
+                {% for manifestError in manifestErrors %}
+                    <li>{{ manifestError.field }}: {{ manifestError.message }}</li>
+                {% endfor %}
+            </ul>
+        {% endif %}
+    {% endif %}
+
+    <h2>{{ 'settings_plugins.installed_heading'|trans }}</h2>
+
+    {% if installedPlugins is empty %}
+        <p>{{ 'settings_plugins.installed_empty'|trans }}</p>
+    {% else %}
+        <table>
+            <thead>
+                <tr>
+                    <th>{{ 'settings_plugins.name_column'|trans }}</th>
+                    <th>{{ 'settings_plugins.id_column'|trans }}</th>
+                    <th>{{ 'settings_plugins.version_column'|trans }}</th>
+                    <th>{{ 'settings_plugins.type_column'|trans }}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for plugin in installedPlugins %}
+                    <tr>
+                        <td>{{ plugin.manifest.name }}</td>
+                        <td><code>{{ plugin.id }}</code></td>
+                        <td>{{ plugin.manifest.version }}</td>
+                        <td>{{ ('plugin_type.' ~ plugin.manifest.type.value)|trans }}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% endif %}
+
+    <h2>{{ 'settings_plugins.install_heading'|trans }}</h2>
+
+    <form method="post" action="{{ path('settings_plugins_install') }}" enctype="multipart/form-data" id="plugin-install-form">
+        <input type="hidden" name="_token" value="{{ csrf_token('settings_plugins_install') }}">
+
+        <label for="plugin-install-file">{{ 'settings_plugins.install_file_label'|trans }}</label>
+        <input type="file" id="plugin-install-file" name="plugin_zip" accept=".zip" required>
+
+        <div class="settings-plugins__warning" id="plugin-install-warning" hidden>
+            <p class="warning">{{ 'settings_plugins.third_party_warning'|trans }}</p>
+            <button type="button" id="plugin-install-confirm-button">{{ 'settings_plugins.confirm_button'|trans }}</button>
+        </div>
+
+        <button type="submit" id="plugin-install-submit-button" disabled>{{ 'settings_plugins.install_button'|trans }}</button>
+    </form>
+{% endblock %}
+
+{% block javascripts %}
+    <script src="{{ asset('js/plugin-install.js') }}"></script>
+{% endblock %}

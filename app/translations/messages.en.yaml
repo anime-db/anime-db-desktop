@@ -106,6 +106,10 @@ storage_type:
     external-r: External (read-only)
     video: Video
 
+plugin_type:
+    integration: Integration
+    translation: Translation
+
 production_status:
     announced: Announced
     ongoing: Ongoing
@@ -115,6 +119,7 @@ settings:
     title: Settings — AnimeDB
     heading: Settings
     labels_link: Labels
+    plugins_link: Plugins
     plugin_widgets_link: Plugin widgets
     language_label: Interface language
     locale:
@@ -156,6 +161,30 @@ settings_plugin_widgets:
     catalog:
         heading: Catalog
         empty: No widgets available for the catalog.
+
+settings_plugins:
+    title: Plugins — Settings — AnimeDB
+    back_link: ← Settings
+    heading: Plugins
+    widgets_link: Plugin widgets
+    installed_heading: Installed plugins
+    installed_empty: No plugins installed yet.
+    name_column: Name
+    id_column: Id
+    version_column: Version
+    type_column: Type
+    install_heading: Install from ZIP
+    install_file_label: Plugin ZIP archive
+    third_party_warning: This plugin comes from a third-party source and has not passed marketplace review. Install it at your own risk?
+    confirm_button: I understand, install
+    install_button: Install
+    install_success: 'Plugin "%pluginId%" has been installed.'
+    install_error_no_file: Choose a ZIP archive of the plugin to install.
+    install_error_incompatible_core: 'The plugin requires core version "%requiredCore%", the installed core version is "%currentCore%".'
+    install_error_syntax: 'Installation aborted: the plugin''s PHP files contain syntax errors:'
+    install_error_already_installed: 'Plugin "%pluginId%" is already installed.'
+    install_error_invalid_manifest: Invalid or missing manifest.json in the archive.
+    install_error_generic: 'Failed to install the plugin: %message%'
 
 anime_list:
     title: List — AnimeDB
