@@ -36,6 +36,7 @@ use App\Entity\MovieAnime;
 use App\Entity\ValueObject\PluginId;
 use App\Message\BackfillExternalIdMessage;
 use App\MessageHandler\BackfillExternalIdMessageHandler;
+use App\Repository\AnimeRepository;
 use App\Service\JobLock\JobLockService;
 use App\Service\JobLock\ProcessLivenessChecker;
 use App\Service\Plugin\PluginsConfigStore;
@@ -140,6 +141,7 @@ final class BackfillExternalIdMessageHandlerTest extends TestCase
         // No plugin registered under this id at all.
         $handler = new BackfillExternalIdMessageHandler(
             $this->entityManager,
+            new AnimeRepository($this->entityManager),
             $this->newJobLockService(),
             new SyncRegistry([], new PluginsConfigStore($this->pluginsConfigPath)),
             new NullLogger(),
@@ -231,6 +233,7 @@ final class BackfillExternalIdMessageHandlerTest extends TestCase
 
         return new BackfillExternalIdMessageHandler(
             $this->entityManager,
+            new AnimeRepository($this->entityManager),
             $this->newJobLockService($livenessChecker),
             $registry,
             new NullLogger(),

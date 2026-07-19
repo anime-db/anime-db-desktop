@@ -27,13 +27,12 @@ declare(strict_types=1);
 
 namespace App\MessageHandler;
 
-use App\Entity\Anime;
 use App\Entity\ValueObject\PluginId;
 use App\Message\BackfillExternalIdMessage;
+use App\Repository\AnimeRepository;
 use App\Service\JobLock\JobLockService;
 use App\Service\Plugin\SyncRegistry;
 use Doctrine\ORM\EntityManagerInterface;
-use Doctrine\ORM\Tools\Pagination\Paginator;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 
@@ -52,13 +51,14 @@ use Symfony\Component\Messenger\Attribute\AsMessageHandler;
  * won't return it and this is a silent no-op — same "nothing left to do" stance as
  * PushSyncMessageHandler's missing-anime case, not a failure worth retrying.
  *
- * The catalog is walked page by page (same LIMIT/OFFSET + EntityManager::clear() pattern as
- * AnimeReindexService::reindexAll(), for the same reason: never materialize the whole
- * catalog in memory at once) rather than filtered down to only-unresolved rows in SQL: a
- * plain full-table walk keeps pagination correct regardless of how many rows this batch
- * resolves (removing rows from the WHERE clause mid-walk would shift the OFFSET under a
- * fixed-size page). Rows that already carry a cached id for this plugin are skipped without
- * calling resolveExternalId() again. A single record's resolveExternalId() throwing is
+ * The catalog is walked page by page via {@see AnimeRepository::findPage()} (same
+ * LIMIT/OFFSET + EntityManager::clear() pattern as AnimeReindexService::reindexAll(), for the
+ * same reason: never materialize the whole catalog in memory at once) rather than filtered
+ * down to only-unresolved rows in SQL: a plain full-table walk keeps pagination correct
+ * regardless of how many rows this batch resolves (removing rows from the WHERE clause
+ * mid-walk would shift the OFFSET under a fixed-size page). Rows that already carry a cached
+ * id for this plugin are skipped without calling resolveExternalId() again. A single
+ * record's resolveExternalId() throwing is
  * logged and skipped, not fatal for the rest of the sweep; each page is flushed and the lock
  * heartbeat is refreshed before moving to the next one, so an interrupted run (crash, app
  * closed) never loses more than one page of progress and a re-dispatch of the same message
@@ -71,6 +71,7 @@ final class BackfillExternalIdMessageHandler
 
     public function __construct(
         private readonly EntityManagerInterface $entityManager,
+        private readonly AnimeRepository $animeRepository,
         private readonly JobLockService $jobLockService,
         private readonly SyncRegistry $syncRegistry,
         private readonly LoggerInterface $logger,
@@ -109,15 +110,7 @@ final class BackfillExternalIdMessageHandler
             $offset = 0;
 
             do {
-                $query = $this->entityManager->getRepository(Anime::class)->createQueryBuilder('a')
-                    ->leftJoin('a.sources', 'sources')->addSelect('sources')
-                    ->orderBy('a.id', 'ASC')
-                    ->setFirstResult($offset)
-                    ->setMaxResults(self::PAGE_SIZE)
-                    ->getQuery();
-
-                /** @var list<Anime> $page */
-                $page = [...new Paginator($query, fetchJoinCollection: true)];
+                $page = $this->animeRepository->findPage($offset, self::PAGE_SIZE);
 
                 foreach ($page as $anime) {
                     if (\array_key_exists((string) $pluginId, $anime->getMetadata()['external_id'] ?? [])) {

@@ -35,6 +35,7 @@ use App\Entity\ValueObject\PluginId;
 use App\Entity\ValueObject\Rating;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\QueryBuilder;
+use Doctrine\ORM\Tools\Pagination\Paginator;
 
 /**
  * Low-level query builder for the anime list (issue #74). It never accepts a raw column
@@ -210,6 +211,30 @@ class AnimeRepository
         }
 
         return $index;
+    }
+
+    /**
+     * A single page of the whole catalog, ordered by id, with $sources eagerly joined — what
+     * BackfillExternalIdMessageHandler (issue #258) walks page by page rather than loading the
+     * whole catalog into memory at once, same LIMIT/OFFSET + Paginator pattern as
+     * AnimeReindexService::reindexAll(). $sources is joined because Anime::getExternalId()
+     * resolves against it.
+     *
+     * @return list<Anime>
+     */
+    public function findPage(int $offset, int $limit): array
+    {
+        $query = $this->entityManager->getRepository(Anime::class)->createQueryBuilder('a')
+            ->leftJoin('a.sources', 'sources')->addSelect('sources')
+            ->orderBy('a.id', 'ASC')
+            ->setFirstResult($offset)
+            ->setMaxResults($limit)
+            ->getQuery();
+
+        /** @var list<Anime> $page */
+        $page = [...new Paginator($query, fetchJoinCollection: true)];
+
+        return $page;
     }
 
     /**
