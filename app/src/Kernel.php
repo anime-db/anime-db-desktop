@@ -27,6 +27,7 @@ declare(strict_types=1);
 
 namespace App;
 
+use App\Service\Plugin\DependencyInjection\Compiler\TagPluginServicesPass;
 use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\PluginLoader;
 use App\Service\Plugin\PluginsConfigStore;
@@ -35,6 +36,7 @@ use Monolog\Level;
 use Monolog\Logger;
 use Psr\Log\LoggerInterface;
 use Symfony\Bundle\FrameworkBundle\Kernel\MicroKernelTrait;
+use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
 use Symfony\Component\HttpKernel\Kernel as BaseKernel;
 use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
@@ -48,6 +50,7 @@ class Kernel extends BaseKernel
     }
 
     private ?PluginLoader $pluginLoader = null;
+    private ?InstalledPluginsRegistry $installedPluginsRegistry = null;
 
     public function getCacheDir(): string
     {
@@ -118,19 +121,39 @@ class Kernel extends BaseKernel
         }
     }
 
+    /**
+     * Registers {@see TagPluginServicesPass} (issue #278) so plugin services get their
+     * `app.filler`/`app.sync`/... tags at compile time, wherever their bundle declared them —
+     * unlike `_instanceof` in services.yaml, which only reaches services declared in that file.
+     */
+    public function build(ContainerBuilder $container): void
+    {
+        $container->addCompilerPass(new TagPluginServicesPass($this->installedPluginsRegistry()));
+    }
+
     private function pluginLoader(): PluginLoader
     {
         if (null === $this->pluginLoader) {
-            $pluginsDir = $_SERVER['PLUGINS_DIR'] ?? $this->getProjectDir().'/var/plugins';
-            $pluginsConfigPath = $_SERVER['PLUGINS_CONFIG_PATH'] ?? $this->getProjectDir().'/var/plugins.json';
-
-            $logger = $this->pluginLoaderLogger();
-            $registry = new InstalledPluginsRegistry($pluginsDir, new PluginsConfigStore($pluginsConfigPath), $logger);
-
-            $this->pluginLoader = new PluginLoader($registry, $logger);
+            $this->pluginLoader = new PluginLoader($this->installedPluginsRegistry(), $this->pluginLoaderLogger());
         }
 
         return $this->pluginLoader;
+    }
+
+    private function installedPluginsRegistry(): InstalledPluginsRegistry
+    {
+        if (null === $this->installedPluginsRegistry) {
+            $pluginsDir = $_SERVER['PLUGINS_DIR'] ?? $this->getProjectDir().'/var/plugins';
+            $pluginsConfigPath = $_SERVER['PLUGINS_CONFIG_PATH'] ?? $this->getProjectDir().'/var/plugins.json';
+
+            $this->installedPluginsRegistry = new InstalledPluginsRegistry(
+                $pluginsDir,
+                new PluginsConfigStore($pluginsConfigPath),
+                $this->pluginLoaderLogger(),
+            );
+        }
+
+        return $this->installedPluginsRegistry;
     }
 
     /**

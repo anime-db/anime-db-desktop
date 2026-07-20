@@ -34,10 +34,10 @@ use Symfony\Component\DependencyInjection\Attribute\AutowireIterator;
 /**
  * Lists installed, active {@see SyncInterface} plugins for the background push/pull flows
  * (issues #214/#215), which need either one already-known plugin or every active one to run
- * the periodic sync over. Same `_instanceof`-tagging and `indexAttribute: 'id'` convention as
+ * the periodic sync over. Same compiler-pass tagging and `indexAttribute: 'id'` convention as
  * {@see FillerRegistry} — see that class for why `SyncInterface` cannot carry
- * `#[AutoconfigureTag]` itself and why the iterable is keyed by each plugin's own DI service id
- * (its {@see PluginId}).
+ * `#[AutoconfigureTag]` itself and why the iterable is keyed by each plugin's own
+ * {@see PluginId}.
  *
  * Unlike filler/widgets, sync defaults to *off*: it pushes/pulls the user's list to an external
  * service, which touches privacy and requires credentials, so it only runs once the user opts
