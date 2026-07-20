@@ -28,11 +28,17 @@ declare(strict_types=1);
 namespace App\Entity\Enum;
 
 /**
- * What a SyncReviewItem is flagging. Only PotentialDuplicate exists so far (issue #216b's
- * cross-vendor dedup detector). Issue #217 (source-side removal) will add DeletedFromSource /
- * DeletionConflict cases onto the same store.
+ * What a SyncReviewItem is flagging:
+ * - PotentialDuplicate — cross-vendor dedup heuristic (issue #216b);
+ * - DeletedFromSource / DeletionConflict — a title that disappeared from the user's list on a
+ *   source, never auto-deleted, flagged for the user to decide (issue #217).
+ *
+ * No CHECK constraint pins these values in the migration (SQLite can't ALTER one), so adding a
+ * case here is enough — the enumType column validates at the app layer.
  */
 enum SyncReviewItemKind: string
 {
     case PotentialDuplicate = 'potential_duplicate';
+    case DeletedFromSource = 'deleted_from_source';
+    case DeletionConflict = 'deletion_conflict';
 }

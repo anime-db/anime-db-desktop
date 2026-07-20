@@ -36,6 +36,7 @@ use AnimeDb\PluginContracts\SyncStatus;
 use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
 use App\Entity\Anime;
+use App\Entity\Enum\SyncReviewItemKind;
 use App\Entity\Enum\WatchStatus;
 use App\Entity\SyncReviewItem;
 use App\Entity\TvAnime;
@@ -49,9 +50,11 @@ use App\Service\Plugin\Filler\PluginMediaDownloaderInterface;
 use App\Service\Plugin\FillerRegistry;
 use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Plugin\PullSyncService;
+use App\Service\Plugin\SyncRegistry;
 use App\Service\Search\AnimeSearchMatch;
 use App\Service\Search\AnimeSearchResolver;
 use App\Service\Sync\CrossVendorDuplicateDetector;
+use App\Service\Sync\DeletedFromSourceDetector;
 use App\Service\Sync\SyncReviewService;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Types\Type;
@@ -117,7 +120,15 @@ final class PullSyncServiceTest extends TestCase
             new SyncReviewService(new SyncReviewItemRepository($entityManager)),
         );
 
-        return new PullSyncService($entityManager, $animeRepository, $bulkFillerService, $duplicateDetector);
+        // Empty SyncRegistry — no other active sync plugin, so a removed record without storage
+        // is flagged as deleted_from_source (never a conflict) here; the conflict branch and
+        // storage protection are covered in DeletedFromSourceDetectorTest.
+        $deletionDetector = new DeletedFromSourceDetector(
+            new SyncRegistry([], new PluginsConfigStore(sys_get_temp_dir().'/anime-pull-sync-reg-'.uniqid().'.json')),
+            new SyncReviewService(new SyncReviewItemRepository($entityManager)),
+        );
+
+        return new PullSyncService($entityManager, $animeRepository, $bulkFillerService, $duplicateDetector, $deletionDetector);
     }
 
     /**
@@ -261,7 +272,11 @@ final class PullSyncServiceTest extends TestCase
             $resolver,
             new SyncReviewService(new SyncReviewItemRepository($this->entityManager)),
         );
-        $service = new PullSyncService($this->entityManager, new AnimeRepository($this->entityManager), $bulkFillerService, $duplicateDetector);
+        $deletionDetector = new DeletedFromSourceDetector(
+            new SyncRegistry([], new PluginsConfigStore(sys_get_temp_dir().'/anime-pull-sync-reg-'.uniqid().'.json')),
+            new SyncReviewService(new SyncReviewItemRepository($this->entityManager)),
+        );
+        $service = new PullSyncService($this->entityManager, new AnimeRepository($this->entityManager), $bulkFillerService, $duplicateDetector, $deletionDetector);
 
         $sync = $this->syncFillerStub(
             [new SyncItem('42', SyncStatus::Plan, 'Trigun')],
@@ -277,6 +292,23 @@ final class PullSyncServiceTest extends TestCase
         $items = $this->entityManager->getRepository(SyncReviewItem::class)->findAll();
         $this->assertCount(1, $items);
         $this->assertSame(['anime_ids' => [$existing->id, $created[0]->id]], $items[0]->payload);
+    }
+
+    public function testARecordGoneFromTheSourceListIsFlaggedForReview(): void
+    {
+        $anime = new TvAnime();
+        $anime->setTitle('Trigun')->setWatchStatus(WatchStatus::Plan);
+        $anime->rememberExternalId($this->pluginId, '77');
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+
+        // The source no longer lists this title (empty pull) — it is flagged, never deleted.
+        $this->service->pull($this->pluginId, $this->syncFillerStub([], data: null));
+
+        $items = $this->entityManager->getRepository(SyncReviewItem::class)->findAll();
+        $this->assertCount(1, $items);
+        $this->assertSame(SyncReviewItemKind::DeletedFromSource, $items[0]->kind);
+        $this->assertSame(['anime_id' => $anime->id, 'deleted_from' => 'animedb-shikimori'], $items[0]->payload);
     }
 
     public function testRepeatedPullOfTheSameListNeverDuplicatesARow(): void

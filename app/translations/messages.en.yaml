@@ -169,6 +169,8 @@ settings_sync_review:
     heading: Requires attention
     empty: Nothing needs attention right now.
     kind_potential_duplicate: Potential duplicate
+    kind_deleted_from_source: 'Removed from the list on source "%source%"'
+    kind_deletion_conflict: 'Conflict: removed on "%source%" but still listed on: %others%'
     resolve_button: Resolve
 
 settings_plugins:

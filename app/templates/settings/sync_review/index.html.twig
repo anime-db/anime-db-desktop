@@ -39,6 +39,16 @@
                                 <li><a href="{{ path('anime_show', {id: anime.id}) }}">{{ anime.title }}</a></li>
                             {% endfor %}
                         </ul>
+                    {% elseif deletionDetails[item.id] is defined %}
+                        {% set detail = deletionDetails[item.id] %}
+                        {% if item.kind.value == 'deletion_conflict' %}
+                            <p>{{ 'settings_sync_review.kind_deletion_conflict'|trans({'%source%': detail.deletedFrom, '%others%': detail.stillPresentOn|join(', ')}) }}</p>
+                        {% else %}
+                            <p>{{ 'settings_sync_review.kind_deleted_from_source'|trans({'%source%': detail.deletedFrom}) }}</p>
+                        {% endif %}
+                        {% if detail.anime is not null %}
+                            <a href="{{ path('anime_show', {id: detail.anime.id}) }}">{{ detail.anime.title }}</a>
+                        {% endif %}
                     {% endif %}
 
                     <form method="post" action="{{ path('settings_sync_review_resolve', {id: item.id}) }}">

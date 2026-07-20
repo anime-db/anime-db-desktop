@@ -169,6 +169,8 @@ settings_sync_review:
     heading: Требует внимания
     empty: Нет элементов, требующих внимания.
     kind_potential_duplicate: Возможный дубликат
+    kind_deleted_from_source: 'Удалено из списка на источнике «%source%»'
+    kind_deletion_conflict: 'Конфликт: удалено на «%source%», но ещё в списке на: %others%'
     resolve_button: Разобрано
 
 settings_plugins:
