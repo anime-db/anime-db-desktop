@@ -101,7 +101,7 @@ final class StorageScanConfirmControllerTest extends TestCase
             new StorageMarkerService($this->entityManager),
             new FilenameCleaner(),
             new OrphanAnimeMatcher($animeRepository),
-            new SearchByPluginChain([new NullSearchByPlugin()]),
+            new SearchByPluginChain(['test-plugin' => new NullSearchByPlugin()], new PluginsConfigStore('')),
             $animeRepository,
             $this->entityManager,
             new BulkFillerService(

@@ -29,6 +29,7 @@ namespace App\Tests\Unit\Service\Storage\Search;
 
 use AnimeDb\PluginContracts\SearchByPluginCandidate;
 use AnimeDb\PluginContracts\SearchByPluginInterface;
+use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Storage\Search\NullSearchByPlugin;
 use App\Service\Storage\Search\SearchByPluginChain;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -36,6 +37,22 @@ use PHPUnit\Framework\TestCase;
 
 final class SearchByPluginChainTest extends TestCase
 {
+    private string $path;
+
+    protected function setUp(): void
+    {
+        $this->path = sys_get_temp_dir().'/anime-plugins-test-'.uniqid().'.json';
+    }
+
+    protected function tearDown(): void
+    {
+        foreach ([$this->path, $this->path.'.tmp', $this->path.'.lock'] as $file) {
+            if (is_file($file)) {
+                unlink($file);
+            }
+        }
+    }
+
     /**
      * @return array<string, array{string}>
      */
@@ -51,7 +68,10 @@ final class SearchByPluginChainTest extends TestCase
     #[DataProvider('provideNames')]
     public function testFindReturnsEmptyListWhenOnlyNoOpPluginIsRegistered(string $name): void
     {
-        $chain = new SearchByPluginChain([new NullSearchByPlugin()]);
+        $chain = new SearchByPluginChain(
+            ['animedb-null' => new NullSearchByPlugin()],
+            new PluginsConfigStore($this->path),
+        );
 
         $this->assertSame([], $chain->find($name));
     }
@@ -66,7 +86,10 @@ final class SearchByPluginChainTest extends TestCase
         $second = $this->createMock(SearchByPluginInterface::class);
         $second->expects($this->never())->method('find');
 
-        $chain = new SearchByPluginChain([$first, $second]);
+        $chain = new SearchByPluginChain(
+            ['animedb-shikimori' => $first, 'animedb-anilist' => $second],
+            new PluginsConfigStore($this->path),
+        );
 
         $this->assertSame($expected, $chain->find('Bleach'));
     }
@@ -81,7 +104,10 @@ final class SearchByPluginChainTest extends TestCase
         $plugin = $this->createStub(SearchByPluginInterface::class);
         $plugin->method('find')->willReturn($expected);
 
-        $chain = new SearchByPluginChain([$plugin]);
+        $chain = new SearchByPluginChain(
+            ['animedb-shikimori' => $plugin],
+            new PluginsConfigStore($this->path),
+        );
 
         $this->assertSame($expected, $chain->find('Bleach'));
     }
@@ -96,7 +122,85 @@ final class SearchByPluginChainTest extends TestCase
         $second = $this->createStub(SearchByPluginInterface::class);
         $second->method('find')->willReturn($expected);
 
-        $chain = new SearchByPluginChain([$first, $second]);
+        $chain = new SearchByPluginChain(
+            ['animedb-shikimori' => $first, 'animedb-anilist' => $second],
+            new PluginsConfigStore($this->path),
+        );
+
+        $this->assertSame($expected, $chain->find('Bleach'));
+    }
+
+    public function testFindSkipsPluginWithFillerDisabledViaFeaturesFiller(): void
+    {
+        file_put_contents($this->path, json_encode([
+            'animedb-shikimori' => ['features' => ['filler' => false]],
+        ]));
+
+        $disabled = $this->createMock(SearchByPluginInterface::class);
+        $disabled->expects($this->never())->method('find');
+
+        $chain = new SearchByPluginChain(
+            ['animedb-shikimori' => $disabled],
+            new PluginsConfigStore($this->path),
+        );
+
+        $this->assertSame([], $chain->find('Bleach'));
+    }
+
+    public function testFindStillTriesAPluginWithFillerExplicitlyEnabled(): void
+    {
+        $expected = [new SearchByPluginCandidate('animedb-shikimori', 'Bleach', '104')];
+
+        file_put_contents($this->path, json_encode([
+            'animedb-shikimori' => ['features' => ['filler' => true]],
+        ]));
+
+        $plugin = $this->createStub(SearchByPluginInterface::class);
+        $plugin->method('find')->willReturn($expected);
+
+        $chain = new SearchByPluginChain(
+            ['animedb-shikimori' => $plugin],
+            new PluginsConfigStore($this->path),
+        );
+
+        $this->assertSame($expected, $chain->find('Bleach'));
+    }
+
+    public function testFindStillTriesAPluginWithoutRecordedFillerSettings(): void
+    {
+        $expected = [new SearchByPluginCandidate('animedb-shikimori', 'Bleach', '104')];
+
+        $plugin = $this->createStub(SearchByPluginInterface::class);
+        $plugin->method('find')->willReturn($expected);
+
+        $chain = new SearchByPluginChain(
+            ['animedb-shikimori' => $plugin],
+            new PluginsConfigStore($this->path),
+        );
+
+        $this->assertSame($expected, $chain->find('Bleach'));
+    }
+
+    public function testFindStillTriesAPureSearchPluginEvenWhenOtherPluginsFillerIsDisabled(): void
+    {
+        $expected = [new SearchByPluginCandidate('animedb-mal', 'Bleach', '104')];
+
+        file_put_contents($this->path, json_encode([
+            'animedb-shikimori' => ['features' => ['filler' => false]],
+        ]));
+
+        $disabled = $this->createMock(SearchByPluginInterface::class);
+        $disabled->expects($this->never())->method('find');
+
+        // Pure search plugin: not registered in plugins.json at all, so features.filler ?? true
+        // resolves to true regardless of it never exposing a filler toggle.
+        $pureSearch = $this->createStub(SearchByPluginInterface::class);
+        $pureSearch->method('find')->willReturn($expected);
+
+        $chain = new SearchByPluginChain(
+            ['animedb-shikimori' => $disabled, 'animedb-mal' => $pureSearch],
+            new PluginsConfigStore($this->path),
+        );
 
         $this->assertSame($expected, $chain->find('Bleach'));
     }
