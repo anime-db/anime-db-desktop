@@ -144,6 +144,19 @@ final class DeletedFromSourceDetectorTest extends TestCase
         $this->assertSame(SyncReviewItemKind::DeletedFromSource, $items[0]->kind);
     }
 
+    public function testAlreadyFlaggedRecordIsNotFlaggedAgainOnARepeatedRun(): void
+    {
+        $anime = $this->persistAnime(['animedb-shikimori' => '10']);
+        $this->entityManager->flush();
+
+        $detector = $this->detector(new SyncRegistry([], $this->store([])));
+        // Two consecutive pulls where the title stays gone from the source — flagged once only.
+        $detector->detect($this->pluginId, ['10' => $anime]);
+        $detector->detect($this->pluginId, ['10' => $anime]);
+
+        $this->assertCount(1, $this->reviewItems());
+    }
+
     private function detector(SyncRegistry $registry): DeletedFromSourceDetector
     {
         return new DeletedFromSourceDetector(

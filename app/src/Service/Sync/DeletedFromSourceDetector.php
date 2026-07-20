@@ -63,6 +63,16 @@ final class DeletedFromSourceDetector
      */
     public function detect(PluginId $pluginId, array $disappeared): void
     {
+        if ($disappeared === []) {
+            return;
+        }
+
+        // pull() runs periodically, and a flagged removal keeps the local record (and its
+        // metadata link) untouched, so the same record would re-appear in $disappeared on every
+        // later run. Skip anything already flagged for this plugin and still unresolved, so a
+        // periodic pull does not pile up duplicate review items.
+        $alreadyFlagged = $this->alreadyFlaggedFor($pluginId);
+
         foreach ($disappeared as $anime) {
             // Hard protection: a storage-backed record is never touched and never listed.
             if ($anime->getStorage() !== null) {
@@ -70,6 +80,10 @@ final class DeletedFromSourceDetector
             }
 
             $id = $anime->id ?? throw new \LogicException('Anime must have an id at this point in its lifecycle.');
+            if (isset($alreadyFlagged[$id])) {
+                continue;
+            }
+
             $stillPresentOn = $this->stillPresentOn($anime, $pluginId);
 
             $payload = ['anime_id' => $id, 'deleted_from' => (string) $pluginId];
@@ -81,6 +95,28 @@ final class DeletedFromSourceDetector
                 $this->reviewService->create(SyncReviewItemKind::DeletionConflict, $payload);
             }
         }
+    }
+
+    /**
+     * Anime ids that already have an unresolved removal/conflict item raised for this plugin.
+     *
+     * @return array<int, true>
+     */
+    private function alreadyFlaggedFor(PluginId $pluginId): array
+    {
+        $flagged = [];
+        foreach ($this->reviewService->findUnresolved() as $item) {
+            $animeId = $item->payload['anime_id'] ?? null;
+
+            if (\in_array($item->kind, [SyncReviewItemKind::DeletedFromSource, SyncReviewItemKind::DeletionConflict], true)
+                && ($item->payload['deleted_from'] ?? null) === (string) $pluginId
+                && \is_int($animeId)
+            ) {
+                $flagged[$animeId] = true;
+            }
+        }
+
+        return $flagged;
     }
 
     /**
