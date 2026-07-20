@@ -78,24 +78,16 @@ services:
             $locales: '%app.locales%'
             $sampleCoversDir: '%app.sample_covers_dir%'
 
-    # AnimeDb\PluginContracts\FillerInterface lives in the read-only anime-db/plugin-contracts
-    # package, so it cannot carry #[AutoconfigureTag] itself the way a local interface does —
-    # _instanceof tags it here instead, for App\Service\Plugin\FillerRegistry to autowire via
-    # #[AutowireIterator]. EntryWidgetInterface/CatalogWidgetInterface (issue #212),
-    # SyncInterface (issue #256) and SearchByPluginInterface (issue #233, for
-    # App\Service\Storage\Search\SearchByPluginChain — FillerInterface extends it, so a Filler
-    # plugin gets both tags) are tagged the same way.
-    _instanceof:
-        AnimeDb\PluginContracts\FillerInterface:
-            tags: ['app.filler']
-        AnimeDb\PluginContracts\SearchByPluginInterface:
-            tags: ['app.search_by_plugin']
-        AnimeDb\PluginContracts\EntryWidgetInterface:
-            tags: ['app.entry_widget']
-        AnimeDb\PluginContracts\CatalogWidgetInterface:
-            tags: ['app.catalog_widget']
-        AnimeDb\PluginContracts\SyncInterface:
-            tags: ['app.sync']
+    # AnimeDb\PluginContracts\FillerInterface/SearchByPluginInterface/EntryWidgetInterface/
+    # CatalogWidgetInterface/SyncInterface all live in the read-only anime-db/plugin-contracts
+    # package, so they cannot carry #[AutoconfigureTag] themselves the way a local interface does.
+    # _instanceof would only tag services declared in *this* file though, and plugin services are
+    # declared in each plugin bundle's own DI config, loaded separately on boot (issue #218) — so
+    # tagging them (app.filler/app.search_by_plugin/app.entry_widget/app.catalog_widget/app.sync,
+    # each with an `id` attribute equal to the plugin's id) is done by
+    # App\Service\Plugin\DependencyInjection\Compiler\TagPluginServicesPass instead (issue #278),
+    # registered in App\Kernel::build(). Nothing in this file needs those tags today; add an
+    # _instanceof entry here if a host-internal service ever implements one of these interfaces.
 
     # makes classes in src/ available to be used as services
     # this creates a service per class whose id is the fully-qualified class name

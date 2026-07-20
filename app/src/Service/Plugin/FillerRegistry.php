@@ -39,19 +39,15 @@ use Symfony\Component\DependencyInjection\Attribute\AutowireIterator;
  *
  * `FillerInterface` lives in the read-only `anime-db/plugin-contracts` package, so it cannot
  * carry `#[AutoconfigureTag]` the way the local {@see \App\Service\Storage\Search\SearchByPluginInterface}
- * does — tagging is done declaratively in services.yaml instead, via `_instanceof`.
+ * does — it is tagged 'app.filler' at compile time instead, by
+ * {@see DependencyInjection\Compiler\TagPluginServicesPass} (issue #278).
  *
- * `indexAttribute: 'id'` keys the injected iterable by each filler's own DI service id.
- * Neither `PluginInterface` nor `FillerInterface` exposes a way to ask an arbitrary instance
- * for its own {@see PluginId} — the closest thing, `resolveExternalId()`, resolves an id on an
- * external source from catalog URLs, not the plugin's own identity. The tag itself carries no
- * `id` attribute (see services.yaml), so Symfony falls back to indexing by service id; the
- * plugin manager (issues #218/#220-224, not implemented yet), which is what will actually
- * register a real plugin's Filler service into the container, is expected to register it under
- * a service id equal to its `PluginId` (e.g. "animedb-shikimori"), matching the same string
- * {@see PluginsConfigStore} already keys `plugins.json` by. Until then this iterable is simply
- * empty in production — Stage 4 plugins join by implementing FillerInterface, no change needed
- * here.
+ * `indexAttribute: 'id'` keys the injected iterable by each filler's own {@see PluginId}: the
+ * compiler pass derives it from the plugin's namespace and puts it on the tag as the `id`
+ * attribute, matching the same string {@see PluginsConfigStore} already keys `plugins.json` by.
+ * Neither `PluginInterface` nor `FillerInterface` exposes a way to ask an arbitrary instance for
+ * its own `PluginId` directly — the closest thing, `resolveExternalId()`, resolves an id on an
+ * external source from catalog URLs, not the plugin's own identity.
  */
 final class FillerRegistry
 {

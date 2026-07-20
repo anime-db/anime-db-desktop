@@ -45,11 +45,13 @@ use Symfony\Component\HttpKernel\Bundle\BundleInterface;
  *   search paths.
  *
  * `manifest.json` intentionally carries neither a namespace nor a bundle class name
- * (`AnimeDb\PluginContracts\Manifest\Manifest` has no such field) — both are derived here,
- * deterministically, from the plugin id: "vendor-name" becomes namespace
- * `AnimeDb\Plugins\VendorName`, bundle class `AnimeDb\Plugins\VendorName\VendorNameBundle`,
- * loaded from `<installPath>/src/`. Keeping the convention in this one place means it can
- * still change later without touching callers.
+ * (`AnimeDb\PluginContracts\Manifest\Manifest` has no such field) — both are derived,
+ * deterministically, from the plugin id via {@see PluginNamespace}: "vendor-name" becomes
+ * namespace `AnimeDb\Plugins\VendorName`, bundle class `AnimeDb\Plugins\VendorName\VendorNameBundle`,
+ * loaded from `<installPath>/src/`. Keeping the convention in one place means it can still
+ * change later without touching callers — including
+ * {@see DependencyInjection\Compiler\TagPluginServicesPass} (issue #278),
+ * which matches a plugin service's class the same way.
  *
  * A plugin that fails to load (missing `src/`, missing/invalid bundle class, missing
  * `translations/`) is skipped and logged, not fatal for the rest — same policy as
@@ -262,11 +264,11 @@ final class PluginLoader
 
     private function studlyId(InstalledPlugin $plugin): string
     {
-        return str_replace('-', '', ucwords((string) $plugin->id, '-'));
+        return PluginNamespace::studlyId($plugin->id);
     }
 
     private function namespacePrefix(InstalledPlugin $plugin): string
     {
-        return 'AnimeDb\\Plugins\\'.$this->studlyId($plugin).'\\';
+        return PluginNamespace::prefix($plugin->id);
     }
 }
