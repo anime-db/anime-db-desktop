@@ -28,6 +28,7 @@ declare(strict_types=1);
 namespace App\Controller\Settings;
 
 use App\Entity\Anime;
+use App\Entity\Enum\SyncReviewItemKind;
 use App\Entity\SyncReviewItem;
 use App\Repository\AnimeRepository;
 use App\Service\Sync\SyncReviewService;
@@ -66,6 +67,7 @@ final class SyncReviewController
         return new Response($this->twig->render('settings/sync_review/index.html.twig', [
             'items' => $items,
             'duplicateClusters' => $this->duplicateClusters($items),
+            'deletionDetails' => $this->deletionDetails($items),
         ]));
     }
 
@@ -81,9 +83,9 @@ final class SyncReviewController
 
     /**
      * Resolves each item's payload anime_ids to Anime entities for display. Only
-     * SyncReviewItemKind::PotentialDuplicate carries anime_ids today, so other kinds simply
-     * resolve to an empty cluster here — no per-kind branching needed until a kind with a
-     * different payload shape actually exists (issue #217).
+     * SyncReviewItemKind::PotentialDuplicate carries anime_ids; deletion kinds (issue #217) carry
+     * a single anime_id instead and are resolved by {@see self::deletionDetails()}, so they
+     * simply resolve to an empty cluster here.
      *
      * @param SyncReviewItem[] $items
      *
@@ -106,6 +108,38 @@ final class SyncReviewController
         }
 
         return $clusters;
+    }
+
+    /**
+     * Display data for source-side removal items (issue #217): the affected Anime plus the source
+     * it was removed from and the still-linked sources, from the item's payload.
+     *
+     * @param SyncReviewItem[] $items
+     *
+     * @return array<int, array{anime: ?Anime, deletedFrom: string, stillPresentOn: list<string>}>
+     */
+    private function deletionDetails(array $items): array
+    {
+        $details = [];
+        foreach ($items as $item) {
+            if (!\in_array($item->kind, [SyncReviewItemKind::DeletedFromSource, SyncReviewItemKind::DeletionConflict], true)) {
+                continue;
+            }
+
+            $id = $item->id ?? throw new \LogicException('SyncReviewItem id must be set after persisting');
+            $animeId = $item->payload['anime_id'] ?? null;
+
+            /** @var list<string> $stillPresentOn */
+            $stillPresentOn = $item->payload['still_present_on'] ?? [];
+
+            $details[$id] = [
+                'anime' => \is_int($animeId) ? ($this->animeRepository->findByIds([$animeId])[$animeId] ?? null) : null,
+                'deletedFrom' => (string) ($item->payload['deleted_from'] ?? ''),
+                'stillPresentOn' => $stillPresentOn,
+            ];
+        }
+
+        return $details;
     }
 
     private function assertValidCsrfToken(string $tokenId, Request $request): void

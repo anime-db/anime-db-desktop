@@ -34,6 +34,7 @@ use App\Entity\ValueObject\PluginId;
 use App\Repository\AnimeRepository;
 use App\Service\Plugin\Filler\BulkFillerService;
 use App\Service\Sync\CrossVendorDuplicateDetector;
+use App\Service\Sync\DeletedFromSourceDetector;
 use Doctrine\ORM\EntityManagerInterface;
 
 /**
@@ -82,6 +83,7 @@ final class PullSyncService
         private readonly AnimeRepository $animeRepository,
         private readonly BulkFillerService $bulkFillerService,
         private readonly CrossVendorDuplicateDetector $duplicateDetector,
+        private readonly DeletedFromSourceDetector $deletionDetector,
     ) {
     }
 
@@ -90,8 +92,11 @@ final class PullSyncService
         $byExternalId = $this->animeRepository->indexByExternalId($pluginId);
         /** @var list<Anime> $newlyCreated */
         $newlyCreated = [];
+        /** @var array<string, true> $presentExternalIds external ids still in the source's list */
+        $presentExternalIds = [];
 
         foreach ($sync->pull() as $item) {
+            $presentExternalIds[$item->externalId] = true;
             $anime = $byExternalId[$item->externalId] ?? null;
 
             if ($anime === null) {
@@ -124,5 +129,11 @@ final class PullSyncService
         foreach ($newlyCreated as $anime) {
             $this->duplicateDetector->detect($anime);
         }
+
+        // Records this plugin synced before but that are no longer in its list — never deleted
+        // automatically, flagged for review (issue #217). Newly created items are keyed in
+        // $byExternalId and are present in $presentExternalIds, so they never count as removed.
+        $disappeared = array_diff_key($byExternalId, $presentExternalIds);
+        $this->deletionDetector->detect($pluginId, $disappeared);
     }
 }

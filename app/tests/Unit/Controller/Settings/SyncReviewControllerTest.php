@@ -103,6 +103,42 @@ final class SyncReviewControllerTest extends TestCase
         $this->assertSame(200, $response->getStatusCode());
     }
 
+    public function testIndexPassesDeletionDetailsToTemplate(): void
+    {
+        $item = new SyncReviewItem(SyncReviewItemKind::DeletionConflict, [
+            'anime_id' => 7,
+            'deleted_from' => 'animedb-shikimori',
+            'still_present_on' => ['animedb-mal'],
+        ]);
+        (new \ReflectionProperty(SyncReviewItem::class, 'id'))->setValue($item, 20);
+
+        $anime = new TvAnime();
+        $anime->setTitle('Trigun');
+        (new \ReflectionProperty(Anime::class, 'id'))->setValue($anime, 7);
+
+        $syncReviewItemRepository = $this->createStub(SyncReviewItemRepository::class);
+        $syncReviewItemRepository->method('findAllUnresolvedOrderedByCreatedAt')->willReturn([$item]);
+
+        $animeRepository = $this->createStub(AnimeRepository::class);
+        $animeRepository->method('findByIds')->willReturnCallback(
+            static fn (array $ids): array => $ids === [7] ? [7 => $anime] : [],
+        );
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('settings/sync_review/index.html.twig', $this->callback(
+                static fn (array $params): bool => [$item] === $params['items']
+                    && [20 => []] === $params['duplicateClusters']
+                    && [20 => ['anime' => $anime, 'deletedFrom' => 'animedb-shikimori', 'stillPresentOn' => ['animedb-mal']]] === $params['deletionDetails'],
+            ))
+            ->willReturn('<html></html>');
+
+        $controller = $this->createController(syncReviewItemRepository: $syncReviewItemRepository, animeRepository: $animeRepository, twig: $twig);
+
+        $this->assertSame(200, $controller->index()->getStatusCode());
+    }
+
     public function testResolveMarksItemResolvedAndRedirectsToIndex(): void
     {
         $item = new SyncReviewItem(SyncReviewItemKind::PotentialDuplicate, ['anime_ids' => [1, 2]]);
