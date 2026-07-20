@@ -55,11 +55,11 @@ final class DeletedFromSourceDetector
     }
 
     /**
-     * @param array<array-key, Anime> $disappeared local records this plugin synced before but
-     *                                              that are absent from its current pull() list
-     *                                              (keyed by external_id — numeric ids become int
-     *                                              keys, so the key type is left open; only the
-     *                                              values are used)
+     * $disappeared holds the local records this plugin synced before but that are absent from its
+     * current pull() list. It is keyed by external_id — numeric ids become int keys, so the key
+     * type is left open; only the values are used.
+     *
+     * @param array<array-key, Anime> $disappeared
      */
     public function detect(PluginId $pluginId, array $disappeared): void
     {
