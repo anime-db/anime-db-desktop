@@ -96,3 +96,4 @@ JS (из корня репозитория): `npm run lint` / `npm run lint:fix`
 
 - Ветка по умолчанию: `master`
 - Трекер задач: workspace [`/var/www/anime-db-workspace`](https://github.com/openronin/anime-db-workspace) — `tasks/` и `roadmap/`
+- Автоматическое ИИ-ревью каждого PR — `.github/workflows/claude-review.yml` (auth через секрет `CLAUDE_CODE_OAUTH_TOKEN` из подписки Max). Детали и настройка — [.claude-docs/decisions.md](.claude-docs/decisions.md)
