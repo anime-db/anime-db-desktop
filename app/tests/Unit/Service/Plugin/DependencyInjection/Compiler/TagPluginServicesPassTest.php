@@ -101,6 +101,21 @@ final class TagPluginServicesPassTest extends TestCase
         $this->assertSame([], $definition->getTag('app.search_by_plugin'));
     }
 
+    public function testDoesNotAutoloadNonPluginServiceWithMissingDependency(): void
+    {
+        $this->writeManifest('fake-vendor');
+        $brokenClass = $this->registerBrokenNonPluginServiceAutoloader();
+
+        $container = new ContainerBuilder();
+        $container->register(FakeFiller::class, FakeFiller::class);
+        $container->register($brokenClass, $brokenClass);
+
+        $this->pass()->process($container);
+
+        $definition = $container->getDefinition(FakeFiller::class);
+        $this->assertSame([['id' => 'fake-vendor']], $definition->getTag('app.filler'));
+    }
+
     public function testNoInstalledPluginsLeavesContainerUntagged(): void
     {
         $container = new ContainerBuilder();
@@ -138,6 +153,33 @@ final class TagPluginServicesPassTest extends TestCase
             'features' => ['filler' => true, 'sync' => true],
             'require' => ['core' => '>=2.0.0', 'php' => '>=8.2'],
         ]));
+    }
+
+    /**
+     * Writes a class outside any plugin namespace that `extends` a parent class which does not
+     * exist anywhere, and registers an autoloader for it, so that autoloading it (e.g. via
+     * `class_exists()`) fatals with a "Class not found" error — the same shape as the real
+     * `doctrine.orm.validator.unique` landmine from issue #287 (its class extends
+     * `Symfony\Component\Validator\ConstraintValidator`, from a package this app does not
+     * require). Generated at runtime into a temp file rather than a checked-in fixture so static
+     * analysis never has to resolve the intentionally-missing parent class.
+     */
+    private function registerBrokenNonPluginServiceAutoloader(): string
+    {
+        $class = 'App\\Tests\\Fixtures\\Plugin\\TagPluginServicesPass\\BrokenNonPluginService';
+        $path = $this->pluginsDir.'/BrokenNonPluginService.php';
+        file_put_contents($path, '<?php declare(strict_types=1);'
+            .' namespace App\Tests\Fixtures\Plugin\TagPluginServicesPass;'
+            .' final class BrokenNonPluginService'
+            .' extends \App\Tests\Fixtures\Plugin\TagPluginServicesPass\MissingParentClassThatDoesNotExist {}');
+
+        spl_autoload_register(static function (string $requested) use ($class, $path): void {
+            if ($requested === $class) {
+                require $path;
+            }
+        });
+
+        return $class;
     }
 
     private function removeDirectory(string $dir): void
