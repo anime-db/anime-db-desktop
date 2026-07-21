@@ -45,7 +45,6 @@ use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Storage\FilenameCleaner;
 use App\Service\Storage\OrphanAnimeMatcher;
 use App\Service\Storage\ScanStorageService;
-use App\Service\Storage\Search\NullSearchByPlugin;
 use App\Service\Storage\Search\SearchByPluginChain;
 use App\Service\Storage\StorageMarkerService;
 use App\Service\WsPublisher;
@@ -337,7 +336,7 @@ final class ScanStorageMessageHandlerTest extends TestCase
             $storageMarkerService,
             new FilenameCleaner(),
             new OrphanAnimeMatcher($animeRepository),
-            new SearchByPluginChain(['test-plugin' => new NullSearchByPlugin()], new PluginsConfigStore('')),
+            new SearchByPluginChain([], new PluginsConfigStore('')),
             $animeRepository,
             $this->entityManager,
             new BulkFillerService(

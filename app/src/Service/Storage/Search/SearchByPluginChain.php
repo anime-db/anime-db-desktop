@@ -39,9 +39,10 @@ use Symfony\Component\DependencyInjection\Attribute\AutowireIterator;
  * first one that reports anything at all — the remaining implementations are never consulted,
  * so callers must not assume a "better" match further down the chain would have been considered.
  * That first non-empty list is returned as-is, ambiguity and all: this chain only picks which
- * plugin to trust, it does not resolve how many candidates that plugin found. Currently resolves
- * to a chain of one ({@see NullSearchByPlugin}); Stage 4 plugins join by implementing the
- * interface, with no change needed here or in the storage scan that calls this service.
+ * plugin to trust, it does not resolve how many candidates that plugin found. The chain is empty
+ * until a search or filler plugin is installed, in which case find() returns [] straight away;
+ * Stage 4 plugins join by implementing the interface, with no change needed here or in the
+ * storage scan that calls this service.
  *
  * `SearchByPluginInterface` lives in the read-only `anime-db/plugin-contracts` package, so it
  * cannot carry `#[AutoconfigureTag]` itself — it is tagged 'app.search_by_plugin' at compile time

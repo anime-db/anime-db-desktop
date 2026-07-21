@@ -30,7 +30,6 @@ namespace App\Tests\Unit\Service\Storage\Search;
 use AnimeDb\PluginContracts\SearchByPluginCandidate;
 use AnimeDb\PluginContracts\SearchByPluginInterface;
 use App\Service\Plugin\PluginsConfigStore;
-use App\Service\Storage\Search\NullSearchByPlugin;
 use App\Service\Storage\Search\SearchByPluginChain;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -66,10 +65,10 @@ final class SearchByPluginChainTest extends TestCase
     }
 
     #[DataProvider('provideNames')]
-    public function testFindReturnsEmptyListWhenOnlyNoOpPluginIsRegistered(string $name): void
+    public function testFindReturnsEmptyListWhenChainIsEmpty(string $name): void
     {
         $chain = new SearchByPluginChain(
-            ['animedb-null' => new NullSearchByPlugin()],
+            [],
             new PluginsConfigStore($this->path),
         );
 
