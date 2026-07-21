@@ -55,7 +55,6 @@ use App\Service\Storage\OrphanAnimeMatcher;
 use App\Service\Storage\Scan\ScanCandidate;
 use App\Service\Storage\Scan\ScanItemType;
 use App\Service\Storage\ScanStorageService;
-use App\Service\Storage\Search\NullSearchByPlugin;
 use App\Service\Storage\Search\SearchByPluginChain;
 use App\Service\Storage\StorageMarkerService;
 use Doctrine\DBAL\DriverManager;
@@ -148,7 +147,7 @@ final class ScanStorageServiceTest extends TestCase
             new StorageMarkerService($this->entityManager),
             new FilenameCleaner(),
             new OrphanAnimeMatcher($this->animeRepository),
-            $pluginChain ?? new SearchByPluginChain(['test-plugin' => new NullSearchByPlugin()], new PluginsConfigStore('')),
+            $pluginChain ?? new SearchByPluginChain([], new PluginsConfigStore('')),
             $this->animeRepository,
             $this->entityManager,
             $bulkFillerService ?? $this->newBulkFillerService([]),
