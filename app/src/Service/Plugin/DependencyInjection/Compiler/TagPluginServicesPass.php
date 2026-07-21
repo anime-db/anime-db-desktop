@@ -88,12 +88,16 @@ final class TagPluginServicesPass implements CompilerPassInterface
 
         foreach ($container->getDefinitions() as $definition) {
             $class = $definition->getClass();
-            if (null === $class || !class_exists($class)) {
+            if (null === $class) {
                 continue;
             }
 
             $pluginId = $this->matchPluginId($class, $namespacePrefixes);
             if (null === $pluginId) {
+                continue;
+            }
+
+            if (!class_exists($class)) {
                 continue;
             }
 
