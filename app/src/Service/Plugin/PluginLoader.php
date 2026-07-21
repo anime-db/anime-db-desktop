@@ -36,10 +36,14 @@ use Symfony\Component\HttpKernel\Bundle\BundleInterface;
  * branching on {@see InstalledPluginsRegistry} + {@see PluginsConfigStore}'s enabled flags
  * (#241) by `manifest->type`:
  *
- * - {@see PluginType::Integration} (Filler/Widget/Search/Sync) is a real Symfony bundle: its
- *   class is autoloaded from an isolated namespace (never through the app's own
- *   `composer.json` — plugins_architecture.md §5 "Автозагрузка классов"), then instantiated
- *   for `registerBundles()`; its `plugin-routing.yaml` and `templates/` get wired up too.
+ * - {@see PluginType::Integration} (Filler/Widget/Search/Sync) is autoloaded from an isolated
+ *   namespace (never through the app's own `composer.json` — plugins_architecture.md §5
+ *   "Автозагрузка классов"); its `plugin-routing.yaml` and `templates/` get wired up too. A
+ *   bundle class (`<namespace><Studly>Bundle`) is optional: most integration plugins need
+ *   nothing beyond autoload/services/routes/twig/translations, all of which are wired without
+ *   a bundle instance. A plugin only needs one when it brings its own DI extension, compiler
+ *   passes, or Doctrine mappings — if the class exists, it's instantiated for
+ *   `registerBundles()`; if it doesn't, the plugin loads normally without one.
  * - {@see PluginType::Translation} is purely declarative — no bundle, no autoload, no
  *   routes: only its `translations/` directory is exposed, for the Symfony Translator's
  *   search paths.
@@ -53,9 +57,10 @@ use Symfony\Component\HttpKernel\Bundle\BundleInterface;
  * {@see DependencyInjection\Compiler\TagPluginServicesPass} (issue #278),
  * which matches a plugin service's class the same way.
  *
- * A plugin that fails to load (missing `src/`, missing/invalid bundle class, missing
+ * A plugin that fails to load (missing `src/`, an invalid bundle class, missing
  * `translations/`) is skipped and logged, not fatal for the rest — same policy as
- * {@see InstalledPluginsRegistry::reconcile()}.
+ * {@see InstalledPluginsRegistry::reconcile()}. A missing bundle class is not a failure: it's
+ * the expected shape for a bundle-less integration plugin, so it's only debug-logged.
  */
 final class PluginLoader
 {
@@ -207,7 +212,7 @@ final class PluginLoader
 
         $bundleClass = $namespace.$studly.'Bundle';
         if (!class_exists($bundleClass)) {
-            $this->logger->error('Skipping integration plugin: bundle class not found.', [
+            $this->logger->debug('Integration plugin has no bundle class; loading without one.', [
                 'pluginId' => (string) $plugin->id,
                 'bundleClass' => $bundleClass,
             ]);
