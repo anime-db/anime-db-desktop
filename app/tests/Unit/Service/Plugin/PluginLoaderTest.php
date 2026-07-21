@@ -89,19 +89,27 @@ final class PluginLoaderTest extends TestCase
         $this->assertSame([], $this->loader(logger: $logger)->integrationBundles());
     }
 
-    public function testIntegrationBundlesSkipsAndLogsWhenBundleClassMissing(): void
+    public function testIntegrationBundlesLoadsPluginWithoutBundleClassWithoutErrorLog(): void
     {
         $pluginId = 'acme-'.uniqid();
         $this->writeIntegrationManifest($pluginId);
-        mkdir($this->pluginsDir.'/'.$pluginId.'/src', recursive: true);
+        $this->writeFillerClassOnly($pluginId);
 
         $logger = $this->createMock(LoggerInterface::class);
-        $logger->expects($this->once())->method('error')->with(
-            $this->stringContains('bundle class not found'),
-            $this->callback(static fn (array $context): bool => $context['pluginId'] === $pluginId),
-        );
+        $logger->expects($this->never())->method('error');
 
         $this->assertSame([], $this->loader(logger: $logger)->integrationBundles());
+    }
+
+    public function testRegisterAutoloadForIntegrationPluginsMakesFillerLoadableWithoutBundleClass(): void
+    {
+        $pluginId = 'acme-'.uniqid();
+        $this->writeIntegrationManifest($pluginId);
+        $this->writeFillerClassOnly($pluginId);
+
+        $this->loader()->registerAutoloadForIntegrationPlugins();
+
+        $this->assertTrue(class_exists($this->fillerClass($pluginId)));
     }
 
     public function testIntegrationBundlesSkipsAndLogsWhenClassDoesNotImplementBundleInterface(): void
@@ -305,6 +313,18 @@ final class PluginLoaderTest extends TestCase
         );
     }
 
+    private function writeFillerClassOnly(string $pluginId): void
+    {
+        $srcDir = $this->pluginsDir.'/'.$pluginId.'/src';
+        mkdir($srcDir, recursive: true);
+
+        $studly = $this->studlyId($pluginId);
+        file_put_contents(
+            $srcDir.'/'.$studly.'Filler.php',
+            '<?php declare(strict_types=1); namespace AnimeDb\Plugins\\'.$studly.'; final class '.$studly.'Filler {}',
+        );
+    }
+
     private function writeNonBundleClass(string $pluginId): void
     {
         $srcDir = $this->pluginsDir.'/'.$pluginId.'/src';
@@ -322,6 +342,13 @@ final class PluginLoaderTest extends TestCase
         $studly = $this->studlyId($pluginId);
 
         return 'AnimeDb\\Plugins\\'.$studly.'\\'.$studly.'Bundle';
+    }
+
+    private function fillerClass(string $pluginId): string
+    {
+        $studly = $this->studlyId($pluginId);
+
+        return 'AnimeDb\\Plugins\\'.$studly.'\\'.$studly.'Filler';
     }
 
     private function studlyId(string $pluginId): string
