@@ -337,7 +337,7 @@ final class ScanStorageMessageHandlerTest extends TestCase
             $storageMarkerService,
             new FilenameCleaner(),
             new OrphanAnimeMatcher($animeRepository),
-            new SearchByPluginChain([new NullSearchByPlugin()]),
+            new SearchByPluginChain(['test-plugin' => new NullSearchByPlugin()], new PluginsConfigStore('')),
             $animeRepository,
             $this->entityManager,
             new BulkFillerService(

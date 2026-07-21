@@ -48,9 +48,14 @@ use Symfony\Component\DependencyInjection\Attribute\AutowireIterator;
  * Neither `PluginInterface` nor `FillerInterface` exposes a way to ask an arbitrary instance for
  * its own `PluginId` directly — the closest thing, `resolveExternalId()`, resolves an id on an
  * external source from catalog URLs, not the plugin's own identity.
+ *
+ * The `features.filler ?? true` activity check itself lives in {@see FillerActiveTrait}, shared
+ * with {@see \App\Service\Storage\Search\SearchByPluginChain} (issue #280).
  */
 final class FillerRegistry
 {
+    use FillerActiveTrait;
+
     /** @param iterable<string, FillerInterface> $fillers */
     public function __construct(
         #[AutowireIterator('app.filler', indexAttribute: 'id')]
@@ -66,7 +71,7 @@ final class FillerRegistry
     {
         $result = [];
         foreach ($this->fillers as $id => $filler) {
-            if ($this->isActive((string) $id) && \in_array($field, $filler->getFillableFields(), true)) {
+            if ($this->isFillerActive(new PluginId((string) $id)) && \in_array($field, $filler->getFillableFields(), true)) {
                 $result[] = $filler;
             }
         }
@@ -81,22 +86,8 @@ final class FillerRegistry
      */
     public function findByPluginId(PluginId $pluginId): ?FillerInterface
     {
-        $id = (string) $pluginId;
-        $filler = iterator_to_array($this->fillers)[$id] ?? null;
+        $filler = iterator_to_array($this->fillers)[(string) $pluginId] ?? null;
 
-        return $filler !== null && $this->isActive($id) ? $filler : null;
-    }
-
-    /**
-     * A plugin without recorded settings yet (freshly installed, never configured) is treated
-     * as active: plugins.json only ever records an explicit "false" once the user turns a
-     * feature off, so the key's absence is not a signal that it should be excluded.
-     */
-    private function isActive(string $id): bool
-    {
-        $settings = $this->pluginsConfigStore->getPluginSettings(new PluginId($id));
-        $features = $settings['features'] ?? [];
-
-        return (bool) ($features['filler'] ?? true);
+        return $filler !== null && $this->isFillerActive($pluginId) ? $filler : null;
     }
 }

@@ -29,6 +29,9 @@ namespace App\Service\Storage\Search;
 
 use AnimeDb\PluginContracts\SearchByPluginCandidate;
 use AnimeDb\PluginContracts\SearchByPluginInterface;
+use App\Entity\ValueObject\PluginId;
+use App\Service\Plugin\FillerActiveTrait;
+use App\Service\Plugin\PluginsConfigStore;
 use Symfony\Component\DependencyInjection\Attribute\AutowireIterator;
 
 /**
@@ -48,20 +51,35 @@ use Symfony\Component\DependencyInjection\Attribute\AutowireIterator;
  * up by this chain too, without a separate registration — and its candidates already carry the
  * `externalId` needed for a bulk fill-in (issue #233), unlike the old local candidate type this
  * replaced.
+ *
+ * Storage-scan search only exists to feed a bulk-fill (see {@see \App\Service\Plugin\Filler\BulkFillerService}),
+ * so a plugin whose filler is disabled (`features.filler = false`) is skipped here too, via
+ * {@see FillerActiveTrait} — the same check {@see \App\Service\Plugin\FillerRegistry} uses to
+ * gate the fill itself. Without this, a disabled-filler plugin would still find a candidate here,
+ * only for the fill to then be refused, leaving a title-only placeholder behind (issue #280). A
+ * "pure" search plugin with no filler toggle at all (implements only `SearchByPluginInterface`)
+ * has nothing to gate on and stays active — see {@see FillerActiveTrait} for that default.
  */
 final class SearchByPluginChain
 {
-    /** @param iterable<SearchByPluginInterface> $plugins */
+    use FillerActiveTrait;
+
+    /** @param iterable<string, SearchByPluginInterface> $plugins keyed by plugin id */
     public function __construct(
-        #[AutowireIterator('app.search_by_plugin')]
+        #[AutowireIterator('app.search_by_plugin', indexAttribute: 'id')]
         private readonly iterable $plugins,
+        private readonly PluginsConfigStore $pluginsConfigStore,
     ) {
     }
 
     /** @return list<SearchByPluginCandidate> */
     public function find(string $name): array
     {
-        foreach ($this->plugins as $plugin) {
+        foreach ($this->plugins as $id => $plugin) {
+            if (!$this->isFillerActive(new PluginId((string) $id))) {
+                continue;
+            }
+
             $candidates = $plugin->find($name);
 
             if ($candidates !== []) {

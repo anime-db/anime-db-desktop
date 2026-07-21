@@ -148,7 +148,7 @@ final class ScanStorageServiceTest extends TestCase
             new StorageMarkerService($this->entityManager),
             new FilenameCleaner(),
             new OrphanAnimeMatcher($this->animeRepository),
-            $pluginChain ?? new SearchByPluginChain([new NullSearchByPlugin()]),
+            $pluginChain ?? new SearchByPluginChain(['test-plugin' => new NullSearchByPlugin()], new PluginsConfigStore('')),
             $this->animeRepository,
             $this->entityManager,
             $bulkFillerService ?? $this->newBulkFillerService([]),
@@ -182,7 +182,7 @@ final class ScanStorageServiceTest extends TestCase
         $plugin = $this->createStub(SearchByPluginInterface::class);
         $plugin->method('find')->willReturn($candidates);
 
-        return new SearchByPluginChain([$plugin]);
+        return new SearchByPluginChain(['test-plugin' => $plugin], new PluginsConfigStore(''));
     }
 
     public function testConflictWhenMarkerOwnedByAnotherActiveStorageAbortsScanWithNoSideEffects(): void
