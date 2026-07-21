@@ -119,6 +119,16 @@ class Kernel extends BaseKernel
         if ([] !== $translationPaths) {
             $container->extension('framework', ['translator' => ['paths' => $translationPaths]]);
         }
+
+        // Auto-registers every integration plugin's classes as services (issue #282): a plugin
+        // ships only manifest.json + src/*.php, no DI config of its own. `load()` picks up
+        // non-service classes (DTOs, enums, exceptions) too, but Symfony's compiler removes
+        // unused private services, so that's harmless.
+        foreach ($this->pluginLoader()->integrationPluginServices() as $namespacePrefix => $srcDir) {
+            $container->services()
+                ->defaults()->autowire()->autoconfigure()
+                ->load($namespacePrefix, $srcDir);
+        }
     }
 
     /**

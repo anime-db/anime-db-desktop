@@ -163,6 +163,38 @@ final class PluginLoaderTest extends TestCase
         $this->assertSame([], $this->loader()->twigPaths());
     }
 
+    public function testIntegrationPluginServicesMapsNamespacePrefixToSourceDirectory(): void
+    {
+        $pluginId = 'acme-'.uniqid();
+        $this->writeIntegrationManifest($pluginId);
+        $this->writeBundleClass($pluginId);
+
+        $paths = $this->loader()->integrationPluginServices();
+
+        $this->assertSame(
+            ['AnimeDb\\Plugins\\'.$this->studlyId($pluginId).'\\' => $this->pluginsDir.'/'.$pluginId.'/src'],
+            $paths,
+        );
+    }
+
+    public function testIntegrationPluginServicesOmitsPluginWithoutSrcDirectory(): void
+    {
+        $pluginId = 'acme-'.uniqid();
+        $this->writeIntegrationManifest($pluginId);
+
+        $this->assertSame([], $this->loader()->integrationPluginServices());
+    }
+
+    public function testIntegrationPluginServicesIgnoresTranslationPlugins(): void
+    {
+        $pluginId = 'acme-'.uniqid();
+        $this->writeTranslationManifest($pluginId);
+        mkdir($this->pluginsDir.'/'.$pluginId.'/translations', recursive: true);
+        mkdir($this->pluginsDir.'/'.$pluginId.'/src', recursive: true);
+
+        $this->assertSame([], $this->loader()->integrationPluginServices());
+    }
+
     public function testRoutingFilesReturnsExistingPluginRoutingYaml(): void
     {
         $pluginId = 'acme-'.uniqid();

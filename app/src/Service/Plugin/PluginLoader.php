@@ -152,6 +152,27 @@ final class PluginLoader
     }
 
     /**
+     * @return array<string, string> plugin namespace prefix => absolute `src/` directory, for every
+     *                               enabled integration plugin that has one — lets
+     *                               {@see \App\Kernel::configureContainer()} register a plugin's classes
+     *                               as autowired, autoconfigured services without the plugin needing a
+     *                               DI config of its own (issue #282)
+     */
+    public function integrationPluginServices(): array
+    {
+        $paths = [];
+
+        foreach ($this->integrationPlugins() as $plugin) {
+            $srcDir = $plugin->installPath.\DIRECTORY_SEPARATOR.'src';
+            if (is_dir($srcDir)) {
+                $paths[$this->namespacePrefix($plugin)] = $srcDir;
+            }
+        }
+
+        return $paths;
+    }
+
+    /**
      * @return list<string> absolute `translations/` directories of enabled "translation" plugins
      */
     public function translationPaths(): array
