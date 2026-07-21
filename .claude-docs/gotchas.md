@@ -139,3 +139,14 @@ PHPUnit не может создать test double (`createStub`/`createMock`) �
 ## Индекс плагинов через `require` + opcache в worker mode может отдать устаревшие данные
 
 `InstalledPluginsRegistry::readIndex()` (issue #241) читает сгенерированный `installed-plugins.php` через `require`. В worker mode FrankenPHP держит процесс живым (см. «Worker mode — PHP не перезагружается между запросами»), а opcache кэширует байткод включённых файлов. Поэтому вызов `readIndex()` в том же воркере **сразу после** `reconcile()`, который только что перезаписал `installed-plugins.php`, может вернуть **старый** массив: opcache при `opcache.validate_timestamps` перечитывает файл не мгновенно (`revalidate_freq`, по умолчанию 2с), а без него — вообще до рестарта процесса. На практике безопасно: установка/удаление плагина всё равно требует перезапуска воркера (новый DI-контейнер/набор бандлов — «Atomic Cache Swap»), после которого индекс перечитывается свежим. Ловушка проявится, только если кто-то попытается вызвать `reconcile()` и тут же прочитать результат внутри одного долгоживущего запроса — так делать не нужно; `reconcile()` — install-time операция, а не read-path.
+
+## `claude-code-action` молча пропускает ревью на PR, который меняет `.github/workflows/*`
+
+Джоб `Claude review` (`.github/workflows/claude-review.yml`, `anthropics/claude-code-action`) имеет **защиту целостности**: если workflow-файл в контексте PR **отличается** от версии на дефолтной ветке (`master`), экшен отказывается запускать SDK и **самопропускается**, при этом job завершается **success** (не failure). В логе:
+
+> `Workflow validation failed. The workflow file must exist and have identical content to the version on the repository's default branch.`
+
+Смысл — не дать PR (в т.ч. из форка) подменить ревью-воркфлоу и утащить секреты. Практические следствия:
+
+- **Любой PR, который трогает `.github/workflows/`, не получает Claude-ревью вообще** — оно зелёное, но фактически не выполнялось. Легко принять «зелёный skip» за «ревью прошло». Проверять по наличию комментария от `claude[bot]`, а не только по цвету чека.
+- **Отладить сам ревью-воркфлоу (например, включить `show_full_output: true`) с ветки PR нельзя** — любая правка файла = отличие от `master` = skip. Такие изменения (`show_full_output`, смена модели/промпта, пиннинг версии экшена) нужно вносить **прямо на `master`**, а проверять уже последующими PR.
