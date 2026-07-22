@@ -1,8 +1,11 @@
 name: Claude Code Review
 
 on:
+  # Без synchronize: ревью не перезапускается на каждый коммит (в т.ч. автоправки
+  # openronin) — экономит минуты Actions. Триггерится на открытие PR, перевод из
+  # черновика в готовый и переоткрытие. Для повторного ревью — reopen/ready.
   pull_request:
-    types: [opened, synchronize]
+    types: [opened, ready_for_review, reopened]
 
 jobs:
   claude-review:
