@@ -10,6 +10,10 @@ on:
 jobs:
   claude-review:
     name: Claude review
+    # Черновики не ревьюим: openronin открывает PR черновиком (draft_pr: true), и без
+    # этого гейта ревью прогонялось бы на недописанном коде на opened. Так ревью идёт
+    # один раз — когда PR готов (ready_for_review) или открыт сразу не черновиком.
+    if: ${{ github.event.pull_request.draft == false }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
