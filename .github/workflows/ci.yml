@@ -25,8 +25,9 @@ jobs:
         run: composer config --global github-oauth.github.com ${{ secrets.COMPOSER_GITHUB_TOKEN }}
 
       - name: Install dependencies
-        run: composer install --no-interaction --prefer-dist
-        working-directory: app
+        uses: ramsey/composer-install@v3
+        with:
+          working-directory: app
 
       - name: Run PHPUnit
         run: vendor/bin/phpunit
@@ -51,8 +52,9 @@ jobs:
         run: composer config --global github-oauth.github.com ${{ secrets.COMPOSER_GITHUB_TOKEN }}
 
       - name: Install dependencies
-        run: composer install --no-interaction --prefer-dist
-        working-directory: app
+        uses: ramsey/composer-install@v3
+        with:
+          working-directory: app
 
       - name: Check ru/en translation keys match
         run: vendor/bin/phpunit --filter CatalogTranslationsTest
@@ -75,8 +77,9 @@ jobs:
         run: composer config --global github-oauth.github.com ${{ secrets.COMPOSER_GITHUB_TOKEN }}
 
       - name: Install dependencies
-        run: composer install --no-interaction --prefer-dist
-        working-directory: app
+        uses: ramsey/composer-install@v3
+        with:
+          working-directory: app
 
       - name: Check code style
         run: composer cs-check
@@ -99,8 +102,9 @@ jobs:
         run: composer config --global github-oauth.github.com ${{ secrets.COMPOSER_GITHUB_TOKEN }}
 
       - name: Install dependencies
-        run: composer install --no-interaction --prefer-dist
-        working-directory: app
+        uses: ramsey/composer-install@v3
+        with:
+          working-directory: app
 
       - name: Run PHPStan
         run: composer phpstan
