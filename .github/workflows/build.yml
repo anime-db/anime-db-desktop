@@ -6,6 +6,12 @@ on:
       - 'v*.*.*'
   workflow_dispatch:
 
+# Сериализуем сборку одного тега (повторный пуш тега / ручной dispatch), но НЕ
+# отменяем: релизную сборку по тегу нужно доводить до конца.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build:
     runs-on: windows-latest

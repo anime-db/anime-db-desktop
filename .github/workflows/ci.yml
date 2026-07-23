@@ -5,6 +5,12 @@ on:
     branches: [master]
   pull_request:
 
+# Отменяем устаревшие прогоны PR при новом пуше (частые автоправки openronin);
+# прогоны push в master не отменяем — это запись о состоянии основной ветки.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   phpunit:
     name: PHPUnit

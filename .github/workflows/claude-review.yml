@@ -7,6 +7,12 @@ on:
   pull_request:
     types: [opened, ready_for_review, reopened]
 
+# Один PR — одно ревью: при быстром ready→draft→ready отменяем предыдущий прогон,
+# экономя минуты Actions и стоимость Claude-ревью. Все события здесь — только PR.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   claude-review:
     name: Claude review
