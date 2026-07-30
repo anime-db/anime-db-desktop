@@ -274,8 +274,8 @@ final class InstalledPluginsRegistryTest extends TestCase
         }
 
         $entries = scandir($dir);
-        foreach (false === $entries ? [] : $entries as $entry) {
-            if ('.' === $entry || '..' === $entry) {
+        foreach ($entries === false ? [] : $entries as $entry) {
+            if ($entry === '.' || $entry === '..') {
                 continue;
             }
 

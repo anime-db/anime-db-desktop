@@ -118,7 +118,7 @@ final class ZipPluginInstaller
 
             return $pluginId;
         } catch (\Throwable $exception) {
-            if ($moveStarted && null !== $targetDir) {
+            if ($moveStarted && $targetDir !== null) {
                 $this->removeDirectory($targetDir);
             }
 
@@ -148,7 +148,7 @@ final class ZipPluginInstaller
     {
         $zip = new \ZipArchive();
         $openResult = $zip->open($zipPath);
-        if (true !== $openResult) {
+        if ($openResult !== true) {
             throw new PluginInstallException(\sprintf('Unable to open ZIP archive "%s" (error code %s).', $zipPath, $openResult));
         }
 
@@ -177,11 +177,11 @@ final class ZipPluginInstaller
     {
         for ($i = 0; $i < $zip->numFiles; ++$i) {
             $name = $zip->getNameIndex($i);
-            if (false === $name) {
+            if ($name === false) {
                 continue;
             }
 
-            $isAbsolute = str_starts_with($name, '/') || str_starts_with($name, '\\') || 1 === preg_match('#^[A-Za-z]:#', $name);
+            $isAbsolute = str_starts_with($name, '/') || str_starts_with($name, '\\') || preg_match('#^[A-Za-z]:#', $name) === 1;
             $hasParentTraversal = \in_array('..', explode('/', str_replace('\\', '/', $name)), true);
 
             if ($isAbsolute || $hasParentTraversal) {
@@ -205,7 +205,7 @@ final class ZipPluginInstaller
         }
 
         $entries = array_values(array_diff((array) scandir($tmpDir), ['.', '..']));
-        if (1 === \count($entries)) {
+        if (\count($entries) === 1) {
             $nested = $tmpDir.\DIRECTORY_SEPARATOR.$entries[0];
             if (is_dir($nested) && is_file($nested.\DIRECTORY_SEPARATOR.'manifest.json')) {
                 return $nested;
@@ -223,7 +223,7 @@ final class ZipPluginInstaller
         $manifestPath = $dir.\DIRECTORY_SEPARATOR.'manifest.json';
         $contents = is_file($manifestPath) ? file_get_contents($manifestPath) : false;
 
-        if (false === $contents) {
+        if ($contents === false) {
             throw new InvalidInstalledPluginException($dir, []);
         }
 
@@ -268,7 +268,7 @@ final class ZipPluginInstaller
             }
         }
 
-        if ([] !== $errors) {
+        if ($errors !== []) {
             throw new PluginSyntaxErrorException($errors);
         }
     }
@@ -285,8 +285,8 @@ final class ZipPluginInstaller
      */
     private function parseSyntaxErrorMessage(string $errorOutput, string $standardOutput): string
     {
-        $firstLine = strtok(trim('' !== trim($errorOutput) ? $errorOutput : $standardOutput), "\n");
-        if (false === $firstLine) {
+        $firstLine = strtok(trim(trim($errorOutput) !== '' ? $errorOutput : $standardOutput), "\n");
+        if ($firstLine === false) {
             return 'Unknown syntax error.';
         }
 
@@ -311,8 +311,8 @@ final class ZipPluginInstaller
         }
 
         $entries = scandir($dir);
-        foreach (false === $entries ? [] : $entries as $entry) {
-            if ('.' === $entry || '..' === $entry) {
+        foreach ($entries === false ? [] : $entries as $entry) {
+            if ($entry === '.' || $entry === '..') {
                 continue;
             }
 

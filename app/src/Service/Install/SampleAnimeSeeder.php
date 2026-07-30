@@ -396,11 +396,11 @@ class SampleAnimeSeeder
             ->setDateEnd(\DateTimeImmutable::createFromFormat('!Y-m-d', $sample['dateEnd']) ?: null)
             ->setCountries($sample['countries']);
 
-        if (null !== $sample['durationMinutes']) {
+        if ($sample['durationMinutes'] !== null) {
             $anime->setDurationMinutes($sample['durationMinutes']);
         }
 
-        if ($anime instanceof SeriesAnime && null !== $sample['episodesCount']) {
+        if ($anime instanceof SeriesAnime && $sample['episodesCount'] !== null) {
             $anime->setEpisodesCount($sample['episodesCount']);
         }
 
@@ -436,7 +436,7 @@ class SampleAnimeSeeder
     private function findOrCreateLabel(): Label
     {
         $label = $this->labels->findOneByName(self::LABEL_NAME);
-        if (null !== $label) {
+        if ($label !== null) {
             return $label;
         }
 
@@ -449,7 +449,7 @@ class SampleAnimeSeeder
     private function findOrCreateStudio(string $name): Studio
     {
         $studio = $this->studios->findOneByName($name);
-        if (null !== $studio) {
+        if ($studio !== null) {
             return $studio;
         }
 

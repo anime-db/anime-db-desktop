@@ -142,13 +142,13 @@ final class InstalledPluginsRegistry
         }
 
         $entries = scandir($this->pluginsDir);
-        if (false === $entries) {
+        if ($entries === false) {
             return;
         }
 
         foreach ($entries as $entry) {
             $path = $this->pluginsDir.\DIRECTORY_SEPARATOR.$entry;
-            if ('.' !== $entry && '..' !== $entry && is_dir($path)) {
+            if ($entry !== '.' && $entry !== '..' && is_dir($path)) {
                 yield $path;
             }
         }
@@ -162,7 +162,7 @@ final class InstalledPluginsRegistry
         $manifestPath = $pluginDir.\DIRECTORY_SEPARATOR.'manifest.json';
         $contents = is_file($manifestPath) ? file_get_contents($manifestPath) : false;
 
-        if (false === $contents) {
+        if ($contents === false) {
             throw new InvalidInstalledPluginException($pluginDir, []);
         }
 
@@ -286,7 +286,7 @@ final class InstalledPluginsRegistry
         $contents = "<?php\n\nreturn ".var_export($entries, true).";\n";
 
         $tmpPath = $this->indexPath().'.tmp';
-        if (false === file_put_contents($tmpPath, $contents)) {
+        if (file_put_contents($tmpPath, $contents) === false) {
             throw new InstalledPluginsRegistryException(\sprintf('Unable to write "%s".', $tmpPath));
         }
 

@@ -229,7 +229,7 @@ final class StorageMarkerService
 
         $sections = @parse_ini_file($markerPath, true, \INI_SCANNER_RAW);
 
-        return false !== $sections ? $sections : [];
+        return $sections !== false ? $sections : [];
     }
 
     /** @param array<string, array<string, mixed>> $sections */

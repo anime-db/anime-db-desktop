@@ -61,13 +61,13 @@ final class LocaleSubscriber implements EventSubscriberInterface
             return;
         }
 
-        if ([] === $this->locales) {
+        if ($this->locales === []) {
             return;
         }
 
         $request = $event->getRequest();
         $preferredLocale = $request->getPreferredLanguage($this->locales);
-        if (null !== $preferredLocale) {
+        if ($preferredLocale !== null) {
             $request->setLocale($preferredLocale);
         }
     }

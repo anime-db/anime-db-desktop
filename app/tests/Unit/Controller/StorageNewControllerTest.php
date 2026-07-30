@@ -124,10 +124,10 @@ final class StorageNewControllerTest extends TestCase
         $twig->expects($this->once())
             ->method('render')
             ->with('storage/new.html.twig', $this->callback(
-                static fn (array $params): bool => '' === $params['name']
-                    && '' === $params['path']
-                    && null === $params['type']
-                    && null === $params['error']
+                static fn (array $params): bool => $params['name'] === ''
+                    && $params['path'] === ''
+                    && $params['type'] === null
+                    && $params['error'] === null
                     && ['folder', 'external', 'external-r', 'video'] === $params['types']
                     && ['folder', 'external'] === $params['writable_types'],
             ))
@@ -214,7 +214,7 @@ final class StorageNewControllerTest extends TestCase
         $twig->expects($this->once())
             ->method('render')
             ->with('storage/new.html.twig', $this->callback(
-                static fn (array $params): bool => 'storage_new.error_invalid' === $params['error'],
+                static fn (array $params): bool => $params['error'] === 'storage_new.error_invalid',
             ))
             ->willReturn('<html></html>');
 
@@ -238,7 +238,7 @@ final class StorageNewControllerTest extends TestCase
         $twig->expects($this->once())
             ->method('render')
             ->with('storage/new.html.twig', $this->callback(
-                static fn (array $params): bool => 'storage_new.error_invalid' === $params['error'],
+                static fn (array $params): bool => $params['error'] === 'storage_new.error_invalid',
             ))
             ->willReturn('<html></html>');
 
@@ -262,7 +262,7 @@ final class StorageNewControllerTest extends TestCase
         $twig->expects($this->once())
             ->method('render')
             ->with('storage/new.html.twig', $this->callback(
-                static fn (array $params): bool => 'storage_new.error_invalid' === $params['error'],
+                static fn (array $params): bool => $params['error'] === 'storage_new.error_invalid',
             ))
             ->willReturn('<html></html>');
 

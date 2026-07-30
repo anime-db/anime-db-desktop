@@ -48,7 +48,7 @@ final class RatingType extends Type
 
     public function convertToDatabaseValue(mixed $value, AbstractPlatform $platform): ?int
     {
-        if (null === $value) {
+        if ($value === null) {
             return null;
         }
 
@@ -61,7 +61,7 @@ final class RatingType extends Type
 
     public function convertToPHPValue(mixed $value, AbstractPlatform $platform): ?Rating
     {
-        if (null === $value) {
+        if ($value === null) {
             return null;
         }
 

@@ -68,7 +68,7 @@ final class AnimeSearchIndexerTest extends TestCase
     protected function setUp(): void
     {
         $binary = getenv('MEILISEARCH_TEST_BINARY');
-        if (!\is_string($binary) || '' === $binary || !is_file($binary)) {
+        if (!\is_string($binary) || $binary === '' || !is_file($binary)) {
             self::markTestSkipped('Set MEILISEARCH_TEST_BINARY to a Meilisearch binary path to run this integration test.');
         }
 
@@ -195,13 +195,13 @@ final class AnimeSearchIndexerTest extends TestCase
     private function findFreePort(): int
     {
         $socket = stream_socket_server('tcp://127.0.0.1:0', $errno, $errstr);
-        if (false === $socket) {
+        if ($socket === false) {
             self::fail("Could not find a free port: {$errstr}");
         }
 
         $name = stream_socket_get_name($socket, false);
         fclose($socket);
-        if (false === $name) {
+        if ($name === false) {
             self::fail('Could not determine the bound port.');
         }
 

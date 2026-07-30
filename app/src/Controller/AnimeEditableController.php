@@ -112,7 +112,7 @@ final class AnimeEditableController
         $value = trim((string) $request->request->get('user_rating', ''));
 
         try {
-            $anime->setUserRating('' === $value ? null : new Rating((int) $value));
+            $anime->setUserRating($value === '' ? null : new Rating((int) $value));
         } catch (InvalidRatingException) {
             return $this->renderEditable($anime, 'user_rating', 'anime_detail.error_user_rating_invalid');
         }
@@ -128,7 +128,7 @@ final class AnimeEditableController
         $this->assertValidCsrfToken('anime_editable_notes_'.$anime->id, $request);
 
         $notes = trim((string) $request->request->get('notes', ''));
-        $anime->setNotes('' === $notes ? null : $notes);
+        $anime->setNotes($notes === '' ? null : $notes);
         $this->entityManager->flush();
 
         return $this->renderEditable($anime);

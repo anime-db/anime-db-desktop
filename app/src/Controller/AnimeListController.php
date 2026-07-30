@@ -66,9 +66,9 @@ final class AnimeListController
     public function list(Request $request): JsonResponse
     {
         $filter = $this->requestParser->parseFilter($request);
-        if (null !== $filter->name) {
+        if ($filter->name !== null) {
             $ids = $this->searchResolver->tryResolveIds($filter->name);
-            if (null !== $ids) {
+            if ($ids !== null) {
                 $filter = $filter->withIds($ids);
             }
         }

@@ -77,7 +77,7 @@ class Storage
     public function rename(string $name): self
     {
         $name = trim($name);
-        if ('' === $name) {
+        if ($name === '') {
             throw new InvalidNameException('name must not be empty');
         }
 
@@ -114,7 +114,7 @@ class Storage
     public function relocate(string $path): self
     {
         $path = trim($path);
-        if ('' === $path || 1 !== preg_match(self::ABSOLUTE_PATH_PATTERN, $path)) {
+        if ($path === '' || preg_match(self::ABSOLUTE_PATH_PATTERN, $path) !== 1) {
             throw new InvalidPathException(\sprintf('path must be an absolute Windows path, got "%s"', $path));
         }
 

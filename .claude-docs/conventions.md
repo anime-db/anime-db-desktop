@@ -10,7 +10,7 @@ tags: [memory/repo, conventions]
 
 **Rule Set**: `@Symfony` с переопределениями:
 - `declare_strict_types => true` — обязателен во всех PHP-файлах
-- `yoda_style => false` — обычный порядок операндов (`$x === null`, не `null === $x`)
+- `yoda_style => ['equal' => false, 'identical' => false, 'less_and_greater' => false]` — фиксер переписывает Yoda в обычный порядок операндов (`$x === null`, не `null === $x`). Важно: `yoda_style => false` лишь ВЫКЛЮЧИЛ бы фиксер и ничего не навязывал — нужен именно массив-конфиг
 - `setRiskyAllowed(true)` — разрешены risky-правила Symfony (нужны для `declare_strict_types`)
 
 **Команды** (запускать из `app/`):

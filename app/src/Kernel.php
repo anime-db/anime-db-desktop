@@ -111,12 +111,12 @@ class Kernel extends BaseKernel
         $this->getFrameworkContainerConfiguration($container);
 
         $twigPaths = $this->pluginLoader()->twigPaths();
-        if ([] !== $twigPaths) {
+        if ($twigPaths !== []) {
             $container->extension('twig', ['paths' => $twigPaths]);
         }
 
         $translationPaths = $this->pluginLoader()->translationPaths();
-        if ([] !== $translationPaths) {
+        if ($translationPaths !== []) {
             $container->extension('framework', ['translator' => ['paths' => $translationPaths]]);
         }
 
@@ -143,7 +143,7 @@ class Kernel extends BaseKernel
 
     private function pluginLoader(): PluginLoader
     {
-        if (null === $this->pluginLoader) {
+        if ($this->pluginLoader === null) {
             $this->pluginLoader = new PluginLoader($this->installedPluginsRegistry(), $this->pluginLoaderLogger());
         }
 
@@ -152,7 +152,7 @@ class Kernel extends BaseKernel
 
     private function installedPluginsRegistry(): InstalledPluginsRegistry
     {
-        if (null === $this->installedPluginsRegistry) {
+        if ($this->installedPluginsRegistry === null) {
             $pluginsDir = $_SERVER['PLUGINS_DIR'] ?? $this->getProjectDir().'/var/plugins';
             $pluginsConfigPath = $_SERVER['PLUGINS_CONFIG_PATH'] ?? $this->getProjectDir().'/var/plugins.json';
 

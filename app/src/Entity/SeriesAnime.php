@@ -72,8 +72,8 @@ abstract class SeriesAnime extends Anime
         $this->assertEpisodeCount($watchedEpisodes, $this->episodesCount);
         $this->watchedEpisodes = $watchedEpisodes;
 
-        if (null !== $watchedEpisodes) {
-            $this->setWatchStatus((null !== $this->episodesCount
+        if ($watchedEpisodes !== null) {
+            $this->setWatchStatus(($this->episodesCount !== null
                     && $watchedEpisodes === $this->episodesCount
                     && $this->getProductionStatus() === ProductionStatus::Released)
                 ? WatchStatus::Completed
@@ -91,7 +91,7 @@ abstract class SeriesAnime extends Anime
      */
     private function assertEpisodeCount(?int $watchedEpisodes, ?int $episodesCount): void
     {
-        if (null === $watchedEpisodes) {
+        if ($watchedEpisodes === null) {
             return;
         }
 
@@ -99,7 +99,7 @@ abstract class SeriesAnime extends Anime
             throw new InvalidEpisodeCountException('watched_episodes must not be negative');
         }
 
-        if (null !== $episodesCount && $watchedEpisodes > $episodesCount) {
+        if ($episodesCount !== null && $watchedEpisodes > $episodesCount) {
             throw new InvalidEpisodeCountException('watched_episodes must not exceed episodes_count');
         }
     }

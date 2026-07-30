@@ -58,7 +58,7 @@ final class CatalogTranslationsTest extends TestCase
     {
         $keys = [];
         foreach ($data as $key => $value) {
-            $fullKey = '' === $prefix ? (string) $key : $prefix.'.'.$key;
+            $fullKey = $prefix === '' ? (string) $key : $prefix.'.'.$key;
             if (\is_array($value)) {
                 $keys = [...$keys, ...$this->flattenKeys($value, $fullKey)];
             } else {

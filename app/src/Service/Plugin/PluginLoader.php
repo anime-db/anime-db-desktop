@@ -91,7 +91,7 @@ final class PluginLoader
 
         foreach ($this->integrationPlugins() as $plugin) {
             $bundle = $this->loadBundle($plugin);
-            if (null !== $bundle) {
+            if ($bundle !== null) {
                 $bundles[] = $bundle;
             }
         }
@@ -185,7 +185,7 @@ final class PluginLoader
         $paths = [];
 
         foreach ($this->registry->enabled() as $plugin) {
-            if (PluginType::Translation !== $plugin->manifest->type) {
+            if ($plugin->manifest->type !== PluginType::Translation) {
                 continue;
             }
 
@@ -210,7 +210,7 @@ final class PluginLoader
     {
         return $this->integrationPluginsCache ??= array_values(array_filter(
             $this->registry->enabled(),
-            static fn (InstalledPlugin $plugin): bool => PluginType::Integration === $plugin->manifest->type,
+            static fn (InstalledPlugin $plugin): bool => $plugin->manifest->type === PluginType::Integration,
         ));
     }
 

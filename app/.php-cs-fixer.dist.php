@@ -32,7 +32,9 @@ return (new PhpCsFixer\Config())
     ->setRules([
         '@Symfony' => true,
         'declare_strict_types' => true,
-        // Yoda-условия отключены — читаемее обычный порядок ($x === null).
-        'yoda_style' => false,
+        // Yoda-условия запрещены — фиксер переписывает их в обычный порядок
+        // ($x === null). Важно: 'yoda_style' => false лишь ВЫКЛЮЧАЕТ фиксер и
+        // ничего не навязывает, поэтому нужен массив-конфиг, а не false.
+        'yoda_style' => ['equal' => false, 'identical' => false, 'less_and_greater' => false],
     ])
     ->setFinder($finder);

@@ -92,7 +92,7 @@ final class PluginsConfigStore
         }
 
         $contents = file_get_contents($this->pluginsConfigPath);
-        if (false === $contents) {
+        if ($contents === false) {
             return [];
         }
 
@@ -116,7 +116,7 @@ final class PluginsConfigStore
         // A dedicated lock file, never replaced by rename(), keeps the same inode across every
         // acquisition, so flock() actually serializes writers.
         $lockHandle = fopen($this->pluginsConfigPath.'.lock', 'c');
-        if (false === $lockHandle) {
+        if ($lockHandle === false) {
             throw new PluginsConfigStoreException(\sprintf('Unable to open lock file for "%s".', $this->pluginsConfigPath));
         }
 
@@ -128,14 +128,14 @@ final class PluginsConfigStore
             $plugins = $modifier($this->read());
 
             $encoded = json_encode($plugins, \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE);
-            if (false === $encoded) {
+            if ($encoded === false) {
                 throw new PluginsConfigStoreException(\sprintf('Unable to encode "%s" as JSON.', $this->pluginsConfigPath));
             }
 
             // rename() on Windows overwrites an existing destination (unlike a bare POSIX
             // rename() pre-8.0), so this stays atomic on the app's only supported platform.
             $tmpPath = $this->pluginsConfigPath.'.tmp';
-            if (false === file_put_contents($tmpPath, $encoded)) {
+            if (file_put_contents($tmpPath, $encoded) === false) {
                 throw new PluginsConfigStoreException(\sprintf('Unable to write "%s".', $tmpPath));
             }
 
@@ -151,7 +151,7 @@ final class PluginsConfigStore
      */
     private function decode(string $contents): array
     {
-        if ('' === $contents) {
+        if ($contents === '') {
             return [];
         }
 

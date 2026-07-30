@@ -114,9 +114,9 @@ final class StorageEditControllerTest extends TestCase
             ->method('render')
             ->with('storage/edit.html.twig', $this->callback(
                 static fn (array $params): bool => $storage === $params['storage']
-                    && 'Main folder' === $params['name']
-                    && 'folder' === $params['type']
-                    && null === $params['error']
+                    && $params['name'] === 'Main folder'
+                    && $params['type'] === 'folder'
+                    && $params['error'] === null
                     && ['folder', 'external', 'external-r', 'video'] === $params['types'],
             ))
             ->willReturn('<html></html>');
@@ -190,9 +190,9 @@ final class StorageEditControllerTest extends TestCase
         $twig->expects($this->once())
             ->method('render')
             ->with('storage/edit.html.twig', $this->callback(
-                static fn (array $params): bool => 'storage_edit.error_invalid' === $params['error']
-                    && '   ' === $params['name']
-                    && 'external' === $params['type'],
+                static fn (array $params): bool => $params['error'] === 'storage_edit.error_invalid'
+                    && $params['name'] === '   '
+                    && $params['type'] === 'external',
             ))
             ->willReturn('<html></html>');
 
@@ -221,7 +221,7 @@ final class StorageEditControllerTest extends TestCase
         $twig->expects($this->once())
             ->method('render')
             ->with('storage/edit.html.twig', $this->callback(
-                static fn (array $params): bool => 'storage_edit.error_invalid' === $params['error'],
+                static fn (array $params): bool => $params['error'] === 'storage_edit.error_invalid',
             ))
             ->willReturn('<html></html>');
 

@@ -63,7 +63,7 @@ final class HttpPluginMediaDownloader implements PluginMediaDownloaderInterface
         }
 
         $content = $this->fetch($url);
-        if (null === $content || '' === $content) {
+        if ($content === null || $content === '') {
             return null;
         }
 
@@ -71,7 +71,7 @@ final class HttpPluginMediaDownloader implements PluginMediaDownloaderInterface
             return null;
         }
 
-        if (false === file_put_contents($targetPath, $content)) {
+        if (file_put_contents($targetPath, $content) === false) {
             return null;
         }
 
@@ -93,7 +93,7 @@ final class HttpPluginMediaDownloader implements PluginMediaDownloaderInterface
                     $location = $response->getHeaders(false)['location'][0] ?? null;
                     // Relative Location headers are rejected rather than resolved against $url,
                     // so every hop we follow has already gone through isUrlAllowed() as an absolute URL.
-                    if (null === $location || !\in_array(strtolower((string) (parse_url($location, PHP_URL_SCHEME) ?? '')), ['http', 'https'], true)) {
+                    if ($location === null || !\in_array(strtolower((string) (parse_url($location, PHP_URL_SCHEME) ?? '')), ['http', 'https'], true)) {
                         return null;
                     }
 
@@ -102,7 +102,7 @@ final class HttpPluginMediaDownloader implements PluginMediaDownloaderInterface
                     continue;
                 }
 
-                if (200 !== $statusCode) {
+                if ($statusCode !== 200) {
                     return null;
                 }
 
@@ -132,12 +132,12 @@ final class HttpPluginMediaDownloader implements PluginMediaDownloaderInterface
         }
 
         $host = parse_url($url, PHP_URL_HOST);
-        if (!\is_string($host) || '' === $host) {
+        if (!\is_string($host) || $host === '') {
             return false;
         }
 
         $ips = filter_var($host, FILTER_VALIDATE_IP) ? [$host] : (gethostbynamel($host) ?: []);
-        if ([] === $ips) {
+        if ($ips === []) {
             return false;
         }
 

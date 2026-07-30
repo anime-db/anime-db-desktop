@@ -94,7 +94,7 @@ final class AppSettingsProvider
         }
 
         $contents = file_get_contents($this->configPath);
-        if (false === $contents) {
+        if ($contents === false) {
             return [];
         }
 

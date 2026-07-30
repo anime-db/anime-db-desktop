@@ -349,7 +349,7 @@ final class AnimeTest extends TestCase
         $this->assertCount(1, $names);
 
         $name = $names->first();
-        if (false === $name) {
+        if ($name === false) {
             $this->fail('Expected one name');
         }
         $this->assertSame($anime, $name->anime);
@@ -364,7 +364,7 @@ final class AnimeTest extends TestCase
         $this->assertCount(1, $anime->getImages());
 
         $image = $anime->getImages()->first();
-        if (false === $image) {
+        if ($image === false) {
             $this->fail('Expected one image');
         }
         $this->assertSame('images/frame1.jpg', $image->source);
@@ -378,7 +378,7 @@ final class AnimeTest extends TestCase
         $this->assertCount(1, $anime->getSources());
 
         $source = $anime->getSources()->first();
-        if (false === $source) {
+        if ($source === false) {
             $this->fail('Expected one source');
         }
         $this->assertSame('https://shikimori.one/animes/1', $source->url);

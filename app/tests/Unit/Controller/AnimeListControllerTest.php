@@ -163,7 +163,7 @@ final class AnimeListControllerTest extends TestCase
         $response = $this->controller->list(new Request(['watch_status' => 'watching']));
         $data = json_decode((string) $response->getContent(), true);
 
-        $labelled = array_values(array_filter($data['items'], static fn (array $item): bool => 'Labelled Movie' === $item['title']));
+        $labelled = array_values(array_filter($data['items'], static fn (array $item): bool => $item['title'] === 'Labelled Movie'));
         $this->assertSame(['Family favourite'], $labelled[0]['labels']);
     }
 

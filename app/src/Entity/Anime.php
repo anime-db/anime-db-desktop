@@ -200,7 +200,7 @@ abstract class Anime
     public function setTitle(string $title): self
     {
         $title = trim($title);
-        if ('' === $title) {
+        if ($title === '') {
             throw new InvalidNameException('title must not be empty');
         }
 
@@ -238,7 +238,7 @@ abstract class Anime
 
     private function assertDateRange(?\DateTimeImmutable $datePremiere, ?\DateTimeImmutable $dateEnd): void
     {
-        if (null !== $datePremiere && null !== $dateEnd && $dateEnd < $datePremiere) {
+        if ($datePremiere !== null && $dateEnd !== null && $dateEnd < $datePremiere) {
             throw new InvalidDateRangeException('date_end must not be earlier than date_premiere');
         }
     }
@@ -250,7 +250,7 @@ abstract class Anime
 
     public function setDurationMinutes(?int $durationMinutes): self
     {
-        if (null !== $durationMinutes && $durationMinutes <= 0) {
+        if ($durationMinutes !== null && $durationMinutes <= 0) {
             throw new InvalidDurationException('duration_minutes must be greater than zero');
         }
 
@@ -320,7 +320,7 @@ abstract class Anime
             throw new InvalidAnimeTypeMigrationException('Type migration to the same type is not allowed');
         }
 
-        if (ProductionStatus::Announced !== $this->getProductionStatus()) {
+        if ($this->getProductionStatus() !== ProductionStatus::Announced) {
             throw new InvalidAnimeTypeMigrationException('Type migration is only allowed while production status is announced');
         }
 
@@ -386,9 +386,9 @@ abstract class Anime
     /** @param list<string>|null $countries */
     public function setCountries(?array $countries): self
     {
-        if (null !== $countries) {
+        if ($countries !== null) {
             foreach ($countries as $code) {
-                if (1 !== preg_match('/^[A-Z]{2}$/', $code)) {
+                if (preg_match('/^[A-Z]{2}$/', $code) !== 1) {
                     throw new InvalidCountryCodeException(\sprintf('country code "%s" must be two uppercase ASCII letters', $code));
                 }
             }
@@ -500,14 +500,14 @@ abstract class Anime
     public function getExternalId(PluginId $pluginId, PluginInterface $plugin): ?string
     {
         $cached = $this->metadata['external_id'][(string) $pluginId] ?? null;
-        if (null !== $cached) {
+        if ($cached !== null) {
             return $cached;
         }
 
         $urls = array_map(static fn (AnimeSource $source): string => $source->url, $this->getSources()->toArray());
         $id = $plugin->resolveExternalId($urls);
 
-        if (null !== $id) {
+        if ($id !== null) {
             $metadata = $this->metadata ?? [];
             $metadata['external_id'][(string) $pluginId] = $id;
             $this->metadata = $metadata;
@@ -755,12 +755,12 @@ abstract class Anime
     {
         $now = new \DateTimeImmutable();
 
-        if (null !== $this->dateEnd && $this->dateEnd <= $now) {
+        if ($this->dateEnd !== null && $this->dateEnd <= $now) {
             return ProductionStatus::Released;
         }
 
-        if (null !== $this->datePremiere && $this->datePremiere <= $now
-            && (null === $this->dateEnd || $this->dateEnd > $now)) {
+        if ($this->datePremiere !== null && $this->datePremiere <= $now
+            && ($this->dateEnd === null || $this->dateEnd > $now)) {
             return ProductionStatus::Ongoing;
         }
 
@@ -774,7 +774,7 @@ abstract class Anime
     public function getSummary(string $locale): string
     {
         $descriptions = $this->metadata['descriptions'] ?? null;
-        if (!\is_array($descriptions) || [] === $descriptions) {
+        if (!\is_array($descriptions) || $descriptions === []) {
             return '';
         }
 

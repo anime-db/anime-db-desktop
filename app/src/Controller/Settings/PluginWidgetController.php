@@ -85,7 +85,7 @@ final class PluginWidgetController
         }
 
         $placement = (string) $request->request->get('placement', '');
-        $active = '1' === (string) $request->request->get('active', '0');
+        $active = (string) $request->request->get('active', '0') === '1';
 
         try {
             match ($placement) {
@@ -116,7 +116,7 @@ final class PluginWidgetController
             'catalogActiveCount' => \count($this->catalogWidgets->findAllActive()),
             'hardLimit' => EntryWidgetRegistry::HARD_LIMIT,
             'recommendedLimit' => EntryWidgetRegistry::RECOMMENDED_LIMIT,
-            'error' => '' !== $error ? $error : null,
+            'error' => $error !== '' ? $error : null,
         ]));
     }
 

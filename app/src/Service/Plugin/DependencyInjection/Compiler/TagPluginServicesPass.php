@@ -82,18 +82,18 @@ final class TagPluginServicesPass implements CompilerPassInterface
     public function process(ContainerBuilder $container): void
     {
         $namespacePrefixes = $this->pluginNamespacePrefixes();
-        if ([] === $namespacePrefixes) {
+        if ($namespacePrefixes === []) {
             return;
         }
 
         foreach ($container->getDefinitions() as $definition) {
             $class = $definition->getClass();
-            if (null === $class) {
+            if ($class === null) {
                 continue;
             }
 
             $pluginId = $this->matchPluginId($class, $namespacePrefixes);
-            if (null === $pluginId) {
+            if ($pluginId === null) {
                 continue;
             }
 

@@ -94,7 +94,7 @@ final class AnimeLabelController
     private function findOrCreateLabel(string $name): Label
     {
         $label = $this->labels->findOneByName($name);
-        if (null !== $label) {
+        if ($label !== null) {
             return $label;
         }
 
@@ -120,7 +120,7 @@ final class AnimeLabelController
             }
 
             $trimmed = trim($name);
-            if ('' !== $trimmed && !\in_array($trimmed, $normalized, true)) {
+            if ($trimmed !== '' && !\in_array($trimmed, $normalized, true)) {
                 $normalized[] = $trimmed;
             }
         }
