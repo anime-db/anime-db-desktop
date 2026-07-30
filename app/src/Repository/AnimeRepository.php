@@ -170,7 +170,7 @@ class AnimeRepository
             [self::externalIdJsonPath($pluginId), $externalId],
         );
 
-        return false !== $id ? $this->entityManager->find(Anime::class, $id) : null;
+        return $id !== false ? $this->entityManager->find(Anime::class, $id) : null;
     }
 
     /**
@@ -195,7 +195,7 @@ class AnimeRepository
             [$path, $path],
         );
 
-        if ([] === $rows) {
+        if ($rows === []) {
             return [];
         }
 
@@ -248,7 +248,7 @@ class AnimeRepository
      */
     public function findByIds(array $ids): array
     {
-        if ([] === $ids) {
+        if ($ids === []) {
             return [];
         }
 
@@ -280,50 +280,50 @@ class AnimeRepository
             ->andWhere('a.watchStatus = :watchStatus')
             ->setParameter('watchStatus', $filter->watchStatus);
 
-        if (null !== $filter->type) {
+        if ($filter->type !== null) {
             $qb->andWhere($qb->expr()->isInstanceOf('a', $filter->type->entityClass()));
         }
 
-        if (null !== $filter->country) {
+        if ($filter->country !== null) {
             $qb->andWhere('a.countries LIKE :country')
                 ->setParameter('country', '%"'.$filter->country.'"%');
         }
 
-        if (null !== $filter->ids) {
+        if ($filter->ids !== null) {
             // Already resolved by AnimeSearchResolver (issue #199), via Meilisearch — takes
             // precedence over $name and skips the FTS5 quick-filter below entirely.
             $qb->andWhere('a.id IN (:searchAnimeIds)')
-                ->setParameter('searchAnimeIds', [] !== $filter->ids ? $filter->ids : [0]);
-        } elseif (null !== $filter->name) {
+                ->setParameter('searchAnimeIds', $filter->ids !== [] ? $filter->ids : [0]);
+        } elseif ($filter->name !== null) {
             $ftsAnimeIds = $this->matchAnimeIdsByName($filter->name);
             $qb->andWhere('a.id IN (:ftsAnimeIds)')
-                ->setParameter('ftsAnimeIds', [] !== $ftsAnimeIds ? $ftsAnimeIds : [0]);
+                ->setParameter('ftsAnimeIds', $ftsAnimeIds !== [] ? $ftsAnimeIds : [0]);
         }
 
-        if ([] !== $filter->genres) {
+        if ($filter->genres !== []) {
             $qb->innerJoin('a.genres', 'g')
                 ->andWhere('g.code IN (:genres)')
                 ->setParameter('genres', $filter->genres);
         }
 
-        if ([] !== $filter->studioIds) {
+        if ($filter->studioIds !== []) {
             $qb->innerJoin('a.studios', 'st')
                 ->andWhere('st.id IN (:studioIds)')
                 ->setParameter('studioIds', $filter->studioIds);
         }
 
-        if ([] !== $filter->labelIds) {
+        if ($filter->labelIds !== []) {
             $qb->innerJoin('a.labels', 'lb')
                 ->andWhere('lb.id IN (:labelIds)')
                 ->setParameter('labelIds', $filter->labelIds);
         }
 
-        if (null !== $filter->userRatingFrom) {
+        if ($filter->userRatingFrom !== null) {
             $qb->andWhere('a.userRating >= :userRatingFrom')
                 ->setParameter('userRatingFrom', new Rating($filter->userRatingFrom), RatingType::NAME);
         }
 
-        if (null !== $filter->userRatingTo) {
+        if ($filter->userRatingTo !== null) {
             $qb->andWhere('a.userRating <= :userRatingTo')
                 ->setParameter('userRatingTo', new Rating($filter->userRatingTo), RatingType::NAME);
         }
@@ -367,12 +367,12 @@ class AnimeRepository
         ?\DateTimeImmutable $to,
         string $paramPrefix,
     ): void {
-        if (null !== $from) {
+        if ($from !== null) {
             $qb->andWhere("{$dqlField} >= :{$paramPrefix}From")
                 ->setParameter("{$paramPrefix}From", $from, UnixTimestampType::NAME);
         }
 
-        if (null !== $to) {
+        if ($to !== null) {
             $qb->andWhere("{$dqlField} <= :{$paramPrefix}To")
                 ->setParameter("{$paramPrefix}To", $to, UnixTimestampType::NAME);
         }

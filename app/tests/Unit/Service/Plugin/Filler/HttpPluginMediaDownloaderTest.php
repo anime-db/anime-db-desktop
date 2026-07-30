@@ -139,12 +139,12 @@ final class HttpPluginMediaDownloaderTest extends TestCase
     private function removeDir(string $dir): void
     {
         $items = scandir($dir);
-        if (false === $items) {
+        if ($items === false) {
             return;
         }
 
         foreach ($items as $item) {
-            if ('.' === $item || '..' === $item) {
+            if ($item === '.' || $item === '..') {
                 continue;
             }
 

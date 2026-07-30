@@ -44,12 +44,12 @@ final class AnimeListSortResolver
 
     public function resolve(?string $field, ?string $direction): AnimeListSort
     {
-        $resolvedField = null !== $field ? AnimeSortField::tryFrom($field) : null;
-        if (null === $resolvedField) {
+        $resolvedField = $field !== null ? AnimeSortField::tryFrom($field) : null;
+        if ($resolvedField === null) {
             return new AnimeListSort(self::DEFAULT_FIELD, self::DEFAULT_DIRECTION);
         }
 
-        $resolvedDirection = null !== $direction ? SortDirection::tryFrom($direction) : null;
+        $resolvedDirection = $direction !== null ? SortDirection::tryFrom($direction) : null;
 
         return new AnimeListSort($resolvedField, $resolvedDirection ?? self::DEFAULT_DIRECTION);
     }

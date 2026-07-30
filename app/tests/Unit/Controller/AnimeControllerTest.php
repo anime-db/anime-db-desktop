@@ -95,14 +95,14 @@ final class AnimeControllerTest extends TestCase
             ->with('anime/show.html.twig', $this->callback(function (array $params) use ($storage) {
                 $view = $params['anime'];
 
-                return 'Shingeki no Kyojin' === $view['title']
-                    && 'tv' === $view['type']
-                    && true === $view['is_series']
-                    && 'watching' === $view['watch_status']
-                    && null === $view['user_rating']
-                    && 25 === $view['episodes_count']
-                    && null === $view['watched_episodes']
-                    && 24 === $view['duration_minutes']
+                return $view['title'] === 'Shingeki no Kyojin'
+                    && $view['type'] === 'tv'
+                    && $view['is_series'] === true
+                    && $view['watch_status'] === 'watching'
+                    && $view['user_rating'] === null
+                    && $view['episodes_count'] === 25
+                    && $view['watched_episodes'] === null
+                    && $view['duration_minutes'] === 24
                     && ['MAPPA'] === $view['studios']
                     && ['JP'] === $view['countries']
                     && [
@@ -114,11 +114,11 @@ final class AnimeControllerTest extends TestCase
                     && [['name' => '進撃の巨人', 'type' => 'original']] === $view['names']
                     && ['action'] === $view['genres']
                     && ['military'] === $view['themes']
-                    && 'shounen' === $view['demographic']
-                    && 'Rewatch before the finale.' === $view['notes']
+                    && $view['demographic'] === 'shounen'
+                    && $view['notes'] === 'Rewatch before the finale.'
                     && [['id' => null, 'name' => 'favorite']] === $view['labels']
                     && [['url' => 'https://shikimori.one/animes/16498', 'domain' => 'shikimori.one']] === $view['sources']
-                    && 'cover_1720273812345.webp' === $view['cover']
+                    && $view['cover'] === 'cover_1720273812345.webp'
                     && ['screenshot_1720273812345.webp'] === $view['images'];
             }))
             ->willReturn('<html></html>');
@@ -151,7 +151,7 @@ final class AnimeControllerTest extends TestCase
                 // The composed path points at a nonexistent file, so path_available must be false —
                 // this is what makes the "open folder" button disabled for it, not for the storage root.
                 return $expectedPath === $view['storage']['path']
-                    && false === $view['storage']['path_available'];
+                    && $view['storage']['path_available'] === false;
             }))
             ->willReturn('<html></html>');
 
@@ -170,23 +170,23 @@ final class AnimeControllerTest extends TestCase
             ->with('anime/show.html.twig', $this->callback(static function (array $params) {
                 $view = $params['anime'];
 
-                return false === $view['is_series']
-                    && 'plan' === $view['watch_status']
-                    && null === $view['user_rating']
-                    && null === $view['episodes_count']
-                    && null === $view['watched_episodes']
-                    && null === $view['storage']
-                    && [] === $view['studios']
-                    && [] === $view['countries']
-                    && [] === $view['names']
-                    && [] === $view['genres']
-                    && [] === $view['themes']
-                    && null === $view['demographic']
-                    && null === $view['notes']
-                    && [] === $view['labels']
-                    && [] === $view['sources']
-                    && null === $view['cover']
-                    && [] === $view['images'];
+                return $view['is_series'] === false
+                    && $view['watch_status'] === 'plan'
+                    && $view['user_rating'] === null
+                    && $view['episodes_count'] === null
+                    && $view['watched_episodes'] === null
+                    && $view['storage'] === null
+                    && $view['studios'] === []
+                    && $view['countries'] === []
+                    && $view['names'] === []
+                    && $view['genres'] === []
+                    && $view['themes'] === []
+                    && $view['demographic'] === null
+                    && $view['notes'] === null
+                    && $view['labels'] === []
+                    && $view['sources'] === []
+                    && $view['cover'] === null
+                    && $view['images'] === [];
             }))
             ->willReturn('<html></html>');
 

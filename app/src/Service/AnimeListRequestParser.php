@@ -48,18 +48,18 @@ final class AnimeListRequestParser
     public function parseFilter(Request $request): AnimeListFilter
     {
         $watchStatusRaw = $this->assertScalarParam($request, 'watch_status');
-        $watchStatus = null !== $watchStatusRaw ? WatchStatus::tryFrom((string) $watchStatusRaw) : null;
-        if (null === $watchStatus) {
+        $watchStatus = $watchStatusRaw !== null ? WatchStatus::tryFrom((string) $watchStatusRaw) : null;
+        if ($watchStatus === null) {
             throw new BadRequestHttpException('watch_status is required and must be one of: '.implode(', ', array_column(WatchStatus::cases(), 'value')));
         }
 
         $type = $this->parseEnumParam($request, 'type', AnimeType::tryFrom(...));
 
         $country = $this->assertScalarParam($request, 'countries');
-        $country = \is_string($country) && '' !== $country ? $country : null;
+        $country = \is_string($country) && $country !== '' ? $country : null;
 
         $name = $this->assertScalarParam($request, 'name');
-        $name = \is_string($name) && '' !== $name ? $name : null;
+        $name = \is_string($name) && $name !== '' ? $name : null;
 
         return new AnimeListFilter(
             watchStatus: $watchStatus,
@@ -93,7 +93,7 @@ final class AnimeListRequestParser
     {
         $raw = $this->assertScalarParam($request, $name);
 
-        return null !== $raw ? (string) $raw : null;
+        return $raw !== null ? (string) $raw : null;
     }
 
     /**
@@ -106,12 +106,12 @@ final class AnimeListRequestParser
     private function parseEnumParam(Request $request, string $name, callable $tryFrom): ?object
     {
         $raw = $this->assertScalarParam($request, $name);
-        if (null === $raw || '' === $raw) {
+        if ($raw === null || $raw === '') {
             return null;
         }
 
         $value = $tryFrom((string) $raw);
-        if (null === $value) {
+        if ($value === null) {
             throw new BadRequestHttpException(\sprintf('"%s" is not a valid value for "%s"', $raw, $name));
         }
 
@@ -130,7 +130,7 @@ final class AnimeListRequestParser
         $values = [];
         foreach ($this->queryList($request, $name) as $raw) {
             $value = $tryFrom((string) $raw);
-            if (null === $value) {
+            if ($value === null) {
                 throw new BadRequestHttpException(\sprintf('"%s" is not a valid value for "%s[]"', $raw, $name));
             }
             $values[] = $value;
@@ -168,7 +168,7 @@ final class AnimeListRequestParser
     private function parseIntParam(Request $request, string $name): ?int
     {
         $raw = $this->assertScalarParam($request, $name);
-        if (null === $raw || '' === $raw) {
+        if ($raw === null || $raw === '') {
             return null;
         }
 
@@ -182,12 +182,12 @@ final class AnimeListRequestParser
     private function parseDateParam(Request $request, string $name): ?\DateTimeImmutable
     {
         $raw = $this->assertScalarParam($request, $name);
-        if (null === $raw || '' === $raw) {
+        if ($raw === null || $raw === '') {
             return null;
         }
 
         $date = \DateTimeImmutable::createFromFormat('!Y-m-d', (string) $raw);
-        if (false === $date) {
+        if ($date === false) {
             throw new BadRequestHttpException(\sprintf('"%s" is not a valid Y-m-d date for "%s"', $raw, $name));
         }
 

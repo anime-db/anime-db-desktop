@@ -72,11 +72,11 @@ final class AnimeNewControllerTest extends TestCase
         $twig->expects($this->once())
             ->method('render')
             ->with('anime/new.html.twig', $this->callback(
-                static fn (array $params): bool => '' === $params['title']
-                    && null === $params['type']
-                    && 'plan' === $params['watch_status']
-                    && null === $params['storage_id']
-                    && null === $params['storage_path'],
+                static fn (array $params): bool => $params['title'] === ''
+                    && $params['type'] === null
+                    && $params['watch_status'] === 'plan'
+                    && $params['storage_id'] === null
+                    && $params['storage_path'] === null,
             ))
             ->willReturn('<html></html>');
 
@@ -91,9 +91,9 @@ final class AnimeNewControllerTest extends TestCase
         $twig->expects($this->once())
             ->method('render')
             ->with('anime/new.html.twig', $this->callback(
-                static fn (array $params): bool => 'Frieren' === $params['title']
-                    && '5' === $params['storage_id']
-                    && 'Frieren.mkv' === $params['storage_path'],
+                static fn (array $params): bool => $params['title'] === 'Frieren'
+                    && $params['storage_id'] === '5'
+                    && $params['storage_path'] === 'Frieren.mkv',
             ))
             ->willReturn('<html></html>');
 
@@ -171,7 +171,7 @@ final class AnimeNewControllerTest extends TestCase
         $twig->expects($this->once())
             ->method('render')
             ->with('anime/new.html.twig', $this->callback(
-                static fn (array $params): bool => 'anime_new.error_invalid' === $params['error'],
+                static fn (array $params): bool => $params['error'] === 'anime_new.error_invalid',
             ))
             ->willReturn('<html></html>');
 
@@ -195,7 +195,7 @@ final class AnimeNewControllerTest extends TestCase
         $twig->expects($this->once())
             ->method('render')
             ->with('anime/new.html.twig', $this->callback(
-                static fn (array $params): bool => 'anime_new.error_invalid' === $params['error'],
+                static fn (array $params): bool => $params['error'] === 'anime_new.error_invalid',
             ))
             ->willReturn('<html></html>');
 

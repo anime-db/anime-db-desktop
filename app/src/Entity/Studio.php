@@ -56,7 +56,7 @@ class Studio
     public function rename(string $name): void
     {
         $name = trim($name);
-        if ('' === $name) {
+        if ($name === '') {
             throw new InvalidNameException('name must not be empty');
         }
 

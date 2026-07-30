@@ -179,7 +179,7 @@ final class PluginWidgetControllerTest extends TestCase
         $twig->expects($this->once())
             ->method('render')
             ->with('plugin/_widget_error.html.twig', $this->callback(
-                static fn (array $params): bool => 'animedb-shikimori' === $params['pluginId'] && \is_string($params['retryUrl']),
+                static fn (array $params): bool => $params['pluginId'] === 'animedb-shikimori' && \is_string($params['retryUrl']),
             ))
             ->willReturn('<div>error</div>');
 
@@ -218,7 +218,7 @@ final class PluginWidgetControllerTest extends TestCase
         $twig->expects($this->once())
             ->method('render')
             ->with('plugin/_widget_error.html.twig', $this->callback(
-                static fn (array $params): bool => 'animedb-shikimori' === $params['pluginId'] && \is_string($params['retryUrl']),
+                static fn (array $params): bool => $params['pluginId'] === 'animedb-shikimori' && \is_string($params['retryUrl']),
             ))
             ->willReturn('<div>error</div>');
 

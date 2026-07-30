@@ -43,7 +43,7 @@ final class PluginId
 
     public function __construct(string $value)
     {
-        if (1 !== preg_match(self::FORMAT, $value)) {
+        if (preg_match(self::FORMAT, $value) !== 1) {
             throw new InvalidPluginIdException(\sprintf('Plugin id must be a lowercase "vendor-name" slug, got "%s".', $value));
         }
 

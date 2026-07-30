@@ -115,7 +115,7 @@ final class ScanStorageServiceTest extends TestCase
         }
 
         foreach (scandir($dir) ?: [] as $entry) {
-            if ('.' === $entry || '..' === $entry) {
+            if ($entry === '.' || $entry === '..') {
                 continue;
             }
 

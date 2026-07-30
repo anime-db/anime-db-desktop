@@ -78,7 +78,7 @@ final class PluginController
     {
         $installedPluginId = (string) $request->query->get('installed', '');
 
-        return $this->renderIndex(installedPluginId: '' !== $installedPluginId ? $installedPluginId : null);
+        return $this->renderIndex(installedPluginId: $installedPluginId !== '' ? $installedPluginId : null);
     }
 
     #[Route('/settings/plugins/install', name: 'settings_plugins_install', methods: ['POST'])]

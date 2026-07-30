@@ -93,7 +93,7 @@ final class PluginWidgetController
     private function renderEntryWidget(EntryWidgetInterface $widget, PluginId $pluginId, Request $request): Response
     {
         $entryId = $request->query->get('entryId');
-        if (!\is_string($entryId) || '' === $entryId || !ctype_digit($entryId)) {
+        if (!\is_string($entryId) || $entryId === '' || !ctype_digit($entryId)) {
             throw new BadRequestHttpException('Query parameter "entryId" must be a positive integer.');
         }
 

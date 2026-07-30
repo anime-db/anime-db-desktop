@@ -117,7 +117,7 @@ final class AnimeViewFactory
             return null;
         }
 
-        $path = null === $storagePath
+        $path = $storagePath === null
             ? $storage->getPath()
             : rtrim($storage->getPath(), '\\/').\DIRECTORY_SEPARATOR.$storagePath;
 

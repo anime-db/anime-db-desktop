@@ -164,7 +164,7 @@ final class PluginControllerTest extends TestCase
         $twig->expects($this->once())
             ->method('render')
             ->with('settings/plugins/index.html.twig', $this->callback(
-                static fn (array $params): bool => 'animedb-shikimori' === $params['installedPluginId'],
+                static fn (array $params): bool => $params['installedPluginId'] === 'animedb-shikimori',
             ))
             ->willReturn('<html></html>');
 
@@ -214,7 +214,7 @@ final class PluginControllerTest extends TestCase
         $twig->expects($this->once())
             ->method('render')
             ->with('settings/plugins/index.html.twig', $this->callback(
-                static fn (array $params): bool => 'settings_plugins.install_error_no_file' === $params['installError'],
+                static fn (array $params): bool => $params['installError'] === 'settings_plugins.install_error_no_file',
             ))
             ->willReturn('<html></html>');
 
@@ -336,7 +336,7 @@ final class PluginControllerTest extends TestCase
         $twig->expects($this->once())
             ->method('render')
             ->with('settings/plugins/index.html.twig', $this->callback(
-                static fn (array $params): bool => 'settings_plugins.install_error_invalid_manifest' === $params['installError'],
+                static fn (array $params): bool => $params['installError'] === 'settings_plugins.install_error_invalid_manifest',
             ))
             ->willReturn('<html></html>');
 
@@ -408,8 +408,8 @@ final class PluginControllerTest extends TestCase
         }
 
         $entries = scandir($dir);
-        foreach (false === $entries ? [] : $entries as $entry) {
-            if ('.' === $entry || '..' === $entry) {
+        foreach ($entries === false ? [] : $entries as $entry) {
+            if ($entry === '.' || $entry === '..') {
                 continue;
             }
 

@@ -375,7 +375,7 @@ final class ZipPluginInstallerTest extends TestCase
     {
         $stagingRoot = $this->rootDir.'/.plugin-install-tmp';
         $entries = is_dir($stagingRoot) ? scandir($stagingRoot) : [];
-        $leftovers = array_values(array_diff(false === $entries ? [] : $entries, ['.', '..']));
+        $leftovers = array_values(array_diff($entries === false ? [] : $entries, ['.', '..']));
 
         $this->assertSame([], $leftovers);
     }
@@ -387,8 +387,8 @@ final class ZipPluginInstallerTest extends TestCase
         }
 
         $entries = scandir($dir);
-        foreach (false === $entries ? [] : $entries as $entry) {
-            if ('.' === $entry || '..' === $entry) {
+        foreach ($entries === false ? [] : $entries as $entry) {
+            if ($entry === '.' || $entry === '..') {
                 continue;
             }
 

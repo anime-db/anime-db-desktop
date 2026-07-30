@@ -81,7 +81,7 @@ final class AnimeEditableControllerTest extends TestCase
         $twig->expects($this->once())
             ->method('render')
             ->with('anime/_editable.html.twig', $this->callback(
-                static fn (array $params): bool => null === $params['editing'] && null === $params['error'],
+                static fn (array $params): bool => $params['editing'] === null && $params['error'] === null,
             ))
             ->willReturn('<section></section>');
 
@@ -99,7 +99,7 @@ final class AnimeEditableControllerTest extends TestCase
         $twig->expects($this->once())
             ->method('render')
             ->with('anime/_editable.html.twig', $this->callback(
-                static fn (array $params): bool => 'notes' === $params['editing'],
+                static fn (array $params): bool => $params['editing'] === 'notes',
             ))
             ->willReturn('<section></section>');
 
@@ -133,8 +133,8 @@ final class AnimeEditableControllerTest extends TestCase
         $twig->expects($this->once())
             ->method('render')
             ->with('anime/_editable.html.twig', $this->callback(
-                static fn (array $params): bool => 'watch_status' === $params['editing']
-                    && 'anime_detail.error_watch_status_not_released' === $params['error'],
+                static fn (array $params): bool => $params['editing'] === 'watch_status'
+                    && $params['error'] === 'anime_detail.error_watch_status_not_released',
             ))
             ->willReturn('<section></section>');
 

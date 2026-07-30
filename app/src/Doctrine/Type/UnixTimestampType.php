@@ -49,7 +49,7 @@ final class UnixTimestampType extends Type
 
     public function convertToDatabaseValue(mixed $value, AbstractPlatform $platform): ?int
     {
-        if (null === $value) {
+        if ($value === null) {
             return null;
         }
 
@@ -62,7 +62,7 @@ final class UnixTimestampType extends Type
 
     public function convertToPHPValue(mixed $value, AbstractPlatform $platform): ?\DateTimeImmutable
     {
-        if (null === $value) {
+        if ($value === null) {
             return null;
         }
 
