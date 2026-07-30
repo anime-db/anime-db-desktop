@@ -144,6 +144,12 @@ services:
 
     App\Service\Plugin\Filler\PluginMediaDownloaderInterface: '@App\Service\Plugin\Filler\HttpPluginMediaDownloader'
 
+    # Every installed plugin gets this preconfigured PSR-18 client via DI just by type-hinting
+    # Psr\Http\Client\ClientInterface (issue #293 item 4) — see PluginHttpClientFactory for why
+    # a factory, not a bare service definition here, is the seam for future proxy support.
+    Psr\Http\Client\ClientInterface:
+        factory: ['@App\Service\Plugin\Http\PluginHttpClientFactory', 'create']
+
     # meilisearch/meilisearch-php's Client is not autowireable as-is: its constructor takes
     # plain url/apiKey strings, not services (see AnimeSearchIndexer, issue #196).
     Meilisearch\Client:

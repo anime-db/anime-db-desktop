@@ -45,9 +45,9 @@ use Symfony\Component\DependencyInjection\Attribute\AutowireIterator;
  * `indexAttribute: 'id'` keys the injected iterable by each filler's own {@see PluginId}: the
  * compiler pass derives it from the plugin's namespace and puts it on the tag as the `id`
  * attribute, matching the same string {@see PluginsConfigStore} already keys `plugins.json` by.
- * Neither `PluginInterface` nor `FillerInterface` exposes a way to ask an arbitrary instance for
- * its own `PluginId` directly — the closest thing, `resolveExternalId()`, resolves an id on an
- * external source from catalog URLs, not the plugin's own identity.
+ * Neither `ExternalIdResolutionInterface` nor `FillerInterface` exposes a way to ask an arbitrary
+ * instance for its own `PluginId` directly — the closest thing, `resolveExternalId()`, resolves an
+ * id on an external source from catalog URLs, not the plugin's own identity.
  *
  * The `features.filler ?? true` activity check itself lives in {@see FillerActiveTrait}, shared
  * with {@see \App\Service\Storage\Search\SearchByPluginChain} (issue #280).

@@ -27,7 +27,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Entity;
 
-use AnimeDb\PluginContracts\PluginInterface;
+use AnimeDb\PluginContracts\ExternalIdResolutionInterface;
 use App\Entity\Enum\AnimeNameType;
 use App\Entity\Enum\AnimeType;
 use App\Entity\Enum\Demographic;
@@ -565,11 +565,11 @@ final class AnimeTest extends TestCase
         $anime = new MovieAnime();
         $anime->addSource('https://shikimori.one/animes/1-cowboy-bebop');
         $pluginId = new PluginId('animedb-shikimori');
-        $seedingPlugin = $this->createStub(PluginInterface::class);
+        $seedingPlugin = $this->createStub(ExternalIdResolutionInterface::class);
         $seedingPlugin->method('resolveExternalId')->willReturn('1');
         $anime->getExternalId($pluginId, $seedingPlugin);
 
-        $plugin = $this->createMock(PluginInterface::class);
+        $plugin = $this->createMock(ExternalIdResolutionInterface::class);
         $plugin->expects($this->never())->method('resolveExternalId');
 
         $this->assertSame('1', $anime->getExternalId($pluginId, $plugin));
@@ -581,7 +581,7 @@ final class AnimeTest extends TestCase
         $anime->addSource('https://shikimori.one/animes/1-cowboy-bebop');
         $pluginId = new PluginId('animedb-shikimori');
 
-        $plugin = $this->createMock(PluginInterface::class);
+        $plugin = $this->createMock(ExternalIdResolutionInterface::class);
         $plugin->expects($this->once())
             ->method('resolveExternalId')
             ->with(['https://shikimori.one/animes/1-cowboy-bebop'])
@@ -599,7 +599,7 @@ final class AnimeTest extends TestCase
         $anime->addSource('https://myanimelist.net/anime/1');
         $pluginId = new PluginId('animedb-shikimori');
 
-        $plugin = $this->createStub(PluginInterface::class);
+        $plugin = $this->createStub(ExternalIdResolutionInterface::class);
         $plugin->method('resolveExternalId')->willReturn(null);
 
         $id = $anime->getExternalId($pluginId, $plugin);

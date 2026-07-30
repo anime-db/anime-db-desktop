@@ -27,7 +27,7 @@ declare(strict_types=1);
 
 namespace App\Entity;
 
-use AnimeDb\PluginContracts\PluginInterface;
+use AnimeDb\PluginContracts\ExternalIdResolutionInterface;
 use App\Entity\Enum\AnimeNameType;
 use App\Entity\Enum\AnimeType;
 use App\Entity\Enum\Demographic;
@@ -497,7 +497,7 @@ abstract class Anime
      * future overwrite of that plugin's raw filler data must not accidentally clobber
      * an already-resolved id.
      */
-    public function getExternalId(PluginId $pluginId, PluginInterface $plugin): ?string
+    public function getExternalId(PluginId $pluginId, ExternalIdResolutionInterface $plugin): ?string
     {
         $cached = $this->metadata['external_id'][(string) $pluginId] ?? null;
         if ($cached !== null) {

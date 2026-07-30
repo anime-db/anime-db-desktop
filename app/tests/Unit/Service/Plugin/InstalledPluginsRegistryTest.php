@@ -98,6 +98,26 @@ final class InstalledPluginsRegistryTest extends TestCase
         $this->assertTrue($plugin->enabled);
     }
 
+    public function testReconcileAcceptsLocalPluginType(): void
+    {
+        $dir = $this->pluginsDir.'/animedb-onboarding';
+        mkdir($dir, recursive: true);
+        file_put_contents($dir.'/manifest.json', (string) json_encode([
+            'id' => 'animedb-onboarding',
+            'name' => 'Onboarding',
+            'version' => '1.0.0',
+            'type' => 'local',
+            'require' => ['core' => '>=2.0.0', 'php' => '>=8.2'],
+        ]));
+
+        $registry = new InstalledPluginsRegistry($this->pluginsDir, $this->configStore(), new NullLogger());
+        $registry->reconcile();
+
+        $plugin = $registry->all()[0];
+
+        $this->assertSame(PluginType::Local, $plugin->manifest->type);
+    }
+
     public function testEnabledFiltersOutPluginsDisabledInPluginsConfigStore(): void
     {
         $this->writeManifest('animedb-shikimori');

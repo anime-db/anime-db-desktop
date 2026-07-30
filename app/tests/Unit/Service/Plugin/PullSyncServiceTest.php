@@ -132,7 +132,7 @@ final class PullSyncServiceTest extends TestCase
     }
 
     /**
-     * SyncInterface and FillerInterface both extend PluginInterface, so
+     * SyncInterface and FillerInterface both extend ExternalIdResolutionInterface, so
      * createMockForIntersectionOfInterfaces() rejects them (it treats resolveExternalId(),
      * inherited by both, as a conflicting redeclaration) — a small concrete stub in place of a
      * generated mock instead. $pull and $data are set directly on the returned instance rather
