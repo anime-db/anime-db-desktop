@@ -36,6 +36,7 @@ use App\Doctrine\Type\UnixTimestampType;
 use App\Entity\MovieAnime;
 use App\Entity\ValueObject\PluginId;
 use App\Repository\StudioRepository;
+use App\Service\Plugin\Exception\ExternalIdAlreadyClaimedException;
 use App\Service\Plugin\Filler\BulkFillerService;
 use App\Service\Plugin\Filler\PluginAnimeDataMerger;
 use App\Service\Plugin\Filler\PluginMediaDownloaderInterface;
@@ -127,6 +128,14 @@ final class BulkFillerServiceTest extends TestCase
         $this->assertSame('104', $anime->getExternalId($pluginId, $filler));
     }
 
+    /**
+     * A caller re-requesting the same external id twice without checking for an existing
+     * match first (this test's setup, not a realistic caller) still hits the real
+     * anime_external_id UNIQUE(plugin_id, external_id) constraint on the second attempt
+     * (issue #297) — build() does not silently produce a second Anime for an id it already
+     * created. findById() itself is still only called once, proving the cache is what saves
+     * the round trip, not a resolve()-style pre-check.
+     */
     public function testFillNewFromPluginCallsFindByIdOnlyOnceForRepeatedExternalId(): void
     {
         $pluginId = new PluginId('animedb-shikimori');
@@ -139,8 +148,17 @@ final class BulkFillerServiceTest extends TestCase
 
         $service = $this->newService([(string) $pluginId => $filler]);
 
-        $service->fillNewFromPlugin($pluginId, 'Bleach');
-        $service->fillNewFromPlugin($pluginId, 'Bleach');
+        $first = $service->fillNewFromPlugin($pluginId, 'Bleach');
+
+        $this->expectException(ExternalIdAlreadyClaimedException::class);
+
+        try {
+            $service->fillNewFromPlugin($pluginId, 'Bleach');
+        } catch (ExternalIdAlreadyClaimedException $e) {
+            $this->assertSame($first?->id, $e->animeId);
+
+            throw $e;
+        }
     }
 
     public function testFillNewFromPluginSkipsFindWhenExternalIdIsAlreadyKnown(): void

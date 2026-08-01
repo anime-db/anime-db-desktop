@@ -113,7 +113,7 @@ final class BackfillExternalIdMessageHandler
                 $page = $this->animeRepository->findPage($offset, self::PAGE_SIZE);
 
                 foreach ($page as $anime) {
-                    if (\array_key_exists((string) $pluginId, $anime->getMetadata()['external_id'] ?? [])) {
+                    if ($anime->getCachedExternalId($pluginId) !== null) {
                         continue;
                     }
 

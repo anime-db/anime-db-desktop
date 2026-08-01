@@ -383,7 +383,7 @@ final class AnimeRepositoryTest extends TestCase
         $this->assertSame([$linked], $this->repository->findByStorage($storage));
     }
 
-    public function testFindByExternalIdMatchesOnlyTheGivenPluginAndId(): void
+    public function testResolveMatchesOnlyTheGivenPluginAndId(): void
     {
         $shikimori = new PluginId('animedb-shikimori');
         $mal = new PluginId('animedb-mal');
@@ -404,9 +404,9 @@ final class AnimeRepositoryTest extends TestCase
         }
         $this->entityManager->flush();
 
-        $this->assertSame($synced, $this->repository->findByExternalId($shikimori, '1'));
-        $this->assertNull($this->repository->findByExternalId($shikimori, '2'));
-        $this->assertNull($this->repository->findByExternalId(new PluginId('animedb-anilist'), '1'));
+        $this->assertSame($synced, $this->repository->resolve($shikimori, '1'));
+        $this->assertNull($this->repository->resolve($shikimori, '2'));
+        $this->assertNull($this->repository->resolve(new PluginId('animedb-anilist'), '1'));
     }
 
     public function testIndexByExternalIdKeysOnlyThatPluginsIdsAndSkipsAnimeWithoutOne(): void

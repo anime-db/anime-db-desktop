@@ -114,7 +114,7 @@ final class BackfillExternalIdMessageHandlerTest extends TestCase
         $this->newHandler($sync)(new BackfillExternalIdMessage(self::PLUGIN_ID));
 
         $reloaded = $this->requireAnime($animeId);
-        $this->assertSame('1', $reloaded->getMetadata()['external_id'][self::PLUGIN_ID] ?? null);
+        $this->assertSame('1', $reloaded->getCachedExternalId(new PluginId(self::PLUGIN_ID)));
     }
 
     public function testSkipsAnimeThatAlreadyHasACachedExternalId(): void
@@ -150,7 +150,7 @@ final class BackfillExternalIdMessageHandlerTest extends TestCase
         $handler(new BackfillExternalIdMessage(self::PLUGIN_ID));
 
         $reloaded = $this->requireAnime($this->requireId($anime));
-        $this->assertNull($reloaded->getMetadata()['external_id'][self::PLUGIN_ID] ?? null);
+        $this->assertNull($reloaded->getCachedExternalId(new PluginId(self::PLUGIN_ID)));
     }
 
     public function testSkipsWhileAnotherBackfillForTheSamePluginIsAlreadyRunning(): void
@@ -210,8 +210,8 @@ final class BackfillExternalIdMessageHandlerTest extends TestCase
         $reloadedFailing = $this->requireAnime($failingId);
         $reloadedHealthy = $this->requireAnime($healthyId);
 
-        $this->assertNull($reloadedFailing->getMetadata()['external_id'][self::PLUGIN_ID] ?? null);
-        $this->assertSame('2', $reloadedHealthy->getMetadata()['external_id'][self::PLUGIN_ID] ?? null);
+        $this->assertNull($reloadedFailing->getCachedExternalId(new PluginId(self::PLUGIN_ID)));
+        $this->assertSame('2', $reloadedHealthy->getCachedExternalId(new PluginId(self::PLUGIN_ID)));
     }
 
     private function requireId(Anime $anime): int

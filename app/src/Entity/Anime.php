@@ -135,7 +135,7 @@ abstract class Anime
     #[ORM\Column(length: 16, enumType: Demographic::class, nullable: true)]
     private ?Demographic $demographic = null;
 
-    /** @var array<string, mixed>|null raw plugin data, including descriptions{} used by getSummary() */
+    /** @var array<string, mixed>|null raw plugin data (external_id{}, plugins{}) */
     #[ORM\Column(type: 'json', nullable: true)]
     private ?array $metadata = null;
 
@@ -179,6 +179,21 @@ abstract class Anime
     #[ORM\OneToMany(mappedBy: 'anime', targetEntity: AnimeSource::class, cascade: ['persist', 'remove'], orphanRemoval: true)]
     private Collection $sources;
 
+    /** @var Collection<int, AnimeExternalId> */
+    #[ORM\OneToMany(mappedBy: 'anime', targetEntity: AnimeExternalId::class, cascade: ['persist', 'remove'], orphanRemoval: true)]
+    private Collection $externalIds;
+
+    /**
+     * One row per locale (issue #298). Not eagerly joined/selected by catalog list
+     * queries (AnimeRepository::findByFilter()) — Doctrine only loads this collection
+     * lazily, the first time getSummary()/getDescriptions() is called, which today only
+     * happens on the anime detail page (AnimeViewFactory::serialize()).
+     *
+     * @var Collection<int, AnimeDescription>
+     */
+    #[ORM\OneToMany(mappedBy: 'anime', targetEntity: AnimeDescription::class, cascade: ['persist', 'remove'], orphanRemoval: true)]
+    private Collection $descriptions;
+
     public function __construct()
     {
         $this->genres = new ArrayCollection();
@@ -188,6 +203,8 @@ abstract class Anime
         $this->names = new ArrayCollection();
         $this->images = new ArrayCollection();
         $this->sources = new ArrayCollection();
+        $this->externalIds = new ArrayCollection();
+        $this->descriptions = new ArrayCollection();
         $this->dateAdd = new \DateTimeImmutable();
         $this->dateUpdate = new \DateTimeImmutable();
     }
@@ -369,6 +386,17 @@ abstract class Anime
             $target->addSource($link->url);
         }
 
+        // Not covered by assignMetadataFrom() above: external ids live in their own table
+        // (issue #297), not in $metadata, so a type migration must carry them over explicitly
+        // or every synced plugin link would be silently orphaned by the class swap.
+        foreach ($this->externalIds as $entry) {
+            $target->rememberExternalId(new PluginId($entry->pluginId), $entry->externalId);
+        }
+
+        foreach ($this->getDescriptions() as $description) {
+            $target->setDescription($description->locale, $description->description);
+        }
+
         if ($this instanceof SeriesAnime && $target instanceof SeriesAnime) {
             $target->setEpisodesCount($this->getEpisodesCount());
             $target->setWatchedEpisodes($this->getWatchedEpisodes());
@@ -457,7 +485,8 @@ abstract class Anime
      * Overwrites the whole metadata blob at once, unlike setDescription() which merges into a
      * namespaced slice. Private (not just protected) and used only by migrate() above: no
      * caller, including subclasses, has a reason to clobber descriptions{} wholesale outside of
-     * that use case.
+     * that use case. Descriptions (issue #298) and plugins' own filler data (issue #299) are
+     * copied separately (see migrate()) since they moved out of this blob into their own tables.
      */
     private function assignMetadataFrom(self $source): void
     {
@@ -468,14 +497,15 @@ abstract class Anime
      * Resolves and caches the external id this plugin uses for the anime, e.g. the
      * Shikimori id parsed from a shikimori.one source URL.
      *
-     * Cached under metadata['external_id'][$pluginId]. Plugins' own filler data used to live
-     * alongside this under metadata['plugins'][$pluginId] — that slice moved to the
-     * `anime_plugin_data` table (issue #299, see {@see \App\Service\Plugin\PluginDataStore}) to
-     * avoid the lost-update this whole-column JSON blob has: this key is unaffected by that move.
+     * Cached as an AnimeExternalId row (issue #297; previously metadata['external_id']
+     * [$pluginId], an unindexed JSON blob) — a separate table from a plugin's own filler data,
+     * which now lives in the `anime_plugin_data` table too (issue #299, see
+     * {@see \App\Service\Plugin\PluginDataStore}): a future overwrite of that plugin's raw
+     * filler data must not accidentally clobber an already-resolved id.
      */
     public function getExternalId(PluginId $pluginId, ExternalIdResolutionInterface $plugin): ?string
     {
-        $cached = $this->metadata['external_id'][(string) $pluginId] ?? null;
+        $cached = $this->getCachedExternalId($pluginId);
         if ($cached !== null) {
             return $cached;
         }
@@ -484,41 +514,92 @@ abstract class Anime
         $id = $plugin->resolveExternalId($urls);
 
         if ($id !== null) {
-            $metadata = $this->metadata ?? [];
-            $metadata['external_id'][(string) $pluginId] = $id;
-            $this->metadata = $metadata;
+            $this->rememberExternalId($pluginId, $id);
         }
 
         return $id;
     }
 
     /**
+     * Peeks the AnimeExternalId row already cached for $pluginId, if any, without ever
+     * calling out to a plugin to resolve one — the read-only half of getExternalId(), used
+     * where a caller only wants to check what's already known (e.g. BackfillExternalIdMessageHandler
+     * skipping a row that's already resolved).
+     */
+    public function getCachedExternalId(PluginId $pluginId): ?string
+    {
+        foreach ($this->externalIds as $entry) {
+            if ($entry->pluginId === (string) $pluginId) {
+                return $entry->externalId;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @return list<PluginId> every plugin this anime already has a cached external id for
+     */
+    public function getExternalIdPluginIds(): array
+    {
+        return array_values(array_map(
+            static fn (AnimeExternalId $entry): PluginId => new PluginId($entry->pluginId),
+            $this->externalIds->toArray(),
+        ));
+    }
+
+    /**
      * Caches an external id obtained without a resolveExternalId() round trip — e.g. from
      * FillerInterface::find() during bulk fill-in (issue #227), where the id comes back
      * directly from the plugin's search result instead of being parsed from a source URL.
-     * Writes the same metadata['external_id'][$pluginId] slot getExternalId() reads/writes,
-     * so a later getExternalId() call for this plugin returns the cached value without
-     * re-resolving it.
+     * Writes the same AnimeExternalId slot getExternalId() reads/writes, so a later
+     * getExternalId() call for this plugin returns the cached value without re-resolving it.
      */
     public function rememberExternalId(PluginId $pluginId, string $externalId): self
     {
-        $metadata = $this->metadata ?? [];
-        $metadata['external_id'][(string) $pluginId] = $externalId;
-        $this->metadata = $metadata;
+        foreach ($this->externalIds as $entry) {
+            if ($entry->pluginId === (string) $pluginId) {
+                if ($entry->externalId === $externalId) {
+                    return $this;
+                }
+
+                $this->externalIds->removeElement($entry);
+                break;
+            }
+        }
+
+        $this->externalIds->add(new AnimeExternalId($this, $pluginId, $externalId));
 
         return $this;
     }
 
     /**
-     * Writes metadata.descriptions[$locale], the value getSummary() reads.
+     * Upserts the AnimeDescription row for $locale, the value getSummary() reads. An
+     * existing row for the same locale is mutated in place (UPDATE), not replaced via
+     * remove+add: the table has a UNIQUE(anime_id, locale) constraint, and Doctrine's
+     * UnitOfWork issues all INSERTs before any DELETE on flush, so remove+add on an
+     * already-persisted anime (e.g. PluginAnimeDataMerger::applyDescriptions() updating
+     * an existing description) would violate that constraint before the old row is gone.
      */
     public function setDescription(string $locale, string $text): self
     {
-        $metadata = $this->metadata ?? [];
-        $metadata['descriptions'][$locale] = $text;
-        $this->metadata = $metadata;
+        foreach ($this->descriptions as $description) {
+            if ($description->locale === $locale) {
+                $description->description = $text;
+
+                return $this;
+            }
+        }
+
+        $this->descriptions->add(new AnimeDescription($this, $locale, $text));
 
         return $this;
+    }
+
+    /** @return Collection<int, AnimeDescription> */
+    public function getDescriptions(): Collection
+    {
+        return $this->descriptions;
     }
 
     public function getDateAdd(): \DateTimeImmutable
@@ -744,28 +825,32 @@ abstract class Anime
     }
 
     /**
-     * Resolves metadata.descriptions{} (e.g. {"ru": "...", "en": "..."}) for the given UI locale:
-     * preferred locale -> en -> any available -> empty string.
+     * Resolves the $descriptions row (issue #298) for the given UI locale: preferred locale
+     * -> en -> any available -> empty string. Triggers the one lazy query loading this
+     * anime's own description rows on first access (see $descriptions docblock) — called
+     * only from AnimeViewFactory::serialize(), i.e. only when rendering the anime detail
+     * page, never from the catalog list.
      */
     public function getSummary(string $locale): string
     {
-        $descriptions = $this->metadata['descriptions'] ?? null;
-        if (!\is_array($descriptions) || $descriptions === []) {
+        if ($this->descriptions->isEmpty()) {
             return '';
         }
 
-        if (isset($descriptions[$locale]) && \is_string($descriptions[$locale])) {
-            return $descriptions[$locale];
-        }
-
-        if (isset($descriptions[self::FALLBACK_LOCALE]) && \is_string($descriptions[self::FALLBACK_LOCALE])) {
-            return $descriptions[self::FALLBACK_LOCALE];
-        }
-
-        foreach ($descriptions as $value) {
-            if (\is_string($value)) {
-                return $value;
+        foreach ($this->descriptions as $description) {
+            if ($description->locale === $locale) {
+                return $description->description;
             }
+        }
+
+        foreach ($this->descriptions as $description) {
+            if ($description->locale === self::FALLBACK_LOCALE) {
+                return $description->description;
+            }
+        }
+
+        foreach ($this->descriptions as $description) {
+            return $description->description;
         }
 
         return '';

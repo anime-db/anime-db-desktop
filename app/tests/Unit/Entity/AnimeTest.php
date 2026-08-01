@@ -81,7 +81,7 @@ final class AnimeTest extends TestCase
         $this->assertSame($anime, $anime->setTitle('Trigun'));
     }
 
-    public function testMigrateCarriesMetadataOverAsTheWholeBlob(): void
+    public function testMigrateCarriesDescriptionsOverPerLocale(): void
     {
         $source = new MovieAnime();
         $source->setTitle('Cowboy Bebop: The Movie')
@@ -90,7 +90,8 @@ final class AnimeTest extends TestCase
 
         $target = $source->migrate(AnimeType::Tv);
 
-        $this->assertSame(['descriptions' => ['ru' => 'Описание']], $target->getMetadata());
+        $this->assertSame('Описание', $target->getSummary('ru'));
+        $this->assertNull($target->getMetadata());
     }
 
     public function testSetDescriptionIsReadByGetSummary(): void
@@ -547,7 +548,8 @@ final class AnimeTest extends TestCase
         $id = $anime->getExternalId($pluginId, $plugin);
 
         $this->assertSame('1', $id);
-        $this->assertSame(['external_id' => ['animedb-shikimori' => '1']], $anime->getMetadata());
+        $this->assertSame('1', $anime->getCachedExternalId($pluginId));
+        $this->assertNull($anime->getMetadata());
     }
 
     public function testGetExternalIdReturnsNullWithoutCachingWhenPluginCannotResolve(): void
