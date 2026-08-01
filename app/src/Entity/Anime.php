@@ -135,7 +135,7 @@ abstract class Anime
     #[ORM\Column(length: 16, enumType: Demographic::class, nullable: true)]
     private ?Demographic $demographic = null;
 
-    /** @var array<string, mixed>|null raw plugin data, including descriptions{} used by getSummary() */
+    /** @var array<string, mixed>|null raw plugin data (external_id{}, plugins{}) */
     #[ORM\Column(type: 'json', nullable: true)]
     private ?array $metadata = null;
 
@@ -179,6 +179,17 @@ abstract class Anime
     #[ORM\OneToMany(mappedBy: 'anime', targetEntity: AnimeSource::class, cascade: ['persist', 'remove'], orphanRemoval: true)]
     private Collection $sources;
 
+    /**
+     * One row per locale (issue #298). Not eagerly joined/selected by catalog list
+     * queries (AnimeRepository::findByFilter()) — Doctrine only loads this collection
+     * lazily, the first time getSummary()/getDescriptions() is called, which today only
+     * happens on the anime detail page (AnimeViewFactory::serialize()).
+     *
+     * @var Collection<int, AnimeDescription>
+     */
+    #[ORM\OneToMany(mappedBy: 'anime', targetEntity: AnimeDescription::class, cascade: ['persist', 'remove'], orphanRemoval: true)]
+    private Collection $descriptions;
+
     public function __construct()
     {
         $this->genres = new ArrayCollection();
@@ -188,6 +199,7 @@ abstract class Anime
         $this->names = new ArrayCollection();
         $this->images = new ArrayCollection();
         $this->sources = new ArrayCollection();
+        $this->descriptions = new ArrayCollection();
         $this->dateAdd = new \DateTimeImmutable();
         $this->dateUpdate = new \DateTimeImmutable();
     }
@@ -369,6 +381,10 @@ abstract class Anime
             $target->addSource($link->url);
         }
 
+        foreach ($this->getDescriptions() as $description) {
+            $target->setDescription($description->locale, $description->description);
+        }
+
         if ($this instanceof SeriesAnime && $target instanceof SeriesAnime) {
             $target->setEpisodesCount($this->getEpisodesCount());
             $target->setWatchedEpisodes($this->getWatchedEpisodes());
@@ -454,10 +470,11 @@ abstract class Anime
     }
 
     /**
-     * Overwrites the whole metadata blob at once, unlike putPluginData()/setDescription()
-     * which merge into a namespaced slice. Private (not just protected) and used only by
-     * migrate() above: no caller, including subclasses, has a reason to clobber another
-     * plugin's data or descriptions{} wholesale outside of that use case.
+     * Overwrites the whole metadata blob at once, unlike putPluginData() which merges into
+     * a namespaced slice. Private (not just protected) and used only by migrate() above: no
+     * caller, including subclasses, has a reason to clobber another plugin's data wholesale
+     * outside of that use case. Descriptions are copied separately (see migrate()) since
+     * issue #298 moved them out of this blob into their own table.
      */
     private function assignMetadataFrom(self $source): void
     {
@@ -466,7 +483,7 @@ abstract class Anime
 
     /**
      * Merges $data into this plugin's own namespaced slice of metadata, leaving the data
-     * of every other plugin (and descriptions{}) untouched.
+     * of every other plugin untouched.
      *
      * @param array<string, mixed> $data
      */
@@ -534,15 +551,32 @@ abstract class Anime
     }
 
     /**
-     * Writes metadata.descriptions[$locale], the value getSummary() reads.
+     * Upserts the AnimeDescription row for $locale, the value getSummary() reads. An
+     * existing row for the same locale is mutated in place (UPDATE), not replaced via
+     * remove+add: the table has a UNIQUE(anime_id, locale) constraint, and Doctrine's
+     * UnitOfWork issues all INSERTs before any DELETE on flush, so remove+add on an
+     * already-persisted anime (e.g. PluginAnimeDataMerger::applyDescriptions() updating
+     * an existing description) would violate that constraint before the old row is gone.
      */
     public function setDescription(string $locale, string $text): self
     {
-        $metadata = $this->metadata ?? [];
-        $metadata['descriptions'][$locale] = $text;
-        $this->metadata = $metadata;
+        foreach ($this->descriptions as $description) {
+            if ($description->locale === $locale) {
+                $description->description = $text;
+
+                return $this;
+            }
+        }
+
+        $this->descriptions->add(new AnimeDescription($this, $locale, $text));
 
         return $this;
+    }
+
+    /** @return Collection<int, AnimeDescription> */
+    public function getDescriptions(): Collection
+    {
+        return $this->descriptions;
     }
 
     public function getDateAdd(): \DateTimeImmutable
@@ -768,28 +802,32 @@ abstract class Anime
     }
 
     /**
-     * Resolves metadata.descriptions{} (e.g. {"ru": "...", "en": "..."}) for the given UI locale:
-     * preferred locale -> en -> any available -> empty string.
+     * Resolves the $descriptions row (issue #298) for the given UI locale: preferred locale
+     * -> en -> any available -> empty string. Triggers the one lazy query loading this
+     * anime's own description rows on first access (see $descriptions docblock) — called
+     * only from AnimeViewFactory::serialize(), i.e. only when rendering the anime detail
+     * page, never from the catalog list.
      */
     public function getSummary(string $locale): string
     {
-        $descriptions = $this->metadata['descriptions'] ?? null;
-        if (!\is_array($descriptions) || $descriptions === []) {
+        if ($this->descriptions->isEmpty()) {
             return '';
         }
 
-        if (isset($descriptions[$locale]) && \is_string($descriptions[$locale])) {
-            return $descriptions[$locale];
-        }
-
-        if (isset($descriptions[self::FALLBACK_LOCALE]) && \is_string($descriptions[self::FALLBACK_LOCALE])) {
-            return $descriptions[self::FALLBACK_LOCALE];
-        }
-
-        foreach ($descriptions as $value) {
-            if (\is_string($value)) {
-                return $value;
+        foreach ($this->descriptions as $description) {
+            if ($description->locale === $locale) {
+                return $description->description;
             }
+        }
+
+        foreach ($this->descriptions as $description) {
+            if ($description->locale === self::FALLBACK_LOCALE) {
+                return $description->description;
+            }
+        }
+
+        foreach ($this->descriptions as $description) {
+            return $description->description;
         }
 
         return '';
