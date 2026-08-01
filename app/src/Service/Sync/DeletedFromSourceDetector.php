@@ -129,11 +129,11 @@ final class DeletedFromSourceDetector
      */
     private function stillPresentOn(Anime $anime, PluginId $deletedFrom): array
     {
-        $externalIds = ($anime->getMetadata() ?? [])['external_id'] ?? [];
+        $linkedPluginIds = array_map(strval(...), $anime->getExternalIdPluginIds());
 
         $result = [];
         foreach ($this->syncRegistry->allActive() as $otherPluginId => $sync) {
-            if ($otherPluginId !== (string) $deletedFrom && \array_key_exists($otherPluginId, $externalIds)) {
+            if ($otherPluginId !== (string) $deletedFrom && \in_array($otherPluginId, $linkedPluginIds, true)) {
                 $result[] = $otherPluginId;
             }
         }

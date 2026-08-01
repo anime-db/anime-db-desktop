@@ -32,20 +32,22 @@ use App\Entity\Anime;
 use App\Entity\Exception\InvalidWatchStatusException;
 use App\Entity\ValueObject\PluginId;
 use App\Repository\AnimeRepository;
+use App\Service\Plugin\Exception\ExternalIdAlreadyClaimedException;
 use App\Service\Plugin\Filler\BulkFillerService;
 use App\Service\Sync\CrossVendorDuplicateDetector;
 use App\Service\Sync\DeletedFromSourceDetector;
+use Doctrine\ORM\EntityManager;
 use Doctrine\ORM\EntityManagerInterface;
+use Psr\Log\LoggerInterface;
 
 /**
  * Core of the pull direction of sync (issue #257): applies one plugin's
  * SyncInterface::pull() list to the local catalog idempotently, so a periodic re-run of the
  * same plugin never duplicates an already-known title.
  *
- * AnimeRepository::indexByExternalId() builds the reverse lookup by metadata['external_id']
- * [$pluginId] once, up front (see that method's docblock for the accepted risk of scanning
- * the unindexed metadata JSON column) — resolving every pulled item against that in-memory
- * map, rather than repeating the scan per item, covers both cases the issue describes: an
+ * AnimeRepository::indexByExternalId() builds the reverse lookup off the anime_external_id
+ * index (issue #297) once, up front — resolving every pulled item against that in-memory
+ * map, rather than repeating the lookup per item, covers both cases the issue describes: an
  * already-synced item resolves to its known local Anime, and a "new" item that in fact
  * already has a local match (e.g. added by another plugin, or by a previous pull under a
  * stale id) is folded onto it instead of duplicated.
@@ -75,6 +77,25 @@ use Doctrine\ORM\EntityManagerInterface;
  * against every such freshly-created Anime, once the flush below has given it an id, so it never
  * flags $anime against itself. Only genuinely new rows go through it: an item that already
  * resolved via $byExternalId is a known, previously-reviewed title, not a fresh dedup candidate.
+ *
+ * Create-conflict recovery (issue #297): the up-front indexByExternalId() lookup only catches a
+ * race that already resolved before this run started — a *concurrent* create (another process
+ * linking the same external id at the same time) is still possible, caught for real by the
+ * anime_external_id UNIQUE(plugin_id, external_id) constraint inside
+ * BulkFillerService::build(). That method isolates the constraint-checked insert into its own
+ * flush() so a conflict there cannot take unrelated pending work down with it — but Doctrine
+ * still closes this run's EntityManager as its own reaction to any failed flush (see
+ * ExternalIdAlreadyClaimedException), so everything accumulated so far is flushed right before
+ * every create attempt below, and once a conflict has actually happened, the remainder of this
+ * pull() falls back to a throwaway EntityManager sharing the same DBAL connection — the only way
+ * to keep issuing writes once the original one is closed. A *second* unrelated create failing in
+ * the same run (vanishingly rare — SQLite serializes writes, so this needs two conflicts back to
+ * back) is logged and skipped rather than chased further: it resolves itself on the next
+ * scheduled pull, the same self-healing stance already taken for an unresolvable findById() above.
+ * For the same reason, CrossVendorDuplicateDetector and DeletedFromSourceDetector are skipped
+ * (logged, not run) for the rest of a run that hit this recovery path — both are wired to this
+ * run's original, now-closed EntityManager, and re-wiring them to the recovery one is not worth
+ * the complexity for a path this rare.
  */
 final class PullSyncService
 {
@@ -84,6 +105,7 @@ final class PullSyncService
         private readonly BulkFillerService $bulkFillerService,
         private readonly CrossVendorDuplicateDetector $duplicateDetector,
         private readonly DeletedFromSourceDetector $deletionDetector,
+        private readonly LoggerInterface $logger,
     ) {
     }
 
@@ -94,23 +116,58 @@ final class PullSyncService
         $newlyCreated = [];
         /** @var array<string, true> $presentExternalIds external ids still in the source's list */
         $presentExternalIds = [];
+        // Set once this run's own EntityManager gets closed by a lost create race — see the
+        // class docblock's "Create-conflict recovery" section. Everything after that point,
+        // for the rest of this pull(), goes through this one instead.
+        $recoveryEntityManager = null;
 
         foreach ($sync->pull() as $item) {
             $presentExternalIds[$item->externalId] = true;
             $anime = $byExternalId[$item->externalId] ?? null;
+            $status = WatchStatusMapper::toWatchStatus($item->status);
 
             if ($anime === null) {
-                $anime = $this->bulkFillerService->fillNewFrom($sync, $pluginId, $item->externalId);
+                if ($recoveryEntityManager !== null) {
+                    // A further, unrelated new item after this run's EntityManager was
+                    // already closed by an earlier conflict — BulkFillerService is bound to
+                    // that closed instance, so it cannot be used again this run.
+                    $this->logger->warning('Skipping a new item this run: an earlier create conflict already closed this pull\'s EntityManager.', [
+                        'pluginId' => (string) $pluginId,
+                        'externalId' => $item->externalId,
+                    ]);
+
+                    continue;
+                }
+
+                // Durably commit everything accumulated so far before the one conflict-prone
+                // operation left in this run (BulkFillerService::build()'s own isolated
+                // flush): if that flush fails, nothing already-processed here is lost with it.
+                $this->entityManager->flush();
+
+                try {
+                    $anime = $this->bulkFillerService->fillNewFrom($sync, $pluginId, $item->externalId);
+                } catch (ExternalIdAlreadyClaimedException $conflict) {
+                    $recoveryEntityManager = $this->openRecoveryEntityManager();
+                    $anime = $recoveryEntityManager->find(Anime::class, $conflict->animeId);
+                }
+
                 if ($anime === null) {
                     continue;
                 }
 
                 $byExternalId[$item->externalId] = $anime;
-                $newlyCreated[] = $anime;
+                if ($recoveryEntityManager === null) {
+                    $newlyCreated[] = $anime;
+                }
+            } elseif ($recoveryEntityManager !== null) {
+                // Re-fetch through the recovery manager: $anime above is still managed by
+                // the now-closed original one, and a different EntityManager's UnitOfWork
+                // has no idea that object exists.
+                $anime = $recoveryEntityManager->find(Anime::class, $anime->id) ?? $anime;
             }
 
             try {
-                $anime->setWatchStatus(WatchStatusMapper::toWatchStatus($item->status));
+                $anime->setWatchStatus($status);
             } catch (InvalidWatchStatusException) {
                 // The source considers the title completed, but this Anime's own production
                 // status (from datePremiere/dateEnd) isn't Released — either it's genuinely
@@ -122,9 +179,28 @@ final class PullSyncService
                 // once the local production status catches up (dateEnd gets filled in, or a
                 // later pull once the source itself no longer reports it as completed).
             }
+
+            $recoveryEntityManager?->flush();
         }
 
-        $this->entityManager->flush();
+        if ($recoveryEntityManager === null) {
+            $this->entityManager->flush();
+        } else {
+            // Both detectors below are wired to this run's *original* EntityManager (through
+            // SyncReviewItemRepository), which a lost create race has already closed — running
+            // them here would raise EntityManagerClosedException instead of the self-healing
+            // this class promises. Skip them for this run and log it: any duplicate/disappeared
+            // item they would have flagged is still present next pull (a newly created row keeps
+            // its external_id, so it is not "new" again — but the race itself is rare enough,
+            // and Doctrine serializes SQLite writes, that a second one landing in the very next
+            // run to re-surface it is rarer still) — same self-healing stance already taken for
+            // a second conflict earlier in this method.
+            $this->logger->warning('Skipping post-pull duplicate/deletion review for this run: an earlier create conflict already closed this pull\'s EntityManager.', [
+                'pluginId' => (string) $pluginId,
+            ]);
+
+            return;
+        }
 
         foreach ($newlyCreated as $anime) {
             $this->duplicateDetector->detect($anime);
@@ -135,5 +211,20 @@ final class PullSyncService
         // $byExternalId and are present in $presentExternalIds, so they never count as removed.
         $disappeared = array_diff_key($byExternalId, $presentExternalIds);
         $this->deletionDetector->detect($pluginId, $disappeared);
+    }
+
+    /**
+     * A fresh EntityManager sharing this run's original DBAL connection — the recovery path
+     * once a lost create race has closed the original one (see the class docblock). Doctrine
+     * only marks the ORM-level EntityManager unusable on a failed flush(); the underlying
+     * connection stays open and perfectly usable, so wrapping it in a new EntityManager
+     * instance is the standard, documented way to keep issuing ORM writes for the rest of
+     * this run without a Doctrine\Persistence\ManagerRegistry (which would also swap the EM
+     * out from under AnimeRepository/BulkFillerService — no help here, since a *further* new
+     * item still can't be created through them once they hold a closed one).
+     */
+    private function openRecoveryEntityManager(): EntityManagerInterface
+    {
+        return new EntityManager($this->entityManager->getConnection(), $this->entityManager->getConfiguration());
     }
 }
