@@ -590,7 +590,8 @@ final class AnimeTest extends TestCase
         $id = $anime->getExternalId($pluginId, $plugin);
 
         $this->assertSame('1', $id);
-        $this->assertSame(['external_id' => ['animedb-shikimori' => '1']], $anime->getMetadata());
+        $this->assertSame('1', $anime->getCachedExternalId($pluginId));
+        $this->assertNull($anime->getMetadata());
     }
 
     public function testGetExternalIdReturnsNullWithoutCachingWhenPluginCannotResolve(): void

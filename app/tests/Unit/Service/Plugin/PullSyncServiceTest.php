@@ -128,7 +128,7 @@ final class PullSyncServiceTest extends TestCase
             new SyncReviewService(new SyncReviewItemRepository($entityManager)),
         );
 
-        return new PullSyncService($entityManager, $animeRepository, $bulkFillerService, $duplicateDetector, $deletionDetector);
+        return new PullSyncService($entityManager, $animeRepository, $bulkFillerService, $duplicateDetector, $deletionDetector, new NullLogger());
     }
 
     /**
@@ -233,7 +233,47 @@ final class PullSyncServiceTest extends TestCase
         $this->assertCount(1, $created);
         $this->assertSame('Trigun', $created[0]->getTitle());
         $this->assertSame(WatchStatus::Completed, $created[0]->getWatchStatus());
-        $this->assertSame('42', $created[0]->getMetadata()['external_id'][(string) $this->pluginId] ?? null);
+        $this->assertSame('42', $created[0]->getCachedExternalId($this->pluginId));
+    }
+
+    /**
+     * The up-front indexByExternalId() snapshot cannot see a concurrent create that lands
+     * after it — the real guard is the anime_external_id UNIQUE(plugin_id, external_id)
+     * constraint inside BulkFillerService::build() (issue #297). Simulated here by seeding
+     * the "winning" Anime from inside the sync plugin's own pull() generator: PHP generators
+     * run their body lazily, so this insert happens exactly between pull()'s
+     * indexByExternalId() call and its loop reaching this item, the same window a real
+     * concurrent process would race into.
+     */
+    public function testALostCreateRaceUpdatesTheWinnerInsteadOfFailingTheWholeBatch(): void
+    {
+        $pluginId = $this->pluginId;
+        $entityManager = $this->entityManager;
+
+        $pull = (function () use ($pluginId, $entityManager): \Generator {
+            $winner = new TvAnime();
+            $winner->setTitle('Trigun')->setWatchStatus(WatchStatus::Plan);
+            $winner->rememberExternalId($pluginId, '42');
+            $entityManager->persist($winner);
+            $entityManager->flush();
+
+            yield new SyncItem('42', SyncStatus::Watching, 'Trigun');
+        })();
+
+        $sync = $this->syncFillerStub(
+            $pull,
+            data: new PluginAnimeData(title: 'Trigun', type: ContractsAnimeType::Tv),
+            fillableFields: ['title', 'type'],
+        );
+
+        $this->service->pull($pluginId, $sync);
+
+        $all = $this->allAnime();
+        // No duplicate: BulkFillerService's own attempt lost the race, and its orphaned
+        // Anime row was cleaned up rather than left dangling without an external id.
+        $this->assertCount(1, $all);
+        // The item's status is applied to the winner via the recovery path, not dropped.
+        $this->assertSame(WatchStatus::Watching, $all[0]->getWatchStatus());
     }
 
     /**
@@ -276,7 +316,7 @@ final class PullSyncServiceTest extends TestCase
             new SyncRegistry([], new PluginsConfigStore(sys_get_temp_dir().'/anime-pull-sync-reg-'.uniqid().'.json')),
             new SyncReviewService(new SyncReviewItemRepository($this->entityManager)),
         );
-        $service = new PullSyncService($this->entityManager, new AnimeRepository($this->entityManager), $bulkFillerService, $duplicateDetector, $deletionDetector);
+        $service = new PullSyncService($this->entityManager, new AnimeRepository($this->entityManager), $bulkFillerService, $duplicateDetector, $deletionDetector, new NullLogger());
 
         $sync = $this->syncFillerStub(
             [new SyncItem('42', SyncStatus::Plan, 'Trigun')],
@@ -358,7 +398,7 @@ final class PullSyncServiceTest extends TestCase
     /**
      * Regression guard for the pull()-wide O(N×M) reload the review flagged (issue #257):
      * every item in the source list must resolve against the single up-front
-     * indexByExternalId() catalog scan, never against a per-item findByExternalId() call.
+     * indexByExternalId() catalog scan, never against a per-item resolve() call.
      * None of these three items has a local match, and the sync mock's inherited findById()
      * default-returns null, so all three are skipped — the point of this test is the single
      * index call, not creation.
@@ -370,7 +410,7 @@ final class PullSyncServiceTest extends TestCase
             ->method('indexByExternalId')
             ->with($this->pluginId)
             ->willReturn([]);
-        $repository->expects($this->never())->method('findByExternalId');
+        $repository->expects($this->never())->method('resolve');
 
         $service = $this->newService($this->entityManager, $repository);
 

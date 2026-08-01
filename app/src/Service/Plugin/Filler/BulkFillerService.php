@@ -35,7 +35,9 @@ use App\Entity\Enum\AnimeType;
 use App\Entity\Enum\WatchStatus;
 use App\Entity\TvAnime;
 use App\Entity\ValueObject\PluginId;
+use App\Service\Plugin\Exception\ExternalIdAlreadyClaimedException;
 use App\Service\Plugin\FillerRegistry;
+use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Log\LoggerInterface;
 
@@ -132,19 +134,52 @@ final class BulkFillerService
         return $data === null ? null : $this->build($filler, $pluginId, $externalId, $data);
     }
 
+    /**
+     * @throws ExternalIdAlreadyClaimedException when a concurrent create flow already
+     *                                           claimed ($pluginId, $externalId) — see that
+     *                                           exception's docblock for why this is caught
+     *                                           here rather than left to the caller's own
+     *                                           flush()
+     */
     private function build(FillerInterface $filler, PluginId $pluginId, string $externalId, PluginAnimeData $data): Anime
     {
         $anime = $this->instantiate($data->type);
         $anime->setTitle($data->title)->setWatchStatus(WatchStatus::Plan);
+
+        // Flushed alone, before the external id claim below: an autoincrement PK insert is
+        // never conflict-prone, so this step is always safe and gives $anime an id.
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+
         $anime->rememberExternalId($pluginId, $externalId);
+
+        try {
+            // The only conflict-prone write in this whole flow (issue #297): the
+            // anime_external_id UNIQUE(plugin_id, external_id) constraint, not a prior
+            // SELECT, is what actually catches a race against another concurrent create.
+            // Isolated in its own flush() rather than folded into a caller's batch flush,
+            // because a failed flush() closes Doctrine's UnitOfWork for good — bundling it
+            // with unrelated pending work would take that down too.
+            $this->entityManager->flush();
+        } catch (UniqueConstraintViolationException $e) {
+            // The EntityManager is closed now (Doctrine's own reaction to a failed flush) —
+            // persist()/flush()/remove() are off the table, but a plain connection read/write
+            // still works, so the orphaned Anime row from the flush above is cleaned up via
+            // raw SQL instead of $entityManager->remove().
+            $winnerId = (int) $this->entityManager->getConnection()->fetchOne(
+                'SELECT anime_id FROM anime_external_id WHERE plugin_id = ? AND external_id = ?',
+                [(string) $pluginId, $externalId],
+            );
+            $this->entityManager->getConnection()->delete('anime', ['id' => $anime->id]);
+
+            throw new ExternalIdAlreadyClaimedException($pluginId, $externalId, $winnerId, $e);
+        }
 
         // title/type are already applied above; cover/images stay out of the bulk create path —
         // downloading them needs the anime's own database id (see PluginAnimeDataMerger::applyCover()),
-        // which this brand-new, not-yet-persisted Anime does not have yet.
+        // which is available by now, but bulk create is deliberately title/metadata-only (issue #227).
         $fields = array_diff($filler->getFillableFields(), ['title', 'type', 'cover', 'images']);
         $this->merger->apply($anime, $data, $fields);
-
-        $this->entityManager->persist($anime);
 
         return $anime;
     }

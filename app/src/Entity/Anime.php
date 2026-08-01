@@ -179,6 +179,10 @@ abstract class Anime
     #[ORM\OneToMany(mappedBy: 'anime', targetEntity: AnimeSource::class, cascade: ['persist', 'remove'], orphanRemoval: true)]
     private Collection $sources;
 
+    /** @var Collection<int, AnimeExternalId> */
+    #[ORM\OneToMany(mappedBy: 'anime', targetEntity: AnimeExternalId::class, cascade: ['persist', 'remove'], orphanRemoval: true)]
+    private Collection $externalIds;
+
     public function __construct()
     {
         $this->genres = new ArrayCollection();
@@ -188,6 +192,7 @@ abstract class Anime
         $this->names = new ArrayCollection();
         $this->images = new ArrayCollection();
         $this->sources = new ArrayCollection();
+        $this->externalIds = new ArrayCollection();
         $this->dateAdd = new \DateTimeImmutable();
         $this->dateUpdate = new \DateTimeImmutable();
     }
@@ -369,6 +374,13 @@ abstract class Anime
             $target->addSource($link->url);
         }
 
+        // Not covered by assignMetadataFrom() above: external ids live in their own table
+        // (issue #297), not in $metadata, so a type migration must carry them over explicitly
+        // or every synced plugin link would be silently orphaned by the class swap.
+        foreach ($this->externalIds as $entry) {
+            $target->rememberExternalId(new PluginId($entry->pluginId), $entry->externalId);
+        }
+
         if ($this instanceof SeriesAnime && $target instanceof SeriesAnime) {
             $target->setEpisodesCount($this->getEpisodesCount());
             $target->setWatchedEpisodes($this->getWatchedEpisodes());
@@ -492,14 +504,14 @@ abstract class Anime
      * Resolves and caches the external id this plugin uses for the anime, e.g. the
      * Shikimori id parsed from a shikimori.one source URL.
      *
-     * Cached under metadata['external_id'][$pluginId], a separate top-level key from
-     * metadata['plugins'][$pluginId] (see putPluginData()/getPluginData() above): a
-     * future overwrite of that plugin's raw filler data must not accidentally clobber
-     * an already-resolved id.
+     * Cached as an AnimeExternalId row (issue #297; previously metadata['external_id']
+     * [$pluginId], an unindexed JSON blob) — a separate table from metadata['plugins']
+     * [$pluginId] (see putPluginData()/getPluginData() above): a future overwrite of that
+     * plugin's raw filler data must not accidentally clobber an already-resolved id.
      */
     public function getExternalId(PluginId $pluginId, ExternalIdResolutionInterface $plugin): ?string
     {
-        $cached = $this->metadata['external_id'][(string) $pluginId] ?? null;
+        $cached = $this->getCachedExternalId($pluginId);
         if ($cached !== null) {
             return $cached;
         }
@@ -508,27 +520,61 @@ abstract class Anime
         $id = $plugin->resolveExternalId($urls);
 
         if ($id !== null) {
-            $metadata = $this->metadata ?? [];
-            $metadata['external_id'][(string) $pluginId] = $id;
-            $this->metadata = $metadata;
+            $this->rememberExternalId($pluginId, $id);
         }
 
         return $id;
     }
 
     /**
+     * Peeks the AnimeExternalId row already cached for $pluginId, if any, without ever
+     * calling out to a plugin to resolve one — the read-only half of getExternalId(), used
+     * where a caller only wants to check what's already known (e.g. BackfillExternalIdMessageHandler
+     * skipping a row that's already resolved).
+     */
+    public function getCachedExternalId(PluginId $pluginId): ?string
+    {
+        foreach ($this->externalIds as $entry) {
+            if ($entry->pluginId === (string) $pluginId) {
+                return $entry->externalId;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @return list<PluginId> every plugin this anime already has a cached external id for
+     */
+    public function getExternalIdPluginIds(): array
+    {
+        return array_values(array_map(
+            static fn (AnimeExternalId $entry): PluginId => new PluginId($entry->pluginId),
+            $this->externalIds->toArray(),
+        ));
+    }
+
+    /**
      * Caches an external id obtained without a resolveExternalId() round trip — e.g. from
      * FillerInterface::find() during bulk fill-in (issue #227), where the id comes back
      * directly from the plugin's search result instead of being parsed from a source URL.
-     * Writes the same metadata['external_id'][$pluginId] slot getExternalId() reads/writes,
-     * so a later getExternalId() call for this plugin returns the cached value without
-     * re-resolving it.
+     * Writes the same AnimeExternalId slot getExternalId() reads/writes, so a later
+     * getExternalId() call for this plugin returns the cached value without re-resolving it.
      */
     public function rememberExternalId(PluginId $pluginId, string $externalId): self
     {
-        $metadata = $this->metadata ?? [];
-        $metadata['external_id'][(string) $pluginId] = $externalId;
-        $this->metadata = $metadata;
+        foreach ($this->externalIds as $entry) {
+            if ($entry->pluginId === (string) $pluginId) {
+                if ($entry->externalId === $externalId) {
+                    return $this;
+                }
+
+                $this->externalIds->removeElement($entry);
+                break;
+            }
+        }
+
+        $this->externalIds->add(new AnimeExternalId($this, $pluginId, $externalId));
 
         return $this;
     }
