@@ -551,17 +551,20 @@ abstract class Anime
     }
 
     /**
-     * Upserts the AnimeDescription row for $locale, the value getSummary() reads. Any
-     * existing row for the same locale is replaced (orphanRemoval on $descriptions deletes
-     * it on flush) rather than mutated in place, since AnimeDescription::$description is
-     * readonly like the other one-row-per-value child entities (AnimeName, AnimeSource).
+     * Upserts the AnimeDescription row for $locale, the value getSummary() reads. An
+     * existing row for the same locale is mutated in place (UPDATE), not replaced via
+     * remove+add: the table has a UNIQUE(anime_id, locale) constraint, and Doctrine's
+     * UnitOfWork issues all INSERTs before any DELETE on flush, so remove+add on an
+     * already-persisted anime (e.g. PluginAnimeDataMerger::applyDescriptions() updating
+     * an existing description) would violate that constraint before the old row is gone.
      */
     public function setDescription(string $locale, string $text): self
     {
         foreach ($this->descriptions as $description) {
             if ($description->locale === $locale) {
-                $this->descriptions->removeElement($description);
-                break;
+                $description->description = $text;
+
+                return $this;
             }
         }
 
@@ -823,6 +826,10 @@ abstract class Anime
             }
         }
 
-        return $this->descriptions->first()->description;
+        foreach ($this->descriptions as $description) {
+            return $description->description;
+        }
+
+        return '';
     }
 }

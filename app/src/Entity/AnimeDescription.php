@@ -52,7 +52,7 @@ class AnimeDescription
     public readonly string $locale;
 
     #[ORM\Column(type: 'text')]
-    public readonly string $description;
+    public string $description;
 
     public function __construct(Anime $anime, string $locale, string $description)
     {
