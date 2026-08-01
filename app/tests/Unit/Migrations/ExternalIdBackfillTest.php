@@ -32,7 +32,7 @@ use Doctrine\DBAL\DriverManager;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Exercises Version20260801000000's backfill INSERT directly against a real SQLite connection,
+ * Exercises Version20260801000001's backfill INSERT directly against a real SQLite connection,
  * following the same pattern as CatalogSchemaTest: the old metadata['external_id'][pluginId]
  * JSON model never enforced UNIQUE(plugin_id, external_id) across anime rows, so a straight
  * INSERT into the newly-indexed anime_external_id table would abort the whole migration (and

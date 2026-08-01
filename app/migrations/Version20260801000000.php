@@ -30,62 +30,60 @@ namespace DoctrineMigrations;
 use Doctrine\DBAL\Schema\Schema;
 use Doctrine\Migrations\AbstractMigration;
 
+/**
+ * Split anime.metadata['descriptions'][locale] out into its own anime_description table
+ * (issue #298): a catalog list query no longer has to load every locale's description text
+ * for every row along with the metadata JSON blob, only the anime detail page ever touches
+ * this data (Anime::getSummary(), lazily, via the OneToMany relation).
+ */
 final class Version20260801000000 extends AbstractMigration
 {
     public function getDescription(): string
     {
-        return 'Add anime_external_id table (issue #297) as a persistent, indexed replacement for '
-            .'metadata[\'external_id\'][pluginId] — migrates existing rows out of the JSON blob and '
-            .'drops that key from metadata afterwards.';
+        return 'Create anime_description table and migrate metadata.descriptions{} into it (issue #298)';
     }
 
     public function up(Schema $schema): void
     {
-        $this->addSql('CREATE TABLE anime_external_id (
+        $this->addSql('CREATE TABLE anime_description (
+            id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
             anime_id INTEGER NOT NULL,
-            plugin_id VARCHAR(64) NOT NULL,
-            external_id VARCHAR(255) NOT NULL,
-            PRIMARY KEY (anime_id, plugin_id),
-            CONSTRAINT FK_ANIME_EXTERNAL_ID_ANIME FOREIGN KEY (anime_id) REFERENCES anime (id) ON DELETE CASCADE NOT DEFERRABLE INITIALLY IMMEDIATE
+            locale VARCHAR(8) NOT NULL,
+            description CLOB NOT NULL,
+            CONSTRAINT FK_ANIME_DESCRIPTION_ANIME FOREIGN KEY (anime_id) REFERENCES anime (id) ON DELETE CASCADE NOT DEFERRABLE INITIALLY IMMEDIATE
         )');
-        $this->addSql('CREATE UNIQUE INDEX UNIQ_ANIME_EXTERNAL_ID_PLUGIN_EXTERNAL ON anime_external_id (plugin_id, external_id)');
+        $this->addSql('CREATE UNIQUE INDEX UNIQ_ANIME_DESCRIPTION_ANIME_LOCALE ON anime_description (anime_id, locale)');
 
-        // Backfill from the JSON blob: json_each() is only invoked against rows that already
-        // passed the metadata/external_id-present filter in the subquery below, rather than in
-        // a WHERE clause on the outer join — SQLite evaluates a correlated table-valued
-        // function per outer row regardless of a later WHERE, so calling it against a NULL or
-        // key-less metadata column here would error instead of yielding zero rows.
-        //
-        // OR IGNORE: the old JSON-blob model never enforced UNIQUE(plugin_id, external_id)
-        // across anime rows — two anime could carry the same (plugin_id, external_id) pair
-        // (manual duplicate entry, a pre-dedup/pre-idempotent-pull-sync row, ...). The new
-        // index does enforce it, so a straight INSERT would abort the whole migration on any
-        // such pre-existing duplicate, breaking the upgrade with no recovery. OR IGNORE instead
-        // deterministically keeps the mapping for the lowest anime.id (the subquery's natural
-        // row order) and drops the conflicting duplicate's external_id — an acceptable, silent
-        // loss for what was already an unenforced, likely-accidental duplicate.
-        $this->addSql("INSERT OR IGNORE INTO anime_external_id (anime_id, plugin_id, external_id)
-            SELECT a.id, je.key, je.value
-            FROM (
-                SELECT id, metadata FROM anime
-                WHERE metadata IS NOT NULL AND json_extract(metadata, '$.external_id') IS NOT NULL
-            ) a, json_each(a.metadata, '$.external_id') AS je");
+        // metadata.descriptions is a JSON object {"ru": "...", "en": "..."} — json_each()
+        // unpacks it to one (anime_id, locale, description) row per key.
+        $this->addSql("
+            INSERT INTO anime_description (anime_id, locale, description)
+            SELECT anime.id, je.key, je.value
+            FROM anime, json_each(anime.metadata, '\$.descriptions') je
+        ");
 
-        $this->addSql("UPDATE anime SET metadata = json_remove(metadata, '$.external_id')
-            WHERE metadata IS NOT NULL AND json_extract(metadata, '$.external_id') IS NOT NULL");
+        // Strip the now-migrated key out of the JSON blob, then collapse '{}' back to NULL
+        // so a row whose metadata only ever held descriptions ends up with metadata = NULL,
+        // same as a row that never had any metadata at all.
+        $this->addSql("UPDATE anime SET metadata = json_remove(metadata, '\$.descriptions') WHERE json_extract(metadata, '\$.descriptions') IS NOT NULL");
+        $this->addSql("UPDATE anime SET metadata = NULL WHERE metadata = '{}'");
     }
 
     public function down(Schema $schema): void
     {
-        $this->addSql("UPDATE anime
-            SET metadata = json_set(COALESCE(metadata, '{}'), '$.external_id', (
-                SELECT json_group_object(plugin_id, external_id)
-                FROM anime_external_id
-                WHERE anime_external_id.anime_id = anime.id
-            ))
-            WHERE EXISTS (SELECT 1 FROM anime_external_id WHERE anime_external_id.anime_id = anime.id)");
+        $this->addSql("
+            UPDATE anime SET metadata = json_set(
+                COALESCE(metadata, '{}'),
+                '\$.descriptions',
+                (
+                    SELECT json_group_object(locale, description)
+                    FROM anime_description
+                    WHERE anime_description.anime_id = anime.id
+                )
+            )
+            WHERE anime.id IN (SELECT DISTINCT anime_id FROM anime_description)
+        ");
 
-        $this->addSql('DROP INDEX UNIQ_ANIME_EXTERNAL_ID_PLUGIN_EXTERNAL');
-        $this->addSql('DROP TABLE anime_external_id');
+        $this->addSql('DROP TABLE anime_description');
     }
 }

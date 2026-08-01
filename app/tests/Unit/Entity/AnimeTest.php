@@ -105,11 +105,24 @@ final class AnimeTest extends TestCase
         $source = new MovieAnime();
         $source->setTitle('Cowboy Bebop: The Movie')
             ->setWatchStatus(WatchStatus::Plan)
+            ->putPluginData(new PluginId('animedb-shikimori'), ['mal_id' => 1]);
+
+        $target = $source->migrate(AnimeType::Tv);
+
+        $this->assertSame(['plugins' => ['animedb-shikimori' => ['mal_id' => 1]]], $target->getMetadata());
+    }
+
+    public function testMigrateCarriesDescriptionsOverPerLocale(): void
+    {
+        $source = new MovieAnime();
+        $source->setTitle('Cowboy Bebop: The Movie')
+            ->setWatchStatus(WatchStatus::Plan)
             ->setDescription('ru', 'Описание');
 
         $target = $source->migrate(AnimeType::Tv);
 
-        $this->assertSame(['descriptions' => ['ru' => 'Описание']], $target->getMetadata());
+        $this->assertSame('Описание', $target->getSummary('ru'));
+        $this->assertNull($target->getMetadata());
     }
 
     public function testGetPluginDataDefaultsToEmptyArray(): void
