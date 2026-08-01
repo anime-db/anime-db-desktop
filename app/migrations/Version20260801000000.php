@@ -55,7 +55,16 @@ final class Version20260801000000 extends AbstractMigration
         // a WHERE clause on the outer join — SQLite evaluates a correlated table-valued
         // function per outer row regardless of a later WHERE, so calling it against a NULL or
         // key-less metadata column here would error instead of yielding zero rows.
-        $this->addSql("INSERT INTO anime_external_id (anime_id, plugin_id, external_id)
+        //
+        // OR IGNORE: the old JSON-blob model never enforced UNIQUE(plugin_id, external_id)
+        // across anime rows — two anime could carry the same (plugin_id, external_id) pair
+        // (manual duplicate entry, a pre-dedup/pre-idempotent-pull-sync row, ...). The new
+        // index does enforce it, so a straight INSERT would abort the whole migration on any
+        // such pre-existing duplicate, breaking the upgrade with no recovery. OR IGNORE instead
+        // deterministically keeps the mapping for the lowest anime.id (the subquery's natural
+        // row order) and drops the conflicting duplicate's external_id — an acceptable, silent
+        // loss for what was already an unenforced, likely-accidental duplicate.
+        $this->addSql("INSERT OR IGNORE INTO anime_external_id (anime_id, plugin_id, external_id)
             SELECT a.id, je.key, je.value
             FROM (
                 SELECT id, metadata FROM anime
