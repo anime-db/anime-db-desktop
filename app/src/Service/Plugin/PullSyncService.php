@@ -92,6 +92,10 @@ use Psr\Log\LoggerInterface;
  * the same run (vanishingly rare — SQLite serializes writes, so this needs two conflicts back to
  * back) is logged and skipped rather than chased further: it resolves itself on the next
  * scheduled pull, the same self-healing stance already taken for an unresolvable findById() above.
+ * For the same reason, CrossVendorDuplicateDetector and DeletedFromSourceDetector are skipped
+ * (logged, not run) for the rest of a run that hit this recovery path — both are wired to this
+ * run's original, now-closed EntityManager, and re-wiring them to the recovery one is not worth
+ * the complexity for a path this rare.
  */
 final class PullSyncService
 {
@@ -181,6 +185,21 @@ final class PullSyncService
 
         if ($recoveryEntityManager === null) {
             $this->entityManager->flush();
+        } else {
+            // Both detectors below are wired to this run's *original* EntityManager (through
+            // SyncReviewItemRepository), which a lost create race has already closed — running
+            // them here would raise EntityManagerClosedException instead of the self-healing
+            // this class promises. Skip them for this run and log it: any duplicate/disappeared
+            // item they would have flagged is still present next pull (a newly created row keeps
+            // its external_id, so it is not "new" again — but the race itself is rare enough,
+            // and Doctrine serializes SQLite writes, that a second one landing in the very next
+            // run to re-surface it is rarer still) — same self-healing stance already taken for
+            // a second conflict earlier in this method.
+            $this->logger->warning('Skipping post-pull duplicate/deletion review for this run: an earlier create conflict already closed this pull\'s EntityManager.', [
+                'pluginId' => (string) $pluginId,
+            ]);
+
+            return;
         }
 
         foreach ($newlyCreated as $anime) {
