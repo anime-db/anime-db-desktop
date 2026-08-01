@@ -135,10 +135,6 @@ abstract class Anime
     #[ORM\Column(length: 16, enumType: Demographic::class, nullable: true)]
     private ?Demographic $demographic = null;
 
-    /** @var array<string, mixed>|null raw plugin data (external_id{}, plugins{}) */
-    #[ORM\Column(type: 'json', nullable: true)]
-    private ?array $metadata = null;
-
     #[ORM\Column(type: 'unix_timestamp')]
     private \DateTimeImmutable $dateAdd;
 
@@ -356,7 +352,6 @@ abstract class Anime
             ->setDemographic($this->demographic)
             ->setCountries($this->countries)
             ->setWatchStatus($this->watchStatus);
-        $target->assignMetadataFrom($this);
 
         foreach ($this->getGenreCodes() as $code) {
             $target->addGenre($code);
@@ -386,9 +381,9 @@ abstract class Anime
             $target->addSource($link->url);
         }
 
-        // Not covered by assignMetadataFrom() above: external ids live in their own table
-        // (issue #297), not in $metadata, so a type migration must carry them over explicitly
-        // or every synced plugin link would be silently orphaned by the class swap.
+        // External ids live in their own table (issue #297), so a type migration must carry
+        // them over explicitly or every synced plugin link would be silently orphaned by the
+        // class swap.
         foreach ($this->externalIds as $entry) {
             $target->rememberExternalId(new PluginId($entry->pluginId), $entry->externalId);
         }
@@ -473,24 +468,6 @@ abstract class Anime
         $this->demographic = $demographic;
 
         return $this;
-    }
-
-    /** @return array<string, mixed>|null */
-    public function getMetadata(): ?array
-    {
-        return $this->metadata;
-    }
-
-    /**
-     * Overwrites the whole metadata blob at once, unlike setDescription() which merges into a
-     * namespaced slice. Private (not just protected) and used only by migrate() above: no
-     * caller, including subclasses, has a reason to clobber descriptions{} wholesale outside of
-     * that use case. Descriptions (issue #298) and plugins' own filler data (issue #299) are
-     * copied separately (see migrate()) since they moved out of this blob into their own tables.
-     */
-    private function assignMetadataFrom(self $source): void
-    {
-        $this->metadata = $source->metadata;
     }
 
     /**

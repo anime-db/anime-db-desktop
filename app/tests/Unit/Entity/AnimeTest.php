@@ -59,13 +59,6 @@ use PHPUnit\Framework\TestCase;
  */
 final class AnimeTest extends TestCase
 {
-    public function testMetadataDefaultsToNull(): void
-    {
-        $anime = new MovieAnime();
-
-        $this->assertNull($anime->getMetadata());
-    }
-
     public function testSetAndGetTitle(): void
     {
         $anime = new MovieAnime();
@@ -91,7 +84,6 @@ final class AnimeTest extends TestCase
         $target = $source->migrate(AnimeType::Tv);
 
         $this->assertSame('Описание', $target->getSummary('ru'));
-        $this->assertNull($target->getMetadata());
     }
 
     public function testSetDescriptionIsReadByGetSummary(): void
@@ -549,7 +541,6 @@ final class AnimeTest extends TestCase
 
         $this->assertSame('1', $id);
         $this->assertSame('1', $anime->getCachedExternalId($pluginId));
-        $this->assertNull($anime->getMetadata());
     }
 
     public function testGetExternalIdReturnsNullWithoutCachingWhenPluginCannotResolve(): void
@@ -564,6 +555,5 @@ final class AnimeTest extends TestCase
         $id = $anime->getExternalId($pluginId, $plugin);
 
         $this->assertNull($id);
-        $this->assertNull($anime->getMetadata());
     }
 }
