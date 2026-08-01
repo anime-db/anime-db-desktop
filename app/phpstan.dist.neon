@@ -7,6 +7,12 @@ parameters:
     paths:
         - src
         - tests
+    # Not analysed (migrations aren't held to the same rules as src/), but scanned so PHPStan can
+    # resolve DoctrineMigrations\* classes that tests/Unit/Migrations/*Test.php require_once and
+    # instantiate directly to exercise a specific migration's up()/postUp() against a real
+    # SQLite connection.
+    scanDirectories:
+        - migrations
     # Standalone CLI worker script spawned as a child process by PluginsConfigStoreConcurrencyTest
     # (via Symfony\Component\Process), not a PHPUnit test class — relies on $argv like any CLI
     # entry point (bin/console), which PHPStan can't see outside a real CLI invocation.

@@ -41,6 +41,14 @@ use Doctrine\Migrations\AbstractMigration;
  * migrations in this project (see gotchas.md and Version20260712000002::down()). Rebuilding
  * drops the anime_fts sync triggers (Version20260713000000) and the anime indexes along with
  * the table itself, so both are recreated below.
+ *
+ * `anime` is referenced by ON DELETE CASCADE from anime_genres, anime_studios, anime_labels,
+ * anime_name, anime_external_id, anime_description and anime_plugin_data. With
+ * "PRAGMA foreign_keys = ON" (set on every connection by the EnableForeignKeys middleware, see
+ * gotchas.md), DROP TABLE performs an implicit DELETE of every row first, which fires those
+ * cascades and wipes all of the above tables. "PRAGMA foreign_keys" is a no-op inside a
+ * transaction, so isTransactional() is turned off and the pragma is toggled OFF for the rebuild
+ * and back ON afterwards, matching SQLite's documented 12-step ALTER TABLE procedure.
  */
 final class Version20260801000003 extends AbstractMigration
 {
@@ -49,8 +57,15 @@ final class Version20260801000003 extends AbstractMigration
         return 'Drop anime.metadata: every segment it held has moved to its own table (issue #300)';
     }
 
+    public function isTransactional(): bool
+    {
+        return false;
+    }
+
     public function up(Schema $schema): void
     {
+        $this->addSql('PRAGMA foreign_keys = OFF');
+
         $this->addSql('CREATE TABLE anime__new (
             id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
             title VARCHAR(256) NOT NULL,
@@ -105,6 +120,18 @@ final class Version20260801000003 extends AbstractMigration
                 DELETE FROM anime_fts WHERE rowid = old.id;
             END
         ');
+
+        $this->addSql('PRAGMA foreign_keys = ON');
+    }
+
+    public function postUp(Schema $schema): void
+    {
+        $violations = $this->connection->fetchAllAssociative('PRAGMA foreign_key_check');
+
+        $this->abortIf(
+            $violations !== [],
+            'Foreign key violations detected after rebuilding anime: ' . json_encode($violations),
+        );
     }
 
     public function down(Schema $schema): void
