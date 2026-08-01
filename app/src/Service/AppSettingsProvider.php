@@ -28,6 +28,8 @@ declare(strict_types=1);
 namespace App\Service;
 
 use App\Entity\Enum\PaginationMode;
+use App\Entity\ValueObject\Exception\InvalidPluginIdException;
+use App\Entity\ValueObject\PluginId;
 
 /**
  * Reads and writes user-facing app settings in %AppData%/config.json, the same file
@@ -68,6 +70,41 @@ final class AppSettingsProvider
     {
         $config = $this->readConfig();
         $config['locale'] = $locale;
+
+        $this->writeConfig($config);
+    }
+
+    /**
+     * The plugin whose {@see \AnimeDb\PluginContracts\SearchByPluginInterface} implementation is
+     * used by default, e.g. "animedb-shikimori". Null once none is configured yet or the
+     * configured id no longer names an installed search plugin — the caller
+     * ({@see Plugin\DefaultSearchPluginRegistry}) is what actually cascades to the
+     * next available one and persists it back via {@see self::setDefaultSearchPluginId()}. A
+     * malformed value (hand-edited config.json) is treated the same as "not configured", not a
+     * fatal error.
+     */
+    public function getDefaultSearchPluginId(): ?PluginId
+    {
+        $id = $this->readConfig()['defaultSearchPluginId'] ?? null;
+        if (!\is_string($id) || $id === '') {
+            return null;
+        }
+
+        try {
+            return new PluginId($id);
+        } catch (InvalidPluginIdException) {
+            return null;
+        }
+    }
+
+    /**
+     * Overwrites the defaultSearchPluginId field in place, same read-modify-write pattern as
+     * {@see self::setLocale()}. Null clears the setting (no search plugin configured).
+     */
+    public function setDefaultSearchPluginId(?PluginId $pluginId): void
+    {
+        $config = $this->readConfig();
+        $config['defaultSearchPluginId'] = $pluginId !== null ? (string) $pluginId : null;
 
         $this->writeConfig($config);
     }

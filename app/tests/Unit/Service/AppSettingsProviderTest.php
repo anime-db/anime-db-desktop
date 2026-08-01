@@ -28,6 +28,7 @@ declare(strict_types=1);
 namespace App\Tests\Unit\Service;
 
 use App\Entity\Enum\PaginationMode;
+use App\Entity\ValueObject\PluginId;
 use App\Service\AppSettingsProvider;
 use PHPUnit\Framework\TestCase;
 
@@ -140,5 +141,53 @@ final class AppSettingsProviderTest extends TestCase
         unlink($configPath);
         rmdir(\dirname($configPath));
         rmdir(\dirname($configPath, 2));
+    }
+
+    public function testGetDefaultSearchPluginIdReturnsNullWhenFileIsMissing(): void
+    {
+        $provider = new AppSettingsProvider($this->configPath);
+
+        $this->assertNull($provider->getDefaultSearchPluginId());
+    }
+
+    public function testGetDefaultSearchPluginIdReturnsNullWhenValueIsMalformed(): void
+    {
+        file_put_contents($this->configPath, json_encode(['defaultSearchPluginId' => 'not_a_valid_id']));
+
+        $provider = new AppSettingsProvider($this->configPath);
+
+        $this->assertNull($provider->getDefaultSearchPluginId());
+    }
+
+    public function testGetDefaultSearchPluginIdReadsValueFromConfig(): void
+    {
+        file_put_contents($this->configPath, json_encode(['defaultSearchPluginId' => 'animedb-shikimori']));
+
+        $provider = new AppSettingsProvider($this->configPath);
+
+        $this->assertSame('animedb-shikimori', (string) $provider->getDefaultSearchPluginId());
+    }
+
+    public function testSetDefaultSearchPluginIdOverwritesOnlyThatKey(): void
+    {
+        file_put_contents($this->configPath, json_encode(['appSecret' => 'abc']));
+
+        $provider = new AppSettingsProvider($this->configPath);
+        $provider->setDefaultSearchPluginId(new PluginId('animedb-shikimori'));
+
+        $data = json_decode((string) file_get_contents($this->configPath), true);
+
+        $this->assertSame('abc', $data['appSecret']);
+        $this->assertSame('animedb-shikimori', $data['defaultSearchPluginId']);
+    }
+
+    public function testSetDefaultSearchPluginIdWithNullClearsTheSetting(): void
+    {
+        file_put_contents($this->configPath, json_encode(['defaultSearchPluginId' => 'animedb-shikimori']));
+
+        $provider = new AppSettingsProvider($this->configPath);
+        $provider->setDefaultSearchPluginId(null);
+
+        $this->assertNull($provider->getDefaultSearchPluginId());
     }
 }
