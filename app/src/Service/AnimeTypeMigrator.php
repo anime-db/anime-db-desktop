@@ -58,10 +58,22 @@ final class AnimeTypeMigrator
         return $this->entityManager->wrapInTransaction(function () use ($source, $targetType, $sourceId): Anime {
             $target = $source->migrate($targetType);
 
-            // Persist the copy (and its cascaded genres/names/images/sources) before removing
-            // the source, so the ON DELETE CASCADE on anime_id never fires against data we
-            // still need.
+            // Persist the copy (and its cascaded genres/names/images/sources) and flush it on
+            // its own first, before removing the source: the target needs its own new
+            // autoincrement id assigned (only known once this flush runs) so anime_plugin_data
+            // rows can be repointed to it below, before the second flush's cascade delete of the
+            // source row would otherwise take them with it.
             $this->entityManager->persist($target);
+            $this->entityManager->flush();
+
+            if ($sourceId !== null && $target->id !== null && $sourceId !== $target->id) {
+                // anime_plugin_data isn't touched by Anime::migrate() above (unlike
+                // genres/names/images/sources, it isn't part of the entity at all since issue
+                // #299), so its rows still point at $sourceId here and would be lost to the
+                // table's ON DELETE CASCADE once source is removed just below.
+                $this->repointPluginData($sourceId, $target->id);
+            }
+
             $this->entityManager->remove($source);
             $this->entityManager->flush();
 
@@ -76,6 +88,14 @@ final class AnimeTypeMigrator
 
             return $target;
         });
+    }
+
+    private function repointPluginData(int $sourceId, int $targetId): void
+    {
+        $this->entityManager->getConnection()->executeStatement(
+            'UPDATE anime_plugin_data SET anime_id = ? WHERE anime_id = ?',
+            [$targetId, $sourceId],
+        );
     }
 
     private function renameMediaDirectory(int $sourceId, int $targetId): void

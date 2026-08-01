@@ -81,37 +81,6 @@ final class AnimeTest extends TestCase
         $this->assertSame($anime, $anime->setTitle('Trigun'));
     }
 
-    public function testPutPluginDataStoresUnderPluginNamespace(): void
-    {
-        $anime = new MovieAnime();
-        $anime->putPluginData(new PluginId('animedb-shikimori'), ['mal_id' => 1]);
-
-        $this->assertSame(['mal_id' => 1], $anime->getPluginData(new PluginId('animedb-shikimori')));
-    }
-
-    public function testPutPluginDataMergesWithoutTouchingOtherPlugins(): void
-    {
-        $anime = new MovieAnime();
-        $anime->putPluginData(new PluginId('animedb-shikimori'), ['mal_id' => 1]);
-        $anime->putPluginData(new PluginId('animedb-mal'), ['mal_id' => 2]);
-        $anime->putPluginData(new PluginId('animedb-shikimori'), ['rating' => 8.5]);
-
-        $this->assertSame(['mal_id' => 1, 'rating' => 8.5], $anime->getPluginData(new PluginId('animedb-shikimori')));
-        $this->assertSame(['mal_id' => 2], $anime->getPluginData(new PluginId('animedb-mal')));
-    }
-
-    public function testMigrateCarriesMetadataOverAsTheWholeBlob(): void
-    {
-        $source = new MovieAnime();
-        $source->setTitle('Cowboy Bebop: The Movie')
-            ->setWatchStatus(WatchStatus::Plan)
-            ->putPluginData(new PluginId('animedb-shikimori'), ['mal_id' => 1]);
-
-        $target = $source->migrate(AnimeType::Tv);
-
-        $this->assertSame(['plugins' => ['animedb-shikimori' => ['mal_id' => 1]]], $target->getMetadata());
-    }
-
     public function testMigrateCarriesDescriptionsOverPerLocale(): void
     {
         $source = new MovieAnime();
@@ -125,35 +94,11 @@ final class AnimeTest extends TestCase
         $this->assertNull($target->getMetadata());
     }
 
-    public function testGetPluginDataDefaultsToEmptyArray(): void
-    {
-        $anime = new MovieAnime();
-
-        $this->assertSame([], $anime->getPluginData(new PluginId('animedb-shikimori')));
-    }
-
-    public function testPutPluginDataReturnsSelf(): void
-    {
-        $anime = new MovieAnime();
-
-        $this->assertSame($anime, $anime->putPluginData(new PluginId('animedb-shikimori'), []));
-    }
-
     public function testSetDescriptionIsReadByGetSummary(): void
     {
         $anime = new MovieAnime();
         $anime->setDescription('ru', 'Описание');
 
-        $this->assertSame('Описание', $anime->getSummary('ru'));
-    }
-
-    public function testSetDescriptionDoesNotTouchPluginData(): void
-    {
-        $anime = new MovieAnime();
-        $anime->putPluginData(new PluginId('animedb-shikimori'), ['mal_id' => 1]);
-        $anime->setDescription('ru', 'Описание');
-
-        $this->assertSame(['mal_id' => 1], $anime->getPluginData(new PluginId('animedb-shikimori')));
         $this->assertSame('Описание', $anime->getSummary('ru'));
     }
 

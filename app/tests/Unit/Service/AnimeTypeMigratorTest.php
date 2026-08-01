@@ -41,7 +41,6 @@ use App\Entity\OvaAnime;
 use App\Entity\Storage;
 use App\Entity\Studio;
 use App\Entity\TvAnime;
-use App\Entity\ValueObject\PluginId;
 use App\Entity\ValueObject\Rating;
 use App\Service\AnimeTypeMigrator;
 use Doctrine\ORM\EntityManagerInterface;
@@ -74,8 +73,7 @@ final class AnimeTypeMigratorTest extends TestCase
             ->setStorage($storage)
             ->setStoragePath('Cowboy Bebop The Movie')
             ->setCountries(['JP'])
-            ->setWatchStatus(WatchStatus::Plan)
-            ->putPluginData(new PluginId('animedb-shikimori'), ['mal_id' => 1]);
+            ->setWatchStatus(WatchStatus::Plan);
 
         $entityManager = $this->stubEntityManager();
         $migrator = new AnimeTypeMigrator($entityManager, self::MEDIA_DIR);
@@ -94,7 +92,6 @@ final class AnimeTypeMigratorTest extends TestCase
         $this->assertSame('Cowboy Bebop The Movie', $target->getStoragePath());
         $this->assertSame(['JP'], $target->getCountries());
         $this->assertSame(WatchStatus::Plan, $target->getWatchStatus());
-        $this->assertSame(['mal_id' => 1], $target->getPluginData(new PluginId('animedb-shikimori')));
     }
 
     public function testMigrateFromSeriesToMovieDoesNotCarryEpisodeFields(): void
@@ -191,7 +188,11 @@ final class AnimeTypeMigratorTest extends TestCase
         $entityManager->method('wrapInTransaction')->willReturnCallback(static fn (callable $func) => $func());
         $entityManager->expects($this->once())->method('persist');
         $entityManager->expects($this->once())->method('remove')->with($source);
-        $entityManager->expects($this->once())->method('flush');
+        // Two flushes, not one: the target needs its own id assigned (from the first flush)
+        // before anime_plugin_data rows could be repointed to it — moot here since $source was
+        // never persisted (no id, so the repoint step is skipped), but the flush split itself is
+        // unconditional. See AnimeTypeMigrator::migrate().
+        $entityManager->expects($this->exactly(2))->method('flush');
 
         (new AnimeTypeMigrator($entityManager, self::MEDIA_DIR))->migrate($source, AnimeType::Tv);
     }

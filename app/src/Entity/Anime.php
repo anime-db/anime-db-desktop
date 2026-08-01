@@ -482,11 +482,11 @@ abstract class Anime
     }
 
     /**
-     * Overwrites the whole metadata blob at once, unlike putPluginData() which merges into
-     * a namespaced slice. Private (not just protected) and used only by migrate() above: no
-     * caller, including subclasses, has a reason to clobber another plugin's data wholesale
-     * outside of that use case. Descriptions are copied separately (see migrate()) since
-     * issue #298 moved them out of this blob into their own table.
+     * Overwrites the whole metadata blob at once, unlike setDescription() which merges into a
+     * namespaced slice. Private (not just protected) and used only by migrate() above: no
+     * caller, including subclasses, has a reason to clobber descriptions{} wholesale outside of
+     * that use case. Descriptions (issue #298) and plugins' own filler data (issue #299) are
+     * copied separately (see migrate()) since they moved out of this blob into their own tables.
      */
     private function assignMetadataFrom(self $source): void
     {
@@ -494,37 +494,14 @@ abstract class Anime
     }
 
     /**
-     * Merges $data into this plugin's own namespaced slice of metadata, leaving the data
-     * of every other plugin untouched.
-     *
-     * @param array<string, mixed> $data
-     */
-    public function putPluginData(PluginId $pluginId, array $data): self
-    {
-        $metadata = $this->metadata ?? [];
-        $existing = $metadata['plugins'][(string) $pluginId] ?? [];
-        $metadata['plugins'][(string) $pluginId] = [...(\is_array($existing) ? $existing : []), ...$data];
-        $this->metadata = $metadata;
-
-        return $this;
-    }
-
-    /** @return array<string, mixed> */
-    public function getPluginData(PluginId $pluginId): array
-    {
-        $data = $this->metadata['plugins'][(string) $pluginId] ?? [];
-
-        return \is_array($data) ? $data : [];
-    }
-
-    /**
      * Resolves and caches the external id this plugin uses for the anime, e.g. the
      * Shikimori id parsed from a shikimori.one source URL.
      *
      * Cached as an AnimeExternalId row (issue #297; previously metadata['external_id']
-     * [$pluginId], an unindexed JSON blob) — a separate table from metadata['plugins']
-     * [$pluginId] (see putPluginData()/getPluginData() above): a future overwrite of that
-     * plugin's raw filler data must not accidentally clobber an already-resolved id.
+     * [$pluginId], an unindexed JSON blob) — a separate table from a plugin's own filler data,
+     * which now lives in the `anime_plugin_data` table too (issue #299, see
+     * {@see \App\Service\Plugin\PluginDataStore}): a future overwrite of that plugin's raw
+     * filler data must not accidentally clobber an already-resolved id.
      */
     public function getExternalId(PluginId $pluginId, ExternalIdResolutionInterface $plugin): ?string
     {
