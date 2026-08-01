@@ -33,6 +33,7 @@ use App\Entity\Anime;
 use App\Entity\AnimeGenre;
 use App\Entity\AnimeImage;
 use App\Entity\AnimeName;
+use App\Entity\AnimePluginData;
 use App\Entity\AnimeSource;
 use App\Entity\AnimeTheme;
 use App\Entity\Enum\AnimeNameType;
@@ -45,6 +46,7 @@ use App\Entity\Label;
 use App\Entity\MovieAnime;
 use App\Entity\Studio;
 use App\Entity\TvAnime;
+use App\Entity\ValueObject\PluginId;
 use App\Service\AnimeTypeMigrator;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Types\Type;
@@ -79,6 +81,11 @@ final class AnimeTypeMigratorPersistenceTest extends TestCase
         $config->enableNativeLazyObjects(true);
 
         $connection = DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true], $config);
+        // Off by default on SQLite; needed so anime_plugin_data's ON DELETE CASCADE actually
+        // fires below, the same way the real container-wired connection has it on via the
+        // doctrine.middleware-tagged EnableForeignKeys (services.yaml) — this test builds its
+        // own connection outside the container, so that middleware never runs here.
+        $connection->executeStatement('PRAGMA foreign_keys = ON');
         $this->entityManager = new EntityManager($connection, $config);
 
         $schemaTool = new SchemaTool($this->entityManager);
@@ -144,6 +151,34 @@ final class AnimeTypeMigratorPersistenceTest extends TestCase
 
         $this->assertOldRowGoneAndChildrenIntact($sourceId, $targetId, TvAnime::class);
         $this->assertSame(115, $target->getDurationMinutes());
+    }
+
+    public function testMigrateRepointsPluginDataToNewIdInsteadOfLosingItToCascade(): void
+    {
+        $source = new MovieAnime();
+        $source->setTitle('Cowboy Bebop: The Movie')->setWatchStatus(WatchStatus::Plan);
+
+        $this->entityManager->persist($source);
+        $this->entityManager->flush();
+        $sourceId = $source->id;
+        $this->assertNotNull($sourceId);
+
+        $pluginData = new AnimePluginData($source, new PluginId('animedb-shikimori'), ['mal_id' => 1]);
+        $this->entityManager->persist($pluginData);
+        $this->entityManager->flush();
+
+        $migrator = new AnimeTypeMigrator($this->entityManager, $this->mediaDir);
+        $target = $migrator->migrate($source, AnimeType::Tv);
+        $targetId = $target->id;
+        $this->assertNotNull($targetId);
+        $this->assertNotSame($sourceId, $targetId);
+
+        $this->entityManager->clear();
+
+        $rows = $this->entityManager->getRepository(AnimePluginData::class)->findAll();
+        $this->assertCount(1, $rows);
+        $this->assertSame($targetId, $rows[0]->anime->id);
+        $this->assertSame(['mal_id' => 1], $rows[0]->getPayload());
     }
 
     private function persistSourceWithChildren(Anime $source): int

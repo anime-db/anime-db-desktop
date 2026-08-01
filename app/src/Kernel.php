@@ -27,6 +27,7 @@ declare(strict_types=1);
 
 namespace App;
 
+use App\Service\Plugin\DependencyInjection\Compiler\PluginDataStoreScopePass;
 use App\Service\Plugin\DependencyInjection\Compiler\TagPluginServicesPass;
 use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\PluginLoader;
@@ -135,10 +136,14 @@ class Kernel extends BaseKernel
      * Registers {@see TagPluginServicesPass} (issue #278) so plugin services get their
      * `app.filler`/`app.sync`/... tags at compile time, wherever their bundle declared them —
      * unlike `_instanceof` in services.yaml, which only reaches services declared in that file.
+     *
+     * Also registers {@see PluginDataStoreScopePass} (issue #299) so a plugin service asking for
+     * `PluginDataStoreInterface` gets an instance scoped to its own plugin id.
      */
     public function build(ContainerBuilder $container): void
     {
         $container->addCompilerPass(new TagPluginServicesPass($this->installedPluginsRegistry()));
+        $container->addCompilerPass(new PluginDataStoreScopePass($this->installedPluginsRegistry()));
     }
 
     private function pluginLoader(): PluginLoader
