@@ -27,8 +27,8 @@ declare(strict_types=1);
 
 namespace AnimeDb\Plugins\FakeVendor;
 
-use AnimeDb\PluginContracts\FillerInterface;
-use AnimeDb\PluginContracts\PluginAnimeData;
+use AnimeDb\PluginContracts\Filler\FillerInterface;
+use AnimeDb\PluginContracts\Filler\PluginAnimeData;
 
 /**
  * Fixture used by TagPluginServicesPassTest to stand in for a real plugin's Filler service,

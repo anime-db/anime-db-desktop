@@ -27,10 +27,10 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Service\Plugin\Filler;
 
-use AnimeDb\PluginContracts\Demographic as ContractsDemographic;
-use AnimeDb\PluginContracts\GenreCode as ContractsGenreCode;
-use AnimeDb\PluginContracts\PluginAnimeData;
-use AnimeDb\PluginContracts\ThemeCode as ContractsThemeCode;
+use AnimeDb\PluginContracts\Filler\PluginAnimeData;
+use AnimeDb\PluginContracts\Model\Demographic as ContractsDemographic;
+use AnimeDb\PluginContracts\Model\GenreCode as ContractsGenreCode;
+use AnimeDb\PluginContracts\Model\ThemeCode as ContractsThemeCode;
 use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
 use App\Entity\Enum\Demographic;

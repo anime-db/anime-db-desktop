@@ -27,11 +27,11 @@ declare(strict_types=1);
 
 namespace App\Service\Plugin\DependencyInjection\Compiler;
 
-use AnimeDb\PluginContracts\CatalogWidgetInterface;
-use AnimeDb\PluginContracts\EntryWidgetInterface;
-use AnimeDb\PluginContracts\FillerInterface;
-use AnimeDb\PluginContracts\SearchByPluginInterface;
-use AnimeDb\PluginContracts\SyncInterface;
+use AnimeDb\PluginContracts\Filler\FillerInterface;
+use AnimeDb\PluginContracts\Search\SearchByPluginInterface;
+use AnimeDb\PluginContracts\Sync\SyncInterface;
+use AnimeDb\PluginContracts\Widget\CatalogWidgetInterface;
+use AnimeDb\PluginContracts\Widget\EntryWidgetInterface;
 use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\PluginNamespace;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;

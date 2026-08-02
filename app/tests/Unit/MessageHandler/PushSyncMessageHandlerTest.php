@@ -27,9 +27,9 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\MessageHandler;
 
-use AnimeDb\PluginContracts\SyncInterface;
-use AnimeDb\PluginContracts\SyncItem;
-use AnimeDb\PluginContracts\SyncStatus;
+use AnimeDb\PluginContracts\Sync\SyncInterface;
+use AnimeDb\PluginContracts\Sync\SyncItem;
+use AnimeDb\PluginContracts\Sync\SyncStatus;
 use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
 use App\Entity\Enum\WatchStatus;

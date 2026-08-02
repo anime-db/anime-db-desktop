@@ -27,8 +27,8 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Service\Storage\Search;
 
-use AnimeDb\PluginContracts\SearchByPluginCandidate;
-use AnimeDb\PluginContracts\SearchByPluginInterface;
+use AnimeDb\PluginContracts\Search\SearchByPluginCandidate;
+use AnimeDb\PluginContracts\Search\SearchByPluginInterface;
 use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Storage\Search\SearchByPluginChain;
 use PHPUnit\Framework\Attributes\DataProvider;

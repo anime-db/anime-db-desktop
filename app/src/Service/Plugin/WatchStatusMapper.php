@@ -27,7 +27,7 @@ declare(strict_types=1);
 
 namespace App\Service\Plugin;
 
-use AnimeDb\PluginContracts\SyncStatus;
+use AnimeDb\PluginContracts\Sync\SyncStatus;
 use App\Entity\Enum\WatchStatus;
 
 /**

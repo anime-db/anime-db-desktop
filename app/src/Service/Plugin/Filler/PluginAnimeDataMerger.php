@@ -27,10 +27,10 @@ declare(strict_types=1);
 
 namespace App\Service\Plugin\Filler;
 
-use AnimeDb\PluginContracts\Demographic as ContractsDemographic;
-use AnimeDb\PluginContracts\GenreCode as ContractsGenreCode;
-use AnimeDb\PluginContracts\PluginAnimeData;
-use AnimeDb\PluginContracts\ThemeCode as ContractsThemeCode;
+use AnimeDb\PluginContracts\Filler\PluginAnimeData;
+use AnimeDb\PluginContracts\Model\Demographic as ContractsDemographic;
+use AnimeDb\PluginContracts\Model\GenreCode as ContractsGenreCode;
+use AnimeDb\PluginContracts\Model\ThemeCode as ContractsThemeCode;
 use App\Entity\Anime;
 use App\Entity\AnimeImage;
 use App\Entity\AnimeName;
@@ -82,7 +82,7 @@ final class PluginAnimeDataMerger
     /**
      * @param string[] $fields PluginAnimeData property names to apply — already filtered by
      *                         the caller to what the plugin claims to support
-     *                         ({@see \AnimeDb\PluginContracts\FillerInterface::getFillableFields()})
+     *                         ({@see \AnimeDb\PluginContracts\Filler\FillerInterface::getFillableFields()})
      *                         and, for the point fill-in scenario, to the single field the
      *                         user asked for
      */

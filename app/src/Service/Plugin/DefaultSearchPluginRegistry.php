@@ -27,7 +27,7 @@ declare(strict_types=1);
 
 namespace App\Service\Plugin;
 
-use AnimeDb\PluginContracts\SearchByPluginInterface;
+use AnimeDb\PluginContracts\Search\SearchByPluginInterface;
 use App\Entity\ValueObject\PluginId;
 use App\Service\AppSettingsProvider;
 use Symfony\Component\DependencyInjection\Attribute\AutowireIterator;

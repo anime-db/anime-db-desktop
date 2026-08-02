@@ -27,7 +27,7 @@ declare(strict_types=1);
 
 namespace App\Service\Storage\Scan;
 
-use AnimeDb\PluginContracts\SearchByPluginCandidate;
+use AnimeDb\PluginContracts\Search\SearchByPluginCandidate;
 use App\Entity\Anime;
 
 /**

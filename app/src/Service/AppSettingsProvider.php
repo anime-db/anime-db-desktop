@@ -75,7 +75,7 @@ final class AppSettingsProvider
     }
 
     /**
-     * The plugin whose {@see \AnimeDb\PluginContracts\SearchByPluginInterface} implementation is
+     * The plugin whose {@see \AnimeDb\PluginContracts\Search\SearchByPluginInterface} implementation is
      * used by default, e.g. "animedb-shikimori". Null once none is configured yet or the
      * configured id no longer names an installed search plugin — the caller
      * ({@see Plugin\DefaultSearchPluginRegistry}) is what actually cascades to the

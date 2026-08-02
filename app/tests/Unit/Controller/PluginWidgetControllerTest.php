@@ -27,8 +27,9 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Controller;
 
-use AnimeDb\PluginContracts\CatalogWidgetInterface;
-use AnimeDb\PluginContracts\EntryWidgetInterface;
+use AnimeDb\PluginContracts\Model\AnimeId;
+use AnimeDb\PluginContracts\Widget\CatalogWidgetInterface;
+use AnimeDb\PluginContracts\Widget\EntryWidgetInterface;
 use App\Controller\PluginWidgetController;
 use App\Entity\Anime;
 use App\Entity\Enum\WatchStatus;
@@ -101,13 +102,12 @@ final class PluginWidgetControllerTest extends TestCase
         return $anime;
     }
 
-    public function testRenderReturnsWidgetHtmlWhenExternalIdResolves(): void
+    public function testRenderReturnsWidgetHtml(): void
     {
         $anime = $this->anime();
 
         $widget = $this->createMock(EntryWidgetInterface::class);
-        $widget->method('resolveExternalId')->with(['https://shikimori.one/animes/52991'])->willReturn('52991');
-        $widget->expects($this->once())->method('render')->with('52991')->willReturn('<div>Related</div>');
+        $widget->expects($this->once())->method('render')->with(new AnimeId(5))->willReturn('<div>Related</div>');
 
         $entryWidgets = new EntryWidgetRegistry(
             ['animedb-shikimori:related' => $widget],
@@ -116,7 +116,7 @@ final class PluginWidgetControllerTest extends TestCase
 
         $entityManager = $this->createMock(EntityManagerInterface::class);
         $entityManager->method('find')->with(Anime::class, 5)->willReturn($anime);
-        $entityManager->expects($this->once())->method('flush');
+        $entityManager->expects($this->never())->method('flush');
 
         $controller = $this->createController($entryWidgets, $this->emptyCatalogWidgets(), entityManager: $entityManager);
         $response = $controller->render(
@@ -131,40 +131,11 @@ final class PluginWidgetControllerTest extends TestCase
         $this->assertSame(300, $response->getMaxAge());
     }
 
-    public function testRenderPassesNullExternalIdToWidgetWhenSourceIsNotLinked(): void
-    {
-        $anime = $this->anime();
-
-        $widget = $this->createMock(EntryWidgetInterface::class);
-        $widget->method('resolveExternalId')->willReturn(null);
-        $widget->expects($this->once())->method('render')->with(null)->willReturn('<p>no data</p>');
-
-        $entryWidgets = new EntryWidgetRegistry(
-            ['animedb-shikimori:related' => $widget],
-            $this->activeWidgets('animedb-shikimori', ['related' => true]),
-        );
-
-        $entityManager = $this->createMock(EntityManagerInterface::class);
-        $entityManager->method('find')->willReturn($anime);
-        $entityManager->expects($this->once())->method('flush');
-
-        $controller = $this->createController($entryWidgets, $this->emptyCatalogWidgets(), entityManager: $entityManager);
-        $response = $controller->render(
-            'animedb-shikimori',
-            'related',
-            Request::create('/plugin/animedb-shikimori/widget/related', 'GET', ['entryId' => '5']),
-        );
-
-        $this->assertSame(200, $response->getStatusCode());
-        $this->assertSame('<p>no data</p>', $response->getContent());
-    }
-
     public function testRenderReturnsErrorFragmentAndLogsWhenWidgetThrows(): void
     {
         $anime = $this->anime();
 
         $widget = $this->createMock(EntryWidgetInterface::class);
-        $widget->method('resolveExternalId')->willReturn('52991');
         $widget->method('render')->willThrowException(new \RuntimeException('API unreachable'));
 
         $entryWidgets = new EntryWidgetRegistry(
@@ -174,45 +145,6 @@ final class PluginWidgetControllerTest extends TestCase
 
         $entityManager = $this->createMock(EntityManagerInterface::class);
         $entityManager->method('find')->willReturn($anime);
-
-        $twig = $this->createMock(Environment::class);
-        $twig->expects($this->once())
-            ->method('render')
-            ->with('plugin/_widget_error.html.twig', $this->callback(
-                static fn (array $params): bool => $params['pluginId'] === 'animedb-shikimori' && \is_string($params['retryUrl']),
-            ))
-            ->willReturn('<div>error</div>');
-
-        $logger = $this->createMock(LoggerInterface::class);
-        $logger->expects($this->once())->method('error');
-
-        $controller = $this->createController($entryWidgets, $this->emptyCatalogWidgets(), entityManager: $entityManager, twig: $twig, logger: $logger);
-        $response = $controller->render(
-            'animedb-shikimori',
-            'related',
-            Request::create('/plugin/animedb-shikimori/widget/related', 'GET', ['entryId' => '5']),
-        );
-
-        $this->assertSame(200, $response->getStatusCode());
-        $this->assertSame('<div>error</div>', $response->getContent());
-    }
-
-    public function testRenderReturnsErrorFragmentAndLogsWhenResolveExternalIdThrows(): void
-    {
-        $anime = $this->anime();
-
-        $widget = $this->createMock(EntryWidgetInterface::class);
-        $widget->method('resolveExternalId')->willThrowException(new \RuntimeException('source lookup timed out'));
-        $widget->expects($this->never())->method('render');
-
-        $entryWidgets = new EntryWidgetRegistry(
-            ['animedb-shikimori:related' => $widget],
-            $this->activeWidgets('animedb-shikimori', ['related' => true]),
-        );
-
-        $entityManager = $this->createMock(EntityManagerInterface::class);
-        $entityManager->method('find')->willReturn($anime);
-        $entityManager->expects($this->never())->method('flush');
 
         $twig = $this->createMock(Environment::class);
         $twig->expects($this->once())

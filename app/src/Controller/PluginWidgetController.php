@@ -27,8 +27,9 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
-use AnimeDb\PluginContracts\CatalogWidgetInterface;
-use AnimeDb\PluginContracts\EntryWidgetInterface;
+use AnimeDb\PluginContracts\Model\AnimeId;
+use AnimeDb\PluginContracts\Widget\CatalogWidgetInterface;
+use AnimeDb\PluginContracts\Widget\EntryWidgetInterface;
 use App\Entity\Anime;
 use App\Entity\ValueObject\Exception\InvalidPluginIdException;
 use App\Entity\ValueObject\PluginId;
@@ -103,9 +104,7 @@ final class PluginWidgetController
         }
 
         try {
-            $externalId = $anime->getExternalId($pluginId, $widget);
-            $this->entityManager->flush();
-            $html = $widget->render($externalId);
+            $html = $widget->render(new AnimeId((int) $entryId));
         } catch (\Throwable $e) {
             return $this->renderWidgetError($pluginId, $request, $e);
         }

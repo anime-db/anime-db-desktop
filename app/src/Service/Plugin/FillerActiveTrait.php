@@ -32,7 +32,7 @@ use App\Entity\ValueObject\PluginId;
 /**
  * Shared by {@see FillerRegistry} and {@see \App\Service\Storage\Search\SearchByPluginChain}
  * (issue #280): both need the exact same "is this plugin's filler feature active" check — the
- * registry to decide which {@see \AnimeDb\PluginContracts\FillerInterface} instances to hand
+ * registry to decide which {@see \AnimeDb\PluginContracts\Filler\FillerInterface} instances to hand
  * out, the search chain to skip a plugin's find() entirely once its filler is off, since a
  * storage scan's search only exists to feed the bulk-fill that a disabled filler would then
  * reject anyway.
@@ -40,7 +40,7 @@ use App\Entity\ValueObject\PluginId;
  * A plugin without a recorded `features.filler` entry is treated as active: plugins.json only
  * ever records an explicit "false" once the user turns the feature off, so the key's absence is
  * not a signal to exclude the plugin. This also covers a "pure" search plugin that implements
- * only {@see \AnimeDb\PluginContracts\SearchByPluginInterface} and therefore never exposes a
+ * only {@see \AnimeDb\PluginContracts\Search\SearchByPluginInterface} and therefore never exposes a
  * filler toggle in the first place — by design there is nothing to gate it on, so it stays
  * active.
  */

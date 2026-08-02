@@ -27,7 +27,7 @@ declare(strict_types=1);
 
 namespace App\Service\Plugin;
 
-use AnimeDb\PluginContracts\AnimeId;
+use AnimeDb\PluginContracts\Model\AnimeId;
 use App\Entity\Anime;
 use App\Entity\AnimePluginData;
 use App\Entity\ValueObject\PluginId;

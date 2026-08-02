@@ -27,9 +27,9 @@ declare(strict_types=1);
 
 namespace App\Service\Plugin\Filler;
 
-use AnimeDb\PluginContracts\AnimeType as ContractsAnimeType;
-use AnimeDb\PluginContracts\FillerInterface;
-use AnimeDb\PluginContracts\PluginAnimeData;
+use AnimeDb\PluginContracts\Filler\FillerInterface;
+use AnimeDb\PluginContracts\Filler\PluginAnimeData;
+use AnimeDb\PluginContracts\Model\AnimeType as ContractsAnimeType;
 use App\Entity\Anime;
 use App\Entity\Enum\AnimeType;
 use App\Entity\Enum\WatchStatus;

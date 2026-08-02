@@ -27,15 +27,14 @@ declare(strict_types=1);
 
 namespace App\Service\Plugin;
 
-use AnimeDb\PluginContracts\AnimeId;
+use AnimeDb\PluginContracts\Model\AnimeId;
 
 /**
- * App-local stand-in for `AnimeDb\PluginContracts\PluginDataStoreInterface` (contracts issue
- * #30), which is merged to the contracts package's default branch but not yet in a tagged
- * release this app's composer.json can require (latest tag is still v0.6.0). The method shapes
- * match the contract exactly, so swapping `implements PluginDataStoreInterface` for the
- * contracts one is a one-line change once v0.7.0 is tagged and required — nothing about
- * {@see PluginDataStore} itself needs to change.
+ * App-local stand-in for `AnimeDb\PluginContracts\PluginData\PluginDataStoreInterface` (contracts
+ * issue #30), now available in the required v0.7.0 tag. The method shapes match the contract
+ * exactly, so swapping `implements PluginDataStoreInterface` for the contracts one is a one-line
+ * change — nothing about {@see PluginDataStore} itself needs to change; kept app-local here as a
+ * separate migration, out of scope for the namespace bump (issue #305).
  *
  * An instance is scoped to a single plugin (see {@see PluginDataStore}'s constructor and
  * {@see DependencyInjection\Compiler\PluginDataStoreScopePass}, which binds one per plugin), so
