@@ -27,8 +27,8 @@ declare(strict_types=1);
 
 namespace App\Tests\Fixtures\Plugin\TagPluginServicesPass;
 
-use AnimeDb\PluginContracts\FillerInterface;
-use AnimeDb\PluginContracts\PluginAnimeData;
+use AnimeDb\PluginContracts\Filler\FillerInterface;
+use AnimeDb\PluginContracts\Filler\PluginAnimeData;
 
 /**
  * Fixture used by TagPluginServicesPassTest: implements {@see FillerInterface} but lives outside

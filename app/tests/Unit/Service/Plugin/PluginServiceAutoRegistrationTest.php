@@ -225,8 +225,8 @@ final class PluginServiceAutoRegistrationTest extends TestCase
         file_put_contents(
             $srcDir.'/'.$studly.'Filler.php',
             '<?php declare(strict_types=1); namespace AnimeDb\Plugins\\'.$studly.';'
-            .' use AnimeDb\PluginContracts\FillerInterface;'
-            .' use AnimeDb\PluginContracts\PluginAnimeData;'
+            .' use AnimeDb\PluginContracts\Filler\FillerInterface;'
+            .' use AnimeDb\PluginContracts\Filler\PluginAnimeData;'
             .' final class '.$studly.'Filler implements FillerInterface {'
             .' public function resolveExternalId(array $urls): ?string { return null; }'
             .' public function find(string $name, ?callable $onHeartbeat = null): array { return []; }'

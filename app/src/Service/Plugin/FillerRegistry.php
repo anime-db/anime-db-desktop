@@ -27,7 +27,7 @@ declare(strict_types=1);
 
 namespace App\Service\Plugin;
 
-use AnimeDb\PluginContracts\FillerInterface;
+use AnimeDb\PluginContracts\Filler\FillerInterface;
 use App\Entity\ValueObject\PluginId;
 use Symfony\Component\DependencyInjection\Attribute\AutowireIterator;
 

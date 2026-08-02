@@ -27,7 +27,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Service\Plugin;
 
-use AnimeDb\PluginContracts\EntryWidgetInterface;
+use AnimeDb\PluginContracts\Widget\EntryWidgetInterface;
 use App\Entity\ValueObject\PluginId;
 use App\Service\Plugin\EntryWidgetRegistry;
 use App\Service\Plugin\Exception\WidgetHardLimitExceededException;

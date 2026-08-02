@@ -27,7 +27,7 @@ declare(strict_types=1);
 
 namespace App\Service\Plugin;
 
-use AnimeDb\PluginContracts\SyncInterface;
+use AnimeDb\PluginContracts\Sync\SyncInterface;
 use App\Entity\ValueObject\PluginId;
 use Symfony\Component\DependencyInjection\Attribute\AutowireIterator;
 

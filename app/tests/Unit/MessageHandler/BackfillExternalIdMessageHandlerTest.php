@@ -27,7 +27,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\MessageHandler;
 
-use AnimeDb\PluginContracts\SyncInterface;
+use AnimeDb\PluginContracts\Sync\SyncInterface;
 use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
 use App\Entity\Anime;

@@ -27,7 +27,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Controller\Settings;
 
-use AnimeDb\PluginContracts\EntryWidgetInterface;
+use AnimeDb\PluginContracts\Widget\EntryWidgetInterface;
 use App\Controller\Settings\PluginWidgetController;
 use App\Entity\ValueObject\PluginId;
 use App\Service\Plugin\CatalogWidgetRegistry;

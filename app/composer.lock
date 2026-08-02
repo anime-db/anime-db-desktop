@@ -4,25 +4,26 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "986688c19da59fd71f7fa5910057391e",
+    "content-hash": "cc66336cb34ae32a2674cbd658a09c84",
     "packages": [
         {
             "name": "anime-db/plugin-contracts",
-            "version": "v0.6.0",
+            "version": "v0.7.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/anime-db/anime-db-plugin-contracts.git",
-                "reference": "e616c6eb44fea8c77746a03834b97c80ae6159fd"
+                "reference": "073649e5c3babc56d23b5c27b3eb0c1b50058724"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/anime-db/anime-db-plugin-contracts/zipball/e616c6eb44fea8c77746a03834b97c80ae6159fd",
-                "reference": "e616c6eb44fea8c77746a03834b97c80ae6159fd",
+                "url": "https://api.github.com/repos/anime-db/anime-db-plugin-contracts/zipball/073649e5c3babc56d23b5c27b3eb0c1b50058724",
+                "reference": "073649e5c3babc56d23b5c27b3eb0c1b50058724",
                 "shasum": ""
             },
             "require": {
                 "composer/semver": "^3.4",
-                "php": "^8.1"
+                "php": "^8.1",
+                "psr/http-client": "^1.0"
             },
             "require-dev": {
                 "friendsofphp/php-cs-fixer": "^3.95",
@@ -70,10 +71,10 @@
             "description": "Plugin contracts (interfaces and DTOs) for AnimeDB v2 plugins",
             "homepage": "https://github.com/anime-db/anime-db-plugin-contracts",
             "support": {
-                "source": "https://github.com/anime-db/anime-db-plugin-contracts/tree/v0.6.0",
+                "source": "https://github.com/anime-db/anime-db-plugin-contracts/tree/v0.7.0",
                 "issues": "https://github.com/anime-db/anime-db-plugin-contracts/issues"
             },
-            "time": "2026-07-30T17:13:38+00:00"
+            "time": "2026-08-01T21:00:43+00:00"
         },
         {
             "name": "composer/semver",

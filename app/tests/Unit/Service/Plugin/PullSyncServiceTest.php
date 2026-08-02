@@ -27,12 +27,12 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Service\Plugin;
 
-use AnimeDb\PluginContracts\AnimeType as ContractsAnimeType;
-use AnimeDb\PluginContracts\FillerInterface;
-use AnimeDb\PluginContracts\PluginAnimeData;
-use AnimeDb\PluginContracts\SyncInterface;
-use AnimeDb\PluginContracts\SyncItem;
-use AnimeDb\PluginContracts\SyncStatus;
+use AnimeDb\PluginContracts\Filler\FillerInterface;
+use AnimeDb\PluginContracts\Filler\PluginAnimeData;
+use AnimeDb\PluginContracts\Model\AnimeType as ContractsAnimeType;
+use AnimeDb\PluginContracts\Sync\SyncInterface;
+use AnimeDb\PluginContracts\Sync\SyncItem;
+use AnimeDb\PluginContracts\Sync\SyncStatus;
 use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
 use App\Entity\Anime;

@@ -27,7 +27,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Service\Plugin;
 
-use AnimeDb\PluginContracts\AnimeId;
+use AnimeDb\PluginContracts\Model\AnimeId;
 use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
 use App\Entity\AnimePluginData;

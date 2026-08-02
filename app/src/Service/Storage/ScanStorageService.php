@@ -27,7 +27,7 @@ declare(strict_types=1);
 
 namespace App\Service\Storage;
 
-use AnimeDb\PluginContracts\SearchByPluginCandidate;
+use AnimeDb\PluginContracts\Search\SearchByPluginCandidate;
 use App\Entity\Anime;
 use App\Entity\Enum\WatchStatus;
 use App\Entity\NameNormalizer;

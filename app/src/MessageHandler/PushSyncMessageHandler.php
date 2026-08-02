@@ -27,7 +27,7 @@ declare(strict_types=1);
 
 namespace App\MessageHandler;
 
-use AnimeDb\PluginContracts\SyncItem;
+use AnimeDb\PluginContracts\Sync\SyncItem;
 use App\Entity\Anime;
 use App\Entity\ValueObject\PluginId;
 use App\Message\PushSyncMessage;

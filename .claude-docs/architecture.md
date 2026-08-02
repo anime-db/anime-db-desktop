@@ -149,7 +149,7 @@ FrankenPHP стартует `public/index.php` в **worker mode** — PHP заг
 
 ### Виджеты плагинов (issue #212)
 
-Виджет плагина (`AnimeDb\PluginContracts\EntryWidgetInterface`/`CatalogWidgetInterface`) грузится
+Виджет плагина (`AnimeDb\PluginContracts\Widget\EntryWidgetInterface`/`CatalogWidgetInterface`) грузится
 асинхронно через HTMX: `anime/show.html.twig` рендерит один `<div hx-get hx-trigger="load">` на
 каждый активный виджет из `App\Service\Plugin\EntryWidgetRegistry::findAllActive()`, а
 `App\Controller\PluginWidgetController` отвечает на `GET /plugin/{pluginId}/widget/{widgetName}?entryId=`

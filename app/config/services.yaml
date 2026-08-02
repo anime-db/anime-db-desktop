@@ -78,9 +78,10 @@ services:
             $locales: '%app.locales%'
             $sampleCoversDir: '%app.sample_covers_dir%'
 
-    # AnimeDb\PluginContracts\FillerInterface/SearchByPluginInterface/EntryWidgetInterface/
-    # CatalogWidgetInterface/SyncInterface all live in the read-only anime-db/plugin-contracts
-    # package, so they cannot carry #[AutoconfigureTag] themselves the way a local interface does.
+    # AnimeDb\PluginContracts\Filler\FillerInterface/Search\SearchByPluginInterface/
+    # Widget\EntryWidgetInterface/Widget\CatalogWidgetInterface/Sync\SyncInterface all live
+    # in the read-only anime-db/plugin-contracts package, so they cannot carry
+    # #[AutoconfigureTag] themselves the way a local interface does.
     # _instanceof would only tag services declared in *this* file though, and plugin services are
     # declared in each plugin bundle's own DI config, loaded separately on boot (issue #218) — so
     # tagging them (app.filler/app.search_by_plugin/app.entry_widget/app.catalog_widget/app.sync,

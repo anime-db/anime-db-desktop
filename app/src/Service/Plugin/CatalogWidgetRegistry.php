@@ -27,7 +27,7 @@ declare(strict_types=1);
 
 namespace App\Service\Plugin;
 
-use AnimeDb\PluginContracts\CatalogWidgetInterface;
+use AnimeDb\PluginContracts\Widget\CatalogWidgetInterface;
 use App\Entity\ValueObject\PluginId;
 use Symfony\Component\DependencyInjection\Attribute\AutowireIterator;
 

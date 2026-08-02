@@ -27,9 +27,9 @@ declare(strict_types=1);
 
 namespace AnimeDb\Plugins\FakeVendor;
 
-use AnimeDb\PluginContracts\PluginAnimeData;
-use AnimeDb\PluginContracts\SyncInterface;
-use AnimeDb\PluginContracts\SyncItem;
+use AnimeDb\PluginContracts\Filler\PluginAnimeData;
+use AnimeDb\PluginContracts\Sync\SyncInterface;
+use AnimeDb\PluginContracts\Sync\SyncItem;
 
 /**
  * Fixture used by TagPluginServicesPassTest to stand in for a real plugin's Sync service:

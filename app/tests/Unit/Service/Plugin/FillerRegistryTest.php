@@ -27,7 +27,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Service\Plugin;
 
-use AnimeDb\PluginContracts\FillerInterface;
+use AnimeDb\PluginContracts\Filler\FillerInterface;
 use App\Entity\ValueObject\PluginId;
 use App\Service\Plugin\FillerRegistry;
 use App\Service\Plugin\PluginsConfigStore;
