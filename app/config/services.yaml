@@ -148,6 +148,14 @@ services:
     # Every installed plugin gets this preconfigured PSR-18 client via DI just by type-hinting
     # Psr\Http\Client\ClientInterface (issue #293 item 4) — see PluginHttpClientFactory for why
     # a factory, not a bare service definition here, is the seam for future proxy support.
+    #
+    # PSR-17's RequestFactoryInterface/StreamFactoryInterface (needed to *build* a request, e.g.
+    # an OAuth token exchange/refresh, issue #309) are NOT bound here: they are already global
+    # autowire aliases to Http\Discovery\Psr17Factory in config/packages/http_discovery.yaml,
+    # available to plugins the same as any other service. Aliasing them here too would silently
+    # override that binding app-wide (this file loads after config/packages/*.yaml), splitting
+    # the six PSR-17 interfaces across two different factory instances for no benefit — any
+    # PSR-7 message built by Psr17Factory works with Psr18Client::sendRequest() regardless.
     Psr\Http\Client\ClientInterface:
         factory: ['@App\Service\Plugin\Http\PluginHttpClientFactory', 'create']
 
