@@ -121,14 +121,14 @@ final class PluginDataStoreTest extends TestCase
         $this->assertSame(['mal_id' => 1], $store->read(new AnimeId($this->animeId)));
     }
 
-    public function testWriteMergesWithoutDroppingExistingKeys(): void
+    public function testWriteOverridesRatherThanMergesWithPreviousPayload(): void
     {
         $store = new PluginDataStore(new PluginId('animedb-shikimori'), $this->registry());
 
         $store->write(new AnimeId($this->animeId), ['mal_id' => 1]);
         $store->write(new AnimeId($this->animeId), ['rating' => 8.5]);
 
-        $this->assertSame(['mal_id' => 1, 'rating' => 8.5], $store->read(new AnimeId($this->animeId)));
+        $this->assertSame(['rating' => 8.5], $store->read(new AnimeId($this->animeId)));
     }
 
     public function testDifferentPluginsDoNotShareARow(): void
@@ -147,13 +147,14 @@ final class PluginDataStoreTest extends TestCase
      * Simulates a concurrent writer: the row is already loaded into this test's identity map
      * (stale, version 1) before another process's write is applied directly against the
      * database (bypassing the identity map, the same way a second PHP process/EntityManager
-     * would). write()'s first attempt merges onto the stale copy and its flush()'s
+     * would). write()'s first attempt overrides onto the stale copy and its flush()'s
      * version-checked UPDATE affects zero rows, so Doctrine raises OptimisticLockException and
      * closes the EntityManager; the retry has to come back with a fresh one from the registry
-     * (resetManager()) to see the row a concurrent writer already changed, and merge onto that
-     * instead of losing it.
+     * (resetManager()) to see the row a concurrent writer already changed. write() is a full
+     * replace (contracts v0.8.0), so the retry does not preserve what the concurrent writer
+     * left — it overrides with $data again, discarding it.
      */
-    public function testWriteRetriesPastAnOptimisticLockConflictAndMergesOntoTheWinner(): void
+    public function testWriteRetriesPastAnOptimisticLockConflictAndStillOverrides(): void
     {
         $store = new PluginDataStore(new PluginId('animedb-shikimori'), $this->registry());
         $store->write(new AnimeId($this->animeId), ['mal_id' => 1]);
@@ -174,7 +175,7 @@ final class PluginDataStoreTest extends TestCase
         $store->write(new AnimeId($this->animeId), ['episodes_count' => 26]);
 
         $this->assertSame(
-            ['rating' => 8.5, 'episodes_count' => 26],
+            ['episodes_count' => 26],
             $store->read(new AnimeId($this->animeId)),
         );
     }

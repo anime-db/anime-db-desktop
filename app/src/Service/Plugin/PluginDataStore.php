@@ -45,10 +45,12 @@ use Doctrine\Persistence\ManagerRegistry;
  * write() retries on a lost race up to {@see self::MAX_WRITE_ATTEMPTS} times: happy-path is a
  * single flush(), but sync/scan/download all run in the background and may write the *same*
  * (anime, plugin) pair at the same time, which the row's `$version` column
- * ({@see AnimePluginData}) catches as {@see OptimisticLockException} — re-read, merge again onto
- * whatever the other writer left, retry. A concurrent *first* write racing to create the row
- * (nothing to re-read yet) is caught the same way via the table's UNIQUE(anime_id, plugin_id)
- * constraint instead.
+ * ({@see AnimePluginData}) catches as {@see OptimisticLockException} — re-read to get a fresh
+ * version, override with $data again, retry. write() is a full replace (contracts v0.8.0), so
+ * the retry does not attempt to preserve whatever a concurrent writer left; it exists only to
+ * get past the version conflict, not to merge onto it. A concurrent *first* write racing to
+ * create the row (nothing to re-read yet) is caught the same way via the table's
+ * UNIQUE(anime_id, plugin_id) constraint instead.
  *
  * Every attempt fetches a fresh {@see EntityManagerInterface} from {@see ManagerRegistry} rather
  * than reusing one held in a property: Doctrine closes the EntityManager after *any* failed
@@ -89,7 +91,7 @@ class PluginDataStore implements PluginDataStoreInterface
 
                     $entityManager->persist(new AnimePluginData($animeReference, $this->pluginId, $data));
                 } else {
-                    $row->mergePayload($data);
+                    $row->setPayload($data);
                 }
 
                 $entityManager->flush();

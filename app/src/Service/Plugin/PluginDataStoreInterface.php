@@ -31,7 +31,7 @@ use AnimeDb\PluginContracts\Model\AnimeId;
 
 /**
  * App-local stand-in for `AnimeDb\PluginContracts\PluginData\PluginDataStoreInterface` (contracts
- * issue #30), now available in the required v0.7.0 tag. The method shapes match the contract
+ * issue #30), now available in the required v0.8.0 tag. The method shapes match the contract
  * exactly, so swapping `implements PluginDataStoreInterface` for the contracts one is a one-line
  * change — nothing about {@see PluginDataStore} itself needs to change; kept app-local here as a
  * separate migration, out of scope for the namespace bump (issue #305).
@@ -52,9 +52,9 @@ interface PluginDataStoreInterface
     public function read(AnimeId $anime): array;
 
     /**
-     * Merges $data into this plugin's stored payload for the given anime and persists it. A
-     * merge, not a replace: keys already stored from a previous write() that $data does not
-     * mention are kept as-is.
+     * Replaces this plugin's stored payload for the given anime with the given data and persists
+     * it. An override, not a merge (contracts v0.8.0): keys already stored from a previous
+     * write() that are absent from $data are removed.
      *
      * @param array<string, mixed> $data
      */
