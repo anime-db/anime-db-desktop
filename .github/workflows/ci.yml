@@ -1,19 +1,28 @@
 name: CI
 
 on:
-  push:
-    branches: [master]
+  # FIXME(этап 11 «Релиз»): триггер push в master временно отключён ради экономии
+  # минут GitHub Actions в фазе активной разработки — PR всё равно прогоняет тот же
+  # код перед мёржем, поэтому повторная валидация уже смёрженного master сейчас
+  # избыточна. Вернуть перед релизом (см. roadmap, Этап 11): раскомментировать,
+  # чтобы у master снова был собственный зелёный гейт.
+  # push:
+  #   branches: [master]
   pull_request:
 
-# Отменяем устаревшие прогоны PR при новом пуше (частые автоправки openronin);
-# прогоны push в master не отменяем — это запись о состоянии основной ветки.
+# Отменяем устаревшие прогоны PR при новом пуше (частые автоправки openronin).
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: true
 
 jobs:
-  phpunit:
-    name: PHPUnit
+  # Один job на весь PHP-тулинг: composer install один раз, затем phpunit/phpstan/cs
+  # подряд. Раньше это были 4 отдельных job — а GitHub тарифицирует каждый job с
+  # округлением вверх до 1 минуты, поэтому 4 быстрых job = 4 билл-минуты на пустом
+  # месте. Шаги идут через `if: ${{ !cancelled() }}`, чтобы при падении одного всё
+  # равно отработали остальные и было видно все ошибки сразу (как в отдельных job).
+  php:
+    name: PHP
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -35,89 +44,26 @@ jobs:
         with:
           working-directory: app
 
+      # Полный прогон покрывает и консистентность переводов (бывшая отдельная job
+      # translations-consistency гоняла подмножество этого же набора — удалена).
       - name: Run PHPUnit
         run: vendor/bin/phpunit
         working-directory: app
 
-  translations-consistency:
-    name: Translations consistency
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup PHP
-        uses: shivammathur/setup-php@v2
-        with:
-          php-version: '8.4'
-          tools: composer
-          coverage: none
-          extensions: apcu
-          ini-values: apc.enable_cli=1
-
-      - name: Configure Composer auth for private repos
-        run: composer config --global github-oauth.github.com ${{ secrets.COMPOSER_GITHUB_TOKEN }}
-
-      - name: Install dependencies
-        uses: ramsey/composer-install@v3
-        with:
-          working-directory: app
-
-      - name: Check ru/en translation keys match
-        run: vendor/bin/phpunit --filter CatalogTranslationsTest
-        working-directory: app
-
-  php-cs-fixer:
-    name: PHP-CS-Fixer
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup PHP
-        uses: shivammathur/setup-php@v2
-        with:
-          php-version: '8.4'
-          tools: composer
-          coverage: none
-
-      - name: Configure Composer auth for private repos
-        run: composer config --global github-oauth.github.com ${{ secrets.COMPOSER_GITHUB_TOKEN }}
-
-      - name: Install dependencies
-        uses: ramsey/composer-install@v3
-        with:
-          working-directory: app
-
-      - name: Check code style
-        run: composer cs-check
-        working-directory: app
-
-  phpstan:
-    name: PHPStan
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup PHP
-        uses: shivammathur/setup-php@v2
-        with:
-          php-version: '8.4'
-          tools: composer
-          coverage: none
-
-      - name: Configure Composer auth for private repos
-        run: composer config --global github-oauth.github.com ${{ secrets.COMPOSER_GITHUB_TOKEN }}
-
-      - name: Install dependencies
-        uses: ramsey/composer-install@v3
-        with:
-          working-directory: app
-
       - name: Run PHPStan
+        if: ${{ !cancelled() }}
         run: composer phpstan
         working-directory: app
 
-  eslint:
-    name: ESLint
+      - name: Check code style
+        if: ${{ !cancelled() }}
+        run: composer cs-check
+        working-directory: app
+
+  # Один job на весь JS-тулинг: npm ci один раз, затем lint + jest (та же логика
+  # экономии, что и у PHP-джобы выше).
+  js:
+    name: JS
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -134,20 +80,6 @@ jobs:
       - name: Run ESLint
         run: npm run lint
 
-  electron-tests:
-    name: Electron tests
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
       - name: Run Jest
+        if: ${{ !cancelled() }}
         run: npm test
