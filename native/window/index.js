@@ -21,10 +21,62 @@
 
 'use strict';
 
-const { BrowserWindow } = require('electron');
+const { BrowserWindow, shell } = require('electron');
 const path = require('path');
 
 let win = null;
+
+/**
+ * Проверяет, ведёт ли url на собственный локальный backend приложения
+ * (127.0.0.1:{port}), а не на внешний origin.
+ *
+ * @param {string} url
+ * @param {number} port
+ * @returns {boolean}
+ */
+function isLocalUrl(url, port) {
+    try {
+        const parsed = new URL(url);
+        return parsed.hostname === '127.0.0.1' && parsed.port === String(port);
+    } catch {
+        return false;
+    }
+}
+
+/**
+ * Перехватывает навигацию окна (top-level, редиректы и новые окна) на внешний
+ * origin и открывает её в системном браузере вместо окна приложения. Нужно для
+ * OAuth (RFC 8252 — страница авторизации провайдера должна открываться в
+ * системном браузере, а не в webview) и для любых внешних ссылок вообще
+ * (issue #310). Локальный backend (127.0.0.1:{port}) навигацию не трогает.
+ *
+ * @param {import('electron').BrowserWindow} browserWindow
+ * @param {number} port
+ */
+function interceptExternalNavigation(browserWindow, port) {
+    const { webContents } = browserWindow;
+
+    webContents.on('will-navigate', (event, url) => {
+        if (!isLocalUrl(url, port)) {
+            event.preventDefault();
+            shell.openExternal(url);
+        }
+    });
+
+    webContents.on('will-redirect', (event, url) => {
+        if (!isLocalUrl(url, port)) {
+            event.preventDefault();
+            shell.openExternal(url);
+        }
+    });
+
+    webContents.setWindowOpenHandler(({ url }) => {
+        if (!isLocalUrl(url, port)) {
+            shell.openExternal(url);
+        }
+        return { action: 'deny' };
+    });
+}
 
 /**
  * Создаёт главное окно и загружает Symfony-приложение по порту. Preload с
@@ -43,6 +95,7 @@ function createWindow(port) {
             nodeIntegration: false,
         },
     });
+    interceptExternalNavigation(win, port);
     win.loadURL(`http://127.0.0.1:${port}`);
     win.on('closed', () => { win = null; });
     return win;
