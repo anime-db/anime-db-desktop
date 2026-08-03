@@ -43,6 +43,28 @@ function isLocalUrl(url, port) {
     }
 }
 
+const EXTERNAL_SCHEMES = ['http:', 'https:'];
+
+/**
+ * Открывает url в системном браузере, только если схема — http/https.
+ * shell.openExternal — опасный sink: file://, smb:// и произвольные
+ * зарегистрированные в ОС протоколы могут привести к утечке SMB-учёток
+ * или запуску стороннего обработчика (Electron security guide).
+ *
+ * @param {string} url
+ */
+function openExternal(url) {
+    let parsed;
+    try {
+        parsed = new URL(url);
+    } catch {
+        return;
+    }
+    if (EXTERNAL_SCHEMES.includes(parsed.protocol)) {
+        shell.openExternal(url);
+    }
+}
+
 /**
  * Перехватывает навигацию окна (top-level, редиректы и новые окна) на внешний
  * origin и открывает её в системном браузере вместо окна приложения. Нужно для
@@ -59,20 +81,20 @@ function interceptExternalNavigation(browserWindow, port) {
     webContents.on('will-navigate', (event, url) => {
         if (!isLocalUrl(url, port)) {
             event.preventDefault();
-            shell.openExternal(url);
+            openExternal(url);
         }
     });
 
     webContents.on('will-redirect', (event, url) => {
         if (!isLocalUrl(url, port)) {
             event.preventDefault();
-            shell.openExternal(url);
+            openExternal(url);
         }
     });
 
     webContents.setWindowOpenHandler(({ url }) => {
         if (!isLocalUrl(url, port)) {
-            shell.openExternal(url);
+            openExternal(url);
         }
         return { action: 'deny' };
     });

@@ -96,3 +96,28 @@ test('a new window request for the local backend origin is denied without openin
     expect(shell.openExternal).not.toHaveBeenCalled();
     expect(result).toEqual({ action: 'deny' });
 });
+
+test('will-navigate to a file: URL is blocked instead of being handed to shell.openExternal', () => {
+    const event = { preventDefault: jest.fn() };
+
+    handlers['will-navigate'](event, 'file:///etc/passwd');
+
+    expect(event.preventDefault).toHaveBeenCalled();
+    expect(shell.openExternal).not.toHaveBeenCalled();
+});
+
+test('will-redirect to a javascript: URL is blocked instead of being handed to shell.openExternal', () => {
+    const event = { preventDefault: jest.fn() };
+
+    handlers['will-redirect'](event, 'javascript:alert(1)');
+
+    expect(event.preventDefault).toHaveBeenCalled();
+    expect(shell.openExternal).not.toHaveBeenCalled();
+});
+
+test('a new window request for an smb: URL is denied without opening the system browser', () => {
+    const result = handlers.windowOpen({ url: 'smb://attacker.example/share' });
+
+    expect(shell.openExternal).not.toHaveBeenCalled();
+    expect(result).toEqual({ action: 'deny' });
+});
