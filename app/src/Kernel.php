@@ -28,6 +28,7 @@ declare(strict_types=1);
 namespace App;
 
 use App\Service\Plugin\DependencyInjection\Compiler\PluginDataStoreScopePass;
+use App\Service\Plugin\DependencyInjection\Compiler\SettingsStoreScopePass;
 use App\Service\Plugin\DependencyInjection\Compiler\TagPluginServicesPass;
 use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\PluginLoader;
@@ -138,12 +139,14 @@ class Kernel extends BaseKernel
      * unlike `_instanceof` in services.yaml, which only reaches services declared in that file.
      *
      * Also registers {@see PluginDataStoreScopePass} (issue #299) so a plugin service asking for
-     * `PluginDataStoreInterface` gets an instance scoped to its own plugin id.
+     * `PluginDataStoreInterface` gets an instance scoped to its own plugin id, and
+     * {@see SettingsStoreScopePass} (issue #316) doing the same for `SettingsStoreInterface`.
      */
     public function build(ContainerBuilder $container): void
     {
         $container->addCompilerPass(new TagPluginServicesPass($this->installedPluginsRegistry()));
         $container->addCompilerPass(new PluginDataStoreScopePass($this->installedPluginsRegistry()));
+        $container->addCompilerPass(new SettingsStoreScopePass($this->installedPluginsRegistry()));
     }
 
     private function pluginLoader(): PluginLoader

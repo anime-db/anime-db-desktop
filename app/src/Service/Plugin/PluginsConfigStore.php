@@ -83,6 +83,53 @@ final class PluginsConfigStore
     }
 
     /**
+     * Reads the `settings` subsection of a plugin's entry — the payload behind
+     * {@see \AnimeDb\PluginContracts\Settings\SettingsStoreInterface::read()} (issue #316), kept apart from the `enabled`/
+     * `features` keys the rest of this class manages.
+     *
+     * @return array<string, mixed>
+     */
+    public function getSettingsStorePayload(PluginId $pluginId): array
+    {
+        $settings = $this->getPluginSettings($pluginId)['settings'] ?? null;
+
+        return \is_array($settings) ? $settings : [];
+    }
+
+    /**
+     * Replaces the `settings` subsection of a plugin's entry with $payload, leaving that
+     * plugin's `enabled`/`features` keys and every other plugin's entry untouched — the host
+     * side of {@see \AnimeDb\PluginContracts\Settings\SettingsStoreInterface::write()} (issue #316). An override, not a merge: a
+     * key present in a previous payload but absent from $payload is gone after this call, which
+     * is how a plugin revokes e.g. an OAuth token.
+     *
+     * @param array<string, mixed> $payload
+     */
+    public function writeSettingsStorePayload(PluginId $pluginId, array $payload): void
+    {
+        $this->updatePluginSettings($pluginId, static function (array $settings) use ($payload): array {
+            $settings['settings'] = $payload;
+
+            return $settings;
+        });
+    }
+
+    /**
+     * Removes the `settings` subsection of a plugin's entry entirely, leaving its `enabled`/
+     * `features` keys in place. For the future plugin uninstaller (issues #220-225, not
+     * implemented yet) to call once a plugin is removed, so an orphaned plaintext token does
+     * not survive uninstall and resurface if the plugin is reinstalled later.
+     */
+    public function purgeSettingsStorePayload(PluginId $pluginId): void
+    {
+        $this->updatePluginSettings($pluginId, static function (array $settings): array {
+            unset($settings['settings']);
+
+            return $settings;
+        });
+    }
+
+    /**
      * @return array<string, mixed>
      */
     private function read(): array
