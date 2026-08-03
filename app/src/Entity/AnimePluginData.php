@@ -68,7 +68,7 @@ class AnimePluginData
      * Doctrine's optimistic lock: every UPDATE checks this column and bumps it, failing with
      * {@see \Doctrine\ORM\OptimisticLockException} if another process already changed the row
      * since this one read it. See {@see \App\Service\Plugin\PluginDataStore::write()} for the
-     * re-read/merge/retry this drives.
+     * re-read/override/retry this drives.
      */
     #[ORM\Version, ORM\Column(type: 'integer')]
     private int $version = 1;
@@ -98,14 +98,17 @@ class AnimePluginData
     }
 
     /**
-     * Merges $data onto the currently-stored payload, keeping keys already present that $data
-     * does not mention — the same merge semantics {@see Anime}'s former
-     * `putPluginData()` had before this table replaced `metadata['plugins']`.
+     * Replaces the currently-stored payload with $data, dropping any key already present that
+     * $data does not mention — the override semantics
+     * {@see \AnimeDb\PluginContracts\PluginData\PluginDataStoreInterface::write()} mandates as of
+     * contracts v0.8.0 (previously a merge, keeping unmentioned keys — the same semantics
+     * {@see Anime}'s former `putPluginData()` had before this table replaced
+     * `metadata['plugins']`).
      *
      * @param array<string, mixed> $data
      */
-    public function mergePayload(array $data): void
+    public function setPayload(array $data): void
     {
-        $this->payload = [...$this->payload, ...$data];
+        $this->payload = $data;
     }
 }
