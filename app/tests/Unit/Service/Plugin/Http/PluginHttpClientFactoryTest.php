@@ -34,11 +34,12 @@ use Psr\Http\Message\RequestFactoryInterface;
 use Psr\Http\Message\StreamFactoryInterface;
 
 /**
- * The instance {@see PluginHttpClientFactory::create()} returns is the one `config/services.yaml`
- * aliases `Psr\Http\Message\RequestFactoryInterface` and `Psr\Http\Message\StreamFactoryInterface`
- * to (issue #309), on top of the existing `Psr\Http\Client\ClientInterface` binding (issue #293
- * item 4) — this only holds because it is a single Symfony `Psr18Client` implementing all three
- * interfaces at once.
+ * Symfony's `Psr18Client` — the class behind the `Psr\Http\Client\ClientInterface` binding
+ * (issue #293 item 4) — also implements PSR-17's `RequestFactoryInterface`/`StreamFactoryInterface`.
+ * Nothing in `config/services.yaml` relies on that (issue #309: plugins already get those two
+ * interfaces from the global `Http\Discovery\Psr17Factory` binding in
+ * `config/packages/http_discovery.yaml`), but this documents that the returned client could
+ * build its own requests too, since a plugin might reasonably expect that from a PSR-18 client.
  */
 final class PluginHttpClientFactoryTest extends TestCase
 {

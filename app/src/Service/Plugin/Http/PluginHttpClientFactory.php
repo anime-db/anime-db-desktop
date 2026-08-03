@@ -37,10 +37,13 @@ use Symfony\Component\HttpClient\Psr18Client;
  * never see raw filesystem paths for media (they get {@see \App\Service\Plugin\Filler\PluginMediaDownloaderInterface}
  * instead).
  *
- * The returned {@see Psr18Client} also implements PSR-17's `RequestFactoryInterface` and
- * `StreamFactoryInterface` — `config/services.yaml` aliases both to this same service instance so
- * a plugin can type-hint either one to *build* a request (e.g. an OAuth token exchange/refresh,
- * issue #309), not just send one via `ClientInterface`.
+ * A plugin building a request itself (e.g. an OAuth token exchange/refresh, issue #309) type-hints
+ * PSR-17's `RequestFactoryInterface`/`StreamFactoryInterface` instead — those resolve to
+ * `Http\Discovery\Psr17Factory` via the global autowire aliases in
+ * `config/packages/http_discovery.yaml`, not to this factory. The {@see Psr18Client} this method
+ * returns happens to implement those same PSR-17 interfaces too, but nothing wires that here:
+ * PSR-7 messages built by Psr17Factory work with this client's `sendRequest()` regardless of
+ * which factory produced them.
  *
  * {@see self::options()} is the seam for future proxy support: once the app gains a configurable
  * proxy setting, it is added to the array built there (`HttpClient::create()`'s `proxy` option),
