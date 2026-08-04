@@ -67,6 +67,11 @@ jobs:
             - если существенных проблем нет — коротко подтверди: «✅ Существенных
               проблем не найдено».
             Без этого комментария ревью считается незавершённым.
+
+            Итоговый комментарий публикуй ОДНОЙ командой вида
+            `gh pr comment <N> --body '<текст>'` (или `--body "<текст>"`), БЕЗ heredoc
+            и БЕЗ подстановки команд `$(...)`: подстановка команд запрещена настройками
+            прав и вызовет отказ, из-за которого комментарий не опубликуется.
           claude_args: |
             --model claude-opus-4-8
-            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr comment:*)"
+            --allowedTools "Read,Grep,Glob,mcp__github_inline_comment__create_inline_comment,Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr comment:*)"
