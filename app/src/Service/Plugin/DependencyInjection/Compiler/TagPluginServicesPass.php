@@ -29,9 +29,11 @@ namespace App\Service\Plugin\DependencyInjection\Compiler;
 
 use AnimeDb\PluginContracts\Filler\FillerInterface;
 use AnimeDb\PluginContracts\Search\SearchByPluginInterface;
+use AnimeDb\PluginContracts\Settings\SettingsPageInterface;
 use AnimeDb\PluginContracts\Sync\SyncInterface;
 use AnimeDb\PluginContracts\Widget\CatalogWidgetInterface;
 use AnimeDb\PluginContracts\Widget\EntryWidgetInterface;
+use App\Service\Plugin\Exception\MultipleSettingsPagesException;
 use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\PluginNamespace;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
@@ -39,11 +41,11 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
 
 /**
  * Tags plugin services with the host's internal `app.filler`/`app.search_by_plugin`/`app.sync`/
- * `app.entry_widget`/`app.catalog_widget` tags, each carrying an `id` attribute equal to the
- * owning plugin's id, so {@see \App\Service\Plugin\FillerRegistry},
- * {@see \App\Service\Plugin\SyncRegistry}, {@see \App\Service\Storage\Search\SearchByPluginChain}
- * and the widget registries — all consuming their tag via
- * `#[AutowireIterator(..., indexAttribute: 'id')]` — pick plugin services up (issue #278).
+ * `app.entry_widget`/`app.catalog_widget`/`app.settings_page` tags, each carrying an `id`
+ * attribute equal to the owning plugin's id, so {@see \App\Service\Plugin\FillerRegistry},
+ * {@see \App\Service\Plugin\SyncRegistry}, {@see \App\Service\Storage\Search\SearchByPluginChain},
+ * the widget registries and {@see \App\Service\Plugin\SettingsPageRegistry} — all consuming their
+ * tag via `#[AutowireIterator(..., indexAttribute: 'id')]` — pick plugin services up (issue #278).
  *
  * `_instanceof` in `services.yaml` only tags services declared in that same file. A plugin's own
  * services are declared in its bundle's own DI config, loaded separately on boot (issue #218), so
@@ -62,6 +64,13 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
  * once — each matching interface gets its own tag, not just the most specific one, since a Filler
  * plugin still needs to show up in {@see \App\Service\Storage\Search\SearchByPluginChain} and a
  * Sync plugin still needs to show up as a Filler.
+ *
+ * `SettingsPageInterface` (issue #317) is the one contract in the table with an "exactly one per
+ * plugin" invariant stated in its own PHPDoc. `#[AutowireIterator(indexAttribute: 'id')]` would
+ * otherwise resolve a second service under the same plugin id by silently keeping only one of
+ * them — whichever ends up last in compilation order — so this pass instead rejects that case
+ * outright with {@see MultipleSettingsPagesException}, surfacing a plugin author's mistake at
+ * container-compile time rather than as an unexplained "wrong page renders" bug later.
  */
 final class TagPluginServicesPass implements CompilerPassInterface
 {
@@ -72,6 +81,7 @@ final class TagPluginServicesPass implements CompilerPassInterface
         SearchByPluginInterface::class => 'app.search_by_plugin',
         EntryWidgetInterface::class => 'app.entry_widget',
         CatalogWidgetInterface::class => 'app.catalog_widget',
+        SettingsPageInterface::class => 'app.settings_page',
     ];
 
     public function __construct(
@@ -86,7 +96,10 @@ final class TagPluginServicesPass implements CompilerPassInterface
             return;
         }
 
-        foreach ($container->getDefinitions() as $definition) {
+        /** @var array<string, string> $settingsPageOwners plugin id => service id already tagged app.settings_page */
+        $settingsPageOwners = [];
+
+        foreach ($container->getDefinitions() as $serviceId => $definition) {
             $class = $definition->getClass();
             if ($class === null) {
                 continue;
@@ -102,9 +115,20 @@ final class TagPluginServicesPass implements CompilerPassInterface
             }
 
             foreach (self::CONTRACT_TAGS as $interface => $tag) {
-                if (is_a($class, $interface, true)) {
-                    $definition->addTag($tag, ['id' => $pluginId]);
+                if (!is_a($class, $interface, true)) {
+                    continue;
                 }
+
+                if ($interface === SettingsPageInterface::class) {
+                    $existingServiceId = $settingsPageOwners[$pluginId] ?? null;
+                    if ($existingServiceId !== null) {
+                        throw new MultipleSettingsPagesException($pluginId, $existingServiceId, $serviceId);
+                    }
+
+                    $settingsPageOwners[$pluginId] = $serviceId;
+                }
+
+                $definition->addTag($tag, ['id' => $pluginId]);
             }
         }
     }

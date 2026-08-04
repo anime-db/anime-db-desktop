@@ -33,8 +33,10 @@ use App\Service\Plugin\Exception\InvalidInstalledPluginException;
 use App\Service\Plugin\Exception\PluginAlreadyInstalledException;
 use App\Service\Plugin\Exception\PluginInstallException;
 use App\Service\Plugin\Exception\PluginSyntaxErrorException;
+use App\Service\Plugin\InstalledPlugin;
 use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\PluginSyntaxError;
+use App\Service\Plugin\SettingsPageRegistry;
 use App\Service\Plugin\ZipPluginInstaller;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\RedirectResponse;
@@ -66,6 +68,7 @@ final class PluginController
 {
     public function __construct(
         private readonly InstalledPluginsRegistry $installedPlugins,
+        private readonly SettingsPageRegistry $settingsPages,
         private readonly ZipPluginInstaller $installer,
         private readonly CsrfTokenManagerInterface $csrfTokenManager,
         private readonly UrlGeneratorInterface $urlGenerator,
@@ -137,14 +140,35 @@ final class PluginController
         array $syntaxErrors = [],
         array $manifestErrors = [],
     ): Response {
+        $installedPlugins = $this->installedPlugins->all();
+
         return new Response($this->twig->render('settings/plugins/index.html.twig', [
-            'installedPlugins' => $this->installedPlugins->all(),
+            'installedPlugins' => $installedPlugins,
+            'settingsPluginIds' => $this->pluginIdsWithASettingsPage($installedPlugins),
             'installedPluginId' => $installedPluginId,
             'installError' => $installError,
             'installErrorParams' => $installErrorParams,
             'syntaxErrors' => $syntaxErrors,
             'manifestErrors' => $manifestErrors,
         ]));
+    }
+
+    /**
+     * @param list<InstalledPlugin> $installedPlugins
+     *
+     * @return list<string> ids of plugins with a settings page the user may currently open —
+     *                      {@see SettingsPageRegistry::find()} already folds in the `enabled` gate
+     */
+    private function pluginIdsWithASettingsPage(array $installedPlugins): array
+    {
+        $ids = [];
+        foreach ($installedPlugins as $plugin) {
+            if ($this->settingsPages->find($plugin->id) !== null) {
+                $ids[] = (string) $plugin->id;
+            }
+        }
+
+        return $ids;
     }
 
     private function assertValidCsrfToken(Request $request): void

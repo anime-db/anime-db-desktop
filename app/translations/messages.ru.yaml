@@ -184,6 +184,8 @@ settings_plugins:
     id_column: Идентификатор
     version_column: Версия
     type_column: Тип
+    actions_column: Действия
+    settings_link: Настройки
     install_heading: Установить из ZIP
     install_file_label: ZIP-архив плагина
     third_party_warning: Плагин из стороннего источника, не проходил проверку маркета. Установить его на свой страх и риск?
@@ -197,6 +199,11 @@ settings_plugins:
     install_error_already_installed: 'Плагин «%pluginId%» уже установлен.'
     install_error_invalid_manifest: Некорректный или отсутствующий manifest.json в архиве.
     install_error_generic: Не удалось распаковать или установить архив. Убедитесь, что это корректный ZIP-архив плагина.
+
+settings_plugin_page:
+    title_suffix: Настройки плагина — AnimeDB
+    back_link: ← Плагины
+    render_error: Не удалось отобразить страницу настроек этого плагина. Попробуйте ещё раз позже.
 
 anime_list:
     title: Список — AnimeDB
