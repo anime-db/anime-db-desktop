@@ -144,6 +144,14 @@ describe('buildEnv', () => {
         expect(env.MEILISEARCH_KEY).toBe('my-secret-key');
     });
 
+    test('includes OAUTH_CALLBACK_ORIGIN using the given appPort', () => {
+        const env = buildEnv(8000, 9000, 7700, 'test-key');
+        expect(env.OAUTH_CALLBACK_ORIGIN).toBe('http://127.0.0.1:8000');
+
+        const env2 = buildEnv(12345, 9000, 7700, 'test-key');
+        expect(env2.OAUTH_CALLBACK_ORIGIN).toBe('http://127.0.0.1:12345');
+    });
+
     test('inherits existing process.env variables', () => {
         const env = buildEnv(8000, 9000, 7700, 'test-key');
         expect(env).toMatchObject(process.env);
