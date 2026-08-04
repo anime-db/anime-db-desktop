@@ -184,6 +184,70 @@ final class PluginsConfigStoreTest extends TestCase
         }
     }
 
+    public function testGetSettingsStorePayloadReturnsEmptyArrayWhenNothingWasStoredYet(): void
+    {
+        $store = new PluginsConfigStore($this->path);
+
+        $this->assertSame([], $store->getSettingsStorePayload(new PluginId('animedb-shikimori')));
+    }
+
+    public function testWriteSettingsStorePayloadThenGetSettingsStorePayloadRoundTrips(): void
+    {
+        $store = new PluginsConfigStore($this->path);
+        $pluginId = new PluginId('animedb-shikimori');
+
+        $store->writeSettingsStorePayload($pluginId, ['refreshToken' => 'abc']);
+
+        $this->assertSame(['refreshToken' => 'abc'], $store->getSettingsStorePayload($pluginId));
+    }
+
+    public function testWriteSettingsStorePayloadOverridesRatherThanMerges(): void
+    {
+        $store = new PluginsConfigStore($this->path);
+        $pluginId = new PluginId('animedb-shikimori');
+
+        $store->writeSettingsStorePayload($pluginId, ['refreshToken' => 'abc', 'endpoint' => 'https://example.test']);
+        $store->writeSettingsStorePayload($pluginId, ['endpoint' => 'https://example.test']);
+
+        $this->assertSame(['endpoint' => 'https://example.test'], $store->getSettingsStorePayload($pluginId));
+    }
+
+    public function testWriteSettingsStorePayloadDoesNotTouchEnabledOrFeaturesFlags(): void
+    {
+        $store = new PluginsConfigStore($this->path);
+        $pluginId = new PluginId('animedb-shikimori');
+        $store->updatePluginSettings($pluginId, static fn (): array => ['enabled' => true, 'features' => ['filler' => false]]);
+
+        $store->writeSettingsStorePayload($pluginId, ['refreshToken' => 'abc']);
+
+        $this->assertSame(
+            ['enabled' => true, 'features' => ['filler' => false], 'settings' => ['refreshToken' => 'abc']],
+            $store->getPluginSettings($pluginId),
+        );
+    }
+
+    public function testPurgeSettingsStorePayloadRemovesTheSettingsSubsectionOnly(): void
+    {
+        $store = new PluginsConfigStore($this->path);
+        $pluginId = new PluginId('animedb-shikimori');
+        $store->updatePluginSettings($pluginId, static fn (): array => ['enabled' => true, 'settings' => ['refreshToken' => 'abc']]);
+
+        $store->purgeSettingsStorePayload($pluginId);
+
+        $this->assertSame([], $store->getSettingsStorePayload($pluginId));
+        $this->assertSame(['enabled' => true], $store->getPluginSettings($pluginId));
+    }
+
+    public function testPurgeSettingsStorePayloadIsANoopWhenNothingWasStored(): void
+    {
+        $store = new PluginsConfigStore($this->path);
+        $pluginId = new PluginId('animedb-shikimori');
+
+        $store->purgeSettingsStorePayload($pluginId);
+
+        $this->assertSame([], $store->getPluginSettings($pluginId));
+    }
+
     public function testUpdatePluginSettingsThrowsWhenTempFileCannotBeWritten(): void
     {
         file_put_contents($this->path, json_encode(['animedb-shikimori' => ['refreshToken' => 'old']]));
