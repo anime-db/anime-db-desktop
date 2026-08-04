@@ -27,10 +27,12 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Controller\Settings;
 
+use AnimeDb\PluginContracts\Settings\SettingsPageInterface;
 use App\Controller\Settings\PluginController;
 use App\Entity\ValueObject\PluginId;
 use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\PluginsConfigStore;
+use App\Service\Plugin\SettingsPageRegistry;
 use App\Service\Plugin\ZipPluginInstaller;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
@@ -76,6 +78,12 @@ final class PluginControllerTest extends TestCase
     private function installer(): ZipPluginInstaller
     {
         return new ZipPluginInstaller($this->pluginsDir, self::CORE_VERSION, $this->registry);
+    }
+
+    /** @param iterable<string, SettingsPageInterface> $pages */
+    private function settingsPages(iterable $pages = []): SettingsPageRegistry
+    {
+        return new SettingsPageRegistry($pages, $this->registry);
     }
 
     private function alwaysValidCsrf(): CsrfTokenManagerInterface
@@ -138,6 +146,7 @@ final class PluginControllerTest extends TestCase
             ->with('settings/plugins/index.html.twig', $this->callback(function (array $params): bool {
                 self::assertCount(1, $params['installedPlugins']);
                 self::assertSame('animedb-shikimori', (string) $params['installedPlugins'][0]->id);
+                self::assertSame([], $params['settingsPluginIds']);
                 self::assertNull($params['installedPluginId']);
                 self::assertNull($params['installError']);
 
@@ -147,6 +156,7 @@ final class PluginControllerTest extends TestCase
 
         $controller = new PluginController(
             $this->registry,
+            $this->settingsPages(),
             $this->installer(),
             $this->alwaysValidCsrf(),
             $this->createStub(UrlGeneratorInterface::class),
@@ -156,6 +166,36 @@ final class PluginControllerTest extends TestCase
         $response = $controller->index(Request::create('/settings/plugins'));
 
         $this->assertSame(200, $response->getStatusCode());
+    }
+
+    public function testIndexListsSettingsPluginIdsOnlyForPluginsWithARegisteredAndEnabledSettingsPage(): void
+    {
+        $this->writeManifest('animedb-shikimori', 'Shikimori');
+        $this->writeManifest('animedb-anilist', 'AniList');
+        $this->registry->reconcile();
+
+        $settingsPages = $this->settingsPages([
+            'animedb-shikimori' => $this->createStub(SettingsPageInterface::class),
+        ]);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('settings/plugins/index.html.twig', $this->callback(
+                static fn (array $params): bool => $params['settingsPluginIds'] === ['animedb-shikimori'],
+            ))
+            ->willReturn('<html></html>');
+
+        $controller = new PluginController(
+            $this->registry,
+            $settingsPages,
+            $this->installer(),
+            $this->alwaysValidCsrf(),
+            $this->createStub(UrlGeneratorInterface::class),
+            $twig,
+        );
+
+        $controller->index(Request::create('/settings/plugins'));
     }
 
     public function testIndexPassesInstalledQueryParameterThrough(): void
@@ -170,6 +210,7 @@ final class PluginControllerTest extends TestCase
 
         $controller = new PluginController(
             $this->registry,
+            $this->settingsPages(),
             $this->installer(),
             $this->alwaysValidCsrf(),
             $this->createStub(UrlGeneratorInterface::class),
@@ -191,6 +232,7 @@ final class PluginControllerTest extends TestCase
 
         $controller = new PluginController(
             $this->registry,
+            $this->settingsPages(),
             $this->installer(),
             $this->alwaysValidCsrf(),
             $urlGenerator,
@@ -220,6 +262,7 @@ final class PluginControllerTest extends TestCase
 
         $controller = new PluginController(
             $this->registry,
+            $this->settingsPages(),
             $this->installer(),
             $this->alwaysValidCsrf(),
             $this->createStub(UrlGeneratorInterface::class),
@@ -251,6 +294,7 @@ final class PluginControllerTest extends TestCase
 
         $controller = new PluginController(
             $this->registry,
+            $this->settingsPages(),
             $this->installer(),
             $this->alwaysValidCsrf(),
             $this->createStub(UrlGeneratorInterface::class),
@@ -284,6 +328,7 @@ final class PluginControllerTest extends TestCase
 
         $controller = new PluginController(
             $this->registry,
+            $this->settingsPages(),
             $this->installer(),
             $this->alwaysValidCsrf(),
             $this->createStub(UrlGeneratorInterface::class),
@@ -316,6 +361,7 @@ final class PluginControllerTest extends TestCase
 
         $controller = new PluginController(
             $this->registry,
+            $this->settingsPages(),
             $this->installer(),
             $this->alwaysValidCsrf(),
             $this->createStub(UrlGeneratorInterface::class),
@@ -342,6 +388,7 @@ final class PluginControllerTest extends TestCase
 
         $controller = new PluginController(
             $this->registry,
+            $this->settingsPages(),
             $this->installer(),
             $this->alwaysValidCsrf(),
             $this->createStub(UrlGeneratorInterface::class),
@@ -372,6 +419,7 @@ final class PluginControllerTest extends TestCase
 
         $controller = new PluginController(
             $this->registry,
+            $this->settingsPages(),
             $this->installer(),
             $this->alwaysValidCsrf(),
             $this->createStub(UrlGeneratorInterface::class),
@@ -391,6 +439,7 @@ final class PluginControllerTest extends TestCase
 
         $controller = new PluginController(
             $this->registry,
+            $this->settingsPages(),
             $this->installer(),
             $csrf,
             $this->createStub(UrlGeneratorInterface::class),

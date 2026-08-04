@@ -28,8 +28,11 @@ declare(strict_types=1);
 namespace App\Tests\Unit\Service\Plugin\DependencyInjection\Compiler;
 
 use AnimeDb\Plugins\FakeVendor\FakeFiller;
+use AnimeDb\Plugins\FakeVendor\FakeSecondSettingsPage;
+use AnimeDb\Plugins\FakeVendor\FakeSettingsPage;
 use AnimeDb\Plugins\FakeVendor\FakeSync;
 use App\Service\Plugin\DependencyInjection\Compiler\TagPluginServicesPass;
+use App\Service\Plugin\Exception\MultipleSettingsPagesException;
 use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\PluginsConfigStore;
 use App\Tests\Fixtures\Plugin\TagPluginServicesPass\NonPluginFiller;
@@ -45,6 +48,8 @@ final class TagPluginServicesPassTest extends TestCase
     {
         require_once __DIR__.'/../../../../../Fixtures/Plugin/TagPluginServicesPass/FakeFiller.php';
         require_once __DIR__.'/../../../../../Fixtures/Plugin/TagPluginServicesPass/FakeSync.php';
+        require_once __DIR__.'/../../../../../Fixtures/Plugin/TagPluginServicesPass/FakeSettingsPage.php';
+        require_once __DIR__.'/../../../../../Fixtures/Plugin/TagPluginServicesPass/FakeSecondSettingsPage.php';
 
         $this->pluginsDir = sys_get_temp_dir().'/anime-tag-plugin-services-test-'.uniqid();
         mkdir($this->pluginsDir, recursive: true);
@@ -85,6 +90,31 @@ final class TagPluginServicesPassTest extends TestCase
         $this->assertSame([['id' => 'fake-vendor']], $definition->getTag('app.sync'));
         $this->assertSame([['id' => 'fake-vendor']], $definition->getTag('app.filler'));
         $this->assertSame([['id' => 'fake-vendor']], $definition->getTag('app.search_by_plugin'));
+    }
+
+    public function testTagsSettingsPageServiceWithSettingsPageTag(): void
+    {
+        $this->writeManifest('fake-vendor');
+
+        $container = new ContainerBuilder();
+        $container->register(FakeSettingsPage::class, FakeSettingsPage::class);
+
+        $this->pass()->process($container);
+
+        $definition = $container->getDefinition(FakeSettingsPage::class);
+        $this->assertSame([['id' => 'fake-vendor']], $definition->getTag('app.settings_page'));
+    }
+
+    public function testThrowsWhenAPluginRegistersMoreThanOneSettingsPageService(): void
+    {
+        $this->writeManifest('fake-vendor');
+
+        $container = new ContainerBuilder();
+        $container->register(FakeSettingsPage::class, FakeSettingsPage::class);
+        $container->register(FakeSecondSettingsPage::class, FakeSecondSettingsPage::class);
+
+        $this->expectException(MultipleSettingsPagesException::class);
+        $this->pass()->process($container);
     }
 
     public function testDoesNotTagServiceOutsidePluginNamespace(): void

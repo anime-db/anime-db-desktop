@@ -184,6 +184,8 @@ settings_plugins:
     id_column: Id
     version_column: Version
     type_column: Type
+    actions_column: Actions
+    settings_link: Settings
     install_heading: Install from ZIP
     install_file_label: Plugin ZIP archive
     third_party_warning: This plugin comes from a third-party source and has not passed marketplace review. Install it at your own risk?
@@ -197,6 +199,11 @@ settings_plugins:
     install_error_already_installed: 'Plugin "%pluginId%" is already installed.'
     install_error_invalid_manifest: Invalid or missing manifest.json in the archive.
     install_error_generic: Failed to unpack or install the archive. Make sure it is a valid plugin ZIP archive.
+
+settings_plugin_page:
+    title_suffix: Plugin settings — AnimeDB
+    back_link: ← Plugins
+    render_error: Failed to display this plugin's settings page. Please try again later.
 
 anime_list:
     title: List — AnimeDB
