@@ -86,6 +86,7 @@ function buildEnv(appPort, wsPort, meiliPort, meiliKey) {
         PLUGINS_DIR:             paths.getPluginsDir(),
         MEILISEARCH_URL:         `http://127.0.0.1:${meiliPort}`,
         MEILISEARCH_KEY:         meiliKey,
+        OAUTH_CALLBACK_ORIGIN:   `http://127.0.0.1:${appPort}`,
     };
 }
 
