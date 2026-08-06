@@ -198,6 +198,21 @@ describe('readConfig error handling', () => {
         expect(() => getOrCreateAppSecret()).not.toThrow();
         expect(getOrCreateAppSecret()).not.toBe(secret);
     });
+
+    test.each([
+        ['null', 'null'],
+        ['a number', '42'],
+        ['a string', '"just a string"'],
+        ['an array', '[1, 2, 3]'],
+    ])('normalizes valid but non-object JSON (%s) to {} instead of leaking it', (_label, jsonContent) => {
+        const configPath = path.join(tmpDir, 'config.json');
+        fs.writeFileSync(configPath, jsonContent, 'utf8');
+
+        app.getLocale.mockReturnValue('en-US');
+
+        expect(() => getOrCreateAppSecret()).not.toThrow();
+        expect(getOrCreateAppSecret()).toMatch(/^[0-9a-f]{64}$/);
+    });
 });
 
 describe('writeConfig atomicity', () => {

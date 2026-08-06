@@ -40,7 +40,8 @@ function readConfig() {
         return {};
     }
     try {
-        return JSON.parse(fs.readFileSync(configPath, 'utf8'));
+        const parsed = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+        return (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) ? parsed : {};
     } catch {
         return {};
     }
