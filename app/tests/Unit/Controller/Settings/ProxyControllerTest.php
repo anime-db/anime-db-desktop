@@ -39,6 +39,7 @@ use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
+use Symfony\Component\Security\Csrf\CsrfToken;
 use Symfony\Component\Security\Csrf\CsrfTokenManagerInterface;
 use Twig\Environment;
 
@@ -197,7 +198,7 @@ final class ProxyControllerTest extends TestCase
         );
 
         $request = Request::create('/settings/proxy/test', 'POST', [
-            '_token' => 'token',
+            '_token_test' => 'token',
             'mode' => 'manual',
             'protocol' => 'http',
             'host' => 'form-proxy.example',
@@ -220,7 +221,7 @@ final class ProxyControllerTest extends TestCase
         $controller = $this->createController(httpClient: $httpClient);
 
         $request = Request::create('/settings/proxy/test', 'POST', [
-            '_token' => 'token',
+            '_token_test' => 'token',
             'mode' => 'manual',
             'protocol' => 'http',
             'host' => 'secret-proxy.internal',
@@ -245,7 +246,7 @@ final class ProxyControllerTest extends TestCase
         $controller = $this->createController();
 
         $request = Request::create('/settings/proxy/test', 'POST', [
-            '_token' => 'token',
+            '_token_test' => 'token',
             'mode' => 'manual',
             'protocol' => 'http',
             'host' => 'form-proxy.example',
@@ -264,9 +265,35 @@ final class ProxyControllerTest extends TestCase
         $csrf->method('isTokenValid')->willReturn(false);
 
         $controller = $this->createController(csrfTokenManager: $csrf);
-        $request = Request::create('/settings/proxy/test', 'POST', ['_token' => 'bad', 'test_url' => 'https://anime-db.org']);
+        $request = Request::create('/settings/proxy/test', 'POST', ['_token_test' => 'bad', 'test_url' => 'https://anime-db.org']);
 
         $this->expectException(BadRequestHttpException::class);
         $controller->test($request);
+    }
+
+    /**
+     * hx-include="#proxy-settings-form, #proxy-test-form" serializes both forms into one POST
+     * body, so the save form's "_token" and the test form's "_token_test" both arrive together.
+     * The test action must validate the "settings_proxy_test" CSRF token strictly from the
+     * "_token_test" field and ignore the save form's "_token", regardless of field order.
+     */
+    public function testTestActionValidatesTestTokenFieldWhenSaveFormTokenAlsoPresent(): void
+    {
+        $csrf = $this->createStub(CsrfTokenManagerInterface::class);
+        $csrf->method('isTokenValid')->willReturnCallback(
+            static fn (CsrfToken $token): bool => $token->getId() === 'settings_proxy_test' && $token->getValue() === 'valid-test-token',
+        );
+
+        $controller = $this->createController(csrfTokenManager: $csrf);
+        $request = Request::create('/settings/proxy/test', 'POST', [
+            '_token' => 'save-form-token',
+            '_token_test' => 'valid-test-token',
+            'mode' => 'manual',
+            'test_url' => 'https://anime-db.org',
+        ]);
+
+        $response = $controller->test($request);
+
+        $this->assertSame(200, $response->getStatusCode());
     }
 }

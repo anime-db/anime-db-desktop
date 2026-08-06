@@ -71,7 +71,10 @@
     <p class="hint">{{ 'settings_proxy.test_note'|trans }}</p>
 
     <form id="proxy-test-form">
-        <input type="hidden" name="_token" value="{{ csrf_token('settings_proxy_test') }}">
+        {# Named differently from #proxy-settings-form's "_token": hx-include merges both forms
+         # into one POST body, and a duplicate name would let serialization order silently pick
+         # the wrong CSRF token. #}
+        <input type="hidden" name="_token_test" value="{{ csrf_token('settings_proxy_test') }}">
 
         <label for="test_url">{{ 'settings_proxy.test_url_label'|trans }}</label>
         <input type="url" id="test_url" name="test_url" value="https://anime-db.org">

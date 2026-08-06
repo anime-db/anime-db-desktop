@@ -90,7 +90,7 @@ final class ProxyController
     #[Route('/settings/proxy/test', name: 'settings_proxy_test', methods: ['POST'])]
     public function test(Request $request): Response
     {
-        $this->assertValidCsrfToken('settings_proxy_test', $request);
+        $this->assertValidCsrfToken('settings_proxy_test', $request, '_token_test');
 
         $settings = $this->buildSettingsFromRequest($request);
         $url = (string) $request->request->get('test_url', '');
@@ -130,9 +130,9 @@ final class ProxyController
         );
     }
 
-    private function assertValidCsrfToken(string $tokenId, Request $request): void
+    private function assertValidCsrfToken(string $tokenId, Request $request, string $field = '_token'): void
     {
-        $token = new CsrfToken($tokenId, (string) $request->request->get('_token'));
+        $token = new CsrfToken($tokenId, (string) $request->request->get($field));
         if (!$this->csrfTokenManager->isTokenValid($token)) {
             throw new BadRequestHttpException('Invalid CSRF token.');
         }
