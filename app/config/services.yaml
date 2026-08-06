@@ -132,11 +132,13 @@ services:
     # Used by HttpPluginMediaDownloader (issue #231) to fetch a plugin-supplied cover/gallery
     # image URL. A separate client from app.meilisearch.symfony_http_client above: covers/images
     # come from arbitrary external hosts, not a local, always-up Meilisearch process, so this one
-    # allows a longer timeout.
+    # allows a longer timeout and, unlike the Meilisearch client, is routed through the app's
+    # configured outgoing proxy (issue #327) via ProxyAwareHttpClient.
     app.plugin_media.http_client:
         class: Symfony\Contracts\HttpClient\HttpClientInterface
-        factory: ['Symfony\Component\HttpClient\HttpClient', 'create']
+        factory: ['App\Service\Http\ProxyAwareHttpClient', 'create']
         arguments:
+            - '@App\Service\ProxyConfigProvider'
             - { timeout: 5, max_duration: 15 }
 
     App\Service\Plugin\Filler\HttpPluginMediaDownloader:
@@ -147,7 +149,8 @@ services:
 
     # Every installed plugin gets this preconfigured PSR-18 client via DI just by type-hinting
     # Psr\Http\Client\ClientInterface (issue #293 item 4) — see PluginHttpClientFactory for why
-    # a factory, not a bare service definition here, is the seam for future proxy support.
+    # a factory, not a bare service definition here, is needed: it wraps the transport in
+    # ProxyAwareHttpClient (issue #327) so plugin requests go through the app's configured proxy.
     #
     # PSR-17's RequestFactoryInterface/StreamFactoryInterface (needed to *build* a request, e.g.
     # an OAuth token exchange/refresh, issue #309) are NOT bound here: they are already global
