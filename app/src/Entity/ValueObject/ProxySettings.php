@@ -73,7 +73,7 @@ final class ProxySettings implements \Stringable
         }
 
         $credentials = '';
-        if ($this->username !== null) {
+        if ($this->username !== null && $this->username !== '') {
             $credentials = rawurlencode($this->username);
             if ($this->password !== null) {
                 $credentials .= ':'.rawurlencode($this->password);

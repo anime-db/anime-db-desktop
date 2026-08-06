@@ -114,6 +114,13 @@ final class ProxySettingsTest extends TestCase
         $this->assertSame('http://user@proxy.local:8080', $settings->toProxyUrl());
     }
 
+    public function testToProxyUrlOmitsCredentialsWhenUsernameIsEmptyString(): void
+    {
+        $settings = new ProxySettings(ProxyMode::Manual, ProxyProtocol::Http, 'proxy.local', 8080, '', 'pass');
+
+        $this->assertSame('http://proxy.local:8080', $settings->toProxyUrl());
+    }
+
     public function testToProxyUrlPercentEncodesCredentialsWithSpecialCharacters(): void
     {
         $settings = new ProxySettings(ProxyMode::Manual, ProxyProtocol::Http, 'proxy.local', 8080, 'us:er', 'p@ss');
