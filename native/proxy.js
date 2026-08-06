@@ -35,6 +35,17 @@ const { getProxySettings } = require('./config');
 const PROXY_BYPASS_RULES = '127.0.0.1;::1;localhost';
 
 /**
+ * Backend event name (see App\Controller\Settings\ProxyController::PROXY_CHANGED_EVENT on the
+ * PHP side, published from save()) that lifecycle/index.js listens for over /ws to call
+ * applyProxy() on the live Chromium session without an app restart. Keep this string in sync
+ * with the PHP side — a mismatch breaks live-apply silently (issue #336), which is why
+ * proxy.test.js cross-checks both sides against each other.
+ *
+ * @type {string}
+ */
+const PROXY_CHANGED_EVENT = 'proxy.changed';
+
+/**
  * Builds the argument for session.setProxy() from the "proxy" key of config.json
  * (see App\Service\ProxyConfigProvider on the PHP side). `{ mode: 'direct' }` clears any
  * previously configured proxy, which is what ProxyMode::None on the PHP side maps to.
@@ -125,6 +136,7 @@ function registerProxyAuthHandler() {
 
 module.exports = {
     PROXY_BYPASS_RULES,
+    PROXY_CHANGED_EVENT,
     buildProxyConfig,
     applyProxy,
     isConfiguredProxyChallenge,
