@@ -104,7 +104,14 @@ final class ProxySettingsTest extends TestCase
     {
         $settings = new ProxySettings(ProxyMode::Manual, ProxyProtocol::Socks5, 'proxy.local', 1080, 'user', 'pass');
 
-        $this->assertSame('socks5://user:pass@proxy.local:1080', $settings->toProxyUrl());
+        $this->assertSame('socks5h://user:pass@proxy.local:1080', $settings->toProxyUrl());
+    }
+
+    public function testToProxyUrlUsesRemoteDnsSchemeForSocks5(): void
+    {
+        $settings = new ProxySettings(ProxyMode::Manual, ProxyProtocol::Socks5, 'proxy.local', 1080);
+
+        $this->assertSame('socks5h://proxy.local:1080', $settings->toProxyUrl());
     }
 
     public function testToProxyUrlBuildsUrlWithUsernameOnly(): void

@@ -65,6 +65,10 @@ final class ProxySettings implements \Stringable
      * Proxy URL for an HTTP client's "proxy" option (e.g. Symfony HttpClient's `HttpClient::create()`),
      * or null when no proxy is configured. Username/password are percent-encoded so a ":" or "@"
      * in either cannot be mistaken for a URL delimiter.
+     *
+     * SOCKS5 uses the "socks5h" scheme (not "socks5") so ext-curl resolves the target hostname on
+     * the proxy side (CURLPROXY_SOCKS5_HOSTNAME) instead of leaking a plain DNS lookup through the
+     * local resolver — "socks5" only tunnels the TCP connection, not the DNS query (issue #338).
      */
     public function toProxyUrl(): ?string
     {
@@ -81,7 +85,15 @@ final class ProxySettings implements \Stringable
             $credentials .= '@';
         }
 
-        return \sprintf('%s://%s%s:%d', $this->protocol->value, $credentials, $this->host, $this->port);
+        return \sprintf('%s://%s%s:%d', $this->toUrlScheme(), $credentials, $this->host, $this->port);
+    }
+
+    private function toUrlScheme(): string
+    {
+        return match ($this->protocol) {
+            ProxyProtocol::Socks5 => 'socks5h',
+            ProxyProtocol::Http => $this->protocol->value,
+        };
     }
 
     /**
