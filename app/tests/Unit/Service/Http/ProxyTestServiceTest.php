@@ -121,6 +121,19 @@ final class ProxyTestServiceTest extends TestCase
         $this->assertSame(ProxyTestOutcome::AuthFailed, $result->failureReason);
     }
 
+    public function testConnectionRefusedWithPortContaining407IsNotMisclassifiedAsAuthFailed(): void
+    {
+        $client = new MockHttpClient(static function (): never {
+            throw new TransportException('Failed to connect to proxy.example port 4070: Connection refused');
+        });
+        $service = new ProxyTestService($client);
+
+        $result = $service->test($this->manualSettings(), 'https://anime-db.org');
+
+        $this->assertFalse($result->success);
+        $this->assertSame(ProxyTestOutcome::ConnectionRefused, $result->failureReason);
+    }
+
     public function testUnrecognizedTransportErrorIsClassifiedAsUnknownError(): void
     {
         $client = new MockHttpClient(static function (): never {

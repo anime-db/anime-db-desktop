@@ -93,7 +93,7 @@ final class ProxyTestService
     {
         $message = strtolower($exception->getMessage());
 
-        if (str_contains($message, '407') || str_contains($message, 'authenticat')) {
+        if (preg_match('/\b407\b/', $message) === 1 || str_contains($message, 'authenticat')) {
             return ProxyTestOutcome::AuthFailed;
         }
 
