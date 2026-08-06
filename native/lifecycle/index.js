@@ -21,7 +21,7 @@
 
 'use strict';
 
-const { app, dialog } = require('electron');
+const { app, dialog, session } = require('electron');
 require('../protocols/app-media');
 require('../accept-language');
 require('../shell');
@@ -31,6 +31,7 @@ const { createWindow } = require('../window');
 const { createSplash } = require('../window/splash');
 const tray             = require('../tray');
 const wsClient         = require('../ws-client');
+const proxy            = require('../proxy');
 
 let quitting = false;
 
@@ -39,7 +40,11 @@ function onQuit() {
     app.quit();
 }
 
+proxy.registerProxyAuthHandler();
+
 app.whenReady().then(async () => {
+    await proxy.applyProxy(session.defaultSession);
+
     const splash = createSplash();
 
     await new Promise(resolve => splash.once('ready-to-show', () => {
@@ -74,6 +79,11 @@ app.whenReady().then(async () => {
 
         wsClient.on('backend-event', ({ event, data }) => {
             if (event === 'backend.status') tray.setState(data.state);
+            if (event === 'proxy.changed') {
+                proxy.applyProxy(session.defaultSession).catch((err) => {
+                    console.error('[proxy] не удалось применить настройки прокси:', err);
+                });
+            }
         });
 
         supervisor.events.on('exit', () => tray.setState('error'));

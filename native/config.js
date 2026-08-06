@@ -130,4 +130,24 @@ function getLocale() {
     return config.locale || mapOsLocaleToAppLocale(app.getLocale());
 }
 
-module.exports = { getOrCreateAppSecret, getOrCreateLocale, getLocale, mapOsLocaleToAppLocale };
+/**
+ * Reads the "proxy" key from config.json (written by ProxyConfigProvider on the PHP side).
+ * Returns null when the key is missing or malformed, treated by callers the same as
+ * `{ mode: 'none' }` (no proxy configured).
+ *
+ * @returns {Record<string, unknown> | null}
+ */
+function getProxySettings() {
+    const config = readConfig();
+    return (config.proxy !== null && typeof config.proxy === 'object' && !Array.isArray(config.proxy))
+        ? config.proxy
+        : null;
+}
+
+module.exports = {
+    getOrCreateAppSecret,
+    getOrCreateLocale,
+    getLocale,
+    mapOsLocaleToAppLocale,
+    getProxySettings,
+};

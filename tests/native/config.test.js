@@ -39,6 +39,7 @@ const {
     getOrCreateLocale,
     getLocale,
     mapOsLocaleToAppLocale,
+    getProxySettings,
 } = require('../../native/config');
 
 let tmpDir;
@@ -221,6 +222,41 @@ describe('writeConfig atomicity', () => {
 
         const leftovers = fs.readdirSync(tmpDir).filter((name) => name.endsWith('.tmp'));
         expect(leftovers).toEqual([]);
+    });
+});
+
+describe('getProxySettings', () => {
+    test('returns null when config.json has no "proxy" key', () => {
+        expect(getProxySettings()).toBeNull();
+    });
+
+    test('returns null when "proxy" is an array', () => {
+        const configPath = path.join(tmpDir, 'config.json');
+        fs.writeFileSync(configPath, JSON.stringify({ proxy: [1, 2, 3] }), 'utf8');
+
+        expect(getProxySettings()).toBeNull();
+    });
+
+    test('returns null when "proxy" is a string', () => {
+        const configPath = path.join(tmpDir, 'config.json');
+        fs.writeFileSync(configPath, JSON.stringify({ proxy: 'manual' }), 'utf8');
+
+        expect(getProxySettings()).toBeNull();
+    });
+
+    test('returns null when "proxy" is explicitly null', () => {
+        const configPath = path.join(tmpDir, 'config.json');
+        fs.writeFileSync(configPath, JSON.stringify({ proxy: null }), 'utf8');
+
+        expect(getProxySettings()).toBeNull();
+    });
+
+    test('returns the object as-is when "proxy" is a well-formed object', () => {
+        const proxy = { mode: 'manual', protocol: 'http', host: '1.2.3.4', port: 8080 };
+        const configPath = path.join(tmpDir, 'config.json');
+        fs.writeFileSync(configPath, JSON.stringify({ proxy }), 'utf8');
+
+        expect(getProxySettings()).toEqual(proxy);
     });
 });
 
