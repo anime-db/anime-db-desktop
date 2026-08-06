@@ -27,8 +27,9 @@ declare(strict_types=1);
 
 namespace App\Service\Plugin\Http;
 
+use App\Service\Http\ProxyAwareHttpClient;
+use App\Service\ProxyConfigProvider;
 use Psr\Http\Client\ClientInterface;
-use Symfony\Component\HttpClient\HttpClient;
 use Symfony\Component\HttpClient\Psr18Client;
 
 /**
@@ -45,11 +46,10 @@ use Symfony\Component\HttpClient\Psr18Client;
  * PSR-7 messages built by Psr17Factory work with this client's `sendRequest()` regardless of
  * which factory produced them.
  *
- * {@see self::options()} is the seam for future proxy support: once the app gains a configurable
- * proxy setting, it is added to the array built there (`HttpClient::create()`'s `proxy` option),
- * and every plugin's HTTP calls start going through it transparently — no plugin code changes,
- * since plugins only ever depend on the plain PSR-18/PSR-17 interfaces, never on this factory or
- * on Symfony's own `HttpClientInterface`.
+ * The underlying transport is {@see ProxyAwareHttpClient} (issue #327): it reads the app's
+ * outgoing-proxy setting on every request, so every plugin's HTTP calls go through the currently
+ * configured proxy transparently — no plugin code changes, since plugins only ever depend on the
+ * plain PSR-18/PSR-17 interfaces, never on this factory or on Symfony's own `HttpClientInterface`.
  *
  * A separate client from `app.meilisearch.http_client`/`app.plugin_media.http_client`
  * (`config/services.yaml`): those serve one specific internal purpose each (talking to the local
@@ -58,9 +58,13 @@ use Symfony\Component\HttpClient\Psr18Client;
  */
 final class PluginHttpClientFactory
 {
+    public function __construct(private readonly ProxyConfigProvider $proxyConfigProvider)
+    {
+    }
+
     public function create(): ClientInterface
     {
-        return new Psr18Client(HttpClient::create($this->options()));
+        return new Psr18Client(ProxyAwareHttpClient::create($this->proxyConfigProvider, $this->options()));
     }
 
     /** @return array<string, mixed> */

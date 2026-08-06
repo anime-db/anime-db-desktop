@@ -28,6 +28,7 @@ declare(strict_types=1);
 namespace App\Tests\Unit\Service\Plugin\Http;
 
 use App\Service\Plugin\Http\PluginHttpClientFactory;
+use App\Service\ProxyConfigProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Http\Client\ClientInterface;
 use Psr\Http\Message\RequestFactoryInterface;
@@ -43,9 +44,14 @@ use Psr\Http\Message\StreamFactoryInterface;
  */
 final class PluginHttpClientFactoryTest extends TestCase
 {
+    private function createFactory(): PluginHttpClientFactory
+    {
+        return new PluginHttpClientFactory(new ProxyConfigProvider(sys_get_temp_dir().'/anime-plugin-http-client-factory-test-'.uniqid().'.json'));
+    }
+
     public function testCreateReturnsClientThatIsAlsoBothPsr17Factories(): void
     {
-        $client = (new PluginHttpClientFactory())->create();
+        $client = $this->createFactory()->create();
 
         self::assertInstanceOf(ClientInterface::class, $client);
         self::assertInstanceOf(RequestFactoryInterface::class, $client);
@@ -54,7 +60,7 @@ final class PluginHttpClientFactoryTest extends TestCase
 
     public function testCreatedFactoriesCanBuildARequestWithABodyStream(): void
     {
-        $client = (new PluginHttpClientFactory())->create();
+        $client = $this->createFactory()->create();
         self::assertInstanceOf(RequestFactoryInterface::class, $client);
         self::assertInstanceOf(StreamFactoryInterface::class, $client);
 
