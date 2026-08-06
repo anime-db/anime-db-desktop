@@ -79,7 +79,11 @@ app.whenReady().then(async () => {
 
         wsClient.on('backend-event', ({ event, data }) => {
             if (event === 'backend.status') tray.setState(data.state);
-            if (event === 'proxy.changed') proxy.applyProxy(session.defaultSession);
+            if (event === 'proxy.changed') {
+                proxy.applyProxy(session.defaultSession).catch((err) => {
+                    console.error('[proxy] не удалось применить настройки прокси:', err);
+                });
+            }
         });
 
         supervisor.events.on('exit', () => tray.setState('error'));
