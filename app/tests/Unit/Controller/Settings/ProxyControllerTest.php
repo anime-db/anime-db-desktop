@@ -33,7 +33,7 @@ use App\Entity\ValueObject\ProxySettings;
 use App\Service\Http\ProxyTestService;
 use App\Service\ProxyConfigProvider;
 use App\Service\WsPublisher;
-use PHPUnit\Framework\TestCase;
+use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\HttpClient\Exception\TransportException;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
@@ -43,7 +43,7 @@ use Symfony\Component\Security\Csrf\CsrfToken;
 use Symfony\Component\Security\Csrf\CsrfTokenManagerInterface;
 use Twig\Environment;
 
-final class ProxyControllerTest extends TestCase
+final class ProxyControllerTest extends KernelTestCase
 {
     private string $configPath;
 
@@ -212,13 +212,23 @@ final class ProxyControllerTest extends TestCase
         $this->assertSame('http://form-proxy.example:9050', $capturedOptions['proxy'] ?? null);
     }
 
+    /**
+     * Uses the real Twig service (not a stub) so the assertions below exercise the actual
+     * _test_result.html.twig rendering path — a stubbed Environment::render() would return ''
+     * and make every assertStringNotContainsString() pass trivially without proving anything.
+     */
     public function testTestActionResponseNeverContainsHostPortOrCredentials(): void
     {
+        self::bootKernel();
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+
         $httpClient = new MockHttpClient(static function (): never {
             throw new TransportException('Failed to connect to secret-proxy.internal port 1234: Connection refused');
         });
 
-        $controller = $this->createController(httpClient: $httpClient);
+        $controller = $this->createController(httpClient: $httpClient, twig: $twig);
 
         $request = Request::create('/settings/proxy/test', 'POST', [
             '_token_test' => 'token',
@@ -234,6 +244,7 @@ final class ProxyControllerTest extends TestCase
         $response = $controller->test($request);
 
         $body = (string) $response->getContent();
+        $this->assertNotSame('', $body);
         $this->assertStringNotContainsString('secret-proxy.internal', $body);
         $this->assertStringNotContainsString('1234', $body);
         $this->assertStringNotContainsString('alice', $body);
