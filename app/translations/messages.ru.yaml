@@ -122,6 +122,7 @@ settings:
     plugins_link: Плагины
     plugin_widgets_link: Виджеты плагинов
     sync_review_link: Требует внимания
+    proxy_link: Прокси-сервер
     language_label: Язык интерфейса
     locale:
         ru: Русский
@@ -204,6 +205,36 @@ settings_plugin_page:
     title_suffix: Настройки плагина — AnimeDB
     back_link: ← Плагины
     render_error: Не удалось отобразить страницу настроек этого плагина. Попробуйте ещё раз позже.
+
+settings_proxy:
+    title: Прокси-сервер — Настройки — AnimeDB
+    back_link: ← Настройки
+    heading: Прокси-сервер
+    save_success: Настройки прокси сохранены.
+    mode_label: Режим
+    mode:
+        none: Без прокси
+        manual: Свой прокси
+    protocol_label: Протокол
+    protocol:
+        http: HTTP
+        socks5: SOCKS5
+    http_protocol_hint: HTTP-прокси проксирует не весь исходящий трафик приложения. Для полного охвата используйте SOCKS5.
+    host_label: Адрес
+    port_label: Порт
+    username_label: Имя пользователя (необязательно)
+    password_label: Пароль (необязательно)
+    save_button: Сохранить
+    test_heading: Проверка подключения
+    test_note: Проверяются значения из формы выше (в том числе несохранённые) через канал приложения — не активный сохранённый прокси и не браузер. Цель — убедиться, что указанные параметры и учётные данные рабочие.
+    test_url_label: URL для проверки
+    test_button: Тест
+    test_result:
+        success: 'Успешно, время ответа: %ms% мс.'
+        timeout: Превышено время ожидания ответа.
+        connection_refused: Не удалось подключиться к прокси-серверу.
+        auth_failed: Ошибка аутентификации на прокси-сервере.
+        unknown_error: Не удалось выполнить проверку.
 
 anime_list:
     title: Список — AnimeDB

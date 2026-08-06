@@ -147,6 +147,20 @@ services:
 
     App\Service\Plugin\Filler\PluginMediaDownloaderInterface: '@App\Service\Plugin\Filler\HttpPluginMediaDownloader'
 
+    # ProxyTestService (issue #328, settings page "Test" button) always tests a form-supplied
+    # proxy, never the one ProxyConfigProvider currently has saved — a plain CurlHttpClient, not
+    # ProxyAwareHttpClient, so the "proxy" option it sets per-request is never overridden by the
+    # saved config. Forced to CurlHttpClient rather than HttpClient::create() for the same reason
+    # as app.plugin_media.http_client: SOCKS5 needs ext-curl.
+    app.proxy_test.http_client:
+        class: Symfony\Component\HttpClient\CurlHttpClient
+        arguments:
+            - { timeout: 10, max_duration: 10 }
+
+    App\Service\Http\ProxyTestService:
+        arguments:
+            $httpClient: '@app.proxy_test.http_client'
+
     # Every installed plugin gets this preconfigured PSR-18 client via DI just by type-hinting
     # Psr\Http\Client\ClientInterface (issue #293 item 4) — see PluginHttpClientFactory for why
     # a factory, not a bare service definition here, is needed: it wraps the transport in
