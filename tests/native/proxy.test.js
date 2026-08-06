@@ -138,15 +138,16 @@ describe('isConfiguredProxyChallenge', () => {
 });
 
 describe('registerProxyAuthHandler', () => {
-    function fireLogin(authInfo) {
+    function fireLogin(authInfo, details = { pid: 1, url: 'https://example.com/' }) {
         const event = { preventDefault: jest.fn() };
         const callback = jest.fn();
-        loginHandlers[0](event, /* webContents */ {}, /* details */ {}, authInfo, callback);
+        loginHandlers[0](event, /* webContents */ {}, details, authInfo, callback);
         return { event, callback };
     }
 
-    // "already attempted" state lives inside the proxy module, keyed by host:port only - reset it
-    // via a fresh module instance per test so tests reusing the same host:port stay independent.
+    // "already attempted" state lives inside the proxy module, keyed by request identity
+    // (pid + url) plus host:port - reset it via a fresh module instance per test so tests reusing
+    // the same request identity stay independent.
     let proxyModule;
 
     beforeEach(() => {
@@ -190,18 +191,36 @@ describe('registerProxyAuthHandler', () => {
         expect(callback).not.toHaveBeenCalled();
     });
 
-    test('cancels a retried challenge for the same host:port instead of looping on wrong credentials', () => {
+    test('cancels a retried challenge for the same request instead of looping on wrong credentials', () => {
         getProxySettings.mockReturnValue({
             mode: 'manual', protocol: 'http', host: '1.2.3.4', port: 8080, username: 'bob', password: 'wrong',
         });
 
         const authInfo = { isProxy: true, host: '1.2.3.4', port: 8080 };
-        const first = fireLogin(authInfo);
+        const details = { pid: 1, url: 'https://example.com/' };
+        const first = fireLogin(authInfo, details);
         expect(first.callback).toHaveBeenCalledWith('bob', 'wrong');
 
-        const second = fireLogin(authInfo);
+        const second = fireLogin(authInfo, details);
         expect(second.event.preventDefault).toHaveBeenCalled();
         expect(second.callback).toHaveBeenCalledWith();
+    });
+
+    test('answers concurrent challenges for different requests through the same proxy independently', () => {
+        getProxySettings.mockReturnValue({
+            mode: 'manual', protocol: 'http', host: '1.2.3.4', port: 8080, username: 'bob', password: 'secret',
+        });
+
+        const authInfo = { isProxy: true, host: '1.2.3.4', port: 8080 };
+
+        // Two images loading at once through the same proxy: same host:port, different requests
+        // (different pid/url). Neither has been "attempted" yet, so both must get credentials
+        // instead of the second one being cancelled as a false-positive retry.
+        const first = fireLogin(authInfo, { pid: 1, url: 'https://example.com/image1.png' });
+        const second = fireLogin(authInfo, { pid: 2, url: 'https://example.com/image2.png' });
+
+        expect(first.callback).toHaveBeenCalledWith('bob', 'secret');
+        expect(second.callback).toHaveBeenCalledWith('bob', 'secret');
     });
 
     test('retries after applyProxy() re-reads the setting (e.g. the user fixed the password)', async () => {

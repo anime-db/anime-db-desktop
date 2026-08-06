@@ -55,9 +55,12 @@ function buildProxyConfig(proxy) {
     };
 }
 
-// Proxy auth challenges already answered once in this run, keyed by "host:port". Cleared whenever
-// applyProxy() re-reads the setting, so a credential change is retried rather than stuck behind a
-// stale failure.
+// Proxy auth challenges already answered once in this run, keyed by request identity (pid + url)
+// plus host:port - not by host:port alone, so concurrent requests through the same proxy (e.g. a
+// page loading several remote images at once) don't cancel each other's *first* challenge. Only a
+// genuine retry of the same request (same pid+url) hits the "already tried" branch. Cleared
+// whenever applyProxy() re-reads the setting, so a credential change is retried rather than stuck
+// behind a stale failure.
 const attemptedProxyChallenges = new Set();
 
 /**
@@ -93,9 +96,11 @@ function isConfiguredProxyChallenge(authInfo, proxy) {
 
 /**
  * Registers the app-wide "login" handler that supplies the configured proxy's credentials for its
- * own auth challenges only. A challenge is answered with credentials at most once per host:port —
- * if they're wrong, the retry challenge that follows is cancelled instead of resubmitted, so a bad
- * password fails the request instead of looping forever.
+ * own auth challenges only. A challenge is answered with credentials at most once per request
+ * (identified by pid + url, alongside host:port) — if they're wrong, the retry challenge for that
+ * same request is cancelled instead of resubmitted, so a bad password fails the request instead of
+ * looping forever. Concurrent challenges for *different* requests through the same proxy (e.g.
+ * several images loading at once) each get their own first attempt.
  */
 function registerProxyAuthHandler() {
     app.on('login', (event, webContents, details, authInfo, callback) => {
@@ -107,7 +112,7 @@ function registerProxyAuthHandler() {
 
         event.preventDefault();
 
-        const key = `${authInfo.host}:${authInfo.port}`;
+        const key = `${details.pid}:${details.url}:${authInfo.host}:${authInfo.port}`;
         if (attemptedProxyChallenges.has(key)) {
             callback();
             return;
