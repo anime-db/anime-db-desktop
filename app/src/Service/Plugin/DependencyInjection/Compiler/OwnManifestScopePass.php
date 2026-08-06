@@ -29,7 +29,6 @@ namespace App\Service\Plugin\DependencyInjection\Compiler;
 
 use AnimeDb\PluginContracts\Manifest\OwnManifestInterface;
 use App\Entity\ValueObject\PluginId;
-use App\Service\Plugin\InstalledPlugin;
 use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\OwnManifest;
 use App\Service\Plugin\PluginNamespace;
@@ -58,11 +57,10 @@ use Symfony\Component\DependencyInjection\Reference;
  * the plugin is reachable at all — so a value baked into the container can never be staler than
  * the container itself, and a runtime-resolved lookup would be pure overhead.
  *
- * No null guard on {@see InstalledPluginsRegistry::get()}: the plugin id being resolved here came
- * from the very same registry {@see self::pluginNamespacePrefixes()} built its namespace prefixes
- * from, so the plugin is guaranteed to still be present. A `null` here would mean the registry
- * disagreed with itself mid-compile — a loud compile-time failure, not a scenario to silently
- * guard against.
+ * {@see InstalledPluginsRegistry::get()} is expected to always resolve here: the plugin id being
+ * looked up came from the very same registry {@see self::pluginNamespacePrefixes()} built its
+ * namespace prefixes from. A `null` would mean the registry disagreed with itself mid-compile, so
+ * that case throws a {@see \LogicException} instead of being silently guarded against.
  */
 final class OwnManifestScopePass implements CompilerPassInterface
 {
@@ -142,8 +140,8 @@ final class OwnManifestScopePass implements CompilerPassInterface
         $serviceId = 'app.own_manifest.'.$pluginId;
 
         if (!$container->hasDefinition($serviceId)) {
-            $plugin = $this->registry->get(new PluginId($pluginId));
-            \assert($plugin instanceof InstalledPlugin);
+            $plugin = $this->registry->get(new PluginId($pluginId))
+                ?? throw new \LogicException(\sprintf('Plugin "%s" not found in the registry while binding its own manifest.', $pluginId));
 
             $container->setDefinition($serviceId, (new Definition(OwnManifest::class))
                 ->setArguments([$plugin->manifest->id, $plugin->manifest->name, $plugin->manifest->version])
