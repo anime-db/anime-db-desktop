@@ -125,12 +125,22 @@ final class AppSettingsProvider
 
         $tmpPath = $directory.'/.config.json.'.uniqid('', true).'.tmp';
 
-        file_put_contents(
+        $written = @file_put_contents(
             $tmpPath,
             json_encode($config, \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE),
         );
 
-        rename($tmpPath, $this->configPath);
+        if ($written === false) {
+            @unlink($tmpPath);
+
+            throw new \RuntimeException(\sprintf('Failed to write temporary config file "%s".', $tmpPath));
+        }
+
+        if (!@rename($tmpPath, $this->configPath)) {
+            @unlink($tmpPath);
+
+            throw new \RuntimeException(\sprintf('Failed to rename "%s" to "%s".', $tmpPath, $this->configPath));
+        }
     }
 
     /** @return array<string, mixed> */
