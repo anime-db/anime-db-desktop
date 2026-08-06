@@ -105,7 +105,7 @@ final class ProxyAwareHttpClientTest extends TestCase
         (new ProxyAwareHttpClient($inner, $provider))->request('GET', 'https://example.test/');
 
         self::assertIsArray($capturedOptions);
-        self::assertSame('socks5://127.0.0.1:1080', $capturedOptions['proxy']);
+        self::assertSame('socks5h://127.0.0.1:1080', $capturedOptions['proxy']);
     }
 
     public function testDoesNotOverrideCallerProvidedProxyOption(): void
