@@ -21,6 +21,9 @@
 
 'use strict';
 
+const fs = require('fs');
+const path = require('path');
+
 jest.mock('../../native/config', () => ({
     getProxySettings: jest.fn(),
 }));
@@ -38,6 +41,7 @@ jest.mock('electron', () => ({
 let { getProxySettings } = require('../../native/config');
 const {
     PROXY_BYPASS_RULES,
+    PROXY_CHANGED_EVENT,
     buildProxyConfig,
     applyProxy,
     isConfiguredProxyChallenge,
@@ -80,6 +84,25 @@ describe('buildProxyConfig', () => {
     test('bypass rules explicitly list loopback literals, not the "<local>" or "<-loopback>" tokens', () => {
         expect(PROXY_BYPASS_RULES).toBe('127.0.0.1;::1;localhost');
         expect(PROXY_BYPASS_RULES).not.toMatch(/<local>|<-loopback>/);
+    });
+});
+
+// PHP and native/proxy.js each declare the event name as their own literal (they run in separate
+// processes and cannot share a constant), so nothing stops the two from drifting apart again the
+// way they did before issue #336 ('proxy.updated' vs 'proxy.changed'). This test closes that gap
+// by reading ProxyController's PHP constant straight out of its source and comparing it against
+// PROXY_CHANGED_EVENT actually used by lifecycle/index.js to trigger applyProxy().
+describe('PROXY_CHANGED_EVENT contract with the PHP side', () => {
+    test('matches App\\Controller\\Settings\\ProxyController::PROXY_CHANGED_EVENT', () => {
+        const phpControllerSource = fs.readFileSync(
+            path.join(__dirname, '../../app/src/Controller/Settings/ProxyController.php'),
+            'utf8',
+        );
+
+        const match = phpControllerSource.match(/public const PROXY_CHANGED_EVENT = '([^']+)';/);
+
+        expect(match).not.toBeNull();
+        expect(PROXY_CHANGED_EVENT).toBe(match[1]);
     });
 });
 

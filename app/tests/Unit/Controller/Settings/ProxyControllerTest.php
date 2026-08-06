@@ -152,7 +152,7 @@ final class ProxyControllerTest extends KernelTestCase
         $wsPublisher = $this->createMock(WsPublisher::class);
         $wsPublisher->expects($this->once())
             ->method('publish')
-            ->with('proxy.updated', ['mode' => 'manual']);
+            ->with(ProxyController::PROXY_CHANGED_EVENT, ['mode' => 'manual']);
 
         $controller = $this->createController(wsPublisher: $wsPublisher);
 
@@ -167,6 +167,27 @@ final class ProxyControllerTest extends KernelTestCase
         ]);
 
         $controller->save($request);
+    }
+
+    /**
+     * PHP and native/proxy.js each declare the event name as their own literal (they run in
+     * separate processes and cannot share a constant), so nothing stops the two from drifting
+     * apart again the way they did before issue #336 ('proxy.updated' vs 'proxy.changed'). This
+     * test closes that gap by reading native/proxy.js's PROXY_CHANGED_EVENT literal straight out
+     * of its source and comparing it against the PHP constant actually published in save().
+     */
+    public function testProxyChangedEventNameMatchesNativeProxyModuleContract(): void
+    {
+        $nativeProxySource = (string) file_get_contents(\dirname(__DIR__, 5).'/native/proxy.js');
+
+        $matched = preg_match("/const PROXY_CHANGED_EVENT = '([^']+)';/", $nativeProxySource, $matches);
+
+        $this->assertSame(1, $matched, 'native/proxy.js must declare a PROXY_CHANGED_EVENT constant.');
+        $this->assertSame(
+            ProxyController::PROXY_CHANGED_EVENT,
+            $matches[1],
+            'ProxyController::PROXY_CHANGED_EVENT must match native/proxy.js PROXY_CHANGED_EVENT — a mismatch silently breaks live proxy apply (issue #336).',
+        );
     }
 
     public function testSaveRejectsInvalidCsrfToken(): void

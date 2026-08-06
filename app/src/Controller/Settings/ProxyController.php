@@ -50,6 +50,15 @@ use Twig\Environment;
  */
 final class ProxyController
 {
+    /**
+     * Backend event name published on save() and consumed by native/lifecycle/index.js over
+     * /ws to call proxy.applyProxy() on the live Chromium session without an app restart. Keep
+     * this string in sync with PROXY_CHANGED_EVENT in native/proxy.js — a mismatch here breaks
+     * live-apply silently (issue #336), which is why ProxyControllerTest cross-checks both
+     * sides against each other.
+     */
+    public const PROXY_CHANGED_EVENT = 'proxy.changed';
+
     public function __construct(
         private readonly ProxyConfigProvider $proxyConfigProvider,
         private readonly ProxyTestService $proxyTestService,
@@ -77,7 +86,7 @@ final class ProxyController
         // the fact that the proxy changed is published here, never host/port/credentials, which
         // stay solely in config.json (issue #328 acceptance: no credentials leave the process
         // through anything but the config file itself).
-        $this->wsPublisher->publish('proxy.updated', ['mode' => $settings->mode->value]);
+        $this->wsPublisher->publish(self::PROXY_CHANGED_EVENT, ['mode' => $settings->mode->value]);
 
         return $this->renderIndex($settings, saved: true);
     }
