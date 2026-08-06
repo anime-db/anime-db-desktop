@@ -1,0 +1,89 @@
+{#
+ # AnimeDb package.
+ #
+ # @author    Peter Gribanov <info@peter-gribanov.ru>
+ # @copyright Copyright (c) 2026, Peter Gribanov
+ # @license   https://gnu.org GPL-3.0-or-later
+ #
+ # This program is free software: you can redistribute it and/or modify
+ # it under the terms of the GNU General Public License as published by
+ # the Free Software Foundation, either version 3 of the License, or
+ # (at your option) any later version.
+ #
+ # This program is distributed in the hope that it will be useful,
+ # but WITHOUT ANY WARRANTY; without even the implied warranty of
+ # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ # GNU General Public License for more details.
+ #
+ # You should have received a copy of the GNU General Public License
+ # along with this program. If not, see <https://gnu.org>.
+ #}
+{% extends 'base.html.twig' %}
+
+{% block title %}{{ 'settings_proxy.title'|trans }}{% endblock %}
+
+{% block body %}
+    <p><a href="{{ path('settings_index') }}">{{ 'settings_proxy.back_link'|trans }}</a></p>
+    <h1>{{ 'settings_proxy.heading'|trans }}</h1>
+
+    {% if saved %}
+        <p class="success">{{ 'settings_proxy.save_success'|trans }}</p>
+    {% endif %}
+
+    <form id="proxy-settings-form" method="post" action="{{ path('settings_proxy_save') }}">
+        <input type="hidden" name="_token" value="{{ csrf_token('settings_proxy_save') }}">
+
+        <fieldset>
+            <legend>{{ 'settings_proxy.mode_label'|trans }}</legend>
+            <label>
+                <input type="radio" name="mode" value="none"{% if settings.mode.value == 'none' %} checked{% endif %}>
+                {{ 'settings_proxy.mode.none'|trans }}
+            </label>
+            <label>
+                <input type="radio" name="mode" value="manual"{% if settings.mode.value == 'manual' %} checked{% endif %}>
+                {{ 'settings_proxy.mode.manual'|trans }}
+            </label>
+        </fieldset>
+
+        <label for="protocol">{{ 'settings_proxy.protocol_label'|trans }}</label>
+        <select id="protocol" name="protocol">
+            <option value="http"{% if settings.protocol.value == 'http' %} selected{% endif %}>{{ 'settings_proxy.protocol.http'|trans }}</option>
+            <option value="socks5"{% if settings.protocol.value == 'socks5' %} selected{% endif %}>{{ 'settings_proxy.protocol.socks5'|trans }}</option>
+        </select>
+        <p class="hint">{{ 'settings_proxy.http_protocol_hint'|trans }}</p>
+
+        <label for="host">{{ 'settings_proxy.host_label'|trans }}</label>
+        <input type="text" id="host" name="host" value="{{ settings.host }}">
+
+        <label for="port">{{ 'settings_proxy.port_label'|trans }}</label>
+        <input type="number" id="port" name="port" min="1" max="65535" value="{{ settings.port }}">
+
+        <label for="username">{{ 'settings_proxy.username_label'|trans }}</label>
+        <input type="text" id="username" name="username" value="{{ settings.username }}">
+
+        <label for="password">{{ 'settings_proxy.password_label'|trans }}</label>
+        <input type="password" id="password" name="password" value="{{ settings.password }}">
+
+        <button type="submit">{{ 'settings_proxy.save_button'|trans }}</button>
+    </form>
+
+    <h2>{{ 'settings_proxy.test_heading'|trans }}</h2>
+    <p class="hint">{{ 'settings_proxy.test_note'|trans }}</p>
+
+    <form id="proxy-test-form">
+        <input type="hidden" name="_token" value="{{ csrf_token('settings_proxy_test') }}">
+
+        <label for="test_url">{{ 'settings_proxy.test_url_label'|trans }}</label>
+        <input type="url" id="test_url" name="test_url" value="https://anime-db.org">
+
+        <button
+            type="button"
+            hx-post="{{ path('settings_proxy_test') }}"
+            hx-include="#proxy-settings-form, #proxy-test-form"
+            hx-target="#proxy-test-result"
+            hx-swap="innerHTML"
+        >{{ 'settings_proxy.test_button'|trans }}</button>
+    </form>
+
+    <div id="proxy-test-result"></div>
+{% endblock %}

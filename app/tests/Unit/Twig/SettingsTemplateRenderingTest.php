@@ -28,10 +28,15 @@ declare(strict_types=1);
 namespace App\Tests\Unit\Twig;
 
 use App\Entity\Anime;
+use App\Entity\Enum\ProxyMode;
+use App\Entity\Enum\ProxyProtocol;
+use App\Entity\Enum\ProxyTestOutcome;
 use App\Entity\Enum\SyncReviewItemKind;
 use App\Entity\Label;
 use App\Entity\SyncReviewItem;
 use App\Entity\TvAnime;
+use App\Entity\ValueObject\ProxySettings;
+use App\Entity\ValueObject\ProxyTestResult;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RequestStack;
@@ -213,5 +218,72 @@ final class SettingsTemplateRenderingTest extends KernelTestCase
         $this->assertStringContainsString('Trigun', $html);
         $this->assertStringContainsString('/anime/1', $html);
         $this->assertStringContainsString('Возможный дубликат', $html);
+    }
+
+    public function testProxyIndexRendersWithoutErrors(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession();
+        /** @var LocaleSwitcher $localeSwitcher */
+        $localeSwitcher = self::getContainer()->get(LocaleSwitcher::class);
+        $localeSwitcher->setLocale('ru');
+
+        $settings = new ProxySettings(ProxyMode::Manual, ProxyProtocol::Socks5, 'proxy.example', 1080);
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('settings/proxy/index.html.twig', ['settings' => $settings, 'saved' => false]);
+
+        $this->assertStringContainsString('Прокси-сервер', $html);
+        $this->assertStringContainsString('proxy.example', $html);
+    }
+
+    public function testProxyIndexRendersSaveSuccessMessage(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession();
+        /** @var LocaleSwitcher $localeSwitcher */
+        $localeSwitcher = self::getContainer()->get(LocaleSwitcher::class);
+        $localeSwitcher->setLocale('ru');
+
+        $settings = new ProxySettings(ProxyMode::None, ProxyProtocol::Socks5, null, null);
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('settings/proxy/index.html.twig', ['settings' => $settings, 'saved' => true]);
+
+        $this->assertStringContainsString('Настройки прокси сохранены.', $html);
+    }
+
+    public function testProxyTestResultFragmentRendersSuccessWithoutErrors(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession();
+        /** @var LocaleSwitcher $localeSwitcher */
+        $localeSwitcher = self::getContainer()->get(LocaleSwitcher::class);
+        $localeSwitcher->setLocale('ru');
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('settings/proxy/_test_result.html.twig', ['result' => ProxyTestResult::success(120)]);
+
+        $this->assertStringContainsString('120', $html);
+    }
+
+    public function testProxyTestResultFragmentRendersFailureWithoutErrors(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession();
+        /** @var LocaleSwitcher $localeSwitcher */
+        $localeSwitcher = self::getContainer()->get(LocaleSwitcher::class);
+        $localeSwitcher->setLocale('ru');
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('settings/proxy/_test_result.html.twig', [
+            'result' => ProxyTestResult::failure(ProxyTestOutcome::AuthFailed),
+        ]);
+
+        $this->assertStringContainsString('Ошибка аутентификации на прокси-сервере.', $html);
     }
 }
