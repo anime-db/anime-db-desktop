@@ -190,4 +190,65 @@ final class AppSettingsProviderTest extends TestCase
 
         $this->assertNull($provider->getDefaultSearchPluginId());
     }
+
+    public function testWriteConfigLeavesNoTemporaryFileBehind(): void
+    {
+        $provider = new AppSettingsProvider($this->configPath);
+        $provider->setLocale('ru');
+
+        $directory = \dirname($this->configPath);
+        $leftovers = glob($directory.'/.config.json.*.tmp');
+
+        $this->assertSame([], $leftovers);
+    }
+
+    public function testWriteConfigPreservesKeysWrittenByAnotherLayerConcurrently(): void
+    {
+        // Simulates native/config.js (another layer) having already written appSecret before
+        // this process reads-modifies-writes locale, i.e. the read-modify-write cycle sees
+        // the other layer's key rather than clobbering it.
+        file_put_contents($this->configPath, json_encode(['appSecret' => 'abc']));
+
+        $provider = new AppSettingsProvider($this->configPath);
+        $provider->setLocale('ru');
+        $provider->setDefaultSearchPluginId(new PluginId('animedb-shikimori'));
+
+        $data = json_decode((string) file_get_contents($this->configPath), true);
+
+        $this->assertSame('abc', $data['appSecret']);
+        $this->assertSame('ru', $data['locale']);
+        $this->assertSame('animedb-shikimori', $data['defaultSearchPluginId']);
+    }
+
+    public function testWriteConfigThrowsAndLeavesValidFileIntactWhenTemporaryWriteFails(): void
+    {
+        // A directory this process owns (unlike sys_get_temp_dir() itself, which is typically
+        // root-owned with the sticky bit set, so chmod on it would silently no-op).
+        $directory = sys_get_temp_dir().'/anime-config-test-dir-'.uniqid();
+        mkdir($directory);
+        $configPath = $directory.'/config.json';
+        file_put_contents($configPath, json_encode(['appSecret' => 'abc']));
+
+        // Strip write permission from the directory so the temporary file can never be created,
+        // simulating a full disk / permission failure partway through the write.
+        chmod($directory, 0500);
+
+        $provider = new AppSettingsProvider($configPath);
+
+        try {
+            $provider->setLocale('ru');
+            $this->fail('Expected a RuntimeException to be thrown.');
+        } catch (\RuntimeException) {
+            // expected
+        } finally {
+            chmod($directory, 0755);
+        }
+
+        $data = json_decode((string) file_get_contents($configPath), true);
+        $this->assertSame('abc', $data['appSecret']);
+        $this->assertArrayNotHasKey('locale', $data);
+
+        unlink($configPath);
+        rmdir($directory);
+    }
 }

@@ -178,6 +178,52 @@ describe('getOrCreateLocale', () => {
     });
 });
 
+describe('readConfig error handling', () => {
+    test('falls back to {} when config.json contains truncated/invalid JSON', () => {
+        const configPath = path.join(tmpDir, 'config.json');
+        fs.writeFileSync(configPath, '{"locale": "ru", "appSecret": ', 'utf8');
+
+        app.getLocale.mockReturnValue('en-US');
+
+        expect(() => getLocale()).not.toThrow();
+        expect(getLocale()).toBe('en');
+    });
+
+    test('recovers by regenerating a secret when the file becomes corrupted', () => {
+        const secret = getOrCreateAppSecret();
+
+        const configPath = path.join(tmpDir, 'config.json');
+        fs.writeFileSync(configPath, 'not json at all', 'utf8');
+
+        expect(() => getOrCreateAppSecret()).not.toThrow();
+        expect(getOrCreateAppSecret()).not.toBe(secret);
+    });
+
+    test.each([
+        ['null', 'null'],
+        ['a number', '42'],
+        ['a string', '"just a string"'],
+        ['an array', '[1, 2, 3]'],
+    ])('normalizes valid but non-object JSON (%s) to {} instead of leaking it', (_label, jsonContent) => {
+        const configPath = path.join(tmpDir, 'config.json');
+        fs.writeFileSync(configPath, jsonContent, 'utf8');
+
+        app.getLocale.mockReturnValue('en-US');
+
+        expect(() => getOrCreateAppSecret()).not.toThrow();
+        expect(getOrCreateAppSecret()).toMatch(/^[0-9a-f]{64}$/);
+    });
+});
+
+describe('writeConfig atomicity', () => {
+    test('leaves no temporary file behind after a write', () => {
+        getOrCreateAppSecret();
+
+        const leftovers = fs.readdirSync(tmpDir).filter((name) => name.endsWith('.tmp'));
+        expect(leftovers).toEqual([]);
+    });
+});
+
 describe('getLocale', () => {
     test('reads the locale persisted by getOrCreateLocale', () => {
         app.getLocale.mockReturnValue('ru-RU');
