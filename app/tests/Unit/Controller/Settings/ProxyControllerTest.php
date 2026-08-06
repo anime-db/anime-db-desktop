@@ -177,8 +177,11 @@ final class ProxyControllerTest extends KernelTestCase
         $controller = $this->createController(csrfTokenManager: $csrf);
         $request = Request::create('/settings/proxy', 'POST', ['_token' => 'bad', 'mode' => 'manual']);
 
-        $this->expectException(BadRequestHttpException::class);
-        $controller->save($request);
+        try {
+            $controller->save($request);
+            $this->fail('Expected BadRequestHttpException was not thrown.');
+        } catch (BadRequestHttpException) {
+        }
 
         $this->assertFalse(is_file($this->configPath));
     }
