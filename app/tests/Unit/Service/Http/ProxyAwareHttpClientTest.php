@@ -161,12 +161,23 @@ final class ProxyAwareHttpClientTest extends TestCase
     public function testWithOptionsReturnsNewInstanceWrappingInnerWithOptions(): void
     {
         $provider = new ProxyConfigProvider($this->configPath);
-        $inner = new MockHttpClient();
+        $capturedOptions = null;
+
+        $inner = new MockHttpClient(function (string $method, string $url, array $options) use (&$capturedOptions): MockResponse {
+            $capturedOptions = $options;
+
+            return new MockResponse();
+        });
 
         $client = new ProxyAwareHttpClient($inner, $provider);
         $withOptions = $client->withOptions(['timeout' => 42]);
 
         self::assertNotSame($client, $withOptions);
         self::assertInstanceOf(ProxyAwareHttpClient::class, $withOptions);
+
+        $withOptions->request('GET', 'https://example.test/');
+
+        self::assertIsArray($capturedOptions);
+        self::assertSame(42.0, $capturedOptions['timeout']);
     }
 }
