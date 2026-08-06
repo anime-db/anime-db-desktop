@@ -85,6 +85,7 @@ final class ProxyAwareHttpClientTest extends TestCase
 
         (new ProxyAwareHttpClient($inner, $provider))->request('GET', 'https://example.test/');
 
+        self::assertIsArray($capturedOptions);
         self::assertSame('http://127.0.0.1:8080', $capturedOptions['proxy']);
         self::assertSame('localhost,127.0.0.1,::1', $capturedOptions['no_proxy']);
     }
@@ -103,6 +104,7 @@ final class ProxyAwareHttpClientTest extends TestCase
 
         (new ProxyAwareHttpClient($inner, $provider))->request('GET', 'https://example.test/');
 
+        self::assertIsArray($capturedOptions);
         self::assertSame('socks5://127.0.0.1:1080', $capturedOptions['proxy']);
     }
 
@@ -122,6 +124,7 @@ final class ProxyAwareHttpClientTest extends TestCase
             'proxy' => 'http://caller-proxy.test:9090',
         ]);
 
+        self::assertIsArray($capturedOptions);
         self::assertSame('http://caller-proxy.test:9090', $capturedOptions['proxy']);
     }
 
@@ -139,6 +142,7 @@ final class ProxyAwareHttpClientTest extends TestCase
 
         (new ProxyAwareHttpClient($inner, $provider))->request('GET', 'https://example.test/');
 
+        self::assertIsArray($capturedOptions);
         self::assertStringContainsString('localhost', $capturedOptions['no_proxy']);
         self::assertStringContainsString('127.0.0.1', $capturedOptions['no_proxy']);
         self::assertStringContainsString('::1', $capturedOptions['no_proxy']);

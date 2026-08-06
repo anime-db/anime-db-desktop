@@ -68,6 +68,9 @@ final class ProxyAwareHttpClient implements HttpClientInterface
         return new self(new CurlHttpClient($defaultOptions), $proxyConfigProvider);
     }
 
+    /**
+     * @param array<string, mixed> $options
+     */
     public function request(string $method, string $url, array $options = []): ResponseInterface
     {
         $proxyOptions = $this->proxyConfigProvider->getHttpClientOptions();
@@ -83,6 +86,9 @@ final class ProxyAwareHttpClient implements HttpClientInterface
         return $this->client->stream($responses, $timeout);
     }
 
+    /**
+     * @param array<string, mixed> $options
+     */
     public function withOptions(array $options): static
     {
         return new self($this->client->withOptions($options), $this->proxyConfigProvider);
