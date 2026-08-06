@@ -28,7 +28,9 @@ const { app } = require('electron');
 const paths  = require('./paths');
 
 /**
- * Config is stored at <userData>/config.json.
+ * Config is stored at <userData>/config.json. A missing, truncated or otherwise corrupt file
+ * (e.g. a write from the PHP side was interrupted) degrades to an empty config instead of
+ * throwing, symmetrically with AppSettingsProvider::readConfig() on the PHP side.
  *
  * @returns {Record<string, unknown>}
  */
@@ -37,16 +39,28 @@ function readConfig() {
     if (!fs.existsSync(configPath)) {
         return {};
     }
-    return JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    try {
+        return JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    } catch {
+        return {};
+    }
 }
 
 /**
+ * Writes to a temporary file in the same directory and renames it over the target path, so a
+ * concurrent read from the PHP side never observes a partially written file (rename is atomic
+ * within a filesystem).
+ *
  * @param {Record<string, unknown>} config
  */
 function writeConfig(config) {
     const configPath = path.join(paths.getUserDataDir(), 'config.json');
-    fs.mkdirSync(path.dirname(configPath), { recursive: true });
-    fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+    const dir = path.dirname(configPath);
+    fs.mkdirSync(dir, { recursive: true });
+
+    const tmpPath = path.join(dir, `.config.json.${process.pid}.${Date.now()}.tmp`);
+    fs.writeFileSync(tmpPath, JSON.stringify(config, null, 2));
+    fs.renameSync(tmpPath, configPath);
 }
 
 /**

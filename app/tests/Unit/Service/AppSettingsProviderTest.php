@@ -190,4 +190,33 @@ final class AppSettingsProviderTest extends TestCase
 
         $this->assertNull($provider->getDefaultSearchPluginId());
     }
+
+    public function testWriteConfigLeavesNoTemporaryFileBehind(): void
+    {
+        $provider = new AppSettingsProvider($this->configPath);
+        $provider->setLocale('ru');
+
+        $directory = \dirname($this->configPath);
+        $leftovers = glob($directory.'/.config.json.*.tmp');
+
+        $this->assertSame([], $leftovers);
+    }
+
+    public function testWriteConfigPreservesKeysWrittenByAnotherLayerConcurrently(): void
+    {
+        // Simulates native/config.js (another layer) having already written appSecret before
+        // this process reads-modifies-writes locale, i.e. the read-modify-write cycle sees
+        // the other layer's key rather than clobbering it.
+        file_put_contents($this->configPath, json_encode(['appSecret' => 'abc']));
+
+        $provider = new AppSettingsProvider($this->configPath);
+        $provider->setLocale('ru');
+        $provider->setDefaultSearchPluginId(new PluginId('animedb-shikimori'));
+
+        $data = json_decode((string) file_get_contents($this->configPath), true);
+
+        $this->assertSame('abc', $data['appSecret']);
+        $this->assertSame('ru', $data['locale']);
+        $this->assertSame('animedb-shikimori', $data['defaultSearchPluginId']);
+    }
 }

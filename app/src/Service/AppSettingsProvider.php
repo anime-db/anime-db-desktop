@@ -109,7 +109,13 @@ final class AppSettingsProvider
         $this->writeConfig($config);
     }
 
-    /** @param array<string, mixed> $config */
+    /**
+     * Writes to a temporary file in the same directory and renames it over the target path, so a
+     * concurrent read from native/config.js never observes a partially written file (rename is
+     * atomic within a filesystem).
+     *
+     * @param array<string, mixed> $config
+     */
     private function writeConfig(array $config): void
     {
         $directory = \dirname($this->configPath);
@@ -117,10 +123,14 @@ final class AppSettingsProvider
             mkdir($directory, recursive: true);
         }
 
+        $tmpPath = $directory.'/.config.json.'.uniqid('', true).'.tmp';
+
         file_put_contents(
-            $this->configPath,
+            $tmpPath,
             json_encode($config, \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE),
         );
+
+        rename($tmpPath, $this->configPath);
     }
 
     /** @return array<string, mixed> */
