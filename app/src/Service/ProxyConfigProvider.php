@@ -40,6 +40,10 @@ use App\Entity\ValueObject\ProxySettings;
  * Wiring the options {@see self::getHttpClientOptions()} returns into an actual HTTP client
  * (e.g. PluginHttpClientFactory) and exposing this through the settings UI are separate,
  * follow-up issues — this class only covers storage and reading.
+ *
+ * Every write goes through {@see AppConfigStore}, which holds an exclusive lock for the whole
+ * read-modify-write cycle so a concurrent write to a different key (e.g. AppSettingsProvider's
+ * locale) cannot be lost (issue #342).
  */
 final class ProxyConfigProvider
 {
@@ -49,13 +53,16 @@ final class ProxyConfigProvider
      */
     private const NO_PROXY_HOSTS = 'localhost,127.0.0.1,::1';
 
-    public function __construct(private readonly string $configPath)
+    private readonly AppConfigStore $configStore;
+
+    public function __construct(string $configPath)
     {
+        $this->configStore = new AppConfigStore($configPath);
     }
 
     public function getSettings(): ProxySettings
     {
-        $data = $this->readConfig()['proxy'] ?? null;
+        $data = $this->configStore->read()['proxy'] ?? null;
         if (!\is_array($data)) {
             $data = [];
         }
@@ -85,17 +92,18 @@ final class ProxyConfigProvider
      */
     public function setSettings(ProxySettings $settings): void
     {
-        $config = $this->readConfig();
-        $config['proxy'] = [
-            'mode' => $settings->mode->value,
-            'protocol' => $settings->protocol->value,
-            'host' => $settings->host,
-            'port' => $settings->port,
-            'username' => $settings->username,
-            'password' => $settings->password,
-        ];
+        $this->configStore->update(static function (array $config) use ($settings): array {
+            $config['proxy'] = [
+                'mode' => $settings->mode->value,
+                'protocol' => $settings->protocol->value,
+                'host' => $settings->host,
+                'port' => $settings->port,
+                'username' => $settings->username,
+                'password' => $settings->password,
+            ];
 
-        $this->writeConfig($config);
+            return $config;
+        });
     }
 
     /**
@@ -111,56 +119,5 @@ final class ProxyConfigProvider
             'proxy' => $this->getSettings()->toProxyUrl(),
             'no_proxy' => self::NO_PROXY_HOSTS,
         ];
-    }
-
-    /**
-     * Writes to a temporary file in the same directory and renames it over the target path, so a
-     * concurrent read from native/config.js never observes a partially written file (rename is
-     * atomic within a filesystem).
-     *
-     * @param array<string, mixed> $config
-     */
-    private function writeConfig(array $config): void
-    {
-        $directory = \dirname($this->configPath);
-        if (!is_dir($directory)) {
-            mkdir($directory, recursive: true);
-        }
-
-        $tmpPath = $directory.'/.config.json.'.uniqid('', true).'.tmp';
-
-        $written = @file_put_contents(
-            $tmpPath,
-            json_encode($config, \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE),
-        );
-
-        if ($written === false) {
-            @unlink($tmpPath);
-
-            throw new \RuntimeException(\sprintf('Failed to write temporary config file "%s".', $tmpPath));
-        }
-
-        if (!@rename($tmpPath, $this->configPath)) {
-            @unlink($tmpPath);
-
-            throw new \RuntimeException(\sprintf('Failed to rename "%s" to "%s".', $tmpPath, $this->configPath));
-        }
-    }
-
-    /** @return array<string, mixed> */
-    private function readConfig(): array
-    {
-        if (!is_file($this->configPath)) {
-            return [];
-        }
-
-        $contents = file_get_contents($this->configPath);
-        if ($contents === false) {
-            return [];
-        }
-
-        $data = json_decode($contents, true);
-
-        return \is_array($data) ? $data : [];
     }
 }

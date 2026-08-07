@@ -36,16 +36,23 @@ use App\Entity\ValueObject\PluginId;
  * native/config.js writes appSecret and locale (issue #85) to. Missing file/key/unreadable JSON
  * all fall back to the documented default (infinite scroll, issue #74) rather than failing the
  * request.
+ *
+ * Every write goes through {@see AppConfigStore}, which holds an exclusive lock for the whole
+ * read-modify-write cycle so a concurrent write to a different key (e.g. ProxyConfigProvider's,
+ * or this class's own defaultSearchPluginId next to locale) cannot be lost (issue #342).
  */
 final class AppSettingsProvider
 {
-    public function __construct(private readonly string $configPath)
+    private readonly AppConfigStore $configStore;
+
+    public function __construct(string $configPath)
     {
+        $this->configStore = new AppConfigStore($configPath);
     }
 
     public function getPaginationMode(): PaginationMode
     {
-        $data = $this->readConfig();
+        $data = $this->configStore->read();
         $mode = $data['paginationMode'] ?? null;
 
         if (!\is_string($mode)) {
@@ -57,21 +64,23 @@ final class AppSettingsProvider
 
     public function getLocale(): ?string
     {
-        $locale = $this->readConfig()['locale'] ?? null;
+        $locale = $this->configStore->read()['locale'] ?? null;
 
         return \is_string($locale) ? $locale : null;
     }
 
     /**
      * Overwrites the locale field in place, keeping every other key (appSecret, paginationMode,
-     * ...) untouched — the same read-modify-write pattern native/config.js uses.
+     * ...) untouched — the same read-modify-write pattern native/config.js uses, now atomic
+     * end-to-end via {@see AppConfigStore::update()}.
      */
     public function setLocale(string $locale): void
     {
-        $config = $this->readConfig();
-        $config['locale'] = $locale;
+        $this->configStore->update(static function (array $config) use ($locale): array {
+            $config['locale'] = $locale;
 
-        $this->writeConfig($config);
+            return $config;
+        });
     }
 
     /**
@@ -85,7 +94,7 @@ final class AppSettingsProvider
      */
     public function getDefaultSearchPluginId(): ?PluginId
     {
-        $id = $this->readConfig()['defaultSearchPluginId'] ?? null;
+        $id = $this->configStore->read()['defaultSearchPluginId'] ?? null;
         if (!\is_string($id) || $id === '') {
             return null;
         }
@@ -103,60 +112,10 @@ final class AppSettingsProvider
      */
     public function setDefaultSearchPluginId(?PluginId $pluginId): void
     {
-        $config = $this->readConfig();
-        $config['defaultSearchPluginId'] = $pluginId !== null ? (string) $pluginId : null;
+        $this->configStore->update(static function (array $config) use ($pluginId): array {
+            $config['defaultSearchPluginId'] = $pluginId !== null ? (string) $pluginId : null;
 
-        $this->writeConfig($config);
-    }
-
-    /**
-     * Writes to a temporary file in the same directory and renames it over the target path, so a
-     * concurrent read from native/config.js never observes a partially written file (rename is
-     * atomic within a filesystem).
-     *
-     * @param array<string, mixed> $config
-     */
-    private function writeConfig(array $config): void
-    {
-        $directory = \dirname($this->configPath);
-        if (!is_dir($directory)) {
-            mkdir($directory, recursive: true);
-        }
-
-        $tmpPath = $directory.'/.config.json.'.uniqid('', true).'.tmp';
-
-        $written = @file_put_contents(
-            $tmpPath,
-            json_encode($config, \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE),
-        );
-
-        if ($written === false) {
-            @unlink($tmpPath);
-
-            throw new \RuntimeException(\sprintf('Failed to write temporary config file "%s".', $tmpPath));
-        }
-
-        if (!@rename($tmpPath, $this->configPath)) {
-            @unlink($tmpPath);
-
-            throw new \RuntimeException(\sprintf('Failed to rename "%s" to "%s".', $tmpPath, $this->configPath));
-        }
-    }
-
-    /** @return array<string, mixed> */
-    private function readConfig(): array
-    {
-        if (!is_file($this->configPath)) {
-            return [];
-        }
-
-        $contents = file_get_contents($this->configPath);
-        if ($contents === false) {
-            return [];
-        }
-
-        $data = json_decode($contents, true);
-
-        return \is_array($data) ? $data : [];
+            return $config;
+        });
     }
 }

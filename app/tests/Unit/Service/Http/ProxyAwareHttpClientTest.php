@@ -48,8 +48,10 @@ final class ProxyAwareHttpClientTest extends TestCase
 
     protected function tearDown(): void
     {
-        if (is_file($this->configPath)) {
-            unlink($this->configPath);
+        foreach ([$this->configPath, $this->configPath.'.tmp', $this->configPath.'.lock'] as $file) {
+            if (is_file($file)) {
+                unlink($file);
+            }
         }
     }
 

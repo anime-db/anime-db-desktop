@@ -13,10 +13,12 @@ parameters:
     # SQLite connection.
     scanDirectories:
         - migrations
-    # Standalone CLI worker script spawned as a child process by PluginsConfigStoreConcurrencyTest
-    # (via Symfony\Component\Process), not a PHPUnit test class — relies on $argv like any CLI
-    # entry point (bin/console), which PHPStan can't see outside a real CLI invocation.
+    # Standalone CLI worker scripts spawned as child processes by PluginsConfigStoreConcurrencyTest
+    # and AppConfigStoreConcurrencyTest (via Symfony\Component\Process), not PHPUnit test classes —
+    # rely on $argv like any CLI entry point (bin/console), which PHPStan can't see outside a real
+    # CLI invocation.
     excludePaths:
         - tests/Fixtures/Plugin/increment-counter.php
+        - tests/Fixtures/set-config-key.php
     bootstrapFiles:
         - tests/bootstrap.php

@@ -43,8 +43,10 @@ final class AppSettingsProviderTest extends TestCase
 
     protected function tearDown(): void
     {
-        if (is_file($this->configPath)) {
-            unlink($this->configPath);
+        foreach ([$this->configPath, $this->configPath.'.tmp', $this->configPath.'.lock'] as $file) {
+            if (is_file($file)) {
+                unlink($file);
+            }
         }
     }
 
@@ -139,6 +141,7 @@ final class AppSettingsProviderTest extends TestCase
         $this->assertSame('ru', $provider->getLocale());
 
         unlink($configPath);
+        unlink($configPath.'.lock');
         rmdir(\dirname($configPath));
         rmdir(\dirname($configPath, 2));
     }
@@ -196,10 +199,7 @@ final class AppSettingsProviderTest extends TestCase
         $provider = new AppSettingsProvider($this->configPath);
         $provider->setLocale('ru');
 
-        $directory = \dirname($this->configPath);
-        $leftovers = glob($directory.'/.config.json.*.tmp');
-
-        $this->assertSame([], $leftovers);
+        $this->assertFileDoesNotExist($this->configPath.'.tmp');
     }
 
     public function testWriteConfigPreservesKeysWrittenByAnotherLayerConcurrently(): void
@@ -235,12 +235,17 @@ final class AppSettingsProviderTest extends TestCase
 
         $provider = new AppSettingsProvider($configPath);
 
+        // Opening the lock file (also inside $directory) also emits a PHP warning for this
+        // expected failure; silence it so it doesn't pollute test output.
+        set_error_handler(static fn (): bool => true, \E_WARNING);
+
         try {
             $provider->setLocale('ru');
             $this->fail('Expected a RuntimeException to be thrown.');
         } catch (\RuntimeException) {
             // expected
         } finally {
+            restore_error_handler();
             chmod($directory, 0755);
         }
 

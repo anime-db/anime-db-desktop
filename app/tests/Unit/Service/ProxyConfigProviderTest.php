@@ -44,8 +44,10 @@ final class ProxyConfigProviderTest extends TestCase
 
     protected function tearDown(): void
     {
-        if (is_file($this->configPath)) {
-            unlink($this->configPath);
+        foreach ([$this->configPath, $this->configPath.'.tmp', $this->configPath.'.lock'] as $file) {
+            if (is_file($file)) {
+                unlink($file);
+            }
         }
     }
 
@@ -232,9 +234,6 @@ final class ProxyConfigProviderTest extends TestCase
         $provider = new ProxyConfigProvider($this->configPath);
         $provider->setSettings(new ProxySettings(ProxyMode::Manual, ProxyProtocol::Http, '127.0.0.1', 8080));
 
-        $directory = \dirname($this->configPath);
-        $leftovers = glob($directory.'/.config.json.*.tmp');
-
-        $this->assertSame([], $leftovers);
+        $this->assertFileDoesNotExist($this->configPath.'.tmp');
     }
 }
