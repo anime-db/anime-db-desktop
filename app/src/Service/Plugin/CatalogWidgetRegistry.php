@@ -96,6 +96,7 @@ final class CatalogWidgetRegistry
      * simultaneously active widgets (issue #213).
      *
      * @throws Exception\WidgetHardLimitExceededException
+     * @throws Exception\PluginsConfigStoreLockedException
      */
     public function setActive(PluginId $pluginId, string $widgetName, bool $active): void
     {

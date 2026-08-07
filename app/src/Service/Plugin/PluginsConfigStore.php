@@ -84,6 +84,8 @@ final class PluginsConfigStore
      * (empty array if none yet) and returns the settings to persist.
      *
      * @param callable(array<string, mixed>): array<string, mixed> $modifier
+     *
+     * @throws PluginsConfigStoreLockedException
      */
     public function updatePluginSettings(PluginId $pluginId, callable $modifier): void
     {

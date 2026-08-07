@@ -28,6 +28,7 @@ declare(strict_types=1);
 namespace App\Service\Plugin;
 
 use App\Entity\ValueObject\PluginId;
+use App\Service\Plugin\Exception\PluginsConfigStoreLockedException;
 use App\Service\Plugin\Exception\WidgetHardLimitExceededException;
 
 /**
@@ -67,6 +68,7 @@ trait WidgetActiveTrait
      * off, or toggling an already-active widget back on, is always allowed.
      *
      * @throws WidgetHardLimitExceededException
+     * @throws PluginsConfigStoreLockedException
      */
     private function changeActive(PluginId $pluginId, string $widgetName, bool $active, int $activeCount): void
     {

@@ -209,6 +209,54 @@ final class PluginWidgetControllerTest extends TestCase
         $this->assertSame('/settings/plugins/widgets?error=hard_limit_exceeded', $response->getTargetUrl());
     }
 
+    /**
+     * The lock acquire is non-blocking with a short bounded retry (issue #340): if the settings
+     * page's own toggle() loses the race for the lock, it must redirect with a friendly
+     * "busy, retry" error rather than let {@see PluginsConfigStoreLockedException} bubble up as
+     * an uncaught 500 — precisely the "disable that stuck plugin" scenario the fail-fast lock was
+     * introduced for.
+     */
+    public function testToggleRedirectsWithBusyRetryErrorWhenTheLockIsHeldByAnotherWriter(): void
+    {
+        $this->writeManifest('animedb-shikimori', 'Shikimori');
+
+        $entryWidgets = new EntryWidgetRegistry(
+            ['animedb-shikimori:related' => $this->createStub(EntryWidgetInterface::class)],
+            new PluginsConfigStore($this->configPath),
+        );
+
+        $urlGenerator = $this->createMock(UrlGeneratorInterface::class);
+        $urlGenerator->method('generate')
+            ->with('settings_plugin_widgets_index', ['error' => 'busy_retry'])
+            ->willReturn('/settings/plugins/widgets?error=busy_retry');
+
+        $controller = new PluginWidgetController(
+            $this->installedPlugins(),
+            $entryWidgets,
+            new CatalogWidgetRegistry([], new PluginsConfigStore($this->configPath)),
+            $this->alwaysValidCsrf(),
+            $urlGenerator,
+            $this->createStub(Environment::class),
+        );
+
+        $lockHandle = fopen($this->configPath.'.lock', 'c');
+        $this->assertNotFalse($lockHandle);
+        $this->assertTrue(flock($lockHandle, \LOCK_EX));
+
+        try {
+            $response = $controller->toggle(
+                'animedb-shikimori',
+                'related',
+                Request::create('/settings/plugins/widgets/animedb-shikimori/related', 'POST', ['placement' => 'entry', 'active' => '1']),
+            );
+
+            $this->assertSame('/settings/plugins/widgets?error=busy_retry', $response->getTargetUrl());
+        } finally {
+            flock($lockHandle, \LOCK_UN);
+            fclose($lockHandle);
+        }
+    }
+
     public function testToggleThrowsBadRequestForAnUnknownPlacement(): void
     {
         $controller = new PluginWidgetController(
