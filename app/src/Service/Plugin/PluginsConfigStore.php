@@ -29,6 +29,7 @@ namespace App\Service\Plugin;
 
 use App\Entity\ValueObject\PluginId;
 use App\Service\Plugin\Exception\PluginsConfigStoreException;
+use App\Service\Plugin\Exception\PluginsConfigStoreLockedException;
 
 /**
  * Reads and writes %AppData%/plugins.json — one shared file for every installed plugin's
@@ -48,9 +49,21 @@ use App\Service\Plugin\Exception\PluginsConfigStoreException;
  * exclusive flock() for the whole read -> modify -> serialize -> write-temp -> rename cycle.
  * Readers need no lock: the atomic rename() alone guarantees they see a consistent version of
  * the file, wholly old or wholly new.
+ *
+ * The lock acquire is non-blocking (issue #340): a single lock file guards every plugin's
+ * entry, including the host's own `enabled`/`features` toggles ({@see WidgetActiveTrait}), so a
+ * writer that blocked indefinitely behind another one — e.g. a plugin's own $modifier stuck on
+ * a network call it should never have made under the lock — would also block unrelated writers,
+ * including the settings page trying to disable that very plugin. acquireLock() instead retries
+ * a short, bounded number of times and then fails fast with
+ * {@see PluginsConfigStoreLockedException}, turning an unbounded hang into an immediate,
+ * recoverable error.
  */
 final class PluginsConfigStore
 {
+    private const int LOCK_ACQUIRE_MAX_ATTEMPTS = 10;
+    private const int LOCK_ACQUIRE_RETRY_DELAY_MICROSECONDS = 5_000;
+
     public function __construct(private readonly string $pluginsConfigPath)
     {
     }
@@ -94,24 +107,6 @@ final class PluginsConfigStore
         $settings = $this->getPluginSettings($pluginId)['settings'] ?? null;
 
         return \is_array($settings) ? $settings : [];
-    }
-
-    /**
-     * Replaces the `settings` subsection of a plugin's entry with $payload, leaving that
-     * plugin's `enabled`/`features` keys and every other plugin's entry untouched — the host
-     * side of {@see \AnimeDb\PluginContracts\Settings\SettingsStoreInterface::write()} (issue #316). An override, not a merge: a
-     * key present in a previous payload but absent from $payload is gone after this call, which
-     * is how a plugin revokes e.g. an OAuth token.
-     *
-     * @param array<string, mixed> $payload
-     */
-    public function writeSettingsStorePayload(PluginId $pluginId, array $payload): void
-    {
-        $this->updatePluginSettings($pluginId, static function (array $settings) use ($payload): array {
-            $settings['settings'] = $payload;
-
-            return $settings;
-        });
     }
 
     /**
@@ -168,9 +163,7 @@ final class PluginsConfigStore
         }
 
         try {
-            if (!flock($lockHandle, \LOCK_EX)) {
-                throw new PluginsConfigStoreException(\sprintf('Unable to lock "%s".', $this->pluginsConfigPath));
-            }
+            $this->acquireLock($lockHandle);
 
             $plugins = $modifier($this->read());
 
@@ -191,6 +184,29 @@ final class PluginsConfigStore
             flock($lockHandle, \LOCK_UN);
             fclose($lockHandle);
         }
+    }
+
+    /**
+     * A single LOCK_EX | LOCK_NB attempt would fail even a legitimate microsecond-scale race
+     * between two fast writers, so this retries a short, bounded number of times with a small
+     * pause between attempts before giving up — the total ceiling stays in the tens of
+     * milliseconds, never an unbounded wait behind another writer (issue #340).
+     *
+     * @param resource $lockHandle
+     */
+    private function acquireLock($lockHandle): void
+    {
+        for ($attempt = 1; $attempt <= self::LOCK_ACQUIRE_MAX_ATTEMPTS; ++$attempt) {
+            if (flock($lockHandle, \LOCK_EX | \LOCK_NB)) {
+                return;
+            }
+
+            if ($attempt < self::LOCK_ACQUIRE_MAX_ATTEMPTS) {
+                usleep(self::LOCK_ACQUIRE_RETRY_DELAY_MICROSECONDS);
+            }
+        }
+
+        throw new PluginsConfigStoreLockedException($this->pluginsConfigPath, self::LOCK_ACQUIRE_MAX_ATTEMPTS);
     }
 
     /**

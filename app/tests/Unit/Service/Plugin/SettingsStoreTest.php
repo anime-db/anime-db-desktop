@@ -27,7 +27,9 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Service\Plugin;
 
+use AnimeDb\PluginContracts\Settings\ConcurrentWriteException;
 use App\Entity\ValueObject\PluginId;
+use App\Service\Plugin\Exception\PluginsConfigStoreException;
 use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Plugin\SettingsStore;
 use PHPUnit\Framework\TestCase;
@@ -57,21 +59,25 @@ final class SettingsStoreTest extends TestCase
         $this->assertSame([], $store->read());
     }
 
-    public function testWriteThenReadRoundTrips(): void
+    public function testUpdateThenReadRoundTrips(): void
     {
         $store = new SettingsStore(new PluginId('animedb-shikimori'), new PluginsConfigStore($this->path));
 
-        $store->write(['refreshToken' => 'abc']);
+        $store->update(static fn (): array => ['refreshToken' => 'abc']);
 
         $this->assertSame(['refreshToken' => 'abc'], $store->read());
     }
 
-    public function testWriteOverridesRatherThanMergesWithThePreviousPayload(): void
+    public function testUpdatePassesCurrentSettingsToModifierAndPersistsWhatItReturns(): void
     {
         $store = new SettingsStore(new PluginId('animedb-shikimori'), new PluginsConfigStore($this->path));
 
-        $store->write(['refreshToken' => 'abc', 'endpoint' => 'https://example.test']);
-        $store->write(['endpoint' => 'https://example.test']);
+        $store->update(static fn (): array => ['refreshToken' => 'abc', 'endpoint' => 'https://example.test']);
+        $store->update(static function (array $settings): array {
+            unset($settings['refreshToken']);
+
+            return $settings;
+        });
 
         $this->assertSame(['endpoint' => 'https://example.test'], $store->read());
     }
@@ -82,8 +88,8 @@ final class SettingsStoreTest extends TestCase
         $shikimori = new SettingsStore(new PluginId('animedb-shikimori'), $configStore);
         $anilist = new SettingsStore(new PluginId('animedb-anilist'), $configStore);
 
-        $shikimori->write(['refreshToken' => 'shiki-token']);
-        $anilist->write(['refreshToken' => 'anilist-token']);
+        $shikimori->update(static fn (): array => ['refreshToken' => 'shiki-token']);
+        $anilist->update(static fn (): array => ['refreshToken' => 'anilist-token']);
 
         $this->assertSame(['refreshToken' => 'shiki-token'], $shikimori->read());
         $this->assertSame(['refreshToken' => 'anilist-token'], $anilist->read());
@@ -94,7 +100,7 @@ final class SettingsStoreTest extends TestCase
      * shadow the host's own `features` flags (widget/filler/sync toggles) stored in the very
      * same plugins.json entry (issue #316).
      */
-    public function testWriteDoesNotCollideWithHostEnabledAndFeaturesFlags(): void
+    public function testUpdateDoesNotCollideWithHostEnabledAndFeaturesFlags(): void
     {
         $pluginId = new PluginId('animedb-shikimori');
         $configStore = new PluginsConfigStore($this->path);
@@ -104,12 +110,57 @@ final class SettingsStoreTest extends TestCase
         ]);
 
         $store = new SettingsStore($pluginId, $configStore);
-        $store->write(['features' => ['syncedAt' => '2026-08-04']]);
+        $store->update(static fn (): array => ['features' => ['syncedAt' => '2026-08-04']]);
 
         $this->assertSame(['features' => ['syncedAt' => '2026-08-04']], $store->read());
         $this->assertSame(
             ['enabled' => true, 'features' => ['filler' => false], 'settings' => ['features' => ['syncedAt' => '2026-08-04']]],
             $configStore->getPluginSettings($pluginId),
         );
+    }
+
+    public function testUpdateThrowsWhenModifierDoesNotReturnAnArray(): void
+    {
+        $pluginId = new PluginId('animedb-shikimori');
+        $configStore = new PluginsConfigStore($this->path);
+        $store = new SettingsStore($pluginId, $configStore);
+        $store->update(static fn (): array => ['refreshToken' => 'abc']);
+
+        $this->expectException(PluginsConfigStoreException::class);
+
+        try {
+            // A modifier that forgot its `return` statement must not silently wipe the plugin's
+            // stored settings (issue #340).
+            $store->update($this->modifierThatForgotItsReturnStatement());
+        } finally {
+            $this->assertSame(['refreshToken' => 'abc'], $store->read());
+        }
+    }
+
+    public function testUpdateMapsLockContentionOntoTheContractsConcurrentWriteException(): void
+    {
+        $pluginId = new PluginId('animedb-shikimori');
+        $store = new SettingsStore($pluginId, new PluginsConfigStore($this->path));
+
+        $lockHandle = fopen($this->path.'.lock', 'c');
+        $this->assertNotFalse($lockHandle);
+        $this->assertTrue(flock($lockHandle, \LOCK_EX));
+
+        try {
+            $this->expectException(ConcurrentWriteException::class);
+            $store->update(static fn (array $settings): array => $settings);
+        } finally {
+            flock($lockHandle, \LOCK_UN);
+            fclose($lockHandle);
+        }
+    }
+
+    /**
+     * Returned as plain `callable`, not a `Closure(): array<string, mixed>`, on purpose: nothing
+     * in the contract prevents a plugin from actually passing a modifier that forgets to return.
+     */
+    private function modifierThatForgotItsReturnStatement(): callable
+    {
+        return static function (): void {};
     }
 }

@@ -30,7 +30,7 @@
         "ext-ctype": "*",
         "ext-iconv": "*",
         "ext-zip": "*",
-        "anime-db/plugin-contracts": "^0.9",
+        "anime-db/plugin-contracts": "^0.10",
         "doctrine/doctrine-bundle": "^3.2",
         "doctrine/doctrine-migrations-bundle": "^4.0",
         "doctrine/orm": "^3.3",

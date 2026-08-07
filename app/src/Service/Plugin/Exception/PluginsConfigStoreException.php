@@ -29,7 +29,11 @@ namespace App\Service\Plugin\Exception;
 
 /**
  * Thrown when PluginsConfigStore cannot open, lock, encode or write %AppData%/plugins.json.
+ *
+ * Not final: {@see PluginsConfigStoreLockedException} extends it as a distinguishable subtype
+ * for the specific "another writer holds the lock" case, so callers who only care about that
+ * one condition can catch it precisely while everyone else can still catch this base type.
  */
-final class PluginsConfigStoreException extends \RuntimeException
+class PluginsConfigStoreException extends \RuntimeException
 {
 }

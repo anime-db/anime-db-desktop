@@ -29,6 +29,7 @@ namespace App\Tests\Unit\Service\Plugin;
 
 use App\Entity\ValueObject\PluginId;
 use App\Service\Plugin\Exception\PluginsConfigStoreException;
+use App\Service\Plugin\Exception\PluginsConfigStoreLockedException;
 use App\Service\Plugin\PluginsConfigStore;
 use PHPUnit\Framework\TestCase;
 
@@ -191,39 +192,14 @@ final class PluginsConfigStoreTest extends TestCase
         $this->assertSame([], $store->getSettingsStorePayload(new PluginId('animedb-shikimori')));
     }
 
-    public function testWriteSettingsStorePayloadThenGetSettingsStorePayloadRoundTrips(): void
+    public function testGetSettingsStorePayloadReadsTheSettingsSubsectionWrittenViaUpdatePluginSettings(): void
     {
         $store = new PluginsConfigStore($this->path);
         $pluginId = new PluginId('animedb-shikimori');
 
-        $store->writeSettingsStorePayload($pluginId, ['refreshToken' => 'abc']);
+        $store->updatePluginSettings($pluginId, static fn (): array => ['settings' => ['refreshToken' => 'abc']]);
 
         $this->assertSame(['refreshToken' => 'abc'], $store->getSettingsStorePayload($pluginId));
-    }
-
-    public function testWriteSettingsStorePayloadOverridesRatherThanMerges(): void
-    {
-        $store = new PluginsConfigStore($this->path);
-        $pluginId = new PluginId('animedb-shikimori');
-
-        $store->writeSettingsStorePayload($pluginId, ['refreshToken' => 'abc', 'endpoint' => 'https://example.test']);
-        $store->writeSettingsStorePayload($pluginId, ['endpoint' => 'https://example.test']);
-
-        $this->assertSame(['endpoint' => 'https://example.test'], $store->getSettingsStorePayload($pluginId));
-    }
-
-    public function testWriteSettingsStorePayloadDoesNotTouchEnabledOrFeaturesFlags(): void
-    {
-        $store = new PluginsConfigStore($this->path);
-        $pluginId = new PluginId('animedb-shikimori');
-        $store->updatePluginSettings($pluginId, static fn (): array => ['enabled' => true, 'features' => ['filler' => false]]);
-
-        $store->writeSettingsStorePayload($pluginId, ['refreshToken' => 'abc']);
-
-        $this->assertSame(
-            ['enabled' => true, 'features' => ['filler' => false], 'settings' => ['refreshToken' => 'abc']],
-            $store->getPluginSettings($pluginId),
-        );
     }
 
     public function testPurgeSettingsStorePayloadRemovesTheSettingsSubsectionOnly(): void
@@ -274,6 +250,34 @@ final class PluginsConfigStoreTest extends TestCase
                 $store->getPluginSettings(new PluginId('animedb-shikimori')),
             );
             rmdir($this->path.'.tmp');
+        }
+    }
+
+    /**
+     * The lock acquire is non-blocking with a short bounded retry (issue #340): a writer that
+     * cannot claim the lock because another one already holds it must fail fast with
+     * {@see PluginsConfigStoreLockedException}, not hang waiting for the holder to release it.
+     */
+    public function testUpdatePluginSettingsFailsFastInsteadOfHangingWhenAnotherWriterHoldsTheLock(): void
+    {
+        $store = new PluginsConfigStore($this->path);
+        $pluginId = new PluginId('animedb-shikimori');
+
+        $lockHandle = fopen($this->path.'.lock', 'c');
+        $this->assertNotFalse($lockHandle);
+        $this->assertTrue(flock($lockHandle, \LOCK_EX));
+
+        $start = microtime(true);
+
+        try {
+            $this->expectException(PluginsConfigStoreLockedException::class);
+            $store->updatePluginSettings($pluginId, static fn (array $settings): array => $settings);
+        } finally {
+            // Well under any reasonable timeout: this asserts the call failed fast rather than
+            // blocking on the lock this test process itself is still holding.
+            $this->assertLessThan(1.0, microtime(true) - $start);
+            flock($lockHandle, \LOCK_UN);
+            fclose($lockHandle);
         }
     }
 }
