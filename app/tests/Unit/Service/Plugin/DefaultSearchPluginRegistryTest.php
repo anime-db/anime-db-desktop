@@ -29,6 +29,7 @@ namespace App\Tests\Unit\Service\Plugin;
 
 use AnimeDb\PluginContracts\Search\SearchByPluginInterface;
 use App\Entity\ValueObject\PluginId;
+use App\Service\AppConfigStore;
 use App\Service\AppSettingsProvider;
 use App\Service\Plugin\DefaultSearchPluginRegistry;
 use App\Service\Plugin\PluginsConfigStore;
@@ -65,7 +66,7 @@ final class DefaultSearchPluginRegistryTest extends TestCase
         return new DefaultSearchPluginRegistry(
             $plugins,
             new PluginsConfigStore($this->pluginsConfigPath),
-            new AppSettingsProvider($this->appConfigPath),
+            new AppSettingsProvider(new AppConfigStore($this->appConfigPath)),
         );
     }
 

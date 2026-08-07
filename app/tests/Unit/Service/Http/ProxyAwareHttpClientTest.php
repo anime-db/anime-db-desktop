@@ -30,6 +30,7 @@ namespace App\Tests\Unit\Service\Http;
 use App\Entity\Enum\ProxyMode;
 use App\Entity\Enum\ProxyProtocol;
 use App\Entity\ValueObject\ProxySettings;
+use App\Service\AppConfigStore;
 use App\Service\Http\ProxyAwareHttpClient;
 use App\Service\ProxyConfigProvider;
 use PHPUnit\Framework\TestCase;
@@ -57,7 +58,7 @@ final class ProxyAwareHttpClientTest extends TestCase
 
     public function testDoesNotAddProxyOptionsWhenModeIsNone(): void
     {
-        $provider = new ProxyConfigProvider($this->configPath);
+        $provider = new ProxyConfigProvider(new AppConfigStore($this->configPath));
         $capturedOptions = null;
 
         $inner = new MockHttpClient(function (string $method, string $url, array $options) use (&$capturedOptions): MockResponse {
@@ -75,7 +76,7 @@ final class ProxyAwareHttpClientTest extends TestCase
 
     public function testAddsProxyOptionsWhenModeIsManual(): void
     {
-        $provider = new ProxyConfigProvider($this->configPath);
+        $provider = new ProxyConfigProvider(new AppConfigStore($this->configPath));
         $provider->setSettings(new ProxySettings(ProxyMode::Manual, ProxyProtocol::Http, '127.0.0.1', 8080));
         $capturedOptions = null;
 
@@ -94,7 +95,7 @@ final class ProxyAwareHttpClientTest extends TestCase
 
     public function testAddsSocks5ProxyOptionWhenProtocolIsSocks5(): void
     {
-        $provider = new ProxyConfigProvider($this->configPath);
+        $provider = new ProxyConfigProvider(new AppConfigStore($this->configPath));
         $provider->setSettings(new ProxySettings(ProxyMode::Manual, ProxyProtocol::Socks5, '127.0.0.1', 1080));
         $capturedOptions = null;
 
@@ -112,7 +113,7 @@ final class ProxyAwareHttpClientTest extends TestCase
 
     public function testDoesNotOverrideCallerProvidedProxyOption(): void
     {
-        $provider = new ProxyConfigProvider($this->configPath);
+        $provider = new ProxyConfigProvider(new AppConfigStore($this->configPath));
         $provider->setSettings(new ProxySettings(ProxyMode::Manual, ProxyProtocol::Http, '127.0.0.1', 8080));
         $capturedOptions = null;
 
@@ -132,7 +133,7 @@ final class ProxyAwareHttpClientTest extends TestCase
 
     public function testNoProxyAlwaysCoversLoopbackWhenManual(): void
     {
-        $provider = new ProxyConfigProvider($this->configPath);
+        $provider = new ProxyConfigProvider(new AppConfigStore($this->configPath));
         $provider->setSettings(new ProxySettings(ProxyMode::Manual, ProxyProtocol::Socks5, 'proxy.example.test', 1080));
         $capturedOptions = null;
 
@@ -152,7 +153,7 @@ final class ProxyAwareHttpClientTest extends TestCase
 
     public function testCreateForcesCurlHttpClientTransport(): void
     {
-        $provider = new ProxyConfigProvider($this->configPath);
+        $provider = new ProxyConfigProvider(new AppConfigStore($this->configPath));
 
         $client = ProxyAwareHttpClient::create($provider);
 
@@ -162,7 +163,7 @@ final class ProxyAwareHttpClientTest extends TestCase
 
     public function testWithOptionsReturnsNewInstanceWrappingInnerWithOptions(): void
     {
-        $provider = new ProxyConfigProvider($this->configPath);
+        $provider = new ProxyConfigProvider(new AppConfigStore($this->configPath));
         $capturedOptions = null;
 
         $inner = new MockHttpClient(function (string $method, string $url, array $options) use (&$capturedOptions): MockResponse {

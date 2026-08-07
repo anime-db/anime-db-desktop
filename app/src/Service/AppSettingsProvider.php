@@ -43,11 +43,8 @@ use App\Entity\ValueObject\PluginId;
  */
 final class AppSettingsProvider
 {
-    private readonly AppConfigStore $configStore;
-
-    public function __construct(string $configPath)
+    public function __construct(private readonly AppConfigStore $configStore)
     {
-        $this->configStore = new AppConfigStore($configPath);
     }
 
     public function getPaginationMode(): PaginationMode

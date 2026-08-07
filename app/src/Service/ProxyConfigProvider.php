@@ -53,11 +53,8 @@ final class ProxyConfigProvider
      */
     private const NO_PROXY_HOSTS = 'localhost,127.0.0.1,::1';
 
-    private readonly AppConfigStore $configStore;
-
-    public function __construct(string $configPath)
+    public function __construct(private readonly AppConfigStore $configStore)
     {
-        $this->configStore = new AppConfigStore($configPath);
     }
 
     public function getSettings(): ProxySettings

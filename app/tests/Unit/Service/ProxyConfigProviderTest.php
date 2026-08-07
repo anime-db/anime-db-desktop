@@ -30,6 +30,7 @@ namespace App\Tests\Unit\Service;
 use App\Entity\Enum\ProxyMode;
 use App\Entity\Enum\ProxyProtocol;
 use App\Entity\ValueObject\ProxySettings;
+use App\Service\AppConfigStore;
 use App\Service\ProxyConfigProvider;
 use PHPUnit\Framework\TestCase;
 
@@ -53,7 +54,7 @@ final class ProxyConfigProviderTest extends TestCase
 
     public function testGetSettingsReturnsNoneWhenFileIsMissing(): void
     {
-        $provider = new ProxyConfigProvider($this->configPath);
+        $provider = new ProxyConfigProvider(new AppConfigStore($this->configPath));
 
         $this->assertSame(ProxyMode::None, $provider->getSettings()->mode);
     }
@@ -62,7 +63,7 @@ final class ProxyConfigProviderTest extends TestCase
     {
         file_put_contents($this->configPath, json_encode(['appSecret' => 'abc']));
 
-        $provider = new ProxyConfigProvider($this->configPath);
+        $provider = new ProxyConfigProvider(new AppConfigStore($this->configPath));
 
         $this->assertSame(ProxyMode::None, $provider->getSettings()->mode);
     }
@@ -71,7 +72,7 @@ final class ProxyConfigProviderTest extends TestCase
     {
         file_put_contents($this->configPath, json_encode(['proxy' => 'bogus']));
 
-        $provider = new ProxyConfigProvider($this->configPath);
+        $provider = new ProxyConfigProvider(new AppConfigStore($this->configPath));
 
         $this->assertSame(ProxyMode::None, $provider->getSettings()->mode);
     }
@@ -80,7 +81,7 @@ final class ProxyConfigProviderTest extends TestCase
     {
         file_put_contents($this->configPath, '{not json');
 
-        $provider = new ProxyConfigProvider($this->configPath);
+        $provider = new ProxyConfigProvider(new AppConfigStore($this->configPath));
 
         $this->assertSame(ProxyMode::None, $provider->getSettings()->mode);
     }
@@ -89,7 +90,7 @@ final class ProxyConfigProviderTest extends TestCase
     {
         file_put_contents($this->configPath, json_encode(['proxy' => ['mode' => 'bogus']]));
 
-        $provider = new ProxyConfigProvider($this->configPath);
+        $provider = new ProxyConfigProvider(new AppConfigStore($this->configPath));
 
         $this->assertSame(ProxyMode::None, $provider->getSettings()->mode);
     }
@@ -100,7 +101,7 @@ final class ProxyConfigProviderTest extends TestCase
             'proxy' => ['mode' => 'manual', 'protocol' => 'http', 'port' => 8080],
         ]));
 
-        $provider = new ProxyConfigProvider($this->configPath);
+        $provider = new ProxyConfigProvider(new AppConfigStore($this->configPath));
 
         $this->assertSame(ProxyMode::None, $provider->getSettings()->mode);
     }
@@ -111,7 +112,7 @@ final class ProxyConfigProviderTest extends TestCase
             'proxy' => ['mode' => 'manual', 'protocol' => 'http', 'host' => '127.0.0.1', 'port' => 70000],
         ]));
 
-        $provider = new ProxyConfigProvider($this->configPath);
+        $provider = new ProxyConfigProvider(new AppConfigStore($this->configPath));
 
         $this->assertSame(ProxyMode::None, $provider->getSettings()->mode);
     }
@@ -129,7 +130,7 @@ final class ProxyConfigProviderTest extends TestCase
             ],
         ]));
 
-        $provider = new ProxyConfigProvider($this->configPath);
+        $provider = new ProxyConfigProvider(new AppConfigStore($this->configPath));
         $settings = $provider->getSettings();
 
         $this->assertSame(ProxyMode::Manual, $settings->mode);
@@ -146,7 +147,7 @@ final class ProxyConfigProviderTest extends TestCase
             'proxy' => ['mode' => 'manual', 'host' => '127.0.0.1', 'port' => 1080],
         ]));
 
-        $provider = new ProxyConfigProvider($this->configPath);
+        $provider = new ProxyConfigProvider(new AppConfigStore($this->configPath));
 
         $this->assertSame(ProxyProtocol::Socks5, $provider->getSettings()->protocol);
     }
@@ -157,14 +158,14 @@ final class ProxyConfigProviderTest extends TestCase
             'proxy' => ['mode' => 'manual', 'protocol' => 'bogus', 'host' => '127.0.0.1', 'port' => 1080],
         ]));
 
-        $provider = new ProxyConfigProvider($this->configPath);
+        $provider = new ProxyConfigProvider(new AppConfigStore($this->configPath));
 
         $this->assertSame(ProxyProtocol::Socks5, $provider->getSettings()->protocol);
     }
 
     public function testSetSettingsCreatesConfigFileWhenMissing(): void
     {
-        $provider = new ProxyConfigProvider($this->configPath);
+        $provider = new ProxyConfigProvider(new AppConfigStore($this->configPath));
 
         $provider->setSettings(new ProxySettings(ProxyMode::Manual, ProxyProtocol::Http, '127.0.0.1', 8080));
 
@@ -175,7 +176,7 @@ final class ProxyConfigProviderTest extends TestCase
     {
         file_put_contents($this->configPath, json_encode(['appSecret' => 'abc', 'locale' => 'ru']));
 
-        $provider = new ProxyConfigProvider($this->configPath);
+        $provider = new ProxyConfigProvider(new AppConfigStore($this->configPath));
         $provider->setSettings(new ProxySettings(ProxyMode::Manual, ProxyProtocol::Http, '127.0.0.1', 8080));
 
         $data = json_decode((string) file_get_contents($this->configPath), true);
@@ -187,7 +188,7 @@ final class ProxyConfigProviderTest extends TestCase
 
     public function testSetSettingsRoundTripsCredentials(): void
     {
-        $provider = new ProxyConfigProvider($this->configPath);
+        $provider = new ProxyConfigProvider(new AppConfigStore($this->configPath));
         $provider->setSettings(new ProxySettings(ProxyMode::Manual, ProxyProtocol::Socks5, '127.0.0.1', 1080, 'user', 'pass'));
 
         $settings = $provider->getSettings();
@@ -198,7 +199,7 @@ final class ProxyConfigProviderTest extends TestCase
 
     public function testGetHttpClientOptionsReturnsNullProxyWhenModeIsNone(): void
     {
-        $provider = new ProxyConfigProvider($this->configPath);
+        $provider = new ProxyConfigProvider(new AppConfigStore($this->configPath));
 
         $options = $provider->getHttpClientOptions();
 
@@ -208,7 +209,7 @@ final class ProxyConfigProviderTest extends TestCase
 
     public function testGetHttpClientOptionsBuildsProxyUrlForManualMode(): void
     {
-        $provider = new ProxyConfigProvider($this->configPath);
+        $provider = new ProxyConfigProvider(new AppConfigStore($this->configPath));
         $provider->setSettings(new ProxySettings(ProxyMode::Manual, ProxyProtocol::Http, '127.0.0.1', 8080, 'user', 'pass'));
 
         $options = $provider->getHttpClientOptions();
@@ -219,7 +220,7 @@ final class ProxyConfigProviderTest extends TestCase
 
     public function testGetHttpClientOptionsAlwaysIncludesLoopbackInNoProxy(): void
     {
-        $provider = new ProxyConfigProvider($this->configPath);
+        $provider = new ProxyConfigProvider(new AppConfigStore($this->configPath));
         $provider->setSettings(new ProxySettings(ProxyMode::Manual, ProxyProtocol::Socks5, 'proxy.local', 1080));
 
         $noProxy = $provider->getHttpClientOptions()['no_proxy'];
@@ -231,7 +232,7 @@ final class ProxyConfigProviderTest extends TestCase
 
     public function testWriteConfigLeavesNoTemporaryFileBehind(): void
     {
-        $provider = new ProxyConfigProvider($this->configPath);
+        $provider = new ProxyConfigProvider(new AppConfigStore($this->configPath));
         $provider->setSettings(new ProxySettings(ProxyMode::Manual, ProxyProtocol::Http, '127.0.0.1', 8080));
 
         $this->assertFileDoesNotExist($this->configPath.'.tmp');

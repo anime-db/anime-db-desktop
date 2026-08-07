@@ -35,6 +35,7 @@ use App\Entity\TvAnime;
 use App\Repository\AnimeRepository;
 use App\Service\AnimeListRequestParser;
 use App\Service\AnimeListSortResolver;
+use App\Service\AppConfigStore;
 use App\Service\AppSettingsProvider;
 use App\Service\Search\AnimeSearchResolver;
 use Doctrine\DBAL\DriverManager;
@@ -143,7 +144,7 @@ final class AnimeListSearchControllerTest extends TestCase
             new AnimeRepository($this->entityManager),
             new AnimeListRequestParser(),
             new AnimeListSortResolver(),
-            new AppSettingsProvider($configPath),
+            new AppSettingsProvider(new AppConfigStore($configPath)),
             $searchResolver,
         );
     }

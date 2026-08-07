@@ -32,6 +32,7 @@ use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
 use App\Entity\Enum\WatchStatus;
 use App\Entity\MovieAnime;
+use App\Service\AppConfigStore;
 use App\Service\AppSettingsProvider;
 use App\Service\Search\AnimeReindexService;
 use App\Service\Search\AnimeSearchIndexer;
@@ -81,7 +82,7 @@ final class SettingsControllerTest extends TestCase
 
         return new SettingsController(
             ['en', 'ru'],
-            new AppSettingsProvider($this->configPath),
+            new AppSettingsProvider(new AppConfigStore($this->configPath)),
             $csrfTokenManager,
             $twig ?? $this->createStub(Environment::class),
             $reindexService ?? $this->createReindexService($this->createStub(Client::class)),
