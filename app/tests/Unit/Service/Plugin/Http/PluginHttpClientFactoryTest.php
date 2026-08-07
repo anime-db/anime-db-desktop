@@ -27,6 +27,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Service\Plugin\Http;
 
+use App\Service\AppConfigStore;
 use App\Service\Plugin\Http\PluginHttpClientFactory;
 use App\Service\ProxyConfigProvider;
 use PHPUnit\Framework\TestCase;
@@ -46,7 +47,7 @@ final class PluginHttpClientFactoryTest extends TestCase
 {
     private function createFactory(): PluginHttpClientFactory
     {
-        return new PluginHttpClientFactory(new ProxyConfigProvider(sys_get_temp_dir().'/anime-plugin-http-client-factory-test-'.uniqid().'.json'));
+        return new PluginHttpClientFactory(new ProxyConfigProvider(new AppConfigStore(sys_get_temp_dir().'/anime-plugin-http-client-factory-test-'.uniqid().'.json')));
     }
 
     public function testCreateReturnsClientThatIsAlsoBothPsr17Factories(): void

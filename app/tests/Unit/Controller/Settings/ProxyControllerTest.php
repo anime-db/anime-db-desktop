@@ -30,6 +30,7 @@ namespace App\Tests\Unit\Controller\Settings;
 use App\Controller\Settings\ProxyController;
 use App\Entity\Enum\ProxyMode;
 use App\Entity\ValueObject\ProxySettings;
+use App\Service\AppConfigStore;
 use App\Service\Http\ProxyTestService;
 use App\Service\ProxyConfigProvider;
 use App\Service\WsPublisher;
@@ -83,7 +84,7 @@ final class ProxyControllerTest extends KernelTestCase
         }
 
         return new ProxyController(
-            new ProxyConfigProvider($this->configPath),
+            new ProxyConfigProvider(new AppConfigStore($this->configPath)),
             new ProxyTestService($httpClient ?? new MockHttpClient(new MockResponse('', ['http_code' => 200]))),
             $wsPublisher ?? $this->createStub(WsPublisher::class),
             $csrfTokenManager,

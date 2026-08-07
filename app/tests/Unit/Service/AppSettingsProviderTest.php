@@ -29,6 +29,7 @@ namespace App\Tests\Unit\Service;
 
 use App\Entity\Enum\PaginationMode;
 use App\Entity\ValueObject\PluginId;
+use App\Service\AppConfigStore;
 use App\Service\AppSettingsProvider;
 use PHPUnit\Framework\TestCase;
 
@@ -43,14 +44,16 @@ final class AppSettingsProviderTest extends TestCase
 
     protected function tearDown(): void
     {
-        if (is_file($this->configPath)) {
-            unlink($this->configPath);
+        foreach ([$this->configPath, $this->configPath.'.tmp', $this->configPath.'.lock'] as $file) {
+            if (is_file($file)) {
+                unlink($file);
+            }
         }
     }
 
     public function testDefaultsToInfiniteScrollWhenFileIsMissing(): void
     {
-        $provider = new AppSettingsProvider($this->configPath);
+        $provider = new AppSettingsProvider(new AppConfigStore($this->configPath));
 
         $this->assertSame(PaginationMode::InfiniteScroll, $provider->getPaginationMode());
     }
@@ -59,7 +62,7 @@ final class AppSettingsProviderTest extends TestCase
     {
         file_put_contents($this->configPath, json_encode(['appSecret' => 'abc']));
 
-        $provider = new AppSettingsProvider($this->configPath);
+        $provider = new AppSettingsProvider(new AppConfigStore($this->configPath));
 
         $this->assertSame(PaginationMode::InfiniteScroll, $provider->getPaginationMode());
     }
@@ -68,7 +71,7 @@ final class AppSettingsProviderTest extends TestCase
     {
         file_put_contents($this->configPath, json_encode(['paginationMode' => 'bogus']));
 
-        $provider = new AppSettingsProvider($this->configPath);
+        $provider = new AppSettingsProvider(new AppConfigStore($this->configPath));
 
         $this->assertSame(PaginationMode::InfiniteScroll, $provider->getPaginationMode());
     }
@@ -77,7 +80,7 @@ final class AppSettingsProviderTest extends TestCase
     {
         file_put_contents($this->configPath, '{not json');
 
-        $provider = new AppSettingsProvider($this->configPath);
+        $provider = new AppSettingsProvider(new AppConfigStore($this->configPath));
 
         $this->assertSame(PaginationMode::InfiniteScroll, $provider->getPaginationMode());
     }
@@ -86,14 +89,14 @@ final class AppSettingsProviderTest extends TestCase
     {
         file_put_contents($this->configPath, json_encode(['paginationMode' => 'classic']));
 
-        $provider = new AppSettingsProvider($this->configPath);
+        $provider = new AppSettingsProvider(new AppConfigStore($this->configPath));
 
         $this->assertSame(PaginationMode::Classic, $provider->getPaginationMode());
     }
 
     public function testGetLocaleReturnsNullWhenFileIsMissing(): void
     {
-        $provider = new AppSettingsProvider($this->configPath);
+        $provider = new AppSettingsProvider(new AppConfigStore($this->configPath));
 
         $this->assertNull($provider->getLocale());
     }
@@ -102,14 +105,14 @@ final class AppSettingsProviderTest extends TestCase
     {
         file_put_contents($this->configPath, json_encode(['locale' => 'ru']));
 
-        $provider = new AppSettingsProvider($this->configPath);
+        $provider = new AppSettingsProvider(new AppConfigStore($this->configPath));
 
         $this->assertSame('ru', $provider->getLocale());
     }
 
     public function testSetLocaleCreatesConfigFileWhenMissing(): void
     {
-        $provider = new AppSettingsProvider($this->configPath);
+        $provider = new AppSettingsProvider(new AppConfigStore($this->configPath));
 
         $provider->setLocale('en');
 
@@ -120,7 +123,7 @@ final class AppSettingsProviderTest extends TestCase
     {
         file_put_contents($this->configPath, json_encode(['appSecret' => 'abc', 'locale' => 'en']));
 
-        $provider = new AppSettingsProvider($this->configPath);
+        $provider = new AppSettingsProvider(new AppConfigStore($this->configPath));
         $provider->setLocale('ru');
 
         $data = json_decode((string) file_get_contents($this->configPath), true);
@@ -132,20 +135,21 @@ final class AppSettingsProviderTest extends TestCase
     public function testSetLocaleCreatesMissingParentDirectory(): void
     {
         $configPath = sys_get_temp_dir().'/anime-config-test-'.uniqid().'/nested/config.json';
-        $provider = new AppSettingsProvider($configPath);
+        $provider = new AppSettingsProvider(new AppConfigStore($configPath));
 
         $provider->setLocale('ru');
 
         $this->assertSame('ru', $provider->getLocale());
 
         unlink($configPath);
+        unlink($configPath.'.lock');
         rmdir(\dirname($configPath));
         rmdir(\dirname($configPath, 2));
     }
 
     public function testGetDefaultSearchPluginIdReturnsNullWhenFileIsMissing(): void
     {
-        $provider = new AppSettingsProvider($this->configPath);
+        $provider = new AppSettingsProvider(new AppConfigStore($this->configPath));
 
         $this->assertNull($provider->getDefaultSearchPluginId());
     }
@@ -154,7 +158,7 @@ final class AppSettingsProviderTest extends TestCase
     {
         file_put_contents($this->configPath, json_encode(['defaultSearchPluginId' => 'not_a_valid_id']));
 
-        $provider = new AppSettingsProvider($this->configPath);
+        $provider = new AppSettingsProvider(new AppConfigStore($this->configPath));
 
         $this->assertNull($provider->getDefaultSearchPluginId());
     }
@@ -163,7 +167,7 @@ final class AppSettingsProviderTest extends TestCase
     {
         file_put_contents($this->configPath, json_encode(['defaultSearchPluginId' => 'animedb-shikimori']));
 
-        $provider = new AppSettingsProvider($this->configPath);
+        $provider = new AppSettingsProvider(new AppConfigStore($this->configPath));
 
         $this->assertSame('animedb-shikimori', (string) $provider->getDefaultSearchPluginId());
     }
@@ -172,7 +176,7 @@ final class AppSettingsProviderTest extends TestCase
     {
         file_put_contents($this->configPath, json_encode(['appSecret' => 'abc']));
 
-        $provider = new AppSettingsProvider($this->configPath);
+        $provider = new AppSettingsProvider(new AppConfigStore($this->configPath));
         $provider->setDefaultSearchPluginId(new PluginId('animedb-shikimori'));
 
         $data = json_decode((string) file_get_contents($this->configPath), true);
@@ -185,7 +189,7 @@ final class AppSettingsProviderTest extends TestCase
     {
         file_put_contents($this->configPath, json_encode(['defaultSearchPluginId' => 'animedb-shikimori']));
 
-        $provider = new AppSettingsProvider($this->configPath);
+        $provider = new AppSettingsProvider(new AppConfigStore($this->configPath));
         $provider->setDefaultSearchPluginId(null);
 
         $this->assertNull($provider->getDefaultSearchPluginId());
@@ -193,13 +197,10 @@ final class AppSettingsProviderTest extends TestCase
 
     public function testWriteConfigLeavesNoTemporaryFileBehind(): void
     {
-        $provider = new AppSettingsProvider($this->configPath);
+        $provider = new AppSettingsProvider(new AppConfigStore($this->configPath));
         $provider->setLocale('ru');
 
-        $directory = \dirname($this->configPath);
-        $leftovers = glob($directory.'/.config.json.*.tmp');
-
-        $this->assertSame([], $leftovers);
+        $this->assertFileDoesNotExist($this->configPath.'.tmp');
     }
 
     public function testWriteConfigPreservesKeysWrittenByAnotherLayerConcurrently(): void
@@ -209,7 +210,7 @@ final class AppSettingsProviderTest extends TestCase
         // the other layer's key rather than clobbering it.
         file_put_contents($this->configPath, json_encode(['appSecret' => 'abc']));
 
-        $provider = new AppSettingsProvider($this->configPath);
+        $provider = new AppSettingsProvider(new AppConfigStore($this->configPath));
         $provider->setLocale('ru');
         $provider->setDefaultSearchPluginId(new PluginId('animedb-shikimori'));
 
@@ -233,7 +234,11 @@ final class AppSettingsProviderTest extends TestCase
         // simulating a full disk / permission failure partway through the write.
         chmod($directory, 0500);
 
-        $provider = new AppSettingsProvider($configPath);
+        $provider = new AppSettingsProvider(new AppConfigStore($configPath));
+
+        // Opening the lock file (also inside $directory) also emits a PHP warning for this
+        // expected failure; silence it so it doesn't pollute test output.
+        set_error_handler(static fn (): bool => true, \E_WARNING);
 
         try {
             $provider->setLocale('ru');
@@ -241,6 +246,7 @@ final class AppSettingsProviderTest extends TestCase
         } catch (\RuntimeException) {
             // expected
         } finally {
+            restore_error_handler();
             chmod($directory, 0755);
         }
 

@@ -32,6 +32,7 @@ use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
 use App\Entity\Enum\WatchStatus;
 use App\Entity\MovieAnime;
+use App\Service\AppConfigStore;
 use App\Service\AppSettingsProvider;
 use App\Service\Search\AnimeReindexService;
 use App\Service\Search\AnimeSearchIndexer;
@@ -62,8 +63,10 @@ final class SettingsControllerTest extends TestCase
 
     protected function tearDown(): void
     {
-        if (is_file($this->configPath)) {
-            unlink($this->configPath);
+        foreach ([$this->configPath, $this->configPath.'.tmp', $this->configPath.'.lock'] as $file) {
+            if (is_file($file)) {
+                unlink($file);
+            }
         }
     }
 
@@ -79,7 +82,7 @@ final class SettingsControllerTest extends TestCase
 
         return new SettingsController(
             ['en', 'ru'],
-            new AppSettingsProvider($this->configPath),
+            new AppSettingsProvider(new AppConfigStore($this->configPath)),
             $csrfTokenManager,
             $twig ?? $this->createStub(Environment::class),
             $reindexService ?? $this->createReindexService($this->createStub(Client::class)),
