@@ -151,6 +151,7 @@ settings_plugin_widgets:
     back_link: ← Настройки
     heading: Виджеты плагинов
     hard_limit_error: Достигнут жёсткий лимит в %limit% активных виджетов для этого размещения.
+    busy_retry_error: Настройки плагинов сейчас заняты другим обновлением. Повторите попытку через мгновение.
     plugin_column: Плагин
     widget_column: Виджет
     active_column: Включён

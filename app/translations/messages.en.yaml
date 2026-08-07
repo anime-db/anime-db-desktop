@@ -151,6 +151,7 @@ settings_plugin_widgets:
     back_link: ← Settings
     heading: Plugin widgets
     hard_limit_error: The hard limit of %limit% active widgets for this placement has been reached.
+    busy_retry_error: Plugin settings are busy with another update right now. Please try again in a moment.
     plugin_column: Plugin
     widget_column: Widget
     active_column: Active

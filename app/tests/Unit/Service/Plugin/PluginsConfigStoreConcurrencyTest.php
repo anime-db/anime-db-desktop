@@ -38,8 +38,14 @@ use Symfony\Component\Process\Process;
  * consumer) doing read -> modify -> write against the same plugins.json at the same time.
  * Both child processes read the same "counter" value, sleep while holding PluginsConfigStore's
  * flock(), then write back current+1. Without the lock covering the whole cycle, both would
- * read 0 and write 1 — a lost update. With it, the second writer blocks until the first
- * releases the lock and reads the already-incremented value.
+ * read 0 and write 1 — a lost update.
+ *
+ * The lock acquire is non-blocking with only a short bounded retry (issue #340): a writer that
+ * loses the race outright no longer blocks until the holder releases it, it fails fast with
+ * {@see \App\Service\Plugin\Exception\PluginsConfigStoreLockedException}. increment-counter.php
+ * retries on that exception at its own pace, so this still asserts the same "no lost updates"
+ * invariant — the retry now happens one layer up, in the caller, instead of inside the flock()
+ * call itself.
  */
 final class PluginsConfigStoreConcurrencyTest extends TestCase
 {

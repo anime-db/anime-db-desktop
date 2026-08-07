@@ -32,20 +32,42 @@ declare(strict_types=1);
  * script would otherwise have to slip through. Run two of these against the same plugins.json
  * at once — without PluginsConfigStore's flock() the read-modify-write cycles interleave and
  * one increment is lost.
+ *
+ * The lock acquire itself is non-blocking with only a short bounded retry (issue #340), so a
+ * writer that loses the race outright gets PluginsConfigStoreLockedException rather than
+ * queueing behind the holder. This script retries at its own, more patient pace on that
+ * exception — the same pattern a real caller (e.g. a background OAuth token refresh) is expected
+ * to follow — so the counter still ends up incremented exactly twice regardless of how the two
+ * processes happen to interleave.
  */
 
 require __DIR__.'/../../../vendor/autoload.php';
 
 use App\Entity\ValueObject\PluginId;
+use App\Service\Plugin\Exception\PluginsConfigStoreLockedException;
 use App\Service\Plugin\PluginsConfigStore;
 
 [, $path, $pluginIdValue, $sleepMicroseconds] = $argv;
 
 $store = new PluginsConfigStore($path);
-$store->updatePluginSettings(new PluginId($pluginIdValue), static function (array $settings) use ($sleepMicroseconds): array {
-    $counter = \is_int($settings['counter'] ?? null) ? $settings['counter'] : 0;
-    usleep((int) $sleepMicroseconds);
-    $settings['counter'] = $counter + 1;
+$maxAttempts = 50;
 
-    return $settings;
-});
+for ($attempt = 1; $attempt <= $maxAttempts; ++$attempt) {
+    try {
+        $store->updatePluginSettings(new PluginId($pluginIdValue), static function (array $settings) use ($sleepMicroseconds): array {
+            $counter = \is_int($settings['counter'] ?? null) ? $settings['counter'] : 0;
+            usleep((int) $sleepMicroseconds);
+            $settings['counter'] = $counter + 1;
+
+            return $settings;
+        });
+
+        break;
+    } catch (PluginsConfigStoreLockedException $e) {
+        if ($attempt === $maxAttempts) {
+            throw $e;
+        }
+
+        usleep(10_000);
+    }
+}

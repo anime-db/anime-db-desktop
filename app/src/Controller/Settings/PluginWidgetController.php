@@ -31,6 +31,7 @@ use App\Entity\ValueObject\Exception\InvalidPluginIdException;
 use App\Entity\ValueObject\PluginId;
 use App\Service\Plugin\CatalogWidgetRegistry;
 use App\Service\Plugin\EntryWidgetRegistry;
+use App\Service\Plugin\Exception\PluginsConfigStoreLockedException;
 use App\Service\Plugin\Exception\WidgetHardLimitExceededException;
 use App\Service\Plugin\InstalledPlugin;
 use App\Service\Plugin\InstalledPluginsRegistry;
@@ -95,6 +96,8 @@ final class PluginWidgetController
             };
         } catch (WidgetHardLimitExceededException) {
             return new RedirectResponse($this->urlGenerator->generate('settings_plugin_widgets_index', ['error' => 'hard_limit_exceeded']));
+        } catch (PluginsConfigStoreLockedException) {
+            return new RedirectResponse($this->urlGenerator->generate('settings_plugin_widgets_index', ['error' => 'busy_retry']));
         }
 
         return new RedirectResponse($this->urlGenerator->generate('settings_plugin_widgets_index'));
