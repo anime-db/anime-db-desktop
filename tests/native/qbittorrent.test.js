@@ -123,7 +123,8 @@ describe('seedConfig', () => {
         expect(written).toContain(`Session\\Port=${BT_PORT}`);
         expect(written).toContain('Session\\DHTEnabled=true');
         expect(written).toContain('Session\\PeXEnabled=true');
-        expect(written).toContain('Proxy\\Type=0');
+        expect(written).toContain('Proxy\\Type=None');
+        expect(written).toContain('HostHeaderValidation=false');
         expect(written).not.toContain('Proxy\\IP=');
     });
 
@@ -138,7 +139,7 @@ describe('seedConfig', () => {
         });
 
         const written = writeFileSyncSpy.mock.calls[0][1];
-        expect(written).toContain('Proxy\\Type=2');
+        expect(written).toContain('Proxy\\Type=SOCKS5');
         expect(written).toContain('Proxy\\IP="proxy.example.com"');
         expect(written).toContain('Proxy\\Port=1080');
         expect(written).toContain('Proxy\\HostnameLookupEnabled=true');

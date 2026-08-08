@@ -145,6 +145,9 @@ function seedConfig(proxy) {
         // No WebUI port is exposed outside loopback, so bypassing auth for localhost callers is
         // safe and avoids having to generate/rotate a PBKDF2 credential the driver would need too.
         ['WebUI', 'LocalHostAuth', 'false'],
+        // WebUI is loopback-only; disabling host-header validation avoids a 401 when the
+        // driver's Host header (127.0.0.1:<port>) is not in qBittorrent's default allowlist.
+        ['WebUI', 'HostHeaderValidation', 'false'],
 
         ['BitTorrent', 'Session\\Port', String(BT_PORT)],
         // DHT/PEX stay ON globally: for non-private torrents they are the fallback when the
@@ -153,7 +156,7 @@ function seedConfig(proxy) {
         ['BitTorrent', 'Session\\PeXEnabled', 'true'],
         ['BitTorrent', 'Session\\ProxyPeerConnections', String(socks5)],
 
-        ['Network', 'Proxy\\Type', socks5 ? '2' : '0'], // Net::ProxyType: None=0, SOCKS5=2
+        ['Network', 'Proxy\\Type', socks5 ? 'SOCKS5' : 'None'], // qBittorrent 4.6+/5.x serialises Net::ProxyType as a string enum, not an int
         ['Network', 'Proxy\\HostnameLookupEnabled', 'true'],
         // "Profiles\BitTorrent" is qBittorrent's own per-traffic-type opt-in — without it, BT
         // traffic ignores the proxy configured above even though it is otherwise fully set.
