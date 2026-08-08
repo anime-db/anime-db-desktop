@@ -432,6 +432,11 @@ final class PullSyncServiceTest extends TestCase
      * instead of letting the exception propagate to a caller's retry loop — but whatever was
      * already applied before the exception (here, the status update for item '1', yielded
      * before the plugin's generator throws) stays applied rather than being rolled back.
+     *
+     * A second previously-synced record ('2') is deliberately absent from the partial pull: if
+     * the catch block's early return were removed, DeletedFromSourceDetector would run against
+     * this incomplete list and wrongly flag it, so assertCount(0, $items) below actually
+     * distinguishes "detector skipped" from "detector ran but the list happened to be complete".
      */
     public function testStopsCleanlyOnAReauthRequiredExceptionKeepingAlreadyAppliedChanges(): void
     {
@@ -439,7 +444,14 @@ final class PullSyncServiceTest extends TestCase
         $anime->setTitle('Cowboy Bebop')->setWatchStatus(WatchStatus::Plan);
         $anime->rememberExternalId($this->pluginId, '1');
         $this->entityManager->persist($anime);
+
+        $untouched = new TvAnime();
+        $untouched->setTitle('Trigun')->setWatchStatus(WatchStatus::Watching);
+        $untouched->rememberExternalId($this->pluginId, '2');
+        $this->entityManager->persist($untouched);
+
         $this->entityManager->flush();
+        $animeId = $anime->id;
 
         $pull = (function (): \Generator {
             yield new SyncItem('1', SyncStatus::Watching, 'Cowboy Bebop');
@@ -451,13 +463,18 @@ final class PullSyncServiceTest extends TestCase
 
         $this->service->pull($this->pluginId, $sync);
 
-        $this->assertCount(1, $this->allAnime());
-        $this->assertSame(WatchStatus::Watching, $anime->getWatchStatus());
+        $this->assertCount(2, $this->allAnime());
+
+        // Re-read from the database rather than trusting the in-memory managed instance, so this
+        // proves the catch block's flush() actually persisted the change durably.
+        $this->entityManager->clear();
+        $reloaded = $this->entityManager->getRepository(Anime::class)->find($animeId);
+        $this->assertInstanceOf(TvAnime::class, $reloaded);
+        $this->assertSame(WatchStatus::Watching, $reloaded->getWatchStatus());
 
         // A reauth exception cuts this run short before it ever sees the full source list, so
-        // the deletion-review detector must not run this run — otherwise every other
-        // plugin-synced record would be wrongly flagged "disappeared from source" off a
-        // partial list.
+        // the deletion-review detector must not run this run — otherwise 'Trigun' (absent from
+        // the partial list above) would be wrongly flagged "disappeared from source".
         $items = $this->entityManager->getRepository(SyncReviewItem::class)->findAll();
         $this->assertCount(0, $items);
     }
