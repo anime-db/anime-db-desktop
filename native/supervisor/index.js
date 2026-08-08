@@ -25,38 +25,45 @@ const { EventEmitter } = require('events');
 const frankenphp        = require('./frankenphp');
 const meilisearch       = require('./meilisearch');
 const messengerConsumer = require('./messenger-consumer');
+const qbittorrent       = require('./qbittorrent');
 
 const events = new EventEmitter();
 frankenphp.events.on('exit', (code) => events.emit('exit', code));
 messengerConsumer.events.on('exit', (code) => events.emit('exit', code));
+qbittorrent.events.on('exit', (code) => events.emit('exit', code));
 
 /**
  * Запускает все дочерние процессы и возвращает занятые ими порты.
- * Meilisearch стартует первым — его URL/key нужны FrankenPHP и messenger-consumer в env.
+ * Meilisearch и qbittorrent-nox стартуют первыми (независимо друг от друга) — их
+ * порты/ключи нужны FrankenPHP в env.
  *
  * @param {((step: number, text: string) => void) | undefined} onProgress
- * @returns {Promise<{ frankenphpPort: number, wsPort: number, meiliPort: number }>}
+ * @returns {Promise<{ frankenphpPort: number, wsPort: number, meiliPort: number, qbittorrentPort: number }>}
  */
 async function start(onProgress) {
-    const { port: meiliPort, key: meiliKey } = await meilisearch.start();
+    const [{ port: meiliPort, key: meiliKey }, { webuiPort: qbittorrentPort }] = await Promise.all([
+        meilisearch.start(),
+        qbittorrent.start(),
+    ]);
     if (onProgress) onProgress(1, 'Запуск FrankenPHP...');
-    const { httpPort: frankenphpPort, wsPort } = await frankenphp.start(meiliPort, meiliKey);
+    const { httpPort: frankenphpPort, wsPort } = await frankenphp.start(meiliPort, meiliKey, qbittorrentPort);
     if (onProgress) onProgress(2, 'Запуск обработчика фоновых задач...');
     await messengerConsumer.start(meiliPort, meiliKey);
     if (onProgress) onProgress(3, 'Готово');
-    return { frankenphpPort, wsPort, meiliPort };
+    return { frankenphpPort, wsPort, meiliPort, qbittorrentPort };
 }
 
 /**
  * Останавливает все дочерние процессы в правильном порядке:
- * сначала messenger-consumer и FrankenPHP (нет новых запросов и задач), затем Meilisearch.
+ * сначала messenger-consumer и FrankenPHP (нет новых запросов и задач), затем
+ * Meilisearch и qbittorrent-nox.
  *
  * @returns {Promise<void>}
  */
 async function stop() {
     await messengerConsumer.stop();
     await frankenphp.stop();
-    await meilisearch.stop();
+    await Promise.all([meilisearch.stop(), qbittorrent.stop()]);
 }
 
 module.exports = { start, stop, events };

@@ -66,7 +66,7 @@ function ensurePhpIni() {
     fs.writeFileSync(iniPath, ini, 'utf8');
 }
 
-function buildEnv(appPort, wsPort, meiliPort, meiliKey) {
+function buildEnv(appPort, wsPort, meiliPort, meiliKey, qbittorrentPort) {
     return {
         ...process.env,
         APP_PORT:                String(appPort),
@@ -87,6 +87,7 @@ function buildEnv(appPort, wsPort, meiliPort, meiliKey) {
         MEILISEARCH_URL:         `http://127.0.0.1:${meiliPort}`,
         MEILISEARCH_KEY:         meiliKey,
         OAUTH_CALLBACK_ORIGIN:   `http://127.0.0.1:${appPort}`,
+        QBITTORRENT_URL:         `http://127.0.0.1:${qbittorrentPort}`,
     };
 }
 
@@ -94,14 +95,14 @@ function buildEnv(appPort, wsPort, meiliPort, meiliKey) {
  * Запускает FrankenPHP и при падении перезапускает с backoff.
  * Если stopping === true — молча прекращает перезапуски.
  */
-function spawnProcess(appPort, wsPort, meiliPort, meiliKey, backoffIdx = 0) {
+function spawnProcess(appPort, wsPort, meiliPort, meiliKey, qbittorrentPort, backoffIdx = 0) {
     if (stopping) return;
 
     fs.mkdirSync(paths.getRuntimeDir(), { recursive: true });
 
     child = spawn(BINARY, ['run', '--config', CADDYFILE], {
         cwd: paths.getAppRootDir(),
-        env: buildEnv(appPort, wsPort, meiliPort, meiliKey),
+        env: buildEnv(appPort, wsPort, meiliPort, meiliKey, qbittorrentPort),
         stdio: ['ignore', 'pipe', 'pipe'],
     });
 
@@ -113,7 +114,7 @@ function spawnProcess(appPort, wsPort, meiliPort, meiliKey, backoffIdx = 0) {
         events.emit('exit', code);
         const delay = BACKOFF[Math.min(backoffIdx, BACKOFF.length - 1)];
         console.error(`[frankenphp] вышел с кодом ${code}, перезапуск через ${delay}ms`);
-        setTimeout(() => spawnProcess(appPort, wsPort, meiliPort, meiliKey, backoffIdx + 1), delay);
+        setTimeout(() => spawnProcess(appPort, wsPort, meiliPort, meiliKey, qbittorrentPort, backoffIdx + 1), delay);
     });
 }
 
@@ -123,9 +124,10 @@ function spawnProcess(appPort, wsPort, meiliPort, meiliKey, backoffIdx = 0) {
  *
  * @param {number} meiliPort  порт Meilisearch
  * @param {string} meiliKey   master-key Meilisearch
+ * @param {number} qbittorrentPort  WebUI-порт qbittorrent-nox
  * @returns {Promise<{ httpPort: number, wsPort: number }>}
  */
-async function start(meiliPort, meiliKey) {
+async function start(meiliPort, meiliKey, qbittorrentPort) {
     stopping = false;
     ensurePhpIni();
 
@@ -135,7 +137,7 @@ async function start(meiliPort, meiliKey) {
 
     port   = await findFreePort(8000);
     wsPort = await findFreePort(port + 1);
-    spawnProcess(port, wsPort, meiliPort, meiliKey);
+    spawnProcess(port, wsPort, meiliPort, meiliKey, qbittorrentPort);
     await waitForHealth(port);
     return { httpPort: port, wsPort };
 }

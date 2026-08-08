@@ -24,18 +24,18 @@
 const http = require('http');
 
 /**
- * Опрашивает GET /health на 127.0.0.1:port до получения 200 или истечения таймаута.
+ * Опрашивает GET <path> на 127.0.0.1:port до получения 200 или истечения таймаута.
  *
  * @param {number} port
- * @param {{ intervalMs?: number, timeoutMs?: number }} options
+ * @param {{ intervalMs?: number, timeoutMs?: number, path?: string }} options
  * @returns {Promise<number>} резолвится портом при успехе
  */
-function waitForHealth(port, { intervalMs = 200, timeoutMs = 30000 } = {}) {
+function waitForHealth(port, { intervalMs = 200, timeoutMs = 30000, path = '/health' } = {}) {
     return new Promise((resolve, reject) => {
         const deadline = Date.now() + timeoutMs;
 
         const check = () => {
-            http.get(`http://127.0.0.1:${port}/health`, (res) => {
+            http.get(`http://127.0.0.1:${port}${path}`, (res) => {
                 if (res.statusCode === 200) return resolve(port);
                 retry();
             }).on('error', retry);

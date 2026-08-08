@@ -37,6 +37,12 @@ module.exports = {
     getAppRootDir:         appRootDir,
     getRuntimeDir:         () => path.join(userDataDir(), 'var'),
     getMeilisearchKeyPath: () => path.join(userDataDir(), 'meilisearch-key.txt'),
+    // qbittorrent-nox's own "--profile=<dir>" layout (see qBittorrent's CustomProfile,
+    // src/base/profile_p.cpp): it appends "qBittorrent/config/qBittorrent.<ext>" to the profile
+    // root itself, ".ini" on Windows (".conf" on Linux/macOS is not relevant — this app is
+    // Windows-only, see .claude-docs/architecture.md).
+    getQbittorrentProfileDir: () => path.join(userDataDir(), 'qbittorrent'),
+    getQbittorrentConfigPath: () => path.join(userDataDir(), 'qbittorrent', 'qBittorrent', 'config', 'qBittorrent.ini'),
     getMediaDir:           () => path.join(userDataDir(), 'media'),
     getConfigPath:         () => path.join(userDataDir(), 'config.json'),
     getPluginsConfigPath:  () => path.join(userDataDir(), 'plugins.json'),

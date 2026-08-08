@@ -64,6 +64,11 @@ parameters:
     app.meilisearch.url: '%env(MEILISEARCH_URL)%'
     app.meilisearch.key: '%env(MEILISEARCH_KEY)%'
 
+    # qbittorrent-nox sidecar's WebUI endpoint (native/supervisor/qbittorrent.js, issue #345) —
+    # the port is pinned, not discovered, but the URL is still passed through env rather than
+    # hardcoded here so the port constant has a single source of truth.
+    app.qbittorrent.url: '%env(QBITTORRENT_URL)%'
+
 services:
     # default configuration for services in *this* file
     _defaults:
@@ -183,3 +188,16 @@ services:
             $url: '%app.meilisearch.url%'
             $apiKey: '%app.meilisearch.key%'
             $httpClient: '@app.meilisearch.http_client'
+
+    # The sidecar is on loopback only (issue #345) — no proxy, no auth, just a bounded timeout so
+    # a stuck request never hangs the FrankenPHP worker.
+    app.qbittorrent.http_client:
+        class: Symfony\Contracts\HttpClient\HttpClientInterface
+        factory: ['Symfony\Component\HttpClient\HttpClient', 'create']
+        arguments:
+            - { timeout: 5, max_duration: 15 }
+
+    App\Service\Qbittorrent\QbittorrentClient:
+        arguments:
+            $httpClient: '@app.qbittorrent.http_client'
+            $baseUrl: '%app.qbittorrent.url%'
