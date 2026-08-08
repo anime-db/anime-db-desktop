@@ -30,6 +30,7 @@ namespace App\Tests\Unit\Service\Plugin;
 use AnimeDb\PluginContracts\Filler\FillerInterface;
 use AnimeDb\PluginContracts\Filler\PluginAnimeData;
 use AnimeDb\PluginContracts\Model\AnimeType as ContractsAnimeType;
+use AnimeDb\PluginContracts\OAuth\ReauthRequiredException;
 use AnimeDb\PluginContracts\Sync\SyncInterface;
 use AnimeDb\PluginContracts\Sync\SyncItem;
 use AnimeDb\PluginContracts\Sync\SyncStatus;
@@ -424,6 +425,56 @@ final class PullSyncServiceTest extends TestCase
         $service->pull($this->pluginId, $sync);
 
         $this->assertCount(0, $this->allAnime());
+    }
+
+    /**
+     * Issue #353: a dead OAuth session is not transient, so pull() must stop this run cleanly
+     * instead of letting the exception propagate to a caller's retry loop — but whatever was
+     * already applied before the exception (here, the status update for item '1', yielded
+     * before the plugin's generator throws) stays applied rather than being rolled back.
+     */
+    public function testStopsCleanlyOnAReauthRequiredExceptionKeepingAlreadyAppliedChanges(): void
+    {
+        $anime = new TvAnime();
+        $anime->setTitle('Cowboy Bebop')->setWatchStatus(WatchStatus::Plan);
+        $anime->rememberExternalId($this->pluginId, '1');
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+
+        $pull = (function (): \Generator {
+            yield new SyncItem('1', SyncStatus::Watching, 'Cowboy Bebop');
+
+            throw new ReauthRequiredException('Refresh token is dead.');
+        })();
+
+        $sync = $this->syncFillerStub($pull, data: null);
+
+        $this->service->pull($this->pluginId, $sync);
+
+        $this->assertCount(1, $this->allAnime());
+        $this->assertSame(WatchStatus::Watching, $anime->getWatchStatus());
+
+        // A reauth exception cuts this run short before it ever sees the full source list, so
+        // the deletion-review detector must not run this run — otherwise every other
+        // plugin-synced record would be wrongly flagged "disappeared from source" off a
+        // partial list.
+        $items = $this->entityManager->getRepository(SyncReviewItem::class)->findAll();
+        $this->assertCount(0, $items);
+    }
+
+    /**
+     * Unlike ReauthRequiredException, a transient failure (network error, external source
+     * down, ...) must still propagate uncaught, so a caller's own retry logic sees it.
+     */
+    public function testLetsATransientPullFailurePropagate(): void
+    {
+        $sync = $this->createMock(SyncInterface::class);
+        $sync->expects($this->once())->method('pull')->willThrowException(new \RuntimeException('Source is down.'));
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Source is down.');
+
+        $this->service->pull($this->pluginId, $sync);
     }
 
     /** @return list<Anime> */

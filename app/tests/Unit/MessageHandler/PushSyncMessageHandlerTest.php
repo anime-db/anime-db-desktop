@@ -27,6 +27,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\MessageHandler;
 
+use AnimeDb\PluginContracts\OAuth\ReauthRequiredException;
 use AnimeDb\PluginContracts\Sync\SyncInterface;
 use AnimeDb\PluginContracts\Sync\SyncItem;
 use AnimeDb\PluginContracts\Sync\SyncStatus;
@@ -44,6 +45,8 @@ use Doctrine\ORM\EntityManager;
 use Doctrine\ORM\ORMSetup;
 use Doctrine\ORM\Tools\SchemaTool;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
+use Symfony\Component\Messenger\Exception\UnrecoverableMessageHandlingException;
 
 /**
  * Verifies the push handler loads the current entity by id, resolves the external id per
@@ -108,7 +111,7 @@ final class PushSyncMessageHandlerTest extends TestCase
             new PluginsConfigStore($this->pluginsConfigPath),
         );
 
-        $handler = new PushSyncMessageHandler($this->entityManager, $registry);
+        $handler = new PushSyncMessageHandler($this->entityManager, $registry, new NullLogger());
         $handler(new PushSyncMessage($animeId));
     }
 
@@ -133,7 +136,7 @@ final class PushSyncMessageHandlerTest extends TestCase
             new PluginsConfigStore($this->pluginsConfigPath),
         );
 
-        $handler = new PushSyncMessageHandler($this->entityManager, $registry);
+        $handler = new PushSyncMessageHandler($this->entityManager, $registry, new NullLogger());
         $handler(new PushSyncMessage($animeId));
     }
 
@@ -147,7 +150,72 @@ final class PushSyncMessageHandlerTest extends TestCase
             new PluginsConfigStore($this->pluginsConfigPath),
         );
 
-        $handler = new PushSyncMessageHandler($this->entityManager, $registry);
+        $handler = new PushSyncMessageHandler($this->entityManager, $registry, new NullLogger());
         $handler(new PushSyncMessage(999));
+    }
+
+    /**
+     * Issue #353: a dead OAuth session is not transient, so the handler must not let it fall
+     * through to Messenger's retry_strategy/dead-letter path — it is rethrown wrapped as
+     * unrecoverable instead, which tells Messenger to accept the message as handled.
+     */
+    public function testWrapsAReauthRequiredExceptionAsUnrecoverableInsteadOfLettingItRetry(): void
+    {
+        $anime = new MovieAnime();
+        $anime->setTitle('Cowboy Bebop')->setWatchStatus(WatchStatus::Watching)->addSource('https://shikimori.one/animes/1');
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+        $animeId = $anime->id ?? throw new \LogicException('Anime must have an id after persisting.');
+
+        file_put_contents($this->pluginsConfigPath, json_encode([
+            'animedb-shikimori' => ['features' => ['sync' => true]],
+        ]));
+
+        $sync = $this->createMock(SyncInterface::class);
+        $sync->method('resolveExternalId')->willReturn('1');
+        $sync->expects($this->once())->method('push')->willThrowException(new ReauthRequiredException('Refresh token is dead.'));
+
+        $registry = new SyncRegistry(
+            ['animedb-shikimori' => $sync],
+            new PluginsConfigStore($this->pluginsConfigPath),
+        );
+
+        $handler = new PushSyncMessageHandler($this->entityManager, $registry, new NullLogger());
+
+        $this->expectException(UnrecoverableMessageHandlingException::class);
+        $handler(new PushSyncMessage($animeId));
+    }
+
+    /**
+     * A transient failure (network error, external source down, ...) keeps the pre-#353
+     * behavior: it propagates uncaught, so the `async` transport's own retry_strategy still
+     * retries it.
+     */
+    public function testLetsATransientPushFailurePropagateForMessengersRetryStrategy(): void
+    {
+        $anime = new MovieAnime();
+        $anime->setTitle('Cowboy Bebop')->setWatchStatus(WatchStatus::Watching)->addSource('https://shikimori.one/animes/1');
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+        $animeId = $anime->id ?? throw new \LogicException('Anime must have an id after persisting.');
+
+        file_put_contents($this->pluginsConfigPath, json_encode([
+            'animedb-shikimori' => ['features' => ['sync' => true]],
+        ]));
+
+        $sync = $this->createMock(SyncInterface::class);
+        $sync->method('resolveExternalId')->willReturn('1');
+        $sync->expects($this->once())->method('push')->willThrowException(new \RuntimeException('Source is down.'));
+
+        $registry = new SyncRegistry(
+            ['animedb-shikimori' => $sync],
+            new PluginsConfigStore($this->pluginsConfigPath),
+        );
+
+        $handler = new PushSyncMessageHandler($this->entityManager, $registry, new NullLogger());
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Source is down.');
+        $handler(new PushSyncMessage($animeId));
     }
 }
