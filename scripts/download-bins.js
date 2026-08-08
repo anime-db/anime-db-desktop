@@ -319,5 +319,7 @@ module.exports = {
     verifyEd25519Signature,
     extractZipToDir,
     extractFromZip,
+    downloadQbittorrentNox,
+    QBITTORRENT_NOX,
     QBITTORRENT_NOX_PUBLIC_KEY,
 };

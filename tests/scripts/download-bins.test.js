@@ -25,12 +25,18 @@ const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { EventEmitter } = require('events');
+
+jest.mock('https', () => ({ get: jest.fn() }));
+const https = require('https');
 
 const {
     parseSha256Sums,
     verifyEd25519Signature,
     extractZipToDir,
     extractFromZip,
+    downloadQbittorrentNox,
+    QBITTORRENT_NOX,
     QBITTORRENT_NOX_PUBLIC_KEY,
 } = require('../../scripts/download-bins');
 
@@ -190,5 +196,85 @@ describe('extractZipToDir / extractFromZip', () => {
         extractFromZip(zip, 'frankenphp.exe', dest);
 
         expect(fs.readFileSync(dest, 'utf8')).toBe('php-binary');
+    });
+
+    test('extractZipToDir rejects path-traversal (zip-slip) entries', () => {
+        const zip = buildZip([{ name: '../evil.exe', data: Buffer.from('x') }]);
+
+        expect(() => extractZipToDir(zip, tmpDir)).toThrow(/outside destination/);
+        expect(fs.existsSync(path.join(tmpDir, '..', 'evil.exe'))).toBe(false);
+    });
+});
+
+// Mocks `https.get` so `downloadQbittorrentNox` never touches the network, letting these tests
+// exercise the verify-before-extract orchestration itself: order of checks, and that a failed
+// check aborts before anything is written to disk.
+describe('downloadQbittorrentNox (verify-before-extract orchestration)', () => {
+    let tmpDir;
+    let bin;
+
+    function mockDownloads({ zip, sums, sig }) {
+        https.get.mockImplementation((url, opts, callback) => {
+            const buffer = { [bin.zipUrl]: zip, [bin.sumsUrl]: sums, [bin.sigUrl]: sig }[url];
+            if (!buffer) throw new Error(`Unexpected URL requested in test: ${url}`);
+
+            const res = new EventEmitter();
+            res.statusCode = 200;
+            callback(res);
+            res.emit('data', buffer);
+            res.emit('end');
+
+            return new EventEmitter();
+        });
+    }
+
+    beforeEach(() => {
+        tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'download-bins-orchestration-'));
+        bin = {
+            ...QBITTORRENT_NOX,
+            destDir: path.join(tmpDir, 'out'),
+            dest: path.join(tmpDir, 'out', 'qbittorrent-nox.exe'),
+        };
+    });
+
+    afterEach(() => {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+        https.get.mockReset();
+        jest.restoreAllMocks();
+    });
+
+    test('aborts before extracting anything when the SHA-256 checksum does not match', async () => {
+        const zip = buildZip([{ name: 'qbittorrent-nox.exe', data: Buffer.from('tampered-bundle') }]);
+        const sums = Buffer.from(
+            `${'f'.repeat(64)}  ${bin.zipName}\n`,
+        );
+        mockDownloads({ zip, sums, sig: Buffer.from('irrelevant-signature') });
+
+        await expect(downloadQbittorrentNox(bin)).rejects.toThrow(/SHA-256 mismatch/);
+        expect(fs.existsSync(bin.destDir)).toBe(false);
+    });
+
+    test('aborts before extracting anything when the Ed25519 signature is invalid', async () => {
+        const zip = buildZip([{ name: 'qbittorrent-nox.exe', data: Buffer.from('real-bundle') }]);
+        const hash = crypto.createHash('sha256').update(zip).digest('hex');
+        const sums = Buffer.from(`${hash}  ${bin.zipName}\n`);
+        mockDownloads({ zip, sums, sig: Buffer.from('some-signature') });
+        jest.spyOn(crypto, 'verify').mockReturnValueOnce(false);
+
+        await expect(downloadQbittorrentNox(bin)).rejects.toThrow(/signature verification failed/);
+        expect(fs.existsSync(bin.destDir)).toBe(false);
+    });
+
+    test('extracts the bundle and writes the version file once both checks pass', async () => {
+        const zip = buildZip([{ name: 'qbittorrent-nox.exe', data: Buffer.from('real-bundle') }]);
+        const hash = crypto.createHash('sha256').update(zip).digest('hex');
+        const sums = Buffer.from(`${hash}  ${bin.zipName}\n`);
+        mockDownloads({ zip, sums, sig: Buffer.from('a-matching-signature') });
+        jest.spyOn(crypto, 'verify').mockReturnValueOnce(true);
+
+        await downloadQbittorrentNox(bin);
+
+        expect(fs.readFileSync(bin.dest, 'utf8')).toBe('real-bundle');
+        expect(fs.readFileSync(path.join(bin.destDir, '.version'), 'utf8')).toBe(`${bin.version}\n`);
     });
 });
