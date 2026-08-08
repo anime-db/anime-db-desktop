@@ -1,0 +1,194 @@
+/**
+ * AnimeDb package.
+ *
+ * @author    Peter Gribanov <info@peter-gribanov.ru>
+ * @copyright Copyright (c) 2026, Peter Gribanov
+ * @license   https://gnu.org GPL-3.0-or-later
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://gnu.org>.
+ */
+
+'use strict';
+
+const crypto = require('crypto');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+
+const {
+    parseSha256Sums,
+    verifyEd25519Signature,
+    extractZipToDir,
+    extractFromZip,
+    QBITTORRENT_NOX_PUBLIC_KEY,
+} = require('../../scripts/download-bins');
+
+// Builds a minimal, uncompressed (stored) ZIP archive in memory. CRC-32 is written as 0 since
+// download-bins.js does not validate it (integrity is verified via SHA-256 + Ed25519 upstream).
+function buildZip(entries) {
+    const localParts = [];
+    const centralParts = [];
+    let offset = 0;
+
+    for (const { name, data } of entries) {
+        const nameBuf = Buffer.from(name, 'utf8');
+
+        const localHeader = Buffer.alloc(30);
+        localHeader.writeUInt32LE(0x04034b50, 0);
+        localHeader.writeUInt16LE(20, 4);
+        localHeader.writeUInt16LE(0, 6);
+        localHeader.writeUInt16LE(0, 8);
+        localHeader.writeUInt16LE(0, 10);
+        localHeader.writeUInt16LE(0, 12);
+        localHeader.writeUInt32LE(0, 14);
+        localHeader.writeUInt32LE(data.length, 18);
+        localHeader.writeUInt32LE(data.length, 22);
+        localHeader.writeUInt16LE(nameBuf.length, 26);
+        localHeader.writeUInt16LE(0, 28);
+
+        localParts.push(localHeader, nameBuf, data);
+
+        const centralHeader = Buffer.alloc(46);
+        centralHeader.writeUInt32LE(0x02014b50, 0);
+        centralHeader.writeUInt16LE(20, 4);
+        centralHeader.writeUInt16LE(20, 6);
+        centralHeader.writeUInt16LE(0, 8);
+        centralHeader.writeUInt16LE(0, 10);
+        centralHeader.writeUInt16LE(0, 12);
+        centralHeader.writeUInt16LE(0, 14);
+        centralHeader.writeUInt32LE(0, 16);
+        centralHeader.writeUInt32LE(data.length, 20);
+        centralHeader.writeUInt32LE(data.length, 24);
+        centralHeader.writeUInt16LE(nameBuf.length, 28);
+        centralHeader.writeUInt16LE(0, 30);
+        centralHeader.writeUInt16LE(0, 32);
+        centralHeader.writeUInt16LE(0, 34);
+        centralHeader.writeUInt16LE(0, 36);
+        centralHeader.writeUInt32LE(0, 38);
+        centralHeader.writeUInt32LE(offset, 42);
+
+        centralParts.push(centralHeader, nameBuf);
+
+        offset += localHeader.length + nameBuf.length + data.length;
+    }
+
+    const centralDirOffset = offset;
+    const centralDir = Buffer.concat(centralParts);
+
+    const eocd = Buffer.alloc(22);
+    eocd.writeUInt32LE(0x06054b50, 0);
+    eocd.writeUInt16LE(0, 4);
+    eocd.writeUInt16LE(0, 6);
+    eocd.writeUInt16LE(entries.length, 8);
+    eocd.writeUInt16LE(entries.length, 10);
+    eocd.writeUInt32LE(centralDir.length, 12);
+    eocd.writeUInt32LE(centralDirOffset, 16);
+    eocd.writeUInt16LE(0, 20);
+
+    return Buffer.concat([...localParts, centralDir, eocd]);
+}
+
+describe('parseSha256Sums', () => {
+    const sums = [
+        'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  qbittorrent-nox-5.2.3_1-win-x64.zip',
+        'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb *SHA256SUMS.sig',
+    ].join('\n');
+
+    test('finds the hash for a listed file', () => {
+        expect(parseSha256Sums(sums, 'qbittorrent-nox-5.2.3_1-win-x64.zip'))
+            .toBe('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+    });
+
+    test('handles the "*" binary-mode marker before the filename', () => {
+        expect(parseSha256Sums(sums, 'SHA256SUMS.sig'))
+            .toBe('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb');
+    });
+
+    test('returns null when the file is not listed', () => {
+        expect(parseSha256Sums(sums, 'unknown.zip')).toBeNull();
+    });
+});
+
+describe('verifyEd25519Signature', () => {
+    const { publicKey, privateKey } = crypto.generateKeyPairSync('ed25519');
+    const publicKeyPem = publicKey.export({ type: 'spki', format: 'pem' });
+    const data = Buffer.from('qbittorrent-nox release bundle bytes');
+
+    function sign(buffer) {
+        return crypto.sign(null, buffer, privateKey).toString('base64');
+    }
+
+    test('accepts a valid signature from the matching key', () => {
+        expect(verifyEd25519Signature(data, sign(data), publicKeyPem)).toBe(true);
+    });
+
+    test('rejects a signature computed over a tampered zip (SHA-256 mismatch scenario)', () => {
+        const validSig = sign(data);
+        const tampered = Buffer.from('qbittorrent-nox RELEASE bundle bytes');
+        expect(verifyEd25519Signature(tampered, validSig, publicKeyPem)).toBe(false);
+    });
+
+    test('rejects a corrupted/garbage signature', () => {
+        const garbageSig = Buffer.alloc(64, 0).toString('base64');
+        expect(verifyEd25519Signature(data, garbageSig, publicKeyPem)).toBe(false);
+    });
+
+    test('rejects a valid signature checked against an unrelated (non-pinned) key', () => {
+        const otherKeyPair = crypto.generateKeyPairSync('ed25519');
+        const otherPublicKeyPem = otherKeyPair.publicKey.export({ type: 'spki', format: 'pem' });
+        expect(verifyEd25519Signature(data, sign(data), otherPublicKeyPem)).toBe(false);
+    });
+
+    test('the pinned public key is a well-formed Ed25519 SPKI PEM', () => {
+        const keyObject = crypto.createPublicKey(QBITTORRENT_NOX_PUBLIC_KEY);
+        expect(keyObject.asymmetricKeyType).toBe('ed25519');
+    });
+});
+
+describe('extractZipToDir / extractFromZip', () => {
+    let tmpDir;
+
+    beforeEach(() => {
+        tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'download-bins-test-'));
+    });
+
+    afterEach(() => {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    test('extracts every file of a multi-entry archive, preserving relative paths', () => {
+        const zip = buildZip([
+            { name: 'qbittorrent-nox.exe', data: Buffer.from('binary-content') },
+            { name: 'THIRD-PARTY-LICENSES/Qt6.txt', data: Buffer.from('license-text') },
+            { name: 'versions.txt', data: Buffer.from('5.2.3_1') },
+        ]);
+
+        extractZipToDir(zip, tmpDir);
+
+        expect(fs.readFileSync(path.join(tmpDir, 'qbittorrent-nox.exe'), 'utf8')).toBe('binary-content');
+        expect(fs.readFileSync(path.join(tmpDir, 'THIRD-PARTY-LICENSES/Qt6.txt'), 'utf8')).toBe('license-text');
+        expect(fs.readFileSync(path.join(tmpDir, 'versions.txt'), 'utf8')).toBe('5.2.3_1');
+    });
+
+    test('extractFromZip pulls a single named file out of the archive', () => {
+        const zip = buildZip([
+            { name: 'nested/frankenphp.exe', data: Buffer.from('php-binary') },
+        ]);
+        const dest = path.join(tmpDir, 'frankenphp.exe');
+
+        extractFromZip(zip, 'frankenphp.exe', dest);
+
+        expect(fs.readFileSync(dest, 'utf8')).toBe('php-binary');
+    });
+});
