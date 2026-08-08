@@ -27,6 +27,7 @@ declare(strict_types=1);
 
 namespace App\Service\Plugin;
 
+use AnimeDb\PluginContracts\OAuth\ReauthRequiredException;
 use AnimeDb\PluginContracts\Sync\SyncInterface;
 use App\Entity\Anime;
 use App\Entity\Exception\InvalidWatchStatusException;
@@ -96,6 +97,16 @@ use Psr\Log\LoggerInterface;
  * (logged, not run) for the rest of a run that hit this recovery path — both are wired to this
  * run's original, now-closed EntityManager, and re-wiring them to the recovery one is not worth
  * the complexity for a path this rare.
+ *
+ * A dead OAuth session (issue #353) is handled the same self-healing way: {@see SyncInterface::pull()}
+ * throwing {@see ReauthRequiredException} — up front or mid-iteration, since it returns
+ * `iterable` and a generator-backed plugin can throw from any `yield` — stops this run cleanly
+ * instead of propagating to a caller's retry loop, since a dead refresh token will not fix
+ * itself on a retry. Whatever this run already applied before the exception is flushed, not
+ * rolled back (pull's per-item idempotency means nothing is lost by stopping early), but
+ * CrossVendorDuplicateDetector/DeletedFromSourceDetector are skipped for this run — the source
+ * list this run saw is only a partial prefix, so treating anything absent from it as
+ * "disappeared from source" would be a false positive.
  */
 final class PullSyncService
 {
@@ -121,66 +132,82 @@ final class PullSyncService
         // for the rest of this pull(), goes through this one instead.
         $recoveryEntityManager = null;
 
-        foreach ($sync->pull() as $item) {
-            $presentExternalIds[$item->externalId] = true;
-            $anime = $byExternalId[$item->externalId] ?? null;
-            $status = WatchStatusMapper::toWatchStatus($item->status);
-
-            if ($anime === null) {
-                if ($recoveryEntityManager !== null) {
-                    // A further, unrelated new item after this run's EntityManager was
-                    // already closed by an earlier conflict — BulkFillerService is bound to
-                    // that closed instance, so it cannot be used again this run.
-                    $this->logger->warning('Skipping a new item this run: an earlier create conflict already closed this pull\'s EntityManager.', [
-                        'pluginId' => (string) $pluginId,
-                        'externalId' => $item->externalId,
-                    ]);
-
-                    continue;
-                }
-
-                // Durably commit everything accumulated so far before the one conflict-prone
-                // operation left in this run (BulkFillerService::build()'s own isolated
-                // flush): if that flush fails, nothing already-processed here is lost with it.
-                $this->entityManager->flush();
-
-                try {
-                    $anime = $this->bulkFillerService->fillNewFrom($sync, $pluginId, $item->externalId);
-                } catch (ExternalIdAlreadyClaimedException $conflict) {
-                    $recoveryEntityManager = $this->openRecoveryEntityManager();
-                    $anime = $recoveryEntityManager->find(Anime::class, $conflict->animeId);
-                }
+        try {
+            foreach ($sync->pull() as $item) {
+                $presentExternalIds[$item->externalId] = true;
+                $anime = $byExternalId[$item->externalId] ?? null;
+                $status = WatchStatusMapper::toWatchStatus($item->status);
 
                 if ($anime === null) {
-                    continue;
+                    if ($recoveryEntityManager !== null) {
+                        // A further, unrelated new item after this run's EntityManager was
+                        // already closed by an earlier conflict — BulkFillerService is bound to
+                        // that closed instance, so it cannot be used again this run.
+                        $this->logger->warning('Skipping a new item this run: an earlier create conflict already closed this pull\'s EntityManager.', [
+                            'pluginId' => (string) $pluginId,
+                            'externalId' => $item->externalId,
+                        ]);
+
+                        continue;
+                    }
+
+                    // Durably commit everything accumulated so far before the one conflict-prone
+                    // operation left in this run (BulkFillerService::build()'s own isolated
+                    // flush): if that flush fails, nothing already-processed here is lost with it.
+                    $this->entityManager->flush();
+
+                    try {
+                        $anime = $this->bulkFillerService->fillNewFrom($sync, $pluginId, $item->externalId);
+                    } catch (ExternalIdAlreadyClaimedException $conflict) {
+                        $recoveryEntityManager = $this->openRecoveryEntityManager();
+                        $anime = $recoveryEntityManager->find(Anime::class, $conflict->animeId);
+                    }
+
+                    if ($anime === null) {
+                        continue;
+                    }
+
+                    $byExternalId[$item->externalId] = $anime;
+                    if ($recoveryEntityManager === null) {
+                        $newlyCreated[] = $anime;
+                    }
+                } elseif ($recoveryEntityManager !== null) {
+                    // Re-fetch through the recovery manager: $anime above is still managed by
+                    // the now-closed original one, and a different EntityManager's UnitOfWork
+                    // has no idea that object exists.
+                    $anime = $recoveryEntityManager->find(Anime::class, $anime->id) ?? $anime;
                 }
 
-                $byExternalId[$item->externalId] = $anime;
-                if ($recoveryEntityManager === null) {
-                    $newlyCreated[] = $anime;
+                try {
+                    $anime->setWatchStatus($status);
+                } catch (InvalidWatchStatusException) {
+                    // The source considers the title completed, but this Anime's own production
+                    // status (from datePremiere/dateEnd) isn't Released — either it's genuinely
+                    // airing right now locally, or (for a title this same run just created) the
+                    // plugin's own fill-in data didn't carry release dates. Same invariant
+                    // AnimeEditableController::updateWatchStatus() enforces for a user-driven
+                    // edit; here there's no form to reject, so this single item's status is
+                    // skipped for this run rather than failing the whole pull. It resolves itself
+                    // once the local production status catches up (dateEnd gets filled in, or a
+                    // later pull once the source itself no longer reports it as completed).
                 }
-            } elseif ($recoveryEntityManager !== null) {
-                // Re-fetch through the recovery manager: $anime above is still managed by
-                // the now-closed original one, and a different EntityManager's UnitOfWork
-                // has no idea that object exists.
-                $anime = $recoveryEntityManager->find(Anime::class, $anime->id) ?? $anime;
+
+                $recoveryEntityManager?->flush();
+            }
+        } catch (ReauthRequiredException $exception) {
+            // Not transient — see the class docblock's "dead OAuth session" section. Flush
+            // whatever this run already applied (idempotency preserved, nothing rolled back)
+            // and stop cleanly rather than let it propagate to a caller's retry loop.
+            $this->logger->warning('Sync plugin "{plugin}" needs reauthorization; stopping this pull run, not retrying.', [
+                'pluginId' => (string) $pluginId,
+                'exception' => $exception,
+            ]);
+
+            if ($recoveryEntityManager === null) {
+                $this->entityManager->flush();
             }
 
-            try {
-                $anime->setWatchStatus($status);
-            } catch (InvalidWatchStatusException) {
-                // The source considers the title completed, but this Anime's own production
-                // status (from datePremiere/dateEnd) isn't Released — either it's genuinely
-                // airing right now locally, or (for a title this same run just created) the
-                // plugin's own fill-in data didn't carry release dates. Same invariant
-                // AnimeEditableController::updateWatchStatus() enforces for a user-driven
-                // edit; here there's no form to reject, so this single item's status is
-                // skipped for this run rather than failing the whole pull. It resolves itself
-                // once the local production status catches up (dateEnd gets filled in, or a
-                // later pull once the source itself no longer reports it as completed).
-            }
-
-            $recoveryEntityManager?->flush();
+            return;
         }
 
         if ($recoveryEntityManager === null) {
