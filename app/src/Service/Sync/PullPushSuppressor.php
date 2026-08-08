@@ -41,6 +41,14 @@ namespace App\Service\Sync;
  * pull() that itself nests another suppressed call (there is none today, but recovery-EntityManager
  * flushes already happen inside the same run) can never have an inner scope's finally turn
  * suppression off while the outer scope is still in progress.
+ *
+ * Suppression is global for the whole duration of a pull run: AnimeSyncPushListener has no way to
+ * tell which plugin a pull came from, so push is muted to *every* source, not only the one being
+ * pulled from. Consequence: a change applied by a pull from source X is not propagated to another
+ * source Y of the same title — Y catches up on its own next pull under a last-pull-wins model. This
+ * is an accepted trade-off for #352 (per-source suppression is not cleanly achievable at the level of
+ * a global Doctrine listener, which has no notion of "current plugin"); reconciling divergent
+ * multi-source data is separate future work, out of scope here.
  */
 final class PullPushSuppressor
 {
