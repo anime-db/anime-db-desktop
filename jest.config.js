@@ -24,5 +24,5 @@
 /** @type {import('jest').Config} */
 module.exports = {
     testEnvironment: 'node',
-    testMatch: ['<rootDir>/tests/native/**/*.test.js'],
+    testMatch: ['<rootDir>/tests/native/**/*.test.js', '<rootDir>/tests/scripts/**/*.test.js'],
 };
