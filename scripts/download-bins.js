@@ -55,7 +55,10 @@ const BINS = [
 ];
 
 const QBITTORRENT_NOX_TAG = `qbt-nox-${versions.qbittorrentNox}`;
-const QBITTORRENT_NOX_ZIP_NAME = `qbittorrent-nox-${versions.qbittorrentNox}-win-x64.zip`;
+// Release asset filenames use ONLY the upstream qBittorrent version (e.g. "5.2.3");
+// the release tag carries the full "<upstream>_<build>" (e.g. "5.2.3_2").
+const [QBITTORRENT_NOX_UPSTREAM_VERSION] = versions.qbittorrentNox.split('_');
+const QBITTORRENT_NOX_ZIP_NAME = `qbittorrent-nox-${QBITTORRENT_NOX_UPSTREAM_VERSION}-win-x64.zip`;
 const QBITTORRENT_NOX_RELEASE_BASE = `https://github.com/gpslab/qbittorrent-nox-win-build/releases/download/${QBITTORRENT_NOX_TAG}`;
 
 const QBITTORRENT_NOX = {
@@ -203,6 +206,10 @@ function extractZipToDir(zipBuffer, destDir) {
 
         const data = readZipEntryData(zipBuffer, entry);
         const destPath = path.join(destDir, normalizedName);
+        // Defense-in-depth against zip-slip (bundle is signature-verified, but never trust entry paths).
+        if (!path.resolve(destPath).startsWith(path.resolve(destDir) + path.sep)) {
+            throw new Error(`Refusing to extract ZIP entry outside destination: ${entry.fileName}`);
+        }
         fs.mkdirSync(path.dirname(destPath), { recursive: true });
         fs.writeFileSync(destPath, data);
     }
