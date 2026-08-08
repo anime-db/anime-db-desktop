@@ -41,6 +41,7 @@ use App\Entity\Enum\WatchStatus;
 use App\Entity\SyncReviewItem;
 use App\Entity\TvAnime;
 use App\Entity\ValueObject\PluginId;
+use App\EventListener\AnimeSyncPushListener;
 use App\Repository\AnimeRepository;
 use App\Repository\StudioRepository;
 use App\Repository\SyncReviewItemRepository;
@@ -55,14 +56,17 @@ use App\Service\Search\AnimeSearchMatch;
 use App\Service\Search\AnimeSearchResolver;
 use App\Service\Sync\CrossVendorDuplicateDetector;
 use App\Service\Sync\DeletedFromSourceDetector;
+use App\Service\Sync\PullPushSuppressor;
 use App\Service\Sync\SyncReviewService;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\EntityManager;
+use Doctrine\ORM\Events;
 use Doctrine\ORM\ORMSetup;
 use Doctrine\ORM\Tools\SchemaTool;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
+use Symfony\Component\Messenger\MessageBusInterface;
 
 /**
  * Verifies the pull() core logic (issue #257): an already-known SyncItem updates its local
@@ -75,6 +79,7 @@ final class PullSyncServiceTest extends TestCase
     private EntityManager $entityManager;
     private PullSyncService $service;
     private PluginId $pluginId;
+    private PullPushSuppressor $pushSuppressor;
 
     protected function setUp(): void
     {
@@ -94,6 +99,7 @@ final class PullSyncServiceTest extends TestCase
         $schemaTool = new SchemaTool($this->entityManager);
         $schemaTool->createSchema($this->entityManager->getMetadataFactory()->getAllMetadata());
 
+        $this->pushSuppressor = new PullPushSuppressor();
         $this->service = $this->newService($this->entityManager, new AnimeRepository($this->entityManager));
         $this->pluginId = new PluginId('animedb-shikimori');
     }
@@ -128,7 +134,7 @@ final class PullSyncServiceTest extends TestCase
             new SyncReviewService(new SyncReviewItemRepository($entityManager)),
         );
 
-        return new PullSyncService($entityManager, $animeRepository, $bulkFillerService, $duplicateDetector, $deletionDetector, new NullLogger());
+        return new PullSyncService($entityManager, $animeRepository, $bulkFillerService, $duplicateDetector, $deletionDetector, $this->pushSuppressor, new NullLogger());
     }
 
     /**
@@ -200,6 +206,36 @@ final class PullSyncServiceTest extends TestCase
         $this->service->pull($this->pluginId, $sync);
 
         $this->assertCount(1, $this->allAnime());
+        $this->assertSame(WatchStatus::Watching, $anime->getWatchStatus());
+    }
+
+    /**
+     * Regression test for the pull->push echo loop (issue #352): a real AnimeSyncPushListener,
+     * wired to the same $pushSuppressor the service under test uses, is attached to this run's
+     * EntityManager so it observes every preUpdate the pull's own flush() raises — mirroring how
+     * the listener is actually attached in production (issue #214), rather than asserting on the
+     * suppressor's internal state.
+     */
+    public function testPullDoesNotDispatchPushSyncMessageForTheStatusChangeItAppliedItself(): void
+    {
+        $anime = new TvAnime();
+        $anime->setTitle('Cowboy Bebop')->setWatchStatus(WatchStatus::Plan);
+        $anime->rememberExternalId($this->pluginId, '1');
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+
+        $messageBus = $this->createMock(MessageBusInterface::class);
+        $messageBus->expects($this->never())->method('dispatch');
+        $this->entityManager->getEventManager()->addEventListener(
+            [Events::preUpdate],
+            new AnimeSyncPushListener($messageBus, $this->pushSuppressor),
+        );
+
+        $sync = $this->createMock(SyncInterface::class);
+        $sync->expects($this->once())->method('pull')->willReturn([new SyncItem('1', SyncStatus::Watching, 'Cowboy Bebop')]);
+
+        $this->service->pull($this->pluginId, $sync);
+
         $this->assertSame(WatchStatus::Watching, $anime->getWatchStatus());
     }
 
@@ -277,6 +313,48 @@ final class PullSyncServiceTest extends TestCase
     }
 
     /**
+     * The recovery EntityManager opened after a lost create race (see the class docblock's
+     * "Create-conflict recovery" section) shares this run's original DBAL connection — and
+     * therefore its Doctrine EventManager/listeners, per Doctrine\ORM\EntityManager's own
+     * constructor (it falls back to $conn->getEventManager() when none is passed explicitly).
+     * $pushSuppressor must stay active for its flush() too, not just the original
+     * EntityManager's — issue #352 requires this explicitly.
+     */
+    public function testRecoveryEntityManagerFlushesDuringAPullAreAlsoSuppressed(): void
+    {
+        $pluginId = $this->pluginId;
+        $entityManager = $this->entityManager;
+
+        $pull = (function () use ($pluginId, $entityManager): \Generator {
+            $winner = new TvAnime();
+            $winner->setTitle('Trigun')->setWatchStatus(WatchStatus::Plan);
+            $winner->rememberExternalId($pluginId, '42');
+            $entityManager->persist($winner);
+            $entityManager->flush();
+
+            yield new SyncItem('42', SyncStatus::Watching, 'Trigun');
+        })();
+
+        $sync = $this->syncFillerStub(
+            $pull,
+            data: new PluginAnimeData(title: 'Trigun', type: ContractsAnimeType::Tv),
+            fillableFields: ['title', 'type'],
+        );
+
+        $messageBus = $this->createMock(MessageBusInterface::class);
+        $messageBus->expects($this->never())->method('dispatch');
+        $this->entityManager->getEventManager()->addEventListener(
+            [Events::preUpdate],
+            new AnimeSyncPushListener($messageBus, $this->pushSuppressor),
+        );
+
+        $this->service->pull($pluginId, $sync);
+
+        $all = $this->allAnime();
+        $this->assertSame(WatchStatus::Watching, $all[0]->getWatchStatus());
+    }
+
+    /**
      * Wiring check for the cross-vendor dedup heuristic (issue #268): a genuinely new Anime
      * created via fillNewFrom() is run through CrossVendorDuplicateDetector once flush() has
      * given it an id — case-by-case threshold/skip behavior belongs to
@@ -316,7 +394,7 @@ final class PullSyncServiceTest extends TestCase
             new SyncRegistry([], new PluginsConfigStore(sys_get_temp_dir().'/anime-pull-sync-reg-'.uniqid().'.json')),
             new SyncReviewService(new SyncReviewItemRepository($this->entityManager)),
         );
-        $service = new PullSyncService($this->entityManager, new AnimeRepository($this->entityManager), $bulkFillerService, $duplicateDetector, $deletionDetector, new NullLogger());
+        $service = new PullSyncService($this->entityManager, new AnimeRepository($this->entityManager), $bulkFillerService, $duplicateDetector, $deletionDetector, $this->pushSuppressor, new NullLogger());
 
         $sync = $this->syncFillerStub(
             [new SyncItem('42', SyncStatus::Plan, 'Trigun')],

@@ -35,6 +35,7 @@ use App\Entity\MovieAnime;
 use App\Entity\Storage;
 use App\EventListener\AnimeSyncPushListener;
 use App\Message\PushSyncMessage;
+use App\Service\Sync\PullPushSuppressor;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\EntityManager;
@@ -85,8 +86,24 @@ final class AnimeSyncPushListenerTest extends TestCase
             ->willReturn(new Envelope(new PushSyncMessage($animeId)));
 
         $changeSet = ['watchStatus' => [WatchStatus::Plan, WatchStatus::Watching]];
-        $listener = new AnimeSyncPushListener($messageBus);
+        $listener = new AnimeSyncPushListener($messageBus, new PullPushSuppressor());
         $listener->preUpdate(new PreUpdateEventArgs($anime, $this->entityManager, $changeSet));
+    }
+
+    public function testDoesNothingWhenSuppressedByAPullInProgress(): void
+    {
+        $anime = $this->persistAnime();
+
+        $messageBus = $this->createMock(MessageBusInterface::class);
+        $messageBus->expects($this->never())->method('dispatch');
+
+        $suppressor = new PullPushSuppressor();
+        $changeSet = ['watchStatus' => [WatchStatus::Plan, WatchStatus::Watching]];
+        $listener = new AnimeSyncPushListener($messageBus, $suppressor);
+
+        $suppressor->suppress(function () use ($listener, $anime, $changeSet): void {
+            $listener->preUpdate(new PreUpdateEventArgs($anime, $this->entityManager, $changeSet));
+        });
     }
 
     public function testDoesNothingWhenWatchStatusIsUnchanged(): void
@@ -97,7 +114,7 @@ final class AnimeSyncPushListenerTest extends TestCase
         $messageBus->expects($this->never())->method('dispatch');
 
         $changeSet = ['title' => ['Cowboy Bebop', 'Cowboy Bebop: Remastered']];
-        $listener = new AnimeSyncPushListener($messageBus);
+        $listener = new AnimeSyncPushListener($messageBus, new PullPushSuppressor());
         $listener->preUpdate(new PreUpdateEventArgs($anime, $this->entityManager, $changeSet));
     }
 
@@ -111,7 +128,7 @@ final class AnimeSyncPushListenerTest extends TestCase
         $messageBus->expects($this->never())->method('dispatch');
 
         $changeSet = ['name' => ['Main folder', 'Renamed folder']];
-        $listener = new AnimeSyncPushListener($messageBus);
+        $listener = new AnimeSyncPushListener($messageBus, new PullPushSuppressor());
         $listener->preUpdate(new PreUpdateEventArgs($storage, $this->entityManager, $changeSet));
     }
 
