@@ -29,6 +29,7 @@ namespace App\EventListener;
 
 use App\Entity\Anime;
 use App\Message\PushSyncMessage;
+use App\Service\Sync\PullPushSuppressor;
 use Doctrine\Bundle\DoctrineBundle\Attribute\AsDoctrineListener;
 use Doctrine\ORM\Event\PreUpdateEventArgs;
 use Doctrine\ORM\Events;
@@ -45,12 +46,18 @@ use Symfony\Component\Messenger\MessageBusInterface;
  * is cheap and safe to run on every change, but pushing to an external source on every field
  * touch (title edit, rating change, ...) would be wasteful and surprising — only a watchStatus
  * change should trigger a push, which needs the change set preUpdate provides.
+ *
+ * $pushSuppressor breaks the pull->push echo loop (issue #352): a watchStatus change made by
+ * PullSyncService::pull() itself must not be echoed back out as a push — see
+ * PullPushSuppressor's docblock. A plain user-driven edit (outside any pull() run) still
+ * dispatches as before, since the suppressor is only active for the duration of a pull().
  */
 #[AsDoctrineListener(event: Events::preUpdate)]
 final class AnimeSyncPushListener
 {
     public function __construct(
         private readonly MessageBusInterface $messageBus,
+        private readonly PullPushSuppressor $pushSuppressor,
     ) {
     }
 
@@ -62,6 +69,10 @@ final class AnimeSyncPushListener
         }
 
         if (!$args->hasChangedField('watchStatus')) {
+            return;
+        }
+
+        if ($this->pushSuppressor->isSuppressed()) {
             return;
         }
 

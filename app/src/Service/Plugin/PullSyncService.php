@@ -37,6 +37,7 @@ use App\Service\Plugin\Exception\ExternalIdAlreadyClaimedException;
 use App\Service\Plugin\Filler\BulkFillerService;
 use App\Service\Sync\CrossVendorDuplicateDetector;
 use App\Service\Sync\DeletedFromSourceDetector;
+use App\Service\Sync\PullPushSuppressor;
 use Doctrine\ORM\EntityManager;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Log\LoggerInterface;
@@ -116,11 +117,25 @@ final class PullSyncService
         private readonly BulkFillerService $bulkFillerService,
         private readonly CrossVendorDuplicateDetector $duplicateDetector,
         private readonly DeletedFromSourceDetector $deletionDetector,
+        private readonly PullPushSuppressor $pushSuppressor,
         private readonly LoggerInterface $logger,
     ) {
     }
 
+    /**
+     * Wrapped in $pushSuppressor (issue #352) so every flush() this run performs — including
+     * the recovery EntityManager's, which shares the original's DBAL connection and therefore
+     * its Doctrine EventManager/listeners — is seen by AnimeSyncPushListener as pull-originated
+     * and never echoes back out as a push.
+     */
     public function pull(PluginId $pluginId, SyncInterface $sync): void
+    {
+        $this->pushSuppressor->suppress(function () use ($pluginId, $sync): void {
+            $this->doPull($pluginId, $sync);
+        });
+    }
+
+    private function doPull(PluginId $pluginId, SyncInterface $sync): void
     {
         $byExternalId = $this->animeRepository->indexByExternalId($pluginId);
         /** @var list<Anime> $newlyCreated */
