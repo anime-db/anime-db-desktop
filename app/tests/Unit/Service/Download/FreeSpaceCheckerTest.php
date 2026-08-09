@@ -151,6 +151,24 @@ final class FreeSpaceCheckerTest extends TestCase
         $checker->assertEnoughSpaceForTorrentFile($this->bencodeDict(['announce' => $this->bencodeString('http://tracker.local')]));
     }
 
+    public function testAssertEnoughSpaceForTorrentFileRejectsANegativeLength(): void
+    {
+        $checker = $this->makeChecker(1);
+
+        $this->expectException(InvalidTorrentFileException::class);
+
+        $checker->assertEnoughSpaceForTorrentFile($this->singleFileTorrent(-1));
+    }
+
+    public function testAssertEnoughSpaceForTorrentFileRejectsAnOverflowingTotalSize(): void
+    {
+        $checker = $this->makeChecker(1);
+
+        $this->expectException(InvalidTorrentFileException::class);
+
+        $checker->assertEnoughSpaceForTorrentFile($this->multiFileTorrent([\PHP_INT_MAX, \PHP_INT_MAX]));
+    }
+
     private function singleFileTorrent(int $length): string
     {
         $infoBytes = $this->bencodeDict([

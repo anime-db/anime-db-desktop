@@ -115,20 +115,43 @@ final class FreeSpaceChecker
 
         // Single-file torrent: "info" carries "length" directly.
         if (isset($info['length'])) {
-            return (int) $info['length'];
+            return $this->assertNonNegativeLength($info['length']);
         }
 
         // Multi-file torrent: "info.files" is a list of {length, path} dicts, summed.
         if (isset($info['files']) && \is_array($info['files'])) {
             $total = 0;
             foreach ($info['files'] as $file) {
-                $total += \is_array($file) ? (int) ($file['length'] ?? 0) : 0;
+                $length = \is_array($file) ? $this->assertNonNegativeLength($file['length'] ?? 0) : 0;
+
+                // Guard against 64-bit int overflow: a crafted torrent with several
+                // near-PHP_INT_MAX lengths would otherwise wrap the sum to float and blow up
+                // this int-typed method with a TypeError. $total and $length are both >= 0.
+                if ($total > \PHP_INT_MAX - $length) {
+                    throw new InvalidTorrentFileException('Torrent total size overflows the maximum supported value.');
+                }
+
+                $total += $length;
             }
 
             return $total;
         }
 
         throw new InvalidTorrentFileException('Torrent file "info" dictionary has neither "length" nor "files".');
+    }
+
+    /**
+     * A torrent "length" must be a non-negative integer; a decoded string/dict or a negative
+     * value is a malformed .torrent (either would also skew the free-space arithmetic
+     * downstream). $length is `mixed` because it comes straight out of {@see self::decode()}.
+     */
+    private function assertNonNegativeLength(mixed $length): int
+    {
+        if (!\is_int($length) || $length < 0) {
+            throw new InvalidTorrentFileException('Torrent file "length" is not a non-negative integer.');
+        }
+
+        return $length;
     }
 
     /**
