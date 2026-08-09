@@ -152,4 +152,32 @@ final class ProxySettingsTest extends TestCase
         $this->assertStringNotContainsString('super-secret-password', $string);
         $this->assertSame('ProxySettings(mode=manual, protocol=socks5, host=127.0.0.1, port=1080)', $string);
     }
+
+    public function testAllowsIncomingTorrentConnectionsIsFalseOnlyForSocks5(): void
+    {
+        $settings = new ProxySettings(ProxyMode::Manual, ProxyProtocol::Socks5, '127.0.0.1', 1080);
+
+        $this->assertFalse($settings->allowsIncomingTorrentConnections());
+    }
+
+    public function testAllowsIncomingTorrentConnectionsIsTrueForNoProxy(): void
+    {
+        $settings = new ProxySettings(ProxyMode::None, ProxyProtocol::Socks5, null, null);
+
+        $this->assertTrue($settings->allowsIncomingTorrentConnections());
+    }
+
+    public function testAllowsIncomingTorrentConnectionsIsTrueForHttpProxy(): void
+    {
+        $settings = new ProxySettings(ProxyMode::Manual, ProxyProtocol::Http, 'proxy.local', 8080);
+
+        $this->assertTrue($settings->allowsIncomingTorrentConnections());
+    }
+
+    public function testAllowsIncomingTorrentConnectionsIsTrueWhenManualSocks5DowngradesToNone(): void
+    {
+        $settings = new ProxySettings(ProxyMode::Manual, ProxyProtocol::Socks5, null, null);
+
+        $this->assertTrue($settings->allowsIncomingTorrentConnections());
+    }
 }

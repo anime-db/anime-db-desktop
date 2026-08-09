@@ -145,4 +145,25 @@ final class AppSettingsProvider
 
         return rtrim($home, '\\/').\DIRECTORY_SEPARATOR.'Downloads';
     }
+
+    /**
+     * Whether the user has opted into the Windows-only "allow incoming torrent connections"
+     * firewall toggle (issue #361). Defaults to false — the app and qbittorrent-nox run
+     * outbound-only, admin-free, until the user explicitly turns this on from the settings page.
+     */
+    public function getIncomingConnectionsAllowed(): bool
+    {
+        $allowed = $this->configStore->read()['incomingConnectionsAllowed'] ?? null;
+
+        return $allowed === true;
+    }
+
+    public function setIncomingConnectionsAllowed(bool $allowed): void
+    {
+        $this->configStore->update(static function (array $config) use ($allowed): array {
+            $config['incomingConnectionsAllowed'] = $allowed;
+
+            return $config;
+        });
+    }
 }

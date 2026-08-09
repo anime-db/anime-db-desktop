@@ -71,6 +71,20 @@ final class SettingsTemplateRenderingTest extends KernelTestCase
         $requestStack->push($request);
     }
 
+    /**
+     * Isolates just the incoming-connections checkbox's own markup — the page also renders the
+     * proxy mode radio group, which already has its own "checked"/no-"disabled" state and would
+     * otherwise make a plain assertStringContainsString('checked', $html) pass for the wrong
+     * reason.
+     */
+    private function extractIncomingConnectionsCheckbox(string $html): string
+    {
+        $matched = preg_match('/<input[^>]*name="enabled"[^>]*>/s', $html, $matches);
+        $this->assertSame(1, $matched, 'Expected the incoming-connections checkbox to be present.');
+
+        return $matches[0];
+    }
+
     public function testSettingsIndexRendersWithoutErrors(): void
     {
         self::bootKernel();
@@ -274,6 +288,128 @@ final class SettingsTemplateRenderingTest extends KernelTestCase
         ]);
 
         $this->assertStringContainsString('не удалось применить SOCKS5-прокси', $html);
+    }
+
+    public function testProxyIndexHidesIncomingConnectionsSectionWhenNotWindows(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession();
+        /** @var LocaleSwitcher $localeSwitcher */
+        $localeSwitcher = self::getContainer()->get(LocaleSwitcher::class);
+        $localeSwitcher->setLocale('ru');
+
+        $settings = new ProxySettings(ProxyMode::None, ProxyProtocol::Socks5, null, null);
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('settings/proxy/index.html.twig', [
+            'settings' => $settings,
+            'saved' => false,
+            'isWindows' => false,
+            'incomingConnectionsAllowed' => false,
+            'incomingConnectionsEligible' => true,
+        ]);
+
+        $this->assertStringNotContainsString('name="enabled"', $html);
+    }
+
+    public function testProxyIndexRendersIncomingConnectionsToggleCheckedAndEnabledInDirectMode(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession();
+        /** @var LocaleSwitcher $localeSwitcher */
+        $localeSwitcher = self::getContainer()->get(LocaleSwitcher::class);
+        $localeSwitcher->setLocale('ru');
+
+        $settings = new ProxySettings(ProxyMode::None, ProxyProtocol::Socks5, null, null);
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('settings/proxy/index.html.twig', [
+            'settings' => $settings,
+            'saved' => false,
+            'isWindows' => true,
+            'incomingConnectionsAllowed' => true,
+            'incomingConnectionsEligible' => true,
+        ]);
+
+        $checkbox = $this->extractIncomingConnectionsCheckbox($html);
+        $this->assertStringContainsString('checked', $checkbox);
+        $this->assertStringNotContainsString('disabled', $checkbox);
+    }
+
+    public function testProxyIndexDisablesIncomingConnectionsToggleWhenSocks5ActiveAndNotAlreadyAllowed(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession();
+        /** @var LocaleSwitcher $localeSwitcher */
+        $localeSwitcher = self::getContainer()->get(LocaleSwitcher::class);
+        $localeSwitcher->setLocale('ru');
+
+        $settings = new ProxySettings(ProxyMode::Manual, ProxyProtocol::Socks5, 'proxy.example', 1080);
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('settings/proxy/index.html.twig', [
+            'settings' => $settings,
+            'saved' => false,
+            'isWindows' => true,
+            'incomingConnectionsAllowed' => false,
+            'incomingConnectionsEligible' => false,
+        ]);
+
+        $checkbox = $this->extractIncomingConnectionsCheckbox($html);
+        $this->assertStringContainsString('disabled', $checkbox);
+        $this->assertStringNotContainsString('checked', $checkbox);
+    }
+
+    public function testProxyIndexKeepsIncomingConnectionsToggleEnabledWhenAlreadyAllowedDespiteSocks5(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession();
+        /** @var LocaleSwitcher $localeSwitcher */
+        $localeSwitcher = self::getContainer()->get(LocaleSwitcher::class);
+        $localeSwitcher->setLocale('ru');
+
+        $settings = new ProxySettings(ProxyMode::Manual, ProxyProtocol::Socks5, 'proxy.example', 1080);
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('settings/proxy/index.html.twig', [
+            'settings' => $settings,
+            'saved' => false,
+            'isWindows' => true,
+            'incomingConnectionsAllowed' => true,
+            'incomingConnectionsEligible' => false,
+        ]);
+
+        $checkbox = $this->extractIncomingConnectionsCheckbox($html);
+        $this->assertStringContainsString('checked', $checkbox);
+        $this->assertStringNotContainsString('disabled', $checkbox);
+    }
+
+    public function testProxyIndexRendersIncomingConnectionsErrorMessage(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession();
+        /** @var LocaleSwitcher $localeSwitcher */
+        $localeSwitcher = self::getContainer()->get(LocaleSwitcher::class);
+        $localeSwitcher->setLocale('ru');
+
+        $settings = new ProxySettings(ProxyMode::Manual, ProxyProtocol::Socks5, 'proxy.example', 1080);
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('settings/proxy/index.html.twig', [
+            'settings' => $settings,
+            'saved' => false,
+            'isWindows' => true,
+            'incomingConnectionsAllowed' => false,
+            'incomingConnectionsEligible' => false,
+            'incomingConnectionsError' => true,
+        ]);
+
+        $this->assertStringContainsString('Недоступно при выбранном SOCKS5-прокси.', $html);
     }
 
     public function testProxyTestResultFragmentRendersSuccessWithoutErrors(): void

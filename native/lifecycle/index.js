@@ -32,6 +32,7 @@ const { createSplash } = require('../window/splash');
 const tray             = require('../tray');
 const wsClient         = require('../ws-client');
 const proxy            = require('../proxy');
+const firewall         = require('../firewall');
 
 let quitting = false;
 
@@ -82,6 +83,14 @@ app.whenReady().then(async () => {
             if (event === proxy.PROXY_CHANGED_EVENT) {
                 proxy.applyProxy(session.defaultSession).catch((err) => {
                     console.error('[proxy] не удалось применить настройки прокси:', err);
+                });
+            }
+            if (event === firewall.FIREWALL_RULE_CHANGED_EVENT) {
+                firewall.applyIncomingConnections(Boolean(data.enabled)).catch((err) => {
+                    dialog.showErrorBox(
+                        'Брандмауэр Windows',
+                        `Не удалось изменить правило для входящих подключений торрент-клиента: ${err.message}`,
+                    );
                 });
             }
         });

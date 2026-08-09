@@ -237,6 +237,11 @@ settings_proxy:
         connection_refused: Could not connect to the proxy server.
         auth_failed: Proxy authentication failed.
         unknown_error: The test could not be completed.
+    incoming_connections_heading: Torrent client incoming connections
+    incoming_connections_toggle_label: Allow incoming torrent connections (improves connectivity)
+    incoming_connections_save_success: Setting saved. Turning it on will ask Windows to confirm administrator rights to add a firewall rule.
+    incoming_connections_error: Not available while a SOCKS5 proxy is selected.
+    incoming_connections_socks5_hint: Incoming connections do not work through a SOCKS5 proxy regardless of firewall rules, so enabling is unavailable. An already-enabled setting can still be turned off at any time.
 
 anime_list:
     title: List — AnimeDB
