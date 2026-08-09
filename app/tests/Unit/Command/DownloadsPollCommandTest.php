@@ -1,0 +1,97 @@
+<?php
+
+/**
+ * AnimeDb package.
+ *
+ * @author    Peter Gribanov <info@peter-gribanov.ru>
+ * @copyright Copyright (c) 2026, Peter Gribanov
+ * @license   https://gnu.org GPL-3.0-or-later
+ */
+
+/*
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://gnu.org>.
+ */
+
+declare(strict_types=1);
+
+namespace App\Tests\Unit\Command;
+
+use App\Command\DownloadsPollCommand;
+use App\Doctrine\Type\RatingType;
+use App\Doctrine\Type\UnixTimestampType;
+use App\Repository\DownloadRepository;
+use App\Repository\StorageRepository;
+use App\Service\AppConfigStore;
+use App\Service\AppSettingsProvider;
+use App\Service\Download\AnimeDownloadLinker;
+use App\Service\Download\DownloadCompletionPoller;
+use App\Service\Download\DownloadFolderJail;
+use App\Service\Qbittorrent\QbittorrentClient;
+use Doctrine\DBAL\DriverManager;
+use Doctrine\DBAL\Types\Type;
+use Doctrine\ORM\EntityManager;
+use Doctrine\ORM\ORMSetup;
+use Doctrine\ORM\Tools\SchemaTool;
+use PHPUnit\Framework\TestCase;
+use Symfony\Component\Console\Command\Command;
+use Symfony\Component\Console\Tester\CommandTester;
+use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\HttpClient\MockHttpClient;
+
+final class DownloadsPollCommandTest extends TestCase
+{
+    public function testRunningTheCommandWithNoPendingDownloadsSucceedsWithoutAnyHttpCall(): void
+    {
+        if (!Type::hasType(UnixTimestampType::NAME)) {
+            Type::addType(UnixTimestampType::NAME, UnixTimestampType::class);
+        }
+        if (!Type::hasType(RatingType::NAME)) {
+            Type::addType(RatingType::NAME, RatingType::class);
+        }
+
+        $config = ORMSetup::createAttributeMetadataConfig([\dirname(__DIR__, 3).'/src/Entity'], true);
+        $config->enableNativeLazyObjects(true);
+        $connection = DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true], $config);
+        $entityManager = new EntityManager($connection, $config);
+        (new SchemaTool($entityManager))->createSchema($entityManager->getMetadataFactory()->getAllMetadata());
+
+        $httpClient = new MockHttpClient(static function (): never {
+            throw new \LogicException('No pending download should trigger an HTTP call.');
+        });
+
+        $configPath = sys_get_temp_dir().'/anime-downloads-poll-command-test-'.uniqid().'.json';
+        file_put_contents($configPath, json_encode(['downloadsRoot' => 'C:\\Users\\bob\\Downloads']));
+
+        try {
+            $jail = new DownloadFolderJail(new AppSettingsProvider(new AppConfigStore($configPath)));
+            $poller = new DownloadCompletionPoller(
+                new QbittorrentClient($httpClient, 'http://127.0.0.1:18080'),
+                new DownloadRepository($entityManager),
+                new AnimeDownloadLinker(new StorageRepository($entityManager), $entityManager, $jail),
+                new EventDispatcher(),
+            );
+
+            $tester = new CommandTester(new DownloadsPollCommand($poller));
+            $tester->execute([]);
+
+            $this->assertSame(Command::SUCCESS, $tester->getStatusCode());
+        } finally {
+            foreach ([$configPath, $configPath.'.tmp', $configPath.'.lock'] as $file) {
+                if (is_file($file)) {
+                    unlink($file);
+                }
+            }
+        }
+    }
+}

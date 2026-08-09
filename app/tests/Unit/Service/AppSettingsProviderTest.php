@@ -221,6 +221,36 @@ final class AppSettingsProviderTest extends TestCase
         $this->assertSame('animedb-shikimori', $data['defaultSearchPluginId']);
     }
 
+    public function testGetDownloadsRootDefaultsToUserprofileDownloadsWhenFileIsMissing(): void
+    {
+        $provider = new AppSettingsProvider(new AppConfigStore($this->configPath));
+
+        $expected = rtrim((string) (getenv('USERPROFILE') ?: getenv('HOME') ?: sys_get_temp_dir()), '\\/').\DIRECTORY_SEPARATOR.'Downloads';
+        $this->assertSame($expected, $provider->getDownloadsRoot());
+    }
+
+    public function testGetDownloadsRootReadsConfiguredValue(): void
+    {
+        file_put_contents($this->configPath, json_encode(['downloadsRoot' => 'D:\\Anime\\Downloads']));
+
+        $provider = new AppSettingsProvider(new AppConfigStore($this->configPath));
+
+        $this->assertSame('D:\\Anime\\Downloads', $provider->getDownloadsRoot());
+    }
+
+    public function testSetDownloadsRootOverwritesOnlyThatKey(): void
+    {
+        file_put_contents($this->configPath, json_encode(['appSecret' => 'abc']));
+
+        $provider = new AppSettingsProvider(new AppConfigStore($this->configPath));
+        $provider->setDownloadsRoot('D:\\Anime\\Downloads');
+
+        $data = json_decode((string) file_get_contents($this->configPath), true);
+
+        $this->assertSame('abc', $data['appSecret']);
+        $this->assertSame('D:\\Anime\\Downloads', $data['downloadsRoot']);
+    }
+
     public function testWriteConfigThrowsAndLeavesValidFileIntactWhenTemporaryWriteFails(): void
     {
         // A directory this process owns (unlike sys_get_temp_dir() itself, which is typically

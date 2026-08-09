@@ -201,3 +201,12 @@ services:
         arguments:
             $httpClient: '@app.qbittorrent.http_client'
             $baseUrl: '%app.qbittorrent.url%'
+
+    # AnimeDb\PluginContracts\Download\DownloadServiceInterface lives in the read-only
+    # anime-db/plugin-contracts package, so App\Service\Download\QbittorrentDownloadService
+    # cannot self-alias to it the way a local interface would (see the _instanceof comment
+    # above) — an explicit alias, the same approach used above for
+    # Symfony\Component\Translation\TranslatorBagInterface and
+    # App\Service\JobLock\ProcessLivenessChecker, keeps it autowireable by anything (core or
+    # plugin) that type-hints the contract interface (issue #346).
+    AnimeDb\PluginContracts\Download\DownloadServiceInterface: '@App\Service\Download\QbittorrentDownloadService'
