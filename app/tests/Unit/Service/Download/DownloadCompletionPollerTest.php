@@ -404,6 +404,64 @@ final class DownloadCompletionPollerTest extends TestCase
         $this->assertSame(DownloadStatus::Pending, $stored->getStatus());
     }
 
+    public function testPollDoesNotFalselyFailAHealthyMagnetAsFreeSpaceShrinksWhileItDownloads(): void
+    {
+        $anime = $this->persistAnime();
+        $this->downloads->save(new Download(self::HASH, $anime));
+
+        $eventDispatcher = $this->createMock(EventDispatcherInterface::class);
+        $eventDispatcher->expects($this->never())->method('dispatch');
+
+        // Free space shrinks by roughly what this same torrent has already written to disk: 100 GB
+        // free before anything is written, down to 58 GB free once ~42 GB (70%) of a 60 GB torrent
+        // has landed. Comparing against the full 60 GB size (the pre-fix behaviour) would demand
+        // ~61.2 GB free on the second poll and wrongly fail a torrent that fits comfortably.
+        $freeBytesByCall = [100_000_000_000, 58_000_000_000];
+        $callIndex = 0;
+        $freeSpaceProvider = $this->createStub(FreeSpaceProvider::class);
+        $freeSpaceProvider->method('getFreeBytes')->willReturnCallback(
+            static function () use (&$callIndex, $freeBytesByCall): int {
+                return $freeBytesByCall[$callIndex++];
+            },
+        );
+
+        $pollIndex = 0;
+        $torrentsByPoll = [
+            // Metadata just arrived: nothing written yet, amount_left equals the full size.
+            [['hash' => self::HASH, 'progress' => 0.0, 'state' => 'metaDL', 'size' => 60_000_000_000, 'amount_left' => 60_000_000_000]],
+            // 70% written: amount_left has shrunk in step with free space.
+            [['hash' => self::HASH, 'progress' => 0.7, 'state' => 'downloading', 'size' => 60_000_000_000, 'amount_left' => 18_000_000_000]],
+        ];
+        $httpClient = new MockHttpClient(function () use (&$pollIndex, $torrentsByPoll): MockResponse {
+            $response = new MockResponse(
+                json_encode($torrentsByPoll[$pollIndex], \JSON_THROW_ON_ERROR),
+                ['response_headers' => ['content-type' => 'application/json']],
+            );
+            ++$pollIndex;
+
+            return $response;
+        });
+
+        $jail = new DownloadFolderJail(new AppSettingsProvider(new AppConfigStore($this->configPath)));
+        $linker = new AnimeDownloadLinker(new StorageRepository($this->entityManager), $this->entityManager, $jail);
+        $poller = new DownloadCompletionPoller(
+            new QbittorrentClient($httpClient, self::BASE_URL),
+            $this->downloads,
+            $linker,
+            $eventDispatcher,
+            $this->entityManager,
+            new FreeSpaceChecker($jail, $freeSpaceProvider),
+            new NullLogger(),
+        );
+
+        $poller->poll();
+        $poller->poll();
+
+        $stored = $this->downloads->findByInfoHashAndAnime(self::HASH, (int) $anime->id);
+        $this->assertNotNull($stored);
+        $this->assertSame(DownloadStatus::Pending, $stored->getStatus());
+    }
+
     public function testPollMarksEveryPendingRowFailedForASeasonPackSharingOneInfoHash(): void
     {
         $animeOne = $this->persistAnime();
