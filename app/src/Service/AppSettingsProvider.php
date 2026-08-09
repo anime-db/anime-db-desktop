@@ -115,4 +115,34 @@ final class AppSettingsProvider
             return $config;
         });
     }
+
+    /**
+     * Root directory the qBittorrent download service (issue #346) is jailed to — every torrent
+     * is saved under it, and a completed torrent's reported path must fall inside it before
+     * AnimeDownloadLinker will read anything from it. Defaults to "%USERPROFILE%\Downloads"
+     * (falling back to $HOME, then the system temp dir, on the non-Windows CI/dev environment
+     * this test suite runs in) until the user picks a different folder on the settings page.
+     */
+    public function getDownloadsRoot(): string
+    {
+        $root = $this->configStore->read()['downloadsRoot'] ?? null;
+
+        return \is_string($root) && $root !== '' ? $root : $this->defaultDownloadsRoot();
+    }
+
+    public function setDownloadsRoot(string $root): void
+    {
+        $this->configStore->update(static function (array $config) use ($root): array {
+            $config['downloadsRoot'] = $root;
+
+            return $config;
+        });
+    }
+
+    private function defaultDownloadsRoot(): string
+    {
+        $home = getenv('USERPROFILE') ?: getenv('HOME') ?: sys_get_temp_dir();
+
+        return rtrim($home, '\\/').\DIRECTORY_SEPARATOR.'Downloads';
+    }
 }

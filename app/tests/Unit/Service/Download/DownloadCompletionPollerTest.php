@@ -1,0 +1,313 @@
+<?php
+
+/**
+ * AnimeDb package.
+ *
+ * @author    Peter Gribanov <info@peter-gribanov.ru>
+ * @copyright Copyright (c) 2026, Peter Gribanov
+ * @license   https://gnu.org GPL-3.0-or-later
+ */
+
+/*
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://gnu.org>.
+ */
+
+declare(strict_types=1);
+
+namespace App\Tests\Unit\Service\Download;
+
+use AnimeDb\PluginContracts\Download\DownloadCompletedEvent;
+use App\Doctrine\Type\RatingType;
+use App\Doctrine\Type\UnixTimestampType;
+use App\Entity\Download;
+use App\Entity\Enum\WatchStatus;
+use App\Entity\TvAnime;
+use App\Repository\DownloadRepository;
+use App\Repository\StorageRepository;
+use App\Service\AppConfigStore;
+use App\Service\AppSettingsProvider;
+use App\Service\Download\AnimeDownloadLinker;
+use App\Service\Download\DownloadCompletionPoller;
+use App\Service\Download\DownloadFolderJail;
+use App\Service\Qbittorrent\QbittorrentClient;
+use Doctrine\DBAL\DriverManager;
+use Doctrine\DBAL\Types\Type;
+use Doctrine\ORM\EntityManager;
+use Doctrine\ORM\ORMSetup;
+use Doctrine\ORM\Tools\SchemaTool;
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
+use Symfony\Component\HttpClient\MockHttpClient;
+use Symfony\Component\HttpClient\Response\MockResponse;
+use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
+
+final class DownloadCompletionPollerTest extends TestCase
+{
+    private const string BASE_URL = 'http://127.0.0.1:18080';
+    private const string ROOT = 'C:\\Users\\bob\\Downloads';
+    private const string HASH = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+
+    private EntityManager $entityManager;
+    private DownloadRepository $downloads;
+    private string $configPath;
+
+    protected function setUp(): void
+    {
+        if (!Type::hasType(UnixTimestampType::NAME)) {
+            Type::addType(UnixTimestampType::NAME, UnixTimestampType::class);
+        }
+        if (!Type::hasType(RatingType::NAME)) {
+            Type::addType(RatingType::NAME, RatingType::class);
+        }
+
+        $config = ORMSetup::createAttributeMetadataConfig([\dirname(__DIR__, 4).'/src/Entity'], true);
+        $config->enableNativeLazyObjects(true);
+
+        $connection = DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true], $config);
+        $this->entityManager = new EntityManager($connection, $config);
+
+        $schemaTool = new SchemaTool($this->entityManager);
+        $schemaTool->createSchema($this->entityManager->getMetadataFactory()->getAllMetadata());
+
+        $this->downloads = new DownloadRepository($this->entityManager);
+
+        $this->configPath = sys_get_temp_dir().'/anime-download-poller-test-'.uniqid().'.json';
+        file_put_contents($this->configPath, json_encode(['downloadsRoot' => self::ROOT]));
+    }
+
+    protected function tearDown(): void
+    {
+        foreach ([$this->configPath, $this->configPath.'.tmp', $this->configPath.'.lock'] as $file) {
+            if (is_file($file)) {
+                unlink($file);
+            }
+        }
+    }
+
+    private function persistAnime(): TvAnime
+    {
+        $anime = new TvAnime();
+        $anime->setTitle('Test')->setWatchStatus(WatchStatus::Plan);
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+
+        return $anime;
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $torrentsInfoResponse
+     */
+    private function makePoller(array $torrentsInfoResponse, EventDispatcherInterface $eventDispatcher): DownloadCompletionPoller
+    {
+        $httpClient = new MockHttpClient(static fn (): MockResponse => new MockResponse(
+            json_encode($torrentsInfoResponse, \JSON_THROW_ON_ERROR),
+            ['response_headers' => ['content-type' => 'application/json']],
+        ));
+
+        $jail = new DownloadFolderJail(new AppSettingsProvider(new AppConfigStore($this->configPath)));
+        $linker = new AnimeDownloadLinker(new StorageRepository($this->entityManager), $this->entityManager, $jail);
+
+        return new DownloadCompletionPoller(
+            new QbittorrentClient($httpClient, self::BASE_URL),
+            $this->downloads,
+            $linker,
+            $eventDispatcher,
+            new NullLogger(),
+        );
+    }
+
+    public function testPollLinksFolderAndDispatchesEventForAFinishedTorrent(): void
+    {
+        $anime = $this->persistAnime();
+        $this->downloads->save(new Download(self::HASH, $anime));
+
+        $eventDispatcher = $this->createMock(EventDispatcherInterface::class);
+        $eventDispatcher->expects($this->once())
+            ->method('dispatch')
+            ->with($this->callback(function (DownloadCompletedEvent $event) use ($anime): bool {
+                $this->assertSame($anime->id, $event->anime->value);
+                $this->assertSame(self::HASH, $event->task->value);
+
+                return true;
+            }));
+
+        $poller = $this->makePoller([[
+            'hash' => self::HASH,
+            'progress' => 1,
+            'state' => 'uploading',
+            'content_path' => self::ROOT.'\\finished-release',
+        ]], $eventDispatcher);
+
+        $poller->poll();
+
+        $stored = $this->downloads->findByInfoHashAndAnime(self::HASH, (int) $anime->id);
+        $this->assertNotNull($stored);
+        $this->assertTrue($stored->isCompleted());
+        $this->assertNotNull($anime->getStorage());
+        $this->assertSame(self::ROOT, $anime->getStorage()->getPath());
+        $this->assertSame('finished-release', $anime->getStoragePath());
+    }
+
+    public function testPollDoesNotDispatchTwiceAcrossTwoRuns(): void
+    {
+        $anime = $this->persistAnime();
+        $this->downloads->save(new Download(self::HASH, $anime));
+
+        $eventDispatcher = $this->createMock(EventDispatcherInterface::class);
+        $eventDispatcher->expects($this->once())->method('dispatch');
+
+        $poller = $this->makePoller([[
+            'hash' => self::HASH,
+            'progress' => 1,
+            'state' => 'uploading',
+            'content_path' => self::ROOT.'\\finished-release',
+        ]], $eventDispatcher);
+
+        $poller->poll();
+        $poller->poll();
+    }
+
+    /**
+     * @return array<string, array{0: string, 1: float, 2: string}>
+     */
+    public static function incompleteTorrentProvider(): array
+    {
+        return [
+            'progress not yet 1' => ['not-done-progress', 0.99, 'downloading'],
+            'still moving' => ['not-done-moving', 1.0, 'moving'],
+            'still checking resume data' => ['not-done-checking', 1.0, 'checkingResumeData'],
+            'errored out' => ['not-done-error', 1.0, 'error'],
+            'missing files' => ['not-done-missing', 1.0, 'missingFiles'],
+        ];
+    }
+
+    #[DataProvider('incompleteTorrentProvider')]
+    public function testPollDoesNotCompleteATorrentThatIsNotActuallyDone(string $case, float $progress, string $state): void
+    {
+        $anime = $this->persistAnime();
+        $this->downloads->save(new Download(self::HASH, $anime));
+
+        $eventDispatcher = $this->createMock(EventDispatcherInterface::class);
+        $eventDispatcher->expects($this->never())->method('dispatch');
+
+        $poller = $this->makePoller([[
+            'hash' => self::HASH,
+            'progress' => $progress,
+            'state' => $state,
+            'content_path' => self::ROOT.'\\'.$case,
+        ]], $eventDispatcher);
+
+        $poller->poll();
+
+        $stored = $this->downloads->findByInfoHashAndAnime(self::HASH, (int) $anime->id);
+        $this->assertNotNull($stored);
+        $this->assertFalse($stored->isCompleted());
+    }
+
+    public function testPollDispatchesOnceForEachAnimeInASeasonPack(): void
+    {
+        $animeOne = $this->persistAnime();
+        $animeTwo = $this->persistAnime();
+        $this->downloads->save(new Download(self::HASH, $animeOne));
+        $this->downloads->save(new Download(self::HASH, $animeTwo));
+
+        $eventDispatcher = $this->createMock(EventDispatcherInterface::class);
+        $eventDispatcher->expects($this->exactly(2))->method('dispatch');
+
+        $poller = $this->makePoller([[
+            'hash' => self::HASH,
+            'progress' => 1,
+            'state' => 'uploading',
+            'content_path' => self::ROOT.'\\season-pack',
+        ]], $eventDispatcher);
+
+        $poller->poll();
+
+        $this->assertEmpty($this->downloads->findPendingByInfoHash(self::HASH));
+    }
+
+    public function testAContentPathOutsideTheJailDoesNotWedgeOtherPendingDownloads(): void
+    {
+        $wedgedHash = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+        $wedged = $this->persistAnime();
+        $ok = $this->persistAnime();
+        $this->downloads->save(new Download($wedgedHash, $wedged));
+        $this->downloads->save(new Download(self::HASH, $ok));
+
+        $eventDispatcher = $this->createMock(EventDispatcherInterface::class);
+        $eventDispatcher->expects($this->once())
+            ->method('dispatch')
+            ->with($this->callback(function (DownloadCompletedEvent $event) use ($ok): bool {
+                $this->assertSame($ok->id, $event->anime->value);
+
+                return true;
+            }));
+
+        // A real qBittorrent WebUI filters /api/v2/torrents/info by the "hashes" query param sent
+        // per infoHash — this mock has to do the same instead of returning a fixed body for every
+        // request, otherwise a poll() that queries two distinct pending infoHashes could not be
+        // told apart here.
+        $torrentsByHash = [
+            $wedgedHash => [
+                'hash' => $wedgedHash,
+                'progress' => 1,
+                'state' => 'uploading',
+                'content_path' => 'D:\\elsewhere\\moved-away',
+            ],
+            self::HASH => [
+                'hash' => self::HASH,
+                'progress' => 1,
+                'state' => 'uploading',
+                'content_path' => self::ROOT.'\\finished-release',
+            ],
+        ];
+        $httpClient = new MockHttpClient(function (string $method, string $url) use ($torrentsByHash): MockResponse {
+            parse_str((string) parse_url($url, \PHP_URL_QUERY), $query);
+            $requestedHash = $query['hashes'] ?? null;
+            $torrent = \is_string($requestedHash) ? $torrentsByHash[$requestedHash] ?? null : null;
+
+            return new MockResponse(
+                json_encode($torrent === null ? [] : [$torrent], \JSON_THROW_ON_ERROR),
+                ['response_headers' => ['content-type' => 'application/json']],
+            );
+        });
+
+        $jail = new DownloadFolderJail(new AppSettingsProvider(new AppConfigStore($this->configPath)));
+        $linker = new AnimeDownloadLinker(new StorageRepository($this->entityManager), $this->entityManager, $jail);
+        $poller = new DownloadCompletionPoller(
+            new QbittorrentClient($httpClient, self::BASE_URL),
+            $this->downloads,
+            $linker,
+            $eventDispatcher,
+            new NullLogger(),
+        );
+
+        $poller->poll();
+
+        $wedgedRow = $this->downloads->findByInfoHashAndAnime($wedgedHash, (int) $wedged->id);
+        $this->assertNotNull($wedgedRow);
+        $this->assertFalse($wedgedRow->isCompleted());
+
+        $okRow = $this->downloads->findByInfoHashAndAnime(self::HASH, (int) $ok->id);
+        $this->assertNotNull($okRow);
+        $this->assertTrue($okRow->isCompleted());
+
+        // The wedged pair keeps being reported as pending and does not permanently jam the poller.
+        $poller->poll();
+        $stillWedged = $this->downloads->findByInfoHashAndAnime($wedgedHash, (int) $wedged->id);
+        $this->assertNotNull($stillWedged);
+        $this->assertFalse($stillWedged->isCompleted());
+    }
+}

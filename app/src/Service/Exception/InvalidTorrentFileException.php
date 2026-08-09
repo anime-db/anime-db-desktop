@@ -25,34 +25,12 @@
 
 declare(strict_types=1);
 
-namespace App\Repository;
+namespace App\Service\Exception;
 
-use App\Entity\Storage;
-use Doctrine\ORM\EntityManagerInterface;
-
-class StorageRepository
+/**
+ * Thrown by {@see \App\Service\Download\TorrentInfoHashResolver} when a `.torrent` file cannot
+ * be read from disk, or is not a well-formed bencoded dictionary with an "info" key.
+ */
+final class InvalidTorrentFileException extends \RuntimeException
 {
-    public function __construct(private readonly EntityManagerInterface $entityManager)
-    {
-    }
-
-    /** @return Storage[] */
-    public function findAllOrderedByName(): array
-    {
-        return $this->entityManager->getRepository(Storage::class)->findBy([], ['name' => 'ASC']);
-    }
-
-    public function hasAny(): bool
-    {
-        $qb = $this->entityManager->getRepository(Storage::class)->createQueryBuilder('s')
-            ->select('COUNT(s.id)')
-            ->setMaxResults(1);
-
-        return (int) $qb->getQuery()->getSingleScalarResult() > 0;
-    }
-
-    public function findOneByPath(string $path): ?Storage
-    {
-        return $this->entityManager->getRepository(Storage::class)->findOneBy(['path' => $path]);
-    }
 }

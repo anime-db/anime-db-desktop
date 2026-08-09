@@ -25,34 +25,8 @@
 
 declare(strict_types=1);
 
-namespace App\Repository;
+namespace App\Entity\Exception;
 
-use App\Entity\Storage;
-use Doctrine\ORM\EntityManagerInterface;
-
-class StorageRepository
+final class InvalidInfoHashException extends \InvalidArgumentException
 {
-    public function __construct(private readonly EntityManagerInterface $entityManager)
-    {
-    }
-
-    /** @return Storage[] */
-    public function findAllOrderedByName(): array
-    {
-        return $this->entityManager->getRepository(Storage::class)->findBy([], ['name' => 'ASC']);
-    }
-
-    public function hasAny(): bool
-    {
-        $qb = $this->entityManager->getRepository(Storage::class)->createQueryBuilder('s')
-            ->select('COUNT(s.id)')
-            ->setMaxResults(1);
-
-        return (int) $qb->getQuery()->getSingleScalarResult() > 0;
-    }
-
-    public function findOneByPath(string $path): ?Storage
-    {
-        return $this->entityManager->getRepository(Storage::class)->findOneBy(['path' => $path]);
-    }
 }
