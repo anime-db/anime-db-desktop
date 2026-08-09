@@ -30,11 +30,14 @@ namespace App\Tests\Unit\Controller\Settings;
 use App\Controller\Settings\ProxyController;
 use App\Entity\Enum\ProxyMode;
 use App\Entity\ValueObject\ProxySettings;
+use App\Event\ProxySettingsChangedEvent;
 use App\Service\AppConfigStore;
+use App\Service\Exception\TorrentProxyApplyException;
 use App\Service\Http\ProxyTestService;
 use App\Service\ProxyConfigProvider;
 use App\Service\WsPublisher;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
+use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\HttpClient\Exception\TransportException;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
@@ -71,6 +74,7 @@ final class ProxyControllerTest extends KernelTestCase
         ?array $existingConfig = null,
         ?MockHttpClient $httpClient = null,
         ?WsPublisher $wsPublisher = null,
+        ?EventDispatcherInterface $eventDispatcher = null,
         ?CsrfTokenManagerInterface $csrfTokenManager = null,
         ?Environment $twig = null,
     ): ProxyController {
@@ -87,6 +91,7 @@ final class ProxyControllerTest extends KernelTestCase
             new ProxyConfigProvider(new AppConfigStore($this->configPath)),
             new ProxyTestService($httpClient ?? new MockHttpClient(new MockResponse('', ['http_code' => 200]))),
             $wsPublisher ?? $this->createStub(WsPublisher::class),
+            $eventDispatcher ?? $this->createStub(EventDispatcherInterface::class),
             $csrfTokenManager,
             $twig ?? $this->createStub(Environment::class),
         );
@@ -168,6 +173,74 @@ final class ProxyControllerTest extends KernelTestCase
         ]);
 
         $controller->save($request);
+    }
+
+    /**
+     * Torrent leg's counterpart to the WS notification above (issue #347): save() must dispatch
+     * ProxySettingsChangedEvent carrying the just-saved settings so TorrentProxySubscriber can
+     * re-apply them to qbittorrent-nox in-process.
+     */
+    public function testSaveDispatchesProxySettingsChangedEventWithSavedSettings(): void
+    {
+        $eventDispatcher = $this->createMock(EventDispatcherInterface::class);
+        $eventDispatcher->expects($this->once())
+            ->method('dispatch')
+            ->with($this->callback(
+                static function (ProxySettingsChangedEvent $event): bool {
+                    return $event->settings->mode === ProxyMode::Manual
+                        && $event->settings->host === 'proxy.example'
+                        && $event->settings->port === 3128;
+                },
+            ))
+            ->willReturnArgument(0);
+
+        $controller = $this->createController(eventDispatcher: $eventDispatcher);
+
+        $request = Request::create('/settings/proxy', 'POST', [
+            '_token' => 'token',
+            'mode' => 'manual',
+            'protocol' => 'http',
+            'host' => 'proxy.example',
+            'port' => '3128',
+        ]);
+
+        $response = $controller->save($request);
+
+        $this->assertSame(200, $response->getStatusCode());
+    }
+
+    /**
+     * A fail-closed SOCKS5 apply failure must never bubble up as an unhandled 500 — the settings
+     * themselves are already saved successfully by this point, so save() renders the page again
+     * with a visible torrent-proxy error flag instead (issue #347 acceptance: a partial apply
+     * failure must be a visible error, not a silent success page).
+     */
+    public function testSaveSurfacesTorrentProxyErrorWithoutThrowingWhenFailClosedApplyFails(): void
+    {
+        $eventDispatcher = $this->createStub(EventDispatcherInterface::class);
+        $eventDispatcher->method('dispatch')->willThrowException(new TorrentProxyApplyException('boom'));
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('settings/proxy/index.html.twig', $this->callback(
+                static fn (array $params): bool => $params['saved'] === true && $params['torrentProxyError'] === true,
+            ))
+            ->willReturn('<html></html>');
+
+        $controller = $this->createController(eventDispatcher: $eventDispatcher, twig: $twig);
+
+        $request = Request::create('/settings/proxy', 'POST', [
+            '_token' => 'token',
+            'mode' => 'manual',
+            'protocol' => 'socks5',
+            'host' => 'proxy.example',
+            'port' => '1080',
+        ]);
+
+        $response = $controller->save($request);
+
+        $this->assertSame(200, $response->getStatusCode());
     }
 
     /**

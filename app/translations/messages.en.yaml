@@ -212,6 +212,7 @@ settings_proxy:
     back_link: ← Settings
     heading: Proxy server
     save_success: Proxy settings have been saved.
+    torrent_proxy_error: Settings were saved, but the SOCKS5 proxy could not be applied to the torrent client. Torrents stay paused until the proxy is confirmed.
     mode_label: Mode
     mode:
         none: No proxy

@@ -158,3 +158,17 @@ PHPUnit не может создать test double (`createStub`/`createMock`) �
 
 - **Любой PR, который трогает `.github/workflows/`, не получает Claude-ревью вообще** — оно зелёное, но фактически не выполнялось. Легко принять «зелёный skip» за «ревью прошло». Проверять по наличию комментария от `claude[bot]`, а не только по цвету чека.
 - **Отладить сам ревью-воркфлоу (например, включить `show_full_output: true`) с ветки PR нельзя** — любая правка файла = отличие от `master` = skip. Такие изменения (`show_full_output`, смена модели/промпта, пиннинг версии экшена) нужно вносить **прямо на `master`**, а проверять уже последующими PR.
+
+## qBittorrent 5.x WebUI API переименовал ключи `proxy_*` в `getPreferences()`/`setPreferences()`
+
+`scripts/versions.json` пинит `qbittorrentNox: "5.2.3_2"`. В qBittorrent 5.0 секция прокси WebUI API (`src/webui/api/appcontroller.cpp`) была переработана относительно pre-5.0 схемы:
+
+- `proxy_hostnames` → `proxy_hostname_lookup`;
+- `proxy_peer_connections` — **не переименован**, ключ существует и в 5.2.3 как есть (это отдельная libtorrent session-настройка, `session->isProxyPeerConnectionsEnabled()`), НЕ путать с новым `proxy_bittorrent`;
+- новый ключ `proxy_bittorrent` (`pref->useProxyForBT()`) — отдельный флаг «использовать прокси для BitTorrent-целей» (трекеры/анонсы), появившийся в 5.x;
+- `proxy_tracker_connections` — такого ключа в WebUI API нет и не было вовсе;
+- `proxy_type` отдаётся/принимается как **строка** (`"None"`, `"HTTP"`, `"SOCKS5"`, `"SOCKS4"`) через `Utils::String::fromEnum`/`toEnum` (Qt `QMetaEnum`, буквальное имя C++ enum-константы) — это верно уже в текущей кодовой базе, трогать не нужно.
+
+Проверено эмпирически по исходникам тега `release-5.2.3` (github.com/qbittorrent/qBittorrent), а не по официальной wiki-документации WebUI API — та на момент проверки (страница "WebUI API (qBittorrent 5.0)") оказалась устаревшей/неточной и показывала ещё домодерновую схему (`proxy_type` как int, без `proxy_hostname_lookup`/`proxy_bittorrent`). При сомнениях по WebUI API — сверяться с реальным C++ source нужного тега, а не с вики.
+
+Последствие бага (issue #347, PR #359): `TorrentProxySynchronizer::CONFIRMED_KEYS`/`socks5Preferences()` изначально использовали pre-5.0 имена — `setPreferences()` их молча игнорировал, а readback в `confirmApplied()` падал при каждом применении SOCKS5, оставляя торренты на паузе навсегда. Тесты это не ловили, потому что мок-readback тавтологично копировал те же (неверные) имена ключей из прод-кода — см. `TorrentProxySynchronizerTest::realQbittorrentPreferencesResponse()`, которая теперь независимо от прод-констант типизирует реальные имена полей.
