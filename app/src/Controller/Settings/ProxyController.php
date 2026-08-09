@@ -30,9 +30,12 @@ namespace App\Controller\Settings;
 use App\Entity\Enum\ProxyMode;
 use App\Entity\Enum\ProxyProtocol;
 use App\Entity\ValueObject\ProxySettings;
+use App\Event\ProxySettingsChangedEvent;
+use App\Service\Exception\TorrentProxyApplyException;
 use App\Service\Http\ProxyTestService;
 use App\Service\ProxyConfigProvider;
 use App\Service\WsPublisher;
+use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
@@ -63,6 +66,7 @@ final class ProxyController
         private readonly ProxyConfigProvider $proxyConfigProvider,
         private readonly ProxyTestService $proxyTestService,
         private readonly WsPublisher $wsPublisher,
+        private readonly EventDispatcherInterface $eventDispatcher,
         private readonly CsrfTokenManagerInterface $csrfTokenManager,
         private readonly Environment $twig,
     ) {
@@ -88,6 +92,16 @@ final class ProxyController
         // through anything but the config file itself).
         $this->wsPublisher->publish(self::PROXY_CHANGED_EVENT, ['mode' => $settings->mode->value]);
 
+        // Torrent leg's counterpart to the WS event above (issue #347): TorrentProxySubscriber
+        // re-applies the proxy to qbittorrent-nox in-process. A SOCKS5 apply failure is fail-closed
+        // (torrents stay paused) and must surface as a visible error here rather than a silent
+        // direct fallback or an unhandled 500.
+        try {
+            $this->eventDispatcher->dispatch(new ProxySettingsChangedEvent($settings));
+        } catch (TorrentProxyApplyException) {
+            return $this->renderIndex($settings, saved: true, torrentProxyError: true);
+        }
+
         return $this->renderIndex($settings, saved: true);
     }
 
@@ -111,11 +125,12 @@ final class ProxyController
         ]));
     }
 
-    private function renderIndex(ProxySettings $settings, bool $saved = false): Response
+    private function renderIndex(ProxySettings $settings, bool $saved = false, bool $torrentProxyError = false): Response
     {
         return new Response($this->twig->render('settings/proxy/index.html.twig', [
             'settings' => $settings,
             'saved' => $saved,
+            'torrentProxyError' => $torrentProxyError,
         ]));
     }
 

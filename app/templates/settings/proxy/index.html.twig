@@ -30,6 +30,10 @@
         <p class="success">{{ 'settings_proxy.save_success'|trans }}</p>
     {% endif %}
 
+    {% if torrentProxyError is defined and torrentProxyError %}
+        <p class="error">{{ 'settings_proxy.torrent_proxy_error'|trans }}</p>
+    {% endif %}
+
     <form id="proxy-settings-form" method="post" action="{{ path('settings_proxy_save') }}">
         <input type="hidden" name="_token" value="{{ csrf_token('settings_proxy_save') }}">
 

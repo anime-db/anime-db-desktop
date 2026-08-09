@@ -255,6 +255,27 @@ final class SettingsTemplateRenderingTest extends KernelTestCase
         $this->assertStringContainsString('Настройки прокси сохранены.', $html);
     }
 
+    public function testProxyIndexRendersTorrentProxyErrorMessage(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession();
+        /** @var LocaleSwitcher $localeSwitcher */
+        $localeSwitcher = self::getContainer()->get(LocaleSwitcher::class);
+        $localeSwitcher->setLocale('ru');
+
+        $settings = new ProxySettings(ProxyMode::Manual, ProxyProtocol::Socks5, 'proxy.example', 1080);
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('settings/proxy/index.html.twig', [
+            'settings' => $settings,
+            'saved' => true,
+            'torrentProxyError' => true,
+        ]);
+
+        $this->assertStringContainsString('не удалось применить SOCKS5-прокси', $html);
+    }
+
     public function testProxyTestResultFragmentRendersSuccessWithoutErrors(): void
     {
         self::bootKernel();
