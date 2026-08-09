@@ -119,6 +119,10 @@ services:
     # ProcessLivenessChecker implementation is all JobLockService (issue #98) needs.
     App\Service\JobLock\ProcessLivenessChecker: '@App\Service\JobLock\WindowsProcessLivenessChecker'
 
+    # disk_free_space() cannot be mocked directly — FreeSpaceChecker (issue #348) depends on this
+    # interface instead so it stays unit-testable without touching a real volume.
+    App\Service\Download\FreeSpaceProvider: '@App\Service\Download\NativeFreeSpaceProvider'
+
     # Left to its default PSR-18 client discovery, Meilisearch\Client would inherit whatever
     # timeout that client defaults to — potentially none. The list search box (issue #199)
     # needs a fast, bounded failure when Meilisearch is unreachable so it can fall back to the

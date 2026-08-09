@@ -37,8 +37,12 @@ use App\Repository\DownloadRepository;
 use App\Service\AppConfigStore;
 use App\Service\AppSettingsProvider;
 use App\Service\Download\DownloadFolderJail;
+use App\Service\Download\FreeSpaceChecker;
+use App\Service\Download\FreeSpaceProvider;
+use App\Service\Download\NativeFreeSpaceProvider;
 use App\Service\Download\QbittorrentDownloadService;
 use App\Service\Download\TorrentInfoHashResolver;
+use App\Service\Exception\InsufficientDiskSpaceException;
 use App\Service\Qbittorrent\QbittorrentClient;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Types\Type;
@@ -58,6 +62,9 @@ final class QbittorrentDownloadServiceTest extends TestCase
     private EntityManager $entityManager;
     private DownloadRepository $downloads;
     private string $configPath;
+
+    /** @var list<string> */
+    private array $torrentFilePaths = [];
 
     protected function setUp(): void
     {
@@ -85,15 +92,17 @@ final class QbittorrentDownloadServiceTest extends TestCase
 
     protected function tearDown(): void
     {
-        foreach ([$this->configPath, $this->configPath.'.tmp', $this->configPath.'.lock'] as $file) {
+        foreach ([$this->configPath, $this->configPath.'.tmp', $this->configPath.'.lock', ...$this->torrentFilePaths] as $file) {
             if (is_file($file)) {
                 unlink($file);
             }
         }
     }
 
-    /** @param callable(string, string, array<string, mixed>): MockResponse|null $onRequest */
-    private function makeService(?callable $onRequest = null): QbittorrentDownloadService
+    /**
+     * @param callable(string, string, array<string, mixed>): MockResponse|null $onRequest
+     */
+    private function makeService(?callable $onRequest = null, ?FreeSpaceProvider $freeSpaceProvider = null): QbittorrentDownloadService
     {
         $httpClient = new MockHttpClient($onRequest ?? static function (): never {
             throw new \LogicException('No HTTP request was expected in this test.');
@@ -107,7 +116,43 @@ final class QbittorrentDownloadServiceTest extends TestCase
             $this->entityManager,
             $jail,
             new TorrentInfoHashResolver(),
+            // The real NativeFreeSpaceProvider reports "unknown" (free-open) for self::ROOT on
+            // this Linux test runner, since that Windows-style path never actually exists here —
+            // only tests about the free-space check itself need to override this.
+            new FreeSpaceChecker($jail, $freeSpaceProvider ?? new NativeFreeSpaceProvider()),
         );
+    }
+
+    private function bencodeString(string $value): string
+    {
+        return \strlen($value).':'.$value;
+    }
+
+    private function bencodeInt(int $value): string
+    {
+        return 'i'.$value.'e';
+    }
+
+    /**
+     * @param array<string, string> $entries pre-bencoded values, keyed by their (already sorted) key
+     */
+    private function bencodeDict(array $entries): string
+    {
+        $body = '';
+        foreach ($entries as $key => $value) {
+            $body .= $this->bencodeString($key).$value;
+        }
+
+        return 'd'.$body.'e';
+    }
+
+    private function writeTorrentFile(string $content): string
+    {
+        $path = sys_get_temp_dir().'/anime-download-service-test-'.uniqid().'.torrent';
+        file_put_contents($path, $content);
+        $this->torrentFilePaths[] = $path;
+
+        return $path;
     }
 
     private function persistAnime(): TvAnime
@@ -182,5 +227,95 @@ final class QbittorrentDownloadServiceTest extends TestCase
 
         $this->assertSame(1, $requestCount, 'A season pack must only be submitted to qBittorrent once.');
         $this->assertCount(2, $this->downloads->findByInfoHash(self::MAGNET_HASH));
+    }
+
+    private function torrentFileBytes(int $totalSize, string $name): string
+    {
+        $infoBytes = $this->bencodeDict([
+            'length' => $this->bencodeInt($totalSize),
+            'name' => $this->bencodeString($name),
+            'piece length' => $this->bencodeInt(16384),
+            'pieces' => $this->bencodeString(str_repeat('A', 20)),
+        ]);
+
+        return $this->bencodeDict([
+            'announce' => $this->bencodeString('http://tracker.local/announce'),
+            'info' => $infoBytes,
+        ]);
+    }
+
+    public function testEnqueueRejectsATorrentFileThatDoesNotFitFreeSpace(): void
+    {
+        $anime = $this->persistAnime();
+        $torrentBytes = $this->torrentFileBytes(500_000_000, 'Too.Big.Release.mkv');
+        $torrentPath = $this->writeTorrentFile($torrentBytes);
+        $infoHash = (new TorrentInfoHashResolver())->fromTorrentFileContent($torrentBytes);
+
+        $freeSpaceProvider = $this->createStub(FreeSpaceProvider::class);
+        $freeSpaceProvider->method('getFreeBytes')->willReturn(100_000_000);
+
+        $service = $this->makeService(null, $freeSpaceProvider);
+
+        try {
+            $service->enqueue(DownloadSource::torrentFile($torrentPath), new AnimeId((int) $anime->id));
+            $this->fail('Expected InsufficientDiskSpaceException to be thrown.');
+        } catch (InsufficientDiskSpaceException) {
+            // expected — asserted below that nothing was submitted/persisted either.
+        }
+
+        $this->assertFalse($this->downloads->hasAnyForInfoHash($infoHash));
+    }
+
+    public function testEnqueueAddsATorrentFileWhenItFitsFreeSpaceWithMargin(): void
+    {
+        $anime = $this->persistAnime();
+        $torrentBytes = $this->torrentFileBytes(1_000, 'Small.Release.mkv');
+        $torrentPath = $this->writeTorrentFile($torrentBytes);
+        $infoHash = (new TorrentInfoHashResolver())->fromTorrentFileContent($torrentBytes);
+
+        $freeSpaceProvider = $this->createStub(FreeSpaceProvider::class);
+        $freeSpaceProvider->method('getFreeBytes')->willReturn(500_000_000);
+
+        $captured = null;
+        $service = $this->makeService(function (string $method, string $url, array $options) use (&$captured): MockResponse {
+            $captured = $options;
+
+            return new MockResponse('Ok.');
+        }, $freeSpaceProvider);
+
+        $taskId = $service->enqueue(DownloadSource::torrentFile($torrentPath), new AnimeId((int) $anime->id));
+
+        $this->assertSame($infoHash, $taskId->value);
+        $this->assertNotNull($captured);
+        $this->assertNotNull($this->downloads->findByInfoHashAndAnime($infoHash, (int) $anime->id));
+    }
+
+    public function testEnqueueForATorrentFileSeasonPackDoesNotCheckFreeSpaceAgain(): void
+    {
+        $animeOne = $this->persistAnime();
+        $animeTwo = $this->persistAnime();
+        $torrentBytes = $this->torrentFileBytes(1_000, 'Season.Pack.mkv');
+        $torrentPath = $this->writeTorrentFile($torrentBytes);
+
+        $freeSpaceCalls = 0;
+        $freeSpaceProvider = $this->createStub(FreeSpaceProvider::class);
+        $freeSpaceProvider->method('getFreeBytes')->willReturnCallback(function () use (&$freeSpaceCalls): int {
+            ++$freeSpaceCalls;
+
+            return 500_000_000;
+        });
+
+        $requestCount = 0;
+        $service = $this->makeService(function () use (&$requestCount): MockResponse {
+            ++$requestCount;
+
+            return new MockResponse('Ok.');
+        }, $freeSpaceProvider);
+
+        $service->enqueue(DownloadSource::torrentFile($torrentPath), new AnimeId((int) $animeOne->id));
+        $service->enqueue(DownloadSource::torrentFile($torrentPath), new AnimeId((int) $animeTwo->id));
+
+        $this->assertSame(1, $requestCount, 'A season pack must only be submitted to qBittorrent once.');
+        $this->assertSame(1, $freeSpaceCalls, 'A season pack (infoHash already known) must not re-check free space.');
     }
 }

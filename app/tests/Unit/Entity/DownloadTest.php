@@ -77,4 +77,24 @@ final class DownloadTest extends TestCase
         $this->assertTrue($download->isCompleted());
         $this->assertFalse($download->markCompleted());
     }
+
+    public function testMarkFailedTransitionsOnceAndReportsSecondCallAsNoOp(): void
+    {
+        $download = new Download(self::INFO_HASH, $this->makeAnime());
+
+        $this->assertTrue($download->markFailed());
+        $this->assertTrue($download->isFailed());
+        $this->assertSame(DownloadStatus::Failed, $download->getStatus());
+        $this->assertFalse($download->markFailed());
+    }
+
+    public function testMarkFailedIsANoOpOnceAlreadyCompleted(): void
+    {
+        $download = new Download(self::INFO_HASH, $this->makeAnime());
+        $download->markCompleted();
+
+        $this->assertFalse($download->markFailed());
+        $this->assertTrue($download->isCompleted());
+        $this->assertFalse($download->isFailed());
+    }
 }

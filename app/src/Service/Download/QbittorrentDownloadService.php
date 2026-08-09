@@ -57,6 +57,7 @@ final class QbittorrentDownloadService implements DownloadServiceInterface
         private readonly EntityManagerInterface $entityManager,
         private readonly DownloadFolderJail $jail,
         private readonly TorrentInfoHashResolver $infoHashResolver,
+        private readonly FreeSpaceChecker $freeSpaceChecker,
     ) {
     }
 
@@ -103,6 +104,16 @@ final class QbittorrentDownloadService implements DownloadServiceInterface
     private function submitToQbittorrent(DownloadSource $source, string $infoHash, ?string $torrentFileContent): void
     {
         $savePath = $this->jail->resolveSavePathForInfoHash($infoHash);
+
+        // A .torrent file's size is known up front — reject it here, before it is ever added to
+        // qBittorrent (issue #348). A magnet's size is only known once qBittorrent has fetched
+        // its metadata, so the equivalent check for it runs later, asynchronously, in
+        // DownloadCompletionPoller.
+        if ($source->type === DownloadSourceType::TorrentFile) {
+            $this->freeSpaceChecker->assertEnoughSpaceForTorrentFile(
+                $torrentFileContent ?? throw new \LogicException('Torrent file content must be read before checking its free space.'),
+            );
+        }
 
         match ($source->type) {
             DownloadSourceType::Magnet => $this->client->addTorrentFromMagnet($source->value, $savePath),
