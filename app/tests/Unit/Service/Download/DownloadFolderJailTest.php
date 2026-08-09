@@ -109,6 +109,27 @@ final class DownloadFolderJailTest extends TestCase
         $this->jail->assertWithinRoot('D:\\other-drive\\file.mkv');
     }
 
+    public function testAssertWithinRootAcceptsADifferentlyCasedPathUnderTheRoot(): void
+    {
+        // Windows paths are case-insensitive — qBittorrent/libtorrent is free to echo content_path
+        // back with different segment casing than the configured downloads root.
+        $path = 'c:\\users\\BOB\\downloads\\Some-Release\\video.mkv';
+
+        $this->assertSame($path, $this->jail->assertWithinRoot($path));
+    }
+
+    public function testAssertWithinRootAcceptsTheRootItselfInADifferentCase(): void
+    {
+        $this->assertSame(strtolower(self::ROOT), $this->jail->assertWithinRoot(strtolower(self::ROOT)));
+    }
+
+    public function testAssertWithinRootStillRejectsADifferentlyCasedSiblingDirectory(): void
+    {
+        $this->expectException(DownloadPathOutsideJailException::class);
+
+        $this->jail->assertWithinRoot('c:\\users\\bob\\DOCUMENTS\\secret.txt');
+    }
+
     public function testToLongPathAwareIsIdempotent(): void
     {
         $once = $this->jail->toLongPathAware(self::ROOT.'\\x');

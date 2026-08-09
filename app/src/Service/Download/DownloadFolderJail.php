@@ -88,7 +88,13 @@ final class DownloadFolderJail
         // (this test suite runs on Linux CI, but downloads roots/save-paths are Windows paths).
         $boundary = $root.'\\';
 
-        if ($resolved !== $root && !str_starts_with($resolved, $boundary)) {
+        // Windows filesystems are case-insensitive (NTFS is case-preserving, not case-sensitive):
+        // qBittorrent/libtorrent is free to echo content_path back with different segment casing
+        // than the configured downloads root, so the boundary check has to fold case — a
+        // byte-identical comparison here would reject a legitimately-inside path over nothing
+        // but a differently-cased drive letter or folder name. The returned $resolved keeps its
+        // original casing; only this membership check is case-folded.
+        if (mb_strtolower($resolved) !== mb_strtolower($root) && !str_starts_with(mb_strtolower($resolved), mb_strtolower($boundary))) {
             throw new DownloadPathOutsideJailException(\sprintf('"%s" resolves outside the downloads root "%s".', $path, $root));
         }
 
