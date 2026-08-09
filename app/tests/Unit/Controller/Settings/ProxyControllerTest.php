@@ -32,6 +32,7 @@ use App\Entity\Enum\ProxyMode;
 use App\Entity\ValueObject\ProxySettings;
 use App\Event\ProxySettingsChangedEvent;
 use App\Service\AppConfigStore;
+use App\Service\AppSettingsProvider;
 use App\Service\Exception\TorrentProxyApplyException;
 use App\Service\Http\ProxyTestService;
 use App\Service\ProxyConfigProvider;
@@ -90,6 +91,7 @@ final class ProxyControllerTest extends KernelTestCase
         return new ProxyController(
             new ProxyConfigProvider(new AppConfigStore($this->configPath)),
             new ProxyTestService($httpClient ?? new MockHttpClient(new MockResponse('', ['http_code' => 200]))),
+            new AppSettingsProvider(new AppConfigStore($this->configPath)),
             $wsPublisher ?? $this->createStub(WsPublisher::class),
             $eventDispatcher ?? $this->createStub(EventDispatcherInterface::class),
             $csrfTokenManager,
@@ -261,6 +263,123 @@ final class ProxyControllerTest extends KernelTestCase
             ProxyController::PROXY_CHANGED_EVENT,
             $matches[1],
             'ProxyController::PROXY_CHANGED_EVENT must match native/proxy.js PROXY_CHANGED_EVENT — a mismatch silently breaks live proxy apply (issue #336).',
+        );
+    }
+
+    public function testIncomingConnectionsPersistsAndPublishesEnableWhenDirectMode(): void
+    {
+        $wsPublisher = $this->createMock(WsPublisher::class);
+        $wsPublisher->expects($this->once())
+            ->method('publish')
+            ->with(ProxyController::FIREWALL_RULE_CHANGED_EVENT, ['enabled' => true]);
+
+        $controller = $this->createController(
+            existingConfig: ['proxy' => ['mode' => 'none', 'protocol' => 'socks5']],
+            wsPublisher: $wsPublisher,
+        );
+
+        $request = Request::create('/settings/proxy/incoming-connections', 'POST', ['_token' => 'token', 'enabled' => '1']);
+        $response = $controller->incomingConnections($request);
+
+        $this->assertSame(200, $response->getStatusCode());
+        $data = json_decode((string) file_get_contents($this->configPath), true);
+        $this->assertTrue($data['incomingConnectionsAllowed']);
+    }
+
+    public function testIncomingConnectionsPersistsAndPublishesDisable(): void
+    {
+        $wsPublisher = $this->createMock(WsPublisher::class);
+        $wsPublisher->expects($this->once())
+            ->method('publish')
+            ->with(ProxyController::FIREWALL_RULE_CHANGED_EVENT, ['enabled' => false]);
+
+        $controller = $this->createController(
+            existingConfig: ['incomingConnectionsAllowed' => true, 'proxy' => ['mode' => 'none', 'protocol' => 'socks5']],
+            wsPublisher: $wsPublisher,
+        );
+
+        $request = Request::create('/settings/proxy/incoming-connections', 'POST', ['_token' => 'token']);
+        $controller->incomingConnections($request);
+
+        $data = json_decode((string) file_get_contents($this->configPath), true);
+        $this->assertFalse($data['incomingConnectionsAllowed']);
+    }
+
+    /**
+     * The disabled checkbox in the template already prevents this in the browser, but the
+     * controller must reject it too (defense in depth) — SOCKS5 makes the torrent client
+     * unreachable from the outside regardless of any firewall rule (issue #361).
+     */
+    public function testIncomingConnectionsRejectsEnableWhenSocks5Active(): void
+    {
+        $wsPublisher = $this->createMock(WsPublisher::class);
+        $wsPublisher->expects($this->never())->method('publish');
+
+        $controller = $this->createController(
+            existingConfig: ['proxy' => ['mode' => 'manual', 'protocol' => 'socks5', 'host' => 'proxy.example', 'port' => 1080]],
+            wsPublisher: $wsPublisher,
+        );
+
+        $request = Request::create('/settings/proxy/incoming-connections', 'POST', ['_token' => 'token', 'enabled' => '1']);
+        $controller->incomingConnections($request);
+
+        $this->assertFalse((new AppSettingsProvider(new AppConfigStore($this->configPath)))->getIncomingConnectionsAllowed());
+    }
+
+    /**
+     * Turning the toggle back *off* must stay possible even under SOCKS5, so a rule added while
+     * still in direct mode can be cleaned up after switching proxy modes.
+     */
+    public function testIncomingConnectionsAllowsDisableWhenSocks5Active(): void
+    {
+        $wsPublisher = $this->createMock(WsPublisher::class);
+        $wsPublisher->expects($this->once())
+            ->method('publish')
+            ->with(ProxyController::FIREWALL_RULE_CHANGED_EVENT, ['enabled' => false]);
+
+        $controller = $this->createController(
+            existingConfig: [
+                'incomingConnectionsAllowed' => true,
+                'proxy' => ['mode' => 'manual', 'protocol' => 'socks5', 'host' => 'proxy.example', 'port' => 1080],
+            ],
+            wsPublisher: $wsPublisher,
+        );
+
+        $request = Request::create('/settings/proxy/incoming-connections', 'POST', ['_token' => 'token']);
+        $controller->incomingConnections($request);
+
+        $data = json_decode((string) file_get_contents($this->configPath), true);
+        $this->assertFalse($data['incomingConnectionsAllowed']);
+    }
+
+    public function testIncomingConnectionsRejectsInvalidCsrfToken(): void
+    {
+        $csrf = $this->createStub(CsrfTokenManagerInterface::class);
+        $csrf->method('isTokenValid')->willReturn(false);
+
+        $controller = $this->createController(csrfTokenManager: $csrf);
+        $request = Request::create('/settings/proxy/incoming-connections', 'POST', ['_token' => 'bad', 'enabled' => '1']);
+
+        $this->expectException(BadRequestHttpException::class);
+        $controller->incomingConnections($request);
+    }
+
+    /**
+     * Same drift protection as testProxyChangedEventNameMatchesNativeProxyModuleContract, for the
+     * incoming-connections leg introduced by issue #361: native/firewall.js declares its own
+     * literal, and nothing but a test closes the gap between the two.
+     */
+    public function testFirewallRuleChangedEventNameMatchesNativeFirewallModuleContract(): void
+    {
+        $nativeFirewallSource = (string) file_get_contents(\dirname(__DIR__, 5).'/native/firewall.js');
+
+        $matched = preg_match("/const FIREWALL_RULE_CHANGED_EVENT = '([^']+)';/", $nativeFirewallSource, $matches);
+
+        $this->assertSame(1, $matched, 'native/firewall.js must declare a FIREWALL_RULE_CHANGED_EVENT constant.');
+        $this->assertSame(
+            ProxyController::FIREWALL_RULE_CHANGED_EVENT,
+            $matches[1],
+            'ProxyController::FIREWALL_RULE_CHANGED_EVENT must match native/firewall.js FIREWALL_RULE_CHANGED_EVENT — a mismatch silently breaks the incoming-connections toggle (issue #361).',
         );
     }
 

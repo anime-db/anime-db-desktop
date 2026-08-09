@@ -31,6 +31,7 @@ use App\Entity\Enum\ProxyMode;
 use App\Entity\Enum\ProxyProtocol;
 use App\Entity\ValueObject\ProxySettings;
 use App\Event\ProxySettingsChangedEvent;
+use App\Service\AppSettingsProvider;
 use App\Service\Exception\TorrentProxyApplyException;
 use App\Service\Http\ProxyTestService;
 use App\Service\ProxyConfigProvider;
@@ -62,9 +63,19 @@ final class ProxyController
      */
     public const PROXY_CHANGED_EVENT = 'proxy.changed';
 
+    /**
+     * Backend event name published by incomingConnections() and consumed by native/firewall.js
+     * over /ws to add/remove the Windows Firewall inbound rules for the BT listen port under an
+     * elevated (UAC) netsh call — the incoming-connections analogue of PROXY_CHANGED_EVENT above
+     * (issue #361). Keep this string in sync with FIREWALL_RULE_CHANGED_EVENT in
+     * native/firewall.js; a mismatch breaks the toggle silently, same lesson as issue #336.
+     */
+    public const FIREWALL_RULE_CHANGED_EVENT = 'firewall.rule.changed';
+
     public function __construct(
         private readonly ProxyConfigProvider $proxyConfigProvider,
         private readonly ProxyTestService $proxyTestService,
+        private readonly AppSettingsProvider $appSettingsProvider,
         private readonly WsPublisher $wsPublisher,
         private readonly EventDispatcherInterface $eventDispatcher,
         private readonly CsrfTokenManagerInterface $csrfTokenManager,
@@ -125,12 +136,49 @@ final class ProxyController
         ]));
     }
 
-    private function renderIndex(ProxySettings $settings, bool $saved = false, bool $torrentProxyError = false): Response
+    /**
+     * Windows-only opt-in toggle (issue #361): adds/removes the Windows Firewall inbound rules
+     * for the BT listen port via an elevated (UAC) netsh call, triggered only by this explicit
+     * user action — never automatically at startup or install time. Rejected server-side
+     * (defense in depth against the disabled checkbox being bypassed) when the current proxy is
+     * SOCKS5, under which inbound peer connections never work regardless of any firewall rule;
+     * turning the toggle back *off* is always allowed, including under SOCKS5, so a rule added
+     * while in direct mode can still be cleaned up after switching to SOCKS5.
+     */
+    #[Route('/settings/proxy/incoming-connections', name: 'settings_proxy_incoming_connections', methods: ['POST'])]
+    public function incomingConnections(Request $request): Response
     {
+        $this->assertValidCsrfToken('settings_proxy_incoming_connections', $request);
+
+        $settings = $this->proxyConfigProvider->getSettings();
+        $requestedEnabled = (string) $request->request->get('enabled', '') === '1';
+
+        if ($requestedEnabled && !$settings->allowsIncomingTorrentConnections()) {
+            return $this->renderIndex($settings, incomingConnectionsError: true);
+        }
+
+        $this->appSettingsProvider->setIncomingConnectionsAllowed($requestedEnabled);
+        $this->wsPublisher->publish(self::FIREWALL_RULE_CHANGED_EVENT, ['enabled' => $requestedEnabled]);
+
+        return $this->renderIndex($settings, incomingConnectionsSaved: true);
+    }
+
+    private function renderIndex(
+        ProxySettings $settings,
+        bool $saved = false,
+        bool $torrentProxyError = false,
+        bool $incomingConnectionsSaved = false,
+        bool $incomingConnectionsError = false,
+    ): Response {
         return new Response($this->twig->render('settings/proxy/index.html.twig', [
             'settings' => $settings,
             'saved' => $saved,
             'torrentProxyError' => $torrentProxyError,
+            'isWindows' => \PHP_OS_FAMILY === 'Windows',
+            'incomingConnectionsAllowed' => $this->appSettingsProvider->getIncomingConnectionsAllowed(),
+            'incomingConnectionsEligible' => $settings->allowsIncomingTorrentConnections(),
+            'incomingConnectionsSaved' => $incomingConnectionsSaved,
+            'incomingConnectionsError' => $incomingConnectionsError,
         ]));
     }
 

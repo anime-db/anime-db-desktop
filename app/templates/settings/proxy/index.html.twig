@@ -93,4 +93,39 @@
     </form>
 
     <div id="proxy-test-result"></div>
+
+    {% if isWindows is defined and isWindows %}
+        {% set incomingConnectionsDisabled = not incomingConnectionsEligible and not incomingConnectionsAllowed %}
+
+        <h2>{{ 'settings_proxy.incoming_connections_heading'|trans }}</h2>
+
+        {% if incomingConnectionsSaved is defined and incomingConnectionsSaved %}
+            <p class="success">{{ 'settings_proxy.incoming_connections_save_success'|trans }}</p>
+        {% endif %}
+
+        {% if incomingConnectionsError is defined and incomingConnectionsError %}
+            <p class="error">{{ 'settings_proxy.incoming_connections_error'|trans }}</p>
+        {% endif %}
+
+        {% if not incomingConnectionsEligible %}
+            <p class="hint">{{ 'settings_proxy.incoming_connections_socks5_hint'|trans }}</p>
+        {% endif %}
+
+        <form method="post" action="{{ path('settings_proxy_incoming_connections') }}">
+            <input type="hidden" name="_token" value="{{ csrf_token('settings_proxy_incoming_connections') }}">
+
+            <label>
+                <input
+                    type="checkbox"
+                    name="enabled"
+                    value="1"
+                    {% if incomingConnectionsAllowed %}checked{% endif %}
+                    {% if incomingConnectionsDisabled %}disabled{% endif %}
+                >
+                {{ 'settings_proxy.incoming_connections_toggle_label'|trans }}
+            </label>
+
+            <button type="submit">{{ 'settings_proxy.save_button'|trans }}</button>
+        </form>
+    {% endif %}
 {% endblock %}

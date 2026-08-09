@@ -287,4 +287,42 @@ final class AppSettingsProviderTest extends TestCase
         unlink($configPath);
         rmdir($directory);
     }
+
+    public function testGetIncomingConnectionsAllowedDefaultsToFalseWhenFileIsMissing(): void
+    {
+        $provider = new AppSettingsProvider(new AppConfigStore($this->configPath));
+
+        $this->assertFalse($provider->getIncomingConnectionsAllowed());
+    }
+
+    public function testGetIncomingConnectionsAllowedDefaultsToFalseWhenValueIsMalformed(): void
+    {
+        file_put_contents($this->configPath, json_encode(['incomingConnectionsAllowed' => 'yes']));
+
+        $provider = new AppSettingsProvider(new AppConfigStore($this->configPath));
+
+        $this->assertFalse($provider->getIncomingConnectionsAllowed());
+    }
+
+    public function testGetIncomingConnectionsAllowedReadsConfiguredValue(): void
+    {
+        file_put_contents($this->configPath, json_encode(['incomingConnectionsAllowed' => true]));
+
+        $provider = new AppSettingsProvider(new AppConfigStore($this->configPath));
+
+        $this->assertTrue($provider->getIncomingConnectionsAllowed());
+    }
+
+    public function testSetIncomingConnectionsAllowedOverwritesOnlyThatKey(): void
+    {
+        file_put_contents($this->configPath, json_encode(['appSecret' => 'abc']));
+
+        $provider = new AppSettingsProvider(new AppConfigStore($this->configPath));
+        $provider->setIncomingConnectionsAllowed(true);
+
+        $data = json_decode((string) file_get_contents($this->configPath), true);
+
+        $this->assertSame('abc', $data['appSecret']);
+        $this->assertTrue($data['incomingConnectionsAllowed']);
+    }
 }

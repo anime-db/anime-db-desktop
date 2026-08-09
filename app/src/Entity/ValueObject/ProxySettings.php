@@ -97,6 +97,19 @@ final class ProxySettings implements \Stringable
     }
 
     /**
+     * True unless this is a SOCKS5 proxy: SOCKS5 only tunnels the app's own outgoing CONNECTs,
+     * never inbound peer connections (SOCKS5 BIND is not used here, see
+     * native/supervisor/qbittorrent.js's isSocks5Proxy()), so the torrent client stays
+     * "not connectable" under it no matter what firewall rules exist. The opt-in "allow incoming
+     * torrent connections" toggle (issue #361) only makes sense while this is true; an HTTP proxy
+     * (never applied to BT traffic, see isSocks5Proxy()) counts the same as no proxy at all here.
+     */
+    public function allowsIncomingTorrentConnections(): bool
+    {
+        return !($this->mode === ProxyMode::Manual && $this->protocol === ProxyProtocol::Socks5);
+    }
+
+    /**
      * Credential-free debug representation — username/password must never end up in logs or
      * exception messages (issue #326 acceptance criteria).
      */
