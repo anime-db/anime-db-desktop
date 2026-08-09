@@ -33,9 +33,17 @@ namespace App\Entity\Enum;
  * only transitions Pending => Completed once both have happened, so a row's status alone tells
  * whether {@see \AnimeDb\PluginContracts\Download\DownloadCompletedEvent} has already fired for
  * it (see Download::markCompleted()).
+ *
+ * Failed (issue #348) is the async counterpart of
+ * {@see \App\Service\Exception\InsufficientDiskSpaceException}: a magnet's size is only known
+ * after qBittorrent has fetched its metadata, so a not-enough-free-space verdict for it can only
+ * be discovered later, by {@see \App\Service\Download\DownloadCompletionPoller} — there is no
+ * calling UI context left to throw into by then, so the row is marked Failed (and the torrent
+ * paused) instead.
  */
 enum DownloadStatus: string
 {
     case Pending = 'pending';
     case Completed = 'completed';
+    case Failed = 'failed';
 }

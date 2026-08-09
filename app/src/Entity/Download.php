@@ -103,6 +103,11 @@ class Download
         return $this->status === DownloadStatus::Completed;
     }
 
+    public function isFailed(): bool
+    {
+        return $this->status === DownloadStatus::Failed;
+    }
+
     /**
      * Transitions Pending => Completed and reports whether it actually did so. The caller
      * (DownloadCompletionPoller) relies on the `false` result to skip re-linking/re-dispatching
@@ -129,5 +134,22 @@ class Download
     public function revertToPending(): void
     {
         $this->status = DownloadStatus::Pending;
+    }
+
+    /**
+     * Transitions Pending => Failed (issue #348: DownloadCompletionPoller found that a magnet's
+     * size, once known, does not fit the downloads root's free space) and reports whether it
+     * actually did so — same idempotency shape as markCompleted(), so a pair already marked
+     * Failed on a previous poll is not re-paused/re-logged.
+     */
+    public function markFailed(): bool
+    {
+        if ($this->status !== DownloadStatus::Pending) {
+            return false;
+        }
+
+        $this->status = DownloadStatus::Failed;
+
+        return true;
     }
 }

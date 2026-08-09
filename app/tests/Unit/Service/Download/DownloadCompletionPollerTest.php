@@ -31,6 +31,7 @@ use AnimeDb\PluginContracts\Download\DownloadCompletedEvent;
 use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
 use App\Entity\Download;
+use App\Entity\Enum\DownloadStatus;
 use App\Entity\Enum\WatchStatus;
 use App\Entity\TvAnime;
 use App\Repository\DownloadRepository;
@@ -40,6 +41,9 @@ use App\Service\AppSettingsProvider;
 use App\Service\Download\AnimeDownloadLinker;
 use App\Service\Download\DownloadCompletionPoller;
 use App\Service\Download\DownloadFolderJail;
+use App\Service\Download\FreeSpaceChecker;
+use App\Service\Download\FreeSpaceProvider;
+use App\Service\Download\NativeFreeSpaceProvider;
 use App\Service\Qbittorrent\QbittorrentClient;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Types\Type;
@@ -109,8 +113,11 @@ final class DownloadCompletionPollerTest extends TestCase
     /**
      * @param array<int, array<string, mixed>> $torrentsInfoResponse
      */
-    private function makePoller(array $torrentsInfoResponse, EventDispatcherInterface $eventDispatcher): DownloadCompletionPoller
-    {
+    private function makePoller(
+        array $torrentsInfoResponse,
+        EventDispatcherInterface $eventDispatcher,
+        ?FreeSpaceProvider $freeSpaceProvider = null,
+    ): DownloadCompletionPoller {
         $httpClient = new MockHttpClient(static fn (): MockResponse => new MockResponse(
             json_encode($torrentsInfoResponse, \JSON_THROW_ON_ERROR),
             ['response_headers' => ['content-type' => 'application/json']],
@@ -124,6 +131,10 @@ final class DownloadCompletionPollerTest extends TestCase
             $this->downloads,
             $linker,
             $eventDispatcher,
+            $this->entityManager,
+            // The real NativeFreeSpaceProvider reports "unknown" (free-open) for self::ROOT on
+            // this Linux test runner — only tests about the free-space check itself override this.
+            new FreeSpaceChecker($jail, $freeSpaceProvider ?? new NativeFreeSpaceProvider()),
             new NullLogger(),
         );
     }
@@ -291,6 +302,8 @@ final class DownloadCompletionPollerTest extends TestCase
             $this->downloads,
             $linker,
             $eventDispatcher,
+            $this->entityManager,
+            new FreeSpaceChecker($jail, new NativeFreeSpaceProvider()),
             new NullLogger(),
         );
 
@@ -309,5 +322,173 @@ final class DownloadCompletionPollerTest extends TestCase
         $stillWedged = $this->downloads->findByInfoHashAndAnime($wedgedHash, (int) $wedged->id);
         $this->assertNotNull($stillWedged);
         $this->assertFalse($stillWedged->isCompleted());
+    }
+
+    public function testPollPausesAndMarksFailedWhenAMagnetsKnownSizeDoesNotFitFreeSpace(): void
+    {
+        $anime = $this->persistAnime();
+        $this->downloads->save(new Download(self::HASH, $anime));
+
+        $eventDispatcher = $this->createMock(EventDispatcherInterface::class);
+        $eventDispatcher->expects($this->never())->method('dispatch');
+
+        $freeSpaceProvider = $this->createStub(FreeSpaceProvider::class);
+        $freeSpaceProvider->method('getFreeBytes')->willReturn(100_000_000);
+
+        $pauseCalls = 0;
+        $httpClient = new MockHttpClient(function (string $method, string $url) use (&$pauseCalls): MockResponse {
+            if ($method === 'POST' && str_contains($url, '/api/v2/torrents/pause')) {
+                ++$pauseCalls;
+            }
+
+            return new MockResponse(
+                json_encode([[
+                    // Not yet Completed — a magnet whose metadata just arrived, still downloading.
+                    'hash' => self::HASH,
+                    'progress' => 0.4,
+                    'state' => 'metaDL',
+                    'size' => 500_000_000,
+                ]], \JSON_THROW_ON_ERROR),
+                ['response_headers' => ['content-type' => 'application/json']],
+            );
+        });
+
+        $jail = new DownloadFolderJail(new AppSettingsProvider(new AppConfigStore($this->configPath)));
+        $linker = new AnimeDownloadLinker(new StorageRepository($this->entityManager), $this->entityManager, $jail);
+        $poller = new DownloadCompletionPoller(
+            new QbittorrentClient($httpClient, self::BASE_URL),
+            $this->downloads,
+            $linker,
+            $eventDispatcher,
+            $this->entityManager,
+            new FreeSpaceChecker($jail, $freeSpaceProvider),
+            new NullLogger(),
+        );
+
+        $poller->poll();
+
+        $this->assertSame(1, $pauseCalls);
+        $stored = $this->downloads->findByInfoHashAndAnime(self::HASH, (int) $anime->id);
+        $this->assertNotNull($stored);
+        $this->assertTrue($stored->isFailed());
+        $this->assertSame(DownloadStatus::Failed, $stored->getStatus());
+
+        // Once Failed, the row drops out of findDistinctPendingInfoHashes() — a second poll must
+        // not pause (or log) it again.
+        $poller->poll();
+        $this->assertSame(1, $pauseCalls);
+    }
+
+    public function testPollDoesNotPauseWhenAMagnetsKnownSizeFitsFreeSpace(): void
+    {
+        $anime = $this->persistAnime();
+        $this->downloads->save(new Download(self::HASH, $anime));
+
+        $eventDispatcher = $this->createMock(EventDispatcherInterface::class);
+        $eventDispatcher->expects($this->never())->method('dispatch');
+
+        $freeSpaceProvider = $this->createStub(FreeSpaceProvider::class);
+        $freeSpaceProvider->method('getFreeBytes')->willReturn(2_000_000_000);
+
+        $poller = $this->makePoller([[
+            'hash' => self::HASH,
+            'progress' => 0.4,
+            'state' => 'metaDL',
+            'size' => 500_000_000,
+        ]], $eventDispatcher, $freeSpaceProvider);
+
+        $poller->poll();
+
+        $stored = $this->downloads->findByInfoHashAndAnime(self::HASH, (int) $anime->id);
+        $this->assertNotNull($stored);
+        $this->assertSame(DownloadStatus::Pending, $stored->getStatus());
+    }
+
+    public function testPollDoesNotFalselyFailAHealthyMagnetAsFreeSpaceShrinksWhileItDownloads(): void
+    {
+        $anime = $this->persistAnime();
+        $this->downloads->save(new Download(self::HASH, $anime));
+
+        $eventDispatcher = $this->createMock(EventDispatcherInterface::class);
+        $eventDispatcher->expects($this->never())->method('dispatch');
+
+        // Free space shrinks by roughly what this same torrent has already written to disk: 100 GB
+        // free before anything is written, down to 58 GB free once ~42 GB (70%) of a 60 GB torrent
+        // has landed. Comparing against the full 60 GB size (the pre-fix behaviour) would demand
+        // ~61.2 GB free on the second poll and wrongly fail a torrent that fits comfortably.
+        $freeBytesByCall = [100_000_000_000, 58_000_000_000];
+        $callIndex = 0;
+        $freeSpaceProvider = $this->createStub(FreeSpaceProvider::class);
+        $freeSpaceProvider->method('getFreeBytes')->willReturnCallback(
+            static function () use (&$callIndex, $freeBytesByCall): int {
+                return $freeBytesByCall[$callIndex++];
+            },
+        );
+
+        $pollIndex = 0;
+        $torrentsByPoll = [
+            // Metadata just arrived: nothing written yet, amount_left equals the full size.
+            [['hash' => self::HASH, 'progress' => 0.0, 'state' => 'metaDL', 'size' => 60_000_000_000, 'amount_left' => 60_000_000_000]],
+            // 70% written: amount_left has shrunk in step with free space.
+            [['hash' => self::HASH, 'progress' => 0.7, 'state' => 'downloading', 'size' => 60_000_000_000, 'amount_left' => 18_000_000_000]],
+        ];
+        $httpClient = new MockHttpClient(function () use (&$pollIndex, $torrentsByPoll): MockResponse {
+            $response = new MockResponse(
+                json_encode($torrentsByPoll[$pollIndex], \JSON_THROW_ON_ERROR),
+                ['response_headers' => ['content-type' => 'application/json']],
+            );
+            ++$pollIndex;
+
+            return $response;
+        });
+
+        $jail = new DownloadFolderJail(new AppSettingsProvider(new AppConfigStore($this->configPath)));
+        $linker = new AnimeDownloadLinker(new StorageRepository($this->entityManager), $this->entityManager, $jail);
+        $poller = new DownloadCompletionPoller(
+            new QbittorrentClient($httpClient, self::BASE_URL),
+            $this->downloads,
+            $linker,
+            $eventDispatcher,
+            $this->entityManager,
+            new FreeSpaceChecker($jail, $freeSpaceProvider),
+            new NullLogger(),
+        );
+
+        $poller->poll();
+        $poller->poll();
+
+        $stored = $this->downloads->findByInfoHashAndAnime(self::HASH, (int) $anime->id);
+        $this->assertNotNull($stored);
+        $this->assertSame(DownloadStatus::Pending, $stored->getStatus());
+    }
+
+    public function testPollMarksEveryPendingRowFailedForASeasonPackSharingOneInfoHash(): void
+    {
+        $animeOne = $this->persistAnime();
+        $animeTwo = $this->persistAnime();
+        $this->downloads->save(new Download(self::HASH, $animeOne));
+        $this->downloads->save(new Download(self::HASH, $animeTwo));
+
+        $eventDispatcher = $this->createMock(EventDispatcherInterface::class);
+        $eventDispatcher->expects($this->never())->method('dispatch');
+
+        $freeSpaceProvider = $this->createStub(FreeSpaceProvider::class);
+        $freeSpaceProvider->method('getFreeBytes')->willReturn(100_000_000);
+
+        $poller = $this->makePoller([[
+            'hash' => self::HASH,
+            'progress' => 0.4,
+            'state' => 'metaDL',
+            'size' => 500_000_000,
+        ]], $eventDispatcher, $freeSpaceProvider);
+
+        $poller->poll();
+
+        $rowOne = $this->downloads->findByInfoHashAndAnime(self::HASH, (int) $animeOne->id);
+        $rowTwo = $this->downloads->findByInfoHashAndAnime(self::HASH, (int) $animeTwo->id);
+        $this->assertNotNull($rowOne);
+        $this->assertNotNull($rowTwo);
+        $this->assertTrue($rowOne->isFailed());
+        $this->assertTrue($rowTwo->isFailed());
     }
 }

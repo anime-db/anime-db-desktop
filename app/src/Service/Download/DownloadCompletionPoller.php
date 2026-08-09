@@ -34,6 +34,7 @@ use App\Entity\Download;
 use App\Repository\DownloadRepository;
 use App\Service\Exception\DownloadPathOutsideJailException;
 use App\Service\Qbittorrent\QbittorrentClient;
+use Doctrine\ORM\EntityManagerInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
@@ -66,6 +67,18 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
  * the same offending infoHash every run, permanently wedge every OTHER pending download queued
  * behind it. The pair that fails is logged and skipped instead; everything else in the batch
  * still gets linked and dispatched this run.
+ *
+ * failIfOutOfSpace() (issue #348) is the async half of the free-space precheck: a `.torrent`
+ * file's size is known up front, so QbittorrentDownloadService rejects it synchronously before it
+ * is ever added to qBittorrent, but a magnet's size is only known once qBittorrent has fetched
+ * its metadata — this class is the only place already polling for exactly that. It compares free
+ * space against the torrent's REMAINING bytes (`amount_left`), not its total size: free space on
+ * the downloads root keeps shrinking as this very torrent writes to it, so comparing against the
+ * full size would effectively demand ~2x the torrent's size in free space and false-positive on a
+ * healthy, still-downloading torrent well before it finishes. Once a torrent's reported size is
+ * non-zero and its remaining bytes do not fit the downloads root's free space, every pending
+ * (infoHash, anime) row is marked Failed and the torrent paused — never a thrown exception, since
+ * there is no calling UI context left by the time this runs.
  */
 final class DownloadCompletionPoller
 {
@@ -82,6 +95,8 @@ final class DownloadCompletionPoller
         private readonly DownloadRepository $downloads,
         private readonly AnimeDownloadLinker $linker,
         private readonly EventDispatcherInterface $eventDispatcher,
+        private readonly EntityManagerInterface $entityManager,
+        private readonly FreeSpaceChecker $freeSpaceChecker,
         private readonly LoggerInterface $logger,
     ) {
     }
@@ -96,7 +111,17 @@ final class DownloadCompletionPoller
     private function pollInfoHash(string $infoHash): void
     {
         $torrent = $this->client->getTorrentsInfo($infoHash)[0] ?? null;
-        if ($torrent === null || !$this->isComplete($torrent)) {
+        if ($torrent === null) {
+            return;
+        }
+
+        // A magnet's size is unknown until qBittorrent has fetched its metadata (issue #348) —
+        // this is where that free-space check catches up, once size becomes known, for as long
+        // as the torrent is still short of Completed. A torrent that already reached Completed
+        // necessarily wrote all of its bytes, so it is not re-checked here.
+        if (!$this->isComplete($torrent)) {
+            $this->failIfOutOfSpace($torrent, $infoHash);
+
             return;
         }
 
@@ -108,6 +133,41 @@ final class DownloadCompletionPoller
         foreach ($this->downloads->findPendingByInfoHash($infoHash) as $download) {
             $this->completeDownload($download, $contentPath, $infoHash);
         }
+    }
+
+    /**
+     * @param array<string, mixed> $torrent
+     */
+    private function failIfOutOfSpace(array $torrent, string $infoHash): void
+    {
+        $size = (int) ($torrent['size'] ?? 0);
+        if ($size <= 0) {
+            return;
+        }
+
+        // Compare against what is still left to write, not the torrent's total size — free space
+        // on the downloads root shrinks as this same torrent downloads, so a full-size comparison
+        // would false-positive on a healthy torrent partway through (see class docblock).
+        $amountLeft = (int) ($torrent['amount_left'] ?? $size);
+        if ($this->freeSpaceChecker->hasEnoughFreeSpace($amountLeft)) {
+            return;
+        }
+
+        $this->client->pause($infoHash);
+
+        $pending = $this->downloads->findPendingByInfoHash($infoHash);
+        foreach ($pending as $download) {
+            $download->markFailed();
+        }
+        if ($pending !== []) {
+            $this->entityManager->flush();
+        }
+
+        $this->logger->warning('Paused download: not enough free disk space for its remaining bytes.', [
+            'infoHash' => $infoHash,
+            'size' => $size,
+            'amountLeft' => $amountLeft,
+        ]);
     }
 
     private function completeDownload(Download $download, string $contentPath, string $infoHash): void

@@ -37,6 +37,8 @@ use App\Service\AppSettingsProvider;
 use App\Service\Download\AnimeDownloadLinker;
 use App\Service\Download\DownloadCompletionPoller;
 use App\Service\Download\DownloadFolderJail;
+use App\Service\Download\FreeSpaceChecker;
+use App\Service\Download\NativeFreeSpaceProvider;
 use App\Service\Qbittorrent\QbittorrentClient;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Types\Type;
@@ -81,6 +83,8 @@ final class DownloadsPollCommandTest extends TestCase
                 new DownloadRepository($entityManager),
                 new AnimeDownloadLinker(new StorageRepository($entityManager), $entityManager, $jail),
                 new EventDispatcher(),
+                $entityManager,
+                new FreeSpaceChecker($jail, new NativeFreeSpaceProvider()),
                 new NullLogger(),
             );
 
