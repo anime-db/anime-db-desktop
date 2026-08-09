@@ -51,6 +51,15 @@ final class TorrentInfoHashResolver
 {
     private const string BASE32_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
 
+    /**
+     * skipValue() recurses once per nested bencode list/dict level. A real torrent's "info" dict
+     * never nests more than a handful of levels deep (info -> files -> file-dict -> path-list ->
+     * strings); this caps it far above that so a malicious `.torrent` (untrusted input, per this
+     * class's docblock) built as thousands of nested "l"/"d" tokens cannot exhaust the PHP call
+     * stack — an uncatchable fatal, not something `catch (InvalidTorrentFileException)` stops.
+     */
+    private const int MAX_NESTING_DEPTH = 100;
+
     public function fromMagnet(string $magnetUri): string
     {
         if (preg_match('/xt=urn:btih:([a-zA-Z0-9]{32,40})/', $magnetUri, $matches) !== 1) {
@@ -105,7 +114,7 @@ final class TorrentInfoHashResolver
         while ($pos < $length && $data[$pos] !== 'e') {
             [$key, $pos] = $this->readString($data, $pos);
             $valueStart = $pos;
-            $pos = $this->skipValue($data, $pos);
+            $pos = $this->skipValue($data, $pos, 0);
 
             if ($key === 'info') {
                 return substr($data, $valueStart, $pos - $valueStart);
@@ -115,8 +124,12 @@ final class TorrentInfoHashResolver
         throw new InvalidTorrentFileException('Torrent file has no top-level "info" dictionary.');
     }
 
-    private function skipValue(string $data, int $pos): int
+    private function skipValue(string $data, int $pos, int $depth): int
     {
+        if ($depth > self::MAX_NESTING_DEPTH) {
+            throw new InvalidTorrentFileException(\sprintf('Bencoded list/dictionary nesting exceeds %d levels.', self::MAX_NESTING_DEPTH));
+        }
+
         $length = \strlen($data);
         if ($pos >= $length) {
             throw new InvalidTorrentFileException('Unexpected end of torrent file.');
@@ -139,7 +152,7 @@ final class TorrentInfoHashResolver
                 if ($type === 'd') {
                     [, $pos] = $this->readString($data, $pos);
                 }
-                $pos = $this->skipValue($data, $pos);
+                $pos = $this->skipValue($data, $pos, $depth + 1);
             }
 
             if ($pos >= $length) {

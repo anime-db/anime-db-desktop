@@ -117,6 +117,18 @@ final class TorrentInfoHashResolverTest extends TestCase
         $this->resolver->fromTorrentFileContent($this->bencodeDict(['announce' => $this->bencodeString('http://a')]));
     }
 
+    public function testFromTorrentFileContentRejectsDeeplyNestedListsInsteadOfExhaustingTheStack(): void
+    {
+        $this->expectException(InvalidTorrentFileException::class);
+
+        // A tiny adversarial payload: thousands of nested "l"/"e" pairs before any "info" key is
+        // ever reached — the DoS shape this limit exists to reject (see MAX_NESTING_DEPTH).
+        $deeplyNested = str_repeat('l', 10_000).str_repeat('e', 10_000);
+        $torrentBytes = $this->bencodeDict(['announce' => $deeplyNested, 'info' => $this->bencodeDict([])]);
+
+        $this->resolver->fromTorrentFileContent($torrentBytes);
+    }
+
     private function bencodeString(string $value): string
     {
         return \strlen($value).':'.$value;
