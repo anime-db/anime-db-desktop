@@ -53,26 +53,57 @@ final class TorrentProxySubscriberTest extends TestCase
     /**
      * TorrentProxySynchronizer is final and cannot be mocked (see ProxyControllerTest's
      * createController() for the same constraint on ProxyConfigProvider/ProxyTestService); a
-     * real instance backed by a MockHttpClient stands in for it instead. The direct (HTTP
-     * protocol) path is used here since it is a single setPreferences() call with no
-     * pause/confirm/resume ordering to assert on — that fail-closed sequence is covered in depth
-     * by TorrentProxySynchronizerTest itself.
+     * real instance backed by a MockHttpClient stands in for it instead. SOCKS5 is used here
+     * (rather than HTTP) specifically because the direct/HTTP path ignores the event's settings
+     * content entirely (see TorrentProxySynchronizer::directPreferences()) — asserting only the
+     * called URL there would prove a call happened, not that the event's host/port actually
+     * reached qbittorrent-nox. The readback response below echoes the SOCKS5 settings back so the
+     * synchronizer's fail-closed confirmation step succeeds.
      */
     public function testForwardsEventSettingsToSynchronizer(): void
     {
         $calls = [];
-        $httpClient = new MockHttpClient(function (string $method, string $url) use (&$calls): MockResponse {
+        $sentPreferences = null;
+        $httpClient = new MockHttpClient(function (string $method, string $url, array $options) use (&$calls, &$sentPreferences): MockResponse {
             $calls[] = $url;
+
+            if (str_ends_with($url, '/api/v2/app/setPreferences')) {
+                $sentPreferences = json_decode(
+                    urldecode(substr($options['body'], \strlen('json='))),
+                    true,
+                    flags: \JSON_THROW_ON_ERROR,
+                );
+            }
+
+            if (str_ends_with($url, '/api/v2/app/preferences')) {
+                return new MockResponse(json_encode([
+                    'proxy_type' => 'SOCKS5',
+                    'proxy_ip' => 'proxy.example',
+                    'proxy_port' => 51080,
+                    'proxy_hostname_lookup' => true,
+                    'proxy_bittorrent' => true,
+                    'proxy_peer_connections' => true,
+                ], \JSON_THROW_ON_ERROR), [
+                    'response_headers' => ['content-type' => 'application/json'],
+                ]);
+            }
 
             return new MockResponse('Ok.');
         });
 
-        $settings = new ProxySettings(ProxyMode::Manual, ProxyProtocol::Http, 'proxy.example', 3128);
+        $settings = new ProxySettings(ProxyMode::Manual, ProxyProtocol::Socks5, 'proxy.example', 51080);
         $synchronizer = new TorrentProxySynchronizer(new QbittorrentClient($httpClient, self::BASE_URL));
 
         $subscriber = new TorrentProxySubscriber($synchronizer);
         $subscriber->onProxySettingsChanged(new ProxySettingsChangedEvent($settings));
 
-        $this->assertSame([self::BASE_URL.'/api/v2/app/setPreferences'], $calls);
+        $this->assertSame([
+            self::BASE_URL.'/api/v2/torrents/pause',
+            self::BASE_URL.'/api/v2/app/setPreferences',
+            self::BASE_URL.'/api/v2/app/preferences',
+            self::BASE_URL.'/api/v2/torrents/resume',
+        ], $calls);
+        $this->assertSame('proxy.example', $sentPreferences['proxy_ip']);
+        $this->assertSame(51080, $sentPreferences['proxy_port']);
     }
 }
