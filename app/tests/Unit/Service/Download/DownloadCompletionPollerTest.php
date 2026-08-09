@@ -48,6 +48,7 @@ use Doctrine\ORM\ORMSetup;
 use Doctrine\ORM\Tools\SchemaTool;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
@@ -123,6 +124,7 @@ final class DownloadCompletionPollerTest extends TestCase
             $this->downloads,
             $linker,
             $eventDispatcher,
+            new NullLogger(),
         );
     }
 
@@ -233,5 +235,78 @@ final class DownloadCompletionPollerTest extends TestCase
         $poller->poll();
 
         $this->assertEmpty($this->downloads->findPendingByInfoHash(self::HASH));
+    }
+
+    public function testAContentPathOutsideTheJailDoesNotWedgeOtherPendingDownloads(): void
+    {
+        $wedgedHash = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+        $wedged = $this->persistAnime();
+        $ok = $this->persistAnime();
+        $this->downloads->save(new Download($wedgedHash, $wedged));
+        $this->downloads->save(new Download(self::HASH, $ok));
+
+        $eventDispatcher = $this->createMock(EventDispatcherInterface::class);
+        $eventDispatcher->expects($this->once())
+            ->method('dispatch')
+            ->with($this->callback(function (DownloadCompletedEvent $event) use ($ok): bool {
+                $this->assertSame($ok->id, $event->anime->value);
+
+                return true;
+            }));
+
+        // A real qBittorrent WebUI filters /api/v2/torrents/info by the "hashes" query param sent
+        // per infoHash — this mock has to do the same instead of returning a fixed body for every
+        // request, otherwise a poll() that queries two distinct pending infoHashes could not be
+        // told apart here.
+        $torrentsByHash = [
+            $wedgedHash => [
+                'hash' => $wedgedHash,
+                'progress' => 1,
+                'state' => 'uploading',
+                'content_path' => 'D:\\elsewhere\\moved-away',
+            ],
+            self::HASH => [
+                'hash' => self::HASH,
+                'progress' => 1,
+                'state' => 'uploading',
+                'content_path' => self::ROOT.'\\finished-release',
+            ],
+        ];
+        $httpClient = new MockHttpClient(function (string $method, string $url) use ($torrentsByHash): MockResponse {
+            parse_str((string) parse_url($url, \PHP_URL_QUERY), $query);
+            $requestedHash = $query['hashes'] ?? null;
+            $torrent = \is_string($requestedHash) ? $torrentsByHash[$requestedHash] ?? null : null;
+
+            return new MockResponse(
+                json_encode($torrent === null ? [] : [$torrent], \JSON_THROW_ON_ERROR),
+                ['response_headers' => ['content-type' => 'application/json']],
+            );
+        });
+
+        $jail = new DownloadFolderJail(new AppSettingsProvider(new AppConfigStore($this->configPath)));
+        $linker = new AnimeDownloadLinker(new StorageRepository($this->entityManager), $this->entityManager, $jail);
+        $poller = new DownloadCompletionPoller(
+            new QbittorrentClient($httpClient, self::BASE_URL),
+            $this->downloads,
+            $linker,
+            $eventDispatcher,
+            new NullLogger(),
+        );
+
+        $poller->poll();
+
+        $wedgedRow = $this->downloads->findByInfoHashAndAnime($wedgedHash, (int) $wedged->id);
+        $this->assertNotNull($wedgedRow);
+        $this->assertFalse($wedgedRow->isCompleted());
+
+        $okRow = $this->downloads->findByInfoHashAndAnime(self::HASH, (int) $ok->id);
+        $this->assertNotNull($okRow);
+        $this->assertTrue($okRow->isCompleted());
+
+        // The wedged pair keeps being reported as pending and does not permanently jam the poller.
+        $poller->poll();
+        $stillWedged = $this->downloads->findByInfoHashAndAnime($wedgedHash, (int) $wedged->id);
+        $this->assertNotNull($stillWedged);
+        $this->assertFalse($stillWedged->isCompleted());
     }
 }

@@ -44,6 +44,7 @@ use Doctrine\ORM\EntityManager;
 use Doctrine\ORM\ORMSetup;
 use Doctrine\ORM\Tools\SchemaTool;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Tester\CommandTester;
 use Symfony\Component\EventDispatcher\EventDispatcher;
@@ -80,6 +81,7 @@ final class DownloadsPollCommandTest extends TestCase
                 new DownloadRepository($entityManager),
                 new AnimeDownloadLinker(new StorageRepository($entityManager), $entityManager, $jail),
                 new EventDispatcher(),
+                new NullLogger(),
             );
 
             $tester = new CommandTester(new DownloadsPollCommand($poller));

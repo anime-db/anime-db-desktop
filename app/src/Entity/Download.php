@@ -119,4 +119,15 @@ class Download
 
         return true;
     }
+
+    /**
+     * Undoes an in-memory-only markCompleted() when the completion step that must accompany it
+     * (linking the folder, see DownloadCompletionPoller) failed before either was ever flushed.
+     * Only correct to call in that exact window — reverting an already-flushed Completed row
+     * back to Pending would make it retry forever even though it already emitted its event.
+     */
+    public function revertToPending(): void
+    {
+        $this->status = DownloadStatus::Pending;
+    }
 }

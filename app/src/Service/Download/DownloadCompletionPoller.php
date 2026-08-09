@@ -32,7 +32,9 @@ use AnimeDb\PluginContracts\Download\DownloadTaskId;
 use AnimeDb\PluginContracts\Model\AnimeId;
 use App\Entity\Download;
 use App\Repository\DownloadRepository;
+use App\Service\Exception\DownloadPathOutsideJailException;
 use App\Service\Qbittorrent\QbittorrentClient;
+use Psr\Log\LoggerInterface;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
 /**
@@ -55,6 +57,15 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
  * dispatch could re-dispatch the same event on the next poll if the process died before the
  * flush — and "at most once" is the wrong trade-off here, since the acceptance criterion is
  * "exactly once", not "at least once".
+ *
+ * completeDownload() isolates failures per (infoHash, anime) pair: AnimeDownloadLinker::link()
+ * can throw {@see DownloadPathOutsideJailException} for a torrent qBittorrent itself reports as
+ * finished but whose content_path was moved outside the downloads root (e.g. a "Set Location" in
+ * qBittorrent's own WebUI) — a reachable state this class does not control. Left uncaught, that
+ * would escape pollInfoHash()/poll() and, since findDistinctPendingInfoHashes() keeps returning
+ * the same offending infoHash every run, permanently wedge every OTHER pending download queued
+ * behind it. The pair that fails is logged and skipped instead; everything else in the batch
+ * still gets linked and dispatched this run.
  */
 final class DownloadCompletionPoller
 {
@@ -71,6 +82,7 @@ final class DownloadCompletionPoller
         private readonly DownloadRepository $downloads,
         private readonly AnimeDownloadLinker $linker,
         private readonly EventDispatcherInterface $eventDispatcher,
+        private readonly LoggerInterface $logger,
     ) {
     }
 
@@ -105,7 +117,23 @@ final class DownloadCompletionPoller
         }
 
         $anime = $download->getAnime();
-        $this->linker->link($anime, $contentPath);
+
+        try {
+            $this->linker->link($anime, $contentPath);
+        } catch (DownloadPathOutsideJailException $exception) {
+            // markCompleted() above only touched in-memory state — link() never reached its own
+            // flush(), so nothing was persisted yet. Revert it so this Download does not sit
+            // dirty as Completed in the EntityManager's unit of work and get flushed as a side
+            // effect of some unrelated download completing later in this same poll() run.
+            $download->revertToPending();
+            $this->logger->warning('Skipping download completion: content_path is outside the configured downloads root.', [
+                'infoHash' => $infoHash,
+                'contentPath' => $contentPath,
+                'exception' => $exception->getMessage(),
+            ]);
+
+            return;
+        }
 
         $animeId = $anime->id ?? throw new \LogicException('Anime must have an id once it has a Download row pointing at it.');
         $this->eventDispatcher->dispatch(new DownloadCompletedEvent(new AnimeId($animeId), new DownloadTaskId($infoHash)));
