@@ -58,8 +58,12 @@ final class TorrentProxySynchronizer
      * issue #347 asks for. Credentials are deliberately excluded: qbittorrent-nox's own
      * /api/v2/app/preferences response never echoes proxy_password back, so comparing it would
      * always (falsely) fail.
+     *
+     * Names match the qBittorrent 5.x WebUI API (verified against the shipped 5.2.3, see
+     * scripts/versions.json, and the appcontroller.cpp source for that tag): the pre-5.0 names
+     * `proxy_hostnames`/`proxy_tracker_connections` no longer exist.
      */
-    private const CONFIRMED_KEYS = ['proxy_type', 'proxy_ip', 'proxy_port', 'proxy_hostnames', 'proxy_peer_connections', 'proxy_tracker_connections'];
+    private const CONFIRMED_KEYS = ['proxy_type', 'proxy_ip', 'proxy_port', 'proxy_hostname_lookup', 'proxy_bittorrent', 'proxy_peer_connections'];
 
     public function __construct(private readonly QbittorrentClient $client)
     {
@@ -87,11 +91,13 @@ final class TorrentProxySynchronizer
             $this->client->pause('all');
             $this->client->setPreferences($preferences);
             $this->confirmApplied($preferences);
+            // Resume is inside the same try/catch: a failure here means the proxy is confirmed
+            // but torrents did not resume, which must surface as the same visible fail-closed
+            // error rather than an unhandled exception — torrents simply stay paused either way.
+            $this->client->resume('all');
         } catch (QbittorrentClientException $exception) {
             throw new TorrentProxyApplyException('Failed to apply the SOCKS5 proxy to qbittorrent-nox; torrent egress stays paused (fail-closed).', previous: $exception);
         }
-
-        $this->client->resume('all');
     }
 
     /**
@@ -119,12 +125,14 @@ final class TorrentProxySynchronizer
             'proxy_type' => 'SOCKS5',
             'proxy_ip' => $settings->host,
             'proxy_port' => $settings->port,
-            // DNS-leak guards (issue #347 acceptance): hostnames are resolved on the proxy side,
-            // and both peer and tracker connections are routed through it — without these, only
-            // some torrent traffic would be proxied while the rest (and DNS) leaks direct.
-            'proxy_hostnames' => true,
+            // DNS-leak guards (issue #347 acceptance): hostnames are resolved on the proxy side
+            // (proxy_hostname_lookup), peer connections are routed through it
+            // (proxy_peer_connections), and tracker/announce traffic is covered by the
+            // "BitTorrent purposes" toggle (proxy_bittorrent) — without these, only some torrent
+            // traffic would be proxied while the rest (and DNS) leaks direct.
+            'proxy_hostname_lookup' => true,
             'proxy_peer_connections' => true,
-            'proxy_tracker_connections' => true,
+            'proxy_bittorrent' => true,
         ];
 
         $hasAuth = $settings->username !== null && $settings->username !== '';
@@ -144,9 +152,9 @@ final class TorrentProxySynchronizer
     {
         return [
             'proxy_type' => 'None',
-            'proxy_hostnames' => false,
+            'proxy_hostname_lookup' => false,
             'proxy_peer_connections' => false,
-            'proxy_tracker_connections' => false,
+            'proxy_bittorrent' => false,
         ];
     }
 }

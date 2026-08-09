@@ -49,7 +49,7 @@ final class TorrentProxySynchronizerTest extends TestCase
             $calls[] = $url;
 
             if (str_ends_with($url, '/api/v2/app/preferences')) {
-                return new MockResponse(json_encode($this->expectedSocks5Preferences(), \JSON_THROW_ON_ERROR), [
+                return new MockResponse(json_encode($this->realQbittorrentPreferencesResponse(), \JSON_THROW_ON_ERROR), [
                     'response_headers' => ['content-type' => 'application/json'],
                 ]);
             }
@@ -79,7 +79,7 @@ final class TorrentProxySynchronizerTest extends TestCase
                 $captured['preferences'] = $options['body'];
             }
             if (str_ends_with($url, '/api/v2/app/preferences')) {
-                return new MockResponse(json_encode($this->expectedSocks5Preferences(true), \JSON_THROW_ON_ERROR), [
+                return new MockResponse(json_encode($this->realQbittorrentPreferencesResponse(true), \JSON_THROW_ON_ERROR), [
                     'response_headers' => ['content-type' => 'application/json'],
                 ]);
             }
@@ -101,9 +101,9 @@ final class TorrentProxySynchronizerTest extends TestCase
         $this->assertSame('SOCKS5', $sentPreferences['proxy_type']);
         $this->assertSame('proxy.example', $sentPreferences['proxy_ip']);
         $this->assertSame(1080, $sentPreferences['proxy_port']);
-        $this->assertTrue($sentPreferences['proxy_hostnames']);
+        $this->assertTrue($sentPreferences['proxy_hostname_lookup']);
         $this->assertTrue($sentPreferences['proxy_peer_connections']);
-        $this->assertTrue($sentPreferences['proxy_tracker_connections']);
+        $this->assertTrue($sentPreferences['proxy_bittorrent']);
         $this->assertTrue($sentPreferences['proxy_auth_enabled']);
         $this->assertSame('alice', $sentPreferences['proxy_username']);
         $this->assertSame('p4ss', $sentPreferences['proxy_password']);
@@ -166,8 +166,9 @@ final class TorrentProxySynchronizerTest extends TestCase
     }
 
     /**
-     * A partial DNS-leak-guard failure (proxy_type confirmed, but proxy_hostnames silently not
-     * applied) must be treated the same as a total failure — never a silent, half-proxied state.
+     * A partial DNS-leak-guard failure (proxy_type confirmed, but proxy_hostname_lookup silently
+     * not applied) must be treated the same as a total failure — never a silent, half-proxied
+     * state.
      */
     public function testSocks5LeavesTorrentsPausedWhenOnlyDnsLeakGuardFailsToConfirm(): void
     {
@@ -177,8 +178,8 @@ final class TorrentProxySynchronizerTest extends TestCase
                 $resumeCalled = true;
             }
             if (str_ends_with($url, '/api/v2/app/preferences')) {
-                $preferences = $this->expectedSocks5Preferences();
-                $preferences['proxy_hostnames'] = false;
+                $preferences = $this->realQbittorrentPreferencesResponse();
+                $preferences['proxy_hostname_lookup'] = false;
 
                 return new MockResponse(json_encode($preferences, \JSON_THROW_ON_ERROR), [
                     'response_headers' => ['content-type' => 'application/json'],
@@ -230,9 +231,9 @@ final class TorrentProxySynchronizerTest extends TestCase
             if (str_ends_with($url, '/api/v2/app/setPreferences')) {
                 $decoded = json_decode(urldecode(substr($options['body'], \strlen('json='))), true, flags: \JSON_THROW_ON_ERROR);
                 $this->assertSame('None', $decoded['proxy_type']);
-                $this->assertFalse($decoded['proxy_hostnames']);
+                $this->assertFalse($decoded['proxy_hostname_lookup']);
                 $this->assertFalse($decoded['proxy_peer_connections']);
-                $this->assertFalse($decoded['proxy_tracker_connections']);
+                $this->assertFalse($decoded['proxy_bittorrent']);
             }
 
             return new MockResponse('Ok.');
@@ -274,25 +275,30 @@ final class TorrentProxySynchronizerTest extends TestCase
     }
 
     /**
+     * A representative slice of qBittorrent 5.2.3's real `GET /api/v2/app/preferences` response —
+     * field names are hand-typed from the WebUI API source (src/webui/api/appcontroller.cpp at
+     * tag release-5.2.3), independently of TorrentProxySynchronizer's own constants. If the
+     * synchronizer's CONFIRMED_KEYS/socks5Preferences() ever regress to the pre-5.0 names
+     * (proxy_hostnames, proxy_tracker_connections), this fixture keeps returning the real 5.x
+     * names and confirmApplied() fails the test — instead of the mock silently mirroring
+     * whatever the production code happens to send.
+     *
      * @return array<string, mixed>
      */
-    private function expectedSocks5Preferences(bool $withAuth = false): array
+    private function realQbittorrentPreferencesResponse(bool $withAuth = false): array
     {
-        $preferences = [
+        return [
             'proxy_type' => 'SOCKS5',
             'proxy_ip' => 'proxy.example',
             'proxy_port' => 1080,
-            'proxy_hostnames' => true,
-            'proxy_peer_connections' => true,
-            'proxy_tracker_connections' => true,
             'proxy_auth_enabled' => $withAuth,
+            'proxy_username' => $withAuth ? 'alice' : '',
+            'proxy_password' => $withAuth ? 'p4ss' : '',
+            'proxy_hostname_lookup' => true,
+            'proxy_bittorrent' => true,
+            'proxy_peer_connections' => true,
+            'proxy_rss' => false,
+            'proxy_misc' => false,
         ];
-
-        if ($withAuth) {
-            $preferences['proxy_username'] = 'alice';
-            $preferences['proxy_password'] = 'p4ss';
-        }
-
-        return $preferences;
     }
 }
