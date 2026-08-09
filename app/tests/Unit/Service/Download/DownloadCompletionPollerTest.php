@@ -155,6 +155,7 @@ final class DownloadCompletionPollerTest extends TestCase
         $stored = $this->downloads->findByInfoHashAndAnime(self::HASH, (int) $anime->id);
         $this->assertNotNull($stored);
         $this->assertTrue($stored->isCompleted());
+        $this->assertNotNull($anime->getStorage());
         $this->assertSame(self::ROOT, $anime->getStorage()->getPath());
         $this->assertSame('finished-release', $anime->getStoragePath());
     }
@@ -179,7 +180,7 @@ final class DownloadCompletionPollerTest extends TestCase
     }
 
     /**
-     * @return list<array{0: string, 1: float, 2: string}>
+     * @return array<string, array{0: string, 1: float, 2: string}>
      */
     public static function incompleteTorrentProvider(): array
     {

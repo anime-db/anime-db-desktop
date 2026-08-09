@@ -83,7 +83,8 @@ final class QbittorrentDownloadService implements DownloadServiceInterface
             $this->submitToQbittorrent($source, $infoHash, $torrentFileContent);
         }
 
-        $animeReference = $this->entityManager->getReference(Anime::class, $anime->value);
+        $animeReference = $this->entityManager->getReference(Anime::class, $anime->value)
+            ?? throw new \LogicException(\sprintf('Anime #%d does not exist.', $anime->value));
         $this->downloads->save(new Download($infoHash, $animeReference));
 
         return new DownloadTaskId($infoHash);

@@ -97,7 +97,7 @@ final class TorrentInfoHashResolver
 
         $bytes = '';
         foreach (str_split(substr($bits, 0, \intdiv(\strlen($bits), 8) * 8), 8) as $byte) {
-            $bytes .= \chr(bindec($byte));
+            $bytes .= \chr((int) bindec($byte) & 0xFF);
         }
 
         return $bytes;

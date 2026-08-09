@@ -115,6 +115,8 @@ final class AnimeDownloadLinkerTest extends TestCase
         $this->linker->link($first, self::ROOT.'\\release-one');
         $this->linker->link($second, self::ROOT.'\\release-two');
 
+        $this->assertNotNull($first->getStorage());
+        $this->assertNotNull($second->getStorage());
         $this->assertSame($first->getStorage()->id, $second->getStorage()->id);
     }
 

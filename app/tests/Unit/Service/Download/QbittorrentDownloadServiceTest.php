@@ -137,6 +137,9 @@ final class QbittorrentDownloadServiceTest extends TestCase
         );
 
         $this->assertSame(self::MAGNET_HASH, $taskId->value);
+        if (!\is_array($captured) || !\is_string($captured['body'] ?? null)) {
+            $this->fail('Expected the request body to be captured as a string.');
+        }
         $this->assertStringContainsString('savepath='.rawurlencode('\\\\?\\'.self::ROOT.'\\'.self::MAGNET_HASH), $captured['body']);
         $this->assertNotNull($this->downloads->findByInfoHashAndAnime(self::MAGNET_HASH, (int) $anime->id));
     }
