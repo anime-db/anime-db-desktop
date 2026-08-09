@@ -22,6 +22,7 @@
 'use strict';
 
 const { spawn } = require('child_process');
+const path       = require('path');
 
 /**
  * Backend event name (see App\Controller\Settings\ProxyController::FIREWALL_RULE_CHANGED_EVENT
@@ -43,6 +44,16 @@ const FIREWALL_RULE_CHANGED_EVENT = 'firewall.rule.changed';
  */
 const BT_PORT = 51413;
 
+/**
+ * qbittorrent-nox executable path (see native/supervisor/qbittorrent.js's BINARY). Duplicated
+ * rather than imported for the same no-dependency reason as BT_PORT above. Scoping the rule to
+ * this program (rather than leaving `program=` unset) keeps the opened port from being usable by
+ * any other locally-bound process.
+ *
+ * @type {string}
+ */
+const BINARY = path.join(__dirname, '..', 'bin', 'qbittorrent-nox', 'qbittorrent-nox.exe');
+
 /** @type {{ TCP: string, UDP: string }} */
 const RULE_NAMES = Object.freeze({
     TCP: 'AnimeDB qBittorrent (TCP)',
@@ -50,6 +61,10 @@ const RULE_NAMES = Object.freeze({
 });
 
 /**
+ * Scoped to `program=` (only qbittorrent-nox may listen on the port) and `profile=private`
+ * (home/work networks only, not Public) — an unscoped rule would open the port for any locally
+ * bound process on any network, including untrusted public Wi-Fi.
+ *
  * @param {'TCP' | 'UDP'} protocol
  * @param {string} ruleName
  * @returns {string[]}
@@ -60,8 +75,10 @@ function buildAddRuleArgs(protocol, ruleName) {
         `name=${ruleName}`,
         'dir=in',
         'action=allow',
+        `program=${BINARY}`,
         `protocol=${protocol}`,
         `localport=${BT_PORT}`,
+        'profile=private',
     ];
 }
 
@@ -85,43 +102,75 @@ function buildNetshArgs(enabled, protocol) {
 }
 
 /**
- * @param {string} value
+ * netsh argv keys whose value may contain spaces/parens (rule name, program path) and therefore
+ * needs its own embedded double quotes to survive as one token once the argv is flattened to a
+ * single command-line string (see buildNetshCommandLine doc).
+ *
+ * @type {string[]}
+ */
+const QUOTED_ARG_KEYS = ['name=', 'program='];
+
+/**
+ * @param {string} arg
  * @returns {string}
  */
-function quotePowerShellArg(value) {
-    return `'${value.replace(/'/g, "''")}'`;
+function quoteNetshArg(arg) {
+    const key = QUOTED_ARG_KEYS.find((prefix) => arg.startsWith(prefix));
+
+    return key ? `${key}"${arg.slice(key.length)}"` : arg;
 }
 
 /**
- * Builds the PowerShell command that runs the given netsh argv elevated (UAC prompt). Win32's
- * CreateProcess only ever sees a single command-line string, not an argv array — once
- * Start-Process re-joins the args with spaces, the rule name (which contains spaces/parens)
- * needs its own embedded double quotes to still parse as one netsh token.
+ * Flattens a netsh argv array into the single command-line string netsh itself expects. Win32's
+ * CreateProcess only ever sees a single command-line string, not an argv array — so `name=` and
+ * `program=` values (which may contain spaces/parens) need their own embedded double quotes,
+ * otherwise netsh would see them split into several unrelated tokens and fail to parse.
  *
  * @param {string[]} argv
  * @returns {string}
  */
-function buildElevatedNetshCommand(argv) {
-    const commandLine = argv
-        .map((arg) => (arg.startsWith('name=') ? `name="${arg.slice('name='.length)}"` : arg))
-        .join(' ');
-
-    return `Start-Process -FilePath 'netsh' -ArgumentList ${quotePowerShellArg(commandLine)} -Verb RunAs -Wait -WindowStyle Hidden`;
+function buildNetshCommandLine(argv) {
+    return argv.map(quoteNetshArg).join(' ');
 }
 
 /**
- * Runs a single elevated netsh add/delete for one protocol. No-op on any platform but Windows
- * (the app only ships for Windows, see .claude-docs/architecture.md, but the jest suite runs on
- * Linux CI).
+ * Builds the elevated (UAC) PowerShell command that applies both the TCP and UDP rules in a
+ * single elevated session, so one toggle click prompts UAC exactly once instead of twice (one
+ * per protocol). The inner script is passed via `-EncodedCommand` (base64 UTF-16LE) rather than
+ * as inline quoted text — that sidesteps having to nest PowerShell's own quoting rules two levels
+ * deep (outer non-elevated `-Command` invoking `Start-Process`, which itself launches an elevated
+ * `powershell.exe` running the netsh calls).
  *
  * @param {boolean} enabled
- * @param {'TCP' | 'UDP'} protocol
+ * @returns {string}
+ */
+function buildElevatedNetshCommand(enabled) {
+    const script = ['TCP', 'UDP']
+        .map((protocol) => `netsh ${buildNetshCommandLine(buildNetshArgs(enabled, protocol))}`)
+        .join('; ');
+
+    const encodedCommand = Buffer.from(script, 'utf16le').toString('base64');
+
+    return "Start-Process -FilePath 'powershell.exe' "
+        + `-ArgumentList '-NoProfile -NonInteractive -EncodedCommand ${encodedCommand}' `
+        + '-Verb RunAs -Wait -WindowStyle Hidden';
+}
+
+/**
+ * Adds (enabled=true) or removes (enabled=false) the TCP+UDP Windows Firewall inbound rules for
+ * the BT listen port via a single elevated (UAC) session — see buildElevatedNetshCommand(). No-op
+ * on any platform but Windows (the app only ships for Windows, see .claude-docs/architecture.md,
+ * but the jest suite runs on Linux CI). Called only in reaction to the user's explicit
+ * settings-page toggle (FIREWALL_RULE_CHANGED_EVENT) — never at app startup or install time
+ * (issue #361 acceptance: elevation only by explicit user action).
+ *
+ * @param {boolean} enabled
  * @returns {Promise<void>}
  */
-function applyRule(enabled, protocol) {
+function applyIncomingConnections(enabled) {
     if (process.platform !== 'win32') return Promise.resolve();
 
-    const command = buildElevatedNetshCommand(buildNetshArgs(enabled, protocol));
+    const command = buildElevatedNetshCommand(enabled);
 
     return new Promise((resolve, reject) => {
         const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command], { stdio: 'ignore' });
@@ -131,24 +180,10 @@ function applyRule(enabled, protocol) {
             if (code === 0) {
                 resolve();
             } else {
-                reject(new Error(`netsh ${protocol} rule ${enabled ? 'add' : 'delete'} exited with code ${code}`));
+                reject(new Error(`netsh incoming connections ${enabled ? 'enable' : 'disable'} exited with code ${code}`));
             }
         });
     });
-}
-
-/**
- * Adds (enabled=true) or removes (enabled=false) the TCP+UDP Windows Firewall inbound rules for
- * the BT listen port, each its own elevated (UAC) netsh call. Called only in reaction to the
- * user's explicit settings-page toggle (FIREWALL_RULE_CHANGED_EVENT) — never at app startup or
- * install time (issue #361 acceptance: elevation only by explicit user action).
- *
- * @param {boolean} enabled
- * @returns {Promise<void>}
- */
-async function applyIncomingConnections(enabled) {
-    await applyRule(enabled, 'TCP');
-    await applyRule(enabled, 'UDP');
 }
 
 module.exports = {
@@ -158,6 +193,7 @@ module.exports = {
     buildAddRuleArgs,
     buildDeleteRuleArgs,
     buildNetshArgs,
+    buildNetshCommandLine,
     buildElevatedNetshCommand,
     applyIncomingConnections,
 };

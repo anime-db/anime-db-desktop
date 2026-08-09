@@ -34,9 +34,24 @@ const {
     buildAddRuleArgs,
     buildDeleteRuleArgs,
     buildNetshArgs,
+    buildNetshCommandLine,
     buildElevatedNetshCommand,
     applyIncomingConnections,
 } = require('../../native/firewall');
+
+/**
+ * Decodes the base64 UTF-16LE `-EncodedCommand` payload embedded in a buildElevatedNetshCommand()
+ * result back into the plain netsh script, so tests can assert on its content.
+ *
+ * @param {string} command
+ * @returns {string}
+ */
+function decodeEncodedCommand(command) {
+    const matched = command.match(/-EncodedCommand ([A-Za-z0-9+/=]+)/);
+    expect(matched).not.toBeNull();
+
+    return Buffer.from(matched[1], 'base64').toString('utf16le');
+}
 
 beforeEach(() => {
     jest.clearAllMocks();
@@ -52,15 +67,35 @@ describe('BT_PORT', () => {
     });
 });
 
+describe('program= path', () => {
+    test('resolves to the same qbittorrent-nox.exe path as native/supervisor/qbittorrent.js\'s BINARY', () => {
+        const supervisorDir = path.join(__dirname, '../../native/supervisor');
+        const source = fs.readFileSync(path.join(supervisorDir, 'qbittorrent.js'), 'utf8');
+        const matched = source.match(/const BINARY = path\.join\(__dirname, ((?:'[^']*',?\s*)+)\);/);
+
+        expect(matched).not.toBeNull();
+        const segments = matched[1].match(/'([^']*)'/g).map((quoted) => quoted.slice(1, -1));
+        const expectedBinary = path.join(supervisorDir, ...segments);
+
+        const programArg = buildAddRuleArgs('TCP', RULE_NAMES.TCP).find((arg) => arg.startsWith('program='));
+
+        expect(programArg).toBe(`program=${expectedBinary}`);
+    });
+});
+
 describe('buildAddRuleArgs', () => {
-    test('builds an inbound allow rule for the given protocol on the BT port', () => {
-        expect(buildAddRuleArgs('TCP', RULE_NAMES.TCP)).toEqual([
+    test('builds an inbound allow rule for the given protocol on the BT port, scoped to the qbittorrent-nox program and the private profile', () => {
+        const args = buildAddRuleArgs('TCP', RULE_NAMES.TCP);
+
+        expect(args).toEqual([
             'advfirewall', 'firewall', 'add', 'rule',
             'name=AnimeDB qBittorrent (TCP)',
             'dir=in',
             'action=allow',
+            expect.stringMatching(/^program=.*qbittorrent-nox\.exe$/),
             'protocol=TCP',
             `localport=${BT_PORT}`,
+            'profile=private',
         ]);
     });
 
@@ -90,21 +125,35 @@ describe('buildNetshArgs', () => {
     });
 });
 
-describe('buildElevatedNetshCommand', () => {
-    test('quotes the rule name so it survives Start-Process -ArgumentList joining args with spaces', () => {
-        const command = buildElevatedNetshCommand(buildAddRuleArgs('TCP', RULE_NAMES.TCP));
+describe('buildNetshCommandLine', () => {
+    test('quotes name= and program= values so they survive being flattened into one command-line string', () => {
+        const commandLine = buildNetshCommandLine(buildAddRuleArgs('TCP', RULE_NAMES.TCP));
 
-        expect(command).toBe(
-            'Start-Process -FilePath \'netsh\' -ArgumentList '
-            + '\'advfirewall firewall add rule name="AnimeDB qBittorrent (TCP)" dir=in action=allow protocol=TCP localport=51413\' '
-            + '-Verb RunAs -Wait -WindowStyle Hidden',
-        );
+        expect(commandLine).toContain('name="AnimeDB qBittorrent (TCP)"');
+        expect(commandLine).toMatch(/program="[^"]*qbittorrent-nox\.exe"/);
+        expect(commandLine).toContain('dir=in');
+        expect(commandLine).toContain('localport=51413');
+    });
+});
+
+describe('buildElevatedNetshCommand', () => {
+    test('runs both TCP and UDP netsh calls inside a single elevated Start-Process (one UAC prompt)', () => {
+        const command = buildElevatedNetshCommand(true);
+
+        expect(command).toMatch(/^Start-Process -FilePath 'powershell\.exe' -ArgumentList '-NoProfile -NonInteractive -EncodedCommand [A-Za-z0-9+/=]+' -Verb RunAs -Wait -WindowStyle Hidden$/);
+
+        const script = decodeEncodedCommand(command);
+
+        expect(script).toContain('netsh advfirewall firewall add rule name="AnimeDB qBittorrent (TCP)"');
+        expect(script).toContain('netsh advfirewall firewall add rule name="AnimeDB qBittorrent (UDP)"');
+        expect(script.indexOf('protocol=TCP')).toBeLessThan(script.indexOf('protocol=UDP'));
     });
 
-    test('escapes a single quote in an argument for PowerShell', () => {
-        const command = buildElevatedNetshCommand(['advfirewall', "o'brien"]);
+    test('builds delete-rule netsh calls for both protocols when disabling', () => {
+        const script = decodeEncodedCommand(buildElevatedNetshCommand(false));
 
-        expect(command).toContain("o''brien");
+        expect(script).toContain('netsh advfirewall firewall delete rule name="AnimeDB qBittorrent (TCP)"');
+        expect(script).toContain('netsh advfirewall firewall delete rule name="AnimeDB qBittorrent (UDP)"');
     });
 });
 
@@ -123,26 +172,21 @@ describe('applyIncomingConnections', () => {
         expect(spawn).not.toHaveBeenCalled();
     });
 
-    test('spawns one elevated powershell call per protocol on Windows', async () => {
+    test('spawns exactly one elevated powershell call for both protocols on Windows', async () => {
         Object.defineProperty(process, 'platform', { value: 'win32' });
         const fakeChild = { on: jest.fn((event, cb) => { if (event === 'exit') cb(0); }) };
         spawn.mockReturnValue(fakeChild);
 
         await applyIncomingConnections(true);
 
-        expect(spawn).toHaveBeenCalledTimes(2);
-        expect(spawn).toHaveBeenNthCalledWith(
-            1,
-            'powershell.exe',
-            expect.arrayContaining(['-Command', expect.stringContaining('protocol=TCP')]),
-            expect.any(Object),
-        );
-        expect(spawn).toHaveBeenNthCalledWith(
-            2,
-            'powershell.exe',
-            expect.arrayContaining(['-Command', expect.stringContaining('protocol=UDP')]),
-            expect.any(Object),
-        );
+        expect(spawn).toHaveBeenCalledTimes(1);
+
+        const [, args] = spawn.mock.calls[0];
+        const commandIndex = args.indexOf('-Command');
+        const script = decodeEncodedCommand(args[commandIndex + 1]);
+
+        expect(script).toContain('protocol=TCP');
+        expect(script).toContain('protocol=UDP');
     });
 
     test('builds delete-rule commands when disabling', async () => {
@@ -152,15 +196,14 @@ describe('applyIncomingConnections', () => {
 
         await applyIncomingConnections(false);
 
-        expect(spawn).toHaveBeenNthCalledWith(
-            1,
-            'powershell.exe',
-            expect.arrayContaining(['-Command', expect.stringContaining('delete')]),
-            expect.any(Object),
-        );
+        const [, args] = spawn.mock.calls[0];
+        const commandIndex = args.indexOf('-Command');
+        const script = decodeEncodedCommand(args[commandIndex + 1]);
+
+        expect(script).toContain('delete');
     });
 
-    test('rejects when the elevated netsh call exits non-zero (e.g. UAC declined)', async () => {
+    test('rejects when the elevated call exits non-zero (e.g. UAC declined)', async () => {
         Object.defineProperty(process, 'platform', { value: 'win32' });
         const fakeChild = { on: jest.fn((event, cb) => { if (event === 'exit') cb(1); }) };
         spawn.mockReturnValue(fakeChild);
