@@ -30,6 +30,7 @@ namespace App\Entity;
 use App\Entity\Enum\ProductionStatus;
 use App\Entity\Enum\WatchStatus;
 use App\Entity\Exception\InvalidEpisodeCountException;
+use App\Entity\Exception\InvalidWatchStatusException;
 use Doctrine\ORM\Mapping as ORM;
 
 /**
@@ -123,6 +124,47 @@ abstract class SeriesAnime extends Anime
         if ($watchStatus === WatchStatus::Completed) {
             $this->watchedEpisodes = $this->episodesCount;
         }
+
+        return $this;
+    }
+
+    /**
+     * Episodes-then-status order (issue #365): applying $watchedEpisodes first lets the pair
+     * represent e.g. "Dropped at 5/12" — setWatchedEpisodes(5) derives Watching via the usual
+     * coupling, then the explicit setWatchStatus($status) below overrides it to Dropped without
+     * touching watchedEpisodes (only a target of Completed forces watchedEpisodes := episodesCount).
+     * $watchedEpisodes === null means the source didn't report episode progress this time
+     * ("doesn't report" isn't "0"), so the local value is left untouched entirely.
+     *
+     * Each setter is atomic on its own (assertEpisodeCount()/the Completed-not-Released check
+     * both validate before mutating), but the pair together is not: setWatchedEpisodes() can
+     * succeed and then the explicit setWatchStatus() can still reject. On that path the episodes
+     * mutation is rolled back to its pre-call value via the same two setters (same order, so the
+     * intermediate status the rollback's setWatchedEpisodes() call derives is itself overwritten
+     * by the restored setWatchStatus() right after) — a rejected pair must never leave the entity
+     * holding a value the source never actually sent.
+     */
+    public function applyWatchProgress(WatchStatus $status, ?int $watchedEpisodes, \DateTimeImmutable $updatedAt): self
+    {
+        $previousStatus = $this->getWatchStatus();
+        $previousWatchedEpisodes = $this->watchedEpisodes;
+
+        try {
+            if ($watchedEpisodes !== null) {
+                $this->setWatchedEpisodes($watchedEpisodes);
+            }
+            $this->setWatchStatus($status);
+        } catch (InvalidEpisodeCountException|InvalidWatchStatusException) {
+            if ($watchedEpisodes !== null) {
+                $this->setWatchedEpisodes($previousWatchedEpisodes);
+            }
+            $this->setWatchStatus($previousStatus);
+            $this->flagWatchProgressRejected();
+
+            return $this;
+        }
+
+        $this->touchWatchProgress($updatedAt);
 
         return $this;
     }

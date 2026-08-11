@@ -102,6 +102,43 @@ final class AnimeTest extends TestCase
         $this->assertSame(WatchStatus::Watching, $anime->getWatchStatus());
     }
 
+    public function testApplyWatchProgressSetsStatusAndWatchProgressUpdatedAt(): void
+    {
+        $anime = new MovieAnime();
+        $anime->setWatchStatus(WatchStatus::Plan);
+        $updatedAt = new \DateTimeImmutable('2026-01-01 12:00:00');
+
+        $anime->applyWatchProgress(WatchStatus::Watching, null, $updatedAt);
+
+        $this->assertSame(WatchStatus::Watching, $anime->getWatchStatus());
+        $this->assertEquals($updatedAt, $anime->getWatchProgressUpdatedAt());
+        $this->assertNull($anime->getWatchProgressRejectedAt());
+    }
+
+    public function testApplyWatchProgressRejectsCompletedWithoutReleaseDatesWithoutThrowing(): void
+    {
+        $anime = new MovieAnime();
+        $anime->setWatchStatus(WatchStatus::Plan);
+
+        $anime->applyWatchProgress(WatchStatus::Completed, null, new \DateTimeImmutable());
+
+        $this->assertSame(WatchStatus::Plan, $anime->getWatchStatus());
+        $this->assertNull($anime->getWatchProgressUpdatedAt());
+        $this->assertNotNull($anime->getWatchProgressRejectedAt());
+    }
+
+    public function testApplyWatchProgressSuccessClearsAPriorRejectionFlag(): void
+    {
+        $anime = new MovieAnime();
+        $anime->setWatchStatus(WatchStatus::Plan);
+        $anime->applyWatchProgress(WatchStatus::Completed, null, new \DateTimeImmutable());
+        $this->assertNotNull($anime->getWatchProgressRejectedAt());
+
+        $anime->applyWatchProgress(WatchStatus::Watching, null, new \DateTimeImmutable());
+
+        $this->assertNull($anime->getWatchProgressRejectedAt());
+    }
+
     public function testDateEndEarlierThanDatePremiereIsRejectedViaSetDateEnd(): void
     {
         $anime = new MovieAnime();

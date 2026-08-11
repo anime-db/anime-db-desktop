@@ -141,6 +141,29 @@ abstract class Anime
     #[ORM\Column(type: 'unix_timestamp')]
     private \DateTimeImmutable $dateUpdate;
 
+    /**
+     * Time of the last change to the (watchStatus, watchedEpisodes) projection, the unit the
+     * sync reconciliation snapshot (anime_sync_state, issue #365) diffs against — separate from
+     * $dateUpdate, which bumps on every field touch (title edit, rating, ...), not just watch
+     * progress. Only applyWatchProgress() writes it; a plain setWatchStatus()/setWatchedEpisodes()
+     * call (still used for initial creation, e.g. AnimeNewController) leaves it untouched.
+     * Nullable because existing rows only get it via the Version20260812000000 backfill and a
+     * freshly created Anime has no watch progress history yet.
+     */
+    #[ORM\Column(type: 'unix_timestamp', nullable: true)]
+    private ?\DateTimeImmutable $watchProgressUpdatedAt = null;
+
+    /**
+     * Set by applyWatchProgress() when it rejects an incoming (watchStatus, watchedEpisodes)
+     * pair because applying it would violate a local invariant (InvalidWatchStatusException/
+     * InvalidEpisodeCountException) — cleared automatically the next time applyWatchProgress()
+     * succeeds. A one-shot marker rather than a running log: the future sync engine is expected
+     * to raise a review item off it once per rejection (not on every sync attempt) and clear it
+     * once surfaced, see issue #365's "не долбить каждый синк, не морозить невидимо".
+     */
+    #[ORM\Column(type: 'unix_timestamp', nullable: true)]
+    private ?\DateTimeImmutable $watchProgressRejectedAt = null;
+
     /** @var Collection<int, AnimeGenre> */
     #[ORM\OneToMany(mappedBy: 'anime', targetEntity: AnimeGenre::class, cascade: ['persist', 'remove'], orphanRemoval: true)]
     private Collection $genres;
@@ -289,6 +312,63 @@ abstract class Anime
         return $this;
     }
 
+    public function getWatchProgressUpdatedAt(): ?\DateTimeImmutable
+    {
+        return $this->watchProgressUpdatedAt;
+    }
+
+    public function getWatchProgressRejectedAt(): ?\DateTimeImmutable
+    {
+        return $this->watchProgressRejectedAt;
+    }
+
+    /**
+     * Applies a (watchStatus, watchedEpisodes) pair as a single reconciled fact rather than two
+     * independent field writes (issue #365): the domain already couples them (setWatchedEpisodes()
+     * derives a status, setWatchStatus(Completed) forces watchedEpisodes to episodesCount), so a
+     * sync source's progress update has to go through the same coupling atomically, or a rejected
+     * half of the pair could leave the entity in a state the source never actually sent.
+     * SeriesAnime overrides this to also apply $watchedEpisodes, in episodes-then-status order.
+     *
+     * $watchedEpisodes is accepted here only so the signature matches the SeriesAnime override;
+     * Anime itself has no episode axis, so it is ignored.
+     *
+     * A source pair that violates a local invariant (Completed while not yet released) does not
+     * throw out of here — that would abort an entire sync run over one bad item. The pair is left
+     * unapplied and $watchProgressRejectedAt is flagged instead; see that property's docblock.
+     */
+    public function applyWatchProgress(WatchStatus $status, ?int $watchedEpisodes, \DateTimeImmutable $updatedAt): self
+    {
+        try {
+            $this->setWatchStatus($status);
+        } catch (InvalidWatchStatusException) {
+            $this->flagWatchProgressRejected();
+
+            return $this;
+        }
+
+        $this->touchWatchProgress($updatedAt);
+
+        return $this;
+    }
+
+    /**
+     * Deliberately the last statement on every applyWatchProgress() success path (base and
+     * SeriesAnime override alike): it must record the source's own $updatedAt, not a "now" a
+     * setter along the way might stamp for an unrelated reason — running it after every mutating
+     * setter has already succeeded is what guarantees that.
+     */
+    protected function touchWatchProgress(\DateTimeImmutable $updatedAt): void
+    {
+        $this->watchProgressUpdatedAt = $updatedAt;
+        $this->watchProgressRejectedAt = null;
+    }
+
+    protected function flagWatchProgressRejected(): void
+    {
+        $this->watchProgressRejectedAt = new \DateTimeImmutable();
+    }
+
     public function getUserRating(): ?Rating
     {
         return $this->userRating;
@@ -352,6 +432,15 @@ abstract class Anime
             ->setDemographic($this->demographic)
             ->setCountries($this->countries)
             ->setWatchStatus($this->watchStatus);
+
+        // No public setter exists for these — they are sync bookkeeping, not something a caller
+        // should ever set directly. Carried over by direct property assignment (legal here: both
+        // are private to Anime, and migrate() is itself a method of Anime) so the reconciliation
+        // snapshot's timestamp basis survives a type migration instead of resetting to null,
+        // which would otherwise make every participant look "changed" on the next sync (issue
+        // #365, "camp #13").
+        $target->watchProgressUpdatedAt = $this->watchProgressUpdatedAt;
+        $target->watchProgressRejectedAt = $this->watchProgressRejectedAt;
 
         foreach ($this->getGenreCodes() as $code) {
             $target->addGenre($code);

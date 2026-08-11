@@ -118,6 +118,48 @@ final class AnimeSyncPushListenerTest extends TestCase
         $listener->preUpdate(new PreUpdateEventArgs($anime, $this->entityManager, $changeSet));
     }
 
+    /**
+     * Regression test (issue #365, "camp #5"): a SeriesAnime episode-only edit (5/12 -> 6/12
+     * while still Watching) never touches watchStatus, so the old hasChangedField('watchStatus')-
+     * only check missed it entirely and the episode progress was never pushed to sync plugins.
+     */
+    public function testDispatchesPushSyncMessageWhenWatchedEpisodesChanged(): void
+    {
+        $anime = $this->persistAnime();
+        $animeId = $this->requireId($anime);
+
+        $messageBus = $this->createMock(MessageBusInterface::class);
+        $messageBus->expects($this->once())
+            ->method('dispatch')
+            ->with($this->equalTo(new PushSyncMessage($animeId)))
+            ->willReturn(new Envelope(new PushSyncMessage($animeId)));
+
+        $changeSet = ['watchedEpisodes' => [5, 6]];
+        $listener = new AnimeSyncPushListener($messageBus, new PullPushSuppressor());
+        $listener->preUpdate(new PreUpdateEventArgs($anime, $this->entityManager, $changeSet));
+    }
+
+    /**
+     * Anime::applyWatchProgress() (issue #365) stamps watchProgressUpdatedAt on every
+     * successful application, so a future sync-engine call through it is covered by this
+     * changed field even on a run where neither watchStatus nor watchedEpisodes moved.
+     */
+    public function testDispatchesPushSyncMessageWhenWatchProgressUpdatedAtChanged(): void
+    {
+        $anime = $this->persistAnime();
+        $animeId = $this->requireId($anime);
+
+        $messageBus = $this->createMock(MessageBusInterface::class);
+        $messageBus->expects($this->once())
+            ->method('dispatch')
+            ->with($this->equalTo(new PushSyncMessage($animeId)))
+            ->willReturn(new Envelope(new PushSyncMessage($animeId)));
+
+        $changeSet = ['watchProgressUpdatedAt' => [null, new \DateTimeImmutable()]];
+        $listener = new AnimeSyncPushListener($messageBus, new PullPushSuppressor());
+        $listener->preUpdate(new PreUpdateEventArgs($anime, $this->entityManager, $changeSet));
+    }
+
     public function testDoesNothingForOtherEntityTypes(): void
     {
         $storage = new Storage('Main folder', 'C:\\Anime', StorageType::Folder);
