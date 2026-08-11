@@ -104,7 +104,8 @@ final class PushSyncMessageHandlerTest extends TestCase
         $sync->method('resolveExternalId')->willReturn('1');
         $sync->expects($this->once())
             ->method('push')
-            ->with($this->equalTo(new SyncItem('1', SyncStatus::Watching, 'Cowboy Bebop')));
+            ->with($this->equalTo(new SyncItem('1', SyncStatus::Watching, 'Cowboy Bebop')))
+            ->willReturn(new SyncItem('1', SyncStatus::Watching, 'Cowboy Bebop'));
 
         $registry = new SyncRegistry(
             ['animedb-shikimori' => $sync],

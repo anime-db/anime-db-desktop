@@ -34,6 +34,7 @@ use App\Service\Plugin\CatalogWidgetRegistry;
 use App\Service\Plugin\EntryWidgetRegistry;
 use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\PluginsConfigStore;
+use App\Tests\Fixtures\Plugin\Widget\FakeEntryWidget;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\Component\HttpFoundation\Request;
@@ -101,8 +102,8 @@ final class PluginWidgetControllerTest extends TestCase
 
         $entryWidgets = new EntryWidgetRegistry(
             [
-                'zzz-plugin:teaser' => $this->createStub(EntryWidgetInterface::class),
-                'animedb-shikimori:related' => $this->createStub(EntryWidgetInterface::class),
+                'zzz-plugin:teaser' => new FakeEntryWidget(),
+                'animedb-shikimori:related' => new FakeEntryWidget(),
             ],
             new PluginsConfigStore($this->configPath),
         );
@@ -114,8 +115,22 @@ final class PluginWidgetControllerTest extends TestCase
             ->with('settings/plugin/widgets.html.twig', $this->callback(static function (array $params): bool {
                 self::assertSame(
                     [
-                        ['pluginId' => 'animedb-shikimori', 'widgetName' => 'related', 'active' => false, 'pluginName' => 'Shikimori'],
-                        ['pluginId' => 'zzz-plugin', 'widgetName' => 'teaser', 'active' => false, 'pluginName' => 'Zzz Plugin'],
+                        [
+                            'pluginId' => 'animedb-shikimori',
+                            'widgetName' => 'related',
+                            'active' => false,
+                            'title' => 'Fake entry widget',
+                            'description' => 'A fake entry widget used in tests.',
+                            'pluginName' => 'Shikimori',
+                        ],
+                        [
+                            'pluginId' => 'zzz-plugin',
+                            'widgetName' => 'teaser',
+                            'active' => false,
+                            'title' => 'Fake entry widget',
+                            'description' => 'A fake entry widget used in tests.',
+                            'pluginName' => 'Zzz Plugin',
+                        ],
                     ],
                     $params['entryWidgets'],
                 );

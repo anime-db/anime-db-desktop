@@ -32,6 +32,7 @@ use App\Entity\ValueObject\PluginId;
 use App\Service\Plugin\EntryWidgetRegistry;
 use App\Service\Plugin\Exception\WidgetHardLimitExceededException;
 use App\Service\Plugin\PluginsConfigStore;
+use App\Tests\Fixtures\Plugin\Widget\FakeEntryWidget;
 use PHPUnit\Framework\TestCase;
 
 final class EntryWidgetRegistryTest extends TestCase
@@ -128,16 +129,28 @@ final class EntryWidgetRegistryTest extends TestCase
 
         $registry = new EntryWidgetRegistry(
             [
-                'animedb-shikimori:related' => $this->createStub(EntryWidgetInterface::class),
-                'animedb-shikimori:recommended' => $this->createStub(EntryWidgetInterface::class),
+                'animedb-shikimori:related' => new FakeEntryWidget(),
+                'animedb-shikimori:recommended' => new FakeEntryWidget(),
             ],
             new PluginsConfigStore($this->path),
         );
 
         $this->assertSame(
             [
-                ['pluginId' => 'animedb-shikimori', 'widgetName' => 'related', 'active' => false],
-                ['pluginId' => 'animedb-shikimori', 'widgetName' => 'recommended', 'active' => true],
+                [
+                    'pluginId' => 'animedb-shikimori',
+                    'widgetName' => 'related',
+                    'active' => false,
+                    'title' => 'Fake entry widget',
+                    'description' => 'A fake entry widget used in tests.',
+                ],
+                [
+                    'pluginId' => 'animedb-shikimori',
+                    'widgetName' => 'recommended',
+                    'active' => true,
+                    'title' => 'Fake entry widget',
+                    'description' => 'A fake entry widget used in tests.',
+                ],
             ],
             $registry->listAll(),
         );

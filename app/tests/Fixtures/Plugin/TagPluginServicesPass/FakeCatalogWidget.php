@@ -27,45 +27,28 @@ declare(strict_types=1);
 
 namespace AnimeDb\Plugins\FakeVendor;
 
-use AnimeDb\PluginContracts\Filler\PluginAnimeData;
-use AnimeDb\PluginContracts\Sync\SyncInterface;
-use AnimeDb\PluginContracts\Sync\SyncItem;
+use AnimeDb\PluginContracts\Widget\CatalogWidgetInterface;
+use AnimeDb\PluginContracts\Widget\WidgetMetadata;
 
 /**
- * Fixture used by TagPluginServicesPassTest to stand in for a real plugin's Sync service:
- * implementing {@see SyncInterface} (which extends FillerInterface, which extends
- * SearchByPluginInterface) should make the pass under test tag it with all three host tags at
- * once.
+ * Fixture used by TagPluginServicesPassTest to stand in for a real plugin's catalog widget
+ * service (issue #364), living under a plugin namespace so the pass under test recognizes it as
+ * belonging to the "fake-vendor" plugin.
  */
-final class FakeSync implements SyncInterface
+final class FakeCatalogWidget implements CatalogWidgetInterface
 {
+    public static function metadata(): WidgetMetadata
+    {
+        return new WidgetMetadata('new_releases', 'New releases', 'Shows recently released anime.');
+    }
+
     public function resolveExternalId(array $urls): ?string
     {
         return null;
     }
 
-    public function find(string $name, ?callable $onHeartbeat = null): array
+    public function render(): string
     {
-        return [];
-    }
-
-    public function findById(string $externalId): ?PluginAnimeData
-    {
-        return null;
-    }
-
-    public function getFillableFields(): array
-    {
-        return [];
-    }
-
-    public function push(SyncItem $item): SyncItem
-    {
-        return $item;
-    }
-
-    public function pull(): iterable
-    {
-        return [];
+        return '';
     }
 }

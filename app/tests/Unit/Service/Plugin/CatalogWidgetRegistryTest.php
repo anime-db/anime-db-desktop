@@ -32,6 +32,7 @@ use App\Entity\ValueObject\PluginId;
 use App\Service\Plugin\CatalogWidgetRegistry;
 use App\Service\Plugin\Exception\WidgetHardLimitExceededException;
 use App\Service\Plugin\PluginsConfigStore;
+use App\Tests\Fixtures\Plugin\Widget\FakeCatalogWidget;
 use PHPUnit\Framework\TestCase;
 
 final class CatalogWidgetRegistryTest extends TestCase
@@ -117,12 +118,18 @@ final class CatalogWidgetRegistryTest extends TestCase
         ]));
 
         $registry = new CatalogWidgetRegistry(
-            ['animedb-shikimori:new_releases' => $this->createStub(CatalogWidgetInterface::class)],
+            ['animedb-shikimori:new_releases' => new FakeCatalogWidget()],
             new PluginsConfigStore($this->path),
         );
 
         $this->assertSame(
-            [['pluginId' => 'animedb-shikimori', 'widgetName' => 'new_releases', 'active' => false]],
+            [[
+                'pluginId' => 'animedb-shikimori',
+                'widgetName' => 'new_releases',
+                'active' => false,
+                'title' => 'Fake catalog widget',
+                'description' => 'A fake catalog widget used in tests.',
+            ]],
             $registry->listAll(),
         );
     }

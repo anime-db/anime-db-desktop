@@ -50,11 +50,18 @@ use Twig\Environment;
  * each of those requests independently. A single failing widget therefore never blocks the page
  * or any other widget — the request that failed just swaps in the error fragment instead.
  *
- * The response depends only on the three URL parameters (pluginId, widgetName, entryId) and
- * reads no session/cookie state, so it is a plain cacheable GET; successful responses carry a
- * short-lived Cache-Control so a reload does not immediately re-hit the plugin's own API through
- * render(). The error fragment is not cached — a transient plugin error must not be pinned past
- * the request that observed it.
+ * This is a plain cacheable GET keyed on the three URL parameters (pluginId, widgetName,
+ * entryId) — but, despite reading no session/cookie state itself, its response is not a pure
+ * function of the URL: an OAuth-aware widget's render() (e.g. Shikimori's "new" widget) can
+ * depend on the plugin's own credential/token state stored in plugins.json, which the URL does
+ * not capture. Successful responses therefore carry a short-lived, `private` Cache-Control (issue
+ * #364) — short so a stale token/reauth state does not linger past what a reload would show
+ * anyway, `private` so a shared cache never reuses one user's personalized content for another —
+ * accepting up to {@see self::CACHE_MAX_AGE_SECONDS} of staleness for that personalized content
+ * in exchange for not re-hitting the plugin's own API on every reload. No no-store mechanism is
+ * introduced for the OAuth-aware case; the staleness window is accepted as-is. The error fragment
+ * is not cached at all — a transient plugin error must not be pinned past the request that
+ * observed it.
  */
 final class PluginWidgetController
 {

@@ -63,9 +63,10 @@ final class CatalogWidgetRegistry
     public function findAllActive(): array
     {
         $result = [];
-        foreach ($this->listAll() as $widget) {
-            if ($widget['active']) {
-                $result[] = ['pluginId' => $widget['pluginId'], 'widgetName' => $widget['widgetName']];
+        foreach (array_keys($this->all()) as $key) {
+            [$pluginId, $widgetName] = explode(':', $key, 2);
+            if ($this->isActive(new PluginId($pluginId), $widgetName)) {
+                $result[] = ['pluginId' => $pluginId, 'widgetName' => $widgetName];
             }
         }
 
@@ -73,18 +74,26 @@ final class CatalogWidgetRegistry
     }
 
     /**
-     * @return list<array{pluginId: string, widgetName: string, active: bool}> every registered
-     *                                                                         widget, active or not, for the settings UI (issue #213)
+     * Title/description come from the widget's own `metadata()` (issue #364), read fresh on
+     * every call rather than cached: the widget instances themselves are already resolved once
+     * at container build time, so this is not a repeated I/O cost, just a couple of property
+     * reads on an already-live object.
+     *
+     * @return list<array{pluginId: string, widgetName: string, active: bool, title: string, description: string}> every
+     *                                                                                                             registered widget, active or not, for the settings UI (issue #213/#364)
      */
     public function listAll(): array
     {
         $result = [];
-        foreach (array_keys($this->all()) as $key) {
+        foreach ($this->all() as $key => $widget) {
             [$pluginId, $widgetName] = explode(':', $key, 2);
+            $metadata = $widget::metadata();
             $result[] = [
                 'pluginId' => $pluginId,
                 'widgetName' => $widgetName,
                 'active' => $this->isActive(new PluginId($pluginId), $widgetName),
+                'title' => $metadata->title,
+                'description' => $metadata->description,
             ];
         }
 
