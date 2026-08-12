@@ -27,16 +27,25 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Service\Plugin\DependencyInjection\Compiler;
 
+use AnimeDb\Plugins\FakeVendor\FakeBrokenMetadataEntryWidget;
+use AnimeDb\Plugins\FakeVendor\FakeCatalogWidget;
+use AnimeDb\Plugins\FakeVendor\FakeDuplicateNameCatalogWidget;
+use AnimeDb\Plugins\FakeVendor\FakeEntryWidget;
 use AnimeDb\Plugins\FakeVendor\FakeFiller;
+use AnimeDb\Plugins\FakeVendor\FakeReservedNameEntryWidget;
 use AnimeDb\Plugins\FakeVendor\FakeSecondSettingsPage;
 use AnimeDb\Plugins\FakeVendor\FakeSettingsPage;
 use AnimeDb\Plugins\FakeVendor\FakeSync;
 use App\Service\Plugin\DependencyInjection\Compiler\TagPluginServicesPass;
+use App\Service\Plugin\Exception\DuplicateWidgetNameException;
 use App\Service\Plugin\Exception\MultipleSettingsPagesException;
+use App\Service\Plugin\Exception\ReservedWidgetNameException;
 use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\PluginsConfigStore;
 use App\Tests\Fixtures\Plugin\TagPluginServicesPass\NonPluginFiller;
+use App\Tests\Fixtures\Plugin\TagPluginServicesPass\RecordingLogger;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 
@@ -50,6 +59,12 @@ final class TagPluginServicesPassTest extends TestCase
         require_once __DIR__.'/../../../../../Fixtures/Plugin/TagPluginServicesPass/FakeSync.php';
         require_once __DIR__.'/../../../../../Fixtures/Plugin/TagPluginServicesPass/FakeSettingsPage.php';
         require_once __DIR__.'/../../../../../Fixtures/Plugin/TagPluginServicesPass/FakeSecondSettingsPage.php';
+        require_once __DIR__.'/../../../../../Fixtures/Plugin/TagPluginServicesPass/FakeEntryWidget.php';
+        require_once __DIR__.'/../../../../../Fixtures/Plugin/TagPluginServicesPass/FakeCatalogWidget.php';
+        require_once __DIR__.'/../../../../../Fixtures/Plugin/TagPluginServicesPass/FakeDuplicateNameCatalogWidget.php';
+        require_once __DIR__.'/../../../../../Fixtures/Plugin/TagPluginServicesPass/FakeReservedNameEntryWidget.php';
+        require_once __DIR__.'/../../../../../Fixtures/Plugin/TagPluginServicesPass/FakeBrokenMetadataEntryWidget.php';
+        require_once __DIR__.'/../../../../../Fixtures/Plugin/TagPluginServicesPass/RecordingLogger.php';
 
         $this->pluginsDir = sys_get_temp_dir().'/anime-tag-plugin-services-test-'.uniqid();
         mkdir($this->pluginsDir, recursive: true);
@@ -105,6 +120,70 @@ final class TagPluginServicesPassTest extends TestCase
         $this->assertSame([['id' => 'fake-vendor']], $definition->getTag('app.settings_page'));
     }
 
+    public function testTagsEntryWidgetServiceWithCompoundPluginAndWidgetNameId(): void
+    {
+        $this->writeManifest('fake-vendor');
+
+        $container = new ContainerBuilder();
+        $container->register(FakeEntryWidget::class, FakeEntryWidget::class);
+
+        $this->pass()->process($container);
+
+        $definition = $container->getDefinition(FakeEntryWidget::class);
+        $this->assertSame([['id' => 'fake-vendor:related']], $definition->getTag('app.entry_widget'));
+    }
+
+    public function testTagsCatalogWidgetServiceWithCompoundPluginAndWidgetNameId(): void
+    {
+        $this->writeManifest('fake-vendor');
+
+        $container = new ContainerBuilder();
+        $container->register(FakeCatalogWidget::class, FakeCatalogWidget::class);
+
+        $this->pass()->process($container);
+
+        $definition = $container->getDefinition(FakeCatalogWidget::class);
+        $this->assertSame([['id' => 'fake-vendor:new_releases']], $definition->getTag('app.catalog_widget'));
+    }
+
+    public function testSkipsAndLogsAWidgetServiceWithABrokenMetadata(): void
+    {
+        $this->writeManifest('fake-vendor');
+
+        $container = new ContainerBuilder();
+        $container->register(FakeBrokenMetadataEntryWidget::class, FakeBrokenMetadataEntryWidget::class);
+
+        $logger = new RecordingLogger();
+        $this->pass($logger)->process($container);
+
+        $definition = $container->getDefinition(FakeBrokenMetadataEntryWidget::class);
+        $this->assertSame([], $definition->getTag('app.entry_widget'));
+        $this->assertNotEmpty($logger->records);
+    }
+
+    public function testThrowsWhenAPluginRegistersTwoWidgetsWithTheSameNameAcrossPlacements(): void
+    {
+        $this->writeManifest('fake-vendor');
+
+        $container = new ContainerBuilder();
+        $container->register(FakeEntryWidget::class, FakeEntryWidget::class);
+        $container->register(FakeDuplicateNameCatalogWidget::class, FakeDuplicateNameCatalogWidget::class);
+
+        $this->expectException(DuplicateWidgetNameException::class);
+        $this->pass()->process($container);
+    }
+
+    public function testThrowsWhenAWidgetNameCollidesWithAReservedFeaturesKey(): void
+    {
+        $this->writeManifest('fake-vendor');
+
+        $container = new ContainerBuilder();
+        $container->register(FakeReservedNameEntryWidget::class, FakeReservedNameEntryWidget::class);
+
+        $this->expectException(ReservedWidgetNameException::class);
+        $this->pass()->process($container);
+    }
+
     public function testThrowsWhenAPluginRegistersMoreThanOneSettingsPageService(): void
     {
         $this->writeManifest('fake-vendor');
@@ -158,17 +237,16 @@ final class TagPluginServicesPassTest extends TestCase
         $this->assertSame([], $definition->getTag('app.search_by_plugin'));
     }
 
-    private function pass(): TagPluginServicesPass
+    private function pass(?LoggerInterface $logger = null): TagPluginServicesPass
     {
-        $logger = new NullLogger();
         $registry = new InstalledPluginsRegistry(
             $this->pluginsDir,
             new PluginsConfigStore($this->pluginsDir.'/plugins.json'),
-            $logger,
+            new NullLogger(),
         );
         $registry->reconcile();
 
-        return new TagPluginServicesPass($registry);
+        return new TagPluginServicesPass($registry, $logger ?? new NullLogger());
     }
 
     private function writeManifest(string $pluginId): void

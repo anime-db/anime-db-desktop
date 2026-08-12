@@ -127,7 +127,7 @@ final class PluginServiceAutoRegistrationTest extends TestCase
         $pluginLoader->registerAutoloadForIntegrationPlugins();
 
         $container = new ContainerBuilder();
-        $container->addCompilerPass(new TagPluginServicesPass($registry));
+        $container->addCompilerPass(new TagPluginServicesPass($registry, new NullLogger()));
 
         // Real consumer of the 'app.filler' tag (see FillerRegistry's #[AutowireIterator]) — kept
         // public so the test can retrieve it, and so that a plugin Filler service registered below

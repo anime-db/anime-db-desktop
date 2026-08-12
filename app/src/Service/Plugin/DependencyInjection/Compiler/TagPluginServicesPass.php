@@ -33,9 +33,12 @@ use AnimeDb\PluginContracts\Settings\SettingsPageInterface;
 use AnimeDb\PluginContracts\Sync\SyncInterface;
 use AnimeDb\PluginContracts\Widget\CatalogWidgetInterface;
 use AnimeDb\PluginContracts\Widget\EntryWidgetInterface;
+use App\Service\Plugin\Exception\DuplicateWidgetNameException;
 use App\Service\Plugin\Exception\MultipleSettingsPagesException;
+use App\Service\Plugin\Exception\ReservedWidgetNameException;
 use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\PluginNamespace;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 
@@ -71,6 +74,18 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
  * them — whichever ends up last in compilation order — so this pass instead rejects that case
  * outright with {@see MultipleSettingsPagesException}, surfacing a plugin author's mistake at
  * container-compile time rather than as an unexplained "wrong page renders" bug later.
+ *
+ * `EntryWidgetInterface`/`CatalogWidgetInterface` (issue #364) get a compound `id` instead of the
+ * plain plugin id every other row uses: a plugin may declare several widgets per placement, and
+ * {@see \App\Service\Plugin\EntryWidgetRegistry}/{@see \App\Service\Plugin\CatalogWidgetRegistry}
+ * key their `#[AutowireIterator(indexAttribute: 'id')]` on "{pluginId}:{widgetName}", `widgetName`
+ * coming from the widget's own static `metadata()` (contract, not this app). A plugin's
+ * `metadata()` is untrusted third-party code executed at container-compile time, so a
+ * throwing/broken implementation is caught and the widget is skipped with a log entry rather than
+ * failing the whole build — but a `metadata()->name` that collides with another widget of the
+ * same plugin, or with a reserved `features` key (`filler`/`sync` — see
+ * {@see \App\Service\Plugin\WidgetActiveTrait}), is a plugin author's mistake serious enough to
+ * reject outright, same stance as `MultipleSettingsPagesException` above.
  */
 final class TagPluginServicesPass implements CompilerPassInterface
 {
@@ -84,8 +99,12 @@ final class TagPluginServicesPass implements CompilerPassInterface
         SettingsPageInterface::class => 'app.settings_page',
     ];
 
+    /** @var list<string> features keys already used to gate the plugin's own Filler/Sync capabilities */
+    private const RESERVED_WIDGET_NAMES = ['filler', 'sync'];
+
     public function __construct(
         private readonly InstalledPluginsRegistry $registry,
+        private readonly LoggerInterface $logger,
     ) {
     }
 
@@ -98,6 +117,9 @@ final class TagPluginServicesPass implements CompilerPassInterface
 
         /** @var array<string, string> $settingsPageOwners plugin id => service id already tagged app.settings_page */
         $settingsPageOwners = [];
+
+        /** @var array<string, array<string, string>> $widgetNamesByPlugin plugin id => widget name => owning service id, shared by entry and catalog widgets */
+        $widgetNamesByPlugin = [];
 
         foreach ($container->getDefinitions() as $serviceId => $definition) {
             $class = $definition->getClass();
@@ -128,8 +150,51 @@ final class TagPluginServicesPass implements CompilerPassInterface
                     $settingsPageOwners[$pluginId] = $serviceId;
                 }
 
+                if ($interface === EntryWidgetInterface::class || $interface === CatalogWidgetInterface::class) {
+                    $name = $this->widgetName($class, $pluginId, $serviceId);
+                    if ($name === null) {
+                        continue;
+                    }
+
+                    if (\in_array($name, self::RESERVED_WIDGET_NAMES, true)) {
+                        throw new ReservedWidgetNameException($pluginId, $serviceId, $name);
+                    }
+
+                    $existingServiceId = $widgetNamesByPlugin[$pluginId][$name] ?? null;
+                    if ($existingServiceId !== null) {
+                        throw new DuplicateWidgetNameException($pluginId, $name, $existingServiceId, $serviceId);
+                    }
+
+                    $widgetNamesByPlugin[$pluginId][$name] = $serviceId;
+
+                    $definition->addTag($tag, ['id' => $pluginId.':'.$name]);
+
+                    continue;
+                }
+
                 $definition->addTag($tag, ['id' => $pluginId]);
             }
+        }
+    }
+
+    /**
+     * Reads a widget service's `metadata()->name`, or `null` if `metadata()` is broken (logged,
+     * not thrown — a single misbehaving plugin must not take down the whole container build). A
+     * plugin's `metadata()` is untrusted third-party code executed at container-compile time.
+     */
+    private function widgetName(string $class, string $pluginId, string $serviceId): ?string
+    {
+        try {
+            return $class::metadata()->name;
+        } catch (\Throwable $exception) {
+            $this->logger->error('Skipping widget service with a broken metadata().', [
+                'pluginId' => $pluginId,
+                'serviceId' => $serviceId,
+                'class' => $class,
+                'exception' => $exception,
+            ]);
+
+            return null;
         }
     }
 

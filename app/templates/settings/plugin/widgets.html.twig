@@ -44,7 +44,13 @@
                 {% for widget in widgets %}
                     <tr>
                         <td>{{ widget.pluginName }}</td>
-                        <td><code>{{ widget.widgetName }}</code></td>
+                        <td>
+                            <div class="settings-plugin-widgets__widget-title">{{ widget.title }}</div>
+                            {% if widget.description is not empty %}
+                                <div class="settings-plugin-widgets__widget-description">{{ widget.description }}</div>
+                            {% endif %}
+                            <code>{{ widget.widgetName }}</code>
+                        </td>
                         <td>
                             <form method="post" action="{{ path('settings_plugin_widgets_toggle', {pluginId: widget.pluginId, widgetName: widget.widgetName}) }}">
                                 <input type="hidden" name="_token" value="{{ csrf_token('settings_plugin_widgets_toggle_'~widget.pluginId~'_'~widget.widgetName) }}">

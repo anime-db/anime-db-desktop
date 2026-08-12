@@ -124,11 +124,11 @@ final class PluginWidgetController
     }
 
     /**
-     * @param list<array{pluginId: string, widgetName: string, active: bool}> $widgets
-     * @param array<string, string>                                           $pluginNames
-     * @param array<string, int>                                              $installOrder
+     * @param list<array{pluginId: string, widgetName: string, active: bool, title: string, description: string}> $widgets
+     * @param array<string, string>                                                                               $pluginNames
+     * @param array<string, int>                                                                                  $installOrder
      *
-     * @return list<array{pluginId: string, pluginName: string, widgetName: string, active: bool}>
+     * @return list<array{pluginId: string, pluginName: string, widgetName: string, active: bool, title: string, description: string}>
      */
     private function decorate(array $widgets, array $pluginNames, array $installOrder): array
     {

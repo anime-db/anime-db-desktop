@@ -146,7 +146,7 @@ class Kernel extends BaseKernel
      */
     public function build(ContainerBuilder $container): void
     {
-        $container->addCompilerPass(new TagPluginServicesPass($this->installedPluginsRegistry()));
+        $container->addCompilerPass(new TagPluginServicesPass($this->installedPluginsRegistry(), $this->pluginLoaderLogger()));
         $container->addCompilerPass(new PluginDataStoreScopePass($this->installedPluginsRegistry()));
         $container->addCompilerPass(new SettingsStoreScopePass($this->installedPluginsRegistry()));
         $container->addCompilerPass(new OwnManifestScopePass($this->installedPluginsRegistry()));

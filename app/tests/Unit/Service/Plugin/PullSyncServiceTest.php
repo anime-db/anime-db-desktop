@@ -167,8 +167,9 @@ final class PullSyncServiceTest extends TestCase
                 return null;
             }
 
-            public function push(SyncItem $item): void
+            public function push(SyncItem $item): SyncItem
             {
+                return $item;
             }
 
             public function pull(): iterable
