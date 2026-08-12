@@ -31,6 +31,7 @@ use App\Entity\Enum\ProductionStatus;
 use App\Entity\Enum\WatchStatus;
 use App\Entity\Exception\InvalidEpisodeCountException;
 use App\Entity\Exception\InvalidWatchStatusException;
+use App\Event\WatchProgressChangedByUserEvent;
 use Doctrine\ORM\Mapping as ORM;
 
 /**
@@ -115,6 +116,35 @@ abstract class SeriesAnime extends Anime
     public function watchNextEpisode(): self
     {
         return $this->setWatchedEpisodes(($this->watchedEpisodes ?? 0) + 1);
+    }
+
+    /**
+     * The manual-edit counterpart of setWatchedEpisodes() (issue #371) — see
+     * Anime::changeWatchStatusByUser() for why this split exists. Covers the episodes half of
+     * the reconciliation unit that the old Doctrine preUpdate listener needed a dedicated
+     * watchedEpisodes changed-field check for (issue #365, "camp #5"); here it is simply a
+     * second call site recording the same WatchProgressChangedByUserEvent.
+     */
+    public function changeWatchedEpisodesByUser(?int $watchedEpisodes): self
+    {
+        $previous = $this->watchedEpisodes;
+        $this->setWatchedEpisodes($watchedEpisodes);
+
+        if ($this->watchedEpisodes !== $previous) {
+            $this->recordThat(new WatchProgressChangedByUserEvent($this));
+        }
+
+        return $this;
+    }
+
+    /**
+     * The manual-edit counterpart of watchNextEpisode() (issue #371), delegating to
+     * changeWatchedEpisodesByUser() instead of duplicating its event-recording so the two stay
+     * in lockstep.
+     */
+    public function watchNextEpisodeByUser(): self
+    {
+        return $this->changeWatchedEpisodesByUser(($this->watchedEpisodes ?? 0) + 1);
     }
 
     public function setWatchStatus(WatchStatus $watchStatus): self

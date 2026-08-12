@@ -97,7 +97,7 @@ final class AnimeNewController
 
         $entityClass = $type->entityClass();
         $anime = new $entityClass();
-        $anime->setTitle($title)->setWatchStatus($watchStatus);
+        $anime->setTitle($title)->changeWatchStatusByUser($watchStatus);
 
         if (\is_string($storageId) && $storageId !== '' && \is_string($storagePath) && $storagePath !== '') {
             $storage = $this->entityManager->find(Storage::class, $storageId);

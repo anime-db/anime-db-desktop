@@ -47,6 +47,7 @@ use App\Entity\Storage;
 use App\Entity\Studio;
 use App\Entity\ValueObject\PluginId;
 use App\Entity\ValueObject\Rating;
+use App\Event\WatchProgressChangedByUserEvent;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -124,6 +125,78 @@ final class AnimeTest extends TestCase
         $anime->setWatchStatus(WatchStatus::Watching);
 
         $this->assertSame(WatchStatus::Watching, $anime->getWatchStatus());
+    }
+
+    /**
+     * Regression coverage for issue #371: changeWatchStatusByUser() is the manual-edit path
+     * (AnimeEditableController/AnimeNewController) — it must record a WatchProgressChangedByUserEvent
+     * so AnimeDomainEventListener has something to release/dispatch, driving the sync push
+     * trigger the old Doctrine preUpdate listener (AnimeSyncPushListener) used to.
+     */
+    public function testChangeWatchStatusByUserRecordsWatchProgressChangedByUserEvent(): void
+    {
+        $anime = new MovieAnime();
+        $anime->setWatchStatus(WatchStatus::Plan);
+
+        $anime->changeWatchStatusByUser(WatchStatus::Watching);
+
+        $this->assertSame(WatchStatus::Watching, $anime->getWatchStatus());
+        $events = $anime->releaseEvents();
+        $this->assertCount(1, $events);
+        $this->assertInstanceOf(WatchProgressChangedByUserEvent::class, $events[0]);
+        $this->assertSame($anime, $events[0]->anime);
+    }
+
+    /**
+     * A brand-new, not-yet-persisted Anime (AnimeNewController::create()) has never had
+     * $watchStatus assigned before — the very first changeWatchStatusByUser() call must still
+     * record the event instead of throwing on the "uninitialized typed property" read of the
+     * previous value.
+     */
+    public function testChangeWatchStatusByUserRecordsEventOnFirstAssignment(): void
+    {
+        $anime = new MovieAnime();
+
+        $anime->changeWatchStatusByUser(WatchStatus::Plan);
+
+        $this->assertCount(1, $anime->releaseEvents());
+    }
+
+    public function testChangeWatchStatusByUserDoesNotRecordAnEventWhenTheStatusIsUnchanged(): void
+    {
+        $anime = new MovieAnime();
+        $anime->setWatchStatus(WatchStatus::Plan);
+        $anime->releaseEvents();
+
+        $anime->changeWatchStatusByUser(WatchStatus::Plan);
+
+        $this->assertSame([], $anime->releaseEvents());
+    }
+
+    public function testPlainSetWatchStatusDoesNotRecordAnEvent(): void
+    {
+        $anime = new MovieAnime();
+
+        $anime->setWatchStatus(WatchStatus::Watching);
+
+        $this->assertSame([], $anime->releaseEvents());
+    }
+
+    /**
+     * The sync-apply path (Anime::applyWatchProgress(), called from the future reconciliation
+     * engine/PullSyncService) must never record this event — that is exactly the manual/sync
+     * split issue #371 introduces. A prior echo bug (issue #352) had to be worked around at the
+     * infrastructure level (PullPushSuppressor); here it simply cannot happen.
+     */
+    public function testApplyWatchProgressDoesNotRecordAnEvent(): void
+    {
+        $anime = new MovieAnime();
+        $anime->setWatchStatus(WatchStatus::Plan);
+        $anime->releaseEvents();
+
+        $anime->applyWatchProgress(WatchStatus::Watching, null, new \DateTimeImmutable());
+
+        $this->assertSame([], $anime->releaseEvents());
     }
 
     public function testApplyWatchProgressSetsStatusAndWatchProgressUpdatedAt(): void

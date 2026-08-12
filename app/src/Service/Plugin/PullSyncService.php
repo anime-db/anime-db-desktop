@@ -123,10 +123,13 @@ final class PullSyncService
     }
 
     /**
-     * Wrapped in $pushSuppressor (issue #352) so every flush() this run performs — including
-     * the recovery EntityManager's, which shares the original's DBAL connection and therefore
-     * its Doctrine EventManager/listeners — is seen by AnimeSyncPushListener as pull-originated
-     * and never echoes back out as a push.
+     * Wrapped in $pushSuppressor (issue #352). doPull() below applies every incoming status
+     * through the plain Anime::setWatchStatus(), never through the manual-edit
+     * Anime::changeWatchStatusByUser() (issue #371) — so no WatchProgressChangedByUserEvent is
+     * ever recorded here, and the push trigger it drives never echoes back out for a pull-applied
+     * change in the first place. $pushSuppressor itself is kept for the origin-aware
+     * forward-propagation suppression #366 repositions it for; it has no push-trigger consumer
+     * left to guard at this point.
      */
     public function pull(PluginId $pluginId, SyncInterface $sync): void
     {

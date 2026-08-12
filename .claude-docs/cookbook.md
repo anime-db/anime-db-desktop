@@ -45,7 +45,7 @@
 
 ## Doctrine-листенер → диспатч сообщения
 
-**Образец:** `AnimeSearchIndexListener` (`postUpdate`), `AnimeSyncPushListener` (`preUpdate` + детект изменения конкретного поля).
+**Образец:** `AnimeSearchIndexListener` (`postPersist`/`postUpdate`, реакция на любой insert/update), `AnimeDomainEventListener` (тот же хук, но диспатчит не `Message`, а доменные события, накопленные агрегатом через `AggregateRootTrait::releaseEvents()` — см. [sync.md](sync.md)).
 
 1. Листенер `app/src/EventListener/<Name>Listener.php` с `#[AsDoctrineListener(event: Events::...)]`.
    - Реакция на изменение **конкретного поля** — `preUpdate` + `PreUpdateEventArgs::hasChangedField('...')` (единственный event с changeset). Реакция на любой insert/update — `postPersist`/`postUpdate`.
