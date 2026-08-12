@@ -125,7 +125,7 @@ final class PullSyncService
     /**
      * Wrapped in $pushSuppressor (issue #352). doPull() below applies every incoming status
      * through the plain Anime::setWatchStatus(), never through the manual-edit
-     * Anime::changeWatchStatusByUser() (issue #371) — so no WatchProgressChangedByUserEvent is
+     * Anime::changeWatchStatusManually() (issue #371) — so no WatchProgressChangedManuallyEvent is
      * ever recorded here, and the push trigger it drives never echoes back out for a pull-applied
      * change in the first place. $pushSuppressor itself is kept for the origin-aware
      * forward-propagation suppression #366 repositions it for; it has no push-trigger consumer

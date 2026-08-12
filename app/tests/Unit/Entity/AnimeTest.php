@@ -47,7 +47,7 @@ use App\Entity\Storage;
 use App\Entity\Studio;
 use App\Entity\ValueObject\PluginId;
 use App\Entity\ValueObject\Rating;
-use App\Event\WatchProgressChangedByUserEvent;
+use App\Event\WatchProgressChangedManuallyEvent;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -128,47 +128,54 @@ final class AnimeTest extends TestCase
     }
 
     /**
-     * Regression coverage for issue #371: changeWatchStatusByUser() is the manual-edit path
-     * (AnimeEditableController/AnimeNewController) — it must record a WatchProgressChangedByUserEvent
-     * so AnimeDomainEventListener has something to release/dispatch, driving the sync push
+     * Regression coverage for issue #371: changeWatchStatusManually() is the manual-edit path
+     * (AnimeEditableController/AnimeNewController) — it must record a WatchProgressChangedManuallyEvent
+     * so DomainEventListener has something to release/dispatch, driving the sync push
      * trigger the old Doctrine preUpdate listener (AnimeSyncPushListener) used to.
      */
-    public function testChangeWatchStatusByUserRecordsWatchProgressChangedByUserEvent(): void
+    public function testChangeWatchStatusManuallyRecordsWatchProgressChangedManuallyEvent(): void
     {
         $anime = new MovieAnime();
         $anime->setWatchStatus(WatchStatus::Plan);
 
-        $anime->changeWatchStatusByUser(WatchStatus::Watching);
+        $anime->changeWatchStatusManually(WatchStatus::Watching);
 
         $this->assertSame(WatchStatus::Watching, $anime->getWatchStatus());
         $events = $anime->releaseEvents();
         $this->assertCount(1, $events);
-        $this->assertInstanceOf(WatchProgressChangedByUserEvent::class, $events[0]);
-        $this->assertSame($anime, $events[0]->anime);
+        $this->assertInstanceOf(WatchProgressChangedManuallyEvent::class, $events[0]);
+        $this->assertSame(WatchStatus::Watching, $events[0]->currentWatchStatus);
+        $this->assertSame(WatchStatus::Plan, $events[0]->previousWatchStatus);
     }
 
     /**
      * A brand-new, not-yet-persisted Anime (AnimeNewController::create()) has never had
-     * $watchStatus assigned before — the very first changeWatchStatusByUser() call must still
+     * $watchStatus assigned before — the very first changeWatchStatusManually() call must still
      * record the event instead of throwing on the "uninitialized typed property" read of the
-     * previous value.
+     * previous value. Its $id is still null at this point (Doctrine only assigns it on flush) —
+     * releaseEvents() itself must not require it, only WatchProgressPushSubscriber does, once the
+     * event is actually dispatched post-flush.
      */
-    public function testChangeWatchStatusByUserRecordsEventOnFirstAssignment(): void
+    public function testChangeWatchStatusManuallyRecordsEventOnFirstAssignment(): void
     {
         $anime = new MovieAnime();
 
-        $anime->changeWatchStatusByUser(WatchStatus::Plan);
+        $anime->changeWatchStatusManually(WatchStatus::Plan);
 
-        $this->assertCount(1, $anime->releaseEvents());
+        $events = $anime->releaseEvents();
+        $this->assertCount(1, $events);
+        $this->assertInstanceOf(WatchProgressChangedManuallyEvent::class, $events[0]);
+        $this->assertNull($events[0]->id);
+        $this->assertNull($events[0]->previousWatchStatus);
     }
 
-    public function testChangeWatchStatusByUserDoesNotRecordAnEventWhenTheStatusIsUnchanged(): void
+    public function testChangeWatchStatusManuallyDoesNotRecordAnEventWhenTheStatusIsUnchanged(): void
     {
         $anime = new MovieAnime();
         $anime->setWatchStatus(WatchStatus::Plan);
         $anime->releaseEvents();
 
-        $anime->changeWatchStatusByUser(WatchStatus::Plan);
+        $anime->changeWatchStatusManually(WatchStatus::Plan);
 
         $this->assertSame([], $anime->releaseEvents());
     }

@@ -31,7 +31,7 @@ use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
 use App\Entity\Enum\WatchStatus;
 use App\Entity\MovieAnime;
-use App\Event\WatchProgressChangedByUserEvent;
+use App\Event\WatchProgressChangedManuallyEvent;
 use App\EventSubscriber\WatchProgressPushSubscriber;
 use App\Message\PushSyncMessage;
 use Doctrine\DBAL\DriverManager;
@@ -46,8 +46,8 @@ use Symfony\Component\Messenger\MessageBusInterface;
 
 /**
  * The application half of the domain-event mechanism (issue #371): reacts to
- * WatchProgressChangedByUserEvent (already covered at the domain layer by AnimeTest/
- * SeriesAnimeTest, and released/dispatched by AnimeDomainEventListenerTest) by dispatching
+ * WatchProgressChangedManuallyEvent (already covered at the domain layer by AnimeTest/
+ * SeriesAnimeTest, and released/dispatched by DomainEventListenerTest) by dispatching
  * PushSyncMessage — the same message the old Doctrine preUpdate listener (AnimeSyncPushListener)
  * used to dispatch directly off a changed-field check.
  */
@@ -74,15 +74,15 @@ final class WatchProgressPushSubscriberTest extends TestCase
         $schemaTool->createSchema($this->entityManager->getMetadataFactory()->getAllMetadata());
     }
 
-    public function testSubscribesToWatchProgressChangedByUserEvent(): void
+    public function testSubscribesToWatchProgressChangedManuallyEvent(): void
     {
         $this->assertSame(
-            [WatchProgressChangedByUserEvent::class => 'onWatchProgressChangedByUser'],
+            [WatchProgressChangedManuallyEvent::class => 'onWatchProgressChangedManually'],
             WatchProgressPushSubscriber::getSubscribedEvents(),
         );
     }
 
-    public function testDispatchesPushSyncMessageForTheEventsAnime(): void
+    public function testDispatchesPushSyncMessageForTheEventsId(): void
     {
         $anime = $this->persistAnime();
         $animeId = $this->requireId($anime);
@@ -94,7 +94,19 @@ final class WatchProgressPushSubscriberTest extends TestCase
             ->willReturn(new Envelope(new PushSyncMessage($animeId)));
 
         $subscriber = new WatchProgressPushSubscriber($messageBus);
-        $subscriber->onWatchProgressChangedByUser(new WatchProgressChangedByUserEvent($anime));
+        $subscriber->onWatchProgressChangedManually(
+            new WatchProgressChangedManuallyEvent($animeId, WatchStatus::Watching, WatchStatus::Plan),
+        );
+    }
+
+    public function testThrowsWhenTheEventHasNoId(): void
+    {
+        $subscriber = new WatchProgressPushSubscriber($this->createMock(MessageBusInterface::class));
+
+        $this->expectException(\LogicException::class);
+        $subscriber->onWatchProgressChangedManually(
+            new WatchProgressChangedManuallyEvent(null, WatchStatus::Watching, WatchStatus::Plan),
+        );
     }
 
     public function testIsARegularSymfonyEventSubscriber(): void

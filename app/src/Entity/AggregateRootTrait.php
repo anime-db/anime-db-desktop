@@ -34,28 +34,35 @@ namespace App\Entity;
  * this project's Symfony 8.1 / Doctrine ORM 3.6 / PHP 8.4+.
  *
  * $recordedEvents is deliberately not a mapped Doctrine property — it is transient in-memory
- * state, released by {@see \App\EventListener\AnimeDomainEventListener} from Doctrine's
+ * state, released by {@see \App\EventListener\DomainEventListener} from Doctrine's
  * postPersist/postUpdate hooks, i.e. only once the change the event describes has actually been
  * committed. A caller that calls recordThat() but whose change turns out to be a no-op (nothing
  * for Doctrine to flush) is responsible for not calling it in the first place — this trait does
  * not deduplicate.
+ *
+ * recordThat() takes a factory rather than a built event: a domain event is a DTO carrying the
+ * entity's id, but on the create path (e.g. AnimeNewController) the id is only assigned by
+ * Doctrine's INSERT during flush(), which happens strictly after the domain method that calls
+ * recordThat() returns. Deferring construction to releaseEvents() — called from postPersist/
+ * postUpdate, always after flush — lets the factory read the id once it actually exists.
  */
 trait AggregateRootTrait
 {
-    /** @var list<object> */
+    /** @var list<\Closure(): object> */
     private array $recordedEvents = [];
 
-    protected function recordThat(object $event): void
+    /** @param \Closure(): object $eventFactory */
+    protected function recordThat(\Closure $eventFactory): void
     {
-        $this->recordedEvents[] = $event;
+        $this->recordedEvents[] = $eventFactory;
     }
 
     /** @return list<object> */
     public function releaseEvents(): array
     {
-        $events = $this->recordedEvents;
+        $factories = $this->recordedEvents;
         $this->recordedEvents = [];
 
-        return $events;
+        return array_map(static fn (\Closure $factory): object => $factory(), $factories);
     }
 }

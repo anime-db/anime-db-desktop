@@ -33,8 +33,8 @@ use App\Entity\Enum\StorageType;
 use App\Entity\Enum\WatchStatus;
 use App\Entity\MovieAnime;
 use App\Entity\Storage;
-use App\Event\WatchProgressChangedByUserEvent;
-use App\EventListener\AnimeDomainEventListener;
+use App\Event\WatchProgressChangedManuallyEvent;
+use App\EventListener\DomainEventListener;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\EntityManager;
@@ -51,7 +51,7 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
  * does the listener release and dispatch them, and does it stay quiet for both an Anime with no
  * pending events and other entity types.
  */
-final class AnimeDomainEventListenerTest extends TestCase
+final class DomainEventListenerTest extends TestCase
 {
     private EntityManager $entityManager;
 
@@ -77,14 +77,14 @@ final class AnimeDomainEventListenerTest extends TestCase
     public function testPostPersistReleasesAndDispatchesRecordedEvents(): void
     {
         $anime = new MovieAnime();
-        $anime->setTitle('Cowboy Bebop')->changeWatchStatusByUser(WatchStatus::Plan);
+        $anime->setTitle('Cowboy Bebop')->changeWatchStatusManually(WatchStatus::Plan);
 
         $eventDispatcher = $this->createMock(EventDispatcherInterface::class);
         $eventDispatcher->expects($this->once())
             ->method('dispatch')
-            ->with($this->isInstanceOf(WatchProgressChangedByUserEvent::class));
+            ->with($this->isInstanceOf(WatchProgressChangedManuallyEvent::class));
 
-        $listener = new AnimeDomainEventListener($eventDispatcher);
+        $listener = new DomainEventListener($eventDispatcher);
         $listener->postPersist(new PostPersistEventArgs($anime, $this->entityManager));
 
         // The listener must drain the entity's recorded events, not just peek at them —
@@ -100,14 +100,14 @@ final class AnimeDomainEventListenerTest extends TestCase
         $this->entityManager->flush();
         $anime->releaseEvents();
 
-        $anime->changeWatchStatusByUser(WatchStatus::Watching);
+        $anime->changeWatchStatusManually(WatchStatus::Watching);
 
         $eventDispatcher = $this->createMock(EventDispatcherInterface::class);
         $eventDispatcher->expects($this->once())
             ->method('dispatch')
-            ->with($this->isInstanceOf(WatchProgressChangedByUserEvent::class));
+            ->with($this->isInstanceOf(WatchProgressChangedManuallyEvent::class));
 
-        $listener = new AnimeDomainEventListener($eventDispatcher);
+        $listener = new DomainEventListener($eventDispatcher);
         $listener->postUpdate(new PostUpdateEventArgs($anime, $this->entityManager));
     }
 
@@ -119,7 +119,7 @@ final class AnimeDomainEventListenerTest extends TestCase
         $eventDispatcher = $this->createMock(EventDispatcherInterface::class);
         $eventDispatcher->expects($this->never())->method('dispatch');
 
-        $listener = new AnimeDomainEventListener($eventDispatcher);
+        $listener = new DomainEventListener($eventDispatcher);
         $listener->postPersist(new PostPersistEventArgs($anime, $this->entityManager));
     }
 
@@ -130,7 +130,7 @@ final class AnimeDomainEventListenerTest extends TestCase
         $eventDispatcher = $this->createMock(EventDispatcherInterface::class);
         $eventDispatcher->expects($this->never())->method('dispatch');
 
-        $listener = new AnimeDomainEventListener($eventDispatcher);
+        $listener = new DomainEventListener($eventDispatcher);
         $listener->postPersist(new PostPersistEventArgs($storage, $this->entityManager));
     }
 }

@@ -36,7 +36,7 @@ namespace App\Service\Sync;
  * with a lossily-remapped status (e.g. Shikimori's "rewatching" round-trips back as "watching").
  *
  * Issue #371 moved that distinction into the domain layer itself: the push trigger now only
- * fires off Anime::changeWatchStatusByUser()/SeriesAnime::changeWatchedEpisodesByUser(), which
+ * fires off Anime::changeWatchStatusManually()/SeriesAnime::changeWatchedEpisodesManually(), which
  * PullSyncService never calls, so a pull-applied change no longer reaches the trigger at all —
  * this class currently has no consumer left to guard for that purpose. It is kept, still wrapping
  * every pull() run, for issue #366 to reposition onto the origin-aware forward-propagation

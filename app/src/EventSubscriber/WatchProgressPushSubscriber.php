@@ -27,20 +27,19 @@ declare(strict_types=1);
 
 namespace App\EventSubscriber;
 
-use App\Entity\Anime;
-use App\Event\WatchProgressChangedByUserEvent;
+use App\Event\WatchProgressChangedManuallyEvent;
 use App\Message\PushSyncMessage;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
 
 /**
- * Application-level reaction to the domain event WatchProgressChangedByUserEvent (issue #371):
+ * Application-level reaction to the domain event WatchProgressChangedManuallyEvent (issue #371):
  * dispatches PushSyncMessage onto the `async` transport, same as the old Doctrine preUpdate
  * listener (AnimeSyncPushListener) did, but now driven by a user-driven domain method instead of
  * an inspected Doctrine change set — see PushSyncMessageHandler for why dispatching onto a queue
  * rather than pushing inline is the shape here (transport retry_strategy, issue #97).
  *
- * Anime::applyWatchProgress() (the sync-apply path) never records WatchProgressChangedByUserEvent,
+ * Anime::applyWatchProgress() (the sync-apply path) never records WatchProgressChangedManuallyEvent,
  * so a pull-applied change never reaches this subscriber at all — no suppressor needed to break
  * the pull->push echo (issue #352) for this trigger any more, the distinction is made in the
  * domain layer itself.
@@ -55,17 +54,17 @@ final class WatchProgressPushSubscriber implements EventSubscriberInterface
     public static function getSubscribedEvents(): array
     {
         return [
-            WatchProgressChangedByUserEvent::class => 'onWatchProgressChangedByUser',
+            WatchProgressChangedManuallyEvent::class => 'onWatchProgressChangedManually',
         ];
     }
 
-    public function onWatchProgressChangedByUser(WatchProgressChangedByUserEvent $event): void
+    public function onWatchProgressChangedManually(WatchProgressChangedManuallyEvent $event): void
     {
-        $this->messageBus->dispatch(new PushSyncMessage($this->requireId($event->anime)));
+        $this->messageBus->dispatch(new PushSyncMessage($this->requireId($event)));
     }
 
-    private function requireId(Anime $anime): int
+    private function requireId(WatchProgressChangedManuallyEvent $event): int
     {
-        return $anime->id ?? throw new \LogicException('Anime must have an id at this point in its lifecycle.');
+        return $event->id ?? throw new \LogicException('WatchProgressChangedManuallyEvent must carry an id at this point in its lifecycle.');
     }
 }
