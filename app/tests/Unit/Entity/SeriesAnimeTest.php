@@ -230,6 +230,74 @@ final class SeriesAnimeTest extends TestCase
         $this->assertNull($anime->getWatchedEpisodes());
     }
 
+    public function testApplyWatchProgressRepresentsDroppedPartway(): void
+    {
+        $anime = new TvAnime();
+        $anime->setEpisodesCount(12);
+        $anime->setWatchStatus(WatchStatus::Watching);
+        $anime->setWatchedEpisodes(4);
+
+        $anime->applyWatchProgress(WatchStatus::Dropped, 5, new \DateTimeImmutable());
+
+        $this->assertSame(WatchStatus::Dropped, $anime->getWatchStatus());
+        $this->assertSame(5, $anime->getWatchedEpisodes());
+    }
+
+    public function testApplyWatchProgressRejectsCompletedWithoutReleaseDatesWithoutThrowing(): void
+    {
+        $anime = new TvAnime();
+        $anime->setEpisodesCount(12);
+        $anime->setWatchStatus(WatchStatus::Watching);
+        $anime->setWatchedEpisodes(6);
+
+        $anime->applyWatchProgress(WatchStatus::Completed, 12, new \DateTimeImmutable());
+
+        $this->assertSame(WatchStatus::Watching, $anime->getWatchStatus());
+        $this->assertSame(6, $anime->getWatchedEpisodes());
+        $this->assertNull($anime->getWatchProgressUpdatedAt());
+        $this->assertNotNull($anime->getWatchProgressRejectedAt());
+    }
+
+    public function testApplyWatchProgressWithNullEpisodesLeavesLocalEpisodesUntouched(): void
+    {
+        $anime = new TvAnime();
+        $anime->setEpisodesCount(12);
+        $anime->setWatchStatus(WatchStatus::Watching);
+        $anime->setWatchedEpisodes(5);
+
+        $anime->applyWatchProgress(WatchStatus::OnHold, null, new \DateTimeImmutable());
+
+        $this->assertSame(WatchStatus::OnHold, $anime->getWatchStatus());
+        $this->assertSame(5, $anime->getWatchedEpisodes());
+    }
+
+    public function testApplyWatchProgressSetsWatchProgressUpdatedAtToTheSourceTimeNotNow(): void
+    {
+        $anime = new TvAnime();
+        $anime->setEpisodesCount(12);
+        $anime->setWatchStatus(WatchStatus::Plan);
+        $sourceUpdatedAt = new \DateTimeImmutable('2020-01-01 00:00:00');
+
+        $anime->applyWatchProgress(WatchStatus::Watching, 3, $sourceUpdatedAt);
+
+        $this->assertEquals($sourceUpdatedAt, $anime->getWatchProgressUpdatedAt());
+    }
+
+    public function testApplyWatchProgressRejectionRollsBackBothEpisodesAndStatus(): void
+    {
+        $anime = new TvAnime();
+        $anime->setEpisodesCount(12);
+        $anime->setWatchStatus(WatchStatus::Watching);
+        $anime->setWatchedEpisodes(6);
+
+        // The episodes half of the pair would succeed on its own (12 <= episodesCount), but the
+        // status half is rejected (not released) — the episodes mutation must not survive that.
+        $anime->applyWatchProgress(WatchStatus::Completed, 12, new \DateTimeImmutable());
+
+        $this->assertSame(WatchStatus::Watching, $anime->getWatchStatus());
+        $this->assertSame(6, $anime->getWatchedEpisodes());
+    }
+
     /** @return array<string, array{class-string<SeriesAnime>, AnimeType}> */
     public static function concreteSubtypes(): array
     {

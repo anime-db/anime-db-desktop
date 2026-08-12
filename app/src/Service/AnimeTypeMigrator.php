@@ -72,6 +72,12 @@ final class AnimeTypeMigrator
                 // #299), so its rows still point at $sourceId here and would be lost to the
                 // table's ON DELETE CASCADE once source is removed just below.
                 $this->repointPluginData($sourceId, $target->id);
+
+                // Same reasoning for the reconciliation snapshot (anime_sync_state, issue #365):
+                // it isn't part of the Anime entity either, so a migration would otherwise leave
+                // the new anime_id with no snapshot rows at all, making every sync participant
+                // look "changed" on the very next reconciliation run (issue #365, "camp #13").
+                $this->repointSyncState($sourceId, $target->id);
             }
 
             $this->entityManager->remove($source);
@@ -94,6 +100,14 @@ final class AnimeTypeMigrator
     {
         $this->entityManager->getConnection()->executeStatement(
             'UPDATE anime_plugin_data SET anime_id = ? WHERE anime_id = ?',
+            [$targetId, $sourceId],
+        );
+    }
+
+    private function repointSyncState(int $sourceId, int $targetId): void
+    {
+        $this->entityManager->getConnection()->executeStatement(
+            'UPDATE anime_sync_state SET anime_id = ? WHERE anime_id = ?',
             [$targetId, $sourceId],
         );
     }

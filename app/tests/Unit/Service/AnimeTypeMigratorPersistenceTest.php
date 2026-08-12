@@ -35,6 +35,7 @@ use App\Entity\AnimeImage;
 use App\Entity\AnimeName;
 use App\Entity\AnimePluginData;
 use App\Entity\AnimeSource;
+use App\Entity\AnimeSyncState;
 use App\Entity\AnimeTheme;
 use App\Entity\Enum\AnimeNameType;
 use App\Entity\Enum\AnimeType;
@@ -179,6 +180,41 @@ final class AnimeTypeMigratorPersistenceTest extends TestCase
         $this->assertCount(1, $rows);
         $this->assertSame($targetId, $rows[0]->anime->id);
         $this->assertSame(['mal_id' => 1], $rows[0]->getPayload());
+    }
+
+    /**
+     * Regression coverage for issue #365's "camp #13": anime_sync_state isn't part of the Anime
+     * entity (like anime_plugin_data), so without repointing, a type migration would silently
+     * lose the reconciliation snapshot to the ON DELETE CASCADE on the removed source row —
+     * making every participant look "changed" on the very next sync run.
+     */
+    public function testMigrateRepointsSyncStateToNewIdInsteadOfLosingItToCascade(): void
+    {
+        $source = new MovieAnime();
+        $source->setTitle('Cowboy Bebop: The Movie')->setWatchStatus(WatchStatus::Plan);
+
+        $this->entityManager->persist($source);
+        $this->entityManager->flush();
+        $sourceId = $source->id;
+        $this->assertNotNull($sourceId);
+
+        $syncState = new AnimeSyncState($source, 'local', WatchStatus::Watching, null, new \DateTimeImmutable('2026-01-01'));
+        $this->entityManager->persist($syncState);
+        $this->entityManager->flush();
+
+        $migrator = new AnimeTypeMigrator($this->entityManager, $this->mediaDir);
+        $target = $migrator->migrate($source, AnimeType::Tv);
+        $targetId = $target->id;
+        $this->assertNotNull($targetId);
+        $this->assertNotSame($sourceId, $targetId);
+
+        $this->entityManager->clear();
+
+        $rows = $this->entityManager->getRepository(AnimeSyncState::class)->findAll();
+        $this->assertCount(1, $rows);
+        $this->assertSame($targetId, $rows[0]->anime->id);
+        $this->assertSame('local', $rows[0]->participantId);
+        $this->assertSame(WatchStatus::Watching, $rows[0]->lastStatus);
     }
 
     private function persistSourceWithChildren(Anime $source): int
