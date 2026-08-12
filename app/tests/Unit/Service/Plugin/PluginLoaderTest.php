@@ -250,13 +250,28 @@ final class PluginLoaderTest extends TestCase
         $this->assertSame([], $this->loader(logger: $logger)->translationPaths());
     }
 
-    public function testTranslationPathsIgnoresIntegrationPlugins(): void
+    public function testTranslationPathsReturnsDirectoryForIntegrationPlugin(): void
+    {
+        $pluginId = 'acme-'.uniqid();
+        $this->writeIntegrationManifest($pluginId);
+        $this->writeBundleClass($pluginId);
+        $translationsDir = $this->pluginsDir.'/'.$pluginId.'/translations';
+        mkdir($translationsDir, recursive: true);
+        file_put_contents($translationsDir.'/'.$pluginId.'.fr.yaml', 'title: Titre');
+
+        $this->assertSame([$translationsDir], $this->loader()->translationPaths());
+    }
+
+    public function testTranslationPathsOmitsIntegrationPluginWithoutTranslationsDirectoryWithoutError(): void
     {
         $pluginId = 'acme-'.uniqid();
         $this->writeIntegrationManifest($pluginId);
         $this->writeBundleClass($pluginId);
 
-        $this->assertSame([], $this->loader()->translationPaths());
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->never())->method('error');
+
+        $this->assertSame([], $this->loader(logger: $logger)->translationPaths());
     }
 
     private function loader(?PluginsConfigStore $configStore = null, ?LoggerInterface $logger = null): PluginLoader
