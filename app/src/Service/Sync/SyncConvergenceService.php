@@ -127,20 +127,25 @@ final class SyncConvergenceService
             $this->flagConflict($anime, $result);
         }
 
-        $targets = $this->reconciler->participantsToConverge($result, $available, $originParticipantId);
+        $targets = $this->reconciler->participantsToConverge($result, $available);
 
         // Every participant this run actually has a fresh reading for gets its snapshot closed
         // out, whether or not it needed convergence — that is what stops it from re-appearing in
-        // the changed set next run for the same value it already reported this one.
+        // the changed set next run for the same value it already reported this one. The origin
+        // defaults to its own fresh reading here; it is only overwritten below if it turns out to
+        // actually need $result->winner sent back to it (self-healing a drifted origin, issue
+        // #366 review — see SyncReconciler::participantsToConverge()'s docblock).
         $confirmed = [$originParticipantId => $originState];
         $confirmed['local'] = \in_array('local', $targets, true) ? $this->applyToLocal($anime, $result) : $localState;
 
         foreach ($targets as $participantId) {
-            if ($participantId === 'local' || $participantId === $originParticipantId) {
+            if ($participantId === 'local') {
                 continue;
             }
 
-            $sync = $otherSyncs[$participantId] ?? null;
+            $sync = $participantId === $originParticipantId
+                ? $this->syncRegistry->findByPluginId(new PluginId($originParticipantId))
+                : ($otherSyncs[$participantId] ?? null);
             if ($sync === null) {
                 continue;
             }

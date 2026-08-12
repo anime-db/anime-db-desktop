@@ -128,11 +128,14 @@ final class PullSyncService
      * Anime::changeWatchStatusManually()/changeWatchedEpisodesManually() (issue #371) — so no
      * WatchProgressChangedManuallyEvent is ever recorded for a pull-applied change, and the push
      * trigger it drives never echoes back out in the first place (issue #352). Forward
-     * propagation to other active plugins still happens, deliberately excluding $pluginId itself
-     * — a plain parameter comparison inside SyncReconciler::participantsToConverge() (issue
-     * #366), needing no runtime suppression guard; this method used to wrap doPull() in a
-     * PullPushSuppressor for that purpose before #371 moved the manual/sync distinction into the
-     * domain layer, which left it with nothing left to suppress.
+     * propagation to other active plugins still happens, including back to $pluginId itself when
+     * its own snapshot has genuinely drifted from the winner (issue #366 review) — the plain
+     * equals() check inside SyncReconciler::participantsToConverge() only skips a target whose
+     * current reading already agrees with the winner, which is what keeps $pluginId out of it in
+     * the ordinary "it is the source of the winning value" case, no runtime suppression guard
+     * needed; this method used to wrap doPull() in a PullPushSuppressor for that purpose before
+     * #371 moved the manual/sync distinction into the domain layer, which left it with nothing
+     * left to suppress.
      */
     public function pull(PluginId $pluginId, SyncInterface $sync): void
     {
@@ -203,8 +206,10 @@ final class PullSyncService
                 // itself absorbs an invariant rejection (Completed while not yet Released) by
                 // flagging it rather than throwing, the same self-healing stance this loop takes
                 // everywhere else — and forward-propagates to every other active, resolvable
-                // plugin except $pluginId itself (origin-aware convergence, breaks the pull->push
-                // echo, issue #352, without suppressing forward propagation, issue #366 pitfall #2).
+                // plugin whose current reading disagrees with the winner, $pluginId included
+                // (origin-aware convergence, breaks the pull->push echo, issue #352, without
+                // suppressing forward propagation — even back to $pluginId itself, issue #366
+                // review — pitfall #2).
                 $this->convergenceService->reconcilePulledItem(
                     $anime,
                     (string) $pluginId,

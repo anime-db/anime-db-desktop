@@ -120,17 +120,21 @@ final class SyncReconciler
 
     /**
      * Step 4's "who needs W sent to them": every available participant whose current projection
-     * still differs from the winner, except $originParticipantId — the participant whose own
-     * fresh observation this run's reconciliation was triggered by, if any (a routine periodic
-     * pass over already-agreeing participants has no single origin). Excluding it is what breaks
-     * the pull->push echo (issue #352) while still allowing forward propagation to every other
-     * receiver (issue #366 pitfall #2).
+     * still differs from the winner — the origin (the participant whose own fresh observation
+     * this run's reconciliation was triggered by, if any) is not special-cased here. The
+     * pull->push echo (issue #352) is already broken by this same equals() check: whenever the
+     * origin's own reading is the (sole, or unanimous) reason `W` was picked, `W` literally
+     * equals its projection, so it is excluded exactly like any other already-agreeing
+     * participant. Genuine divergence — the origin's own snapshot having drifted from `W`,
+     * e.g. after a dropped push-on-edit TTL (see PushSyncMessageHandler) — is left in the
+     * target list on purpose: the origin still needs `W` sent back to it, or the drift never
+     * self-heals (issue #366 review).
      *
      * @param list<ParticipantState> $available
      *
      * @return list<string>
      */
-    public function participantsToConverge(ReconciliationResult $result, array $available, ?string $originParticipantId): array
+    public function participantsToConverge(ReconciliationResult $result, array $available): array
     {
         if (!$result->hasChanges) {
             return [];
@@ -138,10 +142,6 @@ final class SyncReconciler
 
         $targets = [];
         foreach ($available as $state) {
-            if ($state->participantId === $originParticipantId) {
-                continue;
-            }
-
             if (!$state->projection->equals($result->winner)) {
                 $targets[] = $state->participantId;
             }
