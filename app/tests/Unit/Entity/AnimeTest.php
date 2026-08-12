@@ -86,6 +86,30 @@ final class AnimeTest extends TestCase
         $this->assertSame('Описание', $target->getSummary('ru'));
     }
 
+    public function testMigrateCarriesWatchProgressUpdatedAtOverToTarget(): void
+    {
+        $source = new MovieAnime();
+        $source->setTitle('Cowboy Bebop: The Movie')->setWatchStatus(WatchStatus::Plan);
+        $updatedAt = new \DateTimeImmutable('2026-01-01 12:00:00');
+        $source->applyWatchProgress(WatchStatus::Watching, null, $updatedAt);
+
+        $target = $source->migrate(AnimeType::Tv);
+
+        $this->assertEquals($updatedAt, $target->getWatchProgressUpdatedAt());
+    }
+
+    public function testMigrateCarriesWatchProgressRejectedAtOverToTarget(): void
+    {
+        $source = new MovieAnime();
+        $source->setTitle('Cowboy Bebop: The Movie')->setWatchStatus(WatchStatus::Plan);
+        $source->applyWatchProgress(WatchStatus::Completed, null, new \DateTimeImmutable());
+        $this->assertNotNull($source->getWatchProgressRejectedAt());
+
+        $target = $source->migrate(AnimeType::Tv);
+
+        $this->assertEquals($source->getWatchProgressRejectedAt(), $target->getWatchProgressRejectedAt());
+    }
+
     public function testSetDescriptionIsReadByGetSummary(): void
     {
         $anime = new MovieAnime();
