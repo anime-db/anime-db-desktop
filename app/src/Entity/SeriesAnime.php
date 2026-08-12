@@ -31,6 +31,7 @@ use App\Entity\Enum\ProductionStatus;
 use App\Entity\Enum\WatchStatus;
 use App\Entity\Exception\InvalidEpisodeCountException;
 use App\Entity\Exception\InvalidWatchStatusException;
+use App\Event\WatchProgressChangedManuallyEvent;
 use Doctrine\ORM\Mapping as ORM;
 
 /**
@@ -115,6 +116,46 @@ abstract class SeriesAnime extends Anime
     public function watchNextEpisode(): self
     {
         return $this->setWatchedEpisodes(($this->watchedEpisodes ?? 0) + 1);
+    }
+
+    /**
+     * The manual-edit counterpart of setWatchedEpisodes() (issue #371) — see
+     * Anime::changeWatchStatusManually() for why this split exists. Covers the episodes half of
+     * the reconciliation unit that the old Doctrine preUpdate listener needed a dedicated
+     * watchedEpisodes changed-field check for (issue #365, "camp #5"); here it is simply a
+     * second call site recording the same WatchProgressChangedManuallyEvent.
+     *
+     * The event's current/previous watchStatus is captured around setWatchedEpisodes() rather
+     * than assumed unchanged: that call derives a watchStatus as a side effect (e.g. reaching
+     * episodes_count flips it to Completed), so the two can differ even though watchedEpisodes,
+     * not watchStatus, is what triggers this method's event.
+     */
+    public function changeWatchedEpisodesManually(?int $watchedEpisodes): self
+    {
+        $previousEpisodes = $this->watchedEpisodes;
+        $previousStatus = $this->getWatchStatus();
+        $this->setWatchedEpisodes($watchedEpisodes);
+
+        if ($this->watchedEpisodes !== $previousEpisodes) {
+            $currentStatus = $this->getWatchStatus();
+            $this->recordThat(fn (): WatchProgressChangedManuallyEvent => new WatchProgressChangedManuallyEvent(
+                $this->id,
+                $currentStatus,
+                $previousStatus,
+            ));
+        }
+
+        return $this;
+    }
+
+    /**
+     * The manual-edit counterpart of watchNextEpisode() (issue #371), delegating to
+     * changeWatchedEpisodesManually() instead of duplicating its event-recording so the two stay
+     * in lockstep.
+     */
+    public function watchNextEpisodeManually(): self
+    {
+        return $this->changeWatchedEpisodesManually(($this->watchedEpisodes ?? 0) + 1);
     }
 
     public function setWatchStatus(WatchStatus $watchStatus): self

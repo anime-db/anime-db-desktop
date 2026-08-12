@@ -36,6 +36,7 @@ use App\Entity\OvaAnime;
 use App\Entity\SeriesAnime;
 use App\Entity\SpecialAnime;
 use App\Entity\TvAnime;
+use App\Event\WatchProgressChangedManuallyEvent;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
@@ -70,6 +71,69 @@ final class SeriesAnimeTest extends TestCase
 
         $this->expectException(InvalidEpisodeCountException::class);
         $anime->setWatchedEpisodes(13);
+    }
+
+    /**
+     * Regression coverage for issue #371 ("camp #5" episode-only edit, this time via the
+     * manual-edit domain method rather than a Doctrine changed-field check): a SeriesAnime
+     * episode-only edit must record WatchProgressChangedManuallyEvent even when watchStatus
+     * itself never moves — the event's current/previous watchStatus are equal in that case,
+     * since watchedEpisodes, not watchStatus, is what triggered it.
+     */
+    public function testChangeWatchedEpisodesManuallyRecordsWatchProgressChangedManuallyEvent(): void
+    {
+        $anime = new TvAnime();
+        $anime->setEpisodesCount(12);
+        $anime->setWatchStatus(WatchStatus::Watching);
+        $anime->setWatchedEpisodes(5);
+        $anime->releaseEvents();
+
+        $anime->changeWatchedEpisodesManually(6);
+
+        $this->assertSame(6, $anime->getWatchedEpisodes());
+        $events = $anime->releaseEvents();
+        $this->assertCount(1, $events);
+        $this->assertInstanceOf(WatchProgressChangedManuallyEvent::class, $events[0]);
+        $this->assertSame(WatchStatus::Watching, $events[0]->currentWatchStatus);
+        $this->assertSame(WatchStatus::Watching, $events[0]->previousWatchStatus);
+    }
+
+    public function testChangeWatchedEpisodesManuallyDoesNotRecordAnEventWhenUnchanged(): void
+    {
+        $anime = new TvAnime();
+        $anime->setEpisodesCount(12);
+        $anime->setWatchStatus(WatchStatus::Watching);
+        $anime->setWatchedEpisodes(5);
+        $anime->releaseEvents();
+
+        $anime->changeWatchedEpisodesManually(5);
+
+        $this->assertSame([], $anime->releaseEvents());
+    }
+
+    public function testWatchNextEpisodeManuallyRecordsWatchProgressChangedManuallyEvent(): void
+    {
+        $anime = new TvAnime();
+        $anime->setEpisodesCount(12);
+        $anime->setWatchStatus(WatchStatus::Plan);
+        $anime->releaseEvents();
+
+        $anime->watchNextEpisodeManually();
+
+        $this->assertSame(1, $anime->getWatchedEpisodes());
+        $this->assertCount(1, $anime->releaseEvents());
+    }
+
+    public function testPlainSetWatchedEpisodesAndWatchNextEpisodeDoNotRecordAnEvent(): void
+    {
+        $anime = new TvAnime();
+        $anime->setEpisodesCount(12);
+        $anime->setWatchStatus(WatchStatus::Plan);
+
+        $anime->setWatchedEpisodes(3);
+        $anime->watchNextEpisode();
+
+        $this->assertSame([], $anime->releaseEvents());
     }
 
     public function testWatchNextEpisodeIncrementsWatchedEpisodes(): void

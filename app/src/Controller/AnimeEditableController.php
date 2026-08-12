@@ -55,6 +55,11 @@ use Twig\Environment;
  * already lives on Anime::setWatchStatus()/SeriesAnime::setWatchedEpisodes(), including
  * the implicit path through episode progress. This controller only catches the resulting
  * exceptions and turns them into a translated error shown back in the edit form.
+ *
+ * Every mutation below goes through the *Manually() domain methods (Anime::changeWatchStatusManually(),
+ * SeriesAnime::changeWatchedEpisodesManually()/watchNextEpisodeManually()), not the plain setters
+ * directly (issue #371): this is what marks a change as user-driven for the sync push trigger,
+ * as opposed to Anime::applyWatchProgress(), the sync-apply path, which never raises it.
  */
 final class AnimeEditableController
 {
@@ -94,7 +99,7 @@ final class AnimeEditableController
         }
 
         try {
-            $anime->setWatchStatus($status);
+            $anime->changeWatchStatusManually($status);
         } catch (InvalidWatchStatusException) {
             return $this->renderEditable($anime, 'watch_status', 'anime_detail.error_watch_status_not_released');
         }
@@ -149,7 +154,7 @@ final class AnimeEditableController
         }
 
         try {
-            $anime->setWatchedEpisodes((int) $raw);
+            $anime->changeWatchedEpisodesManually((int) $raw);
         } catch (InvalidEpisodeCountException) {
             return $this->renderEditable($anime, 'watched_episodes', 'anime_detail.error_watched_episodes_invalid');
         }
@@ -173,7 +178,7 @@ final class AnimeEditableController
         }
 
         try {
-            $anime->watchNextEpisode();
+            $anime->watchNextEpisodeManually();
         } catch (InvalidEpisodeCountException) {
             return $this->renderEditable($anime, null, 'anime_detail.error_watched_episodes_invalid');
         }

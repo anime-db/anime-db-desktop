@@ -43,6 +43,7 @@ use App\Entity\Exception\InvalidNameException;
 use App\Entity\Exception\InvalidWatchStatusException;
 use App\Entity\ValueObject\PluginId;
 use App\Entity\ValueObject\Rating;
+use App\Event\WatchProgressChangedManuallyEvent;
 use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
 use Doctrine\ORM\Mapping as ORM;
@@ -58,8 +59,10 @@ use Doctrine\ORM\Mapping as ORM;
     'special' => SpecialAnime::class,
     'music' => MusicAnime::class,
 ])]
-abstract class Anime
+abstract class Anime implements AggregateRootInterface
 {
+    use AggregateRootTrait;
+
     /**
      * Fallback locale for getSummary() when the requested UI locale has no description.
      */
@@ -146,7 +149,10 @@ abstract class Anime
      * sync reconciliation snapshot (anime_sync_state, issue #365) diffs against — separate from
      * $dateUpdate, which bumps on every field touch (title edit, rating, ...), not just watch
      * progress. Only applyWatchProgress() writes it; a plain setWatchStatus()/setWatchedEpisodes()
-     * call (still used for initial creation, e.g. AnimeNewController) leaves it untouched.
+     * call, or the manual-edit changeWatchStatusManually()/changeWatchedEpisodesManually() wrappers
+     * around them (issue #371; still used for initial creation, e.g. AnimeNewController), leave
+     * it untouched — stamping it for a manual edit too is reconciliation-engine work, deferred to
+     * issue #366 along with the rest of the diffing logic that would actually consume it.
      * Nullable because existing rows only get it via the Version20260812000000 backfill and a
      * freshly created Anime has no watch progress history yet.
      */
@@ -308,6 +314,40 @@ abstract class Anime
         }
 
         $this->watchStatus = $watchStatus;
+
+        return $this;
+    }
+
+    /**
+     * The manual-edit counterpart of setWatchStatus() (issue #371): used by
+     * AnimeEditableController wherever a user edits an existing anime's watch status, so a
+     * WatchProgressChangedManuallyEvent can drive the push-on-edit sync trigger — replacing
+     * the old Doctrine preUpdate listener (AnimeSyncPushListener), which could not distinguish a
+     * user's edit from Anime::applyWatchProgress()'s own writes (the sync-apply path, which
+     * deliberately never calls this method).
+     *
+     * AnimeNewController deliberately does NOT call this on create: the old preUpdate listener
+     * never fired on INSERT either, and a brand-new anime has no source link yet for push to act
+     * on, so it uses the plain setWatchStatus() instead, same as the other creation paths
+     * (BulkFillerService, ScanStorageService, SampleAnimeSeeder, migrate()).
+     *
+     * isset() rather than a direct read of $this->watchStatus: the typed property has no default,
+     * so reading it directly on the very first assignment would throw instead of reporting
+     * "no previous value".
+     */
+    public function changeWatchStatusManually(WatchStatus $watchStatus): self
+    {
+        $previous = isset($this->watchStatus) ? $this->watchStatus : null;
+        $this->setWatchStatus($watchStatus);
+
+        if ($this->watchStatus !== $previous) {
+            $current = $this->watchStatus;
+            $this->recordThat(fn (): WatchProgressChangedManuallyEvent => new WatchProgressChangedManuallyEvent(
+                $this->id,
+                $current,
+                $previous,
+            ));
+        }
 
         return $this;
     }

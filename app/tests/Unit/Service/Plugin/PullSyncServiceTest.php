@@ -42,7 +42,7 @@ use App\Entity\Enum\WatchStatus;
 use App\Entity\SyncReviewItem;
 use App\Entity\TvAnime;
 use App\Entity\ValueObject\PluginId;
-use App\EventListener\AnimeSyncPushListener;
+use App\EventListener\DomainEventListener;
 use App\Repository\AnimeRepository;
 use App\Repository\StudioRepository;
 use App\Repository\SyncReviewItemRepository;
@@ -67,7 +67,7 @@ use Doctrine\ORM\ORMSetup;
 use Doctrine\ORM\Tools\SchemaTool;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
-use Symfony\Component\Messenger\MessageBusInterface;
+use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
 /**
  * Verifies the pull() core logic (issue #257): an already-known SyncItem updates its local
@@ -212,11 +212,15 @@ final class PullSyncServiceTest extends TestCase
     }
 
     /**
-     * Regression test for the pull->push echo loop (issue #352): a real AnimeSyncPushListener,
-     * wired to the same $pushSuppressor the service under test uses, is attached to this run's
-     * EntityManager so it observes every preUpdate the pull's own flush() raises — mirroring how
-     * the listener is actually attached in production (issue #214), rather than asserting on the
-     * suppressor's internal state.
+     * Regression test for the pull->push echo loop (issue #352), updated for issue #371's
+     * domain-driven trigger: a real DomainEventListener, the infra piece that drains
+     * Anime::releaseEvents() on postPersist/postUpdate, is attached to this run's EntityManager
+     * so it observes every flush the pull performs — mirroring how it is actually attached in
+     * production. doPull() applies the incoming status through the plain Anime::setWatchStatus()
+     * (not the manual-edit Anime::changeWatchStatusManually()), which never records a
+     * WatchProgressChangedManuallyEvent in the first place, so there is nothing here for the
+     * listener to release and dispatch — the echo is broken in the domain layer itself, no
+     * $pushSuppressor-style runtime guard needed for this trigger any more.
      */
     public function testPullDoesNotDispatchPushSyncMessageForTheStatusChangeItAppliedItself(): void
     {
@@ -226,11 +230,11 @@ final class PullSyncServiceTest extends TestCase
         $this->entityManager->persist($anime);
         $this->entityManager->flush();
 
-        $messageBus = $this->createMock(MessageBusInterface::class);
-        $messageBus->expects($this->never())->method('dispatch');
+        $eventDispatcher = $this->createMock(EventDispatcherInterface::class);
+        $eventDispatcher->expects($this->never())->method('dispatch');
         $this->entityManager->getEventManager()->addEventListener(
-            [Events::preUpdate],
-            new AnimeSyncPushListener($messageBus, $this->pushSuppressor),
+            [Events::postPersist, Events::postUpdate],
+            new DomainEventListener($eventDispatcher),
         );
 
         $sync = $this->createMock(SyncInterface::class);
@@ -319,8 +323,9 @@ final class PullSyncServiceTest extends TestCase
      * "Create-conflict recovery" section) shares this run's original DBAL connection — and
      * therefore its Doctrine EventManager/listeners, per Doctrine\ORM\EntityManager's own
      * constructor (it falls back to $conn->getEventManager() when none is passed explicitly).
-     * $pushSuppressor must stay active for its flush() too, not just the original
-     * EntityManager's — issue #352 requires this explicitly.
+     * Updated for issue #371: doPull()'s Anime::setWatchStatus() call (through either
+     * EntityManager) never records a domain event, so DomainEventListener — attached here
+     * the same way it is in production — has nothing to release/dispatch for either flush.
      */
     public function testRecoveryEntityManagerFlushesDuringAPullAreAlsoSuppressed(): void
     {
@@ -343,11 +348,11 @@ final class PullSyncServiceTest extends TestCase
             fillableFields: ['title', 'type'],
         );
 
-        $messageBus = $this->createMock(MessageBusInterface::class);
-        $messageBus->expects($this->never())->method('dispatch');
+        $eventDispatcher = $this->createMock(EventDispatcherInterface::class);
+        $eventDispatcher->expects($this->never())->method('dispatch');
         $this->entityManager->getEventManager()->addEventListener(
-            [Events::preUpdate],
-            new AnimeSyncPushListener($messageBus, $this->pushSuppressor),
+            [Events::postPersist, Events::postUpdate],
+            new DomainEventListener($eventDispatcher),
         );
 
         $this->service->pull($pluginId, $sync);
