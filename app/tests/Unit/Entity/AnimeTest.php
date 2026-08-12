@@ -149,6 +149,29 @@ final class AnimeTest extends TestCase
     }
 
     /**
+     * Regression coverage for issue #366 (review): a manual edit must stamp
+     * watchProgressUpdatedAt := now() — the reconciliation engine diffs current state against
+     * this timestamp, so a manual edit that leaves it untouched would never register as
+     * "changed" for the sync engine's own changed-set detection.
+     */
+    public function testChangeWatchStatusManuallyStampsWatchProgressUpdatedAtToNow(): void
+    {
+        $anime = new MovieAnime();
+        $anime->setWatchStatus(WatchStatus::Plan);
+        $initial = $anime->getWatchProgressUpdatedAt();
+        $this->assertNull($initial);
+
+        $before = new \DateTimeImmutable();
+        $anime->changeWatchStatusManually(WatchStatus::Watching);
+        $after = new \DateTimeImmutable();
+
+        $stamped = $anime->getWatchProgressUpdatedAt();
+        $this->assertNotNull($stamped);
+        $this->assertGreaterThanOrEqual($before, $stamped);
+        $this->assertLessThanOrEqual($after, $stamped);
+    }
+
+    /**
      * A brand-new, not-yet-persisted Anime (AnimeNewController::create()) has never had
      * $watchStatus assigned before — the very first changeWatchStatusManually() call must still
      * record the event instead of throwing on the "uninitialized typed property" read of the
@@ -178,6 +201,7 @@ final class AnimeTest extends TestCase
         $anime->changeWatchStatusManually(WatchStatus::Plan);
 
         $this->assertSame([], $anime->releaseEvents());
+        $this->assertNull($anime->getWatchProgressUpdatedAt());
     }
 
     public function testPlainSetWatchStatusDoesNotRecordAnEvent(): void

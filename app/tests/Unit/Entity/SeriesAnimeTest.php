@@ -98,6 +98,31 @@ final class SeriesAnimeTest extends TestCase
         $this->assertSame(WatchStatus::Watching, $events[0]->previousWatchStatus);
     }
 
+    /**
+     * Regression coverage for issue #366 (review): a manual episode-count edit must stamp
+     * watchProgressUpdatedAt := now() the same way changeWatchStatusManually() does — the
+     * reconciliation engine's changed-set detection diffs against this timestamp.
+     */
+    public function testChangeWatchedEpisodesManuallyStampsWatchProgressUpdatedAtToNow(): void
+    {
+        $anime = new TvAnime();
+        $anime->setEpisodesCount(12);
+        $anime->setWatchStatus(WatchStatus::Watching);
+        $anime->setWatchedEpisodes(5);
+        $anime->releaseEvents();
+        $initial = $anime->getWatchProgressUpdatedAt();
+        $this->assertNull($initial);
+
+        $before = new \DateTimeImmutable();
+        $anime->changeWatchedEpisodesManually(6);
+        $after = new \DateTimeImmutable();
+
+        $stamped = $anime->getWatchProgressUpdatedAt();
+        $this->assertNotNull($stamped);
+        $this->assertGreaterThanOrEqual($before, $stamped);
+        $this->assertLessThanOrEqual($after, $stamped);
+    }
+
     public function testChangeWatchedEpisodesManuallyDoesNotRecordAnEventWhenUnchanged(): void
     {
         $anime = new TvAnime();
@@ -109,6 +134,7 @@ final class SeriesAnimeTest extends TestCase
         $anime->changeWatchedEpisodesManually(5);
 
         $this->assertSame([], $anime->releaseEvents());
+        $this->assertNull($anime->getWatchProgressUpdatedAt());
     }
 
     public function testWatchNextEpisodeManuallyRecordsWatchProgressChangedManuallyEvent(): void
