@@ -46,7 +46,17 @@ use Symfony\Component\HttpKernel\Bundle\BundleInterface;
  *   `registerBundles()`; if it doesn't, the plugin loads normally without one.
  * - {@see PluginType::Translation} is purely declarative — no bundle, no autoload, no
  *   routes: only its `translations/` directory is exposed, for the Symfony Translator's
- *   search paths.
+ *   search paths. It supplies translations for the CORE, in the default `messages` domain,
+ *   so a missing `translations/` directory is a load failure (there is nothing else the
+ *   plugin does).
+ * - {@see PluginType::Integration} also gets its own `translations/` directory exposed
+ *   (issue #373) — for its OWN strings (settings page, OAuth pages, widgets), not the
+ *   core's. It is optional: a missing directory just means the plugin has no translations,
+ *   not a load failure. To avoid key collisions with the core catalog and with other
+ *   plugins, an integration plugin's catalog files must be named after its own domain
+ *   (by convention, its plugin id, e.g. `animedb-shikimori.ru.yaml`) — Symfony's Translator
+ *   derives the domain from the `<domain>.<locale>.<format>` filename, so templates read
+ *   these strings via `{{ 'key'|trans({}, '<plugin-id>') }}`.
  *
  * `manifest.json` intentionally carries neither a namespace nor a bundle class name
  * (`AnimeDb\PluginContracts\Manifest\Manifest` has no such field) — both are derived,
@@ -178,21 +188,24 @@ final class PluginLoader
     }
 
     /**
-     * @return list<string> absolute `translations/` directories of enabled "translation" plugins
+     * @return list<string> absolute `translations/` directories of enabled "translation" and
+     *                      "integration" plugins
      */
     public function translationPaths(): array
     {
         $paths = [];
 
         foreach ($this->registry->enabled() as $plugin) {
-            if ($plugin->manifest->type !== PluginType::Translation) {
+            if ($plugin->manifest->type !== PluginType::Translation
+                && $plugin->manifest->type !== PluginType::Integration
+            ) {
                 continue;
             }
 
             $translationsDir = $plugin->installPath.\DIRECTORY_SEPARATOR.'translations';
             if (is_dir($translationsDir)) {
                 $paths[] = $translationsDir;
-            } else {
+            } elseif ($plugin->manifest->type === PluginType::Translation) {
                 $this->logger->error('Skipping translation plugin without a translations/ directory.', [
                     'pluginId' => (string) $plugin->id,
                     'installPath' => $plugin->installPath,
