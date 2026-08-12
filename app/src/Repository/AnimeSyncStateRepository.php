@@ -33,7 +33,15 @@ use Doctrine\ORM\EntityManagerInterface;
 
 /**
  * Thin persistence wrapper (issue #365), mirroring SyncReviewItemRepository: the reconciliation
- * logic that decides when to create/update a row is the sync engine's job, out of scope here.
+ * logic that decides when to create/update a row is the sync engine's job (issue #366,
+ * {@see \App\Service\Sync\SyncConvergenceService}), out of scope here.
+ *
+ * Every method takes an optional $entityManager override, defaulting to the one injected by DI:
+ * PullSyncService's create-conflict recovery path (issue #297) keeps issuing writes through a
+ * throwaway EntityManager sharing the original one's connection once a lost race has closed the
+ * original — the snapshot this class maintains must follow that same recovery instance
+ * (.claude-docs/sync.md pitfall #13, "recovery-EM теряет снимок"), not silently write through
+ * the now-closed original.
  */
 class AnimeSyncStateRepository
 {
@@ -41,23 +49,24 @@ class AnimeSyncStateRepository
     {
     }
 
-    public function find(Anime $anime, string $participantId): ?AnimeSyncState
+    public function find(Anime $anime, string $participantId, ?EntityManagerInterface $entityManager = null): ?AnimeSyncState
     {
-        return $this->entityManager->find(AnimeSyncState::class, [
+        return ($entityManager ?? $this->entityManager)->find(AnimeSyncState::class, [
             'anime' => $anime,
             'participantId' => $participantId,
         ]);
     }
 
     /** @return AnimeSyncState[] */
-    public function findByAnime(Anime $anime): array
+    public function findByAnime(Anime $anime, ?EntityManagerInterface $entityManager = null): array
     {
-        return $this->entityManager->getRepository(AnimeSyncState::class)->findBy(['anime' => $anime]);
+        return ($entityManager ?? $this->entityManager)->getRepository(AnimeSyncState::class)->findBy(['anime' => $anime]);
     }
 
-    public function save(AnimeSyncState $state): void
+    public function save(AnimeSyncState $state, ?EntityManagerInterface $entityManager = null): void
     {
-        $this->entityManager->persist($state);
-        $this->entityManager->flush();
+        $entityManager ??= $this->entityManager;
+        $entityManager->persist($state);
+        $entityManager->flush();
     }
 }

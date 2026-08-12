@@ -69,6 +69,15 @@ parameters:
     # hardcoded here so the port constant has a single source of truth.
     app.qbittorrent.url: '%env(QBITTORRENT_URL)%'
 
+    # Push-on-edit TTL (issue #366, PushSyncMessageHandler): how long, since dispatch, a queued
+    # PushSyncMessage is still trusted as a same-state optimistic write before the standard
+    # reconciliation run is left to reconcile the divergence instead — see .claude-docs/sync.md's
+    # "Ритм: push-on-edit". Deliberately generous relative to the `async` transport's own
+    # retry_strategy (config/packages/messenger.yaml, see the comment there): a value hardcoded
+    # independently of that backoff could end up shorter than its worst-case retry window and
+    # drop a message mid-retry instead of letting it eventually succeed.
+    app.sync.push_on_edit_ttl_seconds: 300
+
 services:
     # default configuration for services in *this* file
     _defaults:
@@ -82,6 +91,7 @@ services:
             $coreVersion: '%app.core_version%'
             $locales: '%app.locales%'
             $sampleCoversDir: '%app.sample_covers_dir%'
+            $pushOnEditTtlSeconds: '%app.sync.push_on_edit_ttl_seconds%'
 
     # AnimeDb\PluginContracts\Filler\FillerInterface/Search\SearchByPluginInterface/
     # Widget\EntryWidgetInterface/Widget\CatalogWidgetInterface/Sync\SyncInterface all live

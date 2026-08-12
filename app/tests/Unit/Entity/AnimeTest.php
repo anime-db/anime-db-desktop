@@ -190,10 +190,11 @@ final class AnimeTest extends TestCase
     }
 
     /**
-     * The sync-apply path (Anime::applyWatchProgress(), called from the future reconciliation
-     * engine/PullSyncService) must never record this event — that is exactly the manual/sync
-     * split issue #371 introduces. A prior echo bug (issue #352) had to be worked around at the
-     * infrastructure level (PullPushSuppressor); here it simply cannot happen.
+     * The sync-apply path (Anime::applyWatchProgress(), called from the reconciliation engine's
+     * SyncConvergenceService/PullSyncService, issue #366) must never record this event — that is
+     * exactly the manual/sync split issue #371 introduces. A prior echo bug (issue #352) had to
+     * be worked around at the infrastructure level (the now-removed PullPushSuppressor); here it
+     * simply cannot happen.
      */
     public function testApplyWatchProgressDoesNotRecordAnEvent(): void
     {

@@ -148,11 +148,12 @@ abstract class Anime implements AggregateRootInterface
      * Time of the last change to the (watchStatus, watchedEpisodes) projection, the unit the
      * sync reconciliation snapshot (anime_sync_state, issue #365) diffs against — separate from
      * $dateUpdate, which bumps on every field touch (title edit, rating, ...), not just watch
-     * progress. Only applyWatchProgress() writes it; a plain setWatchStatus()/setWatchedEpisodes()
-     * call, or the manual-edit changeWatchStatusManually()/changeWatchedEpisodesManually() wrappers
-     * around them (issue #371; still used for initial creation, e.g. AnimeNewController), leave
-     * it untouched — stamping it for a manual edit too is reconciliation-engine work, deferred to
-     * issue #366 along with the rest of the diffing logic that would actually consume it.
+     * progress. Written by both applyWatchProgress() (the sync-apply path, stamped with the
+     * source's own $updatedAt) and changeWatchStatusManually()/changeWatchedEpisodesManually()
+     * (the manual-edit path, issue #371, stamped with now() — issue #366's "ручная правка:
+     * watchProgressUpdatedAt := now()"). A plain setWatchStatus()/setWatchedEpisodes() call
+     * (initial creation, e.g. AnimeNewController/BulkFillerService) leaves it untouched: a
+     * brand-new anime has no watch progress history yet to timestamp.
      * Nullable because existing rows only get it via the Version20260812000000 backfill and a
      * freshly created Anime has no watch progress history yet.
      */
@@ -342,6 +343,7 @@ abstract class Anime implements AggregateRootInterface
 
         if ($this->watchStatus !== $previous) {
             $current = $this->watchStatus;
+            $this->touchWatchProgress(new \DateTimeImmutable());
             $this->recordThat(fn (): WatchProgressChangedManuallyEvent => new WatchProgressChangedManuallyEvent(
                 $this->id,
                 $current,

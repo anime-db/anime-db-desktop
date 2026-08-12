@@ -44,6 +44,7 @@ use App\Entity\TvAnime;
 use App\Entity\ValueObject\PluginId;
 use App\EventListener\DomainEventListener;
 use App\Repository\AnimeRepository;
+use App\Repository\AnimeSyncStateRepository;
 use App\Repository\StudioRepository;
 use App\Repository\SyncReviewItemRepository;
 use App\Service\Plugin\Filler\BulkFillerService;
@@ -57,7 +58,8 @@ use App\Service\Search\AnimeSearchMatch;
 use App\Service\Search\AnimeSearchResolver;
 use App\Service\Sync\CrossVendorDuplicateDetector;
 use App\Service\Sync\DeletedFromSourceDetector;
-use App\Service\Sync\PullPushSuppressor;
+use App\Service\Sync\SyncConvergenceService;
+use App\Service\Sync\SyncReconciler;
 use App\Service\Sync\SyncReviewService;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Types\Type;
@@ -80,7 +82,6 @@ final class PullSyncServiceTest extends TestCase
     private EntityManager $entityManager;
     private PullSyncService $service;
     private PluginId $pluginId;
-    private PullPushSuppressor $pushSuppressor;
 
     protected function setUp(): void
     {
@@ -100,12 +101,12 @@ final class PullSyncServiceTest extends TestCase
         $schemaTool = new SchemaTool($this->entityManager);
         $schemaTool->createSchema($this->entityManager->getMetadataFactory()->getAllMetadata());
 
-        $this->pushSuppressor = new PullPushSuppressor();
         $this->service = $this->newService($this->entityManager, new AnimeRepository($this->entityManager));
         $this->pluginId = new PluginId('animedb-shikimori');
     }
 
-    private function newService(EntityManager $entityManager, AnimeRepository $animeRepository): PullSyncService
+    /** @param array<string, SyncInterface> $otherSyncs active plugins other than $this->pluginId, for forward-propagation coverage */
+    private function newService(EntityManager $entityManager, AnimeRepository $animeRepository, array $otherSyncs = []): PullSyncService
     {
         $bulkFillerService = new BulkFillerService(
             // Never consulted by fillNewFrom() — it works off the sync plugin instance directly.
@@ -127,15 +128,35 @@ final class PullSyncServiceTest extends TestCase
             new SyncReviewService(new SyncReviewItemRepository($entityManager)),
         );
 
-        // Empty SyncRegistry — no other active sync plugin, so a removed record without storage
-        // is flagged as deleted_from_source (never a conflict) here; the conflict branch and
-        // storage protection are covered in DeletedFromSourceDetectorTest.
+        // A single shared SyncRegistry, one active entry per $otherSyncs plus $this->pluginId
+        // itself: production wiring shares one SyncRegistry between DeletedFromSourceDetector
+        // and SyncConvergenceService the same way, and forward propagation needs $this->pluginId
+        // resolvable through it too (SyncConvergenceService excludes it by id, not by omission).
+        $settings = ['animedb-shikimori' => ['features' => ['sync' => true]]];
+        foreach (array_keys($otherSyncs) as $id) {
+            $settings[$id] = ['features' => ['sync' => true]];
+        }
+        $pluginsConfigPath = sys_get_temp_dir().'/anime-pull-sync-reg-'.uniqid().'.json';
+        file_put_contents($pluginsConfigPath, json_encode($settings));
+        $syncRegistry = new SyncRegistry($otherSyncs, new PluginsConfigStore($pluginsConfigPath));
+
+        // Empty of *other* plugins by default, so a removed record without storage is flagged as
+        // deleted_from_source (never a conflict) here; the conflict branch and storage protection
+        // are covered in DeletedFromSourceDetectorTest.
         $deletionDetector = new DeletedFromSourceDetector(
-            new SyncRegistry([], new PluginsConfigStore(sys_get_temp_dir().'/anime-pull-sync-reg-'.uniqid().'.json')),
+            $syncRegistry,
             new SyncReviewService(new SyncReviewItemRepository($entityManager)),
         );
 
-        return new PullSyncService($entityManager, $animeRepository, $bulkFillerService, $duplicateDetector, $deletionDetector, $this->pushSuppressor, new NullLogger());
+        $convergenceService = new SyncConvergenceService(
+            new SyncReconciler(),
+            new AnimeSyncStateRepository($entityManager),
+            $syncRegistry,
+            new SyncReviewService(new SyncReviewItemRepository($entityManager)),
+            new NullLogger(),
+        );
+
+        return new PullSyncService($entityManager, $animeRepository, $bulkFillerService, $duplicateDetector, $deletionDetector, $convergenceService, new NullLogger());
     }
 
     /**
@@ -397,11 +418,19 @@ final class PullSyncServiceTest extends TestCase
             $resolver,
             new SyncReviewService(new SyncReviewItemRepository($this->entityManager)),
         );
+        $syncRegistry = new SyncRegistry([], new PluginsConfigStore(sys_get_temp_dir().'/anime-pull-sync-reg-'.uniqid().'.json'));
         $deletionDetector = new DeletedFromSourceDetector(
-            new SyncRegistry([], new PluginsConfigStore(sys_get_temp_dir().'/anime-pull-sync-reg-'.uniqid().'.json')),
+            $syncRegistry,
             new SyncReviewService(new SyncReviewItemRepository($this->entityManager)),
         );
-        $service = new PullSyncService($this->entityManager, new AnimeRepository($this->entityManager), $bulkFillerService, $duplicateDetector, $deletionDetector, $this->pushSuppressor, new NullLogger());
+        $convergenceService = new SyncConvergenceService(
+            new SyncReconciler(),
+            new AnimeSyncStateRepository($this->entityManager),
+            $syncRegistry,
+            new SyncReviewService(new SyncReviewItemRepository($this->entityManager)),
+            new NullLogger(),
+        );
+        $service = new PullSyncService($this->entityManager, new AnimeRepository($this->entityManager), $bulkFillerService, $duplicateDetector, $deletionDetector, $convergenceService, new NullLogger());
 
         $sync = $this->syncFillerStub(
             [new SyncItem('42', SyncStatus::Plan, 'Trigun')],

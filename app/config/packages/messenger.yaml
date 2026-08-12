@@ -8,6 +8,11 @@ framework:
             # `bin/console messenger:setup-transports`.
             async:
                 dsn: '%env(MESSENGER_TRANSPORT_DSN)%'
+                # Worst-case retry window here (3 * up to 4s = ~7s) must stay well under
+                # app.sync.push_on_edit_ttl_seconds (config/services.yaml, issue #366) — that TTL
+                # is what PushSyncMessageHandler checks before pushing a queued PushSyncMessage,
+                # and it exists precisely so an aggressive backoff here can never itself outlive
+                # the TTL and get a message dropped mid-retry instead of eventually delivered.
                 retry_strategy:
                     max_retries: 3
                     delay: 1000

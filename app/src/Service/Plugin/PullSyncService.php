@@ -30,14 +30,14 @@ namespace App\Service\Plugin;
 use AnimeDb\PluginContracts\OAuth\ReauthRequiredException;
 use AnimeDb\PluginContracts\Sync\SyncInterface;
 use App\Entity\Anime;
-use App\Entity\Exception\InvalidWatchStatusException;
 use App\Entity\ValueObject\PluginId;
 use App\Repository\AnimeRepository;
 use App\Service\Plugin\Exception\ExternalIdAlreadyClaimedException;
 use App\Service\Plugin\Filler\BulkFillerService;
 use App\Service\Sync\CrossVendorDuplicateDetector;
 use App\Service\Sync\DeletedFromSourceDetector;
-use App\Service\Sync\PullPushSuppressor;
+use App\Service\Sync\SyncConvergenceService;
+use App\Service\Sync\SyncProjection;
 use Doctrine\ORM\EntityManager;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Log\LoggerInterface;
@@ -117,25 +117,26 @@ final class PullSyncService
         private readonly BulkFillerService $bulkFillerService,
         private readonly CrossVendorDuplicateDetector $duplicateDetector,
         private readonly DeletedFromSourceDetector $deletionDetector,
-        private readonly PullPushSuppressor $pushSuppressor,
+        private readonly SyncConvergenceService $convergenceService,
         private readonly LoggerInterface $logger,
     ) {
     }
 
     /**
-     * Wrapped in $pushSuppressor (issue #352). doPull() below applies every incoming status
-     * through the plain Anime::setWatchStatus(), never through the manual-edit
-     * Anime::changeWatchStatusManually() (issue #371) — so no WatchProgressChangedManuallyEvent is
-     * ever recorded here, and the push trigger it drives never echoes back out for a pull-applied
-     * change in the first place. $pushSuppressor itself is kept for the origin-aware
-     * forward-propagation suppression #366 repositions it for; it has no push-trigger consumer
-     * left to guard at this point.
+     * doPull() below applies every incoming projection through SyncConvergenceService, which in
+     * turn only ever calls the sync-apply Anime::applyWatchProgress(), never the manual-edit
+     * Anime::changeWatchStatusManually()/changeWatchedEpisodesManually() (issue #371) — so no
+     * WatchProgressChangedManuallyEvent is ever recorded for a pull-applied change, and the push
+     * trigger it drives never echoes back out in the first place (issue #352). Forward
+     * propagation to other active plugins still happens, deliberately excluding $pluginId itself
+     * — a plain parameter comparison inside SyncReconciler::participantsToConverge() (issue
+     * #366), needing no runtime suppression guard; this method used to wrap doPull() in a
+     * PullPushSuppressor for that purpose before #371 moved the manual/sync distinction into the
+     * domain layer, which left it with nothing left to suppress.
      */
     public function pull(PluginId $pluginId, SyncInterface $sync): void
     {
-        $this->pushSuppressor->suppress(function () use ($pluginId, $sync): void {
-            $this->doPull($pluginId, $sync);
-        });
+        $this->doPull($pluginId, $sync);
     }
 
     private function doPull(PluginId $pluginId, SyncInterface $sync): void
@@ -196,19 +197,21 @@ final class PullSyncService
                     $anime = $recoveryEntityManager->find(Anime::class, $anime->id) ?? $anime;
                 }
 
-                try {
-                    $anime->setWatchStatus($status);
-                } catch (InvalidWatchStatusException) {
-                    // The source considers the title completed, but this Anime's own production
-                    // status (from datePremiere/dateEnd) isn't Released — either it's genuinely
-                    // airing right now locally, or (for a title this same run just created) the
-                    // plugin's own fill-in data didn't carry release dates. Same invariant
-                    // AnimeEditableController::updateWatchStatus() enforces for a user-driven
-                    // edit; here there's no form to reject, so this single item's status is
-                    // skipped for this run rather than failing the whole pull. It resolves itself
-                    // once the local production status catches up (dateEnd gets filled in, or a
-                    // later pull once the source itself no longer reports it as completed).
-                }
+                // Reconciliation engine (issue #366): decides whether this item's projection
+                // actually wins over local's current one (and over any other active plugin's
+                // last-seen), applies the winner to $anime via Anime::applyWatchProgress() — which
+                // itself absorbs an invariant rejection (Completed while not yet Released) by
+                // flagging it rather than throwing, the same self-healing stance this loop takes
+                // everywhere else — and forward-propagates to every other active, resolvable
+                // plugin except $pluginId itself (origin-aware convergence, breaks the pull->push
+                // echo, issue #352, without suppressing forward propagation, issue #366 pitfall #2).
+                $this->convergenceService->reconcilePulledItem(
+                    $anime,
+                    (string) $pluginId,
+                    new SyncProjection($status, $item->watchedEpisodes),
+                    $item->updatedAt,
+                    $recoveryEntityManager ?? $this->entityManager,
+                );
 
                 $recoveryEntityManager?->flush();
             }

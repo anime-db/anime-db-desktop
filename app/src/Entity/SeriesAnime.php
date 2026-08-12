@@ -138,6 +138,7 @@ abstract class SeriesAnime extends Anime
 
         if ($this->watchedEpisodes !== $previousEpisodes) {
             $currentStatus = $this->getWatchStatus();
+            $this->touchWatchProgress(new \DateTimeImmutable());
             $this->recordThat(fn (): WatchProgressChangedManuallyEvent => new WatchProgressChangedManuallyEvent(
                 $this->id,
                 $currentStatus,
