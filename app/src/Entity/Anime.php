@@ -320,16 +320,20 @@ abstract class Anime implements AggregateRootInterface
 
     /**
      * The manual-edit counterpart of setWatchStatus() (issue #371): used by
-     * AnimeEditableController/AnimeNewController wherever a user directly picks a watch status,
-     * so a WatchProgressChangedManuallyEvent can drive the push-on-edit sync trigger — replacing
+     * AnimeEditableController wherever a user edits an existing anime's watch status, so a
+     * WatchProgressChangedManuallyEvent can drive the push-on-edit sync trigger — replacing
      * the old Doctrine preUpdate listener (AnimeSyncPushListener), which could not distinguish a
      * user's edit from Anime::applyWatchProgress()'s own writes (the sync-apply path, which
      * deliberately never calls this method).
      *
-     * isset() rather than a direct read of $this->watchStatus: on a brand-new, not-yet-persisted
-     * Anime (AnimeNewController), the typed property has no default and this may be the very
-     * first assignment, so reading it directly would throw instead of reporting "no previous
-     * value".
+     * AnimeNewController deliberately does NOT call this on create: the old preUpdate listener
+     * never fired on INSERT either, and a brand-new anime has no source link yet for push to act
+     * on, so it uses the plain setWatchStatus() instead, same as the other creation paths
+     * (BulkFillerService, ScanStorageService, SampleAnimeSeeder, migrate()).
+     *
+     * isset() rather than a direct read of $this->watchStatus: the typed property has no default,
+     * so reading it directly on the very first assignment would throw instead of reporting
+     * "no previous value".
      */
     public function changeWatchStatusManually(WatchStatus $watchStatus): self
     {
