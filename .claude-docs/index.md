@@ -12,6 +12,8 @@ tags: [memory/repo, index]
 | Понять FrankenPHP, php.ini, Caddyfile               | [architecture.md](architecture.md) §FrankenPHP         |
 | Понять Meilisearch — бинарник, индекс, лицензия     | [architecture.md](architecture.md) §Meilisearch        |
 | Узнать, почему принято то или иное решение          | [decisions.md](decisions.md)                           |
+| Работать с синхронизацией списков (реконсиляция)     | [sync.md](sync.md)                                     |
+| Понять подводные камни синхронизации перед правкой   | [sync.md](sync.md) §Реестр подводных камней            |
 | Столкнулся с неочевидным поведением / ловушкой      | [gotchas.md](gotchas.md)                               |
 | Работать с supervisor (FrankenPHP/Meilisearch)      | [architecture.md](architecture.md) §native/supervisor  |
 | Добавить плагин или работать с Plugin/              | [architecture.md](architecture.md) §app/               |

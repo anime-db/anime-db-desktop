@@ -10,6 +10,7 @@ Entry point for Claude Code agents. For deeper reference see [`.claude-docs/`](.
 - [.claude-docs/gotchas.md](.claude-docs/gotchas.md) — нетривиальные ловушки
 - [.claude-docs/conventions.md](.claude-docs/conventions.md) — стиль кода, форматирование, команды
 - [.claude-docs/cookbook.md](.claude-docs/cookbook.md) — рецепты частых задач (settings-страница, entity+миграция, Messenger-job, листенер, реестр плагина)
+- [.claude-docs/sync.md](.claude-docs/sync.md) — синхронизация списков: модель реконсиляции, диаграммы, реестр подводных камней
 
 ## О проекте
 
