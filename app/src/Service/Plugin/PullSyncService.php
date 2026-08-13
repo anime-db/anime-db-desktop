@@ -107,7 +107,11 @@ use Psr\Log\LoggerInterface;
  * rolled back (pull's per-item idempotency means nothing is lost by stopping early), but
  * CrossVendorDuplicateDetector/DeletedFromSourceDetector are skipped for this run — the source
  * list this run saw is only a partial prefix, so treating anything absent from it as
- * "disappeared from source" would be a false positive.
+ * "disappeared from source" would be a false positive. pull() reports this case back to its
+ * caller as a `false` return (issue #381 review) rather than swallowing it silently — a caller
+ * that treats "pull ran" as a one-time completion signal (connect-seed's own dispatch flag,
+ * {@see \App\MessageHandler\SyncSeedMessageHandler}) needs to tell "actually pulled" apart from
+ * "stopped short on a dead OAuth session" to know whether to retry once credentials are fixed.
  */
 final class PullSyncService
 {
@@ -137,12 +141,18 @@ final class PullSyncService
      * #371 moved the manual/sync distinction into the domain layer, which left it with nothing
      * left to suppress.
      */
-    public function pull(PluginId $pluginId, SyncInterface $sync): void
+    /**
+     * @return bool whether this run actually reconciled the source's list — `false` means it
+     *              stopped early on {@see ReauthRequiredException} (see the class docblock's
+     *              "dead OAuth session" section) and applied nothing beyond what it saw before
+     *              that point
+     */
+    public function pull(PluginId $pluginId, SyncInterface $sync): bool
     {
-        $this->doPull($pluginId, $sync);
+        return $this->doPull($pluginId, $sync);
     }
 
-    private function doPull(PluginId $pluginId, SyncInterface $sync): void
+    private function doPull(PluginId $pluginId, SyncInterface $sync): bool
     {
         $byExternalId = $this->animeRepository->indexByExternalId($pluginId);
         /** @var list<Anime> $newlyCreated */
@@ -233,7 +243,7 @@ final class PullSyncService
                 $this->entityManager->flush();
             }
 
-            return;
+            return false;
         }
 
         if ($recoveryEntityManager === null) {
@@ -252,7 +262,7 @@ final class PullSyncService
                 'pluginId' => (string) $pluginId,
             ]);
 
-            return;
+            return true;
         }
 
         foreach ($newlyCreated as $anime) {
@@ -264,6 +274,8 @@ final class PullSyncService
         // $byExternalId and are present in $presentExternalIds, so they never count as removed.
         $disappeared = array_diff_key($byExternalId, $presentExternalIds);
         $this->deletionDetector->detect($pluginId, $disappeared);
+
+        return true;
     }
 
     /**
