@@ -28,14 +28,30 @@ declare(strict_types=1);
 namespace App\Tests\Unit\Controller\Settings;
 
 use App\Controller\Settings\SyncReviewController;
+use App\Doctrine\Type\RatingType;
+use App\Doctrine\Type\UnixTimestampType;
 use App\Entity\Anime;
 use App\Entity\Enum\SyncReviewItemKind;
+use App\Entity\Enum\WatchStatus;
 use App\Entity\SyncReviewItem;
 use App\Entity\TvAnime;
 use App\Repository\AnimeRepository;
+use App\Repository\AnimeSyncStateRepository;
 use App\Repository\SyncReviewItemRepository;
+use App\Service\Plugin\PluginsConfigStore;
+use App\Service\Plugin\SyncRegistry;
+use App\Service\Sync\SyncConvergenceService;
+use App\Service\Sync\SyncReconciler;
 use App\Service\Sync\SyncReviewService;
+use Doctrine\DBAL\DriverManager;
+use Doctrine\DBAL\Types\Type;
+use Doctrine\ORM\EntityManager;
+use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\ORM\ORMSetup;
+use Doctrine\ORM\Tools\SchemaTool;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
+use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
@@ -47,6 +63,8 @@ final class SyncReviewControllerTest extends TestCase
     private function createController(
         ?SyncReviewItemRepository $syncReviewItemRepository = null,
         ?AnimeRepository $animeRepository = null,
+        ?SyncConvergenceService $syncConvergenceService = null,
+        ?EntityManagerInterface $entityManager = null,
         ?CsrfTokenManagerInterface $csrfTokenManager = null,
         ?UrlGeneratorInterface $urlGenerator = null,
         ?Environment $twig = null,
@@ -61,13 +79,51 @@ final class SyncReviewControllerTest extends TestCase
             $urlGenerator->method('generate')->willReturn('/settings/sync-review');
         }
 
+        $entityManager ??= $this->createStub(EntityManagerInterface::class);
+
         return new SyncReviewController(
             new SyncReviewService($syncReviewItemRepository ?? $this->createStub(SyncReviewItemRepository::class)),
             $animeRepository ?? $this->createStub(AnimeRepository::class),
+            // SyncConvergenceService is final and can't be doubled — a real instance is built
+            // here for every test, unused unless a NeedsCorrection resolve() actually reaches it.
+            $syncConvergenceService ?? $this->createRealSyncConvergenceService($entityManager),
+            $entityManager,
             $csrfTokenManager,
             $urlGenerator,
             $twig ?? $this->createStub(Environment::class),
         );
+    }
+
+    private function createRealSyncConvergenceService(EntityManagerInterface $entityManager): SyncConvergenceService
+    {
+        return new SyncConvergenceService(
+            new SyncReconciler(),
+            new AnimeSyncStateRepository($entityManager),
+            new SyncRegistry([], new PluginsConfigStore('')),
+            new SyncReviewService($this->createStub(SyncReviewItemRepository::class)),
+            new NullLogger(),
+        );
+    }
+
+    private function createInMemoryEntityManager(): EntityManager
+    {
+        if (!Type::hasType(UnixTimestampType::NAME)) {
+            Type::addType(UnixTimestampType::NAME, UnixTimestampType::class);
+        }
+        if (!Type::hasType(RatingType::NAME)) {
+            Type::addType(RatingType::NAME, RatingType::class);
+        }
+
+        $config = ORMSetup::createAttributeMetadataConfig([\dirname(__DIR__, 4).'/src/Entity'], true);
+        $config->enableNativeLazyObjects(true);
+
+        $connection = DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true], $config);
+        $entityManager = new EntityManager($connection, $config);
+
+        $schemaTool = new SchemaTool($entityManager);
+        $schemaTool->createSchema($entityManager->getMetadataFactory()->getAllMetadata());
+
+        return $entityManager;
     }
 
     public function testIndexPassesUnresolvedItemsAndDuplicateClustersToTemplate(): void
@@ -93,7 +149,8 @@ final class SyncReviewControllerTest extends TestCase
             ->method('render')
             ->with('settings/sync_review/index.html.twig', $this->callback(
                 static fn (array $params): bool => [$item] === $params['items']
-                    && [10 => [$anime1, $anime2]] === $params['duplicateClusters'],
+                    && [10 => [$anime1, $anime2]] === $params['duplicateClusters']
+                    && $params['needsCorrectionDetails'] === [],
             ))
             ->willReturn('<html></html>');
 
@@ -130,7 +187,8 @@ final class SyncReviewControllerTest extends TestCase
             ->with('settings/sync_review/index.html.twig', $this->callback(
                 static fn (array $params): bool => [$item] === $params['items']
                     && [20 => []] === $params['duplicateClusters']
-                    && [20 => ['anime' => $anime, 'deletedFrom' => 'animedb-shikimori', 'stillPresentOn' => ['animedb-mal']]] === $params['deletionDetails'],
+                    && [20 => ['anime' => $anime, 'deletedFrom' => 'animedb-shikimori', 'stillPresentOn' => ['animedb-mal']]] === $params['deletionDetails']
+                    && $params['needsCorrectionDetails'] === [],
             ))
             ->willReturn('<html></html>');
 
@@ -159,6 +217,7 @@ final class SyncReviewControllerTest extends TestCase
         $response = $controller->resolve($item, $request);
 
         $this->assertTrue($item->isResolved());
+        $this->assertInstanceOf(RedirectResponse::class, $response);
         $this->assertSame('/settings/sync-review', $response->getTargetUrl());
     }
 
@@ -175,6 +234,123 @@ final class SyncReviewControllerTest extends TestCase
 
         $controller = $this->createController(syncReviewItemRepository: $syncReviewItemRepository, csrfTokenManager: $csrf);
         $request = Request::create('/settings/sync-review/5/resolve', 'POST', ['_token' => 'bad']);
+
+        $this->expectException(BadRequestHttpException::class);
+        $controller->resolve($item, $request);
+    }
+
+    /**
+     * Acceptance (issue #382): choosing a NeedsCorrection candidate applies it via
+     * SyncConvergenceService::applyManualResolution() (real engine, no plugins registered so it
+     * only touches local) before the item itself is marked resolved.
+     */
+    public function testResolveAppliesTheChosenNeedsCorrectionCandidateAndRedirects(): void
+    {
+        $entityManager = $this->createInMemoryEntityManager();
+
+        $anime = new TvAnime();
+        $anime->setTitle('Cowboy Bebop')->setWatchStatus(WatchStatus::Plan);
+        $entityManager->persist($anime);
+        $entityManager->flush();
+
+        $item = new SyncReviewItem(SyncReviewItemKind::NeedsCorrection, [
+            'anime_id' => $anime->id,
+            'candidates' => [
+                ['participant_id' => 'local', 'status' => 'plan', 'watched_episodes' => null, 'updated_at' => null],
+                ['participant_id' => 'animedb-shikimori', 'status' => 'watching', 'watched_episodes' => 5, 'updated_at' => null],
+            ],
+        ]);
+        (new \ReflectionProperty(SyncReviewItem::class, 'id'))->setValue($item, 5);
+
+        $syncReviewItemRepository = $this->createMock(SyncReviewItemRepository::class);
+        $syncReviewItemRepository->expects($this->once())->method('save')->with($item);
+
+        $controller = $this->createController(
+            syncReviewItemRepository: $syncReviewItemRepository,
+            animeRepository: new AnimeRepository($entityManager),
+            entityManager: $entityManager,
+        );
+        $request = Request::create('/settings/sync-review/5/resolve', 'POST', [
+            '_token' => 'token',
+            'participant_id' => 'animedb-shikimori',
+        ]);
+
+        $response = $controller->resolve($item, $request);
+
+        $this->assertTrue($item->isResolved());
+        $this->assertInstanceOf(RedirectResponse::class, $response);
+        $this->assertSame(WatchStatus::Watching, $anime->getWatchStatus());
+        $this->assertSame(5, $anime->getWatchedEpisodes());
+    }
+
+    /**
+     * The NeedsCorrection resolve form posts via HTMX (issue #382) so a successful pick removes
+     * the item from the list without a full page reload — the controller must respond with a
+     * plain 200 rather than the redirect the non-HTMX forms of the other kinds still get.
+     */
+    public function testResolveReturnsAnEmptyResponseForAnHtmxRequest(): void
+    {
+        $entityManager = $this->createInMemoryEntityManager();
+
+        $anime = new TvAnime();
+        $anime->setTitle('Cowboy Bebop')->setWatchStatus(WatchStatus::Plan);
+        $entityManager->persist($anime);
+        $entityManager->flush();
+
+        $item = new SyncReviewItem(SyncReviewItemKind::NeedsCorrection, [
+            'anime_id' => $anime->id,
+            'candidates' => [
+                ['participant_id' => 'local', 'status' => 'plan', 'watched_episodes' => null, 'updated_at' => null],
+                ['participant_id' => 'animedb-shikimori', 'status' => 'watching', 'watched_episodes' => 5, 'updated_at' => null],
+            ],
+        ]);
+        (new \ReflectionProperty(SyncReviewItem::class, 'id'))->setValue($item, 5);
+
+        $syncReviewItemRepository = $this->createStub(SyncReviewItemRepository::class);
+
+        $controller = $this->createController(
+            syncReviewItemRepository: $syncReviewItemRepository,
+            animeRepository: new AnimeRepository($entityManager),
+            entityManager: $entityManager,
+        );
+        $request = Request::create('/settings/sync-review/5/resolve', 'POST', [
+            '_token' => 'token',
+            'participant_id' => 'local',
+        ]);
+        $request->headers->set('HX-Request', 'true');
+
+        $response = $controller->resolve($item, $request);
+
+        $this->assertNotInstanceOf(RedirectResponse::class, $response);
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertSame('', $response->getContent());
+    }
+
+    public function testResolveRejectsAnUnknownParticipantForNeedsCorrection(): void
+    {
+        $entityManager = $this->createInMemoryEntityManager();
+
+        $anime = new TvAnime();
+        $anime->setTitle('Cowboy Bebop')->setWatchStatus(WatchStatus::Plan);
+        $entityManager->persist($anime);
+        $entityManager->flush();
+
+        $item = new SyncReviewItem(SyncReviewItemKind::NeedsCorrection, [
+            'anime_id' => $anime->id,
+            'candidates' => [
+                ['participant_id' => 'animedb-shikimori', 'status' => 'watching', 'watched_episodes' => 5, 'updated_at' => null],
+            ],
+        ]);
+        (new \ReflectionProperty(SyncReviewItem::class, 'id'))->setValue($item, 5);
+
+        $controller = $this->createController(
+            animeRepository: new AnimeRepository($entityManager),
+            entityManager: $entityManager,
+        );
+        $request = Request::create('/settings/sync-review/5/resolve', 'POST', [
+            '_token' => 'token',
+            'participant_id' => 'animedb-mal',
+        ]);
 
         $this->expectException(BadRequestHttpException::class);
         $controller->resolve($item, $request);

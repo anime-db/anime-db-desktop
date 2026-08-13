@@ -30,12 +30,16 @@ namespace App\Tests\Unit\Controller;
 use App\Controller\SettingsController;
 use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
+use App\Entity\Enum\SyncReviewItemKind;
 use App\Entity\Enum\WatchStatus;
 use App\Entity\MovieAnime;
+use App\Entity\SyncReviewItem;
+use App\Repository\SyncReviewItemRepository;
 use App\Service\AppConfigStore;
 use App\Service\AppSettingsProvider;
 use App\Service\Search\AnimeReindexService;
 use App\Service\Search\AnimeSearchIndexer;
+use App\Service\Sync\SyncReviewService;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\EntityManager;
@@ -74,6 +78,7 @@ final class SettingsControllerTest extends TestCase
         ?CsrfTokenManagerInterface $csrfTokenManager = null,
         ?Environment $twig = null,
         ?AnimeReindexService $reindexService = null,
+        ?SyncReviewService $syncReview = null,
     ): SettingsController {
         if ($csrfTokenManager === null) {
             $csrfTokenManager = $this->createStub(CsrfTokenManagerInterface::class);
@@ -86,7 +91,17 @@ final class SettingsControllerTest extends TestCase
             $csrfTokenManager,
             $twig ?? $this->createStub(Environment::class),
             $reindexService ?? $this->createReindexService($this->createStub(Client::class)),
+            $syncReview ?? $this->createSyncReview([]),
         );
+    }
+
+    /** @param SyncReviewItem[] $unresolved */
+    private function createSyncReview(array $unresolved): SyncReviewService
+    {
+        $repository = $this->createStub(SyncReviewItemRepository::class);
+        $repository->method('findAllUnresolvedOrderedByCreatedAt')->willReturn($unresolved);
+
+        return new SyncReviewService($repository);
     }
 
     /**
@@ -129,6 +144,7 @@ final class SettingsControllerTest extends TestCase
                 'availableLocales' => ['en', 'ru'],
                 'currentLocale' => 'en',
                 'reindexStatus' => null,
+                'needsCorrectionCount' => 0,
             ])
             ->willReturn('<html></html>');
 
@@ -149,10 +165,35 @@ final class SettingsControllerTest extends TestCase
                 'availableLocales' => ['en', 'ru'],
                 'currentLocale' => 'ru',
                 'reindexStatus' => null,
+                'needsCorrectionCount' => 0,
             ])
             ->willReturn('<html></html>');
 
         $controller = $this->createController(twig: $twig);
+        $controller->index();
+    }
+
+    /**
+     * Acceptance (issue #382): the settings link badge counts only NeedsCorrection items — a
+     * PotentialDuplicate row unresolved at the same time must not inflate it.
+     */
+    public function testIndexCountsOnlyUnresolvedNeedsCorrectionItemsForTheBadge(): void
+    {
+        $needsCorrection = new SyncReviewItem(SyncReviewItemKind::NeedsCorrection, ['anime_id' => 1, 'candidates' => []]);
+        $duplicate = new SyncReviewItem(SyncReviewItemKind::PotentialDuplicate, ['anime_ids' => [1, 2]]);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('settings/index.html.twig', [
+                'availableLocales' => ['en', 'ru'],
+                'currentLocale' => 'en',
+                'reindexStatus' => null,
+                'needsCorrectionCount' => 1,
+            ])
+            ->willReturn('<html></html>');
+
+        $controller = $this->createController(twig: $twig, syncReview: $this->createSyncReview([$needsCorrection, $duplicate]));
         $controller->index();
     }
 
@@ -209,6 +250,7 @@ final class SettingsControllerTest extends TestCase
                 'availableLocales' => ['en', 'ru'],
                 'currentLocale' => 'en',
                 'reindexStatus' => 'success',
+                'needsCorrectionCount' => 0,
             ])
             ->willReturn('<html></html>');
 
@@ -232,6 +274,7 @@ final class SettingsControllerTest extends TestCase
                 'availableLocales' => ['en', 'ru'],
                 'currentLocale' => 'en',
                 'reindexStatus' => 'error',
+                'needsCorrectionCount' => 0,
             ])
             ->willReturn('<html></html>');
 

@@ -122,6 +122,7 @@ settings:
     plugins_link: Plugins
     plugin_widgets_link: Plugin widgets
     sync_review_link: Requires attention
+    sync_review_badge: 'Requires attention: %count%'
     proxy_link: Proxy server
     language_label: Interface language
     locale:
@@ -173,6 +174,11 @@ settings_sync_review:
     kind_potential_duplicate: Potential duplicate
     kind_deleted_from_source: 'Removed from the list on source "%source%"'
     kind_deletion_conflict: 'Conflict: removed on "%source%" but still listed on: %others%'
+    kind_needs_correction: 'Sync conflict: participants report different watch progress'
+    participant_local: Local
+    candidate_updated_at: 'updated %date%'
+    auto_applied_winner: auto-resolved
+    correct_button: Correct
     resolve_button: Resolve
 
 settings_plugins:
