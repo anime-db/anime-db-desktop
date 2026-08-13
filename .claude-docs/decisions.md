@@ -87,6 +87,14 @@ FrankenPHP и Meilisearch скачиваются с официальных GitHu
 
 `.exe`-инсталлер собирается в GitHub Actions на `windows-latest` runner. NSIS-инсталлер требует Windows. Сборка запускается вручную или по тегу релиза. Артефакт публикуется в GitHub Releases.
 
+## `asar: false` — не asarUnpack (issue #388)
+
+`app/**` читает FrankenPHP как отдельный OS-процесс — asar-виртуализация Electron/Node на него не распространяется, каталог обязан быть настоящими файлами на диске. `bin/**` — исполняемые файлы, `child_process.spawn` не может запустить бинарник изнутри архива. Эти два каталога — фактически весь полезный объём сборки; `asarUnpack` для них оставил бы упакованными только `native/` и `resources/` (и то и другое одинаково исправно читается изнутри asar через fs/`file://`), то есть выгода от упаковки маргинальна, а cost — правка путей в `native/paths.js` и трёх супервизорах (`.asar.unpacked`). Выбран `asar: false` как более простой и не более рискованный вариант; `native/paths.js` и супервизоры не тронуты.
+
+`package.json` → `build.files` до этой задачи не включал `scripts/versions.json`, хотя `meilisearch.js` читает его в рантайме (`path.join(__dirname, '..', '..', 'scripts', 'versions.json')`) — в собранном инсталляторе файла не было бы вообще. Добавлен точечно (`scripts/versions.json`), не весь `scripts/**` — `build.js`/`download-bins.js` нужны только на этапе сборки.
+
+Версия релиза берётся из `GITHUB_REF_NAME` (дефолтная env-переменная GitHub Actions, не требует правки workflow) в `scripts/build.js#syncVersionFromTag`, который выполняется как `prebuild` перед `electron-builder`. Стемпается только при совпадении с `v\d+\.\d+\.\d+` (тег релиза) — для `workflow_dispatch` без тега или локального `npm run build` версия из `package.json` не трогается.
+
 ## Этап 2 — архитектурные решения
 
 ### Splash Screen — прогресс и статус

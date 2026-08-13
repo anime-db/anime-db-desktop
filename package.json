@@ -40,8 +40,10 @@
             "app/**",
             "bin/**",
             "resources/**",
+            "scripts/versions.json",
             "!app/var/**",
             "!node_modules/**"
-        ]
+        ],
+        "asar": false
     }
 }
