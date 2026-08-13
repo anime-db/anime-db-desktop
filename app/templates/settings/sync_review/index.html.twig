@@ -31,7 +31,8 @@
     {% else %}
         <ul>
             {% for item in items %}
-                <li>
+                {% set correction = item.kind.value == 'needs_correction' ? needsCorrectionDetails[item.id] : null %}
+                <li id="sync-review-item-{{ item.id }}">
                     {% if duplicateClusters[item.id] is not empty %}
                         <p>{{ 'settings_sync_review.kind_potential_duplicate'|trans }}</p>
                         <ul>
@@ -49,12 +50,41 @@
                         {% if detail.anime is not null %}
                             <a href="{{ path('anime_show', {id: detail.anime.id}) }}">{{ detail.anime.title }}</a>
                         {% endif %}
+                    {% elseif correction is not null %}
+                        <p>{{ 'settings_sync_review.kind_needs_correction'|trans }}</p>
+                        {% if correction.anime is not null %}
+                            <a href="{{ path('anime_show', {id: correction.anime.id}) }}">{{ correction.anime.title }}</a>
+                        {% endif %}
                     {% endif %}
 
-                    <form method="post" action="{{ path('settings_sync_review_resolve', {id: item.id}) }}">
-                        <input type="hidden" name="_token" value="{{ csrf_token('settings_sync_review_resolve_' ~ item.id) }}">
-                        <button type="submit">{{ 'settings_sync_review.resolve_button'|trans }}</button>
-                    </form>
+                    {% if correction is not null %}
+                        <form hx-post="{{ path('settings_sync_review_resolve', {id: item.id}) }}"
+                              hx-target="#sync-review-item-{{ item.id }}" hx-swap="outerHTML">
+                            <input type="hidden" name="_token" value="{{ csrf_token('settings_sync_review_resolve_' ~ item.id) }}">
+                            <ul>
+                                {% for candidate in correction.candidates %}
+                                    <li>
+                                        <label>
+                                            <input type="radio" name="participant_id" value="{{ candidate.participant_id }}" required>
+                                            {{ candidate.participant_id == 'local' ? ('settings_sync_review.participant_local'|trans) : candidate.participant_id }}:
+                                            {{ ('watch_status.' ~ candidate.status)|trans }}
+                                            {%- if candidate.watched_episodes is not null %} {{ candidate.watched_episodes }}{% endif %}
+                                            {%- if candidate.updated_at is not null %}, {{ 'settings_sync_review.candidate_updated_at'|trans({'%date%': (candidate.updated_at|date('Y-m-d H:i'))}) }}{% endif %}
+                                            {%- if candidate.status == correction.winnerStatus and candidate.watched_episodes == correction.winnerWatchedEpisodes %}
+                                                <strong>{{ 'settings_sync_review.auto_applied_winner'|trans }}</strong>
+                                            {% endif %}
+                                        </label>
+                                    </li>
+                                {% endfor %}
+                            </ul>
+                            <button type="submit">{{ 'settings_sync_review.correct_button'|trans }}</button>
+                        </form>
+                    {% else %}
+                        <form method="post" action="{{ path('settings_sync_review_resolve', {id: item.id}) }}">
+                            <input type="hidden" name="_token" value="{{ csrf_token('settings_sync_review_resolve_' ~ item.id) }}">
+                            <button type="submit">{{ 'settings_sync_review.resolve_button'|trans }}</button>
+                        </form>
+                    {% endif %}
                 </li>
             {% endfor %}
         </ul>

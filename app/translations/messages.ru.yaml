@@ -122,6 +122,7 @@ settings:
     plugins_link: Плагины
     plugin_widgets_link: Виджеты плагинов
     sync_review_link: Требует внимания
+    sync_review_badge: 'Требует внимания: %count%'
     proxy_link: Прокси-сервер
     language_label: Язык интерфейса
     locale:
@@ -173,6 +174,11 @@ settings_sync_review:
     kind_potential_duplicate: Возможный дубликат
     kind_deleted_from_source: 'Удалено из списка на источнике «%source%»'
     kind_deletion_conflict: 'Конфликт: удалено на «%source%», но ещё в списке на: %others%'
+    kind_needs_correction: 'Конфликт синхронизации: разные значения прогресса просмотра у участников'
+    participant_local: Локально
+    candidate_updated_at: 'обновлено %date%'
+    auto_applied_winner: разрешено автоматически
+    correct_button: Поправить
     resolve_button: Разобрано
 
 settings_plugins:

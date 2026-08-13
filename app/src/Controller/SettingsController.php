@@ -27,8 +27,11 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
+use App\Entity\Enum\SyncReviewItemKind;
+use App\Entity\SyncReviewItem;
 use App\Service\AppSettingsProvider;
 use App\Service\Search\AnimeReindexService;
+use App\Service\Sync\SyncReviewService;
 use Meilisearch\Exceptions\ExceptionInterface as MeilisearchExceptionInterface;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -52,6 +55,7 @@ final class SettingsController
         private readonly CsrfTokenManagerInterface $csrfTokenManager,
         private readonly Environment $twig,
         private readonly AnimeReindexService $reindexService,
+        private readonly SyncReviewService $syncReview,
     ) {
     }
 
@@ -106,7 +110,21 @@ final class SettingsController
             'availableLocales' => $this->locales,
             'currentLocale' => $this->settings->getLocale() ?? ($this->locales[0] ?? null),
             'reindexStatus' => $reindexStatus,
+            'needsCorrectionCount' => $this->needsCorrectionCount(),
         ]));
+    }
+
+    /**
+     * Badge count for the "Requires attention" settings link (issue #382): unresolved
+     * NeedsCorrection items specifically, not every SyncReviewItem kind — it is the one kind a
+     * user cannot otherwise notice until they open the page.
+     */
+    private function needsCorrectionCount(): int
+    {
+        return \count(array_filter(
+            $this->syncReview->findUnresolved(),
+            static fn (SyncReviewItem $item): bool => $item->kind === SyncReviewItemKind::NeedsCorrection,
+        ));
     }
 
     private function assertValidCsrfToken(string $tokenId, Request $request): void

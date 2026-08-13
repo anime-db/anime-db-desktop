@@ -96,6 +96,7 @@ final class SettingsTemplateRenderingTest extends KernelTestCase
             'availableLocales' => ['en', 'ru'],
             'currentLocale' => 'ru',
             'reindexStatus' => null,
+            'needsCorrectionCount' => 0,
         ]);
 
         $this->assertStringContainsString('Настройки', $html);
@@ -113,6 +114,7 @@ final class SettingsTemplateRenderingTest extends KernelTestCase
             'availableLocales' => ['en', 'ru'],
             'currentLocale' => 'en',
             'reindexStatus' => null,
+            'needsCorrectionCount' => 0,
         ]);
 
         $this->assertStringContainsString('<option value="en" selected>English</option>', $html);
@@ -134,6 +136,7 @@ final class SettingsTemplateRenderingTest extends KernelTestCase
             'availableLocales' => ['en', 'ru'],
             'currentLocale' => 'ru',
             'reindexStatus' => 'success',
+            'needsCorrectionCount' => 0,
         ]);
 
         $this->assertStringContainsString('Поисковый индекс успешно перестроен.', $html);
@@ -154,6 +157,7 @@ final class SettingsTemplateRenderingTest extends KernelTestCase
             'availableLocales' => ['en', 'ru'],
             'currentLocale' => 'ru',
             'reindexStatus' => 'error',
+            'needsCorrectionCount' => 0,
         ]);
 
         $this->assertStringContainsString('Не удалось перестроить поисковый индекс.', $html);
@@ -232,6 +236,56 @@ final class SettingsTemplateRenderingTest extends KernelTestCase
         $this->assertStringContainsString('Trigun', $html);
         $this->assertStringContainsString('/anime/1', $html);
         $this->assertStringContainsString('Возможный дубликат', $html);
+    }
+
+    /**
+     * Acceptance (issue #382): a NeedsCorrection item renders one radio candidate per
+     * participant, marks the engine's own best-effort winner, and posts the pick via HTMX to the
+     * shared resolve route.
+     */
+    public function testSyncReviewIndexRendersNeedsCorrectionCandidatesWithAutoAppliedWinnerMarked(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession();
+        /** @var LocaleSwitcher $localeSwitcher */
+        $localeSwitcher = self::getContainer()->get(LocaleSwitcher::class);
+        $localeSwitcher->setLocale('ru');
+
+        $item = new SyncReviewItem(SyncReviewItemKind::NeedsCorrection, [
+            'anime_id' => 1,
+            'winner_status' => 'completed',
+            'winner_watched_episodes' => 12,
+            'candidates' => [
+                ['participant_id' => 'local', 'status' => 'completed', 'watched_episodes' => 12, 'updated_at' => 1735689600],
+                ['participant_id' => 'animedb-shikimori', 'status' => 'watching', 'watched_episodes' => 5, 'updated_at' => 1735776000],
+            ],
+        ]);
+        (new \ReflectionProperty(SyncReviewItem::class, 'id'))->setValue($item, 3);
+
+        $anime = new TvAnime();
+        $anime->setTitle('Trigun');
+        (new \ReflectionProperty(Anime::class, 'id'))->setValue($anime, 1);
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('settings/sync_review/index.html.twig', [
+            'items' => [$item],
+            'duplicateClusters' => [3 => []],
+            'needsCorrectionDetails' => [3 => [
+                'anime' => $anime,
+                'candidates' => $item->payload['candidates'],
+                'winnerStatus' => 'completed',
+                'winnerWatchedEpisodes' => 12,
+            ]],
+        ]);
+
+        $this->assertStringContainsString('Trigun', $html);
+        $this->assertStringContainsString('hx-post="/settings/sync-review/3/resolve"', $html);
+        $this->assertStringContainsString('value="local"', $html);
+        $this->assertStringContainsString('value="animedb-shikimori"', $html);
+        $this->assertStringContainsString('Просмотрено', $html);
+        $this->assertStringContainsString('Смотрю', $html);
+        $this->assertStringContainsString('разрешено автоматически', $html);
     }
 
     public function testProxyIndexRendersWithoutErrors(): void

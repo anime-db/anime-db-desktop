@@ -192,11 +192,21 @@ final class SyncConvergenceService
      * constraint {@see reconcilePulledItem()} works under. A participant with no snapshot row yet
      * is treated as diverging (unknown is not "agrees"), same stance {@see SyncReconciler} takes
      * for an absent $lastSeen entry.
+     *
+     * Returns false without touching any snapshot or forward-propagating anything when $chosen
+     * itself violates a local invariant (Completed while not yet released) — applyWatchProgress()
+     * rejects it silently (leaves $anime unchanged, flags getWatchProgressRejectedAt() instead of
+     * throwing), so the caller must check the return value to tell an applied pick from a
+     * rejected one rather than assuming success.
      */
-    public function applyManualResolution(Anime $anime, SyncProjection $chosen, EntityManagerInterface $entityManager): void
+    public function applyManualResolution(Anime $anime, SyncProjection $chosen, EntityManagerInterface $entityManager): bool
     {
         $now = new \DateTimeImmutable();
         $anime->applyWatchProgress($chosen->status, $chosen->watchedEpisodes, $now);
+
+        if ($anime->getWatchProgressRejectedAt() !== null) {
+            return false;
+        }
 
         $lastSeenRowById = [];
         foreach ($this->stateRepository->findByAnime($anime, $entityManager) as $row) {
@@ -228,6 +238,8 @@ final class SyncConvergenceService
         foreach ($confirmed as $participantId => $state) {
             $this->persistLastSeen($anime, $participantId, $state, $lastSeenRowById[$participantId] ?? null, $entityManager);
         }
+
+        return true;
     }
 
     private function localProjection(Anime $anime): SyncProjection
