@@ -41,9 +41,18 @@ jest.mock('../../native/supervisor/port', () => ({
 jest.mock('../../native/supervisor/healthcheck', () => ({
     waitForHealth: jest.fn(),
 }));
+jest.mock('child_process', () => ({
+    spawn: jest.fn(() => ({
+        stdout: { on: jest.fn() },
+        stderr: { on: jest.fn() },
+        on:     jest.fn(),
+    })),
+}));
 
 const fs = require('fs');
-const { checkVersionAndWipe } = require('../../native/supervisor/meilisearch');
+const { findFreePort }  = require('../../native/supervisor/port');
+const { waitForHealth } = require('../../native/supervisor/healthcheck');
+const { checkVersionAndWipe, start } = require('../../native/supervisor/meilisearch');
 
 describe('checkVersionAndWipe', () => {
     let existsSyncSpy;
@@ -62,7 +71,7 @@ describe('checkVersionAndWipe', () => {
 
     test('does nothing when VERSION file is absent', () => {
         existsSyncSpy.mockReturnValue(false);
-        checkVersionAndWipe();
+        expect(checkVersionAndWipe()).toBe(false);
         expect(rmSyncSpy).not.toHaveBeenCalled();
     });
 
@@ -74,11 +83,14 @@ describe('checkVersionAndWipe', () => {
             }
             return '1.13.0\n';
         });
-        checkVersionAndWipe();
+        expect(checkVersionAndWipe()).toBe(false);
         expect(rmSyncSpy).not.toHaveBeenCalled();
     });
 
-    test('wipes data.ms/ when version has changed', () => {
+    // --db-path is passed explicitly when spawning Meilisearch (issue #389), so VERSION,
+    // indexes/, tasks/, auth/ live directly inside the --db-path directory itself — data.ms/ is
+    // only the *default* value of --db-path, not a subdirectory inside an explicitly given one.
+    test('wipes the whole data dir when version has changed', () => {
         existsSyncSpy.mockReturnValue(true);
         readFileSyncSpy.mockImplementation((filePath) => {
             if (String(filePath).endsWith('versions.json')) {
@@ -86,22 +98,47 @@ describe('checkVersionAndWipe', () => {
             }
             return '1.13.0';
         });
-        checkVersionAndWipe();
+        expect(checkVersionAndWipe()).toBe(true);
         expect(rmSyncSpy).toHaveBeenCalledWith(
-            expect.stringContaining('data.ms'),
+            '/fake/meili',
             { recursive: true, force: true }
         );
     });
+});
 
-    test('skips rmSync when data.ms/ does not exist', () => {
-        existsSyncSpy.mockImplementation((filePath) => !String(filePath).endsWith('data.ms'));
+describe('start', () => {
+    let existsSyncSpy;
+    let readFileSyncSpy;
+
+    beforeEach(() => {
+        existsSyncSpy  = jest.spyOn(fs, 'existsSync');
+        readFileSyncSpy = jest.spyOn(fs, 'readFileSync');
+        jest.spyOn(fs, 'writeFileSync').mockImplementation(() => {});
+        jest.spyOn(fs, 'mkdirSync').mockImplementation(() => {});
+        jest.spyOn(fs, 'rmSync').mockImplementation(() => {});
+        findFreePort.mockResolvedValue(7700);
+        waitForHealth.mockResolvedValue(7700);
+    });
+
+    afterEach(() => {
+        jest.restoreAllMocks();
+    });
+
+    test('resolves wiped: true when the installed version differs from expected', async () => {
+        existsSyncSpy.mockReturnValue(true);
         readFileSyncSpy.mockImplementation((filePath) => {
-            if (String(filePath).endsWith('versions.json')) {
-                return JSON.stringify({ meilisearch: '1.14.0' });
-            }
-            return '1.13.0';
+            if (String(filePath).endsWith('versions.json')) return JSON.stringify({ meilisearch: '1.14.0' });
+            if (String(filePath).endsWith('VERSION')) return '1.13.0';
+            return 'existing-key';
         });
-        checkVersionAndWipe();
-        expect(rmSyncSpy).not.toHaveBeenCalled();
+
+        await expect(start()).resolves.toMatchObject({ port: 7700, wiped: true });
+    });
+
+    test('resolves wiped: false when there is no VERSION file yet', async () => {
+        existsSyncSpy.mockImplementation((filePath) => !String(filePath).endsWith('VERSION'));
+        readFileSyncSpy.mockReturnValue('existing-key');
+
+        await expect(start()).resolves.toMatchObject({ port: 7700, wiped: false });
     });
 });

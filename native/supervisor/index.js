@@ -26,6 +26,7 @@ const frankenphp        = require('./frankenphp');
 const meilisearch       = require('./meilisearch');
 const messengerConsumer = require('./messenger-consumer');
 const qbittorrent       = require('./qbittorrent');
+const searchReindex     = require('./search-reindex');
 
 const events = new EventEmitter();
 frankenphp.events.on('exit', (code) => events.emit('exit', code));
@@ -42,6 +43,11 @@ qbittorrent.events.on('exit', (code) => events.emit('exit', code));
  * Meilisearch и qbittorrent-nox стартуют первыми (независимо друг от друга) — их
  * порты/ключи нужны FrankenPHP в env.
  *
+ * Если Meilisearch при старте вайпнул индекс из-за смены версии (issue #389), после
+ * поднятия FrankenPHP и messenger-consumer автоматически прогоняется app:search:reindex —
+ * без этого приложение стартует с пустым поиском до ручного нажатия кнопки в /settings.
+ * Ошибка переиндексации не блокирует старт приложения — только логируется.
+ *
  * @param {((step: number, text: string) => void) | undefined} onProgress
  * @returns {Promise<{ frankenphpPort: number, wsPort: number, meiliPort: number, qbittorrentPort: number }>}
  */
@@ -53,7 +59,7 @@ async function start(onProgress) {
         qbittorrent.killOrphan(),
     ]);
 
-    const [{ port: meiliPort, key: meiliKey }, { webuiPort: qbittorrentPort }] = await Promise.all([
+    const [{ port: meiliPort, key: meiliKey, wiped }, { webuiPort: qbittorrentPort }] = await Promise.all([
         meilisearch.start(),
         qbittorrent.start(),
     ]);
@@ -61,6 +67,16 @@ async function start(onProgress) {
     const { httpPort: frankenphpPort, wsPort } = await frankenphp.start(meiliPort, meiliKey, qbittorrentPort);
     if (onProgress) onProgress(2, 'Запуск обработчика фоновых задач...');
     await messengerConsumer.start(meiliPort, meiliKey);
+
+    if (wiped) {
+        if (onProgress) onProgress(3, 'Переиндексация каталога...');
+        try {
+            await searchReindex.run(meiliPort, meiliKey);
+        } catch (err) {
+            console.error('[search-reindex] не удалось переиндексировать каталог:', err.message);
+        }
+    }
+
     if (onProgress) onProgress(3, 'Готово');
     return { frankenphpPort, wsPort, meiliPort, qbittorrentPort };
 }

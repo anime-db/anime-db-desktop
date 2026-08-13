@@ -63,24 +63,26 @@ function ensureMasterKey() {
 
 /**
  * Сравнивает версию из scripts/versions.json с версией в AppData/meilisearch/VERSION.
- * При несовпадении удаляет data.ms/ для переиндексации.
+ * При несовпадении удаляет содержимое каталога --db-path целиком (VERSION, indexes/, tasks/,
+ * auth/ и т.д. лежат прямо в нём — data.ms/ это дефолт самого --db-path, а не подкаталог внутри
+ * явно заданного пути, см. issue #389) для переиндексации.
+ *
+ * @returns {boolean} true, если вайп был выполнен
  */
 function checkVersionAndWipe() {
     const dataDir    = paths.getMeilisearchDataDir();
     const versionFile = path.join(dataDir, 'VERSION');
 
-    if (!fs.existsSync(versionFile)) return;
+    if (!fs.existsSync(versionFile)) return false;
 
     const { meilisearch: expected } = JSON.parse(fs.readFileSync(VERSIONS, 'utf8'));
     const actual = fs.readFileSync(versionFile, 'utf8').trim();
 
-    if (actual !== expected) {
-        console.error(`[meilisearch] версия сменилась (${actual} → ${expected}), вайп data.ms/`);
-        const dataMs = path.join(dataDir, 'data.ms');
-        if (fs.existsSync(dataMs)) {
-            fs.rmSync(dataMs, { recursive: true, force: true });
-        }
-    }
+    if (actual === expected) return false;
+
+    console.error(`[meilisearch] версия сменилась (${actual} → ${expected}), вайп ${dataDir}`);
+    fs.rmSync(dataDir, { recursive: true, force: true });
+    return true;
 }
 
 /**
@@ -128,14 +130,14 @@ function killOrphan() {
 
 /**
  * Запускает Meilisearch: генерирует/читает key → проверяет версию →
- * ищет порт → спавнит процесс → ждёт /health → возвращает { port, key }.
+ * ищет порт → спавнит процесс → ждёт /health → возвращает { port, key, wiped }.
  *
- * @returns {Promise<{ port: number, key: string }>}
+ * @returns {Promise<{ port: number, key: string, wiped: boolean }>}
  */
 async function start() {
     stopping = false;
     const masterKey = ensureMasterKey();
-    checkVersionAndWipe();
+    const wiped = checkVersionAndWipe();
 
     const logDir = path.join(paths.getRuntimeDir(), 'log');
     pruneOldLogs(logDir, LOG_PREFIX, LOG_MAX);
@@ -144,7 +146,7 @@ async function start() {
     port = await findFreePort(7700);
     spawnProcess(port, masterKey);
     await waitForHealth(port);
-    return { port, key: masterKey };
+    return { port, key: masterKey, wiped };
 }
 
 /**
