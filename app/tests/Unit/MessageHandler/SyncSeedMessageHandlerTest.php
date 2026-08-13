@@ -27,9 +27,11 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\MessageHandler;
 
+use AnimeDb\PluginContracts\OAuth\ReauthRequiredException;
 use AnimeDb\PluginContracts\Sync\SyncInterface;
 use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
+use App\Entity\ValueObject\PluginId;
 use App\Message\SyncSeedMessage;
 use App\MessageHandler\SyncSeedMessageHandler;
 use App\Repository\AnimeRepository;
@@ -61,9 +63,12 @@ use Psr\Log\NullLogger;
 /**
  * The handler itself is a thin dispatch onto {@see PullSyncService::pull()} (issue #381) — these
  * tests verify it resolves the right plugin from {@see SyncRegistry} and actually reaches that
- * plugin's {@see SyncInterface::pull()}, and that a plugin no longer active by the time this
- * async message is processed is skipped rather than erroring, the same self-healing stance
- * {@see \App\MessageHandler\PushSyncMessageHandler} takes for a deleted Anime.
+ * plugin's {@see SyncInterface::pull()}, that a plugin no longer active by the time this async
+ * message is processed is skipped rather than erroring (the same self-healing stance
+ * {@see \App\MessageHandler\PushSyncMessageHandler} takes for a deleted Anime), and that a pull
+ * which stopped short on {@see ReauthRequiredException} resets the `syncSeeded` flag instead of
+ * leaving connect-seed permanently marked "done" for a plugin it never actually seeded (issue
+ * #381 review).
  */
 final class SyncSeedMessageHandlerTest extends TestCase
 {
@@ -93,36 +98,64 @@ final class SyncSeedMessageHandlerTest extends TestCase
         $sync = $this->createMock(SyncInterface::class);
         $sync->expects($this->once())->method('pull')->willReturn([]);
 
-        $syncRegistry = $this->newSyncRegistry(['animedb-shikimori' => $sync]);
-        $handler = new SyncSeedMessageHandler($syncRegistry, $this->newPullSyncService($syncRegistry), new NullLogger());
+        [$syncRegistry, $pluginsConfigStore] = $this->newSyncRegistry(['animedb-shikimori' => $sync]);
+        $handler = new SyncSeedMessageHandler($syncRegistry, $this->newPullSyncService($syncRegistry), $pluginsConfigStore, new NullLogger());
 
         $handler(new SyncSeedMessage('animedb-shikimori'));
     }
 
     public function testInvokeSkipsAPluginThatIsNoLongerActiveByTheTimeTheMessageIsProcessed(): void
     {
-        $syncRegistry = $this->newSyncRegistry([]);
+        [$syncRegistry, $pluginsConfigStore] = $this->newSyncRegistry([]);
 
         $logger = $this->createMock(LoggerInterface::class);
         $logger->expects($this->once())->method('info');
 
-        $handler = new SyncSeedMessageHandler($syncRegistry, $this->newPullSyncService($syncRegistry), $logger);
+        $handler = new SyncSeedMessageHandler($syncRegistry, $this->newPullSyncService($syncRegistry), $pluginsConfigStore, $logger);
 
         $handler(new SyncSeedMessage('animedb-shikimori'));
     }
 
-    /** @param array<string, SyncInterface> $syncs */
-    private function newSyncRegistry(array $syncs): SyncRegistry
+    /**
+     * Issue #381 review: `features.sync` alone does not prove the plugin's OAuth is actually
+     * complete, so a pull that stops short on a dead/missing OAuth session must not leave
+     * `syncSeeded` permanently `true` — otherwise connect-seed never gets a second chance once
+     * the user actually finishes OAuth.
+     */
+    public function testInvokeResetsTheSeededFlagWhenThePullStopsShortOnReauthRequired(): void
+    {
+        $sync = $this->createMock(SyncInterface::class);
+        $sync->expects($this->once())->method('pull')->willThrowException(new ReauthRequiredException('Refresh token is dead.'));
+
+        [$syncRegistry, $pluginsConfigStore] = $this->newSyncRegistry(['animedb-shikimori' => $sync], ['syncSeeded' => true]);
+        $handler = new SyncSeedMessageHandler($syncRegistry, $this->newPullSyncService($syncRegistry), $pluginsConfigStore, new NullLogger());
+
+        $handler(new SyncSeedMessage('animedb-shikimori'));
+
+        $settings = $pluginsConfigStore->getPluginSettings(new PluginId('animedb-shikimori'));
+        $this->assertFalse($settings['syncSeeded'] ?? null);
+    }
+
+    /**
+     * @param array<string, SyncInterface> $syncs
+     * @param array<string, mixed>         $extraSettings merged into every listed plugin's entry,
+     *                                                    e.g. a pre-existing `syncSeeded` flag
+     *
+     * @return array{0: SyncRegistry, 1: PluginsConfigStore}
+     */
+    private function newSyncRegistry(array $syncs, array $extraSettings = []): array
     {
         $settings = [];
         foreach (array_keys($syncs) as $id) {
-            $settings[$id] = ['features' => ['sync' => true]];
+            $settings[$id] = ['features' => ['sync' => true], ...$extraSettings];
         }
 
         $path = sys_get_temp_dir().'/anime-sync-seed-test-'.uniqid().'.json';
         file_put_contents($path, (string) json_encode($settings));
 
-        return new SyncRegistry($syncs, new PluginsConfigStore($path));
+        $pluginsConfigStore = new PluginsConfigStore($path);
+
+        return [new SyncRegistry($syncs, $pluginsConfigStore), $pluginsConfigStore];
     }
 
     private function newPullSyncService(SyncRegistry $syncRegistry): PullSyncService

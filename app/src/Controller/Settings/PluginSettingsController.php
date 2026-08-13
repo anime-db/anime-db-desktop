@@ -70,6 +70,13 @@ use Twig\Environment;
  * `async` transport so it never blocks this request) and redirects to the sync review page
  * instead of rendering the plugin's own settings markup — {@see \App\Service\Plugin\PullSyncService::pull()}
  * is what actually applies agreements to local and raises review items for genuine conflicts.
+ *
+ * `SyncRegistry::isActive()` gates on `features.sync` alone, which the plugin's own settings
+ * page can set before its OAuth flow actually completes — so setting `syncSeeded` here only makes
+ * the *dispatch* idempotent, it is not proof the pull that follows will actually run. If it stops
+ * short on a dead/missing OAuth session, {@see \App\MessageHandler\SyncSeedMessageHandler} resets
+ * `syncSeeded` back to `false` itself, so the next visit (presumably after OAuth is finished)
+ * retries connect-seed instead of it staying silently un-seeded forever.
  */
 final class PluginSettingsController
 {

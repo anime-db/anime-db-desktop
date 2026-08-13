@@ -29,6 +29,7 @@ namespace App\MessageHandler;
 
 use App\Entity\ValueObject\PluginId;
 use App\Message\SyncSeedMessage;
+use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Plugin\PullSyncService;
 use App\Service\Plugin\SyncRegistry;
 use Psr\Log\LoggerInterface;
@@ -46,6 +47,14 @@ use Symfony\Component\Messenger\Attribute\AsMessageHandler;
  * state: the same self-healing stance as {@see PushSyncMessageHandler} takes for a deleted Anime —
  * a plugin the user disabled again before this message was processed simply has nothing left to
  * seed, not an error.
+ *
+ * `features.sync` alone (what {@see SyncRegistry::findByPluginId()} gates on) does not guarantee
+ * the plugin's OAuth is actually complete — {@see \App\Controller\Settings\PluginSettingsController}
+ * sets the `syncSeeded` one-time flag before this handler ever runs, purely to make the dispatch
+ * itself idempotent. If {@see PullSyncService::pull()} reports it stopped short on a dead/missing
+ * OAuth session (its `false` return), the seed never actually happened, so this handler resets
+ * `syncSeeded` back to `false` — the user's next visit to the settings page, presumably after
+ * finishing OAuth, re-triggers connect-seed instead of the flag silently staying "done" forever.
  */
 #[AsMessageHandler]
 final class SyncSeedMessageHandler
@@ -53,6 +62,7 @@ final class SyncSeedMessageHandler
     public function __construct(
         private readonly SyncRegistry $syncRegistry,
         private readonly PullSyncService $pullSyncService,
+        private readonly PluginsConfigStore $pluginsConfigStore,
         private readonly LoggerInterface $logger,
     ) {
     }
@@ -70,6 +80,17 @@ final class SyncSeedMessageHandler
             return;
         }
 
-        $this->pullSyncService->pull($pluginId, $sync);
+        $seeded = $this->pullSyncService->pull($pluginId, $sync);
+        if (!$seeded) {
+            $this->logger->info('Connect-seed for plugin "{pluginId}" did not complete (needs reauthorization); resetting the seeded flag so the next settings-page visit retries it.', [
+                'pluginId' => $message->pluginId,
+            ]);
+
+            $this->pluginsConfigStore->updatePluginSettings($pluginId, static function (array $settings): array {
+                $settings['syncSeeded'] = false;
+
+                return $settings;
+            });
+        }
     }
 }

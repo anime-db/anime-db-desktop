@@ -227,8 +227,9 @@ final class PullSyncServiceTest extends TestCase
         $sync = $this->createMock(SyncInterface::class);
         $sync->expects($this->once())->method('pull')->willReturn([new SyncItem('1', SyncStatus::Watching, 'Cowboy Bebop')]);
 
-        $this->service->pull($this->pluginId, $sync);
+        $completed = $this->service->pull($this->pluginId, $sync);
 
+        $this->assertTrue($completed);
         $this->assertCount(1, $this->allAnime());
         $this->assertSame(WatchStatus::Watching, $anime->getWatchStatus());
     }
@@ -634,6 +635,10 @@ final class PullSyncServiceTest extends TestCase
      * the catch block's early return were removed, DeletedFromSourceDetector would run against
      * this incomplete list and wrongly flag it, so assertCount(0, $items) below actually
      * distinguishes "detector skipped" from "detector ran but the list happened to be complete".
+     *
+     * The `false` return (issue #381 review) is what lets a caller like
+     * {@see \App\MessageHandler\SyncSeedMessageHandler} tell this apart from an actually-completed
+     * run — asserted here alongside the already-applied-changes behavior above.
      */
     public function testStopsCleanlyOnAReauthRequiredExceptionKeepingAlreadyAppliedChanges(): void
     {
@@ -658,8 +663,9 @@ final class PullSyncServiceTest extends TestCase
 
         $sync = $this->syncFillerStub($pull, data: null);
 
-        $this->service->pull($this->pluginId, $sync);
+        $completed = $this->service->pull($this->pluginId, $sync);
 
+        $this->assertFalse($completed);
         $this->assertCount(2, $this->allAnime());
 
         // Re-read from the database rather than trusting the in-memory managed instance, so this
