@@ -203,6 +203,12 @@ final class SyncReviewController
      * payload candidates — never a client-supplied projection directly — and forwards it to
      * {@see SyncConvergenceService::applyManualResolution()}, the same engine entry point a
      * clean reconcile() winner goes through.
+     *
+     * applyManualResolution() can come back false when the chosen candidate itself violates a
+     * local invariant (Completed while not yet released) — it is rejected rather than applied,
+     * see that method's docblock. Throwing here, same as the other invalid-input cases below,
+     * keeps {@see resolve()} from ever marking the item resolved over a pick that never actually
+     * took effect.
      */
     private function applyChosenCandidate(SyncReviewItem $item, Request $request): void
     {
@@ -229,7 +235,9 @@ final class SyncReviewController
             $watchedEpisodes = $candidate['watched_episodes'] ?? null;
             $chosen = new SyncProjection($status, \is_int($watchedEpisodes) ? $watchedEpisodes : null);
 
-            $this->syncConvergenceService->applyManualResolution($anime, $chosen, $this->entityManager);
+            if (!$this->syncConvergenceService->applyManualResolution($anime, $chosen, $this->entityManager)) {
+                throw new BadRequestHttpException('Chosen candidate violates a local invariant and was not applied.');
+            }
 
             return;
         }

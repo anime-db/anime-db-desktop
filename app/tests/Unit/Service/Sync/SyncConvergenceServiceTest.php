@@ -452,8 +452,9 @@ final class SyncConvergenceServiceTest extends TestCase
 
         // Completed is rejected here: a freshly-created TvAnime has no dates, so its production
         // status is Announced, never Released.
-        $service->applyManualResolution($anime, new SyncProjection(WatchStatus::Completed, 12), $this->entityManager);
+        $applied = $service->applyManualResolution($anime, new SyncProjection(WatchStatus::Completed, 12), $this->entityManager);
 
+        $this->assertFalse($applied);
         $this->assertSame(WatchStatus::Plan, $anime->getWatchStatus());
         $this->assertNull($anime->getWatchProgressUpdatedAt());
         $this->assertNotNull($anime->getWatchProgressRejectedAt());

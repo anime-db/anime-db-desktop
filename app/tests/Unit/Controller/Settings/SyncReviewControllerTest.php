@@ -326,6 +326,56 @@ final class SyncReviewControllerTest extends TestCase
         $this->assertSame('', $response->getContent());
     }
 
+    /**
+     * Correctness regression (PR #385 review): a chosen candidate can violate a local invariant
+     * (Completed while the anime is still Announced/Ongoing, see Anime::setWatchStatus()) — the
+     * engine rejects it silently rather than throwing (leaves $anime unchanged, only flags
+     * getWatchProgressRejectedAt()). The item must not be marked resolved over a pick that never
+     * actually took effect, so the controller must surface this as an error instead.
+     */
+    public function testResolveDoesNotResolveTheItemWhenTheChosenCandidateIsRejected(): void
+    {
+        $entityManager = $this->createInMemoryEntityManager();
+
+        $anime = new TvAnime();
+        $anime->setTitle('Cowboy Bebop')->setWatchStatus(WatchStatus::Plan);
+        $entityManager->persist($anime);
+        $entityManager->flush();
+
+        $item = new SyncReviewItem(SyncReviewItemKind::NeedsCorrection, [
+            'anime_id' => $anime->id,
+            'candidates' => [
+                ['participant_id' => 'local', 'status' => 'plan', 'watched_episodes' => null, 'updated_at' => null],
+                // A freshly-created TvAnime has no dates, so its production status is Announced,
+                // never Released — Completed is rejected by Anime::setWatchStatus().
+                ['participant_id' => 'animedb-shikimori', 'status' => 'completed', 'watched_episodes' => 12, 'updated_at' => null],
+            ],
+        ]);
+        (new \ReflectionProperty(SyncReviewItem::class, 'id'))->setValue($item, 5);
+
+        $syncReviewItemRepository = $this->createMock(SyncReviewItemRepository::class);
+        $syncReviewItemRepository->expects($this->never())->method('save');
+
+        $controller = $this->createController(
+            syncReviewItemRepository: $syncReviewItemRepository,
+            animeRepository: new AnimeRepository($entityManager),
+            entityManager: $entityManager,
+        );
+        $request = Request::create('/settings/sync-review/5/resolve', 'POST', [
+            '_token' => 'token',
+            'participant_id' => 'animedb-shikimori',
+        ]);
+
+        $this->expectException(BadRequestHttpException::class);
+
+        try {
+            $controller->resolve($item, $request);
+        } finally {
+            $this->assertFalse($item->isResolved());
+            $this->assertSame(WatchStatus::Plan, $anime->getWatchStatus());
+        }
+    }
+
     public function testResolveRejectsAnUnknownParticipantForNeedsCorrection(): void
     {
         $entityManager = $this->createInMemoryEntityManager();
