@@ -55,15 +55,21 @@ use Psr\Log\LoggerInterface;
  * (or more) conflict is still caught the moment a second/third source's own pull run supplies its
  * own fresh reading — see the class docblock on SyncReconciler.
  *
- * First contact deliberately does not manufacture a conflict: a participant this run has no
- * {@see AnimeSyncState} row for yet — other than $originParticipantId, whose very lack of a row
- * is itself new information worth reconciling — is assumed to already agree with whatever
- * baseline gets established (i.e. its last-seen is synthesized equal to its own current reading).
- * Without this, every first-ever pull for an anime that already has local watch history would
- * read as an unresolved ">=2 changed, different" conflict instead of the source simply informing
- * local for the first time — connect-seed's own resolution flow (issue #367, "разовый посев")
- * pre-seeding the snapshot before a title ever reaches this class is what is expected to change
- * that going forward, not this class second-guessing a source it has never compared before.
+ * First contact for local specifically (no {@see AnimeSyncState} row for it yet) only skips
+ * manufacturing a conflict when local is provably virgin — {@see Anime::getWatchProgressUpdatedAt()}
+ * is still null, meaning nothing (no manual edit, no prior sync apply, not even the
+ * Version20260812000000 backfill for pre-existing rows) has ever recorded real watch progress for
+ * it — in which case local's last-seen is synthesized equal to its own current reading, so a
+ * brand-new title's very first pull is not read as a conflict against a baseline that was never
+ * real data to begin with.
+ *
+ * An existing title with actual watch history reaching this class with no snapshot row yet (an
+ * old title predating this feature, or one added after connect-seed's own one-shot posev, issue
+ * #367, already ran) is deliberately NOT given this treatment: if its real local projection
+ * disagrees with $originParticipantId's incoming one, both are left in the changed set, which the
+ * engine surfaces as a genuine ">=2 changed, different" conflict (persistent review-item) instead
+ * of silently overwriting local's history with the source's value (issue #366 review, "первый
+ * контакт затирает локаль").
  */
 final class SyncConvergenceService
 {
@@ -101,12 +107,12 @@ final class SyncConvergenceService
         $localState = new ParticipantState('local', $this->localProjection($anime), $anime->getWatchProgressUpdatedAt());
         $originState = new ParticipantState($originParticipantId, $originProjection, $originUpdatedAt);
 
-        // Synthesize a same-as-current last-seen for any participant (local included) this run
-        // has no real row for yet, other than the origin itself — see the class docblock.
-        foreach ([$localState, $originState] as $state) {
-            if ($state->participantId !== $originParticipantId && !isset($lastSeen[$state->participantId])) {
-                $lastSeen[$state->participantId] = $state;
-            }
+        // Synthesize a same-as-current last-seen for local only when it is provably virgin (no
+        // real watch progress ever recorded) and only has no row yet — see the class docblock.
+        // The origin itself is never synthesized: its own lack of a row is new information worth
+        // reconciling, not something to assume agreement on.
+        if (!isset($lastSeen['local']) && $anime->getWatchProgressUpdatedAt() === null) {
+            $lastSeen['local'] = $localState;
         }
 
         $available = [$localState, $originState];

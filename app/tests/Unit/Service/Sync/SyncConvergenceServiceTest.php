@@ -33,7 +33,9 @@ use AnimeDb\PluginContracts\Sync\SyncStatus;
 use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
 use App\Entity\AnimeSyncState;
+use App\Entity\Enum\SyncReviewItemKind;
 use App\Entity\Enum\WatchStatus;
+use App\Entity\SyncReviewItem;
 use App\Entity\TvAnime;
 use App\Entity\ValueObject\PluginId;
 use App\Repository\AnimeSyncStateRepository;
@@ -230,5 +232,52 @@ final class SyncConvergenceServiceTest extends TestCase
         $malState = $this->entityManager->getRepository(AnimeSyncState::class)->find(['anime' => $anime, 'participantId' => (string) $malPluginId]);
         $this->assertInstanceOf(AnimeSyncState::class, $malState);
         $this->assertSame(WatchStatus::Watching, $malState->lastStatus);
+    }
+
+    /**
+     * Correctness regression (issue #366 review, "первый контакт затирает локаль"): a title with
+     * real, pre-existing local watch history (not the "freshly created, never touched" case the
+     * first-contact synthesis is meant for) reaching this class with no {@see AnimeSyncState} row
+     * for it yet — an old title predating this feature, or one added after connect-seed's own
+     * one-shot posev (issue #367) already ran — must not have that history silently overwritten
+     * just because the origin's own incoming projection disagrees with it. Both sides belong in
+     * the changed set, so a genuine divergence surfaces as a ">=2 changed, different" conflict
+     * (persistent review-item) instead of a blind last-pull-wins overwrite.
+     */
+    public function testFirstContactWithRealLocalHistoryThatDivergesFromTheOriginRaisesAConflictInsteadOfOverwritingLocal(): void
+    {
+        $anime = new TvAnime();
+        $anime->setTitle('Cowboy Bebop')->setWatchStatus(WatchStatus::Plan);
+        $anime->setEpisodesCount(12);
+        $anime->setDateEnd(new \DateTimeImmutable('-1 day'));
+        $anime->rememberExternalId($this->originPluginId, '1');
+        // A real manual edit, not a plain setter — this is what leaves getWatchProgressUpdatedAt()
+        // non-null, the signal the fix relies on to tell real history apart from a virgin record.
+        $anime->changeWatchedEpisodesManually(12);
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+
+        $origin = $this->createStub(SyncInterface::class);
+        $origin->method('push')->willReturnCallback(static fn (SyncItem $item): SyncItem => $item);
+
+        $service = $this->newService([(string) $this->originPluginId => $origin]);
+
+        // No AnimeSyncState rows seeded for anyone — genuinely the first-ever reconciliation for
+        // this title, with the origin reporting a stale, lower progress than local's own history.
+        $service->reconcilePulledItem(
+            $anime,
+            (string) $this->originPluginId,
+            new SyncProjection(WatchStatus::Watching, 5),
+            new \DateTimeImmutable('2026-01-01'),
+            $this->entityManager,
+        );
+
+        $this->assertSame(WatchStatus::Completed, $anime->getWatchStatus());
+        $this->assertSame(12, $anime->getWatchedEpisodes());
+
+        $items = $this->entityManager->getRepository(SyncReviewItem::class)->findAll();
+        $this->assertCount(1, $items);
+        $this->assertSame(SyncReviewItemKind::NeedsCorrection, $items[0]->kind);
+        $this->assertSame(['local', (string) $this->originPluginId], $items[0]->payload['participants']);
     }
 }
