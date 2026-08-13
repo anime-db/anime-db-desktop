@@ -14,7 +14,7 @@ tags: [memory/repo, conventions, license]
  *
  * @author    Peter Gribanov <info@peter-gribanov.ru>
  * @copyright Copyright (c) <год создания файла>-<год последнего изменения>, Peter Gribanov
- * @license   https://gnu.org GPL-3.0-or-later
+ * @license   https://www.gnu.org/licenses/gpl-3.0.html GPL-3.0-or-later
  */
 
 /*
@@ -29,7 +29,7 @@ tags: [memory/repo, conventions, license]
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with this program. If not, see <https://gnu.org>.
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 ```
 
@@ -41,7 +41,7 @@ tags: [memory/repo, conventions, license]
  *
  * @author    Peter Gribanov <info@peter-gribanov.ru>
  * @copyright Copyright (c) <год создания файла>-<год последнего изменения>, Peter Gribanov
- * @license   https://gnu.org GPL-3.0-or-later
+ * @license   https://www.gnu.org/licenses/gpl-3.0.html GPL-3.0-or-later
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -54,7 +54,7 @@ tags: [memory/repo, conventions, license]
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with this program. If not, see <https://gnu.org>.
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 ```
 
@@ -65,7 +65,7 @@ tags: [memory/repo, conventions, license]
 #
 # @author    Peter Gribanov <info@peter-gribanov.ru>
 # @copyright Copyright (c) <год создания файла>-<год последнего изменения>, Peter Gribanov
-# @license   https://gnu.org GPL-3.0-or-later
+# @license   https://www.gnu.org/licenses/gpl-3.0.html GPL-3.0-or-later
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -78,7 +78,7 @@ tags: [memory/repo, conventions, license]
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with this program. If not, see <https://gnu.org>.
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
 ```
 
 ## Правила диапазона дат в `@copyright`
