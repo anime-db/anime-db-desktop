@@ -27,6 +27,8 @@ declare(strict_types=1);
 
 namespace App\Service\Sync;
 
+use App\Entity\Enum\WatchStatus;
+
 /**
  * The N-way sync reconciliation engine (issue #366; 2-way is the degenerate N=2 case) — see
  * .claude-docs/sync.md's "Алгоритм реконсиляции" for the full write-up this class implements.
@@ -88,14 +90,11 @@ final class SyncReconciler
             return new ReconciliationResult($only->projection, $only->updatedAt, hasChanges: true, isConflict: false, changedParticipantIds: $changedIds);
         }
 
-        $distinctProjections = [];
-        foreach ($changed as $state) {
-            $distinctProjections[$this->projectionKey($state->projection)] ??= $state->projection;
-        }
+        $distinctProjections = $this->distinctProjections($changed);
 
         if (\count($distinctProjections) === 1) {
             return new ReconciliationResult(
-                reset($distinctProjections),
+                $distinctProjections[0],
                 $this->latestUpdatedAt($changed),
                 hasChanges: true,
                 isConflict: false,
@@ -185,8 +184,45 @@ final class SyncReconciler
         return $latest;
     }
 
-    private function projectionKey(SyncProjection $projection): string
+    /**
+     * Groups $changed's projections by SyncProjection::equals() (status equal, episodes equal or
+     * either side null) rather than by literal (status, episodes) pairs — a participant that
+     * didn't report episodes must not manufacture a distinct group of its own against one that
+     * did (issue #366 review, "null-эпизоды не должны порождать различие"). Within one status,
+     * only two different *reported* episode counts are genuinely distinct; a group that mixes a
+     * null reading with a single reported one collapses to that reported value, never staying
+     * null, so a known episode count is never lost behind a participant that simply didn't send
+     * one.
+     *
+     * @param list<ParticipantState> $changed
+     *
+     * @return list<SyncProjection>
+     */
+    private function distinctProjections(array $changed): array
     {
-        return $projection->status->value.'|'.($projection->watchedEpisodes ?? 'null');
+        /** @var array<string, array{status: WatchStatus, episodes: array<int, true>}> $byStatus */
+        $byStatus = [];
+        foreach ($changed as $state) {
+            $key = $state->projection->status->value;
+            $byStatus[$key] ??= ['status' => $state->projection->status, 'episodes' => []];
+
+            if ($state->projection->watchedEpisodes !== null) {
+                $byStatus[$key]['episodes'][$state->projection->watchedEpisodes] = true;
+            }
+        }
+
+        $distinct = [];
+        foreach ($byStatus as $group) {
+            if ($group['episodes'] === []) {
+                $distinct[] = new SyncProjection($group['status'], null);
+                continue;
+            }
+
+            foreach (array_keys($group['episodes']) as $episodes) {
+                $distinct[] = new SyncProjection($group['status'], $episodes);
+            }
+        }
+
+        return $distinct;
     }
 }

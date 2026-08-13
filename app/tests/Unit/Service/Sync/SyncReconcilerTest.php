@@ -147,6 +147,30 @@ final class SyncReconcilerTest extends TestCase
     }
 
     /**
+     * A participant that doesn't report episode progress at all (null, e.g. a plugin ahead of
+     * anime-db-plugins#46) must not manufacture a conflict against one that does — "not reported"
+     * is not "a different value" (issue #366 review, "null-эпизоды не должны порождать
+     * различие"). The merged winner takes the reported episode count, not null.
+     */
+    public function testANullEpisodesReadingAgreesWithAReportedOneInsteadOfConflicting(): void
+    {
+        $lastSeen = $this->state('x', WatchStatus::Plan, null, '2026-01-01');
+
+        $local = $this->state('local', WatchStatus::Watching, 6, '2026-01-02');
+        $shiki = $this->state('animedb-shikimori', WatchStatus::Watching, null, '2026-01-03');
+
+        $result = $this->reconciler->reconcile(
+            [$local, $shiki],
+            ['local' => $lastSeen, 'animedb-shikimori' => $lastSeen],
+        );
+
+        $this->assertTrue($result->hasChanges);
+        $this->assertFalse($result->isConflict);
+        $this->assertSame(WatchStatus::Watching, $result->winner->status);
+        $this->assertSame(6, $result->winner->watchedEpisodes);
+    }
+
+    /**
      * True conflict (step 3, ">=2 changed, different values"): best-effort arbitration picks
      * the participant with the latest updatedAt.
      */

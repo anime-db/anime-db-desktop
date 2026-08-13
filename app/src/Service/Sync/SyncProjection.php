@@ -34,7 +34,13 @@ use App\Entity\Enum\WatchStatus;
  * with one timestamp, never diffed/synced field-by-field — see .claude-docs/sync.md's "Единица
  * реконсиляции". $watchedEpisodes is null both for a movie (no episode axis at all) and for a
  * series participant that simply didn't report episode progress this time; either way it is
- * compared literally (null !== 3), never coerced to 0.
+ * never coerced to 0.
+ *
+ * equals() treats a null $watchedEpisodes as "not reported" rather than a value in its own
+ * right: it never conflicts with the other side's reading, reported or not. Only two different
+ * *reported* (non-null) episode counts disagree. Without this, a participant that simply
+ * doesn't send episode progress (e.g. a plugin ahead of anime-db-plugins#46) would manufacture a
+ * false conflict against every other participant that does.
  */
 final readonly class SyncProjection
 {
@@ -46,6 +52,12 @@ final readonly class SyncProjection
 
     public function equals(self $other): bool
     {
-        return $this->status === $other->status && $this->watchedEpisodes === $other->watchedEpisodes;
+        if ($this->status !== $other->status) {
+            return false;
+        }
+
+        return $this->watchedEpisodes === $other->watchedEpisodes
+            || $this->watchedEpisodes === null
+            || $other->watchedEpisodes === null;
     }
 }
