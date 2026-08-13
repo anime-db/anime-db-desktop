@@ -31,7 +31,11 @@ namespace App\Entity\Enum;
  * What a SyncReviewItem is flagging:
  * - PotentialDuplicate — cross-vendor dedup heuristic (issue #216b);
  * - DeletedFromSource / DeletionConflict — a title that disappeared from the user's list on a
- *   source, never auto-deleted, flagged for the user to decide (issue #217).
+ *   source, never auto-deleted, flagged for the user to decide (issue #217);
+ * - NeedsCorrection — a true N-way reconciliation conflict (issue #366, ">=2 changed
+ *   participants disagreeing"): the engine already applied its best-effort max-updatedAt
+ *   arbitration, this item is the "Поправить" prompt for a human to pin the actually-correct
+ *   value (see SyncReconciler and .claude-docs/sync.md's reconciliation registry, pitfall #4).
  *
  * No CHECK constraint pins these values in the migration (SQLite can't ALTER one), so adding a
  * case here is enough — the enumType column validates at the app layer.
@@ -41,4 +45,5 @@ enum SyncReviewItemKind: string
     case PotentialDuplicate = 'potential_duplicate';
     case DeletedFromSource = 'deleted_from_source';
     case DeletionConflict = 'deletion_conflict';
+    case NeedsCorrection = 'needs_correction';
 }

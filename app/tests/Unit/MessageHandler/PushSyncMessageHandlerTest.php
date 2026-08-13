@@ -37,6 +37,7 @@ use App\Entity\Enum\WatchStatus;
 use App\Entity\MovieAnime;
 use App\Message\PushSyncMessage;
 use App\MessageHandler\PushSyncMessageHandler;
+use App\Repository\AnimeSyncStateRepository;
 use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Plugin\SyncRegistry;
 use Doctrine\DBAL\DriverManager;
@@ -112,8 +113,8 @@ final class PushSyncMessageHandlerTest extends TestCase
             new PluginsConfigStore($this->pluginsConfigPath),
         );
 
-        $handler = new PushSyncMessageHandler($this->entityManager, $registry, new NullLogger());
-        $handler(new PushSyncMessage($animeId));
+        $handler = new PushSyncMessageHandler($this->entityManager, $registry, new AnimeSyncStateRepository($this->entityManager), new NullLogger(), 300);
+        $handler(new PushSyncMessage($animeId, new \DateTimeImmutable()));
     }
 
     public function testSkipsAPluginThatDoesNotRecognizeAnySource(): void
@@ -137,8 +138,8 @@ final class PushSyncMessageHandlerTest extends TestCase
             new PluginsConfigStore($this->pluginsConfigPath),
         );
 
-        $handler = new PushSyncMessageHandler($this->entityManager, $registry, new NullLogger());
-        $handler(new PushSyncMessage($animeId));
+        $handler = new PushSyncMessageHandler($this->entityManager, $registry, new AnimeSyncStateRepository($this->entityManager), new NullLogger(), 300);
+        $handler(new PushSyncMessage($animeId, new \DateTimeImmutable()));
     }
 
     public function testDoesNothingWhenTheAnimeNoLongerExists(): void
@@ -151,8 +152,8 @@ final class PushSyncMessageHandlerTest extends TestCase
             new PluginsConfigStore($this->pluginsConfigPath),
         );
 
-        $handler = new PushSyncMessageHandler($this->entityManager, $registry, new NullLogger());
-        $handler(new PushSyncMessage(999));
+        $handler = new PushSyncMessageHandler($this->entityManager, $registry, new AnimeSyncStateRepository($this->entityManager), new NullLogger(), 300);
+        $handler(new PushSyncMessage(999, new \DateTimeImmutable()));
     }
 
     /**
@@ -181,10 +182,10 @@ final class PushSyncMessageHandlerTest extends TestCase
             new PluginsConfigStore($this->pluginsConfigPath),
         );
 
-        $handler = new PushSyncMessageHandler($this->entityManager, $registry, new NullLogger());
+        $handler = new PushSyncMessageHandler($this->entityManager, $registry, new AnimeSyncStateRepository($this->entityManager), new NullLogger(), 300);
 
         $this->expectException(UnrecoverableMessageHandlingException::class);
-        $handler(new PushSyncMessage($animeId));
+        $handler(new PushSyncMessage($animeId, new \DateTimeImmutable()));
     }
 
     /**
@@ -213,10 +214,10 @@ final class PushSyncMessageHandlerTest extends TestCase
             new PluginsConfigStore($this->pluginsConfigPath),
         );
 
-        $handler = new PushSyncMessageHandler($this->entityManager, $registry, new NullLogger());
+        $handler = new PushSyncMessageHandler($this->entityManager, $registry, new AnimeSyncStateRepository($this->entityManager), new NullLogger(), 300);
 
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('Source is down.');
-        $handler(new PushSyncMessage($animeId));
+        $handler(new PushSyncMessage($animeId, new \DateTimeImmutable()));
     }
 }

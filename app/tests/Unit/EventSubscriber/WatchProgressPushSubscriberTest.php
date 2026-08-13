@@ -90,8 +90,16 @@ final class WatchProgressPushSubscriberTest extends TestCase
         $messageBus = $this->createMock(MessageBusInterface::class);
         $messageBus->expects($this->once())
             ->method('dispatch')
-            ->with($this->equalTo(new PushSyncMessage($animeId)))
-            ->willReturn(new Envelope(new PushSyncMessage($animeId)));
+            ->with($this->callback(function (PushSyncMessage $message) use ($animeId): bool {
+                // $dispatchedAt (issue #366's push-on-edit TTL anchor) is stamped from
+                // now() at dispatch time, so it cannot be compared for exact equality —
+                // "recent" is enough to prove it was actually set to the current time.
+                $this->assertSame($animeId, $message->animeId);
+                $this->assertLessThan(5, abs((new \DateTimeImmutable())->getTimestamp() - $message->dispatchedAt->getTimestamp()));
+
+                return true;
+            }))
+            ->willReturn(new Envelope(new PushSyncMessage($animeId, new \DateTimeImmutable())));
 
         $subscriber = new WatchProgressPushSubscriber($messageBus);
         $subscriber->onWatchProgressChangedManually(

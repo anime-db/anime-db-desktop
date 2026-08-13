@@ -31,11 +31,20 @@ namespace App\Message;
  * Dispatched on the `async` transport when an Anime's watchStatus changes (issue #214) — carries
  * only the id, the handler loads the current entity state itself before pushing it to every
  * active sync plugin.
+ *
+ * $dispatchedAt anchors the push-on-edit TTL (issue #366): a message the handler picks up more
+ * than app.sync.push_on_edit_ttl_seconds after this timestamp is dropped rather than pushed, on
+ * the theory that an optimistic blind write's confidence that the source has not itself diverged
+ * meanwhile decays with time — see .claude-docs/sync.md's "Ритм: push-on-edit". Stamped at
+ * dispatch time (WatchProgressPushSubscriber), not derived from the message's own queued-at
+ * metadata, so the TTL is measured from when the edit actually happened, not from an unrelated
+ * transport implementation detail.
  */
 final readonly class PushSyncMessage
 {
     public function __construct(
         public int $animeId,
+        public \DateTimeImmutable $dispatchedAt,
     ) {
     }
 }

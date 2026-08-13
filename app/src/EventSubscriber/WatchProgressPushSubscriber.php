@@ -60,7 +60,7 @@ final class WatchProgressPushSubscriber implements EventSubscriberInterface
 
     public function onWatchProgressChangedManually(WatchProgressChangedManuallyEvent $event): void
     {
-        $this->messageBus->dispatch(new PushSyncMessage($this->requireId($event)));
+        $this->messageBus->dispatch(new PushSyncMessage($this->requireId($event), new \DateTimeImmutable()));
     }
 
     private function requireId(WatchProgressChangedManuallyEvent $event): int

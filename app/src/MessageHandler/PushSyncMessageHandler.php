@@ -30,8 +30,11 @@ namespace App\MessageHandler;
 use AnimeDb\PluginContracts\OAuth\ReauthRequiredException;
 use AnimeDb\PluginContracts\Sync\SyncItem;
 use App\Entity\Anime;
+use App\Entity\AnimeSyncState;
+use App\Entity\SeriesAnime;
 use App\Entity\ValueObject\PluginId;
 use App\Message\PushSyncMessage;
+use App\Repository\AnimeSyncStateRepository;
 use App\Service\Plugin\SyncRegistry;
 use App\Service\Plugin\WatchStatusMapper;
 use Doctrine\ORM\EntityManagerInterface;
@@ -57,6 +60,19 @@ use Symfony\Component\Messenger\Exception\UnrecoverableMessageHandlingException;
  * its own. Caught per plugin so one plugin needing reauthorization does not stop the loop from
  * reaching the others, logged, and re-thrown once (wrapped as unrecoverable) after the loop so
  * Messenger accepts the message as handled instead of retrying/dead-lettering it.
+ *
+ * Push-on-edit TTL (issue #366): a message older than $pushOnEditTtlSeconds since
+ * PushSyncMessage::$dispatchedAt is dropped without pushing — see that property's docblock and
+ * .claude-docs/sync.md's "Ритм: push-on-edit". This is not a lost edit: the edit itself already
+ * landed in local when it was made, and being too stale to blind-push just means local now
+ * disagrees with this plugin's last-seen snapshot, which the next reconciliation run (issue
+ * #366's SyncConvergenceService, driven by PullSyncService) picks up as an ordinary dirty
+ * participant — no separate "missed push" bookkeeping needed.
+ *
+ * Snapshot bookkeeping (issue #366 pitfall #6): after a successful push, $stateRepository is
+ * updated from the plugin's own confirmed {@see SyncItem} return value, not from what was sent —
+ * a source may normalize the write (e.g. a lossy status mapping) or report its own updatedAt, and
+ * seeding the snapshot with anything else would make the next pull see a phantom "changed".
  */
 #[AsMessageHandler]
 final class PushSyncMessageHandler
@@ -64,12 +80,24 @@ final class PushSyncMessageHandler
     public function __construct(
         private readonly EntityManagerInterface $entityManager,
         private readonly SyncRegistry $syncRegistry,
+        private readonly AnimeSyncStateRepository $stateRepository,
         private readonly LoggerInterface $logger,
+        private readonly int $pushOnEditTtlSeconds,
     ) {
     }
 
     public function __invoke(PushSyncMessage $message): void
     {
+        $age = (new \DateTimeImmutable())->getTimestamp() - $message->dispatchedAt->getTimestamp();
+        if ($age > $this->pushOnEditTtlSeconds) {
+            $this->logger->info('Push-on-edit message for anime #{animeId} is older than the {ttl}s TTL; dropping it, the next reconciliation will pick up the divergence.', [
+                'animeId' => $message->animeId,
+                'ttl' => $this->pushOnEditTtlSeconds,
+            ]);
+
+            return;
+        }
+
         $anime = $this->entityManager->find(Anime::class, $message->animeId);
         if ($anime === null) {
             // Deleted (or the transaction that changed it never committed) by the time this
@@ -78,6 +106,7 @@ final class PushSyncMessageHandler
         }
 
         $status = WatchStatusMapper::toSyncStatus($anime->getWatchStatus());
+        $watchedEpisodes = $anime instanceof SeriesAnime ? $anime->getWatchedEpisodes() : null;
 
         /** @var list<string> $pluginsNeedingReauth */
         $pluginsNeedingReauth = [];
@@ -91,7 +120,7 @@ final class PushSyncMessageHandler
             }
 
             try {
-                $sync->push(new SyncItem($externalId, $status, $anime->getTitle()));
+                $confirmed = $sync->push(new SyncItem($externalId, $status, $anime->getTitle(), updatedAt: $anime->getWatchProgressUpdatedAt(), watchedEpisodes: $watchedEpisodes));
             } catch (ReauthRequiredException $exception) {
                 $this->logger->warning('Sync plugin "{plugin}" needs reauthorization; skipping push for it, not retrying.', [
                     'plugin' => $id,
@@ -99,11 +128,33 @@ final class PushSyncMessageHandler
                 ]);
 
                 $pluginsNeedingReauth[] = $id;
+
+                continue;
             }
+
+            $this->updateSnapshot($anime, $id, $confirmed);
         }
 
         if ($pluginsNeedingReauth !== []) {
             throw new UnrecoverableMessageHandlingException(sprintf('Sync plugin(s) need reauthorization, not retrying this message: %s.', implode(', ', $pluginsNeedingReauth)));
         }
+    }
+
+    private function updateSnapshot(Anime $anime, string $participantId, SyncItem $confirmed): void
+    {
+        $status = WatchStatusMapper::toWatchStatus($confirmed->status);
+        // The contract falls back to the host's own value when the source reports no updatedAt
+        // of its own (SyncItem::$updatedAt docblock) — here that is the anime's own progress time.
+        $updatedAt = $confirmed->updatedAt ?? $anime->getWatchProgressUpdatedAt() ?? new \DateTimeImmutable();
+
+        $existing = $this->stateRepository->find($anime, $participantId);
+        if ($existing !== null) {
+            $existing->update($status, $confirmed->watchedEpisodes, $updatedAt);
+            $this->stateRepository->save($existing);
+
+            return;
+        }
+
+        $this->stateRepository->save(new AnimeSyncState($anime, $participantId, $status, $confirmed->watchedEpisodes, $updatedAt));
     }
 }

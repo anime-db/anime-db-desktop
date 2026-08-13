@@ -37,6 +37,7 @@ use AnimeDb\PluginContracts\Sync\SyncStatus;
 use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
 use App\Entity\Anime;
+use App\Entity\AnimeSyncState;
 use App\Entity\Enum\SyncReviewItemKind;
 use App\Entity\Enum\WatchStatus;
 use App\Entity\SyncReviewItem;
@@ -44,6 +45,7 @@ use App\Entity\TvAnime;
 use App\Entity\ValueObject\PluginId;
 use App\EventListener\DomainEventListener;
 use App\Repository\AnimeRepository;
+use App\Repository\AnimeSyncStateRepository;
 use App\Repository\StudioRepository;
 use App\Repository\SyncReviewItemRepository;
 use App\Service\Plugin\Filler\BulkFillerService;
@@ -57,7 +59,8 @@ use App\Service\Search\AnimeSearchMatch;
 use App\Service\Search\AnimeSearchResolver;
 use App\Service\Sync\CrossVendorDuplicateDetector;
 use App\Service\Sync\DeletedFromSourceDetector;
-use App\Service\Sync\PullPushSuppressor;
+use App\Service\Sync\SyncConvergenceService;
+use App\Service\Sync\SyncReconciler;
 use App\Service\Sync\SyncReviewService;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Types\Type;
@@ -80,7 +83,6 @@ final class PullSyncServiceTest extends TestCase
     private EntityManager $entityManager;
     private PullSyncService $service;
     private PluginId $pluginId;
-    private PullPushSuppressor $pushSuppressor;
 
     protected function setUp(): void
     {
@@ -100,12 +102,12 @@ final class PullSyncServiceTest extends TestCase
         $schemaTool = new SchemaTool($this->entityManager);
         $schemaTool->createSchema($this->entityManager->getMetadataFactory()->getAllMetadata());
 
-        $this->pushSuppressor = new PullPushSuppressor();
         $this->service = $this->newService($this->entityManager, new AnimeRepository($this->entityManager));
         $this->pluginId = new PluginId('animedb-shikimori');
     }
 
-    private function newService(EntityManager $entityManager, AnimeRepository $animeRepository): PullSyncService
+    /** @param array<string, SyncInterface> $otherSyncs active plugins other than $this->pluginId, for forward-propagation coverage */
+    private function newService(EntityManager $entityManager, AnimeRepository $animeRepository, array $otherSyncs = []): PullSyncService
     {
         $bulkFillerService = new BulkFillerService(
             // Never consulted by fillNewFrom() — it works off the sync plugin instance directly.
@@ -127,15 +129,35 @@ final class PullSyncServiceTest extends TestCase
             new SyncReviewService(new SyncReviewItemRepository($entityManager)),
         );
 
-        // Empty SyncRegistry — no other active sync plugin, so a removed record without storage
-        // is flagged as deleted_from_source (never a conflict) here; the conflict branch and
-        // storage protection are covered in DeletedFromSourceDetectorTest.
+        // A single shared SyncRegistry, one active entry per $otherSyncs plus $this->pluginId
+        // itself: production wiring shares one SyncRegistry between DeletedFromSourceDetector
+        // and SyncConvergenceService the same way, and forward propagation needs $this->pluginId
+        // resolvable through it too (SyncConvergenceService excludes it by id, not by omission).
+        $settings = ['animedb-shikimori' => ['features' => ['sync' => true]]];
+        foreach (array_keys($otherSyncs) as $id) {
+            $settings[$id] = ['features' => ['sync' => true]];
+        }
+        $pluginsConfigPath = sys_get_temp_dir().'/anime-pull-sync-reg-'.uniqid().'.json';
+        file_put_contents($pluginsConfigPath, json_encode($settings));
+        $syncRegistry = new SyncRegistry($otherSyncs, new PluginsConfigStore($pluginsConfigPath));
+
+        // Empty of *other* plugins by default, so a removed record without storage is flagged as
+        // deleted_from_source (never a conflict) here; the conflict branch and storage protection
+        // are covered in DeletedFromSourceDetectorTest.
         $deletionDetector = new DeletedFromSourceDetector(
-            new SyncRegistry([], new PluginsConfigStore(sys_get_temp_dir().'/anime-pull-sync-reg-'.uniqid().'.json')),
+            $syncRegistry,
             new SyncReviewService(new SyncReviewItemRepository($entityManager)),
         );
 
-        return new PullSyncService($entityManager, $animeRepository, $bulkFillerService, $duplicateDetector, $deletionDetector, $this->pushSuppressor, new NullLogger());
+        $convergenceService = new SyncConvergenceService(
+            new SyncReconciler(),
+            new AnimeSyncStateRepository($entityManager),
+            $syncRegistry,
+            new SyncReviewService(new SyncReviewItemRepository($entityManager)),
+            new NullLogger(),
+        );
+
+        return new PullSyncService($entityManager, $animeRepository, $bulkFillerService, $duplicateDetector, $deletionDetector, $convergenceService, new NullLogger());
     }
 
     /**
@@ -243,6 +265,89 @@ final class PullSyncServiceTest extends TestCase
         $this->service->pull($this->pluginId, $sync);
 
         $this->assertSame(WatchStatus::Watching, $anime->getWatchStatus());
+    }
+
+    /**
+     * Forward-propagation coverage (issue #366 review): a second active, resolvable plugin
+     * ("animedb-mal") whose own last-seen snapshot still disagrees with the winner must actually
+     * receive the winning value through SyncInterface::push(), not just have $otherSyncs sit
+     * unused in the test fixture.
+     */
+    public function testForwardPropagatesTheWinnerToAnotherActiveResolvablePlugin(): void
+    {
+        $anime = new TvAnime();
+        $anime->setTitle('Cowboy Bebop')->setWatchStatus(WatchStatus::Plan);
+        $anime->rememberExternalId($this->pluginId, '1');
+        $malPluginId = new PluginId('animedb-mal');
+        $anime->rememberExternalId($malPluginId, '99');
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+
+        $this->seedLastSeen($anime, 'local', WatchStatus::Plan, null, '2026-01-01');
+        $this->seedLastSeen($anime, (string) $this->pluginId, WatchStatus::Plan, null, '2026-01-01');
+        $this->seedLastSeen($anime, (string) $malPluginId, WatchStatus::Plan, null, '2026-01-01');
+
+        $mal = $this->createMock(SyncInterface::class);
+        $mal->expects($this->once())
+            ->method('push')
+            ->with($this->callback(static fn (SyncItem $item): bool => $item->externalId === '99' && $item->status === SyncStatus::Watching))
+            ->willReturn(new SyncItem('99', SyncStatus::Watching, 'Cowboy Bebop', updatedAt: new \DateTimeImmutable('2026-01-02')));
+
+        $service = $this->newService($this->entityManager, new AnimeRepository($this->entityManager), [(string) $malPluginId => $mal]);
+
+        $sync = $this->createMock(SyncInterface::class);
+        $sync->expects($this->once())->method('pull')->willReturn([new SyncItem('1', SyncStatus::Watching, 'Cowboy Bebop', updatedAt: new \DateTimeImmutable('2026-01-02'))]);
+
+        $service->pull($this->pluginId, $sync);
+
+        $this->assertSame(WatchStatus::Watching, $anime->getWatchStatus());
+
+        $malState = $this->entityManager->getRepository(AnimeSyncState::class)->find(['anime' => $anime, 'participantId' => (string) $malPluginId]);
+        $this->assertInstanceOf(AnimeSyncState::class, $malState);
+        $this->assertSame(WatchStatus::Watching, $malState->lastStatus);
+    }
+
+    /**
+     * True-conflict coverage (issue #366 review): local diverged from its own last-seen (a
+     * manual edit) and the pulled plugin diverges too, to a *different* value — this must both
+     * arbitrate a winner by max updatedAt and raise a SyncReviewItemKind::NeedsCorrection with
+     * the payload PullSyncServiceTest's happy-path tests never exercise.
+     */
+    public function testAConflictBetweenLocalAndThePulledPluginCreatesANeedsCorrectionReviewItem(): void
+    {
+        $anime = new TvAnime();
+        $anime->setTitle('Cowboy Bebop')->setWatchStatus(WatchStatus::Plan);
+        $anime->rememberExternalId($this->pluginId, '1');
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+
+        $this->seedLastSeen($anime, 'local', WatchStatus::Plan, null, '2026-01-01');
+        $this->seedLastSeen($anime, (string) $this->pluginId, WatchStatus::Plan, null, '2026-01-01');
+
+        // A manual local edit, diverging from last-seen[local] with a fresher updatedAt than
+        // the pulled item below will carry — local should win the arbitration.
+        $anime->changeWatchStatusManually(WatchStatus::Watching);
+        $this->entityManager->flush();
+
+        $sync = $this->createMock(SyncInterface::class);
+        $sync->expects($this->once())->method('pull')->willReturn([
+            new SyncItem('1', SyncStatus::Dropped, 'Cowboy Bebop', updatedAt: new \DateTimeImmutable('2020-01-01')),
+        ]);
+
+        $this->service->pull($this->pluginId, $sync);
+
+        $items = $this->entityManager->getRepository(SyncReviewItem::class)->findAll();
+        $this->assertCount(1, $items);
+        $this->assertSame(SyncReviewItemKind::NeedsCorrection, $items[0]->kind);
+        $this->assertSame($anime->id, $items[0]->payload['anime_id']);
+        $this->assertSame(['local', (string) $this->pluginId], $items[0]->payload['participants']);
+        $this->assertSame(WatchStatus::Watching->value, $items[0]->payload['winner_status']);
+    }
+
+    private function seedLastSeen(Anime $anime, string $participantId, WatchStatus $status, ?int $watchedEpisodes, string $updatedAt): void
+    {
+        $this->entityManager->persist(new AnimeSyncState($anime, $participantId, $status, $watchedEpisodes, new \DateTimeImmutable($updatedAt)));
+        $this->entityManager->flush();
     }
 
     public function testSkipsAnUnknownExternalIdWhenTheFillerCannotResolveIt(): void
@@ -397,11 +502,19 @@ final class PullSyncServiceTest extends TestCase
             $resolver,
             new SyncReviewService(new SyncReviewItemRepository($this->entityManager)),
         );
+        $syncRegistry = new SyncRegistry([], new PluginsConfigStore(sys_get_temp_dir().'/anime-pull-sync-reg-'.uniqid().'.json'));
         $deletionDetector = new DeletedFromSourceDetector(
-            new SyncRegistry([], new PluginsConfigStore(sys_get_temp_dir().'/anime-pull-sync-reg-'.uniqid().'.json')),
+            $syncRegistry,
             new SyncReviewService(new SyncReviewItemRepository($this->entityManager)),
         );
-        $service = new PullSyncService($this->entityManager, new AnimeRepository($this->entityManager), $bulkFillerService, $duplicateDetector, $deletionDetector, $this->pushSuppressor, new NullLogger());
+        $convergenceService = new SyncConvergenceService(
+            new SyncReconciler(),
+            new AnimeSyncStateRepository($this->entityManager),
+            $syncRegistry,
+            new SyncReviewService(new SyncReviewItemRepository($this->entityManager)),
+            new NullLogger(),
+        );
+        $service = new PullSyncService($this->entityManager, new AnimeRepository($this->entityManager), $bulkFillerService, $duplicateDetector, $deletionDetector, $convergenceService, new NullLogger());
 
         $sync = $this->syncFillerStub(
             [new SyncItem('42', SyncStatus::Plan, 'Trigun')],
