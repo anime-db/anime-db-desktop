@@ -43,6 +43,7 @@ use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
+use Symfony\Contracts\Translation\TranslatorInterface;
 use Twig\Environment;
 
 final class PluginWidgetControllerTest extends TestCase
@@ -91,7 +92,12 @@ final class PluginWidgetControllerTest extends TestCase
 
     private function emptyCatalogWidgets(): CatalogWidgetRegistry
     {
-        return new CatalogWidgetRegistry([], new PluginsConfigStore(''));
+        return new CatalogWidgetRegistry([], new PluginsConfigStore(''), $this->createStub(TranslatorInterface::class));
+    }
+
+    private function emptyEntryWidgets(): EntryWidgetRegistry
+    {
+        return new EntryWidgetRegistry([], new PluginsConfigStore(''), $this->createStub(TranslatorInterface::class));
     }
 
     private function anime(): TvAnime
@@ -112,6 +118,7 @@ final class PluginWidgetControllerTest extends TestCase
         $entryWidgets = new EntryWidgetRegistry(
             ['animedb-shikimori:related' => $widget],
             $this->activeWidgets('animedb-shikimori', ['related' => true]),
+            $this->createStub(TranslatorInterface::class),
         );
 
         $entityManager = $this->createMock(EntityManagerInterface::class);
@@ -141,6 +148,7 @@ final class PluginWidgetControllerTest extends TestCase
         $entryWidgets = new EntryWidgetRegistry(
             ['animedb-shikimori:related' => $widget],
             $this->activeWidgets('animedb-shikimori', ['related' => true]),
+            $this->createStub(TranslatorInterface::class),
         );
 
         $entityManager = $this->createMock(EntityManagerInterface::class);
@@ -174,6 +182,7 @@ final class PluginWidgetControllerTest extends TestCase
         $entryWidgets = new EntryWidgetRegistry(
             ['animedb-shikimori:related' => $widget],
             $this->activeWidgets('animedb-shikimori', ['related' => true]),
+            $this->createStub(TranslatorInterface::class),
         );
 
         $controller = $this->createController($entryWidgets, $this->emptyCatalogWidgets());
@@ -188,6 +197,7 @@ final class PluginWidgetControllerTest extends TestCase
         $entryWidgets = new EntryWidgetRegistry(
             ['animedb-shikimori:related' => $widget],
             $this->activeWidgets('animedb-shikimori', ['related' => true]),
+            $this->createStub(TranslatorInterface::class),
         );
 
         $entityManager = $this->createMock(EntityManagerInterface::class);
@@ -206,7 +216,7 @@ final class PluginWidgetControllerTest extends TestCase
     public function testRenderThrowsNotFoundWhenNoWidgetMatchesThePluginAndName(): void
     {
         $controller = $this->createController(
-            new EntryWidgetRegistry([], new PluginsConfigStore('')),
+            $this->emptyEntryWidgets(),
             $this->emptyCatalogWidgets(),
         );
 
@@ -217,7 +227,7 @@ final class PluginWidgetControllerTest extends TestCase
     public function testRenderThrowsNotFoundForAMalformedPluginId(): void
     {
         $controller = $this->createController(
-            new EntryWidgetRegistry([], new PluginsConfigStore('')),
+            $this->emptyEntryWidgets(),
             $this->emptyCatalogWidgets(),
         );
 
@@ -233,13 +243,14 @@ final class PluginWidgetControllerTest extends TestCase
         $catalogWidgets = new CatalogWidgetRegistry(
             ['animedb-shikimori:new_releases' => $widget],
             $this->activeWidgets('animedb-shikimori', ['new_releases' => true]),
+            $this->createStub(TranslatorInterface::class),
         );
 
         $entityManager = $this->createMock(EntityManagerInterface::class);
         $entityManager->expects($this->never())->method('find');
 
         $controller = $this->createController(
-            new EntryWidgetRegistry([], new PluginsConfigStore('')),
+            $this->emptyEntryWidgets(),
             $catalogWidgets,
             entityManager: $entityManager,
         );

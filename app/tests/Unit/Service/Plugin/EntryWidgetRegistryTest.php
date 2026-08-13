@@ -34,6 +34,7 @@ use App\Service\Plugin\Exception\WidgetHardLimitExceededException;
 use App\Service\Plugin\PluginsConfigStore;
 use App\Tests\Fixtures\Plugin\Widget\FakeEntryWidget;
 use PHPUnit\Framework\TestCase;
+use Symfony\Contracts\Translation\TranslatorInterface;
 
 final class EntryWidgetRegistryTest extends TestCase
 {
@@ -53,6 +54,18 @@ final class EntryWidgetRegistryTest extends TestCase
         }
     }
 
+    /**
+     * Echoes the translation key back unchanged, i.e. simulates a plugin that hasn't shipped
+     * this key's translation yet — the registry falls back to `widgetName` in that case.
+     */
+    private function noopTranslator(): TranslatorInterface
+    {
+        $translator = $this->createStub(TranslatorInterface::class);
+        $translator->method('trans')->willReturnArgument(0);
+
+        return $translator;
+    }
+
     public function testFindReturnsTheMatchingWidgetForACompoundPluginAndWidgetNameKey(): void
     {
         file_put_contents($this->path, json_encode([
@@ -65,6 +78,7 @@ final class EntryWidgetRegistryTest extends TestCase
         $registry = new EntryWidgetRegistry(
             ['animedb-shikimori:related' => $related, 'animedb-shikimori:recommended' => $recommended],
             new PluginsConfigStore($this->path),
+            $this->noopTranslator(),
         );
 
         $this->assertSame($related, $registry->find(new PluginId('animedb-shikimori'), 'related'));
@@ -73,7 +87,7 @@ final class EntryWidgetRegistryTest extends TestCase
 
     public function testFindReturnsNullWhenNoWidgetIsRegisteredUnderThatKey(): void
     {
-        $registry = new EntryWidgetRegistry([], new PluginsConfigStore($this->path));
+        $registry = new EntryWidgetRegistry([], new PluginsConfigStore($this->path), $this->noopTranslator());
 
         $this->assertNull($registry->find(new PluginId('animedb-shikimori'), 'related'));
     }
@@ -90,6 +104,7 @@ final class EntryWidgetRegistryTest extends TestCase
         $registry = new EntryWidgetRegistry(
             ['animedb-shikimori:related' => $related, 'animedb-shikimori:recommended' => $recommended],
             new PluginsConfigStore($this->path),
+            $this->noopTranslator(),
         );
 
         $this->assertNull($registry->find(new PluginId('animedb-shikimori'), 'related'));
@@ -110,6 +125,7 @@ final class EntryWidgetRegistryTest extends TestCase
                 'animedb-anilist:related' => $this->createStub(EntryWidgetInterface::class),
             ],
             new PluginsConfigStore($this->path),
+            $this->noopTranslator(),
         );
 
         $this->assertSame(
@@ -133,6 +149,7 @@ final class EntryWidgetRegistryTest extends TestCase
                 'animedb-shikimori:recommended' => new FakeEntryWidget(),
             ],
             new PluginsConfigStore($this->path),
+            $this->noopTranslator(),
         );
 
         $this->assertSame(
@@ -141,17 +158,43 @@ final class EntryWidgetRegistryTest extends TestCase
                     'pluginId' => 'animedb-shikimori',
                     'widgetName' => 'related',
                     'active' => false,
-                    'title' => 'Fake entry widget',
-                    'description' => 'A fake entry widget used in tests.',
+                    'title' => 'related',
+                    'description' => 'related',
                 ],
                 [
                     'pluginId' => 'animedb-shikimori',
                     'widgetName' => 'recommended',
                     'active' => true,
-                    'title' => 'Fake entry widget',
-                    'description' => 'A fake entry widget used in tests.',
+                    'title' => 'recommended',
+                    'description' => 'recommended',
                 ],
             ],
+            $registry->listAll(),
+        );
+    }
+
+    public function testListAllResolvesTitleAndDescriptionThroughTheTranslatorInThePluginsDomain(): void
+    {
+        $translator = $this->createStub(TranslatorInterface::class);
+        $translator->method('trans')->willReturnMap([
+            ['widget.fake_entry_widget.title', [], 'animedb-shikimori', null, 'Related titles'],
+            ['widget.fake_entry_widget.description', [], 'animedb-shikimori', null, 'Shows related anime titles.'],
+        ]);
+
+        $registry = new EntryWidgetRegistry(
+            ['animedb-shikimori:related' => new FakeEntryWidget()],
+            new PluginsConfigStore($this->path),
+            $translator,
+        );
+
+        $this->assertSame(
+            [[
+                'pluginId' => 'animedb-shikimori',
+                'widgetName' => 'related',
+                'active' => false,
+                'title' => 'Related titles',
+                'description' => 'Shows related anime titles.',
+            ]],
             $registry->listAll(),
         );
     }
@@ -161,6 +204,7 @@ final class EntryWidgetRegistryTest extends TestCase
         $registry = new EntryWidgetRegistry(
             ['animedb-shikimori:related' => $this->createStub(EntryWidgetInterface::class)],
             new PluginsConfigStore($this->path),
+            $this->noopTranslator(),
         );
 
         $this->assertNull($registry->find(new PluginId('animedb-shikimori'), 'related'));
@@ -183,7 +227,7 @@ final class EntryWidgetRegistryTest extends TestCase
             $widgets["animedb-shikimori:{$name}"] = $this->createStub(EntryWidgetInterface::class);
         }
 
-        $registry = new EntryWidgetRegistry($widgets, new PluginsConfigStore($this->path));
+        $registry = new EntryWidgetRegistry($widgets, new PluginsConfigStore($this->path), $this->noopTranslator());
 
         $this->assertSame(5, \count($registry->findAllActive()));
 
@@ -202,7 +246,7 @@ final class EntryWidgetRegistryTest extends TestCase
             $widgets["animedb-shikimori:{$name}"] = $this->createStub(EntryWidgetInterface::class);
         }
 
-        $registry = new EntryWidgetRegistry($widgets, new PluginsConfigStore($this->path));
+        $registry = new EntryWidgetRegistry($widgets, new PluginsConfigStore($this->path), $this->noopTranslator());
 
         $registry->setActive(new PluginId('animedb-shikimori'), 'w1', false);
 
@@ -220,7 +264,7 @@ final class EntryWidgetRegistryTest extends TestCase
             $widgets["animedb-shikimori:{$name}"] = $this->createStub(EntryWidgetInterface::class);
         }
 
-        $registry = new EntryWidgetRegistry($widgets, new PluginsConfigStore($this->path));
+        $registry = new EntryWidgetRegistry($widgets, new PluginsConfigStore($this->path), $this->noopTranslator());
 
         $registry->setActive(new PluginId('animedb-shikimori'), 'w1', true);
 

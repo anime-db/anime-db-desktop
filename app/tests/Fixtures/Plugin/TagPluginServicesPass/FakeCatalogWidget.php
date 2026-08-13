@@ -39,7 +39,7 @@ final class FakeCatalogWidget implements CatalogWidgetInterface
 {
     public static function metadata(): WidgetMetadata
     {
-        return new WidgetMetadata('new_releases', 'New releases', 'Shows recently released anime.');
+        return new WidgetMetadata('new_releases', 'widget.new_releases.title', 'widget.new_releases.description');
     }
 
     public function resolveExternalId(array $urls): ?string

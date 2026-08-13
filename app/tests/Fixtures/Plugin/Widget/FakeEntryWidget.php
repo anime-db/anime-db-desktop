@@ -42,7 +42,7 @@ final class FakeEntryWidget implements EntryWidgetInterface
 {
     public static function metadata(): WidgetMetadata
     {
-        return new WidgetMetadata('fake-entry-widget', 'Fake entry widget', 'A fake entry widget used in tests.');
+        return new WidgetMetadata('fake-entry-widget', 'widget.fake_entry_widget.title', 'widget.fake_entry_widget.description');
     }
 
     public function resolveExternalId(array $urls): ?string

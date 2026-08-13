@@ -45,6 +45,7 @@ use App\Service\Plugin\PluginsConfigStore;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RequestStack;
+use Symfony\Contracts\Translation\TranslatorInterface;
 use Twig\Environment;
 
 final class AnimeControllerTest extends TestCase
@@ -59,7 +60,7 @@ final class AnimeControllerTest extends TestCase
 
     private function createEntryWidgetRegistry(): EntryWidgetRegistry
     {
-        return new EntryWidgetRegistry([], new PluginsConfigStore(''));
+        return new EntryWidgetRegistry([], new PluginsConfigStore(''), $this->createStub(TranslatorInterface::class));
     }
 
     public function testShowPassesFullyPopulatedReferenceFieldsToTemplate(): void

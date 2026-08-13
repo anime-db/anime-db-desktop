@@ -42,6 +42,7 @@ use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 use Symfony\Component\Security\Csrf\CsrfTokenManagerInterface;
+use Symfony\Contracts\Translation\TranslatorInterface;
 use Twig\Environment;
 
 final class PluginWidgetControllerTest extends TestCase
@@ -91,6 +92,18 @@ final class PluginWidgetControllerTest extends TestCase
         return $csrf;
     }
 
+    /**
+     * Echoes the translation key back unchanged, i.e. simulates a plugin that hasn't shipped
+     * this key's translation yet — the registry falls back to `widgetName` in that case.
+     */
+    private function noopTranslator(): TranslatorInterface
+    {
+        $translator = $this->createStub(TranslatorInterface::class);
+        $translator->method('trans')->willReturnArgument(0);
+
+        return $translator;
+    }
+
     public function testIndexOrdersWidgetsByPluginInstallationOrderAndResolvesPluginNames(): void
     {
         // Widgets are registered zzz-plugin first, animedb-shikimori second — the opposite of the
@@ -106,8 +119,9 @@ final class PluginWidgetControllerTest extends TestCase
                 'animedb-shikimori:related' => new FakeEntryWidget(),
             ],
             new PluginsConfigStore($this->configPath),
+            $this->noopTranslator(),
         );
-        $catalogWidgets = new CatalogWidgetRegistry([], new PluginsConfigStore($this->configPath));
+        $catalogWidgets = new CatalogWidgetRegistry([], new PluginsConfigStore($this->configPath), $this->noopTranslator());
 
         $twig = $this->createMock(Environment::class);
         $twig->expects($this->once())
@@ -119,16 +133,16 @@ final class PluginWidgetControllerTest extends TestCase
                             'pluginId' => 'animedb-shikimori',
                             'widgetName' => 'related',
                             'active' => false,
-                            'title' => 'Fake entry widget',
-                            'description' => 'A fake entry widget used in tests.',
+                            'title' => 'related',
+                            'description' => 'related',
                             'pluginName' => 'Shikimori',
                         ],
                         [
                             'pluginId' => 'zzz-plugin',
                             'widgetName' => 'teaser',
                             'active' => false,
-                            'title' => 'Fake entry widget',
-                            'description' => 'A fake entry widget used in tests.',
+                            'title' => 'teaser',
+                            'description' => 'teaser',
                             'pluginName' => 'Zzz Plugin',
                         ],
                     ],
@@ -163,6 +177,7 @@ final class PluginWidgetControllerTest extends TestCase
         $entryWidgets = new EntryWidgetRegistry(
             ['animedb-shikimori:related' => $this->createStub(EntryWidgetInterface::class)],
             new PluginsConfigStore($this->configPath),
+            $this->noopTranslator(),
         );
 
         $urlGenerator = $this->createMock(UrlGeneratorInterface::class);
@@ -171,7 +186,7 @@ final class PluginWidgetControllerTest extends TestCase
         $controller = new PluginWidgetController(
             $this->installedPlugins(),
             $entryWidgets,
-            new CatalogWidgetRegistry([], new PluginsConfigStore($this->configPath)),
+            new CatalogWidgetRegistry([], new PluginsConfigStore($this->configPath), $this->noopTranslator()),
             $this->alwaysValidCsrf(),
             $urlGenerator,
             $this->createStub(Environment::class),
@@ -199,7 +214,7 @@ final class PluginWidgetControllerTest extends TestCase
             'animedb-shikimori' => ['features' => ['w1' => true, 'w2' => true, 'w3' => true, 'w4' => true, 'w5' => true]],
         ]));
 
-        $entryWidgets = new EntryWidgetRegistry($widgets, new PluginsConfigStore($this->configPath));
+        $entryWidgets = new EntryWidgetRegistry($widgets, new PluginsConfigStore($this->configPath), $this->noopTranslator());
 
         $urlGenerator = $this->createMock(UrlGeneratorInterface::class);
         $urlGenerator->method('generate')
@@ -209,7 +224,7 @@ final class PluginWidgetControllerTest extends TestCase
         $controller = new PluginWidgetController(
             $this->installedPlugins(),
             $entryWidgets,
-            new CatalogWidgetRegistry([], new PluginsConfigStore($this->configPath)),
+            new CatalogWidgetRegistry([], new PluginsConfigStore($this->configPath), $this->noopTranslator()),
             $this->alwaysValidCsrf(),
             $urlGenerator,
             $this->createStub(Environment::class),
@@ -238,6 +253,7 @@ final class PluginWidgetControllerTest extends TestCase
         $entryWidgets = new EntryWidgetRegistry(
             ['animedb-shikimori:related' => $this->createStub(EntryWidgetInterface::class)],
             new PluginsConfigStore($this->configPath),
+            $this->noopTranslator(),
         );
 
         $urlGenerator = $this->createMock(UrlGeneratorInterface::class);
@@ -248,7 +264,7 @@ final class PluginWidgetControllerTest extends TestCase
         $controller = new PluginWidgetController(
             $this->installedPlugins(),
             $entryWidgets,
-            new CatalogWidgetRegistry([], new PluginsConfigStore($this->configPath)),
+            new CatalogWidgetRegistry([], new PluginsConfigStore($this->configPath), $this->noopTranslator()),
             $this->alwaysValidCsrf(),
             $urlGenerator,
             $this->createStub(Environment::class),
@@ -276,8 +292,8 @@ final class PluginWidgetControllerTest extends TestCase
     {
         $controller = new PluginWidgetController(
             $this->installedPlugins(),
-            new EntryWidgetRegistry([], new PluginsConfigStore($this->configPath)),
-            new CatalogWidgetRegistry([], new PluginsConfigStore($this->configPath)),
+            new EntryWidgetRegistry([], new PluginsConfigStore($this->configPath), $this->noopTranslator()),
+            new CatalogWidgetRegistry([], new PluginsConfigStore($this->configPath), $this->noopTranslator()),
             $this->alwaysValidCsrf(),
             $this->createStub(UrlGeneratorInterface::class),
             $this->createStub(Environment::class),
@@ -295,8 +311,8 @@ final class PluginWidgetControllerTest extends TestCase
     {
         $controller = new PluginWidgetController(
             $this->installedPlugins(),
-            new EntryWidgetRegistry([], new PluginsConfigStore($this->configPath)),
-            new CatalogWidgetRegistry([], new PluginsConfigStore($this->configPath)),
+            new EntryWidgetRegistry([], new PluginsConfigStore($this->configPath), $this->noopTranslator()),
+            new CatalogWidgetRegistry([], new PluginsConfigStore($this->configPath), $this->noopTranslator()),
             $this->alwaysValidCsrf(),
             $this->createStub(UrlGeneratorInterface::class),
             $this->createStub(Environment::class),
@@ -317,8 +333,8 @@ final class PluginWidgetControllerTest extends TestCase
 
         $controller = new PluginWidgetController(
             $this->installedPlugins(),
-            new EntryWidgetRegistry([], new PluginsConfigStore($this->configPath)),
-            new CatalogWidgetRegistry([], new PluginsConfigStore($this->configPath)),
+            new EntryWidgetRegistry([], new PluginsConfigStore($this->configPath), $this->noopTranslator()),
+            new CatalogWidgetRegistry([], new PluginsConfigStore($this->configPath), $this->noopTranslator()),
             $csrf,
             $this->createStub(UrlGeneratorInterface::class),
             $this->createStub(Environment::class),

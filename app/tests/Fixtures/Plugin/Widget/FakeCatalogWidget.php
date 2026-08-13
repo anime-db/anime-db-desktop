@@ -41,7 +41,7 @@ final class FakeCatalogWidget implements CatalogWidgetInterface
 {
     public static function metadata(): WidgetMetadata
     {
-        return new WidgetMetadata('fake-catalog-widget', 'Fake catalog widget', 'A fake catalog widget used in tests.');
+        return new WidgetMetadata('fake-catalog-widget', 'widget.fake_catalog_widget.title', 'widget.fake_catalog_widget.description');
     }
 
     public function resolveExternalId(array $urls): ?string

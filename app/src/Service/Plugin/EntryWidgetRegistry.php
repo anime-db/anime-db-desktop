@@ -30,6 +30,7 @@ namespace App\Service\Plugin;
 use AnimeDb\PluginContracts\Widget\EntryWidgetInterface;
 use App\Entity\ValueObject\PluginId;
 use Symfony\Component\DependencyInjection\Attribute\AutowireIterator;
+use Symfony\Contracts\Translation\TranslatorInterface;
 
 /**
  * Resolves the {@see EntryWidgetInterface} instance a single `/plugin/{pluginId}/widget/{widgetName}`
@@ -56,6 +57,7 @@ final class EntryWidgetRegistry
         #[AutowireIterator('app.entry_widget', indexAttribute: 'id')]
         private readonly iterable $widgets,
         private readonly PluginsConfigStore $pluginsConfigStore,
+        private readonly TranslatorInterface $translator,
     ) {
     }
 
@@ -84,10 +86,16 @@ final class EntryWidgetRegistry
     }
 
     /**
-     * Title/description come from the widget's own `metadata()` (issue #364), read fresh on
-     * every call rather than cached: the widget instances themselves are already resolved once
-     * at container build time, so this is not a repeated I/O cost, just a couple of property
-     * reads on an already-live object.
+     * `metadata()` (issue #364) gives `titleKey`/`descriptionKey`, not ready-to-display strings
+     * (contract v0.14, issue #377): they are resolved here, in the plugin's translation domain
+     * (= pluginId, see {@see PluginLoader}), read fresh on every call rather than cached — the
+     * widget instances are already resolved once at container build time, so this is not a
+     * repeated I/O cost, just a couple of property reads plus a translation lookup.
+     *
+     * A key without a matching catalog entry falls back to `widgetName` — Symfony's
+     * `trans()` returns the key itself when unresolved, and a raw dotted key is not fit for
+     * display. This also protects against the plugin shipping its key before the host does
+     * (issue #377's rollout note: host ships first, plugins follow).
      *
      * @return list<array{pluginId: string, widgetName: string, active: bool, title: string, description: string}> every
      *                                                                                                             registered widget, active or not, for the settings UI (issue #213/#364)
@@ -102,8 +110,8 @@ final class EntryWidgetRegistry
                 'pluginId' => $pluginId,
                 'widgetName' => $widgetName,
                 'active' => $this->isActive(new PluginId($pluginId), $widgetName),
-                'title' => $metadata->title,
-                'description' => $metadata->description,
+                'title' => $this->translate($metadata->titleKey, $pluginId, $widgetName),
+                'description' => $this->translate($metadata->descriptionKey, $pluginId, $widgetName),
             ];
         }
 
@@ -126,6 +134,13 @@ final class EntryWidgetRegistry
     private function all(): array
     {
         return iterator_to_array($this->widgets);
+    }
+
+    private function translate(string $key, string $pluginId, string $widgetName): string
+    {
+        $translated = $this->translator->trans($key, domain: $pluginId);
+
+        return $translated !== $key ? $translated : $widgetName;
     }
 
     private static function key(PluginId $pluginId, string $widgetName): string
