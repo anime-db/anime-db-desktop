@@ -86,6 +86,7 @@ final class PluginSettingsControllerTest extends TestCase
         ?Environment $twig = null,
         ?LoggerInterface $logger = null,
         ?SyncRegistry $syncRegistry = null,
+        ?PluginsConfigStore $pluginsConfigStore = null,
         ?MessageBusInterface $messageBus = null,
         ?UrlGeneratorInterface $urlGenerator = null,
     ): PluginSettingsController {
@@ -93,6 +94,7 @@ final class PluginSettingsControllerTest extends TestCase
             $this->installedPlugins,
             $settingsPages,
             $syncRegistry ?? new SyncRegistry([], new PluginsConfigStore($this->pluginsDir.'/plugins.json')),
+            $pluginsConfigStore ?? new PluginsConfigStore($this->pluginsDir.'/plugins.json'),
             $messageBus ?? $this->createStub(MessageBusInterface::class),
             $urlGenerator ?? $this->createStub(UrlGeneratorInterface::class),
             $twig ?? $this->createStub(Environment::class),
@@ -175,6 +177,84 @@ final class PluginSettingsControllerTest extends TestCase
 
         $this->assertInstanceOf(RedirectResponse::class, $response);
         $this->assertSame('/settings/sync-review', $response->getTargetUrl());
+    }
+
+    public function testInvokeOnlyDispatchesSyncSeedOnceAcrossRepeatedVisits(): void
+    {
+        $this->writeManifest('animedb-shikimori', 'Shikimori');
+        file_put_contents($this->pluginsDir.'/plugins.json', (string) json_encode([
+            'animedb-shikimori' => ['features' => ['sync' => true]],
+        ]));
+        $this->installedPlugins->reconcile();
+
+        $sync = $this->createStub(SyncInterface::class);
+        $pluginsConfigStore = new PluginsConfigStore($this->pluginsDir.'/plugins.json');
+        $syncRegistry = new SyncRegistry(['animedb-shikimori' => $sync], $pluginsConfigStore);
+
+        $page = $this->createMock(SettingsPageInterface::class);
+        $page->expects($this->once())->method('render')->willReturn('<form>settings</form>');
+        $settingsPages = new SettingsPageRegistry(['animedb-shikimori' => $page], $this->installedPlugins);
+
+        $messageBus = $this->createMock(MessageBusInterface::class);
+        $messageBus->expects($this->once())
+            ->method('dispatch')
+            ->willReturnCallback(static fn (object $message): Envelope => new Envelope($message));
+
+        $urlGenerator = $this->createStub(UrlGeneratorInterface::class);
+        $urlGenerator->method('generate')->willReturn('/settings/sync-review');
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())->method('render')->willReturn('<html></html>');
+
+        $controller = $this->createController(
+            $settingsPages,
+            twig: $twig,
+            syncRegistry: $syncRegistry,
+            pluginsConfigStore: $pluginsConfigStore,
+            messageBus: $messageBus,
+            urlGenerator: $urlGenerator,
+        );
+
+        $first = $controller('animedb-shikimori');
+        $second = $controller('animedb-shikimori');
+
+        $this->assertInstanceOf(RedirectResponse::class, $first);
+        $this->assertSame(200, $second->getStatusCode());
+    }
+
+    public function testInvokeRendersThePluginsPageInsteadOfReSeedingWhenAlreadySeeded(): void
+    {
+        $this->writeManifest('animedb-shikimori', 'Shikimori');
+        file_put_contents($this->pluginsDir.'/plugins.json', (string) json_encode([
+            'animedb-shikimori' => ['features' => ['sync' => true], 'syncSeeded' => true],
+        ]));
+        $this->installedPlugins->reconcile();
+
+        $sync = $this->createStub(SyncInterface::class);
+        $syncRegistry = new SyncRegistry(
+            ['animedb-shikimori' => $sync],
+            new PluginsConfigStore($this->pluginsDir.'/plugins.json'),
+        );
+
+        $page = $this->createMock(SettingsPageInterface::class);
+        $page->expects($this->once())->method('render')->willReturn('<form>settings</form>');
+        $settingsPages = new SettingsPageRegistry(['animedb-shikimori' => $page], $this->installedPlugins);
+
+        $messageBus = $this->createMock(MessageBusInterface::class);
+        $messageBus->expects($this->never())->method('dispatch');
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())->method('render')->willReturn('<html></html>');
+
+        $controller = $this->createController(
+            $settingsPages,
+            twig: $twig,
+            syncRegistry: $syncRegistry,
+            messageBus: $messageBus,
+        );
+        $response = $controller('animedb-shikimori');
+
+        $this->assertSame(200, $response->getStatusCode());
     }
 
     public function testInvokeRendersAnInlineErrorAndLogsWhenRenderThrows(): void

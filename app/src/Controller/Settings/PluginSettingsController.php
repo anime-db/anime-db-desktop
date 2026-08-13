@@ -31,6 +31,7 @@ use App\Entity\ValueObject\Exception\InvalidPluginIdException;
 use App\Entity\ValueObject\PluginId;
 use App\Message\SyncSeedMessage;
 use App\Service\Plugin\InstalledPluginsRegistry;
+use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Plugin\SettingsPageRegistry;
 use App\Service\Plugin\SyncRegistry;
 use Psr\Log\LoggerInterface;
@@ -59,12 +60,16 @@ use Twig\Environment;
  * Connect-seed (issue #381): a plugin's own toggle/OAuth routes land the browser back on this GET
  * route as a full top-level navigation once the plugin implements
  * {@see \AnimeDb\PluginContracts\Sync\SyncInterface} and is active — {@see SyncRegistry} is the
- * single source of truth for that ("stayed on"/"already seen" is out of scope here, that plugin's
- * own settings page simply is not linked to again once connected). That moment dispatches a
- * one-time {@see SyncSeedMessage} (full pull, on the `async` transport so it never blocks this
- * request) and redirects to the sync review page instead of rendering the plugin's own settings
- * markup — {@see \App\Service\Plugin\PullSyncService::pull()} is what actually applies agreements
- * to local and raises review items for genuine conflicts.
+ * single source of truth for that. This route is also the settings page itself, reachable again
+ * on every later visit (including a browser prefetch or a plain reload), so the seed must not
+ * fire more than once: a `syncSeeded` flag on the plugin's entry in {@see PluginsConfigStore},
+ * checked and set atomically under its `updatePluginSettings()` lock, gates the dispatch. Once
+ * seeded, this route falls through to rendering the plugin's own settings markup as normal — the
+ * page stays reachable for re-authorizing an expired OAuth token or changing the plugin's own
+ * settings. That first visit dispatches a one-time {@see SyncSeedMessage} (full pull, on the
+ * `async` transport so it never blocks this request) and redirects to the sync review page
+ * instead of rendering the plugin's own settings markup — {@see \App\Service\Plugin\PullSyncService::pull()}
+ * is what actually applies agreements to local and raises review items for genuine conflicts.
  */
 final class PluginSettingsController
 {
@@ -72,6 +77,7 @@ final class PluginSettingsController
         private readonly InstalledPluginsRegistry $installedPlugins,
         private readonly SettingsPageRegistry $settingsPages,
         private readonly SyncRegistry $syncRegistry,
+        private readonly PluginsConfigStore $pluginsConfigStore,
         private readonly MessageBusInterface $messageBus,
         private readonly UrlGeneratorInterface $urlGenerator,
         private readonly Environment $twig,
@@ -105,7 +111,7 @@ final class PluginSettingsController
             throw new NotFoundHttpException(\sprintf('Unknown plugin "%s".', $pluginId));
         }
 
-        if ($this->syncRegistry->findByPluginId($id) !== null) {
+        if ($this->syncRegistry->findByPluginId($id) !== null && !$this->markSeededIfFirstVisit($id)) {
             $this->messageBus->dispatch(new SyncSeedMessage((string) $id));
 
             return new RedirectResponse($this->urlGenerator->generate('settings_sync_review_index'));
@@ -133,5 +139,29 @@ final class PluginSettingsController
             'content' => $content,
             'renderFailed' => false,
         ]));
+    }
+
+    /**
+     * Returns whether the plugin was already seeded before this call, atomically setting the
+     * flag if not — the check and the set happen under the same
+     * {@see PluginsConfigStore::updatePluginSettings()} lock, so two concurrent requests can
+     * never both observe "not seeded yet" and both dispatch {@see SyncSeedMessage}.
+     */
+    private function markSeededIfFirstVisit(PluginId $id): bool
+    {
+        $alreadySeeded = false;
+        $this->pluginsConfigStore->updatePluginSettings($id, static function (array $settings) use (&$alreadySeeded): array {
+            if (($settings['syncSeeded'] ?? false) === true) {
+                $alreadySeeded = true;
+
+                return $settings;
+            }
+
+            $settings['syncSeeded'] = true;
+
+            return $settings;
+        });
+
+        return $alreadySeeded;
     }
 }
