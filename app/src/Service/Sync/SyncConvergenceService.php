@@ -177,8 +177,15 @@ final class SyncConvergenceService
      * {@see Anime::applyWatchProgress()} with $updatedAt = now() makes local the most recently
      * updated participant, so it wins the next arbitration on its own — see .claude-docs/sync.md's
      * "Алгоритм реконсиляции" step 3 (max updatedAt) — for as long as no source makes a *later*
-     * edit of its own. $now is captured once and reused for both the local write and every push,
-     * so the pin and everything derived from it share one exact timestamp.
+     * edit of its own.
+     *
+     * Every other participant is forwarded the *actually applied* local projection/timestamp
+     * (read back from $anime after applyWatchProgress()), never $chosen itself: a pair that
+     * violates a local invariant (Completed while not yet released) is rejected by
+     * applyWatchProgress() — local stays unchanged and unpinned — and forwarding the rejected
+     * $chosen anyway would push a value local itself never actually holds, only for the next
+     * reconcile to see that fresher-but-unpinned remote value and recreate the very conflict the
+     * user just tried to resolve.
      *
      * "Diverging" is judged against each participant's last-seen snapshot (issue #365), not a
      * fresh network read — {@see SyncInterface} has no per-title "read current state" call, same
@@ -196,7 +203,9 @@ final class SyncConvergenceService
             $lastSeenRowById[$row->participantId] = $row;
         }
 
-        $confirmed = ['local' => new ParticipantState('local', $this->localProjection($anime), $anime->getWatchProgressUpdatedAt())];
+        $appliedProjection = $this->localProjection($anime);
+        $appliedUpdatedAt = $anime->getWatchProgressUpdatedAt();
+        $confirmed = ['local' => new ParticipantState('local', $appliedProjection, $appliedUpdatedAt)];
 
         foreach ($this->syncRegistry->allActive() as $participantId => $sync) {
             $externalId = $anime->getCachedExternalId(new PluginId($participantId));
@@ -206,11 +215,11 @@ final class SyncConvergenceService
 
             $lastSeenRow = $lastSeenRowById[$participantId] ?? null;
             $current = $lastSeenRow !== null ? new SyncProjection($lastSeenRow->lastStatus, $lastSeenRow->lastWatchedEpisodes) : null;
-            if ($current !== null && $current->equals($chosen)) {
+            if ($current !== null && $current->equals($appliedProjection)) {
                 continue;
             }
 
-            $pushed = $this->pushTo($anime, $participantId, $sync, $chosen, $now);
+            $pushed = $this->pushTo($anime, $participantId, $sync, $appliedProjection, $appliedUpdatedAt);
             if ($pushed !== null) {
                 $confirmed[$participantId] = $pushed;
             }

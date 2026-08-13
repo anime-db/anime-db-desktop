@@ -425,4 +425,47 @@ final class SyncConvergenceServiceTest extends TestCase
 
         $this->assertSame(WatchStatus::Watching, $anime->getWatchStatus());
     }
+
+    /**
+     * Correctness regression (PR #384 review): a $chosen pair that violates a local invariant
+     * (Completed while the anime is still Announced/Ongoing, see Anime::setWatchStatus()) makes
+     * Anime::applyWatchProgress() reject it — local stays on its previous value and is not
+     * pinned (watchProgressUpdatedAt untouched). Forwarding $chosen to other participants anyway
+     * would push a value local itself never actually holds, so no push must happen here: the
+     * origin's last-seen row already agrees with local's *actual*, unchanged projection.
+     */
+    public function testApplyManualResolutionDoesNotForwardARejectedChoiceToParticipants(): void
+    {
+        $anime = new TvAnime();
+        $anime->setTitle('Cowboy Bebop')->setWatchStatus(WatchStatus::Plan);
+        $anime->rememberExternalId($this->originPluginId, '1');
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+
+        $this->seedLastSeen($anime, 'local', WatchStatus::Plan, '2026-01-01');
+        $this->seedLastSeen($anime, (string) $this->originPluginId, WatchStatus::Plan, '2026-01-01');
+
+        $origin = $this->createMock(SyncInterface::class);
+        $origin->expects($this->never())->method('push');
+
+        $service = $this->newService([(string) $this->originPluginId => $origin]);
+
+        // Completed is rejected here: a freshly-created TvAnime has no dates, so its production
+        // status is Announced, never Released.
+        $service->applyManualResolution($anime, new SyncProjection(WatchStatus::Completed, 12), $this->entityManager);
+
+        $this->assertSame(WatchStatus::Plan, $anime->getWatchStatus());
+        $this->assertNull($anime->getWatchProgressUpdatedAt());
+        $this->assertNotNull($anime->getWatchProgressRejectedAt());
+
+        $stateRepository = $this->entityManager->getRepository(AnimeSyncState::class);
+
+        $localState = $stateRepository->find(['anime' => $anime, 'participantId' => 'local']);
+        $this->assertInstanceOf(AnimeSyncState::class, $localState);
+        $this->assertSame(WatchStatus::Plan, $localState->lastStatus);
+
+        $originState = $stateRepository->find(['anime' => $anime, 'participantId' => (string) $this->originPluginId]);
+        $this->assertInstanceOf(AnimeSyncState::class, $originState);
+        $this->assertSame(WatchStatus::Plan, $originState->lastStatus);
+    }
 }
