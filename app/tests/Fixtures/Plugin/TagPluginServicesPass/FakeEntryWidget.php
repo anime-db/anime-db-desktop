@@ -40,7 +40,7 @@ final class FakeEntryWidget implements EntryWidgetInterface
 {
     public static function metadata(): WidgetMetadata
     {
-        return new WidgetMetadata('related', 'Related titles', 'Shows related anime titles.');
+        return new WidgetMetadata('related', 'widget.related.title', 'widget.related.description');
     }
 
     public function resolveExternalId(array $urls): ?string

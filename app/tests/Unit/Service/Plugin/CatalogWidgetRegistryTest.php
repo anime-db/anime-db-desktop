@@ -34,6 +34,7 @@ use App\Service\Plugin\Exception\WidgetHardLimitExceededException;
 use App\Service\Plugin\PluginsConfigStore;
 use App\Tests\Fixtures\Plugin\Widget\FakeCatalogWidget;
 use PHPUnit\Framework\TestCase;
+use Symfony\Contracts\Translation\TranslatorInterface;
 
 final class CatalogWidgetRegistryTest extends TestCase
 {
@@ -53,6 +54,18 @@ final class CatalogWidgetRegistryTest extends TestCase
         }
     }
 
+    /**
+     * Echoes the translation key back unchanged, i.e. simulates a plugin that hasn't shipped
+     * this key's translation yet — the registry falls back to `widgetName` in that case.
+     */
+    private function noopTranslator(): TranslatorInterface
+    {
+        $translator = $this->createStub(TranslatorInterface::class);
+        $translator->method('trans')->willReturnArgument(0);
+
+        return $translator;
+    }
+
     public function testFindReturnsTheMatchingWidgetForACompoundPluginAndWidgetNameKey(): void
     {
         file_put_contents($this->path, json_encode([
@@ -64,6 +77,7 @@ final class CatalogWidgetRegistryTest extends TestCase
         $registry = new CatalogWidgetRegistry(
             ['animedb-shikimori:new_releases' => $newReleases],
             new PluginsConfigStore($this->path),
+            $this->noopTranslator(),
         );
 
         $this->assertSame($newReleases, $registry->find(new PluginId('animedb-shikimori'), 'new_releases'));
@@ -71,7 +85,7 @@ final class CatalogWidgetRegistryTest extends TestCase
 
     public function testFindReturnsNullWhenNoWidgetIsRegisteredUnderThatKey(): void
     {
-        $registry = new CatalogWidgetRegistry([], new PluginsConfigStore($this->path));
+        $registry = new CatalogWidgetRegistry([], new PluginsConfigStore($this->path), $this->noopTranslator());
 
         $this->assertNull($registry->find(new PluginId('animedb-shikimori'), 'new_releases'));
     }
@@ -85,6 +99,7 @@ final class CatalogWidgetRegistryTest extends TestCase
         $registry = new CatalogWidgetRegistry(
             ['animedb-shikimori:new_releases' => $this->createStub(CatalogWidgetInterface::class)],
             new PluginsConfigStore($this->path),
+            $this->noopTranslator(),
         );
 
         $this->assertNull($registry->find(new PluginId('animedb-shikimori'), 'new_releases'));
@@ -103,6 +118,7 @@ final class CatalogWidgetRegistryTest extends TestCase
                 'animedb-anilist:trending' => $this->createStub(CatalogWidgetInterface::class),
             ],
             new PluginsConfigStore($this->path),
+            $this->noopTranslator(),
         );
 
         $this->assertSame(
@@ -120,6 +136,7 @@ final class CatalogWidgetRegistryTest extends TestCase
         $registry = new CatalogWidgetRegistry(
             ['animedb-shikimori:new_releases' => new FakeCatalogWidget()],
             new PluginsConfigStore($this->path),
+            $this->noopTranslator(),
         );
 
         $this->assertSame(
@@ -127,8 +144,34 @@ final class CatalogWidgetRegistryTest extends TestCase
                 'pluginId' => 'animedb-shikimori',
                 'widgetName' => 'new_releases',
                 'active' => false,
-                'title' => 'Fake catalog widget',
-                'description' => 'A fake catalog widget used in tests.',
+                'title' => 'new_releases',
+                'description' => 'new_releases',
+            ]],
+            $registry->listAll(),
+        );
+    }
+
+    public function testListAllResolvesTitleAndDescriptionThroughTheTranslatorInThePluginsDomain(): void
+    {
+        $translator = $this->createStub(TranslatorInterface::class);
+        $translator->method('trans')->willReturnMap([
+            ['widget.fake_catalog_widget.title', [], 'animedb-shikimori', null, 'New releases'],
+            ['widget.fake_catalog_widget.description', [], 'animedb-shikimori', null, 'Shows recently released anime.'],
+        ]);
+
+        $registry = new CatalogWidgetRegistry(
+            ['animedb-shikimori:new_releases' => new FakeCatalogWidget()],
+            new PluginsConfigStore($this->path),
+            $translator,
+        );
+
+        $this->assertSame(
+            [[
+                'pluginId' => 'animedb-shikimori',
+                'widgetName' => 'new_releases',
+                'active' => false,
+                'title' => 'New releases',
+                'description' => 'Shows recently released anime.',
             ]],
             $registry->listAll(),
         );
@@ -139,6 +182,7 @@ final class CatalogWidgetRegistryTest extends TestCase
         $registry = new CatalogWidgetRegistry(
             ['animedb-shikimori:new_releases' => $this->createStub(CatalogWidgetInterface::class)],
             new PluginsConfigStore($this->path),
+            $this->noopTranslator(),
         );
 
         $this->assertNull($registry->find(new PluginId('animedb-shikimori'), 'new_releases'));
@@ -161,7 +205,7 @@ final class CatalogWidgetRegistryTest extends TestCase
             $widgets["animedb-shikimori:{$name}"] = $this->createStub(CatalogWidgetInterface::class);
         }
 
-        $registry = new CatalogWidgetRegistry($widgets, new PluginsConfigStore($this->path));
+        $registry = new CatalogWidgetRegistry($widgets, new PluginsConfigStore($this->path), $this->noopTranslator());
 
         $this->expectException(WidgetHardLimitExceededException::class);
         $registry->setActive(new PluginId('animedb-shikimori'), 'w6', true);
