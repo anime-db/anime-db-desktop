@@ -29,12 +29,17 @@ namespace App\Controller\Settings;
 
 use App\Entity\ValueObject\Exception\InvalidPluginIdException;
 use App\Entity\ValueObject\PluginId;
+use App\Message\SyncSeedMessage;
 use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\SettingsPageRegistry;
+use App\Service\Plugin\SyncRegistry;
 use Psr\Log\LoggerInterface;
+use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
+use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Routing\Attribute\Route;
+use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 use Twig\Environment;
 
 /**
@@ -50,12 +55,25 @@ use Twig\Environment;
  * a broken settings page must not take down the settings area for every other plugin. Unlike the
  * widget slot, this is a full top-level page (not an HTMX fragment), so a failure degrades to an
  * inline error message on an otherwise normal 200 response rather than a swappable fragment.
+ *
+ * Connect-seed (issue #381): a plugin's own toggle/OAuth routes land the browser back on this GET
+ * route as a full top-level navigation once the plugin implements
+ * {@see \AnimeDb\PluginContracts\Sync\SyncInterface} and is active — {@see SyncRegistry} is the
+ * single source of truth for that ("stayed on"/"already seen" is out of scope here, that plugin's
+ * own settings page simply is not linked to again once connected). That moment dispatches a
+ * one-time {@see SyncSeedMessage} (full pull, on the `async` transport so it never blocks this
+ * request) and redirects to the sync review page instead of rendering the plugin's own settings
+ * markup — {@see \App\Service\Plugin\PullSyncService::pull()} is what actually applies agreements
+ * to local and raises review items for genuine conflicts.
  */
 final class PluginSettingsController
 {
     public function __construct(
         private readonly InstalledPluginsRegistry $installedPlugins,
         private readonly SettingsPageRegistry $settingsPages,
+        private readonly SyncRegistry $syncRegistry,
+        private readonly MessageBusInterface $messageBus,
+        private readonly UrlGeneratorInterface $urlGenerator,
         private readonly Environment $twig,
         private readonly LoggerInterface $logger,
     ) {
@@ -85,6 +103,12 @@ final class PluginSettingsController
         $plugin = $this->installedPlugins->get($id);
         if ($plugin === null) {
             throw new NotFoundHttpException(\sprintf('Unknown plugin "%s".', $pluginId));
+        }
+
+        if ($this->syncRegistry->findByPluginId($id) !== null) {
+            $this->messageBus->dispatch(new SyncSeedMessage((string) $id));
+
+            return new RedirectResponse($this->urlGenerator->generate('settings_sync_review_index'));
         }
 
         try {

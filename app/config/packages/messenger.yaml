@@ -25,3 +25,4 @@ framework:
             'App\Message\DeleteFromIndexMessage': async
             'App\Message\PushSyncMessage': async
             'App\Message\BackfillExternalIdMessage': async
+            'App\Message\SyncSeedMessage': async

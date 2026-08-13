@@ -28,14 +28,21 @@ declare(strict_types=1);
 namespace App\Tests\Unit\Controller\Settings;
 
 use AnimeDb\PluginContracts\Settings\SettingsPageInterface;
+use AnimeDb\PluginContracts\Sync\SyncInterface;
 use App\Controller\Settings\PluginSettingsController;
+use App\Message\SyncSeedMessage;
 use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Plugin\SettingsPageRegistry;
+use App\Service\Plugin\SyncRegistry;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
+use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
+use Symfony\Component\Messenger\Envelope;
+use Symfony\Component\Messenger\MessageBusInterface;
+use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 use Twig\Environment;
 
 final class PluginSettingsControllerTest extends TestCase
@@ -78,10 +85,16 @@ final class PluginSettingsControllerTest extends TestCase
         SettingsPageRegistry $settingsPages,
         ?Environment $twig = null,
         ?LoggerInterface $logger = null,
+        ?SyncRegistry $syncRegistry = null,
+        ?MessageBusInterface $messageBus = null,
+        ?UrlGeneratorInterface $urlGenerator = null,
     ): PluginSettingsController {
         return new PluginSettingsController(
             $this->installedPlugins,
             $settingsPages,
+            $syncRegistry ?? new SyncRegistry([], new PluginsConfigStore($this->pluginsDir.'/plugins.json')),
+            $messageBus ?? $this->createStub(MessageBusInterface::class),
+            $urlGenerator ?? $this->createStub(UrlGeneratorInterface::class),
             $twig ?? $this->createStub(Environment::class),
             $logger ?? $this->createStub(LoggerInterface::class),
         );
@@ -114,6 +127,54 @@ final class PluginSettingsControllerTest extends TestCase
         $response = $controller('animedb-shikimori');
 
         $this->assertSame(200, $response->getStatusCode());
+    }
+
+    public function testInvokeDispatchesSyncSeedAndRedirectsWhenThePluginIsAnActiveSyncPlugin(): void
+    {
+        $this->writeManifest('animedb-shikimori', 'Shikimori');
+        file_put_contents($this->pluginsDir.'/plugins.json', (string) json_encode([
+            'animedb-shikimori' => ['features' => ['sync' => true]],
+        ]));
+        $this->installedPlugins->reconcile();
+
+        $sync = $this->createStub(SyncInterface::class);
+        $syncRegistry = new SyncRegistry(
+            ['animedb-shikimori' => $sync],
+            new PluginsConfigStore($this->pluginsDir.'/plugins.json'),
+        );
+
+        $page = $this->createMock(SettingsPageInterface::class);
+        $page->expects($this->never())->method('render');
+        $settingsPages = new SettingsPageRegistry(['animedb-shikimori' => $page], $this->installedPlugins);
+
+        $messageBus = $this->createMock(MessageBusInterface::class);
+        $messageBus->expects($this->once())
+            ->method('dispatch')
+            ->with($this->callback(
+                static fn (object $message): bool => $message instanceof SyncSeedMessage && $message->pluginId === 'animedb-shikimori',
+            ))
+            ->willReturnCallback(static fn (object $message): Envelope => new Envelope($message));
+
+        $urlGenerator = $this->createMock(UrlGeneratorInterface::class);
+        $urlGenerator->expects($this->once())
+            ->method('generate')
+            ->with('settings_sync_review_index')
+            ->willReturn('/settings/sync-review');
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->never())->method('render');
+
+        $controller = $this->createController(
+            $settingsPages,
+            twig: $twig,
+            syncRegistry: $syncRegistry,
+            messageBus: $messageBus,
+            urlGenerator: $urlGenerator,
+        );
+        $response = $controller('animedb-shikimori');
+
+        $this->assertInstanceOf(RedirectResponse::class, $response);
+        $this->assertSame('/settings/sync-review', $response->getTargetUrl());
     }
 
     public function testInvokeRendersAnInlineErrorAndLogsWhenRenderThrows(): void
