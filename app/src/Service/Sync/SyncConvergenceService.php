@@ -130,7 +130,7 @@ final class SyncConvergenceService
         }
 
         if ($result->isConflict) {
-            $this->flagConflict($anime, $result);
+            $this->flagConflict($anime, $result, $available);
         }
 
         $targets = $this->reconciler->participantsToConverge($result, $available);
@@ -156,7 +156,70 @@ final class SyncConvergenceService
                 continue;
             }
 
-            $pushed = $this->pushTo($anime, $participantId, $sync, $result);
+            $pushed = $this->pushTo($anime, $participantId, $sync, $result->winner, $result->winnerUpdatedAt);
+            if ($pushed !== null) {
+                $confirmed[$participantId] = $pushed;
+            }
+        }
+
+        foreach ($confirmed as $participantId => $state) {
+            $this->persistLastSeen($anime, $participantId, $state, $lastSeenRowById[$participantId] ?? null, $entityManager);
+        }
+    }
+
+    /**
+     * Applies a user's own choice from the sync results page (issue #367) — the third arbitration
+     * path alongside a clean reconcile() winner and a best-effort conflict pick: here the human
+     * *is* the arbiter, so there is no ReconciliationResult to drive convergence from, only the
+     * projection they picked.
+     *
+     * Pinning (issue #380) is deliberately not a stored flag: applying $chosen through
+     * {@see Anime::applyWatchProgress()} with $updatedAt = now() makes local the most recently
+     * updated participant, so it wins the next arbitration on its own — see .claude-docs/sync.md's
+     * "Алгоритм реконсиляции" step 3 (max updatedAt) — for as long as no source makes a *later*
+     * edit of its own.
+     *
+     * Every other participant is forwarded the *actually applied* local projection/timestamp
+     * (read back from $anime after applyWatchProgress()), never $chosen itself: a pair that
+     * violates a local invariant (Completed while not yet released) is rejected by
+     * applyWatchProgress() — local stays unchanged and unpinned — and forwarding the rejected
+     * $chosen anyway would push a value local itself never actually holds, only for the next
+     * reconcile to see that fresher-but-unpinned remote value and recreate the very conflict the
+     * user just tried to resolve.
+     *
+     * "Diverging" is judged against each participant's last-seen snapshot (issue #365), not a
+     * fresh network read — {@see SyncInterface} has no per-title "read current state" call, same
+     * constraint {@see reconcilePulledItem()} works under. A participant with no snapshot row yet
+     * is treated as diverging (unknown is not "agrees"), same stance {@see SyncReconciler} takes
+     * for an absent $lastSeen entry.
+     */
+    public function applyManualResolution(Anime $anime, SyncProjection $chosen, EntityManagerInterface $entityManager): void
+    {
+        $now = new \DateTimeImmutable();
+        $anime->applyWatchProgress($chosen->status, $chosen->watchedEpisodes, $now);
+
+        $lastSeenRowById = [];
+        foreach ($this->stateRepository->findByAnime($anime, $entityManager) as $row) {
+            $lastSeenRowById[$row->participantId] = $row;
+        }
+
+        $appliedProjection = $this->localProjection($anime);
+        $appliedUpdatedAt = $anime->getWatchProgressUpdatedAt();
+        $confirmed = ['local' => new ParticipantState('local', $appliedProjection, $appliedUpdatedAt)];
+
+        foreach ($this->syncRegistry->allActive() as $participantId => $sync) {
+            $externalId = $anime->getCachedExternalId(new PluginId($participantId));
+            if ($externalId === null) {
+                continue;
+            }
+
+            $lastSeenRow = $lastSeenRowById[$participantId] ?? null;
+            $current = $lastSeenRow !== null ? new SyncProjection($lastSeenRow->lastStatus, $lastSeenRow->lastWatchedEpisodes) : null;
+            if ($current !== null && $current->equals($appliedProjection)) {
+                continue;
+            }
+
+            $pushed = $this->pushTo($anime, $participantId, $sync, $appliedProjection, $appliedUpdatedAt);
             if ($pushed !== null) {
                 $confirmed[$participantId] = $pushed;
             }
@@ -195,7 +258,7 @@ final class SyncConvergenceService
      * it stays dirty and gets retried the next time this anime is reconciled (issue #366 pitfall
      * #1, "не отравляем снимок").
      */
-    private function pushTo(Anime $anime, string $participantId, SyncInterface $sync, ReconciliationResult $result): ?ParticipantState
+    private function pushTo(Anime $anime, string $participantId, SyncInterface $sync, SyncProjection $projection, ?\DateTimeImmutable $updatedAt): ?ParticipantState
     {
         $externalId = $anime->getCachedExternalId(new PluginId($participantId));
         if ($externalId === null) {
@@ -204,10 +267,10 @@ final class SyncConvergenceService
 
         $item = new SyncItem(
             $externalId,
-            WatchStatusMapper::toSyncStatus($result->winner->status),
+            WatchStatusMapper::toSyncStatus($projection->status),
             $anime->getTitle(),
-            updatedAt: $result->winnerUpdatedAt,
-            watchedEpisodes: $result->winner->watchedEpisodes,
+            updatedAt: $updatedAt,
+            watchedEpisodes: $projection->watchedEpisodes,
         );
 
         try {
@@ -224,7 +287,7 @@ final class SyncConvergenceService
         return new ParticipantState(
             $participantId,
             new SyncProjection(WatchStatusMapper::toWatchStatus($confirmed->status), $confirmed->watchedEpisodes),
-            $confirmed->updatedAt ?? $result->winnerUpdatedAt,
+            $confirmed->updatedAt ?? $updatedAt,
         );
     }
 
@@ -265,7 +328,14 @@ final class SyncConvergenceService
         );
     }
 
-    private function flagConflict(Anime $anime, ReconciliationResult $result): void
+    /**
+     * $available is the same list {@see reconcilePulledItem()} already built for reconcile()
+     * itself — reused here rather than re-derived so 'candidates' reflects exactly the readings
+     * the engine actually arbitrated over, not a fresh (and possibly different) lookup.
+     *
+     * @param list<ParticipantState> $available
+     */
+    private function flagConflict(Anime $anime, ReconciliationResult $result, array $available): void
     {
         $animeId = $anime->id ?? throw new \LogicException('Anime must have an id at this point in its lifecycle.');
 
@@ -273,11 +343,26 @@ final class SyncConvergenceService
             return;
         }
 
+        $candidates = [];
+        foreach ($available as $state) {
+            if (!\in_array($state->participantId, $result->changedParticipantIds, true)) {
+                continue;
+            }
+
+            $candidates[] = [
+                'participant_id' => $state->participantId,
+                'status' => $state->projection->status->value,
+                'watched_episodes' => $state->projection->watchedEpisodes,
+                'updated_at' => $state->updatedAt?->getTimestamp(),
+            ];
+        }
+
         $this->reviewService->create(SyncReviewItemKind::NeedsCorrection, [
             'anime_id' => $animeId,
             'participants' => $result->changedParticipantIds,
             'winner_status' => $result->winner->status->value,
             'winner_watched_episodes' => $result->winner->watchedEpisodes,
+            'candidates' => $candidates,
         ]);
     }
 
