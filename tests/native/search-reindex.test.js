@@ -33,6 +33,7 @@ jest.mock('../../native/paths', () => ({
     getMediaDir:           jest.fn(() => '/fake/userData/media'),
     getConfigPath:         jest.fn(() => '/fake/userData/config.json'),
     getPluginsConfigPath:  jest.fn(() => '/fake/userData/plugins.json'),
+    getPluginsDir:         jest.fn(() => '/fake/userData/plugins'),
 }));
 jest.mock('../../native/config', () => ({
     getOrCreateAppSecret: jest.fn(() => 'a'.repeat(64)),
@@ -45,21 +46,9 @@ jest.mock('child_process', () => ({
     spawn: jest.fn(),
 }));
 
-const { run, buildEnv } = require('../../native/supervisor/search-reindex');
+const { run } = require('../../native/supervisor/search-reindex');
 
-describe('buildEnv', () => {
-    test('includes MEILISEARCH_URL and MEILISEARCH_KEY for the given port/key', () => {
-        const env = buildEnv(7700, 'test-key');
-        expect(env.MEILISEARCH_URL).toBe('http://127.0.0.1:7700');
-        expect(env.MEILISEARCH_KEY).toBe('test-key');
-    });
-
-    test('includes DATABASE_URL as a sqlite:// URL', () => {
-        const env = buildEnv(7700, 'test-key');
-        expect(env.DATABASE_URL).toMatch(/^sqlite:\/\/\//);
-        expect(env.DATABASE_URL).toContain('data.db');
-    });
-});
+const CONTEXT = { appPort: 8000, qbittorrentPort: 9999, meiliPort: 7700, meiliKey: 'test-key' };
 
 describe('run', () => {
     let fakeChild;
@@ -74,7 +63,7 @@ describe('run', () => {
     });
 
     test('spawns frankenphp.exe running app:search:reindex via php-cli', () => {
-        run(7700, 'test-key');
+        run(CONTEXT);
         expect(spawn).toHaveBeenCalledWith(
             expect.stringContaining('frankenphp.exe'),
             expect.arrayContaining(['php-cli', expect.stringContaining('console'), 'app:search:reindex']),
@@ -82,20 +71,33 @@ describe('run', () => {
         );
     });
 
+    // Разовая переиндексация обязана получать тот же набор путей, что и остальные PHP-процессы
+    // (issue #391) — в первую очередь PLUGINS_DIR, иначе ядро уедет на каталог плагинов внутри
+    // установленного приложения вместо пользовательского.
+    test('builds the process env from the shared module', () => {
+        run(CONTEXT);
+        const { env } = spawn.mock.calls[0][2];
+        expect(env.PLUGINS_DIR).toBe('/fake/userData/plugins');
+        expect(env.QBITTORRENT_URL).toBe('http://127.0.0.1:9999');
+        expect(env.OAUTH_CALLBACK_ORIGIN).toBe('http://127.0.0.1:8000');
+        expect(env.MEILISEARCH_URL).toBe('http://127.0.0.1:7700');
+        expect(env.MEILISEARCH_KEY).toBe('test-key');
+    });
+
     test('resolves when the process exits with code 0', async () => {
-        const promise = run(7700, 'test-key');
+        const promise = run(CONTEXT);
         fakeChild.emit('exit', 0);
         await expect(promise).resolves.toBeUndefined();
     });
 
     test('rejects when the process exits with a non-zero code', async () => {
-        const promise = run(7700, 'test-key');
+        const promise = run(CONTEXT);
         fakeChild.emit('exit', 1);
         await expect(promise).rejects.toThrow('app:search:reindex завершился с кодом 1');
     });
 
     test('rejects when the process fails to spawn', async () => {
-        const promise = run(7700, 'test-key');
+        const promise = run(CONTEXT);
         fakeChild.emit('error', new Error('spawn ENOENT'));
         await expect(promise).rejects.toThrow('spawn ENOENT');
     });

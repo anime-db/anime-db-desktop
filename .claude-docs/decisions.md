@@ -73,7 +73,7 @@ HTTP-shutdown в Symfony не подходит: FrankenPHP — Go-процесс
 
 ## APP_SECRET — генерация при первом запуске, хранение в AppData
 
-`APP_SECRET` генерируется Electron при первом запуске (`crypto.randomBytes(32).toString('hex')`), сохраняется в `AppData/AnimeDB/config.json`, передаётся в FrankenPHP через `buildEnv()`. Каждая установка получает свой уникальный секрет.
+`APP_SECRET` генерируется Electron при первом запуске (`crypto.randomBytes(32).toString('hex')`), сохраняется в `AppData/AnimeDB/config.json`, передаётся всем дочерним PHP-процессам через общий `buildCommonEnv()` (`native/supervisor/env.js`). Каждая установка получает свой уникальный секрет.
 
 **Отклонено:** генерация в NSIS-инсталлере — инсталлер не знает AppData конкретного пользователя Windows.
 
@@ -182,7 +182,7 @@ FrankenPHP завершается первым — новых HTTP-запрос�
 - Единственный транспорт `async` (`config/packages/messenger.yaml`) сидит на DSN `doctrine://queue?auto_setup=0` — `auto_setup=0` осознанно: таблица `messenger_messages` создаётся явно через `bin/console messenger:setup-transports`, а не неявно при первом подключении.
 - `retry_strategy` транспорта `async` задан явно (`max_retries: 3, delay: 1000, multiplier: 2, max_delay: 0`), хотя эти значения совпадают с дефолтом Symfony — сделано намеренно, чтобы поведение не менялось незаметно при апгрейде Symfony. Конкретные хендлеры могут переопределять поведение поштучно через `UnrecoverableMessageHandlingException`.
 - `failure_transport` сознательно не заводится — desktop-приложение с одним конечным пользователем, некому вручную разбирать `messenger:failed:*` по расписанию.
-- В продакшн `QUEUE_DATABASE_URL` и `MESSENGER_TRANSPORT_DSN` передаются через `buildEnv()` в `native/supervisor/frankenphp.js` (по аналогии с `DATABASE_URL`), путь — `paths.getQueueDbPath()` (`AppData/AnimeDB/queue.db`, плоско, как и `data.db`, без вложенной папки `data/` — это только dev-соглашение из `.env`).
+- В продакшн `QUEUE_DATABASE_URL` и `MESSENGER_TRANSPORT_DSN` передаются через общий `buildCommonEnv()` (`native/supervisor/env.js`, issue #391) — единственный источник переменных окружения для всех дочерних PHP-процессов (по аналогии с `DATABASE_URL`), путь — `paths.getQueueDbPath()` (`AppData/AnimeDB/queue.db`, плоско, как и `data.db`, без вложенной папки `data/` — это только dev-соглашение из `.env`).
 - **Не входит в объём**: защита от конкурентного выполнения задач (`job_locks`), supervisor-процесс consumer'а в Electron, реальная бизнес-логика обработчиков — всё отдельными issue.
 
 ## JSON-эндпоинт переводов для JS (issue #87)

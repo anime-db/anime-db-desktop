@@ -66,12 +66,16 @@ async function start(onProgress) {
     if (onProgress) onProgress(1, 'Запуск FrankenPHP...');
     const { httpPort: frankenphpPort, wsPort } = await frankenphp.start(meiliPort, meiliKey, qbittorrentPort);
     if (onProgress) onProgress(2, 'Запуск обработчика фоновых задач...');
-    await messengerConsumer.start(meiliPort, meiliKey);
+    // Один контекст на все PHP-процессы сеанса — см. env.js: набор путей и портов у них обязан
+    // совпадать, поэтому он собирается здесь один раз, а не по месту каждым модулем.
+    const phpContext = { appPort: frankenphpPort, qbittorrentPort, meiliPort, meiliKey };
+
+    await messengerConsumer.start(phpContext);
 
     if (wiped) {
         if (onProgress) onProgress(3, 'Переиндексация каталога...');
         try {
-            await searchReindex.run(meiliPort, meiliKey);
+            await searchReindex.run(phpContext);
         } catch (err) {
             console.error('[search-reindex] не удалось переиндексировать каталог:', err.message);
         }

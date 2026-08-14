@@ -21,51 +21,29 @@
 
 'use strict';
 
-const { app }   = require('electron');
 const { spawn } = require('child_process');
 const path      = require('path');
 const paths     = require('../paths');
-const { getOrCreateAppSecret } = require('../config');
+const { buildCommonEnv } = require('./env');
 
 // FrankenPHP's embedded PHP runtime doubles as the CLI interpreter — there is no separate
 // php.exe binary bundled with the app (see .claude-docs/gotchas.md).
 const BINARY  = path.join(__dirname, '..', '..', 'bin', 'frankenphp', 'frankenphp.exe');
 const CONSOLE = path.join(__dirname, '..', '..', 'app', 'bin', 'console');
 
-function buildEnv(meiliPort, meiliKey) {
-    return {
-        ...process.env,
-        APP_ROOT:                paths.getAppRootDir(),
-        APP_ENV:                 'prod',
-        APP_SECRET:              getOrCreateAppSecret(),
-        CORE_VERSION:            app.getVersion(),
-        DATABASE_URL:            `sqlite:///${paths.getDbPath()}`,
-        QUEUE_DATABASE_URL:      `sqlite:///${paths.getQueueDbPath()}`,
-        MESSENGER_TRANSPORT_DSN: 'doctrine://queue?auto_setup=0',
-        PHPRC:                   paths.getPhpIniDir(),
-        APP_RUNTIME_DIR:         paths.getRuntimeDir(),
-        MEDIA_DIR:               paths.getMediaDir(),
-        CONFIG_PATH:             paths.getConfigPath(),
-        PLUGINS_CONFIG_PATH:     paths.getPluginsConfigPath(),
-        MEILISEARCH_URL:         `http://127.0.0.1:${meiliPort}`,
-        MEILISEARCH_KEY:         meiliKey,
-    };
-}
-
 /**
  * Runs `bin/console app:search:reindex` once and resolves when it exits successfully. Used to
  * rebuild the Meilisearch index after it was wiped by a version change (see meilisearch.js
  * checkVersionAndWipe / issue #389).
  *
- * @param {number} meiliPort
- * @param {string} meiliKey
+ * @param {import('./env').PhpContext} context
  * @returns {Promise<void>}
  */
-function run(meiliPort, meiliKey) {
+function run(context) {
     return new Promise((resolve, reject) => {
         const child = spawn(BINARY, ['php-cli', CONSOLE, 'app:search:reindex'], {
             cwd: paths.getAppRootDir(),
-            env: buildEnv(meiliPort, meiliKey),
+            env: buildCommonEnv(context),
             stdio: 'ignore',
         });
 
@@ -80,4 +58,4 @@ function run(meiliPort, meiliKey) {
     });
 }
 
-module.exports = { run, buildEnv };
+module.exports = { run };

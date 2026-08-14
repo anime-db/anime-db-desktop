@@ -21,12 +21,11 @@
 
 'use strict';
 
-const { app }      = require('electron');
 const { spawn }    = require('child_process');
 const { EventEmitter } = require('events');
 const path         = require('path');
 const paths        = require('../paths');
-const { getOrCreateAppSecret } = require('../config');
+const { buildCommonEnv } = require('./env');
 const { waitForProcessAlive }  = require('./healthcheck');
 const { pruneOldLogs, openLogStream } = require('./logrotate');
 const pidTracker               = require('./pid-tracker');
@@ -55,24 +54,12 @@ let child     = null;
 let stopping  = false;
 let logStream = null;
 
-function buildEnv(meiliPort, meiliKey) {
-    return {
-        ...process.env,
-        APP_ROOT:                paths.getAppRootDir(),
-        APP_ENV:                 'prod',
-        APP_SECRET:              getOrCreateAppSecret(),
-        CORE_VERSION:            app.getVersion(),
-        DATABASE_URL:            `sqlite:///${paths.getDbPath()}`,
-        QUEUE_DATABASE_URL:      `sqlite:///${paths.getQueueDbPath()}`,
-        MESSENGER_TRANSPORT_DSN: 'doctrine://queue?auto_setup=0',
-        PHPRC:                   paths.getPhpIniDir(),
-        APP_RUNTIME_DIR:         paths.getRuntimeDir(),
-        MEDIA_DIR:               paths.getMediaDir(),
-        CONFIG_PATH:             paths.getConfigPath(),
-        PLUGINS_CONFIG_PATH:     paths.getPluginsConfigPath(),
-        MEILISEARCH_URL:         `http://127.0.0.1:${meiliPort}`,
-        MEILISEARCH_KEY:         meiliKey,
-    };
+/**
+ * @param {import('./env').PhpContext} context
+ * @returns {NodeJS.ProcessEnv}
+ */
+function buildEnv(context) {
+    return buildCommonEnv(context);
 }
 
 /**
@@ -81,15 +68,14 @@ function buildEnv(meiliPort, meiliKey) {
  * Ограничена таймаутом SETUP_TRANSPORTS_TIMEOUT_MS: по истечении процесс принудительно
  * завершается и промис отклоняется, а не ждёт его выхода бесконечно.
  *
- * @param {number} meiliPort  порт Meilisearch
- * @param {string} meiliKey   master-key Meilisearch
+ * @param {import('./env').PhpContext} context
  * @returns {Promise<void>}
  */
-function runSetupTransports(meiliPort, meiliKey) {
+function runSetupTransports(context) {
     return new Promise((resolve, reject) => {
         const proc = spawn(BINARY, ['php-cli', CONSOLE, 'messenger:setup-transports'], {
             cwd: paths.getAppRootDir(),
-            env: buildEnv(meiliPort, meiliKey),
+            env: buildEnv(context),
             stdio: ['ignore', 'pipe', 'pipe'],
         });
 
@@ -117,13 +103,16 @@ function runSetupTransports(meiliPort, meiliKey) {
  * Запускает consumer и при падении перезапускает с backoff. Один долгоживущий процесс на
  * весь сеанс приложения — без --time-limit и без периодического перезапуска по таймеру.
  * Если stopping === true — молча прекращает перезапуски.
+ *
+ * @param {import('./env').PhpContext} context
+ * @param {number} backoffIdx
  */
-function spawnProcess(meiliPort, meiliKey, backoffIdx = 0) {
+function spawnProcess(context, backoffIdx = 0) {
     if (stopping) return;
 
     child = spawn(BINARY, ['php-cli', CONSOLE, 'messenger:consume', 'async'], {
         cwd: paths.getAppRootDir(),
-        env: buildEnv(meiliPort, meiliKey),
+        env: buildEnv(context),
         stdio: ['ignore', 'pipe', 'pipe'],
     });
 
@@ -137,7 +126,7 @@ function spawnProcess(meiliPort, meiliKey, backoffIdx = 0) {
         events.emit('exit', code);
         const delay = BACKOFF[Math.min(backoffIdx, BACKOFF.length - 1)];
         console.error(`[messenger-consumer] вышел с кодом ${code}, перезапуск через ${delay}ms`);
-        setTimeout(() => spawnProcess(meiliPort, meiliKey, backoffIdx + 1), delay);
+        setTimeout(() => spawnProcess(context, backoffIdx + 1), delay);
     });
 }
 
@@ -159,20 +148,19 @@ function killOrphan() {
  * нет) → спавнит процесс → ждёт, что он не упал сразу после старта. Если настройка транспорта
  * падает, consumer не запускается — ошибка всплывает вызывающему коду.
  *
- * @param {number} meiliPort  порт Meilisearch
- * @param {string} meiliKey   master-key Meilisearch
+ * @param {import('./env').PhpContext} context
  * @returns {Promise<void>}
  */
-async function start(meiliPort, meiliKey) {
+async function start(context) {
     stopping = false;
 
     const logDir = path.join(paths.getRuntimeDir(), 'log');
     pruneOldLogs(logDir, LOG_PREFIX, LOG_MAX);
     logStream = openLogStream(logDir, LOG_PREFIX);
 
-    await runSetupTransports(meiliPort, meiliKey);
+    await runSetupTransports(context);
 
-    spawnProcess(meiliPort, meiliKey);
+    spawnProcess(context);
     await waitForProcessAlive(child);
 }
 

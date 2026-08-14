@@ -21,13 +21,12 @@
 
 'use strict';
 
-const { app }      = require('electron');
 const { spawn }    = require('child_process');
 const { EventEmitter } = require('events');
 const fs           = require('fs');
 const path         = require('path');
 const paths        = require('../paths');
-const { getOrCreateAppSecret } = require('../config');
+const { buildWebWorkerEnv } = require('./env');
 const { findFreePort }    = require('./port');
 const { waitForHealth }   = require('./healthcheck');
 const { pruneOldLogs, openLogStream } = require('./logrotate');
@@ -67,43 +66,31 @@ function ensurePhpIni() {
     fs.writeFileSync(iniPath, ini, 'utf8');
 }
 
-function buildEnv(appPort, wsPort, meiliPort, meiliKey, qbittorrentPort) {
-    return {
-        ...process.env,
-        APP_PORT:                String(appPort),
-        WS_PORT:                 String(wsPort),
-        APP_ROOT:                paths.getAppRootDir(),
-        APP_ENV:                 'prod',
-        APP_SECRET:              getOrCreateAppSecret(),
-        CORE_VERSION:            app.getVersion(),
-        DATABASE_URL:            `sqlite:///${paths.getDbPath()}`,
-        QUEUE_DATABASE_URL:      `sqlite:///${paths.getQueueDbPath()}`,
-        MESSENGER_TRANSPORT_DSN: 'doctrine://queue?auto_setup=0',
-        PHPRC:                   paths.getPhpIniDir(),
-        APP_RUNTIME_DIR:         paths.getRuntimeDir(),
-        MEDIA_DIR:               paths.getMediaDir(),
-        CONFIG_PATH:             paths.getConfigPath(),
-        PLUGINS_CONFIG_PATH:     paths.getPluginsConfigPath(),
-        PLUGINS_DIR:             paths.getPluginsDir(),
-        MEILISEARCH_URL:         `http://127.0.0.1:${meiliPort}`,
-        MEILISEARCH_KEY:         meiliKey,
-        OAUTH_CALLBACK_ORIGIN:   `http://127.0.0.1:${appPort}`,
-        QBITTORRENT_URL:         `http://127.0.0.1:${qbittorrentPort}`,
-    };
+/**
+ * @param {import('./env').PhpContext} context
+ * @param {number} wsPort
+ * @returns {NodeJS.ProcessEnv}
+ */
+function buildEnv(context, wsPort) {
+    return buildWebWorkerEnv(context, wsPort);
 }
 
 /**
  * Запускает FrankenPHP и при падении перезапускает с backoff.
  * Если stopping === true — молча прекращает перезапуски.
+ *
+ * @param {import('./env').PhpContext} context
+ * @param {number} wsPort
+ * @param {number} backoffIdx
  */
-function spawnProcess(appPort, wsPort, meiliPort, meiliKey, qbittorrentPort, backoffIdx = 0) {
+function spawnProcess(context, wsPort, backoffIdx = 0) {
     if (stopping) return;
 
     fs.mkdirSync(paths.getRuntimeDir(), { recursive: true });
 
     child = spawn(BINARY, ['run', '--config', CADDYFILE], {
         cwd: paths.getAppRootDir(),
-        env: buildEnv(appPort, wsPort, meiliPort, meiliKey, qbittorrentPort),
+        env: buildEnv(context, wsPort),
         stdio: ['ignore', 'pipe', 'pipe'],
     });
 
@@ -117,7 +104,7 @@ function spawnProcess(appPort, wsPort, meiliPort, meiliKey, qbittorrentPort, bac
         events.emit('exit', code);
         const delay = BACKOFF[Math.min(backoffIdx, BACKOFF.length - 1)];
         console.error(`[frankenphp] вышел с кодом ${code}, перезапуск через ${delay}ms`);
-        setTimeout(() => spawnProcess(appPort, wsPort, meiliPort, meiliKey, qbittorrentPort, backoffIdx + 1), delay);
+        setTimeout(() => spawnProcess(context, wsPort, backoffIdx + 1), delay);
     });
 }
 
@@ -152,7 +139,7 @@ async function start(meiliPort, meiliKey, qbittorrentPort) {
 
     port   = await findFreePort(8000);
     wsPort = await findFreePort(port + 1);
-    spawnProcess(port, wsPort, meiliPort, meiliKey, qbittorrentPort);
+    spawnProcess({ appPort: port, qbittorrentPort, meiliPort, meiliKey }, wsPort);
     await waitForHealth(port);
     return { httpPort: port, wsPort };
 }
