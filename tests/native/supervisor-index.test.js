@@ -63,7 +63,13 @@ describe('supervisor.start', () => {
         const onProgress = jest.fn();
         await supervisor.start(onProgress);
 
-        expect(searchReindex.run).toHaveBeenCalledWith(7700, 'k');
+        // Один и тот же контекст уходит и в messenger-consumer, и в переиндексацию (issue #391).
+        expect(searchReindex.run).toHaveBeenCalledWith({
+            appPort:         8000,
+            qbittorrentPort: 9000,
+            meiliPort:       7700,
+            meiliKey:        'k',
+        });
         expect(onProgress).toHaveBeenCalledWith(3, 'Переиндексация каталога...');
         expect(onProgress).toHaveBeenCalledWith(3, 'Готово');
     });
