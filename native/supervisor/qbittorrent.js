@@ -219,6 +219,18 @@ function spawnProcess(backoffIdx = 0) {
 }
 
 /**
+ * Убивает процесс-сироту, оставленный предыдущим сеансом (см. pid-tracker.js). Должен быть
+ * вызван супервизором до того, как запущен хоть один дочерний процесс текущего сеанса — иначе
+ * PID, переиспользованный ОС для процесса на том же бинарнике, пройдёт проверку имени образа и
+ * killOrphan() убьёт только что запущенный процесс текущего сеанса (issue #390).
+ *
+ * @returns {Promise<void>}
+ */
+function killOrphan() {
+    return pidTracker.killOrphan(LOG_PREFIX, BINARY);
+}
+
+/**
  * Запускает qbittorrent-nox: сеет qBittorrent.ini (порты, DHT/PEX, прокси) → спавнит процесс →
  * ждёт готовности WebUI через GET /api/v2/app/version → возвращает фиксированные порты.
  *
@@ -226,7 +238,6 @@ function spawnProcess(backoffIdx = 0) {
  */
 async function start() {
     stopping = false;
-    await pidTracker.killOrphan(LOG_PREFIX, BINARY);
     seedConfig(getProxySettings());
 
     const logDir = path.join(paths.getRuntimeDir(), 'log');
@@ -285,6 +296,7 @@ module.exports = {
     start,
     stop,
     killSync,
+    killOrphan,
     events,
     WEBUI_PORT,
     BT_PORT,

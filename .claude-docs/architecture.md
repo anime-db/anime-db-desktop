@@ -146,11 +146,14 @@ Graceful shutdown: SIGTERM → 500ms → SIGKILL. Оба хранилища (SQL
 
 Каждый из четырёх дочерних процессов (`frankenphp.js`, `meilisearch.js`, `qbittorrent.js`,
 `messenger-consumer.js`) через общий `native/supervisor/pid-tracker.js` пишет свой PID в
-`AppData/AnimeDB/var/pids/<name>.pid` при спавне и удаляет файл при штатном `stop()`. Перед каждым
-`start()` вызывается `pidTracker.killOrphan()` — если файл остался от предыдущего сеанса (падение,
-принудительное завершение, инсталлятор, закрывший только `AnimeDB.exe`), PID проверяется через
-`tasklist` (совпадение имени образа с ожидаемым бинарником — сам PID мог быть переиспользован ОС) и
-при совпадении убивается через `taskkill /F`. No-op не на Windows.
+`AppData/AnimeDB/var/pids/<name>.pid` при спавне и удаляет файл при штатном `stop()`. Каждый модуль
+экспортирует `killOrphan()` — тонкую обёртку над `pidTracker.killOrphan()` для своих `LOG_PREFIX`/
+`BINARY`. `native/supervisor/index.js` вызывает все четыре `killOrphan()` одним `Promise.all()` в
+самом начале своего `start()`, **до** спавна любого дочернего процесса текущего сеанса: если файл
+остался от предыдущего сеанса (падение, принудительное завершение, инсталлятор, закрывший только
+`AnimeDB.exe`), PID проверяется через `tasklist` (совпадение имени образа с ожидаемым бинарником —
+сам PID мог быть переиспользован ОС) и при совпадении убивается через `taskkill /F`. No-op не на
+Windows.
 
 Дополнительно `supervisor.killSync()` (агрегирует `killSync()` каждого модуля, `child.kill('SIGKILL')`
 синхронно) вызывается из `process.on('exit')` в `lifecycle/index.js` — страховка для путей

@@ -97,6 +97,19 @@ function spawnProcess(meiliPort, meiliKey, backoffIdx = 0) {
 }
 
 /**
+ * Убивает процесс-сироту, оставленный предыдущим сеансом (см. pid-tracker.js). Должен быть
+ * вызван супервизором до того, как запущен хоть один дочерний процесс текущего сеанса — в
+ * частности, до frankenphp.start(): оба используют один и тот же frankenphp.exe, и если PID из
+ * messenger-consumer.pid успел быть переиспользован ОС именно под frankenphp текущего сеанса,
+ * запоздалый killOrphan() убьёт его, а не сироту (issue #390).
+ *
+ * @returns {Promise<void>}
+ */
+function killOrphan() {
+    return pidTracker.killOrphan(LOG_PREFIX, BINARY);
+}
+
+/**
  * Запускает messenger-consumer: спавнит процесс → ждёт, что он не упал сразу после старта.
  *
  * @param {number} meiliPort  порт Meilisearch
@@ -105,7 +118,6 @@ function spawnProcess(meiliPort, meiliKey, backoffIdx = 0) {
  */
 async function start(meiliPort, meiliKey) {
     stopping = false;
-    await pidTracker.killOrphan(LOG_PREFIX, BINARY);
 
     const logDir = path.join(paths.getRuntimeDir(), 'log');
     pruneOldLogs(logDir, LOG_PREFIX, LOG_MAX);
@@ -158,4 +170,4 @@ function killSync() {
     }
 }
 
-module.exports = { start, stop, killSync, buildEnv, events };
+module.exports = { start, stop, killSync, killOrphan, buildEnv, events };

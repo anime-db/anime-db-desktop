@@ -122,6 +122,18 @@ function spawnProcess(appPort, wsPort, meiliPort, meiliKey, qbittorrentPort, bac
 }
 
 /**
+ * Убивает процесс-сироту, оставленный предыдущим сеансом (см. pid-tracker.js). Должен быть
+ * вызван супервизором до того, как запущен хоть один дочерний процесс текущего сеанса — иначе
+ * PID, переиспользованный ОС для процесса на том же бинарнике, пройдёт проверку имени образа и
+ * killOrphan() убьёт только что запущенный процесс текущего сеанса (issue #390).
+ *
+ * @returns {Promise<void>}
+ */
+function killOrphan() {
+    return pidTracker.killOrphan(LOG_PREFIX, BINARY);
+}
+
+/**
  * Запускает FrankenPHP: ищет порты → создаёт php.ini → спавнит процесс →
  * ждёт /health → возвращает порты.
  *
@@ -132,7 +144,6 @@ function spawnProcess(appPort, wsPort, meiliPort, meiliKey, qbittorrentPort, bac
  */
 async function start(meiliPort, meiliKey, qbittorrentPort) {
     stopping = false;
-    await pidTracker.killOrphan(LOG_PREFIX, BINARY);
     ensurePhpIni();
 
     const logDir = path.join(paths.getRuntimeDir(), 'log');
@@ -189,4 +200,4 @@ function killSync() {
     }
 }
 
-module.exports = { start, stop, killSync, buildEnv, events };
+module.exports = { start, stop, killSync, killOrphan, buildEnv, events };
