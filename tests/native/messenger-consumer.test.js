@@ -58,6 +58,11 @@ jest.mock('../../native/supervisor/pid-tracker', () => ({
 }));
 jest.mock('child_process', () => ({ spawn: jest.fn() }));
 
+const mockPhpCommandRun = jest.fn();
+jest.mock('../../native/supervisor/php-command', () => ({
+    run: (...args) => mockPhpCommandRun(...args),
+}));
+
 const { spawn } = require('child_process');
 const { openLogStream } = require('../../native/supervisor/logrotate');
 const { buildEnv, start } = require('../../native/supervisor/messenger-consumer');
@@ -190,58 +195,37 @@ describe('buildEnv', () => {
 });
 
 describe('start', () => {
-    test('runs messenger:setup-transports before spawning messenger:consume', async () => {
-        spawn.mockReturnValueOnce(createFakeChild(0)).mockReturnValueOnce(createFakeChild());
+    // messenger:setup-transports идёт через общую обёртку php-command.js (issue #400) — она сама
+    // отвечает за env, лог, таймаут и PID-трекинг; messenger:consume остаётся собственным
+    // долгоживущим спавном, т.к. это не разовый вызов.
+    test('runs messenger:setup-transports via php-command.js before spawning messenger:consume', async () => {
+        mockPhpCommandRun.mockResolvedValueOnce(undefined);
+        spawn.mockReturnValueOnce(createFakeChild());
 
         await start(7700, 'test-key');
 
-        expect(spawn).toHaveBeenCalledTimes(2);
-        expect(spawn.mock.calls[0][1]).toEqual(expect.arrayContaining(['messenger:setup-transports']));
-        expect(spawn.mock.calls[1][1]).toEqual(expect.arrayContaining(['messenger:consume', 'async']));
+        expect(mockPhpCommandRun).toHaveBeenCalledWith('messenger:setup-transports', [], 7700, expect.any(Number));
+        expect(spawn).toHaveBeenCalledTimes(1);
+        expect(spawn.mock.calls[0][1]).toEqual(expect.arrayContaining(['messenger:consume', 'async']));
     });
 
-    test('does not spawn messenger:consume when messenger:setup-transports exits non-zero', async () => {
-        spawn.mockReturnValueOnce(createFakeChild(1));
+    test('does not spawn messenger:consume when messenger:setup-transports rejects', async () => {
+        mockPhpCommandRun.mockRejectedValueOnce(new Error('messenger:setup-transports завершился с кодом 1'));
 
         await expect(start(7700, 'test-key')).rejects.toThrow(/messenger:setup-transports/);
-        expect(spawn).toHaveBeenCalledTimes(1);
+        expect(spawn).not.toHaveBeenCalled();
     });
 
-    test('rejects with a descriptive error when messenger:setup-transports fails to spawn', async () => {
-        const fakeChild = {
-            stdout: { on: jest.fn() },
-            stderr: { on: jest.fn() },
-            on: jest.fn((event, cb) => {
-                if (event === 'error') cb(new Error('ENOENT'));
-            }),
-        };
-        spawn.mockReturnValueOnce(fakeChild);
+    test('propagates a php-command.js spawn-failure error unchanged', async () => {
+        mockPhpCommandRun.mockRejectedValueOnce(new Error('не удалось запустить messenger:setup-transports: ENOENT'));
 
         await expect(start(7700, 'test-key')).rejects.toThrow(/не удалось запустить messenger:setup-transports/);
     });
 
-    test('kills messenger:setup-transports and rejects when it never exits before the timeout', async () => {
-        jest.useFakeTimers();
-        try {
-            const kill = jest.fn();
-            const fakeChild = {
-                stdout: { on: jest.fn() },
-                stderr: { on: jest.fn() },
-                on:     jest.fn(),
-                kill,
-            };
-            spawn.mockReturnValueOnce(fakeChild);
+    test('propagates a php-command.js timeout error unchanged', async () => {
+        mockPhpCommandRun.mockRejectedValueOnce(new Error('messenger:setup-transports не завершился за 30000ms и был принудительно остановлен'));
 
-            const pending = start(7700, 'test-key');
-            const assertion = expect(pending).rejects.toThrow(/messenger:setup-transports не завершился за/);
-
-            await jest.advanceTimersByTimeAsync(30000);
-            await assertion;
-
-            expect(kill).toHaveBeenCalledWith('SIGKILL');
-            expect(spawn).toHaveBeenCalledTimes(1);
-        } finally {
-            jest.useRealTimers();
-        }
+        await expect(start(7700, 'test-key')).rejects.toThrow(/messenger:setup-transports не завершился за/);
+        expect(spawn).not.toHaveBeenCalled();
     });
 });
