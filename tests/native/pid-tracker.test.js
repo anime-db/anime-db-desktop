@@ -93,7 +93,7 @@ describe('killOrphan', () => {
         jest.spyOn(fs, 'existsSync').mockReturnValue(true);
         jest.spyOn(fs, 'readFileSync').mockReturnValue('4242');
         const rmSyncSpy = jest.spyOn(fs, 'rmSync').mockImplementation(() => {});
-        execFile.mockImplementation((cmd, args, cb) => cb(null, ''));
+        execFile.mockImplementation((cmd, args, options, cb) => cb(null, ''));
 
         await killOrphan('frankenphp', 'C:/app/bin/frankenphp/frankenphp.exe');
 
@@ -101,6 +101,7 @@ describe('killOrphan', () => {
         expect(execFile).toHaveBeenCalledWith(
             'tasklist',
             ['/FI', 'PID eq 4242', '/FO', 'CSV', '/NH'],
+            { windowsHide: true },
             expect.any(Function),
         );
     });
@@ -110,7 +111,7 @@ describe('killOrphan', () => {
         jest.spyOn(fs, 'existsSync').mockReturnValue(true);
         jest.spyOn(fs, 'readFileSync').mockReturnValue('4242');
         jest.spyOn(fs, 'rmSync').mockImplementation(() => {});
-        execFile.mockImplementation((cmd, args, cb) => {
+        execFile.mockImplementation((cmd, args, options, cb) => {
             if (cmd === 'tasklist') {
                 cb(null, '"frankenphp.exe","4242","Console","1","12,345 K"');
             } else {
@@ -120,7 +121,12 @@ describe('killOrphan', () => {
 
         await killOrphan('frankenphp', 'C:/app/bin/frankenphp/frankenphp.exe');
 
-        expect(execFile).toHaveBeenCalledWith('taskkill', ['/PID', '4242', '/F'], expect.any(Function));
+        expect(execFile).toHaveBeenCalledWith(
+            'taskkill',
+            ['/PID', '4242', '/F'],
+            { windowsHide: true },
+            expect.any(Function),
+        );
     });
 
     test('does not kill when the pid now belongs to an unrelated process (recycled pid)', async () => {
@@ -128,7 +134,7 @@ describe('killOrphan', () => {
         jest.spyOn(fs, 'existsSync').mockReturnValue(true);
         jest.spyOn(fs, 'readFileSync').mockReturnValue('4242');
         jest.spyOn(fs, 'rmSync').mockImplementation(() => {});
-        execFile.mockImplementation((cmd, args, cb) => {
+        execFile.mockImplementation((cmd, args, options, cb) => {
             if (cmd === 'tasklist') {
                 cb(null, '"notepad.exe","4242","Console","1","5,000 K"');
             } else {
@@ -138,7 +144,12 @@ describe('killOrphan', () => {
 
         await killOrphan('frankenphp', 'C:/app/bin/frankenphp/frankenphp.exe');
 
-        expect(execFile).not.toHaveBeenCalledWith('taskkill', expect.anything(), expect.anything());
+        expect(execFile).not.toHaveBeenCalledWith(
+            'taskkill',
+            expect.anything(),
+            expect.anything(),
+            expect.anything(),
+        );
     });
 
     test('does nothing on non-Windows platforms even with a pid file present', async () => {

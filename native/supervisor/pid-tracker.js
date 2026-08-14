@@ -69,13 +69,18 @@ function clearPid(name) {
  */
 function isRunningAs(pid, binaryName) {
     return new Promise((resolve) => {
-        execFile('tasklist', ['/FI', `PID eq ${pid}`, '/FO', 'CSV', '/NH'], (err, stdout) => {
-            if (err) {
-                resolve(false);
-                return;
-            }
-            resolve(String(stdout).toLowerCase().includes(binaryName.toLowerCase()));
-        });
+        execFile(
+            'tasklist',
+            ['/FI', `PID eq ${pid}`, '/FO', 'CSV', '/NH'],
+            { windowsHide: true },
+            (err, stdout) => {
+                if (err) {
+                    resolve(false);
+                    return;
+                }
+                resolve(String(stdout).toLowerCase().includes(binaryName.toLowerCase()));
+            },
+        );
     });
 }
 
@@ -85,7 +90,7 @@ function isRunningAs(pid, binaryName) {
  */
 function forceKill(pid) {
     return new Promise((resolve) => {
-        execFile('taskkill', ['/PID', String(pid), '/F'], () => resolve());
+        execFile('taskkill', ['/PID', String(pid), '/F'], { windowsHide: true }, () => resolve());
     });
 }
 
