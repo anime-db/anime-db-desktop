@@ -21,6 +21,11 @@
 
 'use strict';
 
+jest.mock('../../native/supervisor/cache-invalidation', () => ({
+    hasBuildChanged:   jest.fn(() => false),
+    invalidateCache:   jest.fn(),
+    commitFingerprint: jest.fn(),
+}));
 jest.mock('../../native/supervisor/frankenphp', () => ({
     start:      jest.fn(() => Promise.resolve({ httpPort: 8000, wsPort: 8001 })),
     stop:       jest.fn(() => Promise.resolve()),
@@ -48,11 +53,26 @@ jest.mock('../../native/supervisor/search-reindex', () => ({
     run: jest.fn(() => Promise.resolve()),
 }));
 
-const meilisearch   = require('../../native/supervisor/meilisearch');
-const searchReindex = require('../../native/supervisor/search-reindex');
-const supervisor    = require('../../native/supervisor');
+const cacheInvalidation = require('../../native/supervisor/cache-invalidation');
+const frankenphp        = require('../../native/supervisor/frankenphp');
+const meilisearch       = require('../../native/supervisor/meilisearch');
+const messengerConsumer = require('../../native/supervisor/messenger-consumer');
+const searchReindex     = require('../../native/supervisor/search-reindex');
+const supervisor        = require('../../native/supervisor');
 
 describe('supervisor.start', () => {
+    beforeEach(() => {
+        // Значения по умолчанию, чтобы тесты не зависели от того, что настроил предыдущий:
+        // jest.clearAllMocks() чистит статистику вызовов, но не реализации.
+        cacheInvalidation.hasBuildChanged.mockReturnValue(false);
+        cacheInvalidation.invalidateCache.mockImplementation(() => {});
+        cacheInvalidation.commitFingerprint.mockImplementation(() => {});
+        frankenphp.start.mockResolvedValue({ httpPort: 8000, wsPort: 8001 });
+        messengerConsumer.start.mockResolvedValue(undefined);
+        meilisearch.start.mockResolvedValue({ port: 7700, key: 'k', wiped: false });
+        searchReindex.run.mockResolvedValue(undefined);
+    });
+
     afterEach(() => {
         jest.clearAllMocks();
     });
@@ -90,5 +110,55 @@ describe('supervisor.start', () => {
         searchReindex.run.mockRejectedValue(new Error('boom'));
 
         await expect(supervisor.start(jest.fn())).resolves.toMatchObject({ frankenphpPort: 8000 });
+    });
+
+    // Инвалидация устаревшего скомпилированного контейнера (issue #386) обязана происходить до
+    // запуска любого PHP-процесса: и frankenphp, и messenger-consumer бутуют одно и то же ядро,
+    // и первый же бут против устаревшего дампа запекает его *.bundles.php для всех последующих.
+    test('invalidates the cache before starting frankenphp or messenger-consumer when the build changed', async () => {
+        cacheInvalidation.hasBuildChanged.mockReturnValue(true);
+        const callOrder = [];
+        cacheInvalidation.invalidateCache.mockImplementation(() => callOrder.push('invalidateCache'));
+        frankenphp.start.mockImplementation(() => {
+            callOrder.push('frankenphp.start');
+            return Promise.resolve({ httpPort: 8000, wsPort: 8001 });
+        });
+        messengerConsumer.start.mockImplementation(() => {
+            callOrder.push('messengerConsumer.start');
+            return Promise.resolve();
+        });
+
+        await supervisor.start();
+
+        expect(callOrder).toEqual(['invalidateCache', 'frankenphp.start', 'messengerConsumer.start']);
+    });
+
+    test('does not delete the cache when the build has not changed', async () => {
+        cacheInvalidation.hasBuildChanged.mockReturnValue(false);
+
+        await supervisor.start();
+
+        expect(cacheInvalidation.invalidateCache).not.toHaveBeenCalled();
+    });
+
+    test('commits the build fingerprint only after every process has started successfully', async () => {
+        const callOrder = [];
+        messengerConsumer.start.mockImplementation(() => {
+            callOrder.push('messengerConsumer.start');
+            return Promise.resolve();
+        });
+        cacheInvalidation.commitFingerprint.mockImplementation(() => callOrder.push('commitFingerprint'));
+
+        await supervisor.start();
+
+        expect(callOrder).toEqual(['messengerConsumer.start', 'commitFingerprint']);
+    });
+
+    test('does not commit the fingerprint when a child process fails to start', async () => {
+        frankenphp.start.mockRejectedValue(new Error('spawn failed'));
+
+        await expect(supervisor.start()).rejects.toThrow('spawn failed');
+
+        expect(cacheInvalidation.commitFingerprint).not.toHaveBeenCalled();
     });
 });

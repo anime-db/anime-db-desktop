@@ -50,6 +50,7 @@
             "bin/**",
             "resources/**",
             "scripts/versions.json",
+            "scripts/build-id.txt",
             "!app/var/**",
             "!node_modules/**"
         ],

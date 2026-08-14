@@ -22,6 +22,7 @@
 'use strict';
 
 const { EventEmitter } = require('events');
+const cacheInvalidation = require('./cache-invalidation');
 const frankenphp        = require('./frankenphp');
 const meilisearch       = require('./meilisearch');
 const messengerConsumer = require('./messenger-consumer');
@@ -40,8 +41,16 @@ qbittorrent.events.on('exit', (code) => events.emit('exit', code));
  * и тот же бинарник (frankenphp.exe); если зачистка messenger-consumer выполнялась бы лениво,
  * внутри его собственного start() (после того как frankenphp текущего сеанса уже запущен),
  * переиспользованный ОС PID мог бы совпасть с процессом текущего сеанса и убить его (issue #390).
- * Meilisearch и qbittorrent-nox стартуют первыми (независимо друг от друга) — их
- * порты/ключи нужны FrankenPHP в env.
+ * Следом, там же и по той же причине "до первого PHP-процесса" — инвалидация устаревшего
+ * скомпилированного контейнера Symfony (issue #386): и frankenphp, и messenger-consumer бутуют
+ * одно и то же ядро, а APP_ENV=prod не проверяет свежесть ConfigCache сам, поэтому первый же бут
+ * против устаревшего дампа запекает его *.bundles.php для всех последующих. Отпечаток сборки
+ * фиксируется отдельно и только после успешного старта всех процессов (см. commitFingerprint
+ * ниже) — если бы он писался заранее, падение где-то в середине старта считало бы апгрейд уже
+ * обработанным. Ошибка инвалидации не перехватывается: пусть прервёт запуск и попадёт в лог
+ * (native/crash-log.js) через catch в lifecycle/index.js, а не тихо продолжит работу против
+ * устаревшего кэша. Meilisearch и qbittorrent-nox стартуют первыми (независимо друг от друга) —
+ * их порты/ключи нужны FrankenPHP в env.
  *
  * Если Meilisearch при старте вайпнул индекс из-за смены версии (issue #389), после
  * поднятия FrankenPHP и messenger-consumer автоматически прогоняется app:search:reindex —
@@ -58,6 +67,10 @@ async function start(onProgress) {
         messengerConsumer.killOrphan(),
         qbittorrent.killOrphan(),
     ]);
+
+    if (cacheInvalidation.hasBuildChanged()) {
+        cacheInvalidation.invalidateCache();
+    }
 
     const [{ port: meiliPort, key: meiliKey, wiped }, { webuiPort: qbittorrentPort }] = await Promise.all([
         meilisearch.start(),
@@ -82,6 +95,9 @@ async function start(onProgress) {
     }
 
     if (onProgress) onProgress(3, 'Готово');
+
+    cacheInvalidation.commitFingerprint();
+
     return { frankenphpPort, wsPort, meiliPort, qbittorrentPort };
 }
 

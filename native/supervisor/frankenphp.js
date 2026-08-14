@@ -121,8 +121,9 @@ function killOrphan() {
 }
 
 /**
- * Запускает FrankenPHP: ищет порты → создаёт php.ini → спавнит процесс →
- * ждёт /health → возвращает порты.
+ * Запускает FrankenPHP: ищет порты → создаёт php.ini → спавнит процесс → ждёт /health →
+ * возвращает порты. Инвалидация устаревшего кэша скомпилированного контейнера выполняется
+ * супервизором раньше — до запуска любого PHP-процесса, см. supervisor/index.js.
  *
  * @param {number} meiliPort  порт Meilisearch
  * @param {string} meiliKey   master-key Meilisearch
