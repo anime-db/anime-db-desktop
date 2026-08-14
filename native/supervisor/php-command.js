@@ -47,17 +47,28 @@ const OUTPUT_TAIL_CHARS = 4000;
  *
  * @param {string} command      bin/console subcommand, e.g. 'app:search:reindex'; also used
  *                               (with ':' replaced by '-', since ':' is not a valid Windows
- *                               filename character) as the log file and PID-tracker name
+ *                               filename character) as the log file and PID-tracker name, unless
+ *                               `options.name` overrides it
  * @param {string[]} args       extra CLI arguments after the subcommand name
  * @param {import('./env').PhpContext} context
- * @param {number} timeoutMs    how long to wait before killing the process and rejecting; the
- *                               caller picks it, since a stuck one-off command must not block
- *                               supervisor.start() forever (see index.js) but different commands
- *                               have very different expected durations
- * @returns {Promise<void>}
+ * @param {number} timeoutMs    how long to wait before killing the process; the caller picks it,
+ *                               since a stuck one-off command must not block supervisor.start()
+ *                               forever (see index.js) but different commands have very
+ *                               different expected durations
+ * @param {object} [options]
+ * @param {boolean} [options.rejectOnNonZero=true]  when true (default), the promise rejects on a
+ *                               non-zero exit code or a timeout and resolves with `undefined` on
+ *                               success. When false, the promise always resolves with
+ *                               `{ code, stdout, stderr }` (code is `null` on timeout) instead —
+ *                               for callers that branch on specific exit codes rather than treat
+ *                               every non-zero code as failure (e.g. migrations.js)
+ * @param {string} [options.name]  overrides the log file / PID-tracker name derived from
+ *                               `command`; lets several distinct subcommands of one multi-step
+ *                               flow share a single log file and PID slot
+ * @returns {Promise<void|{ code: number|null, stdout: string, stderr: string }>}
  */
-function run(command, args, context, timeoutMs) {
-    const name = command.replace(/:/g, '-');
+function run(command, args, context, timeoutMs, options = {}) {
+    const { rejectOnNonZero = true, name = command.replace(/:/g, '-') } = options;
 
     const logDir = path.join(paths.getRuntimeDir(), 'log');
     pruneOldLogs(logDir, name, LOG_MAX);
@@ -73,8 +84,10 @@ function run(command, args, context, timeoutMs) {
         pidTracker.writePid(name, child.pid);
 
         let output = '';
-        child.stdout.on('data', (d) => { output += d; logStream.write(d); });
-        child.stderr.on('data', (d) => { output += d; logStream.write(d); });
+        let stdout = '';
+        let stderr = '';
+        child.stdout.on('data', (d) => { output += d; stdout += d; logStream.write(d); });
+        child.stderr.on('data', (d) => { output += d; stderr += d; logStream.write(d); });
 
         let timedOut = false;
         const timer = setTimeout(() => {
@@ -85,11 +98,11 @@ function run(command, args, context, timeoutMs) {
 
         const tail = () => (output.length > OUTPUT_TAIL_CHARS ? output.slice(-OUTPUT_TAIL_CHARS) : output);
 
-        const finish = (err) => {
+        const finish = (err, result) => {
             clearTimeout(timer);
             pidTracker.clearPid(name);
             logStream.end();
-            if (err) reject(err); else resolve();
+            if (err) reject(err); else resolve(result);
         };
 
         child.on('error', (err) => {
@@ -97,7 +110,16 @@ function run(command, args, context, timeoutMs) {
         });
         child.on('exit', (code) => {
             if (timedOut) {
+                if (!rejectOnNonZero) {
+                    const note = `${command} не завершился за ${timeoutMs}ms и был принудительно остановлен`;
+                    finish(null, { code: null, stdout: stdout.trim(), stderr: [stderr.trim(), note].filter(Boolean).join('\n') });
+                    return;
+                }
                 finish(new Error(`${command} не завершился за ${timeoutMs}ms и был принудительно остановлен:\n${tail()}`));
+                return;
+            }
+            if (!rejectOnNonZero) {
+                finish(null, { code, stdout: stdout.trim(), stderr: stderr.trim() });
                 return;
             }
             if (code === 0) {

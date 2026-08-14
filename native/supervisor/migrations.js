@@ -21,22 +21,14 @@
 
 'use strict';
 
-const { app }   = require('electron');
-const { spawn } = require('child_process');
-const fs        = require('fs');
-const path      = require('path');
-const paths     = require('../paths');
-const { buildCommonEnv } = require('./env');
-const { pruneOldLogs, openLogStream, todayStr } = require('./logrotate');
-const pidTracker = require('./pid-tracker');
-
-// FrankenPHP's embedded PHP runtime doubles as the CLI interpreter — there is no separate
-// php.exe binary bundled with the app (see .claude-docs/gotchas.md).
-const BINARY  = path.join(__dirname, '..', '..', 'bin', 'frankenphp', 'frankenphp.exe');
-const CONSOLE = path.join(__dirname, '..', '..', 'app', 'bin', 'console');
+const { app } = require('electron');
+const fs      = require('fs');
+const path    = require('path');
+const paths   = require('../paths');
+const { todayStr } = require('./logrotate');
+const phpCommand = require('./php-command');
 
 const LOG_PREFIX = 'migrations';
-const LOG_MAX     = 7;
 
 /** How many of the most recent pre-migration backups to keep in getBackupsDir(). */
 const MAX_BACKUPS = 5;
@@ -57,10 +49,7 @@ const OUT_OF_DATE_MARKER = 'Out-of-date!';
 /**
  * Upper bound for a single bin/console invocation. Fail-closed startup means a hang here
  * (locked DB file, migration waiting on input) would otherwise block the splash screen
- * forever with no way for the user to recover. Deliberately not delegated to the shared
- * one-off-command wrapper (php-command.js, issue #400): runConsole() below must resolve with
- * the exit code itself for callers to branch on (STATUS_UP_TO_DATE/OUT_OF_DATE/DOWNGRADE)
- * rather than reject on any non-zero code, which is php-command.js's contract.
+ * forever with no way for the user to recover.
  */
 const CONSOLE_TIMEOUT_MS = 10 * 60 * 1000;
 
@@ -84,64 +73,6 @@ class MigrationBootstrapError extends Error {
 }
 
 /**
- * Runs `bin/console <args>` and resolves with its exit code plus captured stdout/stderr — never
- * rejects on a non-zero exit, since callers here need to branch on specific exit codes rather
- * than treat every failure the same way. Both streams are also mirrored into logStream.
- *
- * The PID is tracked via pid-tracker.js (see killOrphan() below) for the duration of the call,
- * and the call is killed and reported as a failure (code: null) if it outruns
- * CONSOLE_TIMEOUT_MS — otherwise a stuck console command would fail-close the whole startup
- * with no way for the user to get past the splash screen.
- *
- * @param {string[]} args
- * @param {Record<string, string>} env
- * @param {NodeJS.WritableStream} logStream
- * @returns {Promise<{ code: number | null, stdout: string, stderr: string }>}
- */
-function runConsole(args, env, logStream) {
-    return new Promise((resolve, reject) => {
-        const child = spawn(BINARY, ['php-cli', CONSOLE, ...args], {
-            cwd: paths.getAppRootDir(),
-            env,
-            stdio: ['ignore', 'pipe', 'pipe'],
-        });
-        pidTracker.writePid(LOG_PREFIX, child.pid);
-
-        let stdout = '';
-        let stderr = '';
-        let timedOut = false;
-        const timer = setTimeout(() => {
-            timedOut = true;
-            child.kill();
-        }, CONSOLE_TIMEOUT_MS);
-
-        child.stdout.on('data', (d) => {
-            stdout += d;
-            logStream.write(d);
-        });
-        child.stderr.on('data', (d) => {
-            stderr += d;
-            logStream.write(d);
-        });
-
-        child.on('error', (err) => {
-            clearTimeout(timer);
-            pidTracker.clearPid(LOG_PREFIX);
-            reject(err);
-        });
-        child.on('exit', (code) => {
-            clearTimeout(timer);
-            pidTracker.clearPid(LOG_PREFIX);
-            if (timedOut) {
-                stderr += `${stderr ? '\n' : ''}bin/console ${args[0]} timed out after `
-                    + `${CONSOLE_TIMEOUT_MS}ms and was killed`;
-            }
-            resolve({ code: timedOut ? null : code, stdout: stdout.trim(), stderr: stderr.trim() });
-        });
-    });
-}
-
-/**
  * Kills a console invocation orphaned by a previous session that never reached the exit event
  * (crash, force-kill from Task Manager) — must run before any child process of the current
  * session starts, same ordering constraint as the other supervisors' killOrphan() (see
@@ -150,25 +81,35 @@ function runConsole(args, env, logStream) {
  * @returns {Promise<void>}
  */
 function killOrphan() {
-    return pidTracker.killOrphan(LOG_PREFIX, BINARY);
+    return phpCommand.killOrphan(LOG_PREFIX);
 }
 
 /**
- * @param {Record<string, string>} env
- * @param {NodeJS.WritableStream} logStream
+ * @param {import('./env').PhpContext} context
  * @returns {Promise<{ code: number | null, stdout: string, stderr: string }>}
  */
-function checkStatus(env, logStream) {
-    return runConsole(['doctrine:migrations:up-to-date', '--fail-on-unregistered'], env, logStream);
+function checkStatus(context) {
+    return phpCommand.run(
+        'doctrine:migrations:up-to-date',
+        ['--fail-on-unregistered'],
+        context,
+        CONSOLE_TIMEOUT_MS,
+        { rejectOnNonZero: false, name: LOG_PREFIX },
+    );
 }
 
 /**
- * @param {Record<string, string>} env
- * @param {NodeJS.WritableStream} logStream
+ * @param {import('./env').PhpContext} context
  * @returns {Promise<{ code: number | null, stdout: string, stderr: string }>}
  */
-function migrate(env, logStream) {
-    return runConsole(['doctrine:migrations:migrate', '--no-interaction', '--allow-no-migration'], env, logStream);
+function migrate(context) {
+    return phpCommand.run(
+        'doctrine:migrations:migrate',
+        ['--no-interaction', '--allow-no-migration'],
+        context,
+        CONSOLE_TIMEOUT_MS,
+        { rejectOnNonZero: false, name: LOG_PREFIX },
+    );
 }
 
 /**
@@ -196,11 +137,10 @@ function pruneOldBackups(backupDir, maxBackups) {
  * Runs `app:database:backup` (VACUUM INTO, see DatabaseBackupCommand) to snapshot data.db into
  * getBackupsDir() before a migration is attempted, then prunes old backups down to MAX_BACKUPS.
  *
- * @param {Record<string, string>} env
- * @param {NodeJS.WritableStream} logStream
+ * @param {import('./env').PhpContext} context
  * @returns {Promise<string>} path to the backup that was created
  */
-async function createBackup(env, logStream) {
+async function createBackup(context) {
     const backupDir = paths.getBackupsDir();
     fs.mkdirSync(backupDir, { recursive: true });
 
@@ -210,7 +150,13 @@ async function createBackup(env, logStream) {
         + `${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
     const backupPath = path.join(backupDir, `data-${app.getVersion()}-${timestamp}.db`);
 
-    const { code, stderr } = await runConsole(['app:database:backup', backupPath], env, logStream);
+    const { code, stderr } = await phpCommand.run(
+        'app:database:backup',
+        [backupPath],
+        context,
+        CONSOLE_TIMEOUT_MS,
+        { rejectOnNonZero: false, name: LOG_PREFIX },
+    );
     if (code !== 0) {
         throw new MigrationBootstrapError('backup-failed', stderr || `app:database:backup завершился с кодом ${code}`);
     }
@@ -248,15 +194,11 @@ function restoreBackup(backupPath) {
  * @throws {MigrationBootstrapError}
  */
 async function run(context) {
-    const env = buildCommonEnv(context);
-
     const logDir = path.join(paths.getRuntimeDir(), 'log');
-    pruneOldLogs(logDir, LOG_PREFIX, LOG_MAX);
-    const logStream = openLogStream(logDir, LOG_PREFIX);
     const logPath = path.join(logDir, `${LOG_PREFIX}-${todayStr()}.log`);
 
     try {
-        const status = await checkStatus(env, logStream);
+        const status = await checkStatus(context);
         if (status.code === STATUS_UP_TO_DATE) return;
         if (status.code === STATUS_DOWNGRADE) throw new MigrationBootstrapError('downgrade');
 
@@ -274,12 +216,12 @@ async function run(context) {
             );
         }
 
-        const backupPath = await createBackup(env, logStream);
+        const backupPath = await createBackup(context);
 
-        let result = await migrate(env, logStream);
+        let result = await migrate(context);
         if (result.code !== 0) {
             restoreBackup(backupPath);
-            result = await migrate(env, logStream);
+            result = await migrate(context);
         }
         if (result.code !== 0) {
             restoreBackup(backupPath);
@@ -291,8 +233,6 @@ async function run(context) {
             throw err;
         }
         throw new MigrationBootstrapError('migrate-failed', err.message, null, logPath);
-    } finally {
-        logStream.end();
     }
 }
 
