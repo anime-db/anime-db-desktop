@@ -145,14 +145,34 @@ describe('supervisor.start', () => {
         expect(onProgress).toHaveBeenCalledWith(5, 5, 'Готово');
     });
 
-    test('skips search-reindex when the index was not wiped', async () => {
+    test('skips search-reindex when the index was not wiped and no migrations were applied', async () => {
         meilisearch.start.mockResolvedValue({ port: 7700, key: 'k', wiped: false });
+        migrations.run.mockResolvedValue(false);
 
         const onProgress = jest.fn();
         await supervisor.start(onProgress);
 
         expect(searchReindex.run).not.toHaveBeenCalled();
         expect(onProgress).not.toHaveBeenCalledWith(4, 5, 'Обновление поискового индекса...');
+        expect(onProgress).toHaveBeenCalledWith(5, 5, 'Готово');
+    });
+
+    // issue #402: миграции меняют data.db сырым SQL в обход ORM-слушателей, которые диспатчат
+    // индексирующие сообщения, поэтому индекс должен обновляться и без вайпа Meilisearch.
+    test('runs search-reindex when migrations were applied, even if the index was not wiped', async () => {
+        meilisearch.start.mockResolvedValue({ port: 7700, key: 'k', wiped: false });
+        migrations.run.mockResolvedValue(true);
+
+        const onProgress = jest.fn();
+        await supervisor.start(onProgress);
+
+        expect(searchReindex.run).toHaveBeenCalledWith({
+            appPort:         8000,
+            qbittorrentPort: 9000,
+            meiliPort:       7700,
+            meiliKey:        'k',
+        });
+        expect(onProgress).toHaveBeenCalledWith(4, 5, 'Обновление поискового индекса...');
         expect(onProgress).toHaveBeenCalledWith(5, 5, 'Готово');
     });
 

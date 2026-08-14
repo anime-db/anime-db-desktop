@@ -132,10 +132,10 @@ describe('env', () => {
 });
 
 describe('run', () => {
-    test('does nothing when the schema is already up-to-date (status 0)', async () => {
+    test('does nothing and reports no migrations applied when the schema is already up-to-date (status 0)', async () => {
         mockConsoleResponses({ 'up-to-date': [{ code: 0 }] });
 
-        await expect(run(CONTEXT)).resolves.toBeUndefined();
+        await expect(run(CONTEXT)).resolves.toBe(false);
         expect(spawn).toHaveBeenCalledTimes(1);
     });
 
@@ -155,7 +155,7 @@ describe('run', () => {
             migrate:      [{ code: 0 }],
         });
 
-        await expect(run(CONTEXT)).resolves.toBeUndefined();
+        await expect(run(CONTEXT)).resolves.toBe(true);
 
         const backupCall = spawn.mock.calls.find(([, args]) => args.includes('app:database:backup'));
         expect(backupCall[1]).toEqual(expect.arrayContaining([
@@ -176,7 +176,7 @@ describe('run', () => {
             migrate:      [{ code: 1, stderr: 'boom first try' }, { code: 0 }],
         });
 
-        await expect(run(CONTEXT)).resolves.toBeUndefined();
+        await expect(run(CONTEXT)).resolves.toBe(true);
 
         expect(fs.copyFileSync).toHaveBeenCalledTimes(1);
         expect(fs.rmSync).toHaveBeenCalledWith('/fake/userData/data.db-journal', { force: true });
