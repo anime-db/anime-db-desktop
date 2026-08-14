@@ -78,6 +78,14 @@ parameters:
     # drop a message mid-retry instead of letting it eventually succeed.
     app.sync.push_on_edit_ttl_seconds: 300
 
+    # In production Electron passes MARKET_REGISTRY_CACHE_PATH (see native/paths.js,
+    # native/supervisor/frankenphp.js), pointing at %AppData%/market-registry-cache.json — the
+    # last signature-verified plugins-registry.json (issue #292): PluginRegistryLoader falls back
+    # to it whenever a fresh download fails a check, and its "sequence" field is what anti-rollback
+    # protection compares new downloads against across app restarts.
+    app.market_registry_cache_path.dev_default: '%kernel.project_dir%/var/market-registry-cache.json'
+    app.market_registry_cache_path: '%env(default:app.market_registry_cache_path.dev_default:MARKET_REGISTRY_CACHE_PATH)%'
+
 services:
     # default configuration for services in *this* file
     _defaults:
@@ -92,6 +100,7 @@ services:
             $locales: '%app.locales%'
             $sampleCoversDir: '%app.sample_covers_dir%'
             $pushOnEditTtlSeconds: '%app.sync.push_on_edit_ttl_seconds%'
+            $cachePath: '%app.market_registry_cache_path%'
 
     # AnimeDb\PluginContracts\Filler\FillerInterface/Search\SearchByPluginInterface/
     # Widget\EntryWidgetInterface/Widget\CatalogWidgetInterface/Sync\SyncInterface all live
@@ -165,6 +174,26 @@ services:
             $httpClient: '@app.plugin_media.http_client'
 
     App\Service\Plugin\Filler\PluginMediaDownloaderInterface: '@App\Service\Plugin\Filler\HttpPluginMediaDownloader'
+
+    # Used by PluginRegistryFetcher and MarketAssetDownloader (issue #292) to download
+    # plugins-registry.json/its signature and plugin.zip archives from the market's mirrors.
+    # Routed through the app's configured outgoing proxy (issue #327) like app.plugin_media.http_client
+    # above, for the same reason: these are arbitrary external hosts, not a local process. The
+    # longer max_duration accommodates a full plugin.zip download, not just a small JSON file.
+    app.market.http_client:
+        class: Symfony\Contracts\HttpClient\HttpClientInterface
+        factory: ['App\Service\Http\ProxyAwareHttpClient', 'create']
+        arguments:
+            - '@App\Service\ProxyConfigProvider'
+            - { timeout: 10, max_duration: 60 }
+
+    App\Service\Market\PluginRegistryFetcher:
+        arguments:
+            $httpClient: '@app.market.http_client'
+
+    App\Service\Market\MarketAssetDownloader:
+        arguments:
+            $httpClient: '@app.market.http_client'
 
     # ProxyTestService (issue #328, settings page "Test" button) always tests a form-supplied
     # proxy, never the one ProxyConfigProvider currently has saved — a plain CurlHttpClient, not
