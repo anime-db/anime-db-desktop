@@ -201,3 +201,20 @@ describe('abnormal-exit cleanup', () => {
         expect(app.exit).toHaveBeenCalledWith(1);
     });
 });
+
+describe('startup failure', () => {
+    test('a rejected supervisor.start() logs the crash before showing the dialog and quitting', async () => {
+        const { supervisor, app, dialog } = loadLifecycle();
+        supervisor.start.mockRejectedValue(new Error('boom-startup'));
+        const fs = require('fs');
+
+        await new Promise((r) => setTimeout(r, 500));
+
+        expect(fs.appendFileSync).toHaveBeenCalledWith(
+            expect.stringContaining('main-'),
+            expect.stringContaining('boom-startup'),
+        );
+        expect(dialog.showErrorBox).toHaveBeenCalledWith('Ошибка запуска', 'boom-startup');
+        expect(app.quit).toHaveBeenCalledTimes(1);
+    });
+});
