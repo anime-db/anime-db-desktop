@@ -92,6 +92,7 @@ services:
         autowire: true      # Automatically injects dependencies in your services.
         autoconfigure: true # Automatically registers your services as commands, event subscribers, etc.
         bind:
+            $projectDir: '%kernel.project_dir%'
             $mediaDir: '%app.media_dir%'
             $configPath: '%app.config_path%'
             $pluginsConfigPath: '%app.plugins_config_path%'

@@ -34,6 +34,7 @@ use App\Service\Plugin\Exception\PluginAlreadyInstalledException;
 use App\Service\Plugin\Exception\PluginInstallException;
 use App\Service\Plugin\Exception\PluginSyntaxErrorException;
 use App\Service\Plugin\InstalledPluginsRegistry;
+use App\Service\Plugin\PluginCacheWarmer;
 use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Plugin\ZipPluginInstaller;
 use PHPUnit\Framework\TestCase;
@@ -335,7 +336,19 @@ final class ZipPluginInstallerTest extends TestCase
 
     private function installer(): ZipPluginInstaller
     {
-        return new ZipPluginInstaller($this->pluginsDir, self::CORE_VERSION, $this->registry);
+        return new ZipPluginInstaller($this->pluginsDir, self::CORE_VERSION, $this->registry, $this->cacheWarmer());
+    }
+
+    /**
+     * A real {@see PluginCacheWarmer}, same as {@see installer()} builds a real registry rather
+     * than a fake — its subprocess spawn is a thin wrapper around `bin/console cache:warmup`
+     * against this very app, so exercising it for real is the only way to catch a broken
+     * PHP-binary/console-path resolution the way the earlier `php -l` linting is already
+     * exercised for real in these tests.
+     */
+    private function cacheWarmer(): PluginCacheWarmer
+    {
+        return new PluginCacheWarmer($this->pluginsDir, \dirname(__DIR__, 4), new NullLogger());
     }
 
     /**

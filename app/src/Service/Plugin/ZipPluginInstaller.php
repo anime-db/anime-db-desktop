@@ -69,8 +69,12 @@ use Symfony\Component\Process\Process;
  * (untrusted ZIP upload) path: marketplace plugins are linted on the registry side (issue #220)
  * and never go through this service.
  *
- * Deliberately still out of scope here: any UI, and activation/cache warm-up (issue #222) — this
- * service only gets as far as "files are in place and the index is up to date".
+ * After the plugin is moved into place and the registry re-synced, runs {@see PluginCacheWarmer}
+ * (issue #222) to compile the DI container with the new plugin present, in an isolated process —
+ * this is what actually gets to decide whether the install as a whole succeeds, on top of
+ * everything checked above.
+ *
+ * Deliberately still out of scope here: any UI, and enabling an already-installed plugin.
  */
 final class ZipPluginInstaller
 {
@@ -80,6 +84,7 @@ final class ZipPluginInstaller
         private readonly string $pluginsDir,
         private readonly string $coreVersion,
         private readonly InstalledPluginsRegistry $registry,
+        private readonly PluginCacheWarmer $cacheWarmer,
         private readonly ManifestParser $manifestParser = new ManifestParser(),
     ) {
     }
@@ -91,6 +96,9 @@ final class ZipPluginInstaller
      * @throws PluginSyntaxErrorException             if any `*.php` file in the archive has a PHP syntax error
      * @throws PluginAlreadyInstalledException        if the manifest's plugin id is already installed
      * @throws PluginInstallException                 if the archive cannot be unpacked or moved into place
+     * @throws Exception\PluginCacheWarmupException   if the isolated cache warm-up fails to
+     *                                                compile the DI container with the new
+     *                                                plugin present
      */
     public function install(string $zipPath): PluginId
     {
@@ -116,10 +124,16 @@ final class ZipPluginInstaller
 
             $this->registry->reconcile();
 
+            $this->cacheWarmer->warmUp();
+
             return $pluginId;
         } catch (\Throwable $exception) {
             if ($moveStarted && $targetDir !== null) {
                 $this->removeDirectory($targetDir);
+                // The index above may already have been rewritten with an entry pointing at the
+                // directory just removed (e.g. a cache warm-up failure, which runs after
+                // reconcile()) — re-sync it so a stale entry does not outlive the rollback.
+                $this->registry->reconcile();
             }
 
             throw $exception;
