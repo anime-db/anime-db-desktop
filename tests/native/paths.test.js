@@ -85,6 +85,10 @@ test('getStatePath returns state.json inside userData', () => {
     expect(paths.getStatePath()).toBe(path.join(USER_DATA, 'state.json'));
 });
 
+test('getBackupsDir returns backups/ inside userData', () => {
+    expect(paths.getBackupsDir()).toBe(path.join(USER_DATA, 'backups'));
+});
+
 test('all path functions reflect a different userData value (fallback scenario)', () => {
     const OTHER = '/other/AppData/AnimeDB';
     app.getPath.mockReturnValue(OTHER);

@@ -33,7 +33,73 @@ const tray             = require('../tray');
 const wsClient         = require('../ws-client');
 const proxy            = require('../proxy');
 const firewall         = require('../firewall');
+const paths            = require('../paths');
 const { logCrash }     = require('../crash-log');
+const { getLocale }    = require('../config');
+const { MigrationBootstrapError } = require('../supervisor/migrations');
+
+/**
+ * The migration-failure and downgrade dialogs are the only places in the app where the user is
+ * required to take action to recover (delete user data, check disk space, read a log) — see
+ * issue #392 — so, unlike the rest of native/ (Russian-only today), they are localized using the
+ * same locale native/accept-language.js negotiates with.
+ *
+ * @param {InstanceType<typeof MigrationBootstrapError>} err
+ * @param {string} locale
+ * @returns {{ title: string, message: string }}
+ */
+function buildMigrationErrorDialog(err, locale) {
+    const isRu = locale.startsWith('ru');
+
+    if (err.kind === 'downgrade') {
+        const userDataDir = paths.getUserDataDir();
+        return isRu
+            ? {
+                title: 'Несовместимая версия данных',
+                message: `Каталог данных был создан более новой версией AnimeDB и несовместим с этой версией `
+                    + `приложения.\n\nЧтобы продолжить, удалите папку с пользовательскими данными:\n${userDataDir}\n\n`
+                    + 'и установите приложение заново. Обычное удаление приложения эту папку не затрагивает.',
+            }
+            : {
+                title: 'Incompatible data version',
+                message: 'The data folder was created by a newer version of AnimeDB and is incompatible with this '
+                    + `version of the app.\n\nTo continue, delete the user data folder:\n${userDataDir}\n\n`
+                    + 'and reinstall the app. The regular uninstaller does not remove this folder.',
+            };
+    }
+
+    const details = [];
+    if (err.detail) details.push((isRu ? 'Ошибка: ' : 'Error: ') + err.detail);
+    if (err.logPath) details.push((isRu ? 'Лог: ' : 'Log: ') + err.logPath);
+    if (err.backupPath) details.push((isRu ? 'Резервная копия: ' : 'Backup: ') + err.backupPath);
+    const detailsBlock = details.length > 0 ? `\n\n${details.join('\n')}` : '';
+
+    if (err.kind === 'backup-failed') {
+        return isRu
+            ? {
+                title: 'Не удалось создать резервную копию базы данных',
+                message: 'Перед обновлением схемы базы данных не удалось создать её резервную копию, поэтому '
+                    + `обновление не выполнялось.${detailsBlock}`,
+            }
+            : {
+                title: 'Database backup failed',
+                message: 'Could not create a backup of the database before updating its schema, so the update was '
+                    + `not attempted.${detailsBlock}`,
+            };
+    }
+
+    return isRu
+        ? {
+            title: 'Не удалось обновить схему базы данных',
+            message: 'Обновление схемы базы данных завершилось ошибкой. Резервная копия была восстановлена, '
+                + `повторная попытка также не удалась.${detailsBlock}`,
+        }
+        : {
+            title: 'Database schema update failed',
+            message: 'Updating the database schema failed. The backup was restored and the update was retried '
+                + `once, which also failed.${detailsBlock}`,
+        };
+}
 
 let quitting   = false;
 let mainWindow = null;
@@ -74,11 +140,11 @@ if (!gotLock) {
         }));
 
         try {
-            splash.webContents.send('splash-progress', { step: 0, text: 'Запуск Meilisearch...' });
+            splash.webContents.send('splash-progress', { step: 0, total: supervisor.TOTAL_STEPS, text: 'Запуск Meilisearch...' });
 
-            const { frankenphpPort, wsPort } = await supervisor.start((step, text) => {
+            const { frankenphpPort, wsPort } = await supervisor.start((step, total, text) => {
                 if (!splash.isDestroyed()) {
-                    splash.webContents.send('splash-progress', { step, text });
+                    splash.webContents.send('splash-progress', { step, total, text });
                 }
             });
 
@@ -118,8 +184,13 @@ if (!gotLock) {
             supervisor.events.on('exit', () => tray.setState('error'));
         } catch (err) {
             logCrash(err);
-            dialog.showErrorBox('Ошибка запуска', err.message);
             if (!splash.isDestroyed()) splash.close();
+            if (err instanceof MigrationBootstrapError) {
+                const { title, message } = buildMigrationErrorDialog(err, getLocale());
+                dialog.showErrorBox(title, message);
+            } else {
+                dialog.showErrorBox('Ошибка запуска', err.message);
+            }
             app.quit();
         }
     });

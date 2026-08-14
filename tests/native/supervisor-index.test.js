@@ -52,11 +52,16 @@ jest.mock('../../native/supervisor/qbittorrent', () => ({
 jest.mock('../../native/supervisor/search-reindex', () => ({
     run: jest.fn(() => Promise.resolve()),
 }));
+jest.mock('../../native/supervisor/migrations', () => ({
+    run:        jest.fn(() => Promise.resolve()),
+    killOrphan: jest.fn(() => Promise.resolve()),
+}));
 
 const cacheInvalidation = require('../../native/supervisor/cache-invalidation');
 const frankenphp        = require('../../native/supervisor/frankenphp');
 const meilisearch       = require('../../native/supervisor/meilisearch');
 const messengerConsumer = require('../../native/supervisor/messenger-consumer');
+const migrations        = require('../../native/supervisor/migrations');
 const searchReindex     = require('../../native/supervisor/search-reindex');
 const supervisor        = require('../../native/supervisor');
 
@@ -71,10 +76,41 @@ describe('supervisor.start', () => {
         messengerConsumer.start.mockResolvedValue(undefined);
         meilisearch.start.mockResolvedValue({ port: 7700, key: 'k', wiped: false });
         searchReindex.run.mockResolvedValue(undefined);
+        migrations.run.mockResolvedValue(undefined);
     });
 
     afterEach(() => {
         jest.clearAllMocks();
+    });
+
+    // Миграции стартуют до веб-воркера, поэтому их контекст — без appPort (см. env.js).
+    test('runs migrations before starting FrankenPHP, with a context that has no appPort', async () => {
+        const callOrder = [];
+        migrations.run.mockImplementation(() => {
+            callOrder.push('migrations.run');
+            return Promise.resolve();
+        });
+        frankenphp.start.mockImplementation(() => {
+            callOrder.push('frankenphp.start');
+            return Promise.resolve({ httpPort: 8000, wsPort: 8001 });
+        });
+
+        await supervisor.start(jest.fn());
+
+        expect(callOrder).toEqual(['migrations.run', 'frankenphp.start']);
+        expect(migrations.run).toHaveBeenCalledWith({
+            qbittorrentPort: 9000,
+            meiliPort:       7700,
+            meiliKey:        'k',
+        });
+    });
+
+    test('kills an orphaned migrations console process before any child process starts', async () => {
+        meilisearch.start.mockResolvedValue({ port: 7700, key: 'k', wiped: false });
+
+        await supervisor.start(jest.fn());
+
+        expect(migrations.killOrphan).toHaveBeenCalled();
     });
 
     test('runs search-reindex when meilisearch reports the index was wiped', async () => {
@@ -83,15 +119,16 @@ describe('supervisor.start', () => {
         const onProgress = jest.fn();
         await supervisor.start(onProgress);
 
-        // Один и тот же контекст уходит и в messenger-consumer, и в переиндексацию (issue #391).
+        // Один и тот же контекст уходит и в messenger-consumer, и в переиндексацию (issue #391);
+        // у них, в отличие от миграций, appPort уже известен.
         expect(searchReindex.run).toHaveBeenCalledWith({
             appPort:         8000,
             qbittorrentPort: 9000,
             meiliPort:       7700,
             meiliKey:        'k',
         });
-        expect(onProgress).toHaveBeenCalledWith(3, 'Переиндексация каталога...');
-        expect(onProgress).toHaveBeenCalledWith(3, 'Готово');
+        expect(onProgress).toHaveBeenCalledWith(4, 5, 'Обновление поискового индекса...');
+        expect(onProgress).toHaveBeenCalledWith(5, 5, 'Готово');
     });
 
     test('skips search-reindex when the index was not wiped', async () => {
@@ -101,8 +138,8 @@ describe('supervisor.start', () => {
         await supervisor.start(onProgress);
 
         expect(searchReindex.run).not.toHaveBeenCalled();
-        expect(onProgress).not.toHaveBeenCalledWith(3, 'Переиндексация каталога...');
-        expect(onProgress).toHaveBeenCalledWith(3, 'Готово');
+        expect(onProgress).not.toHaveBeenCalledWith(4, 5, 'Обновление поискового индекса...');
+        expect(onProgress).toHaveBeenCalledWith(5, 5, 'Готово');
     });
 
     test('does not fail startup when reindexing errors out', async () => {
@@ -159,6 +196,15 @@ describe('supervisor.start', () => {
 
         await expect(supervisor.start()).rejects.toThrow('spawn failed');
 
+        expect(cacheInvalidation.commitFingerprint).not.toHaveBeenCalled();
+    });
+
+    test('does not start FrankenPHP when migrations fail', async () => {
+        migrations.run.mockRejectedValue(new Error('migration failed'));
+
+        await expect(supervisor.start(jest.fn())).rejects.toThrow('migration failed');
+
+        expect(frankenphp.start).not.toHaveBeenCalled();
         expect(cacheInvalidation.commitFingerprint).not.toHaveBeenCalled();
     });
 });

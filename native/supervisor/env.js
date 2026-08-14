@@ -32,9 +32,14 @@ const { getOrCreateAppSecret } = require('../config');
  * никак не проявляется ни в линте, ни в типах, а ломает только рантайм.
  *
  * @typedef {object} PhpContext
- * @property {number} appPort          порт веб-воркера FrankenPHP; нужен для
+ * @property {number} [appPort]        порт веб-воркера FrankenPHP; нужен для
  *                                      OAUTH_CALLBACK_ORIGIN даже процессам, которые сами
- *                                      HTTP не поднимают
+ *                                      HTTP не поднимают. Опционален: миграции схемы стартуют
+ *                                      ДО веб-воркера (issue #392), и на тот момент порта ещё
+ *                                      не существует — тогда OAUTH_CALLBACK_ORIGIN в env не
+ *                                      попадает вовсе. Отсутствие ключа безопасно: значение
+ *                                      резолвится Symfony лениво, при обращении, а консольные
+ *                                      команды схемы к OAuth не обращаются
  * @property {number} qbittorrentPort  WebUI-порт qbittorrent-nox
  * @property {number} meiliPort        порт Meilisearch
  * @property {string} meiliKey         master-key Meilisearch
@@ -70,7 +75,8 @@ function buildCommonEnv({ meiliPort, meiliKey, qbittorrentPort, appPort }) {
         MEILISEARCH_URL:         `http://127.0.0.1:${meiliPort}`,
         MEILISEARCH_KEY:         meiliKey,
         QBITTORRENT_URL:         `http://127.0.0.1:${qbittorrentPort}`,
-        OAUTH_CALLBACK_ORIGIN:   `http://127.0.0.1:${appPort}`,
+        // Только для процессов, стартующих после веб-воркера — см. PhpContext.appPort.
+        ...(appPort === undefined ? {} : { OAUTH_CALLBACK_ORIGIN: `http://127.0.0.1:${appPort}` }),
     };
 }
 
@@ -83,7 +89,7 @@ function buildCommonEnv({ meiliPort, meiliKey, qbittorrentPort, appPort }) {
  * buildCommonEnv() — отдельным параметром его не принимаем, иначе два значения одного и того же
  * порта могли бы разъехаться.
  *
- * @param {PhpContext} context
+ * @param {PhpContext & { appPort: number }} context  для веб-воркера appPort обязателен
  * @param {number} wsPort  порт WebSocket-сервера; поднимает его только веб-воркер
  * @returns {NodeJS.ProcessEnv}
  */

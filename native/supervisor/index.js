@@ -26,6 +26,7 @@ const cacheInvalidation = require('./cache-invalidation');
 const frankenphp        = require('./frankenphp');
 const meilisearch       = require('./meilisearch');
 const messengerConsumer = require('./messenger-consumer');
+const migrations        = require('./migrations');
 const qbittorrent       = require('./qbittorrent');
 const searchReindex     = require('./search-reindex');
 
@@ -33,6 +34,14 @@ const events = new EventEmitter();
 frankenphp.events.on('exit', (code) => events.emit('exit', code));
 messengerConsumer.events.on('exit', (code) => events.emit('exit', code));
 qbittorrent.events.on('exit', (code) => events.emit('exit', code));
+
+/**
+ * Total number of splash-progress points (Meilisearch=0, migrations=1, FrankenPHP=2,
+ * messenger-consumer=3, done=5) the progress bar divides by. Step 4 (reindex) is only reached
+ * conditionally — same "jump straight to done" behavior the splash bar already had before it
+ * became dynamic, just no longer hardcoded to exactly four steps (issue #392).
+ */
+const TOTAL_STEPS = 5;
 
 /**
  * Запускает все дочерние процессы и возвращает занятые ими порты.
@@ -50,14 +59,23 @@ qbittorrent.events.on('exit', (code) => events.emit('exit', code));
  * обработанным. Ошибка инвалидации не перехватывается: пусть прервёт запуск и попадёт в лог
  * (native/crash-log.js) через catch в lifecycle/index.js, а не тихо продолжит работу против
  * устаревшего кэша. Meilisearch и qbittorrent-nox стартуют первыми (независимо друг от друга) —
- * их порты/ключи нужны FrankenPHP в env.
+ * их порты/ключи нужны FrankenPHP в env. Миграции тоже участвуют в начальной зачистке сирот —
+ * тот же PID-файл (см. pid-tracker.js), которым отмечается spawn консольной команды, должен быть
+ * проверен и убран до старта хоть одного дочернего процесса текущего сеанса, иначе
+ * переиспользованный ОС PID мог бы совпасть с процессом текущего сеанса.
+ *
+ * Doctrine-миграции (issue #392) прогоняются сразу после Meilisearch/qbittorrent и до старта
+ * FrankenPHP — migrate не зависит от HTTP/поиска/очереди, только от DATABASE_URL, но схема
+ * должна быть готова до того, как HTTP-воркер начнёт принимать запросы. На чистом профиле это
+ * тот же путь: миграций ещё не применено ни одной, значит есть что применить, и migrate создаёт
+ * схему с нуля. Провал (в т.ч. отказ по даунгрейду) прерывает запуск — см. MigrationBootstrapError.
  *
  * Если Meilisearch при старте вайпнул индекс из-за смены версии (issue #389), после
  * поднятия FrankenPHP и messenger-consumer автоматически прогоняется app:search:reindex —
  * без этого приложение стартует с пустым поиском до ручного нажатия кнопки в /settings.
  * Ошибка переиндексации не блокирует старт приложения — только логируется.
  *
- * @param {((step: number, text: string) => void) | undefined} onProgress
+ * @param {((step: number, total: number, text: string) => void) | undefined} onProgress
  * @returns {Promise<{ frankenphpPort: number, wsPort: number, meiliPort: number, qbittorrentPort: number }>}
  */
 async function start(onProgress) {
@@ -65,6 +83,7 @@ async function start(onProgress) {
         frankenphp.killOrphan(),
         meilisearch.killOrphan(),
         messengerConsumer.killOrphan(),
+        migrations.killOrphan(),
         qbittorrent.killOrphan(),
     ]);
 
@@ -76,25 +95,35 @@ async function start(onProgress) {
         meilisearch.start(),
         qbittorrent.start(),
     ]);
-    if (onProgress) onProgress(1, 'Запуск FrankenPHP...');
-    const { httpPort: frankenphpPort, wsPort } = await frankenphp.start(meiliPort, meiliKey, qbittorrentPort);
-    if (onProgress) onProgress(2, 'Запуск обработчика фоновых задач...');
-    // Один контекст на все PHP-процессы сеанса — см. env.js: набор путей и портов у них обязан
-    // совпадать, поэтому он собирается здесь один раз, а не по месту каждым модулем.
-    const phpContext = { appPort: frankenphpPort, qbittorrentPort, meiliPort, meiliKey };
 
-    await messengerConsumer.start(phpContext);
+    // Один контекст на все PHP-процессы сеанса — см. env.js: набор путей и портов у них обязан
+    // совпадать, поэтому он собирается здесь один раз, а не по месту каждым модулем. Миграции
+    // стартуют до веб-воркера, поэтому appPort на этот момент ещё не существует — в PhpContext
+    // он опционален (см. env.js), и OAUTH_CALLBACK_ORIGIN в их окружение не попадает.
+    const phpContext = { qbittorrentPort, meiliPort, meiliKey };
+
+    if (onProgress) onProgress(1, TOTAL_STEPS, 'Применение миграций...');
+    await migrations.run(phpContext);
+
+    if (onProgress) onProgress(2, TOTAL_STEPS, 'Запуск FrankenPHP...');
+    const { httpPort: frankenphpPort, wsPort } = await frankenphp.start(meiliPort, meiliKey, qbittorrentPort);
+    if (onProgress) onProgress(3, TOTAL_STEPS, 'Запуск обработчика фоновых задач...');
+
+    // Тот же контекст, что у миграций, плюс порт поднятого веб-воркера — см. env.js.
+    const workerContext = { ...phpContext, appPort: frankenphpPort };
+
+    await messengerConsumer.start(workerContext);
 
     if (wiped) {
-        if (onProgress) onProgress(3, 'Переиндексация каталога...');
+        if (onProgress) onProgress(4, TOTAL_STEPS, 'Обновление поискового индекса...');
         try {
-            await searchReindex.run(phpContext);
+            await searchReindex.run(workerContext);
         } catch (err) {
             console.error('[search-reindex] не удалось переиндексировать каталог:', err.message);
         }
     }
 
-    if (onProgress) onProgress(3, 'Готово');
+    if (onProgress) onProgress(TOTAL_STEPS, TOTAL_STEPS, 'Готово');
 
     cacheInvalidation.commitFingerprint();
 
@@ -126,4 +155,4 @@ function killSync() {
     qbittorrent.killSync();
 }
 
-module.exports = { start, stop, killSync, events };
+module.exports = { start, stop, killSync, events, TOTAL_STEPS };
