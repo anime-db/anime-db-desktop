@@ -34,6 +34,7 @@ jest.mock('../../native/paths', () => ({
     getConfigPath:         jest.fn(() => '/fake/userData/config.json'),
     getPluginsConfigPath:  jest.fn(() => '/fake/userData/plugins.json'),
     getPluginsDir:         jest.fn(() => '/fake/userData/plugins'),
+    getMarketRegistryCachePath: jest.fn(() => '/fake/userData/market-registry-cache.json'),
 }));
 jest.mock('../../native/config', () => ({
     getOrCreateAppSecret: jest.fn(() => 'a'.repeat(64)),

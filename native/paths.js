@@ -49,4 +49,5 @@ module.exports = {
     getPluginsDir:         () => path.join(userDataDir(), 'plugins'),
     getStatePath:          () => path.join(userDataDir(), 'state.json'),
     getBackupsDir:         () => path.join(userDataDir(), 'backups'),
+    getMarketRegistryCachePath: () => path.join(userDataDir(), 'market-registry-cache.json'),
 };
