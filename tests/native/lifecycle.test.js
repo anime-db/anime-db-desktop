@@ -31,7 +31,7 @@ jest.mock('electron', () => ({
         getPath:    jest.fn(() => '/fake/userData'),
         getLocale:  jest.fn(() => 'ru-RU'),
     },
-    dialog:  { showErrorBox: jest.fn() },
+    dialog:  { showErrorBox: jest.fn(), showMessageBoxSync: jest.fn() },
     session: { defaultSession: {} },
 }));
 jest.mock('fs', () => ({
@@ -48,6 +48,10 @@ jest.mock('../../native/supervisor', () => ({
     stop:     jest.fn(() => Promise.resolve()),
     killSync: jest.fn(),
     events:   { on: jest.fn() },
+}));
+jest.mock('../../native/supervisor/safe-mode', () => ({
+    beginStartAttempt:      jest.fn(() => false),
+    commitDiagnosedFailure: jest.fn(),
 }));
 jest.mock('../../native/window', () => ({ createWindow: jest.fn() }));
 jest.mock('../../native/window/splash', () => ({ createSplash: jest.fn() }));
@@ -85,8 +89,10 @@ function loadLifecycle() {
     const { app, dialog }  = require('electron');
     app.on.mockImplementation((event, handler) => { appHandlers[event] = handler; });
 
-    const supervisor  = require('../../native/supervisor');
-    const migrations  = require('../../native/supervisor/migrations');
+    const supervisor   = require('../../native/supervisor');
+    const migrations   = require('../../native/supervisor/migrations');
+    const cacheInvalidation = require('../../native/supervisor/cache-invalidation');
+    const safeModeState = require('../../native/supervisor/safe-mode');
     const { createWindow } = require('../../native/window');
     const { createSplash } = require('../../native/window/splash');
     const tray        = require('../../native/tray');
@@ -116,8 +122,8 @@ function loadLifecycle() {
     require('../../native/lifecycle');
 
     return {
-        app, dialog, supervisor, migrations, createWindow, createSplash, tray, wsClient, proxy, firewall,
-        appHandlers, processHandlers, fakeWindow, fakeSplash,
+        app, dialog, supervisor, migrations, cacheInvalidation, safeModeState, createWindow, createSplash, tray,
+        wsClient, proxy, firewall, appHandlers, processHandlers, fakeWindow, fakeSplash,
     };
 }
 
@@ -170,9 +176,44 @@ describe('single-instance lock', () => {
     });
 });
 
+describe('safe mode prompt (issue #403)', () => {
+    test('does not prompt and starts normally when beginStartAttempt() reports no unclosed streak', async () => {
+        const { supervisor, dialog, safeModeState } = loadLifecycle();
+        safeModeState.beginStartAttempt.mockReturnValue(false);
+
+        await new Promise((r) => setTimeout(r, 500));
+
+        expect(dialog.showMessageBoxSync).not.toHaveBeenCalled();
+        expect(supervisor.start).toHaveBeenCalledWith(expect.any(Function), { safeMode: false });
+    });
+
+    test('two unclosed starts in a row prompt a dialog before the kernel starts', async () => {
+        const { supervisor, dialog, safeModeState } = loadLifecycle();
+        safeModeState.beginStartAttempt.mockReturnValue(true);
+        dialog.showMessageBoxSync.mockReturnValue(0);
+
+        await new Promise((r) => setTimeout(r, 500));
+
+        expect(dialog.showMessageBoxSync).toHaveBeenCalledTimes(1);
+        expect(supervisor.start).toHaveBeenCalledWith(expect.any(Function), { safeMode: true });
+    });
+
+    test('choosing "Exit" quits without ever starting the kernel', async () => {
+        const { app, supervisor, dialog, safeModeState, createSplash } = loadLifecycle();
+        safeModeState.beginStartAttempt.mockReturnValue(true);
+        dialog.showMessageBoxSync.mockReturnValue(1);
+
+        await new Promise((r) => setTimeout(r, 500));
+
+        expect(supervisor.start).not.toHaveBeenCalled();
+        expect(createSplash).not.toHaveBeenCalled();
+        expect(app.quit).toHaveBeenCalledTimes(1);
+    });
+});
+
 describe('migration bootstrap errors', () => {
     test('a downgrade error shows a localized dialog naming the user data folder and quits without opening the window', async () => {
-        const { supervisor, migrations, dialog, app, createWindow, fakeSplash } = loadLifecycle();
+        const { supervisor, migrations, dialog, app, createWindow, fakeSplash, safeModeState } = loadLifecycle();
         supervisor.start.mockRejectedValue(new migrations.MigrationBootstrapError('downgrade'));
 
         await new Promise((r) => setTimeout(r, 500));
@@ -184,10 +225,12 @@ describe('migration bootstrap errors', () => {
         expect(fakeSplash.close).toHaveBeenCalled();
         expect(createWindow).not.toHaveBeenCalled();
         expect(app.quit).toHaveBeenCalled();
+        // Diagnosed failure — must not count towards the safe-mode streak (issue #403 review).
+        expect(safeModeState.commitDiagnosedFailure).toHaveBeenCalledTimes(1);
     });
 
     test('a migrate-failed error shows a dialog including the underlying error detail, log and backup paths', async () => {
-        const { supervisor, migrations, dialog } = loadLifecycle();
+        const { supervisor, migrations, dialog, safeModeState } = loadLifecycle();
         supervisor.start.mockRejectedValue(
             new migrations.MigrationBootstrapError('migrate-failed', 'boom', '/fake/userData/backups/data-1.db', '/fake/userData/var/log/migrations-2026-08-14.log'),
         );
@@ -201,6 +244,30 @@ describe('migration bootstrap errors', () => {
         const [, message] = dialog.showErrorBox.mock.calls[0];
         expect(message).toContain('/fake/userData/backups/data-1.db');
         expect(message).toContain('/fake/userData/var/log/migrations-2026-08-14.log');
+        expect(safeModeState.commitDiagnosedFailure).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe('cache invalidation errors (issue #403 review)', () => {
+    test('a CacheInvalidationError does not count towards the safe-mode streak', async () => {
+        const { supervisor, cacheInvalidation, dialog, app, safeModeState } = loadLifecycle();
+        supervisor.start.mockRejectedValue(new cacheInvalidation.CacheInvalidationError('EPERM: locked'));
+
+        await new Promise((r) => setTimeout(r, 500));
+
+        expect(dialog.showErrorBox).toHaveBeenCalledWith('Ошибка запуска', 'EPERM: locked');
+        expect(app.quit).toHaveBeenCalled();
+        expect(safeModeState.commitDiagnosedFailure).toHaveBeenCalledTimes(1);
+    });
+
+    test('an undiagnosed startup error does count towards the safe-mode streak', async () => {
+        const { supervisor, dialog, safeModeState } = loadLifecycle();
+        supervisor.start.mockRejectedValue(new Error('unexplained crash'));
+
+        await new Promise((r) => setTimeout(r, 500));
+
+        expect(dialog.showErrorBox).toHaveBeenCalledWith('Ошибка запуска', 'unexplained crash');
+        expect(safeModeState.commitDiagnosedFailure).not.toHaveBeenCalled();
     });
 });
 

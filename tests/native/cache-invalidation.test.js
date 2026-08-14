@@ -37,6 +37,7 @@ const {
     invalidateCache,
     commitFingerprint,
     computeBuildFingerprint,
+    CacheInvalidationError,
 } = require('../../native/supervisor/cache-invalidation');
 
 const VERSIONS_JSON_CONTENT = JSON.stringify({ frankenphp: '1.12.4' });
@@ -151,9 +152,10 @@ describe('invalidateCache', () => {
         });
     });
 
-    test('propagates errors instead of swallowing them', () => {
+    test('wraps and propagates errors instead of swallowing them, as a distinguishable CacheInvalidationError', () => {
         fs.rmSync.mockImplementation(() => { throw new Error('EBUSY: resource busy or locked'); });
         expect(() => invalidateCache()).toThrow('EBUSY');
+        expect(() => invalidateCache()).toThrow(CacheInvalidationError);
     });
 });
 

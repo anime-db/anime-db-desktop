@@ -43,6 +43,10 @@ const { getOrCreateAppSecret } = require('../config');
  * @property {number} qbittorrentPort  WebUI-порт qbittorrent-nox
  * @property {number} meiliPort        порт Meilisearch
  * @property {string} meiliKey         master-key Meilisearch
+ * @property {boolean} [safeMode]      true — ядро стартует в safe mode (issue #403): в env
+ *                                      попадает SAFE_MODE=1, из-за которого
+ *                                      Kernel::installedPluginsRegistry() отдаёт пустой список
+ *                                      плагинов, не обращаясь к их реестру
  */
 
 /**
@@ -56,7 +60,7 @@ const { getOrCreateAppSecret } = require('../config');
  * @param {PhpContext} context
  * @returns {NodeJS.ProcessEnv}
  */
-function buildCommonEnv({ meiliPort, meiliKey, qbittorrentPort, appPort }) {
+function buildCommonEnv({ meiliPort, meiliKey, qbittorrentPort, appPort, safeMode }) {
     return {
         ...process.env,
         APP_ROOT:                paths.getAppRootDir(),
@@ -78,6 +82,7 @@ function buildCommonEnv({ meiliPort, meiliKey, qbittorrentPort, appPort }) {
         QBITTORRENT_URL:         `http://127.0.0.1:${qbittorrentPort}`,
         // Только для процессов, стартующих после веб-воркера — см. PhpContext.appPort.
         ...(appPort === undefined ? {} : { OAUTH_CALLBACK_ORIGIN: `http://127.0.0.1:${appPort}` }),
+        ...(safeMode ? { SAFE_MODE: '1' } : {}),
     };
 }
 

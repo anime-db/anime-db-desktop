@@ -60,6 +60,11 @@ jest.mock('../../native/supervisor/php-command', () => ({
     run:        jest.fn(() => Promise.resolve()),
     killOrphan: jest.fn(() => Promise.resolve()),
 }));
+jest.mock('../../native/supervisor/safe-mode', () => ({
+    beginStartAttempt:  jest.fn(() => false),
+    hasModeChanged:     jest.fn(() => false),
+    commitStartSuccess: jest.fn(),
+}));
 
 const cacheInvalidation = require('../../native/supervisor/cache-invalidation');
 const frankenphp        = require('../../native/supervisor/frankenphp');
@@ -67,6 +72,7 @@ const meilisearch       = require('../../native/supervisor/meilisearch');
 const messengerConsumer = require('../../native/supervisor/messenger-consumer');
 const migrations        = require('../../native/supervisor/migrations');
 const phpCommand        = require('../../native/supervisor/php-command');
+const safeModeState     = require('../../native/supervisor/safe-mode');
 const searchReindex     = require('../../native/supervisor/search-reindex');
 const supervisor        = require('../../native/supervisor');
 
@@ -77,6 +83,8 @@ describe('supervisor.start', () => {
         cacheInvalidation.hasBuildChanged.mockReturnValue(false);
         cacheInvalidation.invalidateCache.mockImplementation(() => {});
         cacheInvalidation.commitFingerprint.mockImplementation(() => {});
+        safeModeState.hasModeChanged.mockReturnValue(false);
+        safeModeState.commitStartSuccess.mockImplementation(() => {});
         frankenphp.start.mockResolvedValue({ httpPort: 8000, wsPort: 8001 });
         messengerConsumer.start.mockResolvedValue(undefined);
         meilisearch.start.mockResolvedValue({ port: 7700, key: 'k', wiped: false });
@@ -107,6 +115,7 @@ describe('supervisor.start', () => {
             qbittorrentPort: 9000,
             meiliPort:       7700,
             meiliKey:        'k',
+            safeMode:        false,
         });
     });
 
@@ -140,6 +149,7 @@ describe('supervisor.start', () => {
             qbittorrentPort: 9000,
             meiliPort:       7700,
             meiliKey:        'k',
+            safeMode:        false,
         });
         expect(onProgress).toHaveBeenCalledWith(4, 5, 'Обновление поискового индекса...');
         expect(onProgress).toHaveBeenCalledWith(5, 5, 'Готово');
@@ -171,6 +181,7 @@ describe('supervisor.start', () => {
             qbittorrentPort: 9000,
             meiliPort:       7700,
             meiliKey:        'k',
+            safeMode:        false,
         });
         expect(onProgress).toHaveBeenCalledWith(4, 5, 'Обновление поискового индекса...');
         expect(onProgress).toHaveBeenCalledWith(5, 5, 'Готово');
@@ -240,5 +251,61 @@ describe('supervisor.start', () => {
 
         expect(frankenphp.start).not.toHaveBeenCalled();
         expect(cacheInvalidation.commitFingerprint).not.toHaveBeenCalled();
+    });
+
+    // Safe mode (issue #403): SAFE_MODE must reach every PHP process the same way, since
+    // migrations.run() boots the same Kernel (and its plugin bundles) as frankenphp.
+    describe('safe mode (issue #403)', () => {
+        test('passes safeMode:true through the shared context to migrations, frankenphp and messenger-consumer', async () => {
+            await supervisor.start(jest.fn(), { safeMode: true });
+
+            expect(migrations.run).toHaveBeenCalledWith(expect.objectContaining({ safeMode: true }));
+            expect(frankenphp.start).toHaveBeenCalledWith(expect.objectContaining({ safeMode: true }));
+            expect(messengerConsumer.start).toHaveBeenCalledWith(expect.objectContaining({ safeMode: true }));
+        });
+
+        test('defaults to safeMode:false when no options are given', async () => {
+            await supervisor.start(jest.fn());
+
+            expect(frankenphp.start).toHaveBeenCalledWith(expect.objectContaining({ safeMode: false }));
+        });
+
+        test('invalidates the cache when the safe mode flag changed even though the build did not', async () => {
+            cacheInvalidation.hasBuildChanged.mockReturnValue(false);
+            safeModeState.hasModeChanged.mockReturnValue(true);
+
+            await supervisor.start(jest.fn(), { safeMode: true });
+
+            expect(safeModeState.hasModeChanged).toHaveBeenCalledWith(true);
+            expect(cacheInvalidation.invalidateCache).toHaveBeenCalled();
+        });
+
+        test('does not invalidate the cache when neither the build nor the safe mode flag changed', async () => {
+            cacheInvalidation.hasBuildChanged.mockReturnValue(false);
+            safeModeState.hasModeChanged.mockReturnValue(false);
+
+            await supervisor.start(jest.fn());
+
+            expect(cacheInvalidation.invalidateCache).not.toHaveBeenCalled();
+        });
+
+        test('commits the safe mode state only after every process has started successfully, alongside the fingerprint', async () => {
+            const callOrder = [];
+            cacheInvalidation.commitFingerprint.mockImplementation(() => callOrder.push('commitFingerprint'));
+            safeModeState.commitStartSuccess.mockImplementation(() => callOrder.push('commitStartSuccess'));
+
+            await supervisor.start(jest.fn(), { safeMode: true });
+
+            expect(callOrder).toEqual(['commitFingerprint', 'commitStartSuccess']);
+            expect(safeModeState.commitStartSuccess).toHaveBeenCalledWith(true);
+        });
+
+        test('does not commit the safe mode state when a child process fails to start', async () => {
+            frankenphp.start.mockRejectedValue(new Error('spawn failed'));
+
+            await expect(supervisor.start(jest.fn(), { safeMode: true })).rejects.toThrow('spawn failed');
+
+            expect(safeModeState.commitStartSuccess).not.toHaveBeenCalled();
+        });
     });
 });
