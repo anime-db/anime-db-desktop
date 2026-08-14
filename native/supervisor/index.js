@@ -121,7 +121,7 @@ async function start(onProgress, { safeMode = false } = {}) {
     const migrationsApplied = await migrations.run(phpContext);
 
     if (onProgress) onProgress(2, TOTAL_STEPS, 'Запуск FrankenPHP...');
-    const { httpPort: frankenphpPort, wsPort } = await frankenphp.start(meiliPort, meiliKey, qbittorrentPort, safeMode);
+    const { httpPort: frankenphpPort, wsPort } = await frankenphp.start(phpContext);
     if (onProgress) onProgress(3, TOTAL_STEPS, 'Запуск обработчика фоновых задач...');
 
     // Тот же контекст, что у миграций, плюс порт поднятого веб-воркера — см. env.js.

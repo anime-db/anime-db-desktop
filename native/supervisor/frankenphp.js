@@ -125,13 +125,12 @@ function killOrphan() {
  * возвращает порты. Инвалидация устаревшего кэша скомпилированного контейнера выполняется
  * супервизором раньше — до запуска любого PHP-процесса, см. supervisor/index.js.
  *
- * @param {number} meiliPort  порт Meilisearch
- * @param {string} meiliKey   master-key Meilisearch
- * @param {number} qbittorrentPort  WebUI-порт qbittorrent-nox
- * @param {boolean} [safeMode]  см. PhpContext.safeMode (issue #403)
+ * @param {import('./env').PhpContext} context  общий контекст сеанса, собранный супервизором
+ *                                               (issue #391) — appPort в нём ещё не задан, он
+ *                                               появляется только после findFreePort() ниже
  * @returns {Promise<{ httpPort: number, wsPort: number }>}
  */
-async function start(meiliPort, meiliKey, qbittorrentPort, safeMode) {
+async function start(context) {
     stopping = false;
     ensurePhpIni();
 
@@ -141,7 +140,7 @@ async function start(meiliPort, meiliKey, qbittorrentPort, safeMode) {
 
     port   = await findFreePort(8000);
     wsPort = await findFreePort(port + 1);
-    spawnProcess({ appPort: port, qbittorrentPort, meiliPort, meiliKey, safeMode }, wsPort);
+    spawnProcess({ ...context, appPort: port }, wsPort);
     await waitForHealth(port);
     return { httpPort: port, wsPort };
 }

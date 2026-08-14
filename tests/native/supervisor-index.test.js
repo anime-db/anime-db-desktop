@@ -259,14 +259,14 @@ describe('supervisor.start', () => {
             await supervisor.start(jest.fn(), { safeMode: true });
 
             expect(migrations.run).toHaveBeenCalledWith(expect.objectContaining({ safeMode: true }));
-            expect(frankenphp.start).toHaveBeenCalledWith(7700, 'k', 9000, true);
+            expect(frankenphp.start).toHaveBeenCalledWith(expect.objectContaining({ safeMode: true }));
             expect(messengerConsumer.start).toHaveBeenCalledWith(expect.objectContaining({ safeMode: true }));
         });
 
         test('defaults to safeMode:false when no options are given', async () => {
             await supervisor.start(jest.fn());
 
-            expect(frankenphp.start).toHaveBeenCalledWith(7700, 'k', 9000, false);
+            expect(frankenphp.start).toHaveBeenCalledWith(expect.objectContaining({ safeMode: false }));
         });
 
         test('invalidates the cache when the safe mode flag changed even though the build did not', async () => {
