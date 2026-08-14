@@ -116,7 +116,12 @@ describe('invalidateStaleCache', () => {
 
         invalidateStaleCache();
 
-        expect(fs.rmSync).toHaveBeenCalledWith('/fake/userData/var/cache', { recursive: true, force: true });
+        expect(fs.rmSync).toHaveBeenCalledWith('/fake/userData/var/cache', {
+            recursive: true,
+            force: true,
+            maxRetries: 3,
+            retryDelay: 200,
+        });
         expect(fs.writeFileSync).toHaveBeenCalledWith(
             '/fake/userData/state.json',
             expect.stringContaining('buildFingerprint'),

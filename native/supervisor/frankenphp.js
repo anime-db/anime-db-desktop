@@ -132,7 +132,11 @@ function killOrphan() {
  */
 async function start(meiliPort, meiliKey, qbittorrentPort) {
     stopping = false;
-    invalidateStaleCache();
+    try {
+        invalidateStaleCache();
+    } catch (err) {
+        console.error('[frankenphp] не удалось инвалидировать устаревший кэш контейнера, используем как есть:', err);
+    }
     ensurePhpIni();
 
     const logDir = path.join(paths.getRuntimeDir(), 'log');

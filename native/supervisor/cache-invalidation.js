@@ -86,7 +86,12 @@ function invalidateStaleCache() {
     if (stored === current) return;
 
     if (stored !== null) {
-        fs.rmSync(path.join(paths.getRuntimeDir(), 'cache'), { recursive: true, force: true });
+        fs.rmSync(path.join(paths.getRuntimeDir(), 'cache'), {
+            recursive: true,
+            force: true,
+            maxRetries: 3,
+            retryDelay: 200,
+        });
     }
     writeStoredFingerprint(current);
 }
