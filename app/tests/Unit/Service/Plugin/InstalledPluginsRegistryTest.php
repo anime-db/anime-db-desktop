@@ -226,6 +226,45 @@ final class InstalledPluginsRegistryTest extends TestCase
         $this->assertFalse($registry->has(new PluginId('animedb-unknown')));
     }
 
+    public function testSafeModeReportsNoPluginsEvenWhenInstalled(): void
+    {
+        $this->writeManifest('animedb-shikimori');
+        $registry = new InstalledPluginsRegistry($this->pluginsDir, $this->configStore(), new NullLogger());
+        $registry->reconcile();
+
+        $safeModeRegistry = new InstalledPluginsRegistry(
+            $this->pluginsDir,
+            $this->configStore(),
+            new NullLogger(),
+            safeMode: true,
+        );
+
+        $this->assertSame([], $safeModeRegistry->all());
+        $this->assertSame([], $safeModeRegistry->enabled());
+        $this->assertNull($safeModeRegistry->get(new PluginId('animedb-shikimori')));
+        $this->assertFalse($safeModeRegistry->has(new PluginId('animedb-shikimori')));
+    }
+
+    public function testSafeModeDoesNotReadTheIndexFile(): void
+    {
+        $this->writeManifest('animedb-shikimori');
+        $registry = new InstalledPluginsRegistry($this->pluginsDir, $this->configStore(), new NullLogger());
+        $registry->reconcile();
+
+        // A corrupted index would normally surface as a logged "invalid index entry" error the
+        // moment readIndex() parses it — safe mode must never reach that code path at all.
+        file_put_contents($this->pluginsDir.'/installed-plugins.php', '<?php throw new RuntimeException("must not be read in safe mode");');
+
+        $safeModeRegistry = new InstalledPluginsRegistry(
+            $this->pluginsDir,
+            $this->configStore(),
+            new NullLogger(),
+            safeMode: true,
+        );
+
+        $this->assertSame([], $safeModeRegistry->all());
+    }
+
     private function configStore(): PluginsConfigStore
     {
         return new PluginsConfigStore($this->pluginsDir.'/plugins.json');

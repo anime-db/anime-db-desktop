@@ -60,6 +60,19 @@ describe('buildCommonEnv', () => {
         expect(env.APP_PORT).toBeUndefined();
         expect(env.WS_PORT).toBeUndefined();
     });
+
+    // SAFE_MODE (issue #403) is what makes Kernel::installedPluginsRegistry() report no
+    // installed plugins — every PHP process must receive it identically, or the plugin list
+    // would disagree between e.g. migrations and the web worker within the same session.
+    test('includes SAFE_MODE=1 when context.safeMode is true', () => {
+        const env = buildCommonEnv({ ...CONTEXT, safeMode: true });
+        expect(env.SAFE_MODE).toBe('1');
+    });
+
+    test('omits SAFE_MODE when context.safeMode is false or absent', () => {
+        expect(buildCommonEnv({ ...CONTEXT, safeMode: false }).SAFE_MODE).toBeUndefined();
+        expect(buildCommonEnv(CONTEXT).SAFE_MODE).toBeUndefined();
+    });
 });
 
 describe('buildWebWorkerEnv', () => {

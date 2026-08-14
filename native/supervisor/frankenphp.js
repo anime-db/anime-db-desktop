@@ -128,9 +128,10 @@ function killOrphan() {
  * @param {number} meiliPort  порт Meilisearch
  * @param {string} meiliKey   master-key Meilisearch
  * @param {number} qbittorrentPort  WebUI-порт qbittorrent-nox
+ * @param {boolean} [safeMode]  см. PhpContext.safeMode (issue #403)
  * @returns {Promise<{ httpPort: number, wsPort: number }>}
  */
-async function start(meiliPort, meiliKey, qbittorrentPort) {
+async function start(meiliPort, meiliKey, qbittorrentPort, safeMode) {
     stopping = false;
     ensurePhpIni();
 
@@ -140,7 +141,7 @@ async function start(meiliPort, meiliKey, qbittorrentPort) {
 
     port   = await findFreePort(8000);
     wsPort = await findFreePort(port + 1);
-    spawnProcess({ appPort: port, qbittorrentPort, meiliPort, meiliKey }, wsPort);
+    spawnProcess({ appPort: port, qbittorrentPort, meiliPort, meiliKey, safeMode }, wsPort);
     await waitForHealth(port);
     return { httpPort: port, wsPort };
 }

@@ -63,6 +63,13 @@ final class InstalledPluginsRegistry
         private readonly PluginsConfigStore $pluginsConfigStore,
         private readonly LoggerInterface $logger,
         private readonly ManifestParser $manifestParser = new ManifestParser(),
+        /**
+         * Safe mode (issue #403): the native layer sets SAFE_MODE=1 after repeated failed
+         * startups to recover from a plugin that crashes the kernel bootstrap. When true, every
+         * read below reports no installed plugins without touching the index file at all — see
+         * {@see self::readIndex()}.
+         */
+        private readonly bool $safeMode = false,
     ) {
     }
 
@@ -229,6 +236,10 @@ final class InstalledPluginsRegistry
      */
     private function readIndex(): array
     {
+        if ($this->safeMode) {
+            return [];
+        }
+
         $indexPath = $this->indexPath();
         if (!is_file($indexPath)) {
             return [];

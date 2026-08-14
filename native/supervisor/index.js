@@ -29,6 +29,7 @@ const messengerConsumer = require('./messenger-consumer');
 const migrations        = require('./migrations');
 const phpCommand        = require('./php-command');
 const qbittorrent       = require('./qbittorrent');
+const safeModeState     = require('./safe-mode');
 const searchReindex     = require('./search-reindex');
 
 const events = new EventEmitter();
@@ -82,9 +83,12 @@ const TOTAL_STEPS = 5;
  * /settings. Ошибка переиндексации не блокирует старт приложения — только логируется.
  *
  * @param {((step: number, total: number, text: string) => void) | undefined} onProgress
+ * @param {{ safeMode?: boolean }} [options]  safeMode (issue #403) — набор незакрытых стартов
+ *                                             подряд, отслеживаемый native/lifecycle/index.js,
+ *                                             попадает сюда как уже принятое пользователем решение
  * @returns {Promise<{ frankenphpPort: number, wsPort: number, meiliPort: number, qbittorrentPort: number }>}
  */
-async function start(onProgress) {
+async function start(onProgress, { safeMode = false } = {}) {
     await Promise.all([
         frankenphp.killOrphan(),
         meilisearch.killOrphan(),
@@ -95,7 +99,10 @@ async function start(onProgress) {
         qbittorrent.killOrphan(),
     ]);
 
-    if (cacheInvalidation.hasBuildChanged()) {
+    // Смена SAFE_MODE между запусками требует того же вайпа, что и смена сборки (issue #386) —
+    // см. safe-mode.js#hasModeChanged: набор бандлов плагинов запекается в скомпилированный
+    // контейнер, и без вайпа переключение режима не даст эффекта или "залипнет" после выхода.
+    if (cacheInvalidation.hasBuildChanged() || safeModeState.hasModeChanged(safeMode)) {
         cacheInvalidation.invalidateCache();
     }
 
@@ -108,13 +115,13 @@ async function start(onProgress) {
     // совпадать, поэтому он собирается здесь один раз, а не по месту каждым модулем. Миграции
     // стартуют до веб-воркера, поэтому appPort на этот момент ещё не существует — в PhpContext
     // он опционален (см. env.js), и OAUTH_CALLBACK_ORIGIN в их окружение не попадает.
-    const phpContext = { qbittorrentPort, meiliPort, meiliKey };
+    const phpContext = { qbittorrentPort, meiliPort, meiliKey, safeMode };
 
     if (onProgress) onProgress(1, TOTAL_STEPS, 'Применение миграций...');
     const migrationsApplied = await migrations.run(phpContext);
 
     if (onProgress) onProgress(2, TOTAL_STEPS, 'Запуск FrankenPHP...');
-    const { httpPort: frankenphpPort, wsPort } = await frankenphp.start(meiliPort, meiliKey, qbittorrentPort);
+    const { httpPort: frankenphpPort, wsPort } = await frankenphp.start(meiliPort, meiliKey, qbittorrentPort, safeMode);
     if (onProgress) onProgress(3, TOTAL_STEPS, 'Запуск обработчика фоновых задач...');
 
     // Тот же контекст, что у миграций, плюс порт поднятого веб-воркера — см. env.js.
@@ -134,6 +141,7 @@ async function start(onProgress) {
     if (onProgress) onProgress(TOTAL_STEPS, TOTAL_STEPS, 'Готово');
 
     cacheInvalidation.commitFingerprint();
+    safeModeState.commitStartSuccess(safeMode);
 
     return { frankenphpPort, wsPort, meiliPort, qbittorrentPort };
 }

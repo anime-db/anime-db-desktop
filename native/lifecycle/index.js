@@ -27,6 +27,7 @@ require('../accept-language');
 require('../shell');
 require('../dialog');
 const supervisor       = require('../supervisor');
+const safeModeState    = require('../supervisor/safe-mode');
 const { createWindow } = require('../window');
 const { createSplash } = require('../window/splash');
 const tray             = require('../tray');
@@ -101,6 +102,35 @@ function buildMigrationErrorDialog(err, locale) {
         };
 }
 
+/**
+ * Shown before the kernel is started (issue #403), when the previous two launches in a row never
+ * reached a successful start — see safe-mode.js#beginStartAttempt(). Localized the same way as
+ * {@see buildMigrationErrorDialog}, for the same reason: recovering from this requires the user
+ * to make a choice, not just acknowledge an error.
+ *
+ * @param {string} locale
+ * @returns {{ title: string, message: string, buttons: [string, string] }}
+ */
+function buildSafeModeDialog(locale) {
+    const isRu = locale.startsWith('ru');
+
+    return isRu
+        ? {
+            title: 'Не удаётся запустить приложение',
+            message: 'Приложение не смогло запуститься два раза подряд. Возможная причина — несовместимый '
+                + 'плагин.\n\nМожно запустить приложение без плагинов, чтобы открыть его и удалить '
+                + 'проблемный плагин. Плагины снова будут загружены при обычном перезапуске.',
+            buttons: ['Запустить без плагинов', 'Выход'],
+        }
+        : {
+            title: 'The app failed to start',
+            message: 'The app failed to start two times in a row. An incompatible plugin may be the cause.\n\n'
+                + 'You can start it without plugins to open it and remove the problematic one. Plugins are loaded '
+                + 'again on the next regular restart.',
+            buttons: ['Run without plugins', 'Exit'],
+        };
+}
+
 let quitting   = false;
 let mainWindow = null;
 
@@ -132,6 +162,27 @@ if (!gotLock) {
     app.whenReady().then(async () => {
         await proxy.applyProxy(session.defaultSession);
 
+        // Should the kernel be trusted this time? See safe-mode.js#beginStartAttempt() — two
+        // unclosed starts in a row means the last two launches never made it to a successful
+        // start, so ask before trying a third time the same way (issue #403).
+        let safeMode = false;
+        if (safeModeState.beginStartAttempt()) {
+            const { title, message, buttons } = buildSafeModeDialog(getLocale());
+            const choice = dialog.showMessageBoxSync({
+                type:      'warning',
+                buttons,
+                defaultId: 0,
+                cancelId:  1,
+                title,
+                message,
+            });
+            if (choice === 1) {
+                app.quit();
+                return;
+            }
+            safeMode = true;
+        }
+
         const splash = createSplash();
 
         await new Promise(resolve => splash.once('ready-to-show', () => {
@@ -146,7 +197,7 @@ if (!gotLock) {
                 if (!splash.isDestroyed()) {
                     splash.webContents.send('splash-progress', { step, total, text });
                 }
-            });
+            }, { safeMode });
 
             wsClient.connect(wsPort);
 

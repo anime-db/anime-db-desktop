@@ -171,10 +171,21 @@ class Kernel extends BaseKernel
                 $pluginsDir,
                 new PluginsConfigStore($pluginsConfigPath),
                 $this->pluginLoaderLogger(),
+                safeMode: $this->isSafeMode(),
             );
         }
 
         return $this->installedPluginsRegistry;
+    }
+
+    /**
+     * SAFE_MODE=1 (native/supervisor/env.js) is set by the native layer after repeated failed
+     * startups (issue #403), to recover from a plugin that crashes the kernel bootstrap before
+     * the app can even show a window to disable it.
+     */
+    private function isSafeMode(): bool
+    {
+        return ($_SERVER['SAFE_MODE'] ?? null) === '1';
     }
 
     /**

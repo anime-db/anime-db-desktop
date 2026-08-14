@@ -31,7 +31,7 @@ jest.mock('electron', () => ({
         getPath:    jest.fn(() => '/fake/userData'),
         getLocale:  jest.fn(() => 'ru-RU'),
     },
-    dialog:  { showErrorBox: jest.fn() },
+    dialog:  { showErrorBox: jest.fn(), showMessageBoxSync: jest.fn() },
     session: { defaultSession: {} },
 }));
 jest.mock('fs', () => ({
@@ -48,6 +48,9 @@ jest.mock('../../native/supervisor', () => ({
     stop:     jest.fn(() => Promise.resolve()),
     killSync: jest.fn(),
     events:   { on: jest.fn() },
+}));
+jest.mock('../../native/supervisor/safe-mode', () => ({
+    beginStartAttempt: jest.fn(() => false),
 }));
 jest.mock('../../native/window', () => ({ createWindow: jest.fn() }));
 jest.mock('../../native/window/splash', () => ({ createSplash: jest.fn() }));
@@ -85,8 +88,9 @@ function loadLifecycle() {
     const { app, dialog }  = require('electron');
     app.on.mockImplementation((event, handler) => { appHandlers[event] = handler; });
 
-    const supervisor  = require('../../native/supervisor');
-    const migrations  = require('../../native/supervisor/migrations');
+    const supervisor   = require('../../native/supervisor');
+    const migrations   = require('../../native/supervisor/migrations');
+    const safeModeState = require('../../native/supervisor/safe-mode');
     const { createWindow } = require('../../native/window');
     const { createSplash } = require('../../native/window/splash');
     const tray        = require('../../native/tray');
@@ -116,7 +120,7 @@ function loadLifecycle() {
     require('../../native/lifecycle');
 
     return {
-        app, dialog, supervisor, migrations, createWindow, createSplash, tray, wsClient, proxy, firewall,
+        app, dialog, supervisor, migrations, safeModeState, createWindow, createSplash, tray, wsClient, proxy, firewall,
         appHandlers, processHandlers, fakeWindow, fakeSplash,
     };
 }
@@ -167,6 +171,41 @@ describe('single-instance lock', () => {
 
         expect(() => appHandlers['second-instance']()).not.toThrow();
         expect(fakeWindow.show).not.toHaveBeenCalled();
+    });
+});
+
+describe('safe mode prompt (issue #403)', () => {
+    test('does not prompt and starts normally when beginStartAttempt() reports no unclosed streak', async () => {
+        const { supervisor, dialog, safeModeState } = loadLifecycle();
+        safeModeState.beginStartAttempt.mockReturnValue(false);
+
+        await new Promise((r) => setTimeout(r, 500));
+
+        expect(dialog.showMessageBoxSync).not.toHaveBeenCalled();
+        expect(supervisor.start).toHaveBeenCalledWith(expect.any(Function), { safeMode: false });
+    });
+
+    test('two unclosed starts in a row prompt a dialog before the kernel starts', async () => {
+        const { supervisor, dialog, safeModeState } = loadLifecycle();
+        safeModeState.beginStartAttempt.mockReturnValue(true);
+        dialog.showMessageBoxSync.mockReturnValue(0);
+
+        await new Promise((r) => setTimeout(r, 500));
+
+        expect(dialog.showMessageBoxSync).toHaveBeenCalledTimes(1);
+        expect(supervisor.start).toHaveBeenCalledWith(expect.any(Function), { safeMode: true });
+    });
+
+    test('choosing "Exit" quits without ever starting the kernel', async () => {
+        const { app, supervisor, dialog, safeModeState, createSplash } = loadLifecycle();
+        safeModeState.beginStartAttempt.mockReturnValue(true);
+        dialog.showMessageBoxSync.mockReturnValue(1);
+
+        await new Promise((r) => setTimeout(r, 500));
+
+        expect(supervisor.start).not.toHaveBeenCalled();
+        expect(createSplash).not.toHaveBeenCalled();
+        expect(app.quit).toHaveBeenCalledTimes(1);
     });
 });
 
