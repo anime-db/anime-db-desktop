@@ -29,6 +29,7 @@ const paths        = require('../paths');
 const { getOrCreateAppSecret } = require('../config');
 const { waitForProcessAlive }  = require('./healthcheck');
 const { pruneOldLogs, openLogStream } = require('./logrotate');
+const pidTracker               = require('./pid-tracker');
 
 const events = new EventEmitter();
 
@@ -81,6 +82,8 @@ function spawnProcess(meiliPort, meiliKey, backoffIdx = 0) {
         stdio: ['ignore', 'pipe', 'pipe'],
     });
 
+    pidTracker.writePid(LOG_PREFIX, child.pid);
+
     child.stdout.on('data', (d) => logStream.write(d));
     child.stderr.on('data', (d) => logStream.write(d));
 
@@ -91,6 +94,19 @@ function spawnProcess(meiliPort, meiliKey, backoffIdx = 0) {
         console.error(`[messenger-consumer] вышел с кодом ${code}, перезапуск через ${delay}ms`);
         setTimeout(() => spawnProcess(meiliPort, meiliKey, backoffIdx + 1), delay);
     });
+}
+
+/**
+ * Убивает процесс-сироту, оставленный предыдущим сеансом (см. pid-tracker.js). Должен быть
+ * вызван супервизором до того, как запущен хоть один дочерний процесс текущего сеанса — в
+ * частности, до frankenphp.start(): оба используют один и тот же frankenphp.exe, и если PID из
+ * messenger-consumer.pid успел быть переиспользован ОС именно под frankenphp текущего сеанса,
+ * запоздалый killOrphan() убьёт его, а не сироту (issue #390).
+ *
+ * @returns {Promise<void>}
+ */
+function killOrphan() {
+    return pidTracker.killOrphan(LOG_PREFIX, BINARY);
 }
 
 /**
@@ -132,6 +148,7 @@ function stop() {
                 logStream.end();
                 logStream = null;
             }
+            pidTracker.clearPid(LOG_PREFIX);
             resolve();
         });
 
@@ -139,4 +156,18 @@ function stop() {
     });
 }
 
-module.exports = { start, stop, buildEnv, events };
+/**
+ * Best-effort синхронный килл на случай аварийного выхода Electron, который не проходит через
+ * штатный stop() (см. process.on('exit') в lifecycle/index.js) — дождаться асинхронного
+ * graceful-shutdown там уже нельзя, поэтому сразу SIGKILL.
+ */
+function killSync() {
+    if (!child) return;
+    try {
+        child.kill('SIGKILL');
+    } catch {
+        // процесс уже завершился
+    }
+}
+
+module.exports = { start, stop, killSync, killOrphan, buildEnv, events };

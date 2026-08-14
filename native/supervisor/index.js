@@ -34,6 +34,11 @@ qbittorrent.events.on('exit', (code) => events.emit('exit', code));
 
 /**
  * Запускает все дочерние процессы и возвращает занятые ими порты.
+ * Сначала зачищаются PID-файлы всех процессов-сирот от предыдущего сеанса — до того, как
+ * запущен хоть один дочерний процесс текущего сеанса. frankenphp и messenger-consumer делят один
+ * и тот же бинарник (frankenphp.exe); если зачистка messenger-consumer выполнялась бы лениво,
+ * внутри его собственного start() (после того как frankenphp текущего сеанса уже запущен),
+ * переиспользованный ОС PID мог бы совпасть с процессом текущего сеанса и убить его (issue #390).
  * Meilisearch и qbittorrent-nox стартуют первыми (независимо друг от друга) — их
  * порты/ключи нужны FrankenPHP в env.
  *
@@ -41,6 +46,13 @@ qbittorrent.events.on('exit', (code) => events.emit('exit', code));
  * @returns {Promise<{ frankenphpPort: number, wsPort: number, meiliPort: number, qbittorrentPort: number }>}
  */
 async function start(onProgress) {
+    await Promise.all([
+        frankenphp.killOrphan(),
+        meilisearch.killOrphan(),
+        messengerConsumer.killOrphan(),
+        qbittorrent.killOrphan(),
+    ]);
+
     const [{ port: meiliPort, key: meiliKey }, { webuiPort: qbittorrentPort }] = await Promise.all([
         meilisearch.start(),
         qbittorrent.start(),
@@ -66,4 +78,16 @@ async function stop() {
     await Promise.all([meilisearch.stop(), qbittorrent.stop()]);
 }
 
-module.exports = { start, stop, events };
+/**
+ * Best-effort синхронный килл всех дочерних процессов на случай аварийного выхода Electron,
+ * который не проходит через штатный stop() (см. process.on('exit') в lifecycle/index.js) —
+ * дождаться асинхронного graceful-shutdown там уже нельзя.
+ */
+function killSync() {
+    messengerConsumer.killSync();
+    frankenphp.killSync();
+    meilisearch.killSync();
+    qbittorrent.killSync();
+}
+
+module.exports = { start, stop, killSync, events };

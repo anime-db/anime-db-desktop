@@ -35,6 +35,15 @@
                 "x64"
             ]
         },
+        "nsis": {
+            "oneClick": false,
+            "perMachine": false,
+            "allowToChangeInstallationDirectory": true,
+            "deleteAppDataOnUninstall": false,
+            "createDesktopShortcut": true,
+            "createStartMenuShortcut": true,
+            "runAfterFinish": true
+        },
         "files": [
             "native/**",
             "app/**",

@@ -29,6 +29,7 @@ const paths             = require('../paths');
 const { findFreePort }        = require('./port');
 const { waitForHealth }       = require('./healthcheck');
 const { pruneOldLogs, openLogStream } = require('./logrotate');
+const pidTracker              = require('./pid-tracker');
 
 const BINARY   = path.join(__dirname, '..', '..', 'bin', 'meilisearch', 'meilisearch.exe');
 const VERSIONS = path.join(__dirname, '..', '..', 'scripts', 'versions.json');
@@ -100,6 +101,8 @@ function spawnProcess(appPort, masterKey, backoffIdx = 0) {
         stdio: ['ignore', 'pipe', 'pipe'],
     });
 
+    pidTracker.writePid(LOG_PREFIX, child.pid);
+
     child.stdout.on('data', (d) => logStream.write(d));
     child.stderr.on('data', (d) => logStream.write(d));
 
@@ -109,6 +112,18 @@ function spawnProcess(appPort, masterKey, backoffIdx = 0) {
         console.error(`[meilisearch] вышел с кодом ${code}, перезапуск через ${delay}ms`);
         setTimeout(() => spawnProcess(appPort, masterKey, backoffIdx + 1), delay);
     });
+}
+
+/**
+ * Убивает процесс-сироту, оставленный предыдущим сеансом (см. pid-tracker.js). Должен быть
+ * вызван супервизором до того, как запущен хоть один дочерний процесс текущего сеанса — иначе
+ * PID, переиспользованный ОС для процесса на том же бинарнике, пройдёт проверку имени образа и
+ * killOrphan() убьёт только что запущенный процесс текущего сеанса (issue #390).
+ *
+ * @returns {Promise<void>}
+ */
+function killOrphan() {
+    return pidTracker.killOrphan(LOG_PREFIX, BINARY);
 }
 
 /**
@@ -153,6 +168,7 @@ function stop() {
                 logStream.end();
                 logStream = null;
             }
+            pidTracker.clearPid(LOG_PREFIX);
             resolve();
         });
 
@@ -160,4 +176,18 @@ function stop() {
     });
 }
 
-module.exports = { start, stop, checkVersionAndWipe };
+/**
+ * Best-effort синхронный килл на случай аварийного выхода Electron, который не проходит через
+ * штатный stop() (см. process.on('exit') в lifecycle/index.js) — дождаться асинхронного
+ * graceful-shutdown там уже нельзя, поэтому сразу SIGKILL.
+ */
+function killSync() {
+    if (!child) return;
+    try {
+        child.kill('SIGKILL');
+    } catch {
+        // процесс уже завершился
+    }
+}
+
+module.exports = { start, stop, killSync, killOrphan, checkVersionAndWipe };

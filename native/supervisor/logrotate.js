@@ -76,4 +76,4 @@ function openLogStream(logDir, prefix) {
     return fs.createWriteStream(filename, { flags: 'a' });
 }
 
-module.exports = { pruneOldLogs, openLogStream };
+module.exports = { pruneOldLogs, openLogStream, todayStr };
