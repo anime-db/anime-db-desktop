@@ -181,6 +181,7 @@ describe('supervisor.start', () => {
             qbittorrentPort: 9000,
             meiliPort:       7700,
             meiliKey:        'k',
+            safeMode:        false,
         });
         expect(onProgress).toHaveBeenCalledWith(4, 5, 'Обновление поискового индекса...');
         expect(onProgress).toHaveBeenCalledWith(5, 5, 'Готово');
