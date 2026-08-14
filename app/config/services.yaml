@@ -79,7 +79,7 @@ parameters:
     app.sync.push_on_edit_ttl_seconds: 300
 
     # In production Electron passes MARKET_REGISTRY_CACHE_PATH (see native/paths.js,
-    # native/supervisor/frankenphp.js), pointing at %AppData%/market-registry-cache.json — the
+    # native/supervisor/env.js), pointing at %AppData%/market-registry-cache.json — the
     # last signature-verified plugins-registry.json (issue #292): PluginRegistryLoader falls back
     # to it whenever a fresh download fails a check, and its "sequence" field is what anti-rollback
     # protection compares new downloads against across app restarts.

@@ -89,6 +89,10 @@ test('getBackupsDir returns backups/ inside userData', () => {
     expect(paths.getBackupsDir()).toBe(path.join(USER_DATA, 'backups'));
 });
 
+test('getMarketRegistryCachePath returns market-registry-cache.json inside userData', () => {
+    expect(paths.getMarketRegistryCachePath()).toBe(path.join(USER_DATA, 'market-registry-cache.json'));
+});
+
 test('all path functions reflect a different userData value (fallback scenario)', () => {
     const OTHER = '/other/AppData/AnimeDB';
     app.getPath.mockReturnValue(OTHER);

@@ -35,6 +35,7 @@ jest.mock('../../native/paths', () => ({
     getConfigPath:         jest.fn(() => '/fake/userData/config.json'),
     getPluginsConfigPath:  jest.fn(() => '/fake/userData/plugins.json'),
     getPluginsDir:         jest.fn(() => '/fake/userData/plugins'),
+    getMarketRegistryCachePath: jest.fn(() => '/fake/userData/market-registry-cache.json'),
     getMeilisearchDataDir: jest.fn(() => '/fake/userData/meilisearch'),
     getMeilisearchKeyPath: jest.fn(() => '/fake/userData/meilisearch-key.txt'),
     getUserDataDir:        jest.fn(() => '/fake/userData'),
