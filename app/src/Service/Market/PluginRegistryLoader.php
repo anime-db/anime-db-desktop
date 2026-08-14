@@ -42,7 +42,9 @@ use App\Service\Market\Exception\PluginRegistryRollbackException;
  * Any failure in that chain does not bubble up as an exception: the last cached, already-trusted
  * registry is returned instead (if one exists), packaged together with the failure so the caller
  * can still show the user an error (issue #292's accepted-cases table: "reject the registry,
- * keep the last valid one from cache, show an error").
+ * keep the last valid one from cache, show an error"). This also covers a freshly accepted
+ * registry that fails to persist to the cache ({@see PluginRegistryCache::store()}): the write is
+ * best-effort, so the caller still gets the already-verified registry back instead of a crash.
  */
 final class PluginRegistryLoader
 {
@@ -78,7 +80,13 @@ final class PluginRegistryLoader
             return $this->fallbackToCache(new PluginRegistryRollbackException($registry->sequence, $lastKnownSequence));
         }
 
-        $this->cache->store($document->registryJson);
+        try {
+            $this->cache->store($document->registryJson);
+        } catch (\RuntimeException) {
+            // Caching a fresh, already-verified registry is a best-effort side effect: if the
+            // write fails (disk full, read-only directory, no permissions), the registry itself
+            // is still valid and must be handed to the caller, not lost behind a crash.
+        }
 
         return PluginRegistryLoadResult::fresh($registry);
     }

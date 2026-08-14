@@ -153,6 +153,37 @@ final class PluginRegistryLoaderTest extends TestCase
         $this->assertSame(1, $result->registry?->sequence);
     }
 
+    public function testStillReturnsTheFreshRegistryWhenWritingItToTheCacheFails(): void
+    {
+        // A regular file in place of the cache directory makes PluginRegistryCache::store()
+        // throw. load() must still hand back the already-verified fresh registry instead of
+        // letting that failure bubble up as an exception.
+        $blockingFile = sys_get_temp_dir().'/anime-market-registry-loader-test-blocker-'.uniqid();
+        file_put_contents($blockingFile, '');
+
+        try {
+            $httpClient = new MockHttpClient(
+                fn (string $method, string $url): MockResponse => str_ends_with($url, '.sig')
+                    ? new MockResponse($this->sign($this->registryJson(sequence: 1))->signatureBase64)
+                    : new MockResponse($this->registryJson(sequence: 1)),
+                null,
+            );
+            $loader = new PluginRegistryLoader(
+                new PluginRegistryFetcher($httpClient),
+                new PluginRegistrySignatureVerifier([$this->trustedPublicKey]),
+                new PluginRegistryCache($blockingFile.'/registry.json'),
+            );
+
+            $result = $loader->load();
+
+            $this->assertTrue($result->isFresh());
+            $this->assertNull($result->error);
+            $this->assertSame(1, $result->registry?->sequence);
+        } finally {
+            unlink($blockingFile);
+        }
+    }
+
     public function testReturnsNoRegistryWhenTheFirstEverLoadIsRejectedAndNoCacheExists(): void
     {
         $untrustedKeyPair = sodium_crypto_sign_keypair();

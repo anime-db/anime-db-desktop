@@ -88,6 +88,23 @@ final class PluginRegistryCacheTest extends TestCase
         $this->assertNull($cache->getLastSequence());
     }
 
+    public function testThrowsWhenTheCacheDirectoryCannotBeCreated(): void
+    {
+        // A regular file in place of the cache directory: mkdir() and the subsequent
+        // file_put_contents() both fail, so store() must surface that as an exception
+        // instead of silently pretending the registry was cached.
+        $blockingFile = sys_get_temp_dir().'/anime-market-registry-cache-test-blocker-'.uniqid();
+        file_put_contents($blockingFile, '');
+        $cache = new PluginRegistryCache($blockingFile.'/registry.json');
+
+        try {
+            $this->expectException(\RuntimeException::class);
+            $cache->store($this->registryJson(sequence: 1));
+        } finally {
+            unlink($blockingFile);
+        }
+    }
+
     private function registryJson(int $sequence): string
     {
         return json_encode(['sequence' => $sequence, 'asset_mirrors' => [], 'plugins' => []], \JSON_THROW_ON_ERROR);

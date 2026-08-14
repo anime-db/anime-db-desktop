@@ -77,14 +77,16 @@ final class PluginRegistryCache
     {
         $directory = \dirname($this->cachePath);
         if (!is_dir($directory)) {
-            mkdir($directory, recursive: true);
+            @mkdir($directory, recursive: true);
         }
 
         $tmpPath = $this->cachePath.'.tmp';
-        if (file_put_contents($tmpPath, $registryJson) === false) {
+        if (@file_put_contents($tmpPath, $registryJson) === false) {
             throw new \RuntimeException(\sprintf('Unable to write "%s".', $tmpPath));
         }
 
-        rename($tmpPath, $this->cachePath);
+        if (!@rename($tmpPath, $this->cachePath)) {
+            throw new \RuntimeException(\sprintf('Unable to move "%s" to "%s".', $tmpPath, $this->cachePath));
+        }
     }
 }
