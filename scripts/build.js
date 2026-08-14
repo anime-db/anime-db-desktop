@@ -28,6 +28,7 @@ const path = require('path');
 const rootDir = path.resolve(__dirname, '..');
 const appDir = path.join(rootDir, 'app');
 const packageJsonPath = path.join(rootDir, 'package.json');
+const buildIdPath = path.join(rootDir, 'scripts', 'build-id.txt');
 
 const RELEASE_TAG_PATTERN = /^v\d+\.\d+\.\d+(-[0-9A-Za-z-.]+)?(\+[0-9A-Za-z-.]+)?$/;
 
@@ -62,8 +63,26 @@ function syncVersionFromTag(
     console.log(`Stamped package.json version from tag: ${version}`);
 }
 
+/**
+ * Stamps a value that changes on every build into scripts/build-id.txt — packaged with the app
+ * (see package.json "build.files") and hashed into the runtime cache-invalidation fingerprint
+ * (native/supervisor/cache-invalidation.js). app.getVersion() alone only changes on tagged
+ * release builds (see syncVersionFromTag above); plain workflow_dispatch/branch builds would
+ * otherwise be indistinguishable from a previous install of the same checked-in version and skip
+ * cache invalidation on upgrade (issue #386). GITHUB_SHA/GITHUB_RUN_ID are set by GitHub Actions
+ * automatically on every run — no workflow change needed. Local runs (no CI env) fall back to a
+ * timestamp so every local build is still treated as distinct.
+ */
+function writeBuildId(buildIdOutPath = buildIdPath) {
+    const id = process.env.GITHUB_SHA
+        ? `${process.env.GITHUB_SHA}-${process.env.GITHUB_RUN_ID}`
+        : `local-${Date.now()}`;
+    fs.writeFileSync(buildIdOutPath, id, 'utf8');
+}
+
 function main() {
     syncVersionFromTag();
+    writeBuildId();
 
     execSync('composer install --no-dev --optimize-autoloader', { cwd: appDir, stdio: 'inherit' });
 
@@ -82,4 +101,4 @@ if (require.main === module) {
     main();
 }
 
-module.exports = { syncVersionFromTag };
+module.exports = { syncVersionFromTag, writeBuildId };

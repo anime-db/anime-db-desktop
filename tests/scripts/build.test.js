@@ -25,12 +25,16 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const { syncVersionFromTag } = require('../../scripts/build');
+const { syncVersionFromTag, writeBuildId } = require('../../scripts/build');
 
 function writePackageJson(version) {
     const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'build-test-')), 'package.json');
     fs.writeFileSync(file, JSON.stringify({ name: 'anime-db-desktop', version }, null, 4) + '\n', 'utf8');
     return file;
+}
+
+function buildIdFilePath() {
+    return path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'build-id-test-')), 'build-id.txt');
 }
 
 describe('syncVersionFromTag', () => {
@@ -71,5 +75,33 @@ describe('syncVersionFromTag', () => {
             /does not match the expected/
         );
         expect(JSON.parse(fs.readFileSync(pkgPath, 'utf8')).version).toBe('0.0.1');
+    });
+});
+
+describe('writeBuildId', () => {
+    const ORIGINAL_ENV = { ...process.env };
+
+    afterEach(() => {
+        process.env = { ...ORIGINAL_ENV };
+    });
+
+    test('writes GITHUB_SHA + GITHUB_RUN_ID when running in GitHub Actions (tag or workflow_dispatch alike)', () => {
+        process.env.GITHUB_SHA = 'abc123';
+        process.env.GITHUB_RUN_ID = '999';
+        const idPath = buildIdFilePath();
+
+        writeBuildId(idPath);
+
+        expect(fs.readFileSync(idPath, 'utf8')).toBe('abc123-999');
+    });
+
+    test('falls back to a local timestamp marker outside of CI', () => {
+        delete process.env.GITHUB_SHA;
+        delete process.env.GITHUB_RUN_ID;
+        const idPath = buildIdFilePath();
+
+        writeBuildId(idPath);
+
+        expect(fs.readFileSync(idPath, 'utf8')).toMatch(/^local-\d+$/);
     });
 });

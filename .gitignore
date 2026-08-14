@@ -17,6 +17,9 @@ data/
 # Frontend assets — генерируются при сборке, не хранятся в git
 app/public/js/htmx.min.js
 
+# Отпечаток сборки — стемпуется на каждой сборке в scripts/build.js#writeBuildId, не хранится в git
+scripts/build-id.txt
+
 # Electron build output
 dist/
 out/
