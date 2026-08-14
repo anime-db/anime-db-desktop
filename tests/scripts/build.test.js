@@ -36,26 +36,40 @@ function writePackageJson(version) {
 describe('syncVersionFromTag', () => {
     test('stamps the version from a "v*.*.*" tag ref', () => {
         const pkgPath = writePackageJson('0.0.1');
-        syncVersionFromTag('v1.2.3', pkgPath);
+        syncVersionFromTag('v1.2.3', 'tag', pkgPath);
         expect(JSON.parse(fs.readFileSync(pkgPath, 'utf8')).version).toBe('1.2.3');
     });
 
-    test('leaves the version untouched when ref is not a release tag (branch build)', () => {
+    test('stamps a semver pre-release tag ref', () => {
         const pkgPath = writePackageJson('0.0.1');
-        syncVersionFromTag('master', pkgPath);
+        syncVersionFromTag('v1.0.0-rc1', 'tag', pkgPath);
+        expect(JSON.parse(fs.readFileSync(pkgPath, 'utf8')).version).toBe('1.0.0-rc1');
+    });
+
+    test('leaves the version untouched when the run was not triggered by a tag (branch build)', () => {
+        const pkgPath = writePackageJson('0.0.1');
+        syncVersionFromTag('master', 'branch', pkgPath);
         expect(JSON.parse(fs.readFileSync(pkgPath, 'utf8')).version).toBe('0.0.1');
     });
 
-    test('leaves the version untouched when ref is undefined (local run)', () => {
+    test('leaves the version untouched when ref type is undefined (local run / workflow_dispatch)', () => {
         const pkgPath = writePackageJson('0.0.1');
-        syncVersionFromTag(undefined, pkgPath);
+        syncVersionFromTag(undefined, undefined, pkgPath);
         expect(JSON.parse(fs.readFileSync(pkgPath, 'utf8')).version).toBe('0.0.1');
     });
 
     test('is a no-op when the tag already matches the current version', () => {
         const pkgPath = writePackageJson('1.2.3');
         const before = fs.statSync(pkgPath).mtimeMs;
-        syncVersionFromTag('v1.2.3', pkgPath);
+        syncVersionFromTag('v1.2.3', 'tag', pkgPath);
         expect(fs.statSync(pkgPath).mtimeMs).toBe(before);
+    });
+
+    test('throws when a tag build ref does not parse as a release version', () => {
+        const pkgPath = writePackageJson('0.0.1');
+        expect(() => syncVersionFromTag('v1.2.3.4', 'tag', pkgPath)).toThrow(
+            /does not match the expected/
+        );
+        expect(JSON.parse(fs.readFileSync(pkgPath, 'utf8')).version).toBe('0.0.1');
     });
 });

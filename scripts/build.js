@@ -29,14 +29,29 @@ const rootDir = path.resolve(__dirname, '..');
 const appDir = path.join(rootDir, 'app');
 const packageJsonPath = path.join(rootDir, 'package.json');
 
+const RELEASE_TAG_PATTERN = /^v\d+\.\d+\.\d+(-[0-9A-Za-z-.]+)?(\+[0-9A-Za-z-.]+)?$/;
+
 /**
  * Stamps package.json's "version" from the GITHUB_REF_NAME env var — set automatically by
- * GitHub Actions on every run, no workflow changes needed — when it looks like a release tag
- * ("v1.2.3" -> "1.2.3"). No-op outside of a tag build (workflow_dispatch, local runs), leaving
- * the checked-in version untouched.
+ * GitHub Actions on every run, no workflow changes needed — when the run was triggered by a
+ * release tag ("v1.2.3" -> "1.2.3", including semver pre-release/build tags like "v1.0.0-rc1").
+ * No-op outside of a tag build (workflow_dispatch, local runs), leaving the checked-in version
+ * untouched. A tag build whose ref doesn't parse as a release tag throws instead of silently
+ * keeping the checked-in version, since the build trigger accepts a wider tag pattern than this
+ * function parses.
  */
-function syncVersionFromTag(refName = process.env.GITHUB_REF_NAME, pkgPath = packageJsonPath) {
-    if (!refName || !/^v\d+\.\d+\.\d+$/.test(refName)) return;
+function syncVersionFromTag(
+    refName = process.env.GITHUB_REF_NAME,
+    refType = process.env.GITHUB_REF_TYPE,
+    pkgPath = packageJsonPath
+) {
+    if (refType !== 'tag') return;
+
+    if (!refName || !RELEASE_TAG_PATTERN.test(refName)) {
+        throw new Error(
+            `Release tag "${refName}" does not match the expected "vX.Y.Z" release version format.`
+        );
+    }
 
     const version = refName.slice(1);
     const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
