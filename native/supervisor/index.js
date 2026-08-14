@@ -73,10 +73,13 @@ const TOTAL_STEPS = 5;
  * тот же путь: миграций ещё не применено ни одной, значит есть что применить, и migrate создаёт
  * схему с нуля. Провал (в т.ч. отказ по даунгрейду) прерывает запуск — см. MigrationBootstrapError.
  *
- * Если Meilisearch при старте вайпнул индекс из-за смены версии (issue #389), после
- * поднятия FrankenPHP и messenger-consumer автоматически прогоняется app:search:reindex —
- * без этого приложение стартует с пустым поиском до ручного нажатия кнопки в /settings.
- * Ошибка переиндексации не блокирует старт приложения — только логируется.
+ * Если Meilisearch при старте вайпнул индекс из-за смены версии (issue #389) или если
+ * migrations.run() реально применил хотя бы одну миграцию (issue #402 — Doctrine-миграции
+ * меняют data.db сырым SQL в обход ORM-слушателей, которые диспатчат индексирующие сообщения,
+ * поэтому без этого индекс молча расходится с каталогом), после поднятия FrankenPHP и
+ * messenger-consumer автоматически прогоняется app:search:reindex — без этого приложение либо
+ * стартует с пустым поиском, либо каталог расходится с индексом до ручного нажатия кнопки в
+ * /settings. Ошибка переиндексации не блокирует старт приложения — только логируется.
  *
  * @param {((step: number, total: number, text: string) => void) | undefined} onProgress
  * @returns {Promise<{ frankenphpPort: number, wsPort: number, meiliPort: number, qbittorrentPort: number }>}
@@ -108,7 +111,7 @@ async function start(onProgress) {
     const phpContext = { qbittorrentPort, meiliPort, meiliKey };
 
     if (onProgress) onProgress(1, TOTAL_STEPS, 'Применение миграций...');
-    await migrations.run(phpContext);
+    const migrationsApplied = await migrations.run(phpContext);
 
     if (onProgress) onProgress(2, TOTAL_STEPS, 'Запуск FrankenPHP...');
     const { httpPort: frankenphpPort, wsPort } = await frankenphp.start(meiliPort, meiliKey, qbittorrentPort);
@@ -119,7 +122,7 @@ async function start(onProgress) {
 
     await messengerConsumer.start(workerContext);
 
-    if (wiped) {
+    if (wiped || migrationsApplied) {
         if (onProgress) onProgress(4, TOTAL_STEPS, 'Обновление поискового индекса...');
         try {
             await searchReindex.run(workerContext);

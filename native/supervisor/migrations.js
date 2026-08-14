@@ -190,7 +190,8 @@ function restoreBackup(backupPath) {
  * from scratch.
  *
  * @param {import('./env').PhpContext} context  без appPort — веб-воркер ещё не поднят (см. env.js)
- * @returns {Promise<void>}
+ * @returns {Promise<boolean>} true, если doctrine:migrations:migrate реально применил хотя бы
+ *   одну миграцию; false, если схема уже была актуальна и migrate не запускался.
  * @throws {MigrationBootstrapError}
  */
 async function run(context) {
@@ -199,7 +200,7 @@ async function run(context) {
 
     try {
         const status = await checkStatus(context);
-        if (status.code === STATUS_UP_TO_DATE) return;
+        if (status.code === STATUS_UP_TO_DATE) return false;
         if (status.code === STATUS_DOWNGRADE) throw new MigrationBootstrapError('downgrade');
 
         const output = [status.stdout, status.stderr].filter(Boolean).join('\n');
@@ -227,6 +228,8 @@ async function run(context) {
             restoreBackup(backupPath);
             throw new MigrationBootstrapError('migrate-failed', result.stderr, backupPath);
         }
+
+        return true;
     } catch (err) {
         if (err instanceof MigrationBootstrapError) {
             err.logPath = err.logPath || logPath;
