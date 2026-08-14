@@ -62,6 +62,17 @@ describe('t()', () => {
         ])('%s falls back to English', (locale, expected) => {
             expect(t('tray.open', locale)).toBe(expected);
         });
+
+        // t() обслуживает в том числе диалоги ошибок запуска и обработчик uncaughtException, где
+        // исключение из слоя переводов заменило бы сообщение об ошибке отсутствием сообщения.
+        test.each([
+            [undefined],
+            [null],
+            [''],
+        ])('a non-string locale (%p) falls back to English instead of throwing', (locale) => {
+            expect(() => t('tray.open', locale)).not.toThrow();
+            expect(t('tray.open', locale)).toBe('Open');
+        });
     });
 });
 

@@ -61,10 +61,20 @@ function loadCatalog(locale) {
  * come from a translation plugin the native layer has no counterpart for, and for post-Soviet
  * locales the nearest understood language is Russian, not English (issue #177, issue #404).
  *
+ * A non-string locale falls straight through to "en" instead of reaching
+ * mapOsLocaleToAppLocale(), which would throw on `undefined.split()`. t() is used by the startup
+ * failure dialogs and the uncaughtException handler (native/lifecycle/index.js) — a throw from
+ * the translation layer there would replace the error message with no message at all, which is
+ * exactly when the user needs one.
+ *
  * @param {string} locale
  * @returns {Record<string, string>}
  */
 function resolveCatalog(locale) {
+    if (typeof locale !== 'string' || locale === '') {
+        return loadCatalog('en') || {};
+    }
+
     return loadCatalog(locale) || loadCatalog(mapOsLocaleToAppLocale(locale)) || loadCatalog('en') || {};
 }
 
