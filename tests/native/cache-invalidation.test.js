@@ -32,19 +32,26 @@ jest.mock('../../native/paths', () => ({
 const fs = require('fs');
 const { app } = require('electron');
 const paths = require('../../native/paths');
-const { invalidateStaleCache, computeBuildFingerprint } = require('../../native/supervisor/cache-invalidation');
+const {
+    hasBuildChanged,
+    invalidateCache,
+    commitFingerprint,
+    computeBuildFingerprint,
+} = require('../../native/supervisor/cache-invalidation');
 
 const VERSIONS_JSON_CONTENT = JSON.stringify({ frankenphp: '1.12.4' });
 const MIGRATION_FILES = ['Version20260627000000.php', 'Version20260627000001.php'];
+const BUILD_ID_CONTENT = 'deadbeef-42';
 
 beforeEach(() => {
     jest.spyOn(fs, 'readFileSync').mockImplementation((filePath) => {
         if (String(filePath).endsWith('versions.json')) return VERSIONS_JSON_CONTENT;
+        if (String(filePath).endsWith('build-id.txt')) return BUILD_ID_CONTENT;
         if (String(filePath) === '/fake/userData/state.json') return JSON.stringify({});
         throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
     });
     jest.spyOn(fs, 'readdirSync').mockReturnValue(MIGRATION_FILES);
-    jest.spyOn(fs, 'existsSync').mockReturnValue(false);
+    jest.spyOn(fs, 'existsSync').mockReturnValue(true);
     jest.spyOn(fs, 'mkdirSync').mockImplementation(() => {});
     jest.spyOn(fs, 'writeFileSync').mockImplementation(() => {});
     jest.spyOn(fs, 'rmSync').mockImplementation(() => {});
@@ -65,11 +72,28 @@ describe('computeBuildFingerprint', () => {
         expect(computeBuildFingerprint()).not.toBe(before);
     });
 
+    test('changes when scripts/build-id.txt content changes (e.g. new commit built on the same checked-in version)', () => {
+        const before = computeBuildFingerprint();
+        fs.readFileSync.mockImplementation((filePath) => {
+            if (String(filePath).endsWith('versions.json')) return VERSIONS_JSON_CONTENT;
+            if (String(filePath).endsWith('build-id.txt')) return 'other-build-id';
+            return '{}';
+        });
+        expect(computeBuildFingerprint()).not.toBe(before);
+    });
+
+    test('falls back to a fixed placeholder when build-id.txt does not exist (unpackaged dev run)', () => {
+        fs.existsSync.mockImplementation((filePath) => !String(filePath).endsWith('build-id.txt'));
+        expect(() => computeBuildFingerprint()).not.toThrow();
+    });
+
     test('changes when scripts/versions.json content changes', () => {
         const before = computeBuildFingerprint();
-        fs.readFileSync.mockImplementation((filePath) => (
-            String(filePath).endsWith('versions.json') ? JSON.stringify({ frankenphp: '2.0.0' }) : '{}'
-        ));
+        fs.readFileSync.mockImplementation((filePath) => {
+            if (String(filePath).endsWith('versions.json')) return JSON.stringify({ frankenphp: '2.0.0' });
+            if (String(filePath).endsWith('build-id.txt')) return BUILD_ID_CONTENT;
+            return '{}';
+        });
         expect(computeBuildFingerprint()).not.toBe(before);
     });
 
@@ -80,41 +104,44 @@ describe('computeBuildFingerprint', () => {
     });
 });
 
-describe('invalidateStaleCache', () => {
-    test('first run (no state.json yet) writes a marker without deleting the cache dir', () => {
-        fs.existsSync.mockReturnValue(false);
-
-        invalidateStaleCache();
-
-        expect(fs.rmSync).not.toHaveBeenCalled();
-        expect(fs.writeFileSync).toHaveBeenCalledWith(
-            '/fake/userData/state.json',
-            expect.stringContaining('buildFingerprint'),
-        );
+describe('hasBuildChanged', () => {
+    test('first run (no state.json yet) reports no change', () => {
+        fs.existsSync.mockImplementation((filePath) => !String(filePath).endsWith('state.json'));
+        expect(hasBuildChanged()).toBe(false);
     });
 
-    test('unchanged build (matching stored fingerprint) neither deletes the cache dir nor rewrites the marker', () => {
-        const fingerprint = computeBuildFingerprint();
-        fs.existsSync.mockReturnValue(true);
+    test('a corrupt state.json is treated like a first run — no change reported', () => {
         fs.readFileSync.mockImplementation((filePath) => {
             if (String(filePath).endsWith('versions.json')) return VERSIONS_JSON_CONTENT;
+            if (String(filePath).endsWith('build-id.txt')) return BUILD_ID_CONTENT;
+            return 'not json';
+        });
+        expect(hasBuildChanged()).toBe(false);
+    });
+
+    test('unchanged build (matching stored fingerprint) reports no change', () => {
+        const fingerprint = computeBuildFingerprint();
+        fs.readFileSync.mockImplementation((filePath) => {
+            if (String(filePath).endsWith('versions.json')) return VERSIONS_JSON_CONTENT;
+            if (String(filePath).endsWith('build-id.txt')) return BUILD_ID_CONTENT;
             return JSON.stringify({ buildFingerprint: fingerprint });
         });
-
-        invalidateStaleCache();
-
-        expect(fs.rmSync).not.toHaveBeenCalled();
-        expect(fs.writeFileSync).not.toHaveBeenCalled();
+        expect(hasBuildChanged()).toBe(false);
     });
 
-    test('changed build (mismatched stored fingerprint) deletes the cache dir and writes a new marker', () => {
-        fs.existsSync.mockReturnValue(true);
+    test('changed build (mismatched stored fingerprint) reports a change', () => {
         fs.readFileSync.mockImplementation((filePath) => {
             if (String(filePath).endsWith('versions.json')) return VERSIONS_JSON_CONTENT;
+            if (String(filePath).endsWith('build-id.txt')) return BUILD_ID_CONTENT;
             return JSON.stringify({ buildFingerprint: 'stale-fingerprint' });
         });
+        expect(hasBuildChanged()).toBe(true);
+    });
+});
 
-        invalidateStaleCache();
+describe('invalidateCache', () => {
+    test('deletes APP_RUNTIME_DIR/cache with Windows-friendly retry options', () => {
+        invalidateCache();
 
         expect(fs.rmSync).toHaveBeenCalledWith('/fake/userData/var/cache', {
             recursive: true,
@@ -122,29 +149,49 @@ describe('invalidateStaleCache', () => {
             maxRetries: 3,
             retryDelay: 200,
         });
+    });
+
+    test('propagates errors instead of swallowing them', () => {
+        fs.rmSync.mockImplementation(() => { throw new Error('EBUSY: resource busy or locked'); });
+        expect(() => invalidateCache()).toThrow('EBUSY');
+    });
+});
+
+describe('commitFingerprint', () => {
+    test('writes the current fingerprint to state.json at paths.getStatePath()', () => {
+        fs.existsSync.mockImplementation((filePath) => !String(filePath).endsWith('state.json'));
+
+        commitFingerprint();
+
+        expect(paths.getStatePath).toHaveBeenCalled();
         expect(fs.writeFileSync).toHaveBeenCalledWith(
             '/fake/userData/state.json',
             expect.stringContaining('buildFingerprint'),
         );
     });
 
-    test('a corrupt state.json is treated like a first run — no deletion, marker is (re)written', () => {
-        fs.existsSync.mockReturnValue(true);
-        fs.readFileSync.mockImplementation((filePath) => (
-            String(filePath).endsWith('versions.json') ? VERSIONS_JSON_CONTENT : 'not json'
-        ));
+    test('merges into existing state.json content instead of overwriting other fields', () => {
+        fs.readFileSync.mockImplementation((filePath) => {
+            if (String(filePath).endsWith('versions.json')) return VERSIONS_JSON_CONTENT;
+            if (String(filePath).endsWith('build-id.txt')) return BUILD_ID_CONTENT;
+            return JSON.stringify({ someOtherField: 'keep-me' });
+        });
 
-        invalidateStaleCache();
+        commitFingerprint();
 
-        expect(fs.rmSync).not.toHaveBeenCalled();
-        expect(fs.writeFileSync).toHaveBeenCalled();
+        const written = JSON.parse(fs.writeFileSync.mock.calls[0][1]);
+        expect(written.someOtherField).toBe('keep-me');
+        expect(written.buildFingerprint).toBe(computeBuildFingerprint());
     });
 
-    test('reads and writes the state marker at paths.getStatePath()', () => {
-        fs.existsSync.mockReturnValue(false);
+    test('a corrupt existing state.json is treated as empty, not fatal', () => {
+        fs.readFileSync.mockImplementation((filePath) => {
+            if (String(filePath).endsWith('versions.json')) return VERSIONS_JSON_CONTENT;
+            if (String(filePath).endsWith('build-id.txt')) return BUILD_ID_CONTENT;
+            return 'not json';
+        });
 
-        invalidateStaleCache();
-
-        expect(paths.getStatePath).toHaveBeenCalled();
+        expect(() => commitFingerprint()).not.toThrow();
+        expect(fs.writeFileSync).toHaveBeenCalled();
     });
 });

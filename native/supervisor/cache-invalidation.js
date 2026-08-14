@@ -29,17 +29,23 @@ const paths  = require('../paths');
 
 const VERSIONS_JSON  = path.join(__dirname, '..', '..', 'scripts', 'versions.json');
 const MIGRATIONS_DIR = path.join(__dirname, '..', '..', 'app', 'migrations');
+const BUILD_ID_PATH  = path.join(__dirname, '..', '..', 'scripts', 'build-id.txt');
 
 /**
- * Отпечаток текущей сборки: app.getVersion() + содержимое scripts/versions.json + список файлов
+ * Отпечаток текущей сборки: app.getVersion() + scripts/build-id.txt (стемпуется на каждой сборке
+ * в scripts/build.js#writeBuildId, см. там) + содержимое scripts/versions.json + список файлов
  * app/migrations/. app.getVersion() одной себя недостаточно (issue #386) — package.json version
- * при релизной сборке ниоткуда не обновляется, поэтому сборка может смениться, а версия — нет.
+ * стемпуется только на релизных тег-сборках (scripts/build.js#syncVersionFromTag), а сборки через
+ * workflow_dispatch (единственные, что сейчас существуют) все дают одну и ту же версию.
+ * build-id.txt отсутствует при незапакованном dev-запуске (`npm start` без предварительного
+ * `npm run prebuild`) — в этом случае используется фиксированная заглушка, а не ошибка.
  *
  * @returns {string}
  */
 function computeBuildFingerprint() {
     const hash = crypto.createHash('sha256');
     hash.update(app.getVersion());
+    hash.update(fs.existsSync(BUILD_ID_PATH) ? fs.readFileSync(BUILD_ID_PATH, 'utf8') : 'dev');
     hash.update(fs.readFileSync(VERSIONS_JSON, 'utf8'));
     hash.update(fs.readdirSync(MIGRATIONS_DIR).sort().join(','));
     return hash.digest('hex');
@@ -63,37 +69,54 @@ function readStoredFingerprint() {
 }
 
 /**
- * @param {string} fingerprint
+ * Отсутствие сохранённого отпечатка (первый запуск или битый state.json) не считается сменой
+ * сборки — нечего инвалидировать, commitFingerprint() создаст маркер после успешного старта.
+ *
+ * @returns {boolean}
  */
-function writeStoredFingerprint(fingerprint) {
-    const statePath = paths.getStatePath();
-    fs.mkdirSync(path.dirname(statePath), { recursive: true });
-    fs.writeFileSync(statePath, JSON.stringify({ buildFingerprint: fingerprint }, null, 2));
+function hasBuildChanged() {
+    const stored = readStoredFingerprint();
+    return stored !== null && stored !== computeBuildFingerprint();
 }
 
 /**
- * Удаляет скомпилированный кэш Symfony-контейнера (APP_RUNTIME_DIR/cache), когда отпечаток
- * текущей сборки отличается от сохранённого при предыдущем запуске (issue #386): APP_ENV=prod
- * отключает у Symfony проверку свежести ConfigCache, поэтому при установке новой сборки поверх
- * старой устаревший дамп контейнера и *.bundles.php иначе переживают обновление и грузятся
- * против нового кода. APP_RUNTIME_DIR/log не трогается — там уже есть отдельная ротация.
- * На первом запуске (сохранённого отпечатка ещё нет) только сохраняет текущий, ничего не удаляя.
+ * Удаляет скомпилированный кэш Symfony-контейнера (APP_RUNTIME_DIR/cache): APP_ENV=prod отключает
+ * у Symfony проверку свежести ConfigCache, поэтому устаревший дамп контейнера и *.bundles.php
+ * иначе переживают установку новой сборки поверх старой и грузятся против нового кода (issue
+ * #386). Вызывающая сторона обязана вызывать это до запуска любого PHP-процесса и только когда
+ * hasBuildChanged() вернул true. APP_RUNTIME_DIR/log не трогается — там уже есть отдельная
+ * ротация.
  */
-function invalidateStaleCache() {
-    const current = computeBuildFingerprint();
-    const stored  = readStoredFingerprint();
-
-    if (stored === current) return;
-
-    if (stored !== null) {
-        fs.rmSync(path.join(paths.getRuntimeDir(), 'cache'), {
-            recursive: true,
-            force: true,
-            maxRetries: 3,
-            retryDelay: 200,
-        });
-    }
-    writeStoredFingerprint(current);
+function invalidateCache() {
+    fs.rmSync(path.join(paths.getRuntimeDir(), 'cache'), {
+        recursive: true,
+        force: true,
+        maxRetries: 3,
+        retryDelay: 200,
+    });
 }
 
-module.exports = { invalidateStaleCache, computeBuildFingerprint };
+/**
+ * Сохраняет текущий отпечаток сборки как обработанный. Сливается с существующим содержимым
+ * state.json вместо перезаписи файла целиком — это общее состояние приложения, в нём есть (или
+ * появятся) другие поля. Вызывающая сторона обязана вызывать это только после успешного запуска
+ * всех процессов — если закоммитить отпечаток заранее, а старт упадёт на середине, следующий
+ * запуск сочтёт апгрейд уже обработанным и не повторит инвалидацию.
+ */
+function commitFingerprint() {
+    const statePath = paths.getStatePath();
+
+    let state = {};
+    try {
+        const parsed = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+        if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) state = parsed;
+    } catch {
+        // отсутствует или битый — начинаем с пустого состояния
+    }
+    state.buildFingerprint = computeBuildFingerprint();
+
+    fs.mkdirSync(path.dirname(statePath), { recursive: true });
+    fs.writeFileSync(statePath, JSON.stringify(state, null, 2));
+}
+
+module.exports = { hasBuildChanged, invalidateCache, commitFingerprint, computeBuildFingerprint };

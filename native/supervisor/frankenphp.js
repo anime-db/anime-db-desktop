@@ -31,7 +31,6 @@ const { findFreePort }    = require('./port');
 const { waitForHealth }   = require('./healthcheck');
 const { pruneOldLogs, openLogStream } = require('./logrotate');
 const pidTracker          = require('./pid-tracker');
-const { invalidateStaleCache } = require('./cache-invalidation');
 
 const events = new EventEmitter();
 
@@ -122,8 +121,9 @@ function killOrphan() {
 }
 
 /**
- * Запускает FrankenPHP: инвалидирует устаревший кэш скомпилированного контейнера → ищет порты →
- * создаёт php.ini → спавнит процесс → ждёт /health → возвращает порты.
+ * Запускает FrankenPHP: ищет порты → создаёт php.ini → спавнит процесс → ждёт /health →
+ * возвращает порты. Инвалидация устаревшего кэша скомпилированного контейнера выполняется
+ * супервизором раньше — до запуска любого PHP-процесса, см. supervisor/index.js.
  *
  * @param {number} meiliPort  порт Meilisearch
  * @param {string} meiliKey   master-key Meilisearch
@@ -132,11 +132,6 @@ function killOrphan() {
  */
 async function start(meiliPort, meiliKey, qbittorrentPort) {
     stopping = false;
-    try {
-        invalidateStaleCache();
-    } catch (err) {
-        console.error('[frankenphp] не удалось инвалидировать устаревший кэш контейнера, используем как есть:', err);
-    }
     ensurePhpIni();
 
     const logDir = path.join(paths.getRuntimeDir(), 'log');
