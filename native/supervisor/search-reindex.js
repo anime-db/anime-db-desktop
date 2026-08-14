@@ -21,15 +21,17 @@
 
 'use strict';
 
-const { spawn } = require('child_process');
-const path      = require('path');
-const paths     = require('../paths');
-const { buildCommonEnv } = require('./env');
+const phpCommand = require('./php-command');
 
-// FrankenPHP's embedded PHP runtime doubles as the CLI interpreter — there is no separate
-// php.exe binary bundled with the app (see .claude-docs/gotchas.md).
-const BINARY  = path.join(__dirname, '..', '..', 'bin', 'frankenphp', 'frankenphp.exe');
-const CONSOLE = path.join(__dirname, '..', '..', 'app', 'bin', 'console');
+const COMMAND = 'app:search:reindex';
+
+/**
+ * Upper bound for a full catalog reindex (see AnimeReindexService). Rebuilding the Meilisearch
+ * index from the SQLite catalog can take much longer than the other one-off console calls in
+ * native/supervisor/, so it gets its own, more generous timeout rather than sharing one with
+ * them.
+ */
+const TIMEOUT_MS = 30 * 60 * 1000;
 
 /**
  * Runs `bin/console app:search:reindex` once and resolves when it exits successfully. Used to
@@ -40,22 +42,7 @@ const CONSOLE = path.join(__dirname, '..', '..', 'app', 'bin', 'console');
  * @returns {Promise<void>}
  */
 function run(context) {
-    return new Promise((resolve, reject) => {
-        const child = spawn(BINARY, ['php-cli', CONSOLE, 'app:search:reindex'], {
-            cwd: paths.getAppRootDir(),
-            env: buildCommonEnv(context),
-            stdio: 'ignore',
-        });
-
-        child.on('error', reject);
-        child.on('exit', (code) => {
-            if (code === 0) {
-                resolve();
-            } else {
-                reject(new Error(`app:search:reindex завершился с кодом ${code}`));
-            }
-        });
-    });
+    return phpCommand.run(COMMAND, [], context, TIMEOUT_MS);
 }
 
 module.exports = { run };

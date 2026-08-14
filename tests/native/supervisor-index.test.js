@@ -56,12 +56,17 @@ jest.mock('../../native/supervisor/migrations', () => ({
     run:        jest.fn(() => Promise.resolve()),
     killOrphan: jest.fn(() => Promise.resolve()),
 }));
+jest.mock('../../native/supervisor/php-command', () => ({
+    run:        jest.fn(() => Promise.resolve()),
+    killOrphan: jest.fn(() => Promise.resolve()),
+}));
 
 const cacheInvalidation = require('../../native/supervisor/cache-invalidation');
 const frankenphp        = require('../../native/supervisor/frankenphp');
 const meilisearch       = require('../../native/supervisor/meilisearch');
 const messengerConsumer = require('../../native/supervisor/messenger-consumer');
 const migrations        = require('../../native/supervisor/migrations');
+const phpCommand        = require('../../native/supervisor/php-command');
 const searchReindex     = require('../../native/supervisor/search-reindex');
 const supervisor        = require('../../native/supervisor');
 
@@ -111,6 +116,15 @@ describe('supervisor.start', () => {
         await supervisor.start(jest.fn());
 
         expect(migrations.killOrphan).toHaveBeenCalled();
+    });
+
+    // Оба разовых консольных вызова (issue #400) идут через ту же начальную зачистку сирот, что
+    // и долгоживущие процессы — до старта любого дочернего процесса текущего сеанса.
+    test('kills orphaned one-off console processes before any child process starts', async () => {
+        await supervisor.start(jest.fn());
+
+        expect(phpCommand.killOrphan).toHaveBeenCalledWith('messenger:setup-transports');
+        expect(phpCommand.killOrphan).toHaveBeenCalledWith('app:search:reindex');
     });
 
     test('runs search-reindex when meilisearch reports the index was wiped', async () => {

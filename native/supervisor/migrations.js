@@ -57,9 +57,10 @@ const OUT_OF_DATE_MARKER = 'Out-of-date!';
 /**
  * Upper bound for a single bin/console invocation. Fail-closed startup means a hang here
  * (locked DB file, migration waiting on input) would otherwise block the splash screen
- * forever with no way for the user to recover. A generic timeout+PID-tracking wrapper for all
- * one-off console calls is tracked separately (issue #400); this is the minimal version scoped
- * to migrations.js.
+ * forever with no way for the user to recover. Deliberately not delegated to the shared
+ * one-off-command wrapper (php-command.js, issue #400): runConsole() below must resolve with
+ * the exit code itself for callers to branch on (STATUS_UP_TO_DATE/OUT_OF_DATE/DOWNGRADE)
+ * rather than reject on any non-zero code, which is php-command.js's contract.
  */
 const CONSOLE_TIMEOUT_MS = 10 * 60 * 1000;
 

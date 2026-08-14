@@ -21,14 +21,15 @@
 
 'use strict';
 
-const { spawn }    = require('child_process');
-const { EventEmitter } = require('events');
-const path         = require('path');
-const paths        = require('../paths');
-const { buildCommonEnv } = require('./env');
-const { waitForProcessAlive }  = require('./healthcheck');
+const { spawn }                       = require('child_process');
+const { EventEmitter }                = require('events');
+const path                            = require('path');
+const paths                           = require('../paths');
+const { buildCommonEnv }              = require('./env');
+const { waitForProcessAlive }         = require('./healthcheck');
 const { pruneOldLogs, openLogStream } = require('./logrotate');
-const pidTracker               = require('./pid-tracker');
+const phpCommand                      = require('./php-command');
+const pidTracker                      = require('./pid-tracker');
 
 const events = new EventEmitter();
 
@@ -65,38 +66,14 @@ function buildEnv(context) {
 /**
  * Запускает `messenger:setup-transports` и ждёт завершения. Идемпотентна — Doctrine-транспорт
  * создаёт таблицу очереди, только если её ещё нет, поэтому запускать безопасно на каждом старте.
- * Ограничена таймаутом SETUP_TRANSPORTS_TIMEOUT_MS: по истечении процесс принудительно
- * завершается и промис отклоняется, а не ждёт его выхода бесконечно.
+ * Общая обёртка php-command.js сама ограничивает вызов таймаутом SETUP_TRANSPORTS_TIMEOUT_MS,
+ * логирует вывод и трекает PID (issue #400).
  *
  * @param {import('./env').PhpContext} context
  * @returns {Promise<void>}
  */
 function runSetupTransports(context) {
-    return new Promise((resolve, reject) => {
-        const proc = spawn(BINARY, ['php-cli', CONSOLE, 'messenger:setup-transports'], {
-            cwd: paths.getAppRootDir(),
-            env: buildEnv(context),
-            stdio: ['ignore', 'pipe', 'pipe'],
-        });
-
-        proc.stdout.on('data', (d) => logStream.write(d));
-        proc.stderr.on('data', (d) => logStream.write(d));
-
-        const timer = setTimeout(() => {
-            proc.kill('SIGKILL');
-            reject(new Error(`messenger:setup-transports не завершился за ${SETUP_TRANSPORTS_TIMEOUT_MS}ms`));
-        }, SETUP_TRANSPORTS_TIMEOUT_MS);
-
-        proc.on('error', (err) => {
-            clearTimeout(timer);
-            reject(new Error(`не удалось запустить messenger:setup-transports: ${err.message}`));
-        });
-        proc.on('exit', (code) => {
-            clearTimeout(timer);
-            if (code === 0) return resolve();
-            reject(new Error(`messenger:setup-transports завершился с кодом ${code}`));
-        });
-    });
+    return phpCommand.run('messenger:setup-transports', [], context, SETUP_TRANSPORTS_TIMEOUT_MS);
 }
 
 /**

@@ -21,84 +21,36 @@
 
 'use strict';
 
-jest.mock('electron', () => ({
-    app: { getVersion: jest.fn(() => '1.2.3') },
-}));
-jest.mock('../../native/paths', () => ({
-    getAppRootDir:         jest.fn(() => '/fake/app'),
-    getDbPath:             jest.fn(() => '/fake/userData/data.db'),
-    getQueueDbPath:        jest.fn(() => '/fake/userData/queue.db'),
-    getPhpIniDir:          jest.fn(() => '/fake/userData'),
-    getRuntimeDir:         jest.fn(() => '/fake/userData/var'),
-    getMediaDir:           jest.fn(() => '/fake/userData/media'),
-    getConfigPath:         jest.fn(() => '/fake/userData/config.json'),
-    getPluginsConfigPath:  jest.fn(() => '/fake/userData/plugins.json'),
-    getPluginsDir:         jest.fn(() => '/fake/userData/plugins'),
-}));
-jest.mock('../../native/config', () => ({
-    getOrCreateAppSecret: jest.fn(() => 'a'.repeat(64)),
-}));
-
-const { EventEmitter } = require('events');
-const { spawn } = require('child_process');
-
-jest.mock('child_process', () => ({
-    spawn: jest.fn(),
+const mockRun = jest.fn();
+jest.mock('../../native/supervisor/php-command', () => ({
+    run: (...args) => mockRun(...args),
 }));
 
 const { run } = require('../../native/supervisor/search-reindex');
 
 const CONTEXT = { appPort: 8000, qbittorrentPort: 9999, meiliPort: 7700, meiliKey: 'test-key' };
 
+afterEach(() => {
+    jest.clearAllMocks();
+});
+
 describe('run', () => {
-    let fakeChild;
-
-    beforeEach(() => {
-        fakeChild = new EventEmitter();
-        spawn.mockReturnValue(fakeChild);
-    });
-
-    afterEach(() => {
-        jest.clearAllMocks();
-    });
-
-    test('spawns frankenphp.exe running app:search:reindex via php-cli', () => {
+    // Разовая переиндексация обязана идти через общую обёртку php-command.js (issue #400) —
+    // именно она отвечает за env, лог, таймаут и PID-трекинг; search-reindex.js своего спавна
+    // не заводит.
+    test('delegates to php-command.js with the reindex command and a generous timeout', () => {
         run(CONTEXT);
-        expect(spawn).toHaveBeenCalledWith(
-            expect.stringContaining('frankenphp.exe'),
-            expect.arrayContaining(['php-cli', expect.stringContaining('console'), 'app:search:reindex']),
-            expect.objectContaining({ cwd: '/fake/app' }),
-        );
+
+        expect(mockRun).toHaveBeenCalledWith('app:search:reindex', [], CONTEXT, expect.any(Number));
+        const timeoutMs = mockRun.mock.calls[0][3];
+        expect(timeoutMs).toBeGreaterThan(60000);
     });
 
-    // Разовая переиндексация обязана получать тот же набор путей, что и остальные PHP-процессы
-    // (issue #391) — в первую очередь PLUGINS_DIR, иначе ядро уедет на каталог плагинов внутри
-    // установленного приложения вместо пользовательского.
-    test('builds the process env from the shared module', () => {
-        run(CONTEXT);
-        const { env } = spawn.mock.calls[0][2];
-        expect(env.PLUGINS_DIR).toBe('/fake/userData/plugins');
-        expect(env.QBITTORRENT_URL).toBe('http://127.0.0.1:9999');
-        expect(env.OAUTH_CALLBACK_ORIGIN).toBe('http://127.0.0.1:8000');
-        expect(env.MEILISEARCH_URL).toBe('http://127.0.0.1:7700');
-        expect(env.MEILISEARCH_KEY).toBe('test-key');
-    });
+    test('resolves and rejects exactly as php-command.js does', async () => {
+        mockRun.mockResolvedValueOnce(undefined);
+        await expect(run(CONTEXT)).resolves.toBeUndefined();
 
-    test('resolves when the process exits with code 0', async () => {
-        const promise = run(CONTEXT);
-        fakeChild.emit('exit', 0);
-        await expect(promise).resolves.toBeUndefined();
-    });
-
-    test('rejects when the process exits with a non-zero code', async () => {
-        const promise = run(CONTEXT);
-        fakeChild.emit('exit', 1);
-        await expect(promise).rejects.toThrow('app:search:reindex завершился с кодом 1');
-    });
-
-    test('rejects when the process fails to spawn', async () => {
-        const promise = run(CONTEXT);
-        fakeChild.emit('error', new Error('spawn ENOENT'));
-        await expect(promise).rejects.toThrow('spawn ENOENT');
+        mockRun.mockRejectedValueOnce(new Error('app:search:reindex завершился с кодом 1'));
+        await expect(run(CONTEXT)).rejects.toThrow('app:search:reindex завершился с кодом 1');
     });
 });
