@@ -69,11 +69,15 @@ function commandKeyFromArgs(args) {
 }
 
 /**
- * Queues { code, stderr } responses per console command and wires spawn() to resolve them
- * asynchronously, in the order run() actually invokes them (up-to-date, then optionally backup,
- * then migrate — possibly twice on retry).
+ * Queues { code, stdout, stderr } responses per console command and wires spawn() to resolve
+ * them asynchronously, in the order run() actually invokes them (up-to-date, then optionally
+ * backup, then migrate — possibly twice on retry).
  *
- * @param {Record<string, Array<{ code: number, stderr?: string }>>} responses
+ * An up-to-date response with code 1 defaults its stdout to the real doctrine "Out-of-date!"
+ * message (see UpToDateCommand::execute()) unless the test overrides it — run() now requires
+ * that marker before treating a bare exit code 1 as "pending migrations" rather than a crash.
+ *
+ * @param {Record<string, Array<{ code: number, stdout?: string, stderr?: string }>>} responses
  */
 function mockConsoleResponses(responses) {
     spawn.mockImplementation((_bin, args) => {
@@ -84,8 +88,10 @@ function mockConsoleResponses(responses) {
         const key = commandKeyFromArgs(args);
         const queue = responses[key];
         const resp = queue.shift();
+        const stdout = resp.stdout ?? (key === 'up-to-date' && resp.code === 1 ? 'Out-of-date! 1 migration is available to execute.' : undefined);
 
         setImmediate(() => {
+            if (stdout) child.stdout.emit('data', Buffer.from(stdout));
             if (resp.stderr) child.stderr.emit('data', Buffer.from(resp.stderr));
             child.emit('exit', resp.code);
         });
@@ -99,6 +105,7 @@ beforeEach(() => {
     jest.spyOn(fs, 'readdirSync').mockReturnValue([]);
     jest.spyOn(fs, 'rmSync').mockImplementation(() => {});
     jest.spyOn(fs, 'copyFileSync').mockImplementation(() => {});
+    jest.spyOn(fs, 'writeFileSync').mockImplementation(() => {});
 });
 
 afterEach(() => {
@@ -188,6 +195,23 @@ describe('run', () => {
             kind:   'migrate-failed',
             detail: 'second',
         });
+
+        // The DB must not be left in a partially-migrated state after the second failure too —
+        // restored once after the first failed attempt, and again after the second.
+        expect(fs.copyFileSync).toHaveBeenCalledTimes(2);
+    });
+
+    test('treats a bare exit code 1 without the doctrine "Out-of-date!" marker as a crash, not pending migrations', async () => {
+        mockConsoleResponses({
+            'up-to-date': [{ code: 1, stdout: '', stderr: 'Fatal error: could not open php.ini' }],
+        });
+
+        await expect(run(7700, 'k', 9000)).rejects.toMatchObject({
+            kind:   'migrate-failed',
+            detail: expect.stringContaining('could not open php.ini'),
+        });
+        // Never gets to createBackup()/migrate() — a real crash isn't "pending migrations".
+        expect(spawn).toHaveBeenCalledTimes(1);
     });
 
     test('fails closed with a backup-failed error and never attempts migrate when the backup command fails', async () => {

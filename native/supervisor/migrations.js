@@ -28,6 +28,7 @@ const path      = require('path');
 const paths     = require('../paths');
 const { buildCommonEnv } = require('./env');
 const { pruneOldLogs, openLogStream, todayStr } = require('./logrotate');
+const pidTracker = require('./pid-tracker');
 
 // FrankenPHP's embedded PHP runtime doubles as the CLI interpreter — there is no separate
 // php.exe binary bundled with the app (see .claude-docs/gotchas.md).
@@ -44,6 +45,23 @@ const MAX_BACKUPS = 5;
 const STATUS_UP_TO_DATE  = 0;
 const STATUS_OUT_OF_DATE = 1;
 const STATUS_DOWNGRADE   = 2;
+
+/**
+ * The message doctrine/migrations' up-to-date command prints (to stdout, via SymfonyStyle)
+ * when it exits with STATUS_OUT_OF_DATE because there are pending migrations. Symfony also
+ * exits 1 on any uncaught exception, so the exit code alone can't tell "pending migrations"
+ * apart from "console crashed" (broken php.ini, missing vendor, unreadable DB directory, etc.).
+ */
+const OUT_OF_DATE_MARKER = 'Out-of-date!';
+
+/**
+ * Upper bound for a single bin/console invocation. Fail-closed startup means a hang here
+ * (locked DB file, migration waiting on input) would otherwise block the splash screen
+ * forever with no way for the user to recover. A generic timeout+PID-tracking wrapper for all
+ * one-off console calls is tracked separately (issue #400); this is the minimal version scoped
+ * to migrations.js.
+ */
+const CONSOLE_TIMEOUT_MS = 10 * 60 * 1000;
 
 /**
  * Thrown by run() when the app must not start. `kind` selects which localized dialog
@@ -65,14 +83,19 @@ class MigrationBootstrapError extends Error {
 }
 
 /**
- * Runs `bin/console <args>` and resolves with its exit code plus captured stderr — never
+ * Runs `bin/console <args>` and resolves with its exit code plus captured stdout/stderr — never
  * rejects on a non-zero exit, since callers here need to branch on specific exit codes rather
  * than treat every failure the same way. Both streams are also mirrored into logStream.
+ *
+ * The PID is tracked via pid-tracker.js (see killOrphan() below) for the duration of the call,
+ * and the call is killed and reported as a failure (code: null) if it outruns
+ * CONSOLE_TIMEOUT_MS — otherwise a stuck console command would fail-close the whole startup
+ * with no way for the user to get past the splash screen.
  *
  * @param {string[]} args
  * @param {Record<string, string>} env
  * @param {NodeJS.WritableStream} logStream
- * @returns {Promise<{ code: number, stderr: string }>}
+ * @returns {Promise<{ code: number | null, stdout: string, stderr: string }>}
  */
 function runConsole(args, env, logStream) {
     return new Promise((resolve, reject) => {
@@ -81,33 +104,67 @@ function runConsole(args, env, logStream) {
             env,
             stdio: ['ignore', 'pipe', 'pipe'],
         });
+        pidTracker.writePid(LOG_PREFIX, child.pid);
 
+        let stdout = '';
         let stderr = '';
-        child.stdout.on('data', (d) => logStream.write(d));
+        let timedOut = false;
+        const timer = setTimeout(() => {
+            timedOut = true;
+            child.kill();
+        }, CONSOLE_TIMEOUT_MS);
+
+        child.stdout.on('data', (d) => {
+            stdout += d;
+            logStream.write(d);
+        });
         child.stderr.on('data', (d) => {
             stderr += d;
             logStream.write(d);
         });
 
-        child.on('error', reject);
-        child.on('exit', (code) => resolve({ code, stderr: stderr.trim() }));
+        child.on('error', (err) => {
+            clearTimeout(timer);
+            pidTracker.clearPid(LOG_PREFIX);
+            reject(err);
+        });
+        child.on('exit', (code) => {
+            clearTimeout(timer);
+            pidTracker.clearPid(LOG_PREFIX);
+            if (timedOut) {
+                stderr += `${stderr ? '\n' : ''}bin/console ${args[0]} timed out after `
+                    + `${CONSOLE_TIMEOUT_MS}ms and was killed`;
+            }
+            resolve({ code: timedOut ? null : code, stdout: stdout.trim(), stderr: stderr.trim() });
+        });
     });
 }
 
 /**
- * @param {Record<string, string>} env
- * @param {NodeJS.WritableStream} logStream
- * @returns {Promise<number>} STATUS_UP_TO_DATE | STATUS_OUT_OF_DATE | STATUS_DOWNGRADE
+ * Kills a console invocation orphaned by a previous session that never reached the exit event
+ * (crash, force-kill from Task Manager) — must run before any child process of the current
+ * session starts, same ordering constraint as the other supervisors' killOrphan() (see
+ * index.js).
+ *
+ * @returns {Promise<void>}
  */
-async function checkStatus(env, logStream) {
-    const { code } = await runConsole(['doctrine:migrations:up-to-date', '--fail-on-unregistered'], env, logStream);
-    return code;
+function killOrphan() {
+    return pidTracker.killOrphan(LOG_PREFIX, BINARY);
 }
 
 /**
  * @param {Record<string, string>} env
  * @param {NodeJS.WritableStream} logStream
- * @returns {Promise<{ code: number, stderr: string }>}
+ * @returns {Promise<{ code: number | null, stdout: string, stderr: string }>}
+ */
+function checkStatus(env, logStream) {
+    return runConsole(['doctrine:migrations:up-to-date', '--fail-on-unregistered'], env, logStream);
+}
+
+/**
+ * @param {Record<string, string>} env
+ * @param {NodeJS.WritableStream} logStream
+ * @returns {Promise<{ code: number | null, stdout: string, stderr: string }>}
  */
 function migrate(env, logStream) {
     return runConsole(['doctrine:migrations:migrate', '--no-interaction', '--allow-no-migration'], env, logStream);
@@ -199,10 +256,21 @@ async function run(context) {
 
     try {
         const status = await checkStatus(env, logStream);
-        if (status === STATUS_UP_TO_DATE) return;
-        if (status === STATUS_DOWNGRADE) throw new MigrationBootstrapError('downgrade');
-        if (status !== STATUS_OUT_OF_DATE) {
-            throw new MigrationBootstrapError('migrate-failed', `doctrine:migrations:up-to-date завершился с неожиданным кодом ${status}`);
+        if (status.code === STATUS_UP_TO_DATE) return;
+        if (status.code === STATUS_DOWNGRADE) throw new MigrationBootstrapError('downgrade');
+
+        const output = [status.stdout, status.stderr].filter(Boolean).join('\n');
+        if (status.code !== STATUS_OUT_OF_DATE || !output.includes(OUT_OF_DATE_MARKER)) {
+            // A bare exit code of 1 is ambiguous: doctrine also uses it for "pending
+            // migrations", but Symfony returns the same code for any uncaught exception
+            // (broken php.ini, missing vendor, unreadable DB directory, ...). Require the
+            // doctrine "Out-of-date!" marker in the output before treating this as the former —
+            // otherwise a real crash here would be misreported as a migration and go on to fail
+            // the backup step too, masking the actual cause.
+            throw new MigrationBootstrapError(
+                'migrate-failed',
+                output || `doctrine:migrations:up-to-date завершился с неожиданным кодом ${status.code}`,
+            );
         }
 
         const backupPath = await createBackup(env, logStream);
@@ -213,6 +281,7 @@ async function run(context) {
             result = await migrate(env, logStream);
         }
         if (result.code !== 0) {
+            restoreBackup(backupPath);
             throw new MigrationBootstrapError('migrate-failed', result.stderr, backupPath);
         }
     } catch (err) {
@@ -226,4 +295,4 @@ async function run(context) {
     }
 }
 
-module.exports = { run, MigrationBootstrapError, MAX_BACKUPS };
+module.exports = { run, killOrphan, MigrationBootstrapError, MAX_BACKUPS };

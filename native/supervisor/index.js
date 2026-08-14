@@ -59,7 +59,10 @@ const TOTAL_STEPS = 5;
  * обработанным. Ошибка инвалидации не перехватывается: пусть прервёт запуск и попадёт в лог
  * (native/crash-log.js) через catch в lifecycle/index.js, а не тихо продолжит работу против
  * устаревшего кэша. Meilisearch и qbittorrent-nox стартуют первыми (независимо друг от друга) —
- * их порты/ключи нужны FrankenPHP в env.
+ * их порты/ключи нужны FrankenPHP в env. Миграции тоже участвуют в начальной зачистке сирот —
+ * тот же PID-файл (см. pid-tracker.js), которым отмечается spawn консольной команды, должен быть
+ * проверен и убран до старта хоть одного дочернего процесса текущего сеанса, иначе
+ * переиспользованный ОС PID мог бы совпасть с процессом текущего сеанса.
  *
  * Doctrine-миграции (issue #392) прогоняются сразу после Meilisearch/qbittorrent и до старта
  * FrankenPHP — migrate не зависит от HTTP/поиска/очереди, только от DATABASE_URL, но схема
@@ -80,6 +83,7 @@ async function start(onProgress) {
         frankenphp.killOrphan(),
         meilisearch.killOrphan(),
         messengerConsumer.killOrphan(),
+        migrations.killOrphan(),
         qbittorrent.killOrphan(),
     ]);
 

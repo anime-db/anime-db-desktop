@@ -53,7 +53,8 @@ jest.mock('../../native/supervisor/search-reindex', () => ({
     run: jest.fn(() => Promise.resolve()),
 }));
 jest.mock('../../native/supervisor/migrations', () => ({
-    run: jest.fn(() => Promise.resolve()),
+    run:        jest.fn(() => Promise.resolve()),
+    killOrphan: jest.fn(() => Promise.resolve()),
 }));
 
 const cacheInvalidation = require('../../native/supervisor/cache-invalidation');
@@ -102,6 +103,14 @@ describe('supervisor.start', () => {
             meiliPort:       7700,
             meiliKey:        'k',
         });
+    });
+
+    test('kills an orphaned migrations console process before any child process starts', async () => {
+        meilisearch.start.mockResolvedValue({ port: 7700, key: 'k', wiped: false });
+
+        await supervisor.start(jest.fn());
+
+        expect(migrations.killOrphan).toHaveBeenCalled();
     });
 
     test('runs search-reindex when meilisearch reports the index was wiped', async () => {
