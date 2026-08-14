@@ -115,20 +115,22 @@ function migrate(env, logStream) {
 
 /**
  * Deletes the oldest backup files so that at most maxBackups remain. File names are
- * `data-<version>-<timestamp>.db` with a sortable timestamp, mirroring pruneOldLogs().
+ * `data-<version>-<timestamp>.db`; the version prefix is not sortable (e.g. "1.10.0" sorts
+ * before "1.9.0" lexicographically), so files are ordered by the trailing timestamp instead.
  *
  * @param {string} backupDir
  * @param {number} maxBackups
  */
 function pruneOldBackups(backupDir, maxBackups) {
-    const pattern = /^data-.+-\d{8}-\d{6}\.db$/;
+    const pattern = /^data-.+-(\d{8}-\d{6})\.db$/;
     const files = fs.readdirSync(backupDir)
-        .filter(f => pattern.test(f))
-        .sort();
+        .map(f => ({ name: f, match: f.match(pattern) }))
+        .filter(f => f.match !== null)
+        .sort((a, b) => a.match[1].localeCompare(b.match[1]));
 
     const excess = files.length - maxBackups;
     for (let i = 0; i < excess; i++) {
-        fs.rmSync(path.join(backupDir, files[i]), { force: true });
+        fs.rmSync(path.join(backupDir, files[i].name), { force: true });
     }
 }
 

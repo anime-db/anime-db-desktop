@@ -215,17 +215,30 @@ describe('run', () => {
         }
     });
 
-    test('prunes backups older than MAX_BACKUPS', async () => {
+    test('prunes backups older than MAX_BACKUPS by timestamp, not by version string', async () => {
         mockConsoleResponses({
             'up-to-date': [{ code: 1 }],
             backup:       [{ code: 0 }],
             migrate:      [{ code: 0 }],
         });
-        const existing = Array.from({ length: MAX_BACKUPS + 2 }, (_, i) => `data-1.0.0-2026010${i}-000000.db`).sort();
-        fs.readdirSync.mockReturnValue(existing);
+        // Older backups were taken on app version 1.9.0; the newest is from the just-updated
+        // 1.10.0. Lexicographically "1.10.0" < "1.9.0", so a naive filename sort would prune the
+        // newest backup first — assert it survives and only the oldest ones are removed instead.
+        const excessCount = 2;
+        const oldest = Array.from({ length: excessCount }, (_, i) => `data-1.9.0-2026010${i + 1}-000000.db`);
+        const kept   = Array.from(
+            { length: MAX_BACKUPS - 1 },
+            (_, i) => `data-1.9.0-2026010${i + 1 + excessCount}-000000.db`,
+        );
+        const newest = `data-1.10.0-2026010${MAX_BACKUPS + excessCount}-000000.db`;
+        fs.readdirSync.mockReturnValue([...oldest, ...kept, newest]);
 
         await run(CONTEXT);
 
-        expect(fs.rmSync).toHaveBeenCalledTimes(2);
+        expect(fs.rmSync).toHaveBeenCalledTimes(excessCount);
+        for (const file of oldest) {
+            expect(fs.rmSync).toHaveBeenCalledWith(expect.stringContaining(file), expect.anything());
+        }
+        expect(fs.rmSync).not.toHaveBeenCalledWith(expect.stringContaining(newest), expect.anything());
     });
 });
