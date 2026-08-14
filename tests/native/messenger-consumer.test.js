@@ -201,4 +201,29 @@ describe('start', () => {
 
         await expect(start(7700, 'test-key')).rejects.toThrow(/не удалось запустить messenger:setup-transports/);
     });
+
+    test('kills messenger:setup-transports and rejects when it never exits before the timeout', async () => {
+        jest.useFakeTimers();
+        try {
+            const kill = jest.fn();
+            const fakeChild = {
+                stdout: { on: jest.fn() },
+                stderr: { on: jest.fn() },
+                on:     jest.fn(),
+                kill,
+            };
+            spawn.mockReturnValueOnce(fakeChild);
+
+            const pending = start(7700, 'test-key');
+            const assertion = expect(pending).rejects.toThrow(/messenger:setup-transports не завершился за/);
+
+            await jest.advanceTimersByTimeAsync(30000);
+            await assertion;
+
+            expect(kill).toHaveBeenCalledWith('SIGKILL');
+            expect(spawn).toHaveBeenCalledTimes(1);
+        } finally {
+            jest.useRealTimers();
+        }
+    });
 });
