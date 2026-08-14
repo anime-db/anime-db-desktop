@@ -29,6 +29,7 @@ const paths             = require('../paths');
 const { findFreePort }        = require('./port');
 const { waitForHealth }       = require('./healthcheck');
 const { pruneOldLogs, openLogStream } = require('./logrotate');
+const pidTracker              = require('./pid-tracker');
 
 const BINARY   = path.join(__dirname, '..', '..', 'bin', 'meilisearch', 'meilisearch.exe');
 const VERSIONS = path.join(__dirname, '..', '..', 'scripts', 'versions.json');
@@ -100,6 +101,8 @@ function spawnProcess(appPort, masterKey, backoffIdx = 0) {
         stdio: ['ignore', 'pipe', 'pipe'],
     });
 
+    pidTracker.writePid(LOG_PREFIX, child.pid);
+
     child.stdout.on('data', (d) => logStream.write(d));
     child.stderr.on('data', (d) => logStream.write(d));
 
@@ -119,6 +122,7 @@ function spawnProcess(appPort, masterKey, backoffIdx = 0) {
  */
 async function start() {
     stopping = false;
+    await pidTracker.killOrphan(LOG_PREFIX, BINARY);
     const masterKey = ensureMasterKey();
     checkVersionAndWipe();
 
@@ -153,6 +157,7 @@ function stop() {
                 logStream.end();
                 logStream = null;
             }
+            pidTracker.clearPid(LOG_PREFIX);
             resolve();
         });
 
@@ -160,4 +165,18 @@ function stop() {
     });
 }
 
-module.exports = { start, stop, checkVersionAndWipe };
+/**
+ * Best-effort синхронный килл на случай аварийного выхода Electron, который не проходит через
+ * штатный stop() (см. process.on('exit') в lifecycle/index.js) — дождаться асинхронного
+ * graceful-shutdown там уже нельзя, поэтому сразу SIGKILL.
+ */
+function killSync() {
+    if (!child) return;
+    try {
+        child.kill('SIGKILL');
+    } catch {
+        // процесс уже завершился
+    }
+}
+
+module.exports = { start, stop, killSync, checkVersionAndWipe };

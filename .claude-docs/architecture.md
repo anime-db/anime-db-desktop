@@ -139,6 +139,24 @@ Backoff при рестарте: `[1000, 2000, 4000, 8000, 16000, 30000]` ms.
 
 Graceful shutdown: SIGTERM → 500ms → SIGKILL. Оба хранилища (SQLite WAL, LMDB) crash-safe.
 
+**Single-instance lock и защита от процессов-сирот (issue #390):** `lifecycle/index.js` вызывает
+`app.requestSingleInstanceLock()` первым делом; при отказе — `app.quit()`, второй запуск не трогает
+дочерние процессы уже работающей копии. `app.on('second-instance', ...)` поднимает существующее
+окно (`show()`/`focus()`, плюс `restore()` если оно было свёрнуто).
+
+Каждый из четырёх дочерних процессов (`frankenphp.js`, `meilisearch.js`, `qbittorrent.js`,
+`messenger-consumer.js`) через общий `native/supervisor/pid-tracker.js` пишет свой PID в
+`AppData/AnimeDB/var/pids/<name>.pid` при спавне и удаляет файл при штатном `stop()`. Перед каждым
+`start()` вызывается `pidTracker.killOrphan()` — если файл остался от предыдущего сеанса (падение,
+принудительное завершение, инсталлятор, закрывший только `AnimeDB.exe`), PID проверяется через
+`tasklist` (совпадение имени образа с ожидаемым бинарником — сам PID мог быть переиспользован ОС) и
+при совпадении убивается через `taskkill /F`. No-op не на Windows.
+
+Дополнительно `supervisor.killSync()` (агрегирует `killSync()` каждого модуля, `child.kill('SIGKILL')`
+синхронно) вызывается из `process.on('exit')` в `lifecycle/index.js` — страховка для путей
+завершения, которые не проходят через `before-quit` (например `process.exit()` откуда-то ещё).
+`process.on('SIGTERM'/'SIGINT')` ведут туда же, куда и штатный выход из трея.
+
 ## app/ — Symfony 8.1
 
 FrankenPHP стартует `public/index.php` в **worker mode** — PHP загружается один раз и остаётся в памяти.

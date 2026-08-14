@@ -66,4 +66,16 @@ async function stop() {
     await Promise.all([meilisearch.stop(), qbittorrent.stop()]);
 }
 
-module.exports = { start, stop, events };
+/**
+ * Best-effort синхронный килл всех дочерних процессов на случай аварийного выхода Electron,
+ * который не проходит через штатный stop() (см. process.on('exit') в lifecycle/index.js) —
+ * дождаться асинхронного graceful-shutdown там уже нельзя.
+ */
+function killSync() {
+    messengerConsumer.killSync();
+    frankenphp.killSync();
+    meilisearch.killSync();
+    qbittorrent.killSync();
+}
+
+module.exports = { start, stop, killSync, events };

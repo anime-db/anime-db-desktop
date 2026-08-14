@@ -31,6 +31,7 @@ const { getOrCreateAppSecret } = require('../config');
 const { findFreePort }    = require('./port');
 const { waitForHealth }   = require('./healthcheck');
 const { pruneOldLogs, openLogStream } = require('./logrotate');
+const pidTracker          = require('./pid-tracker');
 
 const events = new EventEmitter();
 
@@ -106,6 +107,8 @@ function spawnProcess(appPort, wsPort, meiliPort, meiliKey, qbittorrentPort, bac
         stdio: ['ignore', 'pipe', 'pipe'],
     });
 
+    pidTracker.writePid(LOG_PREFIX, child.pid);
+
     child.stdout.on('data', (d) => logStream.write(d));
     child.stderr.on('data', (d) => logStream.write(d));
 
@@ -129,6 +132,7 @@ function spawnProcess(appPort, wsPort, meiliPort, meiliKey, qbittorrentPort, bac
  */
 async function start(meiliPort, meiliKey, qbittorrentPort) {
     stopping = false;
+    await pidTracker.killOrphan(LOG_PREFIX, BINARY);
     ensurePhpIni();
 
     const logDir = path.join(paths.getRuntimeDir(), 'log');
@@ -163,6 +167,7 @@ function stop() {
                 logStream.end();
                 logStream = null;
             }
+            pidTracker.clearPid(LOG_PREFIX);
             resolve();
         });
 
@@ -170,4 +175,18 @@ function stop() {
     });
 }
 
-module.exports = { start, stop, buildEnv, events };
+/**
+ * Best-effort синхронный килл на случай аварийного выхода Electron, который не проходит через
+ * штатный stop() (см. process.on('exit') в lifecycle/index.js) — дождаться асинхронного
+ * graceful-shutdown там уже нельзя, поэтому сразу SIGKILL.
+ */
+function killSync() {
+    if (!child) return;
+    try {
+        child.kill('SIGKILL');
+    } catch {
+        // процесс уже завершился
+    }
+}
+
+module.exports = { start, stop, killSync, buildEnv, events };

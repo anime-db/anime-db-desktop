@@ -29,6 +29,7 @@ const paths               = require('../paths');
 const { getProxySettings } = require('../config');
 const { waitForHealth }    = require('./healthcheck');
 const { pruneOldLogs, openLogStream } = require('./logrotate');
+const pidTracker           = require('./pid-tracker');
 
 const events = new EventEmitter();
 
@@ -203,6 +204,8 @@ function spawnProcess(backoffIdx = 0) {
         stdio: ['ignore', 'pipe', 'pipe'],
     });
 
+    pidTracker.writePid(LOG_PREFIX, child.pid);
+
     child.stdout.on('data', (d) => logStream.write(d));
     child.stderr.on('data', (d) => logStream.write(d));
 
@@ -223,6 +226,7 @@ function spawnProcess(backoffIdx = 0) {
  */
 async function start() {
     stopping = false;
+    await pidTracker.killOrphan(LOG_PREFIX, BINARY);
     seedConfig(getProxySettings());
 
     const logDir = path.join(paths.getRuntimeDir(), 'log');
@@ -255,6 +259,7 @@ function stop() {
                 logStream.end();
                 logStream = null;
             }
+            pidTracker.clearPid(LOG_PREFIX);
             resolve();
         });
 
@@ -262,9 +267,24 @@ function stop() {
     });
 }
 
+/**
+ * Best-effort синхронный килл на случай аварийного выхода Electron, который не проходит через
+ * штатный stop() (см. process.on('exit') в lifecycle/index.js) — дождаться асинхронного
+ * graceful-shutdown там уже нельзя, поэтому сразу SIGKILL.
+ */
+function killSync() {
+    if (!child) return;
+    try {
+        child.kill('SIGKILL');
+    } catch {
+        // процесс уже завершился
+    }
+}
+
 module.exports = {
     start,
     stop,
+    killSync,
     events,
     WEBUI_PORT,
     BT_PORT,

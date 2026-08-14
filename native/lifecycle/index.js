@@ -34,78 +34,116 @@ const wsClient         = require('../ws-client');
 const proxy            = require('../proxy');
 const firewall         = require('../firewall');
 
-let quitting = false;
+let quitting   = false;
+let mainWindow = null;
 
 function onQuit() {
     quitting = true;
     app.quit();
 }
 
-proxy.registerProxyAuthHandler();
+const gotLock = app.requestSingleInstanceLock();
 
-app.whenReady().then(async () => {
-    await proxy.applyProxy(session.defaultSession);
+if (!gotLock) {
+    // Уже запущен другой экземпляр — этот выходит немедленно, не трогая его дочерние процессы.
+    app.quit();
+} else {
+    /**
+     * Второй запуск (уже открыт другой экземпляр) поднимает существующее окно вместо старта
+     * второй копии — Electron сам перенаправляет вызов сюда, во второй процесс, благодаря
+     * requestSingleInstanceLock() выше (issue #390).
+     */
+    app.on('second-instance', () => {
+        if (!mainWindow) return;
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.show();
+        mainWindow.focus();
+    });
 
-    const splash = createSplash();
+    proxy.registerProxyAuthHandler();
 
-    await new Promise(resolve => splash.once('ready-to-show', () => {
-        splash.show();
-        resolve();
-    }));
+    app.whenReady().then(async () => {
+        await proxy.applyProxy(session.defaultSession);
 
-    try {
-        splash.webContents.send('splash-progress', { step: 0, text: 'Запуск Meilisearch...' });
+        const splash = createSplash();
 
-        const { frankenphpPort, wsPort } = await supervisor.start((step, text) => {
-            if (!splash.isDestroyed()) {
-                splash.webContents.send('splash-progress', { step, text });
-            }
-        });
+        await new Promise(resolve => splash.once('ready-to-show', () => {
+            splash.show();
+            resolve();
+        }));
 
-        wsClient.connect(wsPort);
+        try {
+            splash.webContents.send('splash-progress', { step: 0, text: 'Запуск Meilisearch...' });
 
-        await new Promise(r => setTimeout(r, 400));
-        splash.close();
+            const { frankenphpPort, wsPort } = await supervisor.start((step, text) => {
+                if (!splash.isDestroyed()) {
+                    splash.webContents.send('splash-progress', { step, text });
+                }
+            });
 
-        const mainWindow = createWindow(frankenphpPort);
+            wsClient.connect(wsPort);
 
-        mainWindow.on('close', (e) => {
-            if (!quitting) {
-                e.preventDefault();
-                mainWindow.hide();
-            }
-        });
+            await new Promise(r => setTimeout(r, 400));
+            splash.close();
 
-        tray.create(mainWindow, onQuit);
+            mainWindow = createWindow(frankenphpPort);
 
-        wsClient.on('backend-event', ({ event, data }) => {
-            if (event === 'backend.status') tray.setState(data.state);
-            if (event === proxy.PROXY_CHANGED_EVENT) {
-                proxy.applyProxy(session.defaultSession).catch((err) => {
-                    console.error('[proxy] не удалось применить настройки прокси:', err);
-                });
-            }
-            if (event === firewall.FIREWALL_RULE_CHANGED_EVENT) {
-                firewall.applyIncomingConnections(Boolean(data.enabled)).catch((err) => {
-                    dialog.showErrorBox(
-                        'Брандмауэр Windows',
-                        `Не удалось изменить правило для входящих подключений торрент-клиента: ${err.message}`,
-                    );
-                });
-            }
-        });
+            mainWindow.on('close', (e) => {
+                if (!quitting) {
+                    e.preventDefault();
+                    mainWindow.hide();
+                }
+            });
 
-        supervisor.events.on('exit', () => tray.setState('error'));
-    } catch (err) {
-        dialog.showErrorBox('Ошибка запуска', err.message);
-        if (!splash.isDestroyed()) splash.close();
-        app.quit();
-    }
-});
+            tray.create(mainWindow, onQuit);
 
-app.on('before-quit', (event) => {
-    quitting = true;
-    event.preventDefault();
-    wsClient.disconnect();
-    supervisor.stop().then(() => app.exit(0));
-});
+            wsClient.on('backend-event', ({ event, data }) => {
+                if (event === 'backend.status') tray.setState(data.state);
+                if (event === proxy.PROXY_CHANGED_EVENT) {
+                    proxy.applyProxy(session.defaultSession).catch((err) => {
+                        console.error('[proxy] не удалось применить настройки прокси:', err);
+                    });
+                }
+                if (event === firewall.FIREWALL_RULE_CHANGED_EVENT) {
+                    firewall.applyIncomingConnections(Boolean(data.enabled)).catch((err) => {
+                        dialog.showErrorBox(
+                            'Брандмауэр Windows',
+                            `Не удалось изменить правило для входящих подключений торрент-клиента: ${err.message}`,
+                        );
+                    });
+                }
+            });
+
+            supervisor.events.on('exit', () => tray.setState('error'));
+        } catch (err) {
+            dialog.showErrorBox('Ошибка запуска', err.message);
+            if (!splash.isDestroyed()) splash.close();
+            app.quit();
+        }
+    });
+
+    app.on('before-quit', (event) => {
+        quitting = true;
+        event.preventDefault();
+        wsClient.disconnect();
+        supervisor.stop().then(() => app.exit(0));
+    });
+
+    /**
+     * Страховка для путей завершения, которые не проходят через before-quit — например
+     * process.exit(), вызванный откуда-то ещё в главном процессе. Дождаться асинхронного
+     * supervisor.stop() в обработчике 'exit' нельзя, поэтому сразу SIGKILL (issue #390).
+     */
+    process.on('exit', () => {
+        supervisor.killSync();
+    });
+
+    process.on('SIGTERM', onQuit);
+    process.on('SIGINT', onQuit);
+
+    process.on('uncaughtException', (err) => {
+        console.error('[lifecycle] необработанное исключение в главном процессе:', err);
+        supervisor.killSync();
+        app.exit(1);
+    });
+}
