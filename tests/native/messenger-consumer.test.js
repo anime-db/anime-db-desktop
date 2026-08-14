@@ -48,8 +48,38 @@ jest.mock('../../native/supervisor/logrotate', () => ({
 jest.mock('../../native/supervisor/healthcheck', () => ({
     waitForProcessAlive: jest.fn(),
 }));
+// spawnProcess() пишет PID запущенного процесса через pid-tracker (issue #390) — без мока это
+// был бы реальный fs.mkdirSync по замоканному пути из ../../native/paths.
+jest.mock('../../native/supervisor/pid-tracker', () => ({
+    writePid:   jest.fn(),
+    clearPid:   jest.fn(),
+    killOrphan: jest.fn(() => Promise.resolve()),
+}));
+jest.mock('child_process', () => ({ spawn: jest.fn() }));
 
-const { buildEnv } = require('../../native/supervisor/messenger-consumer');
+const { spawn } = require('child_process');
+const { openLogStream } = require('../../native/supervisor/logrotate');
+const { buildEnv, start } = require('../../native/supervisor/messenger-consumer');
+
+/**
+ * Builds a fake child_process handle. Passing an `exitCode` fires the 'exit' listener
+ * synchronously (mirrors how the real child_process 'exit' event is consumed in these tests);
+ * omitting it leaves the fake process "running" so it doesn't trigger backoff scheduling.
+ */
+function createFakeChild(exitCode) {
+    return {
+        stdout: { on: jest.fn() },
+        stderr: { on: jest.fn() },
+        on: jest.fn((event, cb) => {
+            if (event === 'exit' && exitCode !== undefined) cb(exitCode);
+        }),
+    };
+}
+
+beforeEach(() => {
+    jest.clearAllMocks();
+    openLogStream.mockReturnValue({ write: jest.fn(), end: jest.fn() });
+});
 
 describe('buildEnv', () => {
     test('does not include HTTP-specific ports', () => {
@@ -138,5 +168,62 @@ describe('buildEnv', () => {
         const env = buildEnv(7700, 'test-key');
         expect(env.APP_SECRET).toBe('a'.repeat(64));
         expect(env.APP_SECRET).toHaveLength(64);
+    });
+});
+
+describe('start', () => {
+    test('runs messenger:setup-transports before spawning messenger:consume', async () => {
+        spawn.mockReturnValueOnce(createFakeChild(0)).mockReturnValueOnce(createFakeChild());
+
+        await start(7700, 'test-key');
+
+        expect(spawn).toHaveBeenCalledTimes(2);
+        expect(spawn.mock.calls[0][1]).toEqual(expect.arrayContaining(['messenger:setup-transports']));
+        expect(spawn.mock.calls[1][1]).toEqual(expect.arrayContaining(['messenger:consume', 'async']));
+    });
+
+    test('does not spawn messenger:consume when messenger:setup-transports exits non-zero', async () => {
+        spawn.mockReturnValueOnce(createFakeChild(1));
+
+        await expect(start(7700, 'test-key')).rejects.toThrow(/messenger:setup-transports/);
+        expect(spawn).toHaveBeenCalledTimes(1);
+    });
+
+    test('rejects with a descriptive error when messenger:setup-transports fails to spawn', async () => {
+        const fakeChild = {
+            stdout: { on: jest.fn() },
+            stderr: { on: jest.fn() },
+            on: jest.fn((event, cb) => {
+                if (event === 'error') cb(new Error('ENOENT'));
+            }),
+        };
+        spawn.mockReturnValueOnce(fakeChild);
+
+        await expect(start(7700, 'test-key')).rejects.toThrow(/не удалось запустить messenger:setup-transports/);
+    });
+
+    test('kills messenger:setup-transports and rejects when it never exits before the timeout', async () => {
+        jest.useFakeTimers();
+        try {
+            const kill = jest.fn();
+            const fakeChild = {
+                stdout: { on: jest.fn() },
+                stderr: { on: jest.fn() },
+                on:     jest.fn(),
+                kill,
+            };
+            spawn.mockReturnValueOnce(fakeChild);
+
+            const pending = start(7700, 'test-key');
+            const assertion = expect(pending).rejects.toThrow(/messenger:setup-transports не завершился за/);
+
+            await jest.advanceTimersByTimeAsync(30000);
+            await assertion;
+
+            expect(kill).toHaveBeenCalledWith('SIGKILL');
+            expect(spawn).toHaveBeenCalledTimes(1);
+        } finally {
+            jest.useRealTimers();
+        }
     });
 });
