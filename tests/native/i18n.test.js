@@ -72,4 +72,24 @@ describe('native translation catalogs', () => {
 
         expect(Object.keys(ru).sort()).toEqual(Object.keys(en).sort());
     });
+
+    // A typo or rename in a splash.step_* key would still pass every other test, since t()
+    // deliberately falls back to returning the key unchanged instead of throwing. Without this
+    // check, such a mismatch between the emitter (supervisor/index.js) and the catalog would only
+    // surface as a raw key shown on the splash screen.
+    describe('splash step keys resolve to translated text', () => {
+        const SPLASH_STEP_KEYS = [
+            'splash.step_meilisearch',
+            'splash.step_migrations',
+            'splash.step_frankenphp',
+            'splash.step_messenger',
+            'splash.step_reindex',
+            'splash.step_done',
+        ];
+
+        test.each(SPLASH_STEP_KEYS)('%s is translated on both locales', (key) => {
+            expect(t(key, 'ru')).not.toBe(key);
+            expect(t(key, 'en')).not.toBe(key);
+        });
+    });
 });
