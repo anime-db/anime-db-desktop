@@ -47,4 +47,5 @@ module.exports = {
     getConfigPath:         () => path.join(userDataDir(), 'config.json'),
     getPluginsConfigPath:  () => path.join(userDataDir(), 'plugins.json'),
     getPluginsDir:         () => path.join(userDataDir(), 'plugins'),
+    getStatePath:          () => path.join(userDataDir(), 'state.json'),
 };

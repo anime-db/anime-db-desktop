@@ -31,6 +31,7 @@ const { findFreePort }    = require('./port');
 const { waitForHealth }   = require('./healthcheck');
 const { pruneOldLogs, openLogStream } = require('./logrotate');
 const pidTracker          = require('./pid-tracker');
+const { invalidateStaleCache } = require('./cache-invalidation');
 
 const events = new EventEmitter();
 
@@ -121,8 +122,8 @@ function killOrphan() {
 }
 
 /**
- * Запускает FrankenPHP: ищет порты → создаёт php.ini → спавнит процесс →
- * ждёт /health → возвращает порты.
+ * Запускает FrankenPHP: инвалидирует устаревший кэш скомпилированного контейнера → ищет порты →
+ * создаёт php.ini → спавнит процесс → ждёт /health → возвращает порты.
  *
  * @param {number} meiliPort  порт Meilisearch
  * @param {string} meiliKey   master-key Meilisearch
@@ -131,6 +132,7 @@ function killOrphan() {
  */
 async function start(meiliPort, meiliKey, qbittorrentPort) {
     stopping = false;
+    invalidateStaleCache();
     ensurePhpIni();
 
     const logDir = path.join(paths.getRuntimeDir(), 'log');
