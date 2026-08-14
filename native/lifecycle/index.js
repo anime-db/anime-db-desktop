@@ -22,10 +22,13 @@
 'use strict';
 
 const { app, dialog, session } = require('electron');
+const fs   = require('fs');
+const path = require('path');
 require('../protocols/app-media');
 require('../accept-language');
 require('../shell');
 require('../dialog');
+const paths            = require('../paths');
 const supervisor       = require('../supervisor');
 const { createWindow } = require('../window');
 const { createSplash } = require('../window/splash');
@@ -33,6 +36,7 @@ const tray             = require('../tray');
 const wsClient         = require('../ws-client');
 const proxy            = require('../proxy');
 const firewall         = require('../firewall');
+const { todayStr }     = require('../supervisor/logrotate');
 
 let quitting   = false;
 let mainWindow = null;
@@ -40,6 +44,26 @@ let mainWindow = null;
 function onQuit() {
     quitting = true;
     app.quit();
+}
+
+/**
+ * Синхронно дописывает стек необработанного исключения в лог главного процесса. Дочерние
+ * процессы уже логируются через logrotate.js в своих супервизорах, но у главного процесса
+ * своего лога не было — console.error() в собранном GUI-приложении никуда не попадает (issue
+ * #390, отзыв ревьюера). Best-effort: если запись не удалась (например, каталог недоступен),
+ * молча продолжаем — показать диалог и выйти важнее, чем сам факт логирования.
+ *
+ * @param {Error} err
+ */
+function logCrash(err) {
+    try {
+        const logDir = path.join(paths.getRuntimeDir(), 'log');
+        fs.mkdirSync(logDir, { recursive: true });
+        const file = path.join(logDir, `main-${todayStr()}.log`);
+        fs.appendFileSync(file, `[${new Date().toISOString()}] ${err && err.stack ? err.stack : String(err)}\n`);
+    } catch {
+        // см. комментарий выше — лог необязателен, диалог и выход обязательны
+    }
 }
 
 const gotLock = app.requestSingleInstanceLock();
@@ -142,8 +166,9 @@ if (!gotLock) {
     process.on('SIGINT', onQuit);
 
     process.on('uncaughtException', (err) => {
-        console.error('[lifecycle] необработанное исключение в главном процессе:', err);
+        logCrash(err);
         supervisor.killSync();
+        dialog.showErrorBox('Необработанная ошибка', err && err.stack ? err.stack : String(err));
         app.exit(1);
     });
 }

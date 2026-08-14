@@ -28,9 +28,14 @@ jest.mock('electron', () => ({
         whenReady:  jest.fn(() => Promise.resolve()),
         quit:       jest.fn(),
         exit:       jest.fn(),
+        getPath:    jest.fn(() => '/fake/userData'),
     },
     dialog:  { showErrorBox: jest.fn() },
     session: { defaultSession: {} },
+}));
+jest.mock('fs', () => ({
+    mkdirSync:      jest.fn(),
+    appendFileSync: jest.fn(),
 }));
 jest.mock('../../native/protocols/app-media', () => ({}));
 jest.mock('../../native/accept-language', () => ({}));
@@ -181,11 +186,17 @@ describe('abnormal-exit cleanup', () => {
         expect(app.quit).toHaveBeenCalledTimes(2);
     });
 
-    test('an uncaught exception force-kills children and exits without waiting for graceful stop()', () => {
-        const { processHandlers, supervisor, app } = loadLifecycle();
+    test('an uncaught exception logs the crash, shows a dialog and force-kills children before exiting', () => {
+        const { processHandlers, supervisor, app, dialog } = loadLifecycle();
+        const fs = require('fs');
 
         processHandlers.uncaughtException(new Error('boom'));
 
+        expect(fs.appendFileSync).toHaveBeenCalledWith(
+            expect.stringContaining('main-'),
+            expect.stringContaining('boom'),
+        );
+        expect(dialog.showErrorBox).toHaveBeenCalledWith(expect.any(String), expect.stringContaining('boom'));
         expect(supervisor.killSync).toHaveBeenCalledTimes(1);
         expect(app.exit).toHaveBeenCalledWith(1);
     });
