@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html>
 <head>
     <meta charset="UTF-8">
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' file:; style-src 'unsafe-inline'; script-src 'unsafe-inline';">
@@ -48,14 +48,16 @@
     <div class="track">
         <div class="bar" id="bar"></div>
     </div>
-    <div class="status" id="status">Запуск Meilisearch...</div>
+    <div class="status" id="status"></div>
     <script>
         var bar    = document.getElementById('bar');
         var status = document.getElementById('status');
         var logo   = document.getElementById('logo');
 
         if (window.splash) {
+            document.documentElement.lang = window.splash.locale;
             logo.src = window.splash.logoPath;
+            status.textContent = window.splash.initialStatus;
             window.splash.onProgress(function (data) {
                 var percent = data.total ? Math.round((data.step / data.total) * 100) : 100;
                 bar.style.width = percent + '%';

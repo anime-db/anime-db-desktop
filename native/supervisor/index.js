@@ -82,7 +82,9 @@ const TOTAL_STEPS = 5;
  * стартует с пустым поиском, либо каталог расходится с индексом до ручного нажатия кнопки в
  * /settings. Ошибка переиндексации не блокирует старт приложения — только логируется.
  *
- * @param {((step: number, total: number, text: string) => void) | undefined} onProgress
+ * @param {((step: number, total: number, translationKey: string) => void) | undefined} onProgress
+ *   translationKey is a native/translations/ key, not display text — the caller (native/lifecycle)
+ *   resolves it for the current locale (issue #404).
  * @param {{ safeMode?: boolean }} [options]  safeMode (issue #403) — набор незакрытых стартов
  *                                             подряд, отслеживаемый native/lifecycle/index.js,
  *                                             попадает сюда как уже принятое пользователем решение
@@ -117,12 +119,12 @@ async function start(onProgress, { safeMode = false } = {}) {
     // он опционален (см. env.js), и OAUTH_CALLBACK_ORIGIN в их окружение не попадает.
     const phpContext = { qbittorrentPort, meiliPort, meiliKey, safeMode };
 
-    if (onProgress) onProgress(1, TOTAL_STEPS, 'Применение миграций...');
+    if (onProgress) onProgress(1, TOTAL_STEPS, 'splash.step_migrations');
     const migrationsApplied = await migrations.run(phpContext);
 
-    if (onProgress) onProgress(2, TOTAL_STEPS, 'Запуск FrankenPHP...');
+    if (onProgress) onProgress(2, TOTAL_STEPS, 'splash.step_frankenphp');
     const { httpPort: frankenphpPort, wsPort } = await frankenphp.start(phpContext);
-    if (onProgress) onProgress(3, TOTAL_STEPS, 'Запуск обработчика фоновых задач...');
+    if (onProgress) onProgress(3, TOTAL_STEPS, 'splash.step_messenger');
 
     // Тот же контекст, что у миграций, плюс порт поднятого веб-воркера — см. env.js.
     const workerContext = { ...phpContext, appPort: frankenphpPort };
@@ -130,7 +132,7 @@ async function start(onProgress, { safeMode = false } = {}) {
     await messengerConsumer.start(workerContext);
 
     if (wiped || migrationsApplied) {
-        if (onProgress) onProgress(4, TOTAL_STEPS, 'Обновление поискового индекса...');
+        if (onProgress) onProgress(4, TOTAL_STEPS, 'splash.step_reindex');
         try {
             await searchReindex.run(workerContext);
         } catch (err) {
@@ -138,7 +140,7 @@ async function start(onProgress, { safeMode = false } = {}) {
         }
     }
 
-    if (onProgress) onProgress(TOTAL_STEPS, TOTAL_STEPS, 'Готово');
+    if (onProgress) onProgress(TOTAL_STEPS, TOTAL_STEPS, 'splash.step_done');
 
     cacheInvalidation.commitFingerprint();
     safeModeState.commitStartSuccess(safeMode);

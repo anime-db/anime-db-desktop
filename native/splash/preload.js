@@ -26,7 +26,24 @@ const path = require('path');
 
 const logoPath = 'file://' + path.join(__dirname, '..', '..', 'resources', 'logo.png').replace(/\\/g, '/');
 
+/**
+ * Reads a `--name=value` entry passed via BrowserWindow's webPreferences.additionalArguments —
+ * the only way to hand the resolved locale and its initial status text to this window before its
+ * first paint, so splash.html never flashes hardcoded Russian text while waiting for the first
+ * "splash-progress" IPC message (issue #404).
+ *
+ * @param {string} name
+ * @returns {string}
+ */
+function readArg(name) {
+    const prefix = `--${name}=`;
+    const arg = process.argv.find(a => a.startsWith(prefix));
+    return arg ? decodeURIComponent(arg.slice(prefix.length)) : '';
+}
+
 contextBridge.exposeInMainWorld('splash', {
     logoPath,
+    locale:        readArg('splash-locale'),
+    initialStatus: readArg('splash-initial-status'),
     onProgress: (cb) => ipcRenderer.on('splash-progress', (_event, data) => cb(data)),
 });

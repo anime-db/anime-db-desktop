@@ -37,70 +37,44 @@ const firewall         = require('../firewall');
 const paths            = require('../paths');
 const { logCrash }     = require('../crash-log');
 const { getLocale }    = require('../config');
+const i18n             = require('../i18n');
 const { MigrationBootstrapError } = require('../supervisor/migrations');
 const { CacheInvalidationError } = require('../supervisor/cache-invalidation');
 
 /**
  * The migration-failure and downgrade dialogs are the only places in the app where the user is
  * required to take action to recover (delete user data, check disk space, read a log) — see
- * issue #392 — so, unlike the rest of native/ (Russian-only today), they are localized using the
- * same locale native/accept-language.js negotiates with.
+ * issue #392.
  *
  * @param {InstanceType<typeof MigrationBootstrapError>} err
  * @param {string} locale
  * @returns {{ title: string, message: string }}
  */
 function buildMigrationErrorDialog(err, locale) {
-    const isRu = locale.startsWith('ru');
-
     if (err.kind === 'downgrade') {
-        const userDataDir = paths.getUserDataDir();
-        return isRu
-            ? {
-                title: 'Несовместимая версия данных',
-                message: `Каталог данных был создан более новой версией AnimeDB и несовместим с этой версией `
-                    + `приложения.\n\nЧтобы продолжить, удалите папку с пользовательскими данными:\n${userDataDir}\n\n`
-                    + 'и установите приложение заново. Обычное удаление приложения эту папку не затрагивает.',
-            }
-            : {
-                title: 'Incompatible data version',
-                message: 'The data folder was created by a newer version of AnimeDB and is incompatible with this '
-                    + `version of the app.\n\nTo continue, delete the user data folder:\n${userDataDir}\n\n`
-                    + 'and reinstall the app. The regular uninstaller does not remove this folder.',
-            };
+        return {
+            title:   i18n.t('dialog.migration_downgrade_title', locale),
+            message: i18n.t('dialog.migration_downgrade_message', locale, { userDataDir: paths.getUserDataDir() }),
+        };
     }
 
     const details = [];
-    if (err.detail) details.push((isRu ? 'Ошибка: ' : 'Error: ') + err.detail);
-    if (err.logPath) details.push((isRu ? 'Лог: ' : 'Log: ') + err.logPath);
-    if (err.backupPath) details.push((isRu ? 'Резервная копия: ' : 'Backup: ') + err.backupPath);
+    if (err.detail) details.push(i18n.t('dialog.migration_detail_error', locale, { detail: err.detail }));
+    if (err.logPath) details.push(i18n.t('dialog.migration_detail_log', locale, { logPath: err.logPath }));
+    if (err.backupPath) details.push(i18n.t('dialog.migration_detail_backup', locale, { backupPath: err.backupPath }));
     const detailsBlock = details.length > 0 ? `\n\n${details.join('\n')}` : '';
 
     if (err.kind === 'backup-failed') {
-        return isRu
-            ? {
-                title: 'Не удалось создать резервную копию базы данных',
-                message: 'Перед обновлением схемы базы данных не удалось создать её резервную копию, поэтому '
-                    + `обновление не выполнялось.${detailsBlock}`,
-            }
-            : {
-                title: 'Database backup failed',
-                message: 'Could not create a backup of the database before updating its schema, so the update was '
-                    + `not attempted.${detailsBlock}`,
-            };
+        return {
+            title:   i18n.t('dialog.migration_backup_failed_title', locale),
+            message: i18n.t('dialog.migration_backup_failed_message', locale, { details: detailsBlock }),
+        };
     }
 
-    return isRu
-        ? {
-            title: 'Не удалось обновить схему базы данных',
-            message: 'Обновление схемы базы данных завершилось ошибкой. Резервная копия была восстановлена, '
-                + `повторная попытка также не удалась.${detailsBlock}`,
-        }
-        : {
-            title: 'Database schema update failed',
-            message: 'Updating the database schema failed. The backup was restored and the update was retried '
-                + `once, which also failed.${detailsBlock}`,
-        };
+    return {
+        title:   i18n.t('dialog.migration_schema_failed_title', locale),
+        message: i18n.t('dialog.migration_schema_failed_message', locale, { details: detailsBlock }),
+    };
 }
 
 /**
@@ -192,11 +166,16 @@ if (!gotLock) {
         }));
 
         try {
-            splash.webContents.send('splash-progress', { step: 0, total: supervisor.TOTAL_STEPS, text: 'Запуск Meilisearch...' });
+            const startupLocale = getLocale();
+            splash.webContents.send('splash-progress', {
+                step:  0,
+                total: supervisor.TOTAL_STEPS,
+                text:  i18n.t('splash.step_meilisearch', startupLocale),
+            });
 
-            const { frankenphpPort, wsPort } = await supervisor.start((step, total, text) => {
+            const { frankenphpPort, wsPort } = await supervisor.start((step, total, key) => {
                 if (!splash.isDestroyed()) {
-                    splash.webContents.send('splash-progress', { step, total, text });
+                    splash.webContents.send('splash-progress', { step, total, text: i18n.t(key, startupLocale) });
                 }
             }, { safeMode });
 
@@ -226,8 +205,8 @@ if (!gotLock) {
                 if (event === firewall.FIREWALL_RULE_CHANGED_EVENT) {
                     firewall.applyIncomingConnections(Boolean(data.enabled)).catch((err) => {
                         dialog.showErrorBox(
-                            'Брандмауэр Windows',
-                            `Не удалось изменить правило для входящих подключений торрент-клиента: ${err.message}`,
+                            i18n.t('dialog.firewall_error_title', getLocale()),
+                            i18n.t('dialog.firewall_error_message', getLocale(), { message: err.message }),
                         );
                     });
                 }
@@ -247,7 +226,7 @@ if (!gotLock) {
                 safeModeState.commitDiagnosedFailure();
                 dialog.showErrorBox('Ошибка запуска', err.message);
             } else {
-                dialog.showErrorBox('Ошибка запуска', err.message);
+                dialog.showErrorBox(i18n.t('dialog.startup_error_title', getLocale()), err.message);
             }
             app.quit();
         }
@@ -275,7 +254,7 @@ if (!gotLock) {
     process.on('uncaughtException', (err) => {
         logCrash(err);
         supervisor.killSync();
-        dialog.showErrorBox('Необработанная ошибка', err && err.stack ? err.stack : String(err));
+        dialog.showErrorBox(i18n.t('dialog.uncaught_error_title', getLocale()), err && err.stack ? err.stack : String(err));
         app.exit(1);
     });
 }

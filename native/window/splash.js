@@ -22,14 +22,24 @@
 'use strict';
 
 const { BrowserWindow } = require('electron');
-const path = require('path');
+const path           = require('path');
+const { getLocale }  = require('../config');
+const i18n           = require('../i18n');
 
 /**
  * Creates the splash window. Uses show: false — show it inside 'ready-to-show' handler.
  *
+ * The locale and the translated initial status text are passed in via
+ * webPreferences.additionalArguments rather than an IPC message: this is the only channel
+ * available before the window's first paint, so splash.html can render the correct-locale text
+ * from the start instead of flashing a hardcoded string while waiting for the first
+ * "splash-progress" event (issue #404).
+ *
  * @returns {BrowserWindow}
  */
 function createSplash() {
+    const locale = getLocale();
+
     const win = new BrowserWindow({
         width: 400,
         height: 300,
@@ -43,6 +53,10 @@ function createSplash() {
             preload: path.join(__dirname, '..', 'splash', 'preload.js'),
             contextIsolation: true,
             nodeIntegration: false,
+            additionalArguments: [
+                `--splash-locale=${encodeURIComponent(locale)}`,
+                `--splash-initial-status=${encodeURIComponent(i18n.t('splash.step_meilisearch', locale))}`,
+            ],
         },
     });
 

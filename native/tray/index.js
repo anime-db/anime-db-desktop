@@ -22,7 +22,9 @@
 'use strict';
 
 const { Tray, Menu, nativeImage } = require('electron');
-const path = require('path');
+const path          = require('path');
+const { getLocale } = require('../config');
+const i18n          = require('../i18n');
 
 let tray = null;
 
@@ -33,6 +35,11 @@ const ICONS = {
 };
 
 /**
+ * The tray menu is built once here, unlike the window (which re-reads getLocale() per request).
+ * Switching the app locale in settings while the app is running therefore translates the window
+ * but leaves the tray on the language it was built with until the next launch — an accepted
+ * limitation (issue #404), not a bug to chase.
+ *
  * @param {import('electron').BrowserWindow} mainWindow
  * @param {Function} onQuit
  */
@@ -41,10 +48,11 @@ function create(mainWindow, onQuit) {
     tray = new Tray(icon);
     tray.setToolTip('AnimeDB');
 
+    const locale = getLocale();
     const menu = Menu.buildFromTemplate([
-        { label: 'Открыть', click: () => mainWindow.show() },
+        { label: i18n.t('tray.open', locale), click: () => mainWindow.show() },
         { type: 'separator' },
-        { label: 'Выход', click: onQuit },
+        { label: i18n.t('tray.quit', locale), click: onQuit },
     ]);
     tray.setContextMenu(menu);
     tray.on('double-click', () => mainWindow.show());
