@@ -1,0 +1,26 @@
+{
+    "splash.step_meilisearch": "Запуск Meilisearch...",
+    "splash.step_migrations": "Применение миграций...",
+    "splash.step_frankenphp": "Запуск FrankenPHP...",
+    "splash.step_messenger": "Запуск обработчика фоновых задач...",
+    "splash.step_reindex": "Обновление поискового индекса...",
+    "splash.step_done": "Готово",
+
+    "tray.open": "Открыть",
+    "tray.quit": "Выход",
+
+    "dialog.startup_error_title": "Ошибка запуска",
+    "dialog.uncaught_error_title": "Необработанная ошибка",
+    "dialog.firewall_error_title": "Брандмауэр Windows",
+    "dialog.firewall_error_message": "Не удалось изменить правило для входящих подключений торрент-клиента: %message%",
+
+    "dialog.migration_downgrade_title": "Несовместимая версия данных",
+    "dialog.migration_downgrade_message": "Каталог данных был создан более новой версией AnimeDB и несовместим с этой версией приложения.\n\nЧтобы продолжить, удалите папку с пользовательскими данными:\n%userDataDir%\n\nи установите приложение заново. Обычное удаление приложения эту папку не затрагивает.",
+    "dialog.migration_detail_error": "Ошибка: %detail%",
+    "dialog.migration_detail_log": "Лог: %logPath%",
+    "dialog.migration_detail_backup": "Резервная копия: %backupPath%",
+    "dialog.migration_backup_failed_title": "Не удалось создать резервную копию базы данных",
+    "dialog.migration_backup_failed_message": "Перед обновлением схемы базы данных не удалось создать её резервную копию, поэтому обновление не выполнялось.%details%",
+    "dialog.migration_schema_failed_title": "Не удалось обновить схему базы данных",
+    "dialog.migration_schema_failed_message": "Обновление схемы базы данных завершилось ошибкой. Резервная копия была восстановлена, повторная попытка также не удалась.%details%"
+}

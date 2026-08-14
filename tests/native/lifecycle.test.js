@@ -38,6 +38,10 @@ jest.mock('fs', () => ({
     mkdirSync:      jest.fn(),
     appendFileSync: jest.fn(),
     existsSync:     jest.fn(() => false),
+    // native/i18n reads the real native/translations/*.json catalogs off disk, so the mock
+    // delegates rather than stubbing it out — everything else in this suite only ever calls
+    // existsSync (config.js) or appendFileSync/mkdirSync (crash-log.js).
+    readFileSync:   jest.requireActual('fs').readFileSync,
 }));
 jest.mock('../../native/protocols/app-media', () => ({}));
 jest.mock('../../native/accept-language', () => ({}));
@@ -320,5 +324,49 @@ describe('startup failure', () => {
         );
         expect(dialog.showErrorBox).toHaveBeenCalledWith('Ошибка запуска', 'boom-startup');
         expect(app.quit).toHaveBeenCalledTimes(1);
+    });
+});
+
+// issue #404: native/ text is now sourced from native/translations/ via native/i18n, resolved
+// through the same getLocale() the rest of the app already uses.
+describe('locale-aware text', () => {
+    test('splash progress and the startup-error dialog show Russian text for a "ru" locale', async () => {
+        const { supervisor, dialog, fakeSplash } = loadLifecycle();
+        supervisor.start.mockRejectedValue(new Error('boom-ru'));
+
+        await new Promise((r) => setTimeout(r, 500));
+
+        expect(fakeSplash.webContents.send).toHaveBeenCalledWith(
+            'splash-progress',
+            expect.objectContaining({ step: 0, text: 'Запуск Meilisearch...' }),
+        );
+        expect(dialog.showErrorBox).toHaveBeenCalledWith('Ошибка запуска', 'boom-ru');
+    });
+
+    test('splash progress and the startup-error dialog show English text for an "en" locale', async () => {
+        const { app, supervisor, dialog, fakeSplash } = loadLifecycle();
+        app.getLocale.mockReturnValue('en-US');
+        supervisor.start.mockRejectedValue(new Error('boom-en'));
+
+        await new Promise((r) => setTimeout(r, 500));
+
+        expect(fakeSplash.webContents.send).toHaveBeenCalledWith(
+            'splash-progress',
+            expect.objectContaining({ step: 0, text: 'Starting Meilisearch...' }),
+        );
+        expect(dialog.showErrorBox).toHaveBeenCalledWith('Startup error', 'boom-en');
+    });
+
+    test('a downgrade migration dialog is shown in English for an "en" locale', async () => {
+        const { app, supervisor, migrations, dialog } = loadLifecycle();
+        app.getLocale.mockReturnValue('en-US');
+        supervisor.start.mockRejectedValue(new migrations.MigrationBootstrapError('downgrade'));
+
+        await new Promise((r) => setTimeout(r, 500));
+
+        expect(dialog.showErrorBox).toHaveBeenCalledWith(
+            'Incompatible data version',
+            expect.stringContaining('/fake/userData'),
+        );
     });
 });

@@ -1,0 +1,26 @@
+{
+    "splash.step_meilisearch": "Starting Meilisearch...",
+    "splash.step_migrations": "Applying migrations...",
+    "splash.step_frankenphp": "Starting FrankenPHP...",
+    "splash.step_messenger": "Starting the background task processor...",
+    "splash.step_reindex": "Updating the search index...",
+    "splash.step_done": "Done",
+
+    "tray.open": "Open",
+    "tray.quit": "Quit",
+
+    "dialog.startup_error_title": "Startup error",
+    "dialog.uncaught_error_title": "Unhandled error",
+    "dialog.firewall_error_title": "Windows Firewall",
+    "dialog.firewall_error_message": "Could not change the inbound rule for the torrent client: %message%",
+
+    "dialog.migration_downgrade_title": "Incompatible data version",
+    "dialog.migration_downgrade_message": "The data folder was created by a newer version of AnimeDB and is incompatible with this version of the app.\n\nTo continue, delete the user data folder:\n%userDataDir%\n\nand reinstall the app. The regular uninstaller does not remove this folder.",
+    "dialog.migration_detail_error": "Error: %detail%",
+    "dialog.migration_detail_log": "Log: %logPath%",
+    "dialog.migration_detail_backup": "Backup: %backupPath%",
+    "dialog.migration_backup_failed_title": "Database backup failed",
+    "dialog.migration_backup_failed_message": "Could not create a backup of the database before updating its schema, so the update was not attempted.%details%",
+    "dialog.migration_schema_failed_title": "Database schema update failed",
+    "dialog.migration_schema_failed_message": "Updating the database schema failed. The backup was restored and the update was retried once, which also failed.%details%"
+}

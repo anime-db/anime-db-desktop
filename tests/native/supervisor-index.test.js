@@ -151,8 +151,8 @@ describe('supervisor.start', () => {
             meiliKey:        'k',
             safeMode:        false,
         });
-        expect(onProgress).toHaveBeenCalledWith(4, 5, 'Обновление поискового индекса...');
-        expect(onProgress).toHaveBeenCalledWith(5, 5, 'Готово');
+        expect(onProgress).toHaveBeenCalledWith(4, 5, 'splash.step_reindex');
+        expect(onProgress).toHaveBeenCalledWith(5, 5, 'splash.step_done');
     });
 
     test('skips search-reindex when the index was not wiped and no migrations were applied', async () => {
@@ -163,8 +163,8 @@ describe('supervisor.start', () => {
         await supervisor.start(onProgress);
 
         expect(searchReindex.run).not.toHaveBeenCalled();
-        expect(onProgress).not.toHaveBeenCalledWith(4, 5, 'Обновление поискового индекса...');
-        expect(onProgress).toHaveBeenCalledWith(5, 5, 'Готово');
+        expect(onProgress).not.toHaveBeenCalledWith(4, 5, 'splash.step_reindex');
+        expect(onProgress).toHaveBeenCalledWith(5, 5, 'splash.step_done');
     });
 
     // issue #402: миграции меняют data.db сырым SQL в обход ORM-слушателей, которые диспатчат
@@ -183,8 +183,8 @@ describe('supervisor.start', () => {
             meiliKey:        'k',
             safeMode:        false,
         });
-        expect(onProgress).toHaveBeenCalledWith(4, 5, 'Обновление поискового индекса...');
-        expect(onProgress).toHaveBeenCalledWith(5, 5, 'Готово');
+        expect(onProgress).toHaveBeenCalledWith(4, 5, 'splash.step_reindex');
+        expect(onProgress).toHaveBeenCalledWith(5, 5, 'splash.step_done');
     });
 
     test('does not fail startup when reindexing errors out', async () => {
