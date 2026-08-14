@@ -29,6 +29,7 @@ jest.mock('electron', () => ({
         quit:       jest.fn(),
         exit:       jest.fn(),
         getPath:    jest.fn(() => '/fake/userData'),
+        getLocale:  jest.fn(() => 'ru-RU'),
     },
     dialog:  { showErrorBox: jest.fn() },
     session: { defaultSession: {} },
@@ -36,6 +37,7 @@ jest.mock('electron', () => ({
 jest.mock('fs', () => ({
     mkdirSync:      jest.fn(),
     appendFileSync: jest.fn(),
+    existsSync:     jest.fn(() => false),
 }));
 jest.mock('../../native/protocols/app-media', () => ({}));
 jest.mock('../../native/accept-language', () => ({}));
@@ -84,6 +86,7 @@ function loadLifecycle() {
     app.on.mockImplementation((event, handler) => { appHandlers[event] = handler; });
 
     const supervisor  = require('../../native/supervisor');
+    const migrations  = require('../../native/supervisor/migrations');
     const { createWindow } = require('../../native/window');
     const { createSplash } = require('../../native/window/splash');
     const tray        = require('../../native/tray');
@@ -113,7 +116,7 @@ function loadLifecycle() {
     require('../../native/lifecycle');
 
     return {
-        app, dialog, supervisor, createWindow, createSplash, tray, wsClient, proxy, firewall,
+        app, dialog, supervisor, migrations, createWindow, createSplash, tray, wsClient, proxy, firewall,
         appHandlers, processHandlers, fakeWindow, fakeSplash,
     };
 }
@@ -164,6 +167,40 @@ describe('single-instance lock', () => {
 
         expect(() => appHandlers['second-instance']()).not.toThrow();
         expect(fakeWindow.show).not.toHaveBeenCalled();
+    });
+});
+
+describe('migration bootstrap errors', () => {
+    test('a downgrade error shows a localized dialog naming the user data folder and quits without opening the window', async () => {
+        const { supervisor, migrations, dialog, app, createWindow, fakeSplash } = loadLifecycle();
+        supervisor.start.mockRejectedValue(new migrations.MigrationBootstrapError('downgrade'));
+
+        await new Promise((r) => setTimeout(r, 500));
+
+        expect(dialog.showErrorBox).toHaveBeenCalledWith(
+            expect.any(String),
+            expect.stringContaining('/fake/userData'),
+        );
+        expect(fakeSplash.close).toHaveBeenCalled();
+        expect(createWindow).not.toHaveBeenCalled();
+        expect(app.quit).toHaveBeenCalled();
+    });
+
+    test('a migrate-failed error shows a dialog including the underlying error detail, log and backup paths', async () => {
+        const { supervisor, migrations, dialog } = loadLifecycle();
+        supervisor.start.mockRejectedValue(
+            new migrations.MigrationBootstrapError('migrate-failed', 'boom', '/fake/userData/backups/data-1.db', '/fake/userData/var/log/migrations-2026-08-14.log'),
+        );
+
+        await new Promise((r) => setTimeout(r, 500));
+
+        expect(dialog.showErrorBox).toHaveBeenCalledWith(
+            expect.any(String),
+            expect.stringContaining('boom'),
+        );
+        const [, message] = dialog.showErrorBox.mock.calls[0];
+        expect(message).toContain('/fake/userData/backups/data-1.db');
+        expect(message).toContain('/fake/userData/var/log/migrations-2026-08-14.log');
     });
 });
 

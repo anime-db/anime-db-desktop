@@ -59,9 +59,11 @@ HTTP-shutdown в Symfony не подходит: FrankenPHP — Go-процесс
 
 ## Обновление приложения — electron-updater
 
-Реализуется в Этапе 6. Обычный старт не блокируется миграциями. Миграции и переиндексация — только в post-update старте.
+Реализуется в Этапе 6.
 
-Порядок post-update: (1) проверка версии Meilisearch → вайп если нужно; (2) Doctrine migrations; (3) переиндексация Meilisearch; (4) healthcheck → окно.
+**Отменено (issue #392):** «Обычный старт не блокируется миграциями, миграции — только в post-update старте». У «это post-update старт» нет надёжного признака — версия приложения им не является. Вместо этого Doctrine-миграции проверяются на **каждом** старте: дешёвая `doctrine:migrations:up-to-date --fail-on-unregistered` (`native/supervisor/migrations.js`) определяет, есть ли неприменённые миграции, и только тогда запускается реальный `doctrine:migrations:migrate` — с бэкапом `data.db` через `VACUUM INTO` перед прогоном. См. [.claude-docs/gotchas.md](gotchas.md) за подробностями отказоустойчивости (fail-closed, обработка даунгрейда).
+
+Порядок старта: (1) проверка версии Meilisearch → вайп если нужно; (2) Doctrine migrations (каждый старт, реальный прогон — только если есть что применять); (3) переиндексация Meilisearch (только если был вайп); (4) healthcheck → окно.
 
 ## Именование директорий
 

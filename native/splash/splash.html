@@ -54,12 +54,11 @@
         var status = document.getElementById('status');
         var logo   = document.getElementById('logo');
 
-        var steps = [25, 50, 75, 100];
-
         if (window.splash) {
             logo.src = window.splash.logoPath;
             window.splash.onProgress(function (data) {
-                bar.style.width = (steps[data.step] || 33) + '%';
+                var percent = data.total ? Math.round((data.step / data.total) * 100) : 100;
+                bar.style.width = percent + '%';
                 status.textContent = data.text;
             });
         }
