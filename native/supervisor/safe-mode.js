@@ -105,4 +105,22 @@ function commitStartSuccess(safeMode) {
     writeState(state);
 }
 
-module.exports = { beginStartAttempt, hasModeChanged, commitStartSuccess };
+/**
+ * Must be called when the kernel start failed for a reason the app can already explain to the
+ * user — MigrationBootstrapError or cache-invalidation.js's CacheInvalidationError — rather than
+ * an unexplained crash. Unlike commitStartSuccess(), this does not touch the committed `safeMode`
+ * value: the start never reached a successful kernel, so there is no new mode to record.
+ *
+ * A diagnosed failure must not count towards the safe-mode streak: a downgrade or a failed cache
+ * wipe is not fixed by disabling plugins, so folding it into beginStartAttempt()'s counter would
+ * eventually show the safe-mode prompt with a cause that is wrong and a choice that is guaranteed
+ * not to help (issue #403 review).
+ */
+function commitDiagnosedFailure() {
+    const state = readState();
+    state.startPending = false;
+    state.unclosedStartStreak = 0;
+    writeState(state);
+}
+
+module.exports = { beginStartAttempt, hasModeChanged, commitStartSuccess, commitDiagnosedFailure };

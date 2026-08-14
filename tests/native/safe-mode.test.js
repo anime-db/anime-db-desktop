@@ -27,7 +27,9 @@ jest.mock('../../native/paths', () => ({
 
 const fs = require('fs');
 const paths = require('../../native/paths');
-const { beginStartAttempt, hasModeChanged, commitStartSuccess } = require('../../native/supervisor/safe-mode');
+const {
+    beginStartAttempt, hasModeChanged, commitStartSuccess, commitDiagnosedFailure,
+} = require('../../native/supervisor/safe-mode');
 
 let stateOnDisk;
 
@@ -135,6 +137,36 @@ describe('commitStartSuccess', () => {
         stateOnDisk = JSON.stringify({ buildFingerprint: 'keep-me' });
 
         commitStartSuccess(false);
+
+        expect(JSON.parse(stateOnDisk).buildFingerprint).toBe('keep-me');
+    });
+});
+
+describe('commitDiagnosedFailure', () => {
+    test('clears the pending marker and resets the streak without touching the committed mode', () => {
+        stateOnDisk = JSON.stringify({ startPending: true, unclosedStartStreak: 2, safeMode: false });
+
+        commitDiagnosedFailure();
+
+        const written = JSON.parse(stateOnDisk);
+        expect(written.startPending).toBe(false);
+        expect(written.unclosedStartStreak).toBe(0);
+        expect(written.safeMode).toBe(false);
+    });
+
+    test('a diagnosed failure does not carry over into the next launch\'s streak', () => {
+        stateOnDisk = JSON.stringify({ startPending: true, unclosedStartStreak: 1 });
+
+        commitDiagnosedFailure();
+
+        expect(beginStartAttempt()).toBe(false);
+        expect(JSON.parse(stateOnDisk).unclosedStartStreak).toBe(0);
+    });
+
+    test('merges into existing state.json content instead of overwriting other fields', () => {
+        stateOnDisk = JSON.stringify({ buildFingerprint: 'keep-me' });
+
+        commitDiagnosedFailure();
 
         expect(JSON.parse(stateOnDisk).buildFingerprint).toBe('keep-me');
     });

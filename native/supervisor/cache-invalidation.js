@@ -80,20 +80,39 @@ function hasBuildChanged() {
 }
 
 /**
+ * Отличает провал вайпа кэша (диск занят, файл заблокирован антивирусом и т.п.) от прочих ошибок
+ * запуска — вызывающая сторона (native/lifecycle/index.js) обязана распознавать этот класс так же,
+ * как MigrationBootstrapError, и не засчитывать его в серию safe-mode: отключение плагинов не
+ * освобождает занятый файл (issue #403, ревью PR #406).
+ */
+class CacheInvalidationError extends Error {
+    constructor(message) {
+        super(message);
+        this.name = 'CacheInvalidationError';
+    }
+}
+
+/**
  * Удаляет скомпилированный кэш Symfony-контейнера (APP_RUNTIME_DIR/cache): APP_ENV=prod отключает
  * у Symfony проверку свежести ConfigCache, поэтому устаревший дамп контейнера и *.bundles.php
  * иначе переживают установку новой сборки поверх старой и грузятся против нового кода (issue
  * #386). Вызывающая сторона обязана вызывать это до запуска любого PHP-процесса и только когда
  * hasBuildChanged() вернул true. APP_RUNTIME_DIR/log не трогается — там уже есть отдельная
  * ротация.
+ *
+ * @throws {CacheInvalidationError}
  */
 function invalidateCache() {
-    fs.rmSync(path.join(paths.getRuntimeDir(), 'cache'), {
-        recursive: true,
-        force: true,
-        maxRetries: 3,
-        retryDelay: 200,
-    });
+    try {
+        fs.rmSync(path.join(paths.getRuntimeDir(), 'cache'), {
+            recursive: true,
+            force: true,
+            maxRetries: 3,
+            retryDelay: 200,
+        });
+    } catch (err) {
+        throw new CacheInvalidationError(err.message);
+    }
 }
 
 /**
@@ -119,4 +138,4 @@ function commitFingerprint() {
     fs.writeFileSync(statePath, JSON.stringify(state, null, 2));
 }
 
-module.exports = { hasBuildChanged, invalidateCache, commitFingerprint, computeBuildFingerprint };
+module.exports = { hasBuildChanged, invalidateCache, commitFingerprint, computeBuildFingerprint, CacheInvalidationError };

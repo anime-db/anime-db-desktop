@@ -38,6 +38,7 @@ const paths            = require('../paths');
 const { logCrash }     = require('../crash-log');
 const { getLocale }    = require('../config');
 const { MigrationBootstrapError } = require('../supervisor/migrations');
+const { CacheInvalidationError } = require('../supervisor/cache-invalidation');
 
 /**
  * The migration-failure and downgrade dialogs are the only places in the app where the user is
@@ -237,8 +238,14 @@ if (!gotLock) {
             logCrash(err);
             if (!splash.isDestroyed()) splash.close();
             if (err instanceof MigrationBootstrapError) {
+                // Diagnosed failure — the dialog below already tells the user the exact cause, so
+                // it must not count towards the safe-mode streak (see commitDiagnosedFailure()).
+                safeModeState.commitDiagnosedFailure();
                 const { title, message } = buildMigrationErrorDialog(err, getLocale());
                 dialog.showErrorBox(title, message);
+            } else if (err instanceof CacheInvalidationError) {
+                safeModeState.commitDiagnosedFailure();
+                dialog.showErrorBox('Ошибка запуска', err.message);
             } else {
                 dialog.showErrorBox('Ошибка запуска', err.message);
             }
