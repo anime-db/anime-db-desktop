@@ -69,6 +69,35 @@ function buildEnv(meiliPort, meiliKey) {
 }
 
 /**
+ * Запускает `messenger:setup-transports` и ждёт завершения. Идемпотентна — Doctrine-транспорт
+ * создаёт таблицу очереди, только если её ещё нет, поэтому запускать безопасно на каждом старте.
+ *
+ * @param {number} meiliPort  порт Meilisearch
+ * @param {string} meiliKey   master-key Meilisearch
+ * @returns {Promise<void>}
+ */
+function runSetupTransports(meiliPort, meiliKey) {
+    return new Promise((resolve, reject) => {
+        const proc = spawn(BINARY, ['php-cli', CONSOLE, 'messenger:setup-transports'], {
+            cwd: paths.getAppRootDir(),
+            env: buildEnv(meiliPort, meiliKey),
+            stdio: ['ignore', 'pipe', 'pipe'],
+        });
+
+        proc.stdout.on('data', (d) => logStream.write(d));
+        proc.stderr.on('data', (d) => logStream.write(d));
+
+        proc.on('error', (err) => {
+            reject(new Error(`не удалось запустить messenger:setup-transports: ${err.message}`));
+        });
+        proc.on('exit', (code) => {
+            if (code === 0) return resolve();
+            reject(new Error(`messenger:setup-transports завершился с кодом ${code}`));
+        });
+    });
+}
+
+/**
  * Запускает consumer и при падении перезапускает с backoff. Один долгоживущий процесс на
  * весь сеанс приложения — без --time-limit и без периодического перезапуска по таймеру.
  * Если stopping === true — молча прекращает перезапуски.
@@ -110,7 +139,9 @@ function killOrphan() {
 }
 
 /**
- * Запускает messenger-consumer: спавнит процесс → ждёт, что он не упал сразу после старта.
+ * Запускает messenger-consumer: настраивает транспорт (создаёт таблицу очереди, если её ещё
+ * нет) → спавнит процесс → ждёт, что он не упал сразу после старта. Если настройка транспорта
+ * падает, consumer не запускается — ошибка всплывает вызывающему коду.
  *
  * @param {number} meiliPort  порт Meilisearch
  * @param {string} meiliKey   master-key Meilisearch
@@ -122,6 +153,8 @@ async function start(meiliPort, meiliKey) {
     const logDir = path.join(paths.getRuntimeDir(), 'log');
     pruneOldLogs(logDir, LOG_PREFIX, LOG_MAX);
     logStream = openLogStream(logDir, LOG_PREFIX);
+
+    await runSetupTransports(meiliPort, meiliKey);
 
     spawnProcess(meiliPort, meiliKey);
     await waitForProcessAlive(child);
@@ -170,4 +203,4 @@ function killSync() {
     }
 }
 
-module.exports = { start, stop, killSync, killOrphan, buildEnv, events };
+module.exports = { start, stop, killSync, killOrphan, buildEnv, runSetupTransports, events };
