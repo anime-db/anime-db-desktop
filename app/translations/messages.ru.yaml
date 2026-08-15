@@ -203,11 +203,11 @@ settings_plugins:
     confirm_button: Понимаю, установить
     install_button: Установить
     install_success: 'Плагин «%pluginId%» успешно установлен.'
+    update_success: 'Плагин «%pluginId%» успешно обновлён. Настройки плагина сохранены.'
     install_error_no_file: Выберите ZIP-архив плагина для установки.
     install_error_not_zip: Выберите файл с расширением .zip.
     install_error_incompatible_core: 'Плагин требует версию ядра "%requiredCore%", установлена версия "%currentCore%".'
     install_error_syntax: 'Установка прервана: в PHP-файлах плагина есть синтаксические ошибки:'
-    install_error_already_installed: 'Плагин «%pluginId%» уже установлен.'
     install_error_invalid_manifest: Некорректный или отсутствующий manifest.json в архиве.
     install_error_generic: Не удалось распаковать или установить архив. Убедитесь, что это корректный ZIP-архив плагина.
 
@@ -225,6 +225,8 @@ settings_market:
     incompatible_core: 'Нужна версия ядра, совместимая с "%requiredCore%".'
     install_button: Установить
     install_success: 'Плагин «%pluginId%» успешно установлен.'
+    update_button: Обновить
+    update_success: 'Плагин «%pluginId%» успешно обновлён. Настройки плагина сохранены.'
     registry_unavailable: Не удалось загрузить каталог маркета. Проверьте подключение к сети и попробуйте ещё раз позже.
     install_error_registry_unavailable: Не удалось загрузить каталог маркета. Попробуйте ещё раз позже.
     install_error_unknown_plugin: Этот плагин больше не числится в каталоге маркета.

@@ -33,6 +33,7 @@ use App\Service\Plugin\Exception\InvalidInstalledPluginException;
 use App\Service\Plugin\Exception\PluginAlreadyInstalledException;
 use App\Service\Plugin\Exception\PluginCacheWarmupException;
 use App\Service\Plugin\Exception\PluginInstallException;
+use App\Service\Plugin\Exception\PluginNotInstalledException;
 use App\Service\Plugin\Exception\PluginSyntaxErrorException;
 use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\PluginCacheWarmer;
@@ -446,6 +447,197 @@ final class ZipPluginInstallerTest extends TestCase
         $this->assertSame('animedb-shikimori', (string) $pluginId);
         $this->assertDirectoryExists($this->pluginsDir.'/animedb-shikimori');
         $this->assertTrue($this->registry->has(new PluginId('animedb-shikimori')));
+    }
+
+    public function testUpdateSwapsInTheNewVersionAndReconcilesRegistry(): void
+    {
+        mkdir($this->pluginsDir.'/animedb-shikimori', recursive: true);
+        file_put_contents($this->pluginsDir.'/animedb-shikimori/manifest.json', $this->validManifestJson('animedb-shikimori', '1.0.0'));
+        file_put_contents($this->pluginsDir.'/animedb-shikimori/old-only-file.txt', 'left over from v1');
+        $this->registry->reconcile();
+
+        $zipPath = $this->createZip([
+            'manifest.json' => $this->validManifestJson('animedb-shikimori', '2.0.0'),
+            'src/Plugin.php' => '<?php // v2 entry point',
+        ]);
+
+        $pluginId = $this->installer()->update($zipPath);
+
+        $this->assertSame('animedb-shikimori', (string) $pluginId);
+
+        $installed = $this->registry->get(new PluginId('animedb-shikimori'));
+        $this->assertNotNull($installed);
+        $this->assertSame('2.0.0', $installed->manifest->version);
+        $this->assertFileExists($this->pluginsDir.'/animedb-shikimori/src/Plugin.php');
+        $this->assertFileDoesNotExist($this->pluginsDir.'/animedb-shikimori/old-only-file.txt');
+        $this->assertNoLeftoverTempDirectories();
+    }
+
+    public function testUpdatePreservesPluginSettingsAcrossTheDirectorySwap(): void
+    {
+        mkdir($this->pluginsDir.'/animedb-shikimori', recursive: true);
+        file_put_contents($this->pluginsDir.'/animedb-shikimori/manifest.json', $this->validManifestJson('animedb-shikimori', '1.0.0'));
+        $this->registry->reconcile();
+
+        $configStore = new PluginsConfigStore($this->pluginsDir.'/plugins.json');
+        $configStore->updatePluginSettings(new PluginId('animedb-shikimori'), static fn (array $settings): array => [
+            ...$settings,
+            'settings' => ['token' => 'secret-oauth-token'],
+        ]);
+
+        $zipPath = $this->createZip(['manifest.json' => $this->validManifestJson('animedb-shikimori', '2.0.0')]);
+
+        $this->installer()->update($zipPath);
+
+        $this->assertSame(['token' => 'secret-oauth-token'], $configStore->getSettingsStorePayload(new PluginId('animedb-shikimori')));
+    }
+
+    public function testUpdateFailsWhenPluginIdIsNotInstalled(): void
+    {
+        $zipPath = $this->createZip(['manifest.json' => $this->validManifestJson('animedb-shikimori', '2.0.0')]);
+
+        $installer = $this->installer();
+
+        $this->expectException(PluginNotInstalledException::class);
+
+        try {
+            $installer->update($zipPath);
+        } finally {
+            $this->assertFalse($this->registry->has(new PluginId('animedb-shikimori')));
+            $this->assertNoLeftoverTempDirectories();
+        }
+    }
+
+    /**
+     * The core rollback guarantee behind issue #224: a failed isolated warm-up of the new version
+     * must restore the previous, still-working version rather than leaving the plugin directory
+     * empty or half-written — and must leave the plugin's settings untouched throughout, since
+     * they live in plugins.json rather than the swapped directory.
+     */
+    public function testUpdateRestoresThePreviousVersionAndPreservesSettingsWhenCacheWarmupFails(): void
+    {
+        mkdir($this->pluginsDir.'/animedb-shikimori', recursive: true);
+        file_put_contents($this->pluginsDir.'/animedb-shikimori/manifest.json', $this->validManifestJson('animedb-shikimori', '1.0.0'));
+        file_put_contents($this->pluginsDir.'/animedb-shikimori/v1-only-file.txt', 'v1 marker');
+        $this->registry->reconcile();
+
+        $configStore = new PluginsConfigStore($this->pluginsDir.'/plugins.json');
+        $configStore->updatePluginSettings(new PluginId('animedb-shikimori'), static fn (array $settings): array => [
+            ...$settings,
+            'settings' => ['token' => 'secret-oauth-token'],
+        ]);
+
+        $zipPath = $this->createZip(['manifest.json' => $this->validManifestJson('animedb-shikimori', '2.0.0')]);
+
+        $wsPublisher = $this->createMock(WsPublisher::class);
+        $wsPublisher->expects($this->never())->method('publish');
+
+        $installer = new ZipPluginInstaller(
+            $this->pluginsDir,
+            self::CORE_VERSION,
+            $this->registry,
+            new class implements PluginCacheWarmerInterface {
+                public function warmUp(): void
+                {
+                    throw new PluginCacheWarmupException('boom');
+                }
+            },
+            $wsPublisher,
+        );
+
+        $this->expectException(PluginCacheWarmupException::class);
+
+        try {
+            $installer->update($zipPath);
+        } finally {
+            $installed = $this->registry->get(new PluginId('animedb-shikimori'));
+            $this->assertNotNull($installed);
+            $this->assertSame('1.0.0', $installed->manifest->version);
+            $this->assertFileExists($this->pluginsDir.'/animedb-shikimori/v1-only-file.txt');
+            $this->assertSame(
+                ['token' => 'secret-oauth-token'],
+                $configStore->getSettingsStorePayload(new PluginId('animedb-shikimori')),
+            );
+            $this->assertNoLeftoverTempDirectories();
+        }
+    }
+
+    /**
+     * The native supervisor only learns an updated plugin needs to be made live via this event
+     * (issue #224, same mechanism as {@see testInstallPublishesWorkersReloadEventAfterSuccessfulCacheWarmup()}).
+     */
+    public function testUpdatePublishesWorkersReloadEventAfterSuccessfulCacheWarmup(): void
+    {
+        mkdir($this->pluginsDir.'/animedb-shikimori', recursive: true);
+        file_put_contents($this->pluginsDir.'/animedb-shikimori/manifest.json', $this->validManifestJson('animedb-shikimori', '1.0.0'));
+        $this->registry->reconcile();
+
+        $zipPath = $this->createZip(['manifest.json' => $this->validManifestJson('animedb-shikimori', '2.0.0')]);
+
+        $wsPublisher = $this->createMock(WsPublisher::class);
+        $wsPublisher->expects($this->once())
+            ->method('publish')
+            ->with(ZipPluginInstaller::WORKERS_RELOAD_EVENT, ['pluginId' => 'animedb-shikimori']);
+
+        $installer = new ZipPluginInstaller(
+            $this->pluginsDir,
+            self::CORE_VERSION,
+            $this->registry,
+            $this->cacheWarmer(),
+            $wsPublisher,
+        );
+
+        $pluginId = $installer->update($zipPath);
+
+        $this->assertSame('animedb-shikimori', (string) $pluginId);
+        $installed = $this->registry->get(new PluginId('animedb-shikimori'));
+        $this->assertNotNull($installed);
+        $this->assertSame('2.0.0', $installed->manifest->version);
+        $this->assertNoLeftoverTempDirectories();
+    }
+
+    public function testUpdateSkipsSyntaxLintWhenTrusted(): void
+    {
+        mkdir($this->pluginsDir.'/animedb-shikimori', recursive: true);
+        file_put_contents($this->pluginsDir.'/animedb-shikimori/manifest.json', $this->validManifestJson('animedb-shikimori', '1.0.0'));
+        $this->registry->reconcile();
+
+        $zipPath = $this->createZip([
+            'manifest.json' => $this->validManifestJson('animedb-shikimori', '2.0.0'),
+            'src/Plugin.php' => "<?php\n\nfinal class Plugin\n{\n", // unclosed class body
+        ]);
+
+        $pluginId = $this->installer()->update($zipPath, trusted: true);
+
+        $this->assertSame('animedb-shikimori', (string) $pluginId);
+        $installed = $this->registry->get(new PluginId('animedb-shikimori'));
+        $this->assertNotNull($installed);
+        $this->assertSame('2.0.0', $installed->manifest->version);
+        $this->assertNoLeftoverTempDirectories();
+    }
+
+    public function testUpdateBlocksWhenRequiredCoreVersionIsHigherThanCurrent(): void
+    {
+        mkdir($this->pluginsDir.'/animedb-shikimori', recursive: true);
+        file_put_contents($this->pluginsDir.'/animedb-shikimori/manifest.json', $this->validManifestJson('animedb-shikimori', '1.0.0'));
+        $this->registry->reconcile();
+
+        $zipPath = $this->createZip(['manifest.json' => $this->validManifestJson('animedb-shikimori', '2.0.0', requireCore: '>=99.0.0')]);
+
+        $installer = $this->installer();
+
+        try {
+            $installer->update($zipPath);
+            $this->fail('Expected IncompatiblePluginCoreVersionException to be thrown.');
+        } catch (IncompatiblePluginCoreVersionException $exception) {
+            $this->assertSame('>=99.0.0', $exception->requiredCore);
+            $this->assertSame(self::CORE_VERSION, $exception->currentCore);
+        } finally {
+            $installed = $this->registry->get(new PluginId('animedb-shikimori'));
+            $this->assertNotNull($installed);
+            $this->assertSame('1.0.0', $installed->manifest->version);
+            $this->assertNoLeftoverTempDirectories();
+        }
     }
 
     private function installer(?WsPublisher $wsPublisher = null): ZipPluginInstaller

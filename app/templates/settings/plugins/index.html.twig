@@ -32,6 +32,10 @@
         <p class="success">{{ 'settings_plugins.install_success'|trans({'%pluginId%': installedPluginId}) }}</p>
     {% endif %}
 
+    {% if updatedPluginId is not null %}
+        <p class="success">{{ 'settings_plugins.update_success'|trans({'%pluginId%': updatedPluginId}) }}</p>
+    {% endif %}
+
     {% if removedPluginId is not null %}
         <p class="success">{{ 'settings_plugins.remove_success'|trans({'%pluginId%': removedPluginId}) }}</p>
     {% endif %}

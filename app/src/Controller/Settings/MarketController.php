@@ -39,6 +39,7 @@ use App\Service\Plugin\Exception\IncompatiblePluginCoreVersionException;
 use App\Service\Plugin\Exception\InvalidInstalledPluginException;
 use App\Service\Plugin\Exception\PluginAlreadyInstalledException;
 use App\Service\Plugin\Exception\PluginInstallException;
+use App\Service\Plugin\Exception\PluginNotInstalledException;
 use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\ZipPluginInstaller;
 use Symfony\Component\HttpFoundation\RedirectResponse;
@@ -72,6 +73,14 @@ use Twig\Environment;
  * {@see MarketPlugin::resolveCompatibleVersion()} actually resolves against the current
  * `%app.core_version%`, which may be an older one. A plugin with no compatible version at all is
  * rendered inactive with a "needs core version X" hint instead of an "Install" button.
+ *
+ * An already-installed plugin whose resolved compatible version differs from the one on disk gets
+ * an "Update" button ({@see update()}, issue #224) instead of the plain "already installed" label
+ * — driven through {@see ZipPluginInstaller::update()}, which runs the same download+SHA-256
+ * verification and isolated warm-up as {@see install()} but swaps the new version into place
+ * behind a backup of the old one, so a failed warm-up restores it instead of leaving the plugin
+ * directory empty. There is deliberately no automatic update: the resolved version merely decides
+ * whether the button is shown, the update itself always waits for this explicit click.
  */
 final class MarketController
 {
@@ -91,14 +100,35 @@ final class MarketController
     public function index(Request $request): Response
     {
         $installedPluginId = (string) $request->query->get('installed', '');
+        $updatedPluginId = (string) $request->query->get('updated', '');
 
-        return $this->renderIndex(installedPluginId: $installedPluginId !== '' ? $installedPluginId : null);
+        return $this->renderIndex(
+            installedPluginId: $installedPluginId !== '' ? $installedPluginId : null,
+            updatedPluginId: $updatedPluginId !== '' ? $updatedPluginId : null,
+        );
     }
 
     #[Route('/settings/market/{pluginId}/install', name: 'settings_market_install', methods: ['POST'])]
     public function install(string $pluginId, Request $request): Response
     {
-        $this->assertValidCsrfToken('settings_market_install_'.$pluginId, $request);
+        return $this->installOrUpdate($pluginId, $request, update: false);
+    }
+
+    /**
+     * Updates an already-installed plugin to whichever version {@see MarketPlugin::resolveCompatibleVersion()}
+     * currently resolves against `%app.core_version%` (issue #224) — only reachable by an explicit
+     * click of the "Update" button {@see renderIndex()} renders for such a plugin; there is no
+     * silent auto-update.
+     */
+    #[Route('/settings/market/{pluginId}/update', name: 'settings_market_update', methods: ['POST'])]
+    public function update(string $pluginId, Request $request): Response
+    {
+        return $this->installOrUpdate($pluginId, $request, update: true);
+    }
+
+    private function installOrUpdate(string $pluginId, Request $request, bool $update): Response
+    {
+        $this->assertValidCsrfToken(($update ? 'settings_market_update_' : 'settings_market_install_').$pluginId, $request);
 
         try {
             $id = new PluginId($pluginId);
@@ -132,7 +162,11 @@ final class MarketController
         }
 
         try {
-            $this->installer->install($zipPath, trusted: true);
+            if ($update) {
+                $this->installer->update($zipPath, trusted: true);
+            } else {
+                $this->installer->install($zipPath, trusted: true);
+            }
         } catch (IncompatiblePluginCoreVersionException $exception) {
             return $this->renderIndex(
                 installError: 'settings_market.install_error_incompatible_core',
@@ -143,6 +177,10 @@ final class MarketController
                 installError: 'settings_market.install_error_already_installed',
                 installErrorParams: ['%pluginId%' => (string) $exception->pluginId],
             );
+        } catch (PluginNotInstalledException) {
+            // The plugin was removed by another request between rendering the "Update" button and
+            // this click — not installing it here would silently second-guess that removal.
+            return $this->renderIndex(installError: 'settings_market.install_error_generic');
         } catch (InvalidInstalledPluginException) {
             return $this->renderIndex(installError: 'settings_market.install_error_invalid_manifest');
         } catch (PluginInstallException) {
@@ -151,7 +189,10 @@ final class MarketController
             @unlink($zipPath);
         }
 
-        return new RedirectResponse($this->urlGenerator->generate('settings_market_index', ['installed' => (string) $id]));
+        return new RedirectResponse($this->urlGenerator->generate(
+            'settings_market_index',
+            $update ? ['updated' => (string) $id] : ['installed' => (string) $id],
+        ));
     }
 
     /**
@@ -159,6 +200,7 @@ final class MarketController
      */
     private function renderIndex(
         ?string $installedPluginId = null,
+        ?string $updatedPluginId = null,
         ?string $installError = null,
         array $installErrorParams = [],
     ): Response {
@@ -167,10 +209,16 @@ final class MarketController
 
         $items = [];
         foreach ($registry?->plugins() ?? [] as $plugin) {
+            $installedPlugin = $this->installedPlugins->get($plugin->id);
+            $resolvedVersion = $plugin->resolveCompatibleVersion($this->coreVersion);
+
             $items[] = [
                 'plugin' => $plugin,
-                'resolvedVersion' => $plugin->resolveCompatibleVersion($this->coreVersion),
-                'installed' => $this->installedPlugins->has($plugin->id),
+                'resolvedVersion' => $resolvedVersion,
+                'installed' => $installedPlugin !== null,
+                'updateAvailable' => $installedPlugin !== null
+                    && $resolvedVersion !== null
+                    && $resolvedVersion->version !== $installedPlugin->manifest->version,
             ];
         }
 
@@ -178,6 +226,7 @@ final class MarketController
             'items' => $items,
             'registryUnavailable' => $registry === null,
             'installedPluginId' => $installedPluginId,
+            'updatedPluginId' => $updatedPluginId,
             'installError' => $installError,
             'installErrorParams' => $installErrorParams,
         ]));
