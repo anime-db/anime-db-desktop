@@ -128,9 +128,21 @@ function killOrphan() {
  * @param {import('./env').PhpContext} context  общий контекст сеанса, собранный супервизором
  *                                               (issue #391) — appPort в нём ещё не задан, он
  *                                               появляется только после findFreePort() ниже
+ * @param {{ port?: number, wsPort?: number }} [preferred]  желаемые порты вместо поиска с 8000 —
+ *                                               используется супервизором при живом рестарте
+ *                                               воркера после активации плагина (issue #411):
+ *                                               окно уже открыто на старом порту
+ *                                               (native/window/index.js грузит URL один раз при
+ *                                               создании, без повторной навигации), и WS-клиент
+ *                                               переподключается на старый _port сам
+ *                                               (native/ws-client.js), поэтому рестарт обязан
+ *                                               вернуться на те же порты, а не искать новые.
+ *                                               findFreePort(port) сам пробует именно этот порт
+ *                                               первым — он почти наверняка свободен сразу после
+ *                                               await stop()
  * @returns {Promise<{ httpPort: number, wsPort: number }>}
  */
-async function start(context) {
+async function start(context, { port: preferredPort, wsPort: preferredWsPort } = {}) {
     stopping = false;
     ensurePhpIni();
 
@@ -138,8 +150,8 @@ async function start(context) {
     pruneOldLogs(logDir, LOG_PREFIX, LOG_MAX);
     logStream = openLogStream(logDir, LOG_PREFIX);
 
-    port   = await findFreePort(8000);
-    wsPort = await findFreePort(port + 1);
+    port   = await findFreePort(preferredPort ?? 8000);
+    wsPort = await findFreePort(preferredWsPort ?? (port + 1));
     spawnProcess({ ...context, appPort: port }, wsPort);
     await waitForHealth(port);
     return { httpPort: port, wsPort };

@@ -210,9 +210,27 @@ if (!gotLock) {
                         );
                     });
                 }
+                if (event === supervisor.WORKERS_RELOAD_EVENT) {
+                    // reloadForPlugin() never rejects (see supervisor/index.js#performReload) —
+                    // this catch is only a defensive backstop.
+                    supervisor.reloadForPlugin(data.pluginId).catch((err) => {
+                        console.error('[supervisor] не удалось активировать плагин:', err);
+                    });
+                }
             });
 
             supervisor.events.on('exit', () => tray.setState('error'));
+
+            // Both the isolated warm-up (#222) and the reconcile step it runs after already
+            // validated the plugin on disk — a failure here is specifically the live restart not
+            // coming back healthy, which performReload() has already rolled back from by the time
+            // this fires (issue #411).
+            supervisor.events.on('plugin-activation-failed', ({ pluginId }) => {
+                dialog.showErrorBox(
+                    i18n.t('dialog.plugin_activation_failed_title', getLocale()),
+                    i18n.t('dialog.plugin_activation_failed_message', getLocale(), { pluginId }),
+                );
+            });
         } catch (err) {
             logCrash(err);
             if (!splash.isDestroyed()) splash.close();

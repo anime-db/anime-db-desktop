@@ -39,6 +39,7 @@ use App\Service\Plugin\PluginCacheWarmer;
 use App\Service\Plugin\PluginCacheWarmerInterface;
 use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Plugin\ZipPluginInstaller;
+use App\Service\WsPublisher;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 
@@ -342,6 +343,9 @@ final class ZipPluginInstallerTest extends TestCase
             'manifest.json' => $this->validManifestJson('animedb-shikimori'),
         ]);
 
+        $wsPublisher = $this->createMock(WsPublisher::class);
+        $wsPublisher->expects($this->never())->method('publish');
+
         $installer = new ZipPluginInstaller(
             $this->pluginsDir,
             self::CORE_VERSION,
@@ -352,6 +356,7 @@ final class ZipPluginInstallerTest extends TestCase
                     throw new PluginCacheWarmupException('boom');
                 }
             },
+            $wsPublisher,
         );
 
         $this->expectException(PluginCacheWarmupException::class);
@@ -368,9 +373,75 @@ final class ZipPluginInstallerTest extends TestCase
         }
     }
 
-    private function installer(): ZipPluginInstaller
+    /**
+     * The native supervisor (native/supervisor/index.js) only learns a plugin needs to be made
+     * live via this event (issue #411) — a successful install that never publishes it would leave
+     * the plugin installed but permanently inactive until the next full app restart.
+     */
+    public function testInstallPublishesWorkersReloadEventAfterSuccessfulCacheWarmup(): void
     {
-        return new ZipPluginInstaller($this->pluginsDir, self::CORE_VERSION, $this->registry, $this->cacheWarmer());
+        $zipPath = $this->createZip([
+            'manifest.json' => $this->validManifestJson('animedb-shikimori'),
+        ]);
+
+        $wsPublisher = $this->createMock(WsPublisher::class);
+        $wsPublisher->expects($this->once())
+            ->method('publish')
+            ->with(ZipPluginInstaller::WORKERS_RELOAD_EVENT, ['pluginId' => 'animedb-shikimori']);
+
+        $installer = new ZipPluginInstaller(
+            $this->pluginsDir,
+            self::CORE_VERSION,
+            $this->registry,
+            $this->cacheWarmer(),
+            $wsPublisher,
+        );
+
+        $pluginId = $installer->install($zipPath);
+
+        $this->assertSame('animedb-shikimori', (string) $pluginId);
+    }
+
+    /**
+     * A failure to publish {@see ZipPluginInstaller::WORKERS_RELOAD_EVENT} (e.g. a transient
+     * SQLite write error in {@see WsPublisher}) must not undo an install that already succeeded —
+     * it was moved into place, the registry was re-synced and the isolated cache warm-up passed
+     * before publish() ever runs. Degrading to "installed but not yet live" (activated on the next
+     * full app restart) is the intended fallback, not a full rollback.
+     */
+    public function testInstallSucceedsWhenPublishingWorkersReloadEventFails(): void
+    {
+        $zipPath = $this->createZip([
+            'manifest.json' => $this->validManifestJson('animedb-shikimori'),
+        ]);
+
+        $wsPublisher = $this->createStub(WsPublisher::class);
+        $wsPublisher->method('publish')->willThrowException(new \RuntimeException('queue.db is locked'));
+
+        $installer = new ZipPluginInstaller(
+            $this->pluginsDir,
+            self::CORE_VERSION,
+            $this->registry,
+            $this->cacheWarmer(),
+            $wsPublisher,
+        );
+
+        $pluginId = $installer->install($zipPath);
+
+        $this->assertSame('animedb-shikimori', (string) $pluginId);
+        $this->assertDirectoryExists($this->pluginsDir.'/animedb-shikimori');
+        $this->assertTrue($this->registry->has(new PluginId('animedb-shikimori')));
+    }
+
+    private function installer(?WsPublisher $wsPublisher = null): ZipPluginInstaller
+    {
+        return new ZipPluginInstaller(
+            $this->pluginsDir,
+            self::CORE_VERSION,
+            $this->registry,
+            $this->cacheWarmer(),
+            $wsPublisher ?? $this->createStub(WsPublisher::class),
+        );
     }
 
     /**

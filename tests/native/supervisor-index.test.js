@@ -21,6 +21,9 @@
 
 'use strict';
 
+const fs = require('fs');
+const path = require('path');
+
 jest.mock('../../native/supervisor/cache-invalidation', () => ({
     hasBuildChanged:   jest.fn(() => false),
     invalidateCache:   jest.fn(),
@@ -307,5 +310,149 @@ describe('supervisor.start', () => {
 
             expect(safeModeState.commitStartSuccess).not.toHaveBeenCalled();
         });
+    });
+});
+
+// issue #411 — "make live" step of plugin activation: invalidate the real cache and restart the
+// live worker processes on WORKERS_RELOAD_EVENT, rolling back a failed restart instead of letting
+// the processes' own crash-loop backoff fight a broken plugin forever.
+describe('supervisor.reloadForPlugin (issue #411)', () => {
+    beforeEach(async () => {
+        cacheInvalidation.hasBuildChanged.mockReturnValue(false);
+        cacheInvalidation.invalidateCache.mockImplementation(() => {});
+        cacheInvalidation.commitFingerprint.mockImplementation(() => {});
+        safeModeState.hasModeChanged.mockReturnValue(false);
+        safeModeState.commitStartSuccess.mockImplementation(() => {});
+        frankenphp.start.mockResolvedValue({ httpPort: 8000, wsPort: 8001 });
+        messengerConsumer.start.mockResolvedValue(undefined);
+        meilisearch.start.mockResolvedValue({ port: 7700, key: 'k', wiped: false });
+        searchReindex.run.mockResolvedValue(undefined);
+        migrations.run.mockResolvedValue(undefined);
+
+        // Establishes liveContext the same way a real app start would — reloadForPlugin() has
+        // nothing to restart before this.
+        await supervisor.start(jest.fn());
+        jest.clearAllMocks();
+
+        frankenphp.start.mockResolvedValue({ httpPort: 8000, wsPort: 8001 });
+        frankenphp.stop.mockResolvedValue(undefined);
+        messengerConsumer.start.mockResolvedValue(undefined);
+        messengerConsumer.stop.mockResolvedValue(undefined);
+        cacheInvalidation.invalidateCache.mockImplementation(() => {});
+        phpCommand.run.mockResolvedValue(undefined);
+    });
+
+    afterEach(() => {
+        jest.clearAllMocks();
+    });
+
+    test('invalidates the cache and restarts messenger-consumer then frankenphp then messenger-consumer again on the same ports', async () => {
+        const callOrder = [];
+        cacheInvalidation.invalidateCache.mockImplementation(() => callOrder.push('invalidateCache'));
+        messengerConsumer.stop.mockImplementation(() => { callOrder.push('messengerConsumer.stop'); return Promise.resolve(); });
+        frankenphp.stop.mockImplementation(() => { callOrder.push('frankenphp.stop'); return Promise.resolve(); });
+        frankenphp.start.mockImplementation(() => {
+            callOrder.push('frankenphp.start');
+            return Promise.resolve({ httpPort: 8000, wsPort: 8001 });
+        });
+        messengerConsumer.start.mockImplementation(() => { callOrder.push('messengerConsumer.start'); return Promise.resolve(); });
+
+        await supervisor.reloadForPlugin('animedb-shikimori');
+
+        expect(callOrder).toEqual([
+            'invalidateCache', 'messengerConsumer.stop', 'frankenphp.stop', 'frankenphp.start', 'messengerConsumer.start',
+        ]);
+        // Re-requests the ports the live worker was already bound to (issue #411) — the
+        // already-open BrowserWindow and the reconnecting WsClient both assume they don't change.
+        expect(frankenphp.start).toHaveBeenCalledWith(expect.any(Object), { port: 8000, wsPort: 8001 });
+        expect(phpCommand.run).not.toHaveBeenCalled();
+    });
+
+    test('emits plugin-activated once the restarted processes are healthy', async () => {
+        const handler = jest.fn();
+        supervisor.events.once('plugin-activated', handler);
+
+        await supervisor.reloadForPlugin('animedb-shikimori');
+
+        expect(handler).toHaveBeenCalledWith({ pluginId: 'animedb-shikimori' });
+    });
+
+    test('rolls back via app:plugin:deactivate and restarts clean when the restarted worker never becomes healthy', async () => {
+        frankenphp.start
+            .mockRejectedValueOnce(new Error('health check timed out'))
+            .mockResolvedValueOnce({ httpPort: 8000, wsPort: 8001 });
+        const failedHandler = jest.fn();
+        supervisor.events.once('plugin-activation-failed', failedHandler);
+
+        await supervisor.reloadForPlugin('animedb-broken');
+
+        expect(phpCommand.run).toHaveBeenCalledWith(
+            'app:plugin:deactivate', ['animedb-broken'], expect.any(Object), expect.any(Number),
+        );
+        expect(cacheInvalidation.invalidateCache).toHaveBeenCalledTimes(2);
+        expect(frankenphp.start).toHaveBeenCalledTimes(2);
+        expect(messengerConsumer.start).toHaveBeenCalledTimes(1);
+        expect(failedHandler).toHaveBeenCalledWith({ pluginId: 'animedb-broken' });
+    });
+
+    test('a failed app:plugin:deactivate rollback call does not stop the clean restart from being attempted', async () => {
+        frankenphp.start.mockRejectedValueOnce(new Error('health check timed out'))
+            .mockResolvedValueOnce({ httpPort: 8000, wsPort: 8001 });
+        phpCommand.run.mockRejectedValue(new Error('console command timed out'));
+
+        await supervisor.reloadForPlugin('animedb-broken');
+
+        expect(frankenphp.start).toHaveBeenCalledTimes(2);
+        expect(messengerConsumer.start).toHaveBeenCalledTimes(1);
+    });
+
+    test('never rejects even when the rollback restart also fails', async () => {
+        frankenphp.start.mockRejectedValue(new Error('still broken'));
+
+        await expect(supervisor.reloadForPlugin('animedb-broken')).resolves.toBeUndefined();
+
+        expect(phpCommand.run).toHaveBeenCalled();
+    });
+
+    test('a second signal while a reload is in flight coalesces into a single extra run for the latest plugin id', async () => {
+        let resolveFirstStart;
+        frankenphp.start
+            .mockImplementationOnce(() => new Promise((resolve) => { resolveFirstStart = resolve; }))
+            .mockResolvedValue({ httpPort: 8000, wsPort: 8001 });
+
+        const first = supervisor.reloadForPlugin('plugin-a');
+        const second = supervisor.reloadForPlugin('plugin-b');
+        const third = supervisor.reloadForPlugin('plugin-c');
+
+        // second/third join the same in-flight promise as first — no overlapping restart starts.
+        expect(second).toBe(first);
+        expect(third).toBe(first);
+
+        // Lets the pending microtasks (messengerConsumer.stop -> frankenphp.stop -> the
+        // frankenphp.start call) actually run, so the mock implementation above has executed and
+        // captured resolveFirstStart, before resolving it.
+        await new Promise((resolve) => { setImmediate(resolve); });
+
+        resolveFirstStart({ httpPort: 8000, wsPort: 8001 });
+        await first;
+
+        // One run for plugin-a (the in-flight one) plus one coalesced run for plugin-c (the
+        // latest queued id) — plugin-b's own request never gets its own run.
+        expect(frankenphp.start).toHaveBeenCalledTimes(2);
+    });
+});
+
+// WORKERS_RELOAD_EVENT actually used by lifecycle/index.js to trigger reloadForPlugin().
+describe('WORKERS_RELOAD_EVENT contract with the PHP side', () => {
+    test('matches App\\Service\\Plugin\\ZipPluginInstaller::WORKERS_RELOAD_EVENT', () => {
+        const phpSource = fs.readFileSync(
+            path.join(__dirname, '../../app/src/Service/Plugin/ZipPluginInstaller.php'),
+            'utf8',
+        );
+
+        const match = phpSource.match(/public const string WORKERS_RELOAD_EVENT = '([^']+)';/);
+
+        expect(match).not.toBeNull();
+        expect(supervisor.WORKERS_RELOAD_EVENT).toBe(match[1]);
     });
 });

@@ -48,10 +48,12 @@ jest.mock('../../native/accept-language', () => ({}));
 jest.mock('../../native/shell', () => ({}));
 jest.mock('../../native/dialog', () => ({}));
 jest.mock('../../native/supervisor', () => ({
-    start:    jest.fn(() => Promise.resolve({ frankenphpPort: 8000, wsPort: 8001 })),
-    stop:     jest.fn(() => Promise.resolve()),
-    killSync: jest.fn(),
-    events:   { on: jest.fn() },
+    start:              jest.fn(() => Promise.resolve({ frankenphpPort: 8000, wsPort: 8001 })),
+    stop:               jest.fn(() => Promise.resolve()),
+    killSync:           jest.fn(),
+    reloadForPlugin:    jest.fn(() => Promise.resolve()),
+    WORKERS_RELOAD_EVENT: 'workers.reload',
+    events:             { on: jest.fn() },
 }));
 jest.mock('../../native/supervisor/safe-mode', () => ({
     beginStartAttempt:      jest.fn(() => false),
@@ -84,6 +86,8 @@ function loadLifecycle() {
 
     const appHandlers     = {};
     const processHandlers = {};
+    const wsClientHandlers = {};
+    const supervisorEventHandlers = {};
 
     jest.spyOn(process, 'on').mockImplementation((event, handler) => {
         processHandlers[event] = handler;
@@ -94,6 +98,7 @@ function loadLifecycle() {
     app.on.mockImplementation((event, handler) => { appHandlers[event] = handler; });
 
     const supervisor   = require('../../native/supervisor');
+    supervisor.events.on.mockImplementation((event, handler) => { supervisorEventHandlers[event] = handler; });
     const migrations   = require('../../native/supervisor/migrations');
     const cacheInvalidation = require('../../native/supervisor/cache-invalidation');
     const safeModeState = require('../../native/supervisor/safe-mode');
@@ -101,6 +106,7 @@ function loadLifecycle() {
     const { createSplash } = require('../../native/window/splash');
     const tray        = require('../../native/tray');
     const wsClient     = require('../../native/ws-client');
+    wsClient.on.mockImplementation((event, handler) => { wsClientHandlers[event] = handler; });
     const proxy        = require('../../native/proxy');
     const firewall      = require('../../native/firewall');
 
@@ -127,7 +133,8 @@ function loadLifecycle() {
 
     return {
         app, dialog, supervisor, migrations, cacheInvalidation, safeModeState, createWindow, createSplash, tray,
-        wsClient, proxy, firewall, appHandlers, processHandlers, fakeWindow, fakeSplash,
+        wsClient, proxy, firewall, appHandlers, processHandlers, wsClientHandlers, supervisorEventHandlers,
+        fakeWindow, fakeSplash,
     };
 }
 
@@ -367,6 +374,45 @@ describe('locale-aware text', () => {
         expect(dialog.showErrorBox).toHaveBeenCalledWith(
             'Incompatible data version',
             expect.stringContaining('/fake/userData'),
+        );
+    });
+});
+
+// issue #411: PHP publishes WORKERS_RELOAD_EVENT over /ws after a plugin install's isolated
+// cache warm-up succeeds; lifecycle/index.js routes it to supervisor.reloadForPlugin() the same
+// way it already routes proxy.changed/firewall.rule.changed.
+describe('plugin activation (issue #411)', () => {
+    test('routes WORKERS_RELOAD_EVENT to supervisor.reloadForPlugin() with the plugin id', async () => {
+        const { supervisor, wsClientHandlers } = loadLifecycle();
+        await new Promise((r) => setTimeout(r, 500));
+
+        wsClientHandlers['backend-event']({ event: 'workers.reload', data: { pluginId: 'animedb-shikimori' } });
+
+        expect(supervisor.reloadForPlugin).toHaveBeenCalledWith('animedb-shikimori');
+    });
+
+    test('a rejected reloadForPlugin() is logged, not thrown', async () => {
+        const { supervisor, wsClientHandlers } = loadLifecycle();
+        supervisor.reloadForPlugin.mockRejectedValue(new Error('boom'));
+        const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
+        await new Promise((r) => setTimeout(r, 500));
+
+        expect(() => wsClientHandlers['backend-event']({ event: 'workers.reload', data: { pluginId: 'animedb-shikimori' } })).not.toThrow();
+        await new Promise((r) => setTimeout(r, 0));
+
+        expect(consoleError).toHaveBeenCalledWith('[supervisor] не удалось активировать плагин:', expect.any(Error));
+        consoleError.mockRestore();
+    });
+
+    test('a plugin-activation-failed event shows a localized error dialog naming the plugin', async () => {
+        const { dialog, supervisorEventHandlers } = loadLifecycle();
+        await new Promise((r) => setTimeout(r, 500));
+
+        supervisorEventHandlers['plugin-activation-failed']({ pluginId: 'animedb-shikimori' });
+
+        expect(dialog.showErrorBox).toHaveBeenCalledWith(
+            'Активация плагина',
+            'Не удалось активировать плагин «animedb-shikimori». Приложение восстановлено в рабочее состояние без него.',
         );
     });
 });

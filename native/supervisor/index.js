@@ -46,6 +46,43 @@ qbittorrent.events.on('exit', (code) => events.emit('exit', code));
 const TOTAL_STEPS = 5;
 
 /**
+ * Backend event name (see App\Service\Plugin\ZipPluginInstaller::WORKERS_RELOAD_EVENT on the PHP
+ * side, published from install() after a successful isolated cache warm-up) that
+ * native/lifecycle/index.js listens for over /ws to trigger reloadForPlugin() below — the "make
+ * live" step of plugin activation (issue #411). Keep this string in sync with the PHP side, same
+ * lesson as issue #336/#361 for PROXY_CHANGED_EVENT/FIREWALL_RULE_CHANGED_EVENT.
+ *
+ * @type {string}
+ */
+const WORKERS_RELOAD_EVENT = 'workers.reload';
+
+/** Budget for the `app:plugin:deactivate` rollback console call — same order of magnitude as the other one-off calls in php-command.js (issue #400). */
+const PLUGIN_DEACTIVATE_TIMEOUT_MS = 30000;
+
+/**
+ * Session state reloadForPlugin() needs to restart the live worker processes: the shared
+ * PhpContext (ports/keys, no appPort) plus the ports FrankenPHP is currently bound to, so a
+ * restart can ask for the *same* ports back (see frankenphp.js#start's `preferred` param) instead
+ * of drifting onto new ones the already-open BrowserWindow and reconnecting WsClient don't know
+ * about. Set once at the end of start() below, updated after every successful reload.
+ *
+ * @type {{ phpContext: import('./env').PhpContext, frankenphpPort: number, wsPort: number } | null}
+ */
+let liveContext = null;
+
+/**
+ * Serializes reloadForPlugin() calls: a signal that arrives while one is already running does not
+ * start a second, overlapping restart — it just records itself as `queuedPluginId` and rides the
+ * in-flight run's promise. Once that run finishes, exactly one more run fires for the latest
+ * queued plugin id (issue #411 idempotency requirement) rather than one per coalesced signal.
+ *
+ * @type {Promise<void> | null}
+ */
+let reloadInFlight = null;
+/** @type {string | null} */
+let queuedPluginId = null;
+
+/**
  * Запускает все дочерние процессы и возвращает занятые ими порты.
  * Сначала зачищаются PID-файлы всех процессов-сирот от предыдущего сеанса — до того, как
  * запущен хоть один дочерний процесс текущего сеанса. frankenphp и messenger-consumer делят один
@@ -145,7 +182,112 @@ async function start(onProgress, { safeMode = false } = {}) {
     cacheInvalidation.commitFingerprint();
     safeModeState.commitStartSuccess(safeMode);
 
+    liveContext = { phpContext, frankenphpPort, wsPort };
+
     return { frankenphpPort, wsPort, meiliPort, qbittorrentPort };
+}
+
+/**
+ * "Make live" step of plugin activation (issue #411): triggered by WORKERS_RELOAD_EVENT after a
+ * plugin install's isolated cache warm-up succeeds (App\Service\Plugin\ZipPluginInstaller). That
+ * warm-up only proves the container *compiles* with the new plugin — the already-running
+ * FrankenPHP worker and messenger-consumer still hold the old one in memory, and the on-disk
+ * cache is untouched, so neither picks up the plugin without this.
+ *
+ * Idempotent by serialization rather than by detecting "already active": concurrent/rapid signals
+ * (e.g. two installs in a row) coalesce into a single extra run for the latest plugin id once the
+ * in-flight one finishes, instead of overlapping restarts of the same child processes.
+ *
+ * @param {string} pluginId  only used for logging and as the rollback target on failure — the
+ *                            restart itself always picks up whatever is currently on disk under
+ *                            %app.plugins_dir%, not specifically this plugin
+ * @returns {Promise<void>} never rejects — see performReload()'s own doc for why
+ */
+function reloadForPlugin(pluginId) {
+    if (reloadInFlight) {
+        queuedPluginId = pluginId;
+        return reloadInFlight;
+    }
+
+    // Returning the coalesced run's promise from finally() (rather than just firing it and
+    // forgetting) makes this promise settle only once that run also finishes — so a caller
+    // awaiting reloadForPlugin() sees the fully-settled end state, and any signal arriving while
+    // the coalesced run itself is in flight correctly joins it instead of starting a third,
+    // overlapping run.
+    reloadInFlight = performReload(pluginId).finally(() => {
+        reloadInFlight = null;
+        if (queuedPluginId !== null) {
+            const next = queuedPluginId;
+            queuedPluginId = null;
+            return reloadForPlugin(next);
+        }
+        return undefined;
+    });
+
+    return reloadInFlight;
+}
+
+/**
+ * Invalidates the real compiled-container cache and restarts FrankenPHP + messenger-consumer in
+ * place, on the same ports (see frankenphp.js#start's `preferred` param) so the already-open
+ * window and the reconnecting WsClient are unaffected.
+ *
+ * If the restarted worker never becomes healthy, both processes' own crash-loop backoff
+ * (frankenphp.js/messenger-consumer.js `spawnProcess`) would otherwise keep retrying against the
+ * same broken plugin forever — stop() is called again here specifically to break that loop (its
+ * `stopping` guard prevents any backoff respawn already scheduled from firing) before rolling
+ * back: remove the plugin via the `app:plugin:deactivate` console command (issue #411's rollback
+ * requirement) and restart clean, into the pre-plugin state. Every step from here on is
+ * best-effort and swallows its own errors — this function must never leave the supervisor's
+ * crash-loop backoff to fight a plugin that is already known to be broken, and must never reject
+ * (its caller is a fire-and-forget WS event handler with nothing better to do than log).
+ *
+ * @param {string} pluginId
+ * @returns {Promise<void>}
+ */
+async function performReload(pluginId) {
+    if (!liveContext) {
+        console.error(`[supervisor] "${WORKERS_RELOAD_EVENT}" получен до завершения запуска — пропущен.`);
+        return;
+    }
+
+    const { phpContext, frankenphpPort, wsPort } = liveContext;
+
+    try {
+        cacheInvalidation.invalidateCache();
+        await messengerConsumer.stop();
+        await frankenphp.stop();
+
+        const started = await frankenphp.start(phpContext, { port: frankenphpPort, wsPort });
+        liveContext = { phpContext, frankenphpPort: started.httpPort, wsPort: started.wsPort };
+        await messengerConsumer.start({ ...phpContext, appPort: started.httpPort });
+
+        events.emit('plugin-activated', { pluginId });
+        return;
+    } catch (err) {
+        console.error(`[supervisor] активация плагина "${pluginId}" не удалась, откат:`, err.message);
+    }
+
+    try {
+        await frankenphp.stop();
+        await messengerConsumer.stop();
+
+        try {
+            await phpCommand.run('app:plugin:deactivate', [pluginId], phpContext, PLUGIN_DEACTIVATE_TIMEOUT_MS);
+        } catch (removeErr) {
+            console.error(`[supervisor] не удалось убрать плагин "${pluginId}" из реестра:`, removeErr.message);
+        }
+
+        cacheInvalidation.invalidateCache();
+
+        const restarted = await frankenphp.start(phpContext, { port: frankenphpPort, wsPort });
+        liveContext = { phpContext, frankenphpPort: restarted.httpPort, wsPort: restarted.wsPort };
+        await messengerConsumer.start({ ...phpContext, appPort: restarted.httpPort });
+    } catch (rollbackErr) {
+        console.error('[supervisor] откат после неудачной активации плагина тоже не удался:', rollbackErr.message);
+    }
+
+    events.emit('plugin-activation-failed', { pluginId });
 }
 
 /**
@@ -173,4 +315,4 @@ function killSync() {
     qbittorrent.killSync();
 }
 
-module.exports = { start, stop, killSync, events, TOTAL_STEPS };
+module.exports = { start, stop, killSync, reloadForPlugin, events, TOTAL_STEPS, WORKERS_RELOAD_EVENT };
