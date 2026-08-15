@@ -95,6 +95,78 @@ final class PluginRegistryTest extends TestCase
         $this->assertSame([], $registry->plugins());
     }
 
+    public function testPluginsSkipsAVersionEntryWithAnInvalidVersionStringButKeepsTheRest(): void
+    {
+        $registry = PluginRegistry::fromJson(json_encode([
+            'sequence' => 1,
+            'asset_mirrors' => [],
+            'plugins' => [
+                [
+                    'id' => 'animedb-shikimori',
+                    'manifest' => $this->manifest('animedb-shikimori', '1.0.0'),
+                    'versions' => [
+                        ['version' => 'latest', 'core' => '>=2.0.0', 'sha256' => 'abc123'],
+                        ['version' => '1.0.0', 'core' => '>=2.0.0', 'sha256' => 'def456'],
+                    ],
+                ],
+            ],
+        ], \JSON_THROW_ON_ERROR));
+
+        $plugins = $registry->plugins();
+        $this->assertCount(1, $plugins);
+        $this->assertSame(['1.0.0'], array_map(static fn ($v) => $v->version, $plugins[0]->versions));
+    }
+
+    public function testPluginsSkipsAVersionEntryWithAnInvalidCoreConstraintButKeepsTheRest(): void
+    {
+        $registry = PluginRegistry::fromJson(json_encode([
+            'sequence' => 1,
+            'asset_mirrors' => [],
+            'plugins' => [
+                [
+                    'id' => 'animedb-shikimori',
+                    'manifest' => $this->manifest('animedb-shikimori', '1.0.0'),
+                    'versions' => [
+                        ['version' => '1.1.0', 'core' => '~', 'sha256' => 'abc123'],
+                        ['version' => '1.0.0', 'core' => '>=2.0.0', 'sha256' => 'def456'],
+                    ],
+                ],
+            ],
+        ], \JSON_THROW_ON_ERROR));
+
+        $plugins = $registry->plugins();
+        $this->assertCount(1, $plugins);
+        $this->assertSame(['1.0.0'], array_map(static fn ($v) => $v->version, $plugins[0]->versions));
+    }
+
+    public function testPluginsSkipsAPluginWhoseOnlyVersionIsInvalidWithoutFailingTheWholeRegistry(): void
+    {
+        $registry = PluginRegistry::fromJson(json_encode([
+            'sequence' => 1,
+            'asset_mirrors' => [],
+            'plugins' => [
+                [
+                    'id' => 'animedb-broken-version',
+                    'manifest' => $this->manifest('animedb-broken-version', '1.0.0'),
+                    'versions' => [
+                        ['version' => 'latest', 'core' => '~', 'sha256' => 'abc123'],
+                    ],
+                ],
+                [
+                    'id' => 'animedb-shikimori',
+                    'manifest' => $this->manifest('animedb-shikimori', '1.0.0'),
+                    'versions' => [
+                        ['version' => '1.0.0', 'core' => '>=2.0.0', 'sha256' => 'def456'],
+                    ],
+                ],
+            ],
+        ], \JSON_THROW_ON_ERROR));
+
+        $plugins = $registry->plugins();
+        $this->assertCount(1, $plugins);
+        $this->assertSame('animedb-shikimori', (string) $plugins[0]->id);
+    }
+
     public function testPluginsSkipsEntriesWithNoVersions(): void
     {
         $registry = PluginRegistry::fromJson(json_encode([

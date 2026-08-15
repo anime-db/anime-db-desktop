@@ -34,6 +34,7 @@ use App\Entity\ValueObject\Exception\InvalidPluginIdException;
 use App\Entity\ValueObject\PluginId;
 use App\Service\Market\Exception\InvalidPluginRegistryContentException;
 use Composer\Semver\Semver;
+use Composer\Semver\VersionParser;
 
 /**
  * A parsed, already signature-verified `plugins-registry.json` (see
@@ -160,9 +161,15 @@ final class PluginRegistry
 
             $versionsByNumber = [];
             foreach ($plugin['versions'] as $version) {
-                if (\is_array($version) && \is_string($version['version'] ?? null) && \is_string($version['core'] ?? null)) {
-                    $versionsByNumber[$version['version']] = new MarketPluginVersion($version['version'], $version['core']);
+                if (!\is_array($version) || !\is_string($version['version'] ?? null) || !\is_string($version['core'] ?? null)) {
+                    continue;
                 }
+
+                if (!self::isValidVersion($version['version']) || !self::isValidConstraint($version['core'])) {
+                    continue;
+                }
+
+                $versionsByNumber[$version['version']] = new MarketPluginVersion($version['version'], $version['core']);
             }
 
             if ($versionsByNumber === []) {
@@ -185,5 +192,38 @@ final class PluginRegistry
         }
 
         return $result;
+    }
+
+    /**
+     * `Semver::rsort()` ({@see extractPlugins()}) and `Semver::satisfies()`
+     * ({@see MarketPlugin::resolveCompatibleVersion()}) both throw `UnexpectedValueException` on
+     * a version string `composer/semver` cannot normalize (e.g. `"latest"`). Validating here, and
+     * skipping the version entry when it fails, keeps a single malformed publish from taking down
+     * the whole registry or the storefront page.
+     */
+    private static function isValidVersion(string $version): bool
+    {
+        try {
+            (new VersionParser())->normalize($version);
+
+            return true;
+        } catch (\UnexpectedValueException) {
+            return false;
+        }
+    }
+
+    /**
+     * Same rationale as {@see isValidVersion()}, but for the `core` constraint string that later
+     * flows into `Semver::satisfies()` (e.g. an empty/malformed constraint like `"~"`).
+     */
+    private static function isValidConstraint(string $constraint): bool
+    {
+        try {
+            (new VersionParser())->parseConstraints($constraint);
+
+            return true;
+        } catch (\UnexpectedValueException) {
+            return false;
+        }
     }
 }
