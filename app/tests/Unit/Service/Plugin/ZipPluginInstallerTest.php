@@ -337,6 +337,21 @@ final class ZipPluginInstallerTest extends TestCase
         }
     }
 
+    public function testInstallSkipsSyntaxLintWhenTrusted(): void
+    {
+        $zipPath = $this->createZip([
+            'manifest.json' => $this->validManifestJson('animedb-shikimori'),
+            'src/Plugin.php' => "<?php\n\nfinal class Plugin\n{\n", // unclosed class body
+        ]);
+
+        $installer = $this->installer();
+        $pluginId = $installer->install($zipPath, trusted: true);
+
+        $this->assertSame('animedb-shikimori', (string) $pluginId);
+        $this->assertTrue($this->registry->has(new PluginId('animedb-shikimori')));
+        $this->assertNoLeftoverTempDirectories();
+    }
+
     public function testInstallRollsBackAndResyncsRegistryWhenCacheWarmupFails(): void
     {
         $zipPath = $this->createZip([

@@ -119,6 +119,7 @@ settings:
     title: Settings — AnimeDB
     heading: Settings
     labels_link: Labels
+    market_link: Plugin market
     plugins_link: Plugins
     plugin_widgets_link: Plugin widgets
     sync_review_link: Requires attention
@@ -207,6 +208,29 @@ settings_plugins:
     install_error_already_installed: 'Plugin "%pluginId%" is already installed.'
     install_error_invalid_manifest: Invalid or missing manifest.json in the archive.
     install_error_generic: Failed to unpack or install the archive. Make sure it is a valid plugin ZIP archive.
+
+settings_market:
+    title: Plugin market — Settings — AnimeDB
+    back_link: ← Settings
+    heading: Plugin market
+    empty: The market has no plugins yet.
+    name_column: Name
+    description_column: Description
+    type_column: Type
+    version_column: Version
+    actions_column: Actions
+    already_installed: Already installed
+    incompatible_core: 'Needs a core version compatible with "%requiredCore%".'
+    install_button: Install
+    install_success: 'Plugin "%pluginId%" has been installed.'
+    registry_unavailable: Failed to load the market catalog. Check your network connection and try again later.
+    install_error_registry_unavailable: Failed to load the market catalog. Try again later.
+    install_error_unknown_plugin: This plugin is no longer listed in the market catalog.
+    install_error_incompatible_core: 'The plugin requires core version "%requiredCore%", the installed core version is "%currentCore%".'
+    install_error_download_failed: Failed to download the plugin archive from any market mirror.
+    install_error_already_installed: 'Plugin "%pluginId%" is already installed.'
+    install_error_invalid_manifest: Invalid manifest.json in the plugin archive.
+    install_error_generic: Failed to unpack or install the plugin archive.
 
 settings_plugin_page:
     title_suffix: Plugin settings — AnimeDB

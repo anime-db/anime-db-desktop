@@ -27,15 +27,21 @@ declare(strict_types=1);
 
 namespace App\Service\Market;
 
+use AnimeDb\PluginContracts\Manifest\InvalidManifestException;
+use AnimeDb\PluginContracts\Manifest\InvalidManifestJsonException;
+use AnimeDb\PluginContracts\Manifest\ManifestParser;
+use App\Entity\ValueObject\Exception\InvalidPluginIdException;
 use App\Entity\ValueObject\PluginId;
 use App\Service\Market\Exception\InvalidPluginRegistryContentException;
+use Composer\Semver\Semver;
+use Composer\Semver\VersionParser;
 
 /**
  * A parsed, already signature-verified `plugins-registry.json` (see
- * {@see PluginRegistryLoader}). Only the fields this application currently needs are extracted —
- * `sequence` (anti-rollback), `asset_mirrors` (URL templates for asset downloads) and, per
- * plugin, the `sha256` of each published version — full per-version `manifest`/`core` parsing
- * belongs to the market storefront (issue #220), not to this fetch-and-verify layer.
+ * {@see PluginRegistryLoader}). Extracts `sequence` (anti-rollback), `asset_mirrors` (URL
+ * templates for asset downloads), per plugin the `sha256` of each published version, and the
+ * plugin catalog itself ({@see plugins()}) the market storefront (issue #220) renders and
+ * resolves an installable version from.
  */
 final class PluginRegistry
 {
@@ -43,11 +49,13 @@ final class PluginRegistry
      * @param list<string>                         $assetMirrors              URL templates containing
      *                                                                        the `<id>`/`<version>`/`<file>` macros
      * @param array<string, array<string, string>> $sha256ByVersionByPluginId pluginId => [version => sha256]
+     * @param list<MarketPlugin>                   $plugins
      */
     private function __construct(
         public readonly int $sequence,
         public readonly array $assetMirrors,
         private readonly array $sha256ByVersionByPluginId,
+        private readonly array $plugins,
     ) {
     }
 
@@ -82,12 +90,25 @@ final class PluginRegistry
             throw new InvalidPluginRegistryContentException('plugins-registry.json is missing a valid "plugins" list.');
         }
 
-        return new self($sequence, array_map(strval(...), $assetMirrors), self::extractSha256Map($plugins));
+        return new self(
+            $sequence,
+            array_map(strval(...), $assetMirrors),
+            self::extractSha256Map($plugins),
+            self::extractPlugins($plugins),
+        );
     }
 
     public function findVersionSha256(PluginId $pluginId, string $version): ?string
     {
         return $this->sha256ByVersionByPluginId[(string) $pluginId][$version] ?? null;
+    }
+
+    /**
+     * @return list<MarketPlugin>
+     */
+    public function plugins(): array
+    {
+        return $this->plugins;
     }
 
     /**
@@ -115,5 +136,94 @@ final class PluginRegistry
         }
 
         return $sha256ByVersionByPluginId;
+    }
+
+    /**
+     * Builds the storefront catalog (issue #220): one {@see MarketPlugin} per registry entry
+     * that has a well-formed `id`, a `manifest` object {@see ManifestParser::parse()} accepts,
+     * and at least one well-formed `versions[]` entry. A malformed entry is skipped rather than
+     * failing the whole registry — the same leniency {@see extractSha256Map()} already applies,
+     * since one bad plugin entry (a publishing bug on the registry side) should not take down the
+     * storefront for every other plugin.
+     *
+     * @param list<mixed> $plugins
+     *
+     * @return list<MarketPlugin>
+     */
+    private static function extractPlugins(array $plugins): array
+    {
+        $result = [];
+
+        foreach ($plugins as $plugin) {
+            if (!\is_array($plugin) || !\is_string($plugin['id'] ?? null) || !\is_array($plugin['manifest'] ?? null) || !\is_array($plugin['versions'] ?? null)) {
+                continue;
+            }
+
+            $versionsByNumber = [];
+            foreach ($plugin['versions'] as $version) {
+                if (!\is_array($version) || !\is_string($version['version'] ?? null) || !\is_string($version['core'] ?? null)) {
+                    continue;
+                }
+
+                if (!self::isValidVersion($version['version']) || !self::isValidConstraint($version['core'])) {
+                    continue;
+                }
+
+                $versionsByNumber[$version['version']] = new MarketPluginVersion($version['version'], $version['core']);
+            }
+
+            if ($versionsByNumber === []) {
+                continue;
+            }
+
+            try {
+                $id = new PluginId($plugin['id']);
+                $manifest = (new ManifestParser())->parse((string) json_encode($plugin['manifest'], \JSON_THROW_ON_ERROR));
+            } catch (InvalidPluginIdException|InvalidManifestException|InvalidManifestJsonException|\JsonException) {
+                continue;
+            }
+
+            $sortedVersionNumbers = Semver::rsort(array_keys($versionsByNumber));
+
+            $result[] = new MarketPlugin($id, $manifest, array_map(
+                static fn (string $versionNumber): MarketPluginVersion => $versionsByNumber[$versionNumber],
+                $sortedVersionNumbers,
+            ));
+        }
+
+        return $result;
+    }
+
+    /**
+     * `Semver::rsort()` ({@see extractPlugins()}) and `Semver::satisfies()`
+     * ({@see MarketPlugin::resolveCompatibleVersion()}) both throw `UnexpectedValueException` on
+     * a version string `composer/semver` cannot normalize (e.g. `"latest"`). Validating here, and
+     * skipping the version entry when it fails, keeps a single malformed publish from taking down
+     * the whole registry or the storefront page.
+     */
+    private static function isValidVersion(string $version): bool
+    {
+        try {
+            (new VersionParser())->normalize($version);
+
+            return true;
+        } catch (\UnexpectedValueException) {
+            return false;
+        }
+    }
+
+    /**
+     * Same rationale as {@see isValidVersion()}, but for the `core` constraint string that later
+     * flows into `Semver::satisfies()` (e.g. an empty/malformed constraint like `"~"`).
+     */
+    private static function isValidConstraint(string $constraint): bool
+    {
+        try {
+            (new VersionParser())->parseConstraints($constraint);
+
+            return true;
+        } catch (\UnexpectedValueException) {
+            return false;
+        }
     }
 }

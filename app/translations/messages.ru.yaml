@@ -119,6 +119,7 @@ settings:
     title: Настройки — AnimeDB
     heading: Настройки
     labels_link: Метки
+    market_link: Маркет плагинов
     plugins_link: Плагины
     plugin_widgets_link: Виджеты плагинов
     sync_review_link: Требует внимания
@@ -207,6 +208,29 @@ settings_plugins:
     install_error_already_installed: 'Плагин «%pluginId%» уже установлен.'
     install_error_invalid_manifest: Некорректный или отсутствующий manifest.json в архиве.
     install_error_generic: Не удалось распаковать или установить архив. Убедитесь, что это корректный ZIP-архив плагина.
+
+settings_market:
+    title: Маркет плагинов — Настройки — AnimeDB
+    back_link: ← Настройки
+    heading: Маркет плагинов
+    empty: В маркете пока нет ни одного плагина.
+    name_column: Название
+    description_column: Описание
+    type_column: Тип
+    version_column: Версия
+    actions_column: Действия
+    already_installed: Уже установлен
+    incompatible_core: 'Нужна версия ядра, совместимая с "%requiredCore%".'
+    install_button: Установить
+    install_success: 'Плагин «%pluginId%» успешно установлен.'
+    registry_unavailable: Не удалось загрузить каталог маркета. Проверьте подключение к сети и попробуйте ещё раз позже.
+    install_error_registry_unavailable: Не удалось загрузить каталог маркета. Попробуйте ещё раз позже.
+    install_error_unknown_plugin: Этот плагин больше не числится в каталоге маркета.
+    install_error_incompatible_core: 'Плагин требует версию ядра "%requiredCore%", установлена версия "%currentCore%".'
+    install_error_download_failed: Не удалось скачать архив плагина ни с одного из зеркал маркета.
+    install_error_already_installed: 'Плагин «%pluginId%» уже установлен.'
+    install_error_invalid_manifest: Некорректный manifest.json в архиве плагина.
+    install_error_generic: Не удалось распаковать или установить архив плагина.
 
 settings_plugin_page:
     title_suffix: Настройки плагина — AnimeDB

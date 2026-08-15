@@ -1,0 +1,76 @@
+{#
+ # AnimeDb package.
+ #
+ # @author    Peter Gribanov <info@peter-gribanov.ru>
+ # @copyright Copyright (c) 2026, Peter Gribanov
+ # @license   https://www.gnu.org/licenses/gpl-3.0.html GPL-3.0-or-later
+ #
+ # This program is free software: you can redistribute it and/or modify
+ # it under the terms of the GNU General Public License as published by
+ # the Free Software Foundation, either version 3 of the License, or
+ # (at your option) any later version.
+ #
+ # This program is distributed in the hope that it will be useful,
+ # but WITHOUT ANY WARRANTY; without even the implied warranty of
+ # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ # GNU General Public License for more details.
+ #
+ # You should have received a copy of the GNU General Public License
+ # along with this program. If not, see <https://www.gnu.org/licenses/>.
+ #}
+{% extends 'base.html.twig' %}
+
+{% block title %}{{ 'settings_market.title'|trans }}{% endblock %}
+
+{% block body %}
+    <p><a href="{{ path('settings_index') }}">{{ 'settings_market.back_link'|trans }}</a></p>
+    <h1>{{ 'settings_market.heading'|trans }}</h1>
+
+    {% if installedPluginId is not null %}
+        <p class="success">{{ 'settings_market.install_success'|trans({'%pluginId%': installedPluginId}) }}</p>
+    {% endif %}
+
+    {% if installError is not null %}
+        <p class="error">{{ installError|trans(installErrorParams) }}</p>
+    {% endif %}
+
+    {% if registryUnavailable %}
+        <p class="error">{{ 'settings_market.registry_unavailable'|trans }}</p>
+    {% elseif items is empty %}
+        <p>{{ 'settings_market.empty'|trans }}</p>
+    {% else %}
+        <table>
+            <thead>
+                <tr>
+                    <th>{{ 'settings_market.name_column'|trans }}</th>
+                    <th>{{ 'settings_market.description_column'|trans }}</th>
+                    <th>{{ 'settings_market.type_column'|trans }}</th>
+                    <th>{{ 'settings_market.version_column'|trans }}</th>
+                    <th>{{ 'settings_market.actions_column'|trans }}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in items %}
+                    <tr>
+                        <td>{{ item.plugin.manifest.name }}</td>
+                        <td>{{ item.plugin.manifest.description }}</td>
+                        <td>{{ ('plugin_type.' ~ item.plugin.manifest.type.value)|trans }}</td>
+                        <td>{{ item.plugin.manifest.version }}</td>
+                        <td>
+                            {% if item.installed %}
+                                {{ 'settings_market.already_installed'|trans }}
+                            {% elseif item.resolvedVersion is null %}
+                                {{ 'settings_market.incompatible_core'|trans({'%requiredCore%': item.plugin.latestVersion.core}) }}
+                            {% else %}
+                                <form method="post" action="{{ path('settings_market_install', {pluginId: item.plugin.id}) }}">
+                                    <input type="hidden" name="_token" value="{{ csrf_token('settings_market_install_' ~ item.plugin.id) }}">
+                                    <button type="submit">{{ 'settings_market.install_button'|trans }}</button>
+                                </form>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% endif %}
+{% endblock %}
