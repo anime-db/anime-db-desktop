@@ -34,6 +34,84 @@ use PHPUnit\Framework\TestCase;
 
 final class PluginRegistryTest extends TestCase
 {
+    /**
+     * @return array<string, mixed>
+     */
+    private function manifest(string $id, string $version = '1.0.0'): array
+    {
+        return [
+            'id' => $id,
+            'name' => ucfirst($id),
+            'version' => $version,
+            'type' => 'integration',
+            'features' => ['filler' => true],
+            'require' => ['core' => '>=2.0.0', 'php' => '>=8.2'],
+        ];
+    }
+
+    public function testPluginsExposesTheStorefrontCatalogSortedByVersionDescending(): void
+    {
+        $registry = PluginRegistry::fromJson(json_encode([
+            'sequence' => 1,
+            'asset_mirrors' => [],
+            'plugins' => [
+                [
+                    'id' => 'animedb-shikimori',
+                    'manifest' => $this->manifest('animedb-shikimori', '1.2.0'),
+                    'versions' => [
+                        ['version' => '1.1.0', 'core' => '>=2.0 <3.0', 'sha256' => 'def456'],
+                        ['version' => '1.2.0', 'core' => '>=2.1 <3.0', 'sha256' => 'abc123'],
+                    ],
+                ],
+            ],
+        ], \JSON_THROW_ON_ERROR));
+
+        $plugins = $registry->plugins();
+        $this->assertCount(1, $plugins);
+
+        $plugin = $plugins[0];
+        $this->assertSame('animedb-shikimori', (string) $plugin->id);
+        $this->assertSame('1.2.0', $plugin->manifest->version);
+        $this->assertSame(['1.2.0', '1.1.0'], array_map(static fn ($v) => $v->version, $plugin->versions));
+        $this->assertSame('>=2.1 <3.0', $plugin->versions[0]->core);
+    }
+
+    public function testPluginsSkipsEntriesWithAnInvalidManifest(): void
+    {
+        $registry = PluginRegistry::fromJson(json_encode([
+            'sequence' => 1,
+            'asset_mirrors' => [],
+            'plugins' => [
+                [
+                    'id' => 'animedb-broken',
+                    'manifest' => ['id' => 'animedb-broken'],
+                    'versions' => [
+                        ['version' => '1.0.0', 'core' => '>=2.0.0', 'sha256' => 'abc123'],
+                    ],
+                ],
+            ],
+        ], \JSON_THROW_ON_ERROR));
+
+        $this->assertSame([], $registry->plugins());
+    }
+
+    public function testPluginsSkipsEntriesWithNoVersions(): void
+    {
+        $registry = PluginRegistry::fromJson(json_encode([
+            'sequence' => 1,
+            'asset_mirrors' => [],
+            'plugins' => [
+                [
+                    'id' => 'animedb-shikimori',
+                    'manifest' => $this->manifest('animedb-shikimori'),
+                    'versions' => [],
+                ],
+            ],
+        ], \JSON_THROW_ON_ERROR));
+
+        $this->assertSame([], $registry->plugins());
+    }
+
     public function testParsesSequenceAssetMirrorsAndVersionChecksums(): void
     {
         $registry = PluginRegistry::fromJson(json_encode([

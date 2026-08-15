@@ -68,9 +68,10 @@ use Symfony\Component\Process\Process;
  * into place — see {@see IncompatiblePluginCoreVersionException}.
  *
  * Also lints every unpacked `*.php` file with `php -l` (issue #250), still before anything is
- * moved into place — see {@see self::assertNoSyntaxErrors()}. This is specific to the custom
- * (untrusted ZIP upload) path: marketplace plugins are linted on the registry side (issue #220)
- * and never go through this service.
+ * moved into place — see {@see self::assertNoSyntaxErrors()} — unless {@see install()} is called
+ * with `$trusted = true`. That is the marketplace install path (issue #220): those plugins were
+ * already linted on the registry side by CI before ever reaching `plugins-registry.json`, so
+ * repeating the check client-side would be redundant, not defense in depth.
  *
  * After the plugin is moved into place and the registry re-synced, runs {@see PluginCacheWarmer}
  * (issue #222) to compile the DI container with the new plugin present, in an isolated process —
@@ -114,17 +115,22 @@ final class ZipPluginInstaller
     }
 
     /**
+     * @param bool $trusted skips the `php -l` syntax lint (issue #220's marketplace path — see
+     *                      the class docblock); the custom-ZIP-upload path (issue #251) leaves
+     *                      this at its default `false`
+     *
      * @throws InvalidInstalledPluginException        if manifest.json is missing or invalid
      * @throws IncompatiblePluginCoreVersionException if the current core version does not satisfy
      *                                                the manifest's `require.core` lower bound
      * @throws PluginSyntaxErrorException             if any `*.php` file in the archive has a PHP syntax error
+     *                                                (never thrown when `$trusted` is `true`)
      * @throws PluginAlreadyInstalledException        if the manifest's plugin id is already installed
      * @throws PluginInstallException                 if the archive cannot be unpacked or moved into place
      * @throws Exception\PluginCacheWarmupException   if the isolated cache warm-up fails to
      *                                                compile the DI container with the new
      *                                                plugin present
      */
-    public function install(string $zipPath): PluginId
+    public function install(string $zipPath, bool $trusted = false): PluginId
     {
         $tmpDir = $this->createTmpDir();
         $moveStarted = false;
@@ -135,7 +141,9 @@ final class ZipPluginInstaller
             $pluginRoot = $this->resolvePluginRoot($tmpDir);
             $manifest = $this->parseManifest($pluginRoot);
             $this->assertCoreVersionCompatible($manifest);
-            $this->assertNoSyntaxErrors($pluginRoot);
+            if (!$trusted) {
+                $this->assertNoSyntaxErrors($pluginRoot);
+            }
             $pluginId = new PluginId($manifest->id);
             $targetDir = $this->pluginsDir.\DIRECTORY_SEPARATOR.$pluginId;
 
