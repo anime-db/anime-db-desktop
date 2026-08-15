@@ -195,6 +195,8 @@ settings_plugins:
     type_column: Type
     actions_column: Actions
     settings_link: Settings
+    remove_button: Remove
+    remove_success: 'Plugin "%pluginId%" has been removed. Its data accumulated in the catalog is kept and will be reused if the plugin is installed again.'
     install_heading: Install from ZIP
     install_file_label: Plugin ZIP archive
     third_party_warning: This plugin comes from a third-party source and has not passed marketplace review. Install it at your own risk?
