@@ -274,7 +274,7 @@ final class ZipPluginInstaller
 
         $errors = [];
         foreach ($files as $file) {
-            $process = new Process([\PHP_BINARY, '-l', $file->getRealPath()]);
+            $process = new Process(PhpCliCommand::build(\PHP_BINARY, '-l', $file->getRealPath()));
             $process->run();
 
             if (!$process->isSuccessful()) {
