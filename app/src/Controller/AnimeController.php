@@ -30,6 +30,7 @@ namespace App\Controller;
 use App\Entity\Anime;
 use App\Service\AnimeViewFactory;
 use App\Service\Plugin\EntryWidgetRegistry;
+use App\Service\Plugin\Filler\FillableFieldsPresenter;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
 use Twig\Environment;
@@ -52,6 +53,7 @@ final class AnimeController
         private readonly Environment $twig,
         private readonly AnimeViewFactory $viewFactory,
         private readonly EntryWidgetRegistry $entryWidgets,
+        private readonly FillableFieldsPresenter $fillableFieldsPresenter,
     ) {
     }
 
@@ -61,6 +63,7 @@ final class AnimeController
         return new Response($this->twig->render('anime/show.html.twig', [
             'anime' => $this->viewFactory->serialize($anime),
             'widgets' => $this->entryWidgets->findAllActive(),
+            'fillable_fields' => $this->fillableFieldsPresenter->build(),
         ]));
     }
 }

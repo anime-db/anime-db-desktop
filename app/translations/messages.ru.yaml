@@ -360,6 +360,9 @@ anime_detail:
     error_watch_status_not_released: Нельзя отметить как «Просмотрено», пока аниме не вышло.
     error_user_rating_invalid: Оценка должна быть от 1 до 5.
     error_watched_episodes_invalid: Некорректное количество просмотренных серий.
+    fill_from_source_button: Заполнить из источника
+    fill_source_label: Источник
+    error_fill_not_found: Источник не нашёл совпадение по этому аниме.
 
 anime_new:
     title: Новая запись — AnimeDB

@@ -97,6 +97,15 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
         ];
     }
 
+    /** @return array<string, list<array{id: string, name: string}>> */
+    private function emptyFillableFields(): array
+    {
+        return array_fill_keys(
+            ['alternativeNames', 'genres', 'themes', 'demographic', 'studios', 'durationMinutes', 'episodesCount', 'countries'],
+            [],
+        );
+    }
+
     /**
      * csrf_token() (used by the always-visible episode-increment form and by the labels
      * editor) reads/writes the CSRF token through the session of the current request, so
@@ -125,7 +134,7 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
 
         /** @var Environment $twig */
         $twig = self::getContainer()->get('twig');
-        $html = $twig->render('anime/show.html.twig', ['anime' => $this->fullyPopulatedAnime(), 'widgets' => []]);
+        $html = $twig->render('anime/show.html.twig', ['anime' => $this->fullyPopulatedAnime(), 'widgets' => [], 'fillable_fields' => $this->emptyFillableFields()]);
 
         $this->assertStringContainsString('Shingeki no Kyojin', $html);
         $this->assertStringContainsString('Humanity fights for survival against man-eating Titans.', $html);
@@ -163,7 +172,7 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
 
         /** @var Environment $twig */
         $twig = self::getContainer()->get('twig');
-        $html = $twig->render('anime/show.html.twig', ['anime' => $this->minimalAnime(), 'widgets' => []]);
+        $html = $twig->render('anime/show.html.twig', ['anime' => $this->minimalAnime(), 'widgets' => [], 'fillable_fields' => $this->emptyFillableFields()]);
 
         $this->assertStringContainsString('A Silent Voice', $html);
         $this->assertStringContainsString('Фильм', $html);
@@ -189,7 +198,7 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
 
         /** @var Environment $twig */
         $twig = self::getContainer()->get('twig');
-        $html = $twig->render('anime/show.html.twig', ['anime' => $anime, 'widgets' => []]);
+        $html = $twig->render('anime/show.html.twig', ['anime' => $anime, 'widgets' => [], 'fillable_fields' => $this->emptyFillableFields()]);
 
         $this->assertStringContainsString('disabled', $html);
         $this->assertStringContainsString('Путь не доступен', $html);
