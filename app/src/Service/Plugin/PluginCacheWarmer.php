@@ -109,7 +109,7 @@ final class PluginCacheWarmer implements PluginCacheWarmerInterface
 
         try {
             $process = new Process(
-                [...$this->phpCommand(), $this->consolePath(), 'cache:warmup'],
+                PhpCliCommand::build(\PHP_BINARY, $this->consolePath(), 'cache:warmup'),
                 null,
                 ['APP_RUNTIME_DIR' => $runtimeDir, 'APP_ENV' => 'prod', 'APP_DEBUG' => '0'],
             );
@@ -135,24 +135,6 @@ final class PluginCacheWarmer implements PluginCacheWarmerInterface
         } finally {
             $this->removeDirectory($runtimeDir);
         }
-    }
-
-    /**
-     * FrankenPHP's packaged binary embeds the PHP runtime itself and doubles as the CLI
-     * interpreter via a `php-cli` subcommand — there is no separate `php.exe` shipped alongside
-     * it (see `native/supervisor/php-command.js`). In that case `\PHP_BINARY` resolves to
-     * `frankenphp.exe` itself, not to a plain PHP interpreter, so invoking it as one requires
-     * that subcommand first. A regular PHP CLI binary (dev/CI) has no such requirement.
-     *
-     * @return non-empty-list<string>
-     */
-    private function phpCommand(): array
-    {
-        if (preg_match('/^frankenphp(\.exe)?$/i', basename(\PHP_BINARY)) === 1) {
-            return [\PHP_BINARY, 'php-cli'];
-        }
-
-        return [\PHP_BINARY];
     }
 
     private function consolePath(): string
