@@ -30,18 +30,17 @@ namespace App\Service\Plugin\Exception;
 use App\Entity\ValueObject\PluginId;
 
 /**
- * Thrown by {@see \App\Service\Plugin\ZipPluginInstaller::install()} when the plugin id from the
- * unpacked archive's manifest.json already has a directory at `%app.plugins_dir%/<pluginId>/`,
- * whether or not {@see \App\Service\Plugin\InstalledPluginsRegistry} currently has an index entry
- * for it — a stray directory left over from a previous failed install is treated the same as a
- * genuinely already-installed plugin, since either way this installer must not overwrite it.
- * Updating an already-installed plugin goes through {@see \App\Service\Plugin\ZipPluginInstaller::update()}
- * instead (issue #224).
+ * Thrown by {@see \App\Service\Plugin\ZipPluginInstaller::update()} when the unpacked archive's
+ * manifest id has no matching directory at `%app.plugins_dir%/<pluginId>/` and no matching entry
+ * in {@see \App\Service\Plugin\InstalledPluginsRegistry} — i.e. there is nothing to update.
+ * Updating is a distinct operation from a first-time install ({@see PluginAlreadyInstalledException}
+ * is its mirror image over on the install side), so an update attempt for a plugin id that is not
+ * currently installed is rejected rather than silently falling back to installing it fresh.
  */
-final class PluginAlreadyInstalledException extends \RuntimeException
+final class PluginNotInstalledException extends \RuntimeException
 {
     public function __construct(public readonly PluginId $pluginId)
     {
-        parent::__construct(\sprintf('Plugin "%s" is already installed.', $pluginId));
+        parent::__construct(\sprintf('Plugin "%s" is not installed.', $pluginId));
     }
 }

@@ -331,28 +331,63 @@ final class PluginControllerTest extends TestCase
         $this->controller(twig: $twig)->install($request);
     }
 
-    public function testInstallReportsAlreadyInstalledPluginId(): void
+    /**
+     * Re-uploading a ZIP whose manifest id is already installed is treated as an update request
+     * (issue #224), not a blocking "already installed" error: the same install form is the
+     * explicit user action that authorizes it.
+     */
+    public function testInstallOfAnAlreadyInstalledPluginIdUpdatesItInstead(): void
     {
         $this->writeManifest('animedb-shikimori', 'Shikimori');
         $this->registry->reconcile();
 
         $zipPath = $this->createZip(['manifest.json' => $this->validManifestJson('animedb-shikimori', version: '2.0.0')]);
 
-        $twig = $this->createMock(Environment::class);
-        $twig->expects($this->once())
-            ->method('render')
-            ->with('settings/plugins/index.html.twig', $this->callback(static function (array $params): bool {
-                self::assertSame('settings_plugins.install_error_already_installed', $params['installError']);
-                self::assertSame(['%pluginId%' => 'animedb-shikimori'], $params['installErrorParams']);
-
-                return true;
-            }))
-            ->willReturn('<html></html>');
+        $urlGenerator = $this->createMock(UrlGeneratorInterface::class);
+        $urlGenerator->expects($this->once())
+            ->method('generate')
+            ->with('settings_plugins_index', ['updated' => 'animedb-shikimori'])
+            ->willReturn('/settings/plugins?updated=animedb-shikimori');
 
         $request = Request::create('/settings/plugins/install', 'POST', ['_token' => 'token']);
         $request->files->set('plugin_zip', $this->uploadedZip($zipPath));
 
-        $this->controller(twig: $twig)->install($request);
+        $response = $this->controller(urlGenerator: $urlGenerator)->install($request);
+
+        $this->assertInstanceOf(RedirectResponse::class, $response);
+        $this->assertSame('/settings/plugins?updated=animedb-shikimori', $response->getTargetUrl());
+
+        $installed = $this->registry->get(new PluginId('animedb-shikimori'));
+        $this->assertNotNull($installed);
+        $this->assertSame('2.0.0', $installed->manifest->version);
+    }
+
+    /**
+     * A plugin's settings live in plugins.json, entirely outside its directory, so they must
+     * survive an update untouched even while the directory is briefly swapped (issue #224).
+     */
+    public function testUpdateViaReuploadPreservesExistingPluginSettings(): void
+    {
+        $this->writeManifest('animedb-shikimori', 'Shikimori');
+        $this->registry->reconcile();
+
+        $configStore = new PluginsConfigStore($this->pluginsDir.'/plugins.json');
+        $configStore->updatePluginSettings(new PluginId('animedb-shikimori'), static fn (array $settings): array => [
+            ...$settings,
+            'settings' => ['token' => 'secret-oauth-token'],
+        ]);
+
+        $zipPath = $this->createZip(['manifest.json' => $this->validManifestJson('animedb-shikimori', version: '2.0.0')]);
+
+        $request = Request::create('/settings/plugins/install', 'POST', ['_token' => 'token']);
+        $request->files->set('plugin_zip', $this->uploadedZip($zipPath));
+
+        $this->controller()->install($request);
+
+        $this->assertSame(
+            ['token' => 'secret-oauth-token'],
+            $configStore->getSettingsStorePayload(new PluginId('animedb-shikimori')),
+        );
     }
 
     public function testInstallReportsInvalidManifestDetails(): void

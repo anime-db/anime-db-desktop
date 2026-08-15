@@ -36,6 +36,7 @@ use App\Service\Plugin\Exception\IncompatiblePluginCoreVersionException;
 use App\Service\Plugin\Exception\InvalidInstalledPluginException;
 use App\Service\Plugin\Exception\PluginAlreadyInstalledException;
 use App\Service\Plugin\Exception\PluginInstallException;
+use App\Service\Plugin\Exception\PluginNotInstalledException;
 use App\Service\Plugin\Exception\PluginSyntaxErrorException;
 use App\Service\WsPublisher;
 use Composer\Semver\Semver;
@@ -89,6 +90,16 @@ use Symfony\Component\Process\Process;
  * is best-effort: a failure to enqueue the event only logs a warning rather than rolling back the
  * install, since "installed but not yet live" is itself a recoverable, expected state (the plugin
  * activates on the next full app restart regardless of whether this notification got through).
+ *
+ * {@see self::update()} (issue #224) is the counterpart for a plugin id that *is* already
+ * installed: it runs the exact same validation chain as {@see self::install()} above — manifest
+ * parsing, core-version compatibility, syntax lint unless `$trusted` — before touching anything on
+ * disk, then swaps the new version into place behind a backup of the old one instead of
+ * {@see self::install()}'s plain move, so a failed isolated warm-up can restore the previous,
+ * still-working version rather than leaving the plugin directory empty. `plugins.json`
+ * ({@see PluginsConfigStore}) is never touched by either method: a plugin's settings live there,
+ * not in its directory, so they survive the directory swap unconditionally — migrating a settings
+ * schema across versions is the plugin's own init code's job, not this installer's.
  *
  * Deliberately still out of scope here: any UI, and enabling an already-installed plugin.
  */
@@ -174,6 +185,106 @@ final class ZipPluginInstaller
         // Deliberately outside the try/catch above: the install is already complete at this
         // point (moved into place, registry re-synced, cache warm-up passed), so a failure to
         // publish this best-effort notification must not roll it back — see the class docblock.
+        try {
+            $this->wsPublisher->publish(self::WORKERS_RELOAD_EVENT, ['pluginId' => (string) $pluginId]);
+        } catch (\Throwable $exception) {
+            $this->logger->warning('Failed to publish {event} for plugin {pluginId}: {message}', [
+                'event' => self::WORKERS_RELOAD_EVENT,
+                'pluginId' => (string) $pluginId,
+                'message' => $exception->getMessage(),
+                'exception' => $exception,
+            ]);
+        }
+
+        return $pluginId;
+    }
+
+    /**
+     * Updates an already-installed plugin to the version packaged in the given ZIP (issue #224):
+     * runs the same validation chain as {@see self::install()} (manifest parsing, core-version
+     * compatibility, syntax lint unless `$trusted`), then swaps the new version into place behind
+     * a backup of the current one rather than moving it directly on top — so a failed isolated
+     * warm-up can restore the previous version instead of leaving the plugin directory empty or
+     * half-written. The backup lives beside the extraction staging directory
+     * ({@see self::stagingRootDir()}), i.e. outside `%app.plugins_dir%`, so
+     * {@see InstalledPluginsRegistry::reconcile()} never scans it as a second copy of the same
+     * plugin id while both directories briefly coexist.
+     *
+     * The live FrankenPHP worker is never touched while a warm-up is in flight (activation only
+     * happens via {@see self::WORKERS_RELOAD_EVENT} after a successful one, same as
+     * {@see self::install()}), so a failed warm-up leaves it running the old version the whole
+     * time — restoring the backup here is enough to make the on-disk state consistent again, no
+     * separate worker-side rollback is needed.
+     *
+     * @param bool $trusted skips the `php -l` syntax lint — see {@see self::install()}'s parameter
+     *                      of the same name for when to set it
+     *
+     * @throws InvalidInstalledPluginException        if manifest.json is missing or invalid
+     * @throws IncompatiblePluginCoreVersionException if the current core version does not satisfy
+     *                                                the manifest's `require.core` lower bound
+     * @throws PluginSyntaxErrorException             if any `*.php` file in the archive has a PHP syntax error
+     *                                                (never thrown when `$trusted` is `true`)
+     * @throws PluginNotInstalledException            if the manifest's plugin id has no existing
+     *                                                installation to update
+     * @throws PluginInstallException                 if the archive cannot be unpacked, or a directory
+     *                                                cannot be moved into place
+     * @throws Exception\PluginCacheWarmupException   if the isolated cache warm-up fails to
+     *                                                compile the DI container with the updated
+     *                                                plugin present — the previous version is
+     *                                                restored before this propagates
+     */
+    public function update(string $zipPath, bool $trusted = false): PluginId
+    {
+        $tmpDir = $this->createTmpDir();
+        $targetDir = null;
+        $backupDir = null;
+        $backedUp = false;
+        $newVersionInPlace = false;
+
+        try {
+            $this->extract($zipPath, $tmpDir);
+            $pluginRoot = $this->resolvePluginRoot($tmpDir);
+            $manifest = $this->parseManifest($pluginRoot);
+            $this->assertCoreVersionCompatible($manifest);
+            if (!$trusted) {
+                $this->assertNoSyntaxErrors($pluginRoot);
+            }
+            $pluginId = new PluginId($manifest->id);
+            $targetDir = $this->pluginsDir.\DIRECTORY_SEPARATOR.$pluginId;
+
+            if (!$this->registry->has($pluginId) && !is_dir($targetDir)) {
+                throw new PluginNotInstalledException($pluginId);
+            }
+
+            $backupDir = $this->stagingRootDir().\DIRECTORY_SEPARATOR.'anime-db-plugin-update-backup-'.bin2hex(random_bytes(8));
+            $this->move($targetDir, $backupDir);
+            $backedUp = true;
+
+            $this->move($pluginRoot, $targetDir);
+            $newVersionInPlace = true;
+
+            $this->registry->reconcile();
+
+            $this->cacheWarmer->warmUp();
+        } catch (\Throwable $exception) {
+            if ($backedUp && $targetDir !== null && $backupDir !== null) {
+                if ($newVersionInPlace) {
+                    $this->removeDirectory($targetDir);
+                }
+                $this->move($backupDir, $targetDir);
+                $this->registry->reconcile();
+            }
+
+            throw $exception;
+        } finally {
+            $this->removeDirectory($tmpDir);
+        }
+
+        $this->removeDirectory($backupDir);
+
+        // Deliberately outside the try/catch above: the update is already complete at this point
+        // (new version moved into place, registry re-synced, cache warm-up passed), so a failure
+        // to publish this best-effort notification must not roll it back — see the class docblock.
         try {
             $this->wsPublisher->publish(self::WORKERS_RELOAD_EVENT, ['pluginId' => (string) $pluginId]);
         } catch (\Throwable $exception) {

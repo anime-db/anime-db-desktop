@@ -30,6 +30,10 @@
         <p class="success">{{ 'settings_market.install_success'|trans({'%pluginId%': installedPluginId}) }}</p>
     {% endif %}
 
+    {% if updatedPluginId is not null %}
+        <p class="success">{{ 'settings_market.update_success'|trans({'%pluginId%': updatedPluginId}) }}</p>
+    {% endif %}
+
     {% if installError is not null %}
         <p class="error">{{ installError|trans(installErrorParams) }}</p>
     {% endif %}
@@ -57,7 +61,12 @@
                         <td>{{ ('plugin_type.' ~ item.plugin.manifest.type.value)|trans }}</td>
                         <td>{{ item.plugin.manifest.version }}</td>
                         <td>
-                            {% if item.installed %}
+                            {% if item.installed and item.updateAvailable %}
+                                <form method="post" action="{{ path('settings_market_update', {pluginId: item.plugin.id}) }}">
+                                    <input type="hidden" name="_token" value="{{ csrf_token('settings_market_update_' ~ item.plugin.id) }}">
+                                    <button type="submit">{{ 'settings_market.update_button'|trans }}</button>
+                                </form>
+                            {% elseif item.installed %}
                                 {{ 'settings_market.already_installed'|trans }}
                             {% elseif item.resolvedVersion is null %}
                                 {{ 'settings_market.incompatible_core'|trans({'%requiredCore%': item.plugin.latestVersion.core}) }}

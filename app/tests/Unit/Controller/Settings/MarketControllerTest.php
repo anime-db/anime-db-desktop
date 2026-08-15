@@ -529,6 +529,183 @@ final class MarketControllerTest extends TestCase
         $controller->install('animedb-shikimori', $request);
     }
 
+    public function testIndexMarksUpdateAvailableWhenAResolvedVersionIsNewerThanTheInstalledOne(): void
+    {
+        $dir = $this->pluginsDir.'/animedb-shikimori';
+        mkdir($dir, recursive: true);
+        file_put_contents($dir.'/manifest.json', (string) json_encode($this->manifest('animedb-shikimori', '1.1.0')));
+        $this->installedPlugins->reconcile();
+
+        $registryJson = $this->registryJson($this->manifest('animedb-shikimori', '1.2.0'), [
+            ['version' => '1.2.0', 'core' => '>=2.0.0', 'sha256' => 'abc123'],
+        ]);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('settings/market/index.html.twig', $this->callback(static function (array $params): bool {
+                self::assertTrue($params['items'][0]['installed']);
+                self::assertTrue($params['items'][0]['updateAvailable']);
+
+                return true;
+            }))
+            ->willReturn('<html></html>');
+
+        $controller = new MarketController(
+            $this->registryLoaderServing($registryJson),
+            $this->assetDownloaderServingPluginZip(),
+            $this->installer(),
+            $this->installedPlugins,
+            self::CORE_VERSION,
+            $this->alwaysValidCsrf(),
+            $this->createStub(UrlGeneratorInterface::class),
+            $twig,
+        );
+
+        $controller->index(Request::create('/settings/market'));
+    }
+
+    public function testIndexDoesNotMarkUpdateAvailableWhenTheInstalledVersionIsAlreadyTheResolvedOne(): void
+    {
+        $dir = $this->pluginsDir.'/animedb-shikimori';
+        mkdir($dir, recursive: true);
+        file_put_contents($dir.'/manifest.json', (string) json_encode($this->manifest('animedb-shikimori', '1.2.0')));
+        $this->installedPlugins->reconcile();
+
+        $registryJson = $this->registryJson($this->manifest('animedb-shikimori', '1.2.0'), [
+            ['version' => '1.2.0', 'core' => '>=2.0.0', 'sha256' => 'abc123'],
+        ]);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('settings/market/index.html.twig', $this->callback(static function (array $params): bool {
+                self::assertTrue($params['items'][0]['installed']);
+                self::assertFalse($params['items'][0]['updateAvailable']);
+
+                return true;
+            }))
+            ->willReturn('<html></html>');
+
+        $controller = new MarketController(
+            $this->registryLoaderServing($registryJson),
+            $this->assetDownloaderServingPluginZip(),
+            $this->installer(),
+            $this->installedPlugins,
+            self::CORE_VERSION,
+            $this->alwaysValidCsrf(),
+            $this->createStub(UrlGeneratorInterface::class),
+            $twig,
+        );
+
+        $controller->index(Request::create('/settings/market'));
+    }
+
+    public function testUpdateRedirectsToIndexWithUpdatedPluginIdOnSuccess(): void
+    {
+        $dir = $this->pluginsDir.'/animedb-shikimori';
+        mkdir($dir, recursive: true);
+        file_put_contents($dir.'/manifest.json', (string) json_encode($this->manifest('animedb-shikimori', '1.1.0')));
+        $this->installedPlugins->reconcile();
+
+        $zipBytes = $this->pluginZipBytes('animedb-shikimori', '1.2.0');
+        $registryJson = $this->registryJson($this->manifest('animedb-shikimori', '1.2.0'), [
+            ['version' => '1.2.0', 'core' => '>=2.0.0', 'sha256' => hash('sha256', $zipBytes)],
+        ]);
+
+        $urlGenerator = $this->createMock(UrlGeneratorInterface::class);
+        $urlGenerator->expects($this->once())
+            ->method('generate')
+            ->with('settings_market_index', ['updated' => 'animedb-shikimori'])
+            ->willReturn('/settings/market?updated=animedb-shikimori');
+
+        $controller = new MarketController(
+            $this->registryLoaderServing($registryJson),
+            $this->assetDownloaderServing($zipBytes),
+            $this->installer(),
+            $this->installedPlugins,
+            self::CORE_VERSION,
+            $this->alwaysValidCsrf(),
+            $urlGenerator,
+            $this->createStub(Environment::class),
+        );
+
+        $request = Request::create('/settings/market/animedb-shikimori/update', 'POST', ['_token' => 'token']);
+        $response = $controller->update('animedb-shikimori', $request);
+
+        $this->assertInstanceOf(RedirectResponse::class, $response);
+        $this->assertSame('/settings/market?updated=animedb-shikimori', $response->getTargetUrl());
+
+        $installed = $this->installedPlugins->get(new PluginId('animedb-shikimori'));
+        $this->assertNotNull($installed);
+        $this->assertSame('1.2.0', $installed->manifest->version);
+    }
+
+    /**
+     * A plugin's settings live in plugins.json, entirely outside its directory, so an update must
+     * leave them untouched even while the directory is briefly swapped (issue #224).
+     */
+    public function testUpdatePreservesExistingPluginSettings(): void
+    {
+        $dir = $this->pluginsDir.'/animedb-shikimori';
+        mkdir($dir, recursive: true);
+        file_put_contents($dir.'/manifest.json', (string) json_encode($this->manifest('animedb-shikimori', '1.1.0')));
+        $this->installedPlugins->reconcile();
+
+        $configStore = new PluginsConfigStore($this->pluginsDir.'/plugins.json');
+        $configStore->updatePluginSettings(new PluginId('animedb-shikimori'), static fn (array $settings): array => [
+            ...$settings,
+            'settings' => ['token' => 'secret-oauth-token'],
+        ]);
+
+        $zipBytes = $this->pluginZipBytes('animedb-shikimori', '1.2.0');
+        $registryJson = $this->registryJson($this->manifest('animedb-shikimori', '1.2.0'), [
+            ['version' => '1.2.0', 'core' => '>=2.0.0', 'sha256' => hash('sha256', $zipBytes)],
+        ]);
+
+        $urlGenerator = $this->createStub(UrlGeneratorInterface::class);
+        $urlGenerator->method('generate')->willReturn('/settings/market?updated=animedb-shikimori');
+
+        $controller = new MarketController(
+            $this->registryLoaderServing($registryJson),
+            $this->assetDownloaderServing($zipBytes),
+            $this->installer(),
+            $this->installedPlugins,
+            self::CORE_VERSION,
+            $this->alwaysValidCsrf(),
+            $urlGenerator,
+            $this->createStub(Environment::class),
+        );
+
+        $request = Request::create('/settings/market/animedb-shikimori/update', 'POST', ['_token' => 'token']);
+        $controller->update('animedb-shikimori', $request);
+
+        $this->assertSame(
+            ['token' => 'secret-oauth-token'],
+            $configStore->getSettingsStorePayload(new PluginId('animedb-shikimori')),
+        );
+    }
+
+    public function testUpdateRejectsInvalidCsrfToken(): void
+    {
+        $csrf = $this->createStub(CsrfTokenManagerInterface::class);
+        $csrf->method('isTokenValid')->willReturn(false);
+
+        $controller = new MarketController(
+            $this->unavailableRegistryLoader(),
+            $this->assetDownloaderServingPluginZip(),
+            $this->installer(),
+            $this->installedPlugins,
+            self::CORE_VERSION,
+            $csrf,
+            $this->createStub(UrlGeneratorInterface::class),
+            $this->createStub(Environment::class),
+        );
+
+        $this->expectException(BadRequestHttpException::class);
+        $controller->update('animedb-shikimori', Request::create('/settings/market/animedb-shikimori/update', 'POST', ['_token' => 'bad']));
+    }
+
     public function testInstallRejectsInvalidCsrfToken(): void
     {
         $csrf = $this->createStub(CsrfTokenManagerInterface::class);

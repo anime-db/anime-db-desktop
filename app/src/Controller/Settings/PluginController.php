@@ -71,6 +71,14 @@ use Twig\Environment;
  * string. A successful install does redirect (POST-Redirect-GET), so refreshing the result page
  * never resubmits the upload.
  *
+ * Also drives updating an already-installed plugin (issue #224): re-submitting the same install
+ * form with a ZIP whose manifest id is already installed no longer surfaces
+ * {@see PluginAlreadyInstalledException} as a blocking error — {@see install()} instead retries
+ * through {@see ZipPluginInstaller::update()} via {@see installOrUpdate()}, since uploading a new
+ * archive through the third-party-warning-gated form is itself the explicit user action that
+ * authorizes it. The redirect after a successful update carries an `updated` query parameter
+ * instead of `installed` so the flash message on {@see index()} reads correctly.
+ *
  * Also drives plugin removal (issue #225) via {@see remove()}: deletes the plugin's directory and
  * re-syncs {@see InstalledPluginsRegistry} through {@see PluginRemover} — deliberately the only
  * thing it touches. A plugin's accumulated catalog data (`anime_plugin_data`, `anime_external_id`)
@@ -101,10 +109,12 @@ final class PluginController
     public function index(Request $request): Response
     {
         $installedPluginId = (string) $request->query->get('installed', '');
+        $updatedPluginId = (string) $request->query->get('updated', '');
         $removedPluginId = (string) $request->query->get('removed', '');
 
         return $this->renderIndex(
             installedPluginId: $installedPluginId !== '' ? $installedPluginId : null,
+            updatedPluginId: $updatedPluginId !== '' ? $updatedPluginId : null,
             removedPluginId: $removedPluginId !== '' ? $removedPluginId : null,
         );
     }
@@ -147,7 +157,7 @@ final class PluginController
         }
 
         try {
-            $pluginId = $this->installer->install($file->getPathname());
+            [$pluginId, $updated] = $this->installOrUpdate($file->getPathname());
         } catch (IncompatiblePluginCoreVersionException $exception) {
             return $this->renderIndex(
                 installError: 'settings_plugins.install_error_incompatible_core',
@@ -161,11 +171,6 @@ final class PluginController
                 installError: 'settings_plugins.install_error_syntax',
                 syntaxErrors: $exception->errors,
             );
-        } catch (PluginAlreadyInstalledException $exception) {
-            return $this->renderIndex(
-                installError: 'settings_plugins.install_error_already_installed',
-                installErrorParams: ['%pluginId%' => (string) $exception->pluginId],
-            );
         } catch (InvalidInstalledPluginException $exception) {
             return $this->renderIndex(
                 installError: 'settings_plugins.install_error_invalid_manifest',
@@ -177,7 +182,29 @@ final class PluginController
             @unlink($file->getPathname());
         }
 
-        return new RedirectResponse($this->urlGenerator->generate('settings_plugins_index', ['installed' => (string) $pluginId]));
+        return new RedirectResponse($this->urlGenerator->generate(
+            'settings_plugins_index',
+            $updated ? ['updated' => (string) $pluginId] : ['installed' => (string) $pluginId],
+        ));
+    }
+
+    /**
+     * Installs the uploaded archive as a new plugin, or — if its manifest id is already installed
+     * — updates it in place instead of surfacing {@see PluginAlreadyInstalledException} as a
+     * blocking error (issue #224): re-submitting the install form with a newer ZIP of an already
+     * installed plugin is the explicit user action that authorizes the update, the same way it
+     * authorizes a first-time install.
+     *
+     * @return array{0: PluginId, 1: bool} the resulting plugin id, and whether this was an update
+     *                                     of an already-installed plugin rather than a fresh install
+     */
+    private function installOrUpdate(string $zipPath): array
+    {
+        try {
+            return [$this->installer->install($zipPath), false];
+        } catch (PluginAlreadyInstalledException) {
+            return [$this->installer->update($zipPath), true];
+        }
     }
 
     /**
@@ -187,6 +214,7 @@ final class PluginController
      */
     private function renderIndex(
         ?string $installedPluginId = null,
+        ?string $updatedPluginId = null,
         ?string $removedPluginId = null,
         ?string $installError = null,
         array $installErrorParams = [],
@@ -199,6 +227,7 @@ final class PluginController
             'installedPlugins' => $installedPlugins,
             'settingsPluginIds' => $this->pluginIdsWithASettingsPage($installedPlugins),
             'installedPluginId' => $installedPluginId,
+            'updatedPluginId' => $updatedPluginId,
             'removedPluginId' => $removedPluginId,
             'installError' => $installError,
             'installErrorParams' => $installErrorParams,
