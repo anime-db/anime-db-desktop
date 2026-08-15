@@ -31,6 +31,7 @@ use AnimeDb\PluginContracts\Settings\SettingsPageInterface;
 use App\Controller\Settings\PluginController;
 use App\Entity\ValueObject\PluginId;
 use App\Service\Plugin\InstalledPluginsRegistry;
+use App\Service\Plugin\PluginCacheWarmer;
 use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Plugin\SettingsPageRegistry;
 use App\Service\Plugin\ZipPluginInstaller;
@@ -77,7 +78,12 @@ final class PluginControllerTest extends TestCase
 
     private function installer(): ZipPluginInstaller
     {
-        return new ZipPluginInstaller($this->pluginsDir, self::CORE_VERSION, $this->registry);
+        return new ZipPluginInstaller(
+            $this->pluginsDir,
+            self::CORE_VERSION,
+            $this->registry,
+            new PluginCacheWarmer($this->pluginsDir, \dirname(__DIR__, 4), new NullLogger()),
+        );
     }
 
     /** @param iterable<string, SettingsPageInterface> $pages */
