@@ -402,6 +402,37 @@ final class ZipPluginInstallerTest extends TestCase
         $this->assertSame('animedb-shikimori', (string) $pluginId);
     }
 
+    /**
+     * A failure to publish {@see ZipPluginInstaller::WORKERS_RELOAD_EVENT} (e.g. a transient
+     * SQLite write error in {@see WsPublisher}) must not undo an install that already succeeded —
+     * it was moved into place, the registry was re-synced and the isolated cache warm-up passed
+     * before publish() ever runs. Degrading to "installed but not yet live" (activated on the next
+     * full app restart) is the intended fallback, not a full rollback.
+     */
+    public function testInstallSucceedsWhenPublishingWorkersReloadEventFails(): void
+    {
+        $zipPath = $this->createZip([
+            'manifest.json' => $this->validManifestJson('animedb-shikimori'),
+        ]);
+
+        $wsPublisher = $this->createStub(WsPublisher::class);
+        $wsPublisher->method('publish')->willThrowException(new \RuntimeException('queue.db is locked'));
+
+        $installer = new ZipPluginInstaller(
+            $this->pluginsDir,
+            self::CORE_VERSION,
+            $this->registry,
+            $this->cacheWarmer(),
+            $wsPublisher,
+        );
+
+        $pluginId = $installer->install($zipPath);
+
+        $this->assertSame('animedb-shikimori', (string) $pluginId);
+        $this->assertDirectoryExists($this->pluginsDir.'/animedb-shikimori');
+        $this->assertTrue($this->registry->has(new PluginId('animedb-shikimori')));
+    }
+
     private function installer(?WsPublisher $wsPublisher = null): ZipPluginInstaller
     {
         return new ZipPluginInstaller(
