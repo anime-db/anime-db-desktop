@@ -69,10 +69,22 @@ final class FillerRegistry
      */
     public function findByField(string $field): array
     {
+        return array_values($this->findWithIdByField($field));
+    }
+
+    /**
+     * Same filter as {@see findByField()}, but keyed by each filler's own {@see PluginId} -
+     * the per-field "fill from source" button/dropdown (issue #234) needs the id to link to
+     * (route parameter, option value), not just the filler instance.
+     *
+     * @return array<string, FillerInterface> pluginId string => active filler supporting $field
+     */
+    public function findWithIdByField(string $field): array
+    {
         $result = [];
         foreach ($this->fillers as $id => $filler) {
             if ($this->isFillerActive(new PluginId((string) $id)) && \in_array($field, $filler->getFillableFields(), true)) {
-                $result[] = $filler;
+                $result[(string) $id] = $filler;
             }
         }
 

@@ -360,6 +360,9 @@ anime_detail:
     error_watch_status_not_released: Cannot mark as Completed while the anime has not been released yet.
     error_user_rating_invalid: Rating must be between 1 and 5.
     error_watched_episodes_invalid: Invalid watched episode count.
+    fill_from_source_button: Fill from source
+    fill_source_label: Source
+    error_fill_not_found: The source found no match for this anime.
 
 anime_new:
     title: New Anime — AnimeDB

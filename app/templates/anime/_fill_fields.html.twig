@@ -1,0 +1,162 @@
+{#
+ # AnimeDb package.
+ #
+ # @author    Peter Gribanov <info@peter-gribanov.ru>
+ # @copyright Copyright (c) 2026, Peter Gribanov
+ # @license   https://www.gnu.org/licenses/gpl-3.0.html GPL-3.0-or-later
+ #
+ # This program is free software: you can redistribute it and/or modify
+ # it under the terms of the GNU General Public License as published by
+ # the Free Software Foundation, either version 3 of the License, or
+ # (at your option) any later version.
+ #
+ # This program is distributed in the hope that it will be useful,
+ # but WITHOUT ANY WARRANTY; without even the implied warranty of
+ # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ # GNU General Public License for more details.
+ #
+ # You should have received a copy of the GNU General Public License
+ # along with this program. If not, see <https://www.gnu.org/licenses/>.
+ #}
+{#
+ # Rendered both by anime/show.html.twig (initial load, fill_error = null) and by every
+ # AnimeFillController action (HTMX fragment swap, issue #234): the read-only reference
+ # fields, each with its own "fill from source" button/dropdown when at least one active
+ # filler plugin supports it (fillable_fields, built by FillableFieldsPresenter). A field
+ # with no active filler renders exactly as before, with no button at all.
+ #}
+<div class="anime-detail__fillable-fields" id="anime-fill-fields-{{ anime.id }}">
+    {% if fill_error %}
+        <p class="anime-detail__fill-error">{{ fill_error|trans }}</p>
+    {% endif %}
+
+    <dl class="anime-detail__fields">
+        <dt>{{ 'anime_detail.field_type'|trans }}</dt>
+        <dd>{{ ('anime_type.' ~ anime.type)|trans }}</dd>
+
+        {% if anime.episodes_count is not null %}
+            <dt>{{ 'anime_detail.field_episodes_count'|trans }}</dt>
+            <dd>
+                {{ anime.episodes_count }}
+                {{ _self.fill_button(anime, 'episodesCount', fillable_fields.episodesCount) }}
+            </dd>
+        {% endif %}
+
+        <dt>{{ 'anime_detail.field_duration_minutes'|trans }}</dt>
+        <dd>
+            {%- if anime.duration_minutes is not null %}
+                {{- anime.duration_minutes }} {{ 'anime_detail.duration_minutes_suffix'|trans }}
+            {%- else %}
+                {{- 'anime_detail.empty_value'|trans }}
+            {%- endif %}
+            {{ _self.fill_button(anime, 'durationMinutes', fillable_fields.durationMinutes) }}
+        </dd>
+
+        <dt>{{ 'anime_detail.field_studios'|trans }}</dt>
+        <dd>
+            {{ anime.studios is not empty ? anime.studios|join(', ') : ('anime_detail.empty_value'|trans) }}
+            {{ _self.fill_button(anime, 'studios', fillable_fields.studios) }}
+        </dd>
+
+        <dt>{{ 'anime_detail.field_countries'|trans }}</dt>
+        <dd>
+            {{ anime.countries is not empty ? anime.countries|join(', ') : ('anime_detail.empty_value'|trans) }}
+            {{ _self.fill_button(anime, 'countries', fillable_fields.countries) }}
+        </dd>
+
+        <dt>{{ 'anime_detail.field_storage'|trans }}</dt>
+        <dd>
+            {%- if anime.storage %}
+                {{- anime.storage.name }} ({{ ('storage_type.' ~ anime.storage.type)|trans }})
+            {%- else %}
+                {{- 'anime_detail.empty_value'|trans }}
+            {%- endif %}
+        </dd>
+
+        <dt>{{ 'anime_detail.field_storage_path'|trans }}</dt>
+        <dd>
+            {%- if anime.storage %}
+                {{- anime.storage.path }}
+                <button
+                    type="button"
+                    class="anime-detail__open-folder-button"
+                    data-open-folder-path="{{ anime.storage.path }}"
+                    {%- if not anime.storage.path_available %}
+                        disabled
+                        title="{{ 'anime_detail.path_unavailable_tooltip'|trans }}"
+                    {%- endif %}
+                >{{ 'anime_detail.open_folder_button'|trans }}</button>
+            {%- else %}
+                {{- 'anime_detail.empty_value'|trans }}
+            {%- endif %}
+        </dd>
+
+        <dt>{{ 'anime_detail.field_names'|trans }}</dt>
+        <dd>
+            {% if anime.names is not empty %}
+                <ul class="anime-detail__names">
+                    {% for name in anime.names %}
+                        <li>{{ name.name }} <span class="anime-detail__name-type">({{ ('anime_name_type.' ~ name.type)|trans }})</span></li>
+                    {% endfor %}
+                </ul>
+            {% else %}
+                {{ 'anime_detail.empty_value'|trans }}
+            {% endif %}
+            {{ _self.fill_button(anime, 'alternativeNames', fillable_fields.alternativeNames) }}
+        </dd>
+
+        <dt>{{ 'anime_detail.field_genres'|trans }}</dt>
+        <dd>
+            {%- if anime.genres is not empty %}
+                {%- for code in anime.genres %}{{ ('genre.' ~ code)|trans }}{% if not loop.last %}, {% endif %}{% endfor %}
+            {%- else %}
+                {{- 'anime_detail.empty_value'|trans }}
+            {%- endif %}
+            {{ _self.fill_button(anime, 'genres', fillable_fields.genres) }}
+        </dd>
+
+        <dt>{{ 'anime_detail.field_themes'|trans }}</dt>
+        <dd>
+            {%- if anime.themes is not empty %}
+                {%- for code in anime.themes %}{{ ('theme.' ~ code)|trans }}{% if not loop.last %}, {% endif %}{% endfor %}
+            {%- else %}
+                {{- 'anime_detail.empty_value'|trans }}
+            {%- endif %}
+            {{ _self.fill_button(anime, 'themes', fillable_fields.themes) }}
+        </dd>
+
+        <dt>{{ 'anime_detail.field_demographic'|trans }}</dt>
+        <dd>
+            {%- if anime.demographic is not null %}
+                {{- ('demographic.' ~ anime.demographic)|trans }}
+            {%- else %}
+                {{- 'anime_detail.empty_value'|trans }}
+            {%- endif %}
+            {{ _self.fill_button(anime, 'demographic', fillable_fields.demographic) }}
+        </dd>
+    </dl>
+</div>
+
+{% macro fill_button(anime, field, plugins) %}
+    {% if plugins is not empty %}
+        <form class="anime-detail__fill-form"
+              hx-post="{{ path('anime_fill_field', {id: anime.id, field: field}) }}"
+              hx-target="#anime-fill-fields-{{ anime.id }}" hx-swap="outerHTML">
+            <input type="hidden" name="_token" value="{{ csrf_token('anime_fill_' ~ field ~ '_' ~ anime.id) }}">
+            {% if plugins|length > 1 %}
+                <select name="plugin_id" class="anime-detail__fill-select" aria-label="{{ 'anime_detail.fill_source_label'|trans }}">
+                    {% for plugin in plugins %}
+                        <option value="{{ plugin.id }}">{{ plugin.name }}</option>
+                    {% endfor %}
+                </select>
+            {% else %}
+                <input type="hidden" name="plugin_id" value="{{ plugins[0].id }}">
+            {% endif %}
+            <button
+                type="submit"
+                class="anime-detail__fill-button"
+                title="{{ 'anime_detail.fill_from_source_button'|trans }}"
+            >{{ 'anime_detail.fill_from_source_button'|trans }}</button>
+        </form>
+    {% endif %}
+{% endmacro %}

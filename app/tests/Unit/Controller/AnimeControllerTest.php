@@ -41,8 +41,12 @@ use App\Entity\Studio;
 use App\Entity\TvAnime;
 use App\Service\AnimeViewFactory;
 use App\Service\Plugin\EntryWidgetRegistry;
+use App\Service\Plugin\Filler\FillableFieldsPresenter;
+use App\Service\Plugin\FillerRegistry;
+use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\PluginsConfigStore;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Contracts\Translation\TranslatorInterface;
@@ -61,6 +65,14 @@ final class AnimeControllerTest extends TestCase
     private function createEntryWidgetRegistry(): EntryWidgetRegistry
     {
         return new EntryWidgetRegistry([], new PluginsConfigStore(''), $this->createStub(TranslatorInterface::class));
+    }
+
+    private function createFillableFieldsPresenter(): FillableFieldsPresenter
+    {
+        return new FillableFieldsPresenter(
+            new FillerRegistry([], new PluginsConfigStore('')),
+            new InstalledPluginsRegistry(sys_get_temp_dir(), new PluginsConfigStore(''), new NullLogger()),
+        );
     }
 
     public function testShowPassesFullyPopulatedReferenceFieldsToTemplate(): void
@@ -124,7 +136,7 @@ final class AnimeControllerTest extends TestCase
             }))
             ->willReturn('<html></html>');
 
-        $controller = new AnimeController($twig, $this->createViewFactory(), $this->createEntryWidgetRegistry());
+        $controller = new AnimeController($twig, $this->createViewFactory(), $this->createEntryWidgetRegistry(), $this->createFillableFieldsPresenter());
         $response = $controller->show($anime);
 
         $this->assertSame(200, $response->getStatusCode());
@@ -156,7 +168,7 @@ final class AnimeControllerTest extends TestCase
             }))
             ->willReturn('<html></html>');
 
-        $controller = new AnimeController($twig, $this->createViewFactory(), $this->createEntryWidgetRegistry());
+        $controller = new AnimeController($twig, $this->createViewFactory(), $this->createEntryWidgetRegistry(), $this->createFillableFieldsPresenter());
         $controller->show($anime);
     }
 
@@ -191,7 +203,7 @@ final class AnimeControllerTest extends TestCase
             }))
             ->willReturn('<html></html>');
 
-        $controller = new AnimeController($twig, $this->createViewFactory(), $this->createEntryWidgetRegistry());
+        $controller = new AnimeController($twig, $this->createViewFactory(), $this->createEntryWidgetRegistry(), $this->createFillableFieldsPresenter());
         $controller->show($anime);
     }
 }

@@ -125,6 +125,37 @@ final class FillerRegistryTest extends TestCase
         $this->assertSame([$shikimori], $registry->findByField('title'));
     }
 
+    public function testFindWithIdByFieldKeysResultByPluginId(): void
+    {
+        $shikimori = $this->createFiller(['title', 'description']);
+        $anilist = $this->createFiller(['title']);
+        $mal = $this->createFiller(['genres']);
+
+        $registry = new FillerRegistry(
+            ['animedb-shikimori' => $shikimori, 'animedb-anilist' => $anilist, 'animedb-mal' => $mal],
+            new PluginsConfigStore($this->path),
+        );
+
+        $this->assertSame(
+            ['animedb-shikimori' => $shikimori, 'animedb-anilist' => $anilist],
+            $registry->findWithIdByField('title'),
+        );
+    }
+
+    public function testFindWithIdByFieldExcludesPluginDisabledViaFeaturesFiller(): void
+    {
+        file_put_contents($this->path, json_encode([
+            'animedb-shikimori' => ['features' => ['filler' => false]],
+        ]));
+
+        $registry = new FillerRegistry(
+            ['animedb-shikimori' => $this->createFiller(['title'])],
+            new PluginsConfigStore($this->path),
+        );
+
+        $this->assertSame([], $registry->findWithIdByField('title'));
+    }
+
     public function testFindByPluginIdReturnsTheMatchingFiller(): void
     {
         $shikimori = $this->createFiller(['title']);

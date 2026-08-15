@@ -211,6 +211,36 @@
     margin: 0;
 }
 
+.anime-detail__fill-error {
+    margin: 0 0 12px;
+    padding: 6px 10px;
+    border-radius: 4px;
+    background: #f2dede;
+    color: #a94442;
+    font-size: 0.85em;
+}
+
+.anime-detail__fill-form {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: 8px;
+}
+
+.anime-detail__fill-button {
+    padding: 1px 6px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    background: #f5f5f5;
+    color: inherit;
+    font-size: 0.8em;
+    cursor: pointer;
+}
+
+.anime-detail__fill-select {
+    font-size: 0.8em;
+}
+
 .anime-detail__names {
     display: flex;
     flex-wrap: wrap;
