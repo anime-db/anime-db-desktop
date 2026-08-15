@@ -32,6 +32,10 @@
         <p class="success">{{ 'settings_plugins.install_success'|trans({'%pluginId%': installedPluginId}) }}</p>
     {% endif %}
 
+    {% if removedPluginId is not null %}
+        <p class="success">{{ 'settings_plugins.remove_success'|trans({'%pluginId%': removedPluginId}) }}</p>
+    {% endif %}
+
     {% if installError is not null %}
         <p class="error">{{ installError|trans(installErrorParams) }}</p>
 
@@ -78,6 +82,10 @@
                             {% if (plugin.id ~ '') in settingsPluginIds %}
                                 <a href="{{ path('settings_plugin_page', {pluginId: plugin.id}) }}">{{ 'settings_plugins.settings_link'|trans }}</a>
                             {% endif %}
+                            <form method="post" action="{{ path('settings_plugins_remove', {pluginId: plugin.id}) }}" class="settings-plugins__remove-form">
+                                <input type="hidden" name="_token" value="{{ csrf_token('settings_plugins_remove_' ~ plugin.id) }}">
+                                <button type="submit">{{ 'settings_plugins.remove_button'|trans }}</button>
+                            </form>
                         </td>
                     </tr>
                 {% endfor %}

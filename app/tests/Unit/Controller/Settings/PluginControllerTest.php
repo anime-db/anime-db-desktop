@@ -32,6 +32,7 @@ use App\Controller\Settings\PluginController;
 use App\Entity\ValueObject\PluginId;
 use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\PluginCacheWarmer;
+use App\Service\Plugin\PluginRemover;
 use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Plugin\SettingsPageRegistry;
 use App\Service\Plugin\ZipPluginInstaller;
@@ -42,6 +43,7 @@ use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 use Symfony\Component\Security\Csrf\CsrfTokenManagerInterface;
 use Twig\Environment;
@@ -102,6 +104,35 @@ final class PluginControllerTest extends TestCase
         return $csrf;
     }
 
+    private function stubUrlGenerator(): UrlGeneratorInterface
+    {
+        $urlGenerator = $this->createStub(UrlGeneratorInterface::class);
+        $urlGenerator->method('generate')->willReturn('/settings/plugins');
+
+        return $urlGenerator;
+    }
+
+    private function controller(
+        ?SettingsPageRegistry $settingsPages = null,
+        ?ZipPluginInstaller $installer = null,
+        ?PluginRemover $remover = null,
+        ?WsPublisher $wsPublisher = null,
+        ?CsrfTokenManagerInterface $csrfTokenManager = null,
+        ?UrlGeneratorInterface $urlGenerator = null,
+        ?Environment $twig = null,
+    ): PluginController {
+        return new PluginController(
+            $this->registry,
+            $settingsPages ?? $this->settingsPages(),
+            $installer ?? $this->installer(),
+            $remover ?? new PluginRemover($this->registry),
+            $wsPublisher ?? $this->createStub(WsPublisher::class),
+            $csrfTokenManager ?? $this->alwaysValidCsrf(),
+            $urlGenerator ?? $this->stubUrlGenerator(),
+            $twig ?? $this->createStub(Environment::class),
+        );
+    }
+
     private function writeManifest(string $pluginId, string $name): void
     {
         $dir = $this->pluginsDir.'/'.$pluginId;
@@ -156,22 +187,14 @@ final class PluginControllerTest extends TestCase
                 self::assertSame('animedb-shikimori', (string) $params['installedPlugins'][0]->id);
                 self::assertSame([], $params['settingsPluginIds']);
                 self::assertNull($params['installedPluginId']);
+                self::assertNull($params['removedPluginId']);
                 self::assertNull($params['installError']);
 
                 return true;
             }))
             ->willReturn('<html></html>');
 
-        $controller = new PluginController(
-            $this->registry,
-            $this->settingsPages(),
-            $this->installer(),
-            $this->alwaysValidCsrf(),
-            $this->createStub(UrlGeneratorInterface::class),
-            $twig,
-        );
-
-        $response = $controller->index(Request::create('/settings/plugins'));
+        $response = $this->controller(twig: $twig)->index(Request::create('/settings/plugins'));
 
         $this->assertSame(200, $response->getStatusCode());
     }
@@ -194,16 +217,7 @@ final class PluginControllerTest extends TestCase
             ))
             ->willReturn('<html></html>');
 
-        $controller = new PluginController(
-            $this->registry,
-            $settingsPages,
-            $this->installer(),
-            $this->alwaysValidCsrf(),
-            $this->createStub(UrlGeneratorInterface::class),
-            $twig,
-        );
-
-        $controller->index(Request::create('/settings/plugins'));
+        $this->controller(settingsPages: $settingsPages, twig: $twig)->index(Request::create('/settings/plugins'));
     }
 
     public function testIndexPassesInstalledQueryParameterThrough(): void
@@ -216,16 +230,20 @@ final class PluginControllerTest extends TestCase
             ))
             ->willReturn('<html></html>');
 
-        $controller = new PluginController(
-            $this->registry,
-            $this->settingsPages(),
-            $this->installer(),
-            $this->alwaysValidCsrf(),
-            $this->createStub(UrlGeneratorInterface::class),
-            $twig,
-        );
+        $this->controller(twig: $twig)->index(Request::create('/settings/plugins?installed=animedb-shikimori'));
+    }
 
-        $controller->index(Request::create('/settings/plugins?installed=animedb-shikimori'));
+    public function testIndexPassesRemovedQueryParameterThrough(): void
+    {
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('settings/plugins/index.html.twig', $this->callback(
+                static fn (array $params): bool => $params['removedPluginId'] === 'animedb-shikimori',
+            ))
+            ->willReturn('<html></html>');
+
+        $this->controller(twig: $twig)->index(Request::create('/settings/plugins?removed=animedb-shikimori'));
     }
 
     public function testInstallRedirectsToIndexWithInstalledPluginIdOnSuccess(): void
@@ -238,19 +256,10 @@ final class PluginControllerTest extends TestCase
             ->with('settings_plugins_index', ['installed' => 'animedb-shikimori'])
             ->willReturn('/settings/plugins?installed=animedb-shikimori');
 
-        $controller = new PluginController(
-            $this->registry,
-            $this->settingsPages(),
-            $this->installer(),
-            $this->alwaysValidCsrf(),
-            $urlGenerator,
-            $this->createStub(Environment::class),
-        );
-
         $request = Request::create('/settings/plugins/install', 'POST', ['_token' => 'token']);
         $request->files->set('plugin_zip', $this->uploadedZip($zipPath));
 
-        $response = $controller->install($request);
+        $response = $this->controller(urlGenerator: $urlGenerator)->install($request);
 
         $this->assertInstanceOf(RedirectResponse::class, $response);
         $this->assertSame('/settings/plugins?installed=animedb-shikimori', $response->getTargetUrl());
@@ -268,16 +277,7 @@ final class PluginControllerTest extends TestCase
             ))
             ->willReturn('<html></html>');
 
-        $controller = new PluginController(
-            $this->registry,
-            $this->settingsPages(),
-            $this->installer(),
-            $this->alwaysValidCsrf(),
-            $this->createStub(UrlGeneratorInterface::class),
-            $twig,
-        );
-
-        $response = $controller->install(Request::create('/settings/plugins/install', 'POST', ['_token' => 'token']));
+        $response = $this->controller(twig: $twig)->install(Request::create('/settings/plugins/install', 'POST', ['_token' => 'token']));
 
         $this->assertSame(200, $response->getStatusCode());
     }
@@ -300,19 +300,10 @@ final class PluginControllerTest extends TestCase
             }))
             ->willReturn('<html></html>');
 
-        $controller = new PluginController(
-            $this->registry,
-            $this->settingsPages(),
-            $this->installer(),
-            $this->alwaysValidCsrf(),
-            $this->createStub(UrlGeneratorInterface::class),
-            $twig,
-        );
-
         $request = Request::create('/settings/plugins/install', 'POST', ['_token' => 'token']);
         $request->files->set('plugin_zip', $this->uploadedZip($zipPath));
 
-        $controller->install($request);
+        $this->controller(twig: $twig)->install($request);
     }
 
     public function testInstallReportsSyntaxErrorDetails(): void
@@ -334,19 +325,10 @@ final class PluginControllerTest extends TestCase
             }))
             ->willReturn('<html></html>');
 
-        $controller = new PluginController(
-            $this->registry,
-            $this->settingsPages(),
-            $this->installer(),
-            $this->alwaysValidCsrf(),
-            $this->createStub(UrlGeneratorInterface::class),
-            $twig,
-        );
-
         $request = Request::create('/settings/plugins/install', 'POST', ['_token' => 'token']);
         $request->files->set('plugin_zip', $this->uploadedZip($zipPath));
 
-        $controller->install($request);
+        $this->controller(twig: $twig)->install($request);
     }
 
     public function testInstallReportsAlreadyInstalledPluginId(): void
@@ -367,19 +349,10 @@ final class PluginControllerTest extends TestCase
             }))
             ->willReturn('<html></html>');
 
-        $controller = new PluginController(
-            $this->registry,
-            $this->settingsPages(),
-            $this->installer(),
-            $this->alwaysValidCsrf(),
-            $this->createStub(UrlGeneratorInterface::class),
-            $twig,
-        );
-
         $request = Request::create('/settings/plugins/install', 'POST', ['_token' => 'token']);
         $request->files->set('plugin_zip', $this->uploadedZip($zipPath));
 
-        $controller->install($request);
+        $this->controller(twig: $twig)->install($request);
     }
 
     public function testInstallReportsInvalidManifestDetails(): void
@@ -394,19 +367,10 @@ final class PluginControllerTest extends TestCase
             ))
             ->willReturn('<html></html>');
 
-        $controller = new PluginController(
-            $this->registry,
-            $this->settingsPages(),
-            $this->installer(),
-            $this->alwaysValidCsrf(),
-            $this->createStub(UrlGeneratorInterface::class),
-            $twig,
-        );
-
         $request = Request::create('/settings/plugins/install', 'POST', ['_token' => 'token']);
         $request->files->set('plugin_zip', $this->uploadedZip($zipPath));
 
-        $controller->install($request);
+        $this->controller(twig: $twig)->install($request);
     }
 
     public function testInstallReportsGenericInstallErrorForCorruptArchive(): void
@@ -425,19 +389,10 @@ final class PluginControllerTest extends TestCase
             }))
             ->willReturn('<html></html>');
 
-        $controller = new PluginController(
-            $this->registry,
-            $this->settingsPages(),
-            $this->installer(),
-            $this->alwaysValidCsrf(),
-            $this->createStub(UrlGeneratorInterface::class),
-            $twig,
-        );
-
         $request = Request::create('/settings/plugins/install', 'POST', ['_token' => 'token']);
         $request->files->set('plugin_zip', $this->uploadedZip($zipPath));
 
-        $controller->install($request);
+        $this->controller(twig: $twig)->install($request);
     }
 
     public function testInstallRejectsInvalidCsrfToken(): void
@@ -445,17 +400,83 @@ final class PluginControllerTest extends TestCase
         $csrf = $this->createStub(CsrfTokenManagerInterface::class);
         $csrf->method('isTokenValid')->willReturn(false);
 
-        $controller = new PluginController(
-            $this->registry,
-            $this->settingsPages(),
-            $this->installer(),
-            $csrf,
-            $this->createStub(UrlGeneratorInterface::class),
-            $this->createStub(Environment::class),
+        $this->expectException(BadRequestHttpException::class);
+        $this->controller(csrfTokenManager: $csrf)->install(Request::create('/settings/plugins/install', 'POST', ['_token' => 'bad']));
+    }
+
+    public function testRemoveDeletesThePluginAndRedirectsToIndexWithRemovedPluginId(): void
+    {
+        $this->writeManifest('animedb-shikimori', 'Shikimori');
+        $this->registry->reconcile();
+
+        $urlGenerator = $this->createMock(UrlGeneratorInterface::class);
+        $urlGenerator->expects($this->once())
+            ->method('generate')
+            ->with('settings_plugins_index', ['removed' => 'animedb-shikimori'])
+            ->willReturn('/settings/plugins?removed=animedb-shikimori');
+
+        $response = $this->controller(urlGenerator: $urlGenerator)->remove(
+            'animedb-shikimori',
+            Request::create('/settings/plugins/animedb-shikimori/remove', 'POST', ['_token' => 'token']),
         );
 
+        $this->assertInstanceOf(RedirectResponse::class, $response);
+        $this->assertSame('/settings/plugins?removed=animedb-shikimori', $response->getTargetUrl());
+        $this->assertFalse($this->registry->has(new PluginId('animedb-shikimori')));
+    }
+
+    public function testRemovePublishesTheWorkersReloadEventOnSuccess(): void
+    {
+        $this->writeManifest('animedb-shikimori', 'Shikimori');
+        $this->registry->reconcile();
+
+        $wsPublisher = $this->createMock(WsPublisher::class);
+        $wsPublisher->expects($this->once())
+            ->method('publish')
+            ->with(ZipPluginInstaller::WORKERS_RELOAD_EVENT, ['pluginId' => 'animedb-shikimori']);
+
+        $this->controller(wsPublisher: $wsPublisher)->remove(
+            'animedb-shikimori',
+            Request::create('/settings/plugins/animedb-shikimori/remove', 'POST', ['_token' => 'token']),
+        );
+    }
+
+    public function testRemoveStillRedirectsWhenPublishingTheWorkersReloadEventFails(): void
+    {
+        $this->writeManifest('animedb-shikimori', 'Shikimori');
+        $this->registry->reconcile();
+
+        $wsPublisher = $this->createStub(WsPublisher::class);
+        $wsPublisher->method('publish')->willThrowException(new \RuntimeException('queue unavailable'));
+
+        $response = $this->controller(wsPublisher: $wsPublisher)->remove(
+            'animedb-shikimori',
+            Request::create('/settings/plugins/animedb-shikimori/remove', 'POST', ['_token' => 'token']),
+        );
+
+        $this->assertInstanceOf(RedirectResponse::class, $response);
+        $this->assertFalse($this->registry->has(new PluginId('animedb-shikimori')));
+    }
+
+    public function testRemoveRejectsInvalidCsrfToken(): void
+    {
+        $csrf = $this->createStub(CsrfTokenManagerInterface::class);
+        $csrf->method('isTokenValid')->willReturn(false);
+
         $this->expectException(BadRequestHttpException::class);
-        $controller->install(Request::create('/settings/plugins/install', 'POST', ['_token' => 'bad']));
+        $this->controller(csrfTokenManager: $csrf)->remove(
+            'animedb-shikimori',
+            Request::create('/settings/plugins/animedb-shikimori/remove', 'POST', ['_token' => 'bad']),
+        );
+    }
+
+    public function testRemoveRejectsAMalformedPluginId(): void
+    {
+        $this->expectException(NotFoundHttpException::class);
+        $this->controller()->remove(
+            'not a valid id',
+            Request::create('/settings/plugins/not%20a%20valid%20id/remove', 'POST', ['_token' => 'token']),
+        );
     }
 
     private function removeDirectory(string $dir): void

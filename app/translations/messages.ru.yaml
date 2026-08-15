@@ -195,6 +195,8 @@ settings_plugins:
     type_column: Тип
     actions_column: Действия
     settings_link: Настройки
+    remove_button: Удалить
+    remove_success: 'Плагин «%pluginId%» удалён. Накопленные им данные в каталоге сохранены и будут использованы при повторной установке.'
     install_heading: Установить из ZIP
     install_file_label: ZIP-архив плагина
     third_party_warning: Плагин из стороннего источника, не проходил проверку маркета. Установить его на свой страх и риск?
