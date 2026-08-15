@@ -30,6 +30,7 @@ namespace App\Tests\Unit\Controller\Settings;
 use AnimeDb\PluginContracts\Settings\SettingsPageInterface;
 use AnimeDb\PluginContracts\Sync\SyncInterface;
 use App\Controller\Settings\PluginSettingsController;
+use App\Message\BackfillExternalIdMessage;
 use App\Message\SyncSeedMessage;
 use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\PluginsConfigStore;
@@ -131,7 +132,7 @@ final class PluginSettingsControllerTest extends TestCase
         $this->assertSame(200, $response->getStatusCode());
     }
 
-    public function testInvokeDispatchesSyncSeedAndRedirectsWhenThePluginIsAnActiveSyncPlugin(): void
+    public function testInvokeDispatchesSyncSeedAndBackfillExternalIdAndRedirectsWhenThePluginIsAnActiveSyncPlugin(): void
     {
         $this->writeManifest('animedb-shikimori', 'Shikimori');
         file_put_contents($this->pluginsDir.'/plugins.json', (string) json_encode([
@@ -149,13 +150,15 @@ final class PluginSettingsControllerTest extends TestCase
         $page->expects($this->never())->method('render');
         $settingsPages = new SettingsPageRegistry(['animedb-shikimori' => $page], $this->installedPlugins);
 
+        $dispatched = [];
         $messageBus = $this->createMock(MessageBusInterface::class);
-        $messageBus->expects($this->once())
+        $messageBus->expects($this->exactly(2))
             ->method('dispatch')
-            ->with($this->callback(
-                static fn (object $message): bool => $message instanceof SyncSeedMessage && $message->pluginId === 'animedb-shikimori',
-            ))
-            ->willReturnCallback(static fn (object $message): Envelope => new Envelope($message));
+            ->willReturnCallback(static function (object $message) use (&$dispatched): Envelope {
+                $dispatched[] = $message;
+
+                return new Envelope($message);
+            });
 
         $urlGenerator = $this->createMock(UrlGeneratorInterface::class);
         $urlGenerator->expects($this->once())
@@ -177,9 +180,15 @@ final class PluginSettingsControllerTest extends TestCase
 
         $this->assertInstanceOf(RedirectResponse::class, $response);
         $this->assertSame('/settings/sync-review', $response->getTargetUrl());
+
+        $this->assertCount(2, $dispatched);
+        $this->assertInstanceOf(SyncSeedMessage::class, $dispatched[0]);
+        $this->assertSame('animedb-shikimori', $dispatched[0]->pluginId);
+        $this->assertInstanceOf(BackfillExternalIdMessage::class, $dispatched[1]);
+        $this->assertSame('animedb-shikimori', $dispatched[1]->pluginId);
     }
 
-    public function testInvokeOnlyDispatchesSyncSeedOnceAcrossRepeatedVisits(): void
+    public function testInvokeOnlyDispatchesSyncSeedAndBackfillExternalIdOnceAcrossRepeatedVisits(): void
     {
         $this->writeManifest('animedb-shikimori', 'Shikimori');
         file_put_contents($this->pluginsDir.'/plugins.json', (string) json_encode([
@@ -196,7 +205,7 @@ final class PluginSettingsControllerTest extends TestCase
         $settingsPages = new SettingsPageRegistry(['animedb-shikimori' => $page], $this->installedPlugins);
 
         $messageBus = $this->createMock(MessageBusInterface::class);
-        $messageBus->expects($this->once())
+        $messageBus->expects($this->exactly(2))
             ->method('dispatch')
             ->willReturnCallback(static fn (object $message): Envelope => new Envelope($message));
 
