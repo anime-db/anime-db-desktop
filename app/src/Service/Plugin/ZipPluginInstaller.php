@@ -37,6 +37,7 @@ use App\Service\Plugin\Exception\InvalidInstalledPluginException;
 use App\Service\Plugin\Exception\PluginAlreadyInstalledException;
 use App\Service\Plugin\Exception\PluginInstallException;
 use App\Service\Plugin\Exception\PluginSyntaxErrorException;
+use App\Service\WsPublisher;
 use Composer\Semver\Semver;
 use Symfony\Component\Finder\Finder;
 use Symfony\Component\Process\Process;
@@ -74,17 +75,34 @@ use Symfony\Component\Process\Process;
  * this is what actually gets to decide whether the install as a whole succeeds, on top of
  * everything checked above.
  *
+ * Once that isolated warm-up succeeds, publishes {@see self::WORKERS_RELOAD_EVENT} over
+ * {@see WsPublisher} (issue #411): the isolated warm-up only proves the container *compiles* with
+ * the new plugin, it does not make the plugin live — a FrankenPHP worker that is already running
+ * keeps its previously compiled container in memory regardless. `native/supervisor/index.js`
+ * subscribes to this event over the existing `/ws` channel and does the actual activation:
+ * invalidate the real compiled-container cache and restart the live FrankenPHP worker and
+ * messenger-consumer processes, rolling back (via `app:plugin:deactivate`) if the restarted
+ * worker fails its healthcheck.
+ *
  * Deliberately still out of scope here: any UI, and enabling an already-installed plugin.
  */
 final class ZipPluginInstaller
 {
     private const STAGING_DIR_NAME = '.plugin-install-tmp';
 
+    /**
+     * Keep this string in sync with WORKERS_RELOAD_EVENT in native/supervisor/index.js — a
+     * mismatch breaks live plugin activation silently, the same lesson as issue #336/#361 for
+     * PROXY_CHANGED_EVENT/FIREWALL_RULE_CHANGED_EVENT.
+     */
+    public const string WORKERS_RELOAD_EVENT = 'workers.reload';
+
     public function __construct(
         private readonly string $pluginsDir,
         private readonly string $coreVersion,
         private readonly InstalledPluginsRegistry $registry,
         private readonly PluginCacheWarmerInterface $cacheWarmer,
+        private readonly WsPublisher $wsPublisher,
         private readonly ManifestParser $manifestParser = new ManifestParser(),
     ) {
     }
@@ -125,6 +143,8 @@ final class ZipPluginInstaller
             $this->registry->reconcile();
 
             $this->cacheWarmer->warmUp();
+
+            $this->wsPublisher->publish(self::WORKERS_RELOAD_EVENT, ['pluginId' => (string) $pluginId]);
 
             return $pluginId;
         } catch (\Throwable $exception) {

@@ -35,6 +35,7 @@ use App\Service\Plugin\PluginCacheWarmer;
 use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Plugin\SettingsPageRegistry;
 use App\Service\Plugin\ZipPluginInstaller;
+use App\Service\WsPublisher;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
@@ -83,6 +84,7 @@ final class PluginControllerTest extends TestCase
             self::CORE_VERSION,
             $this->registry,
             new PluginCacheWarmer($this->pluginsDir, \dirname(__DIR__, 4), new NullLogger()),
+            $this->createStub(WsPublisher::class),
         );
     }
 
