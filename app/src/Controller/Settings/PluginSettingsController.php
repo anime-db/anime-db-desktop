@@ -29,6 +29,7 @@ namespace App\Controller\Settings;
 
 use App\Entity\ValueObject\Exception\InvalidPluginIdException;
 use App\Entity\ValueObject\PluginId;
+use App\Message\BackfillExternalIdMessage;
 use App\Message\SyncSeedMessage;
 use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\PluginsConfigStore;
@@ -69,7 +70,12 @@ use Twig\Environment;
  * settings. That first visit dispatches a one-time {@see SyncSeedMessage} (full pull, on the
  * `async` transport so it never blocks this request) and redirects to the sync review page
  * instead of rendering the plugin's own settings markup — {@see \App\Service\Plugin\PullSyncService::pull()}
- * is what actually applies agreements to local and raises review items for genuine conflicts.
+ * is what actually applies agreements to local and raises review items for genuine conflicts. The
+ * same first visit also dispatches {@see BackfillExternalIdMessage} (issue #258), which resolves
+ * and caches this plugin's external id for every already-matching local record; it shares the
+ * `syncSeeded` gate above rather than a flag of its own, and its own job-lock
+ * ({@see \App\MessageHandler\BackfillExternalIdMessageHandler}) makes a re-dispatch on the
+ * OAuth-retry path harmless.
  *
  * `SyncRegistry::isActive()` gates on `features.sync` alone, which the plugin's own settings
  * page can set before its OAuth flow actually completes — so setting `syncSeeded` here only makes
@@ -120,6 +126,7 @@ final class PluginSettingsController
 
         if ($this->syncRegistry->findByPluginId($id) !== null && !$this->markSeededIfFirstVisit($id)) {
             $this->messageBus->dispatch(new SyncSeedMessage((string) $id));
+            $this->messageBus->dispatch(new BackfillExternalIdMessage((string) $id));
 
             return new RedirectResponse($this->urlGenerator->generate('settings_sync_review_index'));
         }
