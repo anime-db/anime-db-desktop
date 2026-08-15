@@ -31,10 +31,12 @@ use App\Entity\ValueObject\PluginId;
 use App\Service\Plugin\Exception\IncompatiblePluginCoreVersionException;
 use App\Service\Plugin\Exception\InvalidInstalledPluginException;
 use App\Service\Plugin\Exception\PluginAlreadyInstalledException;
+use App\Service\Plugin\Exception\PluginCacheWarmupException;
 use App\Service\Plugin\Exception\PluginInstallException;
 use App\Service\Plugin\Exception\PluginSyntaxErrorException;
 use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\PluginCacheWarmer;
+use App\Service\Plugin\PluginCacheWarmerInterface;
 use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Plugin\ZipPluginInstaller;
 use PHPUnit\Framework\TestCase;
@@ -334,6 +336,38 @@ final class ZipPluginInstallerTest extends TestCase
         }
     }
 
+    public function testInstallRollsBackAndResyncsRegistryWhenCacheWarmupFails(): void
+    {
+        $zipPath = $this->createZip([
+            'manifest.json' => $this->validManifestJson('animedb-shikimori'),
+        ]);
+
+        $installer = new ZipPluginInstaller(
+            $this->pluginsDir,
+            self::CORE_VERSION,
+            $this->registry,
+            new class implements PluginCacheWarmerInterface {
+                public function warmUp(): void
+                {
+                    throw new PluginCacheWarmupException('boom');
+                }
+            },
+        );
+
+        $this->expectException(PluginCacheWarmupException::class);
+
+        try {
+            $installer->install($zipPath);
+        } finally {
+            // The plugin directory moved into place by install() before the warm-up ran must not
+            // survive a failed warm-up, and the registry's index must be re-synced afterwards so
+            // it does not keep pointing at the now-removed directory.
+            $this->assertDirectoryDoesNotExist($this->pluginsDir.'/animedb-shikimori');
+            $this->assertFalse($this->registry->has(new PluginId('animedb-shikimori')));
+            $this->assertNoLeftoverTempDirectories();
+        }
+    }
+
     private function installer(): ZipPluginInstaller
     {
         return new ZipPluginInstaller($this->pluginsDir, self::CORE_VERSION, $this->registry, $this->cacheWarmer());
@@ -346,7 +380,7 @@ final class ZipPluginInstallerTest extends TestCase
      * PHP-binary/console-path resolution the way the earlier `php -l` linting is already
      * exercised for real in these tests.
      */
-    private function cacheWarmer(): PluginCacheWarmer
+    private function cacheWarmer(): PluginCacheWarmerInterface
     {
         return new PluginCacheWarmer($this->pluginsDir, \dirname(__DIR__, 4), new NullLogger());
     }

@@ -67,7 +67,7 @@ use Symfony\Component\Process\Process;
  * captured output attached, and the throwaway directory is always removed afterwards regardless
  * of the outcome.
  */
-final class PluginCacheWarmer
+final class PluginCacheWarmer implements PluginCacheWarmerInterface
 {
     /**
      * Same staging location as {@see ZipPluginInstaller}: a sibling of `%app.plugins_dir%`, not

@@ -84,7 +84,7 @@ final class ZipPluginInstaller
         private readonly string $pluginsDir,
         private readonly string $coreVersion,
         private readonly InstalledPluginsRegistry $registry,
-        private readonly PluginCacheWarmer $cacheWarmer,
+        private readonly PluginCacheWarmerInterface $cacheWarmer,
         private readonly ManifestParser $manifestParser = new ManifestParser(),
     ) {
     }
