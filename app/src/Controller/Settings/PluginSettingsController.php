@@ -31,6 +31,7 @@ use App\Entity\ValueObject\Exception\InvalidPluginIdException;
 use App\Entity\ValueObject\PluginId;
 use App\Message\BackfillExternalIdMessage;
 use App\Message\SyncSeedMessage;
+use App\Service\Plugin\Exception\PluginsConfigStoreLockedException;
 use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Plugin\SettingsPageRegistry;
@@ -83,6 +84,13 @@ use Twig\Environment;
  * short on a dead/missing OAuth session, {@see \App\MessageHandler\SyncSeedMessageHandler} resets
  * `syncSeeded` back to `false` itself, so the next visit (presumably after OAuth is finished)
  * retries connect-seed instead of it staying silently un-seeded forever.
+ *
+ * `markSeededIfFirstVisit()`'s underlying `updatePluginSettings()` lock has a bounded number of
+ * attempts (issue #340) and can throw {@see PluginsConfigStoreLockedException}
+ * on exhaustion — exactly the shape a prefetch-plus-click double GET produces, the two racing
+ * each other for the same lock (issue #422). That is lock contention, not a broken plugin, so it
+ * degrades the same way as `render()` failing below: skip the seed for this one visit and render
+ * the page normally, instead of a 500 for the whole settings page.
  */
 final class PluginSettingsController
 {
@@ -124,11 +132,28 @@ final class PluginSettingsController
             throw new NotFoundHttpException(\sprintf('Unknown plugin "%s".', $pluginId));
         }
 
-        if ($this->syncRegistry->findByPluginId($id) !== null && !$this->markSeededIfFirstVisit($id)) {
-            $this->messageBus->dispatch(new SyncSeedMessage((string) $id));
-            $this->messageBus->dispatch(new BackfillExternalIdMessage((string) $id));
+        if ($this->syncRegistry->findByPluginId($id) !== null) {
+            try {
+                $alreadySeeded = $this->markSeededIfFirstVisit($id);
+            } catch (PluginsConfigStoreLockedException $exception) {
+                // The lock is contended (e.g. a browser prefetch racing the user's own click,
+                // issue #422) rather than broken, so this must degrade like any other lock
+                // contention: skip the seed for this visit and fall through to a normal render.
+                // The next successful visit picks the seed back up.
+                $this->logger->info('Could not mark connect-seed as seeded because the plugins config store lock was exhausted; skipping seed dispatch for this visit.', [
+                    'pluginId' => $pluginId,
+                    'exception' => $exception,
+                ]);
 
-            return new RedirectResponse($this->urlGenerator->generate('settings_sync_review_index'));
+                $alreadySeeded = true;
+            }
+
+            if (!$alreadySeeded) {
+                $this->messageBus->dispatch(new SyncSeedMessage((string) $id));
+                $this->messageBus->dispatch(new BackfillExternalIdMessage((string) $id));
+
+                return new RedirectResponse($this->urlGenerator->generate('settings_sync_review_index'));
+            }
         }
 
         try {

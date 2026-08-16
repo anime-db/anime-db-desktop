@@ -266,6 +266,59 @@ final class PluginSettingsControllerTest extends TestCase
         $this->assertSame(200, $response->getStatusCode());
     }
 
+    public function testInvokeRendersThePluginsPageInsteadOf500WhenTheConfigStoreLockIsExhausted(): void
+    {
+        $this->writeManifest('animedb-shikimori', 'Shikimori');
+        file_put_contents($this->pluginsDir.'/plugins.json', (string) json_encode([
+            'animedb-shikimori' => ['features' => ['sync' => true]],
+        ]));
+        $this->installedPlugins->reconcile();
+
+        $sync = $this->createStub(SyncInterface::class);
+        $syncRegistry = new SyncRegistry(
+            ['animedb-shikimori' => $sync],
+            new PluginsConfigStore($this->pluginsDir.'/plugins.json'),
+        );
+
+        $page = $this->createMock(SettingsPageInterface::class);
+        $page->expects($this->once())->method('render')->willReturn('<form>settings</form>');
+        $settingsPages = new SettingsPageRegistry(['animedb-shikimori' => $page], $this->installedPlugins);
+
+        $messageBus = $this->createMock(MessageBusInterface::class);
+        $messageBus->expects($this->never())->method('dispatch');
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())->method('render')->willReturn('<html></html>');
+
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->once())->method('info');
+        $logger->expects($this->never())->method('error');
+
+        // A file lock opened via a separate handle in the same process still contends with
+        // itself (flock() locks belong to the open file description, not the process), so this
+        // reliably starves PluginsConfigStore::acquireLock() into PluginsConfigStoreLockedException
+        // without needing a second process or thread.
+        $lockHandle = fopen($this->pluginsDir.'/plugins.json.lock', 'c');
+        \assert($lockHandle !== false);
+        flock($lockHandle, \LOCK_EX);
+
+        try {
+            $controller = $this->createController(
+                $settingsPages,
+                twig: $twig,
+                logger: $logger,
+                syncRegistry: $syncRegistry,
+                messageBus: $messageBus,
+            );
+            $response = $controller('animedb-shikimori');
+        } finally {
+            flock($lockHandle, \LOCK_UN);
+            fclose($lockHandle);
+        }
+
+        $this->assertSame(200, $response->getStatusCode());
+    }
+
     public function testInvokeRendersAnInlineErrorAndLogsWhenRenderThrows(): void
     {
         $this->writeManifest('animedb-shikimori', 'Shikimori');
