@@ -224,12 +224,18 @@ if (!gotLock) {
             // Both the isolated warm-up (#222) and the reconcile step it runs after already
             // validated the plugin on disk — a failure here is specifically the live restart not
             // coming back healthy, which performReload() has already rolled back from by the time
-            // this fires (issue #411).
+            // this fires (issue #411). Routed as a non-blocking in-app notification rather than a
+            // blocking dialog (issue #417) — the 'app-notification' channel is generic so a future
+            // notification history/list can reuse it for other event sources.
             supervisor.events.on('plugin-activation-failed', ({ pluginId }) => {
-                dialog.showErrorBox(
-                    i18n.t('dialog.plugin_activation_failed_title', getLocale()),
-                    i18n.t('dialog.plugin_activation_failed_message', getLocale(), { pluginId }),
-                );
+                if (mainWindow && !mainWindow.isDestroyed()) {
+                    mainWindow.webContents.send('app-notification', {
+                        type:    'plugin-activation-failed',
+                        pluginId,
+                        title:   i18n.t('notification.plugin_activation_failed_title', getLocale()),
+                        message: i18n.t('notification.plugin_activation_failed_message', getLocale(), { pluginId }),
+                    });
+                }
             });
         } catch (err) {
             logCrash(err);

@@ -112,11 +112,13 @@ function loadLifecycle() {
 
     const fakeWindow = {
         isMinimized: jest.fn(() => false),
+        isDestroyed: jest.fn(() => false),
         show:        jest.fn(),
         hide:        jest.fn(),
         focus:       jest.fn(),
         restore:     jest.fn(),
         on:          jest.fn(),
+        webContents: { send: jest.fn() },
     };
     createWindow.mockReturnValue(fakeWindow);
 
@@ -404,15 +406,30 @@ describe('plugin activation (issue #411)', () => {
         consoleError.mockRestore();
     });
 
-    test('a plugin-activation-failed event shows a localized error dialog naming the plugin', async () => {
-        const { dialog, supervisorEventHandlers } = loadLifecycle();
+    // issue #417: a blocking dialog.showErrorBox is the wrong surface for a background event —
+    // it interrupts the user for something that has already been rolled back to a working state.
+    // The event is now routed to the window as a non-blocking, localized in-app notification.
+    test('a plugin-activation-failed event sends a localized in-app notification naming the plugin, not a blocking dialog', async () => {
+        const { dialog, fakeWindow, supervisorEventHandlers } = loadLifecycle();
         await new Promise((r) => setTimeout(r, 500));
 
         supervisorEventHandlers['plugin-activation-failed']({ pluginId: 'animedb-shikimori' });
 
-        expect(dialog.showErrorBox).toHaveBeenCalledWith(
-            'Активация плагина',
-            'Не удалось активировать плагин «animedb-shikimori». Приложение восстановлено в рабочее состояние без него.',
-        );
+        expect(fakeWindow.webContents.send).toHaveBeenCalledWith('app-notification', {
+            type:    'plugin-activation-failed',
+            pluginId: 'animedb-shikimori',
+            title:   'Активация плагина',
+            message: 'Не удалось активировать плагин «animedb-shikimori». Приложение восстановлено в рабочее состояние без него.',
+        });
+        expect(dialog.showErrorBox).not.toHaveBeenCalled();
+    });
+
+    test('a plugin-activation-failed event after the window is destroyed does not throw', async () => {
+        const { fakeWindow, supervisorEventHandlers } = loadLifecycle();
+        await new Promise((r) => setTimeout(r, 500));
+        fakeWindow.isDestroyed.mockReturnValue(true);
+
+        expect(() => supervisorEventHandlers['plugin-activation-failed']({ pluginId: 'animedb-shikimori' })).not.toThrow();
+        expect(fakeWindow.webContents.send).not.toHaveBeenCalled();
     });
 });

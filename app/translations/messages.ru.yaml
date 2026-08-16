@@ -408,4 +408,7 @@ storage_edit:
 plugin_widget:
     loading: Загрузка…
     error: 'Не удалось загрузить виджет источника «%source%».'
+
+app_notification:
+    close_button: Закрыть
     retry_button: Повторить

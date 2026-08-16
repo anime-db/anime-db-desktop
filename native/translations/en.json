@@ -14,8 +14,8 @@
     "dialog.firewall_error_title": "Windows Firewall",
     "dialog.firewall_error_message": "Could not change the inbound rule for the torrent client: %message%",
 
-    "dialog.plugin_activation_failed_title": "Plugin activation",
-    "dialog.plugin_activation_failed_message": "Could not activate the plugin \"%pluginId%\". The app has been restored to a working state without it.",
+    "notification.plugin_activation_failed_title": "Plugin activation",
+    "notification.plugin_activation_failed_message": "Could not activate the plugin \"%pluginId%\". The app has been restored to a working state without it.",
 
     "dialog.migration_downgrade_title": "Incompatible data version",
     "dialog.migration_downgrade_message": "The data folder was created by a newer version of AnimeDB and is incompatible with this version of the app.\n\nTo continue, delete the user data folder:\n%userDataDir%\n\nand reinstall the app. The regular uninstaller does not remove this folder.",

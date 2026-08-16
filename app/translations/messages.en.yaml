@@ -408,4 +408,7 @@ storage_edit:
 plugin_widget:
     loading: Loading…
     error: 'Failed to load the "%source%" widget.'
+
+app_notification:
+    close_button: Close
     retry_button: Retry
