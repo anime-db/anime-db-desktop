@@ -601,6 +601,78 @@ final class MarketControllerTest extends TestCase
         $controller->index(Request::create('/settings/market'));
     }
 
+    public function testIndexDoesNotMarkUpdateAvailableWhenTheResolvedVersionIsOlderThanTheInstalledOne(): void
+    {
+        $dir = $this->pluginsDir.'/animedb-shikimori';
+        mkdir($dir, recursive: true);
+        file_put_contents($dir.'/manifest.json', (string) json_encode($this->manifest('animedb-shikimori', '2.0.0')));
+        $this->installedPlugins->reconcile();
+
+        $registryJson = $this->registryJson($this->manifest('animedb-shikimori', '1.5.0'), [
+            ['version' => '1.5.0', 'core' => '>=2.0.0', 'sha256' => 'abc123'],
+        ]);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('settings/market/index.html.twig', $this->callback(static function (array $params): bool {
+                self::assertTrue($params['items'][0]['installed']);
+                self::assertFalse($params['items'][0]['updateAvailable']);
+
+                return true;
+            }))
+            ->willReturn('<html></html>');
+
+        $controller = new MarketController(
+            $this->registryLoaderServing($registryJson),
+            $this->assetDownloaderServingPluginZip(),
+            $this->installer(),
+            $this->installedPlugins,
+            self::CORE_VERSION,
+            $this->alwaysValidCsrf(),
+            $this->createStub(UrlGeneratorInterface::class),
+            $twig,
+        );
+
+        $controller->index(Request::create('/settings/market'));
+    }
+
+    public function testIndexDoesNotMarkUpdateAvailableWhenVersionsAreSemanticallyEqualButWrittenDifferently(): void
+    {
+        $dir = $this->pluginsDir.'/animedb-shikimori';
+        mkdir($dir, recursive: true);
+        file_put_contents($dir.'/manifest.json', (string) json_encode($this->manifest('animedb-shikimori', '1.0')));
+        $this->installedPlugins->reconcile();
+
+        $registryJson = $this->registryJson($this->manifest('animedb-shikimori', '1.0.0'), [
+            ['version' => '1.0.0', 'core' => '>=2.0.0', 'sha256' => 'abc123'],
+        ]);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('settings/market/index.html.twig', $this->callback(static function (array $params): bool {
+                self::assertTrue($params['items'][0]['installed']);
+                self::assertFalse($params['items'][0]['updateAvailable']);
+
+                return true;
+            }))
+            ->willReturn('<html></html>');
+
+        $controller = new MarketController(
+            $this->registryLoaderServing($registryJson),
+            $this->assetDownloaderServingPluginZip(),
+            $this->installer(),
+            $this->installedPlugins,
+            self::CORE_VERSION,
+            $this->alwaysValidCsrf(),
+            $this->createStub(UrlGeneratorInterface::class),
+            $twig,
+        );
+
+        $controller->index(Request::create('/settings/market'));
+    }
+
     public function testUpdateRedirectsToIndexWithUpdatedPluginIdOnSuccess(): void
     {
         $dir = $this->pluginsDir.'/animedb-shikimori';
