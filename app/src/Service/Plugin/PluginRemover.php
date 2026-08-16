@@ -44,6 +44,12 @@ use App\Entity\ValueObject\PluginId;
  * A no-op (besides the reconcile) when the plugin id is not currently installed — the caller may
  * race with a manual removal or an already-completed rollback, and idempotency here means it does
  * not need to check first.
+ *
+ * Runs under {@see InstalledPluginsRegistry::synchronized()} (issue #420), the same exclusive lock
+ * {@see ZipPluginInstaller::install()}/`update()` already hold for their own whole operation — see
+ * that lock's docblock for why: FrankenPHP's worker mode runs requests in parallel on a shared
+ * filesystem, so without it a remove could interleave with a concurrent install/update touching
+ * the same or a different plugin id.
  */
 final class PluginRemover
 {
@@ -53,30 +59,13 @@ final class PluginRemover
 
     public function remove(PluginId $id): void
     {
-        $installed = $this->registry->get($id);
-        if ($installed !== null) {
-            $this->removeDirectory($installed->installPath);
-        }
-
-        $this->registry->reconcile();
-    }
-
-    private function removeDirectory(string $dir): void
-    {
-        if (!is_dir($dir)) {
-            return;
-        }
-
-        $entries = scandir($dir);
-        foreach ($entries === false ? [] : $entries as $entry) {
-            if ($entry === '.' || $entry === '..') {
-                continue;
+        $this->registry->synchronized(function () use ($id): void {
+            $installed = $this->registry->get($id);
+            if ($installed !== null) {
+                PluginDirectoryRemover::remove($installed->installPath);
             }
 
-            $path = $dir.\DIRECTORY_SEPARATOR.$entry;
-            is_dir($path) && !is_link($path) ? $this->removeDirectory($path) : unlink($path);
-        }
-
-        rmdir($dir);
+            $this->registry->reconcile();
+        });
     }
 }

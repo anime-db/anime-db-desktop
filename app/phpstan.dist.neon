@@ -19,6 +19,8 @@ parameters:
     # CLI invocation.
     excludePaths:
         - tests/Fixtures/Plugin/increment-counter.php
+        - tests/Fixtures/Plugin/reconcile-loop.php
+        - tests/Fixtures/Plugin/install-plugin.php
         - tests/Fixtures/set-config-key.php
     bootstrapFiles:
         - tests/bootstrap.php
