@@ -19,12 +19,48 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-'use strict';
+.app-notifications {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-width: 360px;
+}
 
-const { contextBridge, ipcRenderer } = require('electron');
+.app-notification {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 10px 12px;
+    border-radius: 6px;
+    background: #f2dede;
+    color: #a94442;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+}
 
-contextBridge.exposeInMainWorld('animeDb', {
-    openPath:   (targetPath) => ipcRenderer.invoke('shell:open-path', targetPath),
-    pickFolder: () => ipcRenderer.invoke('dialog:pick-folder'),
-    onNotification: (callback) => ipcRenderer.on('app-notification', (_event, data) => callback(data)),
-});
+.app-notification__text {
+    flex: 1;
+}
+
+.app-notification__title {
+    display: block;
+    margin-bottom: 2px;
+}
+
+.app-notification__message {
+    margin: 0;
+    font-size: 0.9em;
+}
+
+.app-notification__close {
+    border: none;
+    background: none;
+    padding: 0;
+    color: inherit;
+    font-size: 1.1em;
+    line-height: 1;
+    cursor: pointer;
+}

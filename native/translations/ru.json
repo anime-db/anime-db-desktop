@@ -14,8 +14,8 @@
     "dialog.firewall_error_title": "Брандмауэр Windows",
     "dialog.firewall_error_message": "Не удалось изменить правило для входящих подключений торрент-клиента: %message%",
 
-    "dialog.plugin_activation_failed_title": "Активация плагина",
-    "dialog.plugin_activation_failed_message": "Не удалось активировать плагин «%pluginId%». Приложение восстановлено в рабочее состояние без него.",
+    "notification.plugin_activation_failed_title": "Активация плагина",
+    "notification.plugin_activation_failed_message": "Не удалось активировать плагин «%pluginId%». Приложение восстановлено в рабочее состояние без него.",
 
     "dialog.migration_downgrade_title": "Несовместимая версия данных",
     "dialog.migration_downgrade_message": "Каталог данных был создан более новой версией AnimeDB и несовместим с этой версией приложения.\n\nЧтобы продолжить, удалите папку с пользовательскими данными:\n%userDataDir%\n\nи установите приложение заново. Обычное удаление приложения эту папку не затрагивает.",

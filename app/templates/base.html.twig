@@ -24,12 +24,24 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}AnimeDB{% endblock %}</title>
+    <link rel="stylesheet" href="{{ asset('css/app-notifications.css') }}">
     {% block stylesheets %}{% endblock %}
 </head>
 <body>
     {% block body %}{% endblock %}
+    <div id="app-notifications" class="app-notifications" aria-live="polite"></div>
+    <template id="app-notification-template">
+        <div class="app-notification" role="alert">
+            <div class="app-notification__text">
+                <strong class="app-notification__title"></strong>
+                <p class="app-notification__message"></p>
+            </div>
+            <button type="button" class="app-notification__close" aria-label="{{ 'app_notification.close_button'|trans }}">&times;</button>
+        </div>
+    </template>
     <script src="{{ asset('js/htmx.min.js') }}"></script>
     <script src="{{ asset('js/translations.js') }}"></script>
+    <script src="{{ asset('js/app-notifications.js') }}"></script>
     {% block javascripts %}{% endblock %}
 </body>
 </html>

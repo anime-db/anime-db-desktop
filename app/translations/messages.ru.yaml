@@ -409,3 +409,6 @@ plugin_widget:
     loading: Загрузка…
     error: 'Не удалось загрузить виджет источника «%source%».'
     retry_button: Повторить
+
+app_notification:
+    close_button: Закрыть
