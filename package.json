@@ -8,7 +8,7 @@
     "scripts": {
         "start": "electron .",
         "prebuild": "node scripts/build.js",
-        "build": "electron-builder",
+        "build": "electron-builder --publish never",
         "download-bins": "node scripts/download-bins.js",
         "lint": "eslint native/",
         "lint:fix": "eslint native/ --fix",
