@@ -101,11 +101,21 @@ use Symfony\Component\Process\Process;
  * not in its directory, so they survive the directory swap unconditionally — migrating a settings
  * schema across versions is the plugin's own init code's job, not this installer's.
  *
+ * Both {@see self::install()} and {@see self::update()} run their mutating work under
+ * {@see InstalledPluginsRegistry::synchronized()} (issue #420), the same exclusive lock
+ * {@see InstalledPluginsRegistry::reconcile()} itself acquires: FrankenPHP's worker mode runs
+ * requests in parallel on a shared filesystem, so without it a concurrent install of the same
+ * plugin id (or an install racing a remove) could interleave — see the lock's own docblock.
+ *
  * Deliberately still out of scope here: any UI, and enabling an already-installed plugin.
  */
 final class ZipPluginInstaller
 {
     private const STAGING_DIR_NAME = '.plugin-install-tmp';
+
+    /** @see self::moveWithRetries() */
+    private const int RESTORE_MOVE_MAX_ATTEMPTS = 5;
+    private const int RESTORE_MOVE_RETRY_DELAY_MICROSECONDS = 200_000;
 
     /**
      * Keep this string in sync with WORKERS_RELOAD_EVENT in native/supervisor/index.js — a
@@ -143,6 +153,36 @@ final class ZipPluginInstaller
      */
     public function install(string $zipPath, bool $trusted = false): PluginId
     {
+        $pluginId = $this->registry->synchronized(fn (): PluginId => $this->doInstall($zipPath, $trusted));
+
+        // Deliberately outside the lock and the try/catch inside doInstall(): the install is
+        // already complete at this point (moved into place, registry re-synced, cache warm-up
+        // passed), so a failure to publish this best-effort notification must not roll it back —
+        // see the class docblock. There is also no reason to keep holding the exclusive plugin
+        // filesystem lock for a notification that touches neither the index nor a plugin directory.
+        try {
+            $this->wsPublisher->publish(self::WORKERS_RELOAD_EVENT, ['pluginId' => (string) $pluginId]);
+        } catch (\Throwable $exception) {
+            $this->logger->warning('Failed to publish {event} for plugin {pluginId}: {message}', [
+                'event' => self::WORKERS_RELOAD_EVENT,
+                'pluginId' => (string) $pluginId,
+                'message' => $exception->getMessage(),
+                'exception' => $exception,
+            ]);
+        }
+
+        return $pluginId;
+    }
+
+    /**
+     * The mutating body of {@see self::install()}, run under {@see InstalledPluginsRegistry::synchronized()}
+     * so a concurrent install of the same plugin id blocks instead of racing this one — the
+     * loser sees {@see PluginAlreadyInstalledException} from the checks below once the winner's
+     * whole operation has already finished, rather than both passing the check and one deleting
+     * the other's freshly installed directory (issue #420).
+     */
+    private function doInstall(string $zipPath, bool $trusted): PluginId
+    {
         $tmpDir = $this->createTmpDir();
         $moveStarted = false;
         $targetDir = null;
@@ -170,33 +210,45 @@ final class ZipPluginInstaller
             $this->cacheWarmer->warmUp();
         } catch (\Throwable $exception) {
             if ($moveStarted && $targetDir !== null) {
-                $this->removeDirectory($targetDir);
-                // The index above may already have been rewritten with an entry pointing at the
-                // directory just removed (e.g. a cache warm-up failure, which runs after
-                // reconcile()) — re-sync it so a stale entry does not outlive the rollback.
-                $this->registry->reconcile();
+                $this->rollbackFailedMove($targetDir);
             }
 
             throw $exception;
         } finally {
-            $this->removeDirectory($tmpDir);
+            $this->cleanupStagingDirectory($tmpDir);
         }
 
-        // Deliberately outside the try/catch above: the install is already complete at this
-        // point (moved into place, registry re-synced, cache warm-up passed), so a failure to
-        // publish this best-effort notification must not roll it back — see the class docblock.
+        return $pluginId;
+    }
+
+    /**
+     * Rolls back a directory moved into place by a failed {@see self::doInstall()}. Deliberately
+     * swallows (logs instead of throwing) any failure of its own: this already runs inside a catch
+     * block reacting to the real failure (a bad manifest, an incompatible core version, a failed
+     * cache warm-up, ...), and letting a rollback failure replace that exception would mask the
+     * actual reason the install failed behind an unrelated filesystem error.
+     */
+    private function rollbackFailedMove(string $targetDir): void
+    {
         try {
-            $this->wsPublisher->publish(self::WORKERS_RELOAD_EVENT, ['pluginId' => (string) $pluginId]);
+            PluginDirectoryRemover::remove($targetDir);
         } catch (\Throwable $exception) {
-            $this->logger->warning('Failed to publish {event} for plugin {pluginId}: {message}', [
-                'event' => self::WORKERS_RELOAD_EVENT,
-                'pluginId' => (string) $pluginId,
-                'message' => $exception->getMessage(),
+            $this->logger->error('Failed to remove a plugin directory while rolling back a failed install.', [
+                'targetDir' => $targetDir,
                 'exception' => $exception,
             ]);
         }
 
-        return $pluginId;
+        // The index may already have been rewritten with an entry pointing at the directory just
+        // (attempted to be) removed above (e.g. a cache warm-up failure, which runs after
+        // reconcile()) — re-sync it so a stale entry does not outlive the rollback.
+        try {
+            $this->registry->reconcile();
+        } catch (\Throwable $exception) {
+            $this->logger->error('Failed to re-sync the plugin index after rolling back a failed install.', [
+                'exception' => $exception,
+            ]);
+        }
     }
 
     /**
@@ -235,6 +287,32 @@ final class ZipPluginInstaller
      */
     public function update(string $zipPath, bool $trusted = false): PluginId
     {
+        $pluginId = $this->registry->synchronized(fn (): PluginId => $this->doUpdate($zipPath, $trusted));
+
+        // Deliberately outside the lock and the try/catch inside doUpdate(): the update is
+        // already complete at this point (new version moved into place, registry re-synced,
+        // cache warm-up passed), so a failure to publish this best-effort notification must not
+        // roll it back — see the class docblock.
+        try {
+            $this->wsPublisher->publish(self::WORKERS_RELOAD_EVENT, ['pluginId' => (string) $pluginId]);
+        } catch (\Throwable $exception) {
+            $this->logger->warning('Failed to publish {event} for plugin {pluginId}: {message}', [
+                'event' => self::WORKERS_RELOAD_EVENT,
+                'pluginId' => (string) $pluginId,
+                'message' => $exception->getMessage(),
+                'exception' => $exception,
+            ]);
+        }
+
+        return $pluginId;
+    }
+
+    /**
+     * The mutating body of {@see self::update()}, run under {@see InstalledPluginsRegistry::synchronized()}
+     * — same rationale as {@see self::doInstall()}.
+     */
+    private function doUpdate(string $zipPath, bool $trusted): PluginId
+    {
         $tmpDir = $this->createTmpDir();
         $targetDir = null;
         $backupDir = null;
@@ -268,35 +346,55 @@ final class ZipPluginInstaller
             $this->cacheWarmer->warmUp();
         } catch (\Throwable $exception) {
             if ($backedUp && $targetDir !== null && $backupDir !== null) {
-                if ($newVersionInPlace) {
-                    $this->removeDirectory($targetDir);
-                }
-                $this->move($backupDir, $targetDir);
-                $this->registry->reconcile();
+                $this->restoreBackup($targetDir, $backupDir, $newVersionInPlace);
             }
 
             throw $exception;
         } finally {
-            $this->removeDirectory($tmpDir);
+            $this->cleanupStagingDirectory($tmpDir);
         }
 
-        $this->removeDirectory($backupDir);
-
-        // Deliberately outside the try/catch above: the update is already complete at this point
-        // (new version moved into place, registry re-synced, cache warm-up passed), so a failure
-        // to publish this best-effort notification must not roll it back — see the class docblock.
-        try {
-            $this->wsPublisher->publish(self::WORKERS_RELOAD_EVENT, ['pluginId' => (string) $pluginId]);
-        } catch (\Throwable $exception) {
-            $this->logger->warning('Failed to publish {event} for plugin {pluginId}: {message}', [
-                'event' => self::WORKERS_RELOAD_EVENT,
-                'pluginId' => (string) $pluginId,
-                'message' => $exception->getMessage(),
-                'exception' => $exception,
-            ]);
-        }
+        $this->cleanupStagingDirectory($backupDir);
 
         return $pluginId;
+    }
+
+    /**
+     * Restores the previous version after a failed update. Retries the swap back — a file inside
+     * either directory may briefly still be held open, the same reason {@see PluginCacheWarmer::removeDirectory()}
+     * retries its own cleanup — and deliberately never lets a restore failure itself replace the
+     * exception that triggered the rollback: that would mask e.g. the actual
+     * {@see Exception\PluginCacheWarmupException} behind an unrelated filesystem error, exactly
+     * the failure mode issue #420 calls out. A restore failure is logged instead, and the index is
+     * best-effort re-synced regardless: with $targetDir left missing, empty, or only partially
+     * restored, {@see InstalledPluginsRegistry::reconcile()} simply finds no readable
+     * `manifest.json` there and drops the plugin from the index rather than leaving it pointing at
+     * a directory that no longer holds a working plugin.
+     */
+    private function restoreBackup(string $targetDir, string $backupDir, bool $newVersionInPlace): void
+    {
+        try {
+            if ($newVersionInPlace) {
+                PluginDirectoryRemover::remove($targetDir);
+            }
+
+            $this->moveWithRetries($backupDir, $targetDir);
+            $this->registry->reconcile();
+        } catch (\Throwable $restoreException) {
+            $this->logger->error('Failed to restore the previous plugin version after a failed update.', [
+                'targetDir' => $targetDir,
+                'backupDir' => $backupDir,
+                'exception' => $restoreException,
+            ]);
+
+            try {
+                $this->registry->reconcile();
+            } catch (\Throwable $reconcileException) {
+                $this->logger->error('Failed to re-sync the plugin index after a failed update restore.', [
+                    'exception' => $reconcileException,
+                ]);
+            }
+        }
     }
 
     private function stagingRootDir(): string
@@ -475,22 +573,41 @@ final class ZipPluginInstaller
         }
     }
 
-    private function removeDirectory(string $dir): void
+    /**
+     * Used only by {@see self::restoreBackup()}: unlike {@see self::move()}, a failure to swap the
+     * backup back into place is not the end state to report — the whole point is to make one more
+     * attempt at making the app's disk state consistent again before giving up.
+     */
+    private function moveWithRetries(string $source, string $destination): void
     {
-        if (!is_dir($dir)) {
-            return;
-        }
-
-        $entries = scandir($dir);
-        foreach ($entries === false ? [] : $entries as $entry) {
-            if ($entry === '.' || $entry === '..') {
-                continue;
+        for ($attempt = 1; $attempt <= self::RESTORE_MOVE_MAX_ATTEMPTS; ++$attempt) {
+            if (@rename($source, $destination)) {
+                return;
             }
 
-            $path = $dir.\DIRECTORY_SEPARATOR.$entry;
-            is_dir($path) && !is_link($path) ? $this->removeDirectory($path) : unlink($path);
+            if ($attempt < self::RESTORE_MOVE_MAX_ATTEMPTS) {
+                usleep(self::RESTORE_MOVE_RETRY_DELAY_MICROSECONDS);
+            }
         }
 
-        rmdir($dir);
+        throw new PluginInstallException(\sprintf('Unable to move "%s" to "%s".', $source, $destination));
+    }
+
+    /**
+     * Cleanup of a staging/backup directory this installer created itself, as opposed to a plugin
+     * directory rollback ({@see self::rollbackFailedMove()}, {@see self::restoreBackup()}): a
+     * failure here is logged, not thrown, since it never runs from inside a catch block reacting
+     * to a more important failure and leftover staging clutter is not itself a correctness problem.
+     */
+    private function cleanupStagingDirectory(string $dir): void
+    {
+        try {
+            PluginDirectoryRemover::remove($dir);
+        } catch (\Throwable $exception) {
+            $this->logger->warning('Failed to remove a plugin installer staging directory.', [
+                'dir' => $dir,
+                'exception' => $exception,
+            ]);
+        }
     }
 }

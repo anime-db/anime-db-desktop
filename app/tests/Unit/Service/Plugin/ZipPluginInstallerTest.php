@@ -42,11 +42,22 @@ use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Plugin\ZipPluginInstaller;
 use App\Service\WsPublisher;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 
 final class ZipPluginInstallerTest extends TestCase
 {
     private const CORE_VERSION = '2.5.0';
+
+    /**
+     * {@see InstalledPluginsRegistry::synchronized()} leaves a `.plugins.lock`
+     * file behind in $pluginsDir on first use, the same permanent-sentinel pattern
+     * {@see PluginsConfigStore} already uses for `plugins.json.lock` — a
+     * "nothing left behind" assertion below is about plugin directories, not this lock file.
+     *
+     * @var list<string>
+     */
+    private const array PLUGINS_DIR_HOUSEKEEPING_ENTRIES = ['.', '..', '.plugins.lock'];
 
     private string $rootDir;
     private string $pluginsDir;
@@ -115,7 +126,7 @@ final class ZipPluginInstallerTest extends TestCase
         try {
             $installer->install($zipPath);
         } finally {
-            $this->assertSame([], scandir($this->pluginsDir) === false ? [] : array_values(array_diff((array) scandir($this->pluginsDir), ['.', '..'])));
+            $this->assertSame([], scandir($this->pluginsDir) === false ? [] : array_values(array_diff((array) scandir($this->pluginsDir), self::PLUGINS_DIR_HOUSEKEEPING_ENTRIES)));
             $this->assertNoLeftoverTempDirectories();
         }
     }
@@ -133,7 +144,7 @@ final class ZipPluginInstallerTest extends TestCase
         try {
             $installer->install($zipPath);
         } finally {
-            $this->assertSame([], array_values(array_diff((array) scandir($this->pluginsDir), ['.', '..'])));
+            $this->assertSame([], array_values(array_diff((array) scandir($this->pluginsDir), self::PLUGINS_DIR_HOUSEKEEPING_ENTRIES)));
             $this->assertNoLeftoverTempDirectories();
         }
     }
@@ -199,7 +210,7 @@ final class ZipPluginInstallerTest extends TestCase
         try {
             $installer->install($zipPath);
         } finally {
-            $this->assertSame([], array_values(array_diff((array) scandir($this->pluginsDir), ['.', '..'])));
+            $this->assertSame([], array_values(array_diff((array) scandir($this->pluginsDir), self::PLUGINS_DIR_HOUSEKEEPING_ENTRIES)));
             $this->assertNoLeftoverTempDirectories();
         }
     }
@@ -258,7 +269,7 @@ final class ZipPluginInstallerTest extends TestCase
         try {
             $installer->install($zipPath);
         } finally {
-            $this->assertSame([], array_values(array_diff((array) scandir($this->pluginsDir), ['.', '..'])));
+            $this->assertSame([], array_values(array_diff((array) scandir($this->pluginsDir), self::PLUGINS_DIR_HOUSEKEEPING_ENTRIES)));
             $this->assertFileDoesNotExist(\dirname($this->pluginsDir).'/escaped.txt');
             $this->assertNoLeftoverTempDirectories();
         }
@@ -291,7 +302,7 @@ final class ZipPluginInstallerTest extends TestCase
             $this->assertSame('>=99.0.0', $exception->requiredCore);
             $this->assertSame(self::CORE_VERSION, $exception->currentCore);
         } finally {
-            $this->assertSame([], array_values(array_diff((array) scandir($this->pluginsDir), ['.', '..'])));
+            $this->assertSame([], array_values(array_diff((array) scandir($this->pluginsDir), self::PLUGINS_DIR_HOUSEKEEPING_ENTRIES)));
             $this->assertFalse($this->registry->has(new PluginId('animedb-shikimori')));
             $this->assertNoLeftoverTempDirectories();
         }
@@ -332,7 +343,7 @@ final class ZipPluginInstallerTest extends TestCase
             $this->assertStringNotContainsString('.plugin-install-tmp', $exception->errors[0]->message);
             $this->assertStringContainsString('src/Plugin.php', $exception->getMessage());
         } finally {
-            $this->assertSame([], array_values(array_diff((array) scandir($this->pluginsDir), ['.', '..'])));
+            $this->assertSame([], array_values(array_diff((array) scandir($this->pluginsDir), self::PLUGINS_DIR_HOUSEKEEPING_ENTRIES)));
             $this->assertFalse($this->registry->has(new PluginId('animedb-shikimori')));
             $this->assertNoLeftoverTempDirectories();
         }
@@ -559,6 +570,81 @@ final class ZipPluginInstallerTest extends TestCase
                 $configStore->getSettingsStorePayload(new PluginId('animedb-shikimori')),
             );
             $this->assertNoLeftoverTempDirectories();
+        }
+    }
+
+    /**
+     * Regression test for issue #420 defect C: if restoring the backup itself fails (e.g. a file
+     * inside it is locked, simulated here by deleting the backup out from under the installer
+     * before it gets a chance to move it back), the exception update() throws must still be the
+     * *original* failure (the cache warm-up here), not an unrelated filesystem error masking it —
+     * and the restore failure itself must be logged, not silently swallowed.
+     */
+    public function testUpdatePreservesTheOriginalExceptionWhenRestoringTheBackupFails(): void
+    {
+        mkdir($this->pluginsDir.'/animedb-shikimori', recursive: true);
+        file_put_contents($this->pluginsDir.'/animedb-shikimori/manifest.json', $this->validManifestJson('animedb-shikimori', '1.0.0'));
+        $this->registry->reconcile();
+
+        $zipPath = $this->createZip(['manifest.json' => $this->validManifestJson('animedb-shikimori', '2.0.0')]);
+
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->atLeastOnce())->method('error')->with(
+            $this->stringContains('Failed to restore the previous plugin version'),
+            $this->anything(),
+        );
+
+        $installer = new ZipPluginInstaller(
+            $this->pluginsDir,
+            self::CORE_VERSION,
+            $this->registry,
+            new class($this->rootDir) implements PluginCacheWarmerInterface {
+                public function __construct(private readonly string $rootDir)
+                {
+                }
+
+                public function warmUp(): void
+                {
+                    $stagingRoot = $this->rootDir.'/.plugin-install-tmp';
+                    $entries = scandir($stagingRoot);
+                    foreach ($entries === false ? [] : $entries as $entry) {
+                        if (str_starts_with($entry, 'anime-db-plugin-update-backup-')) {
+                            $this->removeDirectory($stagingRoot.'/'.$entry);
+                        }
+                    }
+
+                    throw new PluginCacheWarmupException('boom');
+                }
+
+                private function removeDirectory(string $dir): void
+                {
+                    $entries = scandir($dir);
+                    foreach ($entries === false ? [] : $entries as $entry) {
+                        if ($entry === '.' || $entry === '..') {
+                            continue;
+                        }
+
+                        $path = $dir.'/'.$entry;
+                        is_dir($path) ? $this->removeDirectory($path) : unlink($path);
+                    }
+
+                    rmdir($dir);
+                }
+            },
+            $this->createStub(WsPublisher::class),
+            logger: $logger,
+        );
+
+        $this->expectException(PluginCacheWarmupException::class);
+
+        try {
+            $installer->update($zipPath);
+        } finally {
+            // With the backup unrecoverable, the target directory is left empty (its old content
+            // was already removed to make room for the restore) — reconcile() correctly drops the
+            // plugin from the index rather than leaving it pointing at a directory with no
+            // manifest.json, instead of the index staying stuck on a version that no longer works.
+            $this->assertFalse($this->registry->has(new PluginId('animedb-shikimori')));
         }
     }
 

@@ -55,6 +55,12 @@ use Psr\Log\LoggerInterface;
  * `enabled` is deliberately not part of the persisted index: {@see PluginsConfigStore} is already
  * the single source of truth for it (issue #219), so every read here re-derives it from there
  * instead of risking the two falling out of sync.
+ *
+ * {@see self::synchronized()} serializes {@see self::reconcile()} against itself and against the
+ * installer/remover operations that call it, across FrankenPHP worker threads/processes (issue
+ * #420) — see {@see PluginFileLock}. Reads below (`all()`, `enabled()`, `get()`, `has()`) stay
+ * lock-free: the index file's `rename()`-based publish already guarantees a reader sees a wholly
+ * old or wholly new version of it.
  */
 final class InstalledPluginsRegistry
 {
@@ -109,34 +115,56 @@ final class InstalledPluginsRegistry
      */
     public function reconcile(): void
     {
-        $entries = [];
+        $this->synchronized(function (): void {
+            $entries = [];
 
-        foreach ($this->scanPluginDirectories() as $pluginDir) {
-            try {
-                $manifest = $this->parseManifest($pluginDir);
-            } catch (InvalidInstalledPluginException $exception) {
-                $this->logger->error('Skipping installed plugin with an invalid manifest.json.', [
-                    'pluginDir' => $pluginDir,
-                    'errors' => array_map(
-                        static fn (ManifestValidationError $error): array => [
-                            'field' => $error->field,
-                            'message' => $error->message,
-                        ],
-                        $exception->errors,
-                    ),
-                    'exception' => $exception,
-                ]);
+            foreach ($this->scanPluginDirectories() as $pluginDir) {
+                try {
+                    $manifest = $this->parseManifest($pluginDir);
+                } catch (InvalidInstalledPluginException $exception) {
+                    $this->logger->error('Skipping installed plugin with an invalid manifest.json.', [
+                        'pluginDir' => $pluginDir,
+                        'errors' => array_map(
+                            static fn (ManifestValidationError $error): array => [
+                                'field' => $error->field,
+                                'message' => $error->message,
+                            ],
+                            $exception->errors,
+                        ),
+                        'exception' => $exception,
+                    ]);
 
-                continue;
+                    continue;
+                }
+
+                $entries[$manifest->id] = [
+                    'installPath' => $pluginDir,
+                    'manifest' => $this->manifestToArray($manifest),
+                ];
             }
 
-            $entries[$manifest->id] = [
-                'installPath' => $pluginDir,
-                'manifest' => $this->manifestToArray($manifest),
-            ];
-        }
+            $this->writeIndex($entries);
+        });
+    }
 
-        $this->writeIndex($entries);
+    /**
+     * Runs $callback under the same exclusive, process-wide lock {@see self::reconcile()} itself
+     * acquires — {@see ZipPluginInstaller::install()}/`update()` and {@see PluginRemover::remove()}
+     * wrap their whole operation in this so a concurrent request can never observe, or race against,
+     * a half-finished install/update/remove on the shared plugin filesystem layer (issue #420).
+     * Reentrant: calling this from within an already-synchronized callback (reconcile() is called by
+     * all three of the above once their own file moves are done) does not deadlock — see
+     * {@see PluginFileLock}.
+     *
+     * @template T
+     *
+     * @param callable(): T $callback
+     *
+     * @return T
+     */
+    public function synchronized(callable $callback): mixed
+    {
+        return PluginFileLock::synchronized($this->lockPath(), $callback);
     }
 
     /**
@@ -296,8 +324,13 @@ final class InstalledPluginsRegistry
 
         $contents = "<?php\n\nreturn ".var_export($entries, true).";\n";
 
-        $tmpPath = $this->indexPath().'.tmp';
-        if (file_put_contents($tmpPath, $contents) === false) {
+        // A random suffix (rather than the fixed name this used to be) plus LOCK_EX means a
+        // concurrent writer that somehow bypassed self::synchronized() can no longer interleave
+        // with this one on the same .tmp file and publish a syntactically broken index — see the
+        // class docblock and issue #420. self::synchronized() already serializes every caller
+        // that goes through reconcile(), so this is defence in depth, not the primary guard.
+        $tmpPath = $this->indexPath().'.tmp.'.bin2hex(random_bytes(8));
+        if (file_put_contents($tmpPath, $contents, \LOCK_EX) === false) {
             throw new InstalledPluginsRegistryException(\sprintf('Unable to write "%s".', $tmpPath));
         }
 
@@ -309,5 +342,10 @@ final class InstalledPluginsRegistry
     private function indexPath(): string
     {
         return $this->pluginsDir.\DIRECTORY_SEPARATOR.'installed-plugins.php';
+    }
+
+    private function lockPath(): string
+    {
+        return $this->pluginsDir.\DIRECTORY_SEPARATOR.'.plugins.lock';
     }
 }
