@@ -242,6 +242,15 @@ function reloadForPlugin(pluginId) {
  * crash-loop backoff to fight a plugin that is already known to be broken, and must never reject
  * (its caller is a fire-and-forget WS event handler with nothing better to do than log).
  *
+ * `frankenphp.start()`/`messengerConsumer.start()` flip their own `stopping` flag back to false
+ * as soon as they're called (see frankenphp.js#start), so if the rollback restart itself fails
+ * (e.g. `app:plugin:deactivate` couldn't remove a locked plugin and the pre-plugin process never
+ * becomes healthy either), the crash-loop backoff that `start()` just armed is left running with
+ * `stopping === false` — the exact loop this function exists to prevent, now fighting a state
+ * that's already known to be unrecoverable. The outer catch below calls stop() on both again
+ * (idempotent — see frankenphp.js#stop) so any respawn timer already scheduled sees `stopping ===
+ * true` and no-ops instead of firing (issue #424).
+ *
  * @param {string} pluginId
  * @returns {Promise<void>}
  */
@@ -285,6 +294,12 @@ async function performReload(pluginId) {
         await messengerConsumer.start({ ...phpContext, appPort: restarted.httpPort });
     } catch (rollbackErr) {
         console.error('[supervisor] откат после неудачной активации плагина тоже не удался:', rollbackErr.message);
+
+        // Откатный start() выше мог успеть выставить stopping=false и заспавнить процесс до
+        // своего падения — без этого их backoff-респаун (setTimeout(spawnProcess, …)) продолжил
+        // бы бесконечно перезапускаться против заведомо битого состояния (issue #424).
+        await Promise.all([frankenphp.stop(), messengerConsumer.stop()]);
+        console.error('[supervisor] процессы переведены в stopping — backoff-респаун остановлен.');
     }
 
     events.emit('plugin-activation-failed', { pluginId });

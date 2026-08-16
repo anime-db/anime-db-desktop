@@ -414,6 +414,24 @@ describe('supervisor.reloadForPlugin (issue #411)', () => {
         expect(phpCommand.run).toHaveBeenCalled();
     });
 
+    // issue #424: frankenphp.start()/messengerConsumer.start() flip their own `stopping` flag back
+    // to false as soon as they're called — if the rollback restart itself never becomes healthy
+    // (e.g. a locked plugin folder defeats app:plugin:deactivate, and the pre-plugin process also
+    // fails to come up healthy), that leaves their crash-loop backoff armed with `stopping ===
+    // false`, respawning forever against a state already known to be broken. The extra stop() call
+    // this test checks for is what cancels that armed backoff.
+    test('stops both processes again after a failed deactivate and a failed rollback restart, to cancel any backoff respawn the rollback start armed', async () => {
+        frankenphp.start.mockRejectedValue(new Error('still broken'));
+        phpCommand.run.mockRejectedValue(new Error('plugin folder is locked'));
+
+        await supervisor.reloadForPlugin('animedb-broken');
+
+        // Once before the failed activation attempt's own restart, once before the rollback
+        // restart, and once more after the rollback restart also fails.
+        expect(frankenphp.stop).toHaveBeenCalledTimes(3);
+        expect(messengerConsumer.stop).toHaveBeenCalledTimes(3);
+    });
+
     test('a second signal while a reload is in flight coalesces into a single extra run for the latest plugin id', async () => {
         let resolveFirstStart;
         frankenphp.start
