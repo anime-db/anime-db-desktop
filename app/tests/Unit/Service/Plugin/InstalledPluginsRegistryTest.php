@@ -265,6 +265,56 @@ final class InstalledPluginsRegistryTest extends TestCase
         $this->assertSame([], $safeModeRegistry->all());
     }
 
+    public function testReconcileSkipsAStagingDirectoryWhoseNameDoesNotMatchItsManifestId(): void
+    {
+        // The shape PluginDirectoryRemover::remove() leaves behind when it renames a plugin out of
+        // place but then cannot finish deleting it (issue #420): a "<id>.removing-<hex>" sibling
+        // still holding the plugin's valid manifest.json.
+        $this->writeManifestInto($this->pluginsDir.'/animedb-shikimori.removing-abc123def456', 'animedb-shikimori');
+
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->once())->method('warning')->with(
+            $this->stringContains('does not match its manifest id'),
+            $this->callback(static fn (array $context): bool => $context['manifestId'] === 'animedb-shikimori'),
+        );
+
+        $registry = new InstalledPluginsRegistry($this->pluginsDir, $this->configStore(), $logger);
+        $registry->reconcile();
+
+        $this->assertSame([], $registry->all());
+        $this->assertFalse($registry->has(new PluginId('animedb-shikimori')));
+    }
+
+    public function testReconcileKeepsTheRealInstallAndDoesNotLetAStaleStagingCopyShadowIt(): void
+    {
+        // scandir() lists "animedb-shikimori" before "animedb-shikimori.removing-…", so without the
+        // basename guard the stale staged copy (scanned last) would overwrite the fresh install's
+        // entry in the index.
+        $this->writeManifest('animedb-shikimori', '2.0.0');
+        $this->writeManifestInto($this->pluginsDir.'/animedb-shikimori.removing-abc123def456', 'animedb-shikimori', '1.0.0');
+
+        $registry = new InstalledPluginsRegistry($this->pluginsDir, $this->configStore(), new NullLogger());
+        $registry->reconcile();
+
+        $this->assertSame(['animedb-shikimori'], $this->ids($registry->all()));
+        $plugin = $registry->all()[0];
+        $this->assertSame($this->pluginsDir.'/animedb-shikimori', $plugin->installPath);
+        $this->assertSame('2.0.0', $plugin->manifest->version);
+    }
+
+    private function writeManifestInto(string $dir, string $manifestId, string $version = '1.0.0'): void
+    {
+        mkdir($dir, recursive: true);
+        file_put_contents($dir.'/manifest.json', (string) json_encode([
+            'id' => $manifestId,
+            'name' => ucfirst($manifestId),
+            'version' => $version,
+            'type' => 'integration',
+            'features' => ['filler' => true],
+            'require' => ['core' => '>=2.0.0', 'php' => '>=8.2'],
+        ]));
+    }
+
     private function configStore(): PluginsConfigStore
     {
         return new PluginsConfigStore($this->pluginsDir.'/plugins.json');

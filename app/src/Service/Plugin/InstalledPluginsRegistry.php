@@ -137,6 +137,22 @@ final class InstalledPluginsRegistry
                     continue;
                 }
 
+                // A plugin is always installed at %plugins_dir%/<manifest id>, so a directory whose
+                // basename does not equal its own manifest id is not a real installation. The case
+                // that matters is a "<id>.removing-<hex>" staging directory a failed
+                // PluginDirectoryRemover::remove() left behind (issue #420): registering it would
+                // resurrect a "removed" plugin, and — since scandir() lists "<id>" before
+                // "<id>.removing-<hex>" — a stale staged copy would even overwrite a fresh
+                // reinstall's entry. Skip anything whose basename does not match its manifest id.
+                if (basename($pluginDir) !== $manifest->id) {
+                    $this->logger->warning('Skipping plugin directory whose name does not match its manifest id.', [
+                        'pluginDir' => $pluginDir,
+                        'manifestId' => $manifest->id,
+                    ]);
+
+                    continue;
+                }
+
                 $entries[$manifest->id] = [
                     'installPath' => $pluginDir,
                     'manifest' => $this->manifestToArray($manifest),
