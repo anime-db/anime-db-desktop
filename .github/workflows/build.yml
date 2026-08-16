@@ -36,6 +36,11 @@ jobs:
         with:
           php-version: '8.4'
           tools: composer
+          # Расширения, которые app/composer.json объявляет в require. На windows-latest
+          # setup-php не включает zip по умолчанию, из-за чего `composer install` падал на
+          # проверке платформы ещё до сборки инсталлера. Этот PHP используется только для
+          # composer — приложение работает на PHP, встроенном в FrankenPHP.
+          extensions: zip, ctype, iconv
 
       - name: Build installer
         run: npm run build
