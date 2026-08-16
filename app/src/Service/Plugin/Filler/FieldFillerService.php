@@ -127,10 +127,15 @@ final class FieldFillerService
     {
         $key = 'filler.'.$pluginId.'.'.hash('xxh128', $externalId);
 
-        return $this->cache->get($key, static function (ItemInterface $item) use ($filler, $externalId): ?PluginAnimeData {
+        return $this->cache->get($key, static function (ItemInterface $item, bool &$save) use ($filler, $externalId): ?PluginAnimeData {
             $item->expiresAfter(self::CACHE_TTL_SECONDS);
 
-            return $filler->findById($externalId);
+            $data = $filler->findById($externalId);
+            // A transient "not found" (no match yet, source not queried) must not stick around
+            // for CACHE_TTL_SECONDS - only a real result is worth caching.
+            $save = $data !== null;
+
+            return $data;
         });
     }
 }
