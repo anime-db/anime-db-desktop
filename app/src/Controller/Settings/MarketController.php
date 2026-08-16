@@ -42,6 +42,8 @@ use App\Service\Plugin\Exception\PluginInstallException;
 use App\Service\Plugin\Exception\PluginNotInstalledException;
 use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\ZipPluginInstaller;
+use Composer\Semver\Comparator;
+use Composer\Semver\VersionParser;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -74,8 +76,8 @@ use Twig\Environment;
  * `%app.core_version%`, which may be an older one. A plugin with no compatible version at all is
  * rendered inactive with a "needs core version X" hint instead of an "Install" button.
  *
- * An already-installed plugin whose resolved compatible version differs from the one on disk gets
- * an "Update" button ({@see update()}, issue #224) instead of the plain "already installed" label
+ * An already-installed plugin whose resolved compatible version is strictly newer than the one on
+ * disk gets an "Update" button ({@see update()}, issue #224) instead of the plain "already installed" label
  * — driven through {@see ZipPluginInstaller::update()}, which runs the same download+SHA-256
  * verification and isolated warm-up as {@see install()} but swaps the new version into place
  * behind a backup of the old one, so a failed warm-up restores it instead of leaving the plugin
@@ -218,7 +220,7 @@ final class MarketController
                 'installed' => $installedPlugin !== null,
                 'updateAvailable' => $installedPlugin !== null
                     && $resolvedVersion !== null
-                    && $resolvedVersion->version !== $installedPlugin->manifest->version,
+                    && $this->isNewerVersion($resolvedVersion->version, $installedPlugin->manifest->version),
             ];
         }
 
@@ -230,6 +232,22 @@ final class MarketController
             'installError' => $installError,
             'installErrorParams' => $installErrorParams,
         ]));
+    }
+
+    /**
+     * `Comparator::greaterThan()` compares its raw arguments with PHP's `version_compare()`, which
+     * does not treat differently-formatted-but-equal versions (e.g. `1.0` and `1.0.0`) as equal —
+     * normalizing both through {@see VersionParser::normalize()} first, the same way
+     * {@see \Composer\Semver\Semver::satisfies()} normalizes its `$version` argument, fixes that.
+     */
+    private function isNewerVersion(string $resolvedVersion, string $installedVersion): bool
+    {
+        $versionParser = new VersionParser();
+
+        return Comparator::greaterThan(
+            $versionParser->normalize($resolvedVersion),
+            $versionParser->normalize($installedVersion),
+        );
     }
 
     private function findPlugin(PluginRegistry $registry, PluginId $id): ?MarketPlugin
