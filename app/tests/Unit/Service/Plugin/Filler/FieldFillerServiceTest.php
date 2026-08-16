@@ -242,6 +242,26 @@ final class FieldFillerServiceTest extends TestCase
         $this->assertSame(24, $anime->getDurationMinutes());
     }
 
+    public function testFillDoesNotCacheANullFindByIdResultSoALaterCallRetriesThePlugin(): void
+    {
+        $pluginId = new PluginId('animedb-shikimori');
+        $data = new PluginAnimeData(title: 'Bleach', durationMinutes: 24);
+
+        $filler = $this->createMock(FillerInterface::class);
+        $filler->method('getFillableFields')->willReturn(['durationMinutes']);
+        $filler->method('resolveExternalId')->willReturn('104');
+        $filler->expects($this->exactly(2))->method('findById')->with('104')->willReturnOnConsecutiveCalls(null, $data);
+
+        $anime = $this->persistedAnime();
+        $cache = new ArrayAdapter();
+
+        $service = $this->newService([(string) $pluginId => $filler], $cache);
+
+        $this->assertFalse($service->fill($anime, $pluginId, 'durationMinutes'));
+        $this->assertTrue($service->fill($anime, $pluginId, 'durationMinutes'));
+        $this->assertSame(24, $anime->getDurationMinutes());
+    }
+
     public function testFillOnlyAppliesTheRequestedFieldFromTheResolvedData(): void
     {
         $pluginId = new PluginId('animedb-shikimori');
