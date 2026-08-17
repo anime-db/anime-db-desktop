@@ -60,6 +60,16 @@ final class MarketRefreshService
 {
     private const string CONFIG_KEY_LAST_REFRESH_AT = 'marketLastRefreshAt';
 
+    /**
+     * Recorded unconditionally at the start of every attempt (issue #446 review), unlike
+     * {@see self::CONFIG_KEY_LAST_REFRESH_AT} above which only moves on success. Callers that want
+     * to throttle how often they *trigger* a refresh (e.g. {@see \App\Controller\Settings\MarketController})
+     * need to know when the last attempt started, not when one last completed — otherwise a
+     * persistently failing registry fetch (offline, unreachable mirror, ...) never gets a recorded
+     * timestamp to throttle against, and every caller keeps re-dispatching.
+     */
+    public const string CONFIG_KEY_LAST_REFRESH_ATTEMPT_AT = 'marketLastRefreshAttemptAt';
+
     public function __construct(
         private readonly PluginRegistryLoader $registryLoader,
         private readonly MarketSnapshotBuilder $snapshotBuilder,
@@ -103,6 +113,12 @@ final class MarketRefreshService
 
     private function doRefresh(): bool
     {
+        $this->configStore->update(static function (array $config): array {
+            $config[self::CONFIG_KEY_LAST_REFRESH_ATTEMPT_AT] = (new \DateTimeImmutable())->format(\DateTimeInterface::ATOM);
+
+            return $config;
+        });
+
         $result = $this->registryLoader->load();
         $registry = $result->registry;
 

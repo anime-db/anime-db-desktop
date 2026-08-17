@@ -30,7 +30,9 @@ namespace App\Tests\Unit\Controller\Settings;
 use App\Controller\Settings\MarketController;
 use App\Entity\ValueObject\PluginId;
 use App\Message\RefreshMarketSnapshotMessage;
+use App\Service\AppConfigStore;
 use App\Service\Market\MarketAssetDownloader;
+use App\Service\Market\MarketRefreshService;
 use App\Service\Market\MarketSnapshot;
 use App\Service\Market\MarketSnapshotCache;
 use App\Service\Market\MarketSnapshotPlugin;
@@ -70,6 +72,7 @@ final class MarketControllerTest extends TestCase
     private string $rootDir;
     private string $pluginsDir;
     private string $snapshotCachePath;
+    private string $configPath;
     private InstalledPluginsRegistry $installedPlugins;
 
     protected function setUp(): void
@@ -79,6 +82,7 @@ final class MarketControllerTest extends TestCase
         mkdir($this->pluginsDir, recursive: true);
 
         $this->snapshotCachePath = $this->rootDir.'/market-snapshot-cache.json';
+        $this->configPath = $this->rootDir.'/config.json';
 
         $this->installedPlugins = new InstalledPluginsRegistry(
             $this->pluginsDir,
@@ -118,6 +122,7 @@ final class MarketControllerTest extends TestCase
         ?UrlGeneratorInterface $urlGenerator = null,
         ?CsrfTokenManagerInterface $csrf = null,
         ?MessageBusInterface $messageBus = null,
+        ?AppConfigStore $configStore = null,
     ): MarketController {
         return new MarketController(
             $snapshotCache,
@@ -129,7 +134,25 @@ final class MarketControllerTest extends TestCase
             $urlGenerator ?? $this->createStub(UrlGeneratorInterface::class),
             $twig,
             $messageBus ?? $this->alwaysDispatchingMessageBus(),
+            $configStore ?? new AppConfigStore($this->configPath),
         );
+    }
+
+    /**
+     * Writes {@see MarketRefreshService::CONFIG_KEY_LAST_REFRESH_ATTEMPT_AT} as of $attemptAt, so a
+     * test can assert the render-fallback throttle ({@see MarketController}) either suppresses or
+     * allows a dispatch depending on how far in the past that marker is.
+     */
+    private function configStoreWithLastRefreshAttemptAt(\DateTimeImmutable $attemptAt): AppConfigStore
+    {
+        $configStore = new AppConfigStore($this->configPath);
+        $configStore->update(static function (array $config) use ($attemptAt): array {
+            $config[MarketRefreshService::CONFIG_KEY_LAST_REFRESH_ATTEMPT_AT] = $attemptAt->format(\DateTimeInterface::ATOM);
+
+            return $config;
+        });
+
+        return $configStore;
     }
 
     private function alwaysDispatchingMessageBus(): MessageBusInterface
@@ -332,6 +355,57 @@ final class MarketControllerTest extends TestCase
             $this->assetDownloaderServingPluginZip(),
             $twig,
             messageBus: $messageBus,
+        );
+
+        $controller->index(Request::create('/settings/market'));
+    }
+
+    /**
+     * Reviewer follow-up on issue #440's render-fallback: flock() in {@see MarketRefreshService}
+     * only collapses *concurrent* refreshes, not sequential ones across separate renders, so a
+     * persistently unavailable snapshot must not queue an unbounded stream of refresh jobs — one
+     * dispatched moments ago must suppress another.
+     */
+    public function testIndexDoesNotDispatchARefreshWhenARecentAttemptIsAlreadyRecorded(): void
+    {
+        $messageBus = $this->createMock(MessageBusInterface::class);
+        $messageBus->expects($this->never())->method('dispatch');
+
+        $twig = $this->createStub(Environment::class);
+        $twig->method('render')->willReturn('<html></html>');
+
+        $controller = $this->controller(
+            $this->snapshotCacheServing(null),
+            $this->assetDownloaderServingPluginZip(),
+            $twig,
+            messageBus: $messageBus,
+            configStore: $this->configStoreWithLastRefreshAttemptAt(new \DateTimeImmutable('-1 minute')),
+        );
+
+        $controller->index(Request::create('/settings/market'));
+    }
+
+    /**
+     * Once the throttle window has elapsed, a still-missing snapshot must dispatch again — the
+     * throttle bounds the queue, it does not stop retrying forever.
+     */
+    public function testIndexDispatchesARefreshAgainOnceTheThrottleWindowHasElapsed(): void
+    {
+        $messageBus = $this->createMock(MessageBusInterface::class);
+        $messageBus->expects($this->once())
+            ->method('dispatch')
+            ->with($this->isInstanceOf(RefreshMarketSnapshotMessage::class))
+            ->willReturnCallback(static fn (object $message): Envelope => new Envelope($message));
+
+        $twig = $this->createStub(Environment::class);
+        $twig->method('render')->willReturn('<html></html>');
+
+        $controller = $this->controller(
+            $this->snapshotCacheServing(null),
+            $this->assetDownloaderServingPluginZip(),
+            $twig,
+            messageBus: $messageBus,
+            configStore: $this->configStoreWithLastRefreshAttemptAt(new \DateTimeImmutable('-1 hour')),
         );
 
         $controller->index(Request::create('/settings/market'));

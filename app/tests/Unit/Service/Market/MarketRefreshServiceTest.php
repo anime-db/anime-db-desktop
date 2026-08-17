@@ -99,9 +99,16 @@ final class MarketRefreshServiceTest extends TestCase
         $config = (new AppConfigStore($this->configPath))->read();
         $this->assertSame(1, $config['marketRegistryHighWaterMarkSequence']);
         $this->assertIsString($config['marketLastRefreshAt']);
+        $this->assertIsString($config[MarketRefreshService::CONFIG_KEY_LAST_REFRESH_ATTEMPT_AT]);
     }
 
-    public function testFailurePathLeavesNoSnapshotWhenNoRegistryHasEverBeenAccepted(): void
+    /**
+     * A registry that stays unreachable must still stamp the attempt marker — {@see MarketController}
+     * throttles its render-fallback dispatch off this, and a marker that only ever moved on success
+     * would never get set at all while the registry is down, defeating that throttle entirely
+     * (issue #446 review).
+     */
+    public function testFailurePathLeavesNoSnapshotWhenNoRegistryHasEverBeenAcceptedButStampsTheAttemptMarker(): void
     {
         $unreachableHttpClient = new MockHttpClient(function (): never {
             throw new TransportException('Connection refused.');
@@ -125,6 +132,10 @@ final class MarketRefreshServiceTest extends TestCase
 
         $this->assertFalse($result);
         $this->assertFileDoesNotExist($this->snapshotCachePath);
+
+        $config = (new AppConfigStore($this->configPath))->read();
+        $this->assertIsString($config[MarketRefreshService::CONFIG_KEY_LAST_REFRESH_ATTEMPT_AT]);
+        $this->assertArrayNotHasKey('marketLastRefreshAt', $config);
     }
 
     public function testFailurePathDoesNotDisturbAnExistingSnapshotWhenAFollowUpRefreshIsServedFromCache(): void
