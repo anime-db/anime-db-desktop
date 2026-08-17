@@ -60,13 +60,15 @@ final class MarketSnapshotBuilder
     private function buildPlugin(PluginRegistry $registry, MarketPlugin $plugin, string $coreVersion): MarketSnapshotPlugin
     {
         $resolvedVersion = $plugin->resolveCompatibleVersion($coreVersion);
+        $latestVersion = $plugin->latestVersion();
 
         return new MarketSnapshotPlugin(
             (string) $plugin->id,
             $this->manifestToArray($plugin->manifest),
             $resolvedVersion?->version,
             $resolvedVersion !== null ? $registry->findVersionSha256($plugin->id, $resolvedVersion->version) : null,
-            $plugin->latestVersion()->version,
+            $latestVersion->version,
+            $latestVersion->core,
         );
     }
 

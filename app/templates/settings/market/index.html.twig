@@ -58,7 +58,7 @@
                     <tr>
                         <td>{{ item.plugin.manifest.name }}</td>
                         <td>{{ item.plugin.manifest.description }}</td>
-                        <td>{{ ('plugin_type.' ~ item.plugin.manifest.type.value)|trans }}</td>
+                        <td>{{ ('plugin_type.' ~ item.plugin.manifest.type)|trans }}</td>
                         <td>{{ item.plugin.manifest.version }}</td>
                         <td>
                             {% if item.installed and item.updateAvailable %}
@@ -68,8 +68,8 @@
                                 </form>
                             {% elseif item.installed %}
                                 {{ 'settings_market.already_installed'|trans }}
-                            {% elseif item.resolvedVersion is null %}
-                                {{ 'settings_market.incompatible_core'|trans({'%requiredCore%': item.plugin.latestVersion.core}) }}
+                            {% elseif item.plugin.resolvedVersion is null %}
+                                {{ 'settings_market.incompatible_core'|trans({'%requiredCore%': item.plugin.latestVersionCore}) }}
                             {% else %}
                                 <form method="post" action="{{ path('settings_market_install', {pluginId: item.plugin.id}) }}">
                                     <input type="hidden" name="_token" value="{{ csrf_token('settings_market_install_' ~ item.plugin.id) }}">

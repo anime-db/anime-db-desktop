@@ -33,14 +33,15 @@ use App\Service\Market\Exception\UnknownPluginVersionException;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 
 /**
- * Downloads a plugin's `plugin.zip` for market installation, deriving its URL from the trusted
- * registry's `asset_mirrors` ({@see PluginAssetUrlResolver}) and trying each mirror in order
- * until one serves bytes whose sha256 matches the registry's pinned checksum for that
- * plugin/version. The registry's signature (already verified before this class ever sees a
- * {@see PluginRegistry}) is what makes the expected sha256 trustworthy — the mirror serving the
- * bytes is not: any mirror, including the first, may be down, slow, or (accidentally) serving a
- * truncated/stale copy, so a failure or a checksum mismatch just moves on to the next mirror
- * rather than aborting immediately.
+ * Downloads a plugin's `plugin.zip` for market installation, deriving its URL from the given
+ * `$assetMirrors` ({@see PluginAssetUrlResolver}) and trying each mirror in order until one serves
+ * bytes whose sha256 matches `$expectedSha256`. Both are handed in by the caller rather than read
+ * from a live {@see PluginRegistry} — the market storefront (issue #220, and the snapshot-reading
+ * rework of issue #439) sources them from a {@see MarketSnapshot} instead, itself already built
+ * from a signature-verified registry, which is what makes the expected sha256 trustworthy. The
+ * mirror serving the bytes is not trustworthy on its own: any mirror, including the first, may be
+ * down, slow, or (accidentally) serving a truncated/stale copy, so a failure or a checksum
+ * mismatch just moves on to the next mirror rather than aborting immediately.
  *
  * Resolving *which* version to install (compatibility with the current core version, picking the
  * newest compatible one) is the market storefront's job (issue #220), not this class's — it only
@@ -57,23 +58,25 @@ final class MarketAssetDownloader
     }
 
     /**
+     * @param list<string> $assetMirrors URL templates containing the `<id>`/`<version>`/`<file>` macros
+     *
      * @return string path to a temporary file holding the downloaded, sha256-verified archive —
      *                the caller is responsible for removing it once done with it (e.g. after
      *                handing it to {@see \App\Service\Plugin\ZipPluginInstaller::install()})
      *
-     * @throws UnknownPluginVersionException if the registry has no sha256 pinned for this plugin/version
+     * @throws UnknownPluginVersionException if $expectedSha256 is null — nothing to verify a
+     *                                       downloaded archive against
      * @throws PluginAssetDownloadException  if every mirror failed to serve a matching archive
      */
-    public function downloadPluginZip(PluginRegistry $registry, PluginId $pluginId, string $version): string
+    public function downloadPluginZip(?string $expectedSha256, array $assetMirrors, PluginId $pluginId, string $version): string
     {
-        $expectedSha256 = $registry->findVersionSha256($pluginId, $version);
         if ($expectedSha256 === null) {
             throw new UnknownPluginVersionException($pluginId, $version);
         }
 
         $failuresByUrl = [];
 
-        foreach ($registry->assetMirrors as $mirrorUrlTemplate) {
+        foreach ($assetMirrors as $mirrorUrlTemplate) {
             $url = $this->urlResolver->resolve($mirrorUrlTemplate, $pluginId, $version, self::ASSET_FILE_NAME);
 
             try {

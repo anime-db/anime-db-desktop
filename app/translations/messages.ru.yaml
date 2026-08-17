@@ -227,8 +227,8 @@ settings_market:
     install_success: 'Плагин «%pluginId%» успешно установлен.'
     update_button: Обновить
     update_success: 'Плагин «%pluginId%» успешно обновлён. Настройки плагина сохранены.'
-    registry_unavailable: Не удалось загрузить каталог маркета. Проверьте подключение к сети и попробуйте ещё раз позже.
-    install_error_registry_unavailable: Не удалось загрузить каталог маркета. Попробуйте ещё раз позже.
+    registry_unavailable: Каталог маркета ещё не готов. Он появится после ближайшего фонового обновления.
+    install_error_registry_unavailable: Каталог маркета ещё не готов. Попробуйте ещё раз позже.
     install_error_unknown_plugin: Этот плагин больше не числится в каталоге маркета.
     install_error_incompatible_core: 'Плагин требует версию ядра "%requiredCore%", установлена версия "%currentCore%".'
     install_error_download_failed: Не удалось скачать архив плагина ни с одного из зеркал маркета.

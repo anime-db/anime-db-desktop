@@ -29,13 +29,10 @@ namespace App\Tests\Unit\Controller\Settings;
 
 use App\Controller\Settings\MarketController;
 use App\Entity\ValueObject\PluginId;
-use App\Service\AppConfigStore;
 use App\Service\Market\MarketAssetDownloader;
-use App\Service\Market\PluginRegistryCache;
-use App\Service\Market\PluginRegistryFetcher;
-use App\Service\Market\PluginRegistryHighWaterMarkStore;
-use App\Service\Market\PluginRegistryLoader;
-use App\Service\Market\PluginRegistrySignatureVerifier;
+use App\Service\Market\MarketSnapshot;
+use App\Service\Market\MarketSnapshotCache;
+use App\Service\Market\MarketSnapshotPlugin;
 use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\PluginCacheWarmer;
 use App\Service\Plugin\PluginsConfigStore;
@@ -43,7 +40,6 @@ use App\Service\Plugin\ZipPluginInstaller;
 use App\Service\WsPublisher;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
-use Symfony\Component\HttpClient\Exception\TransportException;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
 use Symfony\Component\HttpFoundation\RedirectResponse;
@@ -52,28 +48,26 @@ use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 use Symfony\Component\Security\Csrf\CsrfTokenManagerInterface;
+use Symfony\Contracts\HttpClient\HttpClientInterface;
 use Twig\Environment;
 
 /**
- * {@see App\Service\Market\PluginRegistryLoader} and {@see MarketAssetDownloader} are both
- * `final`, so — same convention as {@see \App\Tests\Unit\Service\Market\PluginRegistryLoaderTest}
- * and {@see \App\Tests\Unit\Service\Market\MarketAssetDownloaderTest} — this test wires real
- * instances of them against a {@see MockHttpClient} instead of mocking the classes themselves.
+ * Issue #439 moved this controller off a live registry fetch onto reading an already-built
+ * {@see MarketSnapshot} — every test below writes its fixture snapshot straight to a
+ * {@see MarketSnapshotCache} instead of standing up a signed `plugins-registry.json` document the
+ * way {@see \App\Tests\Unit\Service\Market\MarketSnapshotBuilderTest} still does for the builder
+ * itself; that keeps this suite focused on the controller's own read/join/render logic.
  */
 final class MarketControllerTest extends TestCase
 {
     private const CORE_VERSION = '2.5.0';
     private const string PLUGIN_ZIP_CONTENT = 'trusted market plugin archive bytes';
+    private const string DEFAULT_MIRROR = 'https://mirror.example/<id>/<version>/<file>';
 
     private string $rootDir;
     private string $pluginsDir;
-    private string $cachePath;
-    private string $configPath;
+    private string $snapshotCachePath;
     private InstalledPluginsRegistry $installedPlugins;
-    private string $trustedPublicKey;
-
-    /** @var non-empty-string */
-    private string $secretKey;
 
     protected function setUp(): void
     {
@@ -81,18 +75,13 @@ final class MarketControllerTest extends TestCase
         $this->pluginsDir = $this->rootDir.'/plugins';
         mkdir($this->pluginsDir, recursive: true);
 
-        $this->cachePath = $this->rootDir.'/market-registry-cache.json';
-        $this->configPath = $this->rootDir.'/config.json';
+        $this->snapshotCachePath = $this->rootDir.'/market-snapshot-cache.json';
 
         $this->installedPlugins = new InstalledPluginsRegistry(
             $this->pluginsDir,
             new PluginsConfigStore($this->pluginsDir.'/plugins.json'),
             new NullLogger(),
         );
-
-        $keyPair = sodium_crypto_sign_keypair();
-        $this->trustedPublicKey = base64_encode(sodium_crypto_sign_publickey($keyPair));
-        $this->secretKey = sodium_crypto_sign_secretkey($keyPair);
     }
 
     protected function tearDown(): void
@@ -119,42 +108,56 @@ final class MarketControllerTest extends TestCase
         return $csrf;
     }
 
-    private function registryLoaderServing(string $registryJson): PluginRegistryLoader
-    {
-        $signature = base64_encode(sodium_crypto_sign_detached($registryJson, $this->secretKey));
-
-        $httpClient = new MockHttpClient(
-            fn (string $method, string $url): MockResponse => str_ends_with($url, '.sig')
-                ? new MockResponse($signature)
-                : new MockResponse($registryJson),
-            null,
-        );
-
-        return new PluginRegistryLoader(
-            new PluginRegistryFetcher($httpClient),
-            new PluginRegistrySignatureVerifier([$this->trustedPublicKey]),
-            new PluginRegistryCache($this->cachePath),
-            $this->highWaterMarkStore(),
-        );
-    }
-
-    private function unavailableRegistryLoader(): PluginRegistryLoader
-    {
-        $httpClient = new MockHttpClient(function (): never {
-            throw new TransportException('Connection refused.');
-        }, null);
-
-        return new PluginRegistryLoader(
-            new PluginRegistryFetcher($httpClient),
-            new PluginRegistrySignatureVerifier([$this->trustedPublicKey]),
-            new PluginRegistryCache($this->cachePath),
-            $this->highWaterMarkStore(),
+    private function controller(
+        MarketSnapshotCache $snapshotCache,
+        MarketAssetDownloader $assetDownloader,
+        Environment $twig,
+        ?UrlGeneratorInterface $urlGenerator = null,
+        ?CsrfTokenManagerInterface $csrf = null,
+    ): MarketController {
+        return new MarketController(
+            $snapshotCache,
+            $assetDownloader,
+            $this->installer(),
+            $this->installedPlugins,
+            self::CORE_VERSION,
+            $csrf ?? $this->alwaysValidCsrf(),
+            $urlGenerator ?? $this->createStub(UrlGeneratorInterface::class),
+            $twig,
         );
     }
 
-    private function highWaterMarkStore(): PluginRegistryHighWaterMarkStore
+    /**
+     * @param list<MarketSnapshotPlugin> $plugins
+     */
+    private function snapshot(array $plugins, string $coreVersion = self::CORE_VERSION): MarketSnapshot
     {
-        return new PluginRegistryHighWaterMarkStore(new AppConfigStore($this->configPath));
+        return new MarketSnapshot($coreVersion, 1, [self::DEFAULT_MIRROR], $plugins);
+    }
+
+    private function snapshotPlugin(
+        string $id,
+        ?string $resolvedVersion,
+        ?string $sha256,
+        string $latestVersion = '1.2.0',
+        string $latestVersionCore = '>=2.0.0',
+    ): MarketSnapshotPlugin {
+        return new MarketSnapshotPlugin($id, $this->manifest($id, $latestVersion), $resolvedVersion, $sha256, $latestVersion, $latestVersionCore);
+    }
+
+    /**
+     * Writes $snapshot straight to the cache file {@see MarketController} reads — $snapshot ===
+     * null leaves the file absent, the same "no snapshot has ever been built yet" state
+     * {@see MarketSnapshotCache::load()} reports.
+     */
+    private function snapshotCacheServing(?MarketSnapshot $snapshot): MarketSnapshotCache
+    {
+        $cache = new MarketSnapshotCache($this->snapshotCachePath);
+        if ($snapshot !== null) {
+            $cache->store($snapshot);
+        }
+
+        return $cache;
     }
 
     private function assetDownloaderServingPluginZip(): MarketAssetDownloader
@@ -191,25 +194,6 @@ final class MarketControllerTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed>                                        $manifest
-     * @param list<array{version: string, core: string, sha256?: string}> $versions
-     */
-    private function registryJson(array $manifest, array $versions): string
-    {
-        return (string) json_encode([
-            'sequence' => 1,
-            'asset_mirrors' => ['https://mirror.example/<id>/<version>/<file>'],
-            'plugins' => [
-                [
-                    'id' => $manifest['id'],
-                    'manifest' => $manifest,
-                    'versions' => $versions,
-                ],
-            ],
-        ], \JSON_THROW_ON_ERROR);
-    }
-
-    /**
      * @return array<string, mixed>
      */
     private function manifest(string $id, string $version = '1.2.0'): array
@@ -226,9 +210,8 @@ final class MarketControllerTest extends TestCase
 
     public function testIndexRendersPluginsWithResolvedVersionAndInstalledFlag(): void
     {
-        $registryJson = $this->registryJson($this->manifest('animedb-shikimori'), [
-            ['version' => '1.2.0', 'core' => '>=2.1.0 <3.0.0', 'sha256' => 'abc123'],
-            ['version' => '1.1.0', 'core' => '>=2.0.0 <3.0.0', 'sha256' => 'def456'],
+        $snapshot = $this->snapshot([
+            $this->snapshotPlugin('animedb-shikimori', resolvedVersion: '1.2.0', sha256: 'abc123'),
         ]);
 
         $twig = $this->createMock(Environment::class);
@@ -237,52 +220,34 @@ final class MarketControllerTest extends TestCase
             ->with('settings/market/index.html.twig', $this->callback(function (array $params): bool {
                 self::assertFalse($params['registryUnavailable']);
                 self::assertCount(1, $params['items']);
-                self::assertSame('animedb-shikimori', (string) $params['items'][0]['plugin']->id);
-                self::assertSame('1.2.0', $params['items'][0]['resolvedVersion']->version);
+                self::assertSame('animedb-shikimori', $params['items'][0]['plugin']->id);
+                self::assertSame('1.2.0', $params['items'][0]['plugin']->resolvedVersion);
                 self::assertFalse($params['items'][0]['installed']);
 
                 return true;
             }))
             ->willReturn('<html></html>');
 
-        $controller = new MarketController(
-            $this->registryLoaderServing($registryJson),
-            $this->assetDownloaderServingPluginZip(),
-            $this->installer(),
-            $this->installedPlugins,
-            self::CORE_VERSION,
-            $this->alwaysValidCsrf(),
-            $this->createStub(UrlGeneratorInterface::class),
-            $twig,
-        );
+        $controller = $this->controller($this->snapshotCacheServing($snapshot), $this->assetDownloaderServingPluginZip(), $twig);
 
         $controller->index(Request::create('/settings/market'));
     }
 
     public function testIndexMarksIncompatiblePluginsWithNoResolvedVersion(): void
     {
-        $registryJson = $this->registryJson($this->manifest('animedb-shikimori'), [
-            ['version' => '1.2.0', 'core' => '>=99.0.0', 'sha256' => 'abc123'],
+        $snapshot = $this->snapshot([
+            $this->snapshotPlugin('animedb-shikimori', resolvedVersion: null, sha256: null, latestVersionCore: '>=99.0.0'),
         ]);
 
         $twig = $this->createMock(Environment::class);
         $twig->expects($this->once())
             ->method('render')
             ->with('settings/market/index.html.twig', $this->callback(
-                static fn (array $params): bool => $params['items'][0]['resolvedVersion'] === null,
+                static fn (array $params): bool => $params['items'][0]['plugin']->resolvedVersion === null,
             ))
             ->willReturn('<html></html>');
 
-        $controller = new MarketController(
-            $this->registryLoaderServing($registryJson),
-            $this->assetDownloaderServingPluginZip(),
-            $this->installer(),
-            $this->installedPlugins,
-            self::CORE_VERSION,
-            $this->alwaysValidCsrf(),
-            $this->createStub(UrlGeneratorInterface::class),
-            $twig,
-        );
+        $controller = $this->controller($this->snapshotCacheServing($snapshot), $this->assetDownloaderServingPluginZip(), $twig);
 
         $controller->index(Request::create('/settings/market'));
     }
@@ -297,25 +262,68 @@ final class MarketControllerTest extends TestCase
             ))
             ->willReturn('<html></html>');
 
-        $controller = new MarketController(
-            $this->unavailableRegistryLoader(),
-            $this->assetDownloaderServingPluginZip(),
-            $this->installer(),
-            $this->installedPlugins,
-            self::CORE_VERSION,
-            $this->alwaysValidCsrf(),
-            $this->createStub(UrlGeneratorInterface::class),
+        $controller = $this->controller($this->snapshotCacheServing(null), $this->assetDownloaderServingPluginZip(), $twig);
+
+        $controller->index(Request::create('/settings/market'));
+    }
+
+    /**
+     * A snapshot built for a core version other than the one this controller runs against (e.g.
+     * left over from before an app upgrade, not yet refreshed for the new one) must be treated the
+     * same as no snapshot at all — resolving from it would render stale compatibility data instead
+     * of the "not ready yet" state.
+     */
+    public function testIndexTreatsACoreVersionMismatchAsUnavailableRatherThanResolvingStaleData(): void
+    {
+        $snapshot = $this->snapshot([
+            $this->snapshotPlugin('animedb-shikimori', resolvedVersion: '1.2.0', sha256: 'abc123'),
+        ], coreVersion: '2.4.0');
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('settings/market/index.html.twig', $this->callback(
+                static fn (array $params): bool => $params['registryUnavailable'] === true && $params['items'] === [],
+            ))
+            ->willReturn('<html></html>');
+
+        $controller = $this->controller($this->snapshotCacheServing($snapshot), $this->assetDownloaderServingPluginZip(), $twig);
+
+        $controller->index(Request::create('/settings/market'));
+    }
+
+    /**
+     * Issue #439's core acceptance criterion: rendering the storefront makes zero network calls
+     * now that it only ever reads the pre-built snapshot.
+     */
+    public function testIndexMakesNoNetworkCalls(): void
+    {
+        $snapshot = $this->snapshot([
+            $this->snapshotPlugin('animedb-shikimori', resolvedVersion: '1.2.0', sha256: 'abc123'),
+        ]);
+
+        $httpClient = $this->createMock(HttpClientInterface::class);
+        $httpClient->expects($this->never())->method('request');
+
+        $twig = $this->createStub(Environment::class);
+        $twig->method('render')->willReturn('<html></html>');
+
+        $controller = $this->controller(
+            $this->snapshotCacheServing($snapshot),
+            new MarketAssetDownloader($httpClient),
             $twig,
         );
 
-        $controller->index(Request::create('/settings/market'));
+        $response = $controller->index(Request::create('/settings/market'));
+
+        $this->assertSame(200, $response->getStatusCode());
     }
 
     public function testInstallRedirectsToIndexWithInstalledPluginIdOnSuccess(): void
     {
         $zipBytes = $this->pluginZipBytes('animedb-shikimori', '1.2.0');
-        $registryJson = $this->registryJson($this->manifest('animedb-shikimori'), [
-            ['version' => '1.2.0', 'core' => '>=2.0.0', 'sha256' => hash('sha256', $zipBytes)],
+        $snapshot = $this->snapshot([
+            $this->snapshotPlugin('animedb-shikimori', resolvedVersion: '1.2.0', sha256: hash('sha256', $zipBytes)),
         ]);
 
         $urlGenerator = $this->createMock(UrlGeneratorInterface::class);
@@ -324,15 +332,11 @@ final class MarketControllerTest extends TestCase
             ->with('settings_market_index', ['installed' => 'animedb-shikimori'])
             ->willReturn('/settings/market?installed=animedb-shikimori');
 
-        $controller = new MarketController(
-            $this->registryLoaderServing($registryJson),
+        $controller = $this->controller(
+            $this->snapshotCacheServing($snapshot),
             $this->assetDownloaderServing($zipBytes),
-            $this->installer(),
-            $this->installedPlugins,
-            self::CORE_VERSION,
-            $this->alwaysValidCsrf(),
-            $urlGenerator,
             $this->createStub(Environment::class),
+            $urlGenerator,
         );
 
         $request = Request::create('/settings/market/animedb-shikimori/install', 'POST', ['_token' => 'token']);
@@ -341,6 +345,41 @@ final class MarketControllerTest extends TestCase
         $this->assertInstanceOf(RedirectResponse::class, $response);
         $this->assertSame('/settings/market?installed=animedb-shikimori', $response->getTargetUrl());
         $this->assertTrue($this->installedPlugins->has(new PluginId('animedb-shikimori')));
+    }
+
+    /**
+     * The snapshot's `resolvedVersion` may differ from its `latestVersion` (an older version still
+     * compatible with the current core, see {@see \App\Service\Market\MarketSnapshotBuilder}) —
+     * install must fetch that resolved version, not silently upgrade to the latest one.
+     */
+    public function testInstallDownloadsTheSnapshotsResolvedVersionRatherThanTheLatestOne(): void
+    {
+        $zipBytes = $this->pluginZipBytes('animedb-shikimori', '1.1.0');
+        $snapshot = $this->snapshot([
+            $this->snapshotPlugin('animedb-shikimori', resolvedVersion: '1.1.0', sha256: hash('sha256', $zipBytes), latestVersion: '1.2.0'),
+        ]);
+
+        $requestedUrls = [];
+        $httpClient = new MockHttpClient(function (string $method, string $url) use (&$requestedUrls, $zipBytes): MockResponse {
+            $requestedUrls[] = $url;
+
+            return new MockResponse($zipBytes);
+        }, null);
+
+        $urlGenerator = $this->createStub(UrlGeneratorInterface::class);
+        $urlGenerator->method('generate')->willReturn('/settings/market?installed=animedb-shikimori');
+
+        $controller = $this->controller(
+            $this->snapshotCacheServing($snapshot),
+            new MarketAssetDownloader($httpClient),
+            $this->createStub(Environment::class),
+            $urlGenerator,
+        );
+
+        $request = Request::create('/settings/market/animedb-shikimori/install', 'POST', ['_token' => 'token']);
+        $controller->install('animedb-shikimori', $request);
+
+        $this->assertSame(['https://mirror.example/animedb-shikimori/1.1.0/plugin.zip'], $requestedUrls);
     }
 
     public function testInstallSkipsSyntaxLintForAPluginWithSyntaxErrors(): void
@@ -359,22 +398,18 @@ final class MarketControllerTest extends TestCase
         $zipBytes = (string) file_get_contents($zipPath);
         unlink($zipPath);
 
-        $registryJson = $this->registryJson($this->manifest('animedb-shikimori'), [
-            ['version' => '1.2.0', 'core' => '>=2.0.0', 'sha256' => hash('sha256', $zipBytes)],
+        $snapshot = $this->snapshot([
+            $this->snapshotPlugin('animedb-shikimori', resolvedVersion: '1.2.0', sha256: hash('sha256', $zipBytes)),
         ]);
 
         $urlGenerator = $this->createStub(UrlGeneratorInterface::class);
         $urlGenerator->method('generate')->willReturn('/settings/market?installed=animedb-shikimori');
 
-        $controller = new MarketController(
-            $this->registryLoaderServing($registryJson),
+        $controller = $this->controller(
+            $this->snapshotCacheServing($snapshot),
             $this->assetDownloaderServing($zipBytes),
-            $this->installer(),
-            $this->installedPlugins,
-            self::CORE_VERSION,
-            $this->alwaysValidCsrf(),
-            $urlGenerator,
             $this->createStub(Environment::class),
+            $urlGenerator,
         );
 
         $request = Request::create('/settings/market/animedb-shikimori/install', 'POST', ['_token' => 'token']);
@@ -386,8 +421,8 @@ final class MarketControllerTest extends TestCase
 
     public function testInstallReportsIncompatibleCoreWhenNoVersionResolves(): void
     {
-        $registryJson = $this->registryJson($this->manifest('animedb-shikimori'), [
-            ['version' => '1.2.0', 'core' => '>=99.0.0', 'sha256' => 'abc123'],
+        $snapshot = $this->snapshot([
+            $this->snapshotPlugin('animedb-shikimori', resolvedVersion: null, sha256: null, latestVersionCore: '>=99.0.0'),
         ]);
 
         $twig = $this->createMock(Environment::class);
@@ -404,16 +439,7 @@ final class MarketControllerTest extends TestCase
             }))
             ->willReturn('<html></html>');
 
-        $controller = new MarketController(
-            $this->registryLoaderServing($registryJson),
-            $this->assetDownloaderServingPluginZip(),
-            $this->installer(),
-            $this->installedPlugins,
-            self::CORE_VERSION,
-            $this->alwaysValidCsrf(),
-            $this->createStub(UrlGeneratorInterface::class),
-            $twig,
-        );
+        $controller = $this->controller($this->snapshotCacheServing($snapshot), $this->assetDownloaderServingPluginZip(), $twig);
 
         $request = Request::create('/settings/market/animedb-shikimori/install', 'POST', ['_token' => 'token']);
         $controller->install('animedb-shikimori', $request);
@@ -421,8 +447,8 @@ final class MarketControllerTest extends TestCase
 
     public function testInstallReportsUnknownPluginWhenNotInRegistry(): void
     {
-        $registryJson = $this->registryJson($this->manifest('animedb-shikimori'), [
-            ['version' => '1.2.0', 'core' => '>=2.0.0', 'sha256' => 'abc123'],
+        $snapshot = $this->snapshot([
+            $this->snapshotPlugin('animedb-shikimori', resolvedVersion: '1.2.0', sha256: 'abc123'),
         ]);
 
         $twig = $this->createMock(Environment::class);
@@ -433,16 +459,7 @@ final class MarketControllerTest extends TestCase
             ))
             ->willReturn('<html></html>');
 
-        $controller = new MarketController(
-            $this->registryLoaderServing($registryJson),
-            $this->assetDownloaderServingPluginZip(),
-            $this->installer(),
-            $this->installedPlugins,
-            self::CORE_VERSION,
-            $this->alwaysValidCsrf(),
-            $this->createStub(UrlGeneratorInterface::class),
-            $twig,
-        );
+        $controller = $this->controller($this->snapshotCacheServing($snapshot), $this->assetDownloaderServingPluginZip(), $twig);
 
         $request = Request::create('/settings/market/animedb-other/install', 'POST', ['_token' => 'token']);
         $controller->install('animedb-other', $request);
@@ -458,16 +475,7 @@ final class MarketControllerTest extends TestCase
             ))
             ->willReturn('<html></html>');
 
-        $controller = new MarketController(
-            $this->unavailableRegistryLoader(),
-            $this->assetDownloaderServingPluginZip(),
-            $this->installer(),
-            $this->installedPlugins,
-            self::CORE_VERSION,
-            $this->alwaysValidCsrf(),
-            $this->createStub(UrlGeneratorInterface::class),
-            $twig,
-        );
+        $controller = $this->controller($this->snapshotCacheServing(null), $this->assetDownloaderServingPluginZip(), $twig);
 
         $request = Request::create('/settings/market/animedb-shikimori/install', 'POST', ['_token' => 'token']);
         $controller->install('animedb-shikimori', $request);
@@ -475,8 +483,8 @@ final class MarketControllerTest extends TestCase
 
     public function testInstallReportsDownloadFailureWhenTheChecksumDoesNotMatch(): void
     {
-        $registryJson = $this->registryJson($this->manifest('animedb-shikimori'), [
-            ['version' => '1.2.0', 'core' => '>=2.0.0', 'sha256' => 'does-not-match-anything'],
+        $snapshot = $this->snapshot([
+            $this->snapshotPlugin('animedb-shikimori', resolvedVersion: '1.2.0', sha256: 'does-not-match-anything'),
         ]);
 
         $twig = $this->createMock(Environment::class);
@@ -487,16 +495,7 @@ final class MarketControllerTest extends TestCase
             ))
             ->willReturn('<html></html>');
 
-        $controller = new MarketController(
-            $this->registryLoaderServing($registryJson),
-            $this->assetDownloaderServingPluginZip(),
-            $this->installer(),
-            $this->installedPlugins,
-            self::CORE_VERSION,
-            $this->alwaysValidCsrf(),
-            $this->createStub(UrlGeneratorInterface::class),
-            $twig,
-        );
+        $controller = $this->controller($this->snapshotCacheServing($snapshot), $this->assetDownloaderServingPluginZip(), $twig);
 
         $request = Request::create('/settings/market/animedb-shikimori/install', 'POST', ['_token' => 'token']);
         $controller->install('animedb-shikimori', $request);
@@ -505,8 +504,8 @@ final class MarketControllerTest extends TestCase
     public function testInstallReportsAlreadyInstalledPluginId(): void
     {
         $zipBytes = $this->pluginZipBytes('animedb-shikimori', '2.0.0');
-        $registryJson = $this->registryJson($this->manifest('animedb-shikimori', '2.0.0'), [
-            ['version' => '2.0.0', 'core' => '>=2.0.0', 'sha256' => hash('sha256', $zipBytes)],
+        $snapshot = $this->snapshot([
+            $this->snapshotPlugin('animedb-shikimori', resolvedVersion: '2.0.0', sha256: hash('sha256', $zipBytes), latestVersion: '2.0.0'),
         ]);
 
         $dir = $this->pluginsDir.'/animedb-shikimori';
@@ -525,16 +524,7 @@ final class MarketControllerTest extends TestCase
             }))
             ->willReturn('<html></html>');
 
-        $controller = new MarketController(
-            $this->registryLoaderServing($registryJson),
-            $this->assetDownloaderServing($zipBytes),
-            $this->installer(),
-            $this->installedPlugins,
-            self::CORE_VERSION,
-            $this->alwaysValidCsrf(),
-            $this->createStub(UrlGeneratorInterface::class),
-            $twig,
-        );
+        $controller = $this->controller($this->snapshotCacheServing($snapshot), $this->assetDownloaderServing($zipBytes), $twig);
 
         $request = Request::create('/settings/market/animedb-shikimori/install', 'POST', ['_token' => 'token']);
         $controller->install('animedb-shikimori', $request);
@@ -547,8 +537,8 @@ final class MarketControllerTest extends TestCase
         file_put_contents($dir.'/manifest.json', (string) json_encode($this->manifest('animedb-shikimori', '1.1.0')));
         $this->installedPlugins->reconcile();
 
-        $registryJson = $this->registryJson($this->manifest('animedb-shikimori', '1.2.0'), [
-            ['version' => '1.2.0', 'core' => '>=2.0.0', 'sha256' => 'abc123'],
+        $snapshot = $this->snapshot([
+            $this->snapshotPlugin('animedb-shikimori', resolvedVersion: '1.2.0', sha256: 'abc123'),
         ]);
 
         $twig = $this->createMock(Environment::class);
@@ -562,16 +552,7 @@ final class MarketControllerTest extends TestCase
             }))
             ->willReturn('<html></html>');
 
-        $controller = new MarketController(
-            $this->registryLoaderServing($registryJson),
-            $this->assetDownloaderServingPluginZip(),
-            $this->installer(),
-            $this->installedPlugins,
-            self::CORE_VERSION,
-            $this->alwaysValidCsrf(),
-            $this->createStub(UrlGeneratorInterface::class),
-            $twig,
-        );
+        $controller = $this->controller($this->snapshotCacheServing($snapshot), $this->assetDownloaderServingPluginZip(), $twig);
 
         $controller->index(Request::create('/settings/market'));
     }
@@ -583,8 +564,8 @@ final class MarketControllerTest extends TestCase
         file_put_contents($dir.'/manifest.json', (string) json_encode($this->manifest('animedb-shikimori', '1.2.0')));
         $this->installedPlugins->reconcile();
 
-        $registryJson = $this->registryJson($this->manifest('animedb-shikimori', '1.2.0'), [
-            ['version' => '1.2.0', 'core' => '>=2.0.0', 'sha256' => 'abc123'],
+        $snapshot = $this->snapshot([
+            $this->snapshotPlugin('animedb-shikimori', resolvedVersion: '1.2.0', sha256: 'abc123'),
         ]);
 
         $twig = $this->createMock(Environment::class);
@@ -598,16 +579,7 @@ final class MarketControllerTest extends TestCase
             }))
             ->willReturn('<html></html>');
 
-        $controller = new MarketController(
-            $this->registryLoaderServing($registryJson),
-            $this->assetDownloaderServingPluginZip(),
-            $this->installer(),
-            $this->installedPlugins,
-            self::CORE_VERSION,
-            $this->alwaysValidCsrf(),
-            $this->createStub(UrlGeneratorInterface::class),
-            $twig,
-        );
+        $controller = $this->controller($this->snapshotCacheServing($snapshot), $this->assetDownloaderServingPluginZip(), $twig);
 
         $controller->index(Request::create('/settings/market'));
     }
@@ -619,8 +591,8 @@ final class MarketControllerTest extends TestCase
         file_put_contents($dir.'/manifest.json', (string) json_encode($this->manifest('animedb-shikimori', '2.0.0')));
         $this->installedPlugins->reconcile();
 
-        $registryJson = $this->registryJson($this->manifest('animedb-shikimori', '1.5.0'), [
-            ['version' => '1.5.0', 'core' => '>=2.0.0', 'sha256' => 'abc123'],
+        $snapshot = $this->snapshot([
+            $this->snapshotPlugin('animedb-shikimori', resolvedVersion: '1.5.0', sha256: 'abc123'),
         ]);
 
         $twig = $this->createMock(Environment::class);
@@ -634,16 +606,7 @@ final class MarketControllerTest extends TestCase
             }))
             ->willReturn('<html></html>');
 
-        $controller = new MarketController(
-            $this->registryLoaderServing($registryJson),
-            $this->assetDownloaderServingPluginZip(),
-            $this->installer(),
-            $this->installedPlugins,
-            self::CORE_VERSION,
-            $this->alwaysValidCsrf(),
-            $this->createStub(UrlGeneratorInterface::class),
-            $twig,
-        );
+        $controller = $this->controller($this->snapshotCacheServing($snapshot), $this->assetDownloaderServingPluginZip(), $twig);
 
         $controller->index(Request::create('/settings/market'));
     }
@@ -655,8 +618,8 @@ final class MarketControllerTest extends TestCase
         file_put_contents($dir.'/manifest.json', (string) json_encode($this->manifest('animedb-shikimori', '1.0')));
         $this->installedPlugins->reconcile();
 
-        $registryJson = $this->registryJson($this->manifest('animedb-shikimori', '1.0.0'), [
-            ['version' => '1.0.0', 'core' => '>=2.0.0', 'sha256' => 'abc123'],
+        $snapshot = $this->snapshot([
+            $this->snapshotPlugin('animedb-shikimori', resolvedVersion: '1.0.0', sha256: 'abc123'),
         ]);
 
         $twig = $this->createMock(Environment::class);
@@ -670,16 +633,7 @@ final class MarketControllerTest extends TestCase
             }))
             ->willReturn('<html></html>');
 
-        $controller = new MarketController(
-            $this->registryLoaderServing($registryJson),
-            $this->assetDownloaderServingPluginZip(),
-            $this->installer(),
-            $this->installedPlugins,
-            self::CORE_VERSION,
-            $this->alwaysValidCsrf(),
-            $this->createStub(UrlGeneratorInterface::class),
-            $twig,
-        );
+        $controller = $this->controller($this->snapshotCacheServing($snapshot), $this->assetDownloaderServingPluginZip(), $twig);
 
         $controller->index(Request::create('/settings/market'));
     }
@@ -692,8 +646,8 @@ final class MarketControllerTest extends TestCase
         $this->installedPlugins->reconcile();
 
         $zipBytes = $this->pluginZipBytes('animedb-shikimori', '1.2.0');
-        $registryJson = $this->registryJson($this->manifest('animedb-shikimori', '1.2.0'), [
-            ['version' => '1.2.0', 'core' => '>=2.0.0', 'sha256' => hash('sha256', $zipBytes)],
+        $snapshot = $this->snapshot([
+            $this->snapshotPlugin('animedb-shikimori', resolvedVersion: '1.2.0', sha256: hash('sha256', $zipBytes)),
         ]);
 
         $urlGenerator = $this->createMock(UrlGeneratorInterface::class);
@@ -702,15 +656,11 @@ final class MarketControllerTest extends TestCase
             ->with('settings_market_index', ['updated' => 'animedb-shikimori'])
             ->willReturn('/settings/market?updated=animedb-shikimori');
 
-        $controller = new MarketController(
-            $this->registryLoaderServing($registryJson),
+        $controller = $this->controller(
+            $this->snapshotCacheServing($snapshot),
             $this->assetDownloaderServing($zipBytes),
-            $this->installer(),
-            $this->installedPlugins,
-            self::CORE_VERSION,
-            $this->alwaysValidCsrf(),
-            $urlGenerator,
             $this->createStub(Environment::class),
+            $urlGenerator,
         );
 
         $request = Request::create('/settings/market/animedb-shikimori/update', 'POST', ['_token' => 'token']);
@@ -742,22 +692,18 @@ final class MarketControllerTest extends TestCase
         ]);
 
         $zipBytes = $this->pluginZipBytes('animedb-shikimori', '1.2.0');
-        $registryJson = $this->registryJson($this->manifest('animedb-shikimori', '1.2.0'), [
-            ['version' => '1.2.0', 'core' => '>=2.0.0', 'sha256' => hash('sha256', $zipBytes)],
+        $snapshot = $this->snapshot([
+            $this->snapshotPlugin('animedb-shikimori', resolvedVersion: '1.2.0', sha256: hash('sha256', $zipBytes)),
         ]);
 
         $urlGenerator = $this->createStub(UrlGeneratorInterface::class);
         $urlGenerator->method('generate')->willReturn('/settings/market?updated=animedb-shikimori');
 
-        $controller = new MarketController(
-            $this->registryLoaderServing($registryJson),
+        $controller = $this->controller(
+            $this->snapshotCacheServing($snapshot),
             $this->assetDownloaderServing($zipBytes),
-            $this->installer(),
-            $this->installedPlugins,
-            self::CORE_VERSION,
-            $this->alwaysValidCsrf(),
-            $urlGenerator,
             $this->createStub(Environment::class),
+            $urlGenerator,
         );
 
         $request = Request::create('/settings/market/animedb-shikimori/update', 'POST', ['_token' => 'token']);
@@ -774,15 +720,11 @@ final class MarketControllerTest extends TestCase
         $csrf = $this->createStub(CsrfTokenManagerInterface::class);
         $csrf->method('isTokenValid')->willReturn(false);
 
-        $controller = new MarketController(
-            $this->unavailableRegistryLoader(),
+        $controller = $this->controller(
+            $this->snapshotCacheServing(null),
             $this->assetDownloaderServingPluginZip(),
-            $this->installer(),
-            $this->installedPlugins,
-            self::CORE_VERSION,
-            $csrf,
-            $this->createStub(UrlGeneratorInterface::class),
             $this->createStub(Environment::class),
+            csrf: $csrf,
         );
 
         $this->expectException(BadRequestHttpException::class);
@@ -794,15 +736,11 @@ final class MarketControllerTest extends TestCase
         $csrf = $this->createStub(CsrfTokenManagerInterface::class);
         $csrf->method('isTokenValid')->willReturn(false);
 
-        $controller = new MarketController(
-            $this->unavailableRegistryLoader(),
+        $controller = $this->controller(
+            $this->snapshotCacheServing(null),
             $this->assetDownloaderServingPluginZip(),
-            $this->installer(),
-            $this->installedPlugins,
-            self::CORE_VERSION,
-            $csrf,
-            $this->createStub(UrlGeneratorInterface::class),
             $this->createStub(Environment::class),
+            csrf: $csrf,
         );
 
         $this->expectException(BadRequestHttpException::class);
@@ -811,16 +749,7 @@ final class MarketControllerTest extends TestCase
 
     public function testInstallRejectsAMalformedPluginId(): void
     {
-        $controller = new MarketController(
-            $this->unavailableRegistryLoader(),
-            $this->assetDownloaderServingPluginZip(),
-            $this->installer(),
-            $this->installedPlugins,
-            self::CORE_VERSION,
-            $this->alwaysValidCsrf(),
-            $this->createStub(UrlGeneratorInterface::class),
-            $this->createStub(Environment::class),
-        );
+        $controller = $this->controller($this->snapshotCacheServing(null), $this->assetDownloaderServingPluginZip(), $this->createStub(Environment::class));
 
         $this->expectException(NotFoundHttpException::class);
         $controller->install('Not_Valid!', Request::create('/settings/market/Not_Valid!/install', 'POST', ['_token' => 'token']));

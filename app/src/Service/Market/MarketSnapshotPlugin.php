@@ -35,7 +35,8 @@ use App\Service\Market\Exception\InvalidMarketSnapshotContentException;
  *
  * `resolvedVersion`/`sha256` are `null` when {@see MarketPlugin::resolveCompatibleVersion()} found
  * no version compatible with the target core — the plugin is still included (not dropped), so the
- * storefront can render it inactive with a "needs core version X" hint built from `latestVersion`.
+ * storefront can render it inactive with a "needs core version X" hint built from `latestVersion`/
+ * `latestVersionCore`.
  */
 final class MarketSnapshotPlugin
 {
@@ -50,11 +51,12 @@ final class MarketSnapshotPlugin
         public readonly ?string $resolvedVersion,
         public readonly ?string $sha256,
         public readonly string $latestVersion,
+        public readonly string $latestVersionCore,
     ) {
     }
 
     /**
-     * @return array{id: string, manifest: array<string, mixed>, resolvedVersion: ?string, sha256: ?string, latestVersion: string}
+     * @return array{id: string, manifest: array<string, mixed>, resolvedVersion: ?string, sha256: ?string, latestVersion: string, latestVersionCore: string}
      */
     public function toArray(): array
     {
@@ -64,6 +66,7 @@ final class MarketSnapshotPlugin
             'resolvedVersion' => $this->resolvedVersion,
             'sha256' => $this->sha256,
             'latestVersion' => $this->latestVersion,
+            'latestVersionCore' => $this->latestVersionCore,
         ];
     }
 
@@ -77,6 +80,7 @@ final class MarketSnapshotPlugin
             || !\is_string($data['id'] ?? null)
             || !\is_array($data['manifest'] ?? null)
             || !\is_string($data['latestVersion'] ?? null)
+            || !\is_string($data['latestVersionCore'] ?? null)
             || !(\is_string($data['resolvedVersion'] ?? null) || ($data['resolvedVersion'] ?? null) === null)
             || !(\is_string($data['sha256'] ?? null) || ($data['sha256'] ?? null) === null)
         ) {
@@ -89,6 +93,7 @@ final class MarketSnapshotPlugin
             $data['resolvedVersion'],
             $data['sha256'],
             $data['latestVersion'],
+            $data['latestVersionCore'],
         );
     }
 }
