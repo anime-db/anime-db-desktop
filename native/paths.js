@@ -50,4 +50,6 @@ module.exports = {
     getStatePath:          () => path.join(userDataDir(), 'state.json'),
     getBackupsDir:         () => path.join(userDataDir(), 'backups'),
     getMarketRegistryCachePath: () => path.join(userDataDir(), 'market-registry-cache.json'),
+    getMarketSnapshotCachePath: () => path.join(userDataDir(), 'market-snapshot-cache.json'),
+    getMarketRefreshLockPath:   () => path.join(userDataDir(), 'market-refresh.lock'),
 };

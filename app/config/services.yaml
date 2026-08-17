@@ -87,13 +87,20 @@ parameters:
     app.market_registry_cache_path: '%env(default:app.market_registry_cache_path.dev_default:MARKET_REGISTRY_CACHE_PATH)%'
 
     # Same injection pattern as app.market_registry_cache_path above, for MarketSnapshotCache
-    # (issue #436): production Electron is meant to pass MARKET_SNAPSHOT_CACHE_PATH pointing at
-    # %AppData%/market-snapshot-cache.json, the same way it passes MARKET_REGISTRY_CACHE_PATH
-    # (native/paths.js, native/supervisor/env.js). Nothing writes or reads this cache yet — that
-    # is the future refresh command's/controller's job — so wiring the native/ side is deferred to
-    # whichever of those lands first, rather than shipped ahead of any consumer.
+    # (issue #436): production Electron passes MARKET_SNAPSHOT_CACHE_PATH (native/paths.js,
+    # native/supervisor/env.js) pointing at %AppData%/market-snapshot-cache.json. Written by
+    # MarketRefreshCommand (issue #438), the snapshot's single writer.
     app.market_snapshot_cache_path.dev_default: '%kernel.project_dir%/var/market-snapshot-cache.json'
     app.market_snapshot_cache_path: '%env(default:app.market_snapshot_cache_path.dev_default:MARKET_SNAPSHOT_CACHE_PATH)%'
+
+    # Guards MarketRefreshCommand (`app:market:refresh`, issue #438) against a second, concurrent
+    # invocation: the command flock()s this file for the duration of a refresh, so a second
+    # instance started while one is already running can detect that and no-op instead of racing
+    # the first one to write the snapshot. Same injection pattern as the two market cache paths
+    # above; kept as its own file (not e.g. the snapshot cache path) so acquiring the lock never
+    # has to touch — or risk truncating — the snapshot itself.
+    app.market_refresh_lock_path.dev_default: '%kernel.project_dir%/var/market-refresh.lock'
+    app.market_refresh_lock_path: '%env(default:app.market_refresh_lock_path.dev_default:MARKET_REFRESH_LOCK_PATH)%'
 
 services:
     # default configuration for services in *this* file
@@ -112,6 +119,7 @@ services:
             $pushOnEditTtlSeconds: '%app.sync.push_on_edit_ttl_seconds%'
             $cachePath: '%app.market_registry_cache_path%'
             $snapshotCachePath: '%app.market_snapshot_cache_path%'
+            $refreshLockPath: '%app.market_refresh_lock_path%'
 
     # AnimeDb\PluginContracts\Filler\FillerInterface/Search\SearchByPluginInterface/
     # Widget\EntryWidgetInterface/Widget\CatalogWidgetInterface/Sync\SyncInterface all live
