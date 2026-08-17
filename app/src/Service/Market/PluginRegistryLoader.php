@@ -37,13 +37,21 @@ use App\Service\Market\Exception\PluginRegistryRollbackException;
  * ({@see PluginRegistryFetcher}), verify its detached Ed25519 signature *before* looking at its
  * content at all ({@see PluginRegistrySignatureVerifier}), parse it ({@see PluginRegistry}), and
  * reject it as a rollback if its `sequence` is lower than the last one this app has ever
- * accepted ({@see PluginRegistryCache}).
+ * accepted ({@see PluginRegistryHighWaterMarkStore}).
+ *
+ * The comparison also floors against the currently cached registry's `sequence`
+ * ({@see PluginRegistryCache::getCachedRegistry()}): an install that predates
+ * PluginRegistryHighWaterMarkStore has no baseline recorded there yet, but its cache file already
+ * holds the last registry it accepted, so that value still has to be honored on the first load
+ * after upgrading — otherwise that one load would accept an older, replayed registry before the
+ * new store gets a chance to persist a baseline.
  *
  * Any failure in that chain does not bubble up as an exception: the last cached, already-trusted
  * registry is returned instead (if one exists), packaged together with the failure so the caller
  * can still show the user an error (issue #292's accepted-cases table: "reject the registry,
  * keep the last valid one from cache, show an error"). This also covers a freshly accepted
- * registry that fails to persist to the cache ({@see PluginRegistryCache::store()}): the write is
+ * registry that fails to persist to the cache ({@see PluginRegistryCache::store()}) or to raise
+ * the high-water-mark ({@see PluginRegistryHighWaterMarkStore::raise()}): both writes are
  * best-effort, so the caller still gets the already-verified registry back instead of a crash.
  */
 final class PluginRegistryLoader
@@ -52,6 +60,7 @@ final class PluginRegistryLoader
         private readonly PluginRegistryFetcher $fetcher,
         private readonly PluginRegistrySignatureVerifier $signatureVerifier,
         private readonly PluginRegistryCache $cache,
+        private readonly PluginRegistryHighWaterMarkStore $highWaterMark,
     ) {
     }
 
@@ -75,7 +84,12 @@ final class PluginRegistryLoader
             return $this->fallbackToCache($exception);
         }
 
-        $lastKnownSequence = $this->cache->getLastSequence();
+        $lastKnownSequence = $this->highWaterMark->getSequence();
+        $cachedSequence = $this->cache->getCachedRegistry()?->sequence;
+        if ($cachedSequence !== null && ($lastKnownSequence === null || $cachedSequence > $lastKnownSequence)) {
+            $lastKnownSequence = $cachedSequence;
+        }
+
         if ($lastKnownSequence !== null && $registry->sequence < $lastKnownSequence) {
             return $this->fallbackToCache(new PluginRegistryRollbackException($registry->sequence, $lastKnownSequence));
         }
@@ -86,6 +100,14 @@ final class PluginRegistryLoader
             // Caching a fresh, already-verified registry is a best-effort side effect: if the
             // write fails (disk full, read-only directory, no permissions), the registry itself
             // is still valid and must be handed to the caller, not lost behind a crash.
+        }
+
+        try {
+            $this->highWaterMark->raise($registry->sequence);
+        } catch (\RuntimeException) {
+            // Same best-effort rationale as the cache write above: a failure to persist the new
+            // high-water-mark must not lose the already-verified registry. It only means the
+            // anti-rollback baseline stays at its previous value until a later load succeeds.
         }
 
         return PluginRegistryLoadResult::fresh($registry);

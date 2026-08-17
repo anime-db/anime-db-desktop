@@ -53,7 +53,6 @@ final class PluginRegistryCacheTest extends TestCase
         $cache = new PluginRegistryCache($this->path);
 
         $this->assertNull($cache->getCachedRegistry());
-        $this->assertNull($cache->getLastSequence());
     }
 
     public function testStoresAndRetrievesTheRegistry(): void
@@ -65,7 +64,6 @@ final class PluginRegistryCacheTest extends TestCase
         $cached = $cache->getCachedRegistry();
         $this->assertNotNull($cached);
         $this->assertSame(7, $cached->sequence);
-        $this->assertSame(7, $cache->getLastSequence());
     }
 
     public function testStoreOverwritesThePreviousCachedRegistry(): void
@@ -75,7 +73,7 @@ final class PluginRegistryCacheTest extends TestCase
         $cache->store($this->registryJson(sequence: 1));
         $cache->store($this->registryJson(sequence: 2));
 
-        $this->assertSame(2, $cache->getLastSequence());
+        $this->assertSame(2, $cache->getCachedRegistry()?->sequence);
     }
 
     public function testReturnsNullWhenTheCachedFileIsCorrupt(): void
@@ -85,7 +83,6 @@ final class PluginRegistryCacheTest extends TestCase
         $cache = new PluginRegistryCache($this->path);
 
         $this->assertNull($cache->getCachedRegistry());
-        $this->assertNull($cache->getLastSequence());
     }
 
     public function testThrowsWhenTheCacheDirectoryCannotBeCreated(): void

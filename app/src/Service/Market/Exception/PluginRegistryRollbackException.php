@@ -29,10 +29,12 @@ namespace App\Service\Market\Exception;
 
 /**
  * Thrown by {@see \App\Service\Market\PluginRegistryLoader::load()} when a freshly downloaded,
- * validly signed `plugins-registry.json` carries a `sequence` lower than the one already cached
- * from a previous successful load. A validly signed registry can still be an old one replayed by
- * whichever mirror served it — anti-rollback protection, not a signature problem, so it is kept
- * as its own exception rather than folded into {@see InvalidPluginRegistrySignatureException}.
+ * validly signed `plugins-registry.json` carries a `sequence` lower than the persisted
+ * high-water-mark from a previous successful load (see
+ * {@see \App\Service\Market\PluginRegistryHighWaterMarkStore}). A validly signed registry can
+ * still be an old one replayed by whichever mirror served it — anti-rollback protection, not a
+ * signature problem, so it is kept as its own exception rather than folded into
+ * {@see InvalidPluginRegistrySignatureException}.
  */
 final class PluginRegistryRollbackException extends \RuntimeException
 {
