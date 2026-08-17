@@ -25,8 +25,9 @@ jest.mock('electron', () => ({
     app: { getVersion: jest.fn(() => '1.2.3') },
 }));
 jest.mock('../../native/paths', () => ({
-    getStatePath:  jest.fn(() => '/fake/userData/state.json'),
-    getRuntimeDir: jest.fn(() => '/fake/userData/var'),
+    getStatePath:               jest.fn(() => '/fake/userData/state.json'),
+    getRuntimeDir:              jest.fn(() => '/fake/userData/var'),
+    getMarketSnapshotCachePath: jest.fn(() => '/fake/userData/market-snapshot-cache.json'),
 }));
 
 const fs = require('fs');
@@ -35,6 +36,7 @@ const paths = require('../../native/paths');
 const {
     hasBuildChanged,
     invalidateCache,
+    invalidateMarketSnapshot,
     commitFingerprint,
     computeBuildFingerprint,
     CacheInvalidationError,
@@ -156,6 +158,23 @@ describe('invalidateCache', () => {
         fs.rmSync.mockImplementation(() => { throw new Error('EBUSY: resource busy or locked'); });
         expect(() => invalidateCache()).toThrow('EBUSY');
         expect(() => invalidateCache()).toThrow(CacheInvalidationError);
+    });
+});
+
+describe('invalidateMarketSnapshot', () => {
+    test('deletes the market snapshot cache file', () => {
+        invalidateMarketSnapshot();
+
+        expect(fs.rmSync).toHaveBeenCalledWith('/fake/userData/market-snapshot-cache.json', { force: true });
+    });
+
+    // Unlike invalidateCache() above, a missing/locked snapshot file is not fatal to startup —
+    // the render-fallback (MarketController, issue #440) and the next scheduled refresh already
+    // cover its absence, so this swallows the error instead of throwing.
+    test('does not throw when deletion fails, just logs it', () => {
+        fs.rmSync.mockImplementation(() => { throw new Error('EBUSY: resource busy or locked'); });
+
+        expect(() => invalidateMarketSnapshot()).not.toThrow();
     });
 });
 

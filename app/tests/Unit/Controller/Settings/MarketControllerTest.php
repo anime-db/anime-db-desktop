@@ -29,6 +29,7 @@ namespace App\Tests\Unit\Controller\Settings;
 
 use App\Controller\Settings\MarketController;
 use App\Entity\ValueObject\PluginId;
+use App\Message\RefreshMarketSnapshotMessage;
 use App\Service\Market\MarketAssetDownloader;
 use App\Service\Market\MarketSnapshot;
 use App\Service\Market\MarketSnapshotCache;
@@ -46,6 +47,8 @@ use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
+use Symfony\Component\Messenger\Envelope;
+use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 use Symfony\Component\Security\Csrf\CsrfTokenManagerInterface;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
@@ -114,6 +117,7 @@ final class MarketControllerTest extends TestCase
         Environment $twig,
         ?UrlGeneratorInterface $urlGenerator = null,
         ?CsrfTokenManagerInterface $csrf = null,
+        ?MessageBusInterface $messageBus = null,
     ): MarketController {
         return new MarketController(
             $snapshotCache,
@@ -124,7 +128,18 @@ final class MarketControllerTest extends TestCase
             $csrf ?? $this->alwaysValidCsrf(),
             $urlGenerator ?? $this->createStub(UrlGeneratorInterface::class),
             $twig,
+            $messageBus ?? $this->alwaysDispatchingMessageBus(),
         );
+    }
+
+    private function alwaysDispatchingMessageBus(): MessageBusInterface
+    {
+        $messageBus = $this->createStub(MessageBusInterface::class);
+        $messageBus->method('dispatch')->willReturnCallback(
+            static fn (object $message): Envelope => new Envelope($message),
+        );
+
+        return $messageBus;
     }
 
     /**
@@ -263,6 +278,86 @@ final class MarketControllerTest extends TestCase
             ->willReturn('<html></html>');
 
         $controller = $this->controller($this->snapshotCacheServing(null), $this->assetDownloaderServingPluginZip(), $twig);
+
+        $controller->index(Request::create('/settings/market'));
+    }
+
+    /**
+     * Render-fallback (issue #440): a missing snapshot must dispatch a background refresh instead
+     * of leaving the storefront permanently empty — the read-only HTTP path itself never rebuilds
+     * it inline (issue #439).
+     */
+    public function testIndexDispatchesARefreshWhenTheSnapshotIsMissing(): void
+    {
+        $messageBus = $this->createMock(MessageBusInterface::class);
+        $messageBus->expects($this->once())
+            ->method('dispatch')
+            ->with($this->isInstanceOf(RefreshMarketSnapshotMessage::class))
+            ->willReturnCallback(static fn (object $message): Envelope => new Envelope($message));
+
+        $twig = $this->createStub(Environment::class);
+        $twig->method('render')->willReturn('<html></html>');
+
+        $controller = $this->controller(
+            $this->snapshotCacheServing(null),
+            $this->assetDownloaderServingPluginZip(),
+            $twig,
+            messageBus: $messageBus,
+        );
+
+        $controller->index(Request::create('/settings/market'));
+    }
+
+    /**
+     * Same render-fallback as above, for a snapshot left over from before an app upgrade
+     * (core_version mismatch) rather than a missing one entirely.
+     */
+    public function testIndexDispatchesARefreshWhenTheSnapshotsCoreVersionIsStale(): void
+    {
+        $snapshot = $this->snapshot([
+            $this->snapshotPlugin('animedb-shikimori', resolvedVersion: '1.2.0', sha256: 'abc123'),
+        ], coreVersion: '2.4.0');
+
+        $messageBus = $this->createMock(MessageBusInterface::class);
+        $messageBus->expects($this->once())
+            ->method('dispatch')
+            ->with($this->isInstanceOf(RefreshMarketSnapshotMessage::class))
+            ->willReturnCallback(static fn (object $message): Envelope => new Envelope($message));
+
+        $twig = $this->createStub(Environment::class);
+        $twig->method('render')->willReturn('<html></html>');
+
+        $controller = $this->controller(
+            $this->snapshotCacheServing($snapshot),
+            $this->assetDownloaderServingPluginZip(),
+            $twig,
+            messageBus: $messageBus,
+        );
+
+        $controller->index(Request::create('/settings/market'));
+    }
+
+    /**
+     * A ready snapshot must not trigger a redundant refresh on every render.
+     */
+    public function testIndexDoesNotDispatchARefreshWhenTheSnapshotIsReady(): void
+    {
+        $snapshot = $this->snapshot([
+            $this->snapshotPlugin('animedb-shikimori', resolvedVersion: '1.2.0', sha256: 'abc123'),
+        ]);
+
+        $messageBus = $this->createMock(MessageBusInterface::class);
+        $messageBus->expects($this->never())->method('dispatch');
+
+        $twig = $this->createStub(Environment::class);
+        $twig->method('render')->willReturn('<html></html>');
+
+        $controller = $this->controller(
+            $this->snapshotCacheServing($snapshot),
+            $this->assetDownloaderServingPluginZip(),
+            $twig,
+            messageBus: $messageBus,
+        );
 
         $controller->index(Request::create('/settings/market'));
     }

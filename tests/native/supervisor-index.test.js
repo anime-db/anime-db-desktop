@@ -25,15 +25,19 @@ const fs = require('fs');
 const path = require('path');
 
 jest.mock('../../native/supervisor/cache-invalidation', () => ({
-    hasBuildChanged:   jest.fn(() => false),
-    invalidateCache:   jest.fn(),
-    commitFingerprint: jest.fn(),
+    hasBuildChanged:          jest.fn(() => false),
+    invalidateCache:          jest.fn(),
+    invalidateMarketSnapshot: jest.fn(),
+    commitFingerprint:        jest.fn(),
 }));
 jest.mock('../../native/supervisor/frankenphp', () => ({
     start:      jest.fn(() => Promise.resolve({ httpPort: 8000, wsPort: 8001 })),
     stop:       jest.fn(() => Promise.resolve()),
     killOrphan: jest.fn(() => Promise.resolve()),
     events:     { on: jest.fn() },
+}));
+jest.mock('../../native/supervisor/market-refresh', () => ({
+    run: jest.fn(() => Promise.resolve()),
 }));
 jest.mock('../../native/supervisor/meilisearch', () => ({
     start:      jest.fn(),
@@ -71,6 +75,7 @@ jest.mock('../../native/supervisor/safe-mode', () => ({
 
 const cacheInvalidation = require('../../native/supervisor/cache-invalidation');
 const frankenphp        = require('../../native/supervisor/frankenphp');
+const marketRefresh     = require('../../native/supervisor/market-refresh');
 const meilisearch       = require('../../native/supervisor/meilisearch');
 const messengerConsumer = require('../../native/supervisor/messenger-consumer');
 const migrations        = require('../../native/supervisor/migrations');
@@ -85,6 +90,7 @@ describe('supervisor.start', () => {
         // jest.clearAllMocks() чистит статистику вызовов, но не реализации.
         cacheInvalidation.hasBuildChanged.mockReturnValue(false);
         cacheInvalidation.invalidateCache.mockImplementation(() => {});
+        cacheInvalidation.invalidateMarketSnapshot.mockImplementation(() => {});
         cacheInvalidation.commitFingerprint.mockImplementation(() => {});
         safeModeState.hasModeChanged.mockReturnValue(false);
         safeModeState.commitStartSuccess.mockImplementation(() => {});
@@ -92,6 +98,7 @@ describe('supervisor.start', () => {
         messengerConsumer.start.mockResolvedValue(undefined);
         meilisearch.start.mockResolvedValue({ port: 7700, key: 'k', wiped: false });
         searchReindex.run.mockResolvedValue(undefined);
+        marketRefresh.run.mockResolvedValue(undefined);
         migrations.run.mockResolvedValue(undefined);
     });
 
@@ -135,6 +142,7 @@ describe('supervisor.start', () => {
     test('kills orphaned one-off console processes before any child process starts', async () => {
         await supervisor.start(jest.fn());
 
+        expect(phpCommand.killOrphan).toHaveBeenCalledWith('app:market:refresh');
         expect(phpCommand.killOrphan).toHaveBeenCalledWith('messenger:setup-transports');
         expect(phpCommand.killOrphan).toHaveBeenCalledWith('app:search:reindex');
     });
@@ -197,6 +205,50 @@ describe('supervisor.start', () => {
         await expect(supervisor.start(jest.fn())).resolves.toMatchObject({ frankenphpPort: 8000 });
     });
 
+    // issue #440, epic #435 decision №5: the startup market refresh must be fired and forgotten,
+    // never awaited — the appearing window/splash must not wait on a network fetch of the plugin
+    // registry the way it does wait on migrations/FrankenPHP/messenger-consumer above.
+    describe('market refresh trigger (issue #440)', () => {
+        test('triggers a market refresh with the same context as messenger-consumer, after it has started', async () => {
+            const callOrder = [];
+            messengerConsumer.start.mockImplementation(() => {
+                callOrder.push('messengerConsumer.start');
+                return Promise.resolve();
+            });
+            marketRefresh.run.mockImplementation((context) => {
+                callOrder.push('marketRefresh.run');
+                return Promise.resolve(context);
+            });
+
+            await supervisor.start(jest.fn());
+
+            expect(callOrder).toEqual(['messengerConsumer.start', 'marketRefresh.run']);
+            expect(marketRefresh.run).toHaveBeenCalledWith({
+                appPort:         8000,
+                qbittorrentPort: 9000,
+                meiliPort:       7700,
+                meiliKey:        'k',
+                safeMode:        false,
+            });
+        });
+
+        test('does not block start() from resolving while the refresh is still in flight', async () => {
+            let resolveRefresh;
+            marketRefresh.run.mockImplementation(() => new Promise((resolve) => { resolveRefresh = resolve; }));
+
+            await expect(supervisor.start(jest.fn())).resolves.toMatchObject({ frankenphpPort: 8000 });
+
+            // Cleans up the still-pending promise so it doesn't leak into another test.
+            resolveRefresh(undefined);
+        });
+
+        test('does not fail startup when the market refresh errors out', async () => {
+            marketRefresh.run.mockRejectedValue(new Error('registry unreachable'));
+
+            await expect(supervisor.start(jest.fn())).resolves.toMatchObject({ frankenphpPort: 8000 });
+        });
+    });
+
     // Инвалидация устаревшего скомпилированного контейнера (issue #386) обязана происходить до
     // запуска любого PHP-процесса: и frankenphp, и messenger-consumer бутуют одно и то же ядро,
     // и первый же бут против устаревшего дампа запекает его *.bundles.php для всех последующих.
@@ -224,6 +276,34 @@ describe('supervisor.start', () => {
         await supervisor.start();
 
         expect(cacheInvalidation.invalidateCache).not.toHaveBeenCalled();
+    });
+
+    // issue #440, epic #435 decision №6: the market snapshot is keyed on CORE_VERSION, which only
+    // an actual build change bumps — unlike the compiled-container cache above, a safe-mode-only
+    // toggle must not delete it.
+    test('deletes the market snapshot when the build changed', async () => {
+        cacheInvalidation.hasBuildChanged.mockReturnValue(true);
+
+        await supervisor.start();
+
+        expect(cacheInvalidation.invalidateMarketSnapshot).toHaveBeenCalled();
+    });
+
+    test('does not delete the market snapshot when only the safe mode flag changed', async () => {
+        cacheInvalidation.hasBuildChanged.mockReturnValue(false);
+        safeModeState.hasModeChanged.mockReturnValue(true);
+
+        await supervisor.start(jest.fn(), { safeMode: true });
+
+        expect(cacheInvalidation.invalidateMarketSnapshot).not.toHaveBeenCalled();
+    });
+
+    test('does not delete the market snapshot when nothing changed', async () => {
+        cacheInvalidation.hasBuildChanged.mockReturnValue(false);
+
+        await supervisor.start();
+
+        expect(cacheInvalidation.invalidateMarketSnapshot).not.toHaveBeenCalled();
     });
 
     test('commits the build fingerprint only after every process has started successfully', async () => {

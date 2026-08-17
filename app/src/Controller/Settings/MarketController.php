@@ -29,6 +29,7 @@ namespace App\Controller\Settings;
 
 use App\Entity\ValueObject\Exception\InvalidPluginIdException;
 use App\Entity\ValueObject\PluginId;
+use App\Message\RefreshMarketSnapshotMessage;
 use App\Service\Market\Exception\PluginAssetDownloadException;
 use App\Service\Market\Exception\UnknownPluginVersionException;
 use App\Service\Market\MarketAssetDownloader;
@@ -49,6 +50,7 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
+use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 use Symfony\Component\Security\Csrf\CsrfToken;
@@ -93,6 +95,13 @@ use Twig\Environment;
  * behind a backup of the old one, so a failed warm-up restores it instead of leaving the plugin
  * directory empty. There is deliberately no automatic update: the resolved version merely decides
  * whether the button is shown, the update itself always waits for this explicit click.
+ *
+ * Render-fallback (issue #440): whenever the snapshot this controller would read is missing or
+ * stale (the same check {@see self::renderIndex()} already makes), it dispatches
+ * {@see RefreshMarketSnapshotMessage} on the `async` transport instead of rebuilding it inline —
+ * this HTTP path stays read-only and network-free, and
+ * {@see \App\Service\Market\MarketRefreshService::refresh()}'s own flock() collapses repeat
+ * dispatches from repeat renders into a no-op rather than piling up redundant refreshes.
  */
 final class MarketController
 {
@@ -105,6 +114,7 @@ final class MarketController
         private readonly CsrfTokenManagerInterface $csrfTokenManager,
         private readonly UrlGeneratorInterface $urlGenerator,
         private readonly Environment $twig,
+        private readonly MessageBusInterface $messageBus,
     ) {
     }
 
@@ -216,6 +226,10 @@ final class MarketController
     ): Response {
         $snapshot = $this->snapshotCache->load();
         $snapshotReady = $snapshot !== null && $snapshot->coreVersion === $this->coreVersion;
+
+        if (!$snapshotReady) {
+            $this->messageBus->dispatch(new RefreshMarketSnapshotMessage());
+        }
 
         $items = [];
         if ($snapshotReady) {

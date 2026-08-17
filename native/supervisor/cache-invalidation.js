@@ -138,4 +138,32 @@ function commitFingerprint() {
     fs.writeFileSync(statePath, JSON.stringify(state, null, 2));
 }
 
-module.exports = { hasBuildChanged, invalidateCache, commitFingerprint, computeBuildFingerprint, CacheInvalidationError };
+/**
+ * Удаляет файл кэша снимка маркета (issue #440, epic #435 decision №6). app.getVersion() — часть
+ * отпечатка сборки computeBuildFingerprint() выше сверяет, поэтому hasBuildChanged() уже отличает
+ * апдейт приложения (значит и CORE_VERSION, см. app.core_version в app/config/services.yaml) от
+ * простого перезапуска той же сборки — тот же сигнал, что используется для инвалидации
+ * скомпилированного кэша Symfony. MarketController уже не резолвит против устаревшего снимка
+ * (issue #439's core_version-guard), но сам его не пересобирает — удаление файла здесь гарантирует,
+ * что следующий старт (marketRefresh.run(), см. index.js) или рендер (render-fallback,
+ * MarketController, issue #440) увидят отсутствие снимка и пересоберут его под новый
+ * CORE_VERSION, а не будут неопределённо долго показывать "не готово" против файла, помеченного
+ * старой версией. Best-effort, как invalidateCache() выше, но не бросает исключение — отсутствие
+ * снимка после апдейта — это ожидаемое поведение, а не сбой, блокирующий старт.
+ */
+function invalidateMarketSnapshot() {
+    try {
+        fs.rmSync(paths.getMarketSnapshotCachePath(), { force: true });
+    } catch (err) {
+        console.error('[cache-invalidation] не удалось удалить снимок маркета:', err.message);
+    }
+}
+
+module.exports = {
+    hasBuildChanged,
+    invalidateCache,
+    invalidateMarketSnapshot,
+    commitFingerprint,
+    computeBuildFingerprint,
+    CacheInvalidationError,
+};
