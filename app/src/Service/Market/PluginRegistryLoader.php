@@ -39,6 +39,13 @@ use App\Service\Market\Exception\PluginRegistryRollbackException;
  * reject it as a rollback if its `sequence` is lower than the last one this app has ever
  * accepted ({@see PluginRegistryHighWaterMarkStore}).
  *
+ * The comparison also floors against the currently cached registry's `sequence`
+ * ({@see PluginRegistryCache::getCachedRegistry()}): an install that predates
+ * PluginRegistryHighWaterMarkStore has no baseline recorded there yet, but its cache file already
+ * holds the last registry it accepted, so that value still has to be honored on the first load
+ * after upgrading — otherwise that one load would accept an older, replayed registry before the
+ * new store gets a chance to persist a baseline.
+ *
  * Any failure in that chain does not bubble up as an exception: the last cached, already-trusted
  * registry is returned instead (if one exists), packaged together with the failure so the caller
  * can still show the user an error (issue #292's accepted-cases table: "reject the registry,
@@ -78,6 +85,11 @@ final class PluginRegistryLoader
         }
 
         $lastKnownSequence = $this->highWaterMark->getSequence();
+        $cachedSequence = $this->cache->getCachedRegistry()?->sequence;
+        if ($cachedSequence !== null && ($lastKnownSequence === null || $cachedSequence > $lastKnownSequence)) {
+            $lastKnownSequence = $cachedSequence;
+        }
+
         if ($lastKnownSequence !== null && $registry->sequence < $lastKnownSequence) {
             return $this->fallbackToCache(new PluginRegistryRollbackException($registry->sequence, $lastKnownSequence));
         }

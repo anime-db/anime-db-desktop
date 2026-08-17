@@ -163,6 +163,26 @@ final class PluginRegistryLoaderTest extends TestCase
         $this->assertSame(5, $error->lastKnownSequence);
     }
 
+    public function testRejectsARollbackOnAnUpgradedInstallThatOnlyHasAPreExistingCache(): void
+    {
+        // Simulates an install from before PluginRegistryHighWaterMarkStore existed: the registry
+        // cache already holds sequence 5, but the app config has never recorded a baseline.
+        file_put_contents($this->cachePath, $this->registryJson(sequence: 5));
+        $this->assertNull($this->highWaterMarkStore()->getSequence());
+
+        // A validly signed but older (sequence 3) registry is replayed by a mirror right after
+        // the upgrade, before any load has had a chance to seed the new store.
+        $result = $this->loaderServing($this->sign($this->registryJson(sequence: 3)))->load();
+
+        $error = $result->error;
+        if (!$error instanceof PluginRegistryRollbackException) {
+            $this->fail('Expected a PluginRegistryRollbackException.');
+        }
+        $this->assertSame(3, $error->rejectedSequence);
+        $this->assertSame(5, $error->lastKnownSequence);
+        $this->assertSame(5, $result->registry?->sequence);
+    }
+
     public function testFallsBackToCacheWhenEveryMirrorIsUnreachable(): void
     {
         $this->loaderServing($this->sign($this->registryJson(sequence: 1)))->load();

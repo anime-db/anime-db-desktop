@@ -50,9 +50,11 @@ final class PluginRegistryHighWaterMarkStore
     }
 
     /**
-     * Null until the first registry has ever been accepted (fresh install, or an install that
-     * predates this store) — {@see PluginRegistryLoader} treats that as "nothing to compare
-     * against yet", not a rollback.
+     * Null until the first registry has ever been accepted through this store (fresh install, or
+     * an install that predates it). {@see PluginRegistryLoader} does not treat that as "nothing
+     * to compare against yet" on its own — for a pre-existing install it still floors the
+     * comparison against the cached registry's `sequence` ({@see PluginRegistryCache}), so an
+     * upgrade cannot open a rollback window before this store gets to persist its own baseline.
      */
     public function getSequence(): ?int
     {

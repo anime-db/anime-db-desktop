@@ -36,7 +36,10 @@ use App\Service\Market\Exception\InvalidPluginRegistryContentException;
  *
  * This cache is *not* the anti-rollback baseline: it can be dropped (reinstall) or pruned to a
  * snapshot, and {@see PluginRegistryHighWaterMarkStore} is what survives that instead (issue
- * #437) — do not read this cache's `sequence` for anti-rollback comparisons.
+ * #437). {@see PluginRegistryLoader} still reads this cache's `sequence` as a one-time floor for
+ * installs that predate the high-water-mark store (so it has no baseline recorded yet) — once
+ * that store has ever raised its own baseline, this cache's `sequence` no longer matters for the
+ * comparison.
  *
  * Stores the exact registry bytes as downloaded, not a re-encoded copy: re-serializing through
  * `json_encode()` here would let a future field this class does not know about silently vanish
