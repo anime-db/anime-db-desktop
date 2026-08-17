@@ -89,14 +89,18 @@ parameters:
     # Same injection pattern as app.market_registry_cache_path above, for MarketSnapshotCache
     # (issue #436): production Electron passes MARKET_SNAPSHOT_CACHE_PATH (native/paths.js,
     # native/supervisor/env.js) pointing at %AppData%/market-snapshot-cache.json. Written by
-    # MarketRefreshCommand (issue #438), the snapshot's single writer.
+    # MarketRefreshService::refresh() (issue #438, extracted from MarketRefreshCommand by issue
+    # #440), the snapshot's single writer — reached from the console command, the async messenger
+    # handler and, on the native side, an app update deleting the file directly (native/supervisor/
+    # cache-invalidation.js#invalidateMarketSnapshot).
     app.market_snapshot_cache_path.dev_default: '%kernel.project_dir%/var/market-snapshot-cache.json'
     app.market_snapshot_cache_path: '%env(default:app.market_snapshot_cache_path.dev_default:MARKET_SNAPSHOT_CACHE_PATH)%'
 
-    # Guards MarketRefreshCommand (`app:market:refresh`, issue #438) against a second, concurrent
-    # invocation: the command flock()s this file for the duration of a refresh, so a second
-    # instance started while one is already running can detect that and no-op instead of racing
-    # the first one to write the snapshot. Same injection pattern as the two market cache paths
+    # Guards MarketRefreshService::refresh() (issue #438, extracted from MarketRefreshCommand by
+    # issue #440) against a second, concurrent invocation: refresh() flock()s this file for its
+    # duration, so a second call started while one is already running — whether the console
+    # command or the async messenger handler — can detect that and no-op instead of racing the
+    # first one to write the snapshot. Same injection pattern as the two market cache paths
     # above; kept as its own file (not e.g. the snapshot cache path) so acquiring the lock never
     # has to touch — or risk truncating — the snapshot itself.
     app.market_refresh_lock_path.dev_default: '%kernel.project_dir%/var/market-refresh.lock'

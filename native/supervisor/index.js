@@ -24,6 +24,7 @@
 const { EventEmitter } = require('events');
 const cacheInvalidation = require('./cache-invalidation');
 const frankenphp        = require('./frankenphp');
+const marketRefresh     = require('./market-refresh');
 const meilisearch       = require('./meilisearch');
 const messengerConsumer = require('./messenger-consumer');
 const migrations        = require('./migrations');
@@ -133,6 +134,7 @@ async function start(onProgress, { safeMode = false } = {}) {
         meilisearch.killOrphan(),
         messengerConsumer.killOrphan(),
         migrations.killOrphan(),
+        phpCommand.killOrphan('app:market:refresh'),
         phpCommand.killOrphan('messenger:setup-transports'),
         phpCommand.killOrphan('app:search:reindex'),
         qbittorrent.killOrphan(),
@@ -141,8 +143,15 @@ async function start(onProgress, { safeMode = false } = {}) {
     // Смена SAFE_MODE между запусками требует того же вайпа, что и смена сборки (issue #386) —
     // см. safe-mode.js#hasModeChanged: набор бандлов плагинов запекается в скомпилированный
     // контейнер, и без вайпа переключение режима не даст эффекта или "залипнет" после выхода.
-    if (cacheInvalidation.hasBuildChanged() || safeModeState.hasModeChanged(safeMode)) {
+    const buildChanged = cacheInvalidation.hasBuildChanged();
+    if (buildChanged || safeModeState.hasModeChanged(safeMode)) {
         cacheInvalidation.invalidateCache();
+    }
+
+    // Снимок маркета помечен CORE_VERSION, а не отпечатком сборки — смена SAFE_MODE в одиночку
+    // его не портит, только реальный апдейт приложения (issue #440, epic #435 decision №6).
+    if (buildChanged) {
+        cacheInvalidation.invalidateMarketSnapshot();
     }
 
     const [{ port: meiliPort, key: meiliKey, wiped }, { webuiPort: qbittorrentPort }] = await Promise.all([
@@ -167,6 +176,16 @@ async function start(onProgress, { safeMode = false } = {}) {
     const workerContext = { ...phpContext, appPort: frankenphpPort };
 
     await messengerConsumer.start(workerContext);
+
+    // Fired and forgotten, not awaited (issue #440, epic #435 decision №5): a market refresh is a
+    // network fetch of the plugin registry (up to market-refresh.js's own TIMEOUT_MS), and the
+    // splash/window must not wait on it the way it does wait on migrations/FrankenPHP/messenger
+    // above. Any failure (offline, unreachable mirror) is just logged — the storefront's own
+    // render-fallback (MarketController, issue #440) and the existing cached snapshot, if any,
+    // cover the user-facing side.
+    marketRefresh.run(workerContext).catch((err) => {
+        console.error('[market-refresh] не удалось обновить снимок маркета:', err.message);
+    });
 
     if (wiped || migrationsApplied) {
         if (onProgress) onProgress(4, TOTAL_STEPS, 'splash.step_reindex');

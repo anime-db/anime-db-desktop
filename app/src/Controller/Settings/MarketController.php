@@ -29,9 +29,12 @@ namespace App\Controller\Settings;
 
 use App\Entity\ValueObject\Exception\InvalidPluginIdException;
 use App\Entity\ValueObject\PluginId;
+use App\Message\RefreshMarketSnapshotMessage;
+use App\Service\AppConfigStore;
 use App\Service\Market\Exception\PluginAssetDownloadException;
 use App\Service\Market\Exception\UnknownPluginVersionException;
 use App\Service\Market\MarketAssetDownloader;
+use App\Service\Market\MarketRefreshService;
 use App\Service\Market\MarketSnapshot;
 use App\Service\Market\MarketSnapshotCache;
 use App\Service\Market\MarketSnapshotPlugin;
@@ -49,6 +52,7 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
+use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 use Symfony\Component\Security\Csrf\CsrfToken;
@@ -93,9 +97,27 @@ use Twig\Environment;
  * behind a backup of the old one, so a failed warm-up restores it instead of leaving the plugin
  * directory empty. There is deliberately no automatic update: the resolved version merely decides
  * whether the button is shown, the update itself always waits for this explicit click.
+ *
+ * Render-fallback (issue #440): whenever the snapshot this controller would read is missing or
+ * stale (the same check {@see self::renderIndex()} already makes), it dispatches
+ * {@see RefreshMarketSnapshotMessage} on the `async` transport instead of rebuilding it inline —
+ * this HTTP path stays read-only and network-free. {@see MarketRefreshService::refresh()}'s own
+ * flock() only collapses *concurrent* refreshes into a no-op, not sequential ones — the messenger
+ * consumer processes one job at a time and releases the lock between them, so without a separate
+ * guard here, a persistently missing snapshot (offline, unreachable mirror, incompatible core
+ * version) would let every render — including the failed-install/update fallbacks below — queue up
+ * another full registry fetch. {@see self::shouldDispatchRefresh()} throttles that by reading
+ * {@see MarketRefreshService::CONFIG_KEY_LAST_REFRESH_ATTEMPT_AT}, so at most one dispatch per
+ * {@see self::REFRESH_DISPATCH_THROTTLE_SECONDS} makes it onto the queue.
  */
 final class MarketController
 {
+    /**
+     * How often a render is allowed to dispatch a background refresh while the snapshot stays
+     * unavailable — see the class docblock's "Render-fallback" section.
+     */
+    private const int REFRESH_DISPATCH_THROTTLE_SECONDS = 300;
+
     public function __construct(
         private readonly MarketSnapshotCache $snapshotCache,
         private readonly MarketAssetDownloader $assetDownloader,
@@ -105,6 +127,8 @@ final class MarketController
         private readonly CsrfTokenManagerInterface $csrfTokenManager,
         private readonly UrlGeneratorInterface $urlGenerator,
         private readonly Environment $twig,
+        private readonly MessageBusInterface $messageBus,
+        private readonly AppConfigStore $configStore,
     ) {
     }
 
@@ -217,6 +241,10 @@ final class MarketController
         $snapshot = $this->snapshotCache->load();
         $snapshotReady = $snapshot !== null && $snapshot->coreVersion === $this->coreVersion;
 
+        if (!$snapshotReady && $this->shouldDispatchRefresh()) {
+            $this->messageBus->dispatch(new RefreshMarketSnapshotMessage());
+        }
+
         $items = [];
         if ($snapshotReady) {
             foreach ($snapshot->plugins as $plugin) {
@@ -240,6 +268,32 @@ final class MarketController
             'installError' => $installError,
             'installErrorParams' => $installErrorParams,
         ]));
+    }
+
+    /**
+     * Throttles the render-fallback dispatch (see class docblock) to at most one per
+     * {@see self::REFRESH_DISPATCH_THROTTLE_SECONDS}, reading — never writing —
+     * {@see MarketRefreshService::CONFIG_KEY_LAST_REFRESH_ATTEMPT_AT}. That key is stamped by
+     * {@see MarketRefreshService::refresh()} at the *start* of every attempt, success or failure
+     * alike, which is what makes this throttle hold even while the registry stays unreachable —
+     * a marker that only moved on success would never get set at all in that case, and every
+     * render would keep dispatching.
+     */
+    private function shouldDispatchRefresh(): bool
+    {
+        $lastAttemptAt = $this->configStore->read()[MarketRefreshService::CONFIG_KEY_LAST_REFRESH_ATTEMPT_AT] ?? null;
+        if (!\is_string($lastAttemptAt)) {
+            return true;
+        }
+
+        $lastAttemptAtDate = \DateTimeImmutable::createFromFormat(\DateTimeInterface::ATOM, $lastAttemptAt);
+        if ($lastAttemptAtDate === false) {
+            return true;
+        }
+
+        $elapsedSeconds = (new \DateTimeImmutable())->getTimestamp() - $lastAttemptAtDate->getTimestamp();
+
+        return $elapsedSeconds >= self::REFRESH_DISPATCH_THROTTLE_SECONDS;
     }
 
     /**
