@@ -26,6 +26,8 @@
     <p><a href="{{ path('settings_index') }}">{{ 'settings_market.back_link'|trans }}</a></p>
     <h1>{{ 'settings_market.heading'|trans }}</h1>
 
+    {% include 'settings/market/_refresh_area.html.twig' with {'state': 'idle'} %}
+
     {% if installedPluginId is not null %}
         <p class="success">{{ 'settings_market.install_success'|trans({'%pluginId%': installedPluginId}) }}</p>
     {% endif %}

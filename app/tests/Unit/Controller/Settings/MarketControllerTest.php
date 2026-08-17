@@ -916,6 +916,184 @@ final class MarketControllerTest extends TestCase
         $controller->install('animedb-shikimori', Request::create('/settings/market/animedb-shikimori/install', 'POST', ['_token' => 'bad']));
     }
 
+    /**
+     * The manual refresh button (issue #441) dispatches unconditionally — unlike the
+     * render-fallback throttle in {@see self::testIndexDoesNotDispatchARefreshWhenARecentAttemptIsAlreadyRecorded()},
+     * a fresh attempt timestamp must never suppress an explicit click.
+     */
+    public function testRefreshDispatchesUnconditionallyAndReturnsACheckingFragment(): void
+    {
+        $messageBus = $this->createMock(MessageBusInterface::class);
+        $messageBus->expects($this->once())
+            ->method('dispatch')
+            ->with($this->isInstanceOf(RefreshMarketSnapshotMessage::class))
+            ->willReturnCallback(static fn (object $message): Envelope => new Envelope($message));
+
+        $twig = $this->createStub(Environment::class);
+        $twig->method('render')->willReturn('<div id="market-refresh-area"></div>');
+
+        $urlGenerator = $this->createStub(UrlGeneratorInterface::class);
+        $urlGenerator->method('generate')->willReturn('/settings/market/refresh/status?refreshStartedAt=...');
+
+        $controller = $this->controller(
+            $this->snapshotCacheServing(null),
+            $this->assetDownloaderServingPluginZip(),
+            $twig,
+            $urlGenerator,
+            configStore: $this->configStoreWithLastRefreshAttemptAt(new \DateTimeImmutable('-1 minute')),
+            messageBus: $messageBus,
+        );
+
+        $response = $controller->refresh(Request::create('/settings/market/refresh', 'POST', ['_token' => 'token']));
+
+        $this->assertSame(200, $response->getStatusCode());
+    }
+
+    public function testRefreshRejectsInvalidCsrfToken(): void
+    {
+        $csrf = $this->createStub(CsrfTokenManagerInterface::class);
+        $csrf->method('isTokenValid')->willReturn(false);
+
+        $controller = $this->controller(
+            $this->snapshotCacheServing(null),
+            $this->assetDownloaderServingPluginZip(),
+            $this->createStub(Environment::class),
+            csrf: $csrf,
+        );
+
+        $this->expectException(BadRequestHttpException::class);
+        $controller->refresh(Request::create('/settings/market/refresh', 'POST', ['_token' => 'bad']));
+    }
+
+    /**
+     * When the success timestamp {@see MarketRefreshService::CONFIG_KEY_LAST_REFRESH_AT} has moved
+     * past the baseline the click captured, the refresh succeeded — the response must carry
+     * `HX-Refresh` so the client reloads the page and picks up the fresh snapshot (issue #441's
+     * "the storefront shows the fresh snapshot" acceptance criterion).
+     */
+    public function testRefreshStatusReportsDoneAndTriggersAFullPageRefreshWhenTheSuccessTimestampAdvanced(): void
+    {
+        $configStore = new AppConfigStore($this->configPath);
+        $configStore->update(static fn (array $config): array => [
+            ...$config,
+            MarketRefreshService::CONFIG_KEY_LAST_REFRESH_AT => (new \DateTimeImmutable())->format(\DateTimeInterface::ATOM),
+        ]);
+
+        $twig = $this->createStub(Environment::class);
+        $twig->method('render')->willReturn('<div id="market-refresh-area"></div>');
+
+        $controller = $this->controller(
+            $this->snapshotCacheServing(null),
+            $this->assetDownloaderServingPluginZip(),
+            $twig,
+            configStore: $configStore,
+        );
+
+        $request = Request::create('/settings/market/refresh/status', 'GET', [
+            'refreshBaselineAt' => null,
+            'refreshStartedAt' => (new \DateTimeImmutable('-1 second'))->format(\DateTimeInterface::ATOM),
+        ]);
+        $response = $controller->refreshStatus($request);
+
+        $this->assertSame('true', $response->headers->get('HX-Refresh'));
+    }
+
+    /**
+     * When only the attempt timestamp moved, the refresh ran and failed — no `HX-Refresh`, the
+     * client shows a soft error and stops polling.
+     */
+    public function testRefreshStatusReportsFailedWithoutTriggeringAFullPageRefreshWhenOnlyTheAttemptTimestampAdvanced(): void
+    {
+        $configStore = new AppConfigStore($this->configPath);
+        $configStore->update(static fn (array $config): array => [
+            ...$config,
+            MarketRefreshService::CONFIG_KEY_LAST_REFRESH_ATTEMPT_AT => (new \DateTimeImmutable())->format(\DateTimeInterface::ATOM),
+        ]);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('settings/market/_refresh_area.html.twig', $this->callback(
+                static fn (array $params): bool => $params['state'] === 'failed',
+            ))
+            ->willReturn('<div id="market-refresh-area"></div>');
+
+        $controller = $this->controller(
+            $this->snapshotCacheServing(null),
+            $this->assetDownloaderServingPluginZip(),
+            $twig,
+            configStore: $configStore,
+        );
+
+        $request = Request::create('/settings/market/refresh/status', 'GET', [
+            'refreshBaselineAt' => null,
+            'refreshBaselineAttemptAt' => null,
+            'refreshStartedAt' => (new \DateTimeImmutable('-1 second'))->format(\DateTimeInterface::ATOM),
+        ]);
+        $response = $controller->refreshStatus($request);
+
+        $this->assertNull($response->headers->get('HX-Refresh'));
+    }
+
+    /**
+     * Neither timestamp moved and the polling window elapsed — report a timeout rather than
+     * polling forever.
+     */
+    public function testRefreshStatusReportsTimeoutWhenNeitherTimestampAdvancedWithinTheWindow(): void
+    {
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('settings/market/_refresh_area.html.twig', $this->callback(
+                static fn (array $params): bool => $params['state'] === 'timeout',
+            ))
+            ->willReturn('<div id="market-refresh-area"></div>');
+
+        $controller = $this->controller($this->snapshotCacheServing(null), $this->assetDownloaderServingPluginZip(), $twig);
+
+        $request = Request::create('/settings/market/refresh/status', 'GET', [
+            'refreshBaselineAt' => null,
+            'refreshBaselineAttemptAt' => null,
+            'refreshStartedAt' => (new \DateTimeImmutable('-1 hour'))->format(\DateTimeInterface::ATOM),
+        ]);
+        $response = $controller->refreshStatus($request);
+
+        $this->assertNull($response->headers->get('HX-Refresh'));
+    }
+
+    /**
+     * Neither timestamp moved yet and the window has not elapsed — keep polling.
+     */
+    public function testRefreshStatusKeepsCheckingWhenNeitherTimestampAdvancedAndTheWindowHasNotElapsed(): void
+    {
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('settings/market/_refresh_area.html.twig', $this->callback(
+                static fn (array $params): bool => $params['state'] === 'checking',
+            ))
+            ->willReturn('<div id="market-refresh-area"></div>');
+
+        $controller = $this->controller($this->snapshotCacheServing(null), $this->assetDownloaderServingPluginZip(), $twig);
+
+        $request = Request::create('/settings/market/refresh/status', 'GET', [
+            'refreshBaselineAt' => null,
+            'refreshBaselineAttemptAt' => null,
+            'refreshStartedAt' => (new \DateTimeImmutable('-1 second'))->format(\DateTimeInterface::ATOM),
+        ]);
+        $response = $controller->refreshStatus($request);
+
+        $this->assertNull($response->headers->get('HX-Refresh'));
+    }
+
+    public function testRefreshStatusRejectsAMissingOrInvalidStartedAt(): void
+    {
+        $controller = $this->controller($this->snapshotCacheServing(null), $this->assetDownloaderServingPluginZip(), $this->createStub(Environment::class));
+
+        $this->expectException(BadRequestHttpException::class);
+        $controller->refreshStatus(Request::create('/settings/market/refresh/status', 'GET', ['refreshStartedAt' => 'not-a-date']));
+    }
+
     public function testInstallRejectsAMalformedPluginId(): void
     {
         $controller = $this->controller($this->snapshotCacheServing(null), $this->assetDownloaderServingPluginZip(), $this->createStub(Environment::class));

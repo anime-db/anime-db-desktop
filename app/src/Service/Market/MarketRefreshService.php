@@ -58,7 +58,13 @@ use Psr\Log\LoggerInterface;
  */
 final class MarketRefreshService
 {
-    private const string CONFIG_KEY_LAST_REFRESH_AT = 'marketLastRefreshAt';
+    /**
+     * Public (issue #441): the manual refresh button's polling endpoint
+     * ({@see \App\Controller\Settings\MarketController::refreshStatus()}) reads this alongside
+     * {@see self::CONFIG_KEY_LAST_REFRESH_ATTEMPT_AT} below to tell a completed refresh apart from
+     * a failed or still-running one.
+     */
+    public const string CONFIG_KEY_LAST_REFRESH_AT = 'marketLastRefreshAt';
 
     /**
      * Recorded unconditionally at the start of every attempt (issue #446 review), unlike
