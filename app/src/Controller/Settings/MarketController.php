@@ -32,9 +32,9 @@ use App\Entity\ValueObject\PluginId;
 use App\Service\Market\Exception\PluginAssetDownloadException;
 use App\Service\Market\Exception\UnknownPluginVersionException;
 use App\Service\Market\MarketAssetDownloader;
-use App\Service\Market\MarketPlugin;
-use App\Service\Market\PluginRegistry;
-use App\Service\Market\PluginRegistryLoader;
+use App\Service\Market\MarketSnapshot;
+use App\Service\Market\MarketSnapshotCache;
+use App\Service\Market\MarketSnapshotPlugin;
 use App\Service\Plugin\Exception\IncompatiblePluginCoreVersionException;
 use App\Service\Plugin\Exception\InvalidInstalledPluginException;
 use App\Service\Plugin\Exception\PluginAlreadyInstalledException;
@@ -56,12 +56,19 @@ use Symfony\Component\Security\Csrf\CsrfTokenManagerInterface;
 use Twig\Environment;
 
 /**
- * The official market storefront (issue #220): lists plugins from the trusted, already
- * signature-verified `plugins-registry.json` ({@see PluginRegistryLoader}, issue #292) and drives
- * an "Install" click through the same {@see ZipPluginInstaller} the custom-ZIP path uses
+ * The official market storefront (issue #220): reads a {@see MarketSnapshot} built ahead of time
+ * by `app:market:refresh` ({@see \App\Command\MarketRefreshCommand}, issue #438) and drives an
+ * "Install" click through the same {@see ZipPluginInstaller} the custom-ZIP path uses
  * ({@see PluginController}, issue #251) — download+verify (issue #292 §3,
  * {@see MarketAssetDownloader}), unpack/move/reconcile, isolated cache warm-up and live
  * activation (issue #222), all already implemented by that installer.
+ *
+ * Issue #439 (part of epic #435) moved this controller off a live `plugins-registry.json` fetch
+ * entirely: every request below — rendering the list, and resolving what to install/update —
+ * only ever reads the already-built, already-resolved snapshot ({@see MarketSnapshotCache::load()})
+ * plus {@see InstalledPluginsRegistry} for the installed/update-available join. This controller
+ * makes zero network calls and, per the single-writer invariant #438 established, never writes to
+ * the snapshot or its cache itself — that stays the refresh command's job alone.
  *
  * Two things the custom-ZIP path shows are deliberately absent here: the `php -l` syntax lint
  * (skipped via {@see ZipPluginInstaller::install()}'s `$trusted` flag) and the "third-party
@@ -70,11 +77,14 @@ use Twig\Environment;
  * custom-uploaded ZIP was never reviewed by anything; a market plugin already passed the
  * registry's own CI before it was ever listed here.
  *
- * Each plugin's row shows the manifest of its *latest* published version — the registry stores
- * only that one inline ({@see PluginRegistry::plugins()}) — but installs whichever version
- * {@see MarketPlugin::resolveCompatibleVersion()} actually resolves against the current
- * `%app.core_version%`, which may be an older one. A plugin with no compatible version at all is
- * rendered inactive with a "needs core version X" hint instead of an "Install" button.
+ * Each plugin's row shows the manifest of its *latest* published version, plus the version/sha256
+ * the snapshot already resolved as compatible with `%app.core_version%` at the time it was built
+ * ({@see MarketSnapshotPlugin::$resolvedVersion}), which may be an older one than the latest. A
+ * plugin with no compatible version at all is rendered inactive with a "needs core version X"
+ * hint instead of an "Install" button. If the cached snapshot is missing, or was built for a
+ * different `%app.core_version%` than the one this controller runs against (an app upgrade
+ * between refreshes), the whole list is rendered as "not ready yet" instead of resolving against
+ * stale data — see {@see self::renderIndex()}.
  *
  * An already-installed plugin whose resolved compatible version is strictly newer than the one on
  * disk gets an "Update" button ({@see update()}, issue #224) instead of the plain "already installed" label
@@ -87,7 +97,7 @@ use Twig\Environment;
 final class MarketController
 {
     public function __construct(
-        private readonly PluginRegistryLoader $registryLoader,
+        private readonly MarketSnapshotCache $snapshotCache,
         private readonly MarketAssetDownloader $assetDownloader,
         private readonly ZipPluginInstaller $installer,
         private readonly InstalledPluginsRegistry $installedPlugins,
@@ -117,10 +127,10 @@ final class MarketController
     }
 
     /**
-     * Updates an already-installed plugin to whichever version {@see MarketPlugin::resolveCompatibleVersion()}
-     * currently resolves against `%app.core_version%` (issue #224) — only reachable by an explicit
-     * click of the "Update" button {@see renderIndex()} renders for such a plugin; there is no
-     * silent auto-update.
+     * Updates an already-installed plugin to whichever version the cached snapshot already
+     * resolved as compatible with `%app.core_version%` ({@see MarketSnapshotPlugin::$resolvedVersion},
+     * issue #224) — only reachable by an explicit click of the "Update" button
+     * {@see renderIndex()} renders for such a plugin; there is no silent auto-update.
      */
     #[Route('/settings/market/{pluginId}/update', name: 'settings_market_update', methods: ['POST'])]
     public function update(string $pluginId, Request $request): Response
@@ -138,27 +148,25 @@ final class MarketController
             throw new NotFoundHttpException(\sprintf('Unknown plugin "%s".', $pluginId));
         }
 
-        $result = $this->registryLoader->load();
-        $registry = $result->registry;
-        if ($registry === null) {
+        $snapshot = $this->snapshotCache->load();
+        if ($snapshot === null || $snapshot->coreVersion !== $this->coreVersion) {
             return $this->renderIndex(installError: 'settings_market.install_error_registry_unavailable');
         }
 
-        $plugin = $this->findPlugin($registry, $id);
+        $plugin = $this->findPlugin($snapshot, $id);
         if ($plugin === null) {
             return $this->renderIndex(installError: 'settings_market.install_error_unknown_plugin');
         }
 
-        $version = $plugin->resolveCompatibleVersion($this->coreVersion);
-        if ($version === null) {
+        if ($plugin->resolvedVersion === null) {
             return $this->renderIndex(
                 installError: 'settings_market.install_error_incompatible_core',
-                installErrorParams: ['%requiredCore%' => $plugin->latestVersion()->core, '%currentCore%' => $this->coreVersion],
+                installErrorParams: ['%requiredCore%' => $plugin->latestVersionCore, '%currentCore%' => $this->coreVersion],
             );
         }
 
         try {
-            $zipPath = $this->assetDownloader->downloadPluginZip($registry, $id, $version->version);
+            $zipPath = $this->assetDownloader->downloadPluginZip($plugin->sha256, $snapshot->assetMirrors, $id, $plugin->resolvedVersion);
         } catch (UnknownPluginVersionException|PluginAssetDownloadException) {
             return $this->renderIndex(installError: 'settings_market.install_error_download_failed');
         }
@@ -206,27 +214,27 @@ final class MarketController
         ?string $installError = null,
         array $installErrorParams = [],
     ): Response {
-        $result = $this->registryLoader->load();
-        $registry = $result->registry;
+        $snapshot = $this->snapshotCache->load();
+        $snapshotReady = $snapshot !== null && $snapshot->coreVersion === $this->coreVersion;
 
         $items = [];
-        foreach ($registry?->plugins() ?? [] as $plugin) {
-            $installedPlugin = $this->installedPlugins->get($plugin->id);
-            $resolvedVersion = $plugin->resolveCompatibleVersion($this->coreVersion);
+        if ($snapshotReady) {
+            foreach ($snapshot->plugins as $plugin) {
+                $installedPlugin = $this->installedPlugins->get(new PluginId($plugin->id));
 
-            $items[] = [
-                'plugin' => $plugin,
-                'resolvedVersion' => $resolvedVersion,
-                'installed' => $installedPlugin !== null,
-                'updateAvailable' => $installedPlugin !== null
-                    && $resolvedVersion !== null
-                    && $this->isNewerVersion($resolvedVersion->version, $installedPlugin->manifest->version),
-            ];
+                $items[] = [
+                    'plugin' => $plugin,
+                    'installed' => $installedPlugin !== null,
+                    'updateAvailable' => $installedPlugin !== null
+                        && $plugin->resolvedVersion !== null
+                        && $this->isNewerVersion($plugin->resolvedVersion, $installedPlugin->manifest->version),
+                ];
+            }
         }
 
         return new Response($this->twig->render('settings/market/index.html.twig', [
             'items' => $items,
-            'registryUnavailable' => $registry === null,
+            'registryUnavailable' => !$snapshotReady,
             'installedPluginId' => $installedPluginId,
             'updatedPluginId' => $updatedPluginId,
             'installError' => $installError,
@@ -250,10 +258,10 @@ final class MarketController
         );
     }
 
-    private function findPlugin(PluginRegistry $registry, PluginId $id): ?MarketPlugin
+    private function findPlugin(MarketSnapshot $snapshot, PluginId $id): ?MarketSnapshotPlugin
     {
-        foreach ($registry->plugins() as $plugin) {
-            if ((string) $plugin->id === (string) $id) {
+        foreach ($snapshot->plugins as $plugin) {
+            if ($plugin->id === (string) $id) {
                 return $plugin;
             }
         }

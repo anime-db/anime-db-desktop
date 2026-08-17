@@ -31,7 +31,6 @@ use App\Entity\ValueObject\PluginId;
 use App\Service\Market\Exception\PluginAssetDownloadException;
 use App\Service\Market\Exception\UnknownPluginVersionException;
 use App\Service\Market\MarketAssetDownloader;
-use App\Service\Market\PluginRegistry;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpClient\Exception\TransportException;
 use Symfony\Component\HttpClient\MockHttpClient;
@@ -40,25 +39,6 @@ use Symfony\Component\HttpClient\Response\MockResponse;
 final class MarketAssetDownloaderTest extends TestCase
 {
     private const string PLUGIN_ZIP_CONTENT = 'trusted plugin archive bytes';
-
-    /**
-     * @param list<string> $assetMirrors
-     */
-    private function registryWithMirrors(array $assetMirrors): PluginRegistry
-    {
-        return PluginRegistry::fromJson(json_encode([
-            'sequence' => 1,
-            'asset_mirrors' => $assetMirrors,
-            'plugins' => [
-                [
-                    'id' => 'animedb-shikimori',
-                    'versions' => [
-                        ['version' => '1.2.0', 'core' => '>=1.0', 'sha256' => hash('sha256', self::PLUGIN_ZIP_CONTENT)],
-                    ],
-                ],
-            ],
-        ], \JSON_THROW_ON_ERROR));
-    }
 
     public function testDerivesTheAssetUrlFromAssetMirrorsAndDownloadsTheVerifiedArchive(): void
     {
@@ -69,12 +49,13 @@ final class MarketAssetDownloaderTest extends TestCase
             return new MockResponse(self::PLUGIN_ZIP_CONTENT);
         }, null);
 
-        $registry = $this->registryWithMirrors([
-            'https://github.com/anime-db/anime-db-plugins/releases/download/<id>/<version>/<file>',
-        ]);
-
         $downloader = new MarketAssetDownloader($httpClient);
-        $localPath = $downloader->downloadPluginZip($registry, new PluginId('animedb-shikimori'), '1.2.0');
+        $localPath = $downloader->downloadPluginZip(
+            hash('sha256', self::PLUGIN_ZIP_CONTENT),
+            ['https://github.com/anime-db/anime-db-plugins/releases/download/<id>/<version>/<file>'],
+            new PluginId('animedb-shikimori'),
+            '1.2.0',
+        );
 
         try {
             $this->assertSame([
@@ -92,13 +73,16 @@ final class MarketAssetDownloaderTest extends TestCase
             return str_contains($url, 'mirror-a') ? new MockResponse('corrupted bytes') : new MockResponse(self::PLUGIN_ZIP_CONTENT);
         }, null);
 
-        $registry = $this->registryWithMirrors([
-            'https://mirror-a.example/<id>/<version>/<file>',
-            'https://mirror-b.example/<id>/<version>/<file>',
-        ]);
-
         $downloader = new MarketAssetDownloader($httpClient);
-        $localPath = $downloader->downloadPluginZip($registry, new PluginId('animedb-shikimori'), '1.2.0');
+        $localPath = $downloader->downloadPluginZip(
+            hash('sha256', self::PLUGIN_ZIP_CONTENT),
+            [
+                'https://mirror-a.example/<id>/<version>/<file>',
+                'https://mirror-b.example/<id>/<version>/<file>',
+            ],
+            new PluginId('animedb-shikimori'),
+            '1.2.0',
+        );
 
         try {
             $this->assertSame(self::PLUGIN_ZIP_CONTENT, file_get_contents($localPath));
@@ -117,25 +101,27 @@ final class MarketAssetDownloaderTest extends TestCase
             throw new TransportException('Connection refused.');
         }, null);
 
-        $registry = $this->registryWithMirrors([
-            'https://mirror-a.example/<id>/<version>/<file>',
-            'https://mirror-b.example/<id>/<version>/<file>',
-        ]);
-
         $downloader = new MarketAssetDownloader($httpClient);
 
         $this->expectException(PluginAssetDownloadException::class);
 
-        $downloader->downloadPluginZip($registry, new PluginId('animedb-shikimori'), '1.2.0');
+        $downloader->downloadPluginZip(
+            hash('sha256', self::PLUGIN_ZIP_CONTENT),
+            [
+                'https://mirror-a.example/<id>/<version>/<file>',
+                'https://mirror-b.example/<id>/<version>/<file>',
+            ],
+            new PluginId('animedb-shikimori'),
+            '1.2.0',
+        );
     }
 
-    public function testThrowsWhenTheRegistryHasNoChecksumForThePluginVersion(): void
+    public function testThrowsWhenNoChecksumIsPinnedForThePluginVersion(): void
     {
-        $registry = $this->registryWithMirrors(['https://mirror-a.example/<id>/<version>/<file>']);
         $downloader = new MarketAssetDownloader(new MockHttpClient());
 
         $this->expectException(UnknownPluginVersionException::class);
 
-        $downloader->downloadPluginZip($registry, new PluginId('animedb-shikimori'), '9.9.9');
+        $downloader->downloadPluginZip(null, ['https://mirror-a.example/<id>/<version>/<file>'], new PluginId('animedb-shikimori'), '9.9.9');
     }
 }

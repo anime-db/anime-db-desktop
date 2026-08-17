@@ -97,6 +97,7 @@ final class MarketSnapshotBuilderTest extends TestCase
         $this->assertSame('1.1.0', $plugin->resolvedVersion);
         $this->assertSame('sha-1.1.0', $plugin->sha256);
         $this->assertSame('1.2.0', $plugin->latestVersion);
+        $this->assertSame('>=3.0.0', $plugin->latestVersionCore);
         $this->assertSame('animedb-shikimori', $plugin->manifest['id']);
     }
 
@@ -109,6 +110,7 @@ final class MarketSnapshotBuilderTest extends TestCase
         $this->assertNull($plugin->resolvedVersion);
         $this->assertNull($plugin->sha256);
         $this->assertSame('2.0.0', $plugin->latestVersion);
+        $this->assertSame('>=99.0.0', $plugin->latestVersionCore);
     }
 
     public function testAnEmptyRegistryBuildsAnEmptyPluginsList(): void

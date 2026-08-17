@@ -74,6 +74,7 @@ final class MarketSnapshotCacheTest extends TestCase
         $this->assertSame('1.1.0', $loaded->plugins[0]->resolvedVersion);
         $this->assertSame('sha-1.1.0', $loaded->plugins[0]->sha256);
         $this->assertSame('1.2.0', $loaded->plugins[0]->latestVersion);
+        $this->assertSame('>=3.0.0', $loaded->plugins[0]->latestVersionCore);
     }
 
     public function testStoreOverwritesThePreviousCachedSnapshot(): void
@@ -144,6 +145,7 @@ final class MarketSnapshotCacheTest extends TestCase
                     '1.1.0',
                     'sha-1.1.0',
                     '1.2.0',
+                    '>=3.0.0',
                 ),
             ],
         );
