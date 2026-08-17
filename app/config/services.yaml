@@ -86,6 +86,15 @@ parameters:
     app.market_registry_cache_path.dev_default: '%kernel.project_dir%/var/market-registry-cache.json'
     app.market_registry_cache_path: '%env(default:app.market_registry_cache_path.dev_default:MARKET_REGISTRY_CACHE_PATH)%'
 
+    # Same injection pattern as app.market_registry_cache_path above, for MarketSnapshotCache
+    # (issue #436): production Electron is meant to pass MARKET_SNAPSHOT_CACHE_PATH pointing at
+    # %AppData%/market-snapshot-cache.json, the same way it passes MARKET_REGISTRY_CACHE_PATH
+    # (native/paths.js, native/supervisor/env.js). Nothing writes or reads this cache yet — that
+    # is the future refresh command's/controller's job — so wiring the native/ side is deferred to
+    # whichever of those lands first, rather than shipped ahead of any consumer.
+    app.market_snapshot_cache_path.dev_default: '%kernel.project_dir%/var/market-snapshot-cache.json'
+    app.market_snapshot_cache_path: '%env(default:app.market_snapshot_cache_path.dev_default:MARKET_SNAPSHOT_CACHE_PATH)%'
+
 services:
     # default configuration for services in *this* file
     _defaults:
@@ -102,6 +111,7 @@ services:
             $sampleCoversDir: '%app.sample_covers_dir%'
             $pushOnEditTtlSeconds: '%app.sync.push_on_edit_ttl_seconds%'
             $cachePath: '%app.market_registry_cache_path%'
+            $snapshotCachePath: '%app.market_snapshot_cache_path%'
 
     # AnimeDb\PluginContracts\Filler\FillerInterface/Search\SearchByPluginInterface/
     # Widget\EntryWidgetInterface/Widget\CatalogWidgetInterface/Sync\SyncInterface all live
