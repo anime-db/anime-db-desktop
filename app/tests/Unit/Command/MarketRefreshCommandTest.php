@@ -1,0 +1,233 @@
+<?php
+
+/**
+ * AnimeDb package.
+ *
+ * @author    Peter Gribanov <info@peter-gribanov.ru>
+ * @copyright Copyright (c) 2026, Peter Gribanov
+ * @license   https://www.gnu.org/licenses/gpl-3.0.html GPL-3.0-or-later
+ */
+
+/*
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+
+declare(strict_types=1);
+
+namespace App\Tests\Unit\Command;
+
+use App\Command\MarketRefreshCommand;
+use App\Service\AppConfigStore;
+use App\Service\Market\MarketSnapshotBuilder;
+use App\Service\Market\MarketSnapshotCache;
+use App\Service\Market\PluginRegistryCache;
+use App\Service\Market\PluginRegistryFetcher;
+use App\Service\Market\PluginRegistryHighWaterMarkStore;
+use App\Service\Market\PluginRegistryLoader;
+use App\Service\Market\PluginRegistrySignatureVerifier;
+use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
+use Symfony\Component\Console\Command\Command;
+use Symfony\Component\Console\Tester\CommandTester;
+use Symfony\Component\HttpClient\Exception\TransportException;
+use Symfony\Component\HttpClient\MockHttpClient;
+use Symfony\Component\HttpClient\Response\MockResponse;
+
+final class MarketRefreshCommandTest extends TestCase
+{
+    private string $registryCachePath;
+    private string $snapshotCachePath;
+    private string $configPath;
+    private string $lockPath;
+    private string $trustedPublicKey;
+
+    /** @var non-empty-string */
+    private string $secretKey;
+
+    protected function setUp(): void
+    {
+        $prefix = sys_get_temp_dir().'/anime-market-refresh-command-test-'.uniqid();
+        $this->registryCachePath = $prefix.'-registry.json';
+        $this->snapshotCachePath = $prefix.'-snapshot.json';
+        $this->configPath = $prefix.'-config.json';
+        $this->lockPath = $prefix.'.lock';
+
+        $keyPair = sodium_crypto_sign_keypair();
+        $this->trustedPublicKey = base64_encode(sodium_crypto_sign_publickey($keyPair));
+        $this->secretKey = sodium_crypto_sign_secretkey($keyPair);
+    }
+
+    protected function tearDown(): void
+    {
+        foreach ([
+            $this->registryCachePath, $this->registryCachePath.'.tmp',
+            $this->configPath, $this->configPath.'.tmp', $this->configPath.'.lock',
+            $this->lockPath,
+        ] as $file) {
+            if (is_file($file)) {
+                unlink($file);
+            }
+        }
+        foreach (glob($this->snapshotCachePath.'.*.tmp') ?: [] as $file) {
+            unlink($file);
+        }
+        if (is_file($this->snapshotCachePath)) {
+            unlink($this->snapshotCachePath);
+        }
+    }
+
+    public function testHappyPathBuildsAndStoresTheSnapshotRaisesHighWaterMarkAndRecordsTheRefreshTimestamp(): void
+    {
+        $tester = new CommandTester($this->commandServing($this->sign($this->registryJson(sequence: 1))));
+
+        $tester->execute([]);
+
+        $this->assertSame(Command::SUCCESS, $tester->getStatusCode());
+
+        $snapshot = (new MarketSnapshotCache($this->snapshotCachePath))->load();
+        $this->assertNotNull($snapshot);
+        $this->assertSame(1, $snapshot->sequence);
+        $this->assertSame('2.5.0', $snapshot->coreVersion);
+
+        $config = (new AppConfigStore($this->configPath))->read();
+        $this->assertSame(1, $config['marketRegistryHighWaterMarkSequence']);
+        $this->assertIsString($config['marketLastRefreshAt']);
+    }
+
+    public function testFailurePathLeavesNoSnapshotWhenNoRegistryHasEverBeenAccepted(): void
+    {
+        $unreachableHttpClient = new MockHttpClient(function (): never {
+            throw new TransportException('Connection refused.');
+        }, null);
+        $command = new MarketRefreshCommand(
+            new PluginRegistryLoader(
+                new PluginRegistryFetcher($unreachableHttpClient),
+                new PluginRegistrySignatureVerifier([$this->trustedPublicKey]),
+                new PluginRegistryCache($this->registryCachePath),
+                $this->highWaterMarkStore(),
+            ),
+            new MarketSnapshotBuilder(),
+            new MarketSnapshotCache($this->snapshotCachePath),
+            new AppConfigStore($this->configPath),
+            new NullLogger(),
+            '2.5.0',
+            $this->lockPath,
+        );
+
+        $tester = new CommandTester($command);
+        $tester->execute([]);
+
+        $this->assertSame(Command::FAILURE, $tester->getStatusCode());
+        $this->assertFileDoesNotExist($this->snapshotCachePath);
+    }
+
+    public function testFailurePathDoesNotDisturbAnExistingSnapshotWhenAFollowUpRefreshIsServedFromCache(): void
+    {
+        // First refresh: a validly signed registry is accepted, snapshot written.
+        $firstTester = new CommandTester($this->commandServing($this->sign($this->registryJson(sequence: 1))));
+        $firstTester->execute([]);
+        $this->assertSame(Command::SUCCESS, $firstTester->getStatusCode());
+        $snapshotAfterFirstRun = file_get_contents($this->snapshotCachePath);
+
+        // Second refresh: the mirror now serves a tampered signature, so the registry falls back
+        // to the cached (still sequence 1) one, but PluginRegistryLoadResult::isFresh() is false.
+        $untrustedKeyPair = sodium_crypto_sign_keypair();
+        $badSignature = base64_encode(sodium_crypto_sign_detached(
+            $this->registryJson(sequence: 2),
+            sodium_crypto_sign_secretkey($untrustedKeyPair),
+        ));
+        $secondTester = new CommandTester($this->commandServing(
+            new PluginRegistryDocumentFixture($this->registryJson(sequence: 2), $badSignature),
+        ));
+        $secondTester->execute([]);
+
+        $this->assertSame(Command::FAILURE, $secondTester->getStatusCode());
+        // The snapshot written by the first, successful refresh must be untouched.
+        $this->assertSame($snapshotAfterFirstRun, file_get_contents($this->snapshotCachePath));
+    }
+
+    public function testConcurrentInvocationIsANoOpAndLeavesTheSnapshotUntouched(): void
+    {
+        $lockHandle = fopen($this->lockPath, 'c');
+        $this->assertNotFalse($lockHandle);
+        $this->assertTrue(flock($lockHandle, \LOCK_EX | \LOCK_NB));
+
+        try {
+            $tester = new CommandTester($this->commandServing($this->sign($this->registryJson(sequence: 1))));
+            $tester->execute([]);
+
+            $this->assertSame(Command::SUCCESS, $tester->getStatusCode());
+            $this->assertFileDoesNotExist($this->snapshotCachePath);
+        } finally {
+            flock($lockHandle, \LOCK_UN);
+            fclose($lockHandle);
+        }
+    }
+
+    private function commandServing(PluginRegistryDocumentFixture $document): MarketRefreshCommand
+    {
+        $httpClient = new MockHttpClient(
+            fn (string $method, string $url): MockResponse => str_ends_with($url, '.sig')
+                ? new MockResponse($document->signatureBase64)
+                : new MockResponse($document->registryJson),
+            null,
+        );
+
+        return new MarketRefreshCommand(
+            new PluginRegistryLoader(
+                new PluginRegistryFetcher($httpClient),
+                new PluginRegistrySignatureVerifier([$this->trustedPublicKey]),
+                new PluginRegistryCache($this->registryCachePath),
+                $this->highWaterMarkStore(),
+            ),
+            new MarketSnapshotBuilder(),
+            new MarketSnapshotCache($this->snapshotCachePath),
+            new AppConfigStore($this->configPath),
+            new NullLogger(),
+            '2.5.0',
+            $this->lockPath,
+        );
+    }
+
+    private function highWaterMarkStore(): PluginRegistryHighWaterMarkStore
+    {
+        return new PluginRegistryHighWaterMarkStore(new AppConfigStore($this->configPath));
+    }
+
+    private function sign(string $registryJson): PluginRegistryDocumentFixture
+    {
+        return new PluginRegistryDocumentFixture(
+            $registryJson,
+            base64_encode(sodium_crypto_sign_detached($registryJson, $this->secretKey)),
+        );
+    }
+
+    private function registryJson(int $sequence): string
+    {
+        return json_encode(['sequence' => $sequence, 'asset_mirrors' => [], 'plugins' => []], \JSON_THROW_ON_ERROR);
+    }
+}
+
+/**
+ * Test-only pair of registry bytes + signature, kept separate from the production
+ * {@see \App\Service\Market\PluginRegistryDocument} so this file stays self-contained.
+ */
+final class PluginRegistryDocumentFixture
+{
+    public function __construct(
+        public readonly string $registryJson,
+        public readonly string $signatureBase64,
+    ) {
+    }
+}

@@ -35,6 +35,8 @@ jest.mock('../../native/paths', () => ({
     getPluginsConfigPath: jest.fn(() => '/fake/userData/plugins.json'),
     getPluginsDir:        jest.fn(() => '/fake/userData/plugins'),
     getMarketRegistryCachePath: jest.fn(() => '/fake/userData/market-registry-cache.json'),
+    getMarketSnapshotCachePath: jest.fn(() => '/fake/userData/market-snapshot-cache.json'),
+    getMarketRefreshLockPath:   jest.fn(() => '/fake/userData/market-refresh.lock'),
 }));
 jest.mock('../../native/config', () => ({
     getOrCreateAppSecret: jest.fn(() => 'a'.repeat(64)),
@@ -50,6 +52,8 @@ describe('buildCommonEnv', () => {
         expect(env.PLUGINS_DIR).toBe('/fake/userData/plugins');
         expect(env.PLUGINS_CONFIG_PATH).toBe('/fake/userData/plugins.json');
         expect(env.MARKET_REGISTRY_CACHE_PATH).toBe('/fake/userData/market-registry-cache.json');
+        expect(env.MARKET_SNAPSHOT_CACHE_PATH).toBe('/fake/userData/market-snapshot-cache.json');
+        expect(env.MARKET_REFRESH_LOCK_PATH).toBe('/fake/userData/market-refresh.lock');
         expect(env.QBITTORRENT_URL).toBe('http://127.0.0.1:9999');
         expect(env.OAUTH_CALLBACK_ORIGIN).toBe('http://127.0.0.1:8000');
         expect(env.MEDIA_DIR).toBe('/fake/userData/media');

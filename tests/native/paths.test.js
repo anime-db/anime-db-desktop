@@ -93,6 +93,14 @@ test('getMarketRegistryCachePath returns market-registry-cache.json inside userD
     expect(paths.getMarketRegistryCachePath()).toBe(path.join(USER_DATA, 'market-registry-cache.json'));
 });
 
+test('getMarketSnapshotCachePath returns market-snapshot-cache.json inside userData', () => {
+    expect(paths.getMarketSnapshotCachePath()).toBe(path.join(USER_DATA, 'market-snapshot-cache.json'));
+});
+
+test('getMarketRefreshLockPath returns market-refresh.lock inside userData', () => {
+    expect(paths.getMarketRefreshLockPath()).toBe(path.join(USER_DATA, 'market-refresh.lock'));
+});
+
 test('all path functions reflect a different userData value (fallback scenario)', () => {
     const OTHER = '/other/AppData/AnimeDB';
     app.getPath.mockReturnValue(OTHER);

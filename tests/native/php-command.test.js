@@ -35,6 +35,8 @@ jest.mock('../../native/paths', () => ({
     getPluginsConfigPath:  jest.fn(() => '/fake/userData/plugins.json'),
     getPluginsDir:         jest.fn(() => '/fake/userData/plugins'),
     getMarketRegistryCachePath: jest.fn(() => '/fake/userData/market-registry-cache.json'),
+    getMarketSnapshotCachePath: jest.fn(() => '/fake/userData/market-snapshot-cache.json'),
+    getMarketRefreshLockPath:   jest.fn(() => '/fake/userData/market-refresh.lock'),
 }));
 jest.mock('../../native/config', () => ({
     getOrCreateAppSecret: jest.fn(() => 'a'.repeat(64)),
