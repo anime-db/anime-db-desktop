@@ -32,9 +32,11 @@ use App\Service\Market\Exception\InvalidPluginRegistryContentException;
 /**
  * Persists the last successfully verified `plugins-registry.json` at
  * `%app.market_registry_cache_path%`, so {@see PluginRegistryLoader} has something to serve
- * when a fresh download fails, is unsigned/mis-signed, or is rejected as a rollback — and so the
- * last-seen `sequence` survives an app restart (anti-rollback must hold across runs, not just
- * within one process's lifetime).
+ * when a fresh download fails, is unsigned/mis-signed, or is rejected as a rollback.
+ *
+ * This cache is *not* the anti-rollback baseline: it can be dropped (reinstall) or pruned to a
+ * snapshot, and {@see PluginRegistryHighWaterMarkStore} is what survives that instead (issue
+ * #437) — do not read this cache's `sequence` for anti-rollback comparisons.
  *
  * Stores the exact registry bytes as downloaded, not a re-encoded copy: re-serializing through
  * `json_encode()` here would let a future field this class does not know about silently vanish
@@ -66,11 +68,6 @@ final class PluginRegistryCache
         } catch (InvalidPluginRegistryContentException) {
             return null;
         }
-    }
-
-    public function getLastSequence(): ?int
-    {
-        return $this->getCachedRegistry()?->sequence;
     }
 
     public function store(string $registryJson): void

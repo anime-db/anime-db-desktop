@@ -27,11 +27,13 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Service\Market;
 
+use App\Service\AppConfigStore;
 use App\Service\Market\Exception\InvalidPluginRegistrySignatureException;
 use App\Service\Market\Exception\PluginRegistryFetchException;
 use App\Service\Market\Exception\PluginRegistryRollbackException;
 use App\Service\Market\PluginRegistryCache;
 use App\Service\Market\PluginRegistryFetcher;
+use App\Service\Market\PluginRegistryHighWaterMarkStore;
 use App\Service\Market\PluginRegistryLoader;
 use App\Service\Market\PluginRegistrySignatureVerifier;
 use PHPUnit\Framework\TestCase;
@@ -42,6 +44,7 @@ use Symfony\Component\HttpClient\Response\MockResponse;
 final class PluginRegistryLoaderTest extends TestCase
 {
     private string $cachePath;
+    private string $configPath;
     private string $trustedPublicKey;
 
     /** @var non-empty-string */
@@ -50,6 +53,7 @@ final class PluginRegistryLoaderTest extends TestCase
     protected function setUp(): void
     {
         $this->cachePath = sys_get_temp_dir().'/anime-market-registry-loader-test-'.uniqid().'.json';
+        $this->configPath = sys_get_temp_dir().'/anime-market-registry-loader-test-config-'.uniqid().'.json';
 
         $keyPair = sodium_crypto_sign_keypair();
         $this->trustedPublicKey = base64_encode(sodium_crypto_sign_publickey($keyPair));
@@ -58,7 +62,10 @@ final class PluginRegistryLoaderTest extends TestCase
 
     protected function tearDown(): void
     {
-        foreach ([$this->cachePath, $this->cachePath.'.tmp'] as $file) {
+        foreach ([
+            $this->cachePath, $this->cachePath.'.tmp',
+            $this->configPath, $this->configPath.'.tmp', $this->configPath.'.lock',
+        ] as $file) {
             if (is_file($file)) {
                 unlink($file);
             }
@@ -74,8 +81,8 @@ final class PluginRegistryLoaderTest extends TestCase
         $this->assertTrue($result->isFresh());
         $this->assertNull($result->error);
         $this->assertSame(1, $result->registry?->sequence);
-        // The accepted registry must also be cached, becoming the anti-rollback baseline.
-        $this->assertSame(1, (new PluginRegistryCache($this->cachePath))->getLastSequence());
+        // The accepted registry's sequence must also raise the persisted high-water-mark.
+        $this->assertSame(1, $this->highWaterMarkStore()->getSequence());
     }
 
     public function testRejectsARegistrySignedByAnUntrustedKey(): void
@@ -114,7 +121,7 @@ final class PluginRegistryLoaderTest extends TestCase
         $this->assertSame(1, $result->registry?->sequence);
     }
 
-    public function testRejectsARegistryWithASequenceLowerThanTheCachedOne(): void
+    public function testRejectsARegistryWithASequenceLowerThanTheHighWaterMark(): void
     {
         // First load establishes sequence 5 as the anti-rollback baseline.
         $this->loaderServing($this->sign($this->registryJson(sequence: 5)))->load();
@@ -134,6 +141,28 @@ final class PluginRegistryLoaderTest extends TestCase
         $this->assertSame(5, $result->registry?->sequence);
     }
 
+    public function testHighWaterMarkSurvivesTheRegistryCacheBeingCleared(): void
+    {
+        // First load establishes sequence 5 as the anti-rollback baseline, cached alongside it.
+        $this->loaderServing($this->sign($this->registryJson(sequence: 5)))->load();
+        $this->assertTrue(is_file($this->cachePath));
+
+        // The cache is dropped (reinstall, or a future snapshot prune) — the raw cache file is
+        // gone, but the high-water-mark must not be reset by that.
+        unlink($this->cachePath);
+        $this->assertSame(5, $this->highWaterMarkStore()->getSequence());
+
+        // A validly signed but older (sequence 3) registry is replayed by a mirror.
+        $result = $this->loaderServing($this->sign($this->registryJson(sequence: 3)))->load();
+
+        $error = $result->error;
+        if (!$error instanceof PluginRegistryRollbackException) {
+            $this->fail('Expected a PluginRegistryRollbackException.');
+        }
+        $this->assertSame(3, $error->rejectedSequence);
+        $this->assertSame(5, $error->lastKnownSequence);
+    }
+
     public function testFallsBackToCacheWhenEveryMirrorIsUnreachable(): void
     {
         $this->loaderServing($this->sign($this->registryJson(sequence: 1)))->load();
@@ -145,6 +174,7 @@ final class PluginRegistryLoaderTest extends TestCase
             new PluginRegistryFetcher($unreachableHttpClient),
             new PluginRegistrySignatureVerifier([$this->trustedPublicKey]),
             new PluginRegistryCache($this->cachePath),
+            $this->highWaterMarkStore(),
         );
 
         $result = $loader->load();
@@ -172,6 +202,7 @@ final class PluginRegistryLoaderTest extends TestCase
                 new PluginRegistryFetcher($httpClient),
                 new PluginRegistrySignatureVerifier([$this->trustedPublicKey]),
                 new PluginRegistryCache($blockingFile.'/registry.json'),
+                $this->highWaterMarkStore(),
             );
 
             $result = $loader->load();
@@ -212,7 +243,13 @@ final class PluginRegistryLoaderTest extends TestCase
             new PluginRegistryFetcher($httpClient),
             new PluginRegistrySignatureVerifier([$this->trustedPublicKey]),
             new PluginRegistryCache($this->cachePath),
+            $this->highWaterMarkStore(),
         );
+    }
+
+    private function highWaterMarkStore(): PluginRegistryHighWaterMarkStore
+    {
+        return new PluginRegistryHighWaterMarkStore(new AppConfigStore($this->configPath));
     }
 
     private function sign(string $registryJson): PluginRegistryDocumentFixture

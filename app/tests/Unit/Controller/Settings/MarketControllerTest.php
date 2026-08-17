@@ -29,9 +29,11 @@ namespace App\Tests\Unit\Controller\Settings;
 
 use App\Controller\Settings\MarketController;
 use App\Entity\ValueObject\PluginId;
+use App\Service\AppConfigStore;
 use App\Service\Market\MarketAssetDownloader;
 use App\Service\Market\PluginRegistryCache;
 use App\Service\Market\PluginRegistryFetcher;
+use App\Service\Market\PluginRegistryHighWaterMarkStore;
 use App\Service\Market\PluginRegistryLoader;
 use App\Service\Market\PluginRegistrySignatureVerifier;
 use App\Service\Plugin\InstalledPluginsRegistry;
@@ -66,6 +68,7 @@ final class MarketControllerTest extends TestCase
     private string $rootDir;
     private string $pluginsDir;
     private string $cachePath;
+    private string $configPath;
     private InstalledPluginsRegistry $installedPlugins;
     private string $trustedPublicKey;
 
@@ -79,6 +82,7 @@ final class MarketControllerTest extends TestCase
         mkdir($this->pluginsDir, recursive: true);
 
         $this->cachePath = $this->rootDir.'/market-registry-cache.json';
+        $this->configPath = $this->rootDir.'/config.json';
 
         $this->installedPlugins = new InstalledPluginsRegistry(
             $this->pluginsDir,
@@ -130,6 +134,7 @@ final class MarketControllerTest extends TestCase
             new PluginRegistryFetcher($httpClient),
             new PluginRegistrySignatureVerifier([$this->trustedPublicKey]),
             new PluginRegistryCache($this->cachePath),
+            $this->highWaterMarkStore(),
         );
     }
 
@@ -143,7 +148,13 @@ final class MarketControllerTest extends TestCase
             new PluginRegistryFetcher($httpClient),
             new PluginRegistrySignatureVerifier([$this->trustedPublicKey]),
             new PluginRegistryCache($this->cachePath),
+            $this->highWaterMarkStore(),
         );
+    }
+
+    private function highWaterMarkStore(): PluginRegistryHighWaterMarkStore
+    {
+        return new PluginRegistryHighWaterMarkStore(new AppConfigStore($this->configPath));
     }
 
     private function assetDownloaderServingPluginZip(): MarketAssetDownloader
