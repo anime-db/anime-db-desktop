@@ -999,6 +999,81 @@ final class MarketControllerTest extends TestCase
     }
 
     /**
+     * A returning user already has a non-empty {@see MarketRefreshService::CONFIG_KEY_LAST_REFRESH_AT}
+     * from a previous refresh — this proves {@see MarketController::refreshStatus()} compares the
+     * current timestamp against the *baseline* the click captured, not merely against null. Without
+     * that comparison, a poll landing before the new refresh even finishes would see the old,
+     * already-non-null timestamp and wrongly report `done`.
+     */
+    public function testRefreshStatusKeepsCheckingWhenTheSuccessTimestampEqualsTheBaseline(): void
+    {
+        $previousRefreshAt = (new \DateTimeImmutable('-1 hour'))->format(\DateTimeInterface::ATOM);
+
+        $configStore = new AppConfigStore($this->configPath);
+        $configStore->update(static fn (array $config): array => [
+            ...$config,
+            MarketRefreshService::CONFIG_KEY_LAST_REFRESH_AT => $previousRefreshAt,
+        ]);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('settings/market/_refresh_area.html.twig', $this->callback(
+                static fn (array $params): bool => $params['state'] === 'checking',
+            ))
+            ->willReturn('<div id="market-refresh-area"></div>');
+
+        $controller = $this->controller(
+            $this->snapshotCacheServing(null),
+            $this->assetDownloaderServingPluginZip(),
+            $twig,
+            configStore: $configStore,
+        );
+
+        $request = Request::create('/settings/market/refresh/status', 'GET', [
+            'refreshBaselineAt' => $previousRefreshAt,
+            'refreshStartedAt' => (new \DateTimeImmutable('-1 second'))->format(\DateTimeInterface::ATOM),
+        ]);
+        $response = $controller->refreshStatus($request);
+
+        $this->assertNull($response->headers->get('HX-Refresh'));
+    }
+
+    /**
+     * The same returning-user scenario as above, but the new refresh has actually completed — the
+     * current timestamp differs from the (non-empty) baseline, so this must still report `done`.
+     */
+    public function testRefreshStatusReportsDoneWhenTheSuccessTimestampAdvancedPastANonEmptyBaseline(): void
+    {
+        $previousRefreshAt = (new \DateTimeImmutable('-1 hour'))->format(\DateTimeInterface::ATOM);
+        $newRefreshAt = (new \DateTimeImmutable())->format(\DateTimeInterface::ATOM);
+
+        $configStore = new AppConfigStore($this->configPath);
+        $configStore->update(static fn (array $config): array => [
+            ...$config,
+            MarketRefreshService::CONFIG_KEY_LAST_REFRESH_AT => $newRefreshAt,
+        ]);
+
+        $twig = $this->createStub(Environment::class);
+        $twig->method('render')->willReturn('<div id="market-refresh-area"></div>');
+
+        $controller = $this->controller(
+            $this->snapshotCacheServing(null),
+            $this->assetDownloaderServingPluginZip(),
+            $twig,
+            configStore: $configStore,
+        );
+
+        $request = Request::create('/settings/market/refresh/status', 'GET', [
+            'refreshBaselineAt' => $previousRefreshAt,
+            'refreshStartedAt' => (new \DateTimeImmutable('-1 second'))->format(\DateTimeInterface::ATOM),
+        ]);
+        $response = $controller->refreshStatus($request);
+
+        $this->assertSame('true', $response->headers->get('HX-Refresh'));
+    }
+
+    /**
      * When only the attempt timestamp moved, the refresh ran and failed — no `HX-Refresh`, the
      * client shows a soft error and stops polling.
      */
@@ -1028,6 +1103,47 @@ final class MarketControllerTest extends TestCase
         $request = Request::create('/settings/market/refresh/status', 'GET', [
             'refreshBaselineAt' => null,
             'refreshBaselineAttemptAt' => null,
+            'refreshStartedAt' => (new \DateTimeImmutable('-1 second'))->format(\DateTimeInterface::ATOM),
+        ]);
+        $response = $controller->refreshStatus($request);
+
+        $this->assertNull($response->headers->get('HX-Refresh'));
+    }
+
+    /**
+     * A returning user already has a non-empty {@see MarketRefreshService::CONFIG_KEY_LAST_REFRESH_ATTEMPT_AT}
+     * from a previous refresh — this proves the failure check also compares against the baseline,
+     * not merely against null. Without that comparison, a poll landing before the new attempt even
+     * finishes would see the old, already-non-null attempt timestamp and wrongly report `failed`.
+     */
+    public function testRefreshStatusKeepsCheckingWhenTheAttemptTimestampEqualsTheBaseline(): void
+    {
+        $previousAttemptAt = (new \DateTimeImmutable('-1 hour'))->format(\DateTimeInterface::ATOM);
+
+        $configStore = new AppConfigStore($this->configPath);
+        $configStore->update(static fn (array $config): array => [
+            ...$config,
+            MarketRefreshService::CONFIG_KEY_LAST_REFRESH_ATTEMPT_AT => $previousAttemptAt,
+        ]);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('settings/market/_refresh_area.html.twig', $this->callback(
+                static fn (array $params): bool => $params['state'] === 'checking',
+            ))
+            ->willReturn('<div id="market-refresh-area"></div>');
+
+        $controller = $this->controller(
+            $this->snapshotCacheServing(null),
+            $this->assetDownloaderServingPluginZip(),
+            $twig,
+            configStore: $configStore,
+        );
+
+        $request = Request::create('/settings/market/refresh/status', 'GET', [
+            'refreshBaselineAt' => null,
+            'refreshBaselineAttemptAt' => $previousAttemptAt,
             'refreshStartedAt' => (new \DateTimeImmutable('-1 second'))->format(\DateTimeInterface::ATOM),
         ]);
         $response = $controller->refreshStatus($request);
