@@ -108,7 +108,9 @@ use Twig\Environment;
  * version) would let every render — including the failed-install/update fallbacks below — queue up
  * another full registry fetch. {@see self::shouldDispatchRefresh()} throttles that by reading
  * {@see MarketRefreshService::CONFIG_KEY_LAST_REFRESH_ATTEMPT_AT}, so at most one dispatch per
- * {@see self::REFRESH_DISPATCH_THROTTLE_SECONDS} makes it onto the queue.
+ * {@see self::REFRESH_DISPATCH_THROTTLE_SECONDS} makes it onto the queue. That key moves at the
+ * *end* of an attempt (success or failure alike), so a still-running refresh does not reset this
+ * throttle mid-flight — see that constant's own docblock.
  *
  * Manual refresh (issue #441): the "Check for updates" button on the storefront dispatches the
  * same {@see RefreshMarketSnapshotMessage} unconditionally through {@see self::refresh()} — unlike
