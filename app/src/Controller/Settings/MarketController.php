@@ -108,7 +108,19 @@ use Twig\Environment;
  * version) would let every render — including the failed-install/update fallbacks below — queue up
  * another full registry fetch. {@see self::shouldDispatchRefresh()} throttles that by reading
  * {@see MarketRefreshService::CONFIG_KEY_LAST_REFRESH_ATTEMPT_AT}, so at most one dispatch per
- * {@see self::REFRESH_DISPATCH_THROTTLE_SECONDS} makes it onto the queue.
+ * {@see self::REFRESH_DISPATCH_THROTTLE_SECONDS} makes it onto the queue. That key moves at the
+ * *end* of an attempt (success or failure alike), so a still-running refresh does not reset this
+ * throttle mid-flight — see that constant's own docblock.
+ *
+ * Manual refresh (issue #441): the "Check for updates" button on the storefront dispatches the
+ * same {@see RefreshMarketSnapshotMessage} unconditionally through {@see self::refresh()} — unlike
+ * the render-fallback above, an explicit click is never throttled, since {@see MarketRefreshService}'s
+ * own flock() already collapses a click that lands while a refresh is in flight into a no-op, and
+ * the client disables the button for the duration of the check. The click captures the two
+ * {@see MarketRefreshService} timestamps as they stood right before dispatch and hands them back to
+ * {@see self::refreshStatus()} through the polling URL, which is how that endpoint tells a
+ * completed refresh (the success timestamp moved past its baseline) apart from a failed attempt
+ * (only the attempt timestamp moved) or one still in flight (neither moved yet).
  */
 final class MarketController
 {
@@ -117,6 +129,18 @@ final class MarketController
      * unavailable — see the class docblock's "Render-fallback" section.
      */
     private const int REFRESH_DISPATCH_THROTTLE_SECONDS = 300;
+
+    /**
+     * The CSRF token id the manual refresh button and its retry forms share — there is only ever
+     * one such control per page, unlike the per-plugin install/update tokens above.
+     */
+    private const string REFRESH_CSRF_TOKEN_ID = 'settings_market_refresh';
+
+    /**
+     * How long {@see self::refreshStatus()} keeps reporting "checking" before giving up and telling
+     * the client to stop polling — see the class docblock's "Manual refresh" section.
+     */
+    private const int REFRESH_STATUS_TIMEOUT_SECONDS = 30;
 
     public function __construct(
         private readonly MarketSnapshotCache $snapshotCache,
@@ -160,6 +184,103 @@ final class MarketController
     public function update(string $pluginId, Request $request): Response
     {
         return $this->installOrUpdate($pluginId, $request, update: true);
+    }
+
+    /**
+     * The manual "Check for updates" trigger — see the class docblock's "Manual refresh" section.
+     * Reads {@see MarketRefreshService}'s timestamps as a baseline *before* dispatching, since the
+     * consumer could in principle finish before this request even returns.
+     */
+    #[Route('/settings/market/refresh', name: 'settings_market_refresh', methods: ['POST'])]
+    public function refresh(Request $request): Response
+    {
+        $this->assertValidCsrfToken(self::REFRESH_CSRF_TOKEN_ID, $request);
+
+        $config = $this->configStore->read();
+        $baselineRefreshAt = $this->stringOrNull($config[MarketRefreshService::CONFIG_KEY_LAST_REFRESH_AT] ?? null);
+        $baselineAttemptAt = $this->stringOrNull($config[MarketRefreshService::CONFIG_KEY_LAST_REFRESH_ATTEMPT_AT] ?? null);
+
+        $this->messageBus->dispatch(new RefreshMarketSnapshotMessage());
+
+        return $this->renderRefreshArea('checking', $baselineRefreshAt, $baselineAttemptAt, new \DateTimeImmutable());
+    }
+
+    /**
+     * Polled by the "checking" fragment {@see self::refresh()} returns — see the class docblock's
+     * "Manual refresh" section for how the baseline/current timestamp comparison tells success,
+     * failure and still-in-progress apart. Never writes anything; a stale or tampered baseline can
+     * at worst report the wrong status text, not corrupt any state.
+     */
+    #[Route('/settings/market/refresh/status', name: 'settings_market_refresh_status', methods: ['GET'])]
+    public function refreshStatus(Request $request): Response
+    {
+        $baselineRefreshAt = $this->stringOrNull($request->query->get('refreshBaselineAt'));
+        $baselineAttemptAt = $this->stringOrNull($request->query->get('refreshBaselineAttemptAt'));
+
+        $startedAt = \DateTimeImmutable::createFromFormat(\DateTimeInterface::ATOM, (string) $request->query->get('refreshStartedAt'));
+        if ($startedAt === false) {
+            throw new BadRequestHttpException('Invalid "refreshStartedAt".');
+        }
+
+        $config = $this->configStore->read();
+        $currentRefreshAt = $this->stringOrNull($config[MarketRefreshService::CONFIG_KEY_LAST_REFRESH_AT] ?? null);
+        $currentAttemptAt = $this->stringOrNull($config[MarketRefreshService::CONFIG_KEY_LAST_REFRESH_ATTEMPT_AT] ?? null);
+
+        // Checked first: a successful refresh advances both timestamps (see
+        // MarketRefreshService::doRefresh()), so this must win over the failure check below.
+        if ($currentRefreshAt !== null && $currentRefreshAt !== $baselineRefreshAt) {
+            return $this->renderRefreshArea('done');
+        }
+
+        if ($currentAttemptAt !== null && $currentAttemptAt !== $baselineAttemptAt) {
+            return $this->renderRefreshArea('failed');
+        }
+
+        $elapsedSeconds = (new \DateTimeImmutable())->getTimestamp() - $startedAt->getTimestamp();
+        if ($elapsedSeconds >= self::REFRESH_STATUS_TIMEOUT_SECONDS) {
+            return $this->renderRefreshArea('timeout');
+        }
+
+        return $this->renderRefreshArea('checking', $baselineRefreshAt, $baselineAttemptAt, $startedAt);
+    }
+
+    /**
+     * Renders the `#market-refresh-area` fragment for every state that control can be in. A `done`
+     * response tells the client to reload the whole page via the `HX-Refresh` header instead of
+     * swapping in fresh markup itself — the storefront table this control sits above is out of
+     * scope for this fragment, and a full reload is the simplest way to make sure it picks up the
+     * snapshot the refresh just wrote.
+     */
+    private function renderRefreshArea(
+        string $state,
+        ?string $baselineRefreshAt = null,
+        ?string $baselineAttemptAt = null,
+        ?\DateTimeImmutable $startedAt = null,
+    ): Response {
+        $statusUrl = null;
+        if ($state === 'checking') {
+            $statusUrl = $this->urlGenerator->generate('settings_market_refresh_status', [
+                'refreshBaselineAt' => $baselineRefreshAt,
+                'refreshBaselineAttemptAt' => $baselineAttemptAt,
+                'refreshStartedAt' => $startedAt?->format(\DateTimeInterface::ATOM),
+            ]);
+        }
+
+        $response = new Response($this->twig->render('settings/market/_refresh_area.html.twig', [
+            'state' => $state,
+            'statusUrl' => $statusUrl,
+        ]));
+
+        if ($state === 'done') {
+            $response->headers->set('HX-Refresh', 'true');
+        }
+
+        return $response;
+    }
+
+    private function stringOrNull(mixed $value): ?string
+    {
+        return \is_string($value) ? $value : null;
     }
 
     private function installOrUpdate(string $pluginId, Request $request, bool $update): Response

@@ -58,15 +58,25 @@ use Psr\Log\LoggerInterface;
  */
 final class MarketRefreshService
 {
-    private const string CONFIG_KEY_LAST_REFRESH_AT = 'marketLastRefreshAt';
+    /**
+     * Public (issue #441): the manual refresh button's polling endpoint
+     * ({@see \App\Controller\Settings\MarketController::refreshStatus()}) reads this alongside
+     * {@see self::CONFIG_KEY_LAST_REFRESH_ATTEMPT_AT} below to tell a completed refresh apart from
+     * a failed or still-running one.
+     */
+    public const string CONFIG_KEY_LAST_REFRESH_AT = 'marketLastRefreshAt';
 
     /**
-     * Recorded unconditionally at the start of every attempt (issue #446 review), unlike
-     * {@see self::CONFIG_KEY_LAST_REFRESH_AT} above which only moves on success. Callers that want
-     * to throttle how often they *trigger* a refresh (e.g. {@see \App\Controller\Settings\MarketController})
-     * need to know when the last attempt started, not when one last completed — otherwise a
-     * persistently failing registry fetch (offline, unreachable mirror, ...) never gets a recorded
-     * timestamp to throttle against, and every caller keeps re-dispatching.
+     * Recorded unconditionally at the end of every attempt, success or failure alike (issue #441
+     * review), unlike {@see self::CONFIG_KEY_LAST_REFRESH_AT} above which only moves on success.
+     * Stamped together with that key rather than at the start of {@see self::doRefresh()}: writing
+     * it before {@see PluginRegistryLoader::load()} (a network fetch that can take seconds) would
+     * make {@see \App\Controller\Settings\MarketController::refreshStatus()} see this timestamp
+     * move while the refresh is still in flight and misreport it as failed. Callers that want to
+     * throttle how often they *trigger* a refresh (e.g. {@see \App\Controller\Settings\MarketController})
+     * need to know when the last attempt finished, not when one last started — a persistently
+     * failing registry fetch (offline, unreachable mirror, ...) still gets a recorded timestamp to
+     * throttle against, just after each attempt's own network timeout elapses instead of before it.
      */
     public const string CONFIG_KEY_LAST_REFRESH_ATTEMPT_AT = 'marketLastRefreshAttemptAt';
 
@@ -113,32 +123,32 @@ final class MarketRefreshService
 
     private function doRefresh(): bool
     {
-        $this->configStore->update(static function (array $config): array {
-            $config[self::CONFIG_KEY_LAST_REFRESH_ATTEMPT_AT] = (new \DateTimeImmutable())->format(\DateTimeInterface::ATOM);
-
-            return $config;
-        });
-
         $result = $this->registryLoader->load();
         $registry = $result->registry;
+        $success = $registry !== null && $result->error === null;
 
-        if ($registry === null || $result->error !== null) {
+        if ($success) {
+            $snapshot = $this->snapshotBuilder->build($registry, $this->coreVersion);
+            $this->snapshotCache->store($snapshot);
+        } else {
             $this->logger->error('market refresh: registry refresh failed, keeping the existing snapshot.', [
                 'exception' => $result->error,
             ]);
-
-            return false;
         }
 
-        $snapshot = $this->snapshotBuilder->build($registry, $this->coreVersion);
-        $this->snapshotCache->store($snapshot);
-
-        $this->configStore->update(static function (array $config): array {
-            $config[self::CONFIG_KEY_LAST_REFRESH_AT] = (new \DateTimeImmutable())->format(\DateTimeInterface::ATOM);
+        // Both timestamps are stamped together, after load() resolves either way — see
+        // CONFIG_KEY_LAST_REFRESH_ATTEMPT_AT's docblock for why this must not happen before
+        // load(), which can run for seconds.
+        $this->configStore->update(static function (array $config) use ($success): array {
+            $now = (new \DateTimeImmutable())->format(\DateTimeInterface::ATOM);
+            $config[self::CONFIG_KEY_LAST_REFRESH_ATTEMPT_AT] = $now;
+            if ($success) {
+                $config[self::CONFIG_KEY_LAST_REFRESH_AT] = $now;
+            }
 
             return $config;
         });
 
-        return true;
+        return $success;
     }
 }

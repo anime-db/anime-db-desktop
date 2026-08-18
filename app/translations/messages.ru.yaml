@@ -235,6 +235,10 @@ settings_market:
     install_error_already_installed: 'Плагин «%pluginId%» уже установлен.'
     install_error_invalid_manifest: Некорректный manifest.json в архиве плагина.
     install_error_generic: Не удалось распаковать или установить архив плагина.
+    refresh_button: Проверить обновления
+    refresh_checking: Проверяю обновления…
+    refresh_failed: Не удалось обновить каталог маркета. Попробуйте ещё раз позже.
+    refresh_timeout: Проверка обновлений всё ещё выполняется или прервалась. Попробуйте ещё раз позже.
 
 settings_plugin_page:
     title_suffix: Настройки плагина — AnimeDB

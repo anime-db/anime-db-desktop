@@ -1,0 +1,45 @@
+{#
+ # AnimeDb package.
+ #
+ # @author    Peter Gribanov <info@peter-gribanov.ru>
+ # @copyright Copyright (c) 2026, Peter Gribanov
+ # @license   https://www.gnu.org/licenses/gpl-3.0.html GPL-3.0-or-later
+ #
+ # This program is free software: you can redistribute it and/or modify
+ # it under the terms of the GNU General Public License as published by
+ # the Free Software Foundation, either version 3 of the License, or
+ # (at your option) any later version.
+ #
+ # This program is distributed in the hope that it will be useful,
+ # but WITHOUT ANY WARRANTY; without even the implied warranty of
+ # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ # GNU General Public License for more details.
+ #
+ # You should have received a copy of the GNU General Public License
+ # along with this program. If not, see <https://www.gnu.org/licenses/>.
+ #}
+{# The manual refresh control (issue #441). `state` is one of:
+ # - idle:     nothing in progress yet, show the button.
+ # - checking: a refresh was dispatched, poll {{ statusUrl }} for its outcome.
+ # - failed:   the attempt timestamp moved but the success one did not — the refresh ran and failed.
+ # - timeout:  neither timestamp moved within the polling window — still running or stuck.
+ # - done:     the success timestamp moved; the response carries `HX-Refresh` so the client never
+ #             actually renders this state, but it stays valid markup regardless.
+ #}
+<div id="market-refresh-area">
+    {% if state == 'checking' %}
+        <div hx-get="{{ statusUrl }}" hx-trigger="load delay:2s" hx-target="#market-refresh-area" hx-swap="outerHTML">
+            <button type="button" disabled>{{ 'settings_market.refresh_checking'|trans }}</button>
+        </div>
+    {% else %}
+        {% if state == 'failed' %}
+            <p class="error">{{ 'settings_market.refresh_failed'|trans }}</p>
+        {% elseif state == 'timeout' %}
+            <p>{{ 'settings_market.refresh_timeout'|trans }}</p>
+        {% endif %}
+        <form hx-post="{{ path('settings_market_refresh') }}" hx-target="#market-refresh-area" hx-swap="outerHTML" hx-disabled-elt="find button">
+            <input type="hidden" name="_token" value="{{ csrf_token('settings_market_refresh') }}">
+            <button type="submit">{{ 'settings_market.refresh_button'|trans }}</button>
+        </form>
+    {% endif %}
+</div>

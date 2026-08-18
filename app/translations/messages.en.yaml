@@ -235,6 +235,10 @@ settings_market:
     install_error_already_installed: 'Plugin "%pluginId%" is already installed.'
     install_error_invalid_manifest: Invalid manifest.json in the plugin archive.
     install_error_generic: Failed to unpack or install the plugin archive.
+    refresh_button: Check for updates
+    refresh_checking: Checking for updates…
+    refresh_failed: Failed to refresh the market catalog. Try again later.
+    refresh_timeout: The update check is still running or got interrupted. Try again later.
 
 settings_plugin_page:
     title_suffix: Plugin settings — AnimeDB
