@@ -24,8 +24,24 @@
 const fs   = require('fs');
 const path = require('path');
 const { t } = require('../../native/i18n');
+const { extractPlaceholders, findForbiddenCharacters, diffPlaceholders } = require('./i18n-placeholder-parity');
 
 const TRANSLATIONS_DIR = path.join(__dirname, '..', '..', 'native', 'translations');
+
+/**
+ * @returns {Record<string, Record<string, string>>} locale -> catalog, for every
+ * native/translations/<locale>.json file found on disk
+ */
+function loadCatalogs() {
+    return Object.fromEntries(
+        fs.readdirSync(TRANSLATIONS_DIR)
+            .filter((file) => file.endsWith('.json'))
+            .map((file) => [
+                path.basename(file, '.json'),
+                JSON.parse(fs.readFileSync(path.join(TRANSLATIONS_DIR, file), 'utf8')),
+            ]),
+    );
+}
 
 describe('t()', () => {
     test('resolves a key for the exact locale', () => {
@@ -82,6 +98,92 @@ describe('native translation catalogs', () => {
         const en = JSON.parse(fs.readFileSync(path.join(TRANSLATIONS_DIR, 'en.json'), 'utf8'));
 
         expect(Object.keys(ru).sort()).toEqual(Object.keys(en).sort());
+    });
+
+    // Key parity (above) does not catch the nastiest translation defect: the key is present in
+    // both locales, but the %placeholder% inside its value got lost or renamed. Both tests are
+    // green, the string is broken - the user sees an error dialog with the placeholder text
+    // missing instead of the actual error.
+    describe('placeholder parity across locale catalogs', () => {
+        test('%name% placeholders match for every key shared between locales', () => {
+            const catalogs = loadCatalogs();
+            const locales  = Object.keys(catalogs).sort();
+            const [reference, ...rest] = locales;
+
+            const failures = [];
+            for (const locale of rest) {
+                for (const [key, referenceValue] of Object.entries(catalogs[reference])) {
+                    if (!(key in catalogs[locale])) {
+                        continue; // key parity is covered by the test above, not here
+                    }
+
+                    const diff = diffPlaceholders(referenceValue, catalogs[locale][key]);
+                    if (diff !== null) {
+                        failures.push(
+                            `${key} (${reference} vs ${locale}): missing [${diff.missing.join(', ')}], `
+                            + `extra [${diff.extra.join(', ')}]`,
+                        );
+                    }
+                }
+            }
+
+            expect(failures).toEqual([]);
+        });
+
+        test('catalog values do not use reserved "{", "}" or "|" syntax', () => {
+            const catalogs = loadCatalogs();
+
+            const failures = [];
+            for (const [locale, catalog] of Object.entries(catalogs)) {
+                for (const [key, value] of Object.entries(catalog)) {
+                    const forbidden = findForbiddenCharacters(value);
+                    if (forbidden.length > 0) {
+                        failures.push(`${locale}.json key "${key}" uses reserved syntax "${forbidden.join('", "')}"`);
+                    }
+                }
+            }
+
+            expect(failures).toEqual([]);
+        });
+    });
+
+    describe('diffPlaceholders()', () => {
+        test('returns null when the placeholder sets match', () => {
+            expect(diffPlaceholders('Error: %detail%', 'Ошибка: %detail%')).toBeNull();
+        });
+
+        test('ignores placeholder order', () => {
+            expect(diffPlaceholders('%a% and %b%', '%b% and %a%')).toBeNull();
+        });
+
+        test('reports a lost placeholder', () => {
+            expect(diffPlaceholders('Error: %detail%', 'Ошибка: ')).toEqual({ missing: ['detail'], extra: [] });
+        });
+
+        test('reports a renamed placeholder in both directions', () => {
+            expect(diffPlaceholders('Error: %detail%', 'Ошибка: %reason%'))
+                .toEqual({ missing: ['detail'], extra: ['reason'] });
+        });
+    });
+
+    describe('extractPlaceholders()', () => {
+        test('deduplicates repeated placeholders', () => {
+            expect(extractPlaceholders('%total% of %total%')).toEqual(['total']);
+        });
+    });
+
+    describe('findForbiddenCharacters()', () => {
+        test('detects curly braces', () => {
+            expect(findForbiddenCharacters('Hello {name}')).toEqual(['{', '}']);
+        });
+
+        test('detects a pipe', () => {
+            expect(findForbiddenCharacters('one item|many items')).toEqual(['|']);
+        });
+
+        test('is empty for a plain placeholder', () => {
+            expect(findForbiddenCharacters('Error: %detail%')).toEqual([]);
+        });
     });
 
     // A typo or rename in a splash.step_* key would still pass every other test, since t()

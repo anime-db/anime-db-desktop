@@ -10,8 +10,8 @@
         "prebuild": "node scripts/build.js",
         "build": "electron-builder --publish never",
         "download-bins": "node scripts/download-bins.js",
-        "lint": "eslint native/",
-        "lint:fix": "eslint native/ --fix",
+        "lint": "eslint native/ tests/native/",
+        "lint:fix": "eslint native/ tests/native/ --fix",
         "test": "jest"
     },
     "devDependencies": {
