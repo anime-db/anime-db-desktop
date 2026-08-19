@@ -39,23 +39,24 @@ final class CatalogPlaceholderParityTest extends TestCase
 {
     public function testCatalogValuesDoNotUseForbiddenSyntax(): void
     {
+        $failures = [];
         foreach ($this->loadCatalogs() as $locale => $catalog) {
             foreach ($catalog as $key => $value) {
                 $forbidden = PlaceholderParity::findForbiddenCharacters($value);
 
                 if ($forbidden !== []) {
-                    $this->fail(sprintf(
+                    $failures[] = sprintf(
                         'messages.%s.yaml key "%s" uses reserved syntax "%s". This project uses '
                         .'only %%name%% placeholders and does not use pluralization/ICU catalogs.',
                         $locale,
                         $key,
                         implode('", "', $forbidden),
-                    ));
+                    );
                 }
             }
         }
 
-        $this->addToAssertionCount(1);
+        $this->assertSame([], $failures, "Forbidden syntax in translation catalogs:\n".implode("\n", $failures));
     }
 
     public function testPlaceholdersMatchAcrossLocalesForSharedKeys(): void
@@ -105,8 +106,12 @@ final class CatalogPlaceholderParityTest extends TestCase
 
         $catalogs = [];
         foreach (glob($translationsDir.'/messages.*.yaml') ?: [] as $file) {
-            if (preg_match('/^messages\.([a-zA-Z_]+)\.yaml$/', basename($file), $matches) !== 1) {
-                continue;
+            if (preg_match('/^messages\.([a-zA-Z_-]+)\.yaml$/', basename($file), $matches) !== 1) {
+                $this->fail(sprintf(
+                    'Translation catalog "%s" does not match the expected "messages.<locale>.yaml" naming '
+                    .'pattern and was excluded from the placeholder parity check.',
+                    basename($file),
+                ));
             }
 
             /** @var array<string, mixed> $parsed */
