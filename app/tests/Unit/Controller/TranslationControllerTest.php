@@ -28,7 +28,11 @@ declare(strict_types=1);
 namespace App\Tests\Unit\Controller;
 
 use App\Controller\TranslationController;
+use App\Service\Plugin\AvailableLocalesProvider;
+use App\Service\Plugin\InstalledPluginsRegistry;
+use App\Service\Plugin\PluginsConfigStore;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\Translation\MessageCatalogue;
 use Symfony\Component\Translation\TranslatorBagInterface;
@@ -47,7 +51,7 @@ final class TranslationControllerTest extends TestCase
             ->with('ru')
             ->willReturn($catalogue);
 
-        $controller = new TranslationController(['en', 'ru'], $translator);
+        $controller = new TranslationController($this->availableLocalesProvider(['en', 'ru']), $translator);
         $response = $controller('ru');
 
         $this->assertSame(200, $response->getStatusCode());
@@ -62,9 +66,23 @@ final class TranslationControllerTest extends TestCase
         $translator = $this->createMock(TranslatorBagInterface::class);
         $translator->expects($this->never())->method('getCatalogue');
 
-        $controller = new TranslationController(['en', 'ru'], $translator);
+        $controller = new TranslationController($this->availableLocalesProvider(['en', 'ru']), $translator);
 
         $this->expectException(NotFoundHttpException::class);
         $controller('fr');
+    }
+
+    /**
+     * @param list<string> $coreLocales
+     */
+    private function availableLocalesProvider(array $coreLocales): AvailableLocalesProvider
+    {
+        $registry = new InstalledPluginsRegistry(
+            sys_get_temp_dir().'/anime-translation-controller-test-does-not-exist',
+            new PluginsConfigStore(sys_get_temp_dir().'/anime-translation-controller-test-plugins.json'),
+            new NullLogger(),
+        );
+
+        return new AvailableLocalesProvider($registry, $coreLocales);
     }
 }

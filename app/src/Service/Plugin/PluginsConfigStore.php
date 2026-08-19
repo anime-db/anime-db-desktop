@@ -28,8 +28,11 @@ declare(strict_types=1);
 namespace App\Service\Plugin;
 
 use App\Entity\ValueObject\PluginId;
+use App\Event\InstalledPluginsChangedEvent;
 use App\Service\Plugin\Exception\PluginsConfigStoreException;
 use App\Service\Plugin\Exception\PluginsConfigStoreLockedException;
+use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
 /**
  * Reads and writes %AppData%/plugins.json — one shared file for every installed plugin's
@@ -58,14 +61,23 @@ use App\Service\Plugin\Exception\PluginsConfigStoreLockedException;
  * a short, bounded number of times and then fails fast with
  * {@see PluginsConfigStoreLockedException}, turning an unbounded hang into an immediate,
  * recoverable error.
+ *
+ * Every successful write dispatches {@see InstalledPluginsChangedEvent} (issue #453): a plugin's
+ * `enabled` flag lives only here (see {@see InstalledPluginsRegistry}), so this is the choke
+ * point that must signal "the enabled set may have changed" for in-process caches derived from
+ * it, e.g. {@see AvailableLocalesProvider}, to invalidate without a worker restart. Firing on
+ * every settings write, not just `enabled` changes, is deliberately broad: a spurious cache
+ * recompute is cheap, a missed one means a stale UI until the next unrelated write.
  */
 final class PluginsConfigStore
 {
     private const int LOCK_ACQUIRE_MAX_ATTEMPTS = 10;
     private const int LOCK_ACQUIRE_RETRY_DELAY_MICROSECONDS = 5_000;
 
-    public function __construct(private readonly string $pluginsConfigPath)
-    {
+    public function __construct(
+        private readonly string $pluginsConfigPath,
+        private readonly EventDispatcherInterface $eventDispatcher = new EventDispatcher(),
+    ) {
     }
 
     /**
@@ -182,6 +194,7 @@ final class PluginsConfigStore
             }
 
             rename($tmpPath, $this->pluginsConfigPath);
+            $this->eventDispatcher->dispatch(new InstalledPluginsChangedEvent());
         } finally {
             flock($lockHandle, \LOCK_UN);
             fclose($lockHandle);

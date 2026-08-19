@@ -46,13 +46,14 @@ parameters:
     app.core_version.dev_default: '99.99.99'
     app.core_version: '%env(default:app.core_version.dev_default:CORE_VERSION)%'
 
-    # Locales LocaleSubscriber negotiates against. Kept as an explicit list rather than scanning
-    # app/translations/ on every request (FrankenPHP worker mode keeps the subscriber alive
-    # between requests, so a glob() there would mean disk I/O per request for no benefit — the
-    # core locale set doesn't change at runtime, and a plugin's locales won't live in this
-    # directory anyway). Extend this list when adding a core locale.
-    # Also drives the settings page's language switcher (issue #86): plugin-provided locales are
-    # out of scope until the plugin translation registration mechanism is designed.
+    # Built-in locales, kept as an explicit list rather than scanning app/translations/ on every
+    # request (FrankenPHP worker mode keeps consumers alive between requests, so a glob() there
+    # would mean disk I/O per request for no benefit). Extend this list when adding a core locale.
+    # App\Service\Plugin\AvailableLocalesProvider (issue #453) merges this with locales declared
+    # by enabled "translation" plugins, cached in memory and invalidated only when the installed/
+    # enabled plugin set actually changes — see its class docblock and .claude-docs/decisions.md
+    # (issue #84). LocaleSubscriber, SettingsController and TranslationController all consume
+    # AvailableLocalesProvider, not this parameter, directly.
     app.locales: ['en', 'ru']
 
     # Source cover images for SampleAnimeSeeder (issue #181) — shipped under public/ like
@@ -118,7 +119,7 @@ services:
             $pluginsConfigPath: '%app.plugins_config_path%'
             $pluginsDir: '%app.plugins_dir%'
             $coreVersion: '%app.core_version%'
-            $locales: '%app.locales%'
+            $coreLocales: '%app.locales%'
             $sampleCoversDir: '%app.sample_covers_dir%'
             $pushOnEditTtlSeconds: '%app.sync.push_on_edit_ttl_seconds%'
             $cachePath: '%app.market_registry_cache_path%'

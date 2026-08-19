@@ -27,6 +27,7 @@ declare(strict_types=1);
 
 namespace App\EventSubscriber;
 
+use App\Service\Plugin\AvailableLocalesProvider;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\HttpKernel\Event\RequestEvent;
 use Symfony\Component\HttpKernel\KernelEvents;
@@ -34,17 +35,15 @@ use Symfony\Component\HttpKernel\KernelEvents;
 /**
  * Negotiates the request locale from the Accept-Language header.
  *
- * The available locales come from the app.locales container parameter (services.yaml), not from
- * scanning app/translations/ on every request: the subscriber is a singleton that survives
- * between requests in FrankenPHP worker mode, so a filesystem scan there would be per-request I/O
- * for a locale set that never changes at runtime.
+ * The available locales come from {@see AvailableLocalesProvider} (built-in locales plus enabled
+ * translation plugins' locales, issue #453), not from scanning app/translations/ on every
+ * request: the subscriber is a singleton that survives between requests in FrankenPHP worker
+ * mode, and AvailableLocalesProvider itself caches its result in memory, so this stays free of
+ * per-request I/O for a locale set that rarely changes (see issue #84).
  */
 final class LocaleSubscriber implements EventSubscriberInterface
 {
-    /**
-     * @param list<string> $locales
-     */
-    public function __construct(private readonly array $locales)
+    public function __construct(private readonly AvailableLocalesProvider $availableLocalesProvider)
     {
     }
 
@@ -61,12 +60,13 @@ final class LocaleSubscriber implements EventSubscriberInterface
             return;
         }
 
-        if ($this->locales === []) {
+        $locales = $this->availableLocalesProvider->all();
+        if ($locales === []) {
             return;
         }
 
         $request = $event->getRequest();
-        $preferredLocale = $request->getPreferredLanguage($this->locales);
+        $preferredLocale = $request->getPreferredLanguage($locales);
         if ($preferredLocale !== null) {
             $request->setLocale($preferredLocale);
         }

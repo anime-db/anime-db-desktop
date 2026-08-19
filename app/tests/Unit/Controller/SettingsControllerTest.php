@@ -37,6 +37,9 @@ use App\Entity\SyncReviewItem;
 use App\Repository\SyncReviewItemRepository;
 use App\Service\AppConfigStore;
 use App\Service\AppSettingsProvider;
+use App\Service\Plugin\AvailableLocalesProvider;
+use App\Service\Plugin\InstalledPluginsRegistry;
+use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Search\AnimeReindexService;
 use App\Service\Search\AnimeSearchIndexer;
 use App\Service\Sync\SyncReviewService;
@@ -49,6 +52,7 @@ use Meilisearch\Client;
 use Meilisearch\Endpoints\Indexes;
 use Meilisearch\Exceptions\CommunicationException;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -86,13 +90,27 @@ final class SettingsControllerTest extends TestCase
         }
 
         return new SettingsController(
-            ['en', 'ru'],
+            $this->availableLocalesProvider(['en', 'ru']),
             new AppSettingsProvider(new AppConfigStore($this->configPath)),
             $csrfTokenManager,
             $twig ?? $this->createStub(Environment::class),
             $reindexService ?? $this->createReindexService($this->createStub(Client::class)),
             $syncReview ?? $this->createSyncReview([]),
         );
+    }
+
+    /**
+     * @param list<string> $coreLocales
+     */
+    private function availableLocalesProvider(array $coreLocales): AvailableLocalesProvider
+    {
+        $registry = new InstalledPluginsRegistry(
+            sys_get_temp_dir().'/anime-settings-controller-test-does-not-exist',
+            new PluginsConfigStore(sys_get_temp_dir().'/anime-settings-controller-test-plugins.json'),
+            new NullLogger(),
+        );
+
+        return new AvailableLocalesProvider($registry, $coreLocales);
     }
 
     /** @param SyncReviewItem[] $unresolved */
