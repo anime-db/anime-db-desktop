@@ -28,13 +28,11 @@ declare(strict_types=1);
 namespace App\Tests\Unit\Service\Plugin;
 
 use App\Entity\ValueObject\PluginId;
-use App\Event\InstalledPluginsChangedEvent;
 use App\Service\Plugin\AvailableLocalesProvider;
 use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\PluginsConfigStore;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
-use Symfony\Component\EventDispatcher\EventDispatcher;
 
 final class AvailableLocalesProviderTest extends TestCase
 {
@@ -49,13 +47,6 @@ final class AvailableLocalesProviderTest extends TestCase
     protected function tearDown(): void
     {
         $this->removeDirectory($this->pluginsDir);
-    }
-
-    public function testGetSubscribedEventsInvalidatesOnInstalledPluginsChanged(): void
-    {
-        $events = AvailableLocalesProvider::getSubscribedEvents();
-
-        $this->assertSame('invalidate', $events[InstalledPluginsChangedEvent::class]);
     }
 
     public function testAllReturnsOnlyCoreLocalesWhenNoTranslationPluginIsEnabled(): void
@@ -130,13 +121,12 @@ final class AvailableLocalesProviderTest extends TestCase
     }
 
     /**
-     * Acceptance criterion (issue #453): repeated reads must not re-read the plugin index off
-     * disk. Proven black-box, without mocking the final InstalledPluginsRegistry: the plugin
-     * directory is mutated *after* the first all() call, and a second all() call — without
-     * calling invalidate() — must still report the pre-mutation state, because it was served
-     * from the in-memory cache rather than recomputed.
+     * Acceptance criterion (issue #453): a change to the installed/enabled plugin set must be
+     * visible on the very next call, with no cache to invalidate. Proven black-box: the plugin
+     * directory is mutated *after* the first all() call, and the second call — on the very same
+     * provider instance, with no event or invalidate() involved — already reports the change.
      */
-    public function testAllCachesTheResultAcrossRepeatedCallsUntilInvalidated(): void
+    public function testAllObservesOnDiskChangesOnTheNextCallWithNoCacheToInvalidate(): void
     {
         $registry = $this->registry();
         $registry->reconcile();
@@ -148,34 +138,28 @@ final class AvailableLocalesProviderTest extends TestCase
         $this->writeTranslationManifest('animedb-french', ['fr']);
         $registry->reconcile();
 
-        $this->assertSame(['en', 'ru'], $provider->all(), 'a repeated call must not observe the on-disk change');
-
-        $provider->invalidate();
-
-        $this->assertSame(['en', 'ru', 'fr'], $provider->all(), 'after invalidate(), the change must be visible');
+        $this->assertSame(['en', 'ru', 'fr'], $provider->all());
     }
 
     /**
-     * Acceptance criterion (issue #453): disabling or removing a plugin drops its locale from the
-     * list without an application restart. This wires InstalledPluginsRegistry, PluginsConfigStore
-     * and AvailableLocalesProvider together through a real EventDispatcher, exactly as
-     * App\Kernel/services.yaml do in production, and never recreates the provider instance —
-     * simulating the same object living for a whole (long-running) worker process.
+     * Acceptance criterion (issue #453): disabling a plugin drops its locale from the list on
+     * every FrankenPHP worker, not just the one that handled the disable request. Modeled here
+     * with two independent AvailableLocalesProvider/InstalledPluginsRegistry instances sharing
+     * the same on-disk plugins directory and plugins.json — one instance mutates, a *second,
+     * unrelated* instance (standing in for another worker's own isolated memory) must see the
+     * change too, without any event passed between them.
      */
-    public function testDisablingAPluginRemovesItsLocaleWithoutRecreatingTheProvider(): void
+    public function testDisablingAPluginRemovesItsLocaleForAnIndependentProviderInstance(): void
     {
-        $eventDispatcher = new EventDispatcher();
-        $configPath = $this->pluginsDir.'/plugins.json';
-        $configStore = new PluginsConfigStore($configPath, $eventDispatcher);
-        $registry = new InstalledPluginsRegistry($this->pluginsDir, $configStore, new NullLogger(), eventDispatcher: $eventDispatcher);
+        $configStore = $this->configStore();
+        $writerRegistry = new InstalledPluginsRegistry($this->pluginsDir, $configStore, new NullLogger());
 
         $this->writeTranslationManifest('animedb-french', ['fr']);
-        $registry->reconcile();
+        $writerRegistry->reconcile();
 
-        $provider = new AvailableLocalesProvider($registry, ['en', 'ru']);
-        $eventDispatcher->addSubscriber($provider);
+        $otherWorkerProvider = new AvailableLocalesProvider($this->registry(), ['en', 'ru']);
 
-        $this->assertSame(['en', 'ru', 'fr'], $provider->all());
+        $this->assertSame(['en', 'ru', 'fr'], $otherWorkerProvider->all());
 
         $configStore->updatePluginSettings(new PluginId('animedb-french'), static function (array $settings): array {
             $settings['enabled'] = false;
@@ -183,30 +167,28 @@ final class AvailableLocalesProviderTest extends TestCase
             return $settings;
         });
 
-        $this->assertSame(['en', 'ru'], $provider->all());
+        $this->assertSame(['en', 'ru'], $otherWorkerProvider->all());
     }
 
     /**
      * Same scenario as above, but for removal (uninstall) instead of disable: reconcile() no
      * longer finding the plugin directory at all.
      */
-    public function testRemovingAPluginRemovesItsLocaleWithoutRecreatingTheProvider(): void
+    public function testRemovingAPluginRemovesItsLocaleForAnIndependentProviderInstance(): void
     {
-        $eventDispatcher = new EventDispatcher();
-        $registry = new InstalledPluginsRegistry($this->pluginsDir, $this->configStore(), new NullLogger(), eventDispatcher: $eventDispatcher);
+        $writerRegistry = new InstalledPluginsRegistry($this->pluginsDir, $this->configStore(), new NullLogger());
 
         $this->writeTranslationManifest('animedb-french', ['fr']);
-        $registry->reconcile();
+        $writerRegistry->reconcile();
 
-        $provider = new AvailableLocalesProvider($registry, ['en', 'ru']);
-        $eventDispatcher->addSubscriber($provider);
+        $otherWorkerProvider = new AvailableLocalesProvider($this->registry(), ['en', 'ru']);
 
-        $this->assertSame(['en', 'ru', 'fr'], $provider->all());
+        $this->assertSame(['en', 'ru', 'fr'], $otherWorkerProvider->all());
 
         $this->removeDirectory($this->pluginsDir.'/animedb-french');
-        $registry->reconcile();
+        $writerRegistry->reconcile();
 
-        $this->assertSame(['en', 'ru'], $provider->all());
+        $this->assertSame(['en', 'ru'], $otherWorkerProvider->all());
     }
 
     private function registry(): InstalledPluginsRegistry

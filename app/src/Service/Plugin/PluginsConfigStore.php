@@ -28,11 +28,8 @@ declare(strict_types=1);
 namespace App\Service\Plugin;
 
 use App\Entity\ValueObject\PluginId;
-use App\Event\InstalledPluginsChangedEvent;
 use App\Service\Plugin\Exception\PluginsConfigStoreException;
 use App\Service\Plugin\Exception\PluginsConfigStoreLockedException;
-use Symfony\Component\EventDispatcher\EventDispatcher;
-use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
 /**
  * Reads and writes %AppData%/plugins.json — one shared file for every installed plugin's
@@ -62,12 +59,11 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
  * {@see PluginsConfigStoreLockedException}, turning an unbounded hang into an immediate,
  * recoverable error.
  *
- * Every successful write dispatches {@see InstalledPluginsChangedEvent} (issue #453): a plugin's
- * `enabled` flag lives only here (see {@see InstalledPluginsRegistry}), so this is the choke
- * point that must signal "the enabled set may have changed" for in-process caches derived from
- * it, e.g. {@see AvailableLocalesProvider}, to invalidate without a worker restart. Firing on
- * every settings write, not just `enabled` changes, is deliberately broad: a spurious cache
- * recompute is cheap, a missed one means a stale UI until the next unrelated write.
+ * A plugin's `enabled` flag lives only here (see {@see InstalledPluginsRegistry}), which is why
+ * every read of it — including {@see AvailableLocalesProvider}, issue #453 — goes through
+ * {@see self::read()} fresh rather than through an in-process cache: FrankenPHP's worker pool
+ * gives each worker its own isolated memory, so a cache invalidated by an in-process event would
+ * only ever update the one worker that handled this write.
  */
 final class PluginsConfigStore
 {
@@ -76,7 +72,6 @@ final class PluginsConfigStore
 
     public function __construct(
         private readonly string $pluginsConfigPath,
-        private readonly EventDispatcherInterface $eventDispatcher = new EventDispatcher(),
     ) {
     }
 
@@ -194,7 +189,6 @@ final class PluginsConfigStore
             }
 
             rename($tmpPath, $this->pluginsConfigPath);
-            $this->eventDispatcher->dispatch(new InstalledPluginsChangedEvent());
         } finally {
             flock($lockHandle, \LOCK_UN);
             fclose($lockHandle);

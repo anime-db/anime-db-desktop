@@ -28,8 +28,6 @@ declare(strict_types=1);
 namespace App\Service\Plugin;
 
 use AnimeDb\PluginContracts\Manifest\PluginType;
-use App\Event\InstalledPluginsChangedEvent;
-use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 
 /**
  * Extends the built-in locale set (`app.locales`) with locales declared by enabled
@@ -37,21 +35,17 @@ use Symfony\Component\EventDispatcher\EventSubscriberInterface;
  * cannot declare `locales` at all (see `ManifestValidator`), so they never contribute here, only
  * to their own translation domain via {@see PluginLoader::translationPaths()}.
  *
- * The computed list is cached in memory for the lifetime of the worker process, not recomputed
- * on every request: {@see InstalledPluginsRegistry::enabled()} reads the plugin index (and, per
- * plugin, `plugins.json`) from disk, and issue #84 already established that this class of lookup
- * must not happen on every main request in FrankenPHP worker mode. The cache is invalidated by
- * {@see InstalledPluginsChangedEvent} — dispatched right when the installed/enabled plugin set
- * actually changes (install, uninstall, enable, disable) — so a subsequent request sees the
- * update without waiting for a worker restart, while requests in between pay no I/O at all.
+ * Recomputed on every call, deliberately not cached across requests: FrankenPHP worker mode runs
+ * a pool of worker processes with no shared memory between them (see {@see \App\Service\WsPublisher}),
+ * so an in-process cache invalidated by an in-process event only updates the one worker that
+ * happened to handle the mutating request, leaving the rest stale until they eventually restart.
+ * This is safe to do on every request because {@see InstalledPluginsRegistry::enabled()} is
+ * itself already read fresh, uncached, on every request by {@see PluginLoader::translationPaths()}
+ * — it is backed by a compact pre-parsed index file (`installed-plugins.php`), not the `glob()` +
+ * per-manifest parsing issue #84 ruled out.
  */
-final class AvailableLocalesProvider implements EventSubscriberInterface
+final class AvailableLocalesProvider
 {
-    /**
-     * @var list<string>|null
-     */
-    private ?array $locales = null;
-
     /**
      * @param list<string> $coreLocales
      */
@@ -61,30 +55,10 @@ final class AvailableLocalesProvider implements EventSubscriberInterface
     ) {
     }
 
-    public static function getSubscribedEvents(): array
-    {
-        return [
-            InstalledPluginsChangedEvent::class => 'invalidate',
-        ];
-    }
-
     /**
      * @return list<string>
      */
     public function all(): array
-    {
-        return $this->locales ??= $this->compute();
-    }
-
-    public function invalidate(): void
-    {
-        $this->locales = null;
-    }
-
-    /**
-     * @return list<string>
-     */
-    private function compute(): array
     {
         $locales = $this->coreLocales;
 

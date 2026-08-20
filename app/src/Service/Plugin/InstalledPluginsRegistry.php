@@ -35,12 +35,9 @@ use AnimeDb\PluginContracts\Manifest\ManifestRequirements;
 use AnimeDb\PluginContracts\Manifest\ManifestValidationError;
 use AnimeDb\PluginContracts\Manifest\PluginType;
 use App\Entity\ValueObject\PluginId;
-use App\Event\InstalledPluginsChangedEvent;
 use App\Service\Plugin\Exception\InstalledPluginsRegistryException;
 use App\Service\Plugin\Exception\InvalidInstalledPluginException;
 use Psr\Log\LoggerInterface;
-use Symfony\Component\EventDispatcher\EventDispatcher;
-use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
 /**
  * Read-first source of truth for which plugins are installed, backed by a compact, pre-parsed
@@ -63,11 +60,9 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
  * installer/remover operations that call it, across FrankenPHP worker threads/processes (issue
  * #420) — see {@see PluginFileLock}. Reads below (`all()`, `enabled()`, `get()`, `has()`) stay
  * lock-free: the index file's `rename()`-based publish already guarantees a reader sees a wholly
- * old or wholly new version of it.
- *
- * {@see self::reconcile()} dispatches {@see InstalledPluginsChangedEvent} once the new index is
- * published, so in-process state derived from the installed-plugin set (issue #453) can
- * invalidate itself instead of staying stale until the next worker restart.
+ * old or wholly new version of it, and every one of them re-reads the index and `plugins.json`
+ * fresh rather than caching, so state derived from the installed-plugin set (e.g.
+ * {@see AvailableLocalesProvider}, issue #453) is never stale across worker processes.
  */
 final class InstalledPluginsRegistry
 {
@@ -83,7 +78,6 @@ final class InstalledPluginsRegistry
          * {@see self::readIndex()}.
          */
         private readonly bool $safeMode = false,
-        private readonly EventDispatcherInterface $eventDispatcher = new EventDispatcher(),
     ) {
     }
 
@@ -168,7 +162,6 @@ final class InstalledPluginsRegistry
             }
 
             $this->writeIndex($entries);
-            $this->eventDispatcher->dispatch(new InstalledPluginsChangedEvent());
         });
     }
 

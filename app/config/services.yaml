@@ -50,10 +50,10 @@ parameters:
     # request (FrankenPHP worker mode keeps consumers alive between requests, so a glob() there
     # would mean disk I/O per request for no benefit). Extend this list when adding a core locale.
     # App\Service\Plugin\AvailableLocalesProvider (issue #453) merges this with locales declared
-    # by enabled "translation" plugins, cached in memory and invalidated only when the installed/
-    # enabled plugin set actually changes — see its class docblock and .claude-docs/decisions.md
-    # (issue #84). LocaleSubscriber, SettingsController and TranslationController all consume
-    # AvailableLocalesProvider, not this parameter, directly.
+    # by enabled "translation" plugins, recomputed on every call rather than cached — see its
+    # class docblock and .claude-docs/decisions.md (issue #84). LocaleSubscriber,
+    # SettingsController and TranslationController all consume AvailableLocalesProvider, not this
+    # parameter, directly.
     app.locales: ['en', 'ru']
 
     # Source cover images for SampleAnimeSeeder (issue #181) — shipped under public/ like
