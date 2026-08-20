@@ -19,7 +19,7 @@
    - `POST /settings/<name>/{id}/<action>` — действие с проверкой CSRF (`CsrfTokenManagerInterface`, id токена `<name>_<action>_<id>`), затем PRG-редирект. Сущность из `{id}` — через ParamConverter (авто-404).
 2. Шаблон `app/templates/settings/<name>/index.html.twig` — список + пустое состояние + форма `POST` со скрытым `_token` (`csrf_token(...)`).
 3. Ссылка на страницу — в `app/templates/settings/index.html.twig`.
-4. **Переводы** — ключи `settings_<name>.*` в `app/translations/messages.ru.yaml` **и** `messages.en.yaml` (паритет обязателен, CI `Translations consistency`). Весь текст шаблона — только через `trans`.
+4. **Переводы** — ключи `settings_<name>.*` в `app/translations/messages.ru.yaml` **и** `messages.en.yaml` (паритет обязателен, проверяется полным прогоном PHPUnit — `CatalogTranslationsTest`). Весь текст шаблона — только через `trans`. Конвенции по плейсхолдерам и плюрализации — [conventions.md](conventions.md#локализация-переводы).
 5. Тест `app/tests/Unit/Controller/Settings/<Name>ControllerTest.php` по образцу `SyncReviewControllerTest` (список, успешное действие, отказ при неверном CSRF).
 
 ## Doctrine-сущность + миграция
