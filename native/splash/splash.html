@@ -56,6 +56,7 @@
 
         if (window.splash) {
             document.documentElement.lang = window.splash.locale;
+            document.documentElement.dir = window.splash.dir;
             logo.src = window.splash.logoPath;
             status.textContent = window.splash.initialStatus;
             window.splash.onProgress(function (data) {

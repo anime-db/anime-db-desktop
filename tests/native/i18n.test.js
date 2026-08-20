@@ -23,7 +23,7 @@
 
 const fs   = require('fs');
 const path = require('path');
-const { t } = require('../../native/i18n');
+const { t, textDirection } = require('../../native/i18n');
 const { extractPlaceholders, findForbiddenCharacters, diffPlaceholders } = require('./i18n-placeholder-parity');
 
 const TRANSLATIONS_DIR = path.join(__dirname, '..', '..', 'native', 'translations');
@@ -89,6 +89,40 @@ describe('t()', () => {
             expect(() => t('tray.open', locale)).not.toThrow();
             expect(t('tray.open', locale)).toBe('Open');
         });
+    });
+});
+
+// issue #450: mirrors App\Service\LocaleDirection on the PHP side — direction is resolved from a
+// static core table keyed on the locale's language subtag, not from anything a translation
+// plugin declares.
+describe('textDirection()', () => {
+    test.each([
+        ['ar', 'rtl'],
+        ['ar-EG', 'rtl'],
+        ['he', 'rtl'],
+        ['fa', 'rtl'],
+        ['ur', 'rtl'],
+    ])('%s resolves to "rtl"', (locale, expected) => {
+        expect(textDirection(locale)).toBe(expected);
+    });
+
+    test.each([
+        ['ru', 'ltr'],
+        ['en', 'ltr'],
+        ['de', 'ltr'],
+        ['ja', 'ltr'],
+        ['xx', 'ltr'],
+        ['', 'ltr'],
+    ])('%s resolves to "ltr"', (locale, expected) => {
+        expect(textDirection(locale)).toBe(expected);
+    });
+
+    test.each([
+        [undefined],
+        [null],
+    ])('a non-string locale (%p) resolves to "ltr" instead of throwing', (locale) => {
+        expect(() => textDirection(locale)).not.toThrow();
+        expect(textDirection(locale)).toBe('ltr');
     });
 });
 

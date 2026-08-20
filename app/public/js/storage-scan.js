@@ -55,6 +55,14 @@
     // 0% forever with no feedback (issue #156).
     const NO_RESPONSE_TIMEOUT_MS = 15000;
 
+    // FIRST STRONG ISOLATE / POP DIRECTIONAL ISOLATE: interpolated values (anime titles, storage
+    // paths) come from sources written in Latin or Japanese script. Rendered as plain text
+    // (.textContent, not HTML — a <bdi> element is not available here), an unisolated value
+    // inside an RTL message can reorder adjacent characters, most visibly brackets and colons
+    // (issue #450).
+    const BIDI_ISOLATE_START = '⁨';
+    const BIDI_ISOLATE_END   = '⁩';
+
     let messages = {};
     let noResponseTimer = setTimeout(onNoResponse, NO_RESPONSE_TIMEOUT_MS);
 
@@ -64,7 +72,7 @@
 
     function format(template, params) {
         return Object.keys(params).reduce(
-            (text, name) => text.replace(`%${name}%`, String(params[name])),
+            (text, name) => text.replace(`%${name}%`, `${BIDI_ISOLATE_START}${String(params[name])}${BIDI_ISOLATE_END}`),
             template,
         );
     }

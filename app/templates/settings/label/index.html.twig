@@ -57,7 +57,7 @@
                             </form>
                         </td>
                         <td>
-                            <form method="post" action="{{ path('settings_labels_delete', {id: label.id}) }}" onsubmit="return confirm('{{ ('settings_labels.delete_confirm'|trans({'%name%': label.name}))|e('js') }}');">
+                            <form method="post" action="{{ path('settings_labels_delete', {id: label.id}) }}" onsubmit="return confirm('{{ ('settings_labels.delete_confirm'|trans({'%name%': bidi_isolate(label.name)}))|e('js') }}');">
                                 <input type="hidden" name="_token" value="{{ csrf_token('settings_labels_delete_' ~ label.id) }}">
                                 <button type="submit">{{ 'settings_labels.delete_button'|trans }}</button>
                             </form>
