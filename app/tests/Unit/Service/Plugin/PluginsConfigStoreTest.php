@@ -85,6 +85,31 @@ final class PluginsConfigStoreTest extends TestCase
         $this->assertSame(['refreshToken' => 'abc'], $store->getPluginSettings(new PluginId('animedb-shikimori')));
     }
 
+    public function testGetAllSettingsReturnsEmptyArrayWhenFileIsMissing(): void
+    {
+        $store = new PluginsConfigStore($this->path);
+
+        $this->assertSame([], $store->getAllSettings());
+    }
+
+    public function testGetAllSettingsReturnsEveryPluginsEntryKeyedById(): void
+    {
+        file_put_contents($this->path, json_encode([
+            'animedb-shikimori' => ['refreshToken' => 'shiki-token'],
+            'animedb-anilist' => ['enabled' => false],
+        ]));
+
+        $store = new PluginsConfigStore($this->path);
+
+        $this->assertSame(
+            [
+                'animedb-shikimori' => ['refreshToken' => 'shiki-token'],
+                'animedb-anilist' => ['enabled' => false],
+            ],
+            $store->getAllSettings(),
+        );
+    }
+
     public function testUpdatePluginSettingsCreatesFileWhenMissing(): void
     {
         $store = new PluginsConfigStore($this->path);

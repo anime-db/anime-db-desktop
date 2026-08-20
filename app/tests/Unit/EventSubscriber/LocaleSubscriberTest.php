@@ -28,7 +28,11 @@ declare(strict_types=1);
 namespace App\Tests\Unit\EventSubscriber;
 
 use App\EventSubscriber\LocaleSubscriber;
+use App\Service\Plugin\AvailableLocalesProvider;
+use App\Service\Plugin\InstalledPluginsRegistry;
+use App\Service\Plugin\PluginsConfigStore;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Event\RequestEvent;
 use Symfony\Component\HttpKernel\KernelEvents;
@@ -92,12 +96,29 @@ final class LocaleSubscriberTest extends TestCase
      */
     private function dispatch(Request $request, array $locales, bool $isMainRequest = true): void
     {
-        $subscriber = new LocaleSubscriber($locales);
+        $subscriber = new LocaleSubscriber($this->availableLocalesProvider($locales));
 
         $event = $this->createStub(RequestEvent::class);
         $event->method('getRequest')->willReturn($request);
         $event->method('isMainRequest')->willReturn($isMainRequest);
 
         $subscriber->onKernelRequest($event);
+    }
+
+    /**
+     * @param list<string> $coreLocales
+     */
+    private function availableLocalesProvider(array $coreLocales): AvailableLocalesProvider
+    {
+        // No plugins installed, so AvailableLocalesProvider::all() reduces to exactly $coreLocales
+        // — the pluginsDir simply does not exist (see InstalledPluginsRegistryTest for the same
+        // pattern).
+        $registry = new InstalledPluginsRegistry(
+            sys_get_temp_dir().'/anime-locale-subscriber-test-does-not-exist',
+            new PluginsConfigStore(sys_get_temp_dir().'/anime-locale-subscriber-test-plugins.json'),
+            new NullLogger(),
+        );
+
+        return new AvailableLocalesProvider($registry, $coreLocales);
     }
 }

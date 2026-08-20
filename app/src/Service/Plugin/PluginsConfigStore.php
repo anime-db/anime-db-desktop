@@ -58,14 +58,21 @@ use App\Service\Plugin\Exception\PluginsConfigStoreLockedException;
  * a short, bounded number of times and then fails fast with
  * {@see PluginsConfigStoreLockedException}, turning an unbounded hang into an immediate,
  * recoverable error.
+ *
+ * A plugin's `enabled` flag lives only here (see {@see InstalledPluginsRegistry}), which is why
+ * every read of it — including {@see AvailableLocalesProvider}, issue #453 — goes through
+ * {@see self::read()} fresh rather than through an in-process cache: FrankenPHP's worker pool
+ * gives each worker its own isolated memory, so a cache invalidated by an in-process event would
+ * only ever update the one worker that handled this write.
  */
 final class PluginsConfigStore
 {
     private const int LOCK_ACQUIRE_MAX_ATTEMPTS = 10;
     private const int LOCK_ACQUIRE_RETRY_DELAY_MICROSECONDS = 5_000;
 
-    public function __construct(private readonly string $pluginsConfigPath)
-    {
+    public function __construct(
+        private readonly string $pluginsConfigPath,
+    ) {
     }
 
     /**
@@ -76,6 +83,19 @@ final class PluginsConfigStore
         $settings = $this->read()[(string) $pluginId] ?? null;
 
         return \is_array($settings) ? $settings : [];
+    }
+
+    /**
+     * Every plugin's settings entry, keyed by plugin id — the same data {@see self::getPluginSettings()}
+     * returns one entry of, exposed in bulk so a caller that needs more than one plugin's settings
+     * (e.g. {@see InstalledPluginsRegistry::readIndex()} resolving every plugin's `enabled` flag)
+     * reads this file once instead of once per plugin.
+     *
+     * @return array<string, mixed>
+     */
+    public function getAllSettings(): array
+    {
+        return $this->read();
     }
 
     /**

@@ -30,6 +30,7 @@ namespace App\Controller;
 use App\Entity\Enum\SyncReviewItemKind;
 use App\Entity\SyncReviewItem;
 use App\Service\AppSettingsProvider;
+use App\Service\Plugin\AvailableLocalesProvider;
 use App\Service\Search\AnimeReindexService;
 use App\Service\Sync\SyncReviewService;
 use Meilisearch\Exceptions\ExceptionInterface as MeilisearchExceptionInterface;
@@ -44,13 +45,11 @@ use Twig\Environment;
 final class SettingsController
 {
     /**
-     * @param list<string> $locales same app.locales container parameter LocaleSubscriber
-     *                              negotiates against (issue #84) — plugin-provided locales are
-     *                              out of scope until the plugin translation registration
-     *                              mechanism is designed (issue #86 discussion)
+     * $availableLocalesProvider is the same locale set LocaleSubscriber negotiates against
+     * (issue #84), extended by plugin locales (issue #453).
      */
     public function __construct(
-        private readonly array $locales,
+        private readonly AvailableLocalesProvider $availableLocalesProvider,
         private readonly AppSettingsProvider $settings,
         private readonly CsrfTokenManagerInterface $csrfTokenManager,
         private readonly Environment $twig,
@@ -76,7 +75,7 @@ final class SettingsController
         $this->assertValidCsrfToken('settings_set_locale', $request);
 
         $locale = (string) $request->request->get('locale', '');
-        if (!\in_array($locale, $this->locales, true)) {
+        if (!\in_array($locale, $this->availableLocalesProvider->all(), true)) {
             throw new BadRequestHttpException('Unknown locale.');
         }
 
@@ -106,9 +105,11 @@ final class SettingsController
 
     private function renderIndex(?string $reindexStatus = null): Response
     {
+        $locales = $this->availableLocalesProvider->all();
+
         return new Response($this->twig->render('settings/index.html.twig', [
-            'availableLocales' => $this->locales,
-            'currentLocale' => $this->settings->getLocale() ?? ($this->locales[0] ?? null),
+            'availableLocales' => $locales,
+            'currentLocale' => $this->settings->getLocale() ?? ($locales[0] ?? null),
             'reindexStatus' => $reindexStatus,
             'needsCorrectionCount' => $this->needsCorrectionCount(),
         ]));

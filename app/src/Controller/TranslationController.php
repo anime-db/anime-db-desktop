@@ -27,6 +27,7 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
+use App\Service\Plugin\AvailableLocalesProvider;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\Routing\Attribute\Route;
@@ -40,11 +41,11 @@ use Symfony\Component\Translation\TranslatorBagInterface;
 final class TranslationController
 {
     /**
-     * @param list<string> $locales same app.locales container parameter LocaleSubscriber
-     *                              negotiates against (issue #84)
+     * $availableLocalesProvider is the same locale set LocaleSubscriber negotiates against
+     * (issue #84), extended by plugin locales (issue #453).
      */
     public function __construct(
-        private readonly array $locales,
+        private readonly AvailableLocalesProvider $availableLocalesProvider,
         private readonly TranslatorBagInterface $translator,
     ) {
     }
@@ -57,7 +58,7 @@ final class TranslationController
     )]
     public function __invoke(string $locale): JsonResponse
     {
-        if (!\in_array($locale, $this->locales, true)) {
+        if (!\in_array($locale, $this->availableLocalesProvider->all(), true)) {
             throw new NotFoundHttpException('Unknown locale.');
         }
 

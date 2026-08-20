@@ -27,6 +27,7 @@ declare(strict_types=1);
 
 namespace App\EventSubscriber;
 
+use App\Service\Plugin\AvailableLocalesProvider;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\HttpKernel\Event\RequestEvent;
 use Symfony\Component\HttpKernel\KernelEvents;
@@ -34,17 +35,18 @@ use Symfony\Component\HttpKernel\KernelEvents;
 /**
  * Negotiates the request locale from the Accept-Language header.
  *
- * The available locales come from the app.locales container parameter (services.yaml), not from
- * scanning app/translations/ on every request: the subscriber is a singleton that survives
- * between requests in FrankenPHP worker mode, so a filesystem scan there would be per-request I/O
- * for a locale set that never changes at runtime.
+ * The available locales come from {@see AvailableLocalesProvider} (built-in locales plus enabled
+ * translation plugins' locales, issue #453), not from scanning app/translations/ on every
+ * request — that approach was rejected by issue #84/PR #90 for costing `glob()` I/O on every
+ * main request without even covering plugin translations. `AvailableLocalesProvider::all()` is
+ * called here on every main request and is deliberately NOT cached: it recomputes on every call,
+ * at a small but non-zero fixed I/O cost. See the `AvailableLocalesProvider` class docblock and
+ * `.claude-docs/decisions.md` (issue #84) for why that per-request cost is an accepted, documented
+ * trade-off rather than an oversight.
  */
 final class LocaleSubscriber implements EventSubscriberInterface
 {
-    /**
-     * @param list<string> $locales
-     */
-    public function __construct(private readonly array $locales)
+    public function __construct(private readonly AvailableLocalesProvider $availableLocalesProvider)
     {
     }
 
@@ -61,12 +63,13 @@ final class LocaleSubscriber implements EventSubscriberInterface
             return;
         }
 
-        if ($this->locales === []) {
+        $locales = $this->availableLocalesProvider->all();
+        if ($locales === []) {
             return;
         }
 
         $request = $event->getRequest();
-        $preferredLocale = $request->getPreferredLanguage($this->locales);
+        $preferredLocale = $request->getPreferredLanguage($locales);
         if ($preferredLocale !== null) {
             $request->setLocale($preferredLocale);
         }

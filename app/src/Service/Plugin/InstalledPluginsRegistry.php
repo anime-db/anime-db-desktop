@@ -60,7 +60,9 @@ use Psr\Log\LoggerInterface;
  * installer/remover operations that call it, across FrankenPHP worker threads/processes (issue
  * #420) — see {@see PluginFileLock}. Reads below (`all()`, `enabled()`, `get()`, `has()`) stay
  * lock-free: the index file's `rename()`-based publish already guarantees a reader sees a wholly
- * old or wholly new version of it.
+ * old or wholly new version of it, and every one of them re-reads the index and `plugins.json`
+ * fresh rather than caching, so state derived from the installed-plugin set (e.g.
+ * {@see AvailableLocalesProvider}, issue #453) is never stale across worker processes.
  */
 final class InstalledPluginsRegistry
 {
@@ -294,6 +296,11 @@ final class InstalledPluginsRegistry
             return [];
         }
 
+        // Read plugins.json once for the whole index rather than once per plugin below — with N
+        // installed plugins, resolving isEnabled() per entry used to mean N full reads and
+        // json_decode()s of the same file on every call (PR #455 review).
+        $allSettings = $this->pluginsConfigStore->getAllSettings();
+
         $plugins = [];
         foreach ($raw as $id => $entry) {
             if (!\is_string($id) || !\is_array($entry) || !\is_array($entry['manifest'] ?? null) || !\is_string($entry['installPath'] ?? null)) {
@@ -302,7 +309,7 @@ final class InstalledPluginsRegistry
 
             try {
                 $manifest = $this->manifestFromArray($entry['manifest']);
-                $plugins[$id] = new InstalledPlugin($manifest, $entry['installPath'], $this->isEnabled($id));
+                $plugins[$id] = new InstalledPlugin($manifest, $entry['installPath'], $this->isEnabled($id, $allSettings));
             } catch (\Throwable $exception) {
                 $this->logger->error('Skipping installed plugin with an invalid index entry.', [
                     'pluginId' => $id,
@@ -320,12 +327,14 @@ final class InstalledPluginsRegistry
      * A plugin without a recorded "enabled" setting yet is treated as active, same convention as
      * FillerRegistry/WidgetActiveTrait: plugins.json only ever records an explicit "false" once
      * the user disables it.
+     *
+     * @param array<string, mixed> $allSettings as returned by {@see PluginsConfigStore::getAllSettings()}
      */
-    private function isEnabled(string $id): bool
+    private function isEnabled(string $id, array $allSettings): bool
     {
-        $settings = $this->pluginsConfigStore->getPluginSettings(new PluginId($id));
+        $settings = $allSettings[$id] ?? null;
 
-        return (bool) ($settings['enabled'] ?? true);
+        return (bool) (\is_array($settings) ? $settings['enabled'] ?? true : true);
     }
 
     /**
