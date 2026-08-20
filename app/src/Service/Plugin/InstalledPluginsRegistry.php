@@ -296,6 +296,11 @@ final class InstalledPluginsRegistry
             return [];
         }
 
+        // Read plugins.json once for the whole index rather than once per plugin below — with N
+        // installed plugins, resolving isEnabled() per entry used to mean N full reads and
+        // json_decode()s of the same file on every call (PR #455 review).
+        $allSettings = $this->pluginsConfigStore->getAllSettings();
+
         $plugins = [];
         foreach ($raw as $id => $entry) {
             if (!\is_string($id) || !\is_array($entry) || !\is_array($entry['manifest'] ?? null) || !\is_string($entry['installPath'] ?? null)) {
@@ -304,7 +309,7 @@ final class InstalledPluginsRegistry
 
             try {
                 $manifest = $this->manifestFromArray($entry['manifest']);
-                $plugins[$id] = new InstalledPlugin($manifest, $entry['installPath'], $this->isEnabled($id));
+                $plugins[$id] = new InstalledPlugin($manifest, $entry['installPath'], $this->isEnabled($id, $allSettings));
             } catch (\Throwable $exception) {
                 $this->logger->error('Skipping installed plugin with an invalid index entry.', [
                     'pluginId' => $id,
@@ -322,12 +327,14 @@ final class InstalledPluginsRegistry
      * A plugin without a recorded "enabled" setting yet is treated as active, same convention as
      * FillerRegistry/WidgetActiveTrait: plugins.json only ever records an explicit "false" once
      * the user disables it.
+     *
+     * @param array<string, mixed> $allSettings as returned by {@see PluginsConfigStore::getAllSettings()}
      */
-    private function isEnabled(string $id): bool
+    private function isEnabled(string $id, array $allSettings): bool
     {
-        $settings = $this->pluginsConfigStore->getPluginSettings(new PluginId($id));
+        $settings = $allSettings[$id] ?? null;
 
-        return (bool) ($settings['enabled'] ?? true);
+        return (bool) (\is_array($settings) ? $settings['enabled'] ?? true : true);
     }
 
     /**

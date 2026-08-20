@@ -133,6 +133,33 @@ final class InstalledPluginsRegistryTest extends TestCase
         $this->assertSame(['animedb-anilist', 'animedb-shikimori'], $this->ids($registry->all()));
     }
 
+    /**
+     * PR #455 review: resolving each plugin's `enabled` flag via
+     * {@see PluginsConfigStore::getPluginSettings()} inside the loop used to mean N full reads
+     * and json_decode()s of `plugins.json` for N installed plugins, on every single call. A
+     * single {@see PluginsConfigStore::getAllSettings()} call replaces all of them —
+     * {@see PluginsConfigStore} is `final`, so this is asserted end-to-end via the merged
+     * `enabled` result rather than by counting calls on a mock.
+     */
+    public function testAllResolvesEnabledFlagsForEveryPluginFromASingleConfigStoreRead(): void
+    {
+        $this->writeManifest('animedb-shikimori');
+        $this->writeManifest('animedb-anilist');
+        $this->writeManifest('animedb-mal');
+
+        $configPath = $this->pluginsDir.'/plugins.json';
+        file_put_contents($configPath, json_encode([
+            'animedb-anilist' => ['enabled' => false],
+            'animedb-mal' => ['enabled' => false],
+        ]));
+
+        $registry = new InstalledPluginsRegistry($this->pluginsDir, new PluginsConfigStore($configPath), new NullLogger());
+        $registry->reconcile();
+
+        $this->assertSame(['animedb-shikimori'], $this->ids($registry->enabled()));
+        $this->assertSame(['animedb-anilist', 'animedb-mal', 'animedb-shikimori'], $this->ids($registry->all()));
+    }
+
     public function testReconcileSkipsDirectoryWithInvalidManifestJsonAndKeepsOthers(): void
     {
         $this->writeManifest('animedb-shikimori');

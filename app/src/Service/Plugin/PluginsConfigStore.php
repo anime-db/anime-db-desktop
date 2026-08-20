@@ -86,6 +86,19 @@ final class PluginsConfigStore
     }
 
     /**
+     * Every plugin's settings entry, keyed by plugin id — the same data {@see self::getPluginSettings()}
+     * returns one entry of, exposed in bulk so a caller that needs more than one plugin's settings
+     * (e.g. {@see InstalledPluginsRegistry::readIndex()} resolving every plugin's `enabled` flag)
+     * reads this file once instead of once per plugin.
+     *
+     * @return array<string, mixed>
+     */
+    public function getAllSettings(): array
+    {
+        return $this->read();
+    }
+
+    /**
      * Atomically reads, modifies and writes back the settings of a single plugin, leaving
      * every other plugin's entry untouched. $modifier receives the plugin's current settings
      * (empty array if none yet) and returns the settings to persist.
