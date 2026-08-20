@@ -71,7 +71,7 @@ composer phpstan    # phpstan analyse по конфигу phpstan.dist.neon
 
 ## Локализация: переводы
 
-Правила ниже проверяются тестами (`CatalogTranslationsTest` для `app/`, `tests/native/i18n.test.js` для `native/`), отдельной документации до этого не было.
+Правила ниже проверяются тестами (`CatalogPlaceholderParityTest` для `app/`, `tests/native/i18n.test.js` для `native/`; паритет ключей ru/en — `CatalogTranslationsTest`), отдельной документации до этого не было.
 
 **Плейсхолдеры.** Только Symfony-стиль `%name%` — единый формат для `app/` (`app/translations/messages.{locale}.yaml`) и `native/` (`native/translations/{locale}.json`). Фигурные скобки `{name}` не используются. Имя плейсхолдера — техническая часть ключа: не переводится и не меняется между локалями. Набор плейсхолдеров обязан совпадать между локалями **по составу**; порядок внутри строки свободен и подчиняется грамматике конкретного языка.
 
