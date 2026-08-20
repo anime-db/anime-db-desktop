@@ -69,12 +69,16 @@ final class PluginDataStoreScopePass implements CompilerPassInterface
 
         foreach ($container->getDefinitions() as $definition) {
             $class = $definition->getClass();
-            if ($class === null || !class_exists($class)) {
+            if ($class === null) {
                 continue;
             }
 
             $pluginId = $this->matchPluginId($class, $namespacePrefixes);
-            if ($pluginId === null || !$this->wantsPluginDataStore($class)) {
+            if ($pluginId === null) {
+                continue;
+            }
+
+            if (!class_exists($class) || !$this->wantsPluginDataStore($class)) {
                 continue;
             }
 

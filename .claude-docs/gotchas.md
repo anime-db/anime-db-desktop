@@ -217,6 +217,27 @@ Node оборачивает каждый CommonJS-модуль в функцию
 
 Повторный прогон `doctrine:migrations:migrate` после провала не идемпотентен сам по себе: как минимум `Version20260801000003`/`Version20260812000000` объявляют `isTransactional(): false` и перестраивают таблицы через `PRAGMA foreign_keys = OFF` + `CREATE TABLE <table>__new` + копирование + `DROP`/`RENAME`. Обрыв посередине оставляет в БД `<table>__new` без записанной версии миграции — второй прогон уже упёрся бы в «`<table>__new` already exists» и падал бы всегда. Ретрай в `migrations.js` работает только потому, что перед второй попыткой файл `data.db` целиком заменяется бэкапом (тем самым `<table>__new` пропадает вместе со всем остальным состоянием после первой неудачной попытки) — если бы ретрай просто вызывал `migrate` второй раз без восстановления файла, для non-transactional миграций он был бы гарантированно бесполезен.
 
+## `class_exists()` в плагинных compiler pass'ах — только после фильтра по неймспейсу плагина (issue #287, #458)
+
+Каждый compiler pass плагинной системы (`TagPluginServicesPass`, `PluginDataStoreScopePass`, `OwnManifestScopePass`, `SettingsStoreScopePass`) идёт по **всем** определениям контейнера, не только по плагинским, и должен опознать, каким классам можно доверять рефлексию. `class_exists($class)` для этого не подходит как первая проверка: в контейнере есть определения от сторонних бандлов (`doctrine.orm.validator.unique`, регистрируется безусловно `doctrine/doctrine-bundle`'ом), чей класс наследуется от родителя из пакета, которого нет в `vendor/` (`Symfony\Component\Validator\ConstraintValidator` — `symfony/validator` в этом приложении не установлен). `class_exists()` в таком случае не возвращает `false` — он **фатально роняет процесс** при попытке автозагрузки (класс-родитель не резолвится в момент `extends`).
+
+Фатал условен: пока `$namespacePrefixes === []` (плагинов не установлено), все четыре прохода выходят раньше цикла и до `doctrine.orm.validator.unique` дело не доходит. Он срабатывает, как только в индексе появляется хотя бы **один** плагин любого типа — включая `type: translation`, у которого нет ни `src/`, ни сервисов. Это ломает `bin/console cache:warmup` при холодной компиляции (см. `PluginCacheWarmer`), а значит и установку любого плагина: `ZipPluginInstaller` откатывает установку при неуспешном прогреве.
+
+Правильный порядок — сперва `matchPluginId($class, $namespacePrefixes)` с `continue` при `null`, и только для класса, который действительно принадлежит плагину, `class_exists($class)`:
+
+```php
+$pluginId = $this->matchPluginId($class, $namespacePrefixes);
+if ($pluginId === null) {
+    continue;                    // чужой класс — не трогаем вовсе, class_exists() не вызываем
+}
+
+if (!class_exists($class)) {
+    continue;
+}
+```
+
+`TagPluginServicesPass` получил этот порядок при исправлении issue #287. Три прохода, добавленные позже (`PluginDataStoreScopePass`, `OwnManifestScopePass`, `SettingsStoreScopePass`, issues #299/#316/#323), скопировали общую структуру `matchPluginId()`/`class_exists()`, но инвертировали порядок двух проверок — регрессия, исправленная в issue #458. Регрессионный тест — `tests/Unit/Service/Plugin/DependencyInjection/Compiler/ForeignDefinitionClassExistsOrderTest.php`, гоняет все четыре прохода против собственной фикстуры (класс с заведомо нерезолвящимся родителем, объявленным лениво через `spl_autoload_register`, вне какого-либо плагинного неймспейса) — не завязан на `doctrine.orm.validator.unique`, чтобы не позеленеть просто оттого, что `symfony/validator` когда-нибудь попадёт в зависимости. Правило актуально для **любого** будущего compiler pass'а, который перебирает `$container->getDefinitions()` и хочет отфильтровать их по принадлежности к плагину: `matchPluginId()` — всегда первая проверка, `class_exists()`/рефлексия — только после неё.
+
 ## `console.error` в главном процессе собранного Electron-приложения не попадает никуда
 
 У дочерних процессов (`frankenphp`, `meilisearch`, `qbittorrent-nox`, `messenger-consumer`) есть файловые логи через `native/supervisor/logrotate.js`, подключённые в каждом супервизоре. У самого главного процесса (`lifecycle/index.js`) такого лога не было — в собранном GUI-приложении под Windows у процесса нет консоли, `console.error` пишет в никуда, и `process.on('uncaughtException')` до issue #390 (ревью PR #395) молча убивал все дочерние процессы и завершал приложение без единой строчки диагностики. Исправлено: `logCrash()` в `lifecycle/index.js` синхронно (`fs.appendFileSync`, не поток) дописывает стек в `AppData/AnimeDB/var/log/main-YYYY-MM-DD.log` — та же схема именования, что и у остальных логов (`todayStr()` из `logrotate.js`, экспортирован специально для этого) — и обёрнут в `try/catch` best-effort, поскольку показать `dialog.showErrorBox()` и выйти важнее самого факта записи в лог. `uncaughtException` теперь не подменяет штатное поведение Electron (диалог с ошибкой), а явно его воспроизводит перед `app.exit(1)`.
