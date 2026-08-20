@@ -37,9 +37,12 @@ use Symfony\Component\HttpKernel\KernelEvents;
  *
  * The available locales come from {@see AvailableLocalesProvider} (built-in locales plus enabled
  * translation plugins' locales, issue #453), not from scanning app/translations/ on every
- * request: the subscriber is a singleton that survives between requests in FrankenPHP worker
- * mode, and AvailableLocalesProvider itself caches its result in memory, so this stays free of
- * per-request I/O for a locale set that rarely changes (see issue #84).
+ * request — that approach was rejected by issue #84/PR #90 for costing `glob()` I/O on every
+ * main request without even covering plugin translations. `AvailableLocalesProvider::all()` is
+ * called here on every main request and is deliberately NOT cached: it recomputes on every call,
+ * at a small but non-zero fixed I/O cost. See the `AvailableLocalesProvider` class docblock and
+ * `.claude-docs/decisions.md` (issue #84) for why that per-request cost is an accepted, documented
+ * trade-off rather than an oversight.
  */
 final class LocaleSubscriber implements EventSubscriberInterface
 {

@@ -39,10 +39,18 @@ use AnimeDb\PluginContracts\Manifest\PluginType;
  * a pool of worker processes with no shared memory between them (see {@see \App\Service\WsPublisher}),
  * so an in-process cache invalidated by an in-process event only updates the one worker that
  * happened to handle the mutating request, leaving the rest stale until they eventually restart.
- * This is safe to do on every request because {@see InstalledPluginsRegistry::enabled()} is
- * itself already read fresh, uncached, on every request by {@see PluginLoader::translationPaths()}
- * — it is backed by a compact pre-parsed index file (`installed-plugins.php`), not the `glob()` +
- * per-manifest parsing issue #84 ruled out.
+ *
+ * This is a deliberate, documented relaxation of the "no file I/O on the request path" constraint
+ * issue #84 originally established when it rejected `glob()`-scanning `app/translations/`:
+ * {@see \App\EventSubscriber\LocaleSubscriber} calls `all()` on every main request, and each call
+ * costs one `require` of the pre-parsed plugin index (`installed-plugins.php`) plus one read and
+ * `json_decode()` of `plugins.json` — a fixed cost independent of how many plugins are installed
+ * (see {@see InstalledPluginsRegistry::readIndex()}), not the `glob()` + per-manifest parsing
+ * issue #84 ruled out, but not zero either. A `filemtime()`-gated cache was considered instead and
+ * rejected: `filemtime()` only has whole-second resolution, so two mutations of the same file
+ * within one second would leave a stale worker undetected, which would silently reintroduce the
+ * cross-worker staleness window the in-process cache above was removed for. See
+ * `.claude-docs/decisions.md` (issue #84) for the full record.
  */
 final class AvailableLocalesProvider
 {
