@@ -44,7 +44,7 @@
                     <div class="anime-card__thumb anime-card__thumb--placeholder">{{ 'anime_detail.no_cover'|trans }}</div>
                 {% endif %}
                 <div class="anime-card__body">
-                    <p class="anime-card__title">{{ item.title }}</p>
+                    <p class="anime-card__title"><bdi>{{ item.title }}</bdi></p>
                     {% if item.subtitle %}
                         <p class="anime-card__meta">{{ item.subtitle }}</p>
                     {% endif %}

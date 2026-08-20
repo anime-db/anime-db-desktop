@@ -24,7 +24,7 @@
 
 {% block body %}
     <main class="storage-scan-prompt">
-        <h1>{{ 'storage_scan_prompt.heading'|trans({'%name%': storage.name}) }}</h1>
+        <h1>{{ 'storage_scan_prompt.heading'|trans({'%name%': bidi_isolate(storage.name)}) }}</h1>
         <p>{{ 'storage_scan_prompt.description'|trans }}</p>
 
         <form method="post" action="{{ path('storage_scan', {id: storage.id}) }}">

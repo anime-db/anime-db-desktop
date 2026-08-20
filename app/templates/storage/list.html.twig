@@ -68,9 +68,9 @@
                 <tbody>
                     {% for storage in storages %}
                         <tr>
-                            <td>{{ storage.name }}</td>
+                            <td><bdi>{{ storage.name }}</bdi></td>
                             <td>{{ ('storage_type.' ~ storage.type.value)|trans }}</td>
-                            <td>{{ storage.path }}</td>
+                            <td><bdi>{{ storage.path }}</bdi></td>
                             <td>{{ storage.dateUpdate ? storage.dateUpdate|date('Y-m-d H:i') : ('storage_list.never_scanned'|trans) }}</td>
                             <td>
                                 <a href="{{ path('storage_edit', {id: storage.id}) }}">{{ 'storage_list.edit_button'|trans }}</a>
@@ -78,7 +78,7 @@
                                     <input type="hidden" name="_token" value="{{ csrf_token('storage_scan_' ~ storage.id) }}">
                                     <button type="submit">{{ 'storage_list.scan_button'|trans }}</button>
                                 </form>
-                                <form method="post" action="{{ path('storage_delete', {id: storage.id}) }}" onsubmit="return confirm('{{ ('storage_list.delete_confirm'|trans({'%name%': storage.name}))|e('js') }}');">
+                                <form method="post" action="{{ path('storage_delete', {id: storage.id}) }}" onsubmit="return confirm('{{ ('storage_list.delete_confirm'|trans({'%name%': bidi_isolate(storage.name)}))|e('js') }}');">
                                     <input type="hidden" name="_token" value="{{ csrf_token('storage_delete_' ~ storage.id) }}">
                                     <button type="submit">{{ 'storage_list.delete_button'|trans }}</button>
                                 </form>

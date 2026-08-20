@@ -55,6 +55,7 @@ function createSplash() {
             nodeIntegration: false,
             additionalArguments: [
                 `--splash-locale=${encodeURIComponent(locale)}`,
+                `--splash-dir=${encodeURIComponent(i18n.textDirection(locale))}`,
                 `--splash-initial-status=${encodeURIComponent(i18n.t('splash.step_meilisearch', locale))}`,
             ],
         },

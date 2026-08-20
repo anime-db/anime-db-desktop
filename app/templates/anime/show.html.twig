@@ -39,7 +39,7 @@
             {% else %}
                 <div class="anime-detail__cover anime-detail__cover--placeholder">{{ 'anime_detail.no_cover'|trans }}</div>
             {% endif %}
-            <h1 class="anime-detail__title">{{ anime.title }}</h1>
+            <h1 class="anime-detail__title"><bdi>{{ anime.title }}</bdi></h1>
         </div>
 
         <div class="anime-detail__content">
@@ -60,7 +60,7 @@
 
                 <ul class="anime-detail__labels-list" data-labels-view>
                     {% for label in anime.labels %}
-                        <li><a class="anime-detail__label-link" href="{{ path('home_index', {labels: label.id}) }}">{{ label.name }}</a></li>
+                        <li><a class="anime-detail__label-link" href="{{ path('home_index', {labels: label.id}) }}"><bdi>{{ label.name }}</bdi></a></li>
                     {% else %}
                         <li class="anime-detail__labels-empty" data-labels-empty>{{ 'anime_detail.empty_value'|trans }}</li>
                     {% endfor %}

@@ -96,7 +96,7 @@
             {% if anime.names is not empty %}
                 <ul class="anime-detail__names">
                     {% for name in anime.names %}
-                        <li>{{ name.name }} <span class="anime-detail__name-type">({{ ('anime_name_type.' ~ name.type)|trans }})</span></li>
+                        <li><bdi>{{ name.name }}</bdi> <span class="anime-detail__name-type">({{ ('anime_name_type.' ~ name.type)|trans }})</span></li>
                     {% endfor %}
                 </ul>
             {% else %}

@@ -1,10 +1,14 @@
+<?php
+
 /**
  * AnimeDb package.
  *
  * @author    Peter Gribanov <info@peter-gribanov.ru>
  * @copyright Copyright (c) 2026, Peter Gribanov
  * @license   https://www.gnu.org/licenses/gpl-3.0.html GPL-3.0-or-later
- *
+ */
+
+/*
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
@@ -19,48 +23,24 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-.app-notifications {
-    position: fixed;
-    top: 16px;
-    inset-inline-end: 16px;
-    z-index: 1000;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    max-width: 360px;
-}
+declare(strict_types=1);
 
-.app-notification {
-    display: flex;
-    align-items: flex-start;
-    gap: 8px;
-    padding: 10px 12px;
-    border-radius: 6px;
-    background: #f2dede;
-    color: #a94442;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
-}
+namespace App\Twig;
 
-.app-notification__text {
-    flex: 1;
-}
+use App\Service\LocaleDirection;
+use Twig\Extension\AbstractExtension;
+use Twig\TwigFunction;
 
-.app-notification__title {
-    display: block;
-    margin-bottom: 2px;
-}
+final class LocaleDirectionExtension extends AbstractExtension
+{
+    public function __construct(private readonly LocaleDirection $localeDirection)
+    {
+    }
 
-.app-notification__message {
-    margin: 0;
-    font-size: 0.9em;
-}
-
-.app-notification__close {
-    border: none;
-    background: none;
-    padding: 0;
-    color: inherit;
-    font-size: 1.1em;
-    line-height: 1;
-    cursor: pointer;
+    public function getFunctions(): array
+    {
+        return [
+            new TwigFunction('text_direction', $this->localeDirection->resolve(...)),
+        ];
+    }
 }

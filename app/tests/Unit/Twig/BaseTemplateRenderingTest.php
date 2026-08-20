@@ -48,6 +48,29 @@ final class BaseTemplateRenderingTest extends KernelTestCase
 
         $this->assertStringContainsString('<!DOCTYPE html>', $html);
         $this->assertStringContainsString('AnimeDB', $html);
-        $this->assertStringContainsString('<html lang="en">', $html);
+        $this->assertStringContainsString('<html lang="en" dir="ltr">', $html);
+    }
+
+    /**
+     * The RTL direction comes from a static table in core (issue #450), not from a translation
+     * plugin, so it must switch with the locale even though no RTL plugin is installed in this
+     * test suite.
+     */
+    public function testHtmlDirSwitchesToRtlForAnRtlLocaleWithoutAnyTranslationPlugin(): void
+    {
+        self::bootKernel();
+
+        $request = Request::create('/');
+        $request->setLocale('ar');
+
+        /** @var RequestStack $requestStack */
+        $requestStack = self::getContainer()->get('request_stack');
+        $requestStack->push($request);
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('base.html.twig');
+
+        $this->assertStringContainsString('<html lang="ar" dir="rtl">', $html);
     }
 }

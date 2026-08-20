@@ -44,6 +44,7 @@ function readArg(name) {
 contextBridge.exposeInMainWorld('splash', {
     logoPath,
     locale:        readArg('splash-locale'),
+    dir:           readArg('splash-dir'),
     initialStatus: readArg('splash-initial-status'),
     onProgress: (cb) => ipcRenderer.on('splash-progress', (_event, data) => cb(data)),
 });

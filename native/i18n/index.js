@@ -98,4 +98,29 @@ function t(key, locale, params = {}) {
     return text;
 }
 
-module.exports = { t };
+// Writing direction is a property of the language, not of a translation plugin (issue #450): a
+// plugin declares locales, not code, so it has no channel to ship a "dir" value, and the set of
+// RTL languages changes close to never. Kept as its own static table here rather than a field on
+// the plugin manifest — mirrors App\Service\LocaleDirection on the PHP side, which base.html.twig
+// uses for the same purpose.
+const RTL_LANGUAGES = ['ar', 'he', 'fa', 'ur'];
+
+/**
+ * Resolves the writing direction for `locale` from its BCP 47 primary language subtag (e.g.
+ * "ar-EG" -> "ar"). A locale with no entry in the table — including one supplied by a
+ * translation plugin, or a non-string/empty value — is treated as "ltr".
+ *
+ * @param {string} locale
+ * @returns {'ltr' | 'rtl'}
+ */
+function textDirection(locale) {
+    if (typeof locale !== 'string' || locale === '') {
+        return 'ltr';
+    }
+
+    const language = locale.split(/[-_]/)[0].toLowerCase();
+
+    return RTL_LANGUAGES.includes(language) ? 'rtl' : 'ltr';
+}
+
+module.exports = { t, textDirection };
