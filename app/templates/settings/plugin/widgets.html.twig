@@ -78,7 +78,7 @@
     <h1>{{ 'settings_plugin_widgets.heading'|trans }}</h1>
 
     {% if error == 'hard_limit_exceeded' %}
-        <p class="error">{{ 'settings_plugin_widgets.hard_limit_error'|trans({'%limit%': hardLimit}) }}</p>
+        <p class="error">{{ 'settings_plugin_widgets.hard_limit_reached'|trans({'%limit%': hardLimit}) }}</p>
     {% elseif error == 'busy_retry' %}
         <p class="error">{{ 'settings_plugin_widgets.busy_retry_error'|trans }}</p>
     {% endif %}
