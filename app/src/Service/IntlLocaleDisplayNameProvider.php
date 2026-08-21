@@ -29,9 +29,12 @@ namespace App\Service;
 
 /**
  * The only production {@see LocaleDisplayNameProvider}: a thin wrapper around `ext-intl`'s
- * `\Locale::getDisplayName()`. `class_exists()` guards against the extension being missing
- * (the runtime ships it — see the FrankenPHP build table in `.claude-docs/architecture.md` — but
- * a CI/dev PHP is assembled separately and can omit it, issue #461).
+ * `\Locale::getDisplayName()`, chosen over the `symfony/intl` package because the runtime already
+ * ships `ext-intl` (see the FrankenPHP build table in `.claude-docs/architecture.md`), so pulling
+ * in a userland polyfill would duplicate data already available natively.
+ *
+ * `class_exists()` guards against the extension being missing (the runtime ships it, but a CI/dev
+ * PHP is assembled separately and can omit it, issue #461).
  *
  * `\Locale::getDisplayName()` returns `string|false`, not just `string` — `false` on a hard
  * failure (e.g. a locale string past ICU's length limit) — and for a code it merely does not

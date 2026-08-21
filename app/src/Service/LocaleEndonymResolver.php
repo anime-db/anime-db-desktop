@@ -37,15 +37,12 @@ use Psr\Log\LoggerInterface;
  * catalog (issue #461). An endonym — a language's name for itself, resolved from the locale code
  * alone — is the one label that needs no catalog entry on either side and scales to any locale.
  *
- * Resolved via {@see LocaleDisplayNameProvider} (backed by `ext-intl`'s `\Locale::getDisplayName()`
- * in production) rather than the `symfony/intl` package: the runtime already ships `ext-intl` (see
- * the FrankenPHP build table in `.claude-docs/architecture.md`), so pulling in a userland polyfill
- * would duplicate data already available natively.
+ * Resolved via {@see LocaleDisplayNameProvider} — this class only knows the interface, not what
+ * backs it, so it stays correct regardless of which implementation is wired in.
  *
- * Falls back to the raw locale code (e.g. `de`) whenever the provider returns null — whether
- * because `ext-intl` is unavailable or because ICU does not recognize the code — logged at
- * `warning` level rather than silently: `ext-intl` missing at runtime means the FrankenPHP build
- * lost an extension it is supposed to ship, which is worth surfacing, not swallowing.
+ * Falls back to the raw locale code (e.g. `de`) whenever the provider returns null, logged at
+ * `warning` level rather than silently: the provider being unable to resolve a locale it is
+ * expected to handle is worth surfacing, not swallowing.
  */
 final class LocaleEndonymResolver
 {
@@ -62,7 +59,7 @@ final class LocaleEndonymResolver
             return $endonym;
         }
 
-        $this->logger->warning('locale endonym: no endonym available for locale "{locale}" (ext-intl missing or the code is unrecognized), falling back to the raw code.', [
+        $this->logger->warning('locale endonym: display name provider returned no result for locale "{locale}", falling back to the raw code.', [
             'locale' => $locale,
         ]);
 
