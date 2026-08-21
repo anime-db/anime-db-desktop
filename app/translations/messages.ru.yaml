@@ -126,9 +126,6 @@ settings:
     sync_review_badge: 'Требует внимания: %count%'
     proxy_link: Прокси-сервер
     language_label: Язык интерфейса
-    locale:
-        ru: Русский
-        en: English
     search_reindex_heading: Поисковый индекс
     search_reindex_button: Переиндексировать
     search_reindex_success: Поисковый индекс успешно перестроен.

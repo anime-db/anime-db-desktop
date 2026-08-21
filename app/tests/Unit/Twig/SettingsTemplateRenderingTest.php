@@ -103,6 +103,23 @@ final class SettingsTemplateRenderingTest extends KernelTestCase
         $this->assertStringContainsString('/settings/labels', $html);
     }
 
+    /**
+     * Endonym labels are only real ICU output when `ext-intl` is loaded (issue #461) — CI does
+     * not guarantee that (see the extension list in `.github/workflows/ci.yml`), so the expected
+     * label here follows the same "ext-intl available? real endonym : raw code" contract
+     * {@see \App\Service\LocaleEndonymResolver} itself implements, rather than assuming ICU.
+     */
+    private function expectedLocaleLabel(string $locale): string
+    {
+        if (!class_exists(\Locale::class)) {
+            return $locale;
+        }
+
+        $name = \Locale::getDisplayName($locale, $locale);
+
+        return \in_array($name, [false, ''], true) ? $locale : $name;
+    }
+
     public function testSettingsIndexRendersLocaleSwitcherWithCurrentLocaleSelected(): void
     {
         self::bootKernel();
@@ -117,8 +134,32 @@ final class SettingsTemplateRenderingTest extends KernelTestCase
             'needsCorrectionCount' => 0,
         ]);
 
-        $this->assertStringContainsString('<option value="en" selected>English</option>', $html);
-        $this->assertStringContainsString('<option value="ru">Русский</option>', $html);
+        $this->assertStringContainsString(\sprintf('<option value="en" selected>%s</option>', $this->expectedLocaleLabel('en')), $html);
+        $this->assertStringContainsString(\sprintf('<option value="ru">%s</option>', $this->expectedLocaleLabel('ru')), $html);
+    }
+
+    /**
+     * Acceptance (issue #461): a locale core has no translation catalog entry for at all — the
+     * kind {@see \App\Service\Plugin\AvailableLocalesProvider} can add from an enabled
+     * translation plugin — must render its endonym, not a raw `settings.locale.de` translation
+     * key and not an empty label.
+     */
+    public function testSettingsIndexRendersEndonymForALocaleWithNoCoreCatalogEntry(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession();
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('settings/index.html.twig', [
+            'availableLocales' => ['en', 'ru', 'de'],
+            'currentLocale' => 'en',
+            'reindexStatus' => null,
+            'needsCorrectionCount' => 0,
+        ]);
+
+        $this->assertStringContainsString(\sprintf('<option value="de">%s</option>', $this->expectedLocaleLabel('de')), $html);
+        $this->assertStringNotContainsString('settings.locale.', $html);
     }
 
     public function testSettingsIndexRendersReindexSuccessMessage(): void

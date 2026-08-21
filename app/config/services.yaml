@@ -166,6 +166,11 @@ services:
     # interface instead so it stays unit-testable without touching a real volume.
     App\Service\Download\FreeSpaceProvider: '@App\Service\Download\NativeFreeSpaceProvider'
 
+    # Whether ext-intl is loaded cannot be flipped from a test — LocaleEndonymResolver (issue #461)
+    # depends on this interface instead so its "extension unavailable" fallback stays unit-testable
+    # without touching the actual extension.
+    App\Service\LocaleDisplayNameProvider: '@App\Service\IntlLocaleDisplayNameProvider'
+
     # Left to its default PSR-18 client discovery, Meilisearch\Client would inherit whatever
     # timeout that client defaults to — potentially none. The list search box (issue #199)
     # needs a fast, bounded failure when Meilisearch is unreachable so it can fall back to the
