@@ -46,14 +46,19 @@ use Symfony\Component\DependencyInjection\Loader\PhpFileLoader;
  * `PhpFileLoader`/`ContainerBuilder` machinery, the same way `Kernel::configureContainer()` gets
  * invoked on boot.
  *
- * Deliberately not a full {@see \App\Kernel} boot test: the real container also carries
- * `doctrine.orm.validator.unique` (registered unconditionally by doctrine/doctrine-bundle's own
- * `config/orm.php`), whose class extends `Symfony\Component\Validator\ConstraintValidator` — a
- * class from `symfony/validator`, a package this app does not require. A full boot only survives
- * today because every environment happens to reuse an already-compiled container cache; a truly
- * cold compile fatals as soon as anything (like {@see TagPluginServicesPass}) calls
- * `class_exists()` on that service's class. That is a pre-existing landmine unrelated to this
- * issue, so this test recreates just the plugin-relevant slice of the container instead.
+ * Deliberately not a full {@see \App\Kernel} boot test, but no longer because one is impossible:
+ * a cold compile with a plugin installed used to fatal unconditionally (the real container also
+ * carries `doctrine.orm.validator.unique`, registered unconditionally by
+ * doctrine/doctrine-bundle's own `config/orm.php`, whose class extends
+ * `Symfony\Component\Validator\ConstraintValidator` — a class from `symfony/validator`, a package
+ * this app does not require; {@see TagPluginServicesPass} and friends called `class_exists()` on
+ * that service's class before checking plugin ownership, and `class_exists()` fatals rather than
+ * returning `false` when the class it is asked about has an unresolvable parent). That was fixed
+ * by issue #458/PR #459 (see `.claude-docs/gotchas.md`) and is now covered by a full boot in
+ * {@see \App\Tests\Unit\Translation\PluginTranslationBootTest} (issue #451). This test still
+ * recreates just the plugin-relevant slice of the container rather than switching to a full boot,
+ * because that is all it needs: it targets `configureContainer()`'s per-plugin `load()` call in
+ * isolation, not the translator/routing/twig wiring a full boot would also exercise.
  */
 final class PluginServiceAutoRegistrationTest extends TestCase
 {
