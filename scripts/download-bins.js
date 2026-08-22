@@ -44,6 +44,7 @@ const BINS = [
         url: `https://github.com/php/frankenphp/releases/download/v${versions.frankenphp}/frankenphp-windows-x86_64.zip`,
         dest: path.join(binDir, 'frankenphp', 'frankenphp.exe'),
         zipEntry: 'frankenphp.exe',
+        sha256: versions.sha256.frankenphp,
     },
     {
         name: 'meilisearch',
@@ -51,6 +52,7 @@ const BINS = [
         url: `https://github.com/meilisearch/meilisearch/releases/download/v${versions.meilisearch}/meilisearch-windows-amd64.exe`,
         dest: path.join(binDir, 'meilisearch', 'meilisearch.exe'),
         zipEntry: null,
+        sha256: versions.sha256.meilisearch,
     },
 ];
 
@@ -83,11 +85,20 @@ function isUpToDate(dest, version) {
     return fs.readFileSync(vf, 'utf8').trim() === version;
 }
 
+const REDIRECT_STATUS_CODES = [301, 302, 307, 308];
+const CONNECT_TIMEOUT_MS = 30000;
+const DOWNLOAD_RETRIES = 3;
+const RETRY_BASE_DELAY_MS = 500;
+
+function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function httpGetFollowingRedirects(url, onResponse, reject) {
     const follow = (currentUrl) => {
-        const opts = { headers: { 'User-Agent': 'anime-db-desktop/download-bins' } };
-        https.get(currentUrl, opts, (res) => {
-            if (res.statusCode === 301 || res.statusCode === 302) {
+        const opts = { headers: { 'User-Agent': 'anime-db-desktop/download-bins' }, timeout: CONNECT_TIMEOUT_MS };
+        const req = https.get(currentUrl, opts, (res) => {
+            if (REDIRECT_STATUS_CODES.includes(res.statusCode)) {
                 res.resume();
                 follow(res.headers.location);
                 return;
@@ -97,27 +108,11 @@ function httpGetFollowingRedirects(url, onResponse, reject) {
                 return;
             }
             onResponse(res);
-        }).on('error', reject);
+        });
+        req.on('timeout', () => req.destroy(new Error(`Connection timed out after ${CONNECT_TIMEOUT_MS}ms for ${currentUrl}`)));
+        req.on('error', reject);
     };
     follow(url);
-}
-
-function download(url, destPath) {
-    return new Promise((resolve, reject) => {
-        httpGetFollowingRedirects(url, (res) => {
-            const file = fs.createWriteStream(destPath);
-            res.pipe(file);
-            file.on('finish', () => file.close(resolve));
-            file.on('error', (err) => {
-                fs.unlink(destPath, () => {});
-                reject(err);
-            });
-            res.on('error', (err) => {
-                fs.unlink(destPath, () => {});
-                reject(err);
-            });
-        }, reject);
-    });
 }
 
 function downloadBuffer(url) {
@@ -129,6 +124,29 @@ function downloadBuffer(url) {
             res.on('error', reject);
         }, reject);
     });
+}
+
+// Retries a whole-buffer download with a growing pause between attempts. Each attempt is an
+// independent connection (fresh redirect chain), so a transient error or a truncated transfer
+// never leaves a partial buffer behind — the caller either gets the full, complete download or
+// the last error after all attempts are spent.
+async function downloadBufferWithRetry(url) {
+    let lastErr;
+    for (let attempt = 0; attempt <= DOWNLOAD_RETRIES; attempt++) {
+        try {
+            return await downloadBuffer(url);
+        } catch (err) {
+            lastErr = err;
+            if (attempt === DOWNLOAD_RETRIES) break;
+            const delay = RETRY_BASE_DELAY_MS * 2 ** attempt;
+            console.error(
+                `Download failed (attempt ${attempt + 1}/${DOWNLOAD_RETRIES + 1}) for ${url}: ` +
+                `${err.message}. Retrying in ${delay}ms...`,
+            );
+            await sleep(delay);
+        }
+    }
+    throw lastErr;
 }
 
 // Parses the ZIP End of Central Directory + Central Directory records.
@@ -235,27 +253,29 @@ function verifyEd25519Signature(buffer, signatureBase64, publicKeyPem) {
     return crypto.verify(null, buffer, publicKeyPem, signature);
 }
 
+// Downloads a bin into memory and verifies its SHA-256 checksum BEFORE writing anything to disk.
+// Throws (and writes nothing — no target file, no temp file) on a checksum mismatch.
 async function downloadBin(bin) {
     if (isUpToDate(bin.dest, bin.version)) {
         console.log(`${bin.name} v${bin.version} already up to date, skipping`);
         return;
     }
 
-    fs.mkdirSync(path.dirname(bin.dest), { recursive: true });
+    console.log(`Downloading ${bin.name} v${bin.version}...`);
+    const buffer = await downloadBufferWithRetry(bin.url);
 
+    console.log(`Verifying ${bin.name} SHA-256 checksum...`);
+    const actualHash = crypto.createHash('sha256').update(buffer).digest('hex');
+    if (actualHash !== bin.sha256) {
+        throw new Error(`SHA-256 mismatch for ${bin.name}: expected ${bin.sha256}, got ${actualHash}`);
+    }
+
+    fs.mkdirSync(path.dirname(bin.dest), { recursive: true });
     if (bin.zipEntry) {
-        const tmpZip = bin.dest + '.tmp.zip';
-        console.log(`Downloading ${bin.name} v${bin.version}...`);
-        await download(bin.url, tmpZip);
         console.log(`Extracting ${bin.zipEntry} from archive...`);
-        const zipBuffer = fs.readFileSync(tmpZip);
-        extractFromZip(zipBuffer, bin.zipEntry, bin.dest);
-        fs.unlinkSync(tmpZip);
+        extractFromZip(buffer, bin.zipEntry, bin.dest);
     } else {
-        const tmpFile = bin.dest + '.tmp';
-        console.log(`Downloading ${bin.name} v${bin.version}...`);
-        await download(bin.url, tmpFile);
-        fs.renameSync(tmpFile, bin.dest);
+        fs.writeFileSync(bin.dest, buffer);
     }
 
     fs.writeFileSync(versionFilePath(bin.dest), bin.version + '\n');
@@ -319,7 +339,9 @@ module.exports = {
     verifyEd25519Signature,
     extractZipToDir,
     extractFromZip,
+    downloadBin,
     downloadQbittorrentNox,
+    BINS,
     QBITTORRENT_NOX,
     QBITTORRENT_NOX_PUBLIC_KEY,
 };
