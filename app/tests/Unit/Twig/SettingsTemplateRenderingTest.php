@@ -103,23 +103,6 @@ final class SettingsTemplateRenderingTest extends KernelTestCase
         $this->assertStringContainsString('/settings/labels', $html);
     }
 
-    /**
-     * Endonym labels are only real ICU output when `ext-intl` is loaded (issue #461) — CI does
-     * not guarantee that (see the extension list in `.github/workflows/ci.yml`), so the expected
-     * label here follows the same "ext-intl available? real endonym : raw code" contract
-     * {@see \App\Service\LocaleEndonymResolver} itself implements, rather than assuming ICU.
-     */
-    private function expectedLocaleLabel(string $locale): string
-    {
-        if (!class_exists(\Locale::class)) {
-            return $locale;
-        }
-
-        $name = \Locale::getDisplayName($locale, $locale);
-
-        return \in_array($name, [false, ''], true) ? $locale : $name;
-    }
-
     public function testSettingsIndexRendersLocaleSwitcherWithCurrentLocaleSelected(): void
     {
         self::bootKernel();
@@ -134,8 +117,8 @@ final class SettingsTemplateRenderingTest extends KernelTestCase
             'needsCorrectionCount' => 0,
         ]);
 
-        $this->assertStringContainsString(\sprintf('<option value="en" selected>%s</option>', $this->expectedLocaleLabel('en')), $html);
-        $this->assertStringContainsString(\sprintf('<option value="ru">%s</option>', $this->expectedLocaleLabel('ru')), $html);
+        $this->assertStringContainsString('<option value="en" selected>English</option>', $html);
+        $this->assertStringContainsString('<option value="ru">русский</option>', $html);
     }
 
     /**
@@ -158,7 +141,7 @@ final class SettingsTemplateRenderingTest extends KernelTestCase
             'needsCorrectionCount' => 0,
         ]);
 
-        $this->assertStringContainsString(\sprintf('<option value="de">%s</option>', $this->expectedLocaleLabel('de')), $html);
+        $this->assertStringContainsString('<option value="de">Deutsch</option>', $html);
         $this->assertStringNotContainsString('settings.locale.', $html);
     }
 
