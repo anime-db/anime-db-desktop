@@ -40,7 +40,13 @@ jobs:
           # setup-php не включает zip по умолчанию, из-за чего `composer install` падал на
           # проверке платформы ещё до сборки инсталлера. Этот PHP используется только для
           # composer — приложение работает на PHP, встроенном в FrankenPHP.
-          extensions: zip, ctype, iconv
+          #
+          # intl здесь ПОКА ШИРЕ require: ext-intl объявляется в app/composer.json отдельно
+          # (issue #461, PR #464), а эта джоба готовится заранее — .github/ правит только
+          # человек. Порядок именно такой, потому что config.platform в composer.json не
+          # задан: composer сверяет платформу с реальным PHP этой машины, и объявление
+          # ext-intl раньше этой строки уронило бы сборку на первом же релизном теге.
+          extensions: zip, ctype, iconv, intl
 
       - name: Build installer
         run: npm run build
