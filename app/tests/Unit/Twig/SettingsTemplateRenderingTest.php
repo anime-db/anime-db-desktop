@@ -118,7 +118,10 @@ final class SettingsTemplateRenderingTest extends KernelTestCase
         ]);
 
         $this->assertStringContainsString('<option value="en" selected>English</option>', $html);
-        $this->assertStringContainsString('<option value="ru">русский</option>', $html);
+        // ICU spells the Russian endonym lower-case ("русский"); LocaleEndonymResolver
+        // capitalizes it for a uniform switcher list. Changing this expectation to match ICU's
+        // raw output would be a regression, not a fix.
+        $this->assertStringContainsString('<option value="ru">Русский</option>', $html);
     }
 
     /**

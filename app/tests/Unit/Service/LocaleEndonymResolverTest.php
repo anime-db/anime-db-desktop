@@ -56,6 +56,36 @@ final class LocaleEndonymResolverTest extends TestCase
     }
 
     /**
+     * ICU spells some endonyms lower-case by the target language's own orthography (`русский`),
+     * but the switcher lists several languages side by side and needs a uniform case — see
+     * {@see LocaleEndonymResolver} for why capitalization belongs here rather than in the
+     * provider.
+     */
+    public function testResolveCapitalizesTheFirstLetterOfTheProvidersEndonym(): void
+    {
+        $provider = $this->createStub(LocaleDisplayNameProvider::class);
+        $provider->method('getDisplayName')->willReturn('русский');
+
+        $resolver = new LocaleEndonymResolver($provider, new NullLogger());
+
+        $this->assertSame('Русский', $resolver->resolve('ru'));
+    }
+
+    /**
+     * The raw locale code fallback is not an endonym, so it must not be capitalized the way a
+     * resolved endonym is — `De` would read worse than `de`.
+     */
+    public function testResolveFallsBackToTheRawLocaleCodeUncapitalizedWhenTheProviderReturnsNull(): void
+    {
+        $provider = $this->createStub(LocaleDisplayNameProvider::class);
+        $provider->method('getDisplayName')->willReturn(null);
+
+        $resolver = new LocaleEndonymResolver($provider, new NullLogger());
+
+        $this->assertSame('de', $resolver->resolve('de'));
+    }
+
+    /**
      * Simulates ext-intl being unavailable, or ICU failing to resolve the code at all — both
      * surface identically through {@see LocaleDisplayNameProvider}: null. This is the scenario
      * the settings page must not turn into a fatal error for.
