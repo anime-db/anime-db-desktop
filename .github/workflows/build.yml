@@ -41,8 +41,11 @@ jobs:
           # проверке платформы ещё до сборки инсталлера. Этот PHP используется только для
           # composer — приложение работает на PHP, встроенном в FrankenPHP.
           #
-          # Список обязан совпадать с require в app/composer.json: config.platform там не
-          # задан, поэтому composer проверяет платформу по реальному PHP этой машины.
+          # intl здесь ПОКА ШИРЕ require: ext-intl объявляется в app/composer.json отдельно
+          # (issue #461, PR #464), а эта джоба готовится заранее — .github/ правит только
+          # человек. Порядок именно такой, потому что config.platform в composer.json не
+          # задан: composer сверяет платформу с реальным PHP этой машины, и объявление
+          # ext-intl раньше этой строки уронило бы сборку на первом же релизном теге.
           extensions: zip, ctype, iconv, intl
 
       - name: Build installer
