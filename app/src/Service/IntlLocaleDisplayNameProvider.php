@@ -33,15 +33,12 @@ namespace App\Service;
  * ships `ext-intl` (see the FrankenPHP build table in `.claude-docs/architecture.md`), so pulling
  * in a userland polyfill would duplicate data already available natively.
  *
- * `class_exists()` guards against the extension being missing (the runtime ships it, but a CI/dev
- * PHP is assembled separately and can omit it, issue #461).
- *
  * `\Locale::getDisplayName()` returns `string|false`, not just `string` — `false` on a hard
  * failure (e.g. a locale string past ICU's length limit) — and for a code it merely does not
  * recognize its behavior is ICU-version-dependent (sometimes an empty string, sometimes the code
- * echoed back). Both `false` and `''` are normalized to null here, same as "extension
- * unavailable", rather than being surfaced as a valid endonym; anything else — including an
- * unrecognized code ICU chose to echo back rather than reject — is returned as-is.
+ * echoed back). Both `false` and `''` are normalized to null here rather than being surfaced as a
+ * valid endonym; anything else — including an unrecognized code ICU chose to echo back rather
+ * than reject — is returned as-is.
  *
  * The `''` case is checked via `in_array()` rather than a direct `=== ''` comparison: PHPStan's
  * bundled stub for this function types its success case as `non-empty-string`, so a literal
@@ -52,10 +49,6 @@ final class IntlLocaleDisplayNameProvider implements LocaleDisplayNameProvider
 {
     public function getDisplayName(string $locale): ?string
     {
-        if (!class_exists(\Locale::class)) {
-            return null;
-        }
-
         $name = \Locale::getDisplayName($locale, $locale);
 
         return \in_array($name, [false, ''], true) ? null : $name;
