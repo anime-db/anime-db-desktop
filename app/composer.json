@@ -29,6 +29,7 @@
         "php": ">=8.4",
         "ext-ctype": "*",
         "ext-iconv": "*",
+        "ext-intl": "*",
         "ext-zip": "*",
         "anime-db/plugin-contracts": "^0.14",
         "doctrine/doctrine-bundle": "^3.2",
