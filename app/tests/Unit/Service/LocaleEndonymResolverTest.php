@@ -27,7 +27,6 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Service;
 
-use App\Service\LocaleDisplayNameProvider;
 use App\Service\LocaleEndonymResolver;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
@@ -35,22 +34,16 @@ use Psr\Log\NullLogger;
 
 final class LocaleEndonymResolverTest extends TestCase
 {
-    public function testResolveReturnsTheProvidersEndonymForAKnownLocale(): void
+    public function testResolveReturnsTheEndonymForAKnownLocale(): void
     {
-        $provider = $this->createStub(LocaleDisplayNameProvider::class);
-        $provider->method('getDisplayName')->willReturn('Deutsch');
+        $resolver = new LocaleEndonymResolver(new NullLogger());
 
-        $resolver = new LocaleEndonymResolver($provider, new NullLogger());
-
-        $this->assertSame('Deutsch', $resolver->resolve('de'));
+        $this->assertSame('English', $resolver->resolve('en'));
     }
 
-    public function testResolveReturnsTheProvidersEndonymForALocaleWithARegion(): void
+    public function testResolveReturnsTheEndonymForALocaleWithARegion(): void
     {
-        $provider = $this->createStub(LocaleDisplayNameProvider::class);
-        $provider->method('getDisplayName')->willReturn('Deutsch (Österreich)');
-
-        $resolver = new LocaleEndonymResolver($provider, new NullLogger());
+        $resolver = new LocaleEndonymResolver(new NullLogger());
 
         $this->assertSame('Deutsch (Österreich)', $resolver->resolve('de-AT'));
     }
@@ -58,60 +51,42 @@ final class LocaleEndonymResolverTest extends TestCase
     /**
      * ICU spells some endonyms lower-case by the target language's own orthography (`русский`),
      * but the switcher lists several languages side by side and needs a uniform case — see
-     * {@see LocaleEndonymResolver} for why capitalization belongs here rather than in the
-     * provider.
+     * {@see LocaleEndonymResolver} for why capitalization belongs here rather than being relied
+     * upon from ICU's own output.
      */
-    public function testResolveCapitalizesTheFirstLetterOfTheProvidersEndonym(): void
+    public function testResolveCapitalizesTheFirstLetterOfTheEndonym(): void
     {
-        $provider = $this->createStub(LocaleDisplayNameProvider::class);
-        $provider->method('getDisplayName')->willReturn('русский');
-
-        $resolver = new LocaleEndonymResolver($provider, new NullLogger());
+        $resolver = new LocaleEndonymResolver(new NullLogger());
 
         $this->assertSame('Русский', $resolver->resolve('ru'));
     }
 
     /**
+     * A locale string past ICU's internal length limit makes `\Locale::getDisplayName()` return
+     * `false` (a hard failure, not an empty guess) — this is the deterministic, ICU-version-stable
+     * way to exercise the fallback without relying on CLDR data lookup.
+     *
      * The raw locale code fallback is not an endonym, so it must not be capitalized the way a
      * resolved endonym is — `De` would read worse than `de`.
      */
-    public function testResolveFallsBackToTheRawLocaleCodeUncapitalizedWhenTheProviderReturnsNull(): void
+    public function testResolveFallsBackToTheRawLocaleCodeUncapitalizedWhenIcuFailsOutright(): void
     {
-        $provider = $this->createStub(LocaleDisplayNameProvider::class);
-        $provider->method('getDisplayName')->willReturn(null);
+        $resolver = new LocaleEndonymResolver(new NullLogger());
 
-        $resolver = new LocaleEndonymResolver($provider, new NullLogger());
+        $locale = str_repeat('a', 200);
 
-        $this->assertSame('de', $resolver->resolve('de'));
-    }
-
-    /**
-     * Simulates ext-intl being unavailable, or ICU failing to resolve the code at all — both
-     * surface identically through {@see LocaleDisplayNameProvider}: null. This is the scenario
-     * the settings page must not turn into a fatal error for.
-     */
-    public function testResolveFallsBackToTheRawLocaleCodeWhenTheProviderReturnsNull(): void
-    {
-        $provider = $this->createStub(LocaleDisplayNameProvider::class);
-        $provider->method('getDisplayName')->willReturn(null);
-
-        $resolver = new LocaleEndonymResolver($provider, new NullLogger());
-
-        $this->assertSame('xx', $resolver->resolve('xx'));
+        $this->assertSame($locale, $resolver->resolve($locale));
     }
 
     public function testResolveLogsAWarningWhenFallingBackToTheRawLocaleCode(): void
     {
-        $provider = $this->createStub(LocaleDisplayNameProvider::class);
-        $provider->method('getDisplayName')->willReturn(null);
-
         $logger = $this->createMock(LoggerInterface::class);
         $logger->expects($this->once())->method('warning')->with(
             $this->stringContains('locale endonym'),
             $this->arrayHasKey('locale'),
         );
 
-        $resolver = new LocaleEndonymResolver($provider, $logger);
-        $resolver->resolve('xx');
+        $resolver = new LocaleEndonymResolver($logger);
+        $resolver->resolve(str_repeat('a', 200));
     }
 }
