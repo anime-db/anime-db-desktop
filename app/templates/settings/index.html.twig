@@ -30,7 +30,7 @@
         <label for="locale">{{ 'settings.language_label'|trans({}, null, currentLocale) }}</label>
         <select id="locale" name="locale" onchange="this.form.submit()">
             {% for locale in availableLocales %}
-                <option value="{{ locale }}"{% if locale == currentLocale %} selected{% endif %}>{{ ('settings.locale.'~locale)|trans({}, null, currentLocale) }}</option>
+                <option value="{{ locale }}"{% if locale == currentLocale %} selected{% endif %}>{{ locale_endonym(locale) }}</option>
             {% endfor %}
         </select>
     </form>

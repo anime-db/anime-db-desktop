@@ -118,7 +118,34 @@ final class SettingsTemplateRenderingTest extends KernelTestCase
         ]);
 
         $this->assertStringContainsString('<option value="en" selected>English</option>', $html);
+        // ICU spells the Russian endonym lower-case ("русский"); LocaleEndonymResolver
+        // capitalizes it for a uniform switcher list. Changing this expectation to match ICU's
+        // raw output would be a regression, not a fix.
         $this->assertStringContainsString('<option value="ru">Русский</option>', $html);
+    }
+
+    /**
+     * Acceptance (issue #461): a locale core has no translation catalog entry for at all — the
+     * kind {@see \App\Service\Plugin\AvailableLocalesProvider} can add from an enabled
+     * translation plugin — must render its endonym, not a raw `settings.locale.de` translation
+     * key and not an empty label.
+     */
+    public function testSettingsIndexRendersEndonymForALocaleWithNoCoreCatalogEntry(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession();
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('settings/index.html.twig', [
+            'availableLocales' => ['en', 'ru', 'de'],
+            'currentLocale' => 'en',
+            'reindexStatus' => null,
+            'needsCorrectionCount' => 0,
+        ]);
+
+        $this->assertStringContainsString('<option value="de">Deutsch</option>', $html);
+        $this->assertStringNotContainsString('settings.locale.', $html);
     }
 
     public function testSettingsIndexRendersReindexSuccessMessage(): void

@@ -126,9 +126,6 @@ settings:
     sync_review_badge: 'Requires attention: %count%'
     proxy_link: Proxy server
     language_label: Interface language
-    locale:
-        ru: Русский
-        en: English
     search_reindex_heading: Search index
     search_reindex_button: Rebuild search index
     search_reindex_success: The search index has been rebuilt.
