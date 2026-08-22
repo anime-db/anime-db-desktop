@@ -40,7 +40,10 @@ jobs:
           # setup-php не включает zip по умолчанию, из-за чего `composer install` падал на
           # проверке платформы ещё до сборки инсталлера. Этот PHP используется только для
           # composer — приложение работает на PHP, встроенном в FrankenPHP.
-          extensions: zip, ctype, iconv
+          #
+          # Список обязан совпадать с require в app/composer.json: config.platform там не
+          # задан, поэтому composer проверяет платформу по реальному PHP этой машины.
+          extensions: zip, ctype, iconv, intl
 
       - name: Build installer
         run: npm run build

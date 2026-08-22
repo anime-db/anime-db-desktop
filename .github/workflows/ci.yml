@@ -33,7 +33,11 @@ jobs:
           php-version: '8.4'
           tools: composer
           coverage: none
-          extensions: apcu
+          # intl нужен резолверу эндонимов локали (App\Service\IntlLocaleDisplayNameProvider,
+          # issue #461) и объявлен в app/composer.json require. На ubuntu-latest setup-php
+          # включает его по умолчанию, но полагаться на умолчание нельзя: изменится набор —
+          # тесты реализации тихо уйдут в skip при зелёном прогоне, а не упадут.
+          extensions: apcu, intl
           ini-values: apc.enable_cli=1
 
       - name: Configure Composer auth for private repos
