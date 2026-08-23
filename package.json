@@ -10,6 +10,7 @@
         "prebuild": "node scripts/build.js",
         "build": "electron-builder --publish never",
         "download-bins": "node scripts/download-bins.js",
+        "generate-php-ini": "node scripts/generate-php-ini.js",
         "lint": "eslint native/ tests/native/",
         "lint:fix": "eslint native/ tests/native/ --fix",
         "test": "jest"
