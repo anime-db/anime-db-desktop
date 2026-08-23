@@ -6,9 +6,10 @@ name: Runtime parity
 # (ci.yml) — здесь та же выборка прогоняется на Windows, то есть на той ОС, под которую
 # приложение собирается.
 #
-# Меняется ровно одна переменная — операционная система. Второй шаг, прогон под самим
-# frankenphp.exe, пока не сделан: без php.ini с extension_dir расширения не подгрузятся, а
-# отрендерить ini вне Electron сейчас нечем (см. issue #484).
+# Выборка гоняется дважды, и это две разные проверки. Сначала под системным PHP из setup-php —
+# меняется одна переменная, операционная система. Затем под самим frankenphp.exe — меняется
+# вторая, интерпретатор. Второе стало возможно после #484: php.ini для боевого бинаря теперь
+# рендерится без Electron, иначе он стартовал бы без extension_dir и без расширений.
 on:
   pull_request:
     paths:
@@ -31,6 +32,12 @@ on:
       - 'app/phpunit.xml.dist'
       - 'app/composer.json'
       - 'app/composer.lock'
+      # Всё, от чего зависит запуск боевого интерпретатора на шаге 2.
+      - 'scripts/download-bins.js'
+      - 'scripts/versions.json'
+      - 'scripts/generate-php-ini.js'
+      - 'native/php-ini.js'
+      - 'bin/php/php.ini.template'
       - '.github/workflows/runtime-parity.yml'
   workflow_dispatch:
 
@@ -45,9 +52,10 @@ jobs:
   windows:
     name: Runtime parity (Windows)
     runs-on: windows-latest
-    # Выборка идёт секунды, установка зависимостей — минуты. 15 взято тем же значением, что у
-    # джоб ci.yml: это граница «что-то зависло», а не бюджет на выполнение.
-    timeout-minutes: 15
+    # Выборка идёт секунды, всё остальное — минуты: composer install, npm ci, скачивание 56 МБ
+    # архива FrankenPHP и два прогона тестов. 20 против 15 у джоб ci.yml именно поэтому; это
+    # по-прежнему граница «что-то зависло», а не бюджет на выполнение.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -75,4 +83,77 @@ jobs:
       # исполняется, и гонять их здесь значило бы платить вдвое за нулевую информацию.
       - name: Run runtime-parity group
         run: vendor/bin/phpunit --group runtime-parity
+        working-directory: app
+
+      # --- Шаг 2: та же выборка, но под боевым интерпретатором ---------------------------
+      #
+      # Выше менялась одна переменная — ОС. Ниже меняется вторая: вместо системного PHP из
+      # setup-php ту же группу исполняет frankenphp.exe, тот самый бинарь, который уезжает
+      # пользователю. До этого шага боевой интерпретатор не запускался нигде: и упаковка
+      # (#477), и линтинг плагинов (#478) проверялись статически либо на Linux-сборке.
+      #
+      # Шаги идут через `if: ${{ !cancelled() }}`, чтобы падение прогона на системном PHP не
+      # скрыло результат прогона на боевом, и наоборот — как в ci.yml.
+
+      - name: Setup Node.js
+        if: ${{ !cancelled() }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install Node dependencies
+        if: ${{ !cancelled() }}
+        run: npm ci
+
+      # Качаем только FrankenPHP, а не все три бинаря: Meilisearch и qbittorrent-nox добавили бы
+      # ~230 МБ и собственные режимы отказа (проверка подписи) к джобе, которая про них ничего не
+      # проверяет. `npm run download-bins` тянет всё, поэтому дёргаем экспортируемую функцию
+      # напрямую — она же делает сверку SHA-256 из #466 и извлекает весь курируемый набор DLL.
+      - name: Download the pinned FrankenPHP build
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          node -e '
+            const bins = require("./scripts/download-bins");
+            const frankenphp = bins.BINS.find((bin) => bin.name === "frankenphp");
+            bins.downloadBin(frankenphp).catch((error) => {
+                console.error(error);
+                process.exit(1);
+            });
+          '
+
+      # Без php.ini боевой бинарь стартует без extension_dir, а расширения в Windows-сборке —
+      # подгружаемые DLL (#477), то есть intl/zip/pdo_sqlite/openssl не загрузятся и прогон
+      # упадёт не по существу. Генератор из #484 отдаёт каталог с готовым ini на stdout — он и
+      # уходит в PHPRC (это путь к папке, не к файлу).
+      - name: Generate php.ini for the packaged interpreter
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: echo "PHPRC=$(node scripts/generate-php-ini.js --timezone UTC)" >> "$GITHUB_ENV"
+
+      # Явная проверка перед тестами: если расширение не подхватилось, пусть это скажет одна
+      # понятная строка, а не двадцать провалившихся тестов с разными симптомами.
+      - name: Verify the packaged interpreter loads its extensions
+        if: ${{ !cancelled() }}
+        shell: bash
+        working-directory: app
+        run: |
+          ../bin/frankenphp/frankenphp.exe php-cli -r '
+            foreach (["intl", "zip", "pdo_sqlite", "openssl"] as $extension) {
+                if (!extension_loaded($extension)) {
+                    fwrite(STDERR, "missing extension: $extension\n");
+                    exit(1);
+                }
+                echo "$extension ok\n";
+            }
+          '
+
+      # Точка входа — vendor/phpunit/phpunit/phpunit, а не vendor/bin/phpunit: у php-cli первым
+      # аргументом обязан идти путь к PHP-скрипту (#478), а vendor/bin на Windows composer
+      # раскладывает ещё и .bat-обёрткой. Аргументы после скрипта до PHPUnit доходят — script-режим
+      # заполняет $argv штатно, в отличие от `-r` (см. .claude-docs/gotchas.md).
+      - name: Run runtime-parity group under FrankenPHP
+        if: ${{ !cancelled() }}
+        run: ../bin/frankenphp/frankenphp.exe php-cli vendor/phpunit/phpunit/phpunit --group runtime-parity
         working-directory: app
