@@ -29,13 +29,16 @@ namespace App\Service\Plugin\Exception;
 
 /**
  * Thrown by {@see \App\Service\Plugin\ZipPluginInstaller::install()} for failures outside of
- * manifest validation itself: the archive cannot be opened/extracted, or the unpacked directory
- * cannot be moved into `%app.plugins_dir%`. Deliberately not used for an invalid or missing
- * manifest.json (that stays as {@see InvalidInstalledPluginException}, re-thrown from
- * {@see \AnimeDb\PluginContracts\Manifest\ManifestParser::parse()}'s own exceptions) or for a
- * plugin id collision ({@see PluginAlreadyInstalledException}) — those are more specific and a
- * caller may want to react to them differently, e.g. show a "plugin already installed" message
- * instead of a generic install failure.
+ * manifest validation itself: the archive cannot be opened/extracted, the unpacked directory
+ * cannot be moved into `%app.plugins_dir%`, or a file the syntax check ({@see
+ * \App\Service\Plugin\ZipPluginInstaller::assertNoSyntaxErrors()}) just found via {@see
+ * \Symfony\Component\Finder\Finder} can no longer be read back. Deliberately not used for an
+ * invalid or missing manifest.json (that stays as {@see InvalidInstalledPluginException},
+ * re-thrown from {@see \AnimeDb\PluginContracts\Manifest\ManifestParser::parse()}'s own
+ * exceptions), a plugin id collision ({@see PluginAlreadyInstalledException}), or an actual PHP
+ * syntax error found in a plugin file ({@see PluginSyntaxErrorException}) — those are more
+ * specific and a caller may want to react to them differently, e.g. show a "plugin already
+ * installed" message instead of a generic install failure.
  */
 final class PluginInstallException extends \RuntimeException
 {

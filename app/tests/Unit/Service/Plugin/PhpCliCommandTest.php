@@ -33,11 +33,18 @@ use PHPUnit\Framework\TestCase;
 
 final class PhpCliCommandTest extends TestCase
 {
-    public function testRegularPhpBinaryIsInvokedDirectly(): void
+    public function testRegularPhpBinaryScriptIsInvokedDirectly(): void
     {
-        $command = PhpCliCommand::build('/usr/bin/php', '-l', '/tmp/file.php');
+        $command = PhpCliCommand::forScript('/usr/bin/php', '/app/bin/console', 'cache:warmup');
 
-        $this->assertSame(['/usr/bin/php', '-l', '/tmp/file.php'], $command);
+        $this->assertSame(['/usr/bin/php', '/app/bin/console', 'cache:warmup'], $command);
+    }
+
+    public function testRegularPhpBinaryEvalIsInvokedDirectly(): void
+    {
+        $command = PhpCliCommand::forEval('/usr/bin/php', 'echo PHP_VERSION;');
+
+        $this->assertSame(['/usr/bin/php', '-r', 'echo PHP_VERSION;'], $command);
     }
 
     /**
@@ -54,16 +61,24 @@ final class PhpCliCommandTest extends TestCase
     }
 
     #[DataProvider('frankenphpBinaryProvider')]
-    public function testFrankenphpBinaryIsInvokedViaPhpCliSubcommand(string $phpBinary): void
+    public function testFrankenphpBinaryScriptIsInvokedViaPhpCliSubcommand(string $phpBinary): void
     {
-        $command = PhpCliCommand::build($phpBinary, '-l', '/tmp/file.php');
+        $command = PhpCliCommand::forScript($phpBinary, '/app/bin/console', 'cache:warmup');
 
-        $this->assertSame([$phpBinary, 'php-cli', '-l', '/tmp/file.php'], $command);
+        $this->assertSame([$phpBinary, 'php-cli', '/app/bin/console', 'cache:warmup'], $command);
     }
 
-    public function testBuildsCommandWithoutAdditionalArguments(): void
+    #[DataProvider('frankenphpBinaryProvider')]
+    public function testFrankenphpBinaryEvalIsInvokedViaPhpCliSubcommand(string $phpBinary): void
     {
-        $this->assertSame(['/usr/bin/php'], PhpCliCommand::build('/usr/bin/php'));
-        $this->assertSame(['frankenphp', 'php-cli'], PhpCliCommand::build('frankenphp'));
+        $command = PhpCliCommand::forEval($phpBinary, 'echo PHP_VERSION;');
+
+        $this->assertSame([$phpBinary, 'php-cli', '-r', 'echo PHP_VERSION;'], $command);
+    }
+
+    public function testForScriptWithoutAdditionalArguments(): void
+    {
+        $this->assertSame(['/usr/bin/php', '/app/bin/console'], PhpCliCommand::forScript('/usr/bin/php', '/app/bin/console'));
+        $this->assertSame(['frankenphp', 'php-cli', '/app/bin/console'], PhpCliCommand::forScript('frankenphp', '/app/bin/console'));
     }
 }

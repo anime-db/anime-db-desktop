@@ -68,11 +68,12 @@ use Symfony\Component\Process\Process;
  * the current `%app.core_version%` via {@see Semver::satisfies()}, before anything is moved
  * into place — see {@see IncompatiblePluginCoreVersionException}.
  *
- * Also lints every unpacked `*.php` file with `php -l` (issue #250), still before anything is
- * moved into place — see {@see self::assertNoSyntaxErrors()} — unless {@see install()} is called
- * with `$trusted = true`. That is the marketplace install path (issue #220): those plugins were
- * already linted on the registry side by CI before ever reaching `plugins-registry.json`, so
- * repeating the check client-side would be redundant, not defense in depth.
+ * Also checks every unpacked `*.php` file for PHP syntax errors (issue #250), still before
+ * anything is moved into place — see {@see self::assertNoSyntaxErrors()} — unless {@see install()}
+ * is called with `$trusted = true`. That is the marketplace install path (issue #220): those
+ * plugins were already linted on the registry side by CI before ever reaching
+ * `plugins-registry.json`, so repeating the check client-side would be redundant, not defense in
+ * depth.
  *
  * After the plugin is moved into place and the registry re-synced, runs {@see PluginCacheWarmer}
  * (issue #222) to compile the DI container with the new plugin present, in an isolated process —
@@ -136,7 +137,7 @@ final class ZipPluginInstaller
     }
 
     /**
-     * @param bool $trusted skips the `php -l` syntax lint (issue #220's marketplace path — see
+     * @param bool $trusted skips the PHP syntax check (issue #220's marketplace path — see
      *                      the class docblock); the custom-ZIP-upload path (issue #251) leaves
      *                      this at its default `false`
      *
@@ -268,7 +269,7 @@ final class ZipPluginInstaller
      * time — restoring the backup here is enough to make the on-disk state consistent again, no
      * separate worker-side rollback is needed.
      *
-     * @param bool $trusted skips the `php -l` syntax lint — see {@see self::install()}'s parameter
+     * @param bool $trusted skips the PHP syntax check — see {@see self::install()}'s parameter
      *                      of the same name for when to set it
      *
      * @throws InvalidInstalledPluginException        if manifest.json is missing or invalid
@@ -516,25 +517,103 @@ final class ZipPluginInstaller
     }
 
     /**
-     * Lints every `*.php` file under the unpacked plugin with `php -l` (issue #250). Custom-upload
-     * path only: marketplace plugins are already linted on the registry side (issue #220), so this
-     * check has no equivalent there. Collects every syntax error found instead of stopping at the
-     * first one, so a single failed install reports the full picture.
+     * The file to check, passed to {@see self::SYNTAX_CHECK_CODE_TEMPLATE} via the child
+     * process's environment rather than as a CLI argument — see {@see PhpCliCommand}'s docblock
+     * for why `$argv` cannot be used here.
+     */
+    private const string SYNTAX_CHECK_FILE_ENV = 'ANIMEDB_PLUGIN_SYNTAX_CHECK_FILE';
+
+    /** @see self::assertNoSyntaxErrors() */
+    private const int SYNTAX_CHECK_EXIT_OK = 0;
+    private const int SYNTAX_CHECK_EXIT_UNREADABLE_FILE = 2;
+
+    /**
+     * Template for the code run via {@see PhpCliCommand::forEval()} by
+     * {@see self::assertNoSyntaxErrors()} (formatted by {@see self::syntaxCheckCode()}, which
+     * substitutes in {@see self::SYNTAX_CHECK_EXIT_OK} and
+     * {@see self::SYNTAX_CHECK_EXIT_UNREADABLE_FILE} — kept out of this literal so the exit codes
+     * the evaluated child process actually returns can never drift from the ones
+     * {@see self::assertNoSyntaxErrors()} compares against). Any other exit code, in particular
+     * the literal `1` below, is read by the caller as "syntax error" — see the fall-through branch
+     * in {@see self::assertNoSyntaxErrors()}.
+     *
+     * Reports a syntax error the same way `php -l` does — a parse error with a line number —
+     * without `php -l` itself, which FrankenPHP's `php-cli` subcommand cannot be made to run (see
+     * {@see PhpCliCommand}'s docblock): `-l` is just another flag it does not parse.
+     *
+     * `token_get_all()` with the `TOKEN_PARSE` flag drives the same lexer/parser pass the engine
+     * uses to compile a file, without a subprocess-flag detour, throwing a catchable `\ParseError`
+     * for exactly the same grammar errors `php -l` reports (matched line-for-line against `php -l`
+     * across unclosed braces, unterminated strings and misplaced tokens). What it does not
+     * replicate is `php -l`'s further compile-time checks that go beyond grammar, e.g. validating
+     * an attribute's allowed target — out of scope for a syntax check. Since `token_get_all()`
+     * only tokenizes and parses, never compiles to opcodes, the plugin file's own code is never
+     * executed by this check.
+     */
+    private const string SYNTAX_CHECK_CODE_TEMPLATE = <<<'PHP'
+        $file = getenv('%s');
+        if ($file === false || !is_file($file) || !is_readable($file)) {
+            fwrite(STDERR, 'Unable to read file for syntax check.');
+            exit(%d);
+        }
+        try {
+            token_get_all(file_get_contents($file), TOKEN_PARSE);
+        } catch (\ParseError $error) {
+            fwrite(STDERR, $error->getMessage().' on line '.$error->getLine());
+            exit(1);
+        }
+        exit(%d);
+        PHP;
+
+    private static function syntaxCheckCode(): string
+    {
+        return \sprintf(
+            self::SYNTAX_CHECK_CODE_TEMPLATE,
+            self::SYNTAX_CHECK_FILE_ENV,
+            self::SYNTAX_CHECK_EXIT_UNREADABLE_FILE,
+            self::SYNTAX_CHECK_EXIT_OK,
+        );
+    }
+
+    /**
+     * Checks every `*.php` file under the unpacked plugin for syntax errors (issue #250), via
+     * {@see self::syntaxCheckCode()}. Custom-upload path only: marketplace plugins are already
+     * checked on the registry side (issue #220), so this check has no equivalent there. Collects
+     * every syntax error found instead of stopping at the first one, so a single failed install
+     * reports the full picture.
      *
      * @throws PluginSyntaxErrorException
+     * @throws PluginInstallException     if a file Finder just found cannot be read back (e.g. a
+     *                                    permissions issue in the freshly unpacked staging
+     *                                    directory) — never reported as a syntax error, since it
+     *                                    is not one
      */
     private function assertNoSyntaxErrors(string $pluginRoot): void
     {
         $files = (new Finder())->files()->in($pluginRoot)->name('*.php');
+        $command = PhpCliCommand::forEval(\PHP_BINARY, self::syntaxCheckCode());
 
         $errors = [];
         foreach ($files as $file) {
-            $process = new Process(PhpCliCommand::build(\PHP_BINARY, '-l', $file->getRealPath()));
-            $process->run();
+            $relativePath = str_replace('\\', '/', $file->getRelativePathname());
 
-            if (!$process->isSuccessful()) {
-                $errors[] = new PluginSyntaxError($file->getRelativePathname(), $this->parseSyntaxErrorMessage($process->getErrorOutput(), $process->getOutput()));
+            $process = new Process($command, null, [self::SYNTAX_CHECK_FILE_ENV => $file->getRealPath()]);
+            $process->run();
+            $exitCode = $process->getExitCode();
+
+            if ($exitCode === self::SYNTAX_CHECK_EXIT_OK) {
+                continue;
             }
+
+            if ($exitCode === self::SYNTAX_CHECK_EXIT_UNREADABLE_FILE) {
+                throw new PluginInstallException(\sprintf('Unable to read plugin file "%s" for a syntax check.', $relativePath));
+            }
+
+            // Anything else — the expected `exit(1)` for a caught \ParseError, but also any exit
+            // code neither branch above expects — is reported as a syntax error rather than
+            // silently accepted: this check exists to block a broken plugin from being installed,
+            // so an unexpected failure of the check itself must fail closed.
+            $errors[] = new PluginSyntaxError($relativePath, $this->parseSyntaxErrorMessage($process->getErrorOutput()));
         }
 
         if ($errors !== []) {
@@ -542,24 +621,11 @@ final class ZipPluginInstaller
         }
     }
 
-    /**
-     * `php -l` writes its parse error to stderr as e.g. `PHP Parse error:  syntax error, ...
-     * in /abs/path/file.php on line 5`, followed by an `Errors parsing /abs/path/file.php` line on
-     * stdout. Only the first line carries the actual message, so that is all this keeps. Whether the
-     * message lands on stderr or stdout depends on the `display_errors`/`log_errors` ini settings
-     * (ours are loaded from a native-supplied `PHPRC`, which may differ from the CLI defaults), so
-     * stdout is used as a fallback when stderr is empty. The trailing ` in /abs/path/file.php` is
-     * stripped since the file is already known to the caller via {@see PluginSyntaxError::$relativePath}
-     * and the temp staging path it contains would be meaningless to the user — the line number is kept.
-     */
-    private function parseSyntaxErrorMessage(string $errorOutput, string $standardOutput): string
+    private function parseSyntaxErrorMessage(string $errorOutput): string
     {
-        $firstLine = strtok(trim(trim($errorOutput) !== '' ? $errorOutput : $standardOutput), "\n");
-        if ($firstLine === false) {
-            return 'Unknown syntax error.';
-        }
+        $message = trim($errorOutput);
 
-        return preg_replace('/ in .+( on line \d+)$/', '$1', $firstLine) ?? $firstLine;
+        return $message !== '' ? $message : 'Unknown syntax error.';
     }
 
     private function move(string $source, string $destination): void
