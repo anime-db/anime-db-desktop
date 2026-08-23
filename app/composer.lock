@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "b62d776e6ddff7e2435cc29d36579db4",
+    "content-hash": "5f508e95d138443e3d5562d1a63e1cea",
     "packages": [
         {
             "name": "anime-db/plugin-contracts",
@@ -10074,6 +10074,8 @@
         "ext-ctype": "*",
         "ext-iconv": "*",
         "ext-intl": "*",
+        "ext-openssl": "*",
+        "ext-pdo_sqlite": "*",
         "ext-zip": "*"
     },
     "platform-dev": {},

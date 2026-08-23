@@ -2,6 +2,8 @@
 extension_dir = "{{EXTENSION_DIR}}"
 extension=intl
 extension=zip
+extension=pdo_sqlite
+extension=openssl
 
 [Date]
 date.timezone = {{TIMEZONE}}

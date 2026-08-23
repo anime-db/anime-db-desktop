@@ -30,6 +30,8 @@
         "ext-ctype": "*",
         "ext-iconv": "*",
         "ext-intl": "*",
+        "ext-openssl": "*",
+        "ext-pdo_sqlite": "*",
         "ext-zip": "*",
         "anime-db/plugin-contracts": "^0.14",
         "doctrine/doctrine-bundle": "^3.2",

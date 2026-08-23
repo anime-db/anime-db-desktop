@@ -38,14 +38,17 @@ MCowBQYDK2VwAyEAY2beFPHj/tmY6qJY1rDOk4L12YIKdICTzDkW5sgf0xg=
 `;
 
 // `frankenphp.exe` is not self-contained: it dynamically links php8ts.dll (the PHP runtime itself)
-// plus four more libraries, and the declared PHP extensions (`composer check-platform-reqs
-// --no-dev` in app/) load as separate DLLs under ext/. Both sets were confirmed empirically against
-// the v1.12.4 release asset: `objdump -p frankenphp.exe | grep 'DLL Name'` for the runtime imports
-// (including the brotlicommon.dll transitive dependency of brotlienc.dll/brotlidec.dll, which is
-// easy to miss by inspection alone), and `objdump -p ext/php_intl.dll` for its ICU dependency chain.
+// plus four more libraries, and the PHP extensions the app actually needs at runtime — not just
+// what `composer check-platform-reqs --no-dev` in app/ declares, see the note below — load as
+// separate DLLs under ext/. Both sets were confirmed empirically against the v1.12.4 release
+// asset: `objdump -p frankenphp.exe | grep 'DLL Name'` for the runtime imports (including the
+// brotlicommon.dll transitive dependency of brotlienc.dll/brotlidec.dll, which is easy to miss by
+// inspection alone), and `objdump -p` on each ext/php_*.dll for its own dependency chain
+// (intl → ICU, pdo_sqlite → libsqlite3.dll, openssl → libssl-3-x64.dll → libcrypto-3-x64.dll).
 // ctype/iconv/json/xml have no ext/php_*.dll in the archive — this PHP build compiles them in
-// statically, so only intl and zip need an `extension=` line. See .claude-docs/decisions.md for the
-// curated-set-vs-full-archive tradeoff.
+// statically, so they need no `extension=` line. See .claude-docs/decisions.md for the
+// curated-set-vs-full-archive tradeoff and why the extension list isn't just check-platform-reqs
+// output.
 const FRANKENPHP_FILES = [
     'frankenphp.exe',
     'php8ts.dll',
@@ -58,8 +61,13 @@ const FRANKENPHP_FILES = [
     'icuin77.dll',
     'icuio77.dll',
     'icuuc77.dll',
+    'libsqlite3.dll',
+    'libssl-3-x64.dll',
+    'libcrypto-3-x64.dll',
     'ext/php_intl.dll',
     'ext/php_zip.dll',
+    'ext/php_pdo_sqlite.dll',
+    'ext/php_openssl.dll',
 ];
 
 const BINS = [
