@@ -140,7 +140,20 @@ final class ZipPluginInstallerSyntaxCheckTest extends TestCase
 
     private function resolveBinary(string $phpBinaryLabel): string
     {
-        return $phpBinaryLabel === 'frankenphp' ? $this->frankenphpStandIn : \PHP_BINARY;
+        if ($phpBinaryLabel === 'frankenphp') {
+            if (\PHP_OS_FAMILY === 'Windows') {
+                // The stand-in relies on a `#!/usr/bin/env php` shebang to make a file without an
+                // extension executable; Windows has no such mechanism, and `chmod()` is a no-op
+                // there, so the stand-in itself cannot run under this name on this platform. This is
+                // not a coverage gap for the actual FrankenPHP binary: that is verified by the
+                // Windows runtime-parity job (see issue #480), not by this stand-in on any platform.
+                $this->markTestSkipped('FrankenPHP stand-in needs a #! shebang to be executable, which Windows does not support for extension-less files.');
+            }
+
+            return $this->frankenphpStandIn;
+        }
+
+        return \PHP_BINARY;
     }
 
     private function runSyntaxCheck(string $phpBinary, string $file): Process
