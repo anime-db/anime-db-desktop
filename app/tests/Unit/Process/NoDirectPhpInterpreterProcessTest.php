@@ -27,6 +27,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Process;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -38,12 +39,18 @@ use PHPUnit\Framework\TestCase;
  * until CI or review, because both forms look correct under a plain system PHP.
  *
  * This scans app/src and app/tests for `new Process([...])` calls whose array literal starts
- * with a PHP interpreter path obtained either way, bypassing PhpCliCommand. It matches by intent
- * (any path sourced from `\PHP_BINARY` or `PhpExecutableFinder`), not by spelling, so a future
- * third way of naming "the current PHP binary" is still caught. It does not flag `new Process`
- * calls for other binaries (meilisearch, qbittorrent-nox, ...) — only a PHP interpreter path in
- * the first array slot triggers it. PhpCliCommand itself (which legitimately builds such an
- * array) and its test are the only allowed exception.
+ * with a PHP interpreter path obtained either way, bypassing PhpCliCommand. It matches by two
+ * known markers (`\PHP_BINARY` literal or a `PhpExecutableFinder` result, including through a
+ * variable assigned from either earlier in the same file) rather than requiring a specific
+ * spelling — but it is a fixed marker list, not an open-ended intent check: a future third way of
+ * naming "the current PHP binary" (an environment variable, a config value, a path injected
+ * through DI) is not caught. It also only looks at the array literal that sits directly in `new
+ * Process([...])`'s first argument slot — a command assembled into a variable first
+ * (`$cmd = [\PHP_BINARY, ...]; new Process($cmd)`) or built as a shell string
+ * (`Process::fromShellCommandline(...)`) is invisible to it. It does not flag `new Process` calls
+ * for other binaries (meilisearch, qbittorrent-nox, ...) — only a PHP interpreter path in the
+ * first array slot triggers it. PhpCliCommand itself (which legitimately builds such an array)
+ * and its test are the only allowed exception.
  */
 final class NoDirectPhpInterpreterProcessTest extends TestCase
 {
@@ -78,6 +85,107 @@ final class NoDirectPhpInterpreterProcessTest extends TestCase
             .\PHP_EOL
             .'Wrap the interpreter path with PhpCliCommand::forScript()/forEval() instead of building the Process array by hand.',
         );
+    }
+
+    /**
+     * Proves the scanner itself actually flags what it claims to, independent of whether the
+     * real src/tests tree currently contains a violation. Without this, a regression that made
+     * {@see self::phpInterpreterReason()} always return null would leave
+     * {@see self::testProcessNeverInvokesPhpInterpreterDirectly()} green and silently tautological.
+     */
+    #[DataProvider('detectorScenarios')]
+    public function testDetectorRecognizesKnownSnippets(string $code, int $expectedViolationCount): void
+    {
+        $tempDir = sys_get_temp_dir().'/'.uniqid('no-direct-php-interpreter-', true);
+        mkdir($tempDir.'/src', recursive: true);
+        $file = $tempDir.'/src/Snippet.php';
+        file_put_contents($file, $code);
+
+        try {
+            $method = new \ReflectionMethod(self::class, 'findViolations');
+            $violations = $method->invoke(null, $file, $tempDir);
+        } finally {
+            unlink($file);
+            rmdir($tempDir.'/src');
+            rmdir($tempDir);
+        }
+
+        $this->assertCount($expectedViolationCount, $violations, self::renderTokens(self::tokenize($code)));
+    }
+
+    /**
+     * @return iterable<string, array{string, int}>
+     */
+    public static function detectorScenarios(): iterable
+    {
+        yield 'literal \PHP_BINARY in an array literal' => [
+            <<<'PHP'
+            <?php
+            use Symfony\Component\Process\Process;
+            $script = 'file.php';
+            new Process([\PHP_BINARY, $script]);
+            PHP,
+            1,
+        ];
+
+        yield 'PHP_BINARY without a leading backslash' => [
+            <<<'PHP'
+            <?php
+            use Symfony\Component\Process\Process;
+            $script = 'file.php';
+            new Process([PHP_BINARY, $script]);
+            PHP,
+            1,
+        ];
+
+        yield 'PhpExecutableFinder result assigned to a variable first' => [
+            <<<'PHP'
+            <?php
+            use Symfony\Component\Process\PhpExecutableFinder;
+            use Symfony\Component\Process\Process;
+            $php = (new PhpExecutableFinder())->find();
+            new Process([$php, 'script.php']);
+            PHP,
+            1,
+        ];
+
+        yield 'fully qualified \Symfony\Component\Process\Process class name' => [
+            <<<'PHP'
+            <?php
+            $script = 'file.php';
+            new \Symfony\Component\Process\Process([\PHP_BINARY, $script]);
+            PHP,
+            1,
+        ];
+
+        yield 'sanctioned PhpCliCommand::forScript() wrapper' => [
+            <<<'PHP'
+            <?php
+            use App\Service\Plugin\PhpCliCommand;
+            use Symfony\Component\Process\Process;
+            new Process(PhpCliCommand::forScript($phpBinary, 'script.php'));
+            PHP,
+            0,
+        ];
+
+        yield 'sanctioned PhpCliCommand::forEval() wrapper around \PHP_BINARY' => [
+            <<<'PHP'
+            <?php
+            use App\Service\Plugin\PhpCliCommand;
+            use Symfony\Component\Process\Process;
+            new Process(PhpCliCommand::forEval(\PHP_BINARY, 'echo 1;'));
+            PHP,
+            0,
+        ];
+
+        yield 'non-PHP binary' => [
+            <<<'PHP'
+            <?php
+            use Symfony\Component\Process\Process;
+            new Process(['meilisearch.exe', '--http-addr', $address]);
+            PHP,
+            0,
+        ];
     }
 
     /**
