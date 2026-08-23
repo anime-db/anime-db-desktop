@@ -28,6 +28,7 @@ declare(strict_types=1);
 namespace App\Tests\Unit\Service\Plugin;
 
 use App\Entity\ValueObject\PluginId;
+use App\Service\Plugin\PhpCliCommand;
 use App\Service\Plugin\PluginsConfigStore;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
@@ -76,8 +77,8 @@ final class PluginsConfigStoreConcurrencyTest extends TestCase
         $pluginId = 'animedb-shikimori';
         $sleepMicroseconds = '200000';
 
-        $first = new Process([$php, $script, $this->path, $pluginId, $sleepMicroseconds]);
-        $second = new Process([$php, $script, $this->path, $pluginId, $sleepMicroseconds]);
+        $first = new Process(PhpCliCommand::forScript($php, $script, $this->path, $pluginId, $sleepMicroseconds));
+        $second = new Process(PhpCliCommand::forScript($php, $script, $this->path, $pluginId, $sleepMicroseconds));
 
         $first->start();
         $second->start();

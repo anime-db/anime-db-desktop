@@ -29,6 +29,7 @@ namespace App\Tests\Unit\Service\Plugin;
 
 use App\Entity\ValueObject\PluginId;
 use App\Service\Plugin\InstalledPluginsRegistry;
+use App\Service\Plugin\PhpCliCommand;
 use App\Service\Plugin\PluginsConfigStore;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
@@ -86,8 +87,8 @@ final class ZipPluginInstallerConcurrencyTest extends TestCase
         $resultPathA = $this->fixturesDir.'/result-a.txt';
         $resultPathB = $this->fixturesDir.'/result-b.txt';
 
-        $first = new Process([$php, $script, $this->pluginsDir, self::CORE_VERSION, $zipPathA, $resultPathA]);
-        $second = new Process([$php, $script, $this->pluginsDir, self::CORE_VERSION, $zipPathB, $resultPathB]);
+        $first = new Process(PhpCliCommand::forScript($php, $script, $this->pluginsDir, self::CORE_VERSION, $zipPathA, $resultPathA));
+        $second = new Process(PhpCliCommand::forScript($php, $script, $this->pluginsDir, self::CORE_VERSION, $zipPathB, $resultPathB));
 
         $first->start();
         $second->start();

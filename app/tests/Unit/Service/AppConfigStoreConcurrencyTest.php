@@ -28,6 +28,7 @@ declare(strict_types=1);
 namespace App\Tests\Unit\Service;
 
 use App\Service\AppConfigStore;
+use App\Service\Plugin\PhpCliCommand;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Process\PhpExecutableFinder;
@@ -68,8 +69,12 @@ final class AppConfigStoreConcurrencyTest extends TestCase
         $script = __DIR__.'/../../Fixtures/set-config-key.php';
         $sleepMicroseconds = '200000';
 
-        $first = new Process([$php, $script, $this->path, 'locale', 'ru', $sleepMicroseconds]);
-        $second = new Process([$php, $script, $this->path, 'proxy', 'manual', $sleepMicroseconds]);
+        // Must go through PhpCliCommand::forScript() rather than a raw [$php, $script, ...] array:
+        // under the FrankenPHP interpreter $php resolves to frankenphp.exe, which needs the
+        // `php-cli` subcommand first (see issue #410, #478 for the same class of bug in
+        // production code).
+        $first = new Process(PhpCliCommand::forScript($php, $script, $this->path, 'locale', 'ru', $sleepMicroseconds));
+        $second = new Process(PhpCliCommand::forScript($php, $script, $this->path, 'proxy', 'manual', $sleepMicroseconds));
 
         $first->start();
         $second->start();
