@@ -533,7 +533,15 @@ final class ZipPluginInstaller
             $process->run();
 
             if (!$process->isSuccessful()) {
-                $errors[] = new PluginSyntaxError($file->getRelativePathname(), $this->parseSyntaxErrorMessage($process->getErrorOutput(), $process->getOutput()));
+                // Finder reports the relative path with the host separator, so this reads
+                // `src\Plugin.php` on Windows. The value is shown to the user as "which file in the
+                // plugin you uploaded is broken", and what they have in front of them is a ZIP,
+                // whose entries are `/`-separated by specification. Normalising here keeps the
+                // message pointing at something the user can actually find, and keeps it identical
+                // on every platform — it is display-only and never matched against anything.
+                $relativePath = str_replace('\\', '/', $file->getRelativePathname());
+
+                $errors[] = new PluginSyntaxError($relativePath, $this->parseSyntaxErrorMessage($process->getErrorOutput(), $process->getOutput()));
             }
         }
 
