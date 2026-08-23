@@ -595,6 +595,13 @@ final class ZipPluginInstaller
 
         $errors = [];
         foreach ($files as $file) {
+            // Finder reports the relative path with the host separator, so this reads
+            // `src\Plugin.php` on Windows (caught by the Windows runtime-parity job, issue #480).
+            // The value is shown to the user as "which file in the plugin you uploaded is broken",
+            // and what they have in front of them is a ZIP, whose entries are `/`-separated by
+            // specification. Normalising here keeps the message pointing at something the user can
+            // actually find, and identical on every platform — it is display-only and never
+            // matched against anything.
             $relativePath = str_replace('\\', '/', $file->getRelativePathname());
 
             $process = new Process($command, null, [self::SYNTAX_CHECK_FILE_ENV => $file->getRealPath()]);
