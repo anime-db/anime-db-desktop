@@ -144,9 +144,15 @@ final class ZipPluginInstallerSyntaxCheckTest extends TestCase
             if (\PHP_OS_FAMILY === 'Windows') {
                 // The stand-in relies on a `#!/usr/bin/env php` shebang to make a file without an
                 // extension executable; Windows has no such mechanism, and `chmod()` is a no-op
-                // there, so the stand-in itself cannot run under this name on this platform. This is
-                // not a coverage gap for the actual FrankenPHP binary: that is verified by the
-                // Windows runtime-parity job (see issue #480), not by this stand-in on any platform.
+                // there, so the stand-in itself cannot run under this name on this platform.
+                //
+                // Skipping costs no coverage that running it would have bought: the stand-in is our
+                // own imitation either way, so on Windows it would assert exactly what it already
+                // asserts on Linux. The real binary is not covered by this test on any platform, nor
+                // yet by CI at all — the Windows runtime-parity job currently runs the group under
+                // the system PHP. Running it under frankenphp.exe is step 2 of issue #480, which
+                // waits on issue #484 (php.ini cannot be rendered outside Electron, so the packaged
+                // interpreter would start with no extensions loaded).
                 $this->markTestSkipped('FrankenPHP stand-in needs a #! shebang to be executable, which Windows does not support for extension-less files.');
             }
 
