@@ -109,7 +109,7 @@ final class PluginCacheWarmer implements PluginCacheWarmerInterface
 
         try {
             $process = new Process(
-                PhpCliCommand::build(\PHP_BINARY, $this->consolePath(), 'cache:warmup'),
+                PhpCliCommand::forScript(\PHP_BINARY, $this->consolePath(), 'cache:warmup'),
                 null,
                 ['APP_RUNTIME_DIR' => $runtimeDir, 'APP_ENV' => 'prod', 'APP_DEBUG' => '0'],
             );
