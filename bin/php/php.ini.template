@@ -4,6 +4,7 @@ extension=intl
 extension=zip
 extension=pdo_sqlite
 extension=openssl
+extension=mbstring
 
 [Date]
 date.timezone = {{TIMEZONE}}
