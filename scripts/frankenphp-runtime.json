@@ -1,7 +1,7 @@
 {
     "frankenphp": {
         "version": "1.12.4",
-        "sha256": "ae08e27f4094368ebc612978f3a7adde6c8093915cb97448a54ec8f8fe281b8e"
+        "exeSha256": "ae08e27f4094368ebc612978f3a7adde6c8093915cb97448a54ec8f8fe281b8e"
     },
     "extensions": [
         "Core",

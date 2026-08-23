@@ -37,7 +37,7 @@ const SAMPLE_INI = { short_open_tag: '1', 'zend.assertions': '1' };
 
 function sampleFacts(overrides = {}) {
     return {
-        frankenphp: { version: '1.12.4', sha256: 'a'.repeat(64) },
+        frankenphp: { version: '1.12.4', exeSha256: 'a'.repeat(64) },
         extensions: [...SAMPLE_EXTENSIONS],
         icu: { version: '77.1', cldrVersion: '77.1' },
         localeEndonyms: { ...SAMPLE_ENDONYMS },
@@ -142,7 +142,7 @@ describe('collectFacts', () => {
 
         expect(facts.frankenphp).toEqual({
             version: '1.12.4',
-            sha256: crypto.createHash('sha256').update(fs.readFileSync(binaryPath)).digest('hex'),
+            exeSha256: crypto.createHash('sha256').update(fs.readFileSync(binaryPath)).digest('hex'),
         });
         expect(facts.extensions).toEqual(['Core', 'date', 'intl', 'mbstring']);
         expect(facts.icu).toEqual({ version: '77.1', cldrVersion: '77.1' });

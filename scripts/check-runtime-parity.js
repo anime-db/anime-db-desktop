@@ -115,10 +115,14 @@ function collectFacts(binaryPath) {
     }
 
     const { frankenphp: version } = JSON.parse(fs.readFileSync(VERSIONS_PATH, 'utf8'));
-    const sha256 = crypto.createHash('sha256').update(fs.readFileSync(binaryPath)).digest('hex');
+    // Hashes the extracted `frankenphp.exe` on disk — distinct from `versions.json`'s
+    // `sha256.frankenphp`, which hashes the release *zip* the exe was extracted from. Keep the
+    // two named apart: reconciling them into one field would hide that they hash different
+    // artifacts and can legitimately disagree (e.g. after a zip re-extraction).
+    const exeSha256 = crypto.createHash('sha256').update(fs.readFileSync(binaryPath)).digest('hex');
 
     return {
-        frankenphp: { version, sha256 },
+        frankenphp: { version, exeSha256 },
         extensions: collectExtensions(binaryPath),
         icu: collectIcu(binaryPath),
         localeEndonyms: collectLocaleEndonyms(binaryPath),
@@ -159,7 +163,7 @@ function diffFacts(expected, actual) {
     const lines = [];
 
     diffScalar(lines, 'frankenphp.version', expected.frankenphp.version, actual.frankenphp.version);
-    diffScalar(lines, 'frankenphp.sha256', expected.frankenphp.sha256, actual.frankenphp.sha256);
+    diffScalar(lines, 'frankenphp.exeSha256', expected.frankenphp.exeSha256, actual.frankenphp.exeSha256);
     diffStringList(lines, 'extensions', expected.extensions, actual.extensions);
     diffScalar(lines, 'icu.version', expected.icu.version, actual.icu.version);
     diffScalar(lines, 'icu.cldrVersion', expected.icu.cldrVersion, actual.icu.cldrVersion);
