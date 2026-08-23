@@ -8,7 +8,7 @@ tags: [memory/repo, gotcha]
 
 FrankenPHP — Go-бинарник на базе static-php-cli со встроенным PHP 8.5. Папка `bin/php/` не содержит PHP-рантайма, DLL или расширений. Там только `php.ini.template`. Не устанавливай и не ищи отдельный PHP.
 
-**Уточнение по платформам:** PHP статически вкомпилирован только в Linux-сборке (`frankenphp-linux-x86_64`). В Windows-сборке (`frankenphp-windows-x86_64.zip`, на которую реально собирается приложение) рантайм лежит отдельным файлом `php8ts.dll`, а расширения — подгружаемыми DLL из `ext/`; без них `frankenphp.exe` не запускается. Подробности — запись ниже [«У `frankenphp-windows-x86_64.zip`…»](#у-frankenphp-windows-x86_64zip-на-github-релизах-frankenphpexe-не-самодостаточен-зависит-от-php8tsdll-и-других-dll-из-того-же-архива).
+**Уточнение по платформам:** PHP статически вкомпилирован только в Linux-сборке (`frankenphp-linux-x86_64`). В Windows-сборке (`frankenphp-windows-x86_64.zip`, на которую реально собирается приложение) рантайм лежит отдельным файлом `php8ts.dll`, а расширения — подгружаемыми DLL из `ext/`; без них `frankenphp.exe` не запускается. Подробности — запись ниже [«У `frankenphp-windows-x86_64.zip`…»](#у-frankenphp-windows-x86_64zip-на-github-релизах-frankenphpexe-не-самодостаточен--зависит-от-php8tsdll-и-других-dll-из-того-же-архива).
 
 ## PHPRC — это путь к папке, не к файлу
 
