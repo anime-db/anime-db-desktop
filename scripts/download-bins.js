@@ -37,13 +37,47 @@ MCowBQYDK2VwAyEAY2beFPHj/tmY6qJY1rDOk4L12YIKdICTzDkW5sgf0xg=
 -----END PUBLIC KEY-----
 `;
 
+// `frankenphp.exe` is not self-contained: it dynamically links php8ts.dll (the PHP runtime itself)
+// plus four more libraries, and the PHP extensions the app actually needs at runtime — not just
+// what `composer check-platform-reqs --no-dev` in app/ declares, see the note below — load as
+// separate DLLs under ext/. Both sets were confirmed empirically against the v1.12.4 release
+// asset: `objdump -p frankenphp.exe | grep 'DLL Name'` for the runtime imports (including the
+// brotlicommon.dll transitive dependency of brotlienc.dll/brotlidec.dll, which is easy to miss by
+// inspection alone), and `objdump -p` on each ext/php_*.dll for its own dependency chain
+// (intl → ICU, pdo_sqlite → libsqlite3.dll, openssl → libssl-3-x64.dll → libcrypto-3-x64.dll).
+// ctype/iconv/json/xml have no ext/php_*.dll in the archive — this PHP build compiles them in
+// statically, so they need no `extension=` line. See .claude-docs/decisions.md for the
+// curated-set-vs-full-archive tradeoff and why the extension list isn't just check-platform-reqs
+// output.
+const FRANKENPHP_FILES = [
+    'frankenphp.exe',
+    'php8ts.dll',
+    'brotlienc.dll',
+    'brotlidec.dll',
+    'brotlicommon.dll',
+    'libwatcher-c.dll',
+    'pthreadVC3.dll',
+    'icudt77.dll',
+    'icuin77.dll',
+    'icuio77.dll',
+    'icuuc77.dll',
+    'libsqlite3.dll',
+    'libssl-3-x64.dll',
+    'libcrypto-3-x64.dll',
+    'ext/php_intl.dll',
+    'ext/php_zip.dll',
+    'ext/php_pdo_sqlite.dll',
+    'ext/php_openssl.dll',
+];
+
 const BINS = [
     {
         name: 'frankenphp',
         version: versions.frankenphp,
         url: `https://github.com/php/frankenphp/releases/download/v${versions.frankenphp}/frankenphp-windows-x86_64.zip`,
         dest: path.join(binDir, 'frankenphp', 'frankenphp.exe'),
-        zipEntry: 'frankenphp.exe',
+        destDir: path.join(binDir, 'frankenphp'),
+        zipEntries: FRANKENPHP_FILES,
         sha256: versions.sha256.frankenphp,
     },
     {
@@ -78,11 +112,19 @@ function versionFilePath(dest) {
     return path.join(path.dirname(dest), '.version');
 }
 
-function isUpToDate(dest, version) {
-    if (!fs.existsSync(dest)) return false;
-    const vf = versionFilePath(dest);
+// A bin counts as up to date only when its version marker matches AND, for archives extracted via
+// `zipEntries`, every one of those files is still present in `destDir`. Checking the version marker
+// alone would treat a directory left over from an older script version (e.g. one that only extracted
+// `frankenphp.exe`) as current, silently skipping the download that would have completed the set.
+function isUpToDate(bin) {
+    if (!fs.existsSync(bin.dest)) return false;
+    const vf = versionFilePath(bin.dest);
     if (!fs.existsSync(vf)) return false;
-    return fs.readFileSync(vf, 'utf8').trim() === version;
+    if (fs.readFileSync(vf, 'utf8').trim() !== bin.version) return false;
+    if (bin.zipEntries) {
+        return bin.zipEntries.every((entryPath) => fs.existsSync(path.join(bin.destDir, entryPath)));
+    }
+    return true;
 }
 
 const REDIRECT_STATUS_CODES = [301, 302, 307, 308];
@@ -233,6 +275,34 @@ function extractZipToDir(zipBuffer, destDir) {
     }
 }
 
+// Extracts exactly the ZIP entries listed in `wantedPaths` (archive-relative, forward-slash paths)
+// into `destDir`, preserving their relative subdirectories (e.g. `ext/php_intl.dll`). Throws if any
+// requested entry is missing from the archive — a silent partial extraction here would ship a
+// runtime that fails to start or load an extension, so it must fail the build instead.
+function extractSelectedFromZip(zipBuffer, wantedPaths, destDir) {
+    const entries = readZipCentralDirectory(zipBuffer);
+    const wanted = new Set(wantedPaths);
+    const matched = entries.filter((entry) => wanted.has(entry.fileName.replace(/\\/g, '/')));
+
+    const foundNames = new Set(matched.map((entry) => entry.fileName.replace(/\\/g, '/')));
+    const missing = wantedPaths.filter((p) => !foundNames.has(p));
+    if (missing.length > 0) {
+        throw new Error(`Entries not found in ZIP: ${missing.join(', ')}`);
+    }
+
+    for (const entry of matched) {
+        const normalizedName = entry.fileName.replace(/\\/g, '/');
+        const data = readZipEntryData(zipBuffer, entry);
+        const destPath = path.join(destDir, normalizedName);
+        // Defense-in-depth against zip-slip (bundle is checksum-verified, but never trust entry paths).
+        if (!path.resolve(destPath).startsWith(path.resolve(destDir) + path.sep)) {
+            throw new Error(`Refusing to extract ZIP entry outside destination: ${entry.fileName}`);
+        }
+        fs.mkdirSync(path.dirname(destPath), { recursive: true });
+        fs.writeFileSync(destPath, data);
+    }
+}
+
 // Parses a `SHA256SUMS` file (`<hex>  <filename>` per line, optional `*` before filename) and
 // returns the lowercase hex digest for `filename`, or null when not listed.
 function parseSha256Sums(text, filename) {
@@ -256,7 +326,7 @@ function verifyEd25519Signature(buffer, signatureBase64, publicKeyPem) {
 // Downloads a bin into memory and verifies its SHA-256 checksum BEFORE writing anything to disk.
 // Throws (and writes nothing — no target file, no temp file) on a checksum mismatch.
 async function downloadBin(bin) {
-    if (isUpToDate(bin.dest, bin.version)) {
+    if (isUpToDate(bin)) {
         console.log(`${bin.name} v${bin.version} already up to date, skipping`);
         return;
     }
@@ -277,7 +347,10 @@ async function downloadBin(bin) {
     }
 
     fs.mkdirSync(path.dirname(bin.dest), { recursive: true });
-    if (bin.zipEntry) {
+    if (bin.zipEntries) {
+        console.log(`Extracting ${bin.zipEntries.length} files from archive...`);
+        extractSelectedFromZip(buffer, bin.zipEntries, bin.destDir);
+    } else if (bin.zipEntry) {
         console.log(`Extracting ${bin.zipEntry} from archive...`);
         extractFromZip(buffer, bin.zipEntry, bin.dest);
     } else {
@@ -291,7 +364,7 @@ async function downloadBin(bin) {
 // Downloads the prebuilt qbittorrent-nox bundle and verifies its SHA-256 checksum and Ed25519
 // signature BEFORE extracting anything. Throws (and extracts nothing) on any verification failure.
 async function downloadQbittorrentNox(bin) {
-    if (isUpToDate(bin.dest, bin.version)) {
+    if (isUpToDate(bin)) {
         console.log(`${bin.name} v${bin.version} already up to date, skipping`);
         return;
     }
@@ -345,9 +418,11 @@ module.exports = {
     verifyEd25519Signature,
     extractZipToDir,
     extractFromZip,
+    extractSelectedFromZip,
     downloadBin,
     downloadQbittorrentNox,
     BINS,
+    FRANKENPHP_FILES,
     QBITTORRENT_NOX,
     QBITTORRENT_NOX_PUBLIC_KEY,
 };
