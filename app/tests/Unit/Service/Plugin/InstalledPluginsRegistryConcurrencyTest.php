@@ -28,6 +28,7 @@ declare(strict_types=1);
 namespace App\Tests\Unit\Service\Plugin;
 
 use App\Service\Plugin\InstalledPluginsRegistry;
+use App\Service\Plugin\PhpCliCommand;
 use App\Service\Plugin\PluginsConfigStore;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
@@ -95,8 +96,8 @@ final class InstalledPluginsRegistryConcurrencyTest extends TestCase
         $script = __DIR__.'/../../../Fixtures/Plugin/reconcile-loop.php';
         $iterations = '150';
 
-        $first = new Process([$php, $script, $this->pluginsDir, $iterations]);
-        $second = new Process([$php, $script, $this->pluginsDir, $iterations]);
+        $first = new Process(PhpCliCommand::forScript($php, $script, $this->pluginsDir, $iterations));
+        $second = new Process(PhpCliCommand::forScript($php, $script, $this->pluginsDir, $iterations));
 
         $first->start();
         $second->start();
