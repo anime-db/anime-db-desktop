@@ -10,6 +10,7 @@
         "prebuild": "node scripts/build.js",
         "build": "electron-builder --publish never",
         "download-bins": "node scripts/download-bins.js",
+        "check-runtime-parity": "node scripts/check-runtime-parity.js",
         "lint": "eslint native/ tests/native/",
         "lint:fix": "eslint native/ tests/native/ --fix",
         "test": "jest"

@@ -27,6 +27,7 @@ const paths     = require('../paths');
 const { buildCommonEnv } = require('./env');
 const { pruneOldLogs, openLogStream } = require('./logrotate');
 const pidTracker = require('./pid-tracker');
+const { buildPhpCliArgs } = require('./php-cli-command');
 
 // FrankenPHP's embedded PHP runtime doubles as the CLI interpreter — there is no separate
 // php.exe binary bundled with the app (see .claude-docs/gotchas.md).
@@ -75,7 +76,8 @@ function run(command, args, context, timeoutMs, options = {}) {
     const logStream = openLogStream(logDir, name);
 
     return new Promise((resolve, reject) => {
-        const child = spawn(BINARY, ['php-cli', CONSOLE, command, ...args], {
+        const [spawnCommand, ...spawnArgs] = buildPhpCliArgs(BINARY, CONSOLE, command, ...args);
+        const child = spawn(spawnCommand, spawnArgs, {
             cwd: paths.getAppRootDir(),
             env: buildCommonEnv(context),
             stdio: ['ignore', 'pipe', 'pipe'],
