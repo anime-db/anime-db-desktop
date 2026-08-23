@@ -35,6 +35,7 @@ const {
     verifyEd25519Signature,
     extractZipToDir,
     extractFromZip,
+    extractSelectedFromZip,
     downloadBin,
     downloadQbittorrentNox,
     QBITTORRENT_NOX,
@@ -205,6 +206,36 @@ describe('extractZipToDir / extractFromZip', () => {
         expect(() => extractZipToDir(zip, tmpDir)).toThrow(/outside destination/);
         expect(fs.existsSync(path.join(tmpDir, '..', 'evil.exe'))).toBe(false);
     });
+
+    test('extractSelectedFromZip extracts only the requested entries, preserving subdirectories', () => {
+        const zip = buildZip([
+            { name: 'frankenphp.exe', data: Buffer.from('runtime-binary') },
+            { name: 'ext/php_intl.dll', data: Buffer.from('intl-extension') },
+            { name: 'ext/php_gd.dll', data: Buffer.from('unused-extension') },
+            { name: 'news.txt', data: Buffer.from('changelog') },
+        ]);
+
+        extractSelectedFromZip(zip, ['frankenphp.exe', 'ext/php_intl.dll'], tmpDir);
+
+        expect(fs.readFileSync(path.join(tmpDir, 'frankenphp.exe'), 'utf8')).toBe('runtime-binary');
+        expect(fs.readFileSync(path.join(tmpDir, 'ext/php_intl.dll'), 'utf8')).toBe('intl-extension');
+        expect(fs.existsSync(path.join(tmpDir, 'ext/php_gd.dll'))).toBe(false);
+        expect(fs.existsSync(path.join(tmpDir, 'news.txt'))).toBe(false);
+    });
+
+    test('extractSelectedFromZip throws when a requested entry is missing from the archive', () => {
+        const zip = buildZip([{ name: 'frankenphp.exe', data: Buffer.from('runtime-binary') }]);
+
+        expect(() => extractSelectedFromZip(zip, ['frankenphp.exe', 'php8ts.dll'], tmpDir))
+            .toThrow(/php8ts\.dll/);
+    });
+
+    test('extractSelectedFromZip rejects path-traversal (zip-slip) entries', () => {
+        const zip = buildZip([{ name: '../evil.exe', data: Buffer.from('x') }]);
+
+        expect(() => extractSelectedFromZip(zip, ['../evil.exe'], tmpDir)).toThrow(/outside destination/);
+        expect(fs.existsSync(path.join(tmpDir, '..', 'evil.exe'))).toBe(false);
+    });
 });
 
 // Mocks `https.get` so `downloadQbittorrentNox` never touches the network, letting these tests
@@ -366,6 +397,39 @@ describe('downloadBin (verify-before-write, redirects, retries)', () => {
         await downloadBin(bin);
 
         expect(fs.readFileSync(bin.dest, 'utf8')).toBe('redirected-binary-content');
+    });
+
+    test('extracts every listed entry into destDir when zipEntries is set, preserving subdirectories', async () => {
+        const zip = buildZip([
+            { name: 'frankenphp.exe', data: Buffer.from('runtime-binary') },
+            { name: 'ext/php_intl.dll', data: Buffer.from('intl-extension') },
+            { name: 'ext/php_gd.dll', data: Buffer.from('unused-extension') },
+        ]);
+        bin.destDir = path.join(tmpDir, 'frankenphp');
+        bin.dest = path.join(bin.destDir, 'frankenphp.exe');
+        bin.zipEntries = ['frankenphp.exe', 'ext/php_intl.dll'];
+        bin.sha256 = crypto.createHash('sha256').update(zip).digest('hex');
+        mockSingleResponse(zip);
+
+        await downloadBin(bin);
+
+        expect(fs.readFileSync(bin.dest, 'utf8')).toBe('runtime-binary');
+        expect(fs.readFileSync(path.join(bin.destDir, 'ext/php_intl.dll'), 'utf8')).toBe('intl-extension');
+        expect(fs.existsSync(path.join(bin.destDir, 'ext/php_gd.dll'))).toBe(false);
+    });
+
+    test('rejects and writes nothing when a zipEntries entry is missing from the archive', async () => {
+        const zip = buildZip([{ name: 'frankenphp.exe', data: Buffer.from('runtime-binary') }]);
+        bin.destDir = path.join(tmpDir, 'frankenphp');
+        bin.dest = path.join(bin.destDir, 'frankenphp.exe');
+        bin.zipEntries = ['frankenphp.exe', 'php8ts.dll'];
+        bin.sha256 = crypto.createHash('sha256').update(zip).digest('hex');
+        mockSingleResponse(zip);
+
+        await expect(downloadBin(bin)).rejects.toThrow(/php8ts\.dll/);
+
+        expect(fs.existsSync(bin.dest)).toBe(false);
+        expect(fs.existsSync(path.join(bin.destDir, '.version'))).toBe(false);
     });
 
     test('retries the download and fails once all attempts are exhausted', async () => {

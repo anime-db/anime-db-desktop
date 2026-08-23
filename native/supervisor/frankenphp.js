@@ -52,7 +52,9 @@ let logStream = null;
 
 /**
  * Создаёт php.ini в AppData, если его ещё нет.
- * Подставляет системный часовой пояс вместо {{TIMEZONE}}.
+ * Подставляет системный часовой пояс вместо {{TIMEZONE}} и путь к DLL расширений вместо
+ * {{EXTENSION_DIR}} — вычисляется от __dirname этого модуля, поэтому остаётся верным после
+ * переноса каталога приложения.
  */
 function ensurePhpIni() {
     const iniPath = paths.getPhpIniPath();
@@ -60,7 +62,10 @@ function ensurePhpIni() {
 
     const template = fs.readFileSync(PHP_INI_TEMPLATE, 'utf8');
     const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    const ini = template.replace('{{TIMEZONE}}', timezone);
+    const extensionDir = path.join(__dirname, '..', '..', 'bin', 'frankenphp', 'ext').replace(/\\/g, '/');
+    const ini = template
+        .replace('{{TIMEZONE}}', timezone)
+        .replace('{{EXTENSION_DIR}}', extensionDir);
 
     fs.mkdirSync(paths.getPhpIniDir(), { recursive: true });
     fs.writeFileSync(iniPath, ini, 'utf8');

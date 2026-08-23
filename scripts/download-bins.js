@@ -37,13 +37,39 @@ MCowBQYDK2VwAyEAY2beFPHj/tmY6qJY1rDOk4L12YIKdICTzDkW5sgf0xg=
 -----END PUBLIC KEY-----
 `;
 
+// `frankenphp.exe` is not self-contained: it dynamically links php8ts.dll (the PHP runtime itself)
+// plus four more libraries, and the declared PHP extensions (`composer check-platform-reqs
+// --no-dev` in app/) load as separate DLLs under ext/. Both sets were confirmed empirically against
+// the v1.12.4 release asset: `objdump -p frankenphp.exe | grep 'DLL Name'` for the runtime imports
+// (including the brotlicommon.dll transitive dependency of brotlienc.dll/brotlidec.dll, which is
+// easy to miss by inspection alone), and `objdump -p ext/php_intl.dll` for its ICU dependency chain.
+// ctype/iconv/json/xml have no ext/php_*.dll in the archive — this PHP build compiles them in
+// statically, so only intl and zip need an `extension=` line. See .claude-docs/decisions.md for the
+// curated-set-vs-full-archive tradeoff.
+const FRANKENPHP_FILES = [
+    'frankenphp.exe',
+    'php8ts.dll',
+    'brotlienc.dll',
+    'brotlidec.dll',
+    'brotlicommon.dll',
+    'libwatcher-c.dll',
+    'pthreadVC3.dll',
+    'icudt77.dll',
+    'icuin77.dll',
+    'icuio77.dll',
+    'icuuc77.dll',
+    'ext/php_intl.dll',
+    'ext/php_zip.dll',
+];
+
 const BINS = [
     {
         name: 'frankenphp',
         version: versions.frankenphp,
         url: `https://github.com/php/frankenphp/releases/download/v${versions.frankenphp}/frankenphp-windows-x86_64.zip`,
         dest: path.join(binDir, 'frankenphp', 'frankenphp.exe'),
-        zipEntry: 'frankenphp.exe',
+        destDir: path.join(binDir, 'frankenphp'),
+        zipEntries: FRANKENPHP_FILES,
         sha256: versions.sha256.frankenphp,
     },
     {
@@ -233,6 +259,34 @@ function extractZipToDir(zipBuffer, destDir) {
     }
 }
 
+// Extracts exactly the ZIP entries listed in `wantedPaths` (archive-relative, forward-slash paths)
+// into `destDir`, preserving their relative subdirectories (e.g. `ext/php_intl.dll`). Throws if any
+// requested entry is missing from the archive — a silent partial extraction here would ship a
+// runtime that fails to start or load an extension, so it must fail the build instead.
+function extractSelectedFromZip(zipBuffer, wantedPaths, destDir) {
+    const entries = readZipCentralDirectory(zipBuffer);
+    const wanted = new Set(wantedPaths);
+    const matched = entries.filter((entry) => wanted.has(entry.fileName.replace(/\\/g, '/')));
+
+    const foundNames = new Set(matched.map((entry) => entry.fileName.replace(/\\/g, '/')));
+    const missing = wantedPaths.filter((p) => !foundNames.has(p));
+    if (missing.length > 0) {
+        throw new Error(`Entries not found in ZIP: ${missing.join(', ')}`);
+    }
+
+    for (const entry of matched) {
+        const normalizedName = entry.fileName.replace(/\\/g, '/');
+        const data = readZipEntryData(zipBuffer, entry);
+        const destPath = path.join(destDir, normalizedName);
+        // Defense-in-depth against zip-slip (bundle is checksum-verified, but never trust entry paths).
+        if (!path.resolve(destPath).startsWith(path.resolve(destDir) + path.sep)) {
+            throw new Error(`Refusing to extract ZIP entry outside destination: ${entry.fileName}`);
+        }
+        fs.mkdirSync(path.dirname(destPath), { recursive: true });
+        fs.writeFileSync(destPath, data);
+    }
+}
+
 // Parses a `SHA256SUMS` file (`<hex>  <filename>` per line, optional `*` before filename) and
 // returns the lowercase hex digest for `filename`, or null when not listed.
 function parseSha256Sums(text, filename) {
@@ -271,7 +325,10 @@ async function downloadBin(bin) {
     }
 
     fs.mkdirSync(path.dirname(bin.dest), { recursive: true });
-    if (bin.zipEntry) {
+    if (bin.zipEntries) {
+        console.log(`Extracting ${bin.zipEntries.length} files from archive...`);
+        extractSelectedFromZip(buffer, bin.zipEntries, bin.destDir);
+    } else if (bin.zipEntry) {
         console.log(`Extracting ${bin.zipEntry} from archive...`);
         extractFromZip(buffer, bin.zipEntry, bin.dest);
     } else {
@@ -339,9 +396,11 @@ module.exports = {
     verifyEd25519Signature,
     extractZipToDir,
     extractFromZip,
+    extractSelectedFromZip,
     downloadBin,
     downloadQbittorrentNox,
     BINS,
+    FRANKENPHP_FILES,
     QBITTORRENT_NOX,
     QBITTORRENT_NOX_PUBLIC_KEY,
 };

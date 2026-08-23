@@ -1,3 +1,8 @@
+[PHP]
+extension_dir = "{{EXTENSION_DIR}}"
+extension=intl
+extension=zip
+
 [Date]
 date.timezone = {{TIMEZONE}}
 
