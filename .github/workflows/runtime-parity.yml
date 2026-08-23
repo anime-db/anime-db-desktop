@@ -1,0 +1,78 @@
+name: Runtime parity
+
+# Группа `runtime-parity` (issue #472) помечает тесты, исход которых зависит от того, какой
+# интерпретатор и какая ОС их исполняют: спавн подпроцесса через \PHP_BINARY, реальные
+# межпроцессные блокировки файлов, данные ICU. Основной набор гоняется на Linux с системным PHP
+# (ci.yml) — здесь та же выборка прогоняется на Windows, то есть на той ОС, под которую
+# приложение собирается.
+#
+# Меняется ровно одна переменная — операционная система. Второй шаг, прогон под самим
+# frankenphp.exe, пока не сделан: без php.ini с extension_dir расширения не подгрузятся, а
+# отрендерить ini вне Electron сейчас нечем (см. issue #484).
+on:
+  pull_request:
+    paths:
+      # Тесты, помеченные группой. Список явный, а не маской: маска на app/tests/Unit/Service/**
+      # цепляла бы почти каждый PR и удваивала расход Windows-минут. Плата за это —
+      # обязанность дописать сюда файл, если группа пополнится. Промах не даёт ложно-зелёного:
+      # выборка всё равно прогоняется на Linux в основном наборе, просто без Windows-сигнала.
+      - 'app/tests/Unit/Service/AppConfigStoreConcurrencyTest.php'
+      - 'app/tests/Unit/Service/LocaleEndonymResolverTest.php'
+      - 'app/tests/Unit/Service/Plugin/InstalledPluginsRegistryConcurrencyTest.php'
+      - 'app/tests/Unit/Service/Plugin/PluginDirectoryRemoverTest.php'
+      - 'app/tests/Unit/Service/Plugin/PluginsConfigStoreConcurrencyTest.php'
+      - 'app/tests/Unit/Service/Plugin/ZipPluginInstallerConcurrencyTest.php'
+      - 'app/tests/Unit/Service/Plugin/ZipPluginInstallerTest.php'
+      # Код, который эти тесты покрывают.
+      - 'app/src/Service/Plugin/**'
+      - 'app/src/Service/AppConfigStore.php'
+      - 'app/src/Service/LocaleEndonymResolver.php'
+      # Состав группы, платформенные требования и сам этот файл.
+      - 'app/phpunit.xml.dist'
+      - 'app/composer.json'
+      - 'app/composer.lock'
+      - '.github/workflows/runtime-parity.yml'
+  workflow_dispatch:
+
+# Своя группа, а не общая с ci.yml: отменять прогоны CI при старте этой джобы было бы неверно.
+# cancel-in-progress включён, чтобы пачки автоправок не множили Windows-минуты — они
+# тарифицируются с множителем ×2.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    name: Runtime parity (Windows)
+    runs-on: windows-latest
+    # Выборка идёт секунды, установка зависимостей — минуты. 15 взято тем же значением, что у
+    # джоб ci.yml: это граница «что-то зависло», а не бюджет на выполнение.
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          tools: composer
+          coverage: none
+          # Расширения перечислены явно, а не оставлены на умолчание раннера: после issue #467
+          # composer проверяет платформенные требования в рантайме, и недостающее расширение
+          # уронит прогон на автозагрузчике, а не на понятном шаге.
+          extensions: apcu, intl, zip, openssl, pdo_sqlite
+          ini-values: apc.enable_cli=1
+
+      - name: Configure Composer auth for private repos
+        run: composer config --global github-oauth.github.com ${{ secrets.COMPOSER_GITHUB_TOKEN }}
+
+      - name: Install dependencies
+        uses: ramsey/composer-install@v3
+        with:
+          working-directory: app
+
+      # Только группа. Остальные 1232 теста — чистая логика, которой безразлично, где она
+      # исполняется, и гонять их здесь значило бы платить вдвое за нулевую информацию.
+      - name: Run runtime-parity group
+        run: vendor/bin/phpunit --group runtime-parity
+        working-directory: app
