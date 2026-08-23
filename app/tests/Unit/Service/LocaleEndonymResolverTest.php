@@ -28,12 +28,14 @@ declare(strict_types=1);
 namespace App\Tests\Unit\Service;
 
 use App\Service\LocaleEndonymResolver;
+use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 
 final class LocaleEndonymResolverTest extends TestCase
 {
+    #[Group('runtime-parity')]
     public function testResolveReturnsTheEndonymForAKnownLocale(): void
     {
         $resolver = new LocaleEndonymResolver(new NullLogger());
@@ -41,6 +43,7 @@ final class LocaleEndonymResolverTest extends TestCase
         $this->assertSame('English', $resolver->resolve('en'));
     }
 
+    #[Group('runtime-parity')]
     public function testResolveReturnsTheEndonymForALocaleWithARegion(): void
     {
         $resolver = new LocaleEndonymResolver(new NullLogger());
@@ -54,6 +57,7 @@ final class LocaleEndonymResolverTest extends TestCase
      * {@see LocaleEndonymResolver} for why capitalization belongs here rather than being relied
      * upon from ICU's own output.
      */
+    #[Group('runtime-parity')]
     public function testResolveCapitalizesTheFirstLetterOfTheEndonym(): void
     {
         $resolver = new LocaleEndonymResolver(new NullLogger());

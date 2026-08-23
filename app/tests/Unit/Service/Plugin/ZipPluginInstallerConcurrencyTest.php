@@ -30,6 +30,7 @@ namespace App\Tests\Unit\Service\Plugin;
 use App\Entity\ValueObject\PluginId;
 use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\PluginsConfigStore;
+use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\Component\Process\PhpExecutableFinder;
@@ -73,6 +74,7 @@ final class ZipPluginInstallerConcurrencyTest extends TestCase
         $this->removeDirectory($this->fixturesDir);
     }
 
+    #[Group('runtime-parity')]
     public function testConcurrentInstallsOfTheSamePluginIdDoNotDeleteTheWinner(): void
     {
         $php = (new PhpExecutableFinder())->find();

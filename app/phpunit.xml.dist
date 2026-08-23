@@ -9,6 +9,19 @@
         <server name="KERNEL_CLASS" value="App\Kernel"/>
     </php>
 
+    <!--
+        The "runtime-parity" group marks tests whose outcome can depend on which PHP interpreter
+        or OS runs them (e.g. they spawn a real subprocess through \PHP_BINARY, exercise real
+        multi-process file locking, or depend on the installed ICU/CLDR data) rather than being
+        pure logic. The full suite always runs on the system PHP CLI on Linux; this group exists
+        to let a maintainer additionally re-run just this subset against the packaged interpreter
+        (e.g. frankenphp.exe on Windows) without repeating the rest of the suite for no reason.
+        Select it with the PHPUnit "group" CLI option (or exclude it with "exclude-group").
+        Running phpunit with no CLI options still runs everything, including this group. Adding a
+        test here is a judgement call, not a mechanical rule: it belongs in the group only if its
+        outcome could plausibly differ across interpreters/OSes, not merely because it happens to
+        sit next to one that does.
+    -->
     <testsuites>
         <testsuite name="Unit">
             <directory>tests/Unit</directory>

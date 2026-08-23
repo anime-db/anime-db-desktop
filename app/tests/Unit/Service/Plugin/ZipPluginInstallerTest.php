@@ -41,6 +41,7 @@ use App\Service\Plugin\PluginCacheWarmerInterface;
 use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Plugin\ZipPluginInstaller;
 use App\Service\WsPublisher;
+use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
@@ -89,6 +90,7 @@ final class ZipPluginInstallerTest extends TestCase
         $this->removeDirectory($this->fixturesDir);
     }
 
+    #[Group('runtime-parity')]
     public function testInstallMovesUnpackedFilesAndReconcilesRegistry(): void
     {
         $zipPath = $this->createZip([
@@ -231,6 +233,7 @@ final class ZipPluginInstallerTest extends TestCase
         $this->assertSame($this->rootDir.'/.plugin-install-tmp', $method->invoke($installer));
     }
 
+    #[Group('runtime-parity')]
     public function testInstallDescendsIntoSingleTopLevelWrapperDirectory(): void
     {
         // Packaging a directory directly (Explorer / `zip -r plugin.zip plugin/`) wraps
@@ -275,6 +278,7 @@ final class ZipPluginInstallerTest extends TestCase
         }
     }
 
+    #[Group('runtime-parity')]
     public function testInstallSucceedsWhenCoreVersionSatisfiesRequirement(): void
     {
         $zipPath = $this->createZip([
@@ -308,6 +312,7 @@ final class ZipPluginInstallerTest extends TestCase
         }
     }
 
+    #[Group('runtime-parity')]
     public function testInstallSucceedsWhenAllPhpFilesAreSyntacticallyValid(): void
     {
         $zipPath = $this->createZip([
@@ -323,6 +328,7 @@ final class ZipPluginInstallerTest extends TestCase
         $this->assertNoLeftoverTempDirectories();
     }
 
+    #[Group('runtime-parity')]
     public function testInstallBlocksWhenPluginContainsPhpSyntaxError(): void
     {
         $zipPath = $this->createZip([
@@ -349,6 +355,7 @@ final class ZipPluginInstallerTest extends TestCase
         }
     }
 
+    #[Group('runtime-parity')]
     public function testInstallSkipsSyntaxLintWhenTrusted(): void
     {
         $zipPath = $this->createZip([
@@ -405,6 +412,7 @@ final class ZipPluginInstallerTest extends TestCase
      * live via this event (issue #411) — a successful install that never publishes it would leave
      * the plugin installed but permanently inactive until the next full app restart.
      */
+    #[Group('runtime-parity')]
     public function testInstallPublishesWorkersReloadEventAfterSuccessfulCacheWarmup(): void
     {
         $zipPath = $this->createZip([
@@ -436,6 +444,7 @@ final class ZipPluginInstallerTest extends TestCase
      * before publish() ever runs. Degrading to "installed but not yet live" (activated on the next
      * full app restart) is the intended fallback, not a full rollback.
      */
+    #[Group('runtime-parity')]
     public function testInstallSucceedsWhenPublishingWorkersReloadEventFails(): void
     {
         $zipPath = $this->createZip([
@@ -460,6 +469,7 @@ final class ZipPluginInstallerTest extends TestCase
         $this->assertTrue($this->registry->has(new PluginId('animedb-shikimori')));
     }
 
+    #[Group('runtime-parity')]
     public function testUpdateSwapsInTheNewVersionAndReconcilesRegistry(): void
     {
         mkdir($this->pluginsDir.'/animedb-shikimori', recursive: true);
@@ -484,6 +494,7 @@ final class ZipPluginInstallerTest extends TestCase
         $this->assertNoLeftoverTempDirectories();
     }
 
+    #[Group('runtime-parity')]
     public function testUpdatePreservesPluginSettingsAcrossTheDirectorySwap(): void
     {
         mkdir($this->pluginsDir.'/animedb-shikimori', recursive: true);
@@ -652,6 +663,7 @@ final class ZipPluginInstallerTest extends TestCase
      * The native supervisor only learns an updated plugin needs to be made live via this event
      * (issue #224, same mechanism as {@see testInstallPublishesWorkersReloadEventAfterSuccessfulCacheWarmup()}).
      */
+    #[Group('runtime-parity')]
     public function testUpdatePublishesWorkersReloadEventAfterSuccessfulCacheWarmup(): void
     {
         mkdir($this->pluginsDir.'/animedb-shikimori', recursive: true);
@@ -682,6 +694,7 @@ final class ZipPluginInstallerTest extends TestCase
         $this->assertNoLeftoverTempDirectories();
     }
 
+    #[Group('runtime-parity')]
     public function testUpdateSkipsSyntaxLintWhenTrusted(): void
     {
         mkdir($this->pluginsDir.'/animedb-shikimori', recursive: true);
