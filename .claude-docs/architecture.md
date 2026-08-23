@@ -33,7 +33,7 @@ anime-db-desktop/
 │   ├── Caddyfile           # статический, под git, env-плейсхолдеры {env.APP_PORT} и {env.APP_ROOT}
 │   └── composer.json
 ├── bin/            # в .gitignore; тянутся download-bins.js при сборке
-│   ├── frankenphp/frankenphp.exe
+│   ├── frankenphp/frankenphp.exe   # + php8ts.dll, ext/*.dll, ICU-библиотеки — см. раздел FrankenPHP ниже
 │   ├── meilisearch/meilisearch.exe
 │   └── php/php.ini.template    # под git; динамический ini пишется в AppData
 ├── scripts/
@@ -56,14 +56,17 @@ anime-db-desktop/
 
 ## FrankenPHP
 
-**FrankenPHP — Go-бинарник со встроенным PHP 8.5** (static-php-cli). Отдельного PHP-рантайма нет.
+**FrankenPHP — Go-бинарник на базе static-php-cli.** Устройство сборки различается по платформам: на Linux PHP вкомпилирован статически и отдельного рантайма нет, на Windows рантайм и расширения — отдельные файлы рядом с `frankenphp.exe`, см. таблицу и пометку ниже.
 
-| Параметр       | Значение                                                                                       |
-|----------------|------------------------------------------------------------------------------------------------|
-| PHP            | 8.5 (дефолт build-static.sh с v1.12.4)                                                         |
-| Windows-сборка | `frankenphp-windows-x86_64.zip` — только x64                                                   |
-| ZTS            | да (`--enable-zts`)                                                                            |
-| Расширения     | статически вкомпилированы (pdo_sqlite, mbstring, curl, intl, opcache, gd, imagick, ~50 других) |
+| Параметр             | Значение                                                                                                                                                                                                                    |
+|----------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| PHP                  | 8.5 (дефолт build-static.sh с v1.12.4)                                                                                                                                                                                      |
+| Windows-сборка       | `frankenphp-windows-x86_64.zip` — только x64                                                                                                                                                                                |
+| ZTS                  | да (`--enable-zts`)                                                                                                                                                                                                         |
+| Расширения (Linux)   | ~50 расширений вкомпилированы статически внутрь бинаря (pdo_sqlite, mbstring, curl, intl, opcache, gd, imagick и др.)                                                                                                       |
+| Расширения (Windows) | подгружаемые DLL из `ext/` (`php_intl.dll`, `php_mbstring.dll`, `php_curl.dll`, `php_gd.dll` и др.); PHP-рантайм — `php8ts.dll`, ICU — отдельными библиотеками (`icudt77.dll`, `icuin77.dll`, `icuuc77.dll`, `icuio77.dll`) |
+
+> **Прежняя формулировка была неверной и на ней строились решения #461/#467.** До правки по issue #479 строка «Расширения» в этой таблице была одна и звучала как «статически вкомпилированы (pdo_sqlite, mbstring, curl, intl, opcache, gd, imagick, ~50 других)» — верно для Linux-сборки, но не для Windows, на которую реально собирается приложение (это полноценный дистрибутив PHP: ~80 файлов, ~160 МБ, `frankenphp.exe` без `php8ts.dll` и DLL расширений рядом не запускается). На этом факте строилось обоснование issue #461 (эндонимы локалей через ICU: «`ext-intl` в проде есть, потому что расширения FrankenPHP вкомпилированы статически») и issue #467 (`platform-check: true`). Оба решения остаются в силе — `ext-intl` в Windows-сборке действительно присутствует, просто в виде отдельной DLL, а не статики — исправлено только их фактическое обоснование. Детали проверки (`objdump -p`, состав архива) — [gotchas.md](gotchas.md#у-frankenphp-windows-x86_64zip-на-github-релизах-frankenphpexe-не-самодостаточен--зависит-от-php8tsdll-и-других-dll-из-того-же-архива).
 
 **php.ini:** `bin/php/php.ini.template` под git. При первом запуске `frankenphp.js` копирует его в `AppData/AnimeDB/php.ini`, подставляя часовой пояс (`Intl.DateTimeFormat().resolvedOptions().timeZone`). FrankenPHP стартует с `PHPRC=AppData/AnimeDB` (путь к папке, не к файлу).
 
