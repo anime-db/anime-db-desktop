@@ -140,7 +140,7 @@ jobs:
         working-directory: app
         run: |
           ../bin/frankenphp/frankenphp.exe php-cli -r '
-            foreach (["intl", "zip", "pdo_sqlite", "openssl"] as $extension) {
+            foreach (["intl", "zip", "pdo_sqlite", "openssl", "mbstring"] as $extension) {
                 if (!extension_loaded($extension)) {
                     fwrite(STDERR, "missing extension: $extension\n");
                     exit(1);
