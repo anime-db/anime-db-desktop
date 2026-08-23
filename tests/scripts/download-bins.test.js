@@ -369,6 +369,7 @@ describe('downloadBin (verify-before-write, redirects, retries)', () => {
     });
 
     test('retries the download and fails once all attempts are exhausted', async () => {
+        bin.sha256 = 'f'.repeat(64);
         let callCount = 0;
         https.get.mockImplementation(() => {
             callCount += 1;
@@ -382,4 +383,102 @@ describe('downloadBin (verify-before-write, redirects, retries)', () => {
         expect(callCount).toBe(4);
         expect(fs.existsSync(bin.dest)).toBe(false);
     }, 10000);
+
+    test('recovers and succeeds after a single transient connection failure', async () => {
+        const data = Buffer.from('recovered-binary-content');
+        bin.sha256 = crypto.createHash('sha256').update(data).digest('hex');
+
+        let callCount = 0;
+        https.get.mockImplementation((url, opts, callback) => {
+            callCount += 1;
+            const req = new EventEmitter();
+            if (callCount === 1) {
+                setImmediate(() => req.emit('error', new Error('ECONNRESET')));
+                return req;
+            }
+            const res = new EventEmitter();
+            res.statusCode = 200;
+            res.resume = () => {};
+            callback(res);
+            res.emit('data', data);
+            res.emit('end');
+            return req;
+        });
+
+        await downloadBin(bin);
+
+        expect(fs.readFileSync(bin.dest, 'utf8')).toBe('recovered-binary-content');
+        expect(callCount).toBe(2);
+    }, 10000);
+
+    test('throws a "missing pin" error instead of a mismatch-against-undefined when no SHA-256 is pinned', async () => {
+        bin.sha256 = null;
+
+        await expect(downloadBin(bin)).rejects.toThrow(/Missing pinned SHA-256 for testbin/);
+        expect(https.get).not.toHaveBeenCalled();
+        expect(fs.existsSync(bin.dest)).toBe(false);
+    });
+});
+
+// Covers the ZIP-archive branch of downloadBin (bin.zipEntry set): the checksum must be verified
+// against the archive as downloaded, before any entry is extracted from it.
+describe('downloadBin (ZIP archive branch)', () => {
+    let tmpDir;
+    let bin;
+
+    function mockSingleResponse(buffer) {
+        https.get.mockImplementation((url, opts, callback) => {
+            const res = new EventEmitter();
+            res.statusCode = 200;
+            res.resume = () => {};
+            callback(res);
+            res.emit('data', buffer);
+            res.emit('end');
+            return new EventEmitter();
+        });
+    }
+
+    beforeEach(() => {
+        tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'download-bins-zip-'));
+        bin = {
+            name: 'testbin',
+            version: '1.0.0',
+            url: 'https://example.invalid/testbin.zip',
+            dest: path.join(tmpDir, 'extracted', 'testbin.exe'),
+            zipEntry: 'testbin.exe',
+            sha256: null,
+        };
+    });
+
+    afterEach(() => {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+        https.get.mockReset();
+        jest.restoreAllMocks();
+    });
+
+    test('verifies the SHA-256 of the archive itself, then extracts the pinned entry', async () => {
+        const zip = buildZip([
+            { name: 'testbin.exe', data: Buffer.from('zip-binary-content') },
+            { name: 'README.txt', data: Buffer.from('unrelated archive entry') },
+        ]);
+        bin.sha256 = crypto.createHash('sha256').update(zip).digest('hex');
+        mockSingleResponse(zip);
+
+        await downloadBin(bin);
+
+        expect(fs.readFileSync(bin.dest, 'utf8')).toBe('zip-binary-content');
+        expect(fs.readFileSync(path.join(tmpDir, 'extracted', '.version'), 'utf8')).toBe('1.0.0\n');
+    });
+
+    test('rejects when the archive-level SHA-256 does not match, without extracting anything', async () => {
+        const zip = buildZip([{ name: 'testbin.exe', data: Buffer.from('zip-binary-content') }]);
+        bin.sha256 = 'f'.repeat(64);
+        mockSingleResponse(zip);
+
+        await expect(downloadBin(bin)).rejects.toThrow(/SHA-256 mismatch/);
+
+        // No extraction happened: neither the target file nor the destination directory exists.
+        expect(fs.existsSync(bin.dest)).toBe(false);
+        expect(fs.existsSync(path.dirname(bin.dest))).toBe(false);
+    });
 });

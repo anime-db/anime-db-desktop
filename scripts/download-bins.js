@@ -261,6 +261,12 @@ async function downloadBin(bin) {
         return;
     }
 
+    if (!bin.sha256) {
+        throw new Error(
+            `Missing pinned SHA-256 for ${bin.name} — add it to versions.sha256.${bin.name} in scripts/versions.json`,
+        );
+    }
+
     console.log(`Downloading ${bin.name} v${bin.version}...`);
     const buffer = await downloadBufferWithRetry(bin.url);
 
@@ -292,9 +298,9 @@ async function downloadQbittorrentNox(bin) {
 
     console.log(`Downloading ${bin.name} v${bin.version}...`);
     const [zipBuffer, sumsText, sigBase64] = await Promise.all([
-        downloadBuffer(bin.zipUrl),
-        downloadBuffer(bin.sumsUrl).then((b) => b.toString('utf8')),
-        downloadBuffer(bin.sigUrl).then((b) => b.toString('utf8')),
+        downloadBufferWithRetry(bin.zipUrl),
+        downloadBufferWithRetry(bin.sumsUrl).then((b) => b.toString('utf8')),
+        downloadBufferWithRetry(bin.sigUrl).then((b) => b.toString('utf8')),
     ]);
 
     console.log(`Verifying ${bin.name} SHA-256 checksum...`);
