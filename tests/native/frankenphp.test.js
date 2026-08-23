@@ -180,6 +180,11 @@ describe('buildEnv', () => {
     });
 });
 
+// Mirrors the extensionDir computation in native/supervisor/frankenphp.js (path.join from
+// __dirname up to the repo root, then into bin/frankenphp/ext) — tests/native sits at the same
+// depth from the repo root as native/supervisor, so the two resolve to the same path.
+const EXTENSION_DIR = path.join(__dirname, '..', '..', 'bin', 'frankenphp', 'ext').replace(/\\/g, '/');
+
 describe('ensurePhpIni', () => {
     let tmpDir;
     let iniPath;
@@ -209,7 +214,7 @@ describe('ensurePhpIni', () => {
 
     test('leaves an already up-to-date php.ini untouched', () => {
         const original = [
-            'extension_dir = "/fake/ext"',
+            `extension_dir = "${EXTENSION_DIR}"`,
             'extension=intl',
             'extension=zip',
             'extension=pdo_sqlite',
@@ -269,5 +274,30 @@ describe('ensurePhpIni', () => {
         expect((updated.match(/extension=intl/g) || []).length).toBe(1);
         expect(updated).toContain('extension=pdo_sqlite');
         expect(updated).toContain('extension=openssl');
+    });
+
+    // Regression for a reinstall into a different directory: AppData survives it, so the existing
+    // ini's extension_dir points at the previous install path. Presence alone would consider it
+    // fine and never fix it — the value itself must be checked and rewritten.
+    test('rewrites a stale extension_dir left over from a previous install location, in place', () => {
+        const stale = [
+            'extension_dir = "/old/install/ext"',
+            'extension=intl',
+            'extension=zip',
+            'extension=pdo_sqlite',
+            'extension=openssl',
+            '; user comment',
+            '',
+        ].join('\n');
+        fs.writeFileSync(iniPath, stale, 'utf8');
+        paths.getPhpIniPath.mockReturnValueOnce(iniPath);
+
+        ensurePhpIni();
+
+        const updated = fs.readFileSync(iniPath, 'utf8');
+        expect((updated.match(/extension_dir/g) || []).length).toBe(1);
+        expect(updated).not.toContain('/old/install/ext');
+        expect(updated).toMatch(/extension_dir = "[^"]*\/ext"$/m);
+        expect(updated).toContain('; user comment');
     });
 });
