@@ -241,3 +241,36 @@ if (!class_exists($class)) {
 ## `console.error` в главном процессе собранного Electron-приложения не попадает никуда
 
 У дочерних процессов (`frankenphp`, `meilisearch`, `qbittorrent-nox`, `messenger-consumer`) есть файловые логи через `native/supervisor/logrotate.js`, подключённые в каждом супервизоре. У самого главного процесса (`lifecycle/index.js`) такого лога не было — в собранном GUI-приложении под Windows у процесса нет консоли, `console.error` пишет в никуда, и `process.on('uncaughtException')` до issue #390 (ревью PR #395) молча убивал все дочерние процессы и завершал приложение без единой строчки диагностики. Исправлено: `logCrash()` в `lifecycle/index.js` синхронно (`fs.appendFileSync`, не поток) дописывает стек в `AppData/AnimeDB/var/log/main-YYYY-MM-DD.log` — та же схема именования, что и у остальных логов (`todayStr()` из `logrotate.js`, экспортирован специально для этого) — и обёрнут в `try/catch` best-effort, поскольку показать `dialog.showErrorBox()` и выйти важнее самого факта записи в лог. `uncaughtException` теперь не подменяет штатное поведение Electron (диалог с ошибкой), а явно его воспроизводит перед `app.exit(1)`.
+
+## `frankenphp php-cli` не понимает CLI-SAPI-флаги (`-l`, `-m`, `-v`) — только путь к скрипту либо `-r <code>` (issue #471)
+
+Обнаружено при реализации `scripts/check-runtime-parity.js`: у сабкоманды `php-cli` (исходник — `caddy/php-cli.go` в репозитории `php/frankenphp`) нет собственного разбора флагов — `cmd.DisableFlagParsing = true`, и весь `os.Args[2:]` идёт в `cmdPHPCLI` как есть. Единственная развилка внутри: если `args[0] === '-r'`, выполняется `args[1]` как инлайн-код (`frankenphp.ExecutePHPCode`); в любом другом случае `args[0]` **всегда** трактуется как путь к PHP-скрипту, который нужно `require`-нуть (`frankenphp.ExecuteScriptCLI`). Никакого распознавания `-l`/`-m`/`-v`/`--help` как флагов нет вообще — они уходят в `require($argv[0])` и падают с `Failed opening required '-l' (include_path=...)`, а не с осмысленной ошибкой использования.
+
+Это напрямую ломает `App\Service\Plugin\ZipPluginInstaller::assertNoSyntaxErrors()`, собирающий `PhpCliCommand::build(\PHP_BINARY, '-l', $file->getRealPath())`: под системным PHP в CI/деве `-l` — валидный флаг синтаксис-линта, под боевым `frankenphp.exe php-cli -l <file>` — fatal error на каждом файле каждого устанавливаемого плагина.
+
+**Ключевое — код возврата.** Проверено на реальном бинаре v1.12.4:
+
+```
+$ frankenphp php-cli -l good.php   Fatal error: Failed opening required '-l'   код 255
+$ frankenphp php-cli -l bad.php    Fatal error: Failed opening required '-l'   код 255
+```
+
+255 **и на синтаксически верном файле, и на битом** — различить их невозможно. А `assertNoSyntaxErrors()` считает синтаксической ошибкой любой ненулевой код и копит `PluginSyntaxError`. Значит в упакованном приложении отклоняется **каждый** плагин, содержащий хоть один `.php`-файл, включая полностью корректные, причём с текстом, который `parseSyntaxErrorMessage()` разобрал из фатала самого FrankenPHP. Это не «линтинг работает не как задумано», а неработоспособность установки плагинов из ZIP целиком.
+
+Формально это отдельный баг с тем же классом симптомов, что и issue #410 (там был пропущен сам `php-cli`-префикс; здесь префикс есть, но конкретно `-l` всё равно не работает, поскольку `php-cli` не является полноценной CLI SAPI обёрткой). То есть исправление #410 не пережило собственной проверки на боевом бинаре. Заведено отдельной задачей — issue #478.
+
+Обратная сторона того же правила: `PluginCacheWarmer` собирает `PhpCliCommand::build(\PHP_BINARY, $this->consolePath(), 'cache:warmup')`, где первым аргументом идёт **путь к скрипту**, а не флаг. Эта форма рабочая, и вармер править не нужно. Баг не в `PhpCliCommand`, а в единственном месте, которое передаёт ему флаг.
+
+Практическое следствие для любого кода, которому нужно получить факт из `php-cli` (список расширений, версию ICU и т.п.), а не просто выполнить `bin/console <command>` (это работает, `args[0]` там — реальный путь к `console`): единственный рабочий способ — `php-cli -r '<инлайн PHP-код>'`, никогда не флаги вида `-m`/`-l`/`-v`.
+
+## У `frankenphp-windows-x86_64.zip` на GitHub-релизах `frankenphp.exe` **не самодостаточен** — зависит от `php8ts.dll` и других DLL из того же архива
+
+Проверено `objdump -p` на `frankenphp.exe` из `frankenphp-windows-x86_64.zip` (issue #471): в таблице импорта, помимо системных `api-ms-win-crt-*`/`KERNEL32.dll`/`VCRUNTIME140.dll`, есть `php8ts.dll`, `brotlidec.dll`, `brotlienc.dll`, `pthreadVC3.dll`, `libwatcher-c.dll` — все они лежат рядом в том же ZIP, отдельными файлами. `scripts/download-bins.js` при этом достаёт из архива **только** `frankenphp.exe` (`zipEntry: 'frankenphp.exe'`) и выбрасывает всё остальное, включая эти DLL. На Linux-сборке (`frankenphp-linux-x86_64`, публикуется отдельным файлом, не ZIP) это не воспроизводится — там бинарь полностью статический и `version`/`php-cli` работают без каких-либо файлов рядом. Не проверено на живой Windows/Wine — но по таблице импорта запуск `frankenphp.exe` без `php8ts.dll` рядом ожидаемо упадёт с ошибкой отсутствующей DLL при старте.
+
+**Вторая половина того же:** расширения в Windows-сборке — не статика, а подгружаемые DLL. В архиве лежат `ext/php_intl.dll`, `ext/php_mbstring.dll`, `ext/php_curl.dll` и прочие, плюс ICU-библиотеки `icudt77.dll`/`icuin77.dll`/`icuuc77.dll`/`icuio77.dll`. Ни одна из них не извлекается, а в `bin/php/php.ini.template` нет ни строки `extension=` и не задан `extension_dir`. Даже если положить рядом `php8ts.dll`, ни одно расширение не загрузится.
+
+Весь архив — это 80 файлов и ~160 МБ полноценного Windows-дистрибутива PHP (`php.exe`, `php-cgi.exe`, `phpdbg.exe`, `php.ini-development`, каталог `dev/` с заголовками), а не бинарь с парой библиотек.
+
+Отсюда следует, что запись в [`architecture.md`](architecture.md) про «расширения статически вкомпилированы (… intl …)» **для Windows-сборки неверна** — она верна для Linux-сборки, откуда, вероятно, и пришла. На этой записи строились решения issue #461 (эндонимы локалей через ICU) и #467 (`platform-check: true`): сами решения остаются в силе, но их обоснование опиралось на неверный факт.
+
+Заведено задачами: [#477](https://github.com/anime-db/anime-db-desktop/issues/477) — упаковка, [#479](https://github.com/anime-db/anime-db-desktop/issues/479) — правка `architecture.md`.
