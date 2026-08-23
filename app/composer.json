@@ -72,7 +72,6 @@
         },
         "bump-after-update": true,
         "sort-packages": true,
-        "//": "platform-check: true is explicit because the production PHP interpreter (frankenphp.exe) is built separately from the interpreter used for tests, so a declared ext-* requirement does not guarantee the extension is actually present at runtime.",
         "platform-check": true
     },
     "autoload": {
