@@ -29,6 +29,7 @@ namespace App\Tests\Unit\Service\Plugin;
 
 use App\Service\Plugin\Exception\PluginDirectoryRemovalException;
 use App\Service\Plugin\PluginDirectoryRemover;
+use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
 final class PluginDirectoryRemoverTest extends TestCase
@@ -77,6 +78,7 @@ final class PluginDirectoryRemoverTest extends TestCase
      * write permission on the *containing* directory, not the file itself) and asserts the
      * failure surfaces as {@see PluginDirectoryRemovalException} instead of being swallowed.
      */
+    #[Group('runtime-parity')]
     public function testRemoveThrowsWhenAFileCannotBeDeleted(): void
     {
         if (\PHP_OS_FAMILY === 'Windows') {

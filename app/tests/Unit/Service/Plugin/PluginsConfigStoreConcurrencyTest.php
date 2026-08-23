@@ -29,6 +29,7 @@ namespace App\Tests\Unit\Service\Plugin;
 
 use App\Entity\ValueObject\PluginId;
 use App\Service\Plugin\PluginsConfigStore;
+use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Process\PhpExecutableFinder;
 use Symfony\Component\Process\Process;
@@ -65,6 +66,7 @@ final class PluginsConfigStoreConcurrencyTest extends TestCase
         }
     }
 
+    #[Group('runtime-parity')]
     public function testConcurrentWritersDoNotLoseUpdates(): void
     {
         $php = (new PhpExecutableFinder())->find();

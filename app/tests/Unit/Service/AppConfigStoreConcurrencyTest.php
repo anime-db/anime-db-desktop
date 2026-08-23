@@ -28,6 +28,7 @@ declare(strict_types=1);
 namespace App\Tests\Unit\Service;
 
 use App\Service\AppConfigStore;
+use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Process\PhpExecutableFinder;
 use Symfony\Component\Process\Process;
@@ -58,6 +59,7 @@ final class AppConfigStoreConcurrencyTest extends TestCase
         }
     }
 
+    #[Group('runtime-parity')]
     public function testConcurrentWritersOfDifferentKeysDoNotLoseUpdates(): void
     {
         $php = (new PhpExecutableFinder())->find();
