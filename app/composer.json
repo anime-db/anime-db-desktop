@@ -71,7 +71,8 @@
             "symfony/runtime": true
         },
         "bump-after-update": true,
-        "sort-packages": true
+        "sort-packages": true,
+        "platform-check": true
     },
     "autoload": {
         "psr-4": {
