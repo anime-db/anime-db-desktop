@@ -112,11 +112,19 @@ function versionFilePath(dest) {
     return path.join(path.dirname(dest), '.version');
 }
 
-function isUpToDate(dest, version) {
-    if (!fs.existsSync(dest)) return false;
-    const vf = versionFilePath(dest);
+// A bin counts as up to date only when its version marker matches AND, for archives extracted via
+// `zipEntries`, every one of those files is still present in `destDir`. Checking the version marker
+// alone would treat a directory left over from an older script version (e.g. one that only extracted
+// `frankenphp.exe`) as current, silently skipping the download that would have completed the set.
+function isUpToDate(bin) {
+    if (!fs.existsSync(bin.dest)) return false;
+    const vf = versionFilePath(bin.dest);
     if (!fs.existsSync(vf)) return false;
-    return fs.readFileSync(vf, 'utf8').trim() === version;
+    if (fs.readFileSync(vf, 'utf8').trim() !== bin.version) return false;
+    if (bin.zipEntries) {
+        return bin.zipEntries.every((entryPath) => fs.existsSync(path.join(bin.destDir, entryPath)));
+    }
+    return true;
 }
 
 const REDIRECT_STATUS_CODES = [301, 302, 307, 308];
@@ -318,7 +326,7 @@ function verifyEd25519Signature(buffer, signatureBase64, publicKeyPem) {
 // Downloads a bin into memory and verifies its SHA-256 checksum BEFORE writing anything to disk.
 // Throws (and writes nothing — no target file, no temp file) on a checksum mismatch.
 async function downloadBin(bin) {
-    if (isUpToDate(bin.dest, bin.version)) {
+    if (isUpToDate(bin)) {
         console.log(`${bin.name} v${bin.version} already up to date, skipping`);
         return;
     }
@@ -350,7 +358,7 @@ async function downloadBin(bin) {
 // Downloads the prebuilt qbittorrent-nox bundle and verifies its SHA-256 checksum and Ed25519
 // signature BEFORE extracting anything. Throws (and extracts nothing) on any verification failure.
 async function downloadQbittorrentNox(bin) {
-    if (isUpToDate(bin.dest, bin.version)) {
+    if (isUpToDate(bin)) {
         console.log(`${bin.name} v${bin.version} already up to date, skipping`);
         return;
     }

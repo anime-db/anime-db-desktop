@@ -418,6 +418,29 @@ describe('downloadBin (verify-before-write, redirects, retries)', () => {
         expect(fs.existsSync(path.join(bin.destDir, 'ext/php_gd.dll'))).toBe(false);
     });
 
+    test('re-downloads when destDir is missing zipEntries files even though the version marker matches', async () => {
+        const zip = buildZip([
+            { name: 'frankenphp.exe', data: Buffer.from('runtime-binary') },
+            { name: 'ext/php_intl.dll', data: Buffer.from('intl-extension') },
+        ]);
+        bin.destDir = path.join(tmpDir, 'frankenphp');
+        bin.dest = path.join(bin.destDir, 'frankenphp.exe');
+        bin.zipEntries = ['frankenphp.exe', 'ext/php_intl.dll'];
+        bin.sha256 = crypto.createHash('sha256').update(zip).digest('hex');
+        // Simulate a directory left over from an older script version that only extracted
+        // frankenphp.exe, already stamped with the current version marker.
+        fs.mkdirSync(bin.destDir, { recursive: true });
+        fs.writeFileSync(bin.dest, 'stale-runtime-binary');
+        fs.writeFileSync(path.join(bin.destDir, '.version'), bin.version + '\n');
+        mockSingleResponse(zip);
+
+        await downloadBin(bin);
+
+        expect(https.get).toHaveBeenCalled();
+        expect(fs.readFileSync(bin.dest, 'utf8')).toBe('runtime-binary');
+        expect(fs.readFileSync(path.join(bin.destDir, 'ext/php_intl.dll'), 'utf8')).toBe('intl-extension');
+    });
+
     test('rejects and writes nothing when a zipEntries entry is missing from the archive', async () => {
         const zip = buildZip([{ name: 'frankenphp.exe', data: Buffer.from('runtime-binary') }]);
         bin.destDir = path.join(tmpDir, 'frankenphp');
