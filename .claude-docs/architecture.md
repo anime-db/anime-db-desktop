@@ -33,7 +33,7 @@ anime-db-desktop/
 │   ├── Caddyfile           # статический, под git, env-плейсхолдеры {env.APP_PORT} и {env.APP_ROOT}
 │   └── composer.json
 ├── bin/            # в .gitignore; тянутся download-bins.js при сборке
-│   ├── frankenphp/frankenphp.exe
+│   ├── frankenphp/frankenphp.exe   # + php8ts.dll, ext/*.dll, ICU-библиотеки — см. раздел FrankenPHP ниже
 │   ├── meilisearch/meilisearch.exe
 │   └── php/php.ini.template    # под git; динамический ini пишется в AppData
 ├── scripts/

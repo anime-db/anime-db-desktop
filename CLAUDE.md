@@ -50,7 +50,7 @@ anime-db-desktop/
 │   ├── var/                   # в продакшн → AppData/AnimeDB/var/ (APP_RUNTIME_DIR)
 │   └── composer.json
 ├── bin/         # .gitignore — тянутся download-bins.js при сборке
-│   ├── frankenphp/frankenphp.exe   # PHP 8.5 встроен
+│   ├── frankenphp/frankenphp.exe   # + php8ts.dll, ext/*.dll, ICU-библиотеки — см. architecture.md
 │   ├── meilisearch/meilisearch.exe
 │   └── php/php.ini.template        # под git; динамический ini пишется в AppData
 ├── scripts/
