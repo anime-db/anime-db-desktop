@@ -56,14 +56,14 @@ anime-db-desktop/
 
 ## FrankenPHP
 
-**FrankenPHP — Go-бинарник со встроенным PHP 8.5** (static-php-cli). Отдельного PHP-рантайма нет.
+**FrankenPHP — Go-бинарник со встроенным PHP 8.5** (static-php-cli). Отдельного PHP-рантайма ставить не нужно — но на Windows расширения не все статические, см. ниже.
 
-| Параметр       | Значение                                                                                       |
-|----------------|------------------------------------------------------------------------------------------------|
-| PHP            | 8.5 (дефолт build-static.sh с v1.12.4)                                                         |
-| Windows-сборка | `frankenphp-windows-x86_64.zip` — только x64                                                   |
-| ZTS            | да (`--enable-zts`)                                                                            |
-| Расширения     | статически вкомпилированы (pdo_sqlite, mbstring, curl, intl, opcache, gd, imagick, ~50 других) |
+| Параметр       | Значение                                                                                                                      |
+|----------------|--------------------------------------------------------------------------------------------------------------------------------|
+| PHP            | 8.5 (дефолт build-static.sh с v1.12.4)                                                                                         |
+| Windows-сборка | `frankenphp-windows-x86_64.zip` — только x64                                                                                   |
+| ZTS            | да (`--enable-zts`)                                                                                                            |
+| Расширения     | на Linux-сборке статически вкомпилированы (pdo_sqlite, mbstring, curl, intl, opcache, gd, imagick, ~50 других); на Windows часть из них (как минимум `intl`, `mbstring`, `curl`) и ICU — отдельные DLL внутри того же релизного ZIP, подгружаемые через `extension=` в ini (см. `.claude-docs/gotchas.md`) |
 
 **php.ini:** `bin/php/php.ini.template` под git. При первом запуске `frankenphp.js` копирует его в `AppData/AnimeDB/php.ini`, подставляя часовой пояс (`Intl.DateTimeFormat().resolvedOptions().timeZone`). FrankenPHP стартует с `PHPRC=AppData/AnimeDB` (путь к папке, не к файлу).
 
