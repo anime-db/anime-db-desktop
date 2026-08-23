@@ -35,6 +35,7 @@ const {
     verifyEd25519Signature,
     extractZipToDir,
     extractFromZip,
+    downloadBin,
     downloadQbittorrentNox,
     QBITTORRENT_NOX,
     QBITTORRENT_NOX_PUBLIC_KEY,
@@ -277,4 +278,108 @@ describe('downloadQbittorrentNox (verify-before-extract orchestration)', () => {
         expect(fs.readFileSync(bin.dest, 'utf8')).toBe('real-bundle');
         expect(fs.readFileSync(path.join(bin.destDir, '.version'), 'utf8')).toBe(`${bin.version}\n`);
     });
+});
+
+// Mocks `https.get` so `downloadBin` never touches the network. Covers the same
+// verify-before-write ordering as downloadQbittorrentNox above, plus the pieces specific to
+// downloadBin: the 307/308 redirect codes and the timeout/retry wrapper around the download.
+describe('downloadBin (verify-before-write, redirects, retries)', () => {
+    let tmpDir;
+    let bin;
+
+    function mockSingleResponse(buffer) {
+        https.get.mockImplementation((url, opts, callback) => {
+            const res = new EventEmitter();
+            res.statusCode = 200;
+            res.resume = () => {};
+            callback(res);
+            res.emit('data', buffer);
+            res.emit('end');
+            return new EventEmitter();
+        });
+    }
+
+    beforeEach(() => {
+        tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'download-bins-bin-'));
+        bin = {
+            name: 'testbin',
+            version: '1.0.0',
+            url: 'https://example.invalid/testbin.exe',
+            dest: path.join(tmpDir, 'testbin.exe'),
+            zipEntry: null,
+            sha256: null,
+        };
+    });
+
+    afterEach(() => {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+        https.get.mockReset();
+        jest.restoreAllMocks();
+    });
+
+    test('writes the file once the downloaded content matches the pinned SHA-256', async () => {
+        const data = Buffer.from('trusted-binary-content');
+        bin.sha256 = crypto.createHash('sha256').update(data).digest('hex');
+        mockSingleResponse(data);
+
+        await downloadBin(bin);
+
+        expect(fs.readFileSync(bin.dest, 'utf8')).toBe('trusted-binary-content');
+        expect(fs.readFileSync(path.join(tmpDir, '.version'), 'utf8')).toBe('1.0.0\n');
+    });
+
+    test('rejects and writes nothing when the downloaded content does not match the pinned SHA-256', async () => {
+        const data = Buffer.from('tampered-binary-content');
+        bin.sha256 = 'f'.repeat(64);
+        mockSingleResponse(data);
+
+        await expect(downloadBin(bin)).rejects.toThrow(/SHA-256 mismatch/);
+
+        expect(fs.existsSync(bin.dest)).toBe(false);
+        expect(fs.existsSync(bin.dest + '.tmp')).toBe(false);
+        expect(fs.existsSync(path.join(tmpDir, '.version'))).toBe(false);
+    });
+
+    test('follows a 308 permanent redirect to the final URL', async () => {
+        const data = Buffer.from('redirected-binary-content');
+        bin.sha256 = crypto.createHash('sha256').update(data).digest('hex');
+        const finalUrl = 'https://example.invalid/final/testbin.exe';
+
+        https.get.mockImplementation((url, opts, callback) => {
+            const res = new EventEmitter();
+            res.resume = () => {};
+            if (url === bin.url) {
+                res.statusCode = 308;
+                res.headers = { location: finalUrl };
+                callback(res);
+            } else if (url === finalUrl) {
+                res.statusCode = 200;
+                callback(res);
+                res.emit('data', data);
+                res.emit('end');
+            } else {
+                throw new Error(`Unexpected URL requested in test: ${url}`);
+            }
+            return new EventEmitter();
+        });
+
+        await downloadBin(bin);
+
+        expect(fs.readFileSync(bin.dest, 'utf8')).toBe('redirected-binary-content');
+    });
+
+    test('retries the download and fails once all attempts are exhausted', async () => {
+        let callCount = 0;
+        https.get.mockImplementation(() => {
+            callCount += 1;
+            const req = new EventEmitter();
+            setImmediate(() => req.emit('error', new Error('ECONNRESET')));
+            return req;
+        });
+
+        await expect(downloadBin(bin)).rejects.toThrow(/ECONNRESET/);
+
+        expect(callCount).toBe(4);
+        expect(fs.existsSync(bin.dest)).toBe(false);
+    }, 10000);
 });

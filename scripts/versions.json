@@ -1,5 +1,9 @@
 {
     "frankenphp": "1.12.4",
     "meilisearch": "1.13.0",
-    "qbittorrentNox": "5.2.3_2"
+    "qbittorrentNox": "5.2.3_2",
+    "sha256": {
+        "frankenphp": "9fcf8839b1ba8fe309ab8d9b051396e4c7436ee8c62f7b319b06eafa8c742908",
+        "meilisearch": "d9194453bb35ea0f76de3eef3c0693d1577ef6e41b09ee006f5005a56abbca39"
+    }
 }
