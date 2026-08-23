@@ -210,6 +210,7 @@ describe('ensurePhpIni', () => {
         expect(ini).toContain('extension=zip');
         expect(ini).toContain('extension=pdo_sqlite');
         expect(ini).toContain('extension=openssl');
+        expect(ini).toContain('extension=mbstring');
     });
 
     test('leaves an already up-to-date php.ini untouched', () => {
@@ -219,6 +220,7 @@ describe('ensurePhpIni', () => {
             'extension=zip',
             'extension=pdo_sqlite',
             'extension=openssl',
+            'extension=mbstring',
             '; user comment',
             '',
         ].join('\n');
@@ -253,6 +255,7 @@ describe('ensurePhpIni', () => {
         expect(updated).toContain('extension=zip');
         expect(updated).toContain('extension=pdo_sqlite');
         expect(updated).toContain('extension=openssl');
+        expect(updated).toContain('extension=mbstring');
         expect(updated).toContain('; my custom tweak');
         expect(updated).toContain('apc.shm_size=64M');
     });
@@ -274,6 +277,7 @@ describe('ensurePhpIni', () => {
         expect((updated.match(/extension=intl/g) || []).length).toBe(1);
         expect(updated).toContain('extension=pdo_sqlite');
         expect(updated).toContain('extension=openssl');
+        expect(updated).toContain('extension=mbstring');
     });
 
     // Regression for a reinstall into a different directory: AppData survives it, so the existing
@@ -286,6 +290,7 @@ describe('ensurePhpIni', () => {
             'extension=zip',
             'extension=pdo_sqlite',
             'extension=openssl',
+            'extension=mbstring',
             '; user comment',
             '',
         ].join('\n');
