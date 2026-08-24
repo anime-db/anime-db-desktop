@@ -54,6 +54,7 @@ describe('renderPhpIni', () => {
         expect(ini).toContain('extension=pdo_sqlite');
         expect(ini).toContain('extension=openssl');
         expect(ini).toContain('extension=mbstring');
+        expect(ini).toContain('extension=gd');
         expect(ini).toContain('opcache.enable=1');
     });
 });
@@ -114,5 +115,6 @@ describe('ensurePhpIni', () => {
         expect(updated).toContain('extension=pdo_sqlite');
         expect(updated).toContain('extension=openssl');
         expect(updated).toContain('extension=mbstring');
+        expect(updated).toContain('extension=gd');
     });
 });
