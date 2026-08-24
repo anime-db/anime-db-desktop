@@ -48,7 +48,7 @@ jobs:
           # ничего не меняет. Она нужна против будущего: если умолчание изменится, тесты,
           # пропускающие себя при отсутствии расширения, уйдут в skip при зелёном прогоне —
           # не упадут, а молча перестанут проверять боевой путь.
-          extensions: apcu, intl
+          extensions: apcu, gd, intl
           ini-values: apc.enable_cli=1
 
       - name: Configure Composer auth for private repos

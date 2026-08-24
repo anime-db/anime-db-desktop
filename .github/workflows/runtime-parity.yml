@@ -68,7 +68,7 @@ jobs:
           # Расширения перечислены явно, а не оставлены на умолчание раннера: после issue #467
           # composer проверяет платформенные требования в рантайме, и недостающее расширение
           # уронит прогон на автозагрузчике, а не на понятном шаге.
-          extensions: apcu, intl, zip, openssl, pdo_sqlite
+          extensions: apcu, gd, intl, zip, openssl, pdo_sqlite
           ini-values: apc.enable_cli=1
 
       - name: Configure Composer auth for private repos
@@ -140,12 +140,38 @@ jobs:
         working-directory: app
         run: |
           ../bin/frankenphp/frankenphp.exe php-cli -r '
-            foreach (["intl", "zip", "pdo_sqlite", "openssl", "mbstring"] as $extension) {
+            foreach (["intl", "zip", "pdo_sqlite", "openssl", "mbstring", "gd"] as $extension) {
                 if (!extension_loaded($extension)) {
                     fwrite(STDERR, "missing extension: $extension\n");
                     exit(1);
                 }
                 echo "$extension ok\n";
+            }
+          '
+
+      # Критерий, открытый с 2026-07-06. Решение «все картинки, попадающие в AppData, ресайзятся
+      # через GD2, WebP — целевой формат» (обложки и кадры аниме) закрывалось с явной оговоркой:
+      # проверить `gd_info()['WebP Support']` на реально собранном бинаре, ПРЕЖДЕ чем код станет
+      # на это полагаться. Проверить было нечем — бинаря в репозитории нет, Windows-раннера тогда
+      # не было. Теперь есть и то и другое.
+      #
+      # Отдельным шагом, а не строкой в проверке выше: там вопрос «загрузилось ли расширение»,
+      # здесь — «умеет ли оно то, на что рассчитывает продуктовое решение». Разные вопросы, и при
+      # падении должно быть видно, какой именно.
+      - name: Verify GD can actually encode WebP
+        if: ${{ !cancelled() }}
+        shell: bash
+        working-directory: app
+        run: |
+          ../bin/frankenphp/frankenphp.exe php-cli -r '
+            $info = gd_info();
+            echo "GD ", $info["GD Version"] ?? "?", "\n";
+            foreach (["WebP Support", "PNG Support", "JPEG Support"] as $capability) {
+                printf("%-14s %s\n", $capability, !empty($info[$capability]) ? "yes" : "NO");
+            }
+            if (empty($info["WebP Support"])) {
+                fwrite(STDERR, "GD in the shipped build cannot encode WebP — the target format decided in 2026-07-06 does not hold, see issue #496\n");
+                exit(1);
             }
           '
 

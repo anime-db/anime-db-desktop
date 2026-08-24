@@ -54,7 +54,7 @@ jobs:
           # человек. Порядок именно такой, потому что config.platform в composer.json не
           # задан: composer сверяет платформу с реальным PHP этой машины, и объявление
           # ext-intl раньше этой строки уронило бы сборку на первом же релизном теге.
-          extensions: zip, ctype, iconv, intl
+          extensions: zip, ctype, iconv, gd, intl
 
       - name: Build installer
         run: npm run build
