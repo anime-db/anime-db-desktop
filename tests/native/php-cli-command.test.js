@@ -21,12 +21,12 @@
 
 'use strict';
 
-const { buildPhpCliArgs } = require('../../native/supervisor/php-cli-command');
+const { buildPhpCliScriptArgs, buildPhpCliEvalArgs } = require('../../native/supervisor/php-cli-command');
 
 // Mirrors app/tests/Unit/Service/Plugin/PhpCliCommandTest.php on the PHP side. Both encode the
 // same rule, so both need the same cases: the two representations drifting apart is exactly the
 // failure this module was extracted to prevent.
-describe('buildPhpCliArgs', () => {
+describe('buildPhpCliScriptArgs', () => {
     /**
      * Paths here use forward slashes even though the packaged binary only ever runs on Windows:
      * `path.basename()` follows the host platform, so a `C:\...\frankenphp.exe` literal resolves
@@ -34,23 +34,23 @@ describe('buildPhpCliArgs', () => {
      * is a property of the test environment, not of the code — on Windows either form works.
      */
     test('inserts the php-cli subcommand for the packaged FrankenPHP binary', () => {
-        expect(buildPhpCliArgs('C:/app/bin/frankenphp/frankenphp.exe', 'bin/console', 'cache:warmup'))
+        expect(buildPhpCliScriptArgs('C:/app/bin/frankenphp/frankenphp.exe', 'bin/console', 'cache:warmup'))
             .toEqual(['C:/app/bin/frankenphp/frankenphp.exe', 'php-cli', 'bin/console', 'cache:warmup']);
     });
 
     test('inserts the php-cli subcommand for a FrankenPHP binary without the .exe suffix', () => {
-        expect(buildPhpCliArgs('/opt/bin/frankenphp', 'bin/console'))
+        expect(buildPhpCliScriptArgs('/opt/bin/frankenphp', 'bin/console'))
             .toEqual(['/opt/bin/frankenphp', 'php-cli', 'bin/console']);
     });
 
     test('matches the binary name case-insensitively', () => {
-        expect(buildPhpCliArgs('/opt/bin/FrankenPHP.EXE', 'bin/console'))
+        expect(buildPhpCliScriptArgs('/opt/bin/FrankenPHP.EXE', 'bin/console'))
             .toEqual(['/opt/bin/FrankenPHP.EXE', 'php-cli', 'bin/console']);
     });
 
     test('leaves a plain PHP binary untouched', () => {
-        expect(buildPhpCliArgs('/usr/bin/php', '-l', 'plugin.php'))
-            .toEqual(['/usr/bin/php', '-l', 'plugin.php']);
+        expect(buildPhpCliScriptArgs('/usr/bin/php', 'plugin.php'))
+            .toEqual(['/usr/bin/php', 'plugin.php']);
     });
 
     /**
@@ -58,11 +58,24 @@ describe('buildPhpCliArgs', () => {
      * `frankenphp-wrapper` is not the packaged FrankenPHP and must not get the subcommand.
      */
     test('does not match a binary whose name merely contains frankenphp', () => {
-        expect(buildPhpCliArgs('/usr/bin/frankenphp-wrapper', 'bin/console'))
+        expect(buildPhpCliScriptArgs('/usr/bin/frankenphp-wrapper', 'bin/console'))
             .toEqual(['/usr/bin/frankenphp-wrapper', 'bin/console']);
     });
 
-    test('works with no arguments at all', () => {
-        expect(buildPhpCliArgs('/opt/bin/frankenphp')).toEqual(['/opt/bin/frankenphp', 'php-cli']);
+    test('works with no script arguments at all', () => {
+        expect(buildPhpCliScriptArgs('/opt/bin/frankenphp', 'bin/console'))
+            .toEqual(['/opt/bin/frankenphp', 'php-cli', 'bin/console']);
+    });
+});
+
+describe('buildPhpCliEvalArgs', () => {
+    test('inserts the php-cli subcommand and the -r flag for the packaged FrankenPHP binary', () => {
+        expect(buildPhpCliEvalArgs('/opt/bin/frankenphp', 'echo phpversion();'))
+            .toEqual(['/opt/bin/frankenphp', 'php-cli', '-r', 'echo phpversion();']);
+    });
+
+    test('leaves a plain PHP binary untouched apart from the -r flag', () => {
+        expect(buildPhpCliEvalArgs('/usr/bin/php', 'echo phpversion();'))
+            .toEqual(['/usr/bin/php', '-r', 'echo phpversion();']);
     });
 });
