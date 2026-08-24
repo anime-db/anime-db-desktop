@@ -25,7 +25,7 @@ const fs     = require('fs');
 const path   = require('path');
 const crypto = require('crypto');
 const { execFileSync } = require('child_process');
-const { buildPhpCliArgs } = require('../native/supervisor/php-cli-command');
+const { buildPhpCliEvalArgs } = require('../native/supervisor/php-cli-command');
 
 const rootDir = path.resolve(__dirname, '..');
 
@@ -157,7 +157,7 @@ function collectRuntimeFacts(runtimeDir, exec) {
         );
     }
 
-    const [command, ...args] = buildPhpCliArgs(binaryPath, '-r', FACTS_CODE);
+    const [command, ...args] = buildPhpCliEvalArgs(binaryPath, FACTS_CODE);
 
     let raw;
     try {
