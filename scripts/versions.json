@@ -1,4 +1,5 @@
 {
+    "$comment": "\"sha256\" below is the SHA-256 of the DOWNLOADED release archive/binary as published upstream, verified by scripts/download-bins.js before extraction. It is NOT a fingerprint of the extracted runtime directory bin/frankenphp/ — that is scripts/frankenphp-runtime.json's \"directoryFingerprint\", a separate artifact captured after extraction on the build machine.",
     "frankenphp": "1.12.4",
     "meilisearch": "1.13.0",
     "qbittorrentNox": "5.2.3_2",
