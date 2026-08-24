@@ -37,7 +37,11 @@ on:
       - 'scripts/versions.json'
       - 'scripts/generate-php-ini.js'
       - 'native/php-ini.js'
+      - 'native/supervisor/php-cli-command.js'
       - 'bin/php/php.ini.template'
+      # Сверка со слепком: и сам скрипт, и записанные значения.
+      - 'scripts/check-runtime-parity.js'
+      - 'scripts/frankenphp-runtime.json'
       - '.github/workflows/runtime-parity.yml'
   workflow_dispatch:
 
@@ -140,7 +144,7 @@ jobs:
         working-directory: app
         run: |
           ../bin/frankenphp/frankenphp.exe php-cli -r '
-            foreach (["intl", "zip", "pdo_sqlite", "openssl", "mbstring"] as $extension) {
+            foreach (["intl", "zip", "pdo_sqlite", "openssl", "mbstring", "gd"] as $extension) {
                 if (!extension_loaded($extension)) {
                     fwrite(STDERR, "missing extension: $extension\n");
                     exit(1);
@@ -148,6 +152,62 @@ jobs:
                 echo "$extension ok\n";
             }
           '
+
+      # Критерий, открытый с 2026-07-06. Решение «все картинки, попадающие в AppData, ресайзятся
+      # через GD2, WebP — целевой формат» (обложки и кадры аниме) закрывалось с явной оговоркой:
+      # проверить gd_info()['WebP Support'] на реально собранном бинаре, ПРЕЖДЕ чем код станет на
+      # это полагаться. Проверить было нечем — бинаря в репозитории нет, Windows-раннера тогда не
+      # было. Теперь есть и то и другое.
+      #
+      # Отдельным шагом, а не строкой в проверке выше: там вопрос «загрузилось ли расширение»,
+      # здесь — «умеет ли оно то, на что рассчитывает продуктовое решение». Разные вопросы, и при
+      # падении должно быть видно, какой именно.
+      - name: Verify GD can actually encode WebP
+        if: ${{ !cancelled() }}
+        shell: bash
+        working-directory: app
+        run: |
+          ../bin/frankenphp/frankenphp.exe php-cli -r '
+            $info = gd_info();
+            echo "GD ", $info["GD Version"] ?? "?", "\n";
+            foreach (["WebP Support", "PNG Support", "JPEG Support"] as $capability) {
+                printf("%-14s %s\n", $capability, !empty($info[$capability]) ? "yes" : "NO");
+            }
+
+            // Флага gd_info() недостаточно: он говорит, что сборка собиралась с libwebp, а не что
+            // кодирование работает. Критерий 2026-07-06 допускал и пробный imagewebp() — берём его,
+            // раз имя шага обещает именно кодирование. Проверяется и код возврата, и что на выходе
+            // действительно WebP: контейнер RIFF с сигнатурой WEBP.
+            $image = imagecreatetruecolor(8, 8);
+            imagefilledrectangle($image, 0, 0, 7, 7, imagecolorallocate($image, 10, 20, 30));
+            $file = tempnam(sys_get_temp_dir(), "webp").".webp";
+            $encoded = imagewebp($image, $file);
+            $bytes = is_file($file) ? file_get_contents($file) : "";
+            @unlink($file);
+
+            $riff = substr($bytes, 0, 4) === "RIFF" && substr($bytes, 8, 4) === "WEBP";
+            printf("encode         %s (%d bytes, RIFF/WEBP header: %s)\n",
+                $encoded ? "ok" : "FAILED", strlen($bytes), $riff ? "yes" : "NO");
+
+            if (empty($info["WebP Support"]) || !$encoded || !$riff) {
+                fwrite(STDERR, "GD in the shipped build cannot encode WebP — the target format decided on 2026-07-06 does not hold, see issue #496\n");
+                exit(1);
+            }
+          '
+
+      # Сверка с слепком рантайма (issue #471). Слепок снят на этой же джобе и лежит в
+      # репозитории: 20 файлов курируемого набора с пофайловыми хешами, 36 расширений, ICU 77.1
+      # с данными CLDR 47, эндонимы четырёх локалей, значимые ini. Расхождение любого из этих
+      # фактов — например при бампе версии FrankenPHP в scripts/versions.json — роняет билд
+      # здесь, а не всплывает у пользователя.
+      #
+      # Слепок обновляется человеком: `node scripts/check-runtime-parity.js --write` на Windows,
+      # в том же PR, где меняется пин версии. Автоматически он не перезаписывается намеренно —
+      # слепок, который сам себя чинит, не проверяет ничего.
+      - name: Compare the packaged runtime against the recorded snapshot
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: node scripts/check-runtime-parity.js
 
       # Точка входа — vendor/phpunit/phpunit/phpunit, а не vendor/bin/phpunit: у php-cli первым
       # аргументом обязан идти путь к PHP-скрипту (#478), а vendor/bin на Windows composer
