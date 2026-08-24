@@ -37,6 +37,7 @@ const REQUIRED_EXTENSION_DIRECTIVES = [
     { pattern: /^\s*extension\s*=\s*pdo_sqlite\s*$/m, render: () => 'extension=pdo_sqlite' },
     { pattern: /^\s*extension\s*=\s*openssl\s*$/m, render: () => 'extension=openssl' },
     { pattern: /^\s*extension\s*=\s*mbstring\s*$/m, render: () => 'extension=mbstring' },
+    { pattern: /^\s*extension\s*=\s*gd\s*$/m, render: () => 'extension=gd' },
 ];
 
 // extension_dir is an install path, so unlike REQUIRED_EXTENSION_DIRECTIVES its value — not just
