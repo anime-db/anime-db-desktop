@@ -153,6 +153,38 @@ describe('diffFacts', () => {
             'icu.version: expected "77.1", got "78.2"',
         ]);
     });
+
+    test('reports a CLDR version mismatch', () => {
+        const expected = { icu: { version: '77.1', cldrVersion: '46' } };
+        const actual = { icu: { version: '77.1', cldrVersion: '47' } };
+        expect(diffFacts(expected, actual)).toEqual([
+            'icu.cldrVersion: expected "46", got "47"',
+        ]);
+    });
+
+    test('reports a FrankenPHP version mismatch', () => {
+        const expected = { frankenphpVersion: '1.12.4' };
+        const actual = { frankenphpVersion: '1.12.5' };
+        expect(diffFacts(expected, actual)).toEqual([
+            'frankenphpVersion: expected "1.12.4", got "1.12.5"',
+        ]);
+    });
+
+    test('reports a locale endonym mismatch', () => {
+        const expected = { localeEndonyms: { en: 'English', ru: 'русский' } };
+        const actual = { localeEndonyms: { en: 'English', ru: 'Russian' } };
+        expect(diffFacts(expected, actual)).toEqual([
+            'localeEndonyms["ru"]: expected "русский", got "Russian"',
+        ]);
+    });
+
+    test('reports an ini directive mismatch', () => {
+        const expected = { ini: { 'date.timezone': 'UTC' } };
+        const actual = { ini: { 'date.timezone': 'Europe/Moscow' } };
+        expect(diffFacts(expected, actual)).toEqual([
+            'ini["date.timezone"]: expected "UTC", got "Europe/Moscow"',
+        ]);
+    });
 });
 
 describe('parseArgs', () => {
