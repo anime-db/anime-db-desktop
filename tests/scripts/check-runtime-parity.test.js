@@ -291,14 +291,36 @@ describe('run', () => {
         expect(result.message).toContain('--write');
     });
 
-    test('refuses to compare against the repository\'s own unfilled stub snapshot', () => {
+    /**
+     * Builds its own stub rather than pointing at REPO_SNAPSHOT_PATH. That file was a stub only
+     * until the Windows job captured a real snapshot from the packaged runtime; asserting against
+     * it tied this test to the repository's data rather than to the behaviour under test, and it
+     * broke the moment the real values landed. The behaviour — refuse to compare against a
+     * snapshot nobody has filled in — is what matters, and it needs a fixture, not the live file.
+     */
+    test('refuses to compare against an unfilled stub snapshot', () => {
+        const stubPath = path.join(tmpDir('runtime-stub-snapshot-'), 'snapshot.json');
+        fs.writeFileSync(stubPath, JSON.stringify({ $stub: true, frankenphpVersion: null, directoryFingerprint: {} }));
         const exec = makeExec([baseFacts()]);
 
-        const result = run({ runtimeDir, snapshotPath: REPO_SNAPSHOT_PATH, versionsPath: REPO_VERSIONS_PATH, exec });
+        const result = run({ runtimeDir, snapshotPath: stubPath, versionsPath: REPO_VERSIONS_PATH, exec });
 
         expect(result.ok).toBe(false);
         expect(result.exitCode).toBe(1);
         expect(result.message).toContain('заглушка');
         expect(result.message).toContain('--write');
+    });
+
+    /**
+     * The counterpart: the snapshot committed in the repository is no longer a stub, so a compare
+     * against it must get as far as comparing. Guards against someone reverting it to a stub and
+     * quietly turning the CI gate into a no-op.
+     */
+    test('the snapshot committed in the repository is filled in, not a stub', () => {
+        const snapshot = JSON.parse(fs.readFileSync(REPO_SNAPSHOT_PATH, 'utf8'));
+
+        expect(snapshot.$stub).toBe(false);
+        expect(Object.keys(snapshot.directoryFingerprint).length).toBeGreaterThan(0);
+        expect(snapshot.extensions).toContain('gd');
     });
 });
