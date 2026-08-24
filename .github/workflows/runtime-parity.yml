@@ -37,7 +37,11 @@ on:
       - 'scripts/versions.json'
       - 'scripts/generate-php-ini.js'
       - 'native/php-ini.js'
+      - 'native/supervisor/php-cli-command.js'
       - 'bin/php/php.ini.template'
+      # Сверка со слепком: и сам скрипт, и записанные значения.
+      - 'scripts/check-runtime-parity.js'
+      - 'scripts/frankenphp-runtime.json'
       - '.github/workflows/runtime-parity.yml'
   workflow_dispatch:
 
@@ -169,7 +173,23 @@ jobs:
             foreach (["WebP Support", "PNG Support", "JPEG Support"] as $capability) {
                 printf("%-14s %s\n", $capability, !empty($info[$capability]) ? "yes" : "NO");
             }
-            if (empty($info["WebP Support"])) {
+
+            // Флага gd_info() недостаточно: он говорит, что сборка собиралась с libwebp, а не что
+            // кодирование работает. Критерий 2026-07-06 допускал и пробный imagewebp() — берём его,
+            // раз имя шага обещает именно кодирование. Проверяется и код возврата, и что на выходе
+            // действительно WebP: контейнер RIFF с сигнатурой WEBP.
+            $image = imagecreatetruecolor(8, 8);
+            imagefilledrectangle($image, 0, 0, 7, 7, imagecolorallocate($image, 10, 20, 30));
+            $file = tempnam(sys_get_temp_dir(), "webp").".webp";
+            $encoded = imagewebp($image, $file);
+            $bytes = is_file($file) ? file_get_contents($file) : "";
+            @unlink($file);
+
+            $riff = substr($bytes, 0, 4) === "RIFF" && substr($bytes, 8, 4) === "WEBP";
+            printf("encode         %s (%d bytes, RIFF/WEBP header: %s)\n",
+                $encoded ? "ok" : "FAILED", strlen($bytes), $riff ? "yes" : "NO");
+
+            if (empty($info["WebP Support"]) || !$encoded || !$riff) {
                 fwrite(STDERR, "GD in the shipped build cannot encode WebP — the target format decided on 2026-07-06 does not hold, see issue #496\n");
                 exit(1);
             }
