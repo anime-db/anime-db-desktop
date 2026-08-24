@@ -140,7 +140,7 @@ jobs:
         working-directory: app
         run: |
           ../bin/frankenphp/frankenphp.exe php-cli -r '
-            foreach (["intl", "zip", "pdo_sqlite", "openssl", "mbstring"] as $extension) {
+            foreach (["intl", "zip", "pdo_sqlite", "openssl", "mbstring", "gd"] as $extension) {
                 if (!extension_loaded($extension)) {
                     fwrite(STDERR, "missing extension: $extension\n");
                     exit(1);
@@ -148,6 +148,50 @@ jobs:
                 echo "$extension ok\n";
             }
           '
+
+      # Критерий, открытый с 2026-07-06. Решение «все картинки, попадающие в AppData, ресайзятся
+      # через GD2, WebP — целевой формат» (обложки и кадры аниме) закрывалось с явной оговоркой:
+      # проверить gd_info()['WebP Support'] на реально собранном бинаре, ПРЕЖДЕ чем код станет на
+      # это полагаться. Проверить было нечем — бинаря в репозитории нет, Windows-раннера тогда не
+      # было. Теперь есть и то и другое.
+      #
+      # Отдельным шагом, а не строкой в проверке выше: там вопрос «загрузилось ли расширение»,
+      # здесь — «умеет ли оно то, на что рассчитывает продуктовое решение». Разные вопросы, и при
+      # падении должно быть видно, какой именно.
+      - name: Verify GD can actually encode WebP
+        if: ${{ !cancelled() }}
+        shell: bash
+        working-directory: app
+        run: |
+          ../bin/frankenphp/frankenphp.exe php-cli -r '
+            $info = gd_info();
+            echo "GD ", $info["GD Version"] ?? "?", "\n";
+            foreach (["WebP Support", "PNG Support", "JPEG Support"] as $capability) {
+                printf("%-14s %s\n", $capability, !empty($info[$capability]) ? "yes" : "NO");
+            }
+            if (empty($info["WebP Support"])) {
+                fwrite(STDERR, "GD in the shipped build cannot encode WebP — the target format decided on 2026-07-06 does not hold, see issue #496\n");
+                exit(1);
+            }
+          '
+
+      # Слепок рантайма (issue #471) лежит в репозитории заглушкой: снять его можно только на той
+      # платформе, где боевой бинарь запускается, а такой площадки до этой джобы не было. Здесь он
+      # записывается и выгружается артефактом, чтобы забрать значения и закоммитить вместо
+      # заглушки. После этого шаг переводится в режим сверки — тогда расхождение состава
+      # расширений или версии ICU при следующем бампе версии станет красным билдом, а не
+      # сюрпризом у пользователя.
+      - name: Capture the runtime snapshot
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: node scripts/check-runtime-parity.js --write
+
+      - name: Upload the captured snapshot
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: frankenphp-runtime-snapshot
+          path: scripts/frankenphp-runtime.json
 
       # Точка входа — vendor/phpunit/phpunit/phpunit, а не vendor/bin/phpunit: у php-cli первым
       # аргументом обязан идти путь к PHP-скрипту (#478), а vendor/bin на Windows composer
