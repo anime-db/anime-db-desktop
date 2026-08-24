@@ -175,23 +175,19 @@ jobs:
             }
           '
 
-      # Слепок рантайма (issue #471) лежит в репозитории заглушкой: снять его можно только на той
-      # платформе, где боевой бинарь запускается, а такой площадки до этой джобы не было. Здесь он
-      # записывается и выгружается артефактом, чтобы забрать значения и закоммитить вместо
-      # заглушки. После этого шаг переводится в режим сверки — тогда расхождение состава
-      # расширений или версии ICU при следующем бампе версии станет красным билдом, а не
-      # сюрпризом у пользователя.
-      - name: Capture the runtime snapshot
+      # Сверка с слепком рантайма (issue #471). Слепок снят на этой же джобе и лежит в
+      # репозитории: 20 файлов курируемого набора с пофайловыми хешами, 36 расширений, ICU 77.1
+      # с данными CLDR 47, эндонимы четырёх локалей, значимые ini. Расхождение любого из этих
+      # фактов — например при бампе версии FrankenPHP в scripts/versions.json — роняет билд
+      # здесь, а не всплывает у пользователя.
+      #
+      # Слепок обновляется человеком: `node scripts/check-runtime-parity.js --write` на Windows,
+      # в том же PR, где меняется пин версии. Автоматически он не перезаписывается намеренно —
+      # слепок, который сам себя чинит, не проверяет ничего.
+      - name: Compare the packaged runtime against the recorded snapshot
         if: ${{ !cancelled() }}
         shell: bash
-        run: node scripts/check-runtime-parity.js --write
-
-      - name: Upload the captured snapshot
-        if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: frankenphp-runtime-snapshot
-          path: scripts/frankenphp-runtime.json
+        run: node scripts/check-runtime-parity.js
 
       # Точка входа — vendor/phpunit/phpunit/phpunit, а не vendor/bin/phpunit: у php-cli первым
       # аргументом обязан идти путь к PHP-скрипту (#478), а vendor/bin на Windows composer
