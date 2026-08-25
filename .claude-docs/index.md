@@ -19,6 +19,7 @@ tags: [memory/repo, index]
 | Добавить плагин или работать с Plugin/              | [architecture.md](architecture.md) §app/               |
 | Понять обновление приложения и Meilisearch-миграцию | [decisions.md](decisions.md) §Обновление               |
 | Стиль PHP-кода, форматирование, php-cs-fixer        | [conventions.md](conventions.md)                       |
+| Правка вилки `anime-db/plugin-contracts`            | [conventions.md](conventions.md) §Вилка                |
 | Конвенции переводов (плейсхолдеры, плюрализация)    | [conventions.md](conventions.md) §Локализация          |
 | Лицензионная шапка файла — шаблон, диапазон дат     | [license-header.md](license-header.md)                 |
 | Сделать типовую задачу по образцу — рецепты         | [cookbook.md](cookbook.md)                             |
