@@ -130,4 +130,4 @@ function appendMissingIniDirectives(iniPath, extensionDir) {
     }
 }
 
-module.exports = { PHP_INI_TEMPLATE, renderPhpIni, ensurePhpIni };
+module.exports = { PHP_INI_TEMPLATE, renderPhpIni, ensurePhpIni, REQUIRED_INI_DIRECTIVES };

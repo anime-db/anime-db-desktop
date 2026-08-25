@@ -25,7 +25,7 @@ const fs   = require('fs');
 const os   = require('os');
 const path = require('path');
 
-const { renderPhpIni, ensurePhpIni } = require('../../native/php-ini');
+const { renderPhpIni, ensurePhpIni, PHP_INI_TEMPLATE, REQUIRED_INI_DIRECTIVES } = require('../../native/php-ini');
 
 const EXTENSION_DIR = '/fake/ext';
 
@@ -140,5 +140,20 @@ describe('ensurePhpIni', () => {
         expect((updated.match(/memory_limit/g) || []).length).toBe(1);
         expect(updated).toContain('memory_limit = 512M');
         expect(updated).not.toContain('memory_limit = 256M');
+    });
+
+    // Regression for the template and REQUIRED_INI_DIRECTIVES drifting apart silently: a clean
+    // install reads memory_limit from the template, an upgrade of an existing install gets it
+    // from REQUIRED_INI_DIRECTIVES, so the two values must always match.
+    test('memory_limit in the template matches the value REQUIRED_INI_DIRECTIVES appends on upgrade', () => {
+        const template = fs.readFileSync(PHP_INI_TEMPLATE, 'utf8');
+        const templateMatch = template.match(/^\s*memory_limit\s*=\s*(\S+)\s*$/m);
+        expect(templateMatch).not.toBeNull();
+
+        const memoryLimitDirective = REQUIRED_INI_DIRECTIVES.find(({ render }) => render().startsWith('memory_limit'));
+        expect(memoryLimitDirective).toBeDefined();
+        const renderedMatch = memoryLimitDirective.render().match(/^\s*memory_limit\s*=\s*(\S+)\s*$/);
+
+        expect(renderedMatch[1]).toBe(templateMatch[1]);
     });
 });
