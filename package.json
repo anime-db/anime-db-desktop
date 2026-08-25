@@ -12,8 +12,8 @@
         "download-bins": "node scripts/download-bins.js",
         "generate-php-ini": "node scripts/generate-php-ini.js",
         "check-runtime-parity": "node scripts/check-runtime-parity.js",
-        "lint": "eslint native/ tests/native/",
-        "lint:fix": "eslint native/ tests/native/ --fix",
+        "lint": "eslint native/ tests/native/ app/public/js/ tests/public/",
+        "lint:fix": "eslint native/ tests/native/ app/public/js/ tests/public/ --fix",
         "test": "jest"
     },
     "devDependencies": {
@@ -22,7 +22,8 @@
         "eslint": "^9.39.4",
         "globals": "^17.7.0",
         "htmx.org": "^2.0.0",
-        "jest": "^29.7.0"
+        "jest": "^29.7.0",
+        "jest-environment-jsdom": "^29.7.0"
     },
     "build": {
         "appId": "org.anime-db.desktop",

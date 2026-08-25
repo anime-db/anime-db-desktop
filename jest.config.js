@@ -23,6 +23,16 @@
 
 /** @type {import('jest').Config} */
 module.exports = {
-    testEnvironment: 'node',
-    testMatch: ['<rootDir>/tests/native/**/*.test.js', '<rootDir>/tests/scripts/**/*.test.js'],
+    projects: [
+        {
+            displayName:     'node',
+            testEnvironment: 'node',
+            testMatch:       ['<rootDir>/tests/native/**/*.test.js', '<rootDir>/tests/scripts/**/*.test.js'],
+        },
+        {
+            displayName:     'jsdom',
+            testEnvironment: 'jsdom',
+            testMatch:       ['<rootDir>/tests/public/**/*.test.js'],
+        },
+    ],
 };

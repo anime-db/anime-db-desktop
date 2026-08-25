@@ -63,7 +63,7 @@
         let messages;
         try {
             messages = await getCatalogue();
-        } catch (error) {
+        } catch {
             return key;
         }
 
