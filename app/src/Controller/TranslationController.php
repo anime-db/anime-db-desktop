@@ -31,6 +31,7 @@ use App\Service\Plugin\AvailableLocalesProvider;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\Routing\Attribute\Route;
+use Symfony\Component\Translation\MessageCatalogueInterface;
 use Symfony\Component\Translation\TranslatorBagInterface;
 
 /**
@@ -62,6 +63,22 @@ final class TranslationController
             throw new NotFoundHttpException('Unknown locale.');
         }
 
-        return new JsonResponse($this->translator->getCatalogue($locale)->all('messages'));
+        return new JsonResponse($this->collectMessages($this->translator->getCatalogue($locale)));
+    }
+
+    /**
+     * MessageCatalogue::all() only reads a catalogue's own messages — addFallbackCatalogue()
+     * copies resources for the profiler/debug tooling, not the strings themselves. Walking
+     * getFallbackCatalogue() ourselves is what actually pulls in the fallback locale's
+     * translations for keys the requested locale does not define.
+     *
+     * @return array<string, string>
+     */
+    private function collectMessages(MessageCatalogueInterface $catalogue): array
+    {
+        $fallback = $catalogue->getFallbackCatalogue();
+        $messages = $fallback instanceof MessageCatalogueInterface ? $this->collectMessages($fallback) : [];
+
+        return array_merge($messages, $catalogue->all('messages'));
     }
 }

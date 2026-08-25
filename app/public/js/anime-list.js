@@ -48,16 +48,8 @@
     // Guards against the response race (issue #208): a slow scroll-append response arriving
     // after a faster search response would otherwise splice stale cards into the fresh grid.
     let pendingRequest = null;
-    // Populated once from GET /translations/{locale}.json (issue #87) before the first render;
-    // watch_status.*/anime_type.* keys already exist in the messages catalogue, so there is no
-    // separate JS dictionary to keep in sync with them.
-    let messages = {};
 
-    function trans(key, fallback) {
-        return Object.prototype.hasOwnProperty.call(messages, key) ? messages[key] : fallback;
-    }
-
-    function buildCard(anime) {
+    function buildCard(anime, catalogue) {
         const card = document.createElement('article');
         card.className = 'anime-card';
 
@@ -71,7 +63,7 @@
         } else {
             const placeholder = document.createElement('div');
             placeholder.className = 'anime-card__thumb anime-card__thumb--placeholder';
-            placeholder.textContent = trans('anime_list.no_cover', 'anime_list.no_cover');
+            placeholder.textContent = window.AppTranslations.resolveKey(catalogue, 'anime_list.no_cover');
             card.appendChild(placeholder);
         }
 
@@ -85,13 +77,14 @@
 
         const badge = document.createElement('span');
         badge.className = `anime-card__badge anime-card__badge--${anime.watch_status}`;
-        badge.textContent = trans(`watch_status.${anime.watch_status}`, anime.watch_status);
+        badge.textContent = window.AppTranslations.resolveKey(catalogue, `watch_status.${anime.watch_status}`);
         body.appendChild(badge);
 
         const meta = document.createElement('p');
         meta.className = 'anime-card__meta';
         const year = anime.date_premiere ? anime.date_premiere.slice(0, 4) : '—';
-        meta.textContent = `${trans(`anime_type.${anime.type}`, anime.type)} · ${year}`;
+        const animeType = window.AppTranslations.resolveKey(catalogue, `anime_type.${anime.type}`);
+        meta.textContent = `${animeType} · ${year}`;
         body.appendChild(meta);
 
         if (Array.isArray(anime.labels) && anime.labels.length > 0) {
@@ -111,11 +104,13 @@
         return card;
     }
 
-    function renderCards(items, replace) {
+    function renderCards(items, replace, catalogue) {
         if (replace) {
             grid.replaceChildren();
         }
-        items.forEach((anime) => grid.appendChild(buildCard(anime)));
+        for (const anime of items) {
+            grid.appendChild(buildCard(anime, catalogue));
+        }
         emptyMessage.hidden = grid.children.length > 0;
     }
 
@@ -214,7 +209,17 @@
             return;
         }
 
-        renderCards(data.items, replace);
+        // A failed catalogue fetch falls back to {} (resolveKey() then returns each raw key)
+        // instead of blocking card rendering. The fetch is still a network round-trip and can be
+        // outlived by a newer loadPage() call, so re-check the abort signal before touching the
+        // grid — otherwise a superseded response could splice its cards in after a fresher one
+        // already rendered (issue #208).
+        const catalogue = await window.AppTranslations.getCatalogue().catch(() => ({}));
+        if (controller.signal.aborted) {
+            return;
+        }
+
+        renderCards(data.items, replace, catalogue);
 
         if (data.pagination_mode === 'classic') {
             setupClassicPagination(data.total, data.limit, data.offset);
@@ -237,13 +242,7 @@
         });
     }
 
-    async function init() {
-        try {
-            messages = await window.AppTranslations.getCatalogue();
-        } catch {
-            messages = {};
-        }
-
+    function init() {
         setupSearchInput();
         loadPage(0, true);
     }

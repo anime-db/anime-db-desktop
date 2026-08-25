@@ -63,12 +63,7 @@
     const BIDI_ISOLATE_START = '⁨';
     const BIDI_ISOLATE_END   = '⁩';
 
-    let messages = {};
     let noResponseTimer = setTimeout(onNoResponse, NO_RESPONSE_TIMEOUT_MS);
-
-    function trans(key, fallback) {
-        return Object.prototype.hasOwnProperty.call(messages, key) ? messages[key] : fallback;
-    }
 
     function format(template, params) {
         return Object.keys(params).reduce(
@@ -84,38 +79,35 @@
         }
     }
 
-    function onNoResponse() {
+    async function onNoResponse() {
         noResponseTimer = null;
         progressBox.hidden = true;
         errorBox.hidden = false;
-        errorBox.textContent = trans(
-            'storage_list.scan_no_response',
-            'The scan is still running or no response was received.',
-        );
+        errorBox.textContent = await window.AppTranslations.trans('storage_list.scan_no_response');
     }
 
-    function onProgress(data) {
+    async function onProgress(data) {
         clearNoResponseTimer();
         const percent = data.percent ?? 0;
         progressBar.value = percent;
         progressText.textContent = format(
-            trans('storage_list.scan_progress_text', '%processed%/%total% (%percent%%)'),
+            await window.AppTranslations.trans('storage_list.scan_progress_text'),
             { processed: data.processed, total: data.total, percent },
         );
     }
 
-    function onFailed(data) {
+    async function onFailed(data) {
         clearNoResponseTimer();
         progressBox.hidden = true;
         errorBox.hidden = false;
         errorBox.textContent = data.reason === 'marker_conflict'
-            ? trans('storage_list.scan_failed_marker_conflict', data.message)
-            : format(trans('storage_list.scan_failed_exception', 'Scan failed: %message%'), { message: data.message });
+            ? await window.AppTranslations.trans('storage_list.scan_failed_marker_conflict')
+            : format(await window.AppTranslations.trans('storage_list.scan_failed_exception'), { message: data.message });
     }
 
-    function buildInfoItem(item, labelKey) {
+    async function buildInfoItem(item, labelKey) {
         const li = document.createElement('li');
-        li.textContent = format(trans(labelKey, '%title% (%path%)'), {
+        li.textContent = format(await window.AppTranslations.trans(labelKey), {
             title: item.anime?.title ?? item.storage_path,
             path: item.storage_path,
         });
@@ -123,16 +115,16 @@
         return li;
     }
 
-    function buildAutoLinkedItem(item) {
+    async function buildAutoLinkedItem(item) {
         const li = document.createElement('li');
-        li.textContent = format(trans('storage_list.auto_linked_text', 'Added automatically: %title%'), {
+        li.textContent = format(await window.AppTranslations.trans('storage_list.auto_linked_text'), {
             title: item.anime?.title ?? item.storage_path,
         });
 
         return li;
     }
 
-    function buildManualEntryItem(item) {
+    async function buildManualEntryItem(item) {
         const li = document.createElement('li');
 
         const link = document.createElement('a');
@@ -142,7 +134,7 @@
             storage_path: item.storage_path,
         });
         link.href = `${animeNewUrl}?${params.toString()}`;
-        link.textContent = format(trans('storage_list.create_entry_link', 'Create entry: %title%'), {
+        link.textContent = format(await window.AppTranslations.trans('storage_list.create_entry_link'), {
             title: item.cleaned_name ?? item.storage_path,
         });
 
@@ -170,24 +162,24 @@
 
                 return response.json();
             })
-            .then((data) => {
+            .then(async (data) => {
                 li.replaceChildren();
-                li.textContent = format(trans('storage_list.confirmed_text', 'Confirmed: %title%'), {
+                li.textContent = format(await window.AppTranslations.trans('storage_list.confirmed_text'), {
                     title: data.anime?.title ?? candidate.title,
                 });
             })
-            .catch(() => {
+            .catch(async () => {
                 button.disabled = false;
                 radios.forEach((radio) => { radio.disabled = false; });
 
                 const error = document.createElement('p');
                 error.className = 'storage-scan__item-error';
-                error.textContent = trans('storage_list.confirm_error', 'Failed to confirm the selection.');
+                error.textContent = await window.AppTranslations.trans('storage_list.confirm_error');
                 li.appendChild(error);
             });
     }
 
-    function buildConfirmationItem(item, index) {
+    async function buildConfirmationItem(item, index) {
         const li = document.createElement('li');
 
         const path = document.createElement('p');
@@ -215,7 +207,7 @@
 
         const button = document.createElement('button');
         button.type = 'button';
-        button.textContent = trans('storage_list.confirm_button', 'Confirm');
+        button.textContent = await window.AppTranslations.trans('storage_list.confirm_button');
         button.addEventListener('click', () => {
             const checked = radios.find((radio) => radio.checked);
             if (!checked) {
@@ -230,7 +222,7 @@
         return li;
     }
 
-    function buildItem(type, item, index) {
+    async function buildItem(type, item, index) {
         switch (type) {
             case 'Updated':
                 return buildInfoItem(item, 'storage_list.updated_text');
@@ -247,27 +239,27 @@
         }
     }
 
-    function buildGroup(group, items) {
+    async function buildGroup(group, items) {
         const section = document.createElement('section');
         section.className = 'storage-scan__group';
 
         const heading = document.createElement('h3');
-        heading.textContent = trans(group.labelKey, group.type);
+        heading.textContent = await window.AppTranslations.trans(group.labelKey);
         section.appendChild(heading);
 
         const list = document.createElement('ul');
-        items.forEach((item, index) => {
-            const li = buildItem(group.type, item, index);
+        for (const [index, item] of items.entries()) {
+            const li = await buildItem(group.type, item, index);
             if (li !== null) {
                 list.appendChild(li);
             }
-        });
+        }
         section.appendChild(list);
 
         return section;
     }
 
-    function onDone(data) {
+    async function onDone(data) {
         clearNoResponseTimer();
         progressBox.hidden = true;
         resultsBox.hidden = false;
@@ -275,32 +267,22 @@
 
         const items = Array.isArray(data.items) ? data.items : [];
 
-        GROUPS.forEach((group) => {
+        for (const group of GROUPS) {
             const groupItems = items.filter((item) => item.type === group.type);
             if (groupItems.length > 0) {
-                resultsBox.appendChild(buildGroup(group, groupItems));
+                resultsBox.appendChild(await buildGroup(group, groupItems));
             }
-        });
+        }
 
         if (resultsBox.children.length === 0) {
             const empty = document.createElement('p');
-            empty.textContent = trans('storage_list.scan_result_empty', 'Nothing found.');
+            empty.textContent = await window.AppTranslations.trans('storage_list.scan_result_empty');
             resultsBox.appendChild(empty);
         }
     }
 
-    async function init() {
-        // Subscribe first: window.AppTranslations.getCatalogue() below is a network round-trip
-        // and scan.progress/scan.done may already be on the bus by the time it resolves. The
-        // catalogue is only needed to render text, not to receive events (issue #156).
-        window.ScanWatcher.watch(storageId, { onProgress, onDone, onFailed });
-
-        try {
-            messages = await window.AppTranslations.getCatalogue();
-        } catch {
-            messages = {};
-        }
-    }
-
-    init();
+    // window.AppTranslations.getCatalogue() (see translations.js) is a network round-trip and
+    // scan.progress/scan.done may already be on the bus by the time it resolves — subscribing
+    // does not need to wait on it (issue #156).
+    window.ScanWatcher.watch(storageId, { onProgress, onDone, onFailed });
 })();
