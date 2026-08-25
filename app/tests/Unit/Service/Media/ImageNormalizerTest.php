@@ -121,11 +121,11 @@ final class ImageNormalizerTest extends TestCase
 
     public function testNormalizeRejectsAPngHeaderWithNoPixelData(): void
     {
-        // A crafted PNG header declaring a huge area but with no real pixel data: the decoder
-        // itself fails on this input regardless of the area gate, so this only proves the
-        // service rejects an undecodable file — see
-        // testNormalizeRejectsWhenDeclaredAreaExceedsAConfiguredThreshold() for the area gate.
-        $result = $this->normalizer->normalize(self::pngHeaderOnly(7_000, 4_000));
+        // A crafted PNG header declaring a plausible area (below the area gate, so the gate
+        // lets it through) but with no real pixel data: the decoder itself must fail on this
+        // input — see testNormalizeRejectsWhenDeclaredAreaExceedsAConfiguredThreshold() for the
+        // area gate.
+        $result = $this->normalizer->normalize(self::pngHeaderOnly(4_000, 4_000));
 
         self::assertNull($result);
     }
