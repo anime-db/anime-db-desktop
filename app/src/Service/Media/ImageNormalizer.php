@@ -88,6 +88,10 @@ final class ImageNormalizer
      */
     private const int WEBP_QUALITY = 82;
 
+    public function __construct(private readonly int $maxAreaPixels = self::MAX_AREA_PIXELS)
+    {
+    }
+
     public function normalize(string $bytes): ?string
     {
         $info = @getimagesizefromstring($bytes);
@@ -95,8 +99,8 @@ final class ImageNormalizer
             return null;
         }
 
-        [$width, $height] = $info;
-        if ($width * $height > self::MAX_AREA_PIXELS) {
+        [$declaredWidth, $declaredHeight] = $info;
+        if ($declaredWidth * $declaredHeight > $this->maxAreaPixels) {
             return null;
         }
 
@@ -108,6 +112,12 @@ final class ImageNormalizer
         imagepalettetotruecolor($image);
         imagealphablending($image, false);
         imagesavealpha($image, true);
+
+        // The declared header dimensions are only trusted for the pre-decode area gate above;
+        // the scaling decision must use what actually got decoded, since an untrusted input's
+        // header is not guaranteed to match its real content.
+        $width = imagesx($image);
+        $height = imagesy($image);
 
         if ($width > self::MAX_SIDE_PIXELS || $height > self::MAX_SIDE_PIXELS) {
             $image = $this->scaleToFitSideLimit($image, $width, $height);
@@ -142,7 +152,7 @@ final class ImageNormalizer
     private function encodeToWebp(\GdImage $image): ?string
     {
         ob_start();
-        imagewebp($image, quality: self::WEBP_QUALITY);
+        @imagewebp($image, quality: self::WEBP_QUALITY);
         $webp = ob_get_clean();
 
         // imagewebp()'s return value is not trustworthy: past the container's side limit it

@@ -119,12 +119,24 @@ final class ImageNormalizerTest extends TestCase
         self::assertGreaterThanOrEqual(1, imagesy($decoded), 'rounding the minor side down to 0 must be floored at 1');
     }
 
-    public function testNormalizeRejectsAnImageWhoseDeclaredAreaExceedsTheLimitWithoutDecodingIt(): void
+    public function testNormalizeRejectsAPngHeaderWithNoPixelData(): void
     {
-        // A crafted PNG header declaring a huge area but with no real pixel data: if the
-        // service decoded before checking the area, this would exercise a multi-hundred-MB
-        // allocation instead of failing fast off the declared dimensions.
+        // A crafted PNG header declaring a huge area but with no real pixel data: the decoder
+        // itself fails on this input regardless of the area gate, so this only proves the
+        // service rejects an undecodable file — see
+        // testNormalizeRejectsWhenDeclaredAreaExceedsAConfiguredThreshold() for the area gate.
         $result = $this->normalizer->normalize(self::pngHeaderOnly(7_000, 4_000));
+
+        self::assertNull($result);
+    }
+
+    public function testNormalizeRejectsWhenDeclaredAreaExceedsAConfiguredThreshold(): void
+    {
+        $normalizer = new ImageNormalizer(maxAreaPixels: 100);
+
+        // A real, decodable image above the lowered threshold: proves the rejection comes from
+        // the area gate itself, not from the decoder failing on the input.
+        $result = $normalizer->normalize(self::solidPng(20, 20));
 
         self::assertNull($result);
     }
