@@ -27,6 +27,8 @@ declare(strict_types=1);
 
 namespace App\Service\Plugin\Filler;
 
+use App\Service\Media\ImageNormalizer;
+use Psr\Log\LoggerInterface;
 use Symfony\Contracts\HttpClient\Exception\ExceptionInterface;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 
@@ -35,19 +37,23 @@ use Symfony\Contracts\HttpClient\HttpClientInterface;
  * plugin re-supplying the same image URL (e.g. the same cover reapplied on a later merge, or the
  * same gallery URL appearing again) must resolve to the same local file, so PluginAnimeDataMerger
  * can recognise it as already present instead of downloading and storing a duplicate.
+ *
+ * The extension is always `.webp`, not derived from the URL or the response's Content-Type: every
+ * downloaded body is re-encoded by {@see ImageNormalizer} before it reaches disk, so the file on
+ * disk is always a WebP image regardless of what the source served.
  */
 final class HttpPluginMediaDownloader implements PluginMediaDownloaderInterface
 {
     /** Guards against a plugin-supplied URL pointing at an unreasonably large response body. */
     private const MAX_BYTES = 10 * 1024 * 1024;
 
-    private const ALLOWED_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
-
     /** Followed manually (not via the client's own redirect handling) so each hop can be re-validated against SSRF. */
     private const MAX_REDIRECTS = 5;
 
     public function __construct(
         private readonly HttpClientInterface $httpClient,
+        private readonly ImageNormalizer $imageNormalizer,
+        private readonly LoggerInterface $logger,
         private readonly string $mediaDir,
     ) {
     }
@@ -55,7 +61,7 @@ final class HttpPluginMediaDownloader implements PluginMediaDownloaderInterface
     public function download(int $animeId, string $url): ?string
     {
         $targetDir = rtrim($this->mediaDir, '/\\').'/'.$animeId;
-        $filename = sha1($url).$this->guessExtension($url);
+        $filename = sha1($url).'.webp';
         $targetPath = $targetDir.'/'.$filename;
 
         if (is_file($targetPath)) {
@@ -67,15 +73,73 @@ final class HttpPluginMediaDownloader implements PluginMediaDownloaderInterface
             return null;
         }
 
-        if (!is_dir($targetDir) && !mkdir($targetDir, 0o755, true) && !is_dir($targetDir)) {
+        $normalized = $this->imageNormalizer->normalize($content);
+        if ($normalized === null) {
+            $this->logger->warning('Discarding a plugin-supplied media URL: the response body could not be normalized into a WebP image.', [
+                'url' => $url,
+            ]);
+
             return null;
         }
 
-        if (file_put_contents($targetPath, $content) === false) {
+        if (!is_dir($targetDir) && !mkdir($targetDir, 0o755, true) && !is_dir($targetDir)) {
+            $this->logger->warning('Discarding a plugin-supplied media URL: the media directory for this anime could not be created.', [
+                'url' => $url,
+                'directory' => $targetDir,
+            ]);
+
+            return null;
+        }
+
+        if (!$this->writeAtomically($targetDir, $targetPath, $normalized)) {
+            $this->logger->warning('Discarding a plugin-supplied media URL: the normalized image could not be written to disk.', [
+                'url' => $url,
+                'path' => $targetPath,
+            ]);
+
             return null;
         }
 
         return $filename;
+    }
+
+    /**
+     * Writes through a temporary file in the same directory as $targetPath, then rename()s it
+     * into place, so a process interrupted mid-write never leaves a truncated file under the
+     * final name for the early is_file() check above to mistake for a complete download.
+     */
+    private function writeAtomically(string $targetDir, string $targetPath, string $content): bool
+    {
+        $tmpPath = tempnam($targetDir, 'tmp-');
+        if ($tmpPath === false) {
+            return false;
+        }
+
+        // tempnam() does not fail when $targetDir is not writable — it silently falls back to the
+        // system temp directory. A file created there would turn the rename() below into a
+        // cross-device move: not atomic, and on Linux not even permitted. The fallback is rejected
+        // here rather than discovered as a rename() failure, so "the temporary file always sits
+        // next to its target" stays an invariant of this method instead of a likely outcome.
+        $tmpDir = realpath(\dirname($tmpPath));
+        if ($tmpDir === false || $tmpDir !== realpath($targetDir)) {
+            @unlink($tmpPath);
+
+            return false;
+        }
+
+        if (file_put_contents($tmpPath, $content) === false) {
+            @unlink($tmpPath);
+
+            return false;
+        }
+
+        if (!rename($tmpPath, $targetPath)) {
+            @unlink($tmpPath);
+
+            return false;
+        }
+
+        return true;
     }
 
     private function fetch(string $url): ?string
@@ -148,13 +212,5 @@ final class HttpPluginMediaDownloader implements PluginMediaDownloaderInterface
         }
 
         return true;
-    }
-
-    private function guessExtension(string $url): string
-    {
-        $path = (string) (parse_url($url, PHP_URL_PATH) ?? '');
-        $extension = strtolower(pathinfo($path, PATHINFO_EXTENSION));
-
-        return \in_array($extension, self::ALLOWED_EXTENSIONS, true) ? '.'.$extension : '.jpg';
     }
 }
