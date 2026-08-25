@@ -27,8 +27,10 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Service\Plugin\Filler;
 
+use App\Service\Media\ImageNormalizer;
 use App\Service\Plugin\Filler\HttpPluginMediaDownloader;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
 
@@ -48,21 +50,36 @@ final class HttpPluginMediaDownloaderTest extends TestCase
         }
     }
 
-    public function testDownloadSavesFileFromPublicHost(): void
+    public function testDownloadNormalizesAndSavesFileFromPublicHost(): void
     {
-        $httpClient = new MockHttpClient([new MockResponse('binary-content')]);
-        $downloader = new HttpPluginMediaDownloader($httpClient, $this->mediaDir);
+        $httpClient = new MockHttpClient([new MockResponse($this->createPngBytes())]);
+        $downloader = $this->createDownloader($httpClient);
 
-        $filename = $downloader->download(1, 'https://8.8.8.8/cover.jpg');
+        $filename = $downloader->download(1, 'https://8.8.8.8/cover.png');
 
-        self::assertNotNull($filename);
-        self::assertSame('binary-content', file_get_contents($this->mediaDir.'/1/'.$filename));
+        self::assertSame(sha1('https://8.8.8.8/cover.png').'.webp', $filename);
+        $bytes = file_get_contents($this->mediaDir.'/1/'.$filename);
+        self::assertNotFalse($bytes);
+        self::assertStringStartsWith('RIFF', $bytes);
+        self::assertSame('WEBP', substr($bytes, 8, 4));
+    }
+
+    public function testDownloadReturnsNullAndSavesNothingWhenNormalizerRejectsTheBody(): void
+    {
+        $httpClient = new MockHttpClient([new MockResponse('not-an-image')]);
+        $downloader = $this->createDownloader($httpClient);
+
+        $filename = $downloader->download(1, 'https://8.8.8.8/cover.png');
+
+        self::assertNull($filename);
+        self::assertFalse(is_file($this->mediaDir.'/1/'.sha1('https://8.8.8.8/cover.png').'.webp'));
+        self::assertFalse(is_dir($this->mediaDir.'/1'));
     }
 
     public function testDownloadRejectsLoopbackHost(): void
     {
-        $httpClient = new MockHttpClient([new MockResponse('binary-content')]);
-        $downloader = new HttpPluginMediaDownloader($httpClient, $this->mediaDir);
+        $httpClient = new MockHttpClient([new MockResponse($this->createPngBytes())]);
+        $downloader = $this->createDownloader($httpClient);
 
         $filename = $downloader->download(1, 'http://127.0.0.1/cover.jpg');
 
@@ -72,8 +89,8 @@ final class HttpPluginMediaDownloaderTest extends TestCase
 
     public function testDownloadRejectsLinkLocalHost(): void
     {
-        $httpClient = new MockHttpClient([new MockResponse('binary-content')]);
-        $downloader = new HttpPluginMediaDownloader($httpClient, $this->mediaDir);
+        $httpClient = new MockHttpClient([new MockResponse($this->createPngBytes())]);
+        $downloader = $this->createDownloader($httpClient);
 
         // 169.254.169.254 is the cloud-metadata address abused by real-world SSRF exploits.
         $filename = $downloader->download(1, 'http://169.254.169.254/cover.jpg');
@@ -84,8 +101,8 @@ final class HttpPluginMediaDownloaderTest extends TestCase
 
     public function testDownloadRejectsNonHttpScheme(): void
     {
-        $httpClient = new MockHttpClient([new MockResponse('binary-content')]);
-        $downloader = new HttpPluginMediaDownloader($httpClient, $this->mediaDir);
+        $httpClient = new MockHttpClient([new MockResponse($this->createPngBytes())]);
+        $downloader = $this->createDownloader($httpClient);
 
         $filename = $downloader->download(1, 'file:///etc/passwd');
 
@@ -98,7 +115,7 @@ final class HttpPluginMediaDownloaderTest extends TestCase
         $httpClient = new MockHttpClient([
             new MockResponse('', ['http_code' => 302, 'response_headers' => ['location' => 'http://169.254.169.254/secret.jpg']]),
         ]);
-        $downloader = new HttpPluginMediaDownloader($httpClient, $this->mediaDir);
+        $downloader = $this->createDownloader($httpClient);
 
         $filename = $downloader->download(1, 'https://8.8.8.8/redirect.jpg');
 
@@ -108,11 +125,11 @@ final class HttpPluginMediaDownloaderTest extends TestCase
     public function testDownloadSkipsNetworkWhenFileAlreadyExists(): void
     {
         $httpClient = new MockHttpClient([]);
-        $downloader = new HttpPluginMediaDownloader($httpClient, $this->mediaDir);
+        $downloader = $this->createDownloader($httpClient);
 
         $existingDir = $this->mediaDir.'/1';
         mkdir($existingDir, 0o755, true);
-        $existingFilename = sha1('https://8.8.8.8/cover.jpg').'.jpg';
+        $existingFilename = sha1('https://8.8.8.8/cover.jpg').'.webp';
         file_put_contents($existingDir.'/'.$existingFilename, 'already-downloaded');
 
         $filename = $downloader->download(1, 'https://8.8.8.8/cover.jpg');
@@ -123,8 +140,8 @@ final class HttpPluginMediaDownloaderTest extends TestCase
 
     public function testDownloadCreatesDirectoryWithoutWorldWritePermission(): void
     {
-        $httpClient = new MockHttpClient([new MockResponse('binary-content')]);
-        $downloader = new HttpPluginMediaDownloader($httpClient, $this->mediaDir);
+        $httpClient = new MockHttpClient([new MockResponse($this->createPngBytes())]);
+        $downloader = $this->createDownloader($httpClient);
 
         $previousUmask = umask(0);
         try {
@@ -134,6 +151,38 @@ final class HttpPluginMediaDownloaderTest extends TestCase
         }
 
         self::assertSame('0755', substr(sprintf('%o', fileperms($this->mediaDir.'/1')), -4));
+    }
+
+    public function testDownloadLeavesNoTemporaryFileBehindAfterASuccessfulWrite(): void
+    {
+        $httpClient = new MockHttpClient([new MockResponse($this->createPngBytes())]);
+        $downloader = $this->createDownloader($httpClient);
+
+        $filename = $downloader->download(1, 'https://8.8.8.8/cover.png');
+
+        self::assertNotNull($filename);
+        $entries = array_values(array_diff(scandir($this->mediaDir.'/1') ?: [], ['.', '..']));
+        self::assertSame([$filename], $entries);
+    }
+
+    private function createDownloader(MockHttpClient $httpClient): HttpPluginMediaDownloader
+    {
+        return new HttpPluginMediaDownloader($httpClient, new ImageNormalizer(), new NullLogger(), $this->mediaDir);
+    }
+
+    private function createPngBytes(): string
+    {
+        $image = imagecreatetruecolor(2, 2);
+        self::assertNotFalse($image);
+
+        ob_start();
+        imagepng($image);
+        $bytes = ob_get_clean();
+        if ($bytes === false) {
+            throw new \RuntimeException('ob_get_clean() unexpectedly returned false.');
+        }
+
+        return $bytes;
     }
 
     private function removeDir(string $dir): void
