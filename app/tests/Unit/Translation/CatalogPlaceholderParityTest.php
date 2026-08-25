@@ -27,8 +27,9 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Translation;
 
+use App\Service\Translation\PlaceholderParity;
+use App\Service\Translation\TranslationCatalog;
 use PHPUnit\Framework\TestCase;
-use Symfony\Component\Yaml\Yaml;
 
 /**
  * Guards against a translation defect that the key-parity check in CatalogTranslationsTest
@@ -114,31 +115,14 @@ final class CatalogPlaceholderParityTest extends TestCase
                 ));
             }
 
-            /** @var array<string, mixed> $parsed */
-            $parsed = Yaml::parseFile($file);
-            $catalogs[$matches[1]] = $this->flattenValues($parsed);
+            $catalog = TranslationCatalog::loadFile($file);
+            if ($catalog === null) {
+                $this->fail(sprintf('Translation catalog "%s" is missing or failed to parse.', basename($file)));
+            }
+
+            $catalogs[$matches[1]] = $catalog;
         }
 
         return $catalogs;
-    }
-
-    /**
-     * @param array<string, mixed> $data
-     *
-     * @return array<string, string>
-     */
-    private function flattenValues(array $data, string $prefix = ''): array
-    {
-        $values = [];
-        foreach ($data as $key => $value) {
-            $fullKey = $prefix === '' ? (string) $key : $prefix.'.'.$key;
-            if (\is_array($value)) {
-                $values = [...$values, ...$this->flattenValues($value, $fullKey)];
-            } else {
-                $values[$fullKey] = (string) $value;
-            }
-        }
-
-        return $values;
     }
 }

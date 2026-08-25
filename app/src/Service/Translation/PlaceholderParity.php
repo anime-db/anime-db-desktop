@@ -25,7 +25,7 @@
 
 declare(strict_types=1);
 
-namespace App\Tests\Unit\Translation;
+namespace App\Service\Translation;
 
 /**
  * Compares Symfony-style %name% placeholders between two translations of the same catalog key.

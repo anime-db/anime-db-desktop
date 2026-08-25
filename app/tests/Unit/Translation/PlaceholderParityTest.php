@@ -27,6 +27,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Translation;
 
+use App\Service\Translation\PlaceholderParity;
 use PHPUnit\Framework\TestCase;
 
 final class PlaceholderParityTest extends TestCase

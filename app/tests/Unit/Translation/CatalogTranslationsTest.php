@@ -27,8 +27,8 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Translation;
 
+use App\Service\Translation\TranslationCatalog;
 use PHPUnit\Framework\TestCase;
-use Symfony\Component\Yaml\Yaml;
 
 /**
  * TODO test (per issue #48): keeps the ru/en catalog dictionaries (genres, types, statuses)
@@ -40,32 +40,18 @@ final class CatalogTranslationsTest extends TestCase
     {
         $translationsDir = \dirname(__DIR__, 3).'/translations';
 
-        $ru = $this->flattenKeys(Yaml::parseFile($translationsDir.'/messages.ru.yaml'));
-        $en = $this->flattenKeys(Yaml::parseFile($translationsDir.'/messages.en.yaml'));
+        $ruCatalog = TranslationCatalog::loadFile($translationsDir.'/messages.ru.yaml');
+        $enCatalog = TranslationCatalog::loadFile($translationsDir.'/messages.en.yaml');
+
+        $this->assertNotNull($ruCatalog, 'messages.ru.yaml is missing or failed to parse.');
+        $this->assertNotNull($enCatalog, 'messages.en.yaml is missing or failed to parse.');
+
+        $ru = array_keys($ruCatalog);
+        $en = array_keys($enCatalog);
 
         sort($ru);
         sort($en);
 
         $this->assertSame($ru, $en);
-    }
-
-    /**
-     * @param array<string, mixed> $data
-     *
-     * @return list<string>
-     */
-    private function flattenKeys(array $data, string $prefix = ''): array
-    {
-        $keys = [];
-        foreach ($data as $key => $value) {
-            $fullKey = $prefix === '' ? (string) $key : $prefix.'.'.$key;
-            if (\is_array($value)) {
-                $keys = [...$keys, ...$this->flattenKeys($value, $fullKey)];
-            } else {
-                $keys[] = $fullKey;
-            }
-        }
-
-        return $keys;
     }
 }
