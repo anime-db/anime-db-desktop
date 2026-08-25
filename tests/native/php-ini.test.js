@@ -116,5 +116,29 @@ describe('ensurePhpIni', () => {
         expect(updated).toContain('extension=openssl');
         expect(updated).toContain('extension=mbstring');
         expect(updated).toContain('extension=gd');
+        expect(updated).toContain('memory_limit = 256M');
+    });
+
+    test('appends memory_limit to a pre-existing file that predates the directive', () => {
+        const partial = ['extension_dir = "/fake/ext"', 'extension=intl', ''].join('\n');
+        fs.writeFileSync(iniPath, partial, 'utf8');
+
+        ensurePhpIni({ iniPath, iniDir: tmpDir, extensionDir: '/fake/ext' });
+
+        const updated = fs.readFileSync(iniPath, 'utf8');
+        expect((updated.match(/memory_limit/g) || []).length).toBe(1);
+        expect(updated).toContain('memory_limit = 256M');
+    });
+
+    test('leaves a user-edited memory_limit value untouched', () => {
+        const partial = ['extension_dir = "/fake/ext"', 'memory_limit = 512M', 'extension=intl', ''].join('\n');
+        fs.writeFileSync(iniPath, partial, 'utf8');
+
+        ensurePhpIni({ iniPath, iniDir: tmpDir, extensionDir: '/fake/ext' });
+
+        const updated = fs.readFileSync(iniPath, 'utf8');
+        expect((updated.match(/memory_limit/g) || []).length).toBe(1);
+        expect(updated).toContain('memory_limit = 512M');
+        expect(updated).not.toContain('memory_limit = 256M');
     });
 });
