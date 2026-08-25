@@ -1,4 +1,5 @@
 [PHP]
+memory_limit = 256M
 extension_dir = "{{EXTENSION_DIR}}"
 extension=intl
 extension=zip

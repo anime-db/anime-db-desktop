@@ -217,6 +217,7 @@ describe('ensurePhpIni', () => {
     test('leaves an already up-to-date php.ini untouched', () => {
         const original = [
             `extension_dir = "${EXTENSION_DIR}"`,
+            'memory_limit = 256M',
             'extension=intl',
             'extension=zip',
             'extension=pdo_sqlite',
