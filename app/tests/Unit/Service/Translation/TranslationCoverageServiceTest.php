@@ -1,0 +1,187 @@
+<?php
+
+/**
+ * AnimeDb package.
+ *
+ * @author    Peter Gribanov <info@peter-gribanov.ru>
+ * @copyright Copyright (c) 2026, Peter Gribanov
+ * @license   https://www.gnu.org/licenses/gpl-3.0.html GPL-3.0-or-later
+ */
+
+/*
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+
+declare(strict_types=1);
+
+namespace App\Tests\Unit\Service\Translation;
+
+use App\Entity\ValueObject\PluginId;
+use App\Service\Plugin\InstalledPluginsRegistry;
+use App\Service\Plugin\PluginsConfigStore;
+use App\Service\Translation\TranslationCoverageService;
+use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
+
+final class TranslationCoverageServiceTest extends TestCase
+{
+    public function testComputesCoveredMissingAndOrphanKeysPerLocale(): void
+    {
+        $projectDir = $this->makeProjectDir([
+            'welcome' => 'Hello %name%',
+            'goodbye' => 'Bye',
+        ]);
+        $pluginDir = $this->makePluginDir('de', [
+            'welcome' => 'Hallo %name%',
+            'extra' => 'Nur im Plugin',
+        ]);
+
+        $service = new TranslationCoverageService($this->makeRegistry(), $projectDir);
+        $coverage = $service->coverageForPluginDirectory($pluginDir);
+
+        $this->assertArrayHasKey('de', $coverage);
+        $de = $coverage['de'];
+
+        $this->assertTrue($de->isKnown);
+        $this->assertSame(1, $de->covered);
+        $this->assertSame(['goodbye'], $de->missing);
+        $this->assertSame(['extra'], $de->orphans);
+        $this->assertSame([], $de->placeholderMismatches);
+    }
+
+    public function testDetectsAPlaceholderMismatchOnASharedKey(): void
+    {
+        $projectDir = $this->makeProjectDir(['error' => 'Error: %detail%']);
+        $pluginDir = $this->makePluginDir('de', ['error' => 'Fehler: %reason%']);
+
+        $service = new TranslationCoverageService($this->makeRegistry(), $projectDir);
+        $coverage = $service->coverageForPluginDirectory($pluginDir);
+
+        $this->assertSame(
+            ['missing' => ['detail'], 'extra' => ['reason']],
+            $coverage['de']->placeholderMismatches['error'],
+        );
+    }
+
+    public function testReferenceComesFromTheAppFileNotAMergedCatalogue(): void
+    {
+        // The app's own catalogue only ever has 'welcome' — a plugin catalogue is never merged
+        // into it here. If the reference were instead read from the Symfony Translator's
+        // compiled 'messages' catalogue (which App\Kernel feeds enabled translation plugins'
+        // translations/ directories into via PluginLoader::translationPaths()), 'plugin.only'
+        // would already be part of the reference and would show up as covered, not orphaned.
+        $projectDir = $this->makeProjectDir(['welcome' => 'Hello']);
+        $pluginDir = $this->makePluginDir('en', [
+            'welcome' => 'Hello',
+            'plugin.only' => 'Only the plugin has this',
+        ]);
+
+        $service = new TranslationCoverageService($this->makeRegistry(), $projectDir);
+        $coverage = $service->coverageForPluginDirectory($pluginDir);
+
+        $this->assertSame(['plugin.only'], $coverage['en']->orphans);
+    }
+
+    public function testTreatsAnUnparseableLocaleCatalogAsUnknownRatherThanThrowing(): void
+    {
+        $projectDir = $this->makeProjectDir(['welcome' => 'Hello']);
+        $pluginDir = $this->makePluginDir('de', ['welcome' => 'Hallo']);
+        file_put_contents($pluginDir.'/translations/messages.fr.yaml', "key: [unterminated\n");
+
+        $service = new TranslationCoverageService($this->makeRegistry(), $projectDir);
+        $coverage = $service->coverageForPluginDirectory($pluginDir);
+
+        $this->assertFalse($coverage['fr']->isKnown);
+        $this->assertSame(0, $coverage['fr']->covered);
+    }
+
+    public function testCoverageForInstalledPluginReturnsNullForAnUnknownPluginId(): void
+    {
+        $service = new TranslationCoverageService($this->makeRegistry(), $this->makeProjectDir(['welcome' => 'Hello']));
+
+        $this->assertNull($service->coverageForInstalledPlugin(new PluginId('not-installed')));
+    }
+
+    public function testCoverageForInstalledPluginResolvesTheInstalledPluginsDirectory(): void
+    {
+        $pluginsDir = sys_get_temp_dir().'/anime-translation-coverage-installed-'.uniqid();
+        $pluginDir = $pluginsDir.'/animedb-german';
+        mkdir($pluginDir.'/translations', recursive: true);
+        file_put_contents($pluginDir.'/translations/messages.de.yaml', $this->toYaml(['welcome' => 'Hallo']));
+        file_put_contents($pluginDir.'/manifest.json', (string) json_encode([
+            'id' => 'animedb-german',
+            'name' => 'German',
+            'version' => '1.0.0',
+            'type' => 'translation',
+            'locales' => ['de'],
+            'require' => ['core' => '>=2.0.0', 'php' => '>=8.2'],
+        ]));
+
+        $registry = new InstalledPluginsRegistry($pluginsDir, new PluginsConfigStore($pluginsDir.'/plugins.json'), new NullLogger());
+        $registry->reconcile();
+
+        $projectDir = $this->makeProjectDir(['welcome' => 'Hello']);
+        $service = new TranslationCoverageService($registry, $projectDir);
+
+        $coverage = $service->coverageForInstalledPlugin(new PluginId('animedb-german'));
+
+        $this->assertNotNull($coverage);
+        $this->assertSame(1, $coverage['de']->covered);
+        $this->assertSame([], $coverage['de']->missing);
+    }
+
+    private function makeRegistry(): InstalledPluginsRegistry
+    {
+        $pluginsDir = sys_get_temp_dir().'/anime-translation-coverage-empty-registry-'.uniqid();
+
+        return new InstalledPluginsRegistry($pluginsDir, new PluginsConfigStore($pluginsDir.'/plugins.json'), new NullLogger());
+    }
+
+    /**
+     * @param array<string, string> $messages
+     */
+    private function makeProjectDir(array $messages): string
+    {
+        $projectDir = sys_get_temp_dir().'/anime-translation-coverage-app-'.uniqid();
+        mkdir($projectDir.'/translations', recursive: true);
+        file_put_contents($projectDir.'/translations/messages.en.yaml', $this->toYaml($messages));
+
+        return $projectDir;
+    }
+
+    /**
+     * @param array<string, string> $messages
+     */
+    private function makePluginDir(string $locale, array $messages): string
+    {
+        $pluginDir = sys_get_temp_dir().'/anime-translation-coverage-plugin-'.uniqid();
+        mkdir($pluginDir.'/translations', recursive: true);
+        file_put_contents($pluginDir.'/translations/messages.'.$locale.'.yaml', $this->toYaml($messages));
+
+        return $pluginDir;
+    }
+
+    /**
+     * @param array<string, string> $messages
+     */
+    private function toYaml(array $messages): string
+    {
+        $lines = [];
+        foreach ($messages as $key => $value) {
+            $lines[] = sprintf('%s: %s', $key, json_encode($value));
+        }
+
+        return implode("\n", $lines)."\n";
+    }
+}
