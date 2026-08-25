@@ -83,10 +83,24 @@ final class HttpPluginMediaDownloader implements PluginMediaDownloaderInterface
         }
 
         if (!is_dir($targetDir) && !mkdir($targetDir, 0o755, true) && !is_dir($targetDir)) {
+            $this->logger->warning('Discarding a plugin-supplied media URL: the media directory for this anime could not be created.', [
+                'url' => $url,
+                'directory' => $targetDir,
+            ]);
+
             return null;
         }
 
-        return $this->writeAtomically($targetDir, $targetPath, $normalized) ? $filename : null;
+        if (!$this->writeAtomically($targetDir, $targetPath, $normalized)) {
+            $this->logger->warning('Discarding a plugin-supplied media URL: the normalized image could not be written to disk.', [
+                'url' => $url,
+                'path' => $targetPath,
+            ]);
+
+            return null;
+        }
+
+        return $filename;
     }
 
     /**
@@ -98,6 +112,18 @@ final class HttpPluginMediaDownloader implements PluginMediaDownloaderInterface
     {
         $tmpPath = tempnam($targetDir, 'tmp-');
         if ($tmpPath === false) {
+            return false;
+        }
+
+        // tempnam() does not fail when $targetDir is not writable — it silently falls back to the
+        // system temp directory. A file created there would turn the rename() below into a
+        // cross-device move: not atomic, and on Linux not even permitted. The fallback is rejected
+        // here rather than discovered as a rename() failure, so "the temporary file always sits
+        // next to its target" stays an invariant of this method instead of a likely outcome.
+        $tmpDir = realpath(\dirname($tmpPath));
+        if ($tmpDir === false || $tmpDir !== realpath($targetDir)) {
+            @unlink($tmpPath);
+
             return false;
         }
 
