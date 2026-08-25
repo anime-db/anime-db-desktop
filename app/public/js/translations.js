@@ -52,11 +52,23 @@
         return cataloguePromise;
     }
 
-    async function trans(key) {
-        const messages = await getCatalogue();
-
+    function resolveKey(messages, key) {
         return Object.prototype.hasOwnProperty.call(messages, key) ? messages[key] : key;
     }
 
-    window.AppTranslations = { getCatalogue, trans };
+    // Never rejects: a catalogue fetch failure (missing locale, network error) falls back to the
+    // key itself, the same fallback already used for a key missing from an otherwise loaded
+    // catalogue, so a translation lookup never blocks unrelated rendering (issue #516 follow-up).
+    async function trans(key) {
+        let messages;
+        try {
+            messages = await getCatalogue();
+        } catch (error) {
+            return key;
+        }
+
+        return resolveKey(messages, key);
+    }
+
+    window.AppTranslations = { getCatalogue, trans, resolveKey };
 })();

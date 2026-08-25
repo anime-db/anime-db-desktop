@@ -49,7 +49,7 @@
     // after a faster search response would otherwise splice stale cards into the fresh grid.
     let pendingRequest = null;
 
-    async function buildCard(anime) {
+    function buildCard(anime, catalogue) {
         const card = document.createElement('article');
         card.className = 'anime-card';
 
@@ -63,7 +63,7 @@
         } else {
             const placeholder = document.createElement('div');
             placeholder.className = 'anime-card__thumb anime-card__thumb--placeholder';
-            placeholder.textContent = await window.AppTranslations.trans('anime_list.no_cover');
+            placeholder.textContent = window.AppTranslations.resolveKey(catalogue, 'anime_list.no_cover');
             card.appendChild(placeholder);
         }
 
@@ -77,13 +77,13 @@
 
         const badge = document.createElement('span');
         badge.className = `anime-card__badge anime-card__badge--${anime.watch_status}`;
-        badge.textContent = await window.AppTranslations.trans(`watch_status.${anime.watch_status}`);
+        badge.textContent = window.AppTranslations.resolveKey(catalogue, `watch_status.${anime.watch_status}`);
         body.appendChild(badge);
 
         const meta = document.createElement('p');
         meta.className = 'anime-card__meta';
         const year = anime.date_premiere ? anime.date_premiere.slice(0, 4) : '—';
-        const animeType = await window.AppTranslations.trans(`anime_type.${anime.type}`);
+        const animeType = window.AppTranslations.resolveKey(catalogue, `anime_type.${anime.type}`);
         meta.textContent = `${animeType} · ${year}`;
         body.appendChild(meta);
 
@@ -104,12 +104,12 @@
         return card;
     }
 
-    async function renderCards(items, replace) {
+    function renderCards(items, replace, catalogue) {
         if (replace) {
             grid.replaceChildren();
         }
         for (const anime of items) {
-            grid.appendChild(await buildCard(anime));
+            grid.appendChild(buildCard(anime, catalogue));
         }
         emptyMessage.hidden = grid.children.length > 0;
     }
@@ -209,7 +209,17 @@
             return;
         }
 
-        await renderCards(data.items, replace);
+        // A failed catalogue fetch falls back to {} (resolveKey() then returns each raw key)
+        // instead of blocking card rendering. The fetch is still a network round-trip and can be
+        // outlived by a newer loadPage() call, so re-check the abort signal before touching the
+        // grid — otherwise a superseded response could splice its cards in after a fresher one
+        // already rendered (issue #208).
+        const catalogue = await window.AppTranslations.getCatalogue().catch(() => ({}));
+        if (controller.signal.aborted) {
+            return;
+        }
+
+        renderCards(data.items, replace, catalogue);
 
         if (data.pagination_mode === 'classic') {
             setupClassicPagination(data.total, data.limit, data.offset);
