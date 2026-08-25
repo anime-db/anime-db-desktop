@@ -42,15 +42,6 @@
     const confirmButton = document.getElementById('plugin-install-confirm-button');
     const submitButton = document.getElementById('plugin-install-submit-button');
 
-    let messages = {};
-    window.AppTranslations.getCatalogue().then((catalogue) => {
-        messages = catalogue;
-    }).catch(() => {});
-
-    function trans(key, fallback) {
-        return Object.prototype.hasOwnProperty.call(messages, key) ? messages[key] : fallback;
-    }
-
     function isZipFile(file) {
         return /\.zip$/i.test(file.name);
     }
@@ -61,20 +52,20 @@
         warning.hidden = true;
     }
 
-    function validateFile() {
+    async function validateFile() {
         hideGate();
 
         const file = fileInput.files[0] ?? null;
         if (!file) {
             clientError.hidden = false;
-            clientError.textContent = trans('settings_plugins.install_error_no_file', 'Choose a ZIP archive of the plugin to install.');
+            clientError.textContent = await window.AppTranslations.trans('settings_plugins.install_error_no_file');
 
             return;
         }
 
         if (!isZipFile(file)) {
             clientError.hidden = false;
-            clientError.textContent = trans('settings_plugins.install_error_not_zip', 'Choose a file with the .zip extension.');
+            clientError.textContent = await window.AppTranslations.trans('settings_plugins.install_error_not_zip');
 
             return;
         }
