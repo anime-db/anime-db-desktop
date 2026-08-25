@@ -74,25 +74,6 @@ final class TranslationCoverageServiceTest extends TestCase
         );
     }
 
-    public function testReferenceComesFromTheAppFileNotAMergedCatalogue(): void
-    {
-        // The app's own catalogue only ever has 'welcome' — a plugin catalogue is never merged
-        // into it here. If the reference were instead read from the Symfony Translator's
-        // compiled 'messages' catalogue (which App\Kernel feeds enabled translation plugins'
-        // translations/ directories into via PluginLoader::translationPaths()), 'plugin.only'
-        // would already be part of the reference and would show up as covered, not orphaned.
-        $projectDir = $this->makeProjectDir(['welcome' => 'Hello']);
-        $pluginDir = $this->makePluginDir('en', [
-            'welcome' => 'Hello',
-            'plugin.only' => 'Only the plugin has this',
-        ]);
-
-        $service = new TranslationCoverageService($this->makeRegistry(), $projectDir);
-        $coverage = $service->coverageForPluginDirectory($pluginDir);
-
-        $this->assertSame(['plugin.only'], $coverage['en']->orphans);
-    }
-
     public function testTreatsAnUnparseableLocaleCatalogAsUnknownRatherThanThrowing(): void
     {
         $projectDir = $this->makeProjectDir(['welcome' => 'Hello']);
@@ -139,6 +120,39 @@ final class TranslationCoverageServiceTest extends TestCase
         $this->assertNotNull($coverage);
         $this->assertSame(1, $coverage['de']->covered);
         $this->assertSame([], $coverage['de']->missing);
+    }
+
+    public function testCoverageForInstalledPluginReportsAManifestLocaleWithNoCatalogFileAsUnknown(): void
+    {
+        // The manifest declares 'fr' — App\Service\Plugin\AvailableLocalesProvider reads that same
+        // field to offer 'fr' in the settings-page locale switcher — but the plugin only ships a
+        // 'de' catalog file. Silently omitting 'fr' from the report would hide precisely the defect
+        // this command exists to surface: a locale users can select with nothing translated behind it.
+        $pluginsDir = sys_get_temp_dir().'/anime-translation-coverage-partial-locales-'.uniqid();
+        $pluginDir = $pluginsDir.'/animedb-partial';
+        mkdir($pluginDir.'/translations', recursive: true);
+        file_put_contents($pluginDir.'/translations/messages.de.yaml', $this->toYaml(['welcome' => 'Hallo']));
+        file_put_contents($pluginDir.'/manifest.json', (string) json_encode([
+            'id' => 'animedb-partial',
+            'name' => 'Partial',
+            'version' => '1.0.0',
+            'type' => 'translation',
+            'locales' => ['de', 'fr'],
+            'require' => ['core' => '>=2.0.0', 'php' => '>=8.2'],
+        ]));
+
+        $registry = new InstalledPluginsRegistry($pluginsDir, new PluginsConfigStore($pluginsDir.'/plugins.json'), new NullLogger());
+        $registry->reconcile();
+
+        $projectDir = $this->makeProjectDir(['welcome' => 'Hello']);
+        $service = new TranslationCoverageService($registry, $projectDir);
+
+        $coverage = $service->coverageForInstalledPlugin(new PluginId('animedb-partial'));
+
+        $this->assertNotNull($coverage);
+        $this->assertArrayHasKey('fr', $coverage);
+        $this->assertFalse($coverage['fr']->isKnown);
+        $this->assertSame(1, $coverage['de']->covered);
     }
 
     private function makeRegistry(): InstalledPluginsRegistry

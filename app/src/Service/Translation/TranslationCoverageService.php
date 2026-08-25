@@ -60,6 +60,14 @@ final class TranslationCoverageService
     }
 
     /**
+     * Unlike {@see coverageForPluginDirectory()}, this also cross-checks against the manifest's own
+     * `locales` field — the source of truth {@see \App\Service\Plugin\AvailableLocalesProvider} uses
+     * to decide which locales the settings-page locale switcher offers for an installed plugin. A
+     * locale the manifest declares but whose `messages.<locale>.yaml` is missing on disk is exactly
+     * the user-facing defect this report exists to catch (the switcher offers a locale the plugin
+     * never shipped a catalog for), so it gets an `unknown` entry rather than being silently absent
+     * from the report the way a locale nobody declared would be.
+     *
      * @return array<string, LocaleTranslationCoverage>|null keyed by locale, or null when no
      *                                                       plugin with this id is installed
      */
@@ -70,7 +78,17 @@ final class TranslationCoverageService
             return null;
         }
 
-        return $this->coverageForPluginDirectory($plugin->installPath);
+        $coverage = $this->coverageForPluginDirectory($plugin->installPath);
+
+        foreach ($plugin->manifest->locales ?? [] as $locale) {
+            if (!isset($coverage[$locale])) {
+                $coverage[$locale] = LocaleTranslationCoverage::unknown($locale);
+            }
+        }
+
+        ksort($coverage);
+
+        return $coverage;
     }
 
     /**
