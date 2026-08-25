@@ -189,6 +189,8 @@ settings_plugins:
     id_column: Идентификатор
     version_column: Версия
     type_column: Тип
+    translation_coverage_column: Покрытие интерфейса
+    translation_coverage_badge: '%locale%: переведено %covered% из %total% строк интерфейса приложения'
     actions_column: Действия
     settings_link: Настройки
     remove_button: Удалить

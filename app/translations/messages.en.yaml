@@ -189,6 +189,8 @@ settings_plugins:
     id_column: Id
     version_column: Version
     type_column: Type
+    translation_coverage_column: Interface coverage
+    translation_coverage_badge: '%locale%: %covered% of %total% app interface strings translated'
     actions_column: Actions
     settings_link: Settings
     remove_button: Remove

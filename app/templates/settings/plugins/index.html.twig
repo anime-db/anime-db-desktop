@@ -72,6 +72,7 @@
                     <th>{{ 'settings_plugins.id_column'|trans }}</th>
                     <th>{{ 'settings_plugins.version_column'|trans }}</th>
                     <th>{{ 'settings_plugins.type_column'|trans }}</th>
+                    <th>{{ 'settings_plugins.translation_coverage_column'|trans }}</th>
                     <th>{{ 'settings_plugins.actions_column'|trans }}</th>
                 </tr>
             </thead>
@@ -82,6 +83,15 @@
                         <td><code>{{ plugin.id }}</code></td>
                         <td>{{ plugin.manifest.version }}</td>
                         <td>{{ ('plugin_type.' ~ plugin.manifest.type.value)|trans }}</td>
+                        <td>
+                            {% if translationCoverage[plugin.id ~ ''] is defined %}
+                                <ul class="settings-plugins__coverage-list">
+                                    {% for locale, coverage in translationCoverage[plugin.id ~ ''] %}
+                                        <li>{{ 'settings_plugins.translation_coverage_badge'|trans({'%locale%': locale, '%covered%': coverage.covered, '%total%': coverage.total}) }}</li>
+                                    {% endfor %}
+                                </ul>
+                            {% endif %}
+                        </td>
                         <td>
                             {% if (plugin.id ~ '') in settingsPluginIds %}
                                 <a href="{{ path('settings_plugin_page', {pluginId: plugin.id}) }}">{{ 'settings_plugins.settings_link'|trans }}</a>
