@@ -24,8 +24,17 @@ on:
       - 'app/tests/Unit/Service/Plugin/PluginsConfigStoreConcurrencyTest.php'
       - 'app/tests/Unit/Service/Plugin/ZipPluginInstallerConcurrencyTest.php'
       - 'app/tests/Unit/Service/Plugin/ZipPluginInstallerTest.php'
+      # ImageNormalizerTest (issue #503) — исход зависит от сборки libgd/libwebp: локально и на
+      # Linux-раннере это shared libgd 2.3.3, в поставке — GD bundled (2.1.0 compatible). На этой
+      # разнице стоят три утверждения теста: анимированный WebP не декодируется целиком (в отличие
+      # от GIF, где извлекается первый кадр), imagewebp() пишет ноль байт за пределом стороны
+      # 16383, альфа переживает imagescale(). Фикстура в списке отдельно: она бинарная и
+      # закоммичена, а не генерируется тестом, поэтому её подмена меняет исход прогона.
+      - 'app/tests/Unit/Service/Media/ImageNormalizerTest.php'
+      - 'app/tests/Fixtures/Media/animated.webp'
       # Код, который эти тесты покрывают.
       - 'app/src/Service/Plugin/**'
+      - 'app/src/Service/Media/**'
       - 'app/src/Service/AppConfigStore.php'
       - 'app/src/Service/LocaleEndonymResolver.php'
       # Состав группы, платформенные требования и сам этот файл.
