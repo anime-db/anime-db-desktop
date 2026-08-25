@@ -16,5 +16,6 @@
 | One Punch Man                      | `one-punch-man.webp`                       |
 | Solo Leveling                      | `solo-leveling.webp`                       |
 
-Формат — `webp` (см. `native/protocols/app-media.js`, whitelist MIME-типов допускает также
-`jpg`/`jpeg`/`png`/`gif`).
+Формат — только `webp`: протокол `app-media://` (`native/protocols/app-media.js`) отдаёт
+`Content-Type` из whitelist, состоящего из единственной записи `.webp` → `image/webp`; файл
+любого другого расширения получит `application/octet-stream` и не отрисуется как изображение.

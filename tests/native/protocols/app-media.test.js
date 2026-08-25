@@ -99,10 +99,11 @@ describe('resolveAppDataMediaPath', () => {
 describe('getMimeType', () => {
     test.each([
         ['cover.webp', 'image/webp'],
-        ['cover.JPG', 'image/jpeg'],
-        ['cover.jpeg', 'image/jpeg'],
-        ['cover.png', 'image/png'],
-        ['cover.gif', 'image/gif'],
+        ['cover.WEBP', 'image/webp'],
+        ['cover.jpg', 'application/octet-stream'],
+        ['cover.jpeg', 'application/octet-stream'],
+        ['cover.png', 'application/octet-stream'],
+        ['cover.gif', 'application/octet-stream'],
         ['cover.bin', 'application/octet-stream'],
     ])('maps %s to %s', (filename, expected) => {
         expect(getMimeType(filename)).toBe(expected);

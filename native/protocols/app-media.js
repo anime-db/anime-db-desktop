@@ -29,12 +29,13 @@ const { getMediaDir } = require('../paths');
 const SCHEME = 'app-media';
 const RESOURCE_TYPE = 'anime';
 
+// Единственная запись — намеренное сужение whitelist до webp (issue #505), а не недосмотр.
+// Всё, что попадает в %AppData%/media/, предварительно переэнкодится в WebP
+// App\Service\Media\ImageNormalizer перед записью на диск, поэтому файл другого формата
+// в этом каталоге означает не "формат, который забыли поддержать", а "файл, которого там
+// быть не должно" — не восстанавливать сюда jpg/jpeg/png/gif без пересмотра этого инварианта.
 const MIME_TYPES = {
     '.webp': 'image/webp',
-    '.jpg':  'image/jpeg',
-    '.jpeg': 'image/jpeg',
-    '.png':  'image/png',
-    '.gif':  'image/gif',
 };
 
 // Должно выполниться синхронно при загрузке модуля, до app.ready.
