@@ -31,10 +31,6 @@ const RESOURCE_TYPE = 'anime';
 
 const MIME_TYPES = {
     '.webp': 'image/webp',
-    '.jpg':  'image/jpeg',
-    '.jpeg': 'image/jpeg',
-    '.png':  'image/png',
-    '.gif':  'image/gif',
 };
 
 // Должно выполниться синхронно при загрузке модуля, до app.ready.
