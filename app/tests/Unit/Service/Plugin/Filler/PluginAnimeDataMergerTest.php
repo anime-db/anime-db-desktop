@@ -108,9 +108,10 @@ final class PluginAnimeDataMergerTest extends TestCase
 
         $data = new PluginAnimeData(title: 'Bleach: Memories of Nobody');
 
-        $this->newMerger()->apply($anime, $data, ['title']);
+        $unapplied = $this->newMerger()->apply($anime, $data, ['title']);
 
         $this->assertSame('Bleach: Memories of Nobody', $anime->getTitle());
+        $this->assertSame([], $unapplied);
     }
 
     public function testApplyUnionsAlternativeNamesWithoutDuplicatingExisting(): void
@@ -292,13 +293,19 @@ final class PluginAnimeDataMergerTest extends TestCase
 
         $data = new PluginAnimeData(title: 'Bleach', cover: 'https://example.test/cover.jpg');
 
-        $this->newMerger(['https://example.test/cover.jpg' => 'abc123.jpg'])
+        $unapplied = $this->newMerger(['https://example.test/cover.jpg' => 'abc123.jpg'])
             ->apply($anime, $data, ['cover']);
 
         $this->assertSame('abc123.jpg', $anime->getCover());
+        $this->assertSame([], $unapplied);
     }
 
-    public function testApplyLeavesCoverUntouchedWhenDownloadFails(): void
+    /**
+     * The download/normalization failure this covers is exactly what issue #507 needed apply()
+     * to start reporting: 'cover' lands in the unapplied list precisely because a URL was given
+     * and could not be turned into a file, distinguishing it from "the plugin had nothing".
+     */
+    public function testApplyLeavesCoverUntouchedAndReportsItUnappliedWhenDownloadFails(): void
     {
         $anime = $this->newAnime();
         $anime->setCover('existing.jpg');
@@ -306,9 +313,10 @@ final class PluginAnimeDataMergerTest extends TestCase
 
         $data = new PluginAnimeData(title: 'Bleach', cover: 'https://example.test/broken.jpg');
 
-        $this->newMerger()->apply($anime, $data, ['cover']);
+        $unapplied = $this->newMerger()->apply($anime, $data, ['cover']);
 
         $this->assertSame('existing.jpg', $anime->getCover());
+        $this->assertSame(['cover'], $unapplied);
     }
 
     public function testApplySkipsCoverWhenAnimeIsNotYetPersisted(): void
@@ -317,10 +325,12 @@ final class PluginAnimeDataMergerTest extends TestCase
 
         $data = new PluginAnimeData(title: 'Bleach', cover: 'https://example.test/cover.jpg');
 
-        $this->newMerger(['https://example.test/cover.jpg' => 'abc123.jpg'])
+        $unapplied = $this->newMerger(['https://example.test/cover.jpg' => 'abc123.jpg'])
             ->apply($anime, $data, ['cover']);
 
         $this->assertNull($anime->getCover());
+        // Not-yet-persisted is a "nothing was attempted" skip, not a rejection - see applyCover()'s docblock.
+        $this->assertSame([], $unapplied);
     }
 
     public function testApplyUnionsImagesThroughMediaDownloaderWithoutDuplicating(): void
@@ -334,13 +344,62 @@ final class PluginAnimeDataMergerTest extends TestCase
             'https://example.test/2.jpg',
         ]);
 
-        $this->newMerger([
+        $unapplied = $this->newMerger([
             'https://example.test/1.jpg' => 'existing.jpg',
             'https://example.test/2.jpg' => 'new.jpg',
         ])->apply($anime, $data, ['images']);
 
         $sources = array_map(static fn ($image): string => $image->source, $anime->getImages()->toArray());
         $this->assertSame(['existing.jpg', 'new.jpg'], $sources);
+        $this->assertSame([], $unapplied);
+    }
+
+    /**
+     * Partial success (issue #507): one URL downloads, the other does not - 'images' must not
+     * appear in the unapplied list, per apply()'s docblock.
+     */
+    public function testApplyDoesNotReportImagesUnappliedWhenAtLeastOneUrlDownloads(): void
+    {
+        $anime = $this->newAnime();
+        $this->persistAndFlush($anime);
+
+        $data = new PluginAnimeData(title: 'Bleach', images: [
+            'https://example.test/1.jpg',
+            'https://example.test/broken.jpg',
+        ]);
+
+        $unapplied = $this->newMerger([
+            'https://example.test/1.jpg' => 'new.jpg',
+        ])->apply($anime, $data, ['images']);
+
+        $sources = array_map(static fn ($image): string => $image->source, $anime->getImages()->toArray());
+        $this->assertSame(['new.jpg'], $sources);
+        $this->assertSame([], $unapplied);
+    }
+
+    public function testApplyReportsImagesUnappliedWhenEveryUrlFailsToDownload(): void
+    {
+        $anime = $this->newAnime();
+        $this->persistAndFlush($anime);
+
+        $data = new PluginAnimeData(title: 'Bleach', images: ['https://example.test/broken.jpg']);
+
+        $unapplied = $this->newMerger()->apply($anime, $data, ['images']);
+
+        $this->assertCount(0, $anime->getImages());
+        $this->assertSame(['images'], $unapplied);
+    }
+
+    public function testApplyDoesNotReportImagesUnappliedWhenTheUrlListIsEmpty(): void
+    {
+        $anime = $this->newAnime();
+        $this->persistAndFlush($anime);
+
+        $data = new PluginAnimeData(title: 'Bleach', images: []);
+
+        $unapplied = $this->newMerger()->apply($anime, $data, ['images']);
+
+        $this->assertSame([], $unapplied);
     }
 
     public function testApplyIgnoresUnknownFieldNames(): void
@@ -349,8 +408,9 @@ final class PluginAnimeDataMergerTest extends TestCase
 
         $data = new PluginAnimeData(title: 'Bleach');
 
-        $this->newMerger()->apply($anime, $data, ['type']);
+        $unapplied = $this->newMerger()->apply($anime, $data, ['type']);
 
         $this->assertSame('Placeholder', $anime->getTitle());
+        $this->assertSame([], $unapplied);
     }
 }

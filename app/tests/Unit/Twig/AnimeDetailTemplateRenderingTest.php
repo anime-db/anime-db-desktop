@@ -101,7 +101,7 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
     private function emptyFillableFields(): array
     {
         return array_fill_keys(
-            ['alternativeNames', 'genres', 'themes', 'demographic', 'studios', 'durationMinutes', 'episodesCount', 'countries'],
+            ['alternativeNames', 'genres', 'themes', 'demographic', 'studios', 'durationMinutes', 'episodesCount', 'countries', 'cover', 'images'],
             [],
         );
     }
@@ -180,8 +180,14 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
         $this->assertStringNotContainsString('anime_detail.field_episodes_count', $html);
         $this->assertStringNotContainsString('data-open-folder-path', $html);
         $this->assertStringNotContainsString('anime-detail__sources', $html);
-        $this->assertStringNotContainsString('anime-detail__gallery', $html);
         $this->assertStringContainsString('anime-detail__cover--placeholder', $html);
+
+        // The gallery container itself must always be in the DOM, with a stable id, even with
+        // no images at all - an out-of-band swap after the first successful fill has nowhere to
+        // land otherwise (issue #507).
+        $this->assertStringContainsString('id="anime-gallery-2"', $html);
+        $this->assertStringContainsString('anime-detail__gallery-empty', $html);
+        $this->assertStringNotContainsString('anime-detail__gallery-list', $html);
     }
 
     public function testShowRendersDisabledOpenFolderButtonWhenStoragePathIsUnavailable(): void
@@ -202,5 +208,36 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
 
         $this->assertStringContainsString('disabled', $html);
         $this->assertStringContainsString('Путь не доступен', $html);
+    }
+
+    /**
+     * Both the cover and the gallery sections get their own "fill from source" button once a
+     * plugin actively supports the field (issue #507) - same button/dropdown macro
+     * anime/_fill_fields.html.twig already uses for the other reference fields, and the same
+     * fillable_fields source (FillableFieldsPresenter::build()), not a second one.
+     */
+    public function testShowRendersFillButtonsForCoverAndImagesWhenAPluginSupportsThem(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession('/anime/1');
+
+        /** @var LocaleSwitcher $localeSwitcher */
+        $localeSwitcher = self::getContainer()->get(LocaleSwitcher::class);
+        $localeSwitcher->setLocale('ru');
+
+        $fillableFields = $this->emptyFillableFields();
+        $fillableFields['cover'] = [['id' => 'animedb-shikimori', 'name' => 'Shikimori']];
+        $fillableFields['images'] = [['id' => 'animedb-shikimori', 'name' => 'Shikimori']];
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('anime/show.html.twig', ['anime' => $this->fullyPopulatedAnime(), 'widgets' => [], 'fillable_fields' => $fillableFields]);
+
+        $this->assertStringContainsString('id="anime-media-1"', $html);
+        $this->assertStringContainsString('id="anime-gallery-1"', $html);
+        $this->assertStringContainsString('hx-swap-oob="outerHTML"', $html);
+        $this->assertStringContainsString('hx-post="/anime/1/fill/cover"', $html);
+        $this->assertStringContainsString('hx-post="/anime/1/fill/images"', $html);
+        $this->assertStringContainsString('name="plugin_id" value="animedb-shikimori"', $html);
     }
 }

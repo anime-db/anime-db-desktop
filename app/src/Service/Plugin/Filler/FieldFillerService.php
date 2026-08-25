@@ -68,15 +68,18 @@ final class FieldFillerService
     }
 
     /**
-     * @return bool true when $field was applied to $anime and the change flushed, false when
-     *              $pluginId is not an active filler for $field, the plugin could not resolve
-     *              anything, or a plugin call threw
+     * @return FillResult Applied when $field was applied to $anime and the change flushed;
+     *                    NotFound when $pluginId is not an active filler for $field, the plugin
+     *                    could not resolve anything, or a plugin call threw; ImageRejected when
+     *                    the plugin did return data for $field but
+     *                    {@see PluginAnimeDataMerger::apply()} could not apply it (today only
+     *                    possible for 'cover'/'images', see that method's docblock)
      */
-    public function fill(Anime $anime, PluginId $pluginId, string $field): bool
+    public function fill(Anime $anime, PluginId $pluginId, string $field): FillResult
     {
         $filler = $this->fillerRegistry->findByPluginId($pluginId);
         if ($filler === null || !\in_array($field, $filler->getFillableFields(), true)) {
-            return false;
+            return FillResult::NotFound;
         }
 
         try {
@@ -88,17 +91,17 @@ final class FieldFillerService
                 'exception' => $e,
             ]);
 
-            return false;
+            return FillResult::NotFound;
         }
 
         if ($data === null) {
-            return false;
+            return FillResult::NotFound;
         }
 
-        $this->merger->apply($anime, $data, [$field]);
+        $unapplied = $this->merger->apply($anime, $data, [$field]);
         $this->entityManager->flush();
 
-        return true;
+        return $unapplied === [] ? FillResult::Applied : FillResult::ImageRejected;
     }
 
     private function resolve(FillerInterface $filler, PluginId $pluginId, Anime $anime): ?PluginAnimeData

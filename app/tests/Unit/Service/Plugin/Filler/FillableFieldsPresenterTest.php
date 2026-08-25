@@ -92,7 +92,7 @@ final class FillableFieldsPresenterTest extends TestCase
         $installedPlugins->reconcile();
 
         $presenter = new FillableFieldsPresenter(
-            new FillerRegistry(['animedb-shikimori' => $this->createFiller(['genres', 'studios'])], new PluginsConfigStore($configPath)),
+            new FillerRegistry(['animedb-shikimori' => $this->createFiller(['genres', 'studios', 'cover', 'images'])], new PluginsConfigStore($configPath)),
             $installedPlugins,
         );
 
@@ -100,6 +100,8 @@ final class FillableFieldsPresenterTest extends TestCase
 
         $this->assertSame([['id' => 'animedb-shikimori', 'name' => 'Shikimori']], $result['genres']);
         $this->assertSame([['id' => 'animedb-shikimori', 'name' => 'Shikimori']], $result['studios']);
+        $this->assertSame([['id' => 'animedb-shikimori', 'name' => 'Shikimori']], $result['cover']);
+        $this->assertSame([['id' => 'animedb-shikimori', 'name' => 'Shikimori']], $result['images']);
         $this->assertSame([], $result['countries']);
     }
 

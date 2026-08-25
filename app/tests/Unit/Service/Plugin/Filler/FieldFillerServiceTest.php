@@ -37,6 +37,7 @@ use App\Entity\TvAnime;
 use App\Entity\ValueObject\PluginId;
 use App\Repository\StudioRepository;
 use App\Service\Plugin\Filler\FieldFillerService;
+use App\Service\Plugin\Filler\FillResult;
 use App\Service\Plugin\Filler\PluginAnimeDataMerger;
 use App\Service\Plugin\Filler\PluginMediaDownloaderInterface;
 use App\Service\Plugin\FillerRegistry;
@@ -90,13 +91,14 @@ final class FieldFillerServiceTest extends TestCase
         iterable $fillers,
         ?CacheInterface $cache = null,
         ?LoggerInterface $logger = null,
+        ?PluginMediaDownloaderInterface $mediaDownloader = null,
     ): FieldFillerService {
         return new FieldFillerService(
             new FillerRegistry($fillers, new PluginsConfigStore(sys_get_temp_dir().'/anime-field-filler-test-'.uniqid().'.json')),
             new PluginAnimeDataMerger(
                 new StudioRepository($this->entityManager),
                 $this->entityManager,
-                $this->createStub(PluginMediaDownloaderInterface::class),
+                $mediaDownloader ?? $this->createStub(PluginMediaDownloaderInterface::class),
             ),
             $this->entityManager,
             $cache ?? new ArrayAdapter(),
@@ -108,7 +110,7 @@ final class FieldFillerServiceTest extends TestCase
     {
         $service = $this->newService([]);
 
-        $this->assertFalse($service->fill($this->persistedAnime(), new PluginId('animedb-shikimori'), 'genres'));
+        $this->assertSame(FillResult::NotFound, $service->fill($this->persistedAnime(), new PluginId('animedb-shikimori'), 'genres'));
     }
 
     public function testFillReturnsFalseWhenThePluginDoesNotClaimToSupportTheField(): void
@@ -121,7 +123,7 @@ final class FieldFillerServiceTest extends TestCase
 
         $service = $this->newService([(string) $pluginId => $filler]);
 
-        $this->assertFalse($service->fill($this->persistedAnime(), $pluginId, 'genres'));
+        $this->assertSame(FillResult::NotFound, $service->fill($this->persistedAnime(), $pluginId, 'genres'));
     }
 
     public function testFillSkipsFindWhenThePluginResolvesAnExternalIdFromTheAnimeSSourceUrl(): void
@@ -139,7 +141,7 @@ final class FieldFillerServiceTest extends TestCase
 
         $service = $this->newService([(string) $pluginId => $filler]);
 
-        $this->assertTrue($service->fill($anime, $pluginId, 'durationMinutes'));
+        $this->assertSame(FillResult::Applied, $service->fill($anime, $pluginId, 'durationMinutes'));
         $this->assertSame(24, $anime->getDurationMinutes());
         $this->assertSame('104', $anime->getCachedExternalId($pluginId));
     }
@@ -159,7 +161,7 @@ final class FieldFillerServiceTest extends TestCase
 
         $service = $this->newService([(string) $pluginId => $filler]);
 
-        $this->assertTrue($service->fill($anime, $pluginId, 'durationMinutes'));
+        $this->assertSame(FillResult::Applied, $service->fill($anime, $pluginId, 'durationMinutes'));
         $this->assertSame(24, $anime->getDurationMinutes());
         $this->assertSame('104', $anime->getCachedExternalId($pluginId));
     }
@@ -178,7 +180,7 @@ final class FieldFillerServiceTest extends TestCase
 
         $service = $this->newService([(string) $pluginId => $filler]);
 
-        $this->assertFalse($service->fill($anime, $pluginId, 'durationMinutes'));
+        $this->assertSame(FillResult::NotFound, $service->fill($anime, $pluginId, 'durationMinutes'));
         $this->assertNull($anime->getDurationMinutes());
     }
 
@@ -195,7 +197,7 @@ final class FieldFillerServiceTest extends TestCase
 
         $service = $this->newService([(string) $pluginId => $filler]);
 
-        $this->assertFalse($service->fill($anime, $pluginId, 'durationMinutes'));
+        $this->assertSame(FillResult::NotFound, $service->fill($anime, $pluginId, 'durationMinutes'));
         $this->assertNull($anime->getDurationMinutes());
     }
 
@@ -219,7 +221,7 @@ final class FieldFillerServiceTest extends TestCase
 
         $service = $this->newService([(string) $pluginId => $filler], null, $logger);
 
-        $this->assertFalse($service->fill($anime, $pluginId, 'durationMinutes'));
+        $this->assertSame(FillResult::NotFound, $service->fill($anime, $pluginId, 'durationMinutes'));
     }
 
     public function testFillCallsFindByIdOnlyOnceForTheSamePluginAndExternalIdAcrossCalls(): void
@@ -237,8 +239,8 @@ final class FieldFillerServiceTest extends TestCase
 
         $service = $this->newService([(string) $pluginId => $filler], $cache);
 
-        $this->assertTrue($service->fill($anime, $pluginId, 'durationMinutes'));
-        $this->assertTrue($service->fill($anime, $pluginId, 'episodesCount'));
+        $this->assertSame(FillResult::Applied, $service->fill($anime, $pluginId, 'durationMinutes'));
+        $this->assertSame(FillResult::Applied, $service->fill($anime, $pluginId, 'episodesCount'));
         $this->assertSame(24, $anime->getDurationMinutes());
     }
 
@@ -257,8 +259,8 @@ final class FieldFillerServiceTest extends TestCase
 
         $service = $this->newService([(string) $pluginId => $filler], $cache);
 
-        $this->assertFalse($service->fill($anime, $pluginId, 'durationMinutes'));
-        $this->assertTrue($service->fill($anime, $pluginId, 'durationMinutes'));
+        $this->assertSame(FillResult::NotFound, $service->fill($anime, $pluginId, 'durationMinutes'));
+        $this->assertSame(FillResult::Applied, $service->fill($anime, $pluginId, 'durationMinutes'));
         $this->assertSame(24, $anime->getDurationMinutes());
     }
 
@@ -276,8 +278,99 @@ final class FieldFillerServiceTest extends TestCase
 
         $service = $this->newService([(string) $pluginId => $filler]);
 
-        $this->assertTrue($service->fill($anime, $pluginId, 'durationMinutes'));
+        $this->assertSame(FillResult::Applied, $service->fill($anime, $pluginId, 'durationMinutes'));
         $this->assertSame(24, $anime->getDurationMinutes());
         $this->assertNull($anime->getEpisodesCount());
+    }
+
+    public function testFillReturnsImageRejectedWhenThePluginReturnsACoverUrlThatFailsToDownload(): void
+    {
+        $pluginId = new PluginId('animedb-shikimori');
+        $data = new PluginAnimeData(title: 'Bleach', cover: 'https://example.test/cover.jpg');
+
+        $filler = $this->createStub(FillerInterface::class);
+        $filler->method('getFillableFields')->willReturn(['cover']);
+        $filler->method('resolveExternalId')->willReturn('104');
+        $filler->method('findById')->willReturn($data);
+
+        $downloader = $this->createStub(PluginMediaDownloaderInterface::class);
+        $downloader->method('download')->willReturn(null);
+
+        $anime = $this->persistedAnime();
+
+        $service = $this->newService([(string) $pluginId => $filler], mediaDownloader: $downloader);
+
+        $this->assertSame(FillResult::ImageRejected, $service->fill($anime, $pluginId, 'cover'));
+        $this->assertNull($anime->getCover());
+    }
+
+    public function testFillReturnsAppliedWhenTheCoverDownloadsSuccessfully(): void
+    {
+        $pluginId = new PluginId('animedb-shikimori');
+        $data = new PluginAnimeData(title: 'Bleach', cover: 'https://example.test/cover.jpg');
+
+        $filler = $this->createStub(FillerInterface::class);
+        $filler->method('getFillableFields')->willReturn(['cover']);
+        $filler->method('resolveExternalId')->willReturn('104');
+        $filler->method('findById')->willReturn($data);
+
+        $downloader = $this->createStub(PluginMediaDownloaderInterface::class);
+        $downloader->method('download')->willReturn('abc123.jpg');
+
+        $anime = $this->persistedAnime();
+
+        $service = $this->newService([(string) $pluginId => $filler], mediaDownloader: $downloader);
+
+        $this->assertSame(FillResult::Applied, $service->fill($anime, $pluginId, 'cover'));
+        $this->assertSame('abc123.jpg', $anime->getCover());
+    }
+
+    /**
+     * Partial success (issue #507): one of two URLs downloads, the other one does not - still
+     * Applied, since at least one frame made it into the gallery.
+     */
+    public function testFillReturnsAppliedForImagesWhenAtLeastOneUrlDownloadsSuccessfully(): void
+    {
+        $pluginId = new PluginId('animedb-shikimori');
+        $data = new PluginAnimeData(title: 'Bleach', images: ['https://example.test/1.jpg', 'https://example.test/2.jpg']);
+
+        $filler = $this->createStub(FillerInterface::class);
+        $filler->method('getFillableFields')->willReturn(['images']);
+        $filler->method('resolveExternalId')->willReturn('104');
+        $filler->method('findById')->willReturn($data);
+
+        $downloader = $this->createStub(PluginMediaDownloaderInterface::class);
+        $downloader->method('download')->willReturnCallback(
+            static fn (int $animeId, string $url): ?string => $url === 'https://example.test/2.jpg' ? 'new.jpg' : null,
+        );
+
+        $anime = $this->persistedAnime();
+
+        $service = $this->newService([(string) $pluginId => $filler], mediaDownloader: $downloader);
+
+        $this->assertSame(FillResult::Applied, $service->fill($anime, $pluginId, 'images'));
+        $sources = array_map(static fn ($image): string => $image->source, $anime->getImages()->toArray());
+        $this->assertSame(['new.jpg'], $sources);
+    }
+
+    public function testFillReturnsImageRejectedForImagesWhenEveryUrlFailsToDownload(): void
+    {
+        $pluginId = new PluginId('animedb-shikimori');
+        $data = new PluginAnimeData(title: 'Bleach', images: ['https://example.test/1.jpg']);
+
+        $filler = $this->createStub(FillerInterface::class);
+        $filler->method('getFillableFields')->willReturn(['images']);
+        $filler->method('resolveExternalId')->willReturn('104');
+        $filler->method('findById')->willReturn($data);
+
+        $downloader = $this->createStub(PluginMediaDownloaderInterface::class);
+        $downloader->method('download')->willReturn(null);
+
+        $anime = $this->persistedAnime();
+
+        $service = $this->newService([(string) $pluginId => $filler], mediaDownloader: $downloader);
+
+        $this->assertSame(FillResult::ImageRejected, $service->fill($anime, $pluginId, 'images'));
+        $this->assertCount(0, $anime->getImages());
     }
 }
