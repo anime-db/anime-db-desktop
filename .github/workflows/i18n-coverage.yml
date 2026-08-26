@@ -1,0 +1,153 @@
+name: i18n coverage
+
+# Обвязка над `app:i18n-coverage:sync` (issue #515): после выпуска релиза приложения
+# сверяет каталог каждого опубликованного плагина-перевода с каталогом приложения и
+# заводит, обновляет или закрывает issue в публичном `anime-db-plugins`.
+#
+# Скрипт и его тесты пришли отдельной задачей; здесь только монтаж. Разделение не по
+# удобству, а по границе прав: `.github/workflows/` — защищённый путь, автоматический
+# исполнитель туда не пишет, поэтому обвязку ставит мейнтейнер. Тот же раздел уже
+# сработал у гейта бампа версии и у счётчика в реестре плагинов.
+
+on:
+  # НЕ `release: published`. Релиз создаёт `build.yml` через `softprops/action-gh-release`
+  # штатным GITHUB_TOKEN, а события, порождённые этим токеном, новых прогонов НЕ
+  # запускают — workflow с таким триггером не сработал бы никогда и выглядел бы
+  # настроенным. Отсюда `workflow_run` по самой сборке.
+  #
+  # `push: tags` тоже отвергнут: он стартует параллельно сборке, и автор плагина получил
+  # бы issue про релиз, который не собрался.
+  workflow_run:
+    workflows: ["Build Windows installer"]
+    types: [completed]
+
+  # Ручной прогон — для сухой проверки и для первого боевого запуска до того, как
+  # появится первый релиз приложения. Версия в вычисление дельты не входит, поэтому
+  # сухой прогон осмыслен и без релиза.
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: 'Только посчитать и напечатать решение, ничего не создавая'
+        type: boolean
+        default: true
+      plugin:
+        description: 'Один плагин вместо всех опубликованных (необязательно)'
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+# Прогоны сериализуем: два параллельных могли бы одновременно решить, что открытого
+# issue нет, и завести по одному на каждый.
+concurrency:
+  group: i18n-coverage
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Sync translation coverage issues
+    # На `workflow_run` работаем только после УСПЕШНОЙ сборки: об отставании перевода
+    # автору плагина сообщается применительно к вышедшему релизу, а не к упавшему.
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # ref обязателен и не декоративен: на `workflow_run` чекаут по умолчанию берёт
+      # голову ветки по умолчанию, а не тот коммит, который собрали. Каталог приложения
+      # с головы master может уже уйти вперёд тега, и дельта описывала бы не выпущенное
+      # состояние. На `workflow_dispatch` выражение даёт пустую строку — это штатное
+      # «ветка по умолчанию».
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || '' }}
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          tools: composer
+          coverage: none
+          extensions: apcu, gd, intl
+          ini-values: apc.enable_cli=1
+
+      - name: Configure Composer auth for private repos
+        run: composer config --global github-oauth.github.com ${{ secrets.COMPOSER_GITHUB_TOKEN }}
+
+      - name: Install dependencies
+        uses: ramsey/composer-install@v3
+        with:
+          working-directory: app
+
+      # Список берём из ОПУБЛИКОВАННОГО реестра, а не из рабочего дерева монорепозитория:
+      # скрипт читает ключи плагина из релизного ассета, поэтому плагин, лежащий в master
+      # без единого релиза, ему нечего сравнивать. Реестр — тот же срез «что реально
+      # опубликовано».
+      #
+      # Репозиторий публичный, файл забирается без аутентификации: токен приложения сюда
+      # не подходит (у него есть только права на issues), а штатный GITHUB_TOKEN этого
+      # репозитория к чужому и не обязан иметь доступ.
+      - name: Discover published translation plugins
+        id: plugins
+        run: |
+          set -euo pipefail
+          if [ -n "${{ inputs.plugin }}" ]; then
+            printf '%s\n' "${{ inputs.plugin }}" > plugins.txt
+            echo "Явно задан один плагин: $(cat plugins.txt)"
+          else
+            curl -fsSL https://raw.githubusercontent.com/anime-db/anime-db-plugins/master/plugins-registry.json \
+              | jq -r '.plugins[] | select(.manifest.type == "translation") | .id' > plugins.txt
+            echo "Опубликованные плагины-переводы:"
+            cat plugins.txt
+          fi
+          if [ ! -s plugins.txt ]; then
+            echo "Плагинов-переводов в реестре нет — синхронизировать нечего."
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Токен приложения `animedbintegration`: живёт около часа, минтится на прогон, умеет
+      # ровно `Issues: read/write` и ровно в одном репозитории. Классический PAT со скоупом
+      # `repo` дал бы доступ ко всем репозиториям аккаунта, включая этот приватный.
+      #
+      # Связка проверяется отдельно и по требованию — см. `app-token-smoke-test.yml`.
+      - name: Mint installation token
+        if: steps.plugins.outputs.found == 'true'
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.BOT_APP_ID }}
+          private-key: ${{ secrets.BOT_PRIVATE_KEY }}
+          owner: anime-db
+          repositories: anime-db-plugins
+
+      # На ручном прогоне сухой режим по умолчанию включён: первая проверка механизма не
+      # должна создавать issue в публичном репозитории. На `workflow_run` он всегда боевой.
+      #
+      # Цикл не прерывается на первом упавшем плагине: отставание одного не должно
+      # скрывать отставание остальных. Итоговый код возврата собирается в конце.
+      - name: Sync issues
+        if: steps.plugins.outputs.found == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -uo pipefail
+          DRY=""
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.dry-run }}" = "true" ]; then
+            DRY="--dry-run"
+            echo "::notice::Сухой прогон — ничего не создаётся и не закрывается."
+          fi
+
+          failed=0
+          while IFS= read -r plugin; do
+            [ -n "$plugin" ] || continue
+            echo "::group::$plugin"
+            if ! php app/bin/console app:i18n-coverage:sync "$plugin" $DRY; then
+              echo "::error::Синхронизация не удалась для плагина \"$plugin\"."
+              failed=1
+            fi
+            echo "::endgroup::"
+          done < plugins.txt
+
+          exit "$failed"
