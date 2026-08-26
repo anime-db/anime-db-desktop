@@ -36,6 +36,7 @@ use App\Service\Plugin\PluginRemover;
 use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Plugin\SettingsPageRegistry;
 use App\Service\Plugin\ZipPluginInstaller;
+use App\Service\Translation\TranslationCoverageService;
 use App\Service\WsPublisher;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
@@ -116,6 +117,7 @@ final class PluginControllerTest extends TestCase
         ?SettingsPageRegistry $settingsPages = null,
         ?ZipPluginInstaller $installer = null,
         ?PluginRemover $remover = null,
+        ?TranslationCoverageService $translationCoverage = null,
         ?WsPublisher $wsPublisher = null,
         ?CsrfTokenManagerInterface $csrfTokenManager = null,
         ?UrlGeneratorInterface $urlGenerator = null,
@@ -126,6 +128,7 @@ final class PluginControllerTest extends TestCase
             $settingsPages ?? $this->settingsPages(),
             $installer ?? $this->installer(),
             $remover ?? new PluginRemover($this->registry),
+            $translationCoverage ?? new TranslationCoverageService($this->registry, $this->rootDir),
             $wsPublisher ?? $this->createStub(WsPublisher::class),
             $csrfTokenManager ?? $this->alwaysValidCsrf(),
             $urlGenerator ?? $this->stubUrlGenerator(),
@@ -138,6 +141,23 @@ final class PluginControllerTest extends TestCase
         $dir = $this->pluginsDir.'/'.$pluginId;
         mkdir($dir, recursive: true);
         file_put_contents($dir.'/manifest.json', $this->validManifestJson($pluginId, $name));
+    }
+
+    /**
+     * @param list<string> $locales
+     */
+    private function writeTranslationPluginManifest(string $pluginId, string $name, array $locales): void
+    {
+        $dir = $this->pluginsDir.'/'.$pluginId;
+        mkdir($dir.'/translations', recursive: true);
+        file_put_contents($dir.'/manifest.json', (string) json_encode([
+            'id' => $pluginId,
+            'name' => $name,
+            'version' => '1.0.0',
+            'type' => 'translation',
+            'locales' => $locales,
+            'require' => ['core' => '>=2.0.0', 'php' => '>=8.2'],
+        ]));
     }
 
     private function validManifestJson(string $pluginId, string $name = 'Plugin', string $version = '1.0.0', string $requireCore = '>=2.0.0'): string
@@ -218,6 +238,42 @@ final class PluginControllerTest extends TestCase
             ->willReturn('<html></html>');
 
         $this->controller(settingsPages: $settingsPages, twig: $twig)->index(Request::create('/settings/plugins'));
+    }
+
+    /**
+     * Issue #513: a `translation`-type plugin's row gets a per-locale coverage badge computed
+     * from {@see TranslationCoverageService} (issue #512); an `integration`-type plugin — whose
+     * strings live in their own domain, not `messages` — gets none.
+     */
+    public function testIndexShowsTranslationCoverageOnlyForTranslationTypePlugins(): void
+    {
+        mkdir($this->rootDir.'/translations', recursive: true);
+        file_put_contents($this->rootDir.'/translations/messages.en.yaml', "welcome: Hello\ngoodbye: Bye\n");
+
+        $this->writeManifest('animedb-shikimori', 'Shikimori');
+        mkdir($this->pluginsDir.'/animedb-shikimori/translations', recursive: true);
+        file_put_contents($this->pluginsDir.'/animedb-shikimori/translations/messages.en.yaml', "welcome: Hello\n");
+
+        $this->writeTranslationPluginManifest('animedb-german', 'German', ['de']);
+        file_put_contents($this->pluginsDir.'/animedb-german/translations/messages.de.yaml', "welcome: Hallo\n");
+
+        $this->registry->reconcile();
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('settings/plugins/index.html.twig', $this->callback(static function (array $params): bool {
+                self::assertArrayNotHasKey('animedb-shikimori', $params['translationCoverage']);
+                self::assertSame(
+                    ['de' => ['covered' => 1, 'total' => 2]],
+                    $params['translationCoverage']['animedb-german'],
+                );
+
+                return true;
+            }))
+            ->willReturn('<html></html>');
+
+        $this->controller(twig: $twig)->index(Request::create('/settings/plugins'));
     }
 
     public function testIndexPassesInstalledQueryParameterThrough(): void

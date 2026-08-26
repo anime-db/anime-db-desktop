@@ -28,6 +28,7 @@ declare(strict_types=1);
 namespace App\Controller\Settings;
 
 use AnimeDb\PluginContracts\Manifest\ManifestValidationError;
+use AnimeDb\PluginContracts\Manifest\PluginType;
 use App\Entity\ValueObject\Exception\InvalidPluginIdException;
 use App\Entity\ValueObject\PluginId;
 use App\Service\Plugin\Exception\IncompatiblePluginCoreVersionException;
@@ -41,6 +42,7 @@ use App\Service\Plugin\PluginRemover;
 use App\Service\Plugin\PluginSyntaxError;
 use App\Service\Plugin\SettingsPageRegistry;
 use App\Service\Plugin\ZipPluginInstaller;
+use App\Service\Translation\TranslationCoverageService;
 use App\Service\WsPublisher;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
@@ -97,6 +99,7 @@ final class PluginController
         private readonly SettingsPageRegistry $settingsPages,
         private readonly ZipPluginInstaller $installer,
         private readonly PluginRemover $remover,
+        private readonly TranslationCoverageService $translationCoverage,
         private readonly WsPublisher $wsPublisher,
         private readonly CsrfTokenManagerInterface $csrfTokenManager,
         private readonly UrlGeneratorInterface $urlGenerator,
@@ -226,6 +229,7 @@ final class PluginController
         return new Response($this->twig->render('settings/plugins/index.html.twig', [
             'installedPlugins' => $installedPlugins,
             'settingsPluginIds' => $this->pluginIdsWithASettingsPage($installedPlugins),
+            'translationCoverage' => $this->translationCoverageByPlugin($installedPlugins),
             'installedPluginId' => $installedPluginId,
             'updatedPluginId' => $updatedPluginId,
             'removedPluginId' => $removedPluginId,
@@ -252,6 +256,49 @@ final class PluginController
         }
 
         return $ids;
+    }
+
+    /**
+     * Renders issue #513's per-plugin translation-coverage badges from {@see TranslationCoverageService}
+     * (issue #512) — computed once here, at page render, never per-request or from a locale
+     * subscriber (the service's own docblock rules that out). Only {@see PluginType::Translation}
+     * plugins are covered against the app's `messages` domain: an `integration` plugin's strings
+     * live in its own `<plugin-id>.<locale>.yaml` domain, so a coverage number here would be
+     * meaningless for it. A locale the manifest declares but with no catalog file on disk
+     * ({@see \App\Service\Translation\LocaleTranslationCoverage::isKnown} false) has no covered/total
+     * to show, so it is left out of the badge list rather than shown as a misleading "0 of 0".
+     *
+     * @param list<InstalledPlugin> $installedPlugins
+     *
+     * @return array<string, array<string, array{covered: int, total: int}>> keyed by plugin id,
+     *                                                                       then by locale
+     */
+    private function translationCoverageByPlugin(array $installedPlugins): array
+    {
+        $coverageByPlugin = [];
+        foreach ($installedPlugins as $plugin) {
+            if ($plugin->manifest->type !== PluginType::Translation) {
+                continue;
+            }
+
+            $localeCoverage = [];
+            foreach ($this->translationCoverage->coverageForInstalledPlugin($plugin->id) ?? [] as $locale => $coverage) {
+                if (!$coverage->isKnown) {
+                    continue;
+                }
+
+                $localeCoverage[$locale] = [
+                    'covered' => $coverage->covered,
+                    'total' => $coverage->covered + \count($coverage->missing),
+                ];
+            }
+
+            if ($localeCoverage !== []) {
+                $coverageByPlugin[(string) $plugin->id] = $localeCoverage;
+            }
+        }
+
+        return $coverageByPlugin;
     }
 
     private function assertValidCsrfToken(string $tokenId, Request $request): void
