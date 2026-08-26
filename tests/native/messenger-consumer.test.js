@@ -212,6 +212,18 @@ describe('start', () => {
         expect(spawn.mock.calls[0][1]).toEqual(expect.arrayContaining(['messenger:consume', 'async']));
     });
 
+    // Order is priority, not just membership (issue #508): `media` must come after `async` so
+    // the worker only ever drains it once `async` is empty — see spawnProcess()'s docblock.
+    test('consumes the async transport before the media transport', async () => {
+        mockPhpCommandRun.mockResolvedValueOnce(undefined);
+        spawn.mockReturnValueOnce(createFakeChild());
+
+        await start(7700, 'test-key');
+
+        const args = spawn.mock.calls[0][1];
+        expect(args.slice(-3)).toEqual(['messenger:consume', 'async', 'media']);
+    });
+
     test('does not spawn messenger:consume when messenger:setup-transports rejects', async () => {
         mockPhpCommandRun.mockRejectedValueOnce(new Error('messenger:setup-transports завершился с кодом 1'));
 

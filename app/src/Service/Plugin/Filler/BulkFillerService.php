@@ -35,11 +35,13 @@ use App\Entity\Enum\AnimeType;
 use App\Entity\Enum\WatchStatus;
 use App\Entity\TvAnime;
 use App\Entity\ValueObject\PluginId;
+use App\Message\DownloadAnimeMediaMessage;
 use App\Service\Plugin\Exception\ExternalIdAlreadyClaimedException;
 use App\Service\Plugin\FillerRegistry;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Log\LoggerInterface;
+use Symfony\Component\Messenger\MessageBusInterface;
 
 /**
  * Bulk fill-in scenario (issue #227): a Storage scan matched a top-level entry only through a
@@ -73,6 +75,7 @@ final class BulkFillerService
         private readonly PluginAnimeDataMerger $merger,
         private readonly EntityManagerInterface $entityManager,
         private readonly LoggerInterface $logger,
+        private readonly MessageBusInterface $messageBus,
     ) {
     }
 
@@ -175,13 +178,38 @@ final class BulkFillerService
             throw new ExternalIdAlreadyClaimedException($pluginId, $externalId, $winnerId, $e);
         }
 
-        // title/type are already applied above; cover/images stay out of the bulk create path —
-        // downloading them needs the anime's own database id (see PluginAnimeDataMerger::applyCover()),
-        // which is available by now, but bulk create is deliberately title/metadata-only (issue #227).
-        $fields = array_diff($filler->getFillableFields(), ['title', 'type', 'cover', 'images']);
-        $this->merger->apply($anime, $data, $fields);
+        // title/type are already applied above. cover/images are no longer excluded from bulk
+        // fill-in (issue #508) — the anime now has an id, so there is nothing stopping them from
+        // being filled — but $this->merger is not what fills them: downloading synchronously here
+        // would block whatever dispatched this bulk scan on however many images the plugin
+        // reports. dispatchMediaDownloads() below queues one message per URL on the low-priority
+        // `media` transport instead, so merger->apply() only ever sees the remaining metadata fields.
+        $fields = array_diff($filler->getFillableFields(), ['title', 'type']);
+        $this->merger->apply($anime, $data, array_diff($fields, ['cover', 'images']));
+        $this->dispatchMediaDownloads($anime, $data, $fields);
 
         return $anime;
+    }
+
+    /**
+     * @param string[] $fields the same fillable-fields list passed to $this->merger->apply() —
+     *                         used here only to check whether the filler actually declares
+     *                         'cover'/'images' as fillable, same gate merger->apply() itself
+     *                         would have applied had they not been carved out above
+     */
+    private function dispatchMediaDownloads(Anime $anime, PluginAnimeData $data, array $fields): void
+    {
+        $animeId = $anime->id ?? throw new \LogicException('Anime must have an id before its media downloads can be queued.');
+
+        if (\in_array('cover', $fields, true) && $data->cover !== null) {
+            $this->messageBus->dispatch(new DownloadAnimeMediaMessage($animeId, $data->cover, true));
+        }
+
+        if (\in_array('images', $fields, true)) {
+            foreach ($data->images ?? [] as $url) {
+                $this->messageBus->dispatch(new DownloadAnimeMediaMessage($animeId, $url, false));
+            }
+        }
     }
 
     /** @return array{0: string, 1: PluginAnimeData}|null */

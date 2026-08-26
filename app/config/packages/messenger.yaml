@@ -19,6 +19,18 @@ framework:
                     multiplier: 2
                     max_delay: 0
 
+            # Same connection/table as `async` (queue_name is the only difference) — a plugin
+            # media download or normalization failure is never an exception here (see
+            # HttpPluginMediaDownloader), so this transport's default retry policy exists only
+            # for the truly unexpected case (issue #508). The consumer command
+            # (native/supervisor/messenger-consumer.js) lists `async` before `media`, which is
+            # what actually makes this low priority: a Doctrine transport has no built-in
+            # priority of its own, `messenger:consume`'s transport order is.
+            media:
+                dsn: '%env(MESSENGER_TRANSPORT_DSN)%'
+                options:
+                    queue_name: media
+
         routing:
             'App\Message\ScanStorageMessage': async
             'App\Message\IndexAnimeMessage': async
@@ -27,3 +39,4 @@ framework:
             'App\Message\BackfillExternalIdMessage': async
             'App\Message\SyncSeedMessage': async
             'App\Message\RefreshMarketSnapshotMessage': async
+            'App\Message\DownloadAnimeMediaMessage': media

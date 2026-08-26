@@ -58,6 +58,7 @@ use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\Component\Clock\MockClock;
 use Symfony\Component\Messenger\Exception\UnrecoverableMessageHandlingException;
+use Symfony\Component\Messenger\MessageBusInterface;
 
 /**
  * Exercises ScanStorageMessageHandler end to end: real EntityManager/SQLite connection for the
@@ -348,6 +349,7 @@ final class ScanStorageMessageHandlerTest extends TestCase
                 ),
                 $this->entityManager,
                 new NullLogger(),
+                $this->createMock(MessageBusInterface::class),
             ),
             new NullLogger(),
         );

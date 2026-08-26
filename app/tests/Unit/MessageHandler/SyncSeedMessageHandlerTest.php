@@ -59,6 +59,7 @@ use Doctrine\ORM\Tools\SchemaTool;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
+use Symfony\Component\Messenger\MessageBusInterface;
 
 /**
  * The handler itself is a thin dispatch onto {@see PullSyncService::pull()} (issue #381) — these
@@ -170,6 +171,7 @@ final class SyncSeedMessageHandlerTest extends TestCase
             ),
             $this->entityManager,
             new NullLogger(),
+            $this->createMock(MessageBusInterface::class),
         );
 
         $duplicateDetector = new CrossVendorDuplicateDetector(
