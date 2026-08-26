@@ -169,7 +169,7 @@ final class PluginRegistry
                     continue;
                 }
 
-                $translationKeyCount = \is_int($version['translation_key_count'] ?? null) ? $version['translation_key_count'] : null;
+                $translationKeyCount = \is_int($version['translation_keys_count'] ?? null) ? $version['translation_keys_count'] : null;
                 $versionsByNumber[$version['version']] = new MarketPluginVersion($version['version'], $version['core'], $translationKeyCount);
             }
 

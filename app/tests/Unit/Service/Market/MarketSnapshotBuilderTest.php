@@ -126,7 +126,7 @@ final class MarketSnapshotBuilderTest extends TestCase
      * Issue #514's core acceptance criterion: {@see MarketPlugin::resolveCompatibleVersion()} can
      * fall back to an older-than-latest version (see
      * {@see testResolvesTheHighestCompatibleVersionAndItsSha256()}), and that older version may
-     * carry a different `translation_key_count` than the latest one. The snapshot must carry the
+     * carry a different `translation_keys_count` than the latest one. The snapshot must carry the
      * count of the version it actually resolved, never the latest one's, or the badge would
      * describe an artifact the storefront would not even install.
      */
@@ -140,8 +140,8 @@ final class MarketSnapshotBuilderTest extends TestCase
                     'id' => 'animedb-german',
                     'manifest' => $this->manifest('animedb-german', '1.2.0'),
                     'versions' => [
-                        ['version' => '1.2.0', 'core' => '>=3.0.0', 'sha256' => 'sha-1.2.0', 'translation_key_count' => 200],
-                        ['version' => '1.1.0', 'core' => '>=2.0.0 <3.0.0', 'sha256' => 'sha-1.1.0', 'translation_key_count' => 120],
+                        ['version' => '1.2.0', 'core' => '>=3.0.0', 'sha256' => 'sha-1.2.0', 'translation_keys_count' => 200],
+                        ['version' => '1.1.0', 'core' => '>=2.0.0 <3.0.0', 'sha256' => 'sha-1.1.0', 'translation_keys_count' => 120],
                     ],
                 ],
             ],
