@@ -1,0 +1,60 @@
+name: App token smoke test
+
+# Диагностика связки с GitHub App `animedbintegration`, из которой задача #515 будет
+# минтить короткоживущий токен для записи issue в публичный `anime-db-plugins`.
+#
+# Зачем отдельный workflow, а не проверка внутри #515: там триггер — успешная сборка
+# релиза приложения, то есть первая же боевая проверка связки совпала бы с первым
+# релизом, а он один и повторить его нельзя. Здесь связка проверяется по требованию,
+# сколько угодно раз.
+#
+# Постоянный, а не одноразовый: тот же прогон нужен после каждой ротации приватного
+# ключа приложения и после любой правки набора репозиториев в установке. Без
+# `workflow_dispatch` не запускается никогда и ничего не стоит.
+#
+# Только чтение. `permissions: {}` на уровне workflow обнуляет штатный GITHUB_TOKEN,
+# поэтому всё, что здесь получится, получится исключительно за счёт токена приложения —
+# ложноположительного результата за счёт прав джобы быть не может.
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  probe:
+    name: Mint an installation token and read through it
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # Падение этого шага означает одно из трёх: неверный app-id, нерабочий приватный
+      # ключ (например, в секрет попал отпечаток `SHA256:…` вместо содержимого .pem),
+      # либо приложение не установлено в организацию.
+      - name: Mint installation token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.BOT_APP_ID }}
+          private-key: ${{ secrets.BOT_PRIVATE_KEY }}
+          owner: anime-db
+          repositories: anime-db-plugins
+
+      # Область действия установки. `repository_selection` у неё — `selected`, поэтому
+      # важно не то, что токен выпустился, а то, какие именно репозитории он видит.
+      - name: Show what the token can reach
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          echo "Репозитории, доступные установке:"
+          gh api /installation/repositories --jq '.repositories[].full_name'
+
+      # Проба на чтение через issues-права: метки нужны задаче #515, чтобы находить
+      # уже открытый issue и заводить недостающую метку `<plugin-id>`.
+      - name: Read labels of anime-db-plugins
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          echo "Метки в anime-db-plugins:"
+          gh api repos/anime-db/anime-db-plugins/labels --paginate --jq '.[].name'
