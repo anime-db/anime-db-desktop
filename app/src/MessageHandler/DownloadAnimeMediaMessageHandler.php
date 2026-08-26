@@ -41,9 +41,11 @@ use Symfony\Component\Messenger\Attribute\AsMessageHandler;
  * already turns every such failure (unreachable host, SSRF rejection, failed WebP normalization)
  * into a logged `null` return, which this handler treats as "nothing to apply" rather than an
  * error — from the `media` transport's point of view the message was handled successfully, no
- * retry, no `failure_transport` (deliberately unconfigured, see messenger.yaml). Throwing is
- * reserved for the one case that is genuinely unexpected: the anime this message targets is gone
- * by the time it is processed.
+ * retry, no `failure_transport` (deliberately unconfigured, see messenger.yaml). The anime this
+ * message targets being gone by the time it is processed is handled the same way: that is a
+ * legal race between dispatch and processing, not a failure, so this handler returns silently
+ * rather than throwing — throwing would burn all retries and log noise over an unexceptional
+ * outcome. Nothing in this handler is expected to throw in normal operation.
  */
 #[AsMessageHandler]
 final class DownloadAnimeMediaMessageHandler
