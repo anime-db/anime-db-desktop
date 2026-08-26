@@ -89,8 +89,10 @@ final class GhPluginReleaseTranslationKeysSource implements PluginTranslationKey
         }
         $zip->close();
 
+        $translationsRoot = self::resolveTranslationsRoot($extractDir);
+
         $keySets = [];
-        foreach (glob($extractDir.'/translations/messages.*.yaml') ?: [] as $file) {
+        foreach (glob($translationsRoot.'/translations/messages.*.yaml') ?: [] as $file) {
             $catalog = TranslationCatalog::loadFile($file);
             if ($catalog !== null) {
                 $keySets[] = array_keys($catalog);
@@ -111,5 +113,31 @@ final class GhPluginReleaseTranslationKeysSource implements PluginTranslationKey
         sort($result);
 
         return $result;
+    }
+
+    /**
+     * Locates the directory that should actually contain `translations/`. A ZIP created by
+     * packaging a directory directly (Windows Explorer, `zip -r plugin.zip plugin/`) commonly
+     * wraps everything in one top-level directory instead of putting `translations/` at the
+     * archive root, exactly as {@see \App\Service\Plugin\ZipPluginInstaller::resolvePluginRoot()}
+     * already documents and handles for `manifest.json`; this descends into that same single
+     * top-level directory when present. Anything else (no top-level wrapper, or more than one
+     * top-level entry) is left as-is and simply yields no matching files below.
+     */
+    private static function resolveTranslationsRoot(string $extractDir): string
+    {
+        if (is_dir($extractDir.'/translations')) {
+            return $extractDir;
+        }
+
+        $entries = array_values(array_diff((array) scandir($extractDir), ['.', '..']));
+        if (\count($entries) === 1) {
+            $nested = $extractDir.\DIRECTORY_SEPARATOR.$entries[0];
+            if (is_dir($nested) && is_dir($nested.'/translations')) {
+                return $nested;
+            }
+        }
+
+        return $extractDir;
     }
 }

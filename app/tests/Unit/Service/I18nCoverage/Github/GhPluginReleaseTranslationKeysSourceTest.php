@@ -75,6 +75,24 @@ final class GhPluginReleaseTranslationKeysSourceTest extends TestCase
     }
 
     /**
+     * A release asset packaged by zipping a directory directly (e.g. `zip -r plugin.zip plugin/`)
+     * commonly wraps every entry in one top-level directory instead of putting `translations/` at
+     * the archive root — the same layout `ZipPluginInstaller::resolvePluginRoot()` already handles
+     * for `manifest.json`. The reader must still find the catalogs in that case, not silently
+     * return an empty key set.
+     */
+    public function testKeysAreFoundWhenTheArchiveWrapsEverythingInATopLevelDirectory(): void
+    {
+        $zip = $this->buildZip([
+            'animedb-language-pack/translations/messages.de.yaml' => "welcome: Hallo\ngoodbye: Tschuss\n",
+        ]);
+
+        $source = new GhPluginReleaseTranslationKeysSource('animedb-language-pack', new FakeGhReleaseZipDownloader($zip));
+
+        self::assertSame(['goodbye', 'welcome'], $source->keys());
+    }
+
+    /**
      * @param array<string, string> $files relative path => content
      */
     private function buildZip(array $files): string
