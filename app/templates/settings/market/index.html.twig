@@ -52,6 +52,7 @@
                     <th>{{ 'settings_market.description_column'|trans }}</th>
                     <th>{{ 'settings_market.type_column'|trans }}</th>
                     <th>{{ 'settings_market.version_column'|trans }}</th>
+                    <th>{{ 'settings_market.translation_coverage_column'|trans }}</th>
                     <th>{{ 'settings_market.actions_column'|trans }}</th>
                 </tr>
             </thead>
@@ -62,6 +63,11 @@
                         <td>{{ item.plugin.manifest.description }}</td>
                         <td>{{ ('plugin_type.' ~ item.plugin.manifest.type)|trans }}</td>
                         <td>{{ item.plugin.manifest.version }}</td>
+                        <td>
+                            {% if item.translationCoveragePercent is not null %}
+                                {{ 'settings_market.translation_coverage_badge'|trans({'%percent%': item.translationCoveragePercent}) }}
+                            {% endif %}
+                        </td>
                         <td>
                             {% if item.installed and item.updateAvailable %}
                                 <form method="post" action="{{ path('settings_market_update', {pluginId: item.plugin.id}) }}">

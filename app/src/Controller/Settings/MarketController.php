@@ -27,6 +27,7 @@ declare(strict_types=1);
 
 namespace App\Controller\Settings;
 
+use AnimeDb\PluginContracts\Manifest\PluginType;
 use App\Entity\ValueObject\Exception\InvalidPluginIdException;
 use App\Entity\ValueObject\PluginId;
 use App\Message\RefreshMarketSnapshotMessage;
@@ -45,6 +46,7 @@ use App\Service\Plugin\Exception\PluginInstallException;
 use App\Service\Plugin\Exception\PluginNotInstalledException;
 use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\ZipPluginInstaller;
+use App\Service\Translation\TranslationCoverageService;
 use Composer\Semver\Comparator;
 use Composer\Semver\VersionParser;
 use Symfony\Component\HttpFoundation\RedirectResponse;
@@ -121,6 +123,11 @@ use Twig\Environment;
  * {@see self::refreshStatus()} through the polling URL, which is how that endpoint tells a
  * completed refresh (the success timestamp moved past its baseline) apart from a failed attempt
  * (only the attempt timestamp moved) or one still in flight (neither moved yet).
+ *
+ * Translation coverage badge (issue #514): a `translation`-type plugin's row shows what share of
+ * the app's interface strings its resolved version's catalog covers, computed by
+ * {@see self::translationCoveragePercent()} — see that method for why this is done here, at
+ * render, rather than baked into the snapshot.
  */
 final class MarketController
 {
@@ -153,6 +160,7 @@ final class MarketController
         private readonly Environment $twig,
         private readonly MessageBusInterface $messageBus,
         private readonly AppConfigStore $configStore,
+        private readonly TranslationCoverageService $translationCoverage,
     ) {
     }
 
@@ -368,6 +376,7 @@ final class MarketController
 
         $items = [];
         if ($snapshotReady) {
+            $appTranslationKeyCount = null;
             foreach ($snapshot->plugins as $plugin) {
                 $installedPlugin = $this->installedPlugins->get(new PluginId($plugin->id));
 
@@ -377,6 +386,7 @@ final class MarketController
                     'updateAvailable' => $installedPlugin !== null
                         && $plugin->resolvedVersion !== null
                         && $this->isNewerVersion($plugin->resolvedVersion, $installedPlugin->manifest->version),
+                    'translationCoveragePercent' => $this->translationCoveragePercent($plugin, $appTranslationKeyCount),
                 ];
             }
         }
@@ -431,6 +441,33 @@ final class MarketController
             $versionParser->normalize($resolvedVersion),
             $versionParser->normalize($installedVersion),
         );
+    }
+
+    /**
+     * The storefront's coverage badge (issue #514): a percentage computed here, at render time,
+     * from two counts already in memory — never persisted, so it can never go stale between an
+     * app upgrade and the next market refresh (a stale snapshot is rejected by {@see renderIndex()}
+     * before this is ever reached). Only shown for a {@see PluginType::Translation} plugin whose
+     * resolved version published a key count; a clamp to 100 covers a plugin catalog that grew
+     * past the app's own key count (e.g. it also carries keys for a locale variant this app
+     * version does not).
+     *
+     * $appTranslationKeyCount is read once per render and cached by reference across the loop in
+     * {@see renderIndex()}, so a page with several translation plugins parses the reference
+     * catalog at most once.
+     */
+    private function translationCoveragePercent(MarketSnapshotPlugin $plugin, ?int &$appTranslationKeyCount): ?int
+    {
+        if ($plugin->manifest['type'] !== PluginType::Translation->value || $plugin->translationKeyCount === null) {
+            return null;
+        }
+
+        $appTranslationKeyCount ??= $this->translationCoverage->referenceKeyCount();
+        if ($appTranslationKeyCount <= 0) {
+            return null;
+        }
+
+        return min(100, (int) round($plugin->translationKeyCount / $appTranslationKeyCount * 100));
     }
 
     private function findPlugin(MarketSnapshot $snapshot, PluginId $id): ?MarketSnapshotPlugin

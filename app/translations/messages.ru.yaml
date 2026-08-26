@@ -218,6 +218,8 @@ settings_market:
     description_column: Описание
     type_column: Тип
     version_column: Версия
+    translation_coverage_column: Покрытие интерфейса
+    translation_coverage_badge: 'Переведено %percent%% строк интерфейса приложения'
     actions_column: Действия
     already_installed: Уже установлен
     incompatible_core: 'Нужна версия ядра, совместимая с "%requiredCore%".'

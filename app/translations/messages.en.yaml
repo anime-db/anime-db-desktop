@@ -218,6 +218,8 @@ settings_market:
     description_column: Description
     type_column: Type
     version_column: Version
+    translation_coverage_column: Interface coverage
+    translation_coverage_badge: '%percent%% of app interface strings translated'
     actions_column: Actions
     already_installed: Already installed
     incompatible_core: 'Needs a core version compatible with "%requiredCore%".'

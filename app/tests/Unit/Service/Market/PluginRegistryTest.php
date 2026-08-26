@@ -76,6 +76,58 @@ final class PluginRegistryTest extends TestCase
         $this->assertSame('>=2.1 <3.0', $plugin->versions[0]->core);
     }
 
+    /**
+     * Issue #514: `translation_keys_count` is carried per-version, alongside `sha256` — a version
+     * entry that does not publish it (a plugin published before this field existed) must still
+     * parse, just with a `null` count on that {@see \App\Service\Market\MarketPluginVersion}.
+     */
+    public function testPluginsCarriesOverThePerVersionTranslationKeyCountWhenPresent(): void
+    {
+        $registry = PluginRegistry::fromJson(json_encode([
+            'sequence' => 1,
+            'asset_mirrors' => [],
+            'plugins' => [
+                [
+                    'id' => 'animedb-german',
+                    'manifest' => $this->manifest('animedb-german', '1.2.0'),
+                    'versions' => [
+                        ['version' => '1.2.0', 'core' => '>=2.0.0', 'sha256' => 'abc123', 'translation_keys_count' => 150],
+                        ['version' => '1.1.0', 'core' => '>=2.0.0', 'sha256' => 'def456'],
+                    ],
+                ],
+            ],
+        ], \JSON_THROW_ON_ERROR));
+
+        $versions = $registry->plugins()[0]->versions;
+        $this->assertSame(150, $versions[0]->translationKeyCount);
+        $this->assertNull($versions[1]->translationKeyCount);
+    }
+
+    /**
+     * Regression guard for issue #514: this fixture mirrors the exact shape of a version entry
+     * as published in the real plugins registry (`translation_keys_count`, `core`, `sha256`), so
+     * a typo in the field name read by {@see PluginRegistry} fails this test even when every
+     * other fixture in the suite agrees with the (wrong) name.
+     */
+    public function testPluginsReadsTranslationKeyCountFromAPublishedRegistryShapedVersionEntry(): void
+    {
+        $registry = PluginRegistry::fromJson(json_encode([
+            'sequence' => 1,
+            'asset_mirrors' => [],
+            'plugins' => [
+                [
+                    'id' => 'animedb-language-pack',
+                    'manifest' => $this->manifest('animedb-language-pack', '0.2.1'),
+                    'versions' => [
+                        ['version' => '0.2.1', 'core' => '>=0.0.1', 'sha256' => '2910ece8', 'translation_keys_count' => 356],
+                    ],
+                ],
+            ],
+        ], \JSON_THROW_ON_ERROR));
+
+        $this->assertSame(356, $registry->plugins()[0]->versions[0]->translationKeyCount);
+    }
+
     public function testPluginsSkipsEntriesWithAnInvalidManifest(): void
     {
         $registry = PluginRegistry::fromJson(json_encode([

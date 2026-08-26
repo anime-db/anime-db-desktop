@@ -96,6 +96,35 @@ final class MarketSnapshotCacheTest extends TestCase
         $this->assertNull($cache->load());
     }
 
+    /**
+     * Issue #514: a cache file written before `translationKeyCount` existed on
+     * {@see MarketSnapshotPlugin} has no such key in its plugin entries at all — that must keep
+     * loading rather than being rejected as malformed, or every cache built before this issue
+     * shipped would go dark until the next refresh.
+     */
+    public function testLoadsAPreExistingCacheFileWithoutTheTranslationKeyCountField(): void
+    {
+        file_put_contents($this->path, json_encode([
+            'core_version' => '2.5.0',
+            'sequence' => 42,
+            'asset_mirrors' => ['https://mr01.anime-db.org/<id>/<version>/<file>'],
+            'plugins' => [[
+                'id' => 'animedb-shikimori',
+                'manifest' => ['id' => 'animedb-shikimori', 'name' => 'Shikimori'],
+                'resolvedVersion' => '1.1.0',
+                'sha256' => 'sha-1.1.0',
+                'latestVersion' => '1.2.0',
+                'latestVersionCore' => '>=3.0.0',
+            ]],
+        ], \JSON_THROW_ON_ERROR));
+
+        $cache = new MarketSnapshotCache($this->path);
+        $loaded = $cache->load();
+
+        $this->assertNotNull($loaded);
+        $this->assertNull($loaded->plugins[0]->translationKeyCount);
+    }
+
     public function testReturnsNullWhenTheCachedFileIsMissingARequiredField(): void
     {
         file_put_contents($this->path, json_encode(['sequence' => 1, 'plugins' => []], \JSON_THROW_ON_ERROR));
