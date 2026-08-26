@@ -1,0 +1,57 @@
+{#
+ # AnimeDb package.
+ #
+ # @author    Peter Gribanov <info@peter-gribanov.ru>
+ # @copyright Copyright (c) 2026, Peter Gribanov
+ # @license   https://www.gnu.org/licenses/gpl-3.0.html GPL-3.0-or-later
+ #
+ # This program is free software: you can redistribute it and/or modify
+ # it under the terms of the GNU General Public License as published by
+ # the Free Software Foundation, either version 3 of the License, or
+ # (at your option) any later version.
+ #
+ # This program is distributed in the hope that it will be useful,
+ # but WITHOUT ANY WARRANTY; without even the implied warranty of
+ # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ # GNU General Public License for more details.
+ #
+ # You should have received a copy of the GNU General Public License
+ # along with this program. If not, see <https://www.gnu.org/licenses/>.
+ #}
+{#
+ # Rendered both by anime/show.html.twig (initial load, oob = false) and, as an out-of-band
+ # swap, by AnimeFillController after any images fill attempt - success or rejection alike, so a
+ # "not found"/"rejected" notice appears right next to the button that triggered it instead of in
+ # the unrelated fields fragment (issue #507). hx-swap-oob is only emitted when oob = true: the
+ # attribute only makes sense on a fragment delivered as an out-of-band swap, not on the copy
+ # included directly by show.html.twig's own document. Unlike the pre-#507 markup, this section
+ # always exists in the DOM, empty state included - an oob swap can only replace an element that
+ # is already there by id, so a gallery hidden behind {% if anime.images is not empty %} would
+ # have nowhere to land on the very first successful fill. Newly filled images are added to the
+ # gallery, never replace it (see PluginAnimeDataMerger::applyImages()'s union-by-filename
+ # dedup) - there is no per-image delete in this UI, so a replace semantic here would be an
+ # unrecoverable data loss.
+ #}
+{% import 'anime/_fill_fields.html.twig' as fill %}
+
+<section class="anime-detail__gallery" id="anime-gallery-{{ anime.id }}"{% if oob|default(false) %} hx-swap-oob="outerHTML"{% endif %}>
+    <h2 class="anime-detail__section-heading">{{ 'anime_detail.gallery_heading'|trans }}</h2>
+
+    {% if fill_error|default(null) %}
+        <p class="anime-detail__fill-error">{{ fill_error|trans }}</p>
+    {% endif %}
+
+    {% if anime.images is not empty %}
+        <ul class="anime-detail__gallery-list">
+            {% for image in anime.images %}
+                <li>
+                    <img src="app-media://anime/{{ anime.id }}/{{ image }}" alt="{{ anime.title }}" class="anime-detail__gallery-image" loading="lazy">
+                </li>
+            {% endfor %}
+        </ul>
+    {% else %}
+        <p class="anime-detail__gallery-empty">{{ 'anime_detail.empty_value'|trans }}</p>
+    {% endif %}
+
+    {{ fill.fill_button(anime, 'images', fillable_fields.images) }}
+</section>

@@ -36,9 +36,11 @@ use App\Service\Plugin\InstalledPluginsRegistry;
  * a "fill from source" button at all and, when several active fillers support the same field,
  * which plugins to list in the source dropdown (issue #234).
  *
- * Only the card fields that already have a display slot in anime/_fill_fields.html.twig are
- * covered here - title, descriptions, cover and images live in other sections of the card and
- * are left for a follow-up, and datePremiere/dateEnd are not shown anywhere on the card yet.
+ * Only the card fields that already have a display slot somewhere on the card are covered here -
+ * title and descriptions have no slot at all, and datePremiere/dateEnd are not shown anywhere on
+ * the card yet. cover and images render outside anime/_fill_fields.html.twig, in the media and
+ * gallery sections of anime/show.html.twig (issue #507), but are listed through this same method
+ * so those sections never need a second source for "which plugins support this field".
  */
 final class FillableFieldsPresenter
 {
@@ -52,6 +54,8 @@ final class FillableFieldsPresenter
         'durationMinutes',
         'episodesCount',
         'countries',
+        'cover',
+        'images',
     ];
 
     public function __construct(

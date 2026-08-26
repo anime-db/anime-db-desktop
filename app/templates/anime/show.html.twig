@@ -33,14 +33,7 @@
 
 {% block body %}
     <main class="anime-detail">
-        <div class="anime-detail__media">
-            {% if anime.cover %}
-                <img class="anime-detail__cover" src="app-media://anime/{{ anime.id }}/{{ anime.cover }}" alt="{{ anime.title }}">
-            {% else %}
-                <div class="anime-detail__cover anime-detail__cover--placeholder">{{ 'anime_detail.no_cover'|trans }}</div>
-            {% endif %}
-            <h1 class="anime-detail__title"><bdi>{{ anime.title }}</bdi></h1>
-        </div>
+        {{ include('anime/_media.html.twig', {anime: anime, fillable_fields: fillable_fields}) }}
 
         <div class="anime-detail__content">
             {{ include('anime/_editable.html.twig', {anime: anime, editing: null, error: null}) }}
@@ -114,19 +107,7 @@
                 </section>
             {% endif %}
 
-            {% if anime.images is not empty %}
-                <section class="anime-detail__gallery">
-                    <h2 class="anime-detail__section-heading">{{ 'anime_detail.gallery_heading'|trans }}</h2>
-
-                    <ul class="anime-detail__gallery-list">
-                        {% for image in anime.images %}
-                            <li>
-                                <img src="app-media://anime/{{ anime.id }}/{{ image }}" alt="{{ anime.title }}" class="anime-detail__gallery-image" loading="lazy">
-                            </li>
-                        {% endfor %}
-                    </ul>
-                </section>
-            {% endif %}
+            {{ include('anime/_gallery.html.twig', {anime: anime, fillable_fields: fillable_fields}) }}
 
             {% for widget in widgets %}
                 {# Async-loaded plugin widget (issue #212): the placeholder loads independently

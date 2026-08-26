@@ -363,6 +363,7 @@ anime_detail:
     fill_from_source_button: Fill from source
     fill_source_label: Source
     error_fill_not_found: The source found no match for this anime.
+    error_fill_image_rejected: The source returned an image that could not be saved.
 
 anime_new:
     title: New Anime — AnimeDB

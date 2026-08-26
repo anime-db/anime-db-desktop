@@ -33,6 +33,7 @@ use App\Entity\ValueObject\PluginId;
 use App\Service\AnimeViewFactory;
 use App\Service\Plugin\Filler\FieldFillerService;
 use App\Service\Plugin\Filler\FillableFieldsPresenter;
+use App\Service\Plugin\Filler\FillResult;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
@@ -42,14 +43,19 @@ use Symfony\Component\Security\Csrf\CsrfTokenManagerInterface;
 use Twig\Environment;
 
 /**
- * Point fill-in of a single card field from an explicitly chosen plugin (issue #234): the "fill
- * from source" button/dropdown rendered by anime/_fill_fields.html.twig for every field at least
- * one active filler plugin supports. Same HTMX partial-swap shape as AnimeEditableController
- * (issue #103) - every action here re-renders and swaps that one fragment, never the whole page.
+ * Point fill-in of a single card field from an explicitly chosen plugin (issue #234, extended to
+ * cover/images by issue #507): the "fill from source" button/dropdown rendered by
+ * anime/_fill_fields.html.twig for every field at least one active filler plugin supports, plus
+ * the same button in anime/_media.html.twig (cover) and anime/_gallery.html.twig (images). Same
+ * HTMX partial-swap shape as AnimeEditableController (issue #103) - every action here re-renders
+ * and swaps the fields fragment, and for cover/images additionally sends the corresponding
+ * partial back as an out-of-band swap (see renderFillFields()), success or failure alike, so the
+ * notice always lands next to the button that triggered it instead of in the unrelated fields
+ * fragment further down the page.
  *
  * The resolve/merge itself lives in FieldFillerService; this controller only wires the HTTP
- * request to it and turns "nothing matched" (a null return, including a plugin call that threw)
- * into the same fragment with an inline notice instead of an error page, per the issue's UX.
+ * request to it and turns a non-Applied {@see FillResult} into the same fragment with an inline
+ * notice instead of an error page, per the issue's UX.
  */
 final class AnimeFillController
 {
@@ -65,40 +71,68 @@ final class AnimeFillController
     #[Route(
         '/anime/{id}/fill/{field}',
         name: 'anime_fill_field',
-        requirements: ['field' => 'alternativeNames|genres|themes|demographic|studios|durationMinutes|episodesCount|countries'],
+        requirements: ['field' => 'alternativeNames|genres|themes|demographic|studios|durationMinutes|episodesCount|countries|cover|images'],
         methods: ['POST'],
     )]
     public function fill(Anime $anime, string $field, Request $request): Response
     {
         $this->assertValidCsrfToken('anime_fill_'.$field.'_'.$anime->id, $request);
 
-        $filled = $this->tryFill($anime, $field, (string) $request->request->get('plugin_id', ''));
+        $result = $this->tryFill($anime, $field, (string) $request->request->get('plugin_id', ''));
 
-        return $this->renderFillFields($anime, $filled ? null : 'anime_detail.error_fill_not_found');
+        $error = match ($result) {
+            FillResult::Applied => null,
+            FillResult::NotFound => 'anime_detail.error_fill_not_found',
+            FillResult::ImageRejected => 'anime_detail.error_fill_image_rejected',
+        };
+
+        return $this->renderFillFields($anime, $field, $error);
     }
 
-    private function tryFill(Anime $anime, string $field, string $rawPluginId): bool
+    private function tryFill(Anime $anime, string $field, string $rawPluginId): FillResult
     {
         if ($rawPluginId === '') {
-            return false;
+            return FillResult::NotFound;
         }
 
         try {
             $pluginId = new PluginId($rawPluginId);
         } catch (InvalidPluginIdException) {
-            return false;
+            return FillResult::NotFound;
         }
 
         return $this->fieldFiller->fill($anime, $pluginId, $field);
     }
 
-    private function renderFillFields(Anime $anime, ?string $error = null): Response
+    /**
+     * The fields fragment is always re-rendered and is always the response's primary content
+     * (its id matches the form's hx-target). For 'cover'/'images', the notice belongs next to
+     * the button that triggered it, not in this unrelated fragment - so $error is passed here
+     * only for the other eight fields, and the matching anime/_media.html.twig or
+     * anime/_gallery.html.twig partial is appended after it instead, carrying the error itself
+     * (issue #507). Both partials are rendered with oob = true, which is what makes them emit
+     * hx-swap-oob="outerHTML" on their root element, so HTMX swaps them into place by id
+     * anywhere on the page regardless of the response's declared target, without touching
+     * anything else on the card.
+     */
+    private function renderFillFields(Anime $anime, string $field, ?string $error): Response
     {
-        return new Response($this->twig->render('anime/_fill_fields.html.twig', [
+        $context = [
             'anime' => $this->viewFactory->serialize($anime),
             'fillable_fields' => $this->fillableFieldsPresenter->build(),
-            'fill_error' => $error,
-        ]));
+        ];
+
+        $isMediaField = \in_array($field, ['cover', 'images'], true);
+
+        $html = $this->twig->render('anime/_fill_fields.html.twig', [...$context, 'fill_error' => $isMediaField ? null : $error]);
+
+        if ($field === 'cover') {
+            $html .= $this->twig->render('anime/_media.html.twig', [...$context, 'fill_error' => $error, 'oob' => true]);
+        } elseif ($field === 'images') {
+            $html .= $this->twig->render('anime/_gallery.html.twig', [...$context, 'fill_error' => $error, 'oob' => true]);
+        }
+
+        return new Response($html);
     }
 
     private function assertValidCsrfToken(string $tokenId, Request $request): void

@@ -85,11 +85,21 @@ final class PluginAnimeDataMerger
      *                         ({@see \AnimeDb\PluginContracts\Filler\FillerInterface::getFillableFields()})
      *                         and, for the point fill-in scenario, to the single field the
      *                         user asked for
+     *
+     * @return list<string> the subset of $fields whose source data was non-empty but could not
+     *                      be applied - today only 'cover' and 'images' can end up here (a URL
+     *                      that failed to download or normalize into WebP, see applyCover()/
+     *                      applyImages()); every other field's behavior is unchanged and never
+     *                      appears in this list
      */
-    public function apply(Anime $anime, PluginAnimeData $data, array $fields): void
+    public function apply(Anime $anime, PluginAnimeData $data, array $fields): array
     {
+        $unapplied = [];
         foreach ($fields as $field) {
-            match ($field) {
+            // Every arm here is void except applyCover()/applyImages(), which are the only ones
+            // that can ever report a real rejection - a void arm evaluates to null, so the
+            // `=== false` check below can never mistake "nothing to check" for "rejected".
+            $applied = match ($field) {
                 'title' => $anime->setTitle($data->title),
                 'alternativeNames' => $this->applyAlternativeNames($anime, $data->alternativeNames ?? []),
                 'descriptions' => $this->applyDescriptions($anime, $data->descriptions ?? []),
@@ -106,7 +116,13 @@ final class PluginAnimeDataMerger
                 'images' => $this->applyImages($anime, $data->images ?? []),
                 default => null, // type: not applicable to an already-constructed entity, see class docblock
             };
+
+            if ($applied === false) {
+                $unapplied[] = $field;
+            }
         }
+
+        return $unapplied;
     }
 
     /** @param string[] $names */
@@ -201,39 +217,62 @@ final class PluginAnimeDataMerger
      * Downloading needs %AppData%/media/{$anime->id}/ to exist as a path, which is only true
      * once the entity has a database id — silently skipped for a not-yet-persisted Anime (the
      * bulk fill-in scenario, which does not pass 'cover' in $fields for exactly this reason,
-     * see BulkFillerService).
+     * see BulkFillerService). That skip is not a rejection (nothing was attempted, so it never
+     * belongs in apply()'s unapplied-fields list), unlike a download/normalize failure below.
+     *
+     * @return bool false when $url was given but the download or WebP normalization failed —
+     *              apply() reports that back to the caller so it can tell "the plugin found
+     *              nothing" apart from "the plugin found an image the host could not save"
      */
-    private function applyCover(Anime $anime, ?string $url): void
+    private function applyCover(Anime $anime, ?string $url): bool
     {
         if ($url === null || $anime->id === null) {
-            return;
+            return true;
         }
 
         $filename = $this->mediaDownloader->download($anime->id, $url);
-        if ($filename !== null) {
-            $anime->setCover($filename);
+        if ($filename === null) {
+            return false;
         }
+
+        $anime->setCover($filename);
+
+        return true;
     }
 
     /**
      * @param string[] $urls
      *
+     * @return bool false only when $urls was non-empty and every single URL failed to download —
+     *              one accepted URL among several rejected ones is still success (see
+     *              applyCover()'s docblock for why the same call reports a failure at all);
+     *              a URL that downloads to a filename the gallery already has is not a failure
+     *              either, it is the union-by-filename dedup this class enforces
+     *
      * @see applyCover() for why a not-yet-persisted Anime is skipped
      */
-    private function applyImages(Anime $anime, array $urls): void
+    private function applyImages(Anime $anime, array $urls): bool
     {
         if ($anime->id === null || $urls === []) {
-            return;
+            return true;
         }
 
         $existing = array_map(static fn (AnimeImage $image): string => $image->source, $anime->getImages()->toArray());
+        $downloadedAny = false;
 
         foreach ($urls as $url) {
             $filename = $this->mediaDownloader->download($anime->id, $url);
-            if ($filename !== null && !\in_array($filename, $existing, true)) {
+            if ($filename === null) {
+                continue;
+            }
+
+            $downloadedAny = true;
+            if (!\in_array($filename, $existing, true)) {
                 $anime->addImage($filename);
                 $existing[] = $filename;
             }
         }
+
+        return $downloadedAny;
     }
 }

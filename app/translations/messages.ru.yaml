@@ -363,6 +363,7 @@ anime_detail:
     fill_from_source_button: Заполнить из источника
     fill_source_label: Источник
     error_fill_not_found: Источник не нашёл совпадение по этому аниме.
+    error_fill_image_rejected: Источник вернул изображение, которое не удалось сохранить.
 
 anime_new:
     title: Новая запись — AnimeDB

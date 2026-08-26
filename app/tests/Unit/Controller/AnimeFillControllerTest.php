@@ -102,6 +102,7 @@ final class AnimeFillControllerTest extends TestCase
         iterable $fillers,
         ?Environment $twig = null,
         ?CsrfTokenManagerInterface $csrfTokenManager = null,
+        ?PluginMediaDownloaderInterface $mediaDownloader = null,
     ): AnimeFillController {
         $pluginsConfigPath = sys_get_temp_dir().'/anime-fill-controller-test-'.uniqid().'.json';
         $registry = new FillerRegistry($fillers, new PluginsConfigStore($pluginsConfigPath));
@@ -111,7 +112,7 @@ final class AnimeFillControllerTest extends TestCase
             new PluginAnimeDataMerger(
                 new StudioRepository($this->entityManager),
                 $this->entityManager,
-                $this->createStub(PluginMediaDownloaderInterface::class),
+                $mediaDownloader ?? $this->createStub(PluginMediaDownloaderInterface::class),
             ),
             $this->entityManager,
             new ArrayAdapter(),
@@ -220,6 +221,119 @@ final class AnimeFillControllerTest extends TestCase
 
         $this->assertSame(200, $response->getStatusCode());
         $this->assertNull($anime->getDurationMinutes());
+    }
+
+    public function testFillingCoverSuccessfullyAlsoRendersTheMediaPartialAsAnOobSwap(): void
+    {
+        $data = new PluginAnimeData(title: 'Bleach', cover: 'https://example.test/cover.jpg');
+        $filler = $this->createStub(FillerInterface::class);
+        $filler->method('getFillableFields')->willReturn(['cover']);
+        $filler->method('resolveExternalId')->willReturn('104');
+        $filler->method('findById')->willReturn($data);
+
+        $downloader = $this->createStub(PluginMediaDownloaderInterface::class);
+        $downloader->method('download')->willReturn('abc123.jpg');
+
+        $anime = $this->persistedAnime();
+
+        $rendered = [];
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->exactly(2))
+            ->method('render')
+            ->willReturnCallback(function (string $template, array $params) use (&$rendered): string {
+                $rendered[] = [$template, $params];
+
+                return '<div data-template="'.$template.'"></div>';
+            });
+
+        $controller = $this->createController(['animedb-shikimori' => $filler], $twig, mediaDownloader: $downloader);
+
+        $request = Request::create('/anime/1/fill/cover', 'POST', ['plugin_id' => 'animedb-shikimori', '_token' => 'token']);
+
+        $response = $controller->fill($anime, 'cover', $request);
+
+        $this->assertSame('abc123.jpg', $anime->getCover());
+        $this->assertSame('anime/_fill_fields.html.twig', $rendered[0][0]);
+        $this->assertNull($rendered[0][1]['fill_error']);
+        $this->assertSame('anime/_media.html.twig', $rendered[1][0]);
+        $this->assertSame('abc123.jpg', $rendered[1][1]['anime']['cover']);
+        $content = (string) $response->getContent();
+        $this->assertStringContainsString('anime/_fill_fields.html.twig', $content);
+        $this->assertStringContainsString('anime/_media.html.twig', $content);
+    }
+
+    public function testFillingImagesSuccessfullyAlsoRendersTheGalleryPartialAsAnOobSwap(): void
+    {
+        $data = new PluginAnimeData(title: 'Bleach', images: ['https://example.test/1.jpg']);
+        $filler = $this->createStub(FillerInterface::class);
+        $filler->method('getFillableFields')->willReturn(['images']);
+        $filler->method('resolveExternalId')->willReturn('104');
+        $filler->method('findById')->willReturn($data);
+
+        $downloader = $this->createStub(PluginMediaDownloaderInterface::class);
+        $downloader->method('download')->willReturn('new.jpg');
+
+        $anime = $this->persistedAnime();
+
+        $rendered = [];
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->exactly(2))
+            ->method('render')
+            ->willReturnCallback(function (string $template, array $params) use (&$rendered): string {
+                $rendered[] = [$template, $params];
+
+                return '<div data-template="'.$template.'"></div>';
+            });
+
+        $controller = $this->createController(['animedb-shikimori' => $filler], $twig, mediaDownloader: $downloader);
+
+        $request = Request::create('/anime/1/fill/images', 'POST', ['plugin_id' => 'animedb-shikimori', '_token' => 'token']);
+
+        $controller->fill($anime, 'images', $request);
+
+        $this->assertSame('anime/_fill_fields.html.twig', $rendered[0][0]);
+        $this->assertSame('anime/_gallery.html.twig', $rendered[1][0]);
+        $this->assertSame(['new.jpg'], $rendered[1][1]['anime']['images']);
+    }
+
+    public function testFillingCoverWithAnUndownloadableUrlRendersTheImageRejectedErrorOnTheMediaPartial(): void
+    {
+        $data = new PluginAnimeData(title: 'Bleach', cover: 'https://example.test/broken.jpg');
+        $filler = $this->createStub(FillerInterface::class);
+        $filler->method('getFillableFields')->willReturn(['cover']);
+        $filler->method('resolveExternalId')->willReturn('104');
+        $filler->method('findById')->willReturn($data);
+
+        $downloader = $this->createStub(PluginMediaDownloaderInterface::class);
+        $downloader->method('download')->willReturn(null);
+
+        $anime = $this->persistedAnime();
+
+        $rendered = [];
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->exactly(2))
+            ->method('render')
+            ->willReturnCallback(function (string $template, array $params) use (&$rendered): string {
+                $rendered[] = [$template, $params];
+
+                return '<div data-template="'.$template.'"></div>';
+            });
+
+        $controller = $this->createController(['animedb-shikimori' => $filler], $twig, mediaDownloader: $downloader);
+
+        $request = Request::create('/anime/1/fill/cover', 'POST', ['plugin_id' => 'animedb-shikimori', '_token' => 'token']);
+
+        $controller->fill($anime, 'cover', $request);
+
+        // The notice lands on the media partial, next to the button that triggered it - not on
+        // the unrelated fields fragment further down the page (issue #507 review feedback).
+        $this->assertSame('anime/_fill_fields.html.twig', $rendered[0][0]);
+        $this->assertNull($rendered[0][1]['fill_error']);
+        $this->assertSame('anime/_media.html.twig', $rendered[1][0]);
+        $this->assertSame('anime_detail.error_fill_image_rejected', $rendered[1][1]['fill_error']);
+        $this->assertTrue($rendered[1][1]['oob']);
+
+        $this->assertNull($anime->getCover());
     }
 
     public function testFillRejectsAnInvalidCsrfToken(): void
