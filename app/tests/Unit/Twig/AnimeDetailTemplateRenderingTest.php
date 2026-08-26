@@ -235,7 +235,10 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
 
         $this->assertStringContainsString('id="anime-media-1"', $html);
         $this->assertStringContainsString('id="anime-gallery-1"', $html);
-        $this->assertStringContainsString('hx-swap-oob="outerHTML"', $html);
+        // show.html.twig includes both partials directly for the initial full-page load, not as
+        // an out-of-band swap - hx-swap-oob is only emitted when AnimeFillController renders
+        // them with oob = true (issue #507 review feedback).
+        $this->assertStringNotContainsString('hx-swap-oob', $html);
         $this->assertStringContainsString('hx-post="/anime/1/fill/cover"', $html);
         $this->assertStringContainsString('hx-post="/anime/1/fill/images"', $html);
         $this->assertStringContainsString('name="plugin_id" value="animedb-shikimori"', $html);

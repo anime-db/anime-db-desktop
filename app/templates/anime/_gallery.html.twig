@@ -19,19 +19,27 @@
  # along with this program. If not, see <https://www.gnu.org/licenses/>.
  #}
 {#
- # Rendered both by anime/show.html.twig (initial load) and, as an out-of-band swap, by
- # AnimeFillController after a successful images fill (issue #507). Unlike the pre-#507 markup,
- # this section always exists in the DOM, empty state included - an oob swap can only replace an
- # element that is already there by id, so a gallery hidden behind {% if anime.images is not
- # empty %} would have nowhere to land on the very first successful fill. Newly filled images are
- # added to the gallery, never replace it (see PluginAnimeDataMerger::applyImages()'s union-by-
- # filename dedup) - there is no per-image delete in this UI, so a replace semantic here would be
- # an unrecoverable data loss.
+ # Rendered both by anime/show.html.twig (initial load, oob = false) and, as an out-of-band
+ # swap, by AnimeFillController after any images fill attempt - success or rejection alike, so a
+ # "not found"/"rejected" notice appears right next to the button that triggered it instead of in
+ # the unrelated fields fragment (issue #507). hx-swap-oob is only emitted when oob = true: the
+ # attribute only makes sense on a fragment delivered as an out-of-band swap, not on the copy
+ # included directly by show.html.twig's own document. Unlike the pre-#507 markup, this section
+ # always exists in the DOM, empty state included - an oob swap can only replace an element that
+ # is already there by id, so a gallery hidden behind {% if anime.images is not empty %} would
+ # have nowhere to land on the very first successful fill. Newly filled images are added to the
+ # gallery, never replace it (see PluginAnimeDataMerger::applyImages()'s union-by-filename
+ # dedup) - there is no per-image delete in this UI, so a replace semantic here would be an
+ # unrecoverable data loss.
  #}
 {% import 'anime/_fill_fields.html.twig' as fill %}
 
-<section class="anime-detail__gallery" id="anime-gallery-{{ anime.id }}" hx-swap-oob="outerHTML">
+<section class="anime-detail__gallery" id="anime-gallery-{{ anime.id }}"{% if oob|default(false) %} hx-swap-oob="outerHTML"{% endif %}>
     <h2 class="anime-detail__section-heading">{{ 'anime_detail.gallery_heading'|trans }}</h2>
+
+    {% if fill_error|default(null) %}
+        <p class="anime-detail__fill-error">{{ fill_error|trans }}</p>
+    {% endif %}
 
     {% if anime.images is not empty %}
         <ul class="anime-detail__gallery-list">
