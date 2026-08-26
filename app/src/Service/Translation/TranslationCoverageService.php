@@ -124,6 +124,17 @@ final class TranslationCoverageService
         return $coverage;
     }
 
+    /**
+     * The app's own reference key count for the `messages` domain (issue #514), reusing the exact
+     * same reference catalog {@see coverageForPluginDirectory()} compares a plugin against — the
+     * market storefront's coverage badge divides a plugin's own key count (carried in its market
+     * snapshot entry) by this number rather than recomputing it another way.
+     */
+    public function referenceKeyCount(): int
+    {
+        return \count(TranslationCatalog::loadFile($this->referenceCatalogPath()) ?? []);
+    }
+
     private function referenceCatalogPath(): string
     {
         return $this->projectDir.\DIRECTORY_SEPARATOR.'translations'.\DIRECTORY_SEPARATOR.'messages.en.yaml';

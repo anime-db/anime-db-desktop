@@ -37,6 +37,9 @@ use AnimeDb\PluginContracts\Manifest\Manifest;
  * A plugin with no version compatible with `$coreVersion` is still included in the snapshot, with
  * `resolvedVersion`/`sha256` left `null` (see {@see MarketSnapshotPlugin}) — dropping it instead
  * would leave the storefront with no way to show it inactive with a "needs core version X" hint.
+ * `translationKeyCount` (issue #514) follows the same `$resolvedVersion` rather than
+ * {@see MarketPlugin::latestVersion()} — a coverage figure attached to a version the storefront
+ * would not actually install describes the wrong artifact.
  *
  * Fetching, signature/anti-rollback verification and asset download stay entirely upstream of
  * this class ({@see PluginRegistryLoader}, {@see MarketAssetDownloader}) — this builder only
@@ -69,6 +72,7 @@ final class MarketSnapshotBuilder
             $resolvedVersion !== null ? $registry->findVersionSha256($plugin->id, $resolvedVersion->version) : null,
             $latestVersion->version,
             $latestVersion->core,
+            $resolvedVersion?->translationKeyCount,
         );
     }
 

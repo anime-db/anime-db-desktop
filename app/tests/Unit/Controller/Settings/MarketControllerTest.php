@@ -40,6 +40,7 @@ use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\PluginCacheWarmer;
 use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Plugin\ZipPluginInstaller;
+use App\Service\Translation\TranslationCoverageService;
 use App\Service\WsPublisher;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
@@ -69,6 +70,13 @@ final class MarketControllerTest extends TestCase
     private const string PLUGIN_ZIP_CONTENT = 'trusted market plugin archive bytes';
     private const string DEFAULT_MIRROR = 'https://mirror.example/<id>/<version>/<file>';
 
+    /**
+     * The number of keys {@see self::setUp()} writes into the fixture reference catalog — the
+     * denominator {@see TranslationCoverageService::referenceKeyCount()}
+     * reads for every translation-coverage-badge test below.
+     */
+    private const int APP_TRANSLATION_KEY_COUNT = 10;
+
     private string $rootDir;
     private string $pluginsDir;
     private string $snapshotCachePath;
@@ -88,6 +96,12 @@ final class MarketControllerTest extends TestCase
             $this->pluginsDir,
             new PluginsConfigStore($this->pluginsDir.'/plugins.json'),
             new NullLogger(),
+        );
+
+        mkdir($this->rootDir.'/translations', recursive: true);
+        file_put_contents(
+            $this->rootDir.'/translations/messages.en.yaml',
+            implode('', array_map(static fn (int $i): string => \sprintf("key%d: Value %d\n", $i, $i), range(1, self::APP_TRANSLATION_KEY_COUNT))),
         );
     }
 
@@ -123,6 +137,7 @@ final class MarketControllerTest extends TestCase
         ?CsrfTokenManagerInterface $csrf = null,
         ?MessageBusInterface $messageBus = null,
         ?AppConfigStore $configStore = null,
+        ?TranslationCoverageService $translationCoverage = null,
     ): MarketController {
         return new MarketController(
             $snapshotCache,
@@ -135,6 +150,7 @@ final class MarketControllerTest extends TestCase
             $twig,
             $messageBus ?? $this->alwaysDispatchingMessageBus(),
             $configStore ?? new AppConfigStore($this->configPath),
+            $translationCoverage ?? new TranslationCoverageService($this->installedPlugins, $this->rootDir),
         );
     }
 
@@ -179,8 +195,10 @@ final class MarketControllerTest extends TestCase
         ?string $sha256,
         string $latestVersion = '1.2.0',
         string $latestVersionCore = '>=2.0.0',
+        ?int $translationKeyCount = null,
+        string $type = 'integration',
     ): MarketSnapshotPlugin {
-        return new MarketSnapshotPlugin($id, $this->manifest($id, $latestVersion), $resolvedVersion, $sha256, $latestVersion, $latestVersionCore);
+        return new MarketSnapshotPlugin($id, $this->manifest($id, $latestVersion, $type), $resolvedVersion, $sha256, $latestVersion, $latestVersionCore, $translationKeyCount);
     }
 
     /**
@@ -234,13 +252,13 @@ final class MarketControllerTest extends TestCase
     /**
      * @return array<string, mixed>
      */
-    private function manifest(string $id, string $version = '1.2.0'): array
+    private function manifest(string $id, string $version = '1.2.0', string $type = 'integration'): array
     {
         return [
             'id' => $id,
             'name' => ucfirst($id),
             'version' => $version,
-            'type' => 'integration',
+            'type' => $type,
             'features' => ['filler' => true],
             'require' => ['core' => '>=2.0.0', 'php' => '>=8.2'],
         ];
@@ -282,6 +300,101 @@ final class MarketControllerTest extends TestCase
             ->method('render')
             ->with('settings/market/index.html.twig', $this->callback(
                 static fn (array $params): bool => $params['items'][0]['plugin']->resolvedVersion === null,
+            ))
+            ->willReturn('<html></html>');
+
+        $controller = $this->controller($this->snapshotCacheServing($snapshot), $this->assetDownloaderServingPluginZip(), $twig);
+
+        $controller->index(Request::create('/settings/market'));
+    }
+
+    /**
+     * Issue #514: a `translation`-type plugin whose resolved version published a key count gets a
+     * coverage percentage computed against the app's own reference key count
+     * ({@see self::APP_TRANSLATION_KEY_COUNT}), never a value read straight off the registry.
+     */
+    public function testIndexShowsTranslationCoveragePercentForATranslationPluginWithAKeyCount(): void
+    {
+        $snapshot = $this->snapshot([
+            $this->snapshotPlugin('animedb-german', resolvedVersion: '1.2.0', sha256: 'abc123', translationKeyCount: 6, type: 'translation'),
+        ]);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('settings/market/index.html.twig', $this->callback(
+                static fn (array $params): bool => $params['items'][0]['translationCoveragePercent'] === 60,
+            ))
+            ->willReturn('<html></html>');
+
+        $controller = $this->controller($this->snapshotCacheServing($snapshot), $this->assetDownloaderServingPluginZip(), $twig);
+
+        $controller->index(Request::create('/settings/market'));
+    }
+
+    /**
+     * A `translation`-type plugin whose resolved version carries no key count at all (published
+     * before this field existed, or the version simply is not the one the registry annotated)
+     * shows no badge rather than a fabricated 0%.
+     */
+    public function testIndexShowsNoTranslationCoverageForATranslationPluginWithoutAKeyCount(): void
+    {
+        $snapshot = $this->snapshot([
+            $this->snapshotPlugin('animedb-german', resolvedVersion: '1.2.0', sha256: 'abc123', translationKeyCount: null, type: 'translation'),
+        ]);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('settings/market/index.html.twig', $this->callback(
+                static fn (array $params): bool => $params['items'][0]['translationCoveragePercent'] === null,
+            ))
+            ->willReturn('<html></html>');
+
+        $controller = $this->controller($this->snapshotCacheServing($snapshot), $this->assetDownloaderServingPluginZip(), $twig);
+
+        $controller->index(Request::create('/settings/market'));
+    }
+
+    /**
+     * An `integration` plugin's strings live in their own domain, not the app's `messages`
+     * catalog — a key count on such a plugin's registry entry (a publishing mistake, or a future
+     * unrelated use of the field) must not produce a coverage badge.
+     */
+    public function testIndexShowsNoTranslationCoverageForANonTranslationPluginEvenWithAKeyCount(): void
+    {
+        $snapshot = $this->snapshot([
+            $this->snapshotPlugin('animedb-shikimori', resolvedVersion: '1.2.0', sha256: 'abc123', translationKeyCount: 6, type: 'integration'),
+        ]);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('settings/market/index.html.twig', $this->callback(
+                static fn (array $params): bool => $params['items'][0]['translationCoveragePercent'] === null,
+            ))
+            ->willReturn('<html></html>');
+
+        $controller = $this->controller($this->snapshotCacheServing($snapshot), $this->assetDownloaderServingPluginZip(), $twig);
+
+        $controller->index(Request::create('/settings/market'));
+    }
+
+    /**
+     * A plugin catalog with more keys than the app itself has (e.g. it also carries keys for a
+     * locale variant this app version does not) must clamp to 100%, not report a number above it.
+     */
+    public function testIndexClampsTranslationCoveragePercentAt100WhenThePluginKeyCountExceedsTheAppsOwn(): void
+    {
+        $snapshot = $this->snapshot([
+            $this->snapshotPlugin('animedb-german', resolvedVersion: '1.2.0', sha256: 'abc123', translationKeyCount: self::APP_TRANSLATION_KEY_COUNT * 2, type: 'translation'),
+        ]);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('settings/market/index.html.twig', $this->callback(
+                static fn (array $params): bool => $params['items'][0]['translationCoveragePercent'] === 100,
             ))
             ->willReturn('<html></html>');
 

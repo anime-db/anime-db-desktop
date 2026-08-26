@@ -33,12 +33,19 @@ namespace App\Service\Market;
  * The `sha256` pinned for this version lives on {@see PluginRegistry} instead
  * ({@see PluginRegistry::findVersionSha256()}) — it is keyed by plugin id/version and consumed
  * by {@see MarketAssetDownloader}, which never needs the rest of this DTO.
+ *
+ * `$translationKeyCount` (issue #514) is the number of `messages` domain keys this specific
+ * version's catalog carries, published by the plugin monorepo alongside `sha256`. It is `null`
+ * for a version the registry has not published a count for (a plugin published before this
+ * field existed, or a non-`translation` plugin) — the storefront then shows no coverage badge
+ * for that version instead of a fabricated one.
  */
 final class MarketPluginVersion
 {
     public function __construct(
         public readonly string $version,
         public readonly string $core,
+        public readonly ?int $translationKeyCount = null,
     ) {
     }
 }
