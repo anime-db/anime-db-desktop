@@ -1,0 +1,105 @@
+name: App token smoke test
+
+# Диагностика связки с GitHub App `animedbintegration`, из которой задача #515 будет
+# минтить короткоживущий токен для записи issue в публичный `anime-db-plugins`.
+#
+# Зачем отдельный workflow, а не проверка внутри #515: там триггер — успешная сборка
+# релиза приложения, то есть первая же боевая проверка связки совпала бы с первым
+# релизом, а он один и повторить его нельзя. Здесь связка проверяется по требованию,
+# сколько угодно раз.
+#
+# Постоянный, а не одноразовый: тот же прогон нужен после каждой ротации приватного
+# ключа приложения и после любой правки набора репозиториев в установке. Без
+# `workflow_dispatch` не запускается никогда и ничего не стоит.
+#
+# `permissions: {}` на уровне workflow обнуляет штатный GITHUB_TOKEN, поэтому всё, что
+# здесь получится, получится исключительно за счёт токена приложения — ложноположительного
+# результата за счёт прав джобы быть не может.
+#
+# Прогон делает РОВНО ОДНУ запись — временную метку, которую сам же и удаляет. Почему без
+# записи обойтись нельзя, объяснено у соответствующего шага.
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+env:
+  # Имя временной метки. Фиксированное, а не случайное: остаток оборвавшегося прогона
+  # тогда снимается следующим прогоном, а не копится.
+  PROBE_LABEL: app-token-smoke-test
+
+jobs:
+  probe:
+    name: Mint an installation token and exercise it
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # Падение этого шага означает одно из трёх: неверный app-id, нерабочий приватный
+      # ключ (например, в секрет попал отпечаток `SHA256:…` вместо содержимого .pem),
+      # либо приложение не установлено в организацию.
+      - name: Mint installation token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.BOT_APP_ID }}
+          private-key: ${{ secrets.BOT_PRIVATE_KEY }}
+          owner: anime-db
+          repositories: anime-db-plugins
+
+      # Область действия установки. У неё `repository_selection: selected`, поэтому важно
+      # не то, что токен выпустился, а то, какие именно репозитории он видит.
+      #
+      # Проверка непустая: `GET /installation/repositories` без installation-токена отдаёт
+      # 401 (проверено), анонимно его не пройти.
+      - name: Show what the token can reach
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          echo "Репозитории, доступные установке:"
+          gh api /installation/repositories --jq '.repositories[].full_name'
+
+      # Единственная запись за прогон, и она обязательна.
+      #
+      # `anime-db-plugins` ПУБЛИЧНЫЙ, поэтому чтение его issues и меток проходит вообще без
+      # аутентификации: `GET /repos/anime-db/anime-db-plugins/labels` без токена отдаёт 200
+      # и весь список (проверено). Read-проба доказывала бы только то, что репозиторий
+      # публичный, и была бы зелёной даже на токене БЕЗ прав issues — то есть ровно на той
+      # поломке, ради которой смоук-тест и заводится.
+      #
+      # Инспекция набора прав выданного токена этот пробел не закрывает:
+      # `actions/create-github-app-token` наружу их не отдаёт, а из самого installation-токена
+      # его собственный набор прав не читается ни одним эндпоинтом — `GET /app/installations/{id}`
+      # требует JWT приложения, которого у нас на руках нет.
+      #
+      # Значит на публичном репозитории права `issues` подтверждаются только записью.
+      - name: Write probe — issues permission
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+
+          # Снимаем возможный остаток предыдущего оборвавшегося прогона.
+          gh api -X DELETE "repos/anime-db/anime-db-plugins/labels/$PROBE_LABEL" --silent 2>/dev/null || true
+
+          gh api -X POST repos/anime-db/anime-db-plugins/labels \
+            -f name="$PROBE_LABEL" \
+            -f color=ededed \
+            -f description='Временная метка смоук-теста токена приложения; удаляется тем же прогоном' \
+            --silent
+          echo "метка создана — права issues:write действуют"
+
+          gh api "repos/anime-db/anime-db-plugins/labels/$PROBE_LABEL" --jq '.name' > /dev/null
+          echo "метка читается по имени"
+
+          gh api -X DELETE "repos/anime-db/anime-db-plugins/labels/$PROBE_LABEL" --silent
+          echo "метка удалена"
+
+      # Страховка на случай, если шаг выше упал между созданием и удалением: без неё
+      # временная метка осталась бы висеть в публичном репозитории до следующего прогона.
+      - name: Remove the probe label if the step above was interrupted
+        if: always()
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: gh api -X DELETE "repos/anime-db/anime-db-plugins/labels/$PROBE_LABEL" --silent 2>/dev/null || true
