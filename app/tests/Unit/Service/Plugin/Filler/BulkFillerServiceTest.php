@@ -120,7 +120,7 @@ final class BulkFillerServiceTest extends TestCase
 
         $filler = $this->createStub(FillerInterface::class);
         $filler->method('find')->willReturn([new ContractsSearchByPluginCandidate((string) $pluginId, 'Bleach: Memories of Nobody', '104')]);
-        $filler->method('findById')->with('104')->willReturn($data);
+        $filler->method('findById')->willReturn($data);
         $filler->method('getFillableFields')->willReturn(['title', 'type', 'durationMinutes']);
 
         $service = $this->newService([(string) $pluginId => $filler]);
@@ -272,7 +272,7 @@ final class BulkFillerServiceTest extends TestCase
 
         $filler = $this->createStub(FillerInterface::class);
         $filler->method('find')->willReturn([new ContractsSearchByPluginCandidate((string) $pluginId, 'Bleach', '104')]);
-        $filler->method('findById')->with('104')->willReturn($data);
+        $filler->method('findById')->willReturn($data);
         $filler->method('getFillableFields')->willReturn(['title', 'type', 'cover']);
 
         $messageBus = $this->createMock(MessageBusInterface::class);
@@ -301,7 +301,7 @@ final class BulkFillerServiceTest extends TestCase
 
         $filler = $this->createStub(FillerInterface::class);
         $filler->method('find')->willReturn([new ContractsSearchByPluginCandidate((string) $pluginId, 'Bleach', '104')]);
-        $filler->method('findById')->with('104')->willReturn($data);
+        $filler->method('findById')->willReturn($data);
         $filler->method('getFillableFields')->willReturn(['title', 'type', 'images']);
 
         $dispatchedUrls = [];
@@ -333,7 +333,7 @@ final class BulkFillerServiceTest extends TestCase
 
         $filler = $this->createStub(FillerInterface::class);
         $filler->method('find')->willReturn([new ContractsSearchByPluginCandidate((string) $pluginId, 'Bleach', '104')]);
-        $filler->method('findById')->with('104')->willReturn($data);
+        $filler->method('findById')->willReturn($data);
         $filler->method('getFillableFields')->willReturn(['title', 'type']);
 
         $messageBus = $this->createMock(MessageBusInterface::class);

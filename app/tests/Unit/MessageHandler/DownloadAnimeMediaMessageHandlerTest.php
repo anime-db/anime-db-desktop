@@ -81,8 +81,14 @@ final class DownloadAnimeMediaMessageHandlerTest extends TestCase
         $anime = $this->persistAnime();
         $animeId = $anime->id ?? throw new \LogicException('Anime must have an id after persisting.');
 
-        $downloader = $this->createStub(PluginMediaDownloaderInterface::class);
-        $downloader->method('download')->with($animeId, 'https://example.test/cover.jpg')->willReturn('abc123.webp');
+        // A mock rather than a stub, and deliberately so: with*() on a stub is silently ignored,
+        // which would leave "the handler passes the message's own animeId and url through to the
+        // downloader" — the whole reason the message carries a url at all — unverified.
+        $downloader = $this->createMock(PluginMediaDownloaderInterface::class);
+        $downloader->expects($this->once())
+            ->method('download')
+            ->with($animeId, 'https://example.test/cover.jpg')
+            ->willReturn('abc123.webp');
 
         $handler = new DownloadAnimeMediaMessageHandler($this->entityManager, $downloader, new NullLogger());
         $handler(new DownloadAnimeMediaMessage($animeId, 'https://example.test/cover.jpg', true));
@@ -97,8 +103,11 @@ final class DownloadAnimeMediaMessageHandlerTest extends TestCase
         $anime = $this->persistAnime();
         $animeId = $anime->id ?? throw new \LogicException('Anime must have an id after persisting.');
 
-        $downloader = $this->createStub(PluginMediaDownloaderInterface::class);
-        $downloader->method('download')->with($animeId, 'https://example.test/1.jpg')->willReturn('def456.webp');
+        $downloader = $this->createMock(PluginMediaDownloaderInterface::class);
+        $downloader->expects($this->once())
+            ->method('download')
+            ->with($animeId, 'https://example.test/1.jpg')
+            ->willReturn('def456.webp');
 
         $handler = new DownloadAnimeMediaMessageHandler($this->entityManager, $downloader, new NullLogger());
         $handler(new DownloadAnimeMediaMessage($animeId, 'https://example.test/1.jpg', false));
@@ -120,8 +129,13 @@ final class DownloadAnimeMediaMessageHandlerTest extends TestCase
         $anime = $this->persistAnime();
         $animeId = $anime->id ?? throw new \LogicException('Anime must have an id after persisting.');
 
-        $downloader = $this->createStub(PluginMediaDownloaderInterface::class);
-        $downloader->method('download')->with($animeId, 'https://example.test/1.jpg')->willReturn('def456.webp');
+        // Both deliveries must actually reach the downloader — the dedup this test is about
+        // happens when applying the result, not by skipping the second download.
+        $downloader = $this->createMock(PluginMediaDownloaderInterface::class);
+        $downloader->expects($this->exactly(2))
+            ->method('download')
+            ->with($animeId, 'https://example.test/1.jpg')
+            ->willReturn('def456.webp');
 
         $handler = new DownloadAnimeMediaMessageHandler($this->entityManager, $downloader, new NullLogger());
         $handler(new DownloadAnimeMediaMessage($animeId, 'https://example.test/1.jpg', false));
