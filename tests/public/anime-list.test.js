@@ -82,6 +82,22 @@ function mockFetchQueue() {
     return calls;
 }
 
+// Queues one deferred per getCatalogue() call, mirroring translations.js: a failed catalogue
+// fetch resets its cached promise to null, so the next call starts a fresh one instead of
+// reusing a shared promise — the resolve order of separate calls is independent of call order.
+function mockCatalogueQueue() {
+    const calls = [];
+
+    const getCatalogue = jest.fn(() => {
+        const call = deferred();
+        calls.push(call);
+
+        return call.promise;
+    });
+
+    return { calls, getCatalogue };
+}
+
 async function flushMicrotasks() {
     for (let i = 0; i < 10; i += 1) {
         await Promise.resolve();
@@ -135,29 +151,43 @@ test('cards render even when the translations catalogue fails to load', async ()
     expect(cardTitles(grid)).toEqual(['Steins;Gate', 'Mushishi']);
 });
 
-test('two overlapping loadPage() calls leave only the latest response in the grid', async () => {
-    const calls = mockFetchQueue();
+test('a stale response that outlives an abort during the catalogue fetch is dropped', async () => {
+    const fetchCalls = mockFetchQueue();
+    const { calls: catalogueCalls, getCatalogue } = mockCatalogueQueue();
     window.AppTranslations = {
-        getCatalogue: jest.fn(() => Promise.resolve({})),
-        resolveKey:   (catalogue, key) => key,
+        getCatalogue,
+        resolveKey: (catalogue, key) => key,
     };
 
-    loadAnimeListModule(); // first loadPage(0, true) call, left pending
+    loadAnimeListModule(); // first loadPage(0, true) call
     await flushMicrotasks();
-    expect(calls).toHaveLength(1);
+    expect(fetchCalls).toHaveLength(1);
 
-    // A search keystroke triggers a second, overlapping loadPage(0, true) call before the first
-    // one has settled — the same shape as two fast scroll/search triggers racing in issue #208.
+    // The first request's fetch resolves before the second loadPage() starts, so the first call
+    // is already past fetchPage() and waiting on its own catalogue fetch when it gets aborted —
+    // this is what the controller.signal.aborted re-check after that await guards against
+    // (issue #208). If the fetch itself were still pending, abort() would reject it with an
+    // AbortError and the guard under test would never run.
+    fetchCalls[0].resolve(jsonResponse({
+        items:           [animeItem(1, 'Steins;Gate'), animeItem(2, 'Mushishi')],
+        pagination_mode: 'classic',
+        total:           2,
+        limit:           20,
+        offset:          0,
+    }));
+    await flushMicrotasks();
+    expect(catalogueCalls).toHaveLength(1);
+
+    // A search keystroke triggers a second, overlapping loadPage(0, true) call, which aborts the
+    // first request's controller before fetching its own page.
     const searchInput = document.getElementById('anime-list-search');
     searchInput.value = 'gate';
     searchInput.dispatchEvent(new Event('input'));
     jest.advanceTimersByTime(300);
     await flushMicrotasks();
-    expect(calls).toHaveLength(2);
+    expect(fetchCalls).toHaveLength(2);
 
-    // Resolve the newer request first, then the older one — the older one arriving late is
-    // exactly the race the pendingRequest guard defends against.
-    calls[1].resolve(jsonResponse({
+    fetchCalls[1].resolve(jsonResponse({
         items:           [animeItem(3, 'Gate')],
         pagination_mode: 'classic',
         total:           1,
@@ -165,14 +195,14 @@ test('two overlapping loadPage() calls leave only the latest response in the gri
         offset:          0,
     }));
     await flushMicrotasks();
+    expect(catalogueCalls).toHaveLength(2);
 
-    calls[0].resolve(jsonResponse({
-        items:           [animeItem(1, 'Steins;Gate'), animeItem(2, 'Mushishi')],
-        pagination_mode: 'classic',
-        total:           2,
-        limit:           20,
-        offset:          0,
-    }));
+    // Resolve the newer request's catalogue first, then the stale (aborted) one's — the stale
+    // one arriving last is exactly the race the abort-signal re-check defends against.
+    catalogueCalls[1].resolve({});
+    await flushMicrotasks();
+
+    catalogueCalls[0].resolve({});
     await flushMicrotasks();
 
     const grid = document.getElementById('anime-list-grid');
