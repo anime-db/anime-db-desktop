@@ -251,6 +251,8 @@ final class PluginControllerTest extends TestCase
         file_put_contents($this->rootDir.'/translations/messages.en.yaml', "welcome: Hello\ngoodbye: Bye\n");
 
         $this->writeManifest('animedb-shikimori', 'Shikimori');
+        mkdir($this->pluginsDir.'/animedb-shikimori/translations', recursive: true);
+        file_put_contents($this->pluginsDir.'/animedb-shikimori/translations/messages.en.yaml', "welcome: Hello\n");
 
         $this->writeTranslationPluginManifest('animedb-german', 'German', ['de']);
         file_put_contents($this->pluginsDir.'/animedb-german/translations/messages.de.yaml', "welcome: Hallo\n");
