@@ -30,18 +30,23 @@ namespace App\Tests\Unit\Service\I18nCoverage\Github\Fake;
 use App\Service\I18nCoverage\Github\GhReleaseZipDownloader;
 
 /**
- * Always hands back the one pre-built zip path it was constructed with, regardless of which
- * plugin id is asked for — standing in for "the plugin's latest release asset" without any `gh`
- * or network involved.
+ * Hands back the one pre-built zip path it was constructed with, standing in for "the plugin's
+ * latest release asset" without any `gh` or network involved. Records the plugin id it was asked
+ * for so a test can assert the caller requested the latest release of *this* plugin, not a
+ * working-tree checkout or some other version.
  */
 final class FakeGhReleaseZipDownloader implements GhReleaseZipDownloader
 {
+    public ?string $requestedPluginId = null;
+
     public function __construct(private readonly string $zipPath)
     {
     }
 
     public function downloadLatestReleaseZip(string $pluginId): string
     {
+        $this->requestedPluginId = $pluginId;
+
         return $this->zipPath;
     }
 }

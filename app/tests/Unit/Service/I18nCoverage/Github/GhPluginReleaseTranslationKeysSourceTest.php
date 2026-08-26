@@ -38,18 +38,18 @@ use PHPUnit\Framework\TestCase;
  */
 final class GhPluginReleaseTranslationKeysSourceTest extends TestCase
 {
-    public function testKeysComeFromTheReleaseAssetNotAWorkingTreeCheckout(): void
+    public function testKeysComeFromTheReleaseAssetAndTheRequestedPluginId(): void
     {
-        // What the plugin's latest *released* plugin.zip actually contains.
         $releaseZip = $this->buildZip(['translations/messages.de.yaml' => "welcome: Hallo\ngoodbye: Tschuss\n"]);
+        $downloader = new FakeGhReleaseZipDownloader($releaseZip);
 
-        // What a monorepo working-tree checkout of plugins/<id>/ would contain right now — ahead
-        // of the release, and never wired into the class under test at all.
-        $this->buildWorkingTreeDir(['translations/messages.de.yaml' => "welcome: Hallo\ngoodbye: Tschuss\nunreleased: Nur im Master\n"]);
-
-        $source = new GhPluginReleaseTranslationKeysSource('animedb-language-pack', new FakeGhReleaseZipDownloader($releaseZip));
+        $source = new GhPluginReleaseTranslationKeysSource('animedb-language-pack', $downloader);
 
         self::assertSame(['goodbye', 'welcome'], $source->keys());
+        // Asserts the seam itself: the class must ask the downloader for *this* plugin's latest
+        // release, not read a working-tree checkout or some other version — swapping the source
+        // for one that reads a working tree, or hardcoding a different plugin id, fails this.
+        self::assertSame('animedb-language-pack', $downloader->requestedPluginId);
     }
 
     public function testKeysAreTheIntersectionAcrossEveryShippedLocale(): void
@@ -89,20 +89,5 @@ final class GhPluginReleaseTranslationKeysSourceTest extends TestCase
         $zip->close();
 
         return $zipPath;
-    }
-
-    /**
-     * @param array<string, string> $files relative path => content
-     */
-    private function buildWorkingTreeDir(array $files): string
-    {
-        $dir = sys_get_temp_dir().'/anime-i18n-coverage-master-'.uniqid();
-        foreach ($files as $relativePath => $content) {
-            $fullPath = $dir.'/'.$relativePath;
-            mkdir(\dirname($fullPath), recursive: true);
-            file_put_contents($fullPath, $content);
-        }
-
-        return $dir;
     }
 }

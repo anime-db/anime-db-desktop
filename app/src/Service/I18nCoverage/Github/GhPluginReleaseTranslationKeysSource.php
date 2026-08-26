@@ -46,6 +46,16 @@ use App\Service\Translation\TranslationCatalog;
  * release with no parseable locale catalog at all yields an empty key set (the app's full
  * reference set then becomes the delta), which is the correct signal for a translation plugin
  * that currently ships nothing usable.
+ *
+ * This intersection differs from `translation_keys_count` in the plugins monorepo's own
+ * `PluginValidator`, which unions the key sets of a plugin's locales
+ * (`array_unique(array_merge(...))`) for the coverage percentage shown on the marketplace
+ * listing. The two currently agree because gate #58 in that repo requires every locale of a
+ * plugin to ship the same key set; if #58 is ever relaxed to allow a partially translated
+ * locale, the two figures will diverge on purpose — the marketplace percentage would read
+ * optimistic (any locale having a key counts) while this notification would still flag the
+ * plugin as missing that key (every locale must have it). That divergence is expected, not a
+ * bug in either place.
  */
 final class GhPluginReleaseTranslationKeysSource implements PluginTranslationKeysSource
 {
