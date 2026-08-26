@@ -47,9 +47,24 @@ concurrency:
 jobs:
   sync:
     name: Sync translation coverage issues
-    # На `workflow_run` работаем только после УСПЕШНОЙ сборки: об отставании перевода
-    # автору плагина сообщается применительно к вышедшему релизу, а не к упавшему.
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    # На `workflow_run` работаем только после сборки, которая ДЕЙСТВИТЕЛЬНО ВЫПУСТИЛА
+    # релиз. Одного `conclusion == 'success'` мало: `build.yml` стартует не только по
+    # `push: tags v*.*.*`, но и по `workflow_dispatch`, а шаг создания релиза внутри него
+    # гейтится `if: startsWith(github.ref, 'refs/tags/')`. То есть ручная тест-сборка с
+    # ветки даёт успешный прогон без единого релиза — и боевой (не сухой) проход завёл бы
+    # или закрыл issue в ЧУЖОМ ПУБЛИЧНОМ репозитории на пустом месте.
+    #
+    # Проверяем два условия, а не одно:
+    #   event == 'push'          — сегодня у `build.yml` push-триггер только по тегам,
+    #                              значит это отсекает ручные сборки;
+    #   head_branch начинается с 'v' — на пуше тега сюда попадает имя тега. Держит
+    #                              условие верным, даже если в `build.yml` когда-нибудь
+    #                              добавят push по веткам и первая проверка ослабнет.
+    if: >-
+      ${{ github.event_name == 'workflow_dispatch' ||
+          (github.event.workflow_run.conclusion == 'success' &&
+           github.event.workflow_run.event == 'push' &&
+           startsWith(github.event.workflow_run.head_branch, 'v')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -87,12 +102,20 @@ jobs:
       # Репозиторий публичный, файл забирается без аутентификации: токен приложения сюда
       # не подходит (у него есть только права на issues), а штатный GITHUB_TOKEN этого
       # репозитория к чужому и не обязан иметь доступ.
+      #
+      # Вход прокидывается через `env`, а не подставляется в тело `run:`. Actions
+      # раскрывают `${{ … }}` ДО того, как строку увидит shell, поэтому интерполяция
+      # свободной строки прямо в код — это выполнение произвольной команды на раннере,
+      # где следующим шагом минтится токен с правом писать issue. Тот же приём уже
+      # применён в `app-token-smoke-test.yml`.
       - name: Discover published translation plugins
         id: plugins
+        env:
+          PLUGIN: ${{ inputs.plugin }}
         run: |
           set -euo pipefail
-          if [ -n "${{ inputs.plugin }}" ]; then
-            printf '%s\n' "${{ inputs.plugin }}" > plugins.txt
+          if [ -n "$PLUGIN" ]; then
+            printf '%s\n' "$PLUGIN" > plugins.txt
             echo "Явно задан один плагин: $(cat plugins.txt)"
           else
             curl -fsSL https://raw.githubusercontent.com/anime-db/anime-db-plugins/master/plugins-registry.json \
@@ -131,10 +154,12 @@ jobs:
         if: steps.plugins.outputs.found == 'true'
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          DRY_RUN: ${{ inputs.dry-run }}
         run: |
           set -uo pipefail
           DRY=""
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.dry-run }}" = "true" ]; then
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$DRY_RUN" = "true" ]; then
             DRY="--dry-run"
             echo "::notice::Сухой прогон — ничего не создаётся и не закрывается."
           fi
