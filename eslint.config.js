@@ -33,9 +33,22 @@ module.exports = [
         },
     },
     {
+        files:           ['app/public/js/**/*.js'],
+        languageOptions: {
+            sourceType: 'script',
+            globals:    globals.browser,
+        },
+    },
+    {
         files:           ['tests/**/*.js'],
         languageOptions: {
             globals: globals.jest,
+        },
+    },
+    {
+        files:           ['tests/public/**/*.js'],
+        languageOptions: {
+            globals: { ...globals.jest, ...globals.browser },
         },
     },
 ];
