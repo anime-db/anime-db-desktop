@@ -81,13 +81,18 @@ function runSetupTransports(context) {
  * весь сеанс приложения — без --time-limit и без периодического перезапуска по таймеру.
  * Если stopping === true — молча прекращает перезапуски.
  *
+ * Транспорты перечислены в порядке приоритета, а не как независимый список: worker забирает
+ * сообщение из `media` только когда `async` пуст, поэтому индексация (IndexAnimeMessage) и
+ * пуш-синк (PushSyncMessage) никогда не ждут за пачкой скачиваемых обложек/кадров (issue #508).
+ * Второй процесс-потребитель под `media` сознательно не заводится — см. messenger.yaml.
+ *
  * @param {import('./env').PhpContext} context
  * @param {number} backoffIdx
  */
 function spawnProcess(context, backoffIdx = 0) {
     if (stopping) return;
 
-    child = spawn(BINARY, ['php-cli', CONSOLE, 'messenger:consume', 'async'], {
+    child = spawn(BINARY, ['php-cli', CONSOLE, 'messenger:consume', 'async', 'media'], {
         cwd: paths.getAppRootDir(),
         env: buildEnv(context),
         stdio: ['ignore', 'pipe', 'pipe'],

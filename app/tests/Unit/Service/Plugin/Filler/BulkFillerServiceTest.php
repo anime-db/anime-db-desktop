@@ -33,8 +33,10 @@ use AnimeDb\PluginContracts\Model\AnimeType as ContractsAnimeType;
 use AnimeDb\PluginContracts\Search\SearchByPluginCandidate as ContractsSearchByPluginCandidate;
 use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
+use App\Entity\Anime;
 use App\Entity\MovieAnime;
 use App\Entity\ValueObject\PluginId;
+use App\Message\DownloadAnimeMediaMessage;
 use App\Repository\StudioRepository;
 use App\Service\Plugin\Exception\ExternalIdAlreadyClaimedException;
 use App\Service\Plugin\Filler\BulkFillerService;
@@ -50,6 +52,8 @@ use Doctrine\ORM\Tools\SchemaTool;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
+use Symfony\Component\Messenger\Envelope;
+use Symfony\Component\Messenger\MessageBusInterface;
 
 final class BulkFillerServiceTest extends TestCase
 {
@@ -77,7 +81,7 @@ final class BulkFillerServiceTest extends TestCase
     /**
      * @param iterable<string, FillerInterface> $fillers
      */
-    private function newService(iterable $fillers, ?LoggerInterface $logger = null): BulkFillerService
+    private function newService(iterable $fillers, ?LoggerInterface $logger = null, ?MessageBusInterface $messageBus = null): BulkFillerService
     {
         return new BulkFillerService(
             new FillerRegistry($fillers, new PluginsConfigStore(sys_get_temp_dir().'/anime-bulk-filler-test-'.uniqid().'.json')),
@@ -88,6 +92,7 @@ final class BulkFillerServiceTest extends TestCase
             ),
             $this->entityManager,
             $logger ?? new NullLogger(),
+            $messageBus ?? $this->createMock(MessageBusInterface::class),
         );
     }
 
@@ -252,5 +257,90 @@ final class BulkFillerServiceTest extends TestCase
         $service = $this->newService([]);
 
         $this->assertNull($service->fillNewFrom($filler, $pluginId, '104'));
+    }
+
+    /**
+     * cover/images are no longer excluded from bulk fill-in (issue #508), but they are also
+     * never downloaded synchronously by this service — see PluginAnimeDataMerger's own
+     * applyCover()/applyImages() (untouched, still used by the point fill-in scenario), which
+     * this test proves never ran by asserting getCover() is still null right after build().
+     */
+    public function testFillNewFromPluginDispatchesADownloadMessageForTheCoverInsteadOfDownloadingItSynchronously(): void
+    {
+        $pluginId = new PluginId('animedb-shikimori');
+        $data = new PluginAnimeData(title: 'Bleach', cover: 'https://example.test/cover.jpg');
+
+        $filler = $this->createStub(FillerInterface::class);
+        $filler->method('find')->willReturn([new ContractsSearchByPluginCandidate((string) $pluginId, 'Bleach', '104')]);
+        $filler->method('findById')->with('104')->willReturn($data);
+        $filler->method('getFillableFields')->willReturn(['title', 'type', 'cover']);
+
+        $messageBus = $this->createMock(MessageBusInterface::class);
+        $messageBus->expects($this->once())
+            ->method('dispatch')
+            ->with($this->callback(static fn (DownloadAnimeMediaMessage $message): bool => $message->url === 'https://example.test/cover.jpg' && $message->isCover))
+            ->willReturnCallback(static fn (object $message): Envelope => new Envelope($message));
+
+        $service = $this->newService([(string) $pluginId => $filler], messageBus: $messageBus);
+
+        $anime = $service->fillNewFromPlugin($pluginId, 'Bleach');
+
+        $this->assertInstanceOf(Anime::class, $anime);
+        $this->assertNull($anime->getCover());
+    }
+
+    /**
+     * One message per URL, not one per anime (issue #508): a gallery of several images must not
+     * become a single message that would occupy the consumer for as long as the whole batch
+     * takes.
+     */
+    public function testFillNewFromPluginDispatchesOneDownloadMessagePerImageUrl(): void
+    {
+        $pluginId = new PluginId('animedb-shikimori');
+        $data = new PluginAnimeData(title: 'Bleach', images: ['https://example.test/1.jpg', 'https://example.test/2.jpg']);
+
+        $filler = $this->createStub(FillerInterface::class);
+        $filler->method('find')->willReturn([new ContractsSearchByPluginCandidate((string) $pluginId, 'Bleach', '104')]);
+        $filler->method('findById')->with('104')->willReturn($data);
+        $filler->method('getFillableFields')->willReturn(['title', 'type', 'images']);
+
+        $dispatchedUrls = [];
+        $messageBus = $this->createMock(MessageBusInterface::class);
+        $messageBus->expects($this->exactly(2))
+            ->method('dispatch')
+            ->willReturnCallback(function (DownloadAnimeMediaMessage $message) use (&$dispatchedUrls): Envelope {
+                $dispatchedUrls[] = $message->url;
+                $this->assertFalse($message->isCover);
+
+                return new Envelope($message);
+            });
+
+        $service = $this->newService([(string) $pluginId => $filler], messageBus: $messageBus);
+        $service->fillNewFromPlugin($pluginId, 'Bleach');
+
+        $this->assertSame(['https://example.test/1.jpg', 'https://example.test/2.jpg'], $dispatchedUrls);
+    }
+
+    /**
+     * A filler that never declared 'cover' as one of its {@see FillerInterface::getFillableFields()}
+     * doesn't get a download queued just because $data happens to carry one — same gate
+     * PluginAnimeDataMerger::apply() itself enforces for every other field.
+     */
+    public function testFillNewFromPluginDoesNotDispatchACoverDownloadWhenTheFillerDoesNotDeclareCoverAsFillable(): void
+    {
+        $pluginId = new PluginId('animedb-shikimori');
+        $data = new PluginAnimeData(title: 'Bleach', cover: 'https://example.test/cover.jpg');
+
+        $filler = $this->createStub(FillerInterface::class);
+        $filler->method('find')->willReturn([new ContractsSearchByPluginCandidate((string) $pluginId, 'Bleach', '104')]);
+        $filler->method('findById')->with('104')->willReturn($data);
+        $filler->method('getFillableFields')->willReturn(['title', 'type']);
+
+        $messageBus = $this->createMock(MessageBusInterface::class);
+        $messageBus->expects($this->never())->method('dispatch');
+
+        $service = $this->newService([(string) $pluginId => $filler], messageBus: $messageBus);
+
+        $this->assertInstanceOf(Anime::class, $service->fillNewFromPlugin($pluginId, 'Bleach'));
     }
 }

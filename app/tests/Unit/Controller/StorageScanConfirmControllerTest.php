@@ -58,6 +58,7 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
+use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Security\Csrf\CsrfTokenManagerInterface;
 
 /**
@@ -112,6 +113,7 @@ final class StorageScanConfirmControllerTest extends TestCase
                 ),
                 $this->entityManager,
                 new NullLogger(),
+                $this->createMock(MessageBusInterface::class),
             ),
             new NullLogger(),
         );

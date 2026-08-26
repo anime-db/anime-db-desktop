@@ -70,6 +70,7 @@ use Doctrine\ORM\ORMSetup;
 use Doctrine\ORM\Tools\SchemaTool;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
+use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
 /**
@@ -119,6 +120,7 @@ final class PullSyncServiceTest extends TestCase
             ),
             $entityManager,
             new NullLogger(),
+            $this->createMock(MessageBusInterface::class),
         );
 
         // A stub AnimeSearchResolver::tryResolveMatches() defaults to returning null (its
@@ -498,6 +500,7 @@ final class PullSyncServiceTest extends TestCase
             ),
             $this->entityManager,
             new NullLogger(),
+            $this->createMock(MessageBusInterface::class),
         );
         $duplicateDetector = new CrossVendorDuplicateDetector(
             $resolver,

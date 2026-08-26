@@ -65,6 +65,7 @@ use Doctrine\ORM\Tools\SchemaTool;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
+use Symfony\Component\Messenger\MessageBusInterface;
 
 /**
  * Exercises ScanStorageService end to end (real EntityManager/SQLite connection, real
@@ -167,6 +168,7 @@ final class ScanStorageServiceTest extends TestCase
             ),
             $this->entityManager,
             new NullLogger(),
+            $this->createMock(MessageBusInterface::class),
         );
     }
 
@@ -499,6 +501,7 @@ final class ScanStorageServiceTest extends TestCase
                 ),
                 $this->entityManager,
                 $bulkFillerLogger,
+                $this->createMock(MessageBusInterface::class),
             ),
         );
 
