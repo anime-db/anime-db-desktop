@@ -6,15 +6,15 @@
 Готовых файлов под этот список нет — сервис намеренно не падает, если файл отсутствует
 (демо-тайтл создаётся без обложки). Ожидаемые имена файлов:
 
-| Тайтл                            | Файл                                    |
-|-----------------------------------|-------------------------------------------|
-| Fullmetal Alchemist: Brotherhood   | `fullmetal-alchemist-brotherhood.webp`     |
-| Spirited Away                      | `spirited-away.webp`                       |
-| Gintama                            | `gintama.webp`                             |
-| Hellsing Ultimate                  | `hellsing-ultimate.webp`                   |
-| Sousou no Frieren                  | `sousou-no-frieren.webp`                   |
-| One Punch Man                      | `one-punch-man.webp`                       |
-| Solo Leveling                      | `solo-leveling.webp`                       |
+| Тайтл                            | Файл                                   |
+|----------------------------------|----------------------------------------|
+| Fullmetal Alchemist: Brotherhood | `fullmetal-alchemist-brotherhood.webp` |
+| Spirited Away                    | `spirited-away.webp`                   |
+| Gintama                          | `gintama.webp`                         |
+| Hellsing Ultimate                | `hellsing-ultimate.webp`               |
+| Sousou no Frieren                | `sousou-no-frieren.webp`               |
+| One Punch Man                    | `one-punch-man.webp`                   |
+| Solo Leveling                    | `solo-leveling.webp`                   |
 
 Формат — только `webp`: протокол `app-media://` (`native/protocols/app-media.js`) отдаёт
 `Content-Type` из whitelist, состоящего из единственной записи `.webp` → `image/webp`; файл
