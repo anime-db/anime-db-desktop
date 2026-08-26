@@ -96,7 +96,10 @@ final class PluginAnimeDataMerger
     {
         $unapplied = [];
         foreach ($fields as $field) {
-            match ($field) {
+            // Every arm here is void except applyCover()/applyImages(), which are the only ones
+            // that can ever report a real rejection - a void arm evaluates to null, so the
+            // `=== false` check below can never mistake "nothing to check" for "rejected".
+            $applied = match ($field) {
                 'title' => $anime->setTitle($data->title),
                 'alternativeNames' => $this->applyAlternativeNames($anime, $data->alternativeNames ?? []),
                 'descriptions' => $this->applyDescriptions($anime, $data->descriptions ?? []),
@@ -109,10 +112,14 @@ final class PluginAnimeDataMerger
                 'durationMinutes' => $data->durationMinutes !== null ? $anime->setDurationMinutes($data->durationMinutes) : null,
                 'episodesCount' => $this->applyEpisodesCount($anime, $data->episodesCount),
                 'countries' => $this->applyCountries($anime, $data->countries ?? []),
-                'cover' => $this->applyCover($anime, $data->cover) ? null : $unapplied[] = $field,
-                'images' => $this->applyImages($anime, $data->images ?? []) ? null : $unapplied[] = $field,
+                'cover' => $this->applyCover($anime, $data->cover),
+                'images' => $this->applyImages($anime, $data->images ?? []),
                 default => null, // type: not applicable to an already-constructed entity, see class docblock
             };
+
+            if ($applied === false) {
+                $unapplied[] = $field;
+            }
         }
 
         return $unapplied;
