@@ -85,8 +85,10 @@ final class AvailableLocalesProviderTest extends TestCase
 
     /**
      * Integration plugins get a translations/ directory of their own (PluginLoader::translationPaths())
-     * for their own domain strings, but their manifest cannot declare `locales` (ManifestValidator
-     * rejects it) — an enabled integration plugin must not contribute a new locale to the list.
+     * for their own domain strings. The manifest field `locales` is allowed on an integration manifest
+     * too (ManifestValidator accepts it there — it declares the parser must not reject a manifest
+     * merely for carrying the field), but must still be ignored here: it names locales for the
+     * plugin's own domain, not the `messages` domain the language switcher reads from.
      */
     public function testAllIgnoresIntegrationPluginsEntirely(): void
     {
@@ -97,6 +99,7 @@ final class AvailableLocalesProviderTest extends TestCase
             'name' => 'Shikimori',
             'version' => '1.0.0',
             'type' => 'integration',
+            'locales' => ['fr'],
             'features' => ['filler' => true],
             'require' => ['core' => '>=2.0.0', 'php' => '>=8.2'],
         ]));
