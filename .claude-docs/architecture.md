@@ -30,7 +30,7 @@ anime-db-desktop/
 │   │   └── Kernel.php
 │   ├── templates/          # Twig + HTMX-фрагменты
 │   ├── var/                # в продакшн → AppData/AnimeDB/var/ (APP_RUNTIME_DIR)
-│   ├── Caddyfile           # статический, под git, env-плейсхолдеры {env.APP_PORT} и {env.APP_ROOT}
+│   ├── Caddyfile           # статический, под git, адреса сайтов через {$APP_PORT}/{$WS_PORT}, root через {env.APP_ROOT}
 │   └── composer.json
 ├── bin/            # в .gitignore; тянутся download-bins.js при сборке
 │   ├── frankenphp/frankenphp.exe   # + php8ts.dll, ext/*.dll, ICU-библиотеки — см. раздел FrankenPHP ниже
@@ -70,15 +70,17 @@ anime-db-desktop/
 
 **php.ini:** `bin/php/php.ini.template` под git. При первом запуске `frankenphp.js` копирует его в `AppData/AnimeDB/php.ini`, подставляя часовой пояс (`Intl.DateTimeFormat().resolvedOptions().timeZone`). FrankenPHP стартует с `PHPRC=AppData/AnimeDB` (путь к папке, не к файлу).
 
-**Caddyfile:** статический `app/Caddyfile` под git. Порт и root — через `{env.APP_PORT}` и `{env.APP_ROOT}`. Electron передаёт их через env дочернего процесса.
+**Caddyfile:** статический `app/Caddyfile` под git. Root — через рантайм-плейсхолдер `{env.APP_ROOT}` (разбирается на этапе обработки запроса — там это корректно). Порт в адресе сайта — через препроцессорный `{$APP_PORT}`/`{$WS_PORT}`: адрес сайта разбирается на этапе адаптации конфига, до рантайма, и рантайм-плейсхолдер `{env.X}` там ловит `strconv.Atoi: parsing "{env.APP_PORT}": invalid syntax` (issue #532). Electron передаёт APP_PORT/WS_PORT/APP_ROOT через env дочернего процесса. Оба server-блока держат `bind 127.0.0.1` (иначе `listen` уходит на все интерфейсы, хотя локальность архитектурно предполагается) и WS-блок объявлен без хоста в адресе — хост-литерал (даже IP) заставляет Caddy завести TLS-listener для сайта несмотря на `auto_https off`; бинд, а не хост в адресе, — то, что реально ограничивает сокет.
 
 ```caddyfile
 {
     frankenphp
     auto_https off
+    admin off
 }
 
-:{env.APP_PORT} {
+:{$APP_PORT} {
+    bind 127.0.0.1
     root * {env.APP_ROOT}/public
     php_server {
         worker ./public/index.php
