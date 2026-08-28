@@ -45,6 +45,10 @@
     {% elseif items is empty %}
         <p>{{ 'settings_market.empty'|trans }}</p>
     {% else %}
+        {% if hasIncompatiblePlugin %}
+            <p class="warning">{{ 'settings_market.incompatible_plugins_summary'|trans }}</p>
+        {% endif %}
+
         <table>
             <thead>
                 <tr>
@@ -53,6 +57,7 @@
                     <th>{{ 'settings_market.type_column'|trans }}</th>
                     <th>{{ 'settings_market.version_column'|trans }}</th>
                     <th>{{ 'settings_market.translation_coverage_column'|trans }}</th>
+                    <th>{{ 'settings_market.locales_column'|trans }}</th>
                     <th>{{ 'settings_market.actions_column'|trans }}</th>
                 </tr>
             </thead>
@@ -66,6 +71,17 @@
                         <td>
                             {% if item.translationCoveragePercent is not null %}
                                 {{ 'settings_market.translation_coverage_badge'|trans({'%percent%': item.translationCoveragePercent}) }}
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if item.localeInfo.locales is not null %}
+                                <span>{{ item.localeInfo.locales|join(', ') }}</span>
+                                {% if item.localeInfo.interfaceLocaleMissing %}
+                                    <p class="warning">{{ 'settings_market.locale_missing_warning'|trans }}</p>
+                                {% endif %}
+                                {% if item.localeInfo.missingFallbackLocale %}
+                                    <p class="warning">{{ 'settings_market.locale_missing_fallback_warning'|trans }}</p>
+                                {% endif %}
                             {% endif %}
                         </td>
                         <td>

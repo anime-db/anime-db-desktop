@@ -39,6 +39,7 @@ use App\Service\Market\MarketRefreshService;
 use App\Service\Market\MarketSnapshot;
 use App\Service\Market\MarketSnapshotCache;
 use App\Service\Market\MarketSnapshotPlugin;
+use App\Service\NearestBuiltInLocale;
 use App\Service\Plugin\Exception\IncompatiblePluginCoreVersionException;
 use App\Service\Plugin\Exception\InvalidInstalledPluginException;
 use App\Service\Plugin\Exception\PluginAlreadyInstalledException;
@@ -128,6 +129,11 @@ use Twig\Environment;
  * the app's interface strings its resolved version's catalog covers, computed by
  * {@see self::translationCoveragePercent()} — see that method for why this is done here, at
  * render, rather than baked into the snapshot.
+ *
+ * Language labels (issue #543): every plugin's row can show the resolved version's own locale
+ * list, and how it compares against the current interface locale — computed by
+ * {@see self::localeInfo()}. A page-level summary is also shown whenever at least one plugin has
+ * no compatible version at all, distinct from that plugin's own "needs core version X" hint.
  */
 final class MarketController
 {
@@ -161,6 +167,7 @@ final class MarketController
         private readonly MessageBusInterface $messageBus,
         private readonly AppConfigStore $configStore,
         private readonly TranslationCoverageService $translationCoverage,
+        private readonly NearestBuiltInLocale $nearestBuiltInLocale,
     ) {
     }
 
@@ -171,6 +178,7 @@ final class MarketController
         $updatedPluginId = (string) $request->query->get('updated', '');
 
         return $this->renderIndex(
+            locale: $request->getLocale(),
             installedPluginId: $installedPluginId !== '' ? $installedPluginId : null,
             updatedPluginId: $updatedPluginId !== '' ? $updatedPluginId : null,
         );
@@ -303,16 +311,17 @@ final class MarketController
 
         $snapshot = $this->snapshotCache->load();
         if ($snapshot === null || $snapshot->coreVersion !== $this->coreVersion) {
-            return $this->renderIndex(installError: 'settings_market.install_error_registry_unavailable');
+            return $this->renderIndex(locale: $request->getLocale(), installError: 'settings_market.install_error_registry_unavailable');
         }
 
         $plugin = $this->findPlugin($snapshot, $id);
         if ($plugin === null) {
-            return $this->renderIndex(installError: 'settings_market.install_error_unknown_plugin');
+            return $this->renderIndex(locale: $request->getLocale(), installError: 'settings_market.install_error_unknown_plugin');
         }
 
         if ($plugin->resolvedVersion === null) {
             return $this->renderIndex(
+                locale: $request->getLocale(),
                 installError: 'settings_market.install_error_incompatible_core',
                 installErrorParams: ['%requiredCore%' => $plugin->latestVersionCore, '%currentCore%' => $this->coreVersion],
             );
@@ -321,7 +330,7 @@ final class MarketController
         try {
             $zipPath = $this->assetDownloader->downloadPluginZip($plugin->sha256, $snapshot->assetMirrors, $id, $plugin->resolvedVersion);
         } catch (UnknownPluginVersionException|PluginAssetDownloadException) {
-            return $this->renderIndex(installError: 'settings_market.install_error_download_failed');
+            return $this->renderIndex(locale: $request->getLocale(), installError: 'settings_market.install_error_download_failed');
         }
 
         try {
@@ -332,22 +341,24 @@ final class MarketController
             }
         } catch (IncompatiblePluginCoreVersionException $exception) {
             return $this->renderIndex(
+                locale: $request->getLocale(),
                 installError: 'settings_market.install_error_incompatible_core',
                 installErrorParams: ['%requiredCore%' => $exception->requiredCore, '%currentCore%' => $exception->currentCore],
             );
         } catch (PluginAlreadyInstalledException $exception) {
             return $this->renderIndex(
+                locale: $request->getLocale(),
                 installError: 'settings_market.install_error_already_installed',
                 installErrorParams: ['%pluginId%' => (string) $exception->pluginId],
             );
         } catch (PluginNotInstalledException) {
             // The plugin was removed by another request between rendering the "Update" button and
             // this click — not installing it here would silently second-guess that removal.
-            return $this->renderIndex(installError: 'settings_market.install_error_generic');
+            return $this->renderIndex(locale: $request->getLocale(), installError: 'settings_market.install_error_generic');
         } catch (InvalidInstalledPluginException) {
-            return $this->renderIndex(installError: 'settings_market.install_error_invalid_manifest');
+            return $this->renderIndex(locale: $request->getLocale(), installError: 'settings_market.install_error_invalid_manifest');
         } catch (PluginInstallException) {
-            return $this->renderIndex(installError: 'settings_market.install_error_generic');
+            return $this->renderIndex(locale: $request->getLocale(), installError: 'settings_market.install_error_generic');
         } finally {
             @unlink($zipPath);
         }
@@ -362,6 +373,7 @@ final class MarketController
      * @param array<string, string> $installErrorParams
      */
     private function renderIndex(
+        string $locale,
         ?string $installedPluginId = null,
         ?string $updatedPluginId = null,
         ?string $installError = null,
@@ -375,10 +387,12 @@ final class MarketController
         }
 
         $items = [];
+        $hasIncompatiblePlugin = false;
         if ($snapshotReady) {
             $appTranslationKeyCount = null;
             foreach ($snapshot->plugins as $plugin) {
                 $installedPlugin = $this->installedPlugins->get(new PluginId($plugin->id));
+                $hasIncompatiblePlugin = $hasIncompatiblePlugin || $plugin->resolvedVersion === null;
 
                 $items[] = [
                     'plugin' => $plugin,
@@ -387,6 +401,7 @@ final class MarketController
                         && $plugin->resolvedVersion !== null
                         && $this->isNewerVersion($plugin->resolvedVersion, $installedPlugin->manifest->version),
                     'translationCoveragePercent' => $this->translationCoveragePercent($plugin, $appTranslationKeyCount),
+                    'localeInfo' => $this->localeInfo($plugin, $locale),
                 ];
             }
         }
@@ -394,6 +409,7 @@ final class MarketController
         return new Response($this->twig->render('settings/market/index.html.twig', [
             'items' => $items,
             'registryUnavailable' => !$snapshotReady,
+            'hasIncompatiblePlugin' => $hasIncompatiblePlugin,
             'installedPluginId' => $installedPluginId,
             'updatedPluginId' => $updatedPluginId,
             'installError' => $installError,
@@ -468,6 +484,46 @@ final class MarketController
         }
 
         return min(100, (int) round($plugin->translationKeyCount / $appTranslationKeyCount * 100));
+    }
+
+    /**
+     * The storefront's language labels (issue #543), built from {@see MarketSnapshotPlugin::$locales}
+     * — the resolved version's own locale list, never the latest manifest's (see that property's
+     * docblock). `null` and `[]` are both treated as "nothing to show": a version that has not
+     * published a locale list yet (`null`) and one that explicitly ships none (`[]`) both leave the
+     * storefront with no useful language information to render or reason about.
+     *
+     * The mismatch/fallback checks below only ever apply to a non-`translation` plugin: for a
+     * `translation` plugin, the current interface locale being absent from its own locale list is
+     * the *normal*, expected case (a German pack is installed while running on a Russian
+     * interface) rather than something to warn about.
+     *
+     * @return array{locales: ?list<string>, interfaceLocaleMissing: bool, missingFallbackLocale: bool}
+     */
+    private function localeInfo(MarketSnapshotPlugin $plugin, string $locale): array
+    {
+        $locales = $plugin->locales;
+        if ($locales === null || $locales === []) {
+            return [
+                'locales' => null,
+                'interfaceLocaleMissing' => false,
+                'missingFallbackLocale' => false,
+            ];
+        }
+
+        $isTranslationPlugin = $plugin->manifest['type'] === PluginType::Translation->value;
+        $interfaceLocaleMissing = !$isTranslationPlugin && !\in_array($locale, $locales, true);
+
+        $missingFallbackLocale = false;
+        if ($interfaceLocaleMissing) {
+            $missingFallbackLocale = array_intersect($this->nearestBuiltInLocale->fallbackChain($locale), $locales) === [];
+        }
+
+        return [
+            'locales' => $locales,
+            'interfaceLocaleMissing' => $interfaceLocaleMissing,
+            'missingFallbackLocale' => $missingFallbackLocale,
+        ];
     }
 
     private function findPlugin(MarketSnapshot $snapshot, PluginId $id): ?MarketSnapshotPlugin

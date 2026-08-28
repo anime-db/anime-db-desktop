@@ -39,13 +39,24 @@ namespace App\Service\Market;
  * for a version the registry has not published a count for (a plugin published before this
  * field existed, or a non-`translation` plugin) — the storefront then shows no coverage badge
  * for that version instead of a fabricated one.
+ *
+ * `$locales` (issue #543) is the list of interface locales this specific version's own catalog
+ * carries — distinct from {@see \AnimeDb\PluginContracts\Manifest\Manifest::$locales}, which
+ * describes the *latest* manifest and may not match the version the storefront actually
+ * resolves. It is `null` for a version the registry has not published a locale list for (a
+ * version published before this field existed), so the storefront can tell "languages unknown"
+ * apart from "this version ships no languages at all".
  */
 final class MarketPluginVersion
 {
+    /**
+     * @param list<string>|null $locales
+     */
     public function __construct(
         public readonly string $version,
         public readonly string $core,
         public readonly ?int $translationKeyCount = null,
+        public readonly ?array $locales = null,
     ) {
     }
 }

@@ -221,6 +221,10 @@ settings_market:
     version_column: Version
     translation_coverage_column: Interface coverage
     translation_coverage_badge: '%percent%% of app interface strings translated'
+    locales_column: Languages
+    locale_missing_warning: This plugin's interface will not be in the app's current language.
+    locale_missing_fallback_warning: This plugin does not carry the app's current language or its fallback — you will see raw text keys instead of translated text.
+    incompatible_plugins_summary: Some plugins are not available for your current app version. Updating the app may make them available.
     actions_column: Actions
     already_installed: Already installed
     incompatible_core: 'Needs a core version compatible with "%requiredCore%".'

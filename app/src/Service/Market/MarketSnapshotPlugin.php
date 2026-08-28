@@ -44,6 +44,10 @@ use App\Service\Market\Exception\InvalidMarketSnapshotContentException;
  * figure never goes stale between an app upgrade and the next market refresh. Treated as
  * *optional* in {@see fromArray()}, unlike every other field here: a snapshot cached before this
  * field existed must keep loading, just without a coverage badge for that plugin.
+ *
+ * `locales` (issue #543) is the resolved version's own locale list, carried over verbatim from
+ * {@see MarketPluginVersion::$locales} — `null` means "not published for this version", not "no
+ * languages", the same optional-field treatment as `translationKeyCount` in {@see fromArray()}.
  */
 final class MarketSnapshotPlugin
 {
@@ -51,6 +55,7 @@ final class MarketSnapshotPlugin
      * @param array<string, mixed> $manifest raw manifest fields, shaped like `manifest.json`, for
      *                                       display only — never re-parsed back into a
      *                                       {@see \AnimeDb\PluginContracts\Manifest\Manifest}
+     * @param list<string>|null    $locales
      */
     public function __construct(
         public readonly string $id,
@@ -60,11 +65,12 @@ final class MarketSnapshotPlugin
         public readonly string $latestVersion,
         public readonly string $latestVersionCore,
         public readonly ?int $translationKeyCount = null,
+        public readonly ?array $locales = null,
     ) {
     }
 
     /**
-     * @return array{id: string, manifest: array<string, mixed>, resolvedVersion: ?string, sha256: ?string, latestVersion: string, latestVersionCore: string, translationKeyCount: ?int}
+     * @return array{id: string, manifest: array<string, mixed>, resolvedVersion: ?string, sha256: ?string, latestVersion: string, latestVersionCore: string, translationKeyCount: ?int, locales: ?list<string>}
      */
     public function toArray(): array
     {
@@ -76,6 +82,7 @@ final class MarketSnapshotPlugin
             'latestVersion' => $this->latestVersion,
             'latestVersionCore' => $this->latestVersionCore,
             'translationKeyCount' => $this->translationKeyCount,
+            'locales' => $this->locales,
         ];
     }
 
@@ -93,6 +100,7 @@ final class MarketSnapshotPlugin
             || !(\is_string($data['resolvedVersion'] ?? null) || ($data['resolvedVersion'] ?? null) === null)
             || !(\is_string($data['sha256'] ?? null) || ($data['sha256'] ?? null) === null)
             || !(\is_int($data['translationKeyCount'] ?? null) || ($data['translationKeyCount'] ?? null) === null)
+            || !(self::isLocalesList($data['locales'] ?? null) || ($data['locales'] ?? null) === null)
         ) {
             throw new InvalidMarketSnapshotContentException('Market snapshot plugin entry is malformed.');
         }
@@ -105,6 +113,22 @@ final class MarketSnapshotPlugin
             $data['latestVersion'],
             $data['latestVersionCore'],
             $data['translationKeyCount'] ?? null,
+            $data['locales'] ?? null,
         );
+    }
+
+    private static function isLocalesList(mixed $value): bool
+    {
+        if (!\is_array($value) || !array_is_list($value)) {
+            return false;
+        }
+
+        foreach ($value as $locale) {
+            if (!\is_string($locale)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 }

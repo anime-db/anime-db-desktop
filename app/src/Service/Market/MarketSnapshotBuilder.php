@@ -39,7 +39,9 @@ use AnimeDb\PluginContracts\Manifest\Manifest;
  * would leave the storefront with no way to show it inactive with a "needs core version X" hint.
  * `translationKeyCount` (issue #514) follows the same `$resolvedVersion` rather than
  * {@see MarketPlugin::latestVersion()} — a coverage figure attached to a version the storefront
- * would not actually install describes the wrong artifact.
+ * would not actually install describes the wrong artifact. `locales` (issue #543) follows
+ * `$resolvedVersion` for the same reason — the storefront's language labels must describe the
+ * version it would actually install, not necessarily the latest manifest's.
  *
  * Fetching, signature/anti-rollback verification and asset download stay entirely upstream of
  * this class ({@see PluginRegistryLoader}, {@see MarketAssetDownloader}) — this builder only
@@ -73,6 +75,7 @@ final class MarketSnapshotBuilder
             $latestVersion->version,
             $latestVersion->core,
             $resolvedVersion?->translationKeyCount,
+            $resolvedVersion?->locales,
         );
     }
 

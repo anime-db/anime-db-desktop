@@ -36,6 +36,7 @@ use App\Service\Market\MarketRefreshService;
 use App\Service\Market\MarketSnapshot;
 use App\Service\Market\MarketSnapshotCache;
 use App\Service\Market\MarketSnapshotPlugin;
+use App\Service\NearestBuiltInLocale;
 use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\PluginCacheWarmer;
 use App\Service\Plugin\PluginsConfigStore;
@@ -151,6 +152,7 @@ final class MarketControllerTest extends TestCase
             $messageBus ?? $this->alwaysDispatchingMessageBus(),
             $configStore ?? new AppConfigStore($this->configPath),
             $translationCoverage ?? new TranslationCoverageService($this->installedPlugins, $this->rootDir),
+            new NearestBuiltInLocale(),
         );
     }
 
@@ -189,6 +191,9 @@ final class MarketControllerTest extends TestCase
         return new MarketSnapshot($coreVersion, 1, [self::DEFAULT_MIRROR], $plugins);
     }
 
+    /**
+     * @param list<string>|null $locales
+     */
     private function snapshotPlugin(
         string $id,
         ?string $resolvedVersion,
@@ -197,8 +202,9 @@ final class MarketControllerTest extends TestCase
         string $latestVersionCore = '>=2.0.0',
         ?int $translationKeyCount = null,
         string $type = 'integration',
+        ?array $locales = null,
     ): MarketSnapshotPlugin {
-        return new MarketSnapshotPlugin($id, $this->manifest($id, $latestVersion, $type), $resolvedVersion, $sha256, $latestVersion, $latestVersionCore, $translationKeyCount);
+        return new MarketSnapshotPlugin($id, $this->manifest($id, $latestVersion, $type), $resolvedVersion, $sha256, $latestVersion, $latestVersionCore, $translationKeyCount, $locales);
     }
 
     /**
@@ -395,6 +401,202 @@ final class MarketControllerTest extends TestCase
             ->method('render')
             ->with('settings/market/index.html.twig', $this->callback(
                 static fn (array $params): bool => $params['items'][0]['translationCoveragePercent'] === 100,
+            ))
+            ->willReturn('<html></html>');
+
+        $controller = $this->controller($this->snapshotCacheServing($snapshot), $this->assetDownloaderServingPluginZip(), $twig);
+
+        $controller->index(Request::create('/settings/market'));
+    }
+
+    /**
+     * Issue #543 acceptance criterion: a version entry that never published a `locales` list (a
+     * version published before this field existed) must render no locale badge at all —
+     * "unknown" must not be shown as "no languages".
+     */
+    public function testIndexHidesTheLocaleListWhenTheResolvedVersionDoesNotCarryOne(): void
+    {
+        $snapshot = $this->snapshot([
+            $this->snapshotPlugin('animedb-shikimori', resolvedVersion: '1.2.0', sha256: 'abc123', locales: null),
+        ]);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('settings/market/index.html.twig', $this->callback(
+                static fn (array $params): bool => $params['items'][0]['localeInfo']['locales'] === null,
+            ))
+            ->willReturn('<html></html>');
+
+        $controller = $this->controller($this->snapshotCacheServing($snapshot), $this->assetDownloaderServingPluginZip(), $twig);
+
+        $controller->index(Request::create('/settings/market'));
+    }
+
+    /**
+     * Issue #543 acceptance criterion: at a "de" interface locale, a non-translation
+     * ("integration"/"local") plugin whose resolved version does not carry "de" is marked as not
+     * being translated into the interface language.
+     */
+    public function testIndexMarksAFeaturePluginAsMissingTheInterfaceLocaleAtADifferentLocale(): void
+    {
+        $snapshot = $this->snapshot([
+            $this->snapshotPlugin('animedb-shikimori', resolvedVersion: '1.2.0', sha256: 'abc123', type: 'integration', locales: ['en', 'ru']),
+        ]);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('settings/market/index.html.twig', $this->callback(
+                static fn (array $params): bool => $params['items'][0]['localeInfo']['interfaceLocaleMissing'] === true,
+            ))
+            ->willReturn('<html></html>');
+
+        $controller = $this->controller($this->snapshotCacheServing($snapshot), $this->assetDownloaderServingPluginZip(), $twig);
+
+        $request = Request::create('/settings/market');
+        $request->setLocale('de');
+        $controller->index($request);
+    }
+
+    /**
+     * Issue #543 acceptance criterion: the same missing-locale check does not raise a warning for
+     * a `translation`-type plugin whose resolved version carries the interface locale.
+     */
+    public function testIndexDoesNotWarnATranslationPluginThatCarriesTheInterfaceLocale(): void
+    {
+        $snapshot = $this->snapshot([
+            $this->snapshotPlugin('animedb-german', resolvedVersion: '1.2.0', sha256: 'abc123', type: 'translation', locales: ['de', 'ja']),
+        ]);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('settings/market/index.html.twig', $this->callback(
+                static fn (array $params): bool => $params['items'][0]['localeInfo']['interfaceLocaleMissing'] === false,
+            ))
+            ->willReturn('<html></html>');
+
+        $controller = $this->controller($this->snapshotCacheServing($snapshot), $this->assetDownloaderServingPluginZip(), $twig);
+
+        $request = Request::create('/settings/market');
+        $request->setLocale('de');
+        $controller->index($request);
+    }
+
+    /**
+     * A `translation`-type plugin whose resolved version does not carry the interface locale at
+     * all must still not be warned — a language pack not covering the interface's current
+     * language is the normal, expected case for a translation plugin (issue #543), unlike a
+     * feature plugin.
+     */
+    public function testIndexDoesNotWarnATranslationPluginMissingTheInterfaceLocaleEntirely(): void
+    {
+        $snapshot = $this->snapshot([
+            $this->snapshotPlugin('animedb-german', resolvedVersion: '1.2.0', sha256: 'abc123', type: 'translation', locales: ['de']),
+        ]);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('settings/market/index.html.twig', $this->callback(
+                static fn (array $params): bool => $params['items'][0]['localeInfo']['interfaceLocaleMissing'] === false,
+            ))
+            ->willReturn('<html></html>');
+
+        $controller = $this->controller($this->snapshotCacheServing($snapshot), $this->assetDownloaderServingPluginZip(), $twig);
+
+        $request = Request::create('/settings/market');
+        $request->setLocale('ru');
+        $controller->index($request);
+    }
+
+    /**
+     * Issue #543 acceptance criterion: a feature plugin carrying only "ru" gets flagged as not
+     * carrying the fallback locale when the interface locale is "de" — "de" resolves (issue #538)
+     * to the fallback chain ["en"], which "ru" is not part of.
+     */
+    public function testIndexMarksAFeaturePluginAsMissingTheFallbackLocaleWhenNeitherItNorTheChainIsCarried(): void
+    {
+        $snapshot = $this->snapshot([
+            $this->snapshotPlugin('animedb-shikimori', resolvedVersion: '1.2.0', sha256: 'abc123', type: 'integration', locales: ['ru']),
+        ]);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('settings/market/index.html.twig', $this->callback(
+                static fn (array $params): bool => $params['items'][0]['localeInfo']['missingFallbackLocale'] === true,
+            ))
+            ->willReturn('<html></html>');
+
+        $controller = $this->controller($this->snapshotCacheServing($snapshot), $this->assetDownloaderServingPluginZip(), $twig);
+
+        $request = Request::create('/settings/market');
+        $request->setLocale('de');
+        $controller->index($request);
+    }
+
+    /**
+     * Same plugin as above, but at a "kk" interface locale — its fallback chain is ["ru", "en"]
+     * (issue #538), which "ru" IS part of, so the plugin must not be flagged.
+     */
+    public function testIndexDoesNotMarkAFeaturePluginAsMissingTheFallbackLocaleWhenTheChainCoversIt(): void
+    {
+        $snapshot = $this->snapshot([
+            $this->snapshotPlugin('animedb-shikimori', resolvedVersion: '1.2.0', sha256: 'abc123', type: 'integration', locales: ['ru']),
+        ]);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('settings/market/index.html.twig', $this->callback(
+                static fn (array $params): bool => $params['items'][0]['localeInfo']['missingFallbackLocale'] === false,
+            ))
+            ->willReturn('<html></html>');
+
+        $controller = $this->controller($this->snapshotCacheServing($snapshot), $this->assetDownloaderServingPluginZip(), $twig);
+
+        $request = Request::create('/settings/market');
+        $request->setLocale('kk');
+        $controller->index($request);
+    }
+
+    /**
+     * Issue #543 acceptance criterion: when a plugin has no compatible version at all, the
+     * storefront shows a page-level summary distinct from that plugin's own "needs core version
+     * X" hint.
+     */
+    public function testIndexShowsAnIncompatiblePluginsSummaryWhenNoVersionResolves(): void
+    {
+        $snapshot = $this->snapshot([
+            $this->snapshotPlugin('animedb-shikimori', resolvedVersion: null, sha256: null, latestVersionCore: '>=99.0.0'),
+        ]);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('settings/market/index.html.twig', $this->callback(
+                static fn (array $params): bool => $params['hasIncompatiblePlugin'] === true,
+            ))
+            ->willReturn('<html></html>');
+
+        $controller = $this->controller($this->snapshotCacheServing($snapshot), $this->assetDownloaderServingPluginZip(), $twig);
+
+        $controller->index(Request::create('/settings/market'));
+    }
+
+    public function testIndexDoesNotShowAnIncompatiblePluginsSummaryWhenEveryPluginResolves(): void
+    {
+        $snapshot = $this->snapshot([
+            $this->snapshotPlugin('animedb-shikimori', resolvedVersion: '1.2.0', sha256: 'abc123'),
+        ]);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('settings/market/index.html.twig', $this->callback(
+                static fn (array $params): bool => $params['hasIncompatiblePlugin'] === false,
             ))
             ->willReturn('<html></html>');
 

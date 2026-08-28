@@ -186,7 +186,8 @@ final class PluginRegistry
                 }
 
                 $translationKeyCount = \is_int($version['translation_keys_count'] ?? null) ? $version['translation_keys_count'] : null;
-                $versionsByNumber[$version['version']] = new MarketPluginVersion($version['version'], $version['core'], $translationKeyCount);
+                $locales = self::extractVersionLocales($version['locales'] ?? null);
+                $versionsByNumber[$version['version']] = new MarketPluginVersion($version['version'], $version['core'], $translationKeyCount, $locales);
             }
 
             if ($versionsByNumber === []) {
@@ -275,5 +276,29 @@ final class PluginRegistry
         } catch (\UnexpectedValueException) {
             return false;
         }
+    }
+
+    /**
+     * Issue #543: a version entry's `locales` is optional and, unlike `translation_keys_count`,
+     * a list rather than a scalar — anything other than a well-formed list of strings (missing,
+     * not a list, or holding a non-string element) is treated as "not published", not as an
+     * empty list, so the storefront can tell "languages unknown" apart from "this version ships
+     * no languages at all".
+     *
+     * @return list<string>|null
+     */
+    private static function extractVersionLocales(mixed $locales): ?array
+    {
+        if (!\is_array($locales) || !array_is_list($locales)) {
+            return null;
+        }
+
+        foreach ($locales as $locale) {
+            if (!\is_string($locale)) {
+                return null;
+            }
+        }
+
+        return $locales;
     }
 }
