@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "ba88f424b4655de831518706a91c8667",
+    "content-hash": "26c9e360274cb9ce8890030d67e02639",
     "packages": [
         {
             "name": "anime-db/plugin-contracts",
@@ -10070,7 +10070,7 @@
     "prefer-stable": true,
     "prefer-lowest": false,
     "platform": {
-        "php": ">=8.4",
+        "php": ">=8.5",
         "ext-ctype": "*",
         "ext-gd": "*",
         "ext-iconv": "*",
