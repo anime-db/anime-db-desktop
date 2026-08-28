@@ -27,13 +27,18 @@ declare(strict_types=1);
 
 namespace App\EventSubscriber;
 
+use App\Service\NearestBuiltInLocale;
 use App\Service\Plugin\AvailableLocalesProvider;
+use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\HttpKernel\Event\RequestEvent;
 use Symfony\Component\HttpKernel\KernelEvents;
+use Symfony\Component\Translation\Translator;
 
 /**
- * Negotiates the request locale from the Accept-Language header.
+ * Negotiates the request locale from the Accept-Language header, and points the translator's
+ * fallback chain at the nearest built-in locale (issue #538) instead of the static `[en]` from
+ * `framework.yaml`.
  *
  * The available locales come from {@see AvailableLocalesProvider} (built-in locales plus enabled
  * translation plugins' locales, issue #453), not from scanning app/translations/ on every
@@ -43,11 +48,23 @@ use Symfony\Component\HttpKernel\KernelEvents;
  * at a small but non-zero fixed I/O cost. See the `AvailableLocalesProvider` class docblock and
  * `.claude-docs/decisions.md` (issue #84) for why that per-request cost is an accepted, documented
  * trade-off rather than an oversight.
+ *
+ * `$translator` is injected by explicit service id (`translator.default`, the class behind the
+ * `translator` alias/decorator chain in both prod and dev), not by interface: `setFallbackLocales()`
+ * is declared only on the concrete `Symfony\Component\Translation\Translator`, not on any interface
+ * it implements. Typing the property as that concrete class lets PHPStan see the method directly,
+ * and injecting the id sidesteps the `DataCollectorTranslator` decorator the plain `translator`
+ * alias resolves to in dev — that decorator forwards unknown calls through `__call()`, which
+ * PHPStan cannot see through either.
  */
 final class LocaleSubscriber implements EventSubscriberInterface
 {
-    public function __construct(private readonly AvailableLocalesProvider $availableLocalesProvider)
-    {
+    public function __construct(
+        private readonly AvailableLocalesProvider $availableLocalesProvider,
+        private readonly NearestBuiltInLocale $nearestBuiltInLocale,
+        #[Autowire(service: 'translator.default')]
+        private readonly Translator $translator,
+    ) {
     }
 
     public static function getSubscribedEvents(): array
@@ -63,12 +80,19 @@ final class LocaleSubscriber implements EventSubscriberInterface
             return;
         }
 
+        $request = $event->getRequest();
+
+        // Deliberately unconditional, and ahead of the empty-$locales early return below: the
+        // Translator instance is not recreated between requests in worker mode (issue #538), so a
+        // request that skips this call would inherit whatever fallback chain the previous request
+        // left behind.
+        $this->translator->setFallbackLocales($this->nearestBuiltInLocale->fallbackChain($request->getPreferredLanguage()));
+
         $locales = $this->availableLocalesProvider->all();
         if ($locales === []) {
             return;
         }
 
-        $request = $event->getRequest();
         $preferredLocale = $request->getPreferredLanguage($locales);
         if ($preferredLocale !== null) {
             $request->setLocale($preferredLocale);
