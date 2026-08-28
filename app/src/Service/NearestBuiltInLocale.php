@@ -51,4 +51,19 @@ final class NearestBuiltInLocale
 
         return \in_array($prefix, self::RU_PREFERRED_PREFIXES, true) ? 'ru' : 'en';
     }
+
+    /**
+     * The translator fallback chain for $locale: the nearest built-in locale (see {@see resolve()})
+     * followed by "en", without duplicating "en" when it already is the nearest one. Kept here
+     * rather than reimplemented at each call site (`LocaleSubscriber` and `SettingsController`)
+     * so both stay in lockstep.
+     *
+     * @return list<string>
+     */
+    public function fallbackChain(?string $locale): array
+    {
+        $nearest = $this->resolve($locale);
+
+        return $nearest === 'en' ? ['en'] : [$nearest, 'en'];
+    }
 }

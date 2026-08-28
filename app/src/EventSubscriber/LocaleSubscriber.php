@@ -33,7 +33,7 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\HttpKernel\Event\RequestEvent;
 use Symfony\Component\HttpKernel\KernelEvents;
-use Symfony\Contracts\Translation\TranslatorInterface;
+use Symfony\Component\Translation\Translator;
 
 /**
  * Negotiates the request locale from the Accept-Language header, and points the translator's
@@ -49,20 +49,21 @@ use Symfony\Contracts\Translation\TranslatorInterface;
  * `.claude-docs/decisions.md` (issue #84) for why that per-request cost is an accepted, documented
  * trade-off rather than an oversight.
  *
- * `$translator` is injected by explicit service id, not by interface: `setFallbackLocales()` is
- * declared only on the concrete `Symfony\Component\Translation\Translator` (the prod service), not
- * on any interface it implements — `DataCollectorTranslator` (the dev service) isn't even an
- * instance of it, it forwards unknown calls via `__call()`. An `instanceof` guard would therefore
- * work in prod and silently no-op in dev, so the call below is made unconditionally against
- * whatever `translator` resolves to.
+ * `$translator` is injected by explicit service id (`translator.default`, the class behind the
+ * `translator` alias/decorator chain in both prod and dev), not by interface: `setFallbackLocales()`
+ * is declared only on the concrete `Symfony\Component\Translation\Translator`, not on any interface
+ * it implements. Typing the property as that concrete class lets PHPStan see the method directly,
+ * and injecting the id sidesteps the `DataCollectorTranslator` decorator the plain `translator`
+ * alias resolves to in dev — that decorator forwards unknown calls through `__call()`, which
+ * PHPStan cannot see through either.
  */
 final class LocaleSubscriber implements EventSubscriberInterface
 {
     public function __construct(
         private readonly AvailableLocalesProvider $availableLocalesProvider,
         private readonly NearestBuiltInLocale $nearestBuiltInLocale,
-        #[Autowire(service: 'translator')]
-        private readonly TranslatorInterface $translator,
+        #[Autowire(service: 'translator.default')]
+        private readonly Translator $translator,
     ) {
     }
 
@@ -85,10 +86,7 @@ final class LocaleSubscriber implements EventSubscriberInterface
         // Translator instance is not recreated between requests in worker mode (issue #538), so a
         // request that skips this call would inherit whatever fallback chain the previous request
         // left behind.
-        $nearest = $this->nearestBuiltInLocale->resolve($request->getPreferredLanguage());
-        $fallbacks = $nearest === 'en' ? ['en'] : [$nearest, 'en'];
-        // @phpstan-ignore method.notFound (see class docblock: not on any Translator interface)
-        $this->translator->setFallbackLocales($fallbacks);
+        $this->translator->setFallbackLocales($this->nearestBuiltInLocale->fallbackChain($request->getPreferredLanguage()));
 
         $locales = $this->availableLocalesProvider->all();
         if ($locales === []) {
