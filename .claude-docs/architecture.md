@@ -86,6 +86,18 @@ anime-db-desktop/
         worker ./public/index.php
     }
 }
+
+# No host in the address: even with auto_https off, a literal host (e.g. 127.0.0.1) still
+# makes Caddy set up a TLS listener for the site — host matching is not the same as socket
+# binding. `bind` is what actually restricts the listener to loopback; the bare port keeps
+# auto-HTTPS detection off, same as the block above.
+:{$WS_PORT} {
+    bind 127.0.0.1
+    root * {env.APP_ROOT}/public
+    php_server {
+        worker ./public/index.php
+    }
+}
 ```
 
 **Запуск:** `frankenphp.exe run --config app/Caddyfile` с `cwd=app/`
