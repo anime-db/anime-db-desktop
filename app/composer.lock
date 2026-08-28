@@ -4,20 +4,20 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "26c9e360274cb9ce8890030d67e02639",
+    "content-hash": "77a05e16e5693e86e06e09c5373b6567",
     "packages": [
         {
             "name": "anime-db/plugin-contracts",
-            "version": "v0.14.0",
+            "version": "v0.15.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/anime-db/anime-db-plugin-contracts.git",
-                "reference": "d740bcd035c7b41b8cec0f8bc067ec33da073138"
+                "reference": "bc1d4a59a42f1ab11ab3f474922b3290880e3556"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/anime-db/anime-db-plugin-contracts/zipball/d740bcd035c7b41b8cec0f8bc067ec33da073138",
-                "reference": "d740bcd035c7b41b8cec0f8bc067ec33da073138",
+                "url": "https://api.github.com/repos/anime-db/anime-db-plugin-contracts/zipball/bc1d4a59a42f1ab11ab3f474922b3290880e3556",
+                "reference": "bc1d4a59a42f1ab11ab3f474922b3290880e3556",
                 "shasum": ""
             },
             "require": {
@@ -72,10 +72,10 @@
             "description": "Plugin contracts (interfaces and DTOs) for AnimeDB v2 plugins",
             "homepage": "https://github.com/anime-db/anime-db-plugin-contracts",
             "support": {
-                "source": "https://github.com/anime-db/anime-db-plugin-contracts/tree/v0.14.0",
+                "source": "https://github.com/anime-db/anime-db-plugin-contracts/tree/v0.15.0",
                 "issues": "https://github.com/anime-db/anime-db-plugin-contracts/issues"
             },
-            "time": "2026-08-13T06:35:11+00:00"
+            "time": "2026-08-28T17:16:33+00:00"
         },
         {
             "name": "composer/semver",

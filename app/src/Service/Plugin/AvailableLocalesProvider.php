@@ -31,9 +31,12 @@ use AnimeDb\PluginContracts\Manifest\PluginType;
 
 /**
  * Extends the built-in locale set (`app.locales`) with locales declared by enabled
- * {@see PluginType::Translation} plugins (issue #453) — {@see PluginType::Integration} manifests
- * cannot declare `locales` at all (see `ManifestValidator`), so they never contribute here, only
- * to their own translation domain via {@see PluginLoader::translationPaths()}.
+ * {@see PluginType::Translation} plugins (issue #453) — other plugin types are excluded on
+ * purpose: their translation catalogs, if any, live in their own domain rather than the
+ * `messages` domain the language switcher reads from, so declaring `locales` there would not
+ * mean the interface has a matching catalog. {@see PluginType::Integration} manifests may declare
+ * `locales` too (see `ManifestValidator`), but that value never contributes here, only to their
+ * own translation domain via {@see PluginLoader::translationPaths()}.
  *
  * Recomputed on every call, deliberately not cached across requests: FrankenPHP worker mode runs
  * a pool of worker processes with no shared memory between them (see {@see \App\Service\WsPublisher}),
