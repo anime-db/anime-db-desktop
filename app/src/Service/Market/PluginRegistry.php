@@ -30,11 +30,13 @@ namespace App\Service\Market;
 use AnimeDb\PluginContracts\Manifest\InvalidManifestException;
 use AnimeDb\PluginContracts\Manifest\InvalidManifestJsonException;
 use AnimeDb\PluginContracts\Manifest\ManifestParser;
+use AnimeDb\PluginContracts\Manifest\ManifestValidationError;
 use App\Entity\ValueObject\Exception\InvalidPluginIdException;
 use App\Entity\ValueObject\PluginId;
 use App\Service\Market\Exception\InvalidPluginRegistryContentException;
 use Composer\Semver\Semver;
 use Composer\Semver\VersionParser;
+use Psr\Log\LoggerInterface;
 
 /**
  * A parsed, already signature-verified `plugins-registry.json` (see
@@ -63,7 +65,7 @@ final class PluginRegistry
      * @throws InvalidPluginRegistryContentException if $json is not valid JSON, or is missing
      *                                               one of the fields the registry format requires
      */
-    public static function fromJson(string $json): self
+    public static function fromJson(string $json, LoggerInterface $logger): self
     {
         try {
             $data = json_decode($json, true, 512, \JSON_THROW_ON_ERROR);
@@ -94,7 +96,7 @@ final class PluginRegistry
             $sequence,
             array_map(strval(...), $assetMirrors),
             self::extractSha256Map($plugins),
-            self::extractPlugins($plugins),
+            self::extractPlugins($plugins, $logger),
         );
     }
 
@@ -150,22 +152,36 @@ final class PluginRegistry
      *
      * @return list<MarketPlugin>
      */
-    private static function extractPlugins(array $plugins): array
+    private static function extractPlugins(array $plugins, LoggerInterface $logger): array
     {
         $result = [];
 
         foreach ($plugins as $plugin) {
             if (!\is_array($plugin) || !\is_string($plugin['id'] ?? null) || !\is_array($plugin['manifest'] ?? null) || !\is_array($plugin['versions'] ?? null)) {
+                $logger->warning('Skipping market plugin registry entry with a missing or malformed id, manifest, or versions block.', [
+                    'pluginId' => \is_array($plugin) && \is_string($plugin['id'] ?? null) ? $plugin['id'] : null,
+                ]);
+
                 continue;
             }
 
             $versionsByNumber = [];
             foreach ($plugin['versions'] as $version) {
                 if (!\is_array($version) || !\is_string($version['version'] ?? null) || !\is_string($version['core'] ?? null)) {
+                    $logger->warning('Skipping market plugin version entry with a missing or malformed version or core constraint.', [
+                        'pluginId' => $plugin['id'],
+                    ]);
+
                     continue;
                 }
 
                 if (!self::isValidVersion($version['version']) || !self::isValidConstraint($version['core'])) {
+                    $logger->warning('Skipping market plugin version entry with an unparseable version or core constraint.', [
+                        'pluginId' => $plugin['id'],
+                        'version' => $version['version'],
+                        'core' => $version['core'],
+                    ]);
+
                     continue;
                 }
 
@@ -174,13 +190,46 @@ final class PluginRegistry
             }
 
             if ($versionsByNumber === []) {
+                $logger->warning('Skipping market plugin with no valid version entries.', [
+                    'pluginId' => $plugin['id'],
+                ]);
+
                 continue;
             }
 
             try {
                 $id = new PluginId($plugin['id']);
+            } catch (InvalidPluginIdException $exception) {
+                $logger->warning('Skipping market plugin with an invalid id.', [
+                    'pluginId' => $plugin['id'],
+                    'exception' => $exception,
+                ]);
+
+                continue;
+            }
+
+            try {
                 $manifest = (new ManifestParser())->parse((string) json_encode($plugin['manifest'], \JSON_THROW_ON_ERROR));
-            } catch (InvalidPluginIdException|InvalidManifestException|InvalidManifestJsonException|\JsonException) {
+            } catch (InvalidManifestException $exception) {
+                $logger->error('Skipping market plugin with an invalid manifest.', [
+                    'pluginId' => (string) $id,
+                    'errors' => array_map(
+                        static fn (ManifestValidationError $error): array => [
+                            'field' => $error->field,
+                            'message' => $error->message,
+                        ],
+                        $exception->errors,
+                    ),
+                    'exception' => $exception,
+                ]);
+
+                continue;
+            } catch (InvalidManifestJsonException|\JsonException $exception) {
+                $logger->warning('Skipping market plugin with a manifest that is not valid JSON.', [
+                    'pluginId' => (string) $id,
+                    'exception' => $exception,
+                ]);
+
                 continue;
             }
 

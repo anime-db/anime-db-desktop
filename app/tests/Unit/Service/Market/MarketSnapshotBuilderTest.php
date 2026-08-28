@@ -30,6 +30,7 @@ namespace App\Tests\Unit\Service\Market;
 use App\Service\Market\MarketSnapshotBuilder;
 use App\Service\Market\PluginRegistry;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
 
 final class MarketSnapshotBuilderTest extends TestCase
 {
@@ -73,7 +74,7 @@ final class MarketSnapshotBuilderTest extends TestCase
                     ],
                 ],
             ],
-        ], \JSON_THROW_ON_ERROR));
+        ], \JSON_THROW_ON_ERROR), new NullLogger());
     }
 
     public function testCarriesOverCoreVersionSequenceAndAssetMirrorsUnchanged(): void
@@ -115,7 +116,7 @@ final class MarketSnapshotBuilderTest extends TestCase
 
     public function testAnEmptyRegistryBuildsAnEmptyPluginsList(): void
     {
-        $registry = PluginRegistry::fromJson(json_encode(['sequence' => 1, 'asset_mirrors' => [], 'plugins' => []], \JSON_THROW_ON_ERROR));
+        $registry = PluginRegistry::fromJson(json_encode(['sequence' => 1, 'asset_mirrors' => [], 'plugins' => []], \JSON_THROW_ON_ERROR), new NullLogger());
 
         $snapshot = (new MarketSnapshotBuilder())->build($registry, '2.5.0');
 
@@ -145,7 +146,7 @@ final class MarketSnapshotBuilderTest extends TestCase
                     ],
                 ],
             ],
-        ], \JSON_THROW_ON_ERROR));
+        ], \JSON_THROW_ON_ERROR), new NullLogger());
 
         $snapshot = (new MarketSnapshotBuilder())->build($registry, '2.5.0');
 

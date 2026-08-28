@@ -31,6 +31,7 @@ use App\Service\Market\Exception\InvalidPluginRegistryContentException;
 use App\Service\Market\Exception\InvalidPluginRegistrySignatureException;
 use App\Service\Market\Exception\PluginRegistryFetchException;
 use App\Service\Market\Exception\PluginRegistryRollbackException;
+use Psr\Log\LoggerInterface;
 
 /**
  * Orchestrates a trusted `plugins-registry.json` load: download from the configured mirrors
@@ -61,6 +62,7 @@ final class PluginRegistryLoader
         private readonly PluginRegistrySignatureVerifier $signatureVerifier,
         private readonly PluginRegistryCache $cache,
         private readonly PluginRegistryHighWaterMarkStore $highWaterMark,
+        private readonly LoggerInterface $logger,
     ) {
     }
 
@@ -79,7 +81,7 @@ final class PluginRegistryLoader
         }
 
         try {
-            $registry = PluginRegistry::fromJson($document->registryJson);
+            $registry = PluginRegistry::fromJson($document->registryJson, $this->logger);
         } catch (InvalidPluginRegistryContentException $exception) {
             return $this->fallbackToCache($exception);
         }

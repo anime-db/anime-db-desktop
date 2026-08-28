@@ -37,6 +37,7 @@ use App\Service\Market\PluginRegistryHighWaterMarkStore;
 use App\Service\Market\PluginRegistryLoader;
 use App\Service\Market\PluginRegistrySignatureVerifier;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
 use Symfony\Component\HttpClient\Exception\TransportException;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
@@ -193,8 +194,9 @@ final class PluginRegistryLoaderTest extends TestCase
         $loader = new PluginRegistryLoader(
             new PluginRegistryFetcher($unreachableHttpClient),
             new PluginRegistrySignatureVerifier([$this->trustedPublicKey]),
-            new PluginRegistryCache($this->cachePath),
+            new PluginRegistryCache($this->cachePath, new NullLogger()),
             $this->highWaterMarkStore(),
+            new NullLogger(),
         );
 
         $result = $loader->load();
@@ -221,8 +223,9 @@ final class PluginRegistryLoaderTest extends TestCase
             $loader = new PluginRegistryLoader(
                 new PluginRegistryFetcher($httpClient),
                 new PluginRegistrySignatureVerifier([$this->trustedPublicKey]),
-                new PluginRegistryCache($blockingFile.'/registry.json'),
+                new PluginRegistryCache($blockingFile.'/registry.json', new NullLogger()),
                 $this->highWaterMarkStore(),
+                new NullLogger(),
             );
 
             $result = $loader->load();
@@ -262,8 +265,9 @@ final class PluginRegistryLoaderTest extends TestCase
         return new PluginRegistryLoader(
             new PluginRegistryFetcher($httpClient),
             new PluginRegistrySignatureVerifier([$this->trustedPublicKey]),
-            new PluginRegistryCache($this->cachePath),
+            new PluginRegistryCache($this->cachePath, new NullLogger()),
             $this->highWaterMarkStore(),
+            new NullLogger(),
         );
     }
 

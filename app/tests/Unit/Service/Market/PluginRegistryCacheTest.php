@@ -29,6 +29,7 @@ namespace App\Tests\Unit\Service\Market;
 
 use App\Service\Market\PluginRegistryCache;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
 
 final class PluginRegistryCacheTest extends TestCase
 {
@@ -50,14 +51,14 @@ final class PluginRegistryCacheTest extends TestCase
 
     public function testReturnsNullWhenNoCacheFileExists(): void
     {
-        $cache = new PluginRegistryCache($this->path);
+        $cache = new PluginRegistryCache($this->path, new NullLogger());
 
         $this->assertNull($cache->getCachedRegistry());
     }
 
     public function testStoresAndRetrievesTheRegistry(): void
     {
-        $cache = new PluginRegistryCache($this->path);
+        $cache = new PluginRegistryCache($this->path, new NullLogger());
 
         $cache->store($this->registryJson(sequence: 7));
 
@@ -68,7 +69,7 @@ final class PluginRegistryCacheTest extends TestCase
 
     public function testStoreOverwritesThePreviousCachedRegistry(): void
     {
-        $cache = new PluginRegistryCache($this->path);
+        $cache = new PluginRegistryCache($this->path, new NullLogger());
 
         $cache->store($this->registryJson(sequence: 1));
         $cache->store($this->registryJson(sequence: 2));
@@ -80,7 +81,7 @@ final class PluginRegistryCacheTest extends TestCase
     {
         file_put_contents($this->path, 'not valid json');
 
-        $cache = new PluginRegistryCache($this->path);
+        $cache = new PluginRegistryCache($this->path, new NullLogger());
 
         $this->assertNull($cache->getCachedRegistry());
     }
@@ -92,7 +93,7 @@ final class PluginRegistryCacheTest extends TestCase
         // instead of silently pretending the registry was cached.
         $blockingFile = sys_get_temp_dir().'/anime-market-registry-cache-test-blocker-'.uniqid();
         file_put_contents($blockingFile, '');
-        $cache = new PluginRegistryCache($blockingFile.'/registry.json');
+        $cache = new PluginRegistryCache($blockingFile.'/registry.json', new NullLogger());
 
         try {
             $this->expectException(\RuntimeException::class);
