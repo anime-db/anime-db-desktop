@@ -190,6 +190,8 @@ settings_plugins:
     id_column: Идентификатор
     version_column: Версия
     type_column: Тип
+    languages_column: Языки
+    missing_fallback_locale: 'Плагин не поставляет текущую локаль интерфейса и её фолбэк — в его части интерфейса будут показаны сырые ключи перевода.'
     translation_coverage_column: Покрытие интерфейса
     translation_coverage_badge: '%locale%: переведено %covered% из %total% строк интерфейса приложения'
     actions_column: Действия

@@ -190,6 +190,8 @@ settings_plugins:
     id_column: Id
     version_column: Version
     type_column: Type
+    languages_column: Languages
+    missing_fallback_locale: 'This plugin does not ship the current interface locale or a fallback for it — its interface will show raw translation keys.'
     translation_coverage_column: Interface coverage
     translation_coverage_badge: '%locale%: %covered% of %total% app interface strings translated'
     actions_column: Actions

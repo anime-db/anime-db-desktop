@@ -276,6 +276,76 @@ final class PluginControllerTest extends TestCase
         $this->controller(twig: $twig)->index(Request::create('/settings/plugins'));
     }
 
+    /**
+     * Issue #540: the settings page lists which locales a plugin ships for every installed type,
+     * not just `translation` — an `integration` plugin's catalog lives in its own
+     * `<plugin-id>.<locale>.yaml` domain, so it gets a plain language list with no covered/total
+     * figure (that stays exclusive to `translationCoverage`, unchanged from issue #513).
+     */
+    public function testIndexListsLanguagesForBothPluginTypesWithNoCoverageForFeaturePlugins(): void
+    {
+        mkdir($this->rootDir.'/translations', recursive: true);
+        file_put_contents($this->rootDir.'/translations/messages.en.yaml', "welcome: Hello\n");
+
+        $this->writeManifest('animedb-widget', 'Widget');
+        mkdir($this->pluginsDir.'/animedb-widget/translations', recursive: true);
+        file_put_contents($this->pluginsDir.'/animedb-widget/translations/animedb-widget.en.yaml', "welcome: Hello\n");
+        file_put_contents($this->pluginsDir.'/animedb-widget/translations/animedb-widget.ru.yaml', "welcome: Привет\n");
+
+        $this->writeTranslationPluginManifest('animedb-german', 'German', ['de']);
+        file_put_contents($this->pluginsDir.'/animedb-german/translations/messages.de.yaml', "welcome: Hallo\n");
+
+        $this->registry->reconcile();
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('settings/plugins/index.html.twig', $this->callback(static function (array $params): bool {
+                self::assertArrayNotHasKey('animedb-widget', $params['translationCoverage']);
+                self::assertSame(['en', 'ru'], $params['pluginLocales']['animedb-widget']['locales']);
+                self::assertFalse($params['pluginLocales']['animedb-widget']['missingFallbackLocale']);
+
+                self::assertSame(['de'], $params['pluginLocales']['animedb-german']['locales']);
+
+                return true;
+            }))
+            ->willReturn('<html></html>');
+
+        $this->controller(twig: $twig)->index(Request::create('/settings/plugins'));
+    }
+
+    /**
+     * Issue #540: with the interface in 'de' (falls back to 'en', issue #538) and a feature
+     * plugin shipping only 'ru', neither is among its locales — the page must flag it, since the
+     * user would otherwise see that plugin's raw translation keys.
+     */
+    public function testIndexFlagsAFeaturePluginThatShipsNeitherTheCurrentLocaleNorItsFallback(): void
+    {
+        mkdir($this->rootDir.'/translations', recursive: true);
+        file_put_contents($this->rootDir.'/translations/messages.en.yaml', "welcome: Hello\n");
+
+        $this->writeManifest('animedb-widget', 'Widget');
+        mkdir($this->pluginsDir.'/animedb-widget/translations', recursive: true);
+        file_put_contents($this->pluginsDir.'/animedb-widget/translations/animedb-widget.ru.yaml', "welcome: Привет\n");
+
+        $this->registry->reconcile();
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('settings/plugins/index.html.twig', $this->callback(static function (array $params): bool {
+                self::assertTrue($params['pluginLocales']['animedb-widget']['missingFallbackLocale']);
+
+                return true;
+            }))
+            ->willReturn('<html></html>');
+
+        $request = Request::create('/settings/plugins');
+        $request->setLocale('de');
+
+        $this->controller(twig: $twig)->index($request);
+    }
+
     public function testIndexPassesInstalledQueryParameterThrough(): void
     {
         $twig = $this->createMock(Environment::class);

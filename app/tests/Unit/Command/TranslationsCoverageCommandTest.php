@@ -28,6 +28,8 @@ declare(strict_types=1);
 namespace App\Tests\Unit\Command;
 
 use App\Command\TranslationsCoverageCommand;
+use App\Service\AppConfigStore;
+use App\Service\AppSettingsProvider;
 use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Translation\TranslationCoverageService;
@@ -48,9 +50,10 @@ final class TranslationsCoverageCommandTest extends TestCase
         $pluginDir = sys_get_temp_dir().'/anime-translations-coverage-cmd-plugin-'.uniqid();
         mkdir($pluginDir.'/translations', recursive: true);
         file_put_contents($pluginDir.'/translations/messages.de.yaml', "welcome: Hallo\nextra: Nur hier\n");
+        $this->writeManifest($pluginDir, 'animedb-checkout', 'translation', ['de']);
 
         $registry = $this->makeEmptyRegistry();
-        $command = new TranslationsCoverageCommand(new TranslationCoverageService($registry, $projectDir));
+        $command = $this->makeCommand(new TranslationCoverageService($registry, $projectDir));
         $tester = new CommandTester($command);
 
         $exitCode = $tester->execute(['--path' => $pluginDir]);
@@ -69,7 +72,7 @@ final class TranslationsCoverageCommandTest extends TestCase
         mkdir($projectDir.'/translations', recursive: true);
         file_put_contents($projectDir.'/translations/messages.en.yaml', "welcome: Hello\n");
 
-        $command = new TranslationsCoverageCommand(new TranslationCoverageService($this->makeEmptyRegistry(), $projectDir));
+        $command = $this->makeCommand(new TranslationCoverageService($this->makeEmptyRegistry(), $projectDir));
         $tester = new CommandTester($command);
 
         $exitCode = $tester->execute([]);
@@ -83,12 +86,142 @@ final class TranslationsCoverageCommandTest extends TestCase
         mkdir($projectDir.'/translations', recursive: true);
         file_put_contents($projectDir.'/translations/messages.en.yaml', "welcome: Hello\n");
 
-        $command = new TranslationsCoverageCommand(new TranslationCoverageService($this->makeEmptyRegistry(), $projectDir));
+        $command = $this->makeCommand(new TranslationCoverageService($this->makeEmptyRegistry(), $projectDir));
         $tester = new CommandTester($command);
 
         $exitCode = $tester->execute(['--plugin' => 'not-installed']);
 
         $this->assertSame(Command::FAILURE, $exitCode);
+    }
+
+    public function testPathFailsWithAClearErrorWhenTheDirectoryHasNoManifest(): void
+    {
+        $projectDir = sys_get_temp_dir().'/anime-translations-coverage-cmd-app-'.uniqid();
+        mkdir($projectDir.'/translations', recursive: true);
+        file_put_contents($projectDir.'/translations/messages.en.yaml', "welcome: Hello\n");
+
+        // A directory with a translations/ folder but no manifest.json at all.
+        $pluginDir = sys_get_temp_dir().'/anime-translations-coverage-cmd-no-manifest-'.uniqid();
+        mkdir($pluginDir.'/translations', recursive: true);
+        file_put_contents($pluginDir.'/translations/messages.de.yaml', "welcome: Hallo\n");
+
+        $command = $this->makeCommand(new TranslationCoverageService($this->makeEmptyRegistry(), $projectDir));
+        $tester = new CommandTester($command);
+
+        $exitCode = $tester->execute(['--path' => $pluginDir]);
+
+        $this->assertSame(Command::FAILURE, $exitCode);
+        $this->assertStringContainsString('manifest.json', $tester->getDisplay());
+    }
+
+    public function testPathOnAnIntegrationPluginListsItsLocalesWithoutCoverageFigures(): void
+    {
+        $projectDir = sys_get_temp_dir().'/anime-translations-coverage-cmd-app-'.uniqid();
+        mkdir($projectDir.'/translations', recursive: true);
+        file_put_contents($projectDir.'/translations/messages.en.yaml', "welcome: Hello\n");
+
+        $pluginDir = sys_get_temp_dir().'/anime-translations-coverage-cmd-integration-'.uniqid();
+        mkdir($pluginDir.'/translations', recursive: true);
+        file_put_contents($pluginDir.'/translations/animedb-widget.en.yaml', "welcome: Hello\n");
+        file_put_contents($pluginDir.'/translations/animedb-widget.ru.yaml', "welcome: Привет\n");
+        $this->writeManifest($pluginDir, 'animedb-widget', 'integration', null);
+
+        $command = $this->makeCommand(new TranslationCoverageService($this->makeEmptyRegistry(), $projectDir));
+        $tester = new CommandTester($command);
+
+        $exitCode = $tester->execute(['--path' => $pluginDir]);
+
+        $this->assertSame(Command::SUCCESS, $exitCode);
+        $display = $tester->getDisplay();
+        $this->assertStringContainsString('en', $display);
+        $this->assertStringContainsString('ru', $display);
+        $this->assertStringNotContainsString('Covered:', $display);
+    }
+
+    /**
+     * Issue #540: the current interface locale ('de') falls back to 'en' (issue #538), and the
+     * plugin ships neither — the command must warn that this plugin's UI will show raw keys.
+     */
+    public function testPluginCommandWarnsWhenTheInterfaceLocaleHasNoMatchingFallback(): void
+    {
+        $projectDir = sys_get_temp_dir().'/anime-translations-coverage-cmd-app-'.uniqid();
+        mkdir($projectDir.'/translations', recursive: true);
+        file_put_contents($projectDir.'/translations/messages.en.yaml', "welcome: Hello\n");
+
+        $registry = $this->makeInstalledIntegrationPlugin(['ru']);
+        $command = $this->makeCommand(new TranslationCoverageService($registry, $projectDir), currentLocale: 'de');
+        $tester = new CommandTester($command);
+
+        $exitCode = $tester->execute(['--plugin' => 'animedb-widget']);
+
+        $this->assertSame(Command::SUCCESS, $exitCode);
+        $this->assertStringContainsString('raw translation keys', $tester->getDisplay());
+    }
+
+    /**
+     * Same plugin locales as above, but the interface locale ('kk') falls back to 'ru' (issue
+     * #538), which the plugin does ship — no warning.
+     */
+    public function testPluginCommandDoesNotWarnWhenTheFallbackChainIsShipped(): void
+    {
+        $projectDir = sys_get_temp_dir().'/anime-translations-coverage-cmd-app-'.uniqid();
+        mkdir($projectDir.'/translations', recursive: true);
+        file_put_contents($projectDir.'/translations/messages.en.yaml', "welcome: Hello\n");
+
+        $registry = $this->makeInstalledIntegrationPlugin(['ru']);
+        $command = $this->makeCommand(new TranslationCoverageService($registry, $projectDir), currentLocale: 'kk');
+        $tester = new CommandTester($command);
+
+        $exitCode = $tester->execute(['--plugin' => 'animedb-widget']);
+
+        $this->assertSame(Command::SUCCESS, $exitCode);
+        $this->assertStringNotContainsString('raw translation keys', $tester->getDisplay());
+    }
+
+    /**
+     * @param list<string> $locales
+     */
+    private function makeInstalledIntegrationPlugin(array $locales): InstalledPluginsRegistry
+    {
+        $pluginsDir = sys_get_temp_dir().'/anime-translations-coverage-cmd-installed-'.uniqid();
+        $pluginDir = $pluginsDir.'/animedb-widget';
+        mkdir($pluginDir.'/translations', recursive: true);
+        foreach ($locales as $locale) {
+            file_put_contents($pluginDir.'/translations/animedb-widget.'.$locale.'.yaml', "welcome: Hi\n");
+        }
+        $this->writeManifest($pluginDir, 'animedb-widget', 'integration', $locales);
+
+        $registry = new InstalledPluginsRegistry($pluginsDir, new PluginsConfigStore($pluginsDir.'/plugins.json'), new NullLogger());
+        $registry->reconcile();
+
+        return $registry;
+    }
+
+    /**
+     * @param list<string>|null $locales
+     */
+    private function writeManifest(string $pluginDir, string $id, string $type, ?array $locales): void
+    {
+        file_put_contents($pluginDir.'/manifest.json', (string) json_encode(array_filter([
+            'id' => $id,
+            'name' => $id,
+            'version' => '1.0.0',
+            'type' => $type,
+            'features' => $type === 'integration' ? ['filler' => true] : null,
+            'locales' => $locales,
+            'require' => ['core' => '>=2.0.0', 'php' => '>=8.2'],
+        ], static fn (mixed $value): bool => $value !== null)));
+    }
+
+    private function makeCommand(TranslationCoverageService $coverageService, ?string $currentLocale = null): TranslationsCoverageCommand
+    {
+        $configPath = sys_get_temp_dir().'/anime-translations-coverage-cmd-settings-'.uniqid().'.json';
+        $settings = new AppSettingsProvider(new AppConfigStore($configPath));
+        if ($currentLocale !== null) {
+            $settings->setLocale($currentLocale);
+        }
+
+        return new TranslationsCoverageCommand($coverageService, $settings);
     }
 
     private function makeEmptyRegistry(): InstalledPluginsRegistry

@@ -27,9 +27,11 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Service\Translation;
 
+use AnimeDb\PluginContracts\Manifest\PluginType;
 use App\Entity\ValueObject\PluginId;
 use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\PluginsConfigStore;
+use App\Service\Translation\PluginTranslationReport;
 use App\Service\Translation\TranslationCoverageService;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
@@ -48,10 +50,10 @@ final class TranslationCoverageServiceTest extends TestCase
         ]);
 
         $service = new TranslationCoverageService($this->makeRegistry(), $projectDir);
-        $coverage = $service->coverageForPluginDirectory($pluginDir);
+        $report = $service->coverageForPluginDirectory($pluginDir);
 
-        $this->assertArrayHasKey('de', $coverage);
-        $de = $coverage['de'];
+        $this->assertArrayHasKey('de', $report->coverage);
+        $de = $report->coverage['de'];
 
         $this->assertTrue($de->isKnown);
         $this->assertSame(1, $de->covered);
@@ -66,11 +68,11 @@ final class TranslationCoverageServiceTest extends TestCase
         $pluginDir = $this->makePluginDir('de', ['error' => 'Fehler: %reason%']);
 
         $service = new TranslationCoverageService($this->makeRegistry(), $projectDir);
-        $coverage = $service->coverageForPluginDirectory($pluginDir);
+        $report = $service->coverageForPluginDirectory($pluginDir);
 
         $this->assertSame(
             ['missing' => ['detail'], 'extra' => ['reason']],
-            $coverage['de']->placeholderMismatches['error'],
+            $report->coverage['de']->placeholderMismatches['error'],
         );
     }
 
@@ -81,10 +83,10 @@ final class TranslationCoverageServiceTest extends TestCase
         file_put_contents($pluginDir.'/translations/messages.fr.yaml', "key: [unterminated\n");
 
         $service = new TranslationCoverageService($this->makeRegistry(), $projectDir);
-        $coverage = $service->coverageForPluginDirectory($pluginDir);
+        $report = $service->coverageForPluginDirectory($pluginDir);
 
-        $this->assertFalse($coverage['fr']->isKnown);
-        $this->assertSame(0, $coverage['fr']->covered);
+        $this->assertFalse($report->coverage['fr']->isKnown);
+        $this->assertSame(0, $report->coverage['fr']->covered);
     }
 
     public function testCoverageForInstalledPluginReturnsNullForAnUnknownPluginId(): void
@@ -115,11 +117,11 @@ final class TranslationCoverageServiceTest extends TestCase
         $projectDir = $this->makeProjectDir(['welcome' => 'Hello']);
         $service = new TranslationCoverageService($registry, $projectDir);
 
-        $coverage = $service->coverageForInstalledPlugin(new PluginId('animedb-german'));
+        $report = $service->coverageForInstalledPlugin(new PluginId('animedb-german'));
 
-        $this->assertNotNull($coverage);
-        $this->assertSame(1, $coverage['de']->covered);
-        $this->assertSame([], $coverage['de']->missing);
+        $this->assertNotNull($report);
+        $this->assertSame(1, $report->coverage['de']->covered);
+        $this->assertSame([], $report->coverage['de']->missing);
     }
 
     public function testCoverageForInstalledPluginReportsAManifestLocaleWithNoCatalogFileAsUnknown(): void
@@ -147,12 +149,83 @@ final class TranslationCoverageServiceTest extends TestCase
         $projectDir = $this->makeProjectDir(['welcome' => 'Hello']);
         $service = new TranslationCoverageService($registry, $projectDir);
 
-        $coverage = $service->coverageForInstalledPlugin(new PluginId('animedb-partial'));
+        $report = $service->coverageForInstalledPlugin(new PluginId('animedb-partial'));
 
-        $this->assertNotNull($coverage);
-        $this->assertArrayHasKey('fr', $coverage);
-        $this->assertFalse($coverage['fr']->isKnown);
-        $this->assertSame(1, $coverage['de']->covered);
+        $this->assertNotNull($report);
+        $this->assertArrayHasKey('fr', $report->coverage);
+        $this->assertFalse($report->coverage['fr']->isKnown);
+        $this->assertSame(1, $report->coverage['de']->covered);
+    }
+
+    public function testCoverageForPluginDirectoryOfAnIntegrationTypeReturnsALocaleListWithNoCoverageFields(): void
+    {
+        $pluginDir = sys_get_temp_dir().'/anime-translation-coverage-feature-'.uniqid();
+        mkdir($pluginDir.'/translations', recursive: true);
+        file_put_contents($pluginDir.'/translations/animedb-widget.en.yaml', "welcome: Hello\n");
+        file_put_contents($pluginDir.'/translations/animedb-widget.ru.yaml', "welcome: Привет\n");
+
+        $service = new TranslationCoverageService($this->makeRegistry(), $this->makeProjectDir(['welcome' => 'Hello']));
+        $report = $service->coverageForPluginDirectory($pluginDir, PluginType::Integration, 'animedb-widget');
+
+        $this->assertSame(PluginType::Integration, $report->type);
+        $this->assertSame(['en', 'ru'], $report->locales);
+        $this->assertSame([], $report->coverage);
+    }
+
+    public function testCoverageForInstalledPluginOfAnIntegrationTypeHasNoUnknownEntriesForDeclaredLocales(): void
+    {
+        $pluginsDir = sys_get_temp_dir().'/anime-translation-coverage-integration-installed-'.uniqid();
+        $pluginDir = $pluginsDir.'/animedb-widget';
+        mkdir($pluginDir.'/translations', recursive: true);
+        file_put_contents($pluginDir.'/translations/animedb-widget.ru.yaml', "welcome: Привет\n");
+        file_put_contents($pluginDir.'/manifest.json', (string) json_encode([
+            'id' => 'animedb-widget',
+            'name' => 'Widget',
+            'version' => '1.0.0',
+            'type' => 'integration',
+            'features' => ['filler' => true],
+            // Declares a locale ('fr') the plugin never shipped a catalog file for — unlike a
+            // Translation plugin, this must not produce an 'unknown' entry: there is no reference
+            // catalog for this domain to have found it missing against in the first place.
+            'locales' => ['ru', 'fr'],
+            'require' => ['core' => '>=2.0.0', 'php' => '>=8.2'],
+        ]));
+
+        $registry = new InstalledPluginsRegistry($pluginsDir, new PluginsConfigStore($pluginsDir.'/plugins.json'), new NullLogger());
+        $registry->reconcile();
+
+        $service = new TranslationCoverageService($registry, $this->makeProjectDir(['welcome' => 'Hello']));
+        $report = $service->coverageForInstalledPlugin(new PluginId('animedb-widget'));
+
+        $this->assertNotNull($report);
+        $this->assertSame([], $report->coverage);
+        $this->assertSame(['ru'], $report->locales);
+    }
+
+    public function testIsMissingFallbackLocaleWhenNeitherTheCurrentLocaleNorItsFallbackChainIsShipped(): void
+    {
+        $service = new TranslationCoverageService($this->makeRegistry(), $this->makeProjectDir(['welcome' => 'Hello']));
+        $report = PluginTranslationReport::featureLocales(PluginType::Integration, ['ru']);
+
+        // Interface locale 'de' falls back to 'en' (issue #538) — neither is among ['ru'].
+        $this->assertTrue($service->isMissingFallbackLocale($report, 'de'));
+    }
+
+    public function testIsMissingFallbackLocaleFalseWhenTheFallbackChainIsShipped(): void
+    {
+        $service = new TranslationCoverageService($this->makeRegistry(), $this->makeProjectDir(['welcome' => 'Hello']));
+        $report = PluginTranslationReport::featureLocales(PluginType::Integration, ['ru']);
+
+        // Interface locale 'kk' falls back to 'ru' (issue #538) — 'ru' is among ['ru'].
+        $this->assertFalse($service->isMissingFallbackLocale($report, 'kk'));
+    }
+
+    public function testIsMissingFallbackLocaleAlwaysFalseForATranslationTypeReport(): void
+    {
+        $service = new TranslationCoverageService($this->makeRegistry(), $this->makeProjectDir(['welcome' => 'Hello']));
+        $report = PluginTranslationReport::translation([]);
+
+        $this->assertFalse($service->isMissingFallbackLocale($report, 'de'));
     }
 
     private function makeRegistry(): InstalledPluginsRegistry

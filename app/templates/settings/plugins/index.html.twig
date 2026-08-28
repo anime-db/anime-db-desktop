@@ -72,6 +72,7 @@
                     <th>{{ 'settings_plugins.id_column'|trans }}</th>
                     <th>{{ 'settings_plugins.version_column'|trans }}</th>
                     <th>{{ 'settings_plugins.type_column'|trans }}</th>
+                    <th>{{ 'settings_plugins.languages_column'|trans }}</th>
                     <th>{{ 'settings_plugins.translation_coverage_column'|trans }}</th>
                     <th>{{ 'settings_plugins.actions_column'|trans }}</th>
                 </tr>
@@ -83,6 +84,18 @@
                         <td><code>{{ plugin.id }}</code></td>
                         <td>{{ plugin.manifest.version }}</td>
                         <td>{{ ('plugin_type.' ~ plugin.manifest.type.value)|trans }}</td>
+                        <td>
+                            {% if pluginLocales[plugin.id ~ ''] is defined %}
+                                <ul class="settings-plugins__locales-list">
+                                    {% for locale in pluginLocales[plugin.id ~ ''].locales %}
+                                        <li>{{ locale }}</li>
+                                    {% endfor %}
+                                </ul>
+                                {% if pluginLocales[plugin.id ~ ''].missingFallbackLocale %}
+                                    <p class="settings-plugins__missing-fallback-locale">{{ 'settings_plugins.missing_fallback_locale'|trans }}</p>
+                                {% endif %}
+                            {% endif %}
+                        </td>
                         <td>
                             {% if translationCoverage[plugin.id ~ ''] is defined %}
                                 <ul class="settings-plugins__coverage-list">
