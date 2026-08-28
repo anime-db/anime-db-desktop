@@ -31,10 +31,11 @@ jest.mock('../../native/supervisor/cache-invalidation', () => ({
     commitFingerprint:        jest.fn(),
 }));
 jest.mock('../../native/supervisor/frankenphp', () => ({
-    start:      jest.fn(() => Promise.resolve({ httpPort: 8000, wsPort: 8001 })),
-    stop:       jest.fn(() => Promise.resolve()),
-    killOrphan: jest.fn(() => Promise.resolve()),
-    events:     { on: jest.fn() },
+    start:         jest.fn(() => Promise.resolve({ httpPort: 8000, wsPort: 8001 })),
+    stop:          jest.fn(() => Promise.resolve()),
+    killOrphan:    jest.fn(() => Promise.resolve()),
+    ensurePhpIni:  jest.fn(),
+    events:        { on: jest.fn() },
 }));
 jest.mock('../../native/supervisor/market-refresh', () => ({
     run: jest.fn(() => Promise.resolve()),
@@ -127,6 +128,27 @@ describe('supervisor.start', () => {
             meiliKey:        'k',
             safeMode:        false,
         });
+    });
+
+    /**
+     * Порядок здесь несущий, а не косметический. Расширения Windows-сборки — подгружаемые DLL
+     * (issue #477), путь к ним даёт только extension_dir из php.ini, и без него bin/console падает
+     * на vendor/composer/platform_check.php ещё до Symfony. Пока ensurePhpIni() вызывался лишь
+     * внутри frankenphp.start(), на ЧИСТОМ профиле миграции успевали отработать раньше, чем файл
+     * появлялся, и весь запуск ложился (issue #552). Отказ был строго первозапускным: со второго
+     * раза php.ini уже лежал от прошлого сеанса, поэтому в разработке не воспроизводился.
+     */
+    test('writes php.ini before the first PHP process of the session, not with the web worker', async () => {
+        const callOrder = [];
+        frankenphp.ensurePhpIni.mockImplementation(() => callOrder.push('ensurePhpIni'));
+        migrations.run.mockImplementation(() => {
+            callOrder.push('migrations.run');
+            return Promise.resolve();
+        });
+
+        await supervisor.start(jest.fn());
+
+        expect(callOrder).toEqual(['ensurePhpIni', 'migrations.run']);
     });
 
     test('kills an orphaned migrations console process before any child process starts', async () => {
