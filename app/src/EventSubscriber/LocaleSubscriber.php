@@ -27,13 +27,18 @@ declare(strict_types=1);
 
 namespace App\EventSubscriber;
 
+use App\Service\NearestBuiltInLocale;
 use App\Service\Plugin\AvailableLocalesProvider;
+use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\HttpKernel\Event\RequestEvent;
 use Symfony\Component\HttpKernel\KernelEvents;
+use Symfony\Contracts\Translation\TranslatorInterface;
 
 /**
- * Negotiates the request locale from the Accept-Language header.
+ * Negotiates the request locale from the Accept-Language header, and points the translator's
+ * fallback chain at the nearest built-in locale (issue #538) instead of the static `[en]` from
+ * `framework.yaml`.
  *
  * The available locales come from {@see AvailableLocalesProvider} (built-in locales plus enabled
  * translation plugins' locales, issue #453), not from scanning app/translations/ on every
@@ -43,11 +48,22 @@ use Symfony\Component\HttpKernel\KernelEvents;
  * at a small but non-zero fixed I/O cost. See the `AvailableLocalesProvider` class docblock and
  * `.claude-docs/decisions.md` (issue #84) for why that per-request cost is an accepted, documented
  * trade-off rather than an oversight.
+ *
+ * `$translator` is injected by explicit service id, not by interface: `setFallbackLocales()` is
+ * declared only on the concrete `Symfony\Component\Translation\Translator` (the prod service), not
+ * on any interface it implements — `DataCollectorTranslator` (the dev service) isn't even an
+ * instance of it, it forwards unknown calls via `__call()`. An `instanceof` guard would therefore
+ * work in prod and silently no-op in dev, so the call below is made unconditionally against
+ * whatever `translator` resolves to.
  */
 final class LocaleSubscriber implements EventSubscriberInterface
 {
-    public function __construct(private readonly AvailableLocalesProvider $availableLocalesProvider)
-    {
+    public function __construct(
+        private readonly AvailableLocalesProvider $availableLocalesProvider,
+        private readonly NearestBuiltInLocale $nearestBuiltInLocale,
+        #[Autowire(service: 'translator')]
+        private readonly TranslatorInterface $translator,
+    ) {
     }
 
     public static function getSubscribedEvents(): array
@@ -63,12 +79,22 @@ final class LocaleSubscriber implements EventSubscriberInterface
             return;
         }
 
+        $request = $event->getRequest();
+
+        // Deliberately unconditional, and ahead of the empty-$locales early return below: the
+        // Translator instance is not recreated between requests in worker mode (issue #538), so a
+        // request that skips this call would inherit whatever fallback chain the previous request
+        // left behind.
+        $nearest = $this->nearestBuiltInLocale->resolve($request->getPreferredLanguage());
+        $fallbacks = $nearest === 'en' ? ['en'] : [$nearest, 'en'];
+        // @phpstan-ignore method.notFound (see class docblock: not on any Translator interface)
+        $this->translator->setFallbackLocales($fallbacks);
+
         $locales = $this->availableLocalesProvider->all();
         if ($locales === []) {
             return;
         }
 
-        $request = $event->getRequest();
         $preferredLocale = $request->getPreferredLanguage($locales);
         if ($preferredLocale !== null) {
             $request->setLocale($preferredLocale);

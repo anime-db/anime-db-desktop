@@ -230,6 +230,23 @@ final class SettingsControllerTest extends TestCase
         $this->assertSame('ru', $data['locale']);
     }
 
+    /**
+     * Acceptance (issue #538): native/accept-language.js sends the Accept-Language header built
+     * from config.json as it stood *before* this POST persisted the new locale, so without this,
+     * the request itself would still carry the previous locale even though the response body
+     * already reflects the new one via `currentLocale`.
+     */
+    public function testSetLocaleSynchronizesTheRequestLocaleWithThePersistedChoice(): void
+    {
+        $controller = $this->createController();
+        $request = Request::create('/settings', 'POST', ['locale' => 'ru', '_token' => 'token']);
+        $request->setLocale('en');
+
+        $controller->setLocale($request);
+
+        $this->assertSame('ru', $request->getLocale());
+    }
+
     public function testSetLocaleRejectsUnknownLocale(): void
     {
         $controller = $this->createController();

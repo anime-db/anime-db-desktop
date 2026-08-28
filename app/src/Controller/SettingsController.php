@@ -80,6 +80,10 @@ final class SettingsController
         }
 
         $this->settings->setLocale($locale);
+        // native/accept-language.js sends Accept-Language from config.json as it was before this
+        // write, so without this the render below would still use the previous locale (issue
+        // #538).
+        $request->setLocale($locale);
 
         return $this->renderIndex();
     }
