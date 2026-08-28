@@ -94,6 +94,40 @@ describe('isSocks5Proxy', () => {
     });
 });
 
+/**
+ * Разбирает qBittorrent.ini на секции, чтобы утверждения могли смотреть не на подстроку во всём
+ * файле, а на конкретный ключ в конкретной секции. Полноценный INI-парсер здесь не нужен и вреден:
+ * значения qBittorrent — сырые строки, и любая нормализация скрыла бы ровно то, что проверяется.
+ *
+ * @param {string} contents
+ * @returns {Record<string, Record<string, string>>}
+ */
+function parseIni(contents) {
+    const sections = {};
+    let current = null;
+
+    for (const line of contents.split('\n')) {
+        const trimmed = line.trim();
+        if (trimmed === '') continue;
+
+        const header = trimmed.match(/^\[(.+)\]$/);
+        if (header !== null) {
+            current = header[1];
+            sections[current] ??= {};
+            continue;
+        }
+
+        if (current === null) continue;
+
+        const eq = trimmed.indexOf('=');
+        if (eq === -1) continue;
+
+        sections[current][trimmed.slice(0, eq)] = trimmed.slice(eq + 1);
+    }
+
+    return sections;
+}
+
 describe('seedConfig', () => {
     let existsSyncSpy;
     let readFileSyncSpy;
@@ -117,15 +151,29 @@ describe('seedConfig', () => {
         expect(mkdirSyncSpy).toHaveBeenCalledWith('/fake/qbittorrent/qBittorrent/config', { recursive: true });
 
         const written = writeFileSyncSpy.mock.calls[0][1];
-        expect(written).toContain(`Port=${WEBUI_PORT}`);
-        expect(written).toContain('Address="127.0.0.1"');
-        expect(written).toContain('LocalHostAuth=false');
-        expect(written).toContain(`Session\\Port=${BT_PORT}`);
-        expect(written).toContain('Session\\DHTEnabled=true');
-        expect(written).toContain('Session\\PeXEnabled=true');
-        expect(written).toContain('Proxy\\Type=None');
-        expect(written).toContain('HostHeaderValidation=false');
-        expect(written).not.toContain('Proxy\\IP=');
+        const ini = parseIni(written);
+
+        // Секция значима, а не декоративна: qBittorrent читает настройки WebUI из [Preferences]
+        // ключами `WebUI\<Имя>` и не знает секции [WebUI] вовсе. Проверки ниже смотрят на
+        // конкретную секцию именно поэтому — прежняя версия этого теста сверяла подстроки
+        // (`LocalHostAuth=false`), которые совпадают при любой секции и при любом префиксе, и
+        // пропустила issue #552: ключи писались в несуществующую [WebUI] и не применялись.
+        expect(ini.Preferences).toMatchObject({
+            'WebUI\\Port': String(WEBUI_PORT),
+            'WebUI\\Address': '"127.0.0.1"',
+            'WebUI\\LocalHostAuth': 'false',
+            'WebUI\\HostHeaderValidation': 'false',
+        });
+        expect(ini.WebUI).toBeUndefined();
+
+        expect(ini.BitTorrent).toMatchObject({
+            'Session\\Port': String(BT_PORT),
+            'Session\\DHTEnabled': 'true',
+            'Session\\PeXEnabled': 'true',
+        });
+        expect(ini.Network).toMatchObject({ 'Proxy\\Type': 'None' });
+        expect(ini.Network['Proxy\\IP']).toBeUndefined();
+        expect(ini.LegalNotice).toMatchObject({ Accepted: 'true' });
     });
 
     test('seeds SOCKS5 proxy settings (with credentials) before the process would ever spawn', () => {
