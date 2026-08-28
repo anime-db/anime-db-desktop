@@ -37,6 +37,7 @@ use App\Entity\SyncReviewItem;
 use App\Repository\SyncReviewItemRepository;
 use App\Service\AppConfigStore;
 use App\Service\AppSettingsProvider;
+use App\Service\NearestBuiltInLocale;
 use App\Service\Plugin\AvailableLocalesProvider;
 use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\PluginsConfigStore;
@@ -58,6 +59,7 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\Security\Csrf\CsrfTokenManagerInterface;
+use Symfony\Component\Translation\Translator;
 use Twig\Environment;
 
 final class SettingsControllerTest extends TestCase
@@ -83,6 +85,7 @@ final class SettingsControllerTest extends TestCase
         ?Environment $twig = null,
         ?AnimeReindexService $reindexService = null,
         ?SyncReviewService $syncReview = null,
+        ?Translator $translator = null,
     ): SettingsController {
         if ($csrfTokenManager === null) {
             $csrfTokenManager = $this->createStub(CsrfTokenManagerInterface::class);
@@ -96,6 +99,8 @@ final class SettingsControllerTest extends TestCase
             $twig ?? $this->createStub(Environment::class),
             $reindexService ?? $this->createReindexService($this->createStub(Client::class)),
             $syncReview ?? $this->createSyncReview([]),
+            new NearestBuiltInLocale(),
+            $translator ?? $this->createStub(Translator::class),
         );
     }
 
@@ -245,6 +250,22 @@ final class SettingsControllerTest extends TestCase
         $controller->setLocale($request);
 
         $this->assertSame('ru', $request->getLocale());
+    }
+
+    /**
+     * Acceptance (issue #538): the fallback chain LocaleSubscriber set up from the stale
+     * Accept-Language header must be replaced by the one for the newly persisted locale, or a key
+     * missing from the new locale's catalog would resolve through the old locale instead of "en".
+     */
+    public function testSetLocaleRecomputesTranslatorFallbackLocalesFromTheNewLocale(): void
+    {
+        $translator = $this->createMock(Translator::class);
+        $translator->expects($this->once())->method('setFallbackLocales')->with(['ru', 'en']);
+
+        $controller = $this->createController(translator: $translator);
+        $request = Request::create('/settings', 'POST', ['locale' => 'ru', '_token' => 'token']);
+
+        $controller->setLocale($request);
     }
 
     public function testSetLocaleRejectsUnknownLocale(): void

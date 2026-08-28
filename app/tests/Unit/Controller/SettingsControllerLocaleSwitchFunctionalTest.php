@@ -34,6 +34,7 @@ use App\EventSubscriber\LocaleSubscriber;
 use App\Repository\SyncReviewItemRepository;
 use App\Service\AppConfigStore;
 use App\Service\AppSettingsProvider;
+use App\Service\NearestBuiltInLocale;
 use App\Service\Plugin\AvailableLocalesProvider;
 use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\PluginsConfigStore;
@@ -55,6 +56,7 @@ use Symfony\Component\HttpFoundation\Session\Storage\MockArraySessionStorage;
 use Symfony\Component\HttpKernel\Event\RequestEvent;
 use Symfony\Component\HttpKernel\HttpKernelInterface;
 use Symfony\Component\Security\Csrf\CsrfTokenManagerInterface;
+use Symfony\Component\Translation\Translator;
 use Twig\Environment;
 
 /**
@@ -144,6 +146,12 @@ final class SettingsControllerLocaleSwitchFunctionalTest extends KernelTestCase
         $html = (string) $response->getContent();
         self::assertStringContainsString('<html lang="de"', $html, 'The rendered document must reflect the new locale, not the stale one from Accept-Language.');
         self::assertStringContainsString('Einstellungen', $html, 'settings.title must resolve from the "de" plugin catalogue.');
+
+        // settings.heading is not defined by the "de" plugin fixture above. Before setLocale()
+        // recomputed the fallback chain, the translator was still holding the ["ru", "en"] chain
+        // LocaleSubscriber set up from the stale "ru" Accept-Language, so this key resolved to its
+        // Russian text ("Настройки") instead of falling through to English.
+        self::assertStringContainsString('<h1>Settings</h1>', $html, 'A key missing from the "de" catalog must fall through to English, not the stale "ru" fallback chain.');
     }
 
     private function createController(): SettingsController
@@ -152,6 +160,10 @@ final class SettingsControllerLocaleSwitchFunctionalTest extends KernelTestCase
         $twig = self::getContainer()->get('twig');
         /** @var CsrfTokenManagerInterface $csrfTokenManager */
         $csrfTokenManager = self::getContainer()->get(CsrfTokenManagerInterface::class);
+        /** @var NearestBuiltInLocale $nearestBuiltInLocale */
+        $nearestBuiltInLocale = self::getContainer()->get(NearestBuiltInLocale::class);
+        /** @var Translator $translator */
+        $translator = self::getContainer()->get('translator.default');
 
         return new SettingsController(
             $this->availableLocalesProvider(),
@@ -160,6 +172,8 @@ final class SettingsControllerLocaleSwitchFunctionalTest extends KernelTestCase
             $twig,
             $this->createReindexService(),
             $this->createSyncReview(),
+            $nearestBuiltInLocale,
+            $translator,
         );
     }
 
