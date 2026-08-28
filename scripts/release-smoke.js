@@ -309,6 +309,14 @@ function dumpLogs(userDataDir) {
 
     if (!fs.existsSync(logDir)) {
         console.error(`\nЛогов нет: ${logDir} не создан — приложение упало до того, как супервизор начал писать.`);
+
+        // Что в профиле всё-таки появилось — единственный оставшийся признак того, как далеко
+        // дошёл запуск. Пустой каталог означает, что Electron не стартовал вовсе; файлы
+        // Chromium-профиля без `var/` — что стартовал, но до супервизора не добрался.
+        if (fs.existsSync(userDataDir)) {
+            console.error(`Содержимое профиля ${userDataDir}: ${fs.readdirSync(userDataDir).join(', ') || '(пусто)'}`);
+        }
+
         return;
     }
 
@@ -318,6 +326,34 @@ function dumpLogs(userDataDir) {
 
         console.error(`\n===== ${file} =====`);
         console.error(fs.readFileSync(file, 'utf8').trimEnd() || '(пусто)');
+    }
+}
+
+/**
+ * Removes the throwaway profile without ever becoming the reason the run failed.
+ *
+ * Windows releases file handles asynchronously: right after `taskkill` the Chromium profile files
+ * (`DIPS` and friends) are still locked, and a plain `rmSync` throws EBUSY. Worse, it threw from a
+ * `finally`, which replaced whatever verdict the gate had just reached with a rimraf stack trace —
+ * the first CI run of this script reported a locked temp file instead of the real startup failure.
+ * Leftovers in the runner's temp directory cost nothing; a masked verdict costs the whole run.
+ *
+ * @param {string} dir
+ * @param {number} [attempts]
+ * @returns {Promise<void>}
+ */
+async function removeQuietly(dir, attempts = 5) {
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+        try {
+            fs.rmSync(dir, { recursive: true, force: true });
+            return;
+        } catch (err) {
+            if (attempt === attempts) {
+                console.error(`Не удалось убрать временный профиль ${dir}: ${err.message}. Пропускаю.`);
+                return;
+            }
+            await delay(POLL_INTERVAL_MS);
+        }
     }
 }
 
@@ -420,10 +456,17 @@ async function run({
         }
 
         return { ok: true, exitCode: 0, message: 'Собранное приложение поднялось и отвечает как ожидается.', problems: [] };
+    } catch (err) {
+        // The startup wait rejects on its deadline, and that is the failure this gate exists to
+        // report — so it has to arrive as a verdict with the app's own logs attached, not as a
+        // stack trace from somewhere inside the polling loop.
+        dumpLogs(profileDir);
+
+        return { ok: false, exitCode: 1, message: err.message, problems: [] };
     } finally {
         await terminate(child);
         if (!keepUserData && userDataDir === undefined) {
-            fs.rmSync(profileDir, { recursive: true, force: true });
+            await removeQuietly(profileDir);
         }
     }
 }
