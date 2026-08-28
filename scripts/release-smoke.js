@@ -226,19 +226,49 @@ async function listenersOf(pid) {
 }
 
 /**
+ * Services the app pins to a fixed port instead of discovering one. When startup never gets far
+ * enough to open FrankenPHP's sockets, these are the only things left to ask — and the answer names
+ * the step that blocked. Issue #552 is exactly that case: the supervisor waits for qBittorrent's
+ * WebUI before starting anything else, and "порты не открылись" said nothing about which of the two
+ * plausible causes (403 from an auth check, or a WebUI slower than the 30s timeout) actually
+ * happened, because the status code was never captured.
+ */
+const FIXED_PORT_SERVICES = [
+    // native/supervisor/qbittorrent.js's WEBUI_PORT, duplicated rather than imported: that module
+    // requires paths.js, which requires electron, and this script is deliberately Electron-free.
+    { name: 'qBittorrent WebUI', port: 18080, path: '/api/v2/app/version' },
+];
+
+/**
  * @param {number} port
  * @param {string} requestPath
- * @returns {Promise<{ port: number, path: string, status: number|null, error?: string }>}
+ * @param {boolean} [withBody] capture the first bytes of the response — diagnostics only
+ * @returns {Promise<{ port: number, path: string, status: number|null, body?: string, error?: string }>}
  */
-function probe(port, requestPath) {
+function probe(port, requestPath, withBody = false) {
     return new Promise((resolve) => {
         const request = http.get(
             { host: '127.0.0.1', port, path: requestPath, timeout: PROBE_TIMEOUT_MS },
             (response) => {
-                // The body is irrelevant to this gate, but it has to be drained: an unread response
-                // keeps the socket open and the script would not exit on its own.
-                response.resume();
-                response.on('end', () => resolve({ port, path: requestPath, status: response.statusCode }));
+                // The body is irrelevant to the gate itself, but it has to be drained either way: an
+                // unread response keeps the socket open and the script would not exit on its own.
+                if (!withBody) {
+                    response.resume();
+                    response.on('end', () => resolve({ port, path: requestPath, status: response.statusCode }));
+                    return;
+                }
+
+                let body = '';
+                response.setEncoding('utf8');
+                response.on('data', (chunk) => {
+                    if (body.length < 200) body += chunk;
+                });
+                response.on('end', () => resolve({
+                    port,
+                    path: requestPath,
+                    status: response.statusCode,
+                    body: body.slice(0, 200).replace(/\s+/g, ' ').trim(),
+                }));
             },
         );
 
@@ -295,6 +325,25 @@ async function waitForListeners(userDataDir, timeoutMs) {
     }
 
     throw new Error(`Приложение не открыло свои порты за ${timeoutMs} мс. Последнее состояние: ${lastSeen}`);
+}
+
+/**
+ * Asks every fixed-port service what it answers right now. Runs only on the failure path: on a
+ * healthy run it would add noise, on a broken one it is often the whole diagnosis.
+ *
+ * @returns {Promise<void>}
+ */
+async function dumpFixedPortServices() {
+    console.error('\nСлужбы на фиксированных портах в момент отказа:');
+
+    for (const service of FIXED_PORT_SERVICES) {
+        const response = await probe(service.port, service.path, true);
+
+        console.error(
+            `  ${service.name} — GET 127.0.0.1:${service.port}${service.path} -> ` +
+            `${response.error ?? response.status}${response.body ? ` | ${response.body}` : ''}`,
+        );
+    }
 }
 
 /**
@@ -460,6 +509,7 @@ async function run({
         // The startup wait rejects on its deadline, and that is the failure this gate exists to
         // report — so it has to arrive as a verdict with the app's own logs attached, not as a
         // stack trace from somewhere inside the polling loop.
+        await dumpFixedPortServices();
         dumpLogs(profileDir);
 
         return { ok: false, exitCode: 1, message: err.message, problems: [] };

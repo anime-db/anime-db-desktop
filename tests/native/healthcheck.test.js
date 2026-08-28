@@ -48,6 +48,23 @@ describe('waitForHealth', () => {
         ).rejects.toThrow('/health не ответил');
     });
 
+    /**
+     * Сообщение обязано называть путь, который реально опрашивался: `waitForHealth` принимает
+     * `path`, и его ждут три разных потребителя (FrankenPHP — `/health`, qbittorrent.js —
+     * `/api/v2/app/version`, meilisearch.js — свой). До issue #552 текст был литералом `/health`
+     * при любом пути, и отказ ожидания WebUI qBittorrent прочитался как обращение к
+     * несуществующему `/health` на его порту — разбор ушёл не туда.
+     */
+    test('names the path that was actually polled, not a hardcoded /health', async () => {
+        http.get.mockImplementation((url, cb) => {
+            cb({ statusCode: 403 });
+            return { on: jest.fn().mockReturnThis() };
+        });
+        await expect(
+            waitForHealth(18080, { intervalMs: 1, timeoutMs: 10, path: '/api/v2/app/version' })
+        ).rejects.toThrow('/api/v2/app/version не ответил за 10ms на порту 18080');
+    });
+
     test('rejects when connection is refused until timeout', async () => {
         http.get.mockImplementation(() => {
             const req = {
