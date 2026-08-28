@@ -12,6 +12,7 @@
         "download-bins": "node scripts/download-bins.js",
         "generate-php-ini": "node scripts/generate-php-ini.js",
         "check-runtime-parity": "node scripts/check-runtime-parity.js",
+        "release-smoke": "node scripts/release-smoke.js",
         "lint": "eslint native/ tests/native/ app/public/js/ tests/public/",
         "lint:fix": "eslint native/ tests/native/ app/public/js/ tests/public/ --fix",
         "test": "jest"
