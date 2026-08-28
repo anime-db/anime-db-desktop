@@ -126,6 +126,7 @@ settings:
     sync_review_badge: 'Требует внимания: %count%'
     proxy_link: Прокси-сервер
     language_label: Язык интерфейса
+    language_plugin_translation_note: Интерфейс плагинов переводят их авторы — на языке, не входящем в число встроенных в приложение, часть интерфейса плагинов может остаться непереведённой.
     search_reindex_heading: Поисковый индекс
     search_reindex_button: Переиндексировать
     search_reindex_success: Поисковый индекс успешно перестроен.

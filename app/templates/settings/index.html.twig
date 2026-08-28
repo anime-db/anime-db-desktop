@@ -33,6 +33,7 @@
                 <option value="{{ locale }}"{% if locale == currentLocale %} selected{% endif %}>{{ locale_endonym(locale) }}</option>
             {% endfor %}
         </select>
+        <p class="settings__hint">{{ 'settings.language_plugin_translation_note'|trans({}, null, currentLocale) }}</p>
     </form>
 
     <ul>
