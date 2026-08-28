@@ -85,7 +85,13 @@ jobs:
           # Расширения перечислены явно, а не оставлены на умолчание раннера: после issue #467
           # composer проверяет платформенные требования в рантайме, и недостающее расширение
           # уронит прогон на автозагрузчике, а не на понятном шаге.
-          extensions: apcu, gd, intl, zip, openssl, pdo_sqlite
+          #
+          # ctype/iconv/mbstring дописаны в issue #535 не потому, что их не хватало — на
+          # windows-latest setup-php включает их сам, — а чтобы список был полным надмножеством
+          # `require` из app/composer.json и это можно было проверять машинно
+          # (tests/scripts/build-workflow-extensions.test.js). Ровно то, о чём абзац выше: опора на
+          # умолчания раннера держится, пока умолчания не изменятся.
+          extensions: apcu, gd, intl, zip, openssl, pdo_sqlite, ctype, iconv, mbstring
           ini-values: apc.enable_cli=1
 
       - name: Configure Composer auth for private repos

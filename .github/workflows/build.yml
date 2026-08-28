@@ -46,17 +46,22 @@ jobs:
           # (issue #536). Менять во всех четырёх workflow разом.
           php-version: '8.5'
           tools: composer
-          # Расширения, которые app/composer.json объявляет в require. На windows-latest
-          # setup-php не включает zip по умолчанию, из-за чего `composer install` падал на
-          # проверке платформы ещё до сборки инсталлера. Этот PHP используется только для
-          # composer — приложение работает на PHP, встроенном в FrankenPHP.
+          # Ровно те расширения, которые app/composer.json объявляет в require, и список обязан
+          # оставаться его надмножеством. `config.platform` в composer.json не задан, значит
+          # composer сверяет платформу с реальным PHP этой машины, и недостающее расширение роняет
+          # `composer install` внутри scripts/build.js ещё до сборки инсталлера. Этот PHP нужен
+          # только composer'у: приложение работает на PHP, встроенном в FrankenPHP.
           #
-          # intl здесь ПОКА ШИРЕ require: ext-intl объявляется в app/composer.json отдельно
-          # (issue #461, PR #464), а эта джоба готовится заранее — .github/ правит только
-          # человек. Порядок именно такой, потому что config.platform в composer.json не
-          # задан: composer сверяет платформу с реальным PHP этой машины, и объявление
-          # ext-intl раньше этой строки уронило бы сборку на первом же релизном теге.
-          extensions: zip, ctype, iconv, gd, intl
+          # Перечисляем всё явно, а не полагаемся на умолчания раннера, — по той же причине, что и
+          # в runtime-parity.yml: умолчания setup-php могут измениться, и тогда сборка сломается на
+          # ровном месте.
+          #
+          # Список уже разъезжался молча: коммит fa14290 (2026-08-23) добавил в require
+          # ext-pdo_sqlite и ext-openssl, здесь их не появилось, и релизная сборка была сломана с
+          # того дня. Джоба идёт только по тегу, тегов с тех пор не было, и увидели это лишь при
+          # ручном прогоне 2026-08-28 (issue #535). Чтобы третьего раза не было, расхождение теперь
+          # ловится tests/scripts/build-workflow-extensions.test.js в обычной JS-джобе на каждом PR.
+          extensions: zip, ctype, iconv, gd, intl, mbstring, openssl, pdo_sqlite
 
       - name: Build installer
         run: npm run build
