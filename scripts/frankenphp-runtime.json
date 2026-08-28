@@ -2,6 +2,7 @@
     "$comment": "Fingerprint of the DEPLOYED FrankenPHP runtime directory (bin/frankenphp/) as it exists after extraction on the build machine — every shipped file gets its own SHA-256 under \"directoryFingerprint\". This is a different artifact from scripts/versions.json's \"sha256\", which is the SHA-256 of the downloaded release archive BEFORE extraction; that one proves the archive was not tampered with in transit, this one proves the extracted runtime still matches what was captured. Write this file by running the target FrankenPHP build (Windows) through `node scripts/check-runtime-parity.js --write`; never by hand and never from a Linux checkout — the Linux build differs in extension set and ICU version, see issue #471.",
     "$stub": false,
     "frankenphpVersion": "1.12.4",
+    "phpVersion": "8.5.8",
     "directoryFingerprint": {
         "brotlicommon.dll": "e2c882a26b3ecbd6e8c8fcde47e86e871bcdb4a99abbd335914017fc1973a0a5",
         "brotlidec.dll": "d7125d1a4a0182565ff30846477da7dc1851e68f7f1f88e28bd4e2ffffe195db",

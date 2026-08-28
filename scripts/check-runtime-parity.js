@@ -68,6 +68,7 @@ foreach ($iniKeys as $key) {
 }
 
 echo json_encode([
+    'phpVersion'     => \\PHP_VERSION,
     'extensions'     => get_loaded_extensions(),
     'icuVersion'     => defined('INTL_ICU_VERSION') ? \\INTL_ICU_VERSION : null,
     'cldrVersion'    => $cldrVersion,
@@ -146,7 +147,7 @@ function findRuntimeBinary(runtimeDir) {
 /**
  * @param {string} runtimeDir
  * @param {(command: string, args: string[]) => string} exec
- * @returns {{ directoryFingerprint: Record<string, string>, extensions: string[], icu: { version: string|null, cldrVersion: string|null }, localeEndonyms: Record<string, string>, ini: Record<string, string|false|null> }}
+ * @returns {{ directoryFingerprint: Record<string, string>, phpVersion: string|null, extensions: string[], icu: { version: string|null, cldrVersion: string|null }, localeEndonyms: Record<string, string>, ini: Record<string, string|false|null> }}
  * @throws {RuntimeUnavailableError} when the runtime isn't on disk, or the binary can't be run
  */
 function collectRuntimeFacts(runtimeDir, exec) {
@@ -171,6 +172,13 @@ function collectRuntimeFacts(runtimeDir, exec) {
     const parsed = JSON.parse(raw);
 
     return {
+        // Идёт первым, чтобы в записанном слепке лечь рядом с frankenphpVersion, а не за
+        // полотном пофайловых хешей. Это версия самого интерпретатора, а не бинаря-обёртки:
+        // frankenphpVersion пинится в scripts/versions.json и меняется человеком, а PHP внутри
+        // релиза FrankenPHP выбирает апстрим. Без этого поля бамп FrankenPHP, переносящий
+        // приложение на другой минор PHP, проходил сверку молча — при том что механизм заведён
+        // ровно чтобы такое падало здесь, а не всплывало у пользователя (issue #536).
+        phpVersion:           parsed.phpVersion ?? null,
         directoryFingerprint: fingerprintDirectory(runtimeDir),
         extensions:           [...parsed.extensions].sort(),
         icu:                  { version: parsed.icuVersion ?? null, cldrVersion: parsed.cldrVersion ?? null },
@@ -257,6 +265,7 @@ function diffMap(label, expected = {}, actual = {}) {
 function diffFacts(expected, actual) {
     return [
         ...diffValue('frankenphpVersion', expected.frankenphpVersion, actual.frankenphpVersion),
+        ...diffValue('phpVersion', expected.phpVersion, actual.phpVersion),
         ...diffMap('directoryFingerprint', expected.directoryFingerprint, actual.directoryFingerprint),
         ...diffSet('extensions', expected.extensions, actual.extensions),
         ...diffValue('icu.version', expected.icu && expected.icu.version, actual.icu && actual.icu.version),

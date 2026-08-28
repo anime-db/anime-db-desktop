@@ -42,6 +42,7 @@ const REPO_VERSIONS_PATH = path.join(__dirname, '..', '..', 'scripts', 'versions
 // real binary in tests (this repo's tests run under system PHP on Linux — see .claude-docs/index.md).
 function baseFacts() {
     return {
+        phpVersion: '8.5.8',
         extensions: ['Core', 'intl', 'mbstring'],
         icuVersion: '77.1',
         cldrVersion: '46',
@@ -167,6 +168,20 @@ describe('diffFacts', () => {
         const actual = { frankenphpVersion: '1.12.5' };
         expect(diffFacts(expected, actual)).toEqual([
             'frankenphpVersion: expected "1.12.4", got "1.12.5"',
+        ]);
+    });
+
+    /**
+     * Отдельно от frankenphpVersion выше: это две независимые версии, и ловится здесь именно та,
+     * которую никто не пинит руками. Пин в scripts/versions.json может остаться прежним, а PHP
+     * внутри той же сборки FrankenPHP — смениться апстримом; до issue #536 такое расхождение
+     * сверка не видела вовсе.
+     */
+    test('reports a PHP version mismatch', () => {
+        const expected = { phpVersion: '8.5.8' };
+        const actual = { phpVersion: '8.6.0' };
+        expect(diffFacts(expected, actual)).toEqual([
+            'phpVersion: expected "8.5.8", got "8.6.0"',
         ]);
     });
 
@@ -322,5 +337,18 @@ describe('run', () => {
         expect(snapshot.$stub).toBe(false);
         expect(Object.keys(snapshot.directoryFingerprint).length).toBeGreaterThan(0);
         expect(snapshot.extensions).toContain('gd');
+    });
+
+    /**
+     * Отдельным утверждением, а не строкой в проверке выше: добавить поле в сборщик фактов и
+     * забыть перезаписать слепок — самый вероятный способ провалить issue #536. Слепок с
+     * отсутствующим или null'евым phpVersion сравнение бы прошёл (обе стороны сошлись бы на
+     * «нет значения»), и гейт молча не проверял бы ровно то, ради чего заводился.
+     */
+    test('the committed snapshot records a concrete PHP version', () => {
+        const snapshot = JSON.parse(fs.readFileSync(REPO_SNAPSHOT_PATH, 'utf8'));
+
+        expect(typeof snapshot.phpVersion).toBe('string');
+        expect(snapshot.phpVersion).toMatch(/^\d+\.\d+\.\d+/);
     });
 });
