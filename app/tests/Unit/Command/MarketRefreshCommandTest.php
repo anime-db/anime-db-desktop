@@ -84,8 +84,9 @@ final class MarketRefreshCommandTest extends TestCase
             new PluginRegistryLoader(
                 new PluginRegistryFetcher($unreachableHttpClient),
                 new PluginRegistrySignatureVerifier([]),
-                new PluginRegistryCache($this->registryCachePath),
+                new PluginRegistryCache($this->registryCachePath, new NullLogger()),
                 new PluginRegistryHighWaterMarkStore(new AppConfigStore($this->configPath)),
+                new NullLogger(),
             ),
             new MarketSnapshotBuilder(),
             new MarketSnapshotCache($this->snapshotCachePath),
@@ -115,8 +116,9 @@ final class MarketRefreshCommandTest extends TestCase
                 new PluginRegistryLoader(
                     new PluginRegistryFetcher(new MockHttpClient()),
                     new PluginRegistrySignatureVerifier([]),
-                    new PluginRegistryCache($this->registryCachePath),
+                    new PluginRegistryCache($this->registryCachePath, new NullLogger()),
                     new PluginRegistryHighWaterMarkStore(new AppConfigStore($this->configPath)),
+                    new NullLogger(),
                 ),
                 new MarketSnapshotBuilder(),
                 new MarketSnapshotCache($this->snapshotCachePath),

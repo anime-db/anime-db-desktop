@@ -28,6 +28,7 @@ declare(strict_types=1);
 namespace App\Service\Market;
 
 use App\Service\Market\Exception\InvalidPluginRegistryContentException;
+use Psr\Log\LoggerInterface;
 
 /**
  * Persists the last successfully verified `plugins-registry.json` at
@@ -51,8 +52,10 @@ use App\Service\Market\Exception\InvalidPluginRegistryContentException;
  */
 final class PluginRegistryCache
 {
-    public function __construct(private readonly string $cachePath)
-    {
+    public function __construct(
+        private readonly string $cachePath,
+        private readonly LoggerInterface $logger,
+    ) {
     }
 
     public function getCachedRegistry(): ?PluginRegistry
@@ -67,7 +70,7 @@ final class PluginRegistryCache
         }
 
         try {
-            return PluginRegistry::fromJson($contents);
+            return PluginRegistry::fromJson($contents, $this->logger);
         } catch (InvalidPluginRegistryContentException) {
             return null;
         }

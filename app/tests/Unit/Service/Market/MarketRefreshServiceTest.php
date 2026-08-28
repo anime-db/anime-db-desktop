@@ -117,8 +117,9 @@ final class MarketRefreshServiceTest extends TestCase
             new PluginRegistryLoader(
                 new PluginRegistryFetcher($unreachableHttpClient),
                 new PluginRegistrySignatureVerifier([$this->trustedPublicKey]),
-                new PluginRegistryCache($this->registryCachePath),
+                new PluginRegistryCache($this->registryCachePath, new NullLogger()),
                 $this->highWaterMarkStore(),
+                new NullLogger(),
             ),
             new MarketSnapshotBuilder(),
             new MarketSnapshotCache($this->snapshotCachePath),
@@ -191,8 +192,9 @@ final class MarketRefreshServiceTest extends TestCase
             new PluginRegistryLoader(
                 new PluginRegistryFetcher($httpClient),
                 new PluginRegistrySignatureVerifier([$this->trustedPublicKey]),
-                new PluginRegistryCache($this->registryCachePath),
+                new PluginRegistryCache($this->registryCachePath, new NullLogger()),
                 $this->highWaterMarkStore(),
+                new NullLogger(),
             ),
             new MarketSnapshotBuilder(),
             new MarketSnapshotCache($this->snapshotCachePath),

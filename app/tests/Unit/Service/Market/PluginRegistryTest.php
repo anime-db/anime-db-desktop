@@ -31,6 +31,8 @@ use App\Entity\ValueObject\PluginId;
 use App\Service\Market\Exception\InvalidPluginRegistryContentException;
 use App\Service\Market\PluginRegistry;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 
 final class PluginRegistryTest extends TestCase
 {
@@ -64,7 +66,7 @@ final class PluginRegistryTest extends TestCase
                     ],
                 ],
             ],
-        ], \JSON_THROW_ON_ERROR));
+        ], \JSON_THROW_ON_ERROR), new NullLogger());
 
         $plugins = $registry->plugins();
         $this->assertCount(1, $plugins);
@@ -96,7 +98,7 @@ final class PluginRegistryTest extends TestCase
                     ],
                 ],
             ],
-        ], \JSON_THROW_ON_ERROR));
+        ], \JSON_THROW_ON_ERROR), new NullLogger());
 
         $versions = $registry->plugins()[0]->versions;
         $this->assertSame(150, $versions[0]->translationKeyCount);
@@ -123,13 +125,38 @@ final class PluginRegistryTest extends TestCase
                     ],
                 ],
             ],
-        ], \JSON_THROW_ON_ERROR));
+        ], \JSON_THROW_ON_ERROR), new NullLogger());
 
         $this->assertSame(356, $registry->plugins()[0]->versions[0]->translationKeyCount);
     }
 
+    /**
+     * Issue #539: the sole case this issue treats as loud enough to warrant `error` rather than
+     * `warning` — same rationale as {@see \App\Service\Plugin\InstalledPluginsRegistry::reconcile()},
+     * which the full structured {@see \AnimeDb\PluginContracts\Manifest\ManifestValidationError}
+     * list is carried alongside for.
+     */
     public function testPluginsSkipsEntriesWithAnInvalidManifest(): void
     {
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->once())->method('error')->with(
+            $this->stringContains('invalid manifest'),
+            $this->callback(static function (array $context): bool {
+                if ($context['pluginId'] !== 'animedb-broken' || !\is_array($context['errors']) || $context['errors'] === []) {
+                    return false;
+                }
+
+                foreach ($context['errors'] as $error) {
+                    if (!\is_array($error) || !\array_key_exists('field', $error) || !\array_key_exists('message', $error)) {
+                        return false;
+                    }
+                }
+
+                return true;
+            }),
+        );
+        $logger->expects($this->never())->method('warning');
+
         $registry = PluginRegistry::fromJson(json_encode([
             'sequence' => 1,
             'asset_mirrors' => [],
@@ -142,13 +169,71 @@ final class PluginRegistryTest extends TestCase
                     ],
                 ],
             ],
-        ], \JSON_THROW_ON_ERROR));
+        ], \JSON_THROW_ON_ERROR), $logger);
 
         $this->assertSame([], $registry->plugins());
     }
 
+    public function testPluginsSkipsRegistryEntriesWithAMissingId(): void
+    {
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->once())->method('warning')->with(
+            $this->stringContains('missing or malformed id, manifest, or versions'),
+            $this->callback(static fn (array $context): bool => $context['pluginId'] === null),
+        );
+
+        $registry = PluginRegistry::fromJson(json_encode([
+            'sequence' => 1,
+            'asset_mirrors' => [],
+            'plugins' => [
+                [
+                    'manifest' => $this->manifest('animedb-shikimori'),
+                    'versions' => [
+                        ['version' => '1.0.0', 'core' => '>=2.0.0', 'sha256' => 'abc123'],
+                    ],
+                ],
+            ],
+        ], \JSON_THROW_ON_ERROR), $logger);
+
+        $this->assertSame([], $registry->plugins());
+    }
+
+    public function testPluginsSkipsAVersionEntryMissingItsVersionOrCoreField(): void
+    {
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->once())->method('warning')->with(
+            $this->stringContains('missing or malformed version or core constraint'),
+            $this->callback(static fn (array $context): bool => $context['pluginId'] === 'animedb-shikimori'),
+        );
+
+        $registry = PluginRegistry::fromJson(json_encode([
+            'sequence' => 1,
+            'asset_mirrors' => [],
+            'plugins' => [
+                [
+                    'id' => 'animedb-shikimori',
+                    'manifest' => $this->manifest('animedb-shikimori'),
+                    'versions' => [
+                        ['core' => '>=2.0.0', 'sha256' => 'abc123'],
+                        ['version' => '1.0.0', 'core' => '>=2.0.0', 'sha256' => 'def456'],
+                    ],
+                ],
+            ],
+        ], \JSON_THROW_ON_ERROR), $logger);
+
+        $plugins = $registry->plugins();
+        $this->assertCount(1, $plugins);
+        $this->assertSame(['1.0.0'], array_map(static fn ($v) => $v->version, $plugins[0]->versions));
+    }
+
     public function testPluginsSkipsAVersionEntryWithAnInvalidVersionStringButKeepsTheRest(): void
     {
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->once())->method('warning')->with(
+            $this->stringContains('unparseable version or core constraint'),
+            $this->callback(static fn (array $context): bool => $context['pluginId'] === 'animedb-shikimori' && $context['version'] === 'latest'),
+        );
+
         $registry = PluginRegistry::fromJson(json_encode([
             'sequence' => 1,
             'asset_mirrors' => [],
@@ -162,7 +247,7 @@ final class PluginRegistryTest extends TestCase
                     ],
                 ],
             ],
-        ], \JSON_THROW_ON_ERROR));
+        ], \JSON_THROW_ON_ERROR), $logger);
 
         $plugins = $registry->plugins();
         $this->assertCount(1, $plugins);
@@ -171,6 +256,12 @@ final class PluginRegistryTest extends TestCase
 
     public function testPluginsSkipsAVersionEntryWithAnInvalidCoreConstraintButKeepsTheRest(): void
     {
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->once())->method('warning')->with(
+            $this->stringContains('unparseable version or core constraint'),
+            $this->callback(static fn (array $context): bool => $context['pluginId'] === 'animedb-shikimori' && $context['core'] === '~'),
+        );
+
         $registry = PluginRegistry::fromJson(json_encode([
             'sequence' => 1,
             'asset_mirrors' => [],
@@ -184,15 +275,26 @@ final class PluginRegistryTest extends TestCase
                     ],
                 ],
             ],
-        ], \JSON_THROW_ON_ERROR));
+        ], \JSON_THROW_ON_ERROR), $logger);
 
         $plugins = $registry->plugins();
         $this->assertCount(1, $plugins);
         $this->assertSame(['1.0.0'], array_map(static fn ($v) => $v->version, $plugins[0]->versions));
     }
 
+    /**
+     * The single invalid version entry is skipped (logged once), which then leaves the plugin
+     * with no valid versions at all (logged a second time) — two distinct log entries for the
+     * same broken plugin, none for the healthy one that follows it.
+     */
     public function testPluginsSkipsAPluginWhoseOnlyVersionIsInvalidWithoutFailingTheWholeRegistry(): void
     {
+        $calls = [];
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->exactly(2))->method('warning')->willReturnCallback(static function (string $message, array $context) use (&$calls): void {
+            $calls[] = [$message, $context];
+        });
+
         $registry = PluginRegistry::fromJson(json_encode([
             'sequence' => 1,
             'asset_mirrors' => [],
@@ -212,15 +314,27 @@ final class PluginRegistryTest extends TestCase
                     ],
                 ],
             ],
-        ], \JSON_THROW_ON_ERROR));
+        ], \JSON_THROW_ON_ERROR), $logger);
 
         $plugins = $registry->plugins();
         $this->assertCount(1, $plugins);
         $this->assertSame('animedb-shikimori', (string) $plugins[0]->id);
+
+        $this->assertCount(2, $calls);
+        $this->assertStringContainsString('unparseable version or core constraint', $calls[0][0]);
+        $this->assertSame('animedb-broken-version', $calls[0][1]['pluginId']);
+        $this->assertStringContainsString('no valid version entries', $calls[1][0]);
+        $this->assertSame('animedb-broken-version', $calls[1][1]['pluginId']);
     }
 
     public function testPluginsSkipsEntriesWithNoVersions(): void
     {
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->once())->method('warning')->with(
+            $this->stringContains('no valid version entries'),
+            $this->callback(static fn (array $context): bool => $context['pluginId'] === 'animedb-shikimori'),
+        );
+
         $registry = PluginRegistry::fromJson(json_encode([
             'sequence' => 1,
             'asset_mirrors' => [],
@@ -231,9 +345,65 @@ final class PluginRegistryTest extends TestCase
                     'versions' => [],
                 ],
             ],
-        ], \JSON_THROW_ON_ERROR));
+        ], \JSON_THROW_ON_ERROR), $logger);
 
         $this->assertSame([], $registry->plugins());
+    }
+
+    public function testPluginsSkipsAnEntryWithAnInvalidPluginIdFormat(): void
+    {
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->once())->method('warning')->with(
+            $this->stringContains('invalid id'),
+            $this->callback(static fn (array $context): bool => $context['pluginId'] === 'NotAValidId'),
+        );
+
+        $registry = PluginRegistry::fromJson(json_encode([
+            'sequence' => 1,
+            'asset_mirrors' => [],
+            'plugins' => [
+                [
+                    'id' => 'NotAValidId',
+                    'manifest' => $this->manifest('NotAValidId'),
+                    'versions' => [
+                        ['version' => '1.0.0', 'core' => '>=2.0.0', 'sha256' => 'abc123'],
+                    ],
+                ],
+            ],
+        ], \JSON_THROW_ON_ERROR), $logger);
+
+        $this->assertSame([], $registry->plugins());
+    }
+
+    public function testAFullyValidRegistryProducesNoLogEntries(): void
+    {
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->never())->method('warning');
+        $logger->expects($this->never())->method('error');
+
+        $registry = PluginRegistry::fromJson(json_encode([
+            'sequence' => 1,
+            'asset_mirrors' => [],
+            'plugins' => [
+                [
+                    'id' => 'animedb-shikimori',
+                    'manifest' => $this->manifest('animedb-shikimori', '1.2.0'),
+                    'versions' => [
+                        ['version' => '1.1.0', 'core' => '>=2.0 <3.0', 'sha256' => 'def456'],
+                        ['version' => '1.2.0', 'core' => '>=2.1 <3.0', 'sha256' => 'abc123'],
+                    ],
+                ],
+                [
+                    'id' => 'animedb-mal',
+                    'manifest' => $this->manifest('animedb-mal', '2.0.0'),
+                    'versions' => [
+                        ['version' => '2.0.0', 'core' => '>=1.0.0', 'sha256' => 'ghi789'],
+                    ],
+                ],
+            ],
+        ], \JSON_THROW_ON_ERROR), $logger);
+
+        $this->assertCount(2, $registry->plugins());
     }
 
     public function testParsesSequenceAssetMirrorsAndVersionChecksums(): void
@@ -254,7 +424,7 @@ final class PluginRegistryTest extends TestCase
                     ],
                 ],
             ],
-        ], \JSON_THROW_ON_ERROR));
+        ], \JSON_THROW_ON_ERROR), new NullLogger());
 
         $this->assertSame(42, $registry->sequence);
         $this->assertSame([
@@ -285,7 +455,7 @@ final class PluginRegistryTest extends TestCase
                     ],
                 ],
             ],
-        ], \JSON_THROW_ON_ERROR));
+        ], \JSON_THROW_ON_ERROR), new NullLogger());
 
         $this->assertNull($registry->findVersionSha256(new PluginId('animedb-shikimori'), '9.9.9'));
     }
@@ -294,39 +464,39 @@ final class PluginRegistryTest extends TestCase
     {
         $this->expectException(InvalidPluginRegistryContentException::class);
 
-        PluginRegistry::fromJson('{not valid json');
+        PluginRegistry::fromJson('{not valid json', new NullLogger());
     }
 
     public function testThrowsWhenSequenceIsMissing(): void
     {
         $this->expectException(InvalidPluginRegistryContentException::class);
 
-        PluginRegistry::fromJson(json_encode(['asset_mirrors' => [], 'plugins' => []], \JSON_THROW_ON_ERROR));
+        PluginRegistry::fromJson(json_encode(['asset_mirrors' => [], 'plugins' => []], \JSON_THROW_ON_ERROR), new NullLogger());
     }
 
     public function testThrowsWhenSequenceIsNotAPositiveInteger(): void
     {
         $this->expectException(InvalidPluginRegistryContentException::class);
 
-        PluginRegistry::fromJson(json_encode(['sequence' => 0, 'asset_mirrors' => [], 'plugins' => []], \JSON_THROW_ON_ERROR));
+        PluginRegistry::fromJson(json_encode(['sequence' => 0, 'asset_mirrors' => [], 'plugins' => []], \JSON_THROW_ON_ERROR), new NullLogger());
     }
 
     public function testThrowsWhenAssetMirrorsIsMissing(): void
     {
         $this->expectException(InvalidPluginRegistryContentException::class);
 
-        PluginRegistry::fromJson(json_encode(['sequence' => 1, 'plugins' => []], \JSON_THROW_ON_ERROR));
+        PluginRegistry::fromJson(json_encode(['sequence' => 1, 'plugins' => []], \JSON_THROW_ON_ERROR), new NullLogger());
     }
 
     public function testThrowsWhenPluginsIsMissing(): void
     {
         $this->expectException(InvalidPluginRegistryContentException::class);
 
-        PluginRegistry::fromJson(json_encode(['sequence' => 1, 'asset_mirrors' => []], \JSON_THROW_ON_ERROR));
+        PluginRegistry::fromJson(json_encode(['sequence' => 1, 'asset_mirrors' => []], \JSON_THROW_ON_ERROR), new NullLogger());
     }
 
     private function minimalRegistry(): PluginRegistry
     {
-        return PluginRegistry::fromJson(json_encode(['sequence' => 1, 'asset_mirrors' => [], 'plugins' => []], \JSON_THROW_ON_ERROR));
+        return PluginRegistry::fromJson(json_encode(['sequence' => 1, 'asset_mirrors' => [], 'plugins' => []], \JSON_THROW_ON_ERROR), new NullLogger());
     }
 }
