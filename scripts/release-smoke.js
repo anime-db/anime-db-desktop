@@ -75,15 +75,19 @@ const PROBE_TIMEOUT_MS = 15_000;
  *
  * `/health` alone would not do: `App\Controller\HealthController` runs a raw DBAL query and never
  * touches the ORM, so it answered 200 through the whole period when every catalogue page was a 500
- * (issue #533). `/` and `/anime` go through repositories, which is the part that was broken and
- * invisible. `/ws` is expected to be refused with 426 rather than served: reaching that status means
+ * (issue #533). `/` and the catalogue list go through repositories, which is the part that was
+ * broken and invisible. `/ws` is expected to be refused with 426 rather than served: reaching that status means
  * the request was routed into PHP and `App\Controller\WsController` asked for an upgrade — before
  * issue #532 the same request got a Caddy-level `400 Client sent an HTTP request to an HTTPS server`.
  */
 const EXPECTATIONS = [
     { path: '/health', status: 200, why: 'процесс поднялся и видит базу' },
     { path: '/',       status: 200, why: 'главная ходит в ORM (StorageRepository, AnimeRepository)' },
-    { path: '/anime',  status: 200, why: 'список каталога ходит в ORM' },
+    // `watch_status` у списка обязателен: без него AnimeListRequestParser осознанно отвечает 400
+    // (см. его parseFilter()). Первая версия гейта дёргала голый `/anime`, получала законные 400 и
+    // объявляла сборку сломанной — проверка обязана слать валидный запрос, иначе она измеряет не
+    // приложение, а собственную неточность.
+    { path: '/anime?watch_status=plan', status: 200, why: 'список каталога ходит в ORM' },
     { path: '/ws',     status: 426, why: 'WS-эндпоинт доехал до PHP и просит апгрейд, а не отдан TLS-листенером' },
 ];
 
