@@ -28,14 +28,17 @@ declare(strict_types=1);
 namespace App\Tests\Unit\EventSubscriber;
 
 use App\EventSubscriber\LocaleSubscriber;
+use App\Service\NearestBuiltInLocale;
 use App\Service\Plugin\AvailableLocalesProvider;
 use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\PluginsConfigStore;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Event\RequestEvent;
 use Symfony\Component\HttpKernel\KernelEvents;
+use Symfony\Component\Translation\Translator;
 
 final class LocaleSubscriberTest extends TestCase
 {
@@ -86,23 +89,89 @@ final class LocaleSubscriberTest extends TestCase
         $request = new Request();
         $request->headers->set('Accept-Language', 'ru');
 
-        $this->dispatch($request, ['en', 'ru'], isMainRequest: false);
+        $translator = $this->createMock(Translator::class);
+        $translator->expects($this->never())->method('setFallbackLocales');
+
+        $this->dispatch($request, ['en', 'ru'], isMainRequest: false, translator: $translator);
 
         $this->assertSame($defaultLocale, $request->getLocale());
     }
 
     /**
-     * @param list<string> $locales
+     * @return iterable<string, array{0: string, 1: list<string>}>
      */
-    private function dispatch(Request $request, array $locales, bool $isMainRequest = true): void
+    public static function provideAcceptLanguageToFallbacks(): iterable
     {
-        $subscriber = new LocaleSubscriber($this->availableLocalesProvider($locales));
+        yield 'kk maps to the ru chain (issue #538)' => ['kk', ['ru', 'en']];
+        yield 'ru maps to the ru chain' => ['ru', ['ru', 'en']];
+        yield 'de maps to en only, no duplicate' => ['de', ['en']];
+        yield 'en maps to en only, no duplicate' => ['en', ['en']];
+    }
 
+    /**
+     * @param list<string> $expectedFallbacks
+     */
+    #[DataProvider('provideAcceptLanguageToFallbacks')]
+    public function testOnKernelRequestSetsFallbackLocalesFromNearestBuiltInLocale(string $acceptLanguage, array $expectedFallbacks): void
+    {
+        $request = new Request();
+        $request->headers->set('Accept-Language', $acceptLanguage);
+
+        $translator = $this->createMock(Translator::class);
+        $translator->expects($this->once())->method('setFallbackLocales')->with($expectedFallbacks);
+
+        $this->dispatch($request, ['en', 'ru'], translator: $translator);
+    }
+
+    /**
+     * Worker-mode regression (issue #538): the Translator instance is not recreated between
+     * requests, so a request that would compute a different fallback chain than the previous one
+     * must not inherit it.
+     */
+    public function testOnKernelRequestDoesNotInheritFallbackLocalesFromThePreviousRequestInWorkerMode(): void
+    {
+        $seen = [];
+
+        $translator = $this->createMock(Translator::class);
+        $translator->expects($this->exactly(2))->method('setFallbackLocales')
+            ->willReturnCallback(function (array $fallbacks) use (&$seen): void {
+                $seen[] = $fallbacks;
+            });
+
+        $subscriber = new LocaleSubscriber($this->availableLocalesProvider(['en', 'ru']), new NearestBuiltInLocale(), $translator);
+
+        $kkRequest = new Request();
+        $kkRequest->headers->set('Accept-Language', 'kk');
+        $subscriber->onKernelRequest($this->requestEvent($kkRequest, true));
+
+        $deRequest = new Request();
+        $deRequest->headers->set('Accept-Language', 'de');
+        $subscriber->onKernelRequest($this->requestEvent($deRequest, true));
+
+        $this->assertSame([['ru', 'en'], ['en']], $seen);
+    }
+
+    private function requestEvent(Request $request, bool $isMainRequest): RequestEvent
+    {
         $event = $this->createStub(RequestEvent::class);
         $event->method('getRequest')->willReturn($request);
         $event->method('isMainRequest')->willReturn($isMainRequest);
 
-        $subscriber->onKernelRequest($event);
+        return $event;
+    }
+
+    /**
+     * @param list<string> $locales
+     */
+    private function dispatch(Request $request, array $locales, bool $isMainRequest = true, ?Translator $translator = null): void
+    {
+        $subscriber = new LocaleSubscriber(
+            $this->availableLocalesProvider($locales),
+            new NearestBuiltInLocale(),
+            $translator ?? $this->createStub(Translator::class),
+        );
+
+        $subscriber->onKernelRequest($this->requestEvent($request, $isMainRequest));
     }
 
     /**

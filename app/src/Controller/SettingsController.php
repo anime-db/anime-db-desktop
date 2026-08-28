@@ -30,16 +30,19 @@ namespace App\Controller;
 use App\Entity\Enum\SyncReviewItemKind;
 use App\Entity\SyncReviewItem;
 use App\Service\AppSettingsProvider;
+use App\Service\NearestBuiltInLocale;
 use App\Service\Plugin\AvailableLocalesProvider;
 use App\Service\Search\AnimeReindexService;
 use App\Service\Sync\SyncReviewService;
 use Meilisearch\Exceptions\ExceptionInterface as MeilisearchExceptionInterface;
+use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Security\Csrf\CsrfToken;
 use Symfony\Component\Security\Csrf\CsrfTokenManagerInterface;
+use Symfony\Component\Translation\Translator;
 use Twig\Environment;
 
 final class SettingsController
@@ -47,6 +50,9 @@ final class SettingsController
     /**
      * $availableLocalesProvider is the same locale set LocaleSubscriber negotiates against
      * (issue #84), extended by plugin locales (issue #453).
+     *
+     * $translator is injected by explicit service id, same reasoning as {@see LocaleSubscriber}'s
+     * docblock: `setFallbackLocales()` lives only on the concrete `translator.default` class.
      */
     public function __construct(
         private readonly AvailableLocalesProvider $availableLocalesProvider,
@@ -55,6 +61,9 @@ final class SettingsController
         private readonly Environment $twig,
         private readonly AnimeReindexService $reindexService,
         private readonly SyncReviewService $syncReview,
+        private readonly NearestBuiltInLocale $nearestBuiltInLocale,
+        #[Autowire(service: 'translator.default')]
+        private readonly Translator $translator,
     ) {
     }
 
@@ -80,6 +89,15 @@ final class SettingsController
         }
 
         $this->settings->setLocale($locale);
+        // native/accept-language.js sends Accept-Language from config.json as it was before this
+        // write, so without this the render below would still use the previous locale (issue
+        // #538).
+        $request->setLocale($locale);
+        // LocaleSubscriber computed the fallback chain from the stale Accept-Language earlier in
+        // this same request; without recomputing it here, a key missing from the new locale's
+        // catalog would resolve through the *old* locale's chain instead of falling through to
+        // English (issue #538).
+        $this->translator->setFallbackLocales($this->nearestBuiltInLocale->fallbackChain($locale));
 
         return $this->renderIndex();
     }
