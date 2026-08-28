@@ -42,7 +42,9 @@ jobs:
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
-          php-version: '8.4'
+          # Совпадает с PHP, который несёт запиненный FrankenPHP — обоснование в ci.yml
+          # (issue #536). Менять во всех четырёх workflow разом.
+          php-version: '8.5'
           tools: composer
           # Расширения, которые app/composer.json объявляет в require. На windows-latest
           # setup-php не включает zip по умолчанию, из-за чего `composer install` падал на

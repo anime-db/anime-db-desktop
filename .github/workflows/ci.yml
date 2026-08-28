@@ -36,7 +36,20 @@ jobs:
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
-          php-version: '8.4'
+          # Версия здесь обязана совпадать с той, что несёт запиненный в scripts/versions.json
+          # FrankenPHP: пользователю уезжает интерпретатор из поставки, а не этот. До issue #536
+          # тут стояло 8.4 при поставочном 8.5 — весь набор проверялся на минорную версию младше
+          # той, на которой приложение реально работает, и класс «зелено в CI, ломается у
+          # пользователя» был открыт по всей поверхности. Зазор не теоретический: на 8.5
+          # doctrine:schema:validate падает с "SQLiteSchemaManager.php line 79: Warning: Undefined
+          # array key 1", на 8.4 — нет.
+          #
+          # Значение сверяется со слепком автоматически: scripts/check-runtime-parity.js диффает
+          # phpVersion поставочного бинаря (issue #536), поэтому расхождение после бампа
+          # scripts/versions.json видно в Runtime parity, а не только глазами при чтении этого
+          # файла. Тот же пин продублирован в build.yml, runtime-parity.yml и i18n-coverage.yml —
+          # менять их вместе.
+          php-version: '8.5'
           tools: composer
           coverage: none
           # intl добавлен ЗАРАНЕЕ, до кода, который им пользуется: подписи в переключателе
