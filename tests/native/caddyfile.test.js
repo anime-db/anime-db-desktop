@@ -102,8 +102,19 @@ describe('app/Caddyfile — static structure (level 1, no server, no network, no
     const text     = fs.readFileSync(CADDYFILE, 'utf8');
     const analysis = analyzeCaddyfile(text);
 
-    test('declares at least one site block', () => {
-        expect(analysis.siteBlocks.length).toBeGreaterThan(0);
+    /**
+     * Ровно два, а не «хотя бы один». Остальные проверки этого уровня сформулированы как свойство
+     * КАЖДОГО блока, поэтому удаление целого блока проходит их все: удалять — значит нечего
+     * проверять. Между тем WS-блок несущий, в него ходит native/ws-client.js, и без него отваливается
+     * шина push-событий бэкенд → Electron.
+     *
+     * Закрыть эту дыру должен именно уровень 1: уровень 2 поймал бы пропажу через
+     * expectedListeners, но он условный и в CI пропускается — бинаря FrankenPHP на ubuntu-раннере
+     * нет. Гейт релиза (issue #535) поймал бы тоже, но только на теге. Утверждение зеркалит его
+     * правило «ровно два слушающих сокета, APP и WS».
+     */
+    test('declares exactly two site blocks — the app port and the WS port', () => {
+        expect(analysis.siteBlocks).toHaveLength(2);
     });
 
     test('the global block has admin off', () => {
