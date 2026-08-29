@@ -27,7 +27,13 @@ declare(strict_types=1);
 
 namespace App\Command;
 
+use AnimeDb\PluginContracts\Manifest\InvalidManifestException;
+use AnimeDb\PluginContracts\Manifest\InvalidManifestJsonException;
+use AnimeDb\PluginContracts\Manifest\Manifest;
+use AnimeDb\PluginContracts\Manifest\ManifestParser;
+use AnimeDb\PluginContracts\Manifest\PluginType;
 use App\Entity\ValueObject\PluginId;
+use App\Service\AppSettingsProvider;
 use App\Service\Translation\LocaleTranslationCoverage;
 use App\Service\Translation\TranslationCoverageService;
 use Symfony\Component\Console\Attribute\AsCommand;
@@ -44,15 +50,27 @@ use Symfony\Component\Console\Style\SymfonyStyle;
  * {@see TranslationCoverageService} for what each of those means and where the reference comes
  * from.
  *
+ * For an Integration/Local plugin (issue #540), the catalog lives in its own domain rather than
+ * `messages`, so there is nothing to compute a covered/missing count against — this only lists
+ * which locales the plugin ships, and warns when none of them match the current interface locale
+ * or its fallback chain (the user would see raw translation keys).
+ *
  * `--path` is the reason this command exists rather than just a settings-page badge: it reads an
  * arbitrary directory on disk, installed or not, which is the only way a plugin author working on
  * a checkout next to this app's own can see both sides before ever packaging or installing it.
+ * Unlike an installed plugin, a bare directory carries neither an id nor a type on its own, both
+ * of which the report needs (the type picks the branch above, the id names an Integration/Local
+ * plugin's own domain) — so `--path` reads `manifest.json` from the given directory itself rather
+ * than leaving those two unknown.
  */
 #[AsCommand(name: 'app:translations:coverage', description: 'Compare a translation plugin catalog against the app reference catalog')]
 final class TranslationsCoverageCommand extends Command
 {
-    public function __construct(private readonly TranslationCoverageService $coverageService)
-    {
+    public function __construct(
+        private readonly TranslationCoverageService $coverageService,
+        private readonly AppSettingsProvider $settings,
+        private readonly ManifestParser $manifestParser = new ManifestParser(),
+    ) {
         parent::__construct();
     }
 
@@ -77,27 +95,64 @@ final class TranslationsCoverageCommand extends Command
         }
 
         if ($path !== null) {
-            $coverage = $this->coverageService->coverageForPluginDirectory((string) $path);
+            try {
+                $manifest = $this->readManifest((string) $path);
+            } catch (\RuntimeException $exception) {
+                $io->error($exception->getMessage());
+
+                return Command::FAILURE;
+            }
+
+            $report = $this->coverageService->coverageForPluginDirectory((string) $path, $manifest->type, $manifest->id);
         } else {
-            $coverage = $this->coverageService->coverageForInstalledPlugin(new PluginId((string) $pluginId));
-            if ($coverage === null) {
+            $report = $this->coverageService->coverageForInstalledPlugin(new PluginId((string) $pluginId));
+            if ($report === null) {
                 $io->error(\sprintf('Plugin "%s" is not installed.', $pluginId));
 
                 return Command::FAILURE;
             }
         }
 
-        if ($coverage === []) {
-            $io->warning('No messages.<locale>.yaml catalogs found.');
+        if ($report->locales === []) {
+            $io->warning($report->type === PluginType::Translation
+                ? 'No messages.<locale>.yaml catalogs found.'
+                : 'No <plugin-id>.<locale>.yaml catalogs found.');
 
             return Command::SUCCESS;
         }
 
-        foreach ($coverage as $locale => $localeCoverage) {
-            $this->renderLocale($io, $locale, $localeCoverage);
+        if ($report->type === PluginType::Translation) {
+            foreach ($report->coverage as $locale => $localeCoverage) {
+                $this->renderLocale($io, $locale, $localeCoverage);
+            }
+        } else {
+            $io->section('Locales');
+            $io->listing($report->locales);
+        }
+
+        if ($this->coverageService->isMissingFallbackLocale($report, $this->settings->getLocale())) {
+            $io->warning('This plugin ships none of the current interface locale or its fallback chain — users in that locale will see raw translation keys.');
         }
 
         return Command::SUCCESS;
+    }
+
+    /**
+     * @throws \RuntimeException if $pluginDir has no manifest.json, or it is not valid
+     */
+    private function readManifest(string $pluginDir): Manifest
+    {
+        $manifestPath = $pluginDir.\DIRECTORY_SEPARATOR.'manifest.json';
+        $contents = is_file($manifestPath) ? file_get_contents($manifestPath) : false;
+        if ($contents === false) {
+            throw new \RuntimeException(\sprintf('No manifest.json found in "%s".', $pluginDir));
+        }
+
+        try {
+            return $this->manifestParser->parse($contents);
+        } catch (InvalidManifestException|InvalidManifestJsonException $exception) {
+            throw new \RuntimeException(\sprintf('Invalid manifest.json in "%s": %s', $pluginDir, $exception->getMessage()), previous: $exception);
+        }
     }
 
     private function renderLocale(SymfonyStyle $io, string $locale, LocaleTranslationCoverage $coverage): void

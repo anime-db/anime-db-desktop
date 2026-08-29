@@ -131,10 +131,10 @@ final class TranslationCoverageServicePluginCatalogueBootTest extends KernelTest
         // covered key, even though the Translator's merged catalogue already resolves it above.
         /** @var TranslationCoverageService $coverageService */
         $coverageService = self::getContainer()->get(TranslationCoverageService::class);
-        $coverage = $coverageService->coverageForInstalledPlugin(new PluginId($pluginId));
+        $report = $coverageService->coverageForInstalledPlugin(new PluginId($pluginId));
 
-        self::assertNotNull($coverage);
-        self::assertContains('coverage_probe.plugin_only', $coverage['en']->orphans);
+        self::assertNotNull($report);
+        self::assertContains('coverage_probe.plugin_only', $report->coverage['en']->orphans);
     }
 
     private function restoreServerVar(string $key, ?string $original): void

@@ -116,6 +116,7 @@ final class PluginController
         $removedPluginId = (string) $request->query->get('removed', '');
 
         return $this->renderIndex(
+            currentLocale: $request->getLocale(),
             installedPluginId: $installedPluginId !== '' ? $installedPluginId : null,
             updatedPluginId: $updatedPluginId !== '' ? $updatedPluginId : null,
             removedPluginId: $removedPluginId !== '' ? $removedPluginId : null,
@@ -156,13 +157,14 @@ final class PluginController
 
         $file = $request->files->get('plugin_zip');
         if (!$file instanceof UploadedFile || !$file->isValid()) {
-            return $this->renderIndex(installError: 'settings_plugins.install_error_no_file');
+            return $this->renderIndex(currentLocale: $request->getLocale(), installError: 'settings_plugins.install_error_no_file');
         }
 
         try {
             [$pluginId, $updated] = $this->installOrUpdate($file->getPathname());
         } catch (IncompatiblePluginCoreVersionException $exception) {
             return $this->renderIndex(
+                currentLocale: $request->getLocale(),
                 installError: 'settings_plugins.install_error_incompatible_core',
                 installErrorParams: [
                     '%requiredCore%' => $exception->requiredCore,
@@ -171,16 +173,18 @@ final class PluginController
             );
         } catch (PluginSyntaxErrorException $exception) {
             return $this->renderIndex(
+                currentLocale: $request->getLocale(),
                 installError: 'settings_plugins.install_error_syntax',
                 syntaxErrors: $exception->errors,
             );
         } catch (InvalidInstalledPluginException $exception) {
             return $this->renderIndex(
+                currentLocale: $request->getLocale(),
                 installError: 'settings_plugins.install_error_invalid_manifest',
                 manifestErrors: $exception->errors,
             );
         } catch (PluginInstallException) {
-            return $this->renderIndex(installError: 'settings_plugins.install_error_generic');
+            return $this->renderIndex(currentLocale: $request->getLocale(), installError: 'settings_plugins.install_error_generic');
         } finally {
             @unlink($file->getPathname());
         }
@@ -216,6 +220,7 @@ final class PluginController
      * @param ManifestValidationError[] $manifestErrors
      */
     private function renderIndex(
+        ?string $currentLocale = null,
         ?string $installedPluginId = null,
         ?string $updatedPluginId = null,
         ?string $removedPluginId = null,
@@ -226,10 +231,13 @@ final class PluginController
     ): Response {
         $installedPlugins = $this->installedPlugins->all();
 
+        [$translationCoverage, $pluginLocales] = $this->translationDataByPlugin($installedPlugins, $currentLocale);
+
         return new Response($this->twig->render('settings/plugins/index.html.twig', [
             'installedPlugins' => $installedPlugins,
             'settingsPluginIds' => $this->pluginIdsWithASettingsPage($installedPlugins),
-            'translationCoverage' => $this->translationCoverageByPlugin($installedPlugins),
+            'translationCoverage' => $translationCoverage,
+            'pluginLocales' => $pluginLocales,
             'installedPluginId' => $installedPluginId,
             'updatedPluginId' => $updatedPluginId,
             'removedPluginId' => $removedPluginId,
@@ -259,46 +267,70 @@ final class PluginController
     }
 
     /**
-     * Renders issue #513's per-plugin translation-coverage badges from {@see TranslationCoverageService}
-     * (issue #512) — computed once here, at page render, never per-request or from a locale
-     * subscriber (the service's own docblock rules that out). Only {@see PluginType::Translation}
-     * plugins are covered against the app's `messages` domain: an `integration` plugin's strings
-     * live in its own `<plugin-id>.<locale>.yaml` domain, so a coverage number here would be
-     * meaningless for it. A locale the manifest declares but with no catalog file on disk
-     * ({@see \App\Service\Translation\LocaleTranslationCoverage::isKnown} false) has no covered/total
-     * to show, so it is left out of the badge list rather than shown as a misleading "0 of 0".
+     * Renders issue #513's per-plugin translation-coverage badges and issue #540's per-plugin
+     * language list from {@see TranslationCoverageService} (issue #512) — computed once here, at
+     * page render, never per-request or from a locale subscriber (the service's own docblock rules
+     * that out).
+     *
+     * Only {@see PluginType::Translation} plugins get a covered/total badge: an Integration/Local
+     * plugin's strings live in its own `<plugin-id>.<locale>.yaml` domain, so a coverage number
+     * here would be meaningless for it. A locale the manifest declares but with no catalog file on
+     * disk ({@see \App\Service\Translation\LocaleTranslationCoverage::isKnown} false) has no
+     * covered/total to show, so it is left out of the badge list rather than shown as a misleading
+     * "0 of 0".
+     *
+     * The language list, in contrast, is populated for every plugin type that ships at least one
+     * locale — for Integration/Local it is the only thing there is to show; for Translation it is
+     * the same locale set the badge list already covers. `missingFallbackLocale` flags a plugin
+     * that ships none of $currentLocale or its translator fallback chain, meaning a user viewing
+     * this page in that locale would see that plugin's raw translation keys (always false for
+     * Translation — see {@see TranslationCoverageService::isMissingFallbackLocale()}).
      *
      * @param list<InstalledPlugin> $installedPlugins
      *
-     * @return array<string, array<string, array{covered: int, total: int}>> keyed by plugin id,
-     *                                                                       then by locale
+     * @return array{
+     *     0: array<string, array<string, array{covered: int, total: int}>>,
+     *     1: array<string, array{locales: list<string>, missingFallbackLocale: bool}>,
+     * } translation coverage and plugin locales, both keyed by plugin id
      */
-    private function translationCoverageByPlugin(array $installedPlugins): array
+    private function translationDataByPlugin(array $installedPlugins, ?string $currentLocale): array
     {
         $coverageByPlugin = [];
+        $localesByPlugin = [];
+
         foreach ($installedPlugins as $plugin) {
-            if ($plugin->manifest->type !== PluginType::Translation) {
+            $report = $this->translationCoverage->coverageForInstalledPlugin($plugin->id);
+            if ($report === null) {
                 continue;
             }
 
-            $localeCoverage = [];
-            foreach ($this->translationCoverage->coverageForInstalledPlugin($plugin->id) ?? [] as $locale => $coverage) {
-                if (!$coverage->isKnown) {
-                    continue;
+            if ($plugin->manifest->type === PluginType::Translation) {
+                $localeCoverage = [];
+                foreach ($report->coverage as $locale => $coverage) {
+                    if (!$coverage->isKnown) {
+                        continue;
+                    }
+
+                    $localeCoverage[$locale] = [
+                        'covered' => $coverage->covered,
+                        'total' => $coverage->covered + \count($coverage->missing),
+                    ];
                 }
 
-                $localeCoverage[$locale] = [
-                    'covered' => $coverage->covered,
-                    'total' => $coverage->covered + \count($coverage->missing),
-                ];
+                if ($localeCoverage !== []) {
+                    $coverageByPlugin[(string) $plugin->id] = $localeCoverage;
+                }
             }
 
-            if ($localeCoverage !== []) {
-                $coverageByPlugin[(string) $plugin->id] = $localeCoverage;
+            if ($report->locales !== []) {
+                $localesByPlugin[(string) $plugin->id] = [
+                    'locales' => $report->locales,
+                    'missingFallbackLocale' => $this->translationCoverage->isMissingFallbackLocale($report, $currentLocale),
+                ];
             }
         }
 
-        return $coverageByPlugin;
+        return [$coverageByPlugin, $localesByPlugin];
     }
 
     private function assertValidCsrfToken(string $tokenId, Request $request): void
