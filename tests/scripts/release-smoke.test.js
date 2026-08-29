@@ -152,7 +152,7 @@ describe('checkResponses', () => {
     });
 
     test('reports a probe that never got an answer', () => {
-        const responses = ok(8000).map((r) => (r.path === '/anime' ? { ...r, status: null, error: 'нет ответа' } : r));
+        const responses = ok(8000).map((r) => (r.path.startsWith('/anime') ? { ...r, status: null, error: 'нет ответа' } : r));
 
         const problems = checkResponses(EXPECTATIONS, responses);
 
@@ -167,11 +167,14 @@ describe('EXPECTATIONS', () => {
      * answers without the ORM. If someone trims this list back to a liveness ping, this test says so.
      */
     test('cover an ORM-backed page and the WS endpoint, not just /health', () => {
+        // Список каталога дёргается с обязательным watch_status: голый /anime отвечает 400 по
+        // замыслу (AnimeListRequestParser), и гейт, слащий невалидный запрос, объявил бы рабочую
+        // сборку сломанной — что он и сделал на прогоне issue #552.
         const paths = EXPECTATIONS.map((e) => e.path);
 
         expect(paths).toContain('/health');
         expect(paths).toContain('/');
-        expect(paths).toContain('/anime');
+        expect(paths).toContain('/anime?watch_status=plan');
         expect(paths).toContain('/ws');
         expect(EXPECTATIONS.find((e) => e.path === '/ws').status).toBe(426);
     });

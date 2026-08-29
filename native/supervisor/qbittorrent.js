@@ -139,16 +139,30 @@ function seedConfig(proxy) {
         // interactive prompt; this is the config-file equivalent, kept in sync for belt-and-suspenders.
         ['LegalNotice', 'Accepted', 'true'],
 
-        ['WebUI', 'Port', String(WEBUI_PORT)],
+        // ВНИМАНИЕ на секцию: настройки WebUI живут в `[Preferences]` ключами вида
+        // `WebUI\<Имя>`, а НЕ в собственной секции `[WebUI]`. До issue #552 они писались как
+        // `[WebUI]` + `Port=`/`LocalHostAuth=`, и qBittorrent не читал из них ничего: секции
+        // `[WebUI]` в его схеме не существует, неизвестные секции он молча игнорирует.
+        //
+        // Последствия были не косметические. `LocalHostAuth` не применялся, поэтому WebUI требовал
+        // аутентификацию, `GET /api/v2/app/version` отдавал 403, `waitForHealth()` в start() ждал
+        // 200 до таймаута и роняел запуск ВСЕГО приложения — FrankenPHP не стартовал вовсе.
+        // Порт при этом работал только потому, что дублируется флагом `--webui-port` при спавне,
+        // и это маскировало отказ остальных трёх ключей.
+        //
+        // На уже существующих установках осиротевшая секция `[WebUI]` остаётся в файле. Она
+        // инертна — qBittorrent её не читает — и специально не вычищается: переписывать чужой
+        // конфиг ради косметики рискованнее, чем оставить мёртвые строки.
+        ['Preferences', 'WebUI\\Port', String(WEBUI_PORT)],
         // Overrides qBittorrent's own default of "*" (bind all interfaces) — the WebUI must never
         // be reachable from outside loopback.
-        ['WebUI', 'Address', quoteIniString('127.0.0.1')],
+        ['Preferences', 'WebUI\\Address', quoteIniString('127.0.0.1')],
         // No WebUI port is exposed outside loopback, so bypassing auth for localhost callers is
         // safe and avoids having to generate/rotate a PBKDF2 credential the driver would need too.
-        ['WebUI', 'LocalHostAuth', 'false'],
+        ['Preferences', 'WebUI\\LocalHostAuth', 'false'],
         // WebUI is loopback-only; disabling host-header validation avoids a 401 when the
         // driver's Host header (127.0.0.1:<port>) is not in qBittorrent's default allowlist.
-        ['WebUI', 'HostHeaderValidation', 'false'],
+        ['Preferences', 'WebUI\\HostHeaderValidation', 'false'],
 
         ['BitTorrent', 'Session\\Port', String(BT_PORT)],
         // DHT/PEX stay ON globally: for non-private torrents they are the fallback when the

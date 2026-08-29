@@ -75,15 +75,19 @@ const PROBE_TIMEOUT_MS = 15_000;
  *
  * `/health` alone would not do: `App\Controller\HealthController` runs a raw DBAL query and never
  * touches the ORM, so it answered 200 through the whole period when every catalogue page was a 500
- * (issue #533). `/` and `/anime` go through repositories, which is the part that was broken and
- * invisible. `/ws` is expected to be refused with 426 rather than served: reaching that status means
+ * (issue #533). `/` and the catalogue list go through repositories, which is the part that was
+ * broken and invisible. `/ws` is expected to be refused with 426 rather than served: reaching that status means
  * the request was routed into PHP and `App\Controller\WsController` asked for an upgrade — before
  * issue #532 the same request got a Caddy-level `400 Client sent an HTTP request to an HTTPS server`.
  */
 const EXPECTATIONS = [
     { path: '/health', status: 200, why: 'процесс поднялся и видит базу' },
     { path: '/',       status: 200, why: 'главная ходит в ORM (StorageRepository, AnimeRepository)' },
-    { path: '/anime',  status: 200, why: 'список каталога ходит в ORM' },
+    // `watch_status` у списка обязателен: без него AnimeListRequestParser осознанно отвечает 400
+    // (см. его parseFilter()). Первая версия гейта дёргала голый `/anime`, получала законные 400 и
+    // объявляла сборку сломанной — проверка обязана слать валидный запрос, иначе она измеряет не
+    // приложение, а собственную неточность.
+    { path: '/anime?watch_status=plan', status: 200, why: 'список каталога ходит в ORM' },
     { path: '/ws',     status: 426, why: 'WS-эндпоинт доехал до PHP и просит апгрейд, а не отдан TLS-листенером' },
 ];
 
@@ -226,19 +230,49 @@ async function listenersOf(pid) {
 }
 
 /**
+ * Services the app pins to a fixed port instead of discovering one. When startup never gets far
+ * enough to open FrankenPHP's sockets, these are the only things left to ask — and the answer names
+ * the step that blocked. Issue #552 is exactly that case: the supervisor waits for qBittorrent's
+ * WebUI before starting anything else, and "порты не открылись" said nothing about which of the two
+ * plausible causes (403 from an auth check, or a WebUI slower than the 30s timeout) actually
+ * happened, because the status code was never captured.
+ */
+const FIXED_PORT_SERVICES = [
+    // native/supervisor/qbittorrent.js's WEBUI_PORT, duplicated rather than imported: that module
+    // requires paths.js, which requires electron, and this script is deliberately Electron-free.
+    { name: 'qBittorrent WebUI', port: 18080, path: '/api/v2/app/version' },
+];
+
+/**
  * @param {number} port
  * @param {string} requestPath
- * @returns {Promise<{ port: number, path: string, status: number|null, error?: string }>}
+ * @param {boolean} [withBody] capture the first bytes of the response — diagnostics only
+ * @returns {Promise<{ port: number, path: string, status: number|null, body?: string, error?: string }>}
  */
-function probe(port, requestPath) {
+function probe(port, requestPath, withBody = false) {
     return new Promise((resolve) => {
         const request = http.get(
             { host: '127.0.0.1', port, path: requestPath, timeout: PROBE_TIMEOUT_MS },
             (response) => {
-                // The body is irrelevant to this gate, but it has to be drained: an unread response
-                // keeps the socket open and the script would not exit on its own.
-                response.resume();
-                response.on('end', () => resolve({ port, path: requestPath, status: response.statusCode }));
+                // The body is irrelevant to the gate itself, but it has to be drained either way: an
+                // unread response keeps the socket open and the script would not exit on its own.
+                if (!withBody) {
+                    response.resume();
+                    response.on('end', () => resolve({ port, path: requestPath, status: response.statusCode }));
+                    return;
+                }
+
+                let body = '';
+                response.setEncoding('utf8');
+                response.on('data', (chunk) => {
+                    if (body.length < 200) body += chunk;
+                });
+                response.on('end', () => resolve({
+                    port,
+                    path: requestPath,
+                    status: response.statusCode,
+                    body: body.slice(0, 200).replace(/\s+/g, ' ').trim(),
+                }));
             },
         );
 
@@ -295,6 +329,25 @@ async function waitForListeners(userDataDir, timeoutMs) {
     }
 
     throw new Error(`Приложение не открыло свои порты за ${timeoutMs} мс. Последнее состояние: ${lastSeen}`);
+}
+
+/**
+ * Asks every fixed-port service what it answers right now. Runs only on the failure path: on a
+ * healthy run it would add noise, on a broken one it is often the whole diagnosis.
+ *
+ * @returns {Promise<void>}
+ */
+async function dumpFixedPortServices() {
+    console.error('\nСлужбы на фиксированных портах в момент отказа:');
+
+    for (const service of FIXED_PORT_SERVICES) {
+        const response = await probe(service.port, service.path, true);
+
+        console.error(
+            `  ${service.name} — GET 127.0.0.1:${service.port}${service.path} -> ` +
+            `${response.error ?? response.status}${response.body ? ` | ${response.body}` : ''}`,
+        );
+    }
 }
 
 /**
@@ -460,6 +513,7 @@ async function run({
         // The startup wait rejects on its deadline, and that is the failure this gate exists to
         // report — so it has to arrive as a verdict with the app's own logs attached, not as a
         // stack trace from somewhere inside the polling loop.
+        await dumpFixedPortServices();
         dumpLogs(profileDir);
 
         return { ok: false, exitCode: 1, message: err.message, problems: [] };

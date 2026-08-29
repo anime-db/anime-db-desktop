@@ -165,6 +165,22 @@ async function start(onProgress, { safeMode = false } = {}) {
     // он опционален (см. env.js), и OAUTH_CALLBACK_ORIGIN в их окружение не попадает.
     const phpContext = { qbittorrentPort, meiliPort, meiliKey, safeMode };
 
+    // php.ini обязан существовать ДО первого PHP-процесса сеанса, а первым идут миграции, а не
+    // веб-воркер. Расширения в Windows-сборке — подгружаемые DLL (issue #477), путь к ним даёт
+    // только extension_dir из php.ini, и без него боевой интерпретатор стартует вообще без
+    // расширений: bin/console падает на vendor/composer/platform_check.php с «require the
+    // following PHP extensions: gd, intl, openssl, pdo_sqlite, zip» ещё до первой строки Symfony.
+    //
+    // Раньше этот вызов жил только внутри frankenphp.start(), то есть на шаге 2 — на ЧИСТОМ
+    // профиле миграции шага 1 успевали отработать раньше, чем появлялся php.ini, и весь запуск
+    // ложился (issue #552). На втором и последующих запусках файл уже лежал от прошлого сеанса,
+    // поэтому отказ был строго первозапускным и в разработке не воспроизводился.
+    //
+    // Вызов идемпотентен (см. native/php-ini.js#ensurePhpIni), и собственный вызов внутри
+    // frankenphp.start() намеренно оставлен: он держит start() самодостаточным для пути
+    // перезапуска воркера (reloadForPlugin), где через супервизор сюда никто не заходит.
+    frankenphp.ensurePhpIni();
+
     if (onProgress) onProgress(1, TOTAL_STEPS, 'splash.step_migrations');
     const migrationsApplied = await migrations.run(phpContext);
 

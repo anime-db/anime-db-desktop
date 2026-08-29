@@ -43,7 +43,11 @@ function waitForHealth(port, { intervalMs = 200, timeoutMs = 30000, path = '/hea
 
         const retry = () => {
             if (Date.now() > deadline) {
-                return reject(new Error(`/health не ответил за ${timeoutMs}ms на порту ${port}`));
+                // Путь берётся из параметра, а не пишется литералом: `/health` ждёт только
+                // FrankenPHP, а qbittorrent.js опрашивает `/api/v2/app/version` и meilisearch.js —
+                // свой эндпоинт. Литерал в тексте отправил разбор issue #552 не туда: сообщение
+                // назвало `/health` на порту qBittorrent, которого там нет и никогда не было.
+                return reject(new Error(`${path} не ответил за ${timeoutMs}ms на порту ${port}`));
             }
             setTimeout(check, intervalMs);
         };
