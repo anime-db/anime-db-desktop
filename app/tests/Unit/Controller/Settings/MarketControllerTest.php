@@ -485,6 +485,32 @@ final class MarketControllerTest extends TestCase
     }
 
     /**
+     * Issue #543 acceptance criterion: a feature ("integration"/"local") plugin whose resolved
+     * version DOES carry the interface locale must not be flagged as missing it.
+     */
+    public function testIndexDoesNotWarnAFeaturePluginThatCarriesTheInterfaceLocale(): void
+    {
+        $snapshot = $this->snapshot([
+            $this->snapshotPlugin('animedb-shikimori', resolvedVersion: '1.2.0', sha256: 'abc123', type: 'integration', locales: ['en', 'ru']),
+        ]);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('settings/market/index.html.twig', $this->callback(
+                static fn (array $params): bool => $params['items'][0]['localeInfo']['interfaceLocaleMissing'] === false
+                    && $params['items'][0]['localeInfo']['missingFallbackLocale'] === false,
+            ))
+            ->willReturn('<html></html>');
+
+        $controller = $this->controller($this->snapshotCacheServing($snapshot), $this->assetDownloaderServingPluginZip(), $twig);
+
+        $request = Request::create('/settings/market');
+        $request->setLocale('en');
+        $controller->index($request);
+    }
+
+    /**
      * A `translation`-type plugin whose resolved version does not carry the interface locale at
      * all must still not be warned — a language pack not covering the interface's current
      * language is the normal, expected case for a translation plugin (issue #543), unlike a
