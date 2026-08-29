@@ -223,6 +223,10 @@ settings_market:
     version_column: Версия
     translation_coverage_column: Покрытие интерфейса
     translation_coverage_badge: 'Переведено %percent%% строк интерфейса приложения'
+    locales_column: Языки
+    locale_missing_warning: Интерфейс этого плагина будет не на текущем языке приложения.
+    locale_missing_fallback_warning: Плагин не поддерживает текущий язык приложения и язык, на который он переключается по умолчанию, — вместо перевода вы увидите сырые идентификаторы ключей.
+    incompatible_plugins_summary: Часть плагинов недоступна для вашей версии приложения. Обновление приложения может сделать их доступными.
     actions_column: Действия
     already_installed: Уже установлен
     incompatible_core: 'Нужна версия ядра, совместимая с "%requiredCore%".'
