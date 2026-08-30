@@ -56,6 +56,17 @@ use Symfony\Component\Translation\Translator;
  * and injecting the id sidesteps the `DataCollectorTranslator` decorator the plain `translator`
  * alias resolves to in dev — that decorator forwards unknown calls through `__call()`, which
  * PHPStan cannot see through either.
+ *
+ * Priority 20 on `kernel.request` is load-bearing, not cosmetic (issue #557): every service tagged
+ * `kernel.locale_aware` (`translator.default`, `translation.locale_switcher`, and any plugin-autowired
+ * `SluggerInterface`, see `.claude-docs/decisions.md`) picks up its locale from
+ * `Symfony\Component\HttpKernel\EventListener\LocaleAwareListener`, which itself listens on
+ * `kernel.request` at priority 15. A priority at or below 15 here means that listener reads
+ * `$request->getLocale()` before this method has negotiated it, so it distributes the static
+ * `default_locale` from `framework.yaml` to the whole interface regardless of `Accept-Language` —
+ * exactly the bug this priority fixes. 20 must stay above 15 for that reason, but does not need to
+ * clear `LocaleListener::onKernelRequest()` at priority 16: that core listener only acts on a
+ * `_locale` routing attribute, which no route in this app declares.
  */
 final class LocaleSubscriber implements EventSubscriberInterface
 {
@@ -70,7 +81,7 @@ final class LocaleSubscriber implements EventSubscriberInterface
     public static function getSubscribedEvents(): array
     {
         return [
-            KernelEvents::REQUEST => 'onKernelRequest',
+            KernelEvents::REQUEST => [['onKernelRequest', 20]],
         ];
     }
 
@@ -95,7 +106,37 @@ final class LocaleSubscriber implements EventSubscriberInterface
 
         $preferredLocale = $request->getPreferredLanguage($locales);
         if ($preferredLocale !== null) {
-            $request->setLocale($preferredLocale);
+            $request->setLocale($this->restoreDeclaredSpelling($preferredLocale, $locales));
         }
+    }
+
+    /**
+     * `Request::getPreferredLanguage()` runs every candidate through Symfony's private
+     * `formatLocale()`, which rewrites the separator to `_` (`pt-BR` -> `pt_BR`, `zh-Hans` ->
+     * `zh_Hans`) regardless of how the candidate was originally spelled. That rewritten spelling is
+     * unusable here: translation catalogs are registered under the plugin's own file name
+     * (`messages.pt-BR.yaml` -> catalog `pt-BR`, see `Kernel::configureContainer()`),
+     * so a locale reaching the translator as `pt_BR` finds no catalog and silently falls through to
+     * English (issue #557). This maps the negotiated value back to whichever spelling
+     * {@see AvailableLocalesProvider::all()} declared, comparing case-insensitively with `-`/`_`
+     * unified so `pt_BR`, `PT-br`, and `pt-BR` are all recognized as the same locale. A negotiated
+     * value with no declared match is returned unchanged.
+     *
+     * @param list<string> $declaredLocales
+     */
+    private function restoreDeclaredSpelling(string $negotiatedLocale, array $declaredLocales): string
+    {
+        foreach ($declaredLocales as $declaredLocale) {
+            if ($this->normalizeForComparison($declaredLocale) === $this->normalizeForComparison($negotiatedLocale)) {
+                return $declaredLocale;
+            }
+        }
+
+        return $negotiatedLocale;
+    }
+
+    private function normalizeForComparison(string $locale): string
+    {
+        return strtolower(str_replace('-', '_', $locale));
     }
 }
