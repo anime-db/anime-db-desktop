@@ -1,0 +1,36 @@
+Image codecs inside ext/php_gd.dll
+
+resources/app/bin/frankenphp/ext/php_gd.dll is the PHP GD extension shipped in
+the official
+FrankenPHP Windows release archive. The following third-party libraries are
+linked STATICALLY into that DLL and are therefore redistributed as part of this
+product. Their presence is verified from the strings embedded in the shipped
+binary itself.
+
+  libpng          PNG Reference Library License v2   texts/libpng.txt
+  libjpeg-turbo   IJG + BSD-3-Clause + zlib          texts/libjpeg-turbo.txt
+  libwebp         BSD-3-Clause (Google Inc.)         texts/libwebp-BSD.txt
+  FreeType        FreeType Project License (FTL)     texts/freetype-FTL.txt
+  zlib            zlib License                       texts/zlib.txt
+
+FreeType attribution, as required by the FreeType Project License, section 3:
+
+  Portions of this software are copyright (c) The FreeType Project
+  (https://www.freetype.org). All rights reserved.
+
+libjpeg-turbo attribution, as required by the IJG license:
+
+  This software is based in part on the work of the Independent JPEG Group.
+
+Copyright notices for the libgd code these codecs are called from are listed by
+the PHP project in resources/app/bin/licenses/frankenphp/readme-redist-bins.txt,
+section 13
+("libgd"). That file does not contain the license texts of the codecs
+themselves — those are the files listed in the table above.
+
+Corresponding source:
+  libpng          https://github.com/pnggroup/libpng
+  libjpeg-turbo   https://github.com/libjpeg-turbo/libjpeg-turbo
+  libwebp         https://chromium.googlesource.com/webm/libwebp
+  FreeType        https://gitlab.freedesktop.org/freetype/freetype
+  zlib            https://github.com/madler/zlib

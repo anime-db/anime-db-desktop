@@ -1,0 +1,26 @@
+PHP
+Copyright (c) The PHP Group
+https://www.php.net/
+
+This product includes PHP software, freely available from
+<http://www.php.net/software/>.
+
+The PHP interpreter shipped in this product (php8ts.dll and the extension DLLs
+under resources/app/bin/frankenphp/ext/) is version 8.5.8, taken unmodified
+from the official FrankenPHP Windows release archive. It is distributed under
+the PHP License version 3.01.
+
+Full license text:
+  resources/app/bin/licenses/frankenphp/license.txt
+
+Third-party code compiled into the PHP binaries (PCRE2, libmagic, libmbfl,
+libgd, libzip, xxHash, Lexbor, uriparser, avifinfo, libbcmath and others) is
+attributed by the PHP project in:
+  resources/app/bin/licenses/frankenphp/readme-redist-bins.txt
+
+Libraries that ship as separate DLLs next to the interpreter (OpenSSL, ICU,
+Brotli, SQLite, pthreads4w, watcher) are NOT covered by that file; they are
+listed individually in README.md.
+
+Image codecs (libpng, libjpeg-turbo, libwebp, FreeType, zlib) are linked
+statically into ext/php_gd.dll — see GD-CODECS-NOTICE.txt.

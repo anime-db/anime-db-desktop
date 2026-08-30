@@ -1,0 +1,14 @@
+SQLite
+https://www.sqlite.org/
+
+The file libsqlite3.dll under resources/app/bin/frankenphp/ is shipped as a
+dynamic library inside the official FrankenPHP Windows release archive and is
+used by the PHP extensions ext/php_pdo_sqlite.dll and ext/php_sqlite3.dll.
+
+SQLite is in the public domain. The authors dedicate the code to the public
+domain and disclaim copyright to it; no attribution is required. This notice is
+included for completeness only.
+
+A separate copy of SQLite is present inside the Qt SQL driver shipped with
+qbittorrent-nox; it is attributed independently in
+resources/app/bin/qbittorrent-nox/THIRD-PARTY-LICENSES/SQLite-NOTICE.txt.
