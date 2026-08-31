@@ -37,6 +37,7 @@ use AnimeDb\PluginContracts\Manifest\PluginType;
 use App\Entity\ValueObject\PluginId;
 use App\Service\Plugin\Exception\InstalledPluginsRegistryException;
 use App\Service\Plugin\Exception\InvalidInstalledPluginException;
+use Composer\Semver\Semver;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -56,6 +57,15 @@ use Psr\Log\LoggerInterface;
  * the single source of truth for it (issue #219), so every read here re-derives it from there
  * instead of risking the two falling out of sync.
  *
+ * `compatible` (issue #561) is derived the same way, for the same reason, from a different
+ * source: the plugin's own manifest against {@see self::$coreVersion} and
+ * {@see self::$pluginContractsVersion} — see {@see self::isCompatible()}. It answers "can this
+ * plugin actually run against the app as currently built", independent of whether the user wants
+ * it on; {@see self::enabled()} intersects the two. Fails open (treats the plugin as compatible
+ * and logs) whenever a version to compare against is unknown or a manifest constraint does not
+ * parse, so a build-time problem in this check can never be the reason a plugin the user asked
+ * for stops working.
+ *
  * {@see self::synchronized()} serializes {@see self::reconcile()} against itself and against the
  * installer/remover operations that call it, across FrankenPHP worker threads/processes (issue
  * #420) — see {@see PluginFileLock}. Reads below (`all()`, `enabled()`, `get()`, `has()`) stay
@@ -71,6 +81,19 @@ final class InstalledPluginsRegistry
         private readonly PluginsConfigStore $pluginsConfigStore,
         private readonly LoggerInterface $logger,
         private readonly ManifestParser $manifestParser = new ManifestParser(),
+        /**
+         * The app's own version, same source as `%app.core_version%` — see {@see \App\Kernel}.
+         * Defaults to the same permissive placeholder `services.yaml` uses for the dev
+         * environment (`app.core_version.dev_default`), so a caller that does not care about the
+         * compatibility check (most existing tests) does not need to pass a real one.
+         */
+        private readonly string $coreVersion = '99.99.99',
+        /**
+         * The installed `anime-db/plugin-contracts` version, or `null` when it could not be
+         * determined — see {@see self::isCompatible()}, which fails open on `null` the same way
+         * it fails open on an unparsable manifest constraint.
+         */
+        private readonly ?string $pluginContractsVersion = null,
         /**
          * Safe mode (issue #403): the native layer sets SAFE_MODE=1 after repeated failed
          * startups to recover from a plugin that crashes the kernel bootstrap. When true, every
@@ -96,7 +119,7 @@ final class InstalledPluginsRegistry
     {
         return array_values(array_filter(
             $this->readIndex(),
-            static fn (InstalledPlugin $plugin): bool => $plugin->enabled,
+            static fn (InstalledPlugin $plugin): bool => $plugin->enabled && $plugin->compatible,
         ));
     }
 
@@ -309,7 +332,12 @@ final class InstalledPluginsRegistry
 
             try {
                 $manifest = $this->manifestFromArray($entry['manifest']);
-                $plugins[$id] = new InstalledPlugin($manifest, $entry['installPath'], $this->isEnabled($id, $allSettings));
+                $plugins[$id] = new InstalledPlugin(
+                    $manifest,
+                    $entry['installPath'],
+                    $this->isEnabled($id, $allSettings),
+                    $this->isCompatible($manifest),
+                );
             } catch (\Throwable $exception) {
                 $this->logger->error('Skipping installed plugin with an invalid index entry.', [
                     'pluginId' => $id,
@@ -335,6 +363,57 @@ final class InstalledPluginsRegistry
         $settings = $allSettings[$id] ?? null;
 
         return (bool) (\is_array($settings) ? $settings['enabled'] ?? true : true);
+    }
+
+    /**
+     * Checks the manifest's `require.core` against {@see self::$coreVersion} and, if declared,
+     * `require.plugin-contracts` against {@see self::$pluginContractsVersion} — see the class
+     * docblock for why both axes are checked here for an already-installed plugin, not just
+     * plugin-contracts. `require.core` always fails open through {@see self::satisfiesOrFailOpen()}
+     * too even though {@see \AnimeDb\PluginContracts\Manifest\ManifestValidator} already guarantees
+     * it parses: a plugin's manifest was validated once, at install time, against that version of
+     * the parser, not against this read.
+     */
+    private function isCompatible(Manifest $manifest): bool
+    {
+        if (!$this->satisfiesOrFailOpen($manifest->id, 'core', $this->coreVersion, $manifest->require->core)) {
+            return false;
+        }
+
+        $requiredPluginContracts = $manifest->require->pluginContracts;
+        if ($requiredPluginContracts === null) {
+            return true;
+        }
+
+        if ($this->pluginContractsVersion === null) {
+            $this->logger->info('Unable to determine the installed plugin-contracts version; treating plugin as compatible.', [
+                'pluginId' => $manifest->id,
+                'requiredPluginContracts' => $requiredPluginContracts,
+            ]);
+
+            return true;
+        }
+
+        return $this->satisfiesOrFailOpen($manifest->id, 'plugin-contracts', $this->pluginContractsVersion, $requiredPluginContracts);
+    }
+
+    /**
+     * An unparsable $constraint is logged and treated as satisfied (fail-open) rather than
+     * thrown, same rationale as the `null`-version branches in {@see self::isCompatible()}.
+     */
+    private function satisfiesOrFailOpen(string $pluginId, string $axis, string $version, string $constraint): bool
+    {
+        try {
+            return Semver::satisfies($version, $constraint);
+        } catch (\UnexpectedValueException $exception) {
+            $this->logger->warning(\sprintf('Unable to parse the "%s" version constraint; treating plugin as compatible.', $axis), [
+                'pluginId' => $pluginId,
+                'constraint' => $constraint,
+                'exception' => $exception,
+            ]);
+
+            return true;
+        }
     }
 
     /**

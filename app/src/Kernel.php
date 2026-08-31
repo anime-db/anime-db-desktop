@@ -34,6 +34,7 @@ use App\Service\Plugin\DependencyInjection\Compiler\TagPluginServicesPass;
 use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\PluginLoader;
 use App\Service\Plugin\PluginsConfigStore;
+use Composer\InstalledVersions;
 use Monolog\Handler\StreamHandler;
 use Monolog\Level;
 use Monolog\Logger;
@@ -146,6 +147,13 @@ class Kernel extends BaseKernel
      */
     public function build(ContainerBuilder $container): void
     {
+        // Read once here rather than left to an %env()% default like app.core_version above:
+        // there is no equivalent env var the native layer could pass in for this one, since it
+        // is not configuration but a fact about this app's own vendor/composer/installed.php lock
+        // — the same one every InstalledVersions::getPrettyVersion() call on this process reads
+        // (issue #561).
+        $container->setParameter('app.plugin_contracts_version', $this->pluginContractsVersion());
+
         $container->addCompilerPass(new TagPluginServicesPass($this->installedPluginsRegistry(), $this->pluginLoaderLogger()));
         $container->addCompilerPass(new PluginDataStoreScopePass($this->installedPluginsRegistry()));
         $container->addCompilerPass(new SettingsStoreScopePass($this->installedPluginsRegistry()));
@@ -161,6 +169,15 @@ class Kernel extends BaseKernel
         return $this->pluginLoader;
     }
 
+    /**
+     * Built with real {@see coreVersion()}/{@see pluginContractsVersion()} values, not their
+     * container-parameter equivalents (this instance exists before the container does) — issue
+     * #561's derived `InstalledPlugin::$compatible` has to be correct here too, since this is the
+     * registry {@see PluginLoader::integrationBundles()} reads to decide which plugin bundles get
+     * registered at all (see the "Известный край" note in issue #561: an incompatible plugin's
+     * bundle never registering here is what keeps a stale compiled container from referencing it
+     * after a compatibility change).
+     */
     private function installedPluginsRegistry(): InstalledPluginsRegistry
     {
         if ($this->installedPluginsRegistry === null) {
@@ -171,11 +188,37 @@ class Kernel extends BaseKernel
                 $pluginsDir,
                 new PluginsConfigStore($pluginsConfigPath),
                 $this->pluginLoaderLogger(),
+                coreVersion: $this->coreVersion(),
+                pluginContractsVersion: $this->pluginContractsVersion(),
                 safeMode: $this->isSafeMode(),
             );
         }
 
         return $this->installedPluginsRegistry;
+    }
+
+    /**
+     * Same source and dev-environment placeholder as `app.core_version`/`app.core_version.dev_default`
+     * in `config/services.yaml` (CORE_VERSION is set the same way as PLUGINS_DIR above, by
+     * `native/supervisor/env.js`) — duplicated here rather than read back from the container
+     * because this runs before the container exists.
+     */
+    private function coreVersion(): string
+    {
+        return $_SERVER['CORE_VERSION'] ?? '99.99.99';
+    }
+
+    /**
+     * @see self::build()'s app.plugin_contracts_version parameter — same value, computed the same
+     * way, for the pre-container registry instance above.
+     */
+    private function pluginContractsVersion(): ?string
+    {
+        try {
+            return InstalledVersions::getPrettyVersion('anime-db/plugin-contracts');
+        } catch (\OutOfBoundsException) {
+            return null;
+        }
     }
 
     /**

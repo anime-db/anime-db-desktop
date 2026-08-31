@@ -31,6 +31,7 @@ use AnimeDb\PluginContracts\Manifest\ManifestValidationError;
 use AnimeDb\PluginContracts\Manifest\PluginType;
 use App\Entity\ValueObject\Exception\InvalidPluginIdException;
 use App\Entity\ValueObject\PluginId;
+use App\Service\Plugin\Exception\IncompatiblePluginContractsVersionException;
 use App\Service\Plugin\Exception\IncompatiblePluginCoreVersionException;
 use App\Service\Plugin\Exception\InvalidInstalledPluginException;
 use App\Service\Plugin\Exception\PluginAlreadyInstalledException;
@@ -169,6 +170,15 @@ final class PluginController
                 installErrorParams: [
                     '%requiredCore%' => $exception->requiredCore,
                     '%currentCore%' => $exception->currentCore,
+                ],
+            );
+        } catch (IncompatiblePluginContractsVersionException $exception) {
+            return $this->renderIndex(
+                currentLocale: $request->getLocale(),
+                installError: 'settings_plugins.install_error_incompatible_plugin_contracts',
+                installErrorParams: [
+                    '%requiredPluginContracts%' => $exception->requiredPluginContracts,
+                    '%installedPluginContracts%' => $exception->installedPluginContracts,
                 ],
             );
         } catch (PluginSyntaxErrorException $exception) {

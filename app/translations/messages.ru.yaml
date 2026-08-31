@@ -208,9 +208,14 @@ settings_plugins:
     install_error_no_file: Выберите ZIP-архив плагина для установки.
     install_error_not_zip: Выберите файл с расширением .zip.
     install_error_incompatible_core: 'Плагин требует версию ядра "%requiredCore%", установлена версия "%currentCore%".'
+    install_error_incompatible_plugin_contracts: 'Плагин требует версию контракта плагинов "%requiredPluginContracts%", установлена версия "%installedPluginContracts%".'
     install_error_syntax: 'Установка прервана: в PHP-файлах плагина есть синтаксические ошибки:'
     install_error_invalid_manifest: Некорректный или отсутствующий manifest.json в архиве.
     install_error_generic: Не удалось распаковать или установить архив. Убедитесь, что это корректный ZIP-архив плагина.
+    status_column: Статус
+    status_enabled: Включён
+    status_disabled: Отключён
+    status_incompatible: 'Отключён — плагину нужна другая версия приложения.'
 
 settings_market:
     title: Маркет плагинов — Настройки — AnimeDB

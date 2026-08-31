@@ -32,10 +32,22 @@ use App\Entity\ValueObject\PluginId;
 
 /**
  * A single entry of {@see InstalledPluginsRegistry}: the plugin's parsed `manifest.json`, the
- * absolute path it is unpacked into, and whether it is currently active.
+ * absolute path it is unpacked into, whether the user has it turned on, and whether it is
+ * currently able to run at all.
  *
  * `enabled` is a snapshot taken from {@see PluginsConfigStore} at read time, not a second copy
- * persisted in the on-disk index — see {@see InstalledPluginsRegistry} for why.
+ * persisted in the on-disk index — see {@see InstalledPluginsRegistry} for why. It is purely the
+ * user's own choice and carries no opinion on whether the plugin actually works.
+ *
+ * `compatible` (issue #561) is a second, independent field rather than folded into `enabled`:
+ * it is derived fresh on every read from the manifest's `require.core`/`require.plugin-contracts`
+ * against the app's own versions (see {@see InstalledPluginsRegistry::readIndex()}), so unlike
+ * `enabled` it has no writer at all — nothing in this codebase ever sets it directly, it is pure
+ * computed state. Merging the two into one boolean would make an automatic compatibility change
+ * indistinguishable from the user's own toggle, and — the concrete failure this is avoiding —
+ * would silently overwrite a `false` the user explicitly chose the moment compatibility happened
+ * to return, re-enabling a plugin they turned off on purpose. {@see InstalledPluginsRegistry::enabled()}
+ * is the intersection of both.
  */
 final class InstalledPlugin
 {
@@ -45,6 +57,7 @@ final class InstalledPlugin
         public readonly Manifest $manifest,
         public readonly string $installPath,
         public readonly bool $enabled,
+        public readonly bool $compatible = true,
     ) {
         $this->id = new PluginId($manifest->id);
     }

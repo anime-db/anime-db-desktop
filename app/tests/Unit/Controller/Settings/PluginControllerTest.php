@@ -80,7 +80,7 @@ final class PluginControllerTest extends TestCase
         $this->removeDirectory($this->fixturesDir);
     }
 
-    private function installer(): ZipPluginInstaller
+    private function installer(?string $pluginContractsVersion = null): ZipPluginInstaller
     {
         return new ZipPluginInstaller(
             $this->pluginsDir,
@@ -88,6 +88,7 @@ final class PluginControllerTest extends TestCase
             $this->registry,
             new PluginCacheWarmer($this->pluginsDir, \dirname(__DIR__, 4), new NullLogger()),
             $this->createStub(WsPublisher::class),
+            $pluginContractsVersion,
         );
     }
 
@@ -160,15 +161,25 @@ final class PluginControllerTest extends TestCase
         ]));
     }
 
-    private function validManifestJson(string $pluginId, string $name = 'Plugin', string $version = '1.0.0', string $requireCore = '>=2.0.0'): string
-    {
+    private function validManifestJson(
+        string $pluginId,
+        string $name = 'Plugin',
+        string $version = '1.0.0',
+        string $requireCore = '>=2.0.0',
+        ?string $requirePluginContracts = null,
+    ): string {
+        $require = ['core' => $requireCore, 'php' => '>=8.2'];
+        if ($requirePluginContracts !== null) {
+            $require['plugin-contracts'] = $requirePluginContracts;
+        }
+
         return (string) json_encode([
             'id' => $pluginId,
             'name' => $name,
             'version' => $version,
             'type' => 'integration',
             'features' => ['filler' => true],
-            'require' => ['core' => $requireCore, 'php' => '>=8.2'],
+            'require' => $require,
         ]);
     }
 
@@ -217,6 +228,41 @@ final class PluginControllerTest extends TestCase
         $response = $this->controller(twig: $twig)->index(Request::create('/settings/plugins'));
 
         $this->assertSame(200, $response->getStatusCode());
+    }
+
+    /**
+     * Issue #561: an incompatible plugin must stay visible on the settings page (with a reason,
+     * rendered by `settings/plugins/index.html.twig`), never disappear the way a plugin filtered
+     * out of {@see InstalledPluginsRegistry::enabled()} would if the controller used that instead
+     * of {@see InstalledPluginsRegistry::all()}.
+     */
+    public function testIndexKeepsAnIncompatiblePluginListedWithCompatibleFalse(): void
+    {
+        $dir = $this->pluginsDir.'/animedb-shikimori';
+        mkdir($dir, recursive: true);
+        file_put_contents($dir.'/manifest.json', $this->validManifestJson('animedb-shikimori', 'Shikimori', requirePluginContracts: '^0.16'));
+
+        $registry = new InstalledPluginsRegistry(
+            $this->pluginsDir,
+            new PluginsConfigStore($this->pluginsDir.'/plugins.json'),
+            new NullLogger(),
+            pluginContractsVersion: 'v0.15.0',
+        );
+        $registry->reconcile();
+        $this->registry = $registry;
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('settings/plugins/index.html.twig', $this->callback(function (array $params): bool {
+                self::assertCount(1, $params['installedPlugins']);
+                self::assertFalse($params['installedPlugins'][0]->compatible);
+
+                return true;
+            }))
+            ->willReturn('<html></html>');
+
+        $this->controller(twig: $twig)->index(Request::create('/settings/plugins'));
     }
 
     public function testIndexListsSettingsPluginIdsOnlyForPluginsWithARegisteredAndEnabledSettingsPage(): void
@@ -430,6 +476,32 @@ final class PluginControllerTest extends TestCase
         $request->files->set('plugin_zip', $this->uploadedZip($zipPath));
 
         $this->controller(twig: $twig)->install($request);
+    }
+
+    public function testInstallReportsIncompatiblePluginContractsVersionDetails(): void
+    {
+        $zipPath = $this->createZip(['manifest.json' => $this->validManifestJson('animedb-shikimori', requirePluginContracts: '^0.16')]);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('settings/plugins/index.html.twig', $this->callback(static function (array $params): bool {
+                self::assertSame('settings_plugins.install_error_incompatible_plugin_contracts', $params['installError']);
+                self::assertSame(
+                    ['%requiredPluginContracts%' => '^0.16', '%installedPluginContracts%' => 'v0.15.0'],
+                    $params['installErrorParams'],
+                );
+
+                return true;
+            }))
+            ->willReturn('<html></html>');
+
+        $request = Request::create('/settings/plugins/install', 'POST', ['_token' => 'token']);
+        $request->files->set('plugin_zip', $this->uploadedZip($zipPath));
+
+        $installer = $this->installer(pluginContractsVersion: 'v0.15.0');
+
+        $this->controller(installer: $installer, twig: $twig)->install($request);
     }
 
     public function testInstallReportsSyntaxErrorDetails(): void

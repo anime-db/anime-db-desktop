@@ -27,7 +27,11 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Service\Plugin;
 
+use AnimeDb\PluginContracts\Manifest\Manifest;
+use AnimeDb\PluginContracts\Manifest\ManifestRequirements;
+use AnimeDb\PluginContracts\Manifest\PluginType;
 use App\Entity\ValueObject\PluginId;
+use App\Service\Plugin\Exception\IncompatiblePluginContractsVersionException;
 use App\Service\Plugin\Exception\IncompatiblePluginCoreVersionException;
 use App\Service\Plugin\Exception\InvalidInstalledPluginException;
 use App\Service\Plugin\Exception\PluginAlreadyInstalledException;
@@ -310,6 +314,103 @@ final class ZipPluginInstallerTest extends TestCase
             $this->assertFalse($this->registry->has(new PluginId('animedb-shikimori')));
             $this->assertNoLeftoverTempDirectories();
         }
+    }
+
+    #[Group('runtime-parity')]
+    public function testInstallSucceedsWhenPluginContractsRequirementIsSatisfied(): void
+    {
+        $zipPath = $this->createZip([
+            'manifest.json' => $this->validManifestJson('animedb-shikimori', requirePluginContracts: '^0.15'),
+        ]);
+
+        $installer = $this->installer(pluginContractsVersion: 'v0.15.0');
+        $pluginId = $installer->install($zipPath);
+
+        $this->assertSame('animedb-shikimori', (string) $pluginId);
+    }
+
+    public function testInstallBlocksWhenPluginContractsRequirementIsNotSatisfied(): void
+    {
+        $zipPath = $this->createZip([
+            'manifest.json' => $this->validManifestJson('animedb-shikimori', requirePluginContracts: '^0.16'),
+        ]);
+
+        $installer = $this->installer(pluginContractsVersion: 'v0.15.0');
+
+        try {
+            $installer->install($zipPath);
+            $this->fail('Expected IncompatiblePluginContractsVersionException to be thrown.');
+        } catch (IncompatiblePluginContractsVersionException $exception) {
+            $this->assertSame('^0.16', $exception->requiredPluginContracts);
+            $this->assertSame('v0.15.0', $exception->installedPluginContracts);
+        } finally {
+            $this->assertSame([], array_values(array_diff((array) scandir($this->pluginsDir), self::PLUGINS_DIR_HOUSEKEEPING_ENTRIES)));
+            $this->assertFalse($this->registry->has(new PluginId('animedb-shikimori')));
+            $this->assertNoLeftoverTempDirectories();
+        }
+    }
+
+    #[Group('runtime-parity')]
+    public function testInstallSucceedsWhenManifestOmitsPluginContractsRequirement(): void
+    {
+        // No 'plugin-contracts' key at all — validManifestJson()'s default. An unsatisfiable
+        // installed version would block install() if the check ran anyway; it must not.
+        $zipPath = $this->createZip([
+            'manifest.json' => $this->validManifestJson('animedb-shikimori'),
+        ]);
+
+        $installer = $this->installer(pluginContractsVersion: 'v0.1.0');
+        $pluginId = $installer->install($zipPath);
+
+        $this->assertSame('animedb-shikimori', (string) $pluginId);
+    }
+
+    #[Group('runtime-parity')]
+    public function testInstallSucceedsWhenInstalledPluginContractsVersionIsUnknown(): void
+    {
+        $zipPath = $this->createZip([
+            'manifest.json' => $this->validManifestJson('animedb-shikimori', requirePluginContracts: '^0.16'),
+        ]);
+
+        // installer()'s default omits pluginContractsVersion entirely (null) — the fail-open path.
+        $installer = $this->installer();
+        $pluginId = $installer->install($zipPath);
+
+        $this->assertSame('animedb-shikimori', (string) $pluginId);
+    }
+
+    /**
+     * `ManifestValidator` already rejects a `require.plugin-contracts` that does not parse as a
+     * version constraint, at manifest-parse time — before {@see ZipPluginInstaller} ever sees a
+     * {@see Manifest} object — so this fail-open branch cannot be reached through a real ZIP
+     * install. It still exists as defence in depth, symmetric with
+     * {@see InstalledPluginsRegistry}'s own copy of the same check (which *can* see one, via an
+     * index written by an older, looser validator) — exercised directly here via the private
+     * method, the same technique {@see testStagingDirectoryIsSiblingOfPluginsDir()} uses.
+     */
+    public function testAssertPluginContractsCompatibleFailsOpenWhenConstraintIsUnparsable(): void
+    {
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->once())->method('warning')->with(
+            $this->stringContains('Unable to parse'),
+            $this->callback(static fn (array $context): bool => $context['pluginId'] === 'animedb-shikimori'),
+        );
+
+        $installer = $this->installer(pluginContractsVersion: 'v0.15.0', logger: $logger);
+
+        $manifest = new Manifest(
+            id: 'animedb-shikimori',
+            name: 'Shikimori',
+            version: '1.0.0',
+            type: PluginType::Integration,
+            require: new ManifestRequirements(core: '>=2.0.0', php: '>=8.2', pluginContracts: 'not-a-valid-constraint'),
+            features: ['filler' => true],
+        );
+
+        $method = new \ReflectionMethod($installer, 'assertPluginContractsCompatible');
+
+        // Must not throw — the unparsable constraint is logged and treated as satisfied.
+        $method->invoke($installer, $manifest);
     }
 
     #[Group('runtime-parity')]
@@ -739,14 +840,19 @@ final class ZipPluginInstallerTest extends TestCase
         }
     }
 
-    private function installer(?WsPublisher $wsPublisher = null): ZipPluginInstaller
-    {
+    private function installer(
+        ?WsPublisher $wsPublisher = null,
+        ?string $pluginContractsVersion = null,
+        ?LoggerInterface $logger = null,
+    ): ZipPluginInstaller {
         return new ZipPluginInstaller(
             $this->pluginsDir,
             self::CORE_VERSION,
             $this->registry,
             $this->cacheWarmer(),
             $wsPublisher ?? $this->createStub(WsPublisher::class),
+            $pluginContractsVersion,
+            logger: $logger ?? new NullLogger(),
         );
     }
 
@@ -779,15 +885,24 @@ final class ZipPluginInstallerTest extends TestCase
         return $zipPath;
     }
 
-    private function validManifestJson(string $pluginId, string $version = '1.0.0', string $requireCore = '>=2.0.0'): string
-    {
+    private function validManifestJson(
+        string $pluginId,
+        string $version = '1.0.0',
+        string $requireCore = '>=2.0.0',
+        ?string $requirePluginContracts = null,
+    ): string {
+        $require = ['core' => $requireCore, 'php' => '>=8.2'];
+        if ($requirePluginContracts !== null) {
+            $require['plugin-contracts'] = $requirePluginContracts;
+        }
+
         return (string) json_encode([
             'id' => $pluginId,
             'name' => ucfirst($pluginId),
             'version' => $version,
             'type' => 'integration',
             'features' => ['filler' => true],
-            'require' => ['core' => $requireCore, 'php' => '>=8.2'],
+            'require' => $require,
         ]);
     }
 
