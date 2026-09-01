@@ -85,13 +85,19 @@ use Twig\Environment;
  * registry's own CI before it was ever listed here.
  *
  * Each plugin's row shows the manifest of its *latest* published version, plus the version/sha256
- * the snapshot already resolved as compatible with `%app.core_version%` at the time it was built
+ * the snapshot already resolved as compatible with `%app.core_version%` (and, issue #562, this
+ * app's own installed `%app.plugin_contracts_version%`) at the time it was built
  * ({@see MarketSnapshotPlugin::$resolvedVersion}), which may be an older one than the latest. A
  * plugin with no compatible version at all is rendered inactive with a "needs core version X"
- * hint instead of an "Install" button. If the cached snapshot is missing, or was built for a
- * different `%app.core_version%` than the one this controller runs against (an app upgrade
- * between refreshes), the whole list is rendered as "not ready yet" instead of resolving against
- * stale data — see {@see self::renderIndex()}.
+ * hint instead of an "Install" button — or, if {@see MarketSnapshotPlugin::$incompatiblePluginContracts}
+ * says the block is specifically on the `plugin-contracts` axis, a different hint that does not
+ * claim updating the app would fix it (issue #562: it may not — the plugin's own next release is
+ * what would). If the cached snapshot is missing, or was built for a different `%app.core_version%`
+ * than the one this controller runs against (an app upgrade between refreshes), the whole list is
+ * rendered as "not ready yet" instead of resolving against stale data — see {@see self::renderIndex()}.
+ * A release that changes `%app.plugin_contracts_version%` always changes `%app.core_version%` too
+ * (both come from the same build), so that same check also covers staleness on this new axis
+ * without a separate one.
  *
  * An already-installed plugin whose resolved compatible version is strictly newer than the one on
  * disk gets an "Update" button ({@see update()}, issue #224) instead of the plain "already installed" label
@@ -161,6 +167,7 @@ final class MarketController
         private readonly ZipPluginInstaller $installer,
         private readonly InstalledPluginsRegistry $installedPlugins,
         private readonly string $coreVersion,
+        private readonly ?string $pluginContractsVersion,
         private readonly CsrfTokenManagerInterface $csrfTokenManager,
         private readonly UrlGeneratorInterface $urlGenerator,
         private readonly Environment $twig,
@@ -317,6 +324,14 @@ final class MarketController
         $plugin = $this->findPlugin($snapshot, $id);
         if ($plugin === null) {
             return $this->renderIndex(locale: $request->getLocale(), installError: 'settings_market.install_error_unknown_plugin');
+        }
+
+        if ($plugin->resolvedVersion === null && $plugin->incompatiblePluginContracts) {
+            return $this->renderIndex(
+                locale: $request->getLocale(),
+                installError: 'settings_market.install_error_incompatible_plugin_contracts',
+                installErrorParams: ['%currentPluginContracts%' => (string) $this->pluginContractsVersion],
+            );
         }
 
         if ($plugin->resolvedVersion === null) {

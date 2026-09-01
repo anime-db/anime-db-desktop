@@ -235,6 +235,7 @@ settings_market:
     actions_column: Действия
     already_installed: Уже установлен
     incompatible_core: 'Нужна версия ядра, совместимая с "%requiredCore%".'
+    incompatible_plugin_contracts: Нет ни одной опубликованной версии, совместимой с версией контракта плагинов, установленной в этом приложении.
     install_button: Установить
     install_success: 'Плагин «%pluginId%» успешно установлен.'
     update_button: Обновить
@@ -243,6 +244,7 @@ settings_market:
     install_error_registry_unavailable: Каталог маркета ещё не готов. Попробуйте ещё раз позже.
     install_error_unknown_plugin: Этот плагин больше не числится в каталоге маркета.
     install_error_incompatible_core: 'Плагин требует версию ядра "%requiredCore%", установлена версия "%currentCore%".'
+    install_error_incompatible_plugin_contracts: 'Ни одна опубликованная версия этого плагина не совместима с установленной версией контракта плагинов "%currentPluginContracts%".'
     install_error_download_failed: Не удалось скачать архив плагина ни с одного из зеркал маркета.
     install_error_already_installed: 'Плагин «%pluginId%» уже установлен.'
     install_error_invalid_manifest: Некорректный manifest.json в архиве плагина.

@@ -92,6 +92,8 @@
                                 </form>
                             {% elseif item.installed %}
                                 {{ 'settings_market.already_installed'|trans }}
+                            {% elseif item.plugin.resolvedVersion is null and item.plugin.incompatiblePluginContracts %}
+                                {{ 'settings_market.incompatible_plugin_contracts'|trans }}
                             {% elseif item.plugin.resolvedVersion is null %}
                                 {{ 'settings_market.incompatible_core'|trans({'%requiredCore%': item.plugin.latestVersionCore}) }}
                             {% else %}

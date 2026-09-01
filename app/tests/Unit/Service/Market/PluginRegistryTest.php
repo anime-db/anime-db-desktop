@@ -158,6 +158,58 @@ final class PluginRegistryTest extends TestCase
     }
 
     /**
+     * Issue #562: a version entry's `plugin_contracts` is carried per-version, the same way
+     * `locales` already is — a version entry that does not publish it (a plugin published before
+     * this field existed, or a `translation` plugin that never declares one) must still parse,
+     * just with a `null` `pluginContracts` on that {@see \App\Service\Market\MarketPluginVersion}.
+     */
+    public function testPluginsCarriesOverThePerVersionPluginContractsWhenPresent(): void
+    {
+        $registry = PluginRegistry::fromJson(json_encode([
+            'sequence' => 1,
+            'asset_mirrors' => [],
+            'plugins' => [
+                [
+                    'id' => 'animedb-shikimori',
+                    'manifest' => $this->manifest('animedb-shikimori', '1.2.0'),
+                    'versions' => [
+                        ['version' => '1.2.0', 'core' => '>=2.0.0', 'sha256' => 'abc123', 'plugin_contracts' => '^0.15'],
+                        ['version' => '1.1.0', 'core' => '>=2.0.0', 'sha256' => 'def456'],
+                    ],
+                ],
+            ],
+        ], \JSON_THROW_ON_ERROR), new NullLogger());
+
+        $versions = $registry->plugins()[0]->versions;
+        $this->assertSame('^0.15', $versions[0]->pluginContracts);
+        $this->assertNull($versions[1]->pluginContracts);
+    }
+
+    /**
+     * A malformed `plugin_contracts` value (not a string, or a string that does not parse as a
+     * Semver constraint) is treated the same as "not published" rather than failing the whole
+     * registry — the same leniency already applied to a malformed `locales` value.
+     */
+    public function testPluginsTreatsAMalformedPluginContractsValueAsUnpublished(): void
+    {
+        $registry = PluginRegistry::fromJson(json_encode([
+            'sequence' => 1,
+            'asset_mirrors' => [],
+            'plugins' => [
+                [
+                    'id' => 'animedb-shikimori',
+                    'manifest' => $this->manifest('animedb-shikimori', '1.2.0'),
+                    'versions' => [
+                        ['version' => '1.2.0', 'core' => '>=2.0.0', 'sha256' => 'abc123', 'plugin_contracts' => '~'],
+                    ],
+                ],
+            ],
+        ], \JSON_THROW_ON_ERROR), new NullLogger());
+
+        $this->assertNull($registry->plugins()[0]->versions[0]->pluginContracts);
+    }
+
+    /**
      * Regression guard for issue #514: this fixture mirrors the exact shape of a version entry
      * as published in the real plugins registry (`translation_keys_count`, `core`, `sha256`), so
      * a typo in the field name read by {@see PluginRegistry} fails this test even when every

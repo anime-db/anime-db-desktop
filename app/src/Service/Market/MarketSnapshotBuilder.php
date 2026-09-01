@@ -41,7 +41,15 @@ use AnimeDb\PluginContracts\Manifest\Manifest;
  * {@see MarketPlugin::latestVersion()} — a coverage figure attached to a version the storefront
  * would not actually install describes the wrong artifact. `locales` (issue #543) follows
  * `$resolvedVersion` for the same reason — the storefront's language labels must describe the
- * version it would actually install, not necessarily the latest manifest's.
+ * version it would actually install, not necessarily the latest manifest's. `pluginContracts`
+ * (issue #562) follows `$resolvedVersion` for the same reason again.
+ *
+ * `$pluginContractsVersion` (issue #562) is this app's own installed `anime-db/plugin-contracts`
+ * version — the second axis {@see MarketPlugin::resolveCompatibleVersion()} now checks alongside
+ * `$coreVersion`, mirroring the axis {@see \App\Service\Plugin\ZipPluginInstaller} already
+ * enforces at install time (issue #561) and read from the same `%app.plugin_contracts_version%`
+ * parameter. `null` is a legitimate value (this app build could not determine it) and fails open
+ * on that axis, not closed — see {@see MarketPlugin::resolveCompatibleVersion()}'s own docblock.
  *
  * Fetching, signature/anti-rollback verification and asset download stay entirely upstream of
  * this class ({@see PluginRegistryLoader}, {@see MarketAssetDownloader}) — this builder only
@@ -49,6 +57,11 @@ use AnimeDb\PluginContracts\Manifest\Manifest;
  */
 final class MarketSnapshotBuilder
 {
+    public function __construct(
+        private readonly ?string $pluginContractsVersion = null,
+    ) {
+    }
+
     public function build(PluginRegistry $registry, string $coreVersion): MarketSnapshot
     {
         return new MarketSnapshot(
@@ -64,7 +77,7 @@ final class MarketSnapshotBuilder
 
     private function buildPlugin(PluginRegistry $registry, MarketPlugin $plugin, string $coreVersion): MarketSnapshotPlugin
     {
-        $resolvedVersion = $plugin->resolveCompatibleVersion($coreVersion);
+        $resolvedVersion = $plugin->resolveCompatibleVersion($coreVersion, $this->pluginContractsVersion);
         $latestVersion = $plugin->latestVersion();
 
         return new MarketSnapshotPlugin(
@@ -76,6 +89,8 @@ final class MarketSnapshotBuilder
             $latestVersion->core,
             $resolvedVersion?->translationKeyCount,
             $resolvedVersion?->locales,
+            $resolvedVersion?->pluginContracts,
+            $resolvedVersion === null && $plugin->hasCoreCompatibleVersion($coreVersion),
         );
     }
 

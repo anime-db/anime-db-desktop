@@ -235,6 +235,7 @@ settings_market:
     actions_column: Actions
     already_installed: Already installed
     incompatible_core: 'Needs a core version compatible with "%requiredCore%".'
+    incompatible_plugin_contracts: No published version is compatible with the plugin contracts version installed with this app.
     install_button: Install
     install_success: 'Plugin "%pluginId%" has been installed.'
     update_button: Update
@@ -243,6 +244,7 @@ settings_market:
     install_error_registry_unavailable: The market catalog is not ready yet. Try again later.
     install_error_unknown_plugin: This plugin is no longer listed in the market catalog.
     install_error_incompatible_core: 'The plugin requires core version "%requiredCore%", the installed core version is "%currentCore%".'
+    install_error_incompatible_plugin_contracts: 'No published version of this plugin is compatible with the installed plugin contracts version "%currentPluginContracts%".'
     install_error_download_failed: Failed to download the plugin archive from any market mirror.
     install_error_already_installed: 'Plugin "%pluginId%" is already installed.'
     install_error_invalid_manifest: Invalid manifest.json in the plugin archive.
