@@ -41,7 +41,6 @@ use App\Service\Plugin\Exception\PluginNotInstalledException;
 use App\Service\Plugin\Exception\PluginSyntaxErrorException;
 use App\Service\WsPublisher;
 use Composer\Semver\Semver;
-use Composer\Semver\VersionParser;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Symfony\Component\Finder\Finder;
@@ -77,9 +76,8 @@ use Symfony\Component\Process\Process;
  * `">=0.0.1"`. Compared against `%app.plugin_contracts_version%` — the version this app itself
  * vendors, read via `Composer\InstalledVersions::getPrettyVersion()` (see {@see \App\Kernel}) —
  * not the `^0.15`-style constraint from this app's own `composer.json`. Fails open (skips the
- * check, logs) when that version cannot be determined, is a development version (VCS/path
- * source), or the manifest's constraint does not parse, and is a no-op when the manifest omits
- * the field entirely — see
+ * check, logs) when that version cannot be determined or the manifest's constraint does not
+ * parse, and is a no-op when the manifest omits the field entirely — see
  * {@see self::assertPluginContractsCompatible()} and {@see IncompatiblePluginContractsVersionException}.
  *
  * Also checks every unpacked `*.php` file for PHP syntax errors (issue #250), still before
@@ -566,16 +564,6 @@ final class ZipPluginInstaller
         if ($this->pluginContractsVersion === null) {
             $this->logger->warning('Unable to determine the installed plugin-contracts version; skipping the plugin-contracts compatibility check.', [
                 'pluginId' => $manifest->id,
-                'requiredPluginContracts' => $required,
-            ]);
-
-            return;
-        }
-
-        if (VersionParser::parseStability($this->pluginContractsVersion) === 'dev') {
-            $this->logger->warning('The installed plugin-contracts version is a development version, which cannot be compared against a release constraint; skipping the plugin-contracts compatibility check.', [
-                'pluginId' => $manifest->id,
-                'pluginContractsVersion' => $this->pluginContractsVersion,
                 'requiredPluginContracts' => $required,
             ]);
 

@@ -380,34 +380,6 @@ final class ZipPluginInstallerTest extends TestCase
     }
 
     /**
-     * A VCS/path-sourced `anime-db/plugin-contracts` (a normal way to develop the contract
-     * alongside this app, since `composer.json` declares a VCS repository for it) resolves to a
-     * dev-stability version string such as `dev-master`, which {@see Semver::satisfies()} reports
-     * as unsatisfied rather than unparsable for *any* release constraint. Without an explicit
-     * stability check this would reject every install declaring `require.plugin-contracts` while
-     * developing against such a build, which is exactly what the fail-open contract promises never
-     * happens (PR #563 review).
-     */
-    #[Group('runtime-parity')]
-    public function testInstallSucceedsWhenInstalledPluginContractsVersionIsDevVersion(): void
-    {
-        $zipPath = $this->createZip([
-            'manifest.json' => $this->validManifestJson('animedb-shikimori', requirePluginContracts: '^0.16'),
-        ]);
-
-        $logger = $this->createMock(LoggerInterface::class);
-        $logger->expects($this->once())->method('warning')->with(
-            $this->stringContains('development version'),
-            $this->callback(static fn (array $context): bool => $context['pluginId'] === 'animedb-shikimori'),
-        );
-
-        $installer = $this->installer(pluginContractsVersion: 'dev-master', logger: $logger);
-        $pluginId = $installer->install($zipPath);
-
-        $this->assertSame('animedb-shikimori', (string) $pluginId);
-    }
-
-    /**
      * `ManifestValidator` already rejects a `require.plugin-contracts` that does not parse as a
      * version constraint, at manifest-parse time — before {@see ZipPluginInstaller} ever sees a
      * {@see Manifest} object — so this fail-open branch cannot be reached through a real ZIP

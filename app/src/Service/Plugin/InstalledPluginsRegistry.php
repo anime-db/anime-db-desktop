@@ -38,7 +38,6 @@ use App\Entity\ValueObject\PluginId;
 use App\Service\Plugin\Exception\InstalledPluginsRegistryException;
 use App\Service\Plugin\Exception\InvalidInstalledPluginException;
 use Composer\Semver\Semver;
-use Composer\Semver\VersionParser;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -63,10 +62,9 @@ use Psr\Log\LoggerInterface;
  * {@see self::$pluginContractsVersion} — see {@see self::isCompatible()}. It answers "can this
  * plugin actually run against the app as currently built", independent of whether the user wants
  * it on; {@see self::enabled()} intersects the two. Fails open (treats the plugin as compatible
- * and logs) whenever a version to compare against is unknown, is a development version (VCS/path
- * source — not a release, so it carries no meaningful semver ordering against a release
- * constraint), or a manifest constraint does not parse, so a build-time problem in this check can
- * never be the reason a plugin the user asked for stops working.
+ * and logs) whenever a version to compare against is unknown or a manifest constraint does not
+ * parse, so a build-time problem in this check can never be the reason a plugin the user asked
+ * for stops working.
  *
  * {@see self::synchronized()} serializes {@see self::reconcile()} against itself and against the
  * installer/remover operations that call it, across FrankenPHP worker threads/processes (issue
@@ -405,18 +403,6 @@ final class InstalledPluginsRegistry
                 'info',
                 'Unable to determine the installed plugin-contracts version; treating plugin as compatible.',
                 ['pluginId' => $manifest->id, 'requiredPluginContracts' => $requiredPluginContracts],
-            );
-
-            return true;
-        }
-
-        if (VersionParser::parseStability($this->pluginContractsVersion) === 'dev') {
-            $this->logFailOpenOnce(
-                $manifest->id,
-                'plugin-contracts',
-                'info',
-                'The installed plugin-contracts version is a development version, which cannot be compared against a release constraint; treating plugin as compatible.',
-                ['pluginId' => $manifest->id, 'pluginContractsVersion' => $this->pluginContractsVersion, 'requiredPluginContracts' => $requiredPluginContracts],
             );
 
             return true;

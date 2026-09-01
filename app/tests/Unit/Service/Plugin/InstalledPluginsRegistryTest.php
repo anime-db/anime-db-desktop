@@ -322,38 +322,6 @@ final class InstalledPluginsRegistryTest extends TestCase
     }
 
     /**
-     * A VCS/path-sourced `anime-db/plugin-contracts` (a normal way to develop the contract
-     * alongside this app, since `composer.json` declares a VCS repository for it) resolves to a
-     * dev-stability version string such as `dev-master`. {@see Semver::satisfies()} does not throw
-     * on that — it returns `false` — so without an explicit stability check every plugin declaring
-     * `require.plugin-contracts` would be marked incompatible while developing against such a
-     * build, which is exactly what the fail-open contract promises never happens (PR #563 review).
-     */
-    public function testPluginIsCompatibleWhenInstalledPluginContractsVersionIsDevVersion(): void
-    {
-        $this->writeManifestWithPluginContracts('animedb-shikimori', '^0.15');
-
-        $logger = $this->createMock(LoggerInterface::class);
-        $logger->expects($this->once())->method('info')->with(
-            $this->stringContains('development version'),
-            $this->callback(static fn (array $context): bool => $context['pluginId'] === 'animedb-shikimori'),
-        );
-
-        $registry = new InstalledPluginsRegistry(
-            $this->pluginsDir,
-            $this->configStore(),
-            $logger,
-            pluginContractsVersion: 'dev-master',
-        );
-        $registry->reconcile();
-
-        $plugin = $registry->all()[0];
-
-        $this->assertTrue($plugin->compatible);
-        $this->assertSame(['animedb-shikimori'], $this->ids($registry->enabled()));
-    }
-
-    /**
      * A malformed `require.plugin-contracts` constraint cannot reach {@see reconcile()} through
      * {@see \AnimeDb\PluginContracts\Manifest\ManifestParser} — it is rejected at manifest
      * validation time. This simulates an index entry a looser, earlier validator once accepted
