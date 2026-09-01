@@ -76,6 +76,17 @@ use Psr\Log\LoggerInterface;
  */
 final class InstalledPluginsRegistry
 {
+    /**
+     * Throttles the fail-open logging in {@see self::isCompatible()}/{@see self::satisfiesOrFailOpen()}
+     * to once per (plugin id, axis) pair for the lifetime of this instance. {@see self::readIndex()}
+     * deliberately never caches and reruns on every single read (`all()`, `enabled()`, `get()`,
+     * `has()`), so without this a plugin stuck in a fail-open state would log the same line again
+     * on every one of them for as long as it stays installed (PR #563 review).
+     *
+     * @var array<string, true>
+     */
+    private array $loggedFailOpenAxes = [];
+
     public function __construct(
         private readonly string $pluginsDir,
         private readonly PluginsConfigStore $pluginsConfigStore,
@@ -386,10 +397,13 @@ final class InstalledPluginsRegistry
         }
 
         if ($this->pluginContractsVersion === null) {
-            $this->logger->info('Unable to determine the installed plugin-contracts version; treating plugin as compatible.', [
-                'pluginId' => $manifest->id,
-                'requiredPluginContracts' => $requiredPluginContracts,
-            ]);
+            $this->logFailOpenOnce(
+                $manifest->id,
+                'plugin-contracts',
+                'info',
+                'Unable to determine the installed plugin-contracts version; treating plugin as compatible.',
+                ['pluginId' => $manifest->id, 'requiredPluginContracts' => $requiredPluginContracts],
+            );
 
             return true;
         }
@@ -406,13 +420,35 @@ final class InstalledPluginsRegistry
         try {
             return Semver::satisfies($version, $constraint);
         } catch (\UnexpectedValueException $exception) {
-            $this->logger->warning(\sprintf('Unable to parse the "%s" version constraint; treating plugin as compatible.', $axis), [
-                'pluginId' => $pluginId,
-                'constraint' => $constraint,
-                'exception' => $exception,
-            ]);
+            $this->logFailOpenOnce(
+                $pluginId,
+                $axis,
+                'warning',
+                \sprintf('Unable to parse the "%s" version constraint; treating plugin as compatible.', $axis),
+                ['pluginId' => $pluginId, 'constraint' => $constraint, 'exception' => $exception],
+            );
 
             return true;
+        }
+    }
+
+    /**
+     * @param 'info'|'warning'     $level
+     * @param array<string, mixed> $context
+     */
+    private function logFailOpenOnce(string $pluginId, string $axis, string $level, string $message, array $context): void
+    {
+        $key = $pluginId.':'.$axis;
+        if (isset($this->loggedFailOpenAxes[$key])) {
+            return;
+        }
+
+        $this->loggedFailOpenAxes[$key] = true;
+
+        if ($level === 'info') {
+            $this->logger->info($message, $context);
+        } else {
+            $this->logger->warning($message, $context);
         }
     }
 

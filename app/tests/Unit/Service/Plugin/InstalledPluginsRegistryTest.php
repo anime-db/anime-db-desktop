@@ -338,11 +338,12 @@ final class InstalledPluginsRegistryTest extends TestCase
 
         $this->rewriteIndexPluginContracts('animedb-shikimori', 'not-a-valid-constraint');
 
-        // readIndex() re-derives compatibility on every call and is not cached — all() below and
-        // enabled() further down each trigger their own fail-open warning, same reasoning as
-        // testReadIndexSkipsEntryWithInvalidPluginIdAndKeepsOthers() above.
+        // readIndex() re-derives compatibility on every call and is not cached, but the fail-open
+        // warning below is throttled to once per (plugin id, axis) pair for the registry's
+        // lifetime (PR #563 review) — all() below and enabled() further down share the same
+        // registry instance, so only the first of the two logs.
         $logger = $this->createMock(LoggerInterface::class);
-        $logger->expects($this->exactly(2))->method('warning')->with(
+        $logger->expects($this->once())->method('warning')->with(
             $this->stringContains('Unable to parse'),
             $this->callback(static fn (array $context): bool => $context['pluginId'] === 'animedb-shikimori'),
         );
