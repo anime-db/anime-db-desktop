@@ -42,12 +42,12 @@ use Symfony\Component\Translation\Translator;
 
 final class LocaleSubscriberTest extends TestCase
 {
-    public function testGetSubscribedEvents(): void
+    public function testGetSubscribedEventsRunsAbovePriorityFifteenSoLocaleAwareListenerSeesTheNegotiatedLocale(): void
     {
         $events = LocaleSubscriber::getSubscribedEvents();
 
         $this->assertArrayHasKey(KernelEvents::REQUEST, $events);
-        $this->assertSame('onKernelRequest', $events[KernelEvents::REQUEST]);
+        $this->assertSame([['onKernelRequest', 20]], $events[KernelEvents::REQUEST]);
     }
 
     public function testOnKernelRequestSetsLocaleMatchingAcceptLanguage(): void
@@ -58,6 +58,23 @@ final class LocaleSubscriberTest extends TestCase
         $this->dispatch($request, ['en', 'ru']);
 
         $this->assertSame('ru', $request->getLocale());
+    }
+
+    /**
+     * `Request::getPreferredLanguage()` runs candidates through Symfony's private `formatLocale()`,
+     * which would rewrite the negotiated result to `pt_BR` even though `pt-BR` is what
+     * {@see AvailableLocalesProvider::all()} declared and what a translation catalog file is
+     * actually named after (issue #557). The request locale must come back in the declared
+     * spelling, not the underscore-normalized one.
+     */
+    public function testOnKernelRequestRestoresTheDeclaredHyphenatedSpellingInsteadOfSymfonysUnderscoreForm(): void
+    {
+        $request = new Request();
+        $request->headers->set('Accept-Language', 'pt-BR');
+
+        $this->dispatch($request, ['en', 'pt-BR']);
+
+        $this->assertSame('pt-BR', $request->getLocale());
     }
 
     public function testOnKernelRequestFallsBackToFirstAvailableLocaleWhenNoneMatches(): void
