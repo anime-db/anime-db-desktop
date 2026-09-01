@@ -50,12 +50,14 @@ parameters:
     # above, not sourced from an env var Electron passes in: there is no equivalent value for it,
     # since this is a fact about the app's own vendor/composer/installed.php lock, not deployment
     # configuration. Set from Composer\InstalledVersions::getPrettyVersion() in Kernel::build()
-    # instead; declared here as null only so the parameter exists (and its intent is documented)
-    # even before build() runs. Used by ZipPluginInstaller's install-time compat gate and
-    # InstalledPluginsRegistry's derived per-plugin compatibility to check a manifest's optional
-    # `require.plugin-contracts` constraint against what is actually vendored, not against this
-    # app's own `composer.json` constraint on it (`^0.15`).
-    app.plugin_contracts_version: ~
+    # instead, via $container->setParameter() — deliberately NOT redeclared here. Kernel::build()
+    # runs before this file is loaded (registerContainerConfiguration()), so a declaration here,
+    # even `~`, would load after build() and silently overwrite the real value with null (PR #563
+    # review). This comment documents the parameter's existence and intent for readers of this
+    # file; the binding below is what actually resolves it. Used by ZipPluginInstaller's
+    # install-time compat gate and InstalledPluginsRegistry's derived per-plugin compatibility to
+    # check a manifest's optional `require.plugin-contracts` constraint against what is actually
+    # vendored, not against this app's own `composer.json` constraint on it (`^0.15`).
 
     # Built-in locales, kept as an explicit list rather than scanning app/translations/ on every
     # request (FrankenPHP worker mode keeps consumers alive between requests, so a glob() there
