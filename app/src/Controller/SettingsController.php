@@ -30,19 +30,18 @@ namespace App\Controller;
 use App\Entity\Enum\SyncReviewItemKind;
 use App\Entity\SyncReviewItem;
 use App\Service\AppSettingsProvider;
-use App\Service\NearestBuiltInLocale;
 use App\Service\Plugin\AvailableLocalesProvider;
 use App\Service\Search\AnimeReindexService;
 use App\Service\Sync\SyncReviewService;
 use Meilisearch\Exceptions\ExceptionInterface as MeilisearchExceptionInterface;
-use Symfony\Component\DependencyInjection\Attribute\Autowire;
+use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\Routing\Attribute\Route;
+use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 use Symfony\Component\Security\Csrf\CsrfToken;
 use Symfony\Component\Security\Csrf\CsrfTokenManagerInterface;
-use Symfony\Component\Translation\Translator;
 use Twig\Environment;
 
 final class SettingsController
@@ -50,9 +49,6 @@ final class SettingsController
     /**
      * $availableLocalesProvider is the same locale set LocaleSubscriber negotiates against
      * (issue #84), extended by plugin locales (issue #453).
-     *
-     * $translator is injected by explicit service id, same reasoning as {@see LocaleSubscriber}'s
-     * docblock: `setFallbackLocales()` lives only on the concrete `translator.default` class.
      */
     public function __construct(
         private readonly AvailableLocalesProvider $availableLocalesProvider,
@@ -61,9 +57,7 @@ final class SettingsController
         private readonly Environment $twig,
         private readonly AnimeReindexService $reindexService,
         private readonly SyncReviewService $syncReview,
-        private readonly NearestBuiltInLocale $nearestBuiltInLocale,
-        #[Autowire(service: 'translator.default')]
-        private readonly Translator $translator,
+        private readonly UrlGeneratorInterface $urlGenerator,
     ) {
     }
 
@@ -74,12 +68,18 @@ final class SettingsController
     }
 
     /**
-     * Persists the chosen locale to %AppData%/config.json and re-renders the settings page in
-     * place — no redirect to another URL, so the switch reads as an instant page refresh rather
-     * than a navigation.
+     * Persists the chosen locale to %AppData%/config.json, then redirects back to
+     * `settings_index` (issue #558).
+     *
+     * Historically this endpoint re-rendered the settings page in place instead of redirecting —
+     * "no redirect to another URL, so the switch reads as an instant page refresh rather than a
+     * navigation." Issue #558 supersedes that decision: a 303 back to the same URL is visually
+     * indistinguishable from an in-place refresh, and redirecting removes the request/translator
+     * syncing this endpoint used to do by hand, plus fixes the "confirm form resubmission" prompt
+     * a POST rendered in place on GET refresh (F5) triggers.
      */
     #[Route('/settings', name: 'settings_set_locale', methods: ['POST'])]
-    public function setLocale(Request $request): Response
+    public function setLocale(Request $request): RedirectResponse
     {
         $this->assertValidCsrfToken('settings_set_locale', $request);
 
@@ -89,17 +89,8 @@ final class SettingsController
         }
 
         $this->settings->setLocale($locale);
-        // native/accept-language.js sends Accept-Language from config.json as it was before this
-        // write, so without this the render below would still use the previous locale (issue
-        // #538).
-        $request->setLocale($locale);
-        // LocaleSubscriber computed the fallback chain from the stale Accept-Language earlier in
-        // this same request; without recomputing it here, a key missing from the new locale's
-        // catalog would resolve through the *old* locale's chain instead of falling through to
-        // English (issue #538).
-        $this->translator->setFallbackLocales($this->nearestBuiltInLocale->fallbackChain($locale));
 
-        return $this->renderIndex();
+        return new RedirectResponse($this->urlGenerator->generate('settings_index'), Response::HTTP_SEE_OTHER);
     }
 
     /**
@@ -124,10 +115,12 @@ final class SettingsController
     private function renderIndex(?string $reindexStatus = null): Response
     {
         $locales = $this->availableLocalesProvider->all();
+        $savedLocale = $this->settings->getLocale();
+        $unavailableLocale = $savedLocale !== null && !\in_array($savedLocale, $locales, true) ? $savedLocale : null;
 
         return new Response($this->twig->render('settings/index.html.twig', [
             'availableLocales' => $locales,
-            'currentLocale' => $this->settings->getLocale() ?? ($locales[0] ?? null),
+            'unavailableLocale' => $unavailableLocale,
             'reindexStatus' => $reindexStatus,
             'needsCorrectionCount' => $this->needsCorrectionCount(),
         ]));

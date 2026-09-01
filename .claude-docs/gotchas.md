@@ -319,3 +319,15 @@ Caddy различает две подстановки: `{env.X}` — ранта
 Гарантия теперь принадлежит супервизору (`native/supervisor/index.js`, до `migrations.run()`). Вызов идемпотентен, и собственный вызов внутри `frankenphp.start()` намеренно оставлен: он держит `start()` самодостаточным для пути перезапуска воркера (`reloadForPlugin`), который через супервизор не проходит.
 
 **Общий признак обоих багов:** они первозапускные и молчаливые. Отсюда правило — проверять приложение на ЧИСТОМ профиле, что и делает гейт релиза (`scripts/release-smoke.js` запускает сборку с `--user-data-dir` во временном каталоге).
+
+## Переопределение `$_SERVER['DATABASE_URL']`/`QUEUE_DATABASE_URL` в Acceptance-тесте молча игнорируется — нужен и `$_ENV`
+
+Паттерн из существующих Acceptance-тестов (`SettingsProxyLocalizationTest`, `PluginLocaleSpellingNormalizationTest`) — переопределить `$_SERVER['APP_RUNTIME_DIR']`/`PLUGINS_DIR`/`PLUGINS_CONFIG_PATH`/`CONFIG_PATH` перед `self::bootKernel()` — работает для этих четырёх переменных ровно потому, что ни у одной нет значения по умолчанию в `.env` (только `%env(default:...:ИМЯ)%`, реальное значение передаёт только Electron в проде). Для `DATABASE_URL`/`QUEUE_DATABASE_URL` он не работает: `.env` задаёт им дефолт, `tests/bootstrap.php`'s `Dotenv::bootEnv()` кладёт этот дефолт в `$_ENV` **один раз на весь процесс PHPUnit**, до `setUp()` любого теста, а `Container::getEnv()` при резолве `%env(...)%` читает `$_ENV` раньше `$_SERVER` — переопределение одного `$_SERVER` тихо проигрывает уже заполненному `$_ENV`, без исключения и без предупреждения, просто DBAL-соединение открывает старый (продовый/дефолтный) путь.
+
+Практическое следствие: тест, которому реально нужна БД через контейнер (а не через отдельно сконструированный `EntityManager` на sqlite-in-memory, как делает `SettingsControllerLocaleSwitchFunctionalTest::createReindexService()`), обязан переопределять **оба** суперглобальных массива:
+```php
+$_SERVER['DATABASE_URL'] = $_ENV['DATABASE_URL'] = 'sqlite:///'.$tmpPath;
+```
+Симптом без этого — `PDOException: SQLSTATE[HY000] [14] unable to open database file`, указывающий на `../data/data.db`/`../data/queue.db` (реальный прод-путь), а не на временный файл теста.
+
+Отдельно: `MESSENGER_TRANSPORT_DSN=doctrine://queue?auto_setup=0` означает, что **любой** вызов `Doctrine\ORM\Tools\SchemaTool::createSchema()` в тесте (не только явный вызов на "queue"-соединении) попутно триггерит `postGenerateSchema` → `MessengerTransportDoctrineSchemaListener`, который открывает DBAL-соединение `queue` для проверки существования messenger-таблицы. Если тест переопределяет только `DATABASE_URL`, но не `QUEUE_DATABASE_URL`, `createSchema()` падает на **queue**-соединении раньше, чем успевает создать схему для основного.

@@ -20,46 +20,49 @@
  #}
 {% extends 'base.html.twig' %}
 
-{% block title %}{{ 'settings.title'|trans({}, null, currentLocale) }}{% endblock %}
+{% block title %}{{ 'settings.title'|trans }}{% endblock %}
 
 {% block body %}
-    <h1>{{ 'settings.heading'|trans({}, null, currentLocale) }}</h1>
+    <h1>{{ 'settings.heading'|trans }}</h1>
 
     <form method="post" action="{{ path('settings_set_locale') }}">
         <input type="hidden" name="_token" value="{{ csrf_token('settings_set_locale') }}">
-        <label for="locale">{{ 'settings.language_label'|trans({}, null, currentLocale) }}</label>
+        <label for="locale">{{ 'settings.language_label'|trans }}</label>
         <select id="locale" name="locale" onchange="this.form.submit()">
+            {% if unavailableLocale is not empty %}
+                <option value="" disabled selected>{{ 'settings.language_unavailable_option'|trans({'%language%': locale_endonym(unavailableLocale)}) }}</option>
+            {% endif %}
             {% for locale in availableLocales %}
-                <option value="{{ locale }}"{% if locale == currentLocale %} selected{% endif %}>{{ locale_endonym(locale) }}</option>
+                <option value="{{ locale }}"{% if unavailableLocale is empty and locale == app.request.locale %} selected{% endif %}>{{ locale_endonym(locale) }}</option>
             {% endfor %}
         </select>
-        <p class="settings__hint">{{ 'settings.language_plugin_translation_note'|trans({}, null, currentLocale) }}</p>
+        <p class="settings__hint">{{ 'settings.language_plugin_translation_note'|trans }}</p>
     </form>
 
     <ul>
-        <li><a href="{{ path('settings_labels_index') }}">{{ 'settings.labels_link'|trans({}, null, currentLocale) }}</a></li>
-        <li><a href="{{ path('settings_market_index') }}">{{ 'settings.market_link'|trans({}, null, currentLocale) }}</a></li>
-        <li><a href="{{ path('settings_plugins_index') }}">{{ 'settings.plugins_link'|trans({}, null, currentLocale) }}</a></li>
-        <li><a href="{{ path('settings_plugin_widgets_index') }}">{{ 'settings.plugin_widgets_link'|trans({}, null, currentLocale) }}</a></li>
+        <li><a href="{{ path('settings_labels_index') }}">{{ 'settings.labels_link'|trans }}</a></li>
+        <li><a href="{{ path('settings_market_index') }}">{{ 'settings.market_link'|trans }}</a></li>
+        <li><a href="{{ path('settings_plugins_index') }}">{{ 'settings.plugins_link'|trans }}</a></li>
+        <li><a href="{{ path('settings_plugin_widgets_index') }}">{{ 'settings.plugin_widgets_link'|trans }}</a></li>
         <li>
-            <a href="{{ path('settings_sync_review_index') }}">{{ 'settings.sync_review_link'|trans({}, null, currentLocale) }}</a>
+            <a href="{{ path('settings_sync_review_index') }}">{{ 'settings.sync_review_link'|trans }}</a>
             {% if needsCorrectionCount > 0 %}
-                <span class="settings__badge">{{ 'settings.sync_review_badge'|trans({'%count%': needsCorrectionCount}, null, currentLocale) }}</span>
+                <span class="settings__badge">{{ 'settings.sync_review_badge'|trans({'%count%': needsCorrectionCount}) }}</span>
             {% endif %}
         </li>
-        <li><a href="{{ path('settings_proxy_index') }}">{{ 'settings.proxy_link'|trans({}, null, currentLocale) }}</a></li>
+        <li><a href="{{ path('settings_proxy_index') }}">{{ 'settings.proxy_link'|trans }}</a></li>
     </ul>
 
-    <h2>{{ 'settings.search_reindex_heading'|trans({}, null, currentLocale) }}</h2>
+    <h2>{{ 'settings.search_reindex_heading'|trans }}</h2>
 
     {% if reindexStatus == 'success' %}
-        <p class="success">{{ 'settings.search_reindex_success'|trans({}, null, currentLocale) }}</p>
+        <p class="success">{{ 'settings.search_reindex_success'|trans }}</p>
     {% elseif reindexStatus == 'error' %}
-        <p class="error">{{ 'settings.search_reindex_error'|trans({}, null, currentLocale) }}</p>
+        <p class="error">{{ 'settings.search_reindex_error'|trans }}</p>
     {% endif %}
 
     <form method="post" action="{{ path('settings_search_reindex') }}">
         <input type="hidden" name="_token" value="{{ csrf_token('settings_search_reindex') }}">
-        <button type="submit">{{ 'settings.search_reindex_button'|trans({}, null, currentLocale) }}</button>
+        <button type="submit">{{ 'settings.search_reindex_button'|trans }}</button>
     </form>
 {% endblock %}

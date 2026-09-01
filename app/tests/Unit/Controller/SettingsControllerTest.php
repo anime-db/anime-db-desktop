@@ -37,7 +37,6 @@ use App\Entity\SyncReviewItem;
 use App\Repository\SyncReviewItemRepository;
 use App\Service\AppConfigStore;
 use App\Service\AppSettingsProvider;
-use App\Service\NearestBuiltInLocale;
 use App\Service\Plugin\AvailableLocalesProvider;
 use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\PluginsConfigStore;
@@ -56,10 +55,9 @@ use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
-use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
+use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 use Symfony\Component\Security\Csrf\CsrfTokenManagerInterface;
-use Symfony\Component\Translation\Translator;
 use Twig\Environment;
 
 final class SettingsControllerTest extends TestCase
@@ -85,11 +83,16 @@ final class SettingsControllerTest extends TestCase
         ?Environment $twig = null,
         ?AnimeReindexService $reindexService = null,
         ?SyncReviewService $syncReview = null,
-        ?Translator $translator = null,
+        ?UrlGeneratorInterface $urlGenerator = null,
     ): SettingsController {
         if ($csrfTokenManager === null) {
             $csrfTokenManager = $this->createStub(CsrfTokenManagerInterface::class);
             $csrfTokenManager->method('isTokenValid')->willReturn(true);
+        }
+
+        if ($urlGenerator === null) {
+            $urlGenerator = $this->createStub(UrlGeneratorInterface::class);
+            $urlGenerator->method('generate')->willReturn('/settings');
         }
 
         return new SettingsController(
@@ -99,8 +102,7 @@ final class SettingsControllerTest extends TestCase
             $twig ?? $this->createStub(Environment::class),
             $reindexService ?? $this->createReindexService($this->createStub(Client::class)),
             $syncReview ?? $this->createSyncReview([]),
-            new NearestBuiltInLocale(),
-            $translator ?? $this->createStub(Translator::class),
+            $urlGenerator,
         );
     }
 
@@ -158,14 +160,14 @@ final class SettingsControllerTest extends TestCase
         return new AnimeReindexService($entityManager, new AnimeSearchIndexer($client));
     }
 
-    public function testIndexPassesAvailableLocalesAndFallsBackToFirstOneWhenConfigIsEmpty(): void
+    public function testIndexPassesAvailableLocalesAndNullUnavailableLocaleWhenConfigIsEmpty(): void
     {
         $twig = $this->createMock(Environment::class);
         $twig->expects($this->once())
             ->method('render')
             ->with('settings/index.html.twig', [
                 'availableLocales' => ['en', 'ru'],
-                'currentLocale' => 'en',
+                'unavailableLocale' => null,
                 'reindexStatus' => null,
                 'needsCorrectionCount' => 0,
             ])
@@ -177,7 +179,7 @@ final class SettingsControllerTest extends TestCase
         $this->assertSame(200, $response->getStatusCode());
     }
 
-    public function testIndexPassesCurrentLocaleFromConfig(): void
+    public function testIndexPassesNullUnavailableLocaleWhenSavedLocaleIsAvailable(): void
     {
         file_put_contents($this->configPath, json_encode(['locale' => 'ru']));
 
@@ -186,7 +188,31 @@ final class SettingsControllerTest extends TestCase
             ->method('render')
             ->with('settings/index.html.twig', [
                 'availableLocales' => ['en', 'ru'],
-                'currentLocale' => 'ru',
+                'unavailableLocale' => null,
+                'reindexStatus' => null,
+                'needsCorrectionCount' => 0,
+            ])
+            ->willReturn('<html></html>');
+
+        $controller = $this->createController(twig: $twig);
+        $controller->index();
+    }
+
+    /**
+     * Acceptance (issue #558): a saved locale that dropped out of the available list (e.g. a
+     * translation plugin got removed, or a safe-mode start disabled it) must be surfaced to the
+     * template rather than silently falling back to another locale.
+     */
+    public function testIndexPassesUnavailableLocaleWhenSavedLocaleIsNotInAvailableList(): void
+    {
+        file_put_contents($this->configPath, json_encode(['locale' => 'de']));
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('settings/index.html.twig', [
+                'availableLocales' => ['en', 'ru'],
+                'unavailableLocale' => 'de',
                 'reindexStatus' => null,
                 'needsCorrectionCount' => 0,
             ])
@@ -210,7 +236,7 @@ final class SettingsControllerTest extends TestCase
             ->method('render')
             ->with('settings/index.html.twig', [
                 'availableLocales' => ['en', 'ru'],
-                'currentLocale' => 'en',
+                'unavailableLocale' => null,
                 'reindexStatus' => null,
                 'needsCorrectionCount' => 1,
             ])
@@ -220,52 +246,27 @@ final class SettingsControllerTest extends TestCase
         $controller->index();
     }
 
-    public function testSetLocalePersistsChoiceAndRerendersWithoutRedirecting(): void
+    /**
+     * Acceptance (issue #558): the switch persists the choice and answers with a PRG redirect
+     * (303) to `settings_index`, rather than rendering the page in place — a plain 302 would let
+     * the client repeat the POST, defeating the point of PRG here.
+     */
+    public function testSetLocalePersistsChoiceAndRedirectsWithSeeOther(): void
     {
-        $controller = $this->createController();
+        $urlGenerator = $this->createMock(UrlGeneratorInterface::class);
+        $urlGenerator->expects($this->once())->method('generate')->with('settings_index')->willReturn('/settings');
+
+        $controller = $this->createController(urlGenerator: $urlGenerator);
         $request = Request::create('/settings', 'POST', ['locale' => 'ru', '_token' => 'token']);
 
         $response = $controller->setLocale($request);
 
-        $this->assertSame(200, $response->getStatusCode());
-        $this->assertNotInstanceOf(RedirectResponse::class, $response);
-        $this->assertInstanceOf(Response::class, $response);
+        $this->assertInstanceOf(RedirectResponse::class, $response);
+        $this->assertSame(303, $response->getStatusCode());
+        $this->assertSame('/settings', $response->getTargetUrl());
 
         $data = json_decode((string) file_get_contents($this->configPath), true);
         $this->assertSame('ru', $data['locale']);
-    }
-
-    /**
-     * Acceptance (issue #538): native/accept-language.js sends the Accept-Language header built
-     * from config.json as it stood *before* this POST persisted the new locale, so without this,
-     * the request itself would still carry the previous locale even though the response body
-     * already reflects the new one via `currentLocale`.
-     */
-    public function testSetLocaleSynchronizesTheRequestLocaleWithThePersistedChoice(): void
-    {
-        $controller = $this->createController();
-        $request = Request::create('/settings', 'POST', ['locale' => 'ru', '_token' => 'token']);
-        $request->setLocale('en');
-
-        $controller->setLocale($request);
-
-        $this->assertSame('ru', $request->getLocale());
-    }
-
-    /**
-     * Acceptance (issue #538): the fallback chain LocaleSubscriber set up from the stale
-     * Accept-Language header must be replaced by the one for the newly persisted locale, or a key
-     * missing from the new locale's catalog would resolve through the old locale instead of "en".
-     */
-    public function testSetLocaleRecomputesTranslatorFallbackLocalesFromTheNewLocale(): void
-    {
-        $translator = $this->createMock(Translator::class);
-        $translator->expects($this->once())->method('setFallbackLocales')->with(['ru', 'en']);
-
-        $controller = $this->createController(translator: $translator);
-        $request = Request::create('/settings', 'POST', ['locale' => 'ru', '_token' => 'token']);
-
-        $controller->setLocale($request);
     }
 
     public function testSetLocaleRejectsUnknownLocale(): void
@@ -304,7 +305,7 @@ final class SettingsControllerTest extends TestCase
             ->method('render')
             ->with('settings/index.html.twig', [
                 'availableLocales' => ['en', 'ru'],
-                'currentLocale' => 'en',
+                'unavailableLocale' => null,
                 'reindexStatus' => 'success',
                 'needsCorrectionCount' => 0,
             ])
@@ -328,7 +329,7 @@ final class SettingsControllerTest extends TestCase
             ->method('render')
             ->with('settings/index.html.twig', [
                 'availableLocales' => ['en', 'ru'],
-                'currentLocale' => 'en',
+                'unavailableLocale' => null,
                 'reindexStatus' => 'error',
                 'needsCorrectionCount' => 0,
             ])

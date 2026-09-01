@@ -59,12 +59,17 @@ final class SettingsTemplateRenderingTest extends KernelTestCase
     /**
      * csrf_token() reads/writes the CSRF token through the session of the current request, so
      * rendering a template that calls it outside a real HTTP request-response cycle needs one
-     * pushed onto the request stack manually.
+     * pushed onto the request stack manually. $locale drives `app.request.locale`, which the
+     * settings template's language switcher now reads for the "selected" option (issue #558)
+     * instead of an explicitly passed `currentLocale` variable.
      */
-    private function pushRequestWithSession(): void
+    private function pushRequestWithSession(?string $locale = null): void
     {
         $request = Request::create('/settings/labels');
         $request->setSession(new Session(new MockArraySessionStorage()));
+        if ($locale !== null) {
+            $request->setLocale($locale);
+        }
 
         /** @var RequestStack $requestStack */
         $requestStack = self::getContainer()->get('request_stack');
@@ -89,12 +94,15 @@ final class SettingsTemplateRenderingTest extends KernelTestCase
     {
         self::bootKernel();
         $this->pushRequestWithSession();
+        /** @var LocaleSwitcher $localeSwitcher */
+        $localeSwitcher = self::getContainer()->get(LocaleSwitcher::class);
+        $localeSwitcher->setLocale('ru');
 
         /** @var Environment $twig */
         $twig = self::getContainer()->get('twig');
         $html = $twig->render('settings/index.html.twig', [
             'availableLocales' => ['en', 'ru'],
-            'currentLocale' => 'ru',
+            'unavailableLocale' => null,
             'reindexStatus' => null,
             'needsCorrectionCount' => 0,
         ]);
@@ -106,13 +114,13 @@ final class SettingsTemplateRenderingTest extends KernelTestCase
     public function testSettingsIndexRendersLocaleSwitcherWithCurrentLocaleSelected(): void
     {
         self::bootKernel();
-        $this->pushRequestWithSession();
+        $this->pushRequestWithSession(locale: 'en');
 
         /** @var Environment $twig */
         $twig = self::getContainer()->get('twig');
         $html = $twig->render('settings/index.html.twig', [
             'availableLocales' => ['en', 'ru'],
-            'currentLocale' => 'en',
+            'unavailableLocale' => null,
             'reindexStatus' => null,
             'needsCorrectionCount' => 0,
         ]);
@@ -122,6 +130,37 @@ final class SettingsTemplateRenderingTest extends KernelTestCase
         // capitalizes it for a uniform switcher list. Changing this expectation to match ICU's
         // raw output would be a regression, not a fix.
         $this->assertStringContainsString('<option value="ru">Русский</option>', $html);
+    }
+
+    /**
+     * Acceptance (issue #558): a saved locale that dropped out of the available list must render
+     * as a disabled, pre-selected placeholder option carrying its endonym — not silently fall
+     * back to the first available locale's option being selected instead.
+     */
+    public function testSettingsIndexRendersUnavailableLocaleAsDisabledSelectedOption(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession(locale: 'en');
+
+        // Direct Twig::render() bypasses kernel.request (see testLabelIndexRendersEmptyStateWithoutErrors
+        // above), so the translator's own locale needs setting independently of $request->setLocale()
+        // above, which only feeds app.request.locale for the "selected" comparison.
+        /** @var LocaleSwitcher $localeSwitcher */
+        $localeSwitcher = self::getContainer()->get(LocaleSwitcher::class);
+        $localeSwitcher->setLocale('en');
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('settings/index.html.twig', [
+            'availableLocales' => ['en', 'ru'],
+            'unavailableLocale' => 'de',
+            'reindexStatus' => null,
+            'needsCorrectionCount' => 0,
+        ]);
+
+        $this->assertStringContainsString('<option value="" disabled selected>Deutsch — unavailable</option>', $html);
+        $this->assertStringNotContainsString('<option value="en" selected>', $html);
+        $this->assertStringNotContainsString('<option value="ru" selected>', $html);
     }
 
     /**
@@ -139,7 +178,7 @@ final class SettingsTemplateRenderingTest extends KernelTestCase
         $twig = self::getContainer()->get('twig');
         $html = $twig->render('settings/index.html.twig', [
             'availableLocales' => ['en', 'ru', 'de'],
-            'currentLocale' => 'en',
+            'unavailableLocale' => null,
             'reindexStatus' => null,
             'needsCorrectionCount' => 0,
         ]);
@@ -161,7 +200,7 @@ final class SettingsTemplateRenderingTest extends KernelTestCase
         $twig = self::getContainer()->get('twig');
         $html = $twig->render('settings/index.html.twig', [
             'availableLocales' => ['en', 'ru'],
-            'currentLocale' => 'ru',
+            'unavailableLocale' => null,
             'reindexStatus' => 'success',
             'needsCorrectionCount' => 0,
         ]);
@@ -182,7 +221,7 @@ final class SettingsTemplateRenderingTest extends KernelTestCase
         $twig = self::getContainer()->get('twig');
         $html = $twig->render('settings/index.html.twig', [
             'availableLocales' => ['en', 'ru'],
-            'currentLocale' => 'ru',
+            'unavailableLocale' => null,
             'reindexStatus' => 'error',
             'needsCorrectionCount' => 0,
         ]);
