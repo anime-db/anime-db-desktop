@@ -126,6 +126,7 @@ settings:
     sync_review_badge: 'Requires attention: %count%'
     proxy_link: Proxy server
     language_label: Interface language
+    language_unavailable_option: '%language% — unavailable'
     language_plugin_translation_note: Plugin interfaces are translated by their own authors — outside the app's built-in languages, some plugin screens may stay untranslated.
     search_reindex_heading: Search index
     search_reindex_button: Rebuild search index

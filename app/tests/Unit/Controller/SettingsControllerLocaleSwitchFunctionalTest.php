@@ -30,11 +30,9 @@ namespace App\Tests\Unit\Controller;
 use App\Controller\SettingsController;
 use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
-use App\EventSubscriber\LocaleSubscriber;
 use App\Repository\SyncReviewItemRepository;
 use App\Service\AppConfigStore;
 use App\Service\AppSettingsProvider;
-use App\Service\NearestBuiltInLocale;
 use App\Service\Plugin\AvailableLocalesProvider;
 use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\PluginsConfigStore;
@@ -49,23 +47,24 @@ use Doctrine\ORM\Tools\SchemaTool;
 use Meilisearch\Client;
 use Psr\Log\NullLogger;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
+use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\HttpFoundation\Session\Session;
 use Symfony\Component\HttpFoundation\Session\Storage\MockArraySessionStorage;
 use Symfony\Component\HttpKernel\Event\RequestEvent;
 use Symfony\Component\HttpKernel\HttpKernelInterface;
+use Symfony\Component\HttpKernel\KernelEvents;
+use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 use Symfony\Component\Security\Csrf\CsrfTokenManagerInterface;
-use Symfony\Component\Translation\Translator;
+use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 use Twig\Environment;
 
 /**
- * Acceptance (issue #538 "Что делается" #3): POSTing a locale switch must render the settings
- * page in the new locale, not the one negotiated for the request that carried the switch itself.
- * `native/accept-language.js` still sends the *old* Accept-Language on this exact request (it only
- * updates config.json's own copy after this POST completes), so without
- * `SettingsController::setLocale()` syncing `$request` to the just-persisted locale, the request
- * driving this very page render stays stuck on the old one.
+ * Acceptance (issue #558): a locale switch is now Post/Redirect/Get — the POST itself only
+ * persists the choice and redirects, and it's the *following* GET, negotiated from the
+ * Accept-Language `native/accept-language.js` sends once config.json reflects the new locale,
+ * that must render the settings page in the new language.
  */
 final class SettingsControllerLocaleSwitchFunctionalTest extends KernelTestCase
 {
@@ -108,7 +107,7 @@ final class SettingsControllerLocaleSwitchFunctionalTest extends KernelTestCase
         $this->restoreServerVar('PLUGINS_CONFIG_PATH', $this->originalPluginsConfigPath);
     }
 
-    public function testPostingALocaleSwitchRendersTheResponseInTheNewLocale(): void
+    public function testPostingALocaleSwitchRedirectsAndTheFollowingGetRendersTheNewLocale(): void
     {
         $this->writeGermanTranslationPluginFixture('acme-de-pack');
         $this->reconcilePlugins();
@@ -120,38 +119,62 @@ final class SettingsControllerLocaleSwitchFunctionalTest extends KernelTestCase
         $kernel = self::bootKernel();
         $session = new Session(new MockArraySessionStorage());
 
-        $request = Request::create('/settings', 'POST');
-        $request->setSession($session);
-        $request->headers->set('Accept-Language', 'ru');
+        /** @var EventDispatcherInterface $eventDispatcher */
+        $eventDispatcher = self::getContainer()->get('event_dispatcher');
+
+        $postRequest = Request::create('/settings', 'POST');
+        $postRequest->setSession($session);
+        $postRequest->headers->set('Accept-Language', 'ru');
 
         /** @var RequestStack $requestStack */
         $requestStack = self::getContainer()->get('request_stack');
-        $requestStack->push($request);
+        $requestStack->push($postRequest);
 
         // Real kernel.request dispatch with the stale "ru" Accept-Language, exactly like the one
-        // that precedes SettingsController::setLocale() on a real switch-to-"de" POST.
-        /** @var LocaleSubscriber $localeSubscriber */
-        $localeSubscriber = self::getContainer()->get(LocaleSubscriber::class);
-        $localeSubscriber->onKernelRequest(new RequestEvent($kernel, $request, HttpKernelInterface::MAIN_REQUEST));
-        self::assertSame('ru', $request->getLocale(), 'Precondition: negotiation from the stale header must still land on "ru".');
+        // that precedes SettingsController::setLocale() on a real switch-to-"de" POST. Dispatching
+        // through the actual event dispatcher — not just LocaleSubscriber::onKernelRequest()
+        // directly — also runs Symfony's own LocaleAwareListener (priority 15, right after
+        // LocaleSubscriber's 20), which is what actually syncs translator.default's locale from
+        // the negotiated $request->getLocale() on a real request.
+        $eventDispatcher->dispatch(new RequestEvent($kernel, $postRequest, HttpKernelInterface::MAIN_REQUEST), KernelEvents::REQUEST);
+        self::assertSame('ru', $postRequest->getLocale(), 'Precondition: negotiation from the stale header must still land on "ru".');
 
-        $request->request->set('locale', 'de');
-        $request->request->set('_token', $this->validCsrfToken());
+        $postRequest->request->set('locale', 'de');
+        $postRequest->request->set('_token', $this->validCsrfToken());
 
         $controller = $this->createController();
-        $response = $controller->setLocale($request);
+        $response = $controller->setLocale($postRequest);
 
-        self::assertSame('de', $request->getLocale(), 'setLocale() must sync the request locale to the one it just persisted.');
+        self::assertInstanceOf(RedirectResponse::class, $response);
+        self::assertSame(303, $response->getStatusCode());
+        /** @var UrlGeneratorInterface $urlGenerator */
+        $urlGenerator = self::getContainer()->get(UrlGeneratorInterface::class);
+        self::assertSame($urlGenerator->generate('settings_index'), $response->getTargetUrl());
 
-        $html = (string) $response->getContent();
-        self::assertStringContainsString('<html lang="de"', $html, 'The rendered document must reflect the new locale, not the stale one from Accept-Language.');
+        $persisted = json_decode((string) file_get_contents($this->configPath), true);
+        self::assertSame('de', $persisted['locale'], 'The POST must persist the new locale before redirecting.');
+
+        $requestStack->pop();
+
+        // The following GET: native/accept-language.js now reads config.json after this write and
+        // sends "de", so this request carries the header the redirect's follow-up navigation would
+        // actually receive — unlike the POST above, deliberately not the stale one.
+        $getRequest = Request::create('/settings');
+        $getRequest->setSession($session);
+        $getRequest->headers->set('Accept-Language', 'de');
+        $requestStack->push($getRequest);
+
+        $eventDispatcher->dispatch(new RequestEvent($kernel, $getRequest, HttpKernelInterface::MAIN_REQUEST), KernelEvents::REQUEST);
+        self::assertSame('de', $getRequest->getLocale(), 'The follow-up GET must negotiate "de" on its own, with no help from setLocale().');
+
+        $html = (string) $this->createController()->index()->getContent();
+        self::assertStringContainsString('<html lang="de"', $html, 'The rendered document must reflect the new locale.');
         self::assertStringContainsString('Einstellungen', $html, 'settings.title must resolve from the "de" plugin catalogue.');
 
-        // settings.heading is not defined by the "de" plugin fixture above. Before setLocale()
-        // recomputed the fallback chain, the translator was still holding the ["ru", "en"] chain
-        // LocaleSubscriber set up from the stale "ru" Accept-Language, so this key resolved to its
-        // Russian text ("Настройки") instead of falling through to English.
-        self::assertStringContainsString('<h1>Settings</h1>', $html, 'A key missing from the "de" catalog must fall through to English, not the stale "ru" fallback chain.');
+        // settings.heading is not defined by the "de" plugin fixture above. LocaleSubscriber must
+        // have recomputed the translator's fallback chain from this request's own negotiation, not
+        // from whatever chain a previous request left behind.
+        self::assertStringContainsString('<h1>Settings</h1>', $html, 'A key missing from the "de" catalog must fall through to English.');
     }
 
     private function createController(): SettingsController
@@ -160,10 +183,8 @@ final class SettingsControllerLocaleSwitchFunctionalTest extends KernelTestCase
         $twig = self::getContainer()->get('twig');
         /** @var CsrfTokenManagerInterface $csrfTokenManager */
         $csrfTokenManager = self::getContainer()->get(CsrfTokenManagerInterface::class);
-        /** @var NearestBuiltInLocale $nearestBuiltInLocale */
-        $nearestBuiltInLocale = self::getContainer()->get(NearestBuiltInLocale::class);
-        /** @var Translator $translator */
-        $translator = self::getContainer()->get('translator.default');
+        /** @var UrlGeneratorInterface $urlGenerator */
+        $urlGenerator = self::getContainer()->get(UrlGeneratorInterface::class);
 
         return new SettingsController(
             $this->availableLocalesProvider(),
@@ -172,8 +193,7 @@ final class SettingsControllerLocaleSwitchFunctionalTest extends KernelTestCase
             $twig,
             $this->createReindexService(),
             $this->createSyncReview(),
-            $nearestBuiltInLocale,
-            $translator,
+            $urlGenerator,
         );
     }
 
