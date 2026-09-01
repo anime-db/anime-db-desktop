@@ -46,6 +46,19 @@ parameters:
     app.core_version.dev_default: '99.99.99'
     app.core_version: '%env(default:app.core_version.dev_default:CORE_VERSION)%'
 
+    # The installed `anime-db/plugin-contracts` version (issue #561) — unlike app.core_version
+    # above, not sourced from an env var Electron passes in: there is no equivalent value for it,
+    # since this is a fact about the app's own vendor/composer/installed.php lock, not deployment
+    # configuration. Set from Composer\InstalledVersions::getPrettyVersion() in Kernel::build()
+    # instead, via $container->setParameter() — deliberately NOT redeclared here. Kernel::build()
+    # runs before this file is loaded (registerContainerConfiguration()), so a declaration here,
+    # even `~`, would load after build() and silently overwrite the real value with null (PR #563
+    # review). This comment documents the parameter's existence and intent for readers of this
+    # file; the binding below is what actually resolves it. Used by ZipPluginInstaller's
+    # install-time compat gate and InstalledPluginsRegistry's derived per-plugin compatibility to
+    # check a manifest's optional `require.plugin-contracts` constraint against what is actually
+    # vendored, not against this app's own `composer.json` constraint on it (`^0.15`).
+
     # Built-in locales, kept as an explicit list rather than scanning app/translations/ on every
     # request (FrankenPHP worker mode keeps consumers alive between requests, so a glob() there
     # would mean disk I/O per request for no benefit). Extend this list when adding a core locale.
@@ -119,6 +132,7 @@ services:
             $pluginsConfigPath: '%app.plugins_config_path%'
             $pluginsDir: '%app.plugins_dir%'
             $coreVersion: '%app.core_version%'
+            $pluginContractsVersion: '%app.plugin_contracts_version%'
             $coreLocales: '%app.locales%'
             $sampleCoversDir: '%app.sample_covers_dir%'
             $pushOnEditTtlSeconds: '%app.sync.push_on_edit_ttl_seconds%'

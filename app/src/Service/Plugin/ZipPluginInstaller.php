@@ -32,6 +32,7 @@ use AnimeDb\PluginContracts\Manifest\InvalidManifestJsonException;
 use AnimeDb\PluginContracts\Manifest\Manifest;
 use AnimeDb\PluginContracts\Manifest\ManifestParser;
 use App\Entity\ValueObject\PluginId;
+use App\Service\Plugin\Exception\IncompatiblePluginContractsVersionException;
 use App\Service\Plugin\Exception\IncompatiblePluginCoreVersionException;
 use App\Service\Plugin\Exception\InvalidInstalledPluginException;
 use App\Service\Plugin\Exception\PluginAlreadyInstalledException;
@@ -67,6 +68,17 @@ use Symfony\Component\Process\Process;
  * the manifest's `require.core` lower-bound constraint (e.g. `">=2.0.0"`) is checked against
  * the current `%app.core_version%` via {@see Semver::satisfies()}, before anything is moved
  * into place — see {@see IncompatiblePluginCoreVersionException}.
+ *
+ * Right next to it runs a second, independent check (issue #561) against the optional
+ * `require.plugin-contracts` constraint, if the manifest declares one: the app version alone
+ * cannot express a breaking change in the `anime-db/plugin-contracts` interfaces/DTOs a plugin
+ * actually compiles against, since every published plugin's `require.core` is a permissive
+ * `">=0.0.1"`. Compared against `%app.plugin_contracts_version%` — the version this app itself
+ * vendors, read via `Composer\InstalledVersions::getPrettyVersion()` (see {@see \App\Kernel}) —
+ * not the `^0.15`-style constraint from this app's own `composer.json`. Fails open (skips the
+ * check, logs) when that version cannot be determined or the manifest's constraint does not
+ * parse, and is a no-op when the manifest omits the field entirely — see
+ * {@see self::assertPluginContractsCompatible()} and {@see IncompatiblePluginContractsVersionException}.
  *
  * Also checks every unpacked `*.php` file for PHP syntax errors (issue #250), still before
  * anything is moved into place — see {@see self::assertNoSyntaxErrors()} — unless {@see install()}
@@ -131,6 +143,13 @@ final class ZipPluginInstaller
         private readonly InstalledPluginsRegistry $registry,
         private readonly PluginCacheWarmerInterface $cacheWarmer,
         private readonly WsPublisher $wsPublisher,
+        /**
+         * The installed `anime-db/plugin-contracts` version (issue #561), or `null` when it could
+         * not be determined — see the class docblock. Defaults to `null` rather than requiring
+         * every caller to pass it, so the plugin-contracts check itself fails open the same way it
+         * would for a real "unknown version" at runtime.
+         */
+        private readonly ?string $pluginContractsVersion = null,
         private readonly ManifestParser $manifestParser = new ManifestParser(),
         private readonly LoggerInterface $logger = new NullLogger(),
     ) {
@@ -141,16 +160,20 @@ final class ZipPluginInstaller
      *                      the class docblock); the custom-ZIP-upload path (issue #251) leaves
      *                      this at its default `false`
      *
-     * @throws InvalidInstalledPluginException        if manifest.json is missing or invalid
-     * @throws IncompatiblePluginCoreVersionException if the current core version does not satisfy
-     *                                                the manifest's `require.core` lower bound
-     * @throws PluginSyntaxErrorException             if any `*.php` file in the archive has a PHP syntax error
-     *                                                (never thrown when `$trusted` is `true`)
-     * @throws PluginAlreadyInstalledException        if the manifest's plugin id is already installed
-     * @throws PluginInstallException                 if the archive cannot be unpacked or moved into place
-     * @throws Exception\PluginCacheWarmupException   if the isolated cache warm-up fails to
-     *                                                compile the DI container with the new
-     *                                                plugin present
+     * @throws InvalidInstalledPluginException             if manifest.json is missing or invalid
+     * @throws IncompatiblePluginCoreVersionException      if the current core version does not satisfy
+     *                                                     the manifest's `require.core` lower bound
+     * @throws IncompatiblePluginContractsVersionException if the manifest declares a
+     *                                                     `require.plugin-contracts` constraint the
+     *                                                     installed plugin-contracts version does
+     *                                                     not satisfy
+     * @throws PluginSyntaxErrorException                  if any `*.php` file in the archive has a PHP syntax error
+     *                                                     (never thrown when `$trusted` is `true`)
+     * @throws PluginAlreadyInstalledException             if the manifest's plugin id is already installed
+     * @throws PluginInstallException                      if the archive cannot be unpacked or moved into place
+     * @throws Exception\PluginCacheWarmupException        if the isolated cache warm-up fails to
+     *                                                     compile the DI container with the new
+     *                                                     plugin present
      */
     public function install(string $zipPath, bool $trusted = false): PluginId
     {
@@ -193,6 +216,7 @@ final class ZipPluginInstaller
             $pluginRoot = $this->resolvePluginRoot($tmpDir);
             $manifest = $this->parseManifest($pluginRoot);
             $this->assertCoreVersionCompatible($manifest);
+            $this->assertPluginContractsCompatible($manifest);
             if (!$trusted) {
                 $this->assertNoSyntaxErrors($pluginRoot);
             }
@@ -272,19 +296,23 @@ final class ZipPluginInstaller
      * @param bool $trusted skips the PHP syntax check — see {@see self::install()}'s parameter
      *                      of the same name for when to set it
      *
-     * @throws InvalidInstalledPluginException        if manifest.json is missing or invalid
-     * @throws IncompatiblePluginCoreVersionException if the current core version does not satisfy
-     *                                                the manifest's `require.core` lower bound
-     * @throws PluginSyntaxErrorException             if any `*.php` file in the archive has a PHP syntax error
-     *                                                (never thrown when `$trusted` is `true`)
-     * @throws PluginNotInstalledException            if the manifest's plugin id has no existing
-     *                                                installation to update
-     * @throws PluginInstallException                 if the archive cannot be unpacked, or a directory
-     *                                                cannot be moved into place
-     * @throws Exception\PluginCacheWarmupException   if the isolated cache warm-up fails to
-     *                                                compile the DI container with the updated
-     *                                                plugin present — the previous version is
-     *                                                restored before this propagates
+     * @throws InvalidInstalledPluginException             if manifest.json is missing or invalid
+     * @throws IncompatiblePluginCoreVersionException      if the current core version does not satisfy
+     *                                                     the manifest's `require.core` lower bound
+     * @throws IncompatiblePluginContractsVersionException if the manifest declares a
+     *                                                     `require.plugin-contracts` constraint the
+     *                                                     installed plugin-contracts version does
+     *                                                     not satisfy
+     * @throws PluginSyntaxErrorException                  if any `*.php` file in the archive has a PHP syntax error
+     *                                                     (never thrown when `$trusted` is `true`)
+     * @throws PluginNotInstalledException                 if the manifest's plugin id has no existing
+     *                                                     installation to update
+     * @throws PluginInstallException                      if the archive cannot be unpacked, or a directory
+     *                                                     cannot be moved into place
+     * @throws Exception\PluginCacheWarmupException        if the isolated cache warm-up fails to
+     *                                                     compile the DI container with the updated
+     *                                                     plugin present — the previous version is
+     *                                                     restored before this propagates
      */
     public function update(string $zipPath, bool $trusted = false): PluginId
     {
@@ -325,6 +353,7 @@ final class ZipPluginInstaller
             $pluginRoot = $this->resolvePluginRoot($tmpDir);
             $manifest = $this->parseManifest($pluginRoot);
             $this->assertCoreVersionCompatible($manifest);
+            $this->assertPluginContractsCompatible($manifest);
             if (!$trusted) {
                 $this->assertNoSyntaxErrors($pluginRoot);
             }
@@ -513,6 +542,48 @@ final class ZipPluginInstaller
     {
         if (!Semver::satisfies($this->coreVersion, $manifest->require->core)) {
             throw new IncompatiblePluginCoreVersionException($manifest->require->core, $this->coreVersion);
+        }
+    }
+
+    /**
+     * A manifest without `require.plugin-contracts` declares no constraint on this axis at all —
+     * true for every `translation`-type plugin and part of the historical `integration` catalog —
+     * so that case passes here without even reaching {@see Semver::satisfies()}, same fail-open
+     * shape as the two branches below it. See the class docblock for why this check exists
+     * alongside {@see self::assertCoreVersionCompatible()} rather than folding into it.
+     *
+     * @throws IncompatiblePluginContractsVersionException
+     */
+    private function assertPluginContractsCompatible(Manifest $manifest): void
+    {
+        $required = $manifest->require->pluginContracts;
+        if ($required === null) {
+            return;
+        }
+
+        if ($this->pluginContractsVersion === null) {
+            $this->logger->warning('Unable to determine the installed plugin-contracts version; skipping the plugin-contracts compatibility check.', [
+                'pluginId' => $manifest->id,
+                'requiredPluginContracts' => $required,
+            ]);
+
+            return;
+        }
+
+        try {
+            $satisfies = Semver::satisfies($this->pluginContractsVersion, $required);
+        } catch (\UnexpectedValueException $exception) {
+            $this->logger->warning('Unable to parse the manifest\'s "require.plugin-contracts" constraint; skipping the plugin-contracts compatibility check.', [
+                'pluginId' => $manifest->id,
+                'requiredPluginContracts' => $required,
+                'exception' => $exception,
+            ]);
+
+            return;
+        }
+
+        if (!$satisfies) {
+            throw new IncompatiblePluginContractsVersionException($required, $this->pluginContractsVersion);
         }
     }
 

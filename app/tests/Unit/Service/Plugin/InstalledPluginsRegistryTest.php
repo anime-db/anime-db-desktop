@@ -253,6 +253,178 @@ final class InstalledPluginsRegistryTest extends TestCase
         $this->assertFalse($registry->has(new PluginId('animedb-unknown')));
     }
 
+    public function testPluginWithoutPluginContractsRequirementIsCompatible(): void
+    {
+        $this->writeManifest('animedb-shikimori');
+
+        $registry = new InstalledPluginsRegistry($this->pluginsDir, $this->configStore(), new NullLogger());
+        $registry->reconcile();
+
+        $plugin = $registry->all()[0];
+
+        $this->assertTrue($plugin->compatible);
+        $this->assertSame(['animedb-shikimori'], $this->ids($registry->enabled()));
+    }
+
+    public function testPluginIsCompatibleWhenPluginContractsRequirementIsSatisfied(): void
+    {
+        $this->writeManifestWithPluginContracts('animedb-shikimori', '^0.15');
+
+        $registry = new InstalledPluginsRegistry(
+            $this->pluginsDir,
+            $this->configStore(),
+            new NullLogger(),
+            pluginContractsVersion: 'v0.15.0',
+        );
+        $registry->reconcile();
+
+        $plugin = $registry->all()[0];
+
+        $this->assertTrue($plugin->compatible);
+        $this->assertSame(['animedb-shikimori'], $this->ids($registry->enabled()));
+    }
+
+    public function testPluginIsIncompatibleWhenPluginContractsRequirementIsNotSatisfied(): void
+    {
+        $this->writeManifestWithPluginContracts('animedb-shikimori', '^0.16');
+
+        $registry = new InstalledPluginsRegistry(
+            $this->pluginsDir,
+            $this->configStore(),
+            new NullLogger(),
+            pluginContractsVersion: 'v0.15.0',
+        );
+        $registry->reconcile();
+
+        $plugin = $registry->all()[0];
+
+        $this->assertFalse($plugin->compatible);
+        $this->assertSame(['animedb-shikimori'], $this->ids($registry->all()));
+        $this->assertSame([], $registry->enabled());
+    }
+
+    public function testPluginIsCompatibleWhenInstalledPluginContractsVersionIsUnknown(): void
+    {
+        $this->writeManifestWithPluginContracts('animedb-shikimori', '^0.16');
+
+        $registry = new InstalledPluginsRegistry(
+            $this->pluginsDir,
+            $this->configStore(),
+            new NullLogger(),
+            pluginContractsVersion: null,
+        );
+        $registry->reconcile();
+
+        $plugin = $registry->all()[0];
+
+        $this->assertTrue($plugin->compatible);
+        $this->assertSame(['animedb-shikimori'], $this->ids($registry->enabled()));
+    }
+
+    /**
+     * A malformed `require.plugin-contracts` constraint cannot reach {@see reconcile()} through
+     * {@see \AnimeDb\PluginContracts\Manifest\ManifestParser} — it is rejected at manifest
+     * validation time. This simulates an index entry a looser, earlier validator once accepted
+     * (the same technique {@see testReadIndexSkipsEntryWithInvalidPluginIdAndKeepsOthers()} uses),
+     * to exercise {@see InstalledPluginsRegistry}'s own fail-open handling of a constraint that
+     * fails to parse at read time.
+     */
+    public function testPluginIsCompatibleWhenPluginContractsConstraintIsUnparsable(): void
+    {
+        $this->writeManifest('animedb-shikimori');
+
+        $registry = new InstalledPluginsRegistry($this->pluginsDir, $this->configStore(), new NullLogger());
+        $registry->reconcile();
+
+        $this->rewriteIndexPluginContracts('animedb-shikimori', 'not-a-valid-constraint');
+
+        // readIndex() re-derives compatibility on every call and is not cached, but the fail-open
+        // warning below is throttled to once per (plugin id, axis) pair for the registry's
+        // lifetime (PR #563 review) — all() below and enabled() further down share the same
+        // registry instance, so only the first of the two logs.
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->once())->method('warning')->with(
+            $this->stringContains('Unable to parse'),
+            $this->callback(static fn (array $context): bool => $context['pluginId'] === 'animedb-shikimori'),
+        );
+
+        $registry = new InstalledPluginsRegistry(
+            $this->pluginsDir,
+            $this->configStore(),
+            $logger,
+            pluginContractsVersion: 'v0.15.0',
+        );
+
+        $plugin = $registry->all()[0];
+
+        $this->assertTrue($plugin->compatible);
+        $this->assertSame(['animedb-shikimori'], $this->ids($registry->enabled()));
+    }
+
+    /**
+     * Criterion from issue #561: recomputing derived compatibility on every read must never touch
+     * `plugins.json` — it has exactly one writer today (the future plugin manager, issue #219),
+     * and this derived field is not it.
+     */
+    public function testComputingCompatibilityNeverWritesPluginsJson(): void
+    {
+        $this->writeManifestWithPluginContracts('animedb-shikimori', '^0.16');
+
+        $configPath = $this->pluginsDir.'/plugins.json';
+        $registry = new InstalledPluginsRegistry(
+            $this->pluginsDir,
+            new PluginsConfigStore($configPath),
+            new NullLogger(),
+            pluginContractsVersion: 'v0.15.0',
+        );
+        $registry->reconcile();
+
+        $this->assertFileDoesNotExist($configPath);
+
+        $registry->all();
+        $registry->enabled();
+
+        $this->assertFileDoesNotExist($configPath);
+    }
+
+    /**
+     * Criterion from issue #561: a plugin the user enabled by hand must come back as `enabled()`
+     * on its own, with no action from the user, once its compatibility is restored — since
+     * `enabled` in `plugins.json` is never touched by the compatibility computation, nothing needs
+     * to be undone; a fresh read against a satisfying plugin-contracts version is enough.
+     */
+    public function testPreviouslyEnabledPluginBecomesEnabledAgainOnceCompatibilityIsRestored(): void
+    {
+        $this->writeManifestWithPluginContracts('animedb-shikimori', '^0.16');
+
+        $configPath = $this->pluginsDir.'/plugins.json';
+        file_put_contents($configPath, json_encode(['animedb-shikimori' => ['enabled' => true]]));
+
+        $incompatibleRegistry = new InstalledPluginsRegistry(
+            $this->pluginsDir,
+            new PluginsConfigStore($configPath),
+            new NullLogger(),
+            pluginContractsVersion: 'v0.15.0',
+        );
+        $incompatibleRegistry->reconcile();
+
+        $this->assertSame([], $incompatibleRegistry->enabled());
+
+        $configBefore = file_get_contents($configPath);
+
+        // Simulates the app being upgraded to a plugin-contracts version the plugin's manifest is
+        // satisfied by — a fresh registry instance, same on-disk state, is all a new read needs.
+        $restoredRegistry = new InstalledPluginsRegistry(
+            $this->pluginsDir,
+            new PluginsConfigStore($configPath),
+            new NullLogger(),
+            pluginContractsVersion: 'v0.16.0',
+        );
+
+        $this->assertSame(['animedb-shikimori'], $this->ids($restoredRegistry->enabled()));
+        $this->assertSame($configBefore, file_get_contents($configPath));
+    }
+
     public function testSafeModeReportsNoPluginsEvenWhenInstalled(): void
     {
         $this->writeManifest('animedb-shikimori');
@@ -388,6 +560,35 @@ final class InstalledPluginsRegistryTest extends TestCase
             'features' => ['filler' => true],
             'require' => ['core' => '>=2.0.0', 'php' => '>=8.2'],
         ]));
+    }
+
+    private function writeManifestWithPluginContracts(string $pluginId, string $requirePluginContracts, string $version = '1.0.0'): void
+    {
+        $dir = $this->pluginsDir.'/'.$pluginId;
+        mkdir($dir, recursive: true);
+        file_put_contents($dir.'/manifest.json', (string) json_encode([
+            'id' => $pluginId,
+            'name' => ucfirst($pluginId),
+            'version' => $version,
+            'type' => 'integration',
+            'features' => ['filler' => true],
+            'require' => ['core' => '>=2.0.0', 'php' => '>=8.2', 'plugin-contracts' => $requirePluginContracts],
+        ]));
+    }
+
+    /**
+     * Directly rewrites `installed-plugins.php`'s `require.pluginContracts` for an already
+     * reconciled plugin, bypassing {@see ManifestParser}/{@see ManifestValidator} validation —
+     * see {@see testPluginIsCompatibleWhenPluginContractsConstraintIsUnparsable()}.
+     */
+    private function rewriteIndexPluginContracts(string $pluginId, string $requirePluginContracts): void
+    {
+        $indexPath = $this->pluginsDir.'/installed-plugins.php';
+        $entries = require $indexPath;
+
+        $entries[$pluginId]['manifest']['require']['pluginContracts'] = $requirePluginContracts;
+
+        file_put_contents($indexPath, "<?php\n\nreturn ".var_export($entries, true).";\n");
     }
 
     /**

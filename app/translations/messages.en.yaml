@@ -208,9 +208,14 @@ settings_plugins:
     install_error_no_file: Choose a ZIP archive of the plugin to install.
     install_error_not_zip: Choose a file with the .zip extension.
     install_error_incompatible_core: 'The plugin requires core version "%requiredCore%", the installed core version is "%currentCore%".'
+    install_error_incompatible_plugin_contracts: 'The plugin requires plugin contracts version "%requiredPluginContracts%", the installed plugin contracts version is "%installedPluginContracts%".'
     install_error_syntax: 'Installation aborted: the plugin''s PHP files contain syntax errors:'
     install_error_invalid_manifest: Invalid or missing manifest.json in the archive.
     install_error_generic: Failed to unpack or install the archive. Make sure it is a valid plugin ZIP archive.
+    status_column: Status
+    status_enabled: Enabled
+    status_disabled: Disabled
+    status_incompatible: 'Disabled — this plugin needs a different app version to work.'
 
 settings_market:
     title: Plugin market — Settings — AnimeDB
