@@ -95,9 +95,21 @@ use Twig\Environment;
  * what would). If the cached snapshot is missing, or was built for a different `%app.core_version%`
  * than the one this controller runs against (an app upgrade between refreshes), the whole list is
  * rendered as "not ready yet" instead of resolving against stale data — see {@see self::renderIndex()}.
- * A release that changes `%app.plugin_contracts_version%` always changes `%app.core_version%` too
- * (both come from the same build), so that same check also covers staleness on this new axis
- * without a separate one.
+ * `%app.plugin_contracts_version%` and `%app.core_version%` do not necessarily change together
+ * (`%app.core_version%` tracks `app.getVersion()`, which only bumps on a release-tag build —
+ * see `computeBuildFingerprint()`'s docblock in `native/supervisor/cache-invalidation.js`), so
+ * this controller's own `%app.core_version%` guard does not by itself cover staleness on the
+ * `plugin_contracts_version` axis. What does is a layer below this controller: every build stamps
+ * `scripts/build-id.txt`, which feeds that same `computeBuildFingerprint()` — a change on either
+ * axis changes the fingerprint, `hasBuildChanged()` catches it on next start, and
+ * `invalidateMarketSnapshot()` deletes the cached snapshot file outright, so this controller finds
+ * it missing and falls back to "not ready yet" the same as any other missing-snapshot case, rather
+ * than resolving against one built for the old `plugin_contracts_version`. The one gap: an
+ * unpackaged dev run (`npm start` without `npm run prebuild`) has no `build-id.txt`, so the
+ * fingerprint falls back to a fixed placeholder that does not change with `plugin_contracts_version`
+ * — in that mode a stale snapshot's {@see MarketSnapshotPlugin::$incompatiblePluginContracts} is
+ * not invalidated until the cache is cleared by hand. This does not affect packaged builds shipped
+ * to users.
  *
  * An already-installed plugin whose resolved compatible version is strictly newer than the one on
  * disk gets an "Update" button ({@see update()}, issue #224) instead of the plain "already installed" label
