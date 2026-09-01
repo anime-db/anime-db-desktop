@@ -85,13 +85,31 @@ use Twig\Environment;
  * registry's own CI before it was ever listed here.
  *
  * Each plugin's row shows the manifest of its *latest* published version, plus the version/sha256
- * the snapshot already resolved as compatible with `%app.core_version%` at the time it was built
+ * the snapshot already resolved as compatible with `%app.core_version%` (and, issue #562, this
+ * app's own installed `%app.plugin_contracts_version%`) at the time it was built
  * ({@see MarketSnapshotPlugin::$resolvedVersion}), which may be an older one than the latest. A
  * plugin with no compatible version at all is rendered inactive with a "needs core version X"
- * hint instead of an "Install" button. If the cached snapshot is missing, or was built for a
- * different `%app.core_version%` than the one this controller runs against (an app upgrade
- * between refreshes), the whole list is rendered as "not ready yet" instead of resolving against
- * stale data — see {@see self::renderIndex()}.
+ * hint instead of an "Install" button — or, if {@see MarketSnapshotPlugin::$incompatiblePluginContracts}
+ * says the block is specifically on the `plugin-contracts` axis, a different hint that does not
+ * claim updating the app would fix it (issue #562: it may not — the plugin's own next release is
+ * what would). If the cached snapshot is missing, or was built for a different `%app.core_version%`
+ * than the one this controller runs against (an app upgrade between refreshes), the whole list is
+ * rendered as "not ready yet" instead of resolving against stale data — see {@see self::renderIndex()}.
+ * `%app.plugin_contracts_version%` and `%app.core_version%` do not necessarily change together
+ * (`%app.core_version%` tracks `app.getVersion()`, which only bumps on a release-tag build —
+ * see `computeBuildFingerprint()`'s docblock in `native/supervisor/cache-invalidation.js`), so
+ * this controller's own `%app.core_version%` guard does not by itself cover staleness on the
+ * `plugin_contracts_version` axis. What does is a layer below this controller: every build stamps
+ * `scripts/build-id.txt`, which feeds that same `computeBuildFingerprint()` — a change on either
+ * axis changes the fingerprint, `hasBuildChanged()` catches it on next start, and
+ * `invalidateMarketSnapshot()` deletes the cached snapshot file outright, so this controller finds
+ * it missing and falls back to "not ready yet" the same as any other missing-snapshot case, rather
+ * than resolving against one built for the old `plugin_contracts_version`. The one gap: an
+ * unpackaged dev run (`npm start` without `npm run prebuild`) has no `build-id.txt`, so the
+ * fingerprint falls back to a fixed placeholder that does not change with `plugin_contracts_version`
+ * — in that mode a stale snapshot's {@see MarketSnapshotPlugin::$incompatiblePluginContracts} is
+ * not invalidated until the cache is cleared by hand. This does not affect packaged builds shipped
+ * to users.
  *
  * An already-installed plugin whose resolved compatible version is strictly newer than the one on
  * disk gets an "Update" button ({@see update()}, issue #224) instead of the plain "already installed" label
@@ -161,6 +179,7 @@ final class MarketController
         private readonly ZipPluginInstaller $installer,
         private readonly InstalledPluginsRegistry $installedPlugins,
         private readonly string $coreVersion,
+        private readonly ?string $pluginContractsVersion,
         private readonly CsrfTokenManagerInterface $csrfTokenManager,
         private readonly UrlGeneratorInterface $urlGenerator,
         private readonly Environment $twig,
@@ -317,6 +336,14 @@ final class MarketController
         $plugin = $this->findPlugin($snapshot, $id);
         if ($plugin === null) {
             return $this->renderIndex(locale: $request->getLocale(), installError: 'settings_market.install_error_unknown_plugin');
+        }
+
+        if ($plugin->resolvedVersion === null && $plugin->incompatiblePluginContracts) {
+            return $this->renderIndex(
+                locale: $request->getLocale(),
+                installError: 'settings_market.install_error_incompatible_plugin_contracts',
+                installErrorParams: ['%currentPluginContracts%' => (string) $this->pluginContractsVersion],
+            );
         }
 
         if ($plugin->resolvedVersion === null) {

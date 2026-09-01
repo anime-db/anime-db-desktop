@@ -48,6 +48,18 @@ use App\Service\Market\Exception\InvalidMarketSnapshotContentException;
  * `locales` (issue #543) is the resolved version's own locale list, carried over verbatim from
  * {@see MarketPluginVersion::$locales} — `null` means "not published for this version", not "no
  * languages", the same optional-field treatment as `translationKeyCount` in {@see fromArray()}.
+ *
+ * `pluginContracts` (issue #562) is the resolved version's own `plugin-contracts` constraint,
+ * carried over verbatim from {@see MarketPluginVersion::$pluginContracts} the same way `locales`
+ * is — `null` means "not published for this version". `incompatiblePluginContracts` is not
+ * carried over from anywhere on {@see MarketPlugin}; it is computed by {@see MarketSnapshotBuilder}
+ * from the *whole* `versions` list (via {@see MarketPlugin::hasCoreCompatibleVersion()}), which
+ * this flattened, single-version DTO no longer has access to once built. It is `true` only when
+ * `resolvedVersion` is `null` *and* that is specifically because every core-compatible version was
+ * blocked by `plugin-contracts` — the storefront uses it to choose between the two "why can't I
+ * install this" hints without redoing that determination itself. Defaults to `false` so a
+ * snapshot cached before this field existed keeps loading with the pre-issue-#562 "needs core
+ * version X" hint, same backward-compatibility treatment as `translationKeyCount`/`locales`.
  */
 final class MarketSnapshotPlugin
 {
@@ -66,11 +78,13 @@ final class MarketSnapshotPlugin
         public readonly string $latestVersionCore,
         public readonly ?int $translationKeyCount = null,
         public readonly ?array $locales = null,
+        public readonly ?string $pluginContracts = null,
+        public readonly bool $incompatiblePluginContracts = false,
     ) {
     }
 
     /**
-     * @return array{id: string, manifest: array<string, mixed>, resolvedVersion: ?string, sha256: ?string, latestVersion: string, latestVersionCore: string, translationKeyCount: ?int, locales: ?list<string>}
+     * @return array{id: string, manifest: array<string, mixed>, resolvedVersion: ?string, sha256: ?string, latestVersion: string, latestVersionCore: string, translationKeyCount: ?int, locales: ?list<string>, pluginContracts: ?string, incompatiblePluginContracts: bool}
      */
     public function toArray(): array
     {
@@ -83,6 +97,8 @@ final class MarketSnapshotPlugin
             'latestVersionCore' => $this->latestVersionCore,
             'translationKeyCount' => $this->translationKeyCount,
             'locales' => $this->locales,
+            'pluginContracts' => $this->pluginContracts,
+            'incompatiblePluginContracts' => $this->incompatiblePluginContracts,
         ];
     }
 
@@ -101,6 +117,8 @@ final class MarketSnapshotPlugin
             || !(\is_string($data['sha256'] ?? null) || ($data['sha256'] ?? null) === null)
             || !(\is_int($data['translationKeyCount'] ?? null) || ($data['translationKeyCount'] ?? null) === null)
             || !(self::isLocalesList($data['locales'] ?? null) || ($data['locales'] ?? null) === null)
+            || !(\is_string($data['pluginContracts'] ?? null) || ($data['pluginContracts'] ?? null) === null)
+            || !\is_bool($data['incompatiblePluginContracts'] ?? false)
         ) {
             throw new InvalidMarketSnapshotContentException('Market snapshot plugin entry is malformed.');
         }
@@ -114,6 +132,8 @@ final class MarketSnapshotPlugin
             $data['latestVersionCore'],
             $data['translationKeyCount'] ?? null,
             $data['locales'] ?? null,
+            $data['pluginContracts'] ?? null,
+            $data['incompatiblePluginContracts'] ?? false,
         );
     }
 

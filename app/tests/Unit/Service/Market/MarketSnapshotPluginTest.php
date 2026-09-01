@@ -137,4 +137,89 @@ final class MarketSnapshotPluginTest extends TestCase
         $this->expectException(InvalidMarketSnapshotContentException::class);
         MarketSnapshotPlugin::fromArray($data);
     }
+
+    public function testToArrayCarriesThePluginContracts(): void
+    {
+        $plugin = new MarketSnapshotPlugin('animedb-german', ['id' => 'animedb-german', 'name' => 'German'], '1.1.0', 'sha-1.1.0', '1.2.0', '>=3.0.0', pluginContracts: '^0.15');
+
+        $this->assertSame('^0.15', $plugin->toArray()['pluginContracts']);
+    }
+
+    public function testFromArrayRoundTripsThePluginContracts(): void
+    {
+        $plugin = new MarketSnapshotPlugin('animedb-german', ['id' => 'animedb-german', 'name' => 'German'], '1.1.0', 'sha-1.1.0', '1.2.0', '>=3.0.0', pluginContracts: '^0.15');
+
+        $restored = MarketSnapshotPlugin::fromArray($plugin->toArray());
+
+        $this->assertSame('^0.15', $restored->pluginContracts);
+    }
+
+    /**
+     * Issue #562's backward-compatibility acceptance criterion: a snapshot cached before this
+     * field existed has no `pluginContracts` key at all, not an explicit `null` — the loader must
+     * not treat "key entirely absent" as malformed data, the same tolerance already applied to
+     * `translationKeyCount`/`locales`.
+     */
+    public function testFromArrayTreatsAMissingPluginContractsAsNull(): void
+    {
+        $plugin = new MarketSnapshotPlugin('animedb-german', ['id' => 'animedb-german', 'name' => 'German'], '1.1.0', 'sha-1.1.0', '1.2.0', '>=3.0.0', pluginContracts: '^0.15');
+        $data = $plugin->toArray();
+        unset($data['pluginContracts']);
+
+        $restored = MarketSnapshotPlugin::fromArray($data);
+
+        $this->assertNull($restored->pluginContracts);
+    }
+
+    public function testFromArrayRejectsANonStringPluginContracts(): void
+    {
+        $plugin = new MarketSnapshotPlugin('animedb-german', ['id' => 'animedb-german', 'name' => 'German'], '1.1.0', 'sha-1.1.0', '1.2.0', '>=3.0.0');
+        $data = $plugin->toArray();
+        $data['pluginContracts'] = 42;
+
+        $this->expectException(InvalidMarketSnapshotContentException::class);
+        MarketSnapshotPlugin::fromArray($data);
+    }
+
+    public function testToArrayCarriesTheIncompatiblePluginContractsFlag(): void
+    {
+        $plugin = new MarketSnapshotPlugin('animedb-german', ['id' => 'animedb-german', 'name' => 'German'], null, null, '1.2.0', '>=3.0.0', incompatiblePluginContracts: true);
+
+        $this->assertTrue($plugin->toArray()['incompatiblePluginContracts']);
+    }
+
+    public function testFromArrayRoundTripsTheIncompatiblePluginContractsFlag(): void
+    {
+        $plugin = new MarketSnapshotPlugin('animedb-german', ['id' => 'animedb-german', 'name' => 'German'], null, null, '1.2.0', '>=3.0.0', incompatiblePluginContracts: true);
+
+        $restored = MarketSnapshotPlugin::fromArray($plugin->toArray());
+
+        $this->assertTrue($restored->incompatiblePluginContracts);
+    }
+
+    /**
+     * Issue #562's backward-compatibility acceptance criterion: a snapshot cached before this
+     * field existed has no `incompatiblePluginContracts` key at all — it must default to `false`
+     * (the pre-issue-#562 "needs core version X" hint), not fail to load.
+     */
+    public function testFromArrayTreatsAMissingIncompatiblePluginContractsAsFalse(): void
+    {
+        $plugin = new MarketSnapshotPlugin('animedb-german', ['id' => 'animedb-german', 'name' => 'German'], null, null, '1.2.0', '>=3.0.0', incompatiblePluginContracts: true);
+        $data = $plugin->toArray();
+        unset($data['incompatiblePluginContracts']);
+
+        $restored = MarketSnapshotPlugin::fromArray($data);
+
+        $this->assertFalse($restored->incompatiblePluginContracts);
+    }
+
+    public function testFromArrayRejectsANonBooleanIncompatiblePluginContracts(): void
+    {
+        $plugin = new MarketSnapshotPlugin('animedb-german', ['id' => 'animedb-german', 'name' => 'German'], null, null, '1.2.0', '>=3.0.0');
+        $data = $plugin->toArray();
+        $data['incompatiblePluginContracts'] = 'yes';
+
+        $this->expectException(InvalidMarketSnapshotContentException::class);
+        MarketSnapshotPlugin::fromArray($data);
+    }
 }

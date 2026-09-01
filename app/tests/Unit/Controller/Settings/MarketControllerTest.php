@@ -139,6 +139,7 @@ final class MarketControllerTest extends TestCase
         ?MessageBusInterface $messageBus = null,
         ?AppConfigStore $configStore = null,
         ?TranslationCoverageService $translationCoverage = null,
+        ?string $pluginContractsVersion = null,
     ): MarketController {
         return new MarketController(
             $snapshotCache,
@@ -146,6 +147,7 @@ final class MarketControllerTest extends TestCase
             $this->installer(),
             $this->installedPlugins,
             self::CORE_VERSION,
+            $pluginContractsVersion,
             $csrf ?? $this->alwaysValidCsrf(),
             $urlGenerator ?? $this->createStub(UrlGeneratorInterface::class),
             $twig,
@@ -203,8 +205,9 @@ final class MarketControllerTest extends TestCase
         ?int $translationKeyCount = null,
         string $type = 'integration',
         ?array $locales = null,
+        bool $incompatiblePluginContracts = false,
     ): MarketSnapshotPlugin {
-        return new MarketSnapshotPlugin($id, $this->manifest($id, $latestVersion, $type), $resolvedVersion, $sha256, $latestVersion, $latestVersionCore, $translationKeyCount, $locales);
+        return new MarketSnapshotPlugin($id, $this->manifest($id, $latestVersion, $type), $resolvedVersion, $sha256, $latestVersion, $latestVersionCore, $translationKeyCount, $locales, incompatiblePluginContracts: $incompatiblePluginContracts);
     }
 
     /**
@@ -306,6 +309,30 @@ final class MarketControllerTest extends TestCase
             ->method('render')
             ->with('settings/market/index.html.twig', $this->callback(
                 static fn (array $params): bool => $params['items'][0]['plugin']->resolvedVersion === null,
+            ))
+            ->willReturn('<html></html>');
+
+        $controller = $this->controller($this->snapshotCacheServing($snapshot), $this->assetDownloaderServingPluginZip(), $twig);
+
+        $controller->index(Request::create('/settings/market'));
+    }
+
+    /**
+     * Issue #562: the `incompatiblePluginContracts` flag the snapshot already carries must reach
+     * the template unchanged — the card-level "not the right plugin-contracts version" hint is
+     * driven by this, not recomputed by the controller.
+     */
+    public function testIndexCarriesTheIncompatiblePluginContractsFlagToTheTemplate(): void
+    {
+        $snapshot = $this->snapshot([
+            $this->snapshotPlugin('animedb-shikimori', resolvedVersion: null, sha256: null, incompatiblePluginContracts: true),
+        ]);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('settings/market/index.html.twig', $this->callback(
+                static fn (array $params): bool => $params['items'][0]['plugin']->incompatiblePluginContracts === true,
             ))
             ->willReturn('<html></html>');
 
@@ -950,6 +977,39 @@ final class MarketControllerTest extends TestCase
             ->willReturn('<html></html>');
 
         $controller = $this->controller($this->snapshotCacheServing($snapshot), $this->assetDownloaderServingPluginZip(), $twig);
+
+        $request = Request::create('/settings/market/animedb-shikimori/install', 'POST', ['_token' => 'token']);
+        $controller->install('animedb-shikimori', $request);
+    }
+
+    /**
+     * Issue #562 acceptance criterion: when no version resolves specifically because of the
+     * `plugin_contracts` axis, install must report a different, honest reason — not the
+     * "incompatible core" text, which would wrongly suggest updating the app would help.
+     */
+    public function testInstallReportsIncompatiblePluginContractsWhenBlockedOnThatAxis(): void
+    {
+        $snapshot = $this->snapshot([
+            $this->snapshotPlugin('animedb-shikimori', resolvedVersion: null, sha256: null, incompatiblePluginContracts: true),
+        ]);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('settings/market/index.html.twig', $this->callback(static function (array $params): bool {
+                self::assertSame('settings_market.install_error_incompatible_plugin_contracts', $params['installError']);
+                self::assertSame(['%currentPluginContracts%' => '0.14.0'], $params['installErrorParams']);
+
+                return true;
+            }))
+            ->willReturn('<html></html>');
+
+        $controller = $this->controller(
+            $this->snapshotCacheServing($snapshot),
+            $this->assetDownloaderServingPluginZip(),
+            $twig,
+            pluginContractsVersion: '0.14.0',
+        );
 
         $request = Request::create('/settings/market/animedb-shikimori/install', 'POST', ['_token' => 'token']);
         $controller->install('animedb-shikimori', $request);

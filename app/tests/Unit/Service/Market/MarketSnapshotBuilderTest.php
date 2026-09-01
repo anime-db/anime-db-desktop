@@ -198,4 +198,87 @@ final class MarketSnapshotBuilderTest extends TestCase
 
         $this->assertNull($snapshot->plugins[0]->locales);
     }
+
+    private function registryWithPluginContracts(): PluginRegistry
+    {
+        return PluginRegistry::fromJson(json_encode([
+            'sequence' => 1,
+            'asset_mirrors' => [],
+            'plugins' => [
+                [
+                    'id' => 'animedb-shikimori',
+                    'manifest' => $this->manifest('animedb-shikimori', '1.2.0'),
+                    'versions' => [
+                        ['version' => '1.2.0', 'core' => '>=2.0.0', 'sha256' => 'sha-1.2.0', 'plugin_contracts' => '^0.15'],
+                        ['version' => '1.1.0', 'core' => '>=2.0.0', 'sha256' => 'sha-1.1.0', 'plugin_contracts' => '^0.14'],
+                    ],
+                ],
+            ],
+        ], \JSON_THROW_ON_ERROR), new NullLogger());
+    }
+
+    /**
+     * Issue #562's core acceptance criterion: a version whose `plugin_contracts` is not satisfied
+     * by the installed plugin-contracts version is not selected — the resolver falls back to the
+     * nearest older version whose own `plugin_contracts` (or the lack of one) is satisfied.
+     */
+    public function testResolvedVersionSkipsAVersionWhosePluginContractsIsNotSatisfied(): void
+    {
+        $snapshot = (new MarketSnapshotBuilder('0.14.2'))->build($this->registryWithPluginContracts(), '2.5.0');
+
+        $plugin = $snapshot->plugins[0];
+        $this->assertSame('1.1.0', $plugin->resolvedVersion);
+        $this->assertSame('^0.14', $plugin->pluginContracts);
+    }
+
+    public function testPluginContractsIsNullWhenTheRegistryVersionEntryDoesNotCarryOne(): void
+    {
+        $snapshot = (new MarketSnapshotBuilder('0.15.0'))->build($this->registry(), '2.5.0');
+
+        $this->assertNull($snapshot->plugins[0]->pluginContracts);
+    }
+
+    /**
+     * A builder without an installed plugin-contracts version (this app build could not determine
+     * it) must resolve the same way it did before issue #562 — the axis fails open, never closed,
+     * so an existing deployment's install/update flow does not regress just because this app
+     * cannot itself evaluate that axis.
+     */
+    public function testResolutionFailsOpenWhenNoPluginContractsVersionIsConfigured(): void
+    {
+        $snapshot = (new MarketSnapshotBuilder())->build($this->registryWithPluginContracts(), '2.5.0');
+
+        $this->assertSame('1.2.0', $snapshot->plugins[0]->resolvedVersion);
+    }
+
+    /**
+     * Issue #562's other core acceptance criterion: when `plugin_contracts` blocks every
+     * otherwise-`core`-compatible version, the snapshot must flag `incompatiblePluginContracts`
+     * so the storefront can show the honest "no compatible plugin-contracts version" hint instead
+     * of the "needs core version X" one, which would be misleading here — updating the app's core
+     * would not fix this.
+     */
+    public function testIncompatiblePluginContractsIsTrueWhenPluginContractsBlocksEveryCoreCompatibleVersion(): void
+    {
+        $snapshot = (new MarketSnapshotBuilder('0.10.0'))->build($this->registryWithPluginContracts(), '2.5.0');
+
+        $plugin = $snapshot->plugins[0];
+        $this->assertNull($plugin->resolvedVersion);
+        $this->assertTrue($plugin->incompatiblePluginContracts);
+    }
+
+    /**
+     * The pre-existing "needs core version X" case must not be misreported as a plugin-contracts
+     * problem — `incompatiblePluginContracts` stays `false` when no version's `core` is satisfied
+     * at all, regardless of `plugin_contracts`.
+     */
+    public function testIncompatiblePluginContractsIsFalseWhenTheBlockerIsCoreNotPluginContracts(): void
+    {
+        $snapshot = (new MarketSnapshotBuilder('0.15.0'))->build($this->registry(), '2.5.0');
+
+        $plugin = $snapshot->plugins[1];
+        $this->assertSame('animedb-incompatible', $plugin->id);
+        $this->assertNull($plugin->resolvedVersion);
+        $this->assertFalse($plugin->incompatiblePluginContracts);
+    }
 }

@@ -46,6 +46,15 @@ namespace App\Service\Market;
  * resolves. It is `null` for a version the registry has not published a locale list for (a
  * version published before this field existed), so the storefront can tell "languages unknown"
  * apart from "this version ships no languages at all".
+ *
+ * `$pluginContracts` (issue #562) is the `require.plugin-contracts` constraint string this
+ * specific version was built against — the second axis {@see MarketPlugin::resolveCompatibleVersion()}
+ * checks alongside `$core`, mirroring the same axis {@see \App\Service\Plugin\ZipPluginInstaller}
+ * already enforces at install time (issue #561). `null` means the same as for `$translationKeyCount`
+ * and `$locales`: the registry has not published a constraint for this version — a version
+ * published before this field existed, or a plugin type (e.g. `translation`) that never declares
+ * one — so the version is treated as compatible on this axis rather than blocked by a constraint
+ * that was never actually published.
  */
 final class MarketPluginVersion
 {
@@ -57,6 +66,7 @@ final class MarketPluginVersion
         public readonly string $core,
         public readonly ?int $translationKeyCount = null,
         public readonly ?array $locales = null,
+        public readonly ?string $pluginContracts = null,
     ) {
     }
 }

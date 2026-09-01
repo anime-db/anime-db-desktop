@@ -187,7 +187,8 @@ final class PluginRegistry
 
                 $translationKeyCount = \is_int($version['translation_keys_count'] ?? null) ? $version['translation_keys_count'] : null;
                 $locales = self::extractVersionLocales($version['locales'] ?? null);
-                $versionsByNumber[$version['version']] = new MarketPluginVersion($version['version'], $version['core'], $translationKeyCount, $locales);
+                $pluginContracts = self::extractVersionPluginContracts($version['plugin_contracts'] ?? null);
+                $versionsByNumber[$version['version']] = new MarketPluginVersion($version['version'], $version['core'], $translationKeyCount, $locales, $pluginContracts);
             }
 
             if ($versionsByNumber === []) {
@@ -300,5 +301,22 @@ final class PluginRegistry
         }
 
         return $locales;
+    }
+
+    /**
+     * Issue #562: a version entry's `plugin_contracts` is optional, the same way `locales` is —
+     * anything other than a well-formed constraint string (missing, not a string, or a string
+     * {@see isValidConstraint()} cannot parse) is treated as "not published" (`null`), not as a
+     * reason to drop the whole version entry the way an unparsable `core` constraint does
+     * ({@see extractPlugins()}) — `core` is the one axis a version entry cannot exist without a
+     * valid value for, this is an optional refinement layered on top of it.
+     */
+    private static function extractVersionPluginContracts(mixed $pluginContracts): ?string
+    {
+        if (!\is_string($pluginContracts) || !self::isValidConstraint($pluginContracts)) {
+            return null;
+        }
+
+        return $pluginContracts;
     }
 }

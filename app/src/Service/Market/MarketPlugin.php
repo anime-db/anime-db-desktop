@@ -63,18 +63,73 @@ final class MarketPlugin
     }
 
     /**
-     * The highest published version whose `core` constraint the given core version satisfies, or
-     * `null` if none is compatible (issue #220 §2: the plugin is then shown inactive with a
-     * "needs core version X" hint built from {@see latestVersion()} instead).
+     * The highest published version whose `core` constraint the given core version satisfies
+     * *and* — if that version declares one — whose `plugin-contracts` constraint the given
+     * plugin-contracts version satisfies, or `null` if none is compatible (issue #220 §2 /
+     * #562: the plugin is then shown inactive with a "needs core version X" hint built from
+     * {@see latestVersion()}, or a "no version compatible with the installed plugin-contracts"
+     * hint, instead).
+     *
+     * A version whose `pluginContracts` is `null` (not published for that version — see
+     * {@see MarketPluginVersion::$pluginContracts}) is never blocked on this axis, the same
+     * "unknown = no constraint" rule already applied to `translationKeyCount`/`locales`. A `null`
+     * $pluginContractsVersion (this app build could not determine its own installed
+     * plugin-contracts version), or one `Semver::satisfies()` cannot parse, fails open the same
+     * way: nothing gets blocked on an axis this app cannot itself evaluate, mirroring
+     * {@see \App\Service\Plugin\InstalledPluginsRegistry::isCompatible()}'s fail-open convention
+     * for the installed-plugin side of the same axis (issue #561).
      */
-    public function resolveCompatibleVersion(string $coreVersion): ?MarketPluginVersion
+    public function resolveCompatibleVersion(string $coreVersion, ?string $pluginContractsVersion): ?MarketPluginVersion
     {
         foreach ($this->versions as $version) {
-            if (Semver::satisfies($coreVersion, $version->core)) {
-                return $version;
+            if (!Semver::satisfies($coreVersion, $version->core)) {
+                continue;
             }
+
+            if ($version->pluginContracts !== null && $pluginContractsVersion !== null
+                && !$this->satisfiesPluginContractsOrFailOpen($pluginContractsVersion, $version->pluginContracts)) {
+                continue;
+            }
+
+            return $version;
         }
 
         return null;
+    }
+
+    /**
+     * $pluginContractsVersion comes from `InstalledVersions::getPrettyVersion()`, not from a
+     * registry entry validated up front the way `$constraint` is (see
+     * {@see PluginRegistry::isValidConstraint()}) — an unparsable value fails open (treated as
+     * satisfied) rather than throwing, same rationale as {@see PluginRegistry::isValidVersion()}
+     * and {@see \App\Service\Plugin\InstalledPluginsRegistry}'s `satisfiesOrFailOpen()`.
+     */
+    private function satisfiesPluginContractsOrFailOpen(string $pluginContractsVersion, string $constraint): bool
+    {
+        try {
+            return Semver::satisfies($pluginContractsVersion, $constraint);
+        } catch (\UnexpectedValueException) {
+            return true;
+        }
+    }
+
+    /**
+     * Whether any published version's `core` constraint is satisfied by $coreVersion, regardless
+     * of the `plugin-contracts` axis — used ({@see MarketSnapshotBuilder}) to tell apart *why*
+     * {@see resolveCompatibleVersion()} found nothing: `false` here means the plugin needs a newer
+     * core, same as before issue #562; `true` together with a `null` {@see resolveCompatibleVersion()}
+     * result means every core-compatible version was blocked by `plugin-contracts` instead, which
+     * calls for a different, honest hint — telling the user to update the app would not fix that
+     * case.
+     */
+    public function hasCoreCompatibleVersion(string $coreVersion): bool
+    {
+        foreach ($this->versions as $version) {
+            if (Semver::satisfies($coreVersion, $version->core)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }
