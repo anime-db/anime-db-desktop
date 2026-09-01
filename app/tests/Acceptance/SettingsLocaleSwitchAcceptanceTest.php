@@ -100,7 +100,7 @@ final class SettingsLocaleSwitchAcceptanceTest extends KernelTestCase
         $_SERVER['DATABASE_URL'] = $_ENV['DATABASE_URL'] = 'sqlite:///'.$this->databasePath;
         $_SERVER['QUEUE_DATABASE_URL'] = $_ENV['QUEUE_DATABASE_URL'] = 'sqlite:///'.$this->queueDatabasePath;
 
-        file_put_contents($this->configPath, (string) json_encode(['locale' => 'ru']));
+        file_put_contents($this->configPath, (string) json_encode(['locale' => 'en']));
     }
 
     protected function tearDown(): void
@@ -138,9 +138,9 @@ final class SettingsLocaleSwitchAcceptanceTest extends KernelTestCase
         /** @var CsrfTokenManagerInterface $csrfTokenManager */
         $csrfTokenManager = self::getContainer()->get(CsrfTokenManagerInterface::class);
 
-        $postRequest = Request::create('/settings', 'POST', ['locale' => 'en']);
+        $postRequest = Request::create('/settings', 'POST', ['locale' => 'ru']);
         $postRequest->setSession($session);
-        $postRequest->headers->set('Accept-Language', 'ru');
+        $postRequest->headers->set('Accept-Language', 'en');
 
         // The token manager resolves the current session through the request stack, so a request
         // carrying the session must be on the stack before a token can be minted for it — the
@@ -162,18 +162,18 @@ final class SettingsLocaleSwitchAcceptanceTest extends KernelTestCase
         );
 
         $persisted = json_decode((string) file_get_contents($this->configPath), true);
-        self::assertSame('en', $persisted['locale'], 'The POST must persist the new locale before redirecting.');
+        self::assertSame('ru', $persisted['locale'], 'The POST must persist the new locale before redirecting.');
 
         // The follow-up navigation: native/accept-language.js has re-read config.json by now and
-        // sends the persisted "en", independently of the session the POST used above.
+        // sends the persisted "ru", independently of the session the POST used above.
         $getRequest = Request::create('/settings');
-        $getRequest->headers->set('Accept-Language', 'en');
+        $getRequest->headers->set('Accept-Language', 'ru');
 
         $getResponse = $kernel->handle($getRequest);
         $body = (string) $getResponse->getContent();
 
-        self::assertStringContainsString('<html lang="en"', $body, 'The rendered document must reflect the new locale.');
-        self::assertStringContainsString('<h1>Settings</h1>', $body, 'settings.heading must resolve from the "en" catalogue.');
+        self::assertStringContainsString('<html lang="ru"', $body, 'The rendered document must reflect the new locale.');
+        self::assertStringContainsString('<h1>Настройки</h1>', $body, 'settings.heading must resolve from the "ru" catalogue, not the "en" default_locale fallback that a broken LocaleSubscriber priority would leave in place.');
     }
 
     private function restoreServerVar(string $key, ?string $original): void
