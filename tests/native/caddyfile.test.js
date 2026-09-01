@@ -191,20 +191,48 @@ describe('analyzeCaddyfile — regression fixtures (each catches one previously-
 });
 
 /**
- * @returns {string|null} absolute path to the FrankenPHP binary in bin/frankenphp/, or null when
- *                         the runtime hasn't been downloaded (this project builds Windows-only, so
- *                         a locally-run `npm test` will not normally have it).
+ * @returns {string|null} absolute path to a FrankenPHP binary THIS host can execute, or null when
+ *                         there is none (this project builds Windows-only, so a locally-run
+ *                         `npm test` will not normally have one).
  */
 function findFrankenphpBinary() {
     if (!fs.existsSync(RUNTIME_DIR)) return null;
 
-    const match = fs.readdirSync(RUNTIME_DIR).find((name) => /^frankenphp(\.exe)?$/i.test(name));
+    // Совпадение по имени обязано учитывать платформу. `scripts/download-bins.js` тянет ВСЕГДА
+    // Windows-сборку, на каком бы хосте его ни запустили, — значит на Linux/macOS каталог
+    // заполняется PE32+ файлом `frankenphp.exe`, который этот хост исполнить не может: без бита
+    // исполнения `execFileSync` бросает `EACCES`, с битом — `Exec format error`. Шаблон, ловивший
+    // `.exe` на любой платформе, превращал этот уровень из «пропущен» в два непрозрачных падения
+    // у каждого разработчика не на Windows, который выполнил `npm run download-bins` — то есть
+    // штатную команду получения рантайма. Проверено на этом репозитории: `frankenphp.exe`
+    // от 2026-08-31 роняет оба теста уровня 2 на Linux.
+    const pattern = process.platform === 'win32' ? /^frankenphp(\.exe)?$/i : /^frankenphp$/;
+    const match = fs.readdirSync(RUNTIME_DIR).find((name) => pattern.test(name));
 
     return match ? path.join(RUNTIME_DIR, match) : null;
 }
 
 const BINARY = findFrankenphpBinary();
-const skipReason = `FrankenPHP binary not found in ${RUNTIME_DIR} (run "npm run download-bins" to enable this check)`;
+
+/**
+ * Причина пропуска обязана быть правдой на той платформе, где её читают. Совет «запусти
+ * npm run download-bins» верен только на Windows: на Linux/macOS эта команда положит сюда
+ * Windows-сборку, которую хост исполнить не может, и уровень так и останется пропущенным.
+ * Отправлять разработчика выполнять команду, которая заведомо не поможет, — хуже, чем молчать.
+ *
+ * @returns {string}
+ */
+function buildSkipReason() {
+    if (process.platform === 'win32') {
+        return `FrankenPHP binary not found in ${RUNTIME_DIR} (run "npm run download-bins" to enable this check)`;
+    }
+
+    return `no FrankenPHP build runnable on ${process.platform} in ${RUNTIME_DIR} `
+        + '("npm run download-bins" fetches the Windows build, which this host cannot execute; '
+        + 'drop a native frankenphp binary there to enable this check)';
+}
+
+const skipReason = buildSkipReason();
 const maybeTest  = BINARY === null ? test.skip : test;
 
 describe('app/Caddyfile — validate/adapt via FrankenPHP (level 2, conditional on a local binary)', () => {
