@@ -1,0 +1,24 @@
+Meilisearch
+Copyright (c) 2019-2025 Meili SAS
+https://www.meilisearch.com/
+
+The file meilisearch.exe under resources/app/bin/meilisearch/ is the official,
+unmodified Meilisearch 1.13.0 Windows release binary, distributed under the MIT
+License.
+
+Full license text: texts/meilisearch-MIT.txt
+Corresponding source: https://github.com/meilisearch/meilisearch/tree/v1.13.0
+
+The binary is a statically linked Rust executable and embeds a large number of
+transitive crates under permissive licenses (MIT, Apache-2.0, BSD). They are not
+enumerated here: the complete dependency set with exact versions is fixed by the
+Cargo.lock of the pinned upstream tag above, from which the corresponding source
+of every crate is reachable.
+
+No source modifications are applied by this product: the binary is downloaded
+from the upstream URL recorded in scripts/versions.json and verified against the
+SHA-256 pinned in that same file.
+
+Note on licensing scope: this product ships Meilisearch under the MIT license as
+published for v1.13.0. It does not use, enable or ship any Meilisearch
+Enterprise Edition component.

@@ -568,4 +568,60 @@ describe('downloadBin (ZIP archive branch)', () => {
         expect(fs.existsSync(bin.dest)).toBe(false);
         expect(fs.existsSync(path.dirname(bin.dest))).toBe(false);
     });
+
+    // License files go to a directory of their own, OUTSIDE the runtime directory: check-runtime-parity.js
+    // fingerprints every file under bin/frankenphp/ against a snapshot that only a Windows build machine
+    // may rewrite, so a text file landing there would break that gate.
+    describe('license entries', () => {
+        beforeEach(() => {
+            bin.zipEntry = null;
+            bin.destDir = path.join(tmpDir, 'extracted');
+            bin.zipEntries = ['testbin.exe'];
+            bin.licenseEntries = ['license.txt'];
+            bin.licenseDir = path.join(tmpDir, 'licenses', 'testbin');
+        });
+
+        test('extracts them into licenseDir, leaving the runtime directory untouched', async () => {
+            const zip = buildZip([
+                { name: 'testbin.exe', data: Buffer.from('zip-binary-content') },
+                { name: 'license.txt', data: Buffer.from('UPSTREAM LICENSE') },
+            ]);
+            bin.sha256 = crypto.createHash('sha256').update(zip).digest('hex');
+            mockSingleResponse(zip);
+
+            await downloadBin(bin);
+
+            expect(fs.readFileSync(path.join(bin.licenseDir, 'license.txt'), 'utf8')).toBe('UPSTREAM LICENSE');
+            expect(fs.readdirSync(bin.destDir).sort()).toEqual(['.version', 'testbin.exe']);
+        });
+
+        test('fails the build when the upstream archive stopped shipping a license file', async () => {
+            const zip = buildZip([{ name: 'testbin.exe', data: Buffer.from('zip-binary-content') }]);
+            bin.sha256 = crypto.createHash('sha256').update(zip).digest('hex');
+            mockSingleResponse(zip);
+
+            await expect(downloadBin(bin)).rejects.toThrow(/license\.txt/);
+        });
+
+        test('re-downloads when the binaries are current but the license files are missing', async () => {
+            const zip = buildZip([
+                { name: 'testbin.exe', data: Buffer.from('zip-binary-content') },
+                { name: 'license.txt', data: Buffer.from('UPSTREAM LICENSE') },
+            ]);
+            bin.sha256 = crypto.createHash('sha256').update(zip).digest('hex');
+
+            // A runtime directory left over from before license extraction existed: right version
+            // marker, all binaries in place, no licenses. Without the licenseEntries check this
+            // would be reported as up to date and the installer would ship without attribution.
+            fs.mkdirSync(bin.destDir, { recursive: true });
+            fs.writeFileSync(path.join(bin.destDir, 'testbin.exe'), 'stale');
+            fs.writeFileSync(path.join(bin.destDir, '.version'), '1.0.0\n');
+            mockSingleResponse(zip);
+
+            await downloadBin(bin);
+
+            expect(fs.existsSync(path.join(bin.licenseDir, 'license.txt'))).toBe(true);
+            expect(fs.readFileSync(path.join(bin.destDir, 'testbin.exe'), 'utf8')).toBe('zip-binary-content');
+        });
+    });
 });

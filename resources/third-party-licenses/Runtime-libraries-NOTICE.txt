@@ -1,0 +1,31 @@
+Additional runtime libraries shipped under
+resources/app/bin/frankenphp/
+
+These dynamic libraries come from the official FrankenPHP Windows release
+archive. None of them is covered by
+resources/app/bin/licenses/frankenphp/readme-redist-bins.txt, which attributes
+only the
+third-party code compiled INTO the PHP interpreter.
+
+--------------------------------------------------------------------------------
+Brotli  —  brotlicommon.dll, brotlidec.dll, brotlienc.dll
+
+  Copyright (c) The Brotli Authors
+  MIT License. Full text: texts/brotli-MIT.txt
+  Corresponding source: https://github.com/google/brotli
+
+--------------------------------------------------------------------------------
+pthreads4w (POSIX Threads for Windows)  —  pthreadVC3.dll
+
+  Copyright - Project contributors 1999-2016
+  https://sourceforge.net/p/pthreads4w/wiki/Contributors/
+  Version 3.0.0, read from the PE version resource of the shipped DLL.
+  Apache License 2.0. Full text: texts/pthreads4w-Apache-2.0.txt
+  Corresponding source: https://sourceforge.net/projects/pthreads4w/
+
+--------------------------------------------------------------------------------
+watcher  —  libwatcher-c.dll
+
+  Copyright 2022 github.com/e-dant
+  MIT License. Full text: texts/watcher-MIT.txt
+  Corresponding source: https://github.com/e-dant/watcher

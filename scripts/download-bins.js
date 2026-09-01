@@ -74,6 +74,20 @@ const FRANKENPHP_FILES = [
     'ext/php_gd.dll',
 ];
 
+// License files the upstream archive ships under a redistribution obligation: `license.txt` is the
+// PHP License 3.01 (clause 2 requires the copyright notice to travel "in the documentation and/or
+// other materials provided with the distribution"), `readme-redist-bins.txt` is the PHP project's
+// own attribution of the third-party code compiled into the binaries. They are deliberately NOT in
+// FRANKENPHP_FILES and NOT extracted into bin/frankenphp/: check-runtime-parity.js fingerprints
+// every file in that directory and compares it against scripts/frankenphp-runtime.json, a snapshot
+// that may only be rewritten by `--write` on a real Windows build machine. Adding two text files to
+// the runtime directory would break that gate for no benefit. They go to bin/licenses/ instead,
+// which the parity gate does not look at, and are shipped from there.
+const FRANKENPHP_LICENSE_FILES = [
+    'license.txt',
+    'readme-redist-bins.txt',
+];
+
 const BINS = [
     {
         name: 'frankenphp',
@@ -82,6 +96,8 @@ const BINS = [
         dest: path.join(binDir, 'frankenphp', 'frankenphp.exe'),
         destDir: path.join(binDir, 'frankenphp'),
         zipEntries: FRANKENPHP_FILES,
+        licenseEntries: FRANKENPHP_LICENSE_FILES,
+        licenseDir: path.join(binDir, 'licenses', 'frankenphp'),
         sha256: versions.sha256.frankenphp,
     },
     {
@@ -120,13 +136,19 @@ function versionFilePath(dest) {
 // `zipEntries`, every one of those files is still present in `destDir`. Checking the version marker
 // alone would treat a directory left over from an older script version (e.g. one that only extracted
 // `frankenphp.exe`) as current, silently skipping the download that would have completed the set.
+// `licenseEntries` is checked the same way and for the same reason: a runtime directory left over
+// from before license extraction existed would otherwise pass as current and the installer would
+// ship without the upstream license texts.
 function isUpToDate(bin) {
     if (!fs.existsSync(bin.dest)) return false;
     const vf = versionFilePath(bin.dest);
     if (!fs.existsSync(vf)) return false;
     if (fs.readFileSync(vf, 'utf8').trim() !== bin.version) return false;
-    if (bin.zipEntries) {
-        return bin.zipEntries.every((entryPath) => fs.existsSync(path.join(bin.destDir, entryPath)));
+    if (bin.zipEntries && !bin.zipEntries.every((entryPath) => fs.existsSync(path.join(bin.destDir, entryPath)))) {
+        return false;
+    }
+    if (bin.licenseEntries) {
+        return bin.licenseEntries.every((entryPath) => fs.existsSync(path.join(bin.licenseDir, entryPath)));
     }
     return true;
 }
@@ -359,6 +381,12 @@ async function downloadBin(bin) {
         extractFromZip(buffer, bin.zipEntry, bin.dest);
     } else {
         fs.writeFileSync(bin.dest, buffer);
+    }
+
+    if (bin.licenseEntries) {
+        console.log(`Extracting ${bin.licenseEntries.length} license files from archive...`);
+        fs.mkdirSync(bin.licenseDir, { recursive: true });
+        extractSelectedFromZip(buffer, bin.licenseEntries, bin.licenseDir);
     }
 
     fs.writeFileSync(versionFilePath(bin.dest), bin.version + '\n');

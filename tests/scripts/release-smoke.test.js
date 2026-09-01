@@ -21,6 +21,8 @@
 
 'use strict';
 
+const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
 const {
@@ -29,8 +31,10 @@ const {
     parseListeners,
     checkListeners,
     checkResponses,
+    checkLicenseFiles,
     pidFilePath,
     EXPECTATIONS,
+    REQUIRED_LICENSE_FILES,
 } = require('../../scripts/release-smoke');
 
 describe('parseArgs', () => {
@@ -189,6 +193,112 @@ describe('pidFilePath', () => {
     test('points at <userData>/var/pids/frankenphp.pid', () => {
         expect(pidFilePath(path.join('C:', 'profile')))
             .toBe(path.join('C:', 'profile', 'var', 'pids', 'frankenphp.pid'));
+    });
+});
+
+describe('checkLicenseFiles', () => {
+    let treeDir;
+
+    /** Builds a packaged tree containing exactly the files listed, then reports what's missing. */
+    const treeWith = (relPaths) => {
+        for (const rel of relPaths) {
+            const abs = path.join(treeDir, rel);
+            fs.mkdirSync(path.dirname(abs), { recursive: true });
+            fs.writeFileSync(abs, 'x');
+        }
+
+        return checkLicenseFiles(treeDir);
+    };
+
+    beforeEach(() => {
+        treeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'anime-db-license-tree-'));
+    });
+
+    afterEach(() => {
+        fs.rmSync(treeDir, { recursive: true, force: true });
+    });
+
+    test('accepts a tree that carries every required file', () => {
+        expect(treeWith(REQUIRED_LICENSE_FILES)).toEqual([]);
+    });
+
+    test('reports every missing file by its exact path', () => {
+        const problems = treeWith([]);
+
+        expect(problems).toHaveLength(REQUIRED_LICENSE_FILES.length);
+        for (const rel of REQUIRED_LICENSE_FILES) {
+            expect(problems).toContainEqual(expect.stringContaining(rel));
+        }
+    });
+
+    // The three groups reach the tree through three different mechanisms, each with its own way of
+    // failing silently, so losing any one of them has to be caught individually rather than by a
+    // single "the directory exists" check.
+    test.each([
+        ['our own GPLv3 text (extraFiles)',              'LICENSE.txt'],
+        ['the third-party index (extraFiles)',           'THIRD-PARTY-LICENSES/README.md'],
+        ['the PHP license from the upstream archive',    'resources/app/bin/licenses/frankenphp/license.txt'],
+        ['the qbittorrent-nox bundle attribution',       'resources/app/bin/qbittorrent-nox/THIRD-PARTY-LICENSES/README.md'],
+    ])('fails when the tree loses %s', (_label, dropped) => {
+        const problems = treeWith(REQUIRED_LICENSE_FILES.filter((rel) => rel !== dropped));
+
+        expect(problems).toEqual([expect.stringContaining(dropped)]);
+    });
+});
+
+describe('third-party license index', () => {
+    const licensesDir = path.join(__dirname, '..', '..', 'resources', 'third-party-licenses');
+
+    /**
+     * The index is the document a recipient actually reads, so a reference in it that resolves to
+     * nothing is worse than a missing entry: it claims attribution that isn't shipped. Renaming a
+     * text file without updating the table is the realistic way this breaks.
+     */
+    test('every file the index references exists', () => {
+        const index = fs.readFileSync(path.join(licensesDir, 'README.md'), 'utf8');
+        // Only backtick-quoted names WITHOUT a leading path: those are this directory's own files.
+        // References carrying a path (`resources/app/bin/qbittorrent-nox/THIRD-PARTY-LICENSES/…`)
+        // point into the bundles other components ship for themselves and are not ours to hold.
+        const referenced = new Set(
+            [...index.matchAll(/`(texts\/[\w.+-]+\.txt|[A-Za-z][\w-]*-NOTICE\.txt)`/g)].map(([, rel]) => rel),
+        );
+
+        expect(referenced.size).toBeGreaterThan(0);
+        for (const rel of referenced) {
+            expect({ rel, exists: fs.existsSync(path.join(licensesDir, rel)) })
+                .toEqual({ rel, exists: true });
+        }
+    });
+
+    /**
+     * REQUIRED_LICENSE_FILES is a hand-written list, so the realistic failure is adding a notice
+     * here and forgetting it there: the release gate would then happily pass a build shipping
+     * without it. Tying the list to the directory makes that impossible to do silently.
+     */
+    test('the release gate requires every notice this directory ships', () => {
+        const shipped = fs.readdirSync(licensesDir)
+            .filter((name) => name.endsWith('-NOTICE.txt'))
+            .map((name) => `THIRD-PARTY-LICENSES/${name}`);
+
+        expect(shipped.length).toBeGreaterThan(0);
+        expect(REQUIRED_LICENSE_FILES).toEqual(expect.arrayContaining(shipped));
+    });
+
+    test('every shipped license text is referenced by the index', () => {
+        const index = fs.readFileSync(path.join(licensesDir, 'README.md'), 'utf8');
+        const notices = fs.readdirSync(licensesDir).filter((name) => name.endsWith('-NOTICE.txt'));
+        const texts = fs.readdirSync(path.join(licensesDir, 'texts'));
+
+        expect(notices.length).toBeGreaterThan(0);
+        expect(texts.length).toBeGreaterThan(0);
+
+        // A text may be cited by the index itself or by one of the notices it points at — both
+        // count as reachable for a reader starting from the index.
+        const reachable = index + notices.map((name) => fs.readFileSync(path.join(licensesDir, name), 'utf8')).join('');
+
+        for (const name of [...notices, ...texts]) {
+            expect({ name, cited: reachable.includes(name) }).toEqual({ name, cited: true });
+        }
     });
 });
 
