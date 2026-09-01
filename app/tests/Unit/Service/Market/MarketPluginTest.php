@@ -152,6 +152,22 @@ final class MarketPluginTest extends TestCase
         $this->assertSame('1.2.0', $plugin->resolveCompatibleVersion('2.5.0', null)?->version);
     }
 
+    /**
+     * An installed plugin-contracts version `Semver::satisfies()` cannot parse (e.g. a
+     * non-normalizable string) fails open on this axis instead of throwing out of
+     * {@see MarketPlugin::resolveCompatibleVersion()} and taking down the whole snapshot build —
+     * the same convention {@see \App\Service\Plugin\InstalledPluginsRegistry}'s
+     * `satisfiesOrFailOpen()` already applies for an installed plugin.
+     */
+    public function testResolveCompatibleVersionFailsOpenWhenTheInstalledPluginContractsVersionIsUnparsable(): void
+    {
+        $plugin = new MarketPlugin(new PluginId('animedb-shikimori'), $this->manifest(), [
+            new MarketPluginVersion('1.2.0', '>=2.0.0', pluginContracts: '^0.15'),
+        ]);
+
+        $this->assertSame('1.2.0', $plugin->resolveCompatibleVersion('2.5.0', 'not-a-version')?->version);
+    }
+
     public function testHasCoreCompatibleVersionIsTrueEvenWhenPluginContractsBlocksEveryVersion(): void
     {
         $plugin = new MarketPlugin(new PluginId('animedb-shikimori'), $this->manifest(), [

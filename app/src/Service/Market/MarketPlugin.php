@@ -74,9 +74,10 @@ final class MarketPlugin
      * {@see MarketPluginVersion::$pluginContracts}) is never blocked on this axis, the same
      * "unknown = no constraint" rule already applied to `translationKeyCount`/`locales`. A `null`
      * $pluginContractsVersion (this app build could not determine its own installed
-     * plugin-contracts version) fails open the same way: nothing gets blocked on an axis this
-     * app cannot itself evaluate, mirroring {@see \App\Service\Plugin\InstalledPluginsRegistry::isCompatible()}'s
-     * fail-open convention for the installed-plugin side of the same axis (issue #561).
+     * plugin-contracts version), or one `Semver::satisfies()` cannot parse, fails open the same
+     * way: nothing gets blocked on an axis this app cannot itself evaluate, mirroring
+     * {@see \App\Service\Plugin\InstalledPluginsRegistry::isCompatible()}'s fail-open convention
+     * for the installed-plugin side of the same axis (issue #561).
      */
     public function resolveCompatibleVersion(string $coreVersion, ?string $pluginContractsVersion): ?MarketPluginVersion
     {
@@ -86,7 +87,7 @@ final class MarketPlugin
             }
 
             if ($version->pluginContracts !== null && $pluginContractsVersion !== null
-                && !Semver::satisfies($pluginContractsVersion, $version->pluginContracts)) {
+                && !$this->satisfiesPluginContractsOrFailOpen($pluginContractsVersion, $version->pluginContracts)) {
                 continue;
             }
 
@@ -94,6 +95,22 @@ final class MarketPlugin
         }
 
         return null;
+    }
+
+    /**
+     * $pluginContractsVersion comes from `InstalledVersions::getPrettyVersion()`, not from a
+     * registry entry validated up front the way `$constraint` is (see
+     * {@see PluginRegistry::isValidConstraint()}) — an unparsable value fails open (treated as
+     * satisfied) rather than throwing, same rationale as {@see PluginRegistry::isValidVersion()}
+     * and {@see \App\Service\Plugin\InstalledPluginsRegistry}'s `satisfiesOrFailOpen()`.
+     */
+    private function satisfiesPluginContractsOrFailOpen(string $pluginContractsVersion, string $constraint): bool
+    {
+        try {
+            return Semver::satisfies($pluginContractsVersion, $constraint);
+        } catch (\UnexpectedValueException) {
+            return true;
+        }
     }
 
     /**
