@@ -427,10 +427,6 @@ async function terminate(child) {
     }
 }
 
-/**
- * @param {{ appPath?: string, userDataDir?: string, timeoutMs?: number, keepUserData?: boolean }} [options]
- * @returns {Promise<{ ok: boolean, exitCode: number, message: string, problems: string[] }>}
- */
 // Files that MUST be present in the packaged tree for the installer to be distributable at all:
 // our own GPLv3 text, the third-party index and the license texts of the bundled binaries. Every
 // path is relative to the installation directory. Three different mechanisms put them there
@@ -469,6 +465,10 @@ function checkLicenseFiles(appDir) {
         .map((rel) => `Нет обязательного лицензионного файла: ${rel}`);
 }
 
+/**
+ * @param {{ appPath?: string, userDataDir?: string, timeoutMs?: number, keepUserData?: boolean }} [options]
+ * @returns {Promise<{ ok: boolean, exitCode: number, message: string, problems: string[] }>}
+ */
 async function run({
     appPath = DEFAULT_APP_PATH,
     userDataDir,
