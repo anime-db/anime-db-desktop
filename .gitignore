@@ -4,6 +4,9 @@ node_modules/
 # Binaries — тянутся через scripts/download-bins.js, не хранятся в git
 bin/frankenphp/
 bin/meilisearch/
+bin/qbittorrent-nox/
+# Лицензионные файлы апстримов — извлекаются оттуда же (см. FRANKENPHP_LICENSE_FILES)
+bin/licenses/
 
 # Symfony
 app/vendor/

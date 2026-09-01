@@ -427,6 +427,44 @@ async function terminate(child) {
     }
 }
 
+// Files that MUST be present in the packaged tree for the installer to be distributable at all:
+// our own GPLv3 text, the third-party index and the license texts of the bundled binaries. Every
+// path is relative to the installation directory. Three different mechanisms put them there
+// (`extraFiles` for the first two groups, `files` for what download-bins.js extracts into
+// bin/licenses/, and the qbittorrent-nox bundle carrying its own THIRD-PARTY-LICENSES/), and each
+// of them fails silently: a mistyped glob, a skipped extraction or an upstream that stopped
+// shipping its license file all produce a working application that is simply missing attribution.
+// This is the only place in the pipeline that sees the real shipped tree.
+const REQUIRED_LICENSE_FILES = [
+    'LICENSE.txt',
+    'LICENSE.electron.txt',
+    'LICENSES.chromium.html',
+    'THIRD-PARTY-LICENSES/README.md',
+    'THIRD-PARTY-LICENSES/PHP-NOTICE.txt',
+    'THIRD-PARTY-LICENSES/FrankenPHP-NOTICE.txt',
+    'THIRD-PARTY-LICENSES/OpenSSL-NOTICE.txt',
+    'THIRD-PARTY-LICENSES/ICU-NOTICE.txt',
+    'THIRD-PARTY-LICENSES/GD-CODECS-NOTICE.txt',
+    'THIRD-PARTY-LICENSES/Runtime-libraries-NOTICE.txt',
+    'THIRD-PARTY-LICENSES/Meilisearch-NOTICE.txt',
+    'THIRD-PARTY-LICENSES/SQLite-NOTICE.txt',
+    'THIRD-PARTY-LICENSES/texts/Apache-2.0.txt',
+    'THIRD-PARTY-LICENSES/texts/AGPL-3.0.txt',
+    'resources/app/bin/licenses/frankenphp/license.txt',
+    'resources/app/bin/licenses/frankenphp/readme-redist-bins.txt',
+    'resources/app/bin/qbittorrent-nox/THIRD-PARTY-LICENSES/README.md',
+];
+
+/**
+ * @param {string} appDir installation directory (the one holding the executable)
+ * @returns {string[]} human-readable problems, empty when every required file is in place
+ */
+function checkLicenseFiles(appDir) {
+    return REQUIRED_LICENSE_FILES
+        .filter((rel) => !fs.existsSync(path.join(appDir, rel)))
+        .map((rel) => `Нет обязательного лицензионного файла: ${rel}`);
+}
+
 /**
  * @param {{ appPath?: string, userDataDir?: string, timeoutMs?: number, keepUserData?: boolean }} [options]
  * @returns {Promise<{ ok: boolean, exitCode: number, message: string, problems: string[] }>}
@@ -454,6 +492,18 @@ async function run({
             exitCode: 1,
             message: `Собранного приложения нет: ${appPath}. Сначала выполни:\n  npm run build`,
             problems: [],
+        };
+    }
+
+    // Before spending Windows runner minutes on a launch: a build missing attribution must not be
+    // published regardless of whether it starts.
+    const licenseProblems = checkLicenseFiles(path.dirname(appPath));
+    if (licenseProblems.length > 0) {
+        return {
+            ok: false,
+            exitCode: 1,
+            message: 'Собранное приложение нельзя распространять: в поставке нет лицензионных файлов.',
+            problems: licenseProblems,
         };
     }
 
@@ -551,7 +601,9 @@ module.exports = {
     parseListeners,
     checkListeners,
     checkResponses,
+    checkLicenseFiles,
     pidFilePath,
     EXPECTATIONS,
+    REQUIRED_LICENSE_FILES,
     DEFAULT_APP_PATH,
 };

@@ -1,0 +1,47 @@
+FrankenPHP
+Copyright (c) 2022-present Kévin Dunglas
+https://frankenphp.dev/
+
+The file frankenphp.exe under resources/app/bin/frankenphp/ is the official,
+unmodified FrankenPHP 1.12.4 Windows release binary. FrankenPHP itself is
+MIT-licensed (texts/frankenphp-MIT.txt), but the shipped executable is a
+statically linked Go binary that also contains Caddy and its modules. The
+components below carry obligations of their own.
+
+Components with active obligations, verified in the shipped binary. The module
+list is embedded by the Go toolchain and can be printed with
+`go version -m frankenphp.exe`:
+
+  github.com/caddyserver/caddy/v2      v2.11.4    Apache-2.0
+  github.com/caddyserver/certmagic     v0.25.3    Apache-2.0
+  github.com/caddyserver/zerossl       v0.1.5     Apache-2.0
+  github.com/dunglas/mercure           v0.24.2    AGPL-3.0
+  github.com/dunglas/mercure/caddy     v0.24.2    AGPL-3.0
+  github.com/dunglas/vulcain           v1.4.1     AGPL-3.0
+  github.com/dunglas/vulcain/caddy     v1.4.1     AGPL-3.0
+  github.com/dunglas/caddy-cbrotli     v1.0.1     MIT
+
+License texts: texts/Apache-2.0.txt, texts/AGPL-3.0.txt,
+texts/caddy-cbrotli-MIT.txt, texts/frankenphp-MIT.txt.
+
+The binary additionally links roughly two hundred transitive Go modules under
+permissive licenses (MIT, BSD, Apache-2.0). They are not enumerated here: the
+complete, authoritative list with exact versions is embedded in the binary
+itself by the Go toolchain and is reproducible from it, and the corresponding
+source for every one of them is reachable from the pinned upstream tag below.
+
+Corresponding source (GPL / AGPL / Apache):
+
+  FrankenPHP 1.12.4, including the go.mod pinning every module version above:
+    https://github.com/php/frankenphp/tree/v1.12.4
+  Mercure v0.24.2:  https://github.com/dunglas/mercure/tree/v0.24.2
+  Vulcain v1.4.1:   https://github.com/dunglas/vulcain/tree/v1.4.1
+  Caddy v2.11.4:    https://github.com/caddyserver/caddy/tree/v2.11.4
+
+No source modifications are applied by this product: the release archive is
+downloaded from the upstream URL recorded in scripts/versions.json and verified
+against the SHA-256 pinned in that same file before extraction.
+
+AGPL-3.0 section 13 (remote network interaction): the Mercure and Vulcain
+components are shipped unmodified. This product runs them locally, bound to the
+loopback interface, and does not offer them to users over a network.

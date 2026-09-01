@@ -60,7 +60,18 @@
             "scripts/versions.json",
             "scripts/build-id.txt",
             "!app/var/**",
-            "!node_modules/**"
+            "!node_modules/**",
+            "!resources/third-party-licenses/**"
+        ],
+        "extraFiles": [
+            {
+                "from": "LICENSE",
+                "to": "LICENSE.txt"
+            },
+            {
+                "from": "resources/third-party-licenses",
+                "to": "THIRD-PARTY-LICENSES"
+            }
         ],
         "asar": false
     }

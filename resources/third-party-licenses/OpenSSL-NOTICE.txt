@@ -1,0 +1,18 @@
+OpenSSL
+Copyright 1998-2026 The OpenSSL Authors. All rights reserved.
+https://www.openssl.org/
+
+The files libssl-3-x64.dll and libcrypto-3-x64.dll under
+resources/app/bin/frankenphp/ are OpenSSL 3.5.7, shipped as dynamic libraries
+inside the official FrankenPHP Windows release archive. They are used by the
+PHP interpreter (ext/php_openssl.dll) and are distributed under the Apache
+License 2.0.
+
+Full license text: texts/Apache-2.0.txt
+Corresponding source: https://github.com/openssl/openssl/tree/openssl-3.5.7
+
+The version above is read from the PE version resource of the shipped DLLs.
+
+A separate, statically linked copy of OpenSSL (3.6.3) is present inside
+qbittorrent-nox.exe; it is attributed independently in
+resources/app/bin/qbittorrent-nox/THIRD-PARTY-LICENSES/OpenSSL-NOTICE.txt.
