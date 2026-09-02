@@ -106,37 +106,7 @@ final class LocaleSubscriber implements EventSubscriberInterface
 
         $preferredLocale = $request->getPreferredLanguage($locales);
         if ($preferredLocale !== null) {
-            $request->setLocale($this->restoreDeclaredSpelling($preferredLocale, $locales));
+            $request->setLocale($preferredLocale);
         }
-    }
-
-    /**
-     * `Request::getPreferredLanguage()` runs every candidate through Symfony's private
-     * `formatLocale()`, which rewrites the separator to `_` (`pt-BR` -> `pt_BR`, `zh-Hans` ->
-     * `zh_Hans`) regardless of how the candidate was originally spelled. That rewritten spelling is
-     * unusable here: translation catalogs are registered under the plugin's own file name
-     * (`messages.pt-BR.yaml` -> catalog `pt-BR`, see `Kernel::configureContainer()`),
-     * so a locale reaching the translator as `pt_BR` finds no catalog and silently falls through to
-     * English (issue #557). This maps the negotiated value back to whichever spelling
-     * {@see AvailableLocalesProvider::all()} declared, comparing case-insensitively with `-`/`_`
-     * unified so `pt_BR`, `PT-br`, and `pt-BR` are all recognized as the same locale. A negotiated
-     * value with no declared match is returned unchanged.
-     *
-     * @param list<string> $declaredLocales
-     */
-    private function restoreDeclaredSpelling(string $negotiatedLocale, array $declaredLocales): string
-    {
-        foreach ($declaredLocales as $declaredLocale) {
-            if ($this->normalizeForComparison($declaredLocale) === $this->normalizeForComparison($negotiatedLocale)) {
-                return $declaredLocale;
-            }
-        }
-
-        return $negotiatedLocale;
-    }
-
-    private function normalizeForComparison(string $locale): string
-    {
-        return strtolower(str_replace('-', '_', $locale));
     }
 }
