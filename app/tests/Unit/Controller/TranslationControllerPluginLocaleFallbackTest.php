@@ -30,6 +30,7 @@ namespace App\Tests\Unit\Controller;
 use App\Controller\TranslationController;
 use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\PluginsConfigStore;
+use App\Tests\Support\TemporaryDirectories;
 use Psr\Log\NullLogger;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 
@@ -49,6 +50,8 @@ use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
  */
 final class TranslationControllerPluginLocaleFallbackTest extends KernelTestCase
 {
+    use TemporaryDirectories;
+
     private string $pluginsDir;
     private ?string $originalRuntimeDir;
     private ?string $originalPluginsDir;
@@ -60,10 +63,8 @@ final class TranslationControllerPluginLocaleFallbackTest extends KernelTestCase
         $this->originalPluginsDir = $_SERVER['PLUGINS_DIR'] ?? null;
         $this->originalPluginsConfigPath = $_SERVER['PLUGINS_CONFIG_PATH'] ?? null;
 
-        $runtimeDir = sys_get_temp_dir().'/anime-translation-fallback-test-runtime-'.uniqid();
-        $this->pluginsDir = sys_get_temp_dir().'/anime-translation-fallback-test-plugins-'.uniqid();
-        mkdir($runtimeDir, recursive: true);
-        mkdir($this->pluginsDir, recursive: true);
+        $runtimeDir = $this->createTemporaryDirectory('anime-translation-fallback-test-runtime-');
+        $this->pluginsDir = $this->createTemporaryDirectory('anime-translation-fallback-test-plugins-');
 
         $_SERVER['APP_RUNTIME_DIR'] = $runtimeDir;
         $_SERVER['PLUGINS_DIR'] = $this->pluginsDir;
@@ -77,6 +78,8 @@ final class TranslationControllerPluginLocaleFallbackTest extends KernelTestCase
         $this->restoreServerVar('APP_RUNTIME_DIR', $this->originalRuntimeDir);
         $this->restoreServerVar('PLUGINS_DIR', $this->originalPluginsDir);
         $this->restoreServerVar('PLUGINS_CONFIG_PATH', $this->originalPluginsConfigPath);
+
+        $this->removeTemporaryDirectories();
     }
 
     public function testInvokeFillsMissingKeysFromTheEnglishFallbackForAPluginOnlyLocale(): void

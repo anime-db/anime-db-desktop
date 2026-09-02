@@ -27,6 +27,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Acceptance;
 
+use App\Tests\Support\TemporaryDirectories;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Tools\SchemaTool;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
@@ -56,6 +57,8 @@ use Symfony\Component\Security\Csrf\CsrfTokenManagerInterface;
  */
 final class SettingsLocaleSwitchAcceptanceTest extends KernelTestCase
 {
+    use TemporaryDirectories;
+
     private string $configPath;
     private string $runtimeDir;
     private string $pluginsDir;
@@ -86,12 +89,10 @@ final class SettingsLocaleSwitchAcceptanceTest extends KernelTestCase
         $this->originalQueueDatabaseUrlEnv = $_ENV['QUEUE_DATABASE_URL'] ?? null;
 
         $this->configPath = sys_get_temp_dir().'/anime-settings-locale-switch-acceptance-'.uniqid().'.json';
-        $this->runtimeDir = sys_get_temp_dir().'/anime-settings-locale-switch-acceptance-runtime-'.uniqid();
-        $this->pluginsDir = sys_get_temp_dir().'/anime-settings-locale-switch-acceptance-plugins-'.uniqid();
+        $this->runtimeDir = $this->createTemporaryDirectory('anime-settings-locale-switch-acceptance-runtime-');
+        $this->pluginsDir = $this->createTemporaryDirectory('anime-settings-locale-switch-acceptance-plugins-');
         $this->databasePath = sys_get_temp_dir().'/anime-settings-locale-switch-acceptance-db-'.uniqid().'.sqlite';
         $this->queueDatabasePath = sys_get_temp_dir().'/anime-settings-locale-switch-acceptance-queue-'.uniqid().'.sqlite';
-        mkdir($this->runtimeDir, recursive: true);
-        mkdir($this->pluginsDir, recursive: true);
 
         $_SERVER['CONFIG_PATH'] = $this->configPath;
         $_SERVER['APP_RUNTIME_DIR'] = $this->runtimeDir;
@@ -121,6 +122,8 @@ final class SettingsLocaleSwitchAcceptanceTest extends KernelTestCase
         $this->restoreServerVar('QUEUE_DATABASE_URL', $this->originalQueueDatabaseUrl);
         $this->restoreEnvVar('DATABASE_URL', $this->originalDatabaseUrlEnv);
         $this->restoreEnvVar('QUEUE_DATABASE_URL', $this->originalQueueDatabaseUrlEnv);
+
+        $this->removeTemporaryDirectories();
     }
 
     public function testPostingALocaleSwitchThroughTheKernelRedirectsAndTheFollowingGetRendersTheNewLocale(): void
@@ -129,6 +132,16 @@ final class SettingsLocaleSwitchAcceptanceTest extends KernelTestCase
 
         /** @var EntityManagerInterface $entityManager */
         $entityManager = self::getContainer()->get(EntityManagerInterface::class);
+
+        // Guards against a silently ignored $_SERVER-only override (see .claude-docs/gotchas.md):
+        // if this ever pointed at the app's real DATABASE_URL, createSchema() below would write the
+        // full ORM schema into the working database instead of this test's throwaway file.
+        self::assertSame(
+            $this->databasePath,
+            $entityManager->getConnection()->getParams()['path'] ?? null,
+            'The entity manager must be connected to this test\'s throwaway SQLite file, not the app\'s working database.',
+        );
+
         (new SchemaTool($entityManager))->createSchema($entityManager->getMetadataFactory()->getAllMetadata());
 
         $session = new Session(new MockArraySessionStorage());

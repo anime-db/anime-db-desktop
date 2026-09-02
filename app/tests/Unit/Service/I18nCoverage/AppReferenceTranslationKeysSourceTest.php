@@ -31,6 +31,7 @@ use App\Service\I18nCoverage\AppReferenceTranslationKeysSource;
 use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Translation\TranslationCoverageService;
+use App\Tests\Support\TemporaryDirectories;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\Component\Yaml\Yaml;
@@ -42,6 +43,15 @@ use Symfony\Component\Yaml\Yaml;
  */
 final class AppReferenceTranslationKeysSourceTest extends TestCase
 {
+    use TemporaryDirectories;
+
+    protected function tearDown(): void
+    {
+        parent::tearDown();
+
+        $this->removeTemporaryDirectories();
+    }
+
     public function testKeyCountMatchesTranslationCoverageServiceReferenceKeyCount(): void
     {
         $projectDir = $this->makeProjectDir(['welcome' => 'Hello', 'goodbye' => 'Bye', 'nested' => ['deep' => 'Value']]);
@@ -73,7 +83,7 @@ final class AppReferenceTranslationKeysSourceTest extends TestCase
      */
     private function makeProjectDir(array $messages): string
     {
-        $projectDir = sys_get_temp_dir().'/anime-i18n-coverage-app-'.uniqid();
+        $projectDir = $this->createTemporaryDirectory('anime-i18n-coverage-app-');
         mkdir($projectDir.'/translations', recursive: true);
         file_put_contents($projectDir.'/translations/messages.en.yaml', Yaml::dump($messages));
 

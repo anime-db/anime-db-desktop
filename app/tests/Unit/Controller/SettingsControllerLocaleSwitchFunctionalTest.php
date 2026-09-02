@@ -39,6 +39,7 @@ use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Search\AnimeReindexService;
 use App\Service\Search\AnimeSearchIndexer;
 use App\Service\Sync\SyncReviewService;
+use App\Tests\Support\TemporaryDirectories;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\EntityManager;
@@ -68,6 +69,8 @@ use Twig\Environment;
  */
 final class SettingsControllerLocaleSwitchFunctionalTest extends KernelTestCase
 {
+    use TemporaryDirectories;
+
     private string $configPath;
     private string $pluginsDir;
     private ?string $originalRuntimeDir;
@@ -82,10 +85,8 @@ final class SettingsControllerLocaleSwitchFunctionalTest extends KernelTestCase
         $this->originalPluginsDir = $_SERVER['PLUGINS_DIR'] ?? null;
         $this->originalPluginsConfigPath = $_SERVER['PLUGINS_CONFIG_PATH'] ?? null;
 
-        $runtimeDir = sys_get_temp_dir().'/anime-settings-locale-switch-test-runtime-'.uniqid();
-        $this->pluginsDir = sys_get_temp_dir().'/anime-settings-locale-switch-test-plugins-'.uniqid();
-        mkdir($runtimeDir, recursive: true);
-        mkdir($this->pluginsDir, recursive: true);
+        $runtimeDir = $this->createTemporaryDirectory('anime-settings-locale-switch-test-runtime-');
+        $this->pluginsDir = $this->createTemporaryDirectory('anime-settings-locale-switch-test-plugins-');
 
         $_SERVER['APP_RUNTIME_DIR'] = $runtimeDir;
         $_SERVER['PLUGINS_DIR'] = $this->pluginsDir;
@@ -105,6 +106,8 @@ final class SettingsControllerLocaleSwitchFunctionalTest extends KernelTestCase
         $this->restoreServerVar('APP_RUNTIME_DIR', $this->originalRuntimeDir);
         $this->restoreServerVar('PLUGINS_DIR', $this->originalPluginsDir);
         $this->restoreServerVar('PLUGINS_CONFIG_PATH', $this->originalPluginsConfigPath);
+
+        $this->removeTemporaryDirectories();
     }
 
     public function testPostingALocaleSwitchRedirectsAndTheFollowingGetRendersTheNewLocale(): void

@@ -32,6 +32,7 @@ use App\Entity\ValueObject\PluginId;
 use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\PluginRemover;
 use App\Service\Plugin\PluginsConfigStore;
+use App\Tests\Support\TemporaryDirectories;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\Component\Console\Command\Command;
@@ -39,9 +40,18 @@ use Symfony\Component\Console\Tester\CommandTester;
 
 final class PluginDeactivateCommandTest extends TestCase
 {
+    use TemporaryDirectories;
+
+    protected function tearDown(): void
+    {
+        parent::tearDown();
+
+        $this->removeTemporaryDirectories();
+    }
+
     public function testRemovesTheInstalledPluginDirectoryAndSucceeds(): void
     {
-        $rootDir = sys_get_temp_dir().'/anime-plugin-deactivate-command-test-'.uniqid();
+        $rootDir = $this->createTemporaryDirectory('anime-plugin-deactivate-command-test-');
         $pluginsDir = $rootDir.'/plugins';
         $pluginDir = $pluginsDir.'/animedb-shikimori';
         mkdir($pluginDir, recursive: true);
