@@ -39,8 +39,8 @@ use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 use Symfony\Component\Security\Csrf\CsrfTokenManagerInterface;
 
 /**
- * Extends the #557 kernel-level acceptance style ({@see SettingsProxyLocalizationTest},
- * {@see PluginLocaleSpellingNormalizationTest}) to the locale switch itself (issue #558): a POST
+ * Extends the #557 kernel-level acceptance style ({@see SettingsProxyLocalizationTest})
+ * to the locale switch itself (issue #558): a POST
  * to `/settings` and the follow-up GET both go through `$kernel->handle()`, so routing is
  * actually exercised. `SettingsControllerLocaleSwitchFunctionalTest` calls
  * `SettingsController::setLocale()`/`index()` directly and cannot catch a routing regression —
