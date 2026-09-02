@@ -133,6 +133,31 @@ final class SettingsTemplateRenderingTest extends KernelTestCase
     }
 
     /**
+     * Regression (issue #567): the test above requests 'en', which is simultaneously the first
+     * entry of availableLocales and framework.yaml's default_locale, so it can't tell the
+     * template's real `locale == app.request.locale` condition apart from a hardcoded
+     * `locale == 'en'` or `locale == availableLocales|first`. Requesting 'ru' — neither the first
+     * available locale nor the default_locale — makes both of those wrong conditions fail.
+     */
+    public function testSettingsIndexRendersLocaleSwitcherWithCurrentLocaleSelectedWhenItDiffersFromTheFirstAvailableLocaleAndTheDefaultLocale(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession(locale: 'ru');
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('settings/index.html.twig', [
+            'availableLocales' => ['en', 'ru'],
+            'unavailableLocale' => null,
+            'reindexStatus' => null,
+            'needsCorrectionCount' => 0,
+        ]);
+
+        $this->assertStringContainsString('<option value="ru" selected>Русский</option>', $html);
+        $this->assertStringNotContainsString('<option value="en" selected>', $html);
+    }
+
+    /**
      * Acceptance (issue #558): a saved locale that dropped out of the available list must render
      * as a disabled, pre-selected placeholder option carrying its endonym — not silently fall
      * back to the first available locale's option being selected instead.
