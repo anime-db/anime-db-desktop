@@ -214,6 +214,39 @@ final class InstalledPluginsRegistryTest extends TestCase
         $this->assertSame(['animedb-shikimori'], $this->ids($registry->enabled()));
     }
 
+    /**
+     * PR #573 review: {@see \App\EventSubscriber\LocaleSubscriber} dropped its restoration of a
+     * negotiated locale's declared spelling (issue #568) on the assumption that
+     * {@see \AnimeDb\PluginContracts\Manifest\ManifestValidator} v0.16 no longer lets a
+     * region/script-qualified locale (e.g. "pt-BR") reach the index at all. That validator only
+     * runs inside {@see InstalledPluginsRegistry::reconcile()}, so an entry written by an older,
+     * looser version before this app's own upgrade to plugin-contracts v0.16 would otherwise
+     * survive verbatim until the next reconcile. Simulates exactly that stale entry (the same
+     * technique {@see testReadIndexSkipsEntryWithInvalidPluginIdAndKeepsOthers()} uses) to prove
+     * the registry itself rejects it on every read, not only on reconcile.
+     */
+    public function testReadIndexSkipsEntryWithRegionQualifiedLocaleAndKeepsOthers(): void
+    {
+        $this->writeManifest('animedb-shikimori');
+        $this->writeManifest('animedb-translation-pack');
+
+        $registry = new InstalledPluginsRegistry($this->pluginsDir, $this->configStore(), new NullLogger());
+        $registry->reconcile();
+
+        $this->rewriteIndexLocales('animedb-translation-pack', ['pt-BR']);
+
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->exactly(2))->method('error')->with(
+            $this->stringContains('invalid index entry'),
+            $this->callback(static fn (array $context): bool => $context['pluginId'] === 'animedb-translation-pack'),
+        );
+
+        $registry = new InstalledPluginsRegistry($this->pluginsDir, $this->configStore(), $logger);
+
+        $this->assertSame(['animedb-shikimori'], $this->ids($registry->all()));
+        $this->assertSame(['animedb-shikimori'], $this->ids($registry->enabled()));
+    }
+
     public function testGetReturnsMatchingPlugin(): void
     {
         $this->writeManifest('animedb-shikimori');
@@ -587,6 +620,23 @@ final class InstalledPluginsRegistryTest extends TestCase
         $entries = require $indexPath;
 
         $entries[$pluginId]['manifest']['require']['pluginContracts'] = $requirePluginContracts;
+
+        file_put_contents($indexPath, "<?php\n\nreturn ".var_export($entries, true).";\n");
+    }
+
+    /**
+     * Directly rewrites `installed-plugins.php`'s `manifest.locales` for an already reconciled
+     * plugin, bypassing {@see ManifestParser}/{@see ManifestValidator} validation — see
+     * {@see testReadIndexSkipsEntryWithRegionQualifiedLocaleAndKeepsOthers()}.
+     *
+     * @param list<string> $locales
+     */
+    private function rewriteIndexLocales(string $pluginId, array $locales): void
+    {
+        $indexPath = $this->pluginsDir.'/installed-plugins.php';
+        $entries = require $indexPath;
+
+        $entries[$pluginId]['manifest']['locales'] = $locales;
 
         file_put_contents($indexPath, "<?php\n\nreturn ".var_export($entries, true).";\n");
     }
