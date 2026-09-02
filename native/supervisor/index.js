@@ -29,6 +29,7 @@ const meilisearch       = require('./meilisearch');
 const messengerConsumer = require('./messenger-consumer');
 const migrations        = require('./migrations');
 const phpCommand        = require('./php-command');
+const pluginReconcile   = require('./plugin-reconcile');
 const qbittorrent       = require('./qbittorrent');
 const safeModeState     = require('./safe-mode');
 const searchReindex     = require('./search-reindex');
@@ -137,6 +138,7 @@ async function start(onProgress, { safeMode = false } = {}) {
         phpCommand.killOrphan('app:market:refresh'),
         phpCommand.killOrphan('messenger:setup-transports'),
         phpCommand.killOrphan('app:search:reindex'),
+        phpCommand.killOrphan('app:plugin:reconcile'),
         qbittorrent.killOrphan(),
     ]);
 
@@ -183,6 +185,23 @@ async function start(onProgress, { safeMode = false } = {}) {
 
     if (onProgress) onProgress(1, TOTAL_STEPS, 'splash.step_migrations');
     const migrationsApplied = await migrations.run(phpContext);
+
+    // Rebuilds installed-plugins.php against the current build's manifest validation, same
+    // buildChanged condition as the cache/market-snapshot invalidation above (issue #575) — an
+    // index entry a previous, more permissive build accepted otherwise survives the upgrade
+    // as-is, since readIndex() below never re-validates a manifest, only parses the pre-built
+    // index. Must run before frankenphp.start(): the first request into the new worker already
+    // reads the index, so reconciling after that point would let it observe the stale one. A
+    // failure here is logged and does not block startup — the index is simply left as it was,
+    // the same state as today, not deleted (readIndex() treats a missing file as "no plugins
+    // installed").
+    if (buildChanged) {
+        try {
+            await pluginReconcile.run(phpContext);
+        } catch (err) {
+            console.error('[plugin-reconcile] не удалось пересобрать индекс установленных плагинов:', err.message);
+        }
+    }
 
     if (onProgress) onProgress(2, TOTAL_STEPS, 'splash.step_frankenphp');
     const { httpPort: frankenphpPort, wsPort } = await frankenphp.start(phpContext);

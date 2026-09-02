@@ -60,6 +60,9 @@ jest.mock('../../native/supervisor/qbittorrent', () => ({
 jest.mock('../../native/supervisor/search-reindex', () => ({
     run: jest.fn(() => Promise.resolve()),
 }));
+jest.mock('../../native/supervisor/plugin-reconcile', () => ({
+    run: jest.fn(() => Promise.resolve()),
+}));
 jest.mock('../../native/supervisor/migrations', () => ({
     run:        jest.fn(() => Promise.resolve()),
     killOrphan: jest.fn(() => Promise.resolve()),
@@ -81,6 +84,7 @@ const meilisearch       = require('../../native/supervisor/meilisearch');
 const messengerConsumer = require('../../native/supervisor/messenger-consumer');
 const migrations        = require('../../native/supervisor/migrations');
 const phpCommand        = require('../../native/supervisor/php-command');
+const pluginReconcile   = require('../../native/supervisor/plugin-reconcile');
 const safeModeState     = require('../../native/supervisor/safe-mode');
 const searchReindex     = require('../../native/supervisor/search-reindex');
 const supervisor        = require('../../native/supervisor');
@@ -99,6 +103,7 @@ describe('supervisor.start', () => {
         messengerConsumer.start.mockResolvedValue(undefined);
         meilisearch.start.mockResolvedValue({ port: 7700, key: 'k', wiped: false });
         searchReindex.run.mockResolvedValue(undefined);
+        pluginReconcile.run.mockResolvedValue(undefined);
         marketRefresh.run.mockResolvedValue(undefined);
         migrations.run.mockResolvedValue(undefined);
     });
@@ -167,6 +172,7 @@ describe('supervisor.start', () => {
         expect(phpCommand.killOrphan).toHaveBeenCalledWith('app:market:refresh');
         expect(phpCommand.killOrphan).toHaveBeenCalledWith('messenger:setup-transports');
         expect(phpCommand.killOrphan).toHaveBeenCalledWith('app:search:reindex');
+        expect(phpCommand.killOrphan).toHaveBeenCalledWith('app:plugin:reconcile');
     });
 
     test('runs search-reindex when meilisearch reports the index was wiped', async () => {
@@ -326,6 +332,49 @@ describe('supervisor.start', () => {
         await supervisor.start();
 
         expect(cacheInvalidation.invalidateMarketSnapshot).not.toHaveBeenCalled();
+    });
+
+    // issue #575: an installed-plugins.php entry a previous, more permissive build accepted must
+    // not survive an upgrade as-is, so the index is rebuilt against the current build's manifest
+    // validation — but only on an actual build change, not on every startup.
+    describe('plugin index reconciliation (issue #575)', () => {
+        test('reconciles the installed-plugins index before starting frankenphp when the build changed', async () => {
+            cacheInvalidation.hasBuildChanged.mockReturnValue(true);
+            const callOrder = [];
+            pluginReconcile.run.mockImplementation((context) => {
+                callOrder.push('pluginReconcile.run');
+                return Promise.resolve(context);
+            });
+            frankenphp.start.mockImplementation(() => {
+                callOrder.push('frankenphp.start');
+                return Promise.resolve({ httpPort: 8000, wsPort: 8001 });
+            });
+
+            await supervisor.start(jest.fn());
+
+            expect(callOrder).toEqual(['pluginReconcile.run', 'frankenphp.start']);
+            expect(pluginReconcile.run).toHaveBeenCalledWith(expect.objectContaining({
+                qbittorrentPort: 9000,
+                meiliPort:       7700,
+                meiliKey:        'k',
+                safeMode:        false,
+            }));
+        });
+
+        test('does not reconcile the installed-plugins index when the build has not changed', async () => {
+            cacheInvalidation.hasBuildChanged.mockReturnValue(false);
+
+            await supervisor.start(jest.fn());
+
+            expect(pluginReconcile.run).not.toHaveBeenCalled();
+        });
+
+        test('does not fail startup when reconciliation errors out', async () => {
+            cacheInvalidation.hasBuildChanged.mockReturnValue(true);
+            pluginReconcile.run.mockRejectedValue(new Error('boom'));
+
+            await expect(supervisor.start(jest.fn())).resolves.toMatchObject({ frankenphpPort: 8000 });
+        });
     });
 
     test('commits the build fingerprint only after every process has started successfully', async () => {
