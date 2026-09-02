@@ -54,17 +54,15 @@ final class NearestBuiltInLocaleTest extends TestCase
         yield 'Russian' => ['ru', 'ru'];
         yield 'Belarusian' => ['be', 'ru'];
         yield 'Kazakh' => ['kk', 'ru'];
-        yield 'Kazakh with region (BCP 47)' => ['kk-KZ', 'ru'];
         yield 'Kyrgyz' => ['ky', 'ru'];
         yield 'Tajik' => ['tg', 'ru'];
         yield 'Uzbek' => ['uz', 'ru'];
-        yield 'Uzbek with underscore region' => ['uz_UZ', 'ru'];
         yield 'Armenian' => ['hy', 'ru'];
         yield 'Azerbaijani' => ['az', 'ru'];
 
+        yield 'uppercase subtag' => ['RU', 'ru'];
         yield 'German' => ['de', 'en'];
         yield 'Japanese' => ['ja', 'en'];
-        yield 'English with region (BCP 47)' => ['en-US', 'en'];
         yield 'unknown locale code' => ['xx', 'en'];
         yield 'garbage input' => ['not-a-locale!!', 'en'];
         yield 'empty string' => ['', 'en'];

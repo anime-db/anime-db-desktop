@@ -36,6 +36,12 @@ namespace App\Service;
  * Used to pick the nearest built-in locale for a translation fallback chain — a user whose
  * request locale is e.g. "kk" is understood better by a "ru" catalog than by an "en" one, the
  * same reasoning `native/config.js` already applies when resolving the tray/splash locale.
+ *
+ * Every method here requires a bare language subtag (e.g. "ru", "kk"), never a compound locale
+ * code such as "ru-RU" or "pt_BR": plugin locales are rejected at the manifest level by
+ * `ManifestValidator::validateLocales()` (anime-db/plugin-contracts >= 0.16.0), and the
+ * `Accept-Language` header sent by the desktop window is overwritten with a bare subtag on every
+ * request by `native/accept-language.js`.
  */
 final class NearestBuiltInLocale
 {
@@ -47,7 +53,7 @@ final class NearestBuiltInLocale
             return 'en';
         }
 
-        $prefix = strtolower((preg_split('/[-_]/', $locale, 2) ?: [$locale])[0]);
+        $prefix = strtolower($locale);
 
         return \in_array($prefix, self::RU_PREFERRED_PREFIXES, true) ? 'ru' : 'en';
     }
