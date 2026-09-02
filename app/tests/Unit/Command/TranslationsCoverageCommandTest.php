@@ -33,6 +33,7 @@ use App\Service\AppSettingsProvider;
 use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Translation\TranslationCoverageService;
+use App\Tests\Support\TemporaryDirectories;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\Component\Console\Command\Command;
@@ -40,14 +41,23 @@ use Symfony\Component\Console\Tester\CommandTester;
 
 final class TranslationsCoverageCommandTest extends TestCase
 {
+    use TemporaryDirectories;
+
+    protected function tearDown(): void
+    {
+        parent::tearDown();
+
+        $this->removeTemporaryDirectories();
+    }
+
     public function testReportsCoverageForAPluginDirectoryNotAmongTheInstalledPlugins(): void
     {
-        $projectDir = sys_get_temp_dir().'/anime-translations-coverage-cmd-app-'.uniqid();
+        $projectDir = $this->createTemporaryDirectory('anime-translations-coverage-cmd-app-');
         mkdir($projectDir.'/translations', recursive: true);
         file_put_contents($projectDir.'/translations/messages.en.yaml', "welcome: Hello\ngoodbye: Bye\n");
 
         // A plugin checkout on disk, never registered with InstalledPluginsRegistry.
-        $pluginDir = sys_get_temp_dir().'/anime-translations-coverage-cmd-plugin-'.uniqid();
+        $pluginDir = $this->createTemporaryDirectory('anime-translations-coverage-cmd-plugin-');
         mkdir($pluginDir.'/translations', recursive: true);
         file_put_contents($pluginDir.'/translations/messages.de.yaml', "welcome: Hallo\nextra: Nur hier\n");
         $this->writeManifest($pluginDir, 'animedb-checkout', 'translation', ['de']);
@@ -68,7 +78,7 @@ final class TranslationsCoverageCommandTest extends TestCase
 
     public function testFailsWhenNeitherPluginNorPathIsGiven(): void
     {
-        $projectDir = sys_get_temp_dir().'/anime-translations-coverage-cmd-app-'.uniqid();
+        $projectDir = $this->createTemporaryDirectory('anime-translations-coverage-cmd-app-');
         mkdir($projectDir.'/translations', recursive: true);
         file_put_contents($projectDir.'/translations/messages.en.yaml', "welcome: Hello\n");
 
@@ -82,7 +92,7 @@ final class TranslationsCoverageCommandTest extends TestCase
 
     public function testFailsWhenTheGivenPluginIsNotInstalled(): void
     {
-        $projectDir = sys_get_temp_dir().'/anime-translations-coverage-cmd-app-'.uniqid();
+        $projectDir = $this->createTemporaryDirectory('anime-translations-coverage-cmd-app-');
         mkdir($projectDir.'/translations', recursive: true);
         file_put_contents($projectDir.'/translations/messages.en.yaml', "welcome: Hello\n");
 
@@ -96,12 +106,12 @@ final class TranslationsCoverageCommandTest extends TestCase
 
     public function testPathFailsWithAClearErrorWhenTheDirectoryHasNoManifest(): void
     {
-        $projectDir = sys_get_temp_dir().'/anime-translations-coverage-cmd-app-'.uniqid();
+        $projectDir = $this->createTemporaryDirectory('anime-translations-coverage-cmd-app-');
         mkdir($projectDir.'/translations', recursive: true);
         file_put_contents($projectDir.'/translations/messages.en.yaml', "welcome: Hello\n");
 
         // A directory with a translations/ folder but no manifest.json at all.
-        $pluginDir = sys_get_temp_dir().'/anime-translations-coverage-cmd-no-manifest-'.uniqid();
+        $pluginDir = $this->createTemporaryDirectory('anime-translations-coverage-cmd-no-manifest-');
         mkdir($pluginDir.'/translations', recursive: true);
         file_put_contents($pluginDir.'/translations/messages.de.yaml', "welcome: Hallo\n");
 
@@ -116,11 +126,11 @@ final class TranslationsCoverageCommandTest extends TestCase
 
     public function testPathOnAnIntegrationPluginListsItsLocalesWithoutCoverageFigures(): void
     {
-        $projectDir = sys_get_temp_dir().'/anime-translations-coverage-cmd-app-'.uniqid();
+        $projectDir = $this->createTemporaryDirectory('anime-translations-coverage-cmd-app-');
         mkdir($projectDir.'/translations', recursive: true);
         file_put_contents($projectDir.'/translations/messages.en.yaml', "welcome: Hello\n");
 
-        $pluginDir = sys_get_temp_dir().'/anime-translations-coverage-cmd-integration-'.uniqid();
+        $pluginDir = $this->createTemporaryDirectory('anime-translations-coverage-cmd-integration-');
         mkdir($pluginDir.'/translations', recursive: true);
         file_put_contents($pluginDir.'/translations/animedb-widget.en.yaml', "welcome: Hello\n");
         file_put_contents($pluginDir.'/translations/animedb-widget.ru.yaml', "welcome: Привет\n");
@@ -144,7 +154,7 @@ final class TranslationsCoverageCommandTest extends TestCase
      */
     public function testPluginCommandWarnsWhenTheInterfaceLocaleHasNoMatchingFallback(): void
     {
-        $projectDir = sys_get_temp_dir().'/anime-translations-coverage-cmd-app-'.uniqid();
+        $projectDir = $this->createTemporaryDirectory('anime-translations-coverage-cmd-app-');
         mkdir($projectDir.'/translations', recursive: true);
         file_put_contents($projectDir.'/translations/messages.en.yaml', "welcome: Hello\n");
 
@@ -164,7 +174,7 @@ final class TranslationsCoverageCommandTest extends TestCase
      */
     public function testPluginCommandDoesNotWarnWhenTheFallbackChainIsShipped(): void
     {
-        $projectDir = sys_get_temp_dir().'/anime-translations-coverage-cmd-app-'.uniqid();
+        $projectDir = $this->createTemporaryDirectory('anime-translations-coverage-cmd-app-');
         mkdir($projectDir.'/translations', recursive: true);
         file_put_contents($projectDir.'/translations/messages.en.yaml', "welcome: Hello\n");
 
@@ -183,7 +193,7 @@ final class TranslationsCoverageCommandTest extends TestCase
      */
     private function makeInstalledIntegrationPlugin(array $locales): InstalledPluginsRegistry
     {
-        $pluginsDir = sys_get_temp_dir().'/anime-translations-coverage-cmd-installed-'.uniqid();
+        $pluginsDir = $this->createTemporaryDirectory('anime-translations-coverage-cmd-installed-');
         $pluginDir = $pluginsDir.'/animedb-widget';
         mkdir($pluginDir.'/translations', recursive: true);
         foreach ($locales as $locale) {

@@ -29,6 +29,7 @@ namespace App\Tests\Acceptance;
 
 use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\PluginsConfigStore;
+use App\Tests\Support\TemporaryDirectories;
 use Psr\Log\NullLogger;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\HttpFoundation\Request;
@@ -46,6 +47,8 @@ use Symfony\Component\HttpFoundation\Request;
  */
 final class PluginLocaleSpellingNormalizationTest extends KernelTestCase
 {
+    use TemporaryDirectories;
+
     private string $runtimeDir;
     private string $pluginsDir;
     private ?string $originalRuntimeDir;
@@ -58,10 +61,8 @@ final class PluginLocaleSpellingNormalizationTest extends KernelTestCase
         $this->originalPluginsDir = $_SERVER['PLUGINS_DIR'] ?? null;
         $this->originalPluginsConfigPath = $_SERVER['PLUGINS_CONFIG_PATH'] ?? null;
 
-        $this->runtimeDir = sys_get_temp_dir().'/anime-plugin-locale-spelling-test-runtime-'.uniqid();
-        $this->pluginsDir = sys_get_temp_dir().'/anime-plugin-locale-spelling-test-plugins-'.uniqid();
-        mkdir($this->runtimeDir, recursive: true);
-        mkdir($this->pluginsDir, recursive: true);
+        $this->runtimeDir = $this->createTemporaryDirectory('anime-plugin-locale-spelling-test-runtime-');
+        $this->pluginsDir = $this->createTemporaryDirectory('anime-plugin-locale-spelling-test-plugins-');
 
         $_SERVER['APP_RUNTIME_DIR'] = $this->runtimeDir;
         $_SERVER['PLUGINS_DIR'] = $this->pluginsDir;
@@ -76,8 +77,7 @@ final class PluginLocaleSpellingNormalizationTest extends KernelTestCase
         $this->restoreServerVar('PLUGINS_DIR', $this->originalPluginsDir);
         $this->restoreServerVar('PLUGINS_CONFIG_PATH', $this->originalPluginsConfigPath);
 
-        $this->removeDirectory($this->runtimeDir);
-        $this->removeDirectory($this->pluginsDir);
+        $this->removeTemporaryDirectories();
     }
 
     public function testRequestAndTranslatorReceiveThePluginDeclaredHyphenatedLocaleSpelling(): void
@@ -144,24 +144,5 @@ final class PluginLocaleSpellingNormalizationTest extends KernelTestCase
         } else {
             $_SERVER[$key] = $original;
         }
-    }
-
-    private function removeDirectory(string $dir): void
-    {
-        if (!is_dir($dir)) {
-            return;
-        }
-
-        $entries = scandir($dir);
-        foreach ($entries === false ? [] : $entries as $entry) {
-            if ($entry === '.' || $entry === '..') {
-                continue;
-            }
-
-            $path = $dir.'/'.$entry;
-            is_dir($path) ? $this->removeDirectory($path) : unlink($path);
-        }
-
-        rmdir($dir);
     }
 }

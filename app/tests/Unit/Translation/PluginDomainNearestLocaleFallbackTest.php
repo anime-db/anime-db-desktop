@@ -30,6 +30,7 @@ namespace App\Tests\Unit\Translation;
 use App\EventSubscriber\LocaleSubscriber;
 use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\PluginsConfigStore;
+use App\Tests\Support\TemporaryDirectories;
 use Psr\Log\NullLogger;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\HttpFoundation\Request;
@@ -47,6 +48,8 @@ use Symfony\Contracts\Translation\TranslatorInterface;
  */
 final class PluginDomainNearestLocaleFallbackTest extends KernelTestCase
 {
+    use TemporaryDirectories;
+
     private string $pluginsDir;
     private ?string $originalRuntimeDir;
     private ?string $originalPluginsDir;
@@ -58,10 +61,8 @@ final class PluginDomainNearestLocaleFallbackTest extends KernelTestCase
         $this->originalPluginsDir = $_SERVER['PLUGINS_DIR'] ?? null;
         $this->originalPluginsConfigPath = $_SERVER['PLUGINS_CONFIG_PATH'] ?? null;
 
-        $runtimeDir = sys_get_temp_dir().'/anime-plugin-domain-fallback-test-runtime-'.uniqid();
-        $this->pluginsDir = sys_get_temp_dir().'/anime-plugin-domain-fallback-test-plugins-'.uniqid();
-        mkdir($runtimeDir, recursive: true);
-        mkdir($this->pluginsDir, recursive: true);
+        $runtimeDir = $this->createTemporaryDirectory('anime-plugin-domain-fallback-test-runtime-');
+        $this->pluginsDir = $this->createTemporaryDirectory('anime-plugin-domain-fallback-test-plugins-');
 
         $_SERVER['APP_RUNTIME_DIR'] = $runtimeDir;
         $_SERVER['PLUGINS_DIR'] = $this->pluginsDir;
@@ -75,6 +76,8 @@ final class PluginDomainNearestLocaleFallbackTest extends KernelTestCase
         $this->restoreServerVar('APP_RUNTIME_DIR', $this->originalRuntimeDir);
         $this->restoreServerVar('PLUGINS_DIR', $this->originalPluginsDir);
         $this->restoreServerVar('PLUGINS_CONFIG_PATH', $this->originalPluginsConfigPath);
+
+        $this->removeTemporaryDirectories();
     }
 
     public function testPluginDomainKeyOnlyDefinedInRussianResolvesForKazakhRequestViaTheNearestLocale(): void

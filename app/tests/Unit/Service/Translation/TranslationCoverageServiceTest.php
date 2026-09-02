@@ -33,11 +33,21 @@ use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Translation\PluginTranslationReport;
 use App\Service\Translation\TranslationCoverageService;
+use App\Tests\Support\TemporaryDirectories;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 
 final class TranslationCoverageServiceTest extends TestCase
 {
+    use TemporaryDirectories;
+
+    protected function tearDown(): void
+    {
+        parent::tearDown();
+
+        $this->removeTemporaryDirectories();
+    }
+
     public function testComputesCoveredMissingAndOrphanKeysPerLocale(): void
     {
         $projectDir = $this->makeProjectDir([
@@ -98,7 +108,7 @@ final class TranslationCoverageServiceTest extends TestCase
 
     public function testCoverageForInstalledPluginResolvesTheInstalledPluginsDirectory(): void
     {
-        $pluginsDir = sys_get_temp_dir().'/anime-translation-coverage-installed-'.uniqid();
+        $pluginsDir = $this->createTemporaryDirectory('anime-translation-coverage-installed-');
         $pluginDir = $pluginsDir.'/animedb-german';
         mkdir($pluginDir.'/translations', recursive: true);
         file_put_contents($pluginDir.'/translations/messages.de.yaml', $this->toYaml(['welcome' => 'Hallo']));
@@ -130,7 +140,7 @@ final class TranslationCoverageServiceTest extends TestCase
         // field to offer 'fr' in the settings-page locale switcher — but the plugin only ships a
         // 'de' catalog file. Silently omitting 'fr' from the report would hide precisely the defect
         // this command exists to surface: a locale users can select with nothing translated behind it.
-        $pluginsDir = sys_get_temp_dir().'/anime-translation-coverage-partial-locales-'.uniqid();
+        $pluginsDir = $this->createTemporaryDirectory('anime-translation-coverage-partial-locales-');
         $pluginDir = $pluginsDir.'/animedb-partial';
         mkdir($pluginDir.'/translations', recursive: true);
         file_put_contents($pluginDir.'/translations/messages.de.yaml', $this->toYaml(['welcome' => 'Hallo']));
@@ -159,7 +169,7 @@ final class TranslationCoverageServiceTest extends TestCase
 
     public function testCoverageForPluginDirectoryOfAnIntegrationTypeReturnsALocaleListWithNoCoverageFields(): void
     {
-        $pluginDir = sys_get_temp_dir().'/anime-translation-coverage-feature-'.uniqid();
+        $pluginDir = $this->createTemporaryDirectory('anime-translation-coverage-feature-');
         mkdir($pluginDir.'/translations', recursive: true);
         file_put_contents($pluginDir.'/translations/animedb-widget.en.yaml', "welcome: Hello\n");
         file_put_contents($pluginDir.'/translations/animedb-widget.ru.yaml', "welcome: Привет\n");
@@ -174,7 +184,7 @@ final class TranslationCoverageServiceTest extends TestCase
 
     public function testCoverageForInstalledPluginOfAnIntegrationTypeHasNoUnknownEntriesForDeclaredLocales(): void
     {
-        $pluginsDir = sys_get_temp_dir().'/anime-translation-coverage-integration-installed-'.uniqid();
+        $pluginsDir = $this->createTemporaryDirectory('anime-translation-coverage-integration-installed-');
         $pluginDir = $pluginsDir.'/animedb-widget';
         mkdir($pluginDir.'/translations', recursive: true);
         file_put_contents($pluginDir.'/translations/animedb-widget.ru.yaml', "welcome: Привет\n");
@@ -240,7 +250,7 @@ final class TranslationCoverageServiceTest extends TestCase
      */
     private function makeProjectDir(array $messages): string
     {
-        $projectDir = sys_get_temp_dir().'/anime-translation-coverage-app-'.uniqid();
+        $projectDir = $this->createTemporaryDirectory('anime-translation-coverage-app-');
         mkdir($projectDir.'/translations', recursive: true);
         file_put_contents($projectDir.'/translations/messages.en.yaml', $this->toYaml($messages));
 
@@ -252,7 +262,7 @@ final class TranslationCoverageServiceTest extends TestCase
      */
     private function makePluginDir(string $locale, array $messages): string
     {
-        $pluginDir = sys_get_temp_dir().'/anime-translation-coverage-plugin-'.uniqid();
+        $pluginDir = $this->createTemporaryDirectory('anime-translation-coverage-plugin-');
         mkdir($pluginDir.'/translations', recursive: true);
         file_put_contents($pluginDir.'/translations/messages.'.$locale.'.yaml', $this->toYaml($messages));
 
