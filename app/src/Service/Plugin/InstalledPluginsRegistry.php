@@ -293,6 +293,8 @@ final class InstalledPluginsRegistry
         $type = PluginType::from($data['type']);
         $require = $data['require'];
 
+        $this->assertLocalesAreBareSubtags($data['locales']);
+
         return new Manifest(
             id: $data['id'],
             name: $data['name'],
@@ -309,6 +311,33 @@ final class InstalledPluginsRegistry
             locales: $data['locales'],
             updateUrl: $data['updateUrl'],
         );
+    }
+
+    /**
+     * {@see self::reconcile()} is the only place a manifest is ever validated (see the class
+     * docblock) and it does not rerun on every boot, so an index entry a looser, earlier
+     * `plugin-contracts` version once accepted — e.g. a region/script-qualified locale such as
+     * `pt-BR`, valid before issue #568 restricted the manifest format to a bare language subtag —
+     * stays in the index verbatim until the next reconcile. {@see \App\EventSubscriber\LocaleSubscriber}
+     * relies on {@see AvailableLocalesProvider::all()} never containing such a value (issue #557:
+     * a region/script form survives `Request::getPreferredLanguage()`'s separator rewrite but no
+     * translation catalog is registered under it, so the interface silently falls back to
+     * English). Re-checking the format here on every read is what keeps a pre-upgrade entry from
+     * resurfacing that bug instead of surfacing it once as a skipped plugin.
+     *
+     * @param mixed $locales as produced by {@see self::manifestToArray()}, expected list<string>|null
+     */
+    private function assertLocalesAreBareSubtags(mixed $locales): void
+    {
+        if (!\is_array($locales)) {
+            return;
+        }
+
+        foreach ($locales as $locale) {
+            if (!\is_string($locale) || preg_match('/^[a-z]{2,3}$/', $locale) !== 1) {
+                throw new \UnexpectedValueException('Locale code in installed plugin index must be a bare lowercase language subtag.');
+            }
+        }
     }
 
     /**
