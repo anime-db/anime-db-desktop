@@ -216,7 +216,7 @@ final class CatalogReaderTest extends TestCase
         return new CatalogReader(
             new PluginId($pluginId),
             $this->registry(),
-            $resolver,
+            $resolver !== null ? static fn (): ExternalIdResolutionInterface => $resolver : null,
             new NullLogger(),
         );
     }

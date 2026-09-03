@@ -41,6 +41,7 @@ use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\PluginsConfigStore;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
+use Symfony\Component\DependencyInjection\Argument\ServiceClosureArgument;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\Reference;
@@ -162,8 +163,8 @@ final class CatalogReaderScopePassTest extends TestCase
         $readerDefinition = $container->getDefinition((string) $reference);
 
         $resolverArgument = $readerDefinition->getArguments()[2];
-        self::assertInstanceOf(Reference::class, $resolverArgument);
-        self::assertSame(FakeSearchByPlugin::class, (string) $resolverArgument);
+        self::assertInstanceOf(ServiceClosureArgument::class, $resolverArgument);
+        self::assertSame(FakeSearchByPlugin::class, (string) $resolverArgument->getValues()[0]);
     }
 
     public function testLeavesResolverNullWhenPluginHasNoFillerSyncOrSearchByPluginService(): void
@@ -209,15 +210,16 @@ final class CatalogReaderScopePassTest extends TestCase
     /**
      * A plugin's own filler/sync/search-by-plugin service can just as naturally want to read the
      * record it is about to fill as a widget wants to render one — {@see CatalogReaderInterface}
-     * is not restricted to widgets. Excluding only `app.entry_widget`/`app.catalog_widget` from
-     * {@see CatalogReaderScopePass::RESOLVER_TAGS} left this case unguarded: a service tagged
-     * `app.search_by_plugin` (or filler/sync) that *also* type-hints CatalogReaderInterface would
-     * be wired as its own plugin's resolver, closing the service graph on itself. Symfony's
-     * bindings alone don't surface that — {@see CheckCircularReferencesPass} only catches it once
-     * the container actually compiles, hence the full {@see ContainerBuilder::compile()} call
-     * here rather than just asserting on definitions the way the other tests in this class do.
+     * is not restricted to widgets. A service tagged `app.search_by_plugin` (or filler/sync) that
+     * *also* type-hints `CatalogReaderInterface` is wired as its own plugin's resolver like any
+     * other candidate: the resolver reference is wrapped in a {@see ServiceClosureArgument}
+     * (see {@see CatalogReaderScopePass::catalogReaderServiceId()}), so the resulting service
+     * graph edge from the `CatalogReader` back to this service is lazy and never treated as part
+     * of a construction-time cycle by {@see CheckCircularReferencesPass} — confirmed here with a
+     * full {@see ContainerBuilder::compile()} call rather than just asserting on definitions the
+     * way the other tests in this class do.
      */
-    public function testSearchByPluginServiceConsumingCatalogReaderIsNeverPickedAsItsOwnPluginsResolver(): void
+    public function testSearchByPluginServiceConsumingCatalogReaderIsStillPickedAsItsOwnPluginsResolver(): void
     {
         $this->writeManifest('fake-vendor');
 
@@ -233,9 +235,13 @@ final class CatalogReaderScopePassTest extends TestCase
         $reference = $container->getDefinition(FakeSearchByPluginConsumingCatalogReader::class)
             ->getBindings()[CatalogReaderInterface::class]->getValues()[0];
         $readerDefinition = $container->getDefinition((string) $reference);
-        self::assertNull($readerDefinition->getArguments()[2]);
 
-        // A circular reference would have thrown ServiceCircularReferenceException here.
+        $resolverArgument = $readerDefinition->getArguments()[2];
+        self::assertInstanceOf(ServiceClosureArgument::class, $resolverArgument);
+        self::assertSame(FakeSearchByPluginConsumingCatalogReader::class, (string) $resolverArgument->getValues()[0]);
+
+        // A circular reference would have thrown ServiceCircularReferenceException here, were the
+        // resolver argument above a bare Reference instead of a ServiceClosureArgument.
         $container->compile();
     }
 

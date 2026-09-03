@@ -54,13 +54,14 @@ use Psr\Log\LoggerInterface;
  * Never writes: `externalId` on the returned {@see AnimeView} favours the cached row
  * ({@see Anime::getCachedExternalId()}), a read-only lookup that never talks to the plugin — the
  * fast path a widget rendered on every HTMX request takes. Only when nothing is cached yet does
- * this fall back to a live, equally read-only resolve via {@see $resolver} directly
- * ({@see ExternalIdResolutionInterface::resolveExternalId()} — a local URL parse, not a network
- * call), rather than persisting the result: {@see CatalogReaderInterface} is injected into
- * arbitrary plugin services, including ones the host may call from inside its own unfinished unit
- * of work, so read() must never flush it out from under the caller. Populating the cache row
- * stays the job of the background sweep ({@see \App\MessageHandler\BackfillExternalIdMessageHandler})
- * and of {@see Anime::getExternalId()}'s callers elsewhere. $resolver is null for a plugin with no
+ * this fall back to a live, equally read-only resolve via the resolver obtained from
+ * {@see $resolverFactory} ({@see ExternalIdResolutionInterface::resolveExternalId()} — a local URL
+ * parse, not a network call), rather than persisting the result: {@see CatalogReaderInterface} is
+ * injected into arbitrary plugin services, including ones the host may call from inside its own
+ * unfinished unit of work, so read() must never flush it out from under the caller. Populating the
+ * cache row stays the job of the background sweep
+ * ({@see \App\MessageHandler\BackfillExternalIdMessageHandler}) and of
+ * {@see Anime::getExternalId()}'s callers elsewhere. $resolverFactory is null for a plugin with no
  * `app.filler`/`app.sync`/`app.search_by_plugin`-tagged service at all (see the compiler pass), in
  * which case a cache miss stays null — this covers both "genuinely no external id" (a `type:
  * local` plugin) and "an external-id-capable plugin whose cache nobody has populated yet", the
@@ -71,13 +72,23 @@ use Psr\Log\LoggerInterface;
  * shared for the life of the plugin's scope, and any *other* code sharing the same EntityManager
  * that flushes and fails closes it for everyone — a held-onto closed instance would make read()
  * throw for the rest of the process.
+ *
+ * $resolverFactory is a memoizing closure ({@see \Symfony\Component\DependencyInjection\Argument\ServiceClosureArgument})
+ * around the plugin's own `app.filler`/`app.sync`/`app.search_by_plugin`-tagged service, not that
+ * service directly — see {@see DependencyInjection\Compiler\CatalogReaderScopePass}. That resolver
+ * can itself depend, directly or transitively through any number of collaborators, on a service
+ * that ends up needing this very `CatalogReader`; a bare constructor reference would close that
+ * cycle at container-compile time no matter how many hops away it happened. The closure defers
+ * actually fetching the resolver service to the moment {@see resolveExternalId()} calls it, well
+ * after the whole container has finished compiling, which is what keeps the cycle from ever
+ * mattering.
  */
 final class CatalogReader implements CatalogReaderInterface
 {
     public function __construct(
         private readonly PluginId $pluginId,
         private readonly ManagerRegistry $managerRegistry,
-        private readonly ?ExternalIdResolutionInterface $resolver,
+        private readonly ?\Closure $resolverFactory,
         private readonly LoggerInterface $logger,
     ) {
     }
@@ -108,7 +119,7 @@ final class CatalogReader implements CatalogReaderInterface
             return $cached;
         }
 
-        if ($this->resolver === null) {
+        if ($this->resolverFactory === null) {
             $this->logger->debug('Catalog record has no cached external id for this plugin, and the plugin has no resolver service to try instead.', [
                 'pluginId' => (string) $this->pluginId,
                 'animeId' => $anime->id,
@@ -119,8 +130,11 @@ final class CatalogReader implements CatalogReaderInterface
 
         $sources = array_map(static fn (AnimeSource $source): string => $source->url, $anime->getSources()->toArray());
 
+        $resolver = ($this->resolverFactory)();
+        \assert($resolver instanceof ExternalIdResolutionInterface);
+
         try {
-            return $this->resolver->resolveExternalId($sources);
+            return $resolver->resolveExternalId($sources);
         } catch (\Throwable $exception) {
             $this->logger->error('Resolving the external id failed while reading a catalog record.', [
                 'pluginId' => (string) $this->pluginId,

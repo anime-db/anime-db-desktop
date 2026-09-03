@@ -33,6 +33,7 @@ use App\Service\Plugin\CatalogReader;
 use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\PluginNamespace;
 use Psr\Log\LoggerInterface;
+use Symfony\Component\DependencyInjection\Argument\ServiceClosureArgument;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
@@ -56,15 +57,21 @@ use Symfony\Component\DependencyInjection\Reference;
  * Must run after {@see TagPluginServicesPass}: the per-plugin {@see CatalogReader} it constructs
  * below is wired with that plugin's own `app.filler`/`app.sync`/`app.search_by_plugin`-tagged
  * service, if any, as its lazy external-id resolver, and those tags only exist once
- * `TagPluginServicesPass` has run. A candidate resolver is skipped, and the plugin is left with no
- * resolver, whenever its own class also type-hints `CatalogReaderInterface`
- * ({@see wantsCatalogReader()}) — the general rule behind the widget case that motivated this
- * (issue #577 — Shikimori's RelatedWidget/SimilarWidget consuming `CatalogReaderInterface`, never
- * tagged as a resolver by `TagPluginServicesPass` in the first place): whatever service the
- * `CatalogReader` we are about to build gets injected into cannot also be the service that
- * `CatalogReader` itself depends on, or the container closes a service graph cycle on itself
- * (`ServiceCircularReferenceException` at compile time, not merely a binding oddity). A filler or
- * syncer naturally wanting to read the record it is about to fill hits the exact same case.
+ * `TagPluginServicesPass` has run.
+ *
+ * The resolver is always passed as a {@see ServiceClosureArgument}, never a bare {@see Reference}:
+ * a plugin's filler/syncer/search-by-plugin service can itself type-hint `CatalogReaderInterface`
+ * (it naturally wants to read the record it is about to fill), which would otherwise make the
+ * `CatalogReader` built below and that same service depend on each other — a service graph cycle
+ * closed on itself (`ServiceCircularReferenceException` at compile time). A one-level check on the
+ * resolver's own constructor (skip it if it directly type-hints `CatalogReaderInterface`) only
+ * catches the cycle when the resolver is the consumer itself; it still misses a cycle formed
+ * through any intermediate collaborator the resolver depends on, and that dependency graph is
+ * unbounded in depth. `ServiceClosureArgument` sidesteps the whole class of cycle structurally:
+ * Symfony's `CheckCircularReferencesPass` treats an argument wrapped this way as a lazy edge and
+ * never treats it as part of a construction-time cycle, because the wrapped service is not actually
+ * instantiated until {@see CatalogReader} calls the closure inside `read()` — see
+ * {@see CatalogReader::resolveExternalId()}.
  */
 final class CatalogReaderScopePass implements CompilerPassInterface
 {
@@ -134,14 +141,6 @@ final class CatalogReaderScopePass implements CompilerPassInterface
                         continue;
                     }
 
-                    // A resolver that itself type-hints CatalogReaderInterface would make the
-                    // CatalogReader built below depend on the very service it gets injected into —
-                    // a circular reference. Leave the plugin without a resolver instead.
-                    $class = $container->getDefinition($serviceId)->getClass();
-                    if (\is_string($class) && class_exists($class) && $this->wantsCatalogReader($class)) {
-                        continue;
-                    }
-
                     $resolvers[$pluginId] = $serviceId;
                 }
             }
@@ -194,7 +193,7 @@ final class CatalogReaderScopePass implements CompilerPassInterface
                 ->setArguments([
                     (new Definition(PluginId::class))->setArguments([$pluginId]),
                     new Reference('doctrine'),
-                    $resolverServiceId !== null ? new Reference($resolverServiceId) : null,
+                    $resolverServiceId !== null ? new ServiceClosureArgument(new Reference($resolverServiceId)) : null,
                     new Reference(LoggerInterface::class),
                 ])
                 ->setPublic(false));
