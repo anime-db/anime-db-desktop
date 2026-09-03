@@ -91,8 +91,8 @@ final class CatalogReaderTest extends TestCase
             ->setWatchStatus(WatchStatus::Watching)
             ->addName('Каубой Бибоп', AnimeNameType::Russian)
             ->addGenre(GenreCode::Action)
-            ->addSource('https://shikimori.one/animes/1')
-            ->setEpisodesCount(26);
+            ->addSource('https://shikimori.one/animes/1');
+        $anime->setEpisodesCount(26);
         $this->entityManager->persist($anime);
         $this->entityManager->flush();
         $id = $this->requireId($anime);
