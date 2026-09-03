@@ -27,6 +27,7 @@ declare(strict_types=1);
 
 namespace App;
 
+use App\Service\Plugin\DependencyInjection\Compiler\CatalogReaderScopePass;
 use App\Service\Plugin\DependencyInjection\Compiler\OwnManifestScopePass;
 use App\Service\Plugin\DependencyInjection\Compiler\PluginDataStoreScopePass;
 use App\Service\Plugin\DependencyInjection\Compiler\SettingsStoreScopePass;
@@ -142,8 +143,12 @@ class Kernel extends BaseKernel
      *
      * Also registers {@see PluginDataStoreScopePass} (issue #299) so a plugin service asking for
      * `PluginDataStoreInterface` gets an instance scoped to its own plugin id,
-     * {@see SettingsStoreScopePass} (issue #316) doing the same for `SettingsStoreInterface`, and
-     * {@see OwnManifestScopePass} (issue #323) doing the same for `OwnManifestInterface`.
+     * {@see SettingsStoreScopePass} (issue #316) doing the same for `SettingsStoreInterface`,
+     * {@see OwnManifestScopePass} (issue #323) doing the same for `OwnManifestInterface`, and
+     * {@see CatalogReaderScopePass} (issue #577) doing the same for `CatalogReaderInterface`.
+     * `CatalogReaderScopePass` is added after `TagPluginServicesPass` deliberately — it looks up
+     * that pass's `app.filler`/`app.sync`/`app.search_by_plugin` tags to pick each plugin's
+     * external-id resolver, so it must run once those tags already exist.
      */
     public function build(ContainerBuilder $container): void
     {
@@ -158,6 +163,7 @@ class Kernel extends BaseKernel
         $container->addCompilerPass(new PluginDataStoreScopePass($this->installedPluginsRegistry()));
         $container->addCompilerPass(new SettingsStoreScopePass($this->installedPluginsRegistry()));
         $container->addCompilerPass(new OwnManifestScopePass($this->installedPluginsRegistry()));
+        $container->addCompilerPass(new CatalogReaderScopePass($this->installedPluginsRegistry()));
     }
 
     private function pluginLoader(): PluginLoader
