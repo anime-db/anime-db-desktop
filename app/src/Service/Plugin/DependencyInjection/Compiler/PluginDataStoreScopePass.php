@@ -135,8 +135,16 @@ final class PluginDataStoreScopePass implements CompilerPassInterface
         $serviceId = 'app.plugin_data_store.'.$pluginId;
 
         if (!$container->hasDefinition($serviceId)) {
+            // A raw `new PluginId($pluginId)` argument here would make PhpDumper fail to compile
+            // the container ("Unable to dump a service container if a parameter is an object") the
+            // moment any plugin actually consumes this service — PhpDumper only knows how to
+            // inline a Reference/Definition/scalar as a constructor argument, not an arbitrary
+            // object instance. Wrapping it as its own inline Definition keeps it dumpable.
             $container->setDefinition($serviceId, (new Definition(PluginDataStore::class))
-                ->setArguments([new PluginId($pluginId), new Reference('doctrine')])
+                ->setArguments([
+                    (new Definition(PluginId::class))->setArguments([$pluginId]),
+                    new Reference('doctrine'),
+                ])
                 ->setPublic(false));
         }
 
