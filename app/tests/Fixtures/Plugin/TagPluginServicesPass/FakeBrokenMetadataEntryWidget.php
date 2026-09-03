@@ -43,11 +43,6 @@ final class FakeBrokenMetadataEntryWidget implements EntryWidgetInterface
         throw new \RuntimeException('Broken metadata() fixture.');
     }
 
-    public function resolveExternalId(array $urls): ?string
-    {
-        return null;
-    }
-
     public function render(AnimeId $anime): string
     {
         return '';

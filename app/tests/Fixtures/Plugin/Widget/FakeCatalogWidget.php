@@ -44,11 +44,6 @@ final class FakeCatalogWidget implements CatalogWidgetInterface
         return new WidgetMetadata('fake-catalog-widget', 'widget.fake_catalog_widget.title', 'widget.fake_catalog_widget.description');
     }
 
-    public function resolveExternalId(array $urls): ?string
-    {
-        return null;
-    }
-
     public function render(): string
     {
         return '';

@@ -42,11 +42,6 @@ final class FakeDuplicateNameCatalogWidget implements CatalogWidgetInterface
         return new WidgetMetadata('related', 'Related titles (catalog)', 'Duplicate name fixture.');
     }
 
-    public function resolveExternalId(array $urls): ?string
-    {
-        return null;
-    }
-
     public function render(): string
     {
         return '';

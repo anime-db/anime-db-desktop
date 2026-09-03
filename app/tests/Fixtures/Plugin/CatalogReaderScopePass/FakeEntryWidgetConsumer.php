@@ -51,11 +51,6 @@ final class FakeEntryWidgetConsumer implements EntryWidgetInterface
         return new WidgetMetadata('fake-widget', 'widget.title', 'widget.description');
     }
 
-    public function resolveExternalId(array $urls): ?string
-    {
-        return null;
-    }
-
     public function render(AnimeId $anime): string
     {
         return '';
