@@ -481,17 +481,30 @@ service... argument "$catalogReader"... but no such service exists»), брош�
   интерфейс, подстановка per-plugin инстанса через bindings. Регистрируется в
   `Kernel::build()` последним из четырёх — единственный, кому это принципиально (см. ниже).
 - **Источник `externalId` — выбран вариант 1 (ленивый резолв), не вариант 2 (только кеш +
-  лог).** `CatalogReader::resolveExternalId()` сначала читает `Anime::getCachedExternalId()`
+  лог); но `CatalogReader` остаётся строго read-only, ничего не сохраняет.** Ранняя версия
+  резолвила через `Anime::getExternalId()` и делала `EntityManager::flush()` на успехе — ревью
+  (PR #578) справедливо указало, что `CatalogReaderInterface` инжектится в произвольный сервис
+  плагина, включая те, что хост вызывает внутри собственной незавершённой единицы работы, а
+  безусловный `flush()` коммитит все несохранённые изменения вызывающего, не только свою запись.
+  Исправлено: `CatalogReader::resolveExternalId()` сначала читает `Anime::getCachedExternalId()`
   (read-only, без обращения к плагину); если кеш пуст, а у плагина ЕСТЬ свой
   `app.filler`/`app.sync`/`app.search_by_plugin`-сервис (наследует
-  `ExternalIdResolutionInterface`), резолвит через существующий `Anime::getExternalId()` и
-  сохраняет результат — `EntityManager::flush()` сразу после успешного резолва, чтобы
-  следующий рендер того же виджета попал в быстрый кеш-путь. Обоснование: у Shikimori (мотивирующий
-  плагин issue) есть и филлер, и синкер — виджет получает `externalId` немедленно на первом же
-  рендере, не дожидаясь фонового `BackfillExternalIdMessageHandler`, который иначе остаётся
-  единственным путём наполнить кеш для только-виджетного потребителя. `resolveExternalId()` —
-  дешёвый локальный разбор URL (не сетевой вызов), поэтому лишний вызов на кеш-промах не в счёт.
-  Резолвер, бросающий исключение, перехватывается и логируется как error, `read()` не падает.
+  `ExternalIdResolutionInterface`), резолвит напрямую через `$resolver->resolveExternalId($sources)`
+  — тот же разбор URL, что делает `Anime::getExternalId()` внутри, но без записи и без `flush()`.
+  Обоснование резолва (а не только кеша): у Shikimori (мотивирующий плагин issue) есть и филлер, и
+  синкер — виджет получает `externalId` немедленно на первом же рендере, не дожидаясь фонового
+  `BackfillExternalIdMessageHandler`, который остаётся единственным путём НАПОЛНИТЬ кеш (запись —
+  его задача, не `CatalogReader`). `resolveExternalId()` — дешёвый локальный разбор URL (не
+  сетевой вызов), поэтому лишний вызов на кеш-промах не в счёт. Резолвер, бросающий исключение,
+  перехватывается и логируется как error, `read()` не падает.
+- **`CatalogReader` получает `EntityManager` через `ManagerRegistry`, а не напрямую (как
+  `PluginDataStore`), тоже по итогам ревью PR #578.** Держать `EntityManagerInterface` в
+  свойстве и полагаться на то, что он всегда открыт, ломается тем же способом, что и обсуждается
+  в докблоке `PluginDataStore`: если ЛЮБОЙ другой код, разделяющий тот же EntityManager,
+  зафлашится неудачно, инстанс закрывается для всех, кто его держит — а `CatalogReader` живёт
+  весь скоуп плагина, то есть держал бы закрытый менеджер до конца процесса. `entityManager()`
+  берёт свежий инстанс из `ManagerRegistry` на каждый `read()`, с тем же `isOpen()`/
+  `resetManager()`-паттерном, что и `PluginDataStore::entityManager()`.
 - **Остаточный случай (когда у плагина нет вообще ни одного `app.filler`/`app.sync`/
   `app.search_by_plugin`-сервиса) — не оставлен молчаливым.** Это ровно сценарий из тела
   задачи: только-виджетный плагин без филлера и синкера. `$resolver === null` в этом случае, и
@@ -505,16 +518,21 @@ service... argument "$catalogReader"... but no such service exists»), брош�
   резолвит» на уровне `CatalogReader`, и подавлять лог для него означало бы снова гадать по
   метаданным манифеста, которые контракт явно не поручает читать этому классу.
 - **Кандидат в резолверы — строго `app.filler`/`app.sync`/`app.search_by_plugin`, НЕ
-  `app.entry_widget`/`app.catalog_widget`, при том что оба виджетных интерфейса тоже
-  наследуют `ExternalIdResolutionInterface`.** Мотивирующий случай — сам виджет, потребляющий
-  `CatalogReaderInterface` (Shikimori `RelatedWidget`/`SimilarWidget`), технически годится в
-  резолверы себе самому; если бы `CatalogReaderScopePass` выбирал и его, получился бы цикл:
-  виджет зависит от `CatalogReader`, который зависел бы от того же виджета. Так как список
-  резолверных тегов — это ровно то, что `TagPluginServicesPass` навешивает на
-  `Filler`/`Sync`/`SearchByPlugin`-сервисы (`app.entry_widget`/`app.catalog_widget` — отдельные
-  теги, см. `TagPluginServicesPass`), достаточно не включать эти два тега в список источников,
-  никакой отдельной защиты от цикла не потребовалось. Тест
-  `testWidgetConsumingCatalogReaderIsNeverPickedAsItsOwnPluginsResolver` фиксирует это.
+  `app.entry_widget`/`app.catalog_widget`.** Резолвером плагина выступает его
+  филлер/синкер/поиск; виджет, потребляющий `CatalogReaderInterface` (Shikimori
+  `RelatedWidget`/`SimilarWidget`, мотивирующий случай) — потребитель `CatalogReader`, а не
+  источник для него, и включение его в список резолверов замкнуло бы граф на себя: виджет
+  зависел бы от `CatalogReader`, который зависел бы от того же виджета. Это верно независимо от
+  того, какие интерфейсы виджет наследует — формулировка «виджетные интерфейсы наследуют
+  `ExternalIdResolutionInterface`, поэтому годятся в резолверы» здесь раньше стояла как причина
+  исключения и устарела: в пакете контрактов открыт PR (`anime-db-plugin-contracts#75`), снимающий
+  это наследование у `EntryWidgetInterface`/`CatalogWidgetInterface`, а само решение исключить эти
+  два тега при этом не меняется. Так как список резолверных тегов — это ровно то, что
+  `TagPluginServicesPass` навешивает на `Filler`/`Sync`/`SearchByPlugin`-сервисы
+  (`app.entry_widget`/`app.catalog_widget` — отдельные теги, см. `TagPluginServicesPass`),
+  достаточно не включать эти два тега в список источников, никакой отдельной защиты от цикла не
+  потребовалось. Тест `testWidgetConsumingCatalogReaderIsNeverPickedAsItsOwnPluginsResolver`
+  фиксирует это.
 - **`CatalogReaderScopePass` обязан выполняться после `TagPluginServicesPass`** — он ищет
   резолвер плагина по тегам `app.filler`/`app.sync`/`app.search_by_plugin`, которые
   проставляет именно `TagPluginServicesPass`. Порядок компилятор-пассов без явного приоритета
