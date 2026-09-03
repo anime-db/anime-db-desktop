@@ -527,26 +527,33 @@ service... argument "$catalogReader"... but no such service exists»), брош�
   PR (`anime-db-plugin-contracts#75`), снимающий это наследование у
   `EntryWidgetInterface`/`CatalogWidgetInterface`, а само решение исключить эти два тега при этом
   не меняется.
-- **Общее правило — резолвером плагина не может быть сервис, который сам потребляет
-  `CatalogReaderInterface`, независимо от тега (найдено ревью PR #578, итерация 4).** Не включать
-  `app.entry_widget`/`app.catalog_widget` в список резолверных тегов защищает только от виджета
-  как частного случая. Филлеру/синкеру/поиску ничто не мешает точно так же тайп-хинтить
-  `CatalogReaderInterface` в конструкторе (естественное желание — прочитать текущее состояние
-  записи перед заполнением), а этот тег — как раз то, что `resolverServiceIdsByPlugin()`
-  подбирает в резолверы. Такой сервис прошёл бы отбор по тегу и был бы подставлен в `CatalogReader`
-  как резолвер, а `CatalogReader`, в свою очередь, был бы инжектирован обратно в этот же сервис —
-  цикл в графе сервисов, падение сборки контейнера (`ServiceCircularReferenceException` из
-  `CheckCircularReferencesPass`, а не просто «странный» биндинг). Юнит-тест на голых `Definition`
-  через `process()` этого не ловит — `CheckCircularReferencesPass` срабатывает только при реальном
-  `ContainerBuilder::compile()`, поэтому воспроизведено и закрыто именно вызовом `compile()` в
-  тесте, не только проверкой биндингов. Исправлено обобщением: `resolverServiceIdsByPlugin()`
-  теперь читает класс каждого тегированного кандидата и пропускает его, если класс сам
-  `wantsCatalogReader()` (та же приватная проверка, что уже применялась к потребителям) — вместо
-  специфичного для виджетов исключения тегов получилось общее правило «резолвером не может быть
-  тот, кому мы этот `CatalogReader` и инжектируем». Тесты
-  `testWidgetConsumingCatalogReaderIsNeverPickedAsItsOwnPluginsResolver` (старый, на биндингах) и
-  `testSearchByPluginServiceConsumingCatalogReaderIsNeverPickedAsItsOwnPluginsResolver` (новый, с
-  реальным `compile()`) фиксируют оба уровня защиты.
+- **Цикл в графе сервисов ломается структурно ленивой ссылкой (`ServiceClosureArgument`), а не
+  проверкой конструктора кандидата в резолверы (найдено ревью PR #578, итерация 4, пересмотрено
+  в итерации 5).** Первая версия фикса читала класс каждого тегированного кандидата и пропускала
+  его, если он сам `wantsCatalogReader()` — это ловило только прямой случай (резолвер САМ
+  тайп-хинтит `CatalogReaderInterface` в конструкторе). Ревью справедливо указало, что граф
+  зависимостей плагина ничем не ограничен по глубине: резолвер, который сам не потребляет
+  `CatalogReaderInterface`, но зависит (прямо или транзитивно, через сколько угодно
+  промежуточных сервисов того же плагина) от хелпера, который его потребляет, формирует ровно
+  тот же цикл — `ServiceCircularReferenceException` из `CheckCircularReferencesPass` с путём вида
+  `TransitiveFiller -> CatalogHelper -> app.catalog_reader.<id> -> TransitiveFiller`. Рефлексия
+  на один уровень вглубь всегда будет отставать. Исправлено убиранием самой проверки:
+  `resolverServiceIdsByPlugin()` больше не смотрит на класс кандидата вообще, а
+  `catalogReaderServiceId()` оборачивает `Reference` на резолвер в
+  `Symfony\Component\DependencyInjection\Argument\ServiceClosureArgument` — `CatalogReader`
+  получает `?\Closure $resolverFactory` вместо `?ExternalIdResolutionInterface $resolver` и
+  вызывает его лениво внутри `resolveExternalId()`, только на промахе кеша. Symfony's
+  `AnalyzeServiceReferencesPass` помечает такой аргумент lazy-рёбром графа, а
+  `CheckCircularReferencesPass` не считает lazy-рёбра циклом на этапе компиляции независимо от
+  глубины графа — сервис реально запрашивается из контейнера только в момент вызова замыкания, то
+  есть уже после того, как контейнер целиком собран. Тесты:
+  `testSearchByPluginServiceConsumingCatalogReaderIsStillPickedAsItsOwnPluginsResolver`
+  (переименован из `...IsNeverPickedAsItsOwnPluginsResolver` — поведение теперь обратное: такой
+  сервис МОЖЕТ быть своим резолвером, цикл больше не образуется) и новый
+  `CatalogReaderTransitiveCycleBootTest` — холодная сборка реального контейнера с автовайрингом
+  плагинных классов (`TransitiveFiller` зависит от `CatalogHelper`, который тайп-хинтит
+  `CatalogReaderInterface`), которую проверка на голых `Definition` в принципе не может
+  воспроизвести — граф образуется именно автовайрингом.
 - **`CatalogReaderScopePass` обязан выполняться после `TagPluginServicesPass`** — он ищет
   резолвер плагина по тегам `app.filler`/`app.sync`/`app.search_by_plugin`, которые
   проставляет именно `TagPluginServicesPass`. Порядок компилятор-пассов без явного приоритета
