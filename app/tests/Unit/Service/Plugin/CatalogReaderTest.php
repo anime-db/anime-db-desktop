@@ -46,6 +46,7 @@ use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\EntityManager;
 use Doctrine\ORM\ORMSetup;
 use Doctrine\ORM\Tools\SchemaTool;
+use Doctrine\Persistence\ManagerRegistry;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 
@@ -139,7 +140,7 @@ final class CatalogReaderTest extends TestCase
         self::assertSame('cached-1', $view?->externalId);
     }
 
-    public function testExternalIdIsLazilyResolvedAndCachedWhenNothingIsCachedYet(): void
+    public function testExternalIdIsLazilyResolvedButNeverCached(): void
     {
         $anime = new MovieAnime();
         $anime->setTitle('Cowboy Bebop')->setWatchStatus(WatchStatus::Watching)->addSource('https://shikimori.one/animes/1');
@@ -155,9 +156,11 @@ final class CatalogReaderTest extends TestCase
         $view = $this->newReader('fake-vendor', $resolver)->read(new ContractAnimeId($id));
         self::assertSame('resolved-1', $view?->externalId);
 
+        // read() must never persist what it resolves — it is injected into arbitrary plugin
+        // services, including ones the host calls inside its own unfinished unit of work.
         $this->entityManager->clear();
         $reloaded = $this->requireAnime($id);
-        self::assertSame('resolved-1', $reloaded->getCachedExternalId(new PluginId('fake-vendor')));
+        self::assertNull($reloaded->getCachedExternalId(new PluginId('fake-vendor')));
     }
 
     public function testExternalIdIsNullWithoutCacheOrResolverAndDoesNotThrow(): void
@@ -212,10 +215,20 @@ final class CatalogReaderTest extends TestCase
     {
         return new CatalogReader(
             new PluginId($pluginId),
-            $this->entityManager,
+            $this->registry(),
             $resolver,
             new NullLogger(),
         );
+    }
+
+    private function registry(): ManagerRegistry
+    {
+        $entityManager = $this->entityManager;
+
+        $registry = $this->createMock(ManagerRegistry::class);
+        $registry->method('getManagerForClass')->willReturn($entityManager);
+
+        return $registry;
     }
 
     private function requireId(Anime $anime): int

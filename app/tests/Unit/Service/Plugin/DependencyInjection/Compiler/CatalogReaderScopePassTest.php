@@ -181,12 +181,11 @@ final class CatalogReaderScopePassTest extends TestCase
     }
 
     /**
-     * A widget consuming CatalogReaderInterface is itself an ExternalIdResolutionInterface
-     * implementor (EntryWidgetInterface extends it), but TagPluginServicesPass only ever tags it
-     * `app.entry_widget`/`app.catalog_widget`, never one of the three resolver tags — so it can
-     * never be picked as its own plugin's resolver, which would otherwise be a circular service
-     * reference (the widget would depend on the CatalogReader injected into it, which would
-     * depend on the widget).
+     * A widget consuming CatalogReaderInterface is a consumer of it, not a source for it, and
+     * TagPluginServicesPass only ever tags it `app.entry_widget`/`app.catalog_widget`, never one
+     * of the three resolver tags — so it can never be picked as its own plugin's resolver, which
+     * would otherwise be a circular service reference (the widget would depend on the
+     * CatalogReader injected into it, which would depend on the widget).
      */
     public function testWidgetConsumingCatalogReaderIsNeverPickedAsItsOwnPluginsResolver(): void
     {

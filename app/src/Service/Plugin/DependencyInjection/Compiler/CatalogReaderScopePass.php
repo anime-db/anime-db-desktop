@@ -32,7 +32,6 @@ use App\Entity\ValueObject\PluginId;
 use App\Service\Plugin\CatalogReader;
 use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\PluginNamespace;
-use Doctrine\ORM\EntityManagerInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
@@ -58,12 +57,12 @@ use Symfony\Component\DependencyInjection\Reference;
  * below is wired with that plugin's own `app.filler`/`app.sync`/`app.search_by_plugin`-tagged
  * service, if any, as its lazy external-id resolver, and those tags only exist once
  * `TagPluginServicesPass` has run. Deliberately NOT `app.entry_widget`/`app.catalog_widget`: a
- * widget consuming `CatalogReaderInterface` (the motivating case, issue #577 — Shikimori's
- * RelatedWidget/SimilarWidget) is itself an `ExternalIdResolutionInterface` implementor, and
- * wiring a widget service as its own plugin's resolver would make that widget depend on the very
- * `CatalogReader` instance being injected into it — a circular service graph. Filler/Sync/
- * SearchByPlugin services carry no such risk: they are never themselves a `CatalogReaderInterface`
- * consumer.
+ * plugin's resolver is its filler/syncer/search service, while a widget consuming
+ * `CatalogReaderInterface` (the motivating case, issue #577 — Shikimori's
+ * RelatedWidget/SimilarWidget) is a *consumer* of `CatalogReader`, not a source for it — wiring it
+ * as its own plugin's resolver would close the service graph on itself regardless of which
+ * interfaces the widget happens to implement. Filler/Sync/SearchByPlugin services carry no such
+ * risk: they are never themselves a `CatalogReaderInterface` consumer.
  */
 final class CatalogReaderScopePass implements CompilerPassInterface
 {
@@ -182,7 +181,7 @@ final class CatalogReaderScopePass implements CompilerPassInterface
             $container->setDefinition($serviceId, (new Definition(CatalogReader::class))
                 ->setArguments([
                     (new Definition(PluginId::class))->setArguments([$pluginId]),
-                    new Reference(EntityManagerInterface::class),
+                    new Reference('doctrine'),
                     $resolverServiceId !== null ? new Reference($resolverServiceId) : null,
                     new Reference(LoggerInterface::class),
                 ])

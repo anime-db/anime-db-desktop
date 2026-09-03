@@ -35,10 +35,9 @@ use AnimeDb\PluginContracts\Widget\WidgetMetadata;
 /**
  * Fixture used by CatalogReaderScopePassTest to stand in for a real entry widget that consumes
  * {@see CatalogReaderInterface} — the same shape as Shikimori's RelatedWidget/SimilarWidget
- * (issue #577). `EntryWidgetInterface` extends `ExternalIdResolutionInterface`, so this class is
- * itself technically eligible as an external-id resolver; the pass under test must never pick it
- * as its own plugin's resolver, since that would make the CatalogReader instance injected into it
- * depend on this very service.
+ * (issue #577). It is a *consumer* of CatalogReader, not a source for it; the pass under test
+ * must never pick it as its own plugin's resolver, since that would make the CatalogReader
+ * instance injected into it depend on this very service.
  */
 final class FakeEntryWidgetConsumer implements EntryWidgetInterface
 {
