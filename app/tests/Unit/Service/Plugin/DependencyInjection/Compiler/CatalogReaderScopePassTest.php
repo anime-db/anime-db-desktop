@@ -32,6 +32,7 @@ use AnimeDb\Plugins\FakeVendor\FakeCatalogReaderConsumer;
 use AnimeDb\Plugins\FakeVendor\FakeCatalogReaderNonConsumer;
 use AnimeDb\Plugins\FakeVendor\FakeEntryWidgetConsumer;
 use AnimeDb\Plugins\FakeVendor\FakeSearchByPlugin;
+use AnimeDb\Plugins\FakeVendor\FakeSearchByPluginConsumingCatalogReader;
 use AnimeDb\Plugins\FakeVendorTwo\FakeCatalogReaderConsumerTwo;
 use App\Entity\ValueObject\PluginId;
 use App\Service\Plugin\CatalogReader;
@@ -54,6 +55,7 @@ final class CatalogReaderScopePassTest extends TestCase
         require_once __DIR__.'/../../../../../Fixtures/Plugin/CatalogReaderScopePass/FakeCatalogReaderConsumerTwo.php';
         require_once __DIR__.'/../../../../../Fixtures/Plugin/CatalogReaderScopePass/FakeCatalogReaderNonConsumer.php';
         require_once __DIR__.'/../../../../../Fixtures/Plugin/CatalogReaderScopePass/FakeSearchByPlugin.php';
+        require_once __DIR__.'/../../../../../Fixtures/Plugin/CatalogReaderScopePass/FakeSearchByPluginConsumingCatalogReader.php';
         require_once __DIR__.'/../../../../../Fixtures/Plugin/CatalogReaderScopePass/FakeEntryWidgetConsumer.php';
 
         $this->pluginsDir = sys_get_temp_dir().'/anime-catalog-reader-scope-test-'.uniqid();
@@ -202,6 +204,39 @@ final class CatalogReaderScopePassTest extends TestCase
         $readerDefinition = $container->getDefinition((string) $reference);
 
         self::assertNull($readerDefinition->getArguments()[2]);
+    }
+
+    /**
+     * A plugin's own filler/sync/search-by-plugin service can just as naturally want to read the
+     * record it is about to fill as a widget wants to render one — {@see CatalogReaderInterface}
+     * is not restricted to widgets. Excluding only `app.entry_widget`/`app.catalog_widget` from
+     * {@see CatalogReaderScopePass::RESOLVER_TAGS} left this case unguarded: a service tagged
+     * `app.search_by_plugin` (or filler/sync) that *also* type-hints CatalogReaderInterface would
+     * be wired as its own plugin's resolver, closing the service graph on itself. Symfony's
+     * bindings alone don't surface that — {@see CheckCircularReferencesPass} only catches it once
+     * the container actually compiles, hence the full {@see ContainerBuilder::compile()} call
+     * here rather than just asserting on definitions the way the other tests in this class do.
+     */
+    public function testSearchByPluginServiceConsumingCatalogReaderIsNeverPickedAsItsOwnPluginsResolver(): void
+    {
+        $this->writeManifest('fake-vendor');
+
+        $container = new ContainerBuilder();
+        $container->register(FakeSearchByPluginConsumingCatalogReader::class, FakeSearchByPluginConsumingCatalogReader::class)
+            ->addTag('app.search_by_plugin', ['id' => 'fake-vendor']);
+        $container->register('doctrine', \stdClass::class);
+        $container->register(NullLogger::class, NullLogger::class);
+        $container->setAlias(\Psr\Log\LoggerInterface::class, NullLogger::class);
+
+        $this->pass()->process($container);
+
+        $reference = $container->getDefinition(FakeSearchByPluginConsumingCatalogReader::class)
+            ->getBindings()[CatalogReaderInterface::class]->getValues()[0];
+        $readerDefinition = $container->getDefinition((string) $reference);
+        self::assertNull($readerDefinition->getArguments()[2]);
+
+        // A circular reference would have thrown ServiceCircularReferenceException here.
+        $container->compile();
     }
 
     private function pass(): CatalogReaderScopePass

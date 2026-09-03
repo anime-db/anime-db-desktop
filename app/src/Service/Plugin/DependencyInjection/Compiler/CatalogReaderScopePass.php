@@ -56,13 +56,15 @@ use Symfony\Component\DependencyInjection\Reference;
  * Must run after {@see TagPluginServicesPass}: the per-plugin {@see CatalogReader} it constructs
  * below is wired with that plugin's own `app.filler`/`app.sync`/`app.search_by_plugin`-tagged
  * service, if any, as its lazy external-id resolver, and those tags only exist once
- * `TagPluginServicesPass` has run. Deliberately NOT `app.entry_widget`/`app.catalog_widget`: a
- * plugin's resolver is its filler/syncer/search service, while a widget consuming
- * `CatalogReaderInterface` (the motivating case, issue #577 — Shikimori's
- * RelatedWidget/SimilarWidget) is a *consumer* of `CatalogReader`, not a source for it — wiring it
- * as its own plugin's resolver would close the service graph on itself regardless of which
- * interfaces the widget happens to implement. Filler/Sync/SearchByPlugin services carry no such
- * risk: they are never themselves a `CatalogReaderInterface` consumer.
+ * `TagPluginServicesPass` has run. A candidate resolver is skipped, and the plugin is left with no
+ * resolver, whenever its own class also type-hints `CatalogReaderInterface`
+ * ({@see wantsCatalogReader()}) — the general rule behind the widget case that motivated this
+ * (issue #577 — Shikimori's RelatedWidget/SimilarWidget consuming `CatalogReaderInterface`, never
+ * tagged as a resolver by `TagPluginServicesPass` in the first place): whatever service the
+ * `CatalogReader` we are about to build gets injected into cannot also be the service that
+ * `CatalogReader` itself depends on, or the container closes a service graph cycle on itself
+ * (`ServiceCircularReferenceException` at compile time, not merely a binding oddity). A filler or
+ * syncer naturally wanting to read the record it is about to fill hits the exact same case.
  */
 final class CatalogReaderScopePass implements CompilerPassInterface
 {
@@ -128,9 +130,19 @@ final class CatalogReaderScopePass implements CompilerPassInterface
             foreach ($container->findTaggedServiceIds($tag) as $serviceId => $tagAttributes) {
                 foreach ($tagAttributes as $attributes) {
                     $pluginId = $attributes['id'] ?? null;
-                    if (\is_string($pluginId) && !isset($resolvers[$pluginId])) {
-                        $resolvers[$pluginId] = $serviceId;
+                    if (!\is_string($pluginId) || isset($resolvers[$pluginId])) {
+                        continue;
                     }
+
+                    // A resolver that itself type-hints CatalogReaderInterface would make the
+                    // CatalogReader built below depend on the very service it gets injected into —
+                    // a circular reference. Leave the plugin without a resolver instead.
+                    $class = $container->getDefinition($serviceId)->getClass();
+                    if (\is_string($class) && class_exists($class) && $this->wantsCatalogReader($class)) {
+                        continue;
+                    }
+
+                    $resolvers[$pluginId] = $serviceId;
                 }
             }
         }
