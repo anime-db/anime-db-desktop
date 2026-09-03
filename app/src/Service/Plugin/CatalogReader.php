@@ -130,10 +130,10 @@ final class CatalogReader implements CatalogReaderInterface
 
         $sources = array_map(static fn (AnimeSource $source): string => $source->url, $anime->getSources()->toArray());
 
-        $resolver = ($this->resolverFactory)();
-        \assert($resolver instanceof ExternalIdResolutionInterface);
-
         try {
+            $resolver = ($this->resolverFactory)();
+            \assert($resolver instanceof ExternalIdResolutionInterface);
+
             return $resolver->resolveExternalId($sources);
         } catch (\Throwable $exception) {
             $this->logger->error('Resolving the external id failed while reading a catalog record.', [

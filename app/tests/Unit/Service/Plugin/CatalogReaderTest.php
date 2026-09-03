@@ -194,6 +194,29 @@ final class CatalogReaderTest extends TestCase
         self::assertNull($view->externalId);
     }
 
+    public function testExternalIdIsNullWhenTheResolverFactoryThrows(): void
+    {
+        $anime = new MovieAnime();
+        $anime->setTitle('Cowboy Bebop')->setWatchStatus(WatchStatus::Watching)->addSource('https://shikimori.one/animes/1');
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+        $id = $this->requireId($anime);
+
+        $reader = new CatalogReader(
+            new PluginId('fake-vendor'),
+            $this->registry(),
+            static function (): ExternalIdResolutionInterface {
+                throw new \RuntimeException('boom');
+            },
+            new NullLogger(),
+        );
+
+        $view = $reader->read(new ContractAnimeId($id));
+
+        self::assertNotNull($view);
+        self::assertNull($view->externalId);
+    }
+
     public function testExternalIdIsScopedPerPluginForTheSameRecord(): void
     {
         $anime = new MovieAnime();
