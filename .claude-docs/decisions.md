@@ -521,18 +521,32 @@ service... argument "$catalogReader"... but no such service exists»), брош�
   `app.entry_widget`/`app.catalog_widget`.** Резолвером плагина выступает его
   филлер/синкер/поиск; виджет, потребляющий `CatalogReaderInterface` (Shikimori
   `RelatedWidget`/`SimilarWidget`, мотивирующий случай) — потребитель `CatalogReader`, а не
-  источник для него, и включение его в список резолверов замкнуло бы граф на себя: виджет
-  зависел бы от `CatalogReader`, который зависел бы от того же виджета. Это верно независимо от
-  того, какие интерфейсы виджет наследует — формулировка «виджетные интерфейсы наследуют
-  `ExternalIdResolutionInterface`, поэтому годятся в резолверы» здесь раньше стояла как причина
-  исключения и устарела: в пакете контрактов открыт PR (`anime-db-plugin-contracts#75`), снимающий
-  это наследование у `EntryWidgetInterface`/`CatalogWidgetInterface`, а само решение исключить эти
-  два тега при этом не меняется. Так как список резолверных тегов — это ровно то, что
-  `TagPluginServicesPass` навешивает на `Filler`/`Sync`/`SearchByPlugin`-сервисы
-  (`app.entry_widget`/`app.catalog_widget` — отдельные теги, см. `TagPluginServicesPass`),
-  достаточно не включать эти два тега в список источников, никакой отдельной защиты от цикла не
-  потребовалось. Тест `testWidgetConsumingCatalogReaderIsNeverPickedAsItsOwnPluginsResolver`
-  фиксирует это.
+  источник для него. Это верно независимо от того, какие интерфейсы виджет наследует —
+  формулировка «виджетные интерфейсы наследуют `ExternalIdResolutionInterface`, поэтому годятся
+  в резолверы» здесь раньше стояла как причина исключения и устарела: в пакете контрактов открыт
+  PR (`anime-db-plugin-contracts#75`), снимающий это наследование у
+  `EntryWidgetInterface`/`CatalogWidgetInterface`, а само решение исключить эти два тега при этом
+  не меняется.
+- **Общее правило — резолвером плагина не может быть сервис, который сам потребляет
+  `CatalogReaderInterface`, независимо от тега (найдено ревью PR #578, итерация 4).** Не включать
+  `app.entry_widget`/`app.catalog_widget` в список резолверных тегов защищает только от виджета
+  как частного случая. Филлеру/синкеру/поиску ничто не мешает точно так же тайп-хинтить
+  `CatalogReaderInterface` в конструкторе (естественное желание — прочитать текущее состояние
+  записи перед заполнением), а этот тег — как раз то, что `resolverServiceIdsByPlugin()`
+  подбирает в резолверы. Такой сервис прошёл бы отбор по тегу и был бы подставлен в `CatalogReader`
+  как резолвер, а `CatalogReader`, в свою очередь, был бы инжектирован обратно в этот же сервис —
+  цикл в графе сервисов, падение сборки контейнера (`ServiceCircularReferenceException` из
+  `CheckCircularReferencesPass`, а не просто «странный» биндинг). Юнит-тест на голых `Definition`
+  через `process()` этого не ловит — `CheckCircularReferencesPass` срабатывает только при реальном
+  `ContainerBuilder::compile()`, поэтому воспроизведено и закрыто именно вызовом `compile()` в
+  тесте, не только проверкой биндингов. Исправлено обобщением: `resolverServiceIdsByPlugin()`
+  теперь читает класс каждого тегированного кандидата и пропускает его, если класс сам
+  `wantsCatalogReader()` (та же приватная проверка, что уже применялась к потребителям) — вместо
+  специфичного для виджетов исключения тегов получилось общее правило «резолвером не может быть
+  тот, кому мы этот `CatalogReader` и инжектируем». Тесты
+  `testWidgetConsumingCatalogReaderIsNeverPickedAsItsOwnPluginsResolver` (старый, на биндингах) и
+  `testSearchByPluginServiceConsumingCatalogReaderIsNeverPickedAsItsOwnPluginsResolver` (новый, с
+  реальным `compile()`) фиксируют оба уровня защиты.
 - **`CatalogReaderScopePass` обязан выполняться после `TagPluginServicesPass`** — он ищет
   резолвер плагина по тегам `app.filler`/`app.sync`/`app.search_by_plugin`, которые
   проставляет именно `TagPluginServicesPass`. Порядок компилятор-пассов без явного приоритета
