@@ -462,3 +462,79 @@ Splash-экран, меню трея и диалоги ошибок в `native/`
   а не задним числом. Вместе с ней теряет силу и соседний буллет про «расхождение между окном
   и native-слоем для таких локалей ожидаемо, не баг» — для локалей, покрытых плагином,
   расхождения не будет.
+
+## `CatalogReaderInterface` реализован хостом, per-plugin скоуп (issue #577)
+
+**Факт до фикса, подтверждён запуском, не только статическим анализом.** Плагин с виджетом,
+инжектящим `CatalogReaderInterface` в конструктор, ронял сборку контейнера целиком —
+`Symfony\Component\DependencyInjection\Exception\RuntimeException` («Cannot autowire
+service... argument "$catalogReader"... but no such service exists»), брошенное из
+`ContainerBuilder::compile()` внутри `self::bootKernel()`, то есть до обработки первого
+запроса. Это не «пустой виджет», это неспособность приложения запуститься с таким плагином
+установленным — воспроизведено во временном откате `Kernel::build()`/сервиса/прохода
+(`CatalogReaderWidgetBootTest`, см. её докблок) и восстановлено обратно после фиксации текста
+исключения.
+
+- **Реализация — `App\Service\Plugin\CatalogReader`, скоуп — `CatalogReaderScopePass`,
+  повторяет `PluginDataStoreScopePass`/`SettingsStoreScopePass`/`OwnManifestScopePass`
+  дословно**: поиск классов плагина по namespace-префиксу, рефлексия конструктора на нужный
+  интерфейс, подстановка per-plugin инстанса через bindings. Регистрируется в
+  `Kernel::build()` последним из четырёх — единственный, кому это принципиально (см. ниже).
+- **Источник `externalId` — выбран вариант 1 (ленивый резолв), не вариант 2 (только кеш +
+  лог).** `CatalogReader::resolveExternalId()` сначала читает `Anime::getCachedExternalId()`
+  (read-only, без обращения к плагину); если кеш пуст, а у плагина ЕСТЬ свой
+  `app.filler`/`app.sync`/`app.search_by_plugin`-сервис (наследует
+  `ExternalIdResolutionInterface`), резолвит через существующий `Anime::getExternalId()` и
+  сохраняет результат — `EntityManager::flush()` сразу после успешного резолва, чтобы
+  следующий рендер того же виджета попал в быстрый кеш-путь. Обоснование: у Shikimori (мотивирующий
+  плагин issue) есть и филлер, и синкер — виджет получает `externalId` немедленно на первом же
+  рендере, не дожидаясь фонового `BackfillExternalIdMessageHandler`, который иначе остаётся
+  единственным путём наполнить кеш для только-виджетного потребителя. `resolveExternalId()` —
+  дешёвый локальный разбор URL (не сетевой вызов), поэтому лишний вызов на кеш-промах не в счёт.
+  Резолвер, бросающий исключение, перехватывается и логируется как error, `read()` не падает.
+- **Остаточный случай (когда у плагина нет вообще ни одного `app.filler`/`app.sync`/
+  `app.search_by_plugin`-сервиса) — не оставлен молчаливым.** Это ровно сценарий из тела
+  задачи: только-виджетный плагин без филлера и синкера. `$resolver === null` в этом случае, и
+  `CatalogReader` пишет debug-запись в лог («no cached external id... no resolver service»)
+  вместо тихого `null` — компромисс между вариантом 1 и вариантом 2: полноценный вариант 2
+  (лог на КАЖДЫЙ `null`) не нужен, потому что вариант 1 уже разруливает основной случай, но
+  диагностика для действительно нерешаемого случая всё равно нужна, раз задача явно требует не
+  оставлять такой отказ необъяснимым. Для плагина, у которого внешнего id нет по природе
+  (`type: local`, читает локальные файлы), путь идентичен — тоже `null`, тоже debug-запись;
+  отдельно этот случай не размечен, поскольку неотличим от «резолвер есть, но временно не
+  резолвит» на уровне `CatalogReader`, и подавлять лог для него означало бы снова гадать по
+  метаданным манифеста, которые контракт явно не поручает читать этому классу.
+- **Кандидат в резолверы — строго `app.filler`/`app.sync`/`app.search_by_plugin`, НЕ
+  `app.entry_widget`/`app.catalog_widget`, при том что оба виджетных интерфейса тоже
+  наследуют `ExternalIdResolutionInterface`.** Мотивирующий случай — сам виджет, потребляющий
+  `CatalogReaderInterface` (Shikimori `RelatedWidget`/`SimilarWidget`), технически годится в
+  резолверы себе самому; если бы `CatalogReaderScopePass` выбирал и его, получился бы цикл:
+  виджет зависит от `CatalogReader`, который зависел бы от того же виджета. Так как список
+  резолверных тегов — это ровно то, что `TagPluginServicesPass` навешивает на
+  `Filler`/`Sync`/`SearchByPlugin`-сервисы (`app.entry_widget`/`app.catalog_widget` — отдельные
+  теги, см. `TagPluginServicesPass`), достаточно не включать эти два тега в список источников,
+  никакой отдельной защиты от цикла не потребовалось. Тест
+  `testWidgetConsumingCatalogReaderIsNeverPickedAsItsOwnPluginsResolver` фиксирует это.
+- **`CatalogReaderScopePass` обязан выполняться после `TagPluginServicesPass`** — он ищет
+  резолвер плагина по тегам `app.filler`/`app.sync`/`app.search_by_plugin`, которые
+  проставляет именно `TagPluginServicesPass`. Порядок компилятор-пассов без явного приоритета
+  — порядок добавления (`Symfony\Component\DependencyInjection\Compiler\PassConfig::sortPasses()`,
+  `krsort()` + `array_merge()` сохраняет порядок внутри одного приоритета) — задокументирован
+  явно в докблоке `Kernel::build()` и `CatalogReaderScopePass`, а не оставлен на волю
+  случайного порядка `addCompilerPass()`.
+- **Найден и не исправлен посторонний баг: `PluginDataStoreScopePass`/`SettingsStoreScopePass`
+  передают `new PluginId($pluginId)` сырым объектным аргументом в `Definition`.**
+  `Symfony\Component\DependencyInjection\Dumper\PhpDumper::dumpValue()` бросает «Unable to dump
+  a service container if a parameter is an object or a resource» на ЛЮБОЙ сырой объект-аргумент
+  `Definition` — подтверждено чтением исходника `PhpDumper.php:2040`, не только по памяти
+  прошлой сессии. Оба существующих прохода несут этот баг с момента своего появления; он ни
+  разу не проявлялся, потому что ни один тест до сих пор не поднимал настоящий
+  `KernelTestCase`-контейнер с плагином, реально потребляющим `PluginDataStoreInterface`/
+  `SettingsStoreInterface` целиком (со сборкой и последующим кешированием/компиляцией через
+  `PhpDumper`, а не только `ContainerBuilder` в памяти, как делают их собственные unit-тесты).
+  Это компилируется всегда, не только в debug — `PhpDumper` используется для кеша контейнера в
+  любом окружении. `CatalogReaderScopePass` этого не наследует: `PluginId`-аргумент обёрнут в
+  отдельный inline `Definition` (`(new Definition(PluginId::class))->setArguments([$pluginId])`),
+  который `PhpDumper` умеет разворачивать как `new PluginId(...)` прямо в дампе. Сиблинг-проходы
+  сознательно не тронуты — «минимальное корректное изменение», это отдельный баг вне периметра
+  issue #577; стоит завести отдельный тикет.
