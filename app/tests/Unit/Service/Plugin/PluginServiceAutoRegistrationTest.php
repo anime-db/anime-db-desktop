@@ -41,7 +41,7 @@ use Symfony\Component\DependencyInjection\Loader\PhpFileLoader;
 
 /**
  * Exercises the exact production code path issue #282 adds to
- * {@see \App\Kernel::configureContainer()} — `PluginLoader::integrationPluginServices()` feeding
+ * {@see \App\Kernel::configureContainer()} — `PluginLoader::pluginServices()` feeding
  * a `ContainerConfigurator::services()->load()` call per plugin — through Symfony's real
  * `PhpFileLoader`/`ContainerBuilder` machinery, the same way `Kernel::configureContainer()` gets
  * invoked on boot.
@@ -129,7 +129,7 @@ final class PluginServiceAutoRegistrationTest extends TestCase
         // Mirrors Kernel::initializeBundles(), which registers each integration plugin's
         // autoloader before configureContainer() runs — without it, load() cannot reflect the
         // plugin's classes to build their service definitions.
-        $pluginLoader->registerAutoloadForIntegrationPlugins();
+        $pluginLoader->registerAutoloadForCodePlugins();
 
         $container = new ContainerBuilder();
         $container->addCompilerPass(new TagPluginServicesPass($registry, new NullLogger()));
@@ -145,7 +145,7 @@ final class PluginServiceAutoRegistrationTest extends TestCase
             ->setPublic(true);
 
         $loader = new PhpFileLoader($container, new FileLocator($this->pluginsDir));
-        $loader->load($this->writePluginServicesConfig($pluginLoader->integrationPluginServices()));
+        $loader->load($this->writePluginServicesConfig($pluginLoader->pluginServices()));
 
         $container->compile();
 
