@@ -52,13 +52,18 @@ interface SettingsStoreControllerFixtureInterface
  * settings controllers use.
  *
  * The fixture controller extends `Symfony\Bundle\FrameworkBundle\Controller\AbstractController`
- * deliberately: `FrameworkExtension` calls `registerForAutoconfiguration(AbstractController::class)`,
- * which is what makes Symfony's `ResolveInstanceofConditionalsPass` split the plugin's autoconfigured
- * definition in two — a real service definition plus a companion, argument-less
- * `.abstract.instanceof.<class>` definition holding the merged `_instanceof` rules. The existing
+ * deliberately: `FrameworkExtension` registers controller autoconfiguration both for classes
+ * extending `AbstractController` and, separately, for classes carrying the `#[AsController]`
+ * attribute — either path makes Symfony's `ResolveInstanceofConditionalsPass` split the plugin's
+ * autoconfigured definition in two — a real service definition plus a companion, argument-less
+ * `.abstract.instanceof.<class>` definition holding the merged `_instanceof` rules. The fixture
+ * uses inheritance for brevity, but the only real plugin in the ecosystem today
+ * (`animedb-shikimori`) triggers the same split via `#[AsController]` on a plain, non-inheriting
+ * `final class` — the fix is keyed off `Definition::isAbstract()`, not off which autoconfiguration
+ * rule produced it, so both paths are covered by construction. The existing
  * `PluginDataAndSettingsStoreWidgetBootTest`/`CatalogReaderWidgetBootTest` fixtures are plain classes
- * with no `_instanceof`-matching ancestor, so that abstract definition never appears in their
- * container and they cannot catch this defect.
+ * with no `_instanceof`-matching ancestor or attribute, so that abstract definition never appears in
+ * their container and they cannot catch this defect.
  *
  * Before the fix, `SettingsStoreScopePass` (and its `PluginDataStoreScopePass`/
  * `CatalogReaderScopePass` siblings) looped over every definition without skipping
