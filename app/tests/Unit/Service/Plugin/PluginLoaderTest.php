@@ -55,7 +55,7 @@ final class PluginLoaderTest extends TestCase
         $this->writeIntegrationManifest($pluginId);
         $this->writeBundleClass($pluginId);
 
-        $bundles = $this->loader()->integrationBundles();
+        $bundles = $this->loader()->pluginBundles();
 
         $this->assertCount(1, $bundles);
         $this->assertSame($this->bundleClass($pluginId), $bundles[0]::class);
@@ -72,7 +72,7 @@ final class PluginLoaderTest extends TestCase
 
         $loader = $this->loader(new PluginsConfigStore($configPath));
 
-        $this->assertSame([], $loader->integrationBundles());
+        $this->assertSame([], $loader->pluginBundles());
     }
 
     public function testIntegrationBundlesSkipsAndLogsWhenSrcDirectoryMissing(): void
@@ -86,7 +86,7 @@ final class PluginLoaderTest extends TestCase
             $this->callback(static fn (array $context): bool => $context['pluginId'] === $pluginId),
         );
 
-        $this->assertSame([], $this->loader(logger: $logger)->integrationBundles());
+        $this->assertSame([], $this->loader(logger: $logger)->pluginBundles());
     }
 
     public function testIntegrationBundlesLoadsPluginWithoutBundleClassWithoutErrorLog(): void
@@ -98,7 +98,7 @@ final class PluginLoaderTest extends TestCase
         $logger = $this->createMock(LoggerInterface::class);
         $logger->expects($this->never())->method('error');
 
-        $this->assertSame([], $this->loader(logger: $logger)->integrationBundles());
+        $this->assertSame([], $this->loader(logger: $logger)->pluginBundles());
     }
 
     public function testRegisterAutoloadForIntegrationPluginsMakesFillerLoadableWithoutBundleClass(): void
@@ -107,7 +107,7 @@ final class PluginLoaderTest extends TestCase
         $this->writeIntegrationManifest($pluginId);
         $this->writeFillerClassOnly($pluginId);
 
-        $this->loader()->registerAutoloadForIntegrationPlugins();
+        $this->loader()->registerAutoloadForCodePlugins();
 
         $this->assertTrue(class_exists($this->fillerClass($pluginId)));
     }
@@ -124,7 +124,7 @@ final class PluginLoaderTest extends TestCase
             $this->callback(static fn (array $context): bool => $context['pluginId'] === $pluginId),
         );
 
-        $this->assertSame([], $this->loader(logger: $logger)->integrationBundles());
+        $this->assertSame([], $this->loader(logger: $logger)->pluginBundles());
     }
 
     public function testRegisterAutoloadForIntegrationPluginsMakesBundleClassLoadableWithoutInstantiatingIt(): void
@@ -133,7 +133,7 @@ final class PluginLoaderTest extends TestCase
         $this->writeIntegrationManifest($pluginId);
         $this->writeBundleClass($pluginId);
 
-        $this->loader()->registerAutoloadForIntegrationPlugins();
+        $this->loader()->registerAutoloadForCodePlugins();
 
         $this->assertTrue(class_exists($this->bundleClass($pluginId)));
     }
@@ -144,7 +144,19 @@ final class PluginLoaderTest extends TestCase
         $this->writeTranslationManifest($pluginId);
         mkdir($this->pluginsDir.'/'.$pluginId.'/translations', recursive: true);
 
-        $this->assertSame([], $this->loader()->integrationBundles());
+        $this->assertSame([], $this->loader()->pluginBundles());
+    }
+
+    public function testPluginBundlesInstantiatesEnabledLocalPlugin(): void
+    {
+        $pluginId = 'acme-'.uniqid();
+        $this->writeLocalManifest($pluginId);
+        $this->writeBundleClass($pluginId);
+
+        $bundles = $this->loader()->pluginBundles();
+
+        $this->assertCount(1, $bundles);
+        $this->assertSame($this->bundleClass($pluginId), $bundles[0]::class);
     }
 
     public function testTwigPathsMapsTemplatesDirectoryToStudlyNamespace(): void
@@ -177,7 +189,7 @@ final class PluginLoaderTest extends TestCase
         $this->writeIntegrationManifest($pluginId);
         $this->writeBundleClass($pluginId);
 
-        $paths = $this->loader()->integrationPluginServices();
+        $paths = $this->loader()->pluginServices();
 
         $this->assertSame(
             ['AnimeDb\\Plugins\\'.$this->studlyId($pluginId).'\\' => $this->pluginsDir.'/'.$pluginId.'/src'],
@@ -190,7 +202,7 @@ final class PluginLoaderTest extends TestCase
         $pluginId = 'acme-'.uniqid();
         $this->writeIntegrationManifest($pluginId);
 
-        $this->assertSame([], $this->loader()->integrationPluginServices());
+        $this->assertSame([], $this->loader()->pluginServices());
     }
 
     public function testIntegrationPluginServicesIgnoresTranslationPlugins(): void
@@ -200,7 +212,21 @@ final class PluginLoaderTest extends TestCase
         mkdir($this->pluginsDir.'/'.$pluginId.'/translations', recursive: true);
         mkdir($this->pluginsDir.'/'.$pluginId.'/src', recursive: true);
 
-        $this->assertSame([], $this->loader()->integrationPluginServices());
+        $this->assertSame([], $this->loader()->pluginServices());
+    }
+
+    public function testPluginServicesMapsNamespacePrefixToSourceDirectoryForLocalPlugin(): void
+    {
+        $pluginId = 'acme-'.uniqid();
+        $this->writeLocalManifest($pluginId);
+        $this->writeBundleClass($pluginId);
+
+        $paths = $this->loader()->pluginServices();
+
+        $this->assertSame(
+            ['AnimeDb\\Plugins\\'.$this->studlyId($pluginId).'\\' => $this->pluginsDir.'/'.$pluginId.'/src'],
+            $paths,
+        );
     }
 
     public function testRoutingFilesReturnsExistingPluginRoutingYaml(): void
@@ -274,6 +300,30 @@ final class PluginLoaderTest extends TestCase
         $this->assertSame([], $this->loader(logger: $logger)->translationPaths());
     }
 
+    public function testTranslationPathsReturnsDirectoryForLocalPlugin(): void
+    {
+        $pluginId = 'acme-'.uniqid();
+        $this->writeLocalManifest($pluginId);
+        $this->writeBundleClass($pluginId);
+        $translationsDir = $this->pluginsDir.'/'.$pluginId.'/translations';
+        mkdir($translationsDir, recursive: true);
+        file_put_contents($translationsDir.'/'.$pluginId.'.fr.yaml', 'title: Titre');
+
+        $this->assertSame([$translationsDir], $this->loader()->translationPaths());
+    }
+
+    public function testTranslationPathsOmitsLocalPluginWithoutTranslationsDirectoryWithoutError(): void
+    {
+        $pluginId = 'acme-'.uniqid();
+        $this->writeLocalManifest($pluginId);
+        $this->writeBundleClass($pluginId);
+
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->never())->method('error');
+
+        $this->assertSame([], $this->loader(logger: $logger)->translationPaths());
+    }
+
     private function loader(?PluginsConfigStore $configStore = null, ?LoggerInterface $logger = null): PluginLoader
     {
         $logger ??= new NullLogger();
@@ -311,6 +361,20 @@ final class PluginLoaderTest extends TestCase
             'version' => '1.0.0',
             'type' => 'translation',
             'locales' => ['fr'],
+            'require' => ['core' => '>=2.0.0', 'php' => '>=8.2'],
+        ]));
+    }
+
+    private function writeLocalManifest(string $pluginId): void
+    {
+        $dir = $this->pluginsDir.'/'.$pluginId;
+        mkdir($dir, recursive: true);
+        file_put_contents($dir.'/manifest.json', (string) json_encode([
+            'id' => $pluginId,
+            'name' => ucfirst($pluginId),
+            'version' => '1.0.0',
+            'type' => 'local',
+            'features' => ['widget' => true],
             'require' => ['core' => '>=2.0.0', 'php' => '>=8.2'],
         ]));
     }

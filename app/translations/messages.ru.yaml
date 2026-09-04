@@ -108,6 +108,7 @@ storage_type:
 
 plugin_type:
     integration: Интеграция
+    local: Локальный
     translation: Перевод
 
 production_status:

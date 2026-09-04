@@ -81,11 +81,11 @@ class Kernel extends BaseKernel
      * `registerBundles()` on later boots and instead `require`s a dumped
      * `<Container>.bundles.php` that instantiates plugin bundle classes directly — those
      * still need their spl_autoload_register() callback in place, or that require crashes
-     * with a class-not-found error. See {@see PluginLoader::registerAutoloadForIntegrationPlugins()}.
+     * with a class-not-found error. See {@see PluginLoader::registerAutoloadForCodePlugins()}.
      */
     protected function initializeBundles(): void
     {
-        $this->pluginLoader()->registerAutoloadForIntegrationPlugins();
+        $this->pluginLoader()->registerAutoloadForCodePlugins();
         parent::initializeBundles();
     }
 
@@ -99,7 +99,7 @@ class Kernel extends BaseKernel
     public function registerBundles(): iterable
     {
         yield from $this->getFrameworkBundles();
-        yield from $this->pluginLoader()->integrationBundles();
+        yield from $this->pluginLoader()->pluginBundles();
     }
 
     protected function configureRoutes(RoutingConfigurator $routes): void
@@ -125,11 +125,11 @@ class Kernel extends BaseKernel
             $container->extension('framework', ['translator' => ['paths' => $translationPaths]]);
         }
 
-        // Auto-registers every integration plugin's classes as services (issue #282): a plugin
-        // ships only manifest.json + src/*.php, no DI config of its own. `load()` picks up
-        // non-service classes (DTOs, enums, exceptions) too, but Symfony's compiler removes
-        // unused private services, so that's harmless.
-        foreach ($this->pluginLoader()->integrationPluginServices() as $namespacePrefix => $srcDir) {
+        // Auto-registers every code plugin's classes as services (issue #282, extended to Local
+        // plugins by #579): a plugin ships only manifest.json + src/*.php, no DI config of its
+        // own. `load()` picks up non-service classes (DTOs, enums, exceptions) too, but
+        // Symfony's compiler removes unused private services, so that's harmless.
+        foreach ($this->pluginLoader()->pluginServices() as $namespacePrefix => $srcDir) {
             $container->services()
                 ->defaults()->autowire()->autoconfigure()
                 ->load($namespacePrefix, $srcDir);
@@ -179,7 +179,7 @@ class Kernel extends BaseKernel
      * Built with real {@see coreVersion()}/{@see pluginContractsVersion()} values, not their
      * container-parameter equivalents (this instance exists before the container does) — issue
      * #561's derived `InstalledPlugin::$compatible` has to be correct here too, since this is the
-     * registry {@see PluginLoader::integrationBundles()} reads to decide which plugin bundles get
+     * registry {@see PluginLoader::pluginBundles()} reads to decide which plugin bundles get
      * registered at all (see the "Известный край" note in issue #561: an incompatible plugin's
      * bundle never registering here is what keeps a stale compiled container from referencing it
      * after a compatibility change).
