@@ -122,6 +122,16 @@ final class TagPluginServicesPass implements CompilerPassInterface
         $widgetNamesByPlugin = [];
 
         foreach ($container->getDefinitions() as $serviceId => $definition) {
+            if ($definition->isAbstract()) {
+                // Symfony's `_instanceof` autoconfiguration (e.g. for classes implementing
+                // EventSubscriberInterface) splits an abstract `.abstract.instanceof.<Class>`
+                // definition off any matching service; it has no arguments of its own, so
+                // tagging it here would register the plugin's class a second time under this
+                // pass's per-plugin bookkeeping (e.g. as a duplicate widget name) alongside the
+                // real service.
+                continue;
+            }
+
             $class = $definition->getClass();
             if ($class === null) {
                 continue;
