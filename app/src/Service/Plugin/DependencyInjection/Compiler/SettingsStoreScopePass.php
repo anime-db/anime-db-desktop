@@ -68,6 +68,15 @@ final class SettingsStoreScopePass implements CompilerPassInterface
         }
 
         foreach ($container->getDefinitions() as $definition) {
+            if ($definition->isAbstract()) {
+                // Symfony's `_instanceof` autoconfiguration (e.g. for classes extending
+                // AbstractController, or carrying #[AsController]) splits an abstract
+                // `.abstract.instanceof.<Class>` definition off any matching service; it has no
+                // arguments of its own, so a binding placed on it makes `ResolveBindingsPass`
+                // hard-fail compilation instead of just being unused.
+                continue;
+            }
+
             $class = $definition->getClass();
             if ($class === null) {
                 continue;
