@@ -93,6 +93,10 @@ final class CatalogReaderScopePass implements CompilerPassInterface
         $resolverServiceIdsByPlugin = $this->resolverServiceIdsByPlugin($container);
 
         foreach ($container->getDefinitions() as $definition) {
+            if ($definition->isAbstract()) {
+                continue;
+            }
+
             $class = $definition->getClass();
             if ($class === null) {
                 continue;

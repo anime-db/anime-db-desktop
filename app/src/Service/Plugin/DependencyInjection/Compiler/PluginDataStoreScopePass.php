@@ -68,6 +68,10 @@ final class PluginDataStoreScopePass implements CompilerPassInterface
         }
 
         foreach ($container->getDefinitions() as $definition) {
+            if ($definition->isAbstract()) {
+                continue;
+            }
+
             $class = $definition->getClass();
             if ($class === null) {
                 continue;
