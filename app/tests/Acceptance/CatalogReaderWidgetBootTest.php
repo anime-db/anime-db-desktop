@@ -210,10 +210,6 @@ final class CatalogReaderWidgetBootTest extends KernelTestCase
                     return new WidgetMetadata('{$widgetClassName}', 'widget.title', 'widget.description');
                 }
 
-                public function resolveExternalId(array \$urls): ?string
-                {
-                    return null;
-                }
 
                 public function render(AnimeId \$anime): string
                 {

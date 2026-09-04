@@ -4,20 +4,20 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "504fd787de9490a0f47ea7f1cc69afef",
+    "content-hash": "f1c051dd33de4e9a06d123074aa5d944",
     "packages": [
         {
             "name": "anime-db/plugin-contracts",
-            "version": "v0.16.0",
+            "version": "v0.17.1",
             "source": {
                 "type": "git",
                 "url": "https://github.com/anime-db/anime-db-plugin-contracts.git",
-                "reference": "113a2882c642737b9395ad9165a6bb384b2d4ff4"
+                "reference": "0e53f85c3d002d8218327617cf4f5c572a60c1de"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/anime-db/anime-db-plugin-contracts/zipball/113a2882c642737b9395ad9165a6bb384b2d4ff4",
-                "reference": "113a2882c642737b9395ad9165a6bb384b2d4ff4",
+                "url": "https://api.github.com/repos/anime-db/anime-db-plugin-contracts/zipball/0e53f85c3d002d8218327617cf4f5c572a60c1de",
+                "reference": "0e53f85c3d002d8218327617cf4f5c572a60c1de",
                 "shasum": ""
             },
             "require": {
@@ -29,7 +29,9 @@
             "require-dev": {
                 "friendsofphp/php-cs-fixer": "^3.95",
                 "phpstan/phpstan": "^1.10",
-                "phpunit/phpunit": "^10.5"
+                "phpunit/phpunit": "^10.5",
+                "symfony/http-client": "^6.4",
+                "symfony/process": "^6.4"
             },
             "suggest": {
                 "phpstan/extension-installer": "Automatically registers extension.neon, so the rules from this package are picked up with no manual configuration."
@@ -72,10 +74,10 @@
             "description": "Plugin contracts (interfaces and DTOs) for AnimeDB v2 plugins",
             "homepage": "https://github.com/anime-db/anime-db-plugin-contracts",
             "support": {
-                "source": "https://github.com/anime-db/anime-db-plugin-contracts/tree/v0.16.0",
+                "source": "https://github.com/anime-db/anime-db-plugin-contracts/tree/v0.17.1",
                 "issues": "https://github.com/anime-db/anime-db-plugin-contracts/issues"
             },
-            "time": "2026-09-02T06:23:34+00:00"
+            "time": "2026-09-03T20:40:55+00:00"
         },
         {
             "name": "composer/semver",

@@ -84,10 +84,12 @@ final class SearchByPluginChain
             $candidates = $plugin->find($name);
 
             if ($candidates !== []) {
-                // Contract's find() only guarantees SearchByPluginCandidate[], not a list — this
-                // chain's own contract (mergeCandidates()'s array_map() over ScanCandidate::fromOrphan())
-                // relies on integer-indexed lists throughout.
-                return array_values($candidates);
+                // No array_values() here: since anime-db/plugin-contracts v0.17.0 find() promises
+                // list<SearchByPluginCandidate>, which is what this chain's own contract needs
+                // (mergeCandidates()'s array_map() over ScanCandidate::fromOrphan() relies on
+                // integer-indexed lists throughout). Before that the contract only guaranteed
+                // SearchByPluginCandidate[], and this line paid for the difference.
+                return $candidates;
             }
         }
 

@@ -43,11 +43,6 @@ final class FakeReservedNameEntryWidget implements EntryWidgetInterface
         return new WidgetMetadata('filler', 'Filler', 'Reserved name fixture.');
     }
 
-    public function resolveExternalId(array $urls): ?string
-    {
-        return null;
-    }
-
     public function render(AnimeId $anime): string
     {
         return '';

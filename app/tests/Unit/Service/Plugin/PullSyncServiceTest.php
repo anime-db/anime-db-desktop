@@ -170,14 +170,14 @@ final class PullSyncServiceTest extends TestCase
      * than through a constructor, since PHPUnit's own mocks configure expectations the same way.
      *
      * @param iterable<SyncItem> $pull
-     * @param string[]           $fillableFields
+     * @param list<string>       $fillableFields
      */
     private function syncFillerStub(iterable $pull, ?PluginAnimeData $data, array $fillableFields = []): SyncInterface&FillerInterface
     {
         return new class($pull, $data, $fillableFields) implements SyncInterface, FillerInterface {
             /**
              * @param iterable<SyncItem> $pull
-             * @param string[]           $fillableFields
+             * @param list<string>       $fillableFields
              */
             public function __construct(
                 private readonly iterable $pull,
