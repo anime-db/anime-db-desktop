@@ -27,11 +27,15 @@ declare(strict_types=1);
 
 namespace App\Tests\Acceptance;
 
+use AnimeDb\PluginContracts\Catalog\CatalogReaderInterface;
+use AnimeDb\PluginContracts\Manifest\OwnManifestInterface;
 use AnimeDb\PluginContracts\Model\AnimeId;
+use AnimeDb\PluginContracts\Settings\SettingsStoreInterface;
 use AnimeDb\PluginContracts\Widget\EntryWidgetInterface;
 use App\Entity\Enum\WatchStatus;
 use App\Event\WatchProgressChangedManuallyEvent;
 use App\Service\Plugin\InstalledPluginsRegistry;
+use App\Service\Plugin\PluginDataStoreInterface;
 use App\Service\Plugin\PluginsConfigStore;
 use App\Tests\Support\TemporaryDirectories;
 use Psr\Log\NullLogger;
@@ -57,6 +61,21 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
  * whose class is the very same widget class — got tagged and keyed by widget name a second time,
  * and {@see \App\Service\Plugin\Exception\DuplicateWidgetNameException} fired for a plugin that
  * never actually declared two widgets.
+ *
+ * The fixture widget below also type-hints `PluginDataStoreInterface`, `SettingsStoreInterface`,
+ * `CatalogReaderInterface` and `OwnManifestInterface` in its constructor, so this single
+ * `.abstract.instanceof.<class>` companion definition exercises all five of the compiler passes
+ * that iterate `ContainerBuilder::getDefinitions()` on a plugin's namespace
+ * ({@see \App\Service\Plugin\DependencyInjection\Compiler\TagPluginServicesPass},
+ * {@see \App\Service\Plugin\DependencyInjection\Compiler\PluginDataStoreScopePass},
+ * {@see \App\Service\Plugin\DependencyInjection\Compiler\SettingsStoreScopePass},
+ * {@see \App\Service\Plugin\DependencyInjection\Compiler\CatalogReaderScopePass} and
+ * {@see \App\Service\Plugin\DependencyInjection\Compiler\OwnManifestScopePass}) at once — PR #587
+ * review found `OwnManifestScopePass` was the one pass in the family still missing the
+ * `Definition::isAbstract()` skip, throwing `InvalidArgumentException` out of `ResolveBindingsPass`
+ * for a binding placed on the argument-less companion definition. A fixture that combines all five
+ * constructor dependencies on one class keeps a future sixth pass in this family from reaching
+ * review unguarded the same way.
  *
  * `DATABASE_URL`/`QUEUE_DATABASE_URL` are pointed at throwaway SQLite files, both `$_SERVER` and
  * `$_ENV`, the same way {@see LocalPluginServiceBootTest} does: dispatching
@@ -163,6 +182,14 @@ final class WidgetEventSubscriberBootTest extends KernelTestCase
         // DuplicateWidgetNameException.
         self::assertSame('catalog-aware-widget-markup', $widget->render(new AnimeId(1)));
 
+        // OwnManifestScopePass wiring: the widget's constructor also type-hints
+        // OwnManifestInterface, so reaching bootKernel() above without an InvalidArgumentException
+        // already proves the fix; this additionally confirms the binding resolved to *this*
+        // plugin's own manifest, not merely that compilation didn't throw.
+        $ownManifest = (new \ReflectionProperty($widget, 'ownManifest'))->getValue($widget);
+        self::assertInstanceOf(OwnManifestInterface::class, $ownManifest);
+        self::assertSame(self::PLUGIN_ID, $ownManifest->id());
+
         // Catalog event subscription: the same class also implements EventSubscriberInterface, so
         // a real dispatch of a catalog domain event must reach it — confirming autoconfigure()
         // really did split off the abstract `.abstract.instanceof.<class>` definition that
@@ -212,15 +239,27 @@ final class WidgetEventSubscriberBootTest extends KernelTestCase
 
             namespace AnimeDb\\Plugins\\{$studlyVendor};
 
+            use AnimeDb\\PluginContracts\\Catalog\\CatalogReaderInterface;
+            use AnimeDb\\PluginContracts\\Manifest\\OwnManifestInterface;
             use AnimeDb\\PluginContracts\\Model\\AnimeId;
+            use AnimeDb\\PluginContracts\\Settings\\SettingsStoreInterface;
             use AnimeDb\\PluginContracts\\Widget\\EntryWidgetInterface;
             use AnimeDb\\PluginContracts\\Widget\\WidgetMetadata;
             use App\\Event\\WatchProgressChangedManuallyEvent;
+            use App\\Service\\Plugin\\PluginDataStoreInterface;
             use App\\Tests\\Acceptance\\WidgetEventSubscriberBootTest;
             use Symfony\\Component\\EventDispatcher\\EventSubscriberInterface;
 
             final class {$widgetClassName} implements EntryWidgetInterface, EventSubscriberInterface
             {
+                public function __construct(
+                    private readonly PluginDataStoreInterface \$pluginDataStore,
+                    private readonly SettingsStoreInterface \$settingsStore,
+                    private readonly CatalogReaderInterface \$catalogReader,
+                    private readonly OwnManifestInterface \$ownManifest,
+                ) {
+                }
+
                 public static function metadata(): WidgetMetadata
                 {
                     return new WidgetMetadata('{$widgetClassName}', 'widget.title', 'widget.description');
