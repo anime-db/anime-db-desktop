@@ -135,13 +135,26 @@ final class HttpPluginMediaDownloaderTest extends TestCase
         self::assertSame(0, $httpClient->getRequestsCount());
     }
 
+    public function testDownloadRejectsHighestCgnatAddress(): void
+    {
+        $httpClient = new MockHttpClient([new MockResponse($this->createPngBytes())]);
+        $downloader = $this->createDownloader($httpClient);
+
+        // The upper bound of 100.64.0.0/10: guards against an off-by-one in the range constant
+        // that would let the top of the CGNAT block through as "public".
+        $filename = $downloader->download(1, 'http://100.127.255.255/cover.jpg');
+
+        self::assertNull($filename);
+        self::assertSame(0, $httpClient->getRequestsCount());
+    }
+
     public function testDownloadRejectsHostThatResolvesToLoopbackOnALaterRequest(): void
     {
         // Simulates a short-TTL DNS record: the first lookup answers with a public address (so
         // the check passes), a later lookup for the same host answers with a loopback address.
-        // Fixing the checked address into the request (instead of letting the client resolve the
-        // host again on its own) is what has to stop the second, unsafe answer from being used —
-        // this test is red without that fix.
+        // This only exercises checkedIp() rejecting the new, unsafe answer on the second call;
+        // the request-pinning itself is covered separately by testDownloadPinsTheRequestToThe
+        // ValidatedAddress and testDownloadPinsTheResolvedAddressOnEachRedirectHop.
         $resolver = new FakeHostResolver([['8.8.8.8'], ['127.0.0.1']]);
         $httpClient = new MockHttpClient([new MockResponse($this->createPngBytes())]);
         $downloader = $this->createDownloader($httpClient, $resolver);

@@ -52,7 +52,7 @@ final class HttpPluginMediaDownloader implements PluginMediaDownloaderInterface
 
     /** Not covered by FILTER_FLAG_NO_PRIV_RANGE: carrier-grade NAT space (RFC 6598), routable only within an ISP's own network. */
     private const CGNAT_RANGE_FIRST = 1681915904; // ip2long('100.64.0.0')
-    private const CGNAT_RANGE_LAST = 1685587967; // ip2long('100.127.255.255')
+    private const CGNAT_RANGE_LAST = 1686110207; // ip2long('100.127.255.255')
 
     public function __construct(
         private readonly HttpClientInterface $httpClient,
