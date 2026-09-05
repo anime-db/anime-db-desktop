@@ -120,9 +120,15 @@ jobs:
       # себя, и набор останется зелёным — ровно тот режим, в котором тест простоял всё время до
       # issue #592. Повторный прогон одного класса с --fail-on-skipped превращает пропуск в
       # падение; стоит меньше секунды — Meilisearch поднимается и гасится внутри теста.
+      #
+      # --fail-on-empty-test-suite закрывает второй способ обнулить гейт: переименование или
+      # переезд класса делает --filter пустым, и «прогнали ноль тестов» — тоже успех. На
+      # PHPUnit 12 это уже поведение по умолчанию (12.5.30 в composer.lock), но флаг задан явно:
+      # composer.json допускает и ^11, где умолчание обратное, а весь смысл шага в том, что он
+      # не имеет права молча превратиться в no-op из-за настройки по умолчанию.
       - name: Ensure the Meilisearch integration test really ran
         if: ${{ !cancelled() }}
-        run: vendor/bin/phpunit --filter AnimeSearchIndexerTest --fail-on-skipped
+        run: vendor/bin/phpunit --filter AnimeSearchIndexerTest --fail-on-skipped --fail-on-empty-test-suite
         working-directory: app
 
       - name: Run PHPStan
