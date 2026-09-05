@@ -41,6 +41,12 @@ use Symfony\Contracts\HttpClient\HttpClientInterface;
  * The extension is always `.webp`, not derived from the URL or the response's Content-Type: every
  * downloaded body is re-encoded by {@see ImageNormalizer} before it reaches disk, so the file on
  * disk is always a WebP image regardless of what the source served.
+ *
+ * fetch() pins each request to the address {@see self::checkedIp()} validated, which closes the
+ * DNS-rebinding gap between the check and the request when the connection is direct. When the
+ * injected HTTP client is instead routed through a proxy, the proxy resolves the target host on
+ * its own side, the pin has no effect on that resolution, and the guarantee then depends on the
+ * proxy rather than on this class.
  */
 final class HttpPluginMediaDownloader implements PluginMediaDownloaderInterface
 {
@@ -158,7 +164,10 @@ final class HttpPluginMediaDownloader implements PluginMediaDownloaderInterface
 
                 // Pins the request to the exact address checkedIp() just validated, so the
                 // client can't resolve $url's host a second time and get a different answer
-                // (DNS rebinding) between the check above and the request below.
+                // (DNS rebinding) between the check above and the request below. This only holds
+                // for a direct connection: when the injected $httpClient routes through a proxy,
+                // the target host is resolved by the proxy itself, this option has no effect on
+                // that resolution, and the guarantee then rests on the proxy rather than on the pin.
                 $response = $this->httpClient->request('GET', $url, [
                     'max_redirects' => 0,
                     'resolve' => [(string) parse_url($url, PHP_URL_HOST) => $ip],
