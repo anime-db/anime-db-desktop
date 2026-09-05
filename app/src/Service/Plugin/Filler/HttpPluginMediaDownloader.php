@@ -50,10 +50,15 @@ final class HttpPluginMediaDownloader implements PluginMediaDownloaderInterface
     /** Followed manually (not via the client's own redirect handling) so each hop can be re-validated against SSRF. */
     private const MAX_REDIRECTS = 5;
 
+    /** Not covered by FILTER_FLAG_NO_PRIV_RANGE: carrier-grade NAT space (RFC 6598), routable only within an ISP's own network. */
+    private const CGNAT_RANGE_FIRST = 1681915904; // ip2long('100.64.0.0')
+    private const CGNAT_RANGE_LAST = 1685587967; // ip2long('100.127.255.255')
+
     public function __construct(
         private readonly HttpClientInterface $httpClient,
         private readonly ImageNormalizer $imageNormalizer,
         private readonly LoggerInterface $logger,
+        private readonly HostResolverInterface $hostResolver,
         private readonly string $mediaDir,
     ) {
     }
@@ -146,17 +151,24 @@ final class HttpPluginMediaDownloader implements PluginMediaDownloaderInterface
     {
         try {
             for ($redirect = 0; $redirect <= self::MAX_REDIRECTS; ++$redirect) {
-                if (!$this->isUrlAllowed($url)) {
+                $ip = $this->checkedIp($url);
+                if ($ip === null) {
                     return null;
                 }
 
-                $response = $this->httpClient->request('GET', $url, ['max_redirects' => 0]);
+                // Pins the request to the exact address checkedIp() just validated, so the
+                // client can't resolve $url's host a second time and get a different answer
+                // (DNS rebinding) between the check above and the request below.
+                $response = $this->httpClient->request('GET', $url, [
+                    'max_redirects' => 0,
+                    'resolve' => [(string) parse_url($url, PHP_URL_HOST) => $ip],
+                ]);
                 $statusCode = $response->getStatusCode();
 
                 if (\in_array($statusCode, [301, 302, 303, 307, 308], true)) {
                     $location = $response->getHeaders(false)['location'][0] ?? null;
                     // Relative Location headers are rejected rather than resolved against $url,
-                    // so every hop we follow has already gone through isUrlAllowed() as an absolute URL.
+                    // so every hop we follow has already gone through checkedIp() as an absolute URL.
                     if ($location === null || !\in_array(strtolower((string) (parse_url($location, PHP_URL_SCHEME) ?? '')), ['http', 'https'], true)) {
                         return null;
                     }
@@ -187,30 +199,50 @@ final class HttpPluginMediaDownloader implements PluginMediaDownloaderInterface
         }
     }
 
-    /** Blocks anything but plain http(s) to a public host, so a plugin (or a plugin-relayed API response) can't be used to probe internal/link-local infrastructure. */
-    private function isUrlAllowed(string $url): bool
+    /**
+     * Blocks anything but plain http(s) to a public host, so a plugin (or a plugin-relayed API
+     * response) can't be used to probe internal/link-local infrastructure.
+     *
+     * @return string|null the single address $url's host was validated against, to pin the
+     *                     request to, or null if $url must not be fetched
+     */
+    private function checkedIp(string $url): ?string
     {
         $scheme = strtolower((string) (parse_url($url, PHP_URL_SCHEME) ?? ''));
         if (!\in_array($scheme, ['http', 'https'], true)) {
-            return false;
+            return null;
         }
 
         $host = parse_url($url, PHP_URL_HOST);
         if (!\is_string($host) || $host === '') {
-            return false;
+            return null;
         }
 
-        $ips = filter_var($host, FILTER_VALIDATE_IP) ? [$host] : (gethostbynamel($host) ?: []);
+        $ips = filter_var($host, FILTER_VALIDATE_IP) ? [$host] : $this->hostResolver->resolve($host);
         if ($ips === []) {
-            return false;
+            return null;
         }
 
         foreach ($ips as $ip) {
-            if (!filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
-                return false;
+            if (!$this->isPublicIp($ip)) {
+                return null;
             }
         }
 
-        return true;
+        // gethostbynamel() itself resolved $host to just one of these addresses when fetch()
+        // made its own request in the pre-fix code; picking the first one here reproduces that,
+        // now as a value the caller can pin the request to instead of leaving it to resolve again.
+        return $ips[0];
+    }
+
+    private function isPublicIp(string $ip): bool
+    {
+        if (!filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
+            return false;
+        }
+
+        $long = filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) ? ip2long($ip) : false;
+
+        return $long === false || $long < self::CGNAT_RANGE_FIRST || $long > self::CGNAT_RANGE_LAST;
     }
 }

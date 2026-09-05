@@ -28,6 +28,7 @@ declare(strict_types=1);
 namespace App\Tests\Unit\Service\Plugin\Filler;
 
 use App\Service\Media\ImageNormalizer;
+use App\Service\Plugin\Filler\HostResolverInterface;
 use App\Service\Plugin\Filler\HttpPluginMediaDownloader;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
@@ -122,6 +123,78 @@ final class HttpPluginMediaDownloaderTest extends TestCase
         self::assertNull($filename);
     }
 
+    public function testDownloadRejectsCgnatHost(): void
+    {
+        $httpClient = new MockHttpClient([new MockResponse($this->createPngBytes())]);
+        $downloader = $this->createDownloader($httpClient);
+
+        // 100.64.0.0/10 (RFC 6598 carrier-grade NAT) is not covered by FILTER_FLAG_NO_PRIV_RANGE.
+        $filename = $downloader->download(1, 'http://100.64.0.1/cover.jpg');
+
+        self::assertNull($filename);
+        self::assertSame(0, $httpClient->getRequestsCount());
+    }
+
+    public function testDownloadRejectsHostThatResolvesToLoopbackOnALaterRequest(): void
+    {
+        // Simulates a short-TTL DNS record: the first lookup answers with a public address (so
+        // the check passes), a later lookup for the same host answers with a loopback address.
+        // Fixing the checked address into the request (instead of letting the client resolve the
+        // host again on its own) is what has to stop the second, unsafe answer from being used —
+        // this test is red without that fix.
+        $resolver = new FakeHostResolver([['8.8.8.8'], ['127.0.0.1']]);
+        $httpClient = new MockHttpClient([new MockResponse($this->createPngBytes())]);
+        $downloader = $this->createDownloader($httpClient, $resolver);
+
+        $first = $downloader->download(1, 'https://rebinding.example.test/first.jpg');
+        $second = $downloader->download(1, 'https://rebinding.example.test/second.jpg');
+
+        self::assertNotNull($first);
+        self::assertNull($second);
+    }
+
+    public function testDownloadPinsTheRequestToTheValidatedAddress(): void
+    {
+        $resolver = new FakeHostResolver([['8.8.8.8']]);
+        $capturedOptions = null;
+        $httpClient = new MockHttpClient(function (string $method, string $url, array $options) use (&$capturedOptions): MockResponse {
+            $capturedOptions = $options;
+
+            return new MockResponse($this->createPngBytes());
+        });
+        $downloader = $this->createDownloader($httpClient, $resolver);
+
+        $filename = $downloader->download(1, 'https://public.example.test/cover.jpg');
+
+        self::assertNotNull($filename);
+        self::assertSame(['public.example.test' => '8.8.8.8'], $capturedOptions['resolve'] ?? null);
+    }
+
+    public function testDownloadPinsTheResolvedAddressOnEachRedirectHop(): void
+    {
+        $resolver = new FakeHostResolver([['8.8.8.8'], ['9.9.9.9']]);
+        $capturedOptions = [];
+        $httpClient = new MockHttpClient([
+            function (string $method, string $url, array $options) use (&$capturedOptions): MockResponse {
+                $capturedOptions[] = $options;
+
+                return new MockResponse('', ['http_code' => 302, 'response_headers' => ['location' => 'https://second.example.test/cover.jpg']]);
+            },
+            function (string $method, string $url, array $options) use (&$capturedOptions): MockResponse {
+                $capturedOptions[] = $options;
+
+                return new MockResponse($this->createPngBytes());
+            },
+        ]);
+        $downloader = $this->createDownloader($httpClient, $resolver);
+
+        $filename = $downloader->download(1, 'https://first.example.test/cover.jpg');
+
+        self::assertNotNull($filename);
+        self::assertSame(['first.example.test' => '8.8.8.8'], $capturedOptions[0]['resolve'] ?? null);
+        self::assertSame(['second.example.test' => '9.9.9.9'], $capturedOptions[1]['resolve'] ?? null);
+    }
+
     public function testDownloadSkipsNetworkWhenFileAlreadyExists(): void
     {
         $httpClient = new MockHttpClient([]);
@@ -165,9 +238,15 @@ final class HttpPluginMediaDownloaderTest extends TestCase
         self::assertSame([$filename], $entries);
     }
 
-    private function createDownloader(MockHttpClient $httpClient): HttpPluginMediaDownloader
+    private function createDownloader(MockHttpClient $httpClient, ?HostResolverInterface $hostResolver = null): HttpPluginMediaDownloader
     {
-        return new HttpPluginMediaDownloader($httpClient, new ImageNormalizer(), new NullLogger(), $this->mediaDir);
+        return new HttpPluginMediaDownloader(
+            $httpClient,
+            new ImageNormalizer(),
+            new NullLogger(),
+            $hostResolver ?? new FakeHostResolver([]),
+            $this->mediaDir,
+        );
     }
 
     private function createPngBytes(): string
@@ -206,5 +285,21 @@ final class HttpPluginMediaDownloaderTest extends TestCase
         }
 
         rmdir($dir);
+    }
+}
+
+/** Returns one queued answer per {@see resolve()} call, in order, so a test can simulate a host's DNS record changing between requests. */
+final class FakeHostResolver implements HostResolverInterface
+{
+    /**
+     * @param list<list<string>> $answers
+     */
+    public function __construct(private array $answers)
+    {
+    }
+
+    public function resolve(string $host): array
+    {
+        return array_shift($this->answers) ?? [];
     }
 }
