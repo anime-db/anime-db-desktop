@@ -72,10 +72,57 @@ jobs:
         with:
           working-directory: app
 
+      # Интеграционный тест AnimeSearchIndexerTest поднимает НАСТОЯЩИЙ процесс Meilisearch и
+      # проверяет схему индекса, синонимы и typo-tolerance против живого протокола — всё
+      # остальное вокруг поиска работает с моками и про протокол ничего не утверждает. Без
+      # бинаря тест пропускает сам себя, поэтому до issue #592 он не выполнился ни разу.
+      #
+      # Версия берётся из scripts/versions.json — того же пина, по которому download-bins.js
+      # кладёт бинарь в поставку. Проверять индексатор против другой версии Meilisearch
+      # бессмысленно: индекс несовместим между версиями, и зелёный CI ничего не сказал бы про
+      # то, что поедет пользователю.
+      #
+      # SHA-256 запинен ЗДЕСЬ, а не в scripts/versions.json, намеренно: содержимое versions.json
+      # целиком входит в build fingerprint (native/supervisor/cache-invalidation.js), поэтому
+      # CI-only значение в нём означало бы разовый вайп кэша у пользователя на ровном месте.
+      # Цена решения — пин надо обновлять вручную вместе с versions.meilisearch; забыть не
+      # выйдет, шаг падает с явным указанием, что править (это Linux-бинарь, у него свой хеш,
+      # с windows-amd64 из versions.json он не совпадает).
+      - name: Provision Meilisearch for the indexer integration test
+        env:
+          MEILISEARCH_LINUX_SHA256: d6900108e66384b0b842f2596f71f65fa64594f4af760c42530eded82b996b0a
+        run: |
+          set -euo pipefail
+          version="$(jq -er '.meilisearch' scripts/versions.json)"
+          binary="$RUNNER_TEMP/meilisearch"
+          curl -fsSL --retry 3 --retry-all-errors -o "$binary" \
+            "https://github.com/meilisearch/meilisearch/releases/download/v${version}/meilisearch-linux-amd64"
+          if ! echo "${MEILISEARCH_LINUX_SHA256}  ${binary}" | sha256sum --check --status -; then
+            echo "::error::SHA-256 бинаря Meilisearch v${version} не совпал с пином MEILISEARCH_LINUX_SHA256 в .github/workflows/ci.yml. После бампа versions.meilisearch обнови пин там же (hash от meilisearch-linux-amd64, не от windows-amd64)."
+            exit 1
+          fi
+          chmod +x "$binary"
+          echo "MEILISEARCH_TEST_BINARY=$binary" >> "$GITHUB_ENV"
+
       # Полный прогон покрывает и консистентность переводов (бывшая отдельная job
       # translations-consistency гоняла подмножество этого же набора — удалена).
+      #
+      # `!cancelled()` добавлен вместе с шагом Meilisearch выше: провалившаяся выкачка бинаря
+      # обязана валить джобу, но не обязана прятать результаты всего остального набора —
+      # иначе одна сетевая ошибка отнимает у PR всю обратную связь по тестам.
       - name: Run PHPUnit
+        if: ${{ !cancelled() }}
         run: vendor/bin/phpunit
+        working-directory: app
+
+      # Гейт против бесшумного возврата в skip. Зелёный основной прогон выше сам по себе не
+      # доказывает, что тест отработал: при любой поломке окружения он снова начнёт пропускать
+      # себя, и набор останется зелёным — ровно тот режим, в котором тест простоял всё время до
+      # issue #592. Повторный прогон одного класса с --fail-on-skipped превращает пропуск в
+      # падение; стоит меньше секунды — Meilisearch поднимается и гасится внутри теста.
+      - name: Ensure the Meilisearch integration test really ran
+        if: ${{ !cancelled() }}
+        run: vendor/bin/phpunit --filter AnimeSearchIndexerTest --fail-on-skipped
         working-directory: app
 
       - name: Run PHPStan
