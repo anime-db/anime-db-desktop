@@ -35,18 +35,18 @@ parameters:
     app.plugins_dir.dev_default: '%kernel.project_dir%/var/plugins'
     app.plugins_dir: '%env(default:app.plugins_dir.dev_default:PLUGINS_DIR)%'
 
-    # In production Electron passes CORE_VERSION (see native/supervisor/frankenphp.js,
-    # native/supervisor/messenger-consumer.js), the app's own package.json "version" — there is
-    # no separately versioned core component, so app.getVersion() *is* the core version. Used by
-    # the plugin ZIP installer's compat check (issue #249) to enforce manifest.require.core.
-    # The dev default is deliberately a high placeholder rather than a copy of package.json's
-    # current version (which would need updating here on every release bump): dev/CI runs
-    # without Electron have no real core version to check against, so the compat check is made
-    # a no-op there instead of spuriously blocking every plugin install.
-    app.core_version.dev_default: '99.99.99'
-    app.core_version: '%env(default:app.core_version.dev_default:CORE_VERSION)%'
+    # The app's own version (issue #565) — package.json's "version", the same value Electron's
+    # app.getVersion() reads and, in production, passes down as CORE_VERSION (see
+    # native/supervisor/frankenphp.js, native/supervisor/messenger-consumer.js). Used by the
+    # plugin ZIP installer's compat check (issue #249) to enforce manifest.require.core.
+    # Deliberately NOT declared here as an %env(default:...)%: outside of Electron (dev run,
+    # bin/console, unit tests) CORE_VERSION is never set, and a literal default would just be
+    # another independent copy of the version to keep in sync. Set from
+    # App\Service\Version\AppVersionResolver in Kernel::build() instead, via
+    # $container->setParameter() — same reasoning as app.plugin_contracts_version right below,
+    # including why it must not be redeclared here.
 
-    # The installed `anime-db/plugin-contracts` version (issue #561) — unlike app.core_version
+    # The installed `anime-db/plugin-contracts` version (issue #561) — like app.core_version
     # above, not sourced from an env var Electron passes in: there is no equivalent value for it,
     # since this is a fact about the app's own vendor/composer/installed.php lock, not deployment
     # configuration. Set from Composer\InstalledVersions::getPrettyVersion() in Kernel::build()

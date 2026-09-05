@@ -35,6 +35,7 @@ use App\Service\Plugin\DependencyInjection\Compiler\TagPluginServicesPass;
 use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\PluginLoader;
 use App\Service\Plugin\PluginsConfigStore;
+use App\Service\Version\AppVersionResolver;
 use Composer\InstalledVersions;
 use Monolog\Handler\StreamHandler;
 use Monolog\Level;
@@ -152,11 +153,17 @@ class Kernel extends BaseKernel
      */
     public function build(ContainerBuilder $container): void
     {
-        // Read once here rather than left to an %env()% default like app.core_version above:
-        // there is no equivalent env var the native layer could pass in for this one, since it
-        // is not configuration but a fact about this app's own vendor/composer/installed.php lock
-        // — the same one every InstalledVersions::getPrettyVersion() call on this process reads
-        // (issue #561).
+        // Set directly rather than left to an %env(default:...)% parameter (issue #565): the real
+        // source, package.json's "version", has no env var equivalent reachable outside Electron,
+        // so a services.yaml default would just be another independent copy of the same
+        // placeholder this replaces. coreVersion() is also what builds the pre-container
+        // InstalledPluginsRegistry instance above, so both stay in sync by construction.
+        $container->setParameter('app.core_version', $this->coreVersion());
+
+        // Read once here rather than left to an %env()% default: there is no equivalent env var
+        // the native layer could pass in for this one, since it is not configuration but a fact
+        // about this app's own vendor/composer/installed.php lock — the same one every
+        // InstalledVersions::getPrettyVersion() call on this process reads (issue #561).
         $container->setParameter('app.plugin_contracts_version', $this->pluginContractsVersion());
 
         $container->addCompilerPass(new TagPluginServicesPass($this->installedPluginsRegistry(), $this->pluginLoaderLogger()));
@@ -204,14 +211,16 @@ class Kernel extends BaseKernel
     }
 
     /**
-     * Same source and dev-environment placeholder as `app.core_version`/`app.core_version.dev_default`
-     * in `config/services.yaml` (CORE_VERSION is set the same way as PLUGINS_DIR above, by
-     * `native/supervisor/env.js`) — duplicated here rather than read back from the container
+     * Same source as `app.core_version` in `config/services.yaml`/{@see self::build()} — CORE_VERSION
+     * is set the same way as PLUGINS_DIR above, by `native/supervisor/env.js`, itself reading
+     * `app.getVersion()`. Outside of Electron (dev run, `bin/console`, unit tests) that env var is
+     * never set, so this falls back to {@see AppVersionResolver}, which reads the same
+     * package.json Electron reads — duplicated here rather than read back from the container
      * because this runs before the container exists.
      */
-    private function coreVersion(): string
+    private function coreVersion(): ?string
     {
-        return $_SERVER['CORE_VERSION'] ?? '99.99.99';
+        return $_SERVER['CORE_VERSION'] ?? AppVersionResolver::resolve($this->getProjectDir(), $this->pluginLoaderLogger());
     }
 
     /**

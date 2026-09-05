@@ -67,12 +67,14 @@ final class PluginTranslationBootTest extends KernelTestCase
     private ?string $originalRuntimeDir;
     private ?string $originalPluginsDir;
     private ?string $originalPluginsConfigPath;
+    private ?string $originalCoreVersion;
 
     protected function setUp(): void
     {
         $this->originalRuntimeDir = $_SERVER['APP_RUNTIME_DIR'] ?? null;
         $this->originalPluginsDir = $_SERVER['PLUGINS_DIR'] ?? null;
         $this->originalPluginsConfigPath = $_SERVER['PLUGINS_CONFIG_PATH'] ?? null;
+        $this->originalCoreVersion = $_SERVER['CORE_VERSION'] ?? null;
 
         $this->runtimeDir = sys_get_temp_dir().'/anime-plugin-translation-boot-test-runtime-'.uniqid();
         $this->pluginsDir = sys_get_temp_dir().'/anime-plugin-translation-boot-test-plugins-'.uniqid();
@@ -82,6 +84,11 @@ final class PluginTranslationBootTest extends KernelTestCase
         $_SERVER['APP_RUNTIME_DIR'] = $this->runtimeDir;
         $_SERVER['PLUGINS_DIR'] = $this->pluginsDir;
         $_SERVER['PLUGINS_CONFIG_PATH'] = $this->pluginsDir.'/plugins.json';
+        // Mocks the same Electron-supplied channel native/supervisor/env.js sets in production
+        // (issue #565) — without it, Kernel::coreVersion() would fall back to this checkout's own
+        // package.json version, which does not satisfy the fixture manifests' `require.core`
+        // below and would keep their plugin bundles from registering at all.
+        $_SERVER['CORE_VERSION'] = '2.0.0';
     }
 
     protected function tearDown(): void
@@ -91,6 +98,7 @@ final class PluginTranslationBootTest extends KernelTestCase
         $this->restoreServerVar('APP_RUNTIME_DIR', $this->originalRuntimeDir);
         $this->restoreServerVar('PLUGINS_DIR', $this->originalPluginsDir);
         $this->restoreServerVar('PLUGINS_CONFIG_PATH', $this->originalPluginsConfigPath);
+        $this->restoreServerVar('CORE_VERSION', $this->originalCoreVersion);
 
         $this->removeDirectory($this->runtimeDir);
         $this->removeDirectory($this->pluginsDir);
