@@ -162,6 +162,30 @@ final class AppConfigStoreTest extends TestCase
         }
     }
 
+    public function testUpdateThrowsAndRemovesTempFileWhenRenameFails(): void
+    {
+        // Pre-create the destination as a directory: rename() cannot replace a directory with a
+        // file, the same failure mode the issue reproduced with another process (e.g. antivirus)
+        // holding a handle on config.json on Windows (#589).
+        mkdir($this->path);
+
+        $store = new AppConfigStore($this->path);
+
+        $this->expectException(AppConfigStoreException::class);
+
+        // rename() also emits a PHP warning for this expected failure; silence it so it doesn't
+        // pollute test output.
+        set_error_handler(static fn (): bool => true, \E_WARNING);
+
+        try {
+            $store->update(static fn (array $config): array => ['locale' => 'ru']);
+        } finally {
+            restore_error_handler();
+            $this->assertFileDoesNotExist($this->path.'.tmp');
+            rmdir($this->path);
+        }
+    }
+
     /**
      * The lock acquire is non-blocking with a short bounded retry: a writer that cannot claim
      * the lock because another one already holds it must fail fast with

@@ -29,6 +29,7 @@ namespace App\Tests\Unit\Service\Plugin;
 
 use AnimeDb\PluginContracts\Manifest\PluginType;
 use App\Entity\ValueObject\PluginId;
+use App\Service\Plugin\Exception\InstalledPluginsRegistryException;
 use App\Service\Plugin\InstalledPlugin;
 use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\PluginsConfigStore;
@@ -69,6 +70,31 @@ final class InstalledPluginsRegistryTest extends TestCase
         $registry->reconcile();
 
         $this->assertSame([], $registry->all());
+    }
+
+    public function testReconcileThrowsAndRemovesTempFileWhenRenameFails(): void
+    {
+        $this->writeManifest('animedb-shikimori');
+
+        // Pre-create the index path as a directory: rename() cannot replace a directory with a
+        // file, the same failure mode the issue reproduced with another process (e.g.
+        // antivirus) holding a handle on the target file on Windows (#589).
+        mkdir($this->pluginsDir.'/installed-plugins.php');
+
+        $registry = new InstalledPluginsRegistry($this->pluginsDir, $this->configStore(), new NullLogger());
+
+        $this->expectException(InstalledPluginsRegistryException::class);
+
+        // rename() also emits a PHP warning for this expected failure; silence it so it doesn't
+        // pollute test output.
+        set_error_handler(static fn (): bool => true, \E_WARNING);
+
+        try {
+            $registry->reconcile();
+        } finally {
+            restore_error_handler();
+            $this->assertSame([], glob($this->pluginsDir.'/installed-plugins.php.tmp.*'));
+        }
     }
 
     public function testReconcileEnumeratesMultipleValidPlugins(): void

@@ -505,7 +505,11 @@ final class InstalledPluginsRegistry
 
         // rename() on Windows overwrites an existing destination (unlike a bare POSIX rename()
         // pre-8.0), so this stays atomic on the app's only supported platform.
-        rename($tmpPath, $this->indexPath());
+        if (!rename($tmpPath, $this->indexPath())) {
+            @unlink($tmpPath);
+
+            throw new InstalledPluginsRegistryException(\sprintf('Unable to rename "%s" to "%s".', $tmpPath, $this->indexPath()));
+        }
     }
 
     private function indexPath(): string

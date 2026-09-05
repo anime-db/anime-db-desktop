@@ -132,7 +132,11 @@ final class AppConfigStore
                 throw new AppConfigStoreException(\sprintf('Unable to write "%s".', $tmpPath));
             }
 
-            rename($tmpPath, $this->configPath);
+            if (!rename($tmpPath, $this->configPath)) {
+                @unlink($tmpPath);
+
+                throw new AppConfigStoreException(\sprintf('Unable to rename "%s" to "%s".', $tmpPath, $this->configPath));
+            }
         } finally {
             flock($lockHandle, \LOCK_UN);
             fclose($lockHandle);
