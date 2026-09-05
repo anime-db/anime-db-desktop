@@ -105,7 +105,7 @@ test('rejects a path inside a storage that is not a directory', async () => {
 test('rejects a path with ".." that escapes the storage after canonicalization', async () => {
     const outside = path.join(tmpRoot, 'outside');
     fs.mkdirSync(outside);
-    const escapingPath = path.join(storageDir, '..', 'outside');
+    const escapingPath = `${storageDir}${path.sep}..${path.sep}outside`;
     mockStoragePaths([storageDir]);
 
     await expect(openStoragePath({}, escapingPath)).rejects.toThrow();
