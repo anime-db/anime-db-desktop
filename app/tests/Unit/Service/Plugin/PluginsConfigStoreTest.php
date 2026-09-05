@@ -278,6 +278,33 @@ final class PluginsConfigStoreTest extends TestCase
         }
     }
 
+    public function testUpdatePluginSettingsThrowsAndRemovesTempFileWhenRenameFails(): void
+    {
+        // Pre-create the destination as a directory: rename() cannot replace a directory with a
+        // file, the same failure mode the issue reproduced with another process (e.g. antivirus)
+        // holding a handle on plugins.json on Windows (#589).
+        mkdir($this->path);
+
+        $store = new PluginsConfigStore($this->path);
+
+        $this->expectException(PluginsConfigStoreException::class);
+
+        // rename() also emits a PHP warning for this expected failure; silence it so it doesn't
+        // pollute test output.
+        set_error_handler(static fn (): bool => true, \E_WARNING);
+
+        try {
+            $store->updatePluginSettings(
+                new PluginId('animedb-shikimori'),
+                static fn (array $settings): array => ['refreshToken' => 'new'],
+            );
+        } finally {
+            restore_error_handler();
+            $this->assertFileDoesNotExist($this->path.'.tmp');
+            rmdir($this->path);
+        }
+    }
+
     /**
      * The lock acquire is non-blocking with a short bounded retry (issue #340): a writer that
      * cannot claim the lock because another one already holds it must fail fast with

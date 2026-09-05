@@ -201,7 +201,11 @@ final class PluginsConfigStore
                 throw new PluginsConfigStoreException(\sprintf('Unable to write "%s".', $tmpPath));
             }
 
-            rename($tmpPath, $this->pluginsConfigPath);
+            if (!rename($tmpPath, $this->pluginsConfigPath)) {
+                @unlink($tmpPath);
+
+                throw new PluginsConfigStoreException(\sprintf('Unable to rename "%s" to "%s".', $tmpPath, $this->pluginsConfigPath));
+            }
         } finally {
             flock($lockHandle, \LOCK_UN);
             fclose($lockHandle);
