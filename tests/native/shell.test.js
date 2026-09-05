@@ -53,7 +53,23 @@ function mockStoragePaths(paths) {
             res.emit('data', JSON.stringify({ paths }));
             res.emit('end');
         });
-        return { on: jest.fn() };
+        return { on: jest.fn(), setTimeout: jest.fn() };
+    });
+}
+
+/**
+ * Makes the mocked http.get return a request that never calls back and, once
+ * request.setTimeout()'s callback fires, destroy()s the request with an error and
+ * emits it — as the real http module does when a timed-out request is destroyed.
+ */
+function mockStoragePathsTimeout() {
+    http.get.mockImplementation(() => {
+        const request = new EventEmitter();
+        request.setTimeout = jest.fn((_ms, onTimeout) => {
+            process.nextTick(onTimeout);
+        });
+        request.destroy = jest.fn((err) => { request.emit('error', err); });
+        return request;
     });
 }
 
@@ -130,4 +146,25 @@ test('opens a directory nested inside a configured storage', async () => {
     await openStoragePath({}, nested);
 
     expect(shell.openPath).toHaveBeenCalledWith(nested);
+});
+
+test('opens the resolved path, not a symlink whose target may change after the check', async () => {
+    const real = path.join(storageDir, 'real');
+    fs.mkdirSync(real);
+    const link = path.join(tmpRoot, 'link');
+    fs.symlinkSync(real, link, 'dir');
+    mockStoragePaths([storageDir]);
+
+    await openStoragePath({}, link);
+
+    expect(shell.openPath).toHaveBeenCalledWith(fs.realpathSync(real));
+    expect(shell.openPath).not.toHaveBeenCalledWith(link);
+});
+
+test('rejects when the storage list request times out', async () => {
+    mockStoragePathsTimeout();
+
+    await expect(openStoragePath({}, storageDir)).rejects.toThrow('storage list is unavailable');
+
+    expect(shell.openPath).not.toHaveBeenCalled();
 });

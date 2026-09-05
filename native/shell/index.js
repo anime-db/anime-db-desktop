@@ -28,6 +28,8 @@ const { ipcMain, shell } = require('electron');
 
 let backendPort = null;
 
+const STORAGE_LIST_TIMEOUT_MS = 5000;
+
 /**
  * Запоминает порт backend'а, с которого будет запрашиваться список хранилищ. Должна
  * вызываться после того, как backend поднялся, и до того, как рендерер сможет дойти до
@@ -53,7 +55,7 @@ function fetchStoragePaths() {
             return;
         }
 
-        http.get(`http://127.0.0.1:${backendPort}/storage/paths`, (res) => {
+        const request = http.get(`http://127.0.0.1:${backendPort}/storage/paths`, (res) => {
             if (res.statusCode !== 200) {
                 res.resume();
                 reject(new Error(`unexpected response status: ${res.statusCode}`));
@@ -71,28 +73,38 @@ function fetchStoragePaths() {
                     reject(err);
                 }
             });
-        }).on('error', reject);
+        });
+
+        request.on('error', reject);
+        request.setTimeout(STORAGE_LIST_TIMEOUT_MS, () => {
+            request.destroy(new Error(`request timed out after ${STORAGE_LIST_TIMEOUT_MS}ms`));
+        });
     });
 }
 
 /**
- * true, только если targetPath после разрешения симлинков и `..` указывает на
- * существующий каталог, совпадающий с одним из storagePaths или лежащий внутри него.
+ * Разрешает targetPath (симлинки и `..`) и возвращает этот канонический путь, если он
+ * указывает на существующий каталог, совпадающий с одним из storagePaths или лежащий
+ * внутри него. Возвращает null, если проверка не пройдена.
+ *
+ * Открывать нужно именно возвращённый канонический путь, а не исходный targetPath —
+ * между проверкой и открытием симлинк на диске может смениться и указывать уже в другое
+ * место.
  *
  * @param {string} targetPath
  * @param {string[]} storagePaths
- * @returns {boolean}
+ * @returns {string|null}
  */
-function isInsideConfiguredStorage(targetPath, storagePaths) {
+function resolveInsideConfiguredStorage(targetPath, storagePaths) {
     let realTarget;
     try {
         realTarget = fs.realpathSync(targetPath);
-        if (!fs.statSync(realTarget).isDirectory()) return false;
+        if (!fs.statSync(realTarget).isDirectory()) return null;
     } catch {
-        return false;
+        return null;
     }
 
-    return storagePaths.some((storagePath) => {
+    const isInside = storagePaths.some((storagePath) => {
         let realStorage;
         try {
             realStorage = fs.realpathSync(storagePath);
@@ -103,6 +115,8 @@ function isInsideConfiguredStorage(targetPath, storagePaths) {
         const relative = path.relative(realStorage, realTarget);
         return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
     });
+
+    return isInside ? realTarget : null;
 }
 
 /**
@@ -125,12 +139,13 @@ async function openStoragePath(_event, targetPath) {
         throw new Error('storage list is unavailable');
     }
 
-    if (!isInsideConfiguredStorage(targetPath, storagePaths)) {
+    const resolvedPath = resolveInsideConfiguredStorage(targetPath, storagePaths);
+    if (resolvedPath === null) {
         console.error(`[shell] rejected path outside configured storages or not an existing directory: ${targetPath}`);
         throw new Error('path is not an existing directory inside a configured storage');
     }
 
-    return shell.openPath(targetPath);
+    return shell.openPath(resolvedPath);
 }
 
 ipcMain.handle('shell:open-path', openStoragePath);
