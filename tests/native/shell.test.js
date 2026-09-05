@@ -21,20 +21,150 @@
 
 'use strict';
 
+const fs   = require('fs');
+const os   = require('os');
+const path = require('path');
+const { EventEmitter } = require('events');
+
 jest.mock('electron', () => ({
     ipcMain: { handle: jest.fn() },
     shell:   { openPath: jest.fn(() => Promise.resolve('')) },
 }));
 
+jest.mock('http', () => ({ get: jest.fn() }));
+
+const http = require('http');
 const { ipcMain, shell } = require('electron');
-const { openStoragePath } = require('../../native/shell');
+const { openStoragePath, configure } = require('../../native/shell');
+
+/**
+ * Makes the mocked http.get respond as if the backend's GET /storage/paths returned
+ * the given list of storage paths.
+ *
+ * @param {string[]} paths
+ */
+function mockStoragePaths(paths) {
+    http.get.mockImplementation((_url, callback) => {
+        const res = new EventEmitter();
+        res.statusCode = 200;
+        res.setEncoding = jest.fn();
+        callback(res);
+        process.nextTick(() => {
+            res.emit('data', JSON.stringify({ paths }));
+            res.emit('end');
+        });
+        return { on: jest.fn(), setTimeout: jest.fn() };
+    });
+}
+
+/**
+ * Makes the mocked http.get return a request that never calls back and, once
+ * request.setTimeout()'s callback fires, destroy()s the request with an error and
+ * emits it — as the real http module does when a timed-out request is destroyed.
+ */
+function mockStoragePathsTimeout() {
+    http.get.mockImplementation(() => {
+        const request = new EventEmitter();
+        request.setTimeout = jest.fn((_ms, onTimeout) => {
+            process.nextTick(onTimeout);
+        });
+        request.destroy = jest.fn((err) => { request.emit('error', err); });
+        return request;
+    });
+}
+
+let tmpRoot;
+let storageDir;
+
+beforeEach(() => {
+    http.get.mockClear();
+    shell.openPath.mockClear();
+    configure(12345);
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'shell-test-'));
+    storageDir = path.join(tmpRoot, 'storage');
+    fs.mkdirSync(storageDir);
+});
+
+afterEach(() => {
+    console.error.mockRestore();
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+});
 
 test('registers the shell:open-path IPC handler on module load', () => {
     expect(ipcMain.handle).toHaveBeenCalledWith('shell:open-path', openStoragePath);
 });
 
-test('openStoragePath delegates to shell.openPath with the given path', () => {
-    openStoragePath({}, '/anime/aot');
+test('rejects a path outside the configured storages', async () => {
+    const outside = path.join(tmpRoot, 'outside');
+    fs.mkdirSync(outside);
+    mockStoragePaths([storageDir]);
 
-    expect(shell.openPath).toHaveBeenCalledWith('/anime/aot');
+    await expect(openStoragePath({}, outside)).rejects.toThrow();
+
+    expect(shell.openPath).not.toHaveBeenCalled();
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining(outside));
+});
+
+test('rejects a path inside a storage that is not a directory', async () => {
+    const filePath = path.join(storageDir, 'file.txt');
+    fs.writeFileSync(filePath, 'content');
+    mockStoragePaths([storageDir]);
+
+    await expect(openStoragePath({}, filePath)).rejects.toThrow();
+
+    expect(shell.openPath).not.toHaveBeenCalled();
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining(filePath));
+});
+
+test('rejects a path with ".." that escapes the storage after canonicalization', async () => {
+    const outside = path.join(tmpRoot, 'outside');
+    fs.mkdirSync(outside);
+    const escapingPath = `${storageDir}${path.sep}..${path.sep}outside`;
+    mockStoragePaths([storageDir]);
+
+    await expect(openStoragePath({}, escapingPath)).rejects.toThrow();
+
+    expect(shell.openPath).not.toHaveBeenCalled();
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining(escapingPath));
+});
+
+test('opens a directory equal to a configured storage', async () => {
+    mockStoragePaths([storageDir]);
+
+    await openStoragePath({}, storageDir);
+
+    expect(shell.openPath).toHaveBeenCalledWith(storageDir);
+});
+
+test('opens a directory nested inside a configured storage', async () => {
+    const nested = path.join(storageDir, 'anime', 'aot');
+    fs.mkdirSync(nested, { recursive: true });
+    mockStoragePaths([storageDir]);
+
+    await openStoragePath({}, nested);
+
+    expect(shell.openPath).toHaveBeenCalledWith(nested);
+});
+
+test('opens the resolved path, not a symlink whose target may change after the check', async () => {
+    const real = path.join(storageDir, 'real');
+    fs.mkdirSync(real);
+    const link = path.join(tmpRoot, 'link');
+    fs.symlinkSync(real, link, 'dir');
+    mockStoragePaths([storageDir]);
+
+    await openStoragePath({}, link);
+
+    expect(shell.openPath).toHaveBeenCalledWith(fs.realpathSync(real));
+    expect(shell.openPath).not.toHaveBeenCalledWith(link);
+});
+
+test('rejects when the storage list request times out', async () => {
+    mockStoragePathsTimeout();
+
+    await expect(openStoragePath({}, storageDir)).rejects.toThrow('storage list is unavailable');
+
+    expect(shell.openPath).not.toHaveBeenCalled();
 });

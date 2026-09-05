@@ -24,7 +24,7 @@
 const { app, dialog, session } = require('electron');
 require('../protocols/app-media');
 require('../accept-language');
-require('../shell');
+const shell = require('../shell');
 require('../dialog');
 const supervisor       = require('../supervisor');
 const safeModeState    = require('../supervisor/safe-mode');
@@ -179,6 +179,7 @@ if (!gotLock) {
                 }
             }, { safeMode });
 
+            shell.configure(frankenphpPort);
             wsClient.connect(wsPort);
 
             await new Promise(r => setTimeout(r, 400));

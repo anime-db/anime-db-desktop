@@ -136,6 +136,21 @@ final class StorageControllerTest extends TestCase
         $this->assertSame(200, $response->getStatusCode());
     }
 
+    public function testPathsReturnsAllConfiguredStoragePaths(): void
+    {
+        $storages = $this->createStub(StorageRepository::class);
+        $storages->method('findAllOrderedByName')->willReturn([
+            new Storage('Main folder', 'D:\\Anime', StorageType::Folder),
+            new Storage('Backup folder', 'E:\\Anime backup', StorageType::Folder),
+        ]);
+
+        $controller = $this->createController(storages: $storages);
+        $response = $controller->paths();
+
+        $data = json_decode((string) $response->getContent(), true);
+        $this->assertSame(['D:\\Anime', 'E:\\Anime backup'], $data['paths']);
+    }
+
     public function testScanDispatchesScanStorageMessageAndRedirects(): void
     {
         $storage = new Storage('Main folder', 'D:\\Anime', StorageType::Folder);

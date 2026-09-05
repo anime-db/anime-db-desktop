@@ -32,6 +32,7 @@ use App\Message\ScanStorageMessage;
 use App\Repository\StorageRepository;
 use App\Service\Storage\StorageMarkerService;
 use Doctrine\ORM\EntityManagerInterface;
+use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -73,6 +74,23 @@ final class StorageController
             'scanned' => $request->query->getBoolean('scanned'),
             'scannedStorageId' => $request->query->get('storage_id'),
         ]));
+    }
+
+    /**
+     * Reads the configured storage paths so a caller can validate a filesystem path against
+     * them without trusting a caller-supplied list of what's "allowed" — used by the desktop
+     * shell's native process to check an IPC-supplied path before opening it (issue #593), not
+     * intended for use from the rendered HTML pages.
+     */
+    #[Route('/storage/paths', name: 'storage_paths', methods: ['GET'])]
+    public function paths(): JsonResponse
+    {
+        return new JsonResponse([
+            'paths' => array_map(
+                static fn (Storage $storage): string => $storage->getPath(),
+                $this->storages->findAllOrderedByName(),
+            ),
+        ]);
     }
 
     #[Route('/storage/{id}/scan', name: 'storage_scan', methods: ['POST'])]
