@@ -28,7 +28,7 @@
     <form method="post" action="{{ path('settings_set_locale') }}">
         <input type="hidden" name="_token" value="{{ csrf_token('settings_set_locale') }}">
         <label for="locale">{{ 'settings.language_label'|trans }}</label>
-        <select id="locale" name="locale" onchange="this.form.submit()">
+        <select id="locale" name="locale" data-submit-on-change>
             {% if unavailableLocale is not empty %}
                 <option value="" disabled selected>{{ 'settings.language_unavailable_option'|trans({'%language%': locale_endonym(unavailableLocale)}) }}</option>
             {% endif %}

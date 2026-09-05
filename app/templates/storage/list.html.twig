@@ -78,7 +78,7 @@
                                     <input type="hidden" name="_token" value="{{ csrf_token('storage_scan_' ~ storage.id) }}">
                                     <button type="submit">{{ 'storage_list.scan_button'|trans }}</button>
                                 </form>
-                                <form method="post" action="{{ path('storage_delete', {id: storage.id}) }}" onsubmit="return confirm('{{ ('storage_list.delete_confirm'|trans({'%name%': bidi_isolate(storage.name)}))|e('js') }}');">
+                                <form method="post" action="{{ path('storage_delete', {id: storage.id}) }}" data-confirm="{{ 'storage_list.delete_confirm'|trans({'%name%': bidi_isolate(storage.name)}) }}">
                                     <input type="hidden" name="_token" value="{{ csrf_token('storage_delete_' ~ storage.id) }}">
                                     <button type="submit">{{ 'storage_list.delete_button'|trans }}</button>
                                 </form>
