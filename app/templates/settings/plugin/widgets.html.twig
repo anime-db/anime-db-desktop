@@ -60,7 +60,7 @@
                                     type="checkbox"
                                     name="active"
                                     value="1"
-                                    onchange="this.form.submit()"
+                                    data-submit-on-change
                                     {% if widget.active %}checked{% endif %}
                                     {% if not widget.active and activeCount >= hardLimit %}disabled title="{{ 'settings_plugin_widgets.hard_limit_reached'|trans({'%limit%': hardLimit}) }}"{% endif %}
                                 >
