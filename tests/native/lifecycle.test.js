@@ -45,6 +45,7 @@ jest.mock('fs', () => ({
 }));
 jest.mock('../../native/protocols/app-media', () => ({}));
 jest.mock('../../native/accept-language', () => ({}));
+jest.mock('../../native/content-security-policy', () => ({}));
 jest.mock('../../native/shell', () => ({ configure: jest.fn() }));
 jest.mock('../../native/dialog', () => ({}));
 jest.mock('../../native/supervisor', () => ({
