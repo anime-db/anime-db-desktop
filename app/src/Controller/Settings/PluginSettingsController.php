@@ -33,6 +33,7 @@ use App\Message\BackfillExternalIdMessage;
 use App\Message\SyncSeedMessage;
 use App\Service\Plugin\Exception\PluginsConfigStoreLockedException;
 use App\Service\Plugin\InstalledPluginsRegistry;
+use App\Service\Plugin\PluginHtmlSanitizer;
 use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Plugin\PluginUiAssetsResolver;
 use App\Service\Plugin\SettingsPageRegistry;
@@ -106,6 +107,10 @@ use Twig\Environment;
  * that one tag instead of taking down `renderFailed`'s own graceful-degradation branch along with
  * the happy path, which is exactly the failure this controller otherwise goes out of its way to
  * avoid.
+ *
+ * Issue #595: `$page->render()`'s output is a raw HTML string from unverified plugin code, so it
+ * is passed through {@see PluginHtmlSanitizer} before being handed to `page.html.twig`, which
+ * prints it with `|raw`.
  */
 final class PluginSettingsController
 {
@@ -119,6 +124,7 @@ final class PluginSettingsController
         private readonly Environment $twig,
         private readonly LoggerInterface $logger,
         private readonly PluginUiAssetsResolver $pluginUiAssets,
+        private readonly PluginHtmlSanitizer $htmlSanitizer,
     ) {
     }
 
@@ -175,7 +181,7 @@ final class PluginSettingsController
         $pluginUi = $this->pluginUiAssets->resolve($id);
 
         try {
-            $content = $page->render();
+            $content = $this->htmlSanitizer->sanitize($page->render());
         } catch (\Throwable $exception) {
             $this->logger->error('Plugin settings page render() failed.', [
                 'pluginId' => $pluginId,

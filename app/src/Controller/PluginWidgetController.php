@@ -35,6 +35,7 @@ use App\Entity\ValueObject\Exception\InvalidPluginIdException;
 use App\Entity\ValueObject\PluginId;
 use App\Service\Plugin\CatalogWidgetRegistry;
 use App\Service\Plugin\EntryWidgetRegistry;
+use App\Service\Plugin\PluginHtmlSanitizer;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpFoundation\Request;
@@ -62,6 +63,11 @@ use Twig\Environment;
  * introduced for the OAuth-aware case; the staleness window is accepted as-is. The error fragment
  * is not cached at all — a transient plugin error must not be pinned past the request that
  * observed it.
+ *
+ * Issue #595: a widget's `render()` output is a raw HTML string from unverified plugin code, so
+ * it is passed through {@see PluginHtmlSanitizer} before becoming this controller's response
+ * body — a sanitizer failure is treated the same as `render()` itself throwing, degrading to
+ * this widget's own error fragment.
  */
 final class PluginWidgetController
 {
@@ -73,6 +79,7 @@ final class PluginWidgetController
         private readonly EntityManagerInterface $entityManager,
         private readonly Environment $twig,
         private readonly LoggerInterface $logger,
+        private readonly PluginHtmlSanitizer $htmlSanitizer,
     ) {
     }
 
@@ -111,7 +118,7 @@ final class PluginWidgetController
         }
 
         try {
-            $html = $widget->render(new AnimeId((int) $entryId));
+            $html = $this->htmlSanitizer->sanitize($widget->render(new AnimeId((int) $entryId)));
         } catch (\Throwable $e) {
             return $this->renderWidgetError($pluginId, $request, $e);
         }
@@ -122,7 +129,7 @@ final class PluginWidgetController
     private function renderCatalogWidget(CatalogWidgetInterface $widget, PluginId $pluginId, Request $request): Response
     {
         try {
-            $html = $widget->render();
+            $html = $this->htmlSanitizer->sanitize($widget->render());
         } catch (\Throwable $e) {
             return $this->renderWidgetError($pluginId, $request, $e);
         }
