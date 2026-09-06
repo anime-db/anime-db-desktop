@@ -134,7 +134,7 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
 
         /** @var Environment $twig */
         $twig = self::getContainer()->get('twig');
-        $html = $twig->render('anime/show.html.twig', ['anime' => $this->fullyPopulatedAnime(), 'widgets' => [], 'fillable_fields' => $this->emptyFillableFields()]);
+        $html = $twig->render('anime/show.html.twig', ['anime' => $this->fullyPopulatedAnime(), 'widgets' => [], 'plugins_ui' => [], 'fillable_fields' => $this->emptyFillableFields()]);
 
         $this->assertStringContainsString('Shingeki no Kyojin', $html);
         $this->assertStringContainsString('Humanity fights for survival against man-eating Titans.', $html);
@@ -172,7 +172,7 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
 
         /** @var Environment $twig */
         $twig = self::getContainer()->get('twig');
-        $html = $twig->render('anime/show.html.twig', ['anime' => $this->minimalAnime(), 'widgets' => [], 'fillable_fields' => $this->emptyFillableFields()]);
+        $html = $twig->render('anime/show.html.twig', ['anime' => $this->minimalAnime(), 'widgets' => [], 'plugins_ui' => [], 'fillable_fields' => $this->emptyFillableFields()]);
 
         $this->assertStringContainsString('A Silent Voice', $html);
         $this->assertStringContainsString('Фильм', $html);
@@ -204,7 +204,7 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
 
         /** @var Environment $twig */
         $twig = self::getContainer()->get('twig');
-        $html = $twig->render('anime/show.html.twig', ['anime' => $anime, 'widgets' => [], 'fillable_fields' => $this->emptyFillableFields()]);
+        $html = $twig->render('anime/show.html.twig', ['anime' => $anime, 'widgets' => [], 'plugins_ui' => [], 'fillable_fields' => $this->emptyFillableFields()]);
 
         $this->assertStringContainsString('disabled', $html);
         $this->assertStringContainsString('Путь не доступен', $html);
@@ -231,7 +231,7 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
 
         /** @var Environment $twig */
         $twig = self::getContainer()->get('twig');
-        $html = $twig->render('anime/show.html.twig', ['anime' => $this->fullyPopulatedAnime(), 'widgets' => [], 'fillable_fields' => $fillableFields]);
+        $html = $twig->render('anime/show.html.twig', ['anime' => $this->fullyPopulatedAnime(), 'widgets' => [], 'plugins_ui' => [], 'fillable_fields' => $fillableFields]);
 
         $this->assertStringContainsString('id="anime-media-1"', $html);
         $this->assertStringContainsString('id="anime-gallery-1"', $html);

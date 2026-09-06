@@ -4,34 +4,34 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "f1c051dd33de4e9a06d123074aa5d944",
+    "content-hash": "ae1b66327e96134bec77453be9595ca8",
     "packages": [
         {
             "name": "anime-db/plugin-contracts",
-            "version": "v0.17.1",
+            "version": "v0.19.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/anime-db/anime-db-plugin-contracts.git",
-                "reference": "0e53f85c3d002d8218327617cf4f5c572a60c1de"
+                "reference": "3c483b3f8c1f9fc1af10f29fe9045f005d996ebf"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/anime-db/anime-db-plugin-contracts/zipball/0e53f85c3d002d8218327617cf4f5c572a60c1de",
-                "reference": "0e53f85c3d002d8218327617cf4f5c572a60c1de",
+                "url": "https://api.github.com/repos/anime-db/anime-db-plugin-contracts/zipball/3c483b3f8c1f9fc1af10f29fe9045f005d996ebf",
+                "reference": "3c483b3f8c1f9fc1af10f29fe9045f005d996ebf",
                 "shasum": ""
             },
             "require": {
                 "composer/semver": "^3.4",
-                "php": "^8.1",
+                "php": ">=8.5",
                 "psr/http-client": "^1.0",
                 "psr/http-factory": "^1.0"
             },
             "require-dev": {
                 "friendsofphp/php-cs-fixer": "^3.95",
-                "phpstan/phpstan": "^1.10",
+                "phpstan/phpstan": "^2.2",
                 "phpunit/phpunit": "^10.5",
-                "symfony/http-client": "^6.4",
-                "symfony/process": "^6.4"
+                "symfony/http-client": "8.1.*",
+                "symfony/process": "8.1.*"
             },
             "suggest": {
                 "phpstan/extension-installer": "Automatically registers extension.neon, so the rules from this package are picked up with no manual configuration."
@@ -74,10 +74,10 @@
             "description": "Plugin contracts (interfaces and DTOs) for AnimeDB v2 plugins",
             "homepage": "https://github.com/anime-db/anime-db-plugin-contracts",
             "support": {
-                "source": "https://github.com/anime-db/anime-db-plugin-contracts/tree/v0.17.1",
+                "source": "https://github.com/anime-db/anime-db-plugin-contracts/tree/v0.19.0",
                 "issues": "https://github.com/anime-db/anime-db-plugin-contracts/issues"
             },
-            "time": "2026-09-03T20:40:55+00:00"
+            "time": "2026-09-06T11:46:10+00:00"
         },
         {
             "name": "composer/semver",

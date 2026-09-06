@@ -34,6 +34,7 @@ use App\Message\SyncSeedMessage;
 use App\Service\Plugin\Exception\PluginsConfigStoreLockedException;
 use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\PluginsConfigStore;
+use App\Service\Plugin\PluginUiAssetsResolver;
 use App\Service\Plugin\SettingsPageRegistry;
 use App\Service\Plugin\SyncRegistry;
 use Psr\Log\LoggerInterface;
@@ -91,6 +92,20 @@ use Twig\Environment;
  * each other for the same lock (issue #422). That is lock contention, not a broken plugin, so it
  * degrades the same way as `render()` failing below: skip the seed for this one visit and render
  * the page normally, instead of a 500 for the whole settings page.
+ *
+ * Issue #604: this plugin's declared `ui.css`/`ui.js` (`manifest.json`, not `$page->render()`'s
+ * own output) are inserted into this page's shell (settings/plugin/page.html.twig's
+ * `stylesheets`/`javascripts` blocks) regardless of which of the two branches above runs — an
+ * asset load failure is unrelated to whether the plugin's own settings markup rendered. This only
+ * covers this shell page: a route the plugin declares itself via its own `plugin-routing.yaml`
+ * (its own OAuth callback, for instance) renders its own response with no help from this
+ * controller, and is responsible for its own `<link>`/`<script>` tags if it wants any.
+ *
+ * {@see PluginUiAssetsResolver} resolves those declared paths to URLs here, in the controller —
+ * never in the template itself — so that a stale or malformed `ui` entry degrades to omitting
+ * that one tag instead of taking down `renderFailed`'s own graceful-degradation branch along with
+ * the happy path, which is exactly the failure this controller otherwise goes out of its way to
+ * avoid.
  */
 final class PluginSettingsController
 {
@@ -103,6 +118,7 @@ final class PluginSettingsController
         private readonly UrlGeneratorInterface $urlGenerator,
         private readonly Environment $twig,
         private readonly LoggerInterface $logger,
+        private readonly PluginUiAssetsResolver $pluginUiAssets,
     ) {
     }
 
@@ -156,6 +172,8 @@ final class PluginSettingsController
             }
         }
 
+        $pluginUi = $this->pluginUiAssets->resolve($id);
+
         try {
             $content = $page->render();
         } catch (\Throwable $exception) {
@@ -167,6 +185,7 @@ final class PluginSettingsController
             return new Response($this->twig->render('settings/plugin/page.html.twig', [
                 'pluginId' => $pluginId,
                 'pluginName' => $plugin->manifest->name,
+                'pluginUi' => $pluginUi,
                 'content' => null,
                 'renderFailed' => true,
             ]));
@@ -175,6 +194,7 @@ final class PluginSettingsController
         return new Response($this->twig->render('settings/plugin/page.html.twig', [
             'pluginId' => $pluginId,
             'pluginName' => $plugin->manifest->name,
+            'pluginUi' => $pluginUi,
             'content' => $content,
             'renderFailed' => false,
         ]));

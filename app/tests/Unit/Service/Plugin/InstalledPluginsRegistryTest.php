@@ -124,6 +124,59 @@ final class InstalledPluginsRegistryTest extends TestCase
         $this->assertTrue($plugin->enabled);
     }
 
+    public function testReconcileRoundTripsTheUiField(): void
+    {
+        $dir = $this->pluginsDir.'/animedb-shikimori';
+        mkdir($dir, recursive: true);
+        file_put_contents($dir.'/manifest.json', (string) json_encode([
+            'id' => 'animedb-shikimori',
+            'name' => 'Shikimori',
+            'version' => '1.0.0',
+            'type' => 'integration',
+            'features' => ['filler' => true],
+            'require' => ['core' => '>=2.0.0', 'php' => '>=8.2'],
+            'ui' => ['css' => ['assets/carousel.css'], 'js' => ['assets/settings.js']],
+        ]));
+
+        $registry = new InstalledPluginsRegistry($this->pluginsDir, $this->configStore(), new NullLogger());
+        $registry->reconcile();
+
+        $ui = $registry->all()[0]->manifest->ui;
+
+        $this->assertNotNull($ui);
+        $this->assertSame(['assets/carousel.css'], $ui->css);
+        $this->assertSame(['assets/settings.js'], $ui->js);
+    }
+
+    public function testReconcileLeavesUiNullWhenTheManifestDeclaresNone(): void
+    {
+        $this->writeManifest('animedb-shikimori');
+
+        $registry = new InstalledPluginsRegistry($this->pluginsDir, $this->configStore(), new NullLogger());
+        $registry->reconcile();
+
+        $this->assertNull($registry->all()[0]->manifest->ui);
+    }
+
+    /**
+     * Issue #604: an index written by a build before the "ui" field existed has no such key in
+     * its `manifest` entry at all — {@see InstalledPluginsRegistry::manifestFromArray()} reads it
+     * via `?? null`, not direct array access, specifically so this does not fail to parse.
+     */
+    public function testReadIndexParsesAnEntryWrittenBeforeTheUiFieldExisted(): void
+    {
+        $this->writeManifest('animedb-shikimori');
+
+        $registry = new InstalledPluginsRegistry($this->pluginsDir, $this->configStore(), new NullLogger());
+        $registry->reconcile();
+
+        $this->removeUiKeyFromIndexEntry('animedb-shikimori');
+
+        $registry = new InstalledPluginsRegistry($this->pluginsDir, $this->configStore(), new NullLogger());
+
+        $this->assertNull($registry->all()[0]->manifest->ui);
+    }
+
     public function testReconcileAcceptsLocalPluginType(): void
     {
         $dir = $this->pluginsDir.'/animedb-onboarding';
@@ -576,6 +629,21 @@ final class InstalledPluginsRegistryTest extends TestCase
     private function configStore(): PluginsConfigStore
     {
         return new PluginsConfigStore($this->pluginsDir.'/plugins.json');
+    }
+
+    /**
+     * Directly removes the `manifest.ui` key of an already reconciled index entry, simulating an
+     * index written before {@see InstalledPluginsRegistry::manifestToArray()} started persisting
+     * it at all — see {@see testReadIndexParsesAnEntryWrittenBeforeTheUiFieldExisted()}.
+     */
+    private function removeUiKeyFromIndexEntry(string $pluginId): void
+    {
+        $indexPath = $this->pluginsDir.'/installed-plugins.php';
+        $entries = require $indexPath;
+
+        unset($entries[$pluginId]['manifest']['ui']);
+
+        file_put_contents($indexPath, "<?php\n\nreturn ".var_export($entries, true).";\n");
     }
 
     /**

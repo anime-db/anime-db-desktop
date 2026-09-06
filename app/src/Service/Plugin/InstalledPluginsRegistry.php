@@ -34,6 +34,7 @@ use AnimeDb\PluginContracts\Manifest\ManifestParser;
 use AnimeDb\PluginContracts\Manifest\ManifestRequirements;
 use AnimeDb\PluginContracts\Manifest\ManifestValidationError;
 use AnimeDb\PluginContracts\Manifest\PluginType;
+use AnimeDb\PluginContracts\Manifest\PluginUi;
 use App\Entity\ValueObject\PluginId;
 use App\Service\Plugin\Exception\InstalledPluginsRegistryException;
 use App\Service\Plugin\Exception\InvalidInstalledPluginException;
@@ -282,6 +283,7 @@ final class InstalledPluginsRegistry
             'features' => $manifest->features,
             'locales' => $manifest->locales,
             'updateUrl' => $manifest->updateUrl,
+            'ui' => $manifest->ui !== null ? ['css' => $manifest->ui->css, 'js' => $manifest->ui->js] : null,
         ];
     }
 
@@ -294,6 +296,14 @@ final class InstalledPluginsRegistry
         $require = $data['require'];
 
         $this->assertLocalesAreBareSubtags($data['locales']);
+
+        // Read via ?? null, not direct access like every other key above: the index is only
+        // rewritten by reconcile() (see the class docblock), so a build's index written before
+        // this field existed — encountered on any path that does not go through the supervisor's
+        // rebuild-on-build-change (native/supervisor/index.js), e.g. a dev run, a test fixture or
+        // a CLI invocation against an older AppData — has no "ui" key at all, and direct access
+        // would fail parsing for every installed plugin at once.
+        $ui = $data['ui'] ?? null;
 
         return new Manifest(
             id: $data['id'],
@@ -310,6 +320,7 @@ final class InstalledPluginsRegistry
             features: $data['features'],
             locales: $data['locales'],
             updateUrl: $data['updateUrl'],
+            ui: \is_array($ui) ? new PluginUi(css: $ui['css'] ?? [], js: $ui['js'] ?? []) : null,
         );
     }
 
