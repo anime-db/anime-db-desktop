@@ -36,6 +36,7 @@ use App\Entity\Enum\WatchStatus;
 use App\Entity\TvAnime;
 use App\Service\Plugin\CatalogWidgetRegistry;
 use App\Service\Plugin\EntryWidgetRegistry;
+use App\Service\Plugin\PluginHtmlSanitizer;
 use App\Service\Plugin\PluginsConfigStore;
 use Doctrine\ORM\EntityManagerInterface;
 use PHPUnit\Framework\TestCase;
@@ -87,6 +88,7 @@ final class PluginWidgetControllerTest extends TestCase
             $entityManager ?? $this->createStub(EntityManagerInterface::class),
             $twig ?? $this->createStub(Environment::class),
             $logger ?? $this->createStub(LoggerInterface::class),
+            new PluginHtmlSanitizer(),
         );
     }
 
@@ -233,6 +235,29 @@ final class PluginWidgetControllerTest extends TestCase
 
         $this->expectException(NotFoundHttpException::class);
         $controller->render('Not A Valid Id', 'related', Request::create('/plugin/Not A Valid Id/widget/related'));
+    }
+
+    public function testRenderSanitizesScriptTagOutOfTheWidgetsOwnMarkup(): void
+    {
+        $widget = $this->createStub(CatalogWidgetInterface::class);
+        $widget->method('render')->willReturn('<div>New releases</div><script>alert(1)</script>');
+
+        $catalogWidgets = new CatalogWidgetRegistry(
+            ['animedb-shikimori:new_releases' => $widget],
+            $this->activeWidgets('animedb-shikimori', ['new_releases' => true]),
+            $this->createStub(TranslatorInterface::class),
+        );
+
+        $controller = $this->createController($this->emptyEntryWidgets(), $catalogWidgets);
+
+        $response = $controller->render(
+            'animedb-shikimori',
+            'new_releases',
+            Request::create('/plugin/animedb-shikimori/widget/new_releases'),
+        );
+
+        $this->assertStringNotContainsString('<script', (string) $response->getContent());
+        $this->assertStringContainsString('<div>New releases</div>', (string) $response->getContent());
     }
 
     public function testRenderCallsCatalogWidgetWithoutAnEntryIdOrDatabaseLookup(): void

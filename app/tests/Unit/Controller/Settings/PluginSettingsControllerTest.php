@@ -34,6 +34,7 @@ use App\Message\BackfillExternalIdMessage;
 use App\Message\SyncSeedMessage;
 use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\PluginAssetResolver;
+use App\Service\Plugin\PluginHtmlSanitizer;
 use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Plugin\PluginUiAssetsResolver;
 use App\Service\Plugin\SettingsPageRegistry;
@@ -104,6 +105,7 @@ final class PluginSettingsControllerTest extends TestCase
             $twig ?? $this->createStub(Environment::class),
             $logger ?? $this->createStub(LoggerInterface::class),
             $pluginUiAssets ?? $this->createPluginUiAssetsResolver(),
+            new PluginHtmlSanitizer(),
         );
     }
 
@@ -140,6 +142,34 @@ final class PluginSettingsControllerTest extends TestCase
                 self::assertSame('Shikimori', $params['pluginName']);
                 self::assertSame('<form>settings</form>', $params['content']);
                 self::assertFalse($params['renderFailed']);
+
+                return true;
+            }))
+            ->willReturn('<html></html>');
+
+        $controller = $this->createController($settingsPages, $twig);
+        $response = $controller('animedb-shikimori');
+
+        $this->assertSame(200, $response->getStatusCode());
+    }
+
+    public function testInvokeSanitizesScriptTagOutOfThePluginsOwnSettingsMarkup(): void
+    {
+        $this->writeManifest('animedb-shikimori', 'Shikimori');
+        $this->installedPlugins->reconcile();
+
+        $page = $this->createMock(SettingsPageInterface::class);
+        $page->expects($this->once())->method('render')->willReturn('<form>settings</form><script>alert(1)</script>');
+
+        $settingsPages = new SettingsPageRegistry(['animedb-shikimori' => $page], $this->installedPlugins);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('settings/plugin/page.html.twig', $this->callback(static function (array $params): bool {
+                self::assertIsString($params['content']);
+                self::assertStringNotContainsString('<script', $params['content']);
+                self::assertStringContainsString('<form>settings</form>', $params['content']);
 
                 return true;
             }))
