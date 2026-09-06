@@ -65,8 +65,9 @@ final class PluginAssetExtension extends AbstractExtension
     }
 
     /**
-     * @throws PluginAssetNotFoundException when $pluginId is not an installed, enabled plugin, or
-     *                                      $path does not name an existing file under its `assets/` directory
+     * @throws PluginAssetNotFoundException when $pluginId is not an installed, enabled plugin,
+     *                                      $path does not name an existing file under its `assets/` directory,
+     *                                      or $path's extension is not one {@see \App\Controller\PluginAssetController} serves
      */
     public function generate(string $pluginId, string $path): string
     {
@@ -84,6 +85,10 @@ final class PluginAssetExtension extends AbstractExtension
         $absolutePath = $this->assets->resolveContainedFile($plugin, $path);
         if ($absolutePath === null) {
             throw new PluginAssetNotFoundException(\sprintf('Asset "%s" of plugin "%s" was not found.', $path, $pluginId));
+        }
+
+        if (!PluginAssetResolver::isServableExtension($path)) {
+            throw new PluginAssetNotFoundException(\sprintf('File extension of asset "%s" of plugin "%s" is not servable by the plugin asset route.', $path, $pluginId));
         }
 
         return $this->urlGenerator->generate('plugin_asset', [

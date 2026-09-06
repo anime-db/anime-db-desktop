@@ -42,9 +42,38 @@ use App\Entity\ValueObject\PluginId;
  */
 final class PluginAssetResolver
 {
+    /**
+     * Every extension a plugin's static asset may use — deliberately narrow, and deliberately not
+     * resolved by sniffing the file's actual content: {@see \App\Controller\PluginAssetController}
+     * always takes a served file's `Content-Type` from this map, so a `.svg` whose bytes happen to
+     * look like HTML is still served as `image/svg+xml`, never interpreted as markup by the
+     * browser. Shared with {@see \App\Twig\PluginAssetExtension} and
+     * {@see PluginUiAssetsResolver} so a URL built anywhere in the app only ever names a file this
+     * route actually serves.
+     *
+     * Extension matching is case-sensitive against these lowercase keys — the plugin monorepo's
+     * publish gate already requires lowercase extensions under `assets/`
+     * (`anime-db/anime-db-plugins#129`), so `assets/Logo.SVG` is simply not a file this route
+     * needs to ever have matched, and normalizing case here would only widen what it accepts
+     * beyond what a plugin is allowed to publish.
+     */
+    public const array CONTENT_TYPES = [
+        'css' => 'text/css',
+        'js' => 'text/javascript',
+        'svg' => 'image/svg+xml',
+        'png' => 'image/png',
+        'webp' => 'image/webp',
+        'woff2' => 'font/woff2',
+    ];
+
     public function __construct(
         private readonly InstalledPluginsRegistry $installedPlugins,
     ) {
+    }
+
+    public static function isServableExtension(string $path): bool
+    {
+        return isset(self::CONTENT_TYPES[pathinfo($path, \PATHINFO_EXTENSION)]);
     }
 
     /**
