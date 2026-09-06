@@ -132,6 +132,37 @@ final class PluginSettingsControllerTest extends TestCase
         $this->assertSame(200, $response->getStatusCode());
     }
 
+    public function testInvokePassesThePluginsDeclaredUiToTheTemplate(): void
+    {
+        $dir = $this->pluginsDir.'/animedb-shikimori';
+        mkdir($dir.'/assets', recursive: true);
+        file_put_contents($dir.'/manifest.json', (string) json_encode([
+            'id' => 'animedb-shikimori',
+            'name' => 'Shikimori',
+            'version' => '1.0.0',
+            'type' => 'integration',
+            'features' => ['filler' => true],
+            'require' => ['core' => '>=2.0.0', 'php' => '>=8.2'],
+            'ui' => ['css' => ['assets/carousel.css'], 'js' => []],
+        ]));
+        $this->installedPlugins->reconcile();
+
+        $page = $this->createStub(SettingsPageInterface::class);
+        $page->method('render')->willReturn('<form>settings</form>');
+        $settingsPages = new SettingsPageRegistry(['animedb-shikimori' => $page], $this->installedPlugins);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('settings/plugin/page.html.twig', $this->callback(static function (array $params): bool {
+                return $params['pluginUi'] !== null && $params['pluginUi']->css === ['assets/carousel.css'];
+            }))
+            ->willReturn('<html></html>');
+
+        $controller = $this->createController($settingsPages, $twig);
+        $controller('animedb-shikimori');
+    }
+
     public function testInvokeDispatchesSyncSeedAndBackfillExternalIdAndRedirectsWhenThePluginIsAnActiveSyncPlugin(): void
     {
         $this->writeManifest('animedb-shikimori', 'Shikimori');

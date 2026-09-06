@@ -27,10 +27,13 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
+use AnimeDb\PluginContracts\Manifest\PluginUi;
 use App\Entity\Anime;
+use App\Entity\ValueObject\PluginId;
 use App\Service\AnimeViewFactory;
 use App\Service\Plugin\EntryWidgetRegistry;
 use App\Service\Plugin\Filler\FillableFieldsPresenter;
+use App\Service\Plugin\InstalledPluginsRegistry;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
 use Twig\Environment;
@@ -46,6 +49,13 @@ use Twig\Environment;
  * Plugin widgets (issue #212) render as HTMX placeholders here — one `hx-get` per active
  * {@see EntryWidgetRegistry} entry, loaded by PluginWidgetController after the page itself is
  * already on screen, so a slow or failing plugin API never blocks the initial render.
+ *
+ * Issue #604: a plugin behind at least one of those active widgets can also declare static
+ * `ui.css`/`ui.js` files in its manifest — the host, not the plugin's own widget markup, inserts
+ * the corresponding `<link>`/`<script>` tags into this page's shell (anime/show.html.twig's
+ * `stylesheets`/`javascripts` blocks), which is what lets `script-src 'self'` work with no
+ * per-plugin exception. A plugin with no active widget on this page contributes nothing here,
+ * even if it declares `ui` — its markup simply is not reachable from this page.
  */
 final class AnimeController
 {
@@ -54,16 +64,38 @@ final class AnimeController
         private readonly AnimeViewFactory $viewFactory,
         private readonly EntryWidgetRegistry $entryWidgets,
         private readonly FillableFieldsPresenter $fillableFieldsPresenter,
+        private readonly InstalledPluginsRegistry $installedPlugins,
     ) {
     }
 
     #[Route('/anime/{id}', name: 'anime_show', methods: ['GET'])]
     public function show(Anime $anime): Response
     {
+        $widgets = $this->entryWidgets->findAllActive();
+
         return new Response($this->twig->render('anime/show.html.twig', [
             'anime' => $this->viewFactory->serialize($anime),
-            'widgets' => $this->entryWidgets->findAllActive(),
+            'widgets' => $widgets,
+            'plugins_ui' => $this->pluginsUiFor(array_column($widgets, 'pluginId')),
             'fillable_fields' => $this->fillableFieldsPresenter->build(),
         ]));
+    }
+
+    /**
+     * @param list<string> $pluginIds
+     *
+     * @return list<array{pluginId: string, ui: PluginUi}>
+     */
+    private function pluginsUiFor(array $pluginIds): array
+    {
+        $result = [];
+        foreach (array_unique($pluginIds) as $pluginId) {
+            $ui = $this->installedPlugins->get(new PluginId($pluginId))?->manifest->ui;
+            if ($ui !== null) {
+                $result[] = ['pluginId' => $pluginId, 'ui' => $ui];
+            }
+        }
+
+        return $result;
     }
 }

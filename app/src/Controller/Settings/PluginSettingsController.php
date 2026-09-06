@@ -91,6 +91,14 @@ use Twig\Environment;
  * each other for the same lock (issue #422). That is lock contention, not a broken plugin, so it
  * degrades the same way as `render()` failing below: skip the seed for this one visit and render
  * the page normally, instead of a 500 for the whole settings page.
+ *
+ * Issue #604: this plugin's declared `ui.css`/`ui.js` (`manifest.json`, not `$page->render()`'s
+ * own output) are inserted into this page's shell (settings/plugin/page.html.twig's
+ * `stylesheets`/`javascripts` blocks) regardless of which of the two branches above runs — an
+ * asset load failure is unrelated to whether the plugin's own settings markup rendered. This only
+ * covers this shell page: a route the plugin declares itself via its own `plugin-routing.yaml`
+ * (its own OAuth callback, for instance) renders its own response with no help from this
+ * controller, and is responsible for its own `<link>`/`<script>` tags if it wants any.
  */
 final class PluginSettingsController
 {
@@ -167,6 +175,7 @@ final class PluginSettingsController
             return new Response($this->twig->render('settings/plugin/page.html.twig', [
                 'pluginId' => $pluginId,
                 'pluginName' => $plugin->manifest->name,
+                'pluginUi' => $plugin->manifest->ui,
                 'content' => null,
                 'renderFailed' => true,
             ]));
@@ -175,6 +184,7 @@ final class PluginSettingsController
         return new Response($this->twig->render('settings/plugin/page.html.twig', [
             'pluginId' => $pluginId,
             'pluginName' => $plugin->manifest->name,
+            'pluginUi' => $plugin->manifest->ui,
             'content' => $content,
             'renderFailed' => false,
         ]));

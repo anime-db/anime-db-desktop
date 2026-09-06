@@ -22,6 +22,18 @@
 
 {% block title %}{{ pluginName }} — {{ 'settings_plugin_page.title_suffix'|trans }}{% endblock %}
 
+{% block stylesheets %}
+    {% for cssPath in pluginUi ? pluginUi.css : [] %}
+        <link rel="stylesheet" href="{{ plugin_asset(pluginId, cssPath) }}">
+    {% endfor %}
+{% endblock %}
+
+{% block javascripts %}
+    {% for jsPath in pluginUi ? pluginUi.js : [] %}
+        <script src="{{ plugin_asset(pluginId, jsPath) }}" defer></script>
+    {% endfor %}
+{% endblock %}
+
 {% block body %}
     <p><a href="{{ path('settings_plugins_index') }}">{{ 'settings_plugin_page.back_link'|trans }}</a></p>
     <h1>{{ pluginName }}</h1>

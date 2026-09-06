@@ -25,10 +25,20 @@
 {% block stylesheets %}
     <link rel="stylesheet" href="{{ asset('css/anime-list.css') }}">
     <link rel="stylesheet" href="{{ asset('css/anime-detail.css') }}">
+    {% for plugin in plugins_ui %}
+        {% for cssPath in plugin.ui.css %}
+            <link rel="stylesheet" href="{{ plugin_asset(plugin.pluginId, cssPath) }}">
+        {% endfor %}
+    {% endfor %}
 {% endblock %}
 
 {% block javascripts %}
     <script src="{{ asset('js/anime-detail.js') }}"></script>
+    {% for plugin in plugins_ui %}
+        {% for jsPath in plugin.ui.js %}
+            <script src="{{ plugin_asset(plugin.pluginId, jsPath) }}" defer></script>
+        {% endfor %}
+    {% endfor %}
 {% endblock %}
 
 {% block body %}

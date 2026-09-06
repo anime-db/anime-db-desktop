@@ -27,6 +27,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Controller;
 
+use AnimeDb\PluginContracts\Widget\EntryWidgetInterface;
 use App\Controller\AnimeController;
 use App\Entity\Enum\AnimeNameType;
 use App\Entity\Enum\Demographic;
@@ -71,6 +72,17 @@ final class AnimeControllerTest extends TestCase
     {
         return new FillableFieldsPresenter(
             new FillerRegistry([], new PluginsConfigStore('')),
+            new InstalledPluginsRegistry(sys_get_temp_dir(), new PluginsConfigStore(''), new NullLogger()),
+        );
+    }
+
+    private function createController(Environment $twig): AnimeController
+    {
+        return new AnimeController(
+            $twig,
+            $this->createViewFactory(),
+            $this->createEntryWidgetRegistry(),
+            $this->createFillableFieldsPresenter(),
             new InstalledPluginsRegistry(sys_get_temp_dir(), new PluginsConfigStore(''), new NullLogger()),
         );
     }
@@ -136,7 +148,7 @@ final class AnimeControllerTest extends TestCase
             }))
             ->willReturn('<html></html>');
 
-        $controller = new AnimeController($twig, $this->createViewFactory(), $this->createEntryWidgetRegistry(), $this->createFillableFieldsPresenter());
+        $controller = $this->createController($twig);
         $response = $controller->show($anime);
 
         $this->assertSame(200, $response->getStatusCode());
@@ -168,7 +180,7 @@ final class AnimeControllerTest extends TestCase
             }))
             ->willReturn('<html></html>');
 
-        $controller = new AnimeController($twig, $this->createViewFactory(), $this->createEntryWidgetRegistry(), $this->createFillableFieldsPresenter());
+        $controller = $this->createController($twig);
         $controller->show($anime);
     }
 
@@ -203,7 +215,101 @@ final class AnimeControllerTest extends TestCase
             }))
             ->willReturn('<html></html>');
 
-        $controller = new AnimeController($twig, $this->createViewFactory(), $this->createEntryWidgetRegistry(), $this->createFillableFieldsPresenter());
+        $controller = $this->createController($twig);
         $controller->show($anime);
+    }
+
+    public function testShowIncludesPluginUiOnlyForAPluginWithBothAnActiveWidgetAndADeclaredUi(): void
+    {
+        $pluginsDir = sys_get_temp_dir().'/anime-anime-controller-ui-test-'.uniqid();
+        mkdir($pluginsDir.'/animedb-shikimori/assets', recursive: true);
+        mkdir($pluginsDir.'/animedb-anilist/assets', recursive: true);
+
+        file_put_contents($pluginsDir.'/animedb-shikimori/manifest.json', (string) json_encode([
+            'id' => 'animedb-shikimori',
+            'name' => 'Shikimori',
+            'version' => '1.0.0',
+            'type' => 'integration',
+            'features' => ['filler' => true],
+            'require' => ['core' => '>=2.0.0', 'php' => '>=8.2'],
+            'ui' => ['css' => ['assets/carousel.css'], 'js' => []],
+        ]));
+        // Has an active widget too, but declares no "ui" — must not appear in plugins_ui.
+        file_put_contents($pluginsDir.'/animedb-anilist/manifest.json', (string) json_encode([
+            'id' => 'animedb-anilist',
+            'name' => 'AniList',
+            'version' => '1.0.0',
+            'type' => 'integration',
+            'features' => ['filler' => true],
+            'require' => ['core' => '>=2.0.0', 'php' => '>=8.2'],
+        ]));
+
+        $pluginsConfigStore = new PluginsConfigStore($pluginsDir.'/plugins.json');
+        file_put_contents($pluginsDir.'/plugins.json', (string) json_encode([
+            'animedb-shikimori' => ['features' => ['related' => true]],
+            'animedb-anilist' => ['features' => ['related' => true]],
+        ]));
+
+        $installedPlugins = new InstalledPluginsRegistry($pluginsDir, $pluginsConfigStore, new NullLogger());
+        $installedPlugins->reconcile();
+
+        $entryWidgets = new EntryWidgetRegistry(
+            [
+                'animedb-shikimori:related' => $this->createStub(EntryWidgetInterface::class),
+                'animedb-anilist:related' => $this->createStub(EntryWidgetInterface::class),
+            ],
+            $pluginsConfigStore,
+            $this->createStub(TranslatorInterface::class),
+        );
+
+        $anime = new TvAnime();
+        $anime->setTitle('Frieren')->setWatchStatus(WatchStatus::Watching);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('anime/show.html.twig', $this->callback(static function (array $params): bool {
+                if (\count($params['plugins_ui']) !== 1) {
+                    return false;
+                }
+
+                return $params['plugins_ui'][0]['pluginId'] === 'animedb-shikimori'
+                    && $params['plugins_ui'][0]['ui']->css === ['assets/carousel.css'];
+            }))
+            ->willReturn('<html></html>');
+
+        try {
+            $controller = new AnimeController(
+                $twig,
+                $this->createViewFactory(),
+                $entryWidgets,
+                $this->createFillableFieldsPresenter(),
+                $installedPlugins,
+            );
+            $response = $controller->show($anime);
+
+            $this->assertSame(200, $response->getStatusCode());
+        } finally {
+            $this->removeDirectory($pluginsDir);
+        }
+    }
+
+    private function removeDirectory(string $dir): void
+    {
+        if (!is_dir($dir)) {
+            return;
+        }
+
+        $entries = scandir($dir);
+        foreach ($entries === false ? [] : $entries as $entry) {
+            if ($entry === '.' || $entry === '..') {
+                continue;
+            }
+
+            $path = $dir.'/'.$entry;
+            is_dir($path) ? $this->removeDirectory($path) : unlink($path);
+        }
+
+        rmdir($dir);
     }
 }
