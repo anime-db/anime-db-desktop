@@ -178,6 +178,37 @@ final class PluginHtmlSanitizerTest extends TestCase
         $this->assertStringNotContainsString('hx-', $result);
     }
 
+    public function testTypicalSettingsFormMarkupSurvivesWithoutLoss(): void
+    {
+        $html = '<form action="/settings/plugins/example/save" method="post">'
+            .'<label for="lang">Language</label>'
+            .'<select name="lang" id="lang" required>'
+            .'<optgroup label="Popular">'
+            .'<option value="en" selected>English</option>'
+            .'<option value="ru">Russian</option>'
+            .'</optgroup>'
+            .'</select>'
+            .'<label for="notify">Notifications</label>'
+            .'<input type="checkbox" id="notify" name="notify" checked>'
+            .'<label for="token">Token</label>'
+            .'<textarea name="token" id="token" rows="3" cols="40" required>secret-token</textarea>'
+            .'<button type="submit" name="act" value="save">Save</button>'
+            .'<button type="submit" name="act" value="disconnect">Disconnect</button>'
+            .'</form>';
+
+        $result = $this->sanitizer->sanitize($html);
+
+        $this->assertStringContainsString('<select name="lang" id="lang" required>', $result);
+        $this->assertStringContainsString('<optgroup label="Popular">', $result);
+        $this->assertStringContainsString('<option value="en" selected>English</option>', $result);
+        $this->assertStringContainsString('<option value="ru">Russian</option>', $result);
+        $this->assertStringContainsString('type="checkbox"', $result);
+        $this->assertStringContainsString('checked', $result);
+        $this->assertStringContainsString('<textarea name="token" id="token" rows="3" cols="40" required>secret-token</textarea>', $result);
+        $this->assertStringContainsString('name="act" value="save"', $result);
+        $this->assertStringContainsString('name="act" value="disconnect"', $result);
+    }
+
     public function testWidgetCardMarkupSurvives(): void
     {
         $html = '<ul class="plugin-widget__list"><li>'

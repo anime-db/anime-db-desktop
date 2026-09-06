@@ -41,9 +41,12 @@ use Symfony\Component\HtmlSanitizer\HtmlSanitizerConfig;
  *
  * The allow-list is built explicitly, tag by tag and attribute by attribute, instead of starting
  * from {@see HtmlSanitizerConfig::allowSafeElements()}'s bundled W3C-safe set, so every entry can
- * be traced to markup that actually exists today: the `animedb-shikimori` plugin (currently the
- * only plugin with a settings page or widgets) and the host's own
- * `templates/plugin/_widget_list.html.twig` helper, which other widgets are free to reuse.
+ * be traced to a concrete purpose: markup that exists today in the `animedb-shikimori` plugin
+ * (currently the only plugin with a settings page or widgets) and the host's own
+ * `templates/plugin/_widget_list.html.twig` helper, plus the common form/text primitives
+ * (`select`/`option`/`textarea`, headings, inline text elements, and the `checked`/`required`/
+ * ...-class of declarative state attributes) any future settings page is reasonably expected to
+ * need, even though nothing in the codebase renders them yet.
  *
  * `hx-*` is intentionally not hardcoded to the handful of attributes any single plugin happens to
  * use today: `symfony/html-sanitizer` drops unrecognized attributes silently (no failing test
@@ -90,8 +93,19 @@ final class PluginHtmlSanitizer
             // widget list's `.anime-card__thumb--placeholder` fallback, and status/hint text.
             ->allowElement('div')
             ->allowElement('p')
-            // settings.html.twig's "Account" section heading.
+            // settings.html.twig's "Account" section heading, plus the other heading levels a
+            // settings page is free to use for its own section structure.
+            ->allowElement('h1')
+            ->allowElement('h2')
             ->allowElement('h3')
+            ->allowElement('h4')
+            // Inline text formatting and line breaks any settings page's copy may need — declarative
+            // only, no execution surface.
+            ->allowElement('span')
+            ->allowElement('strong')
+            ->allowElement('em')
+            ->allowElement('br')
+            ->allowElement('hr')
             // plugin/_widget_list.html.twig's card list.
             ->allowElement('ul')
             ->allowElement('li')
@@ -111,8 +125,23 @@ final class PluginHtmlSanitizer
             // (non-HTMX) form submit for "Authorize" (also permitted by the contract) still works.
             ->allowElement('form', ['action', 'method'])
             ->allowElement('label', ['for'])
-            ->allowElement('input', ['name', 'type', 'value', 'placeholder'])
-            ->allowElement('button', ['type'])
+            // The state/constraint attributes below (`checked`, `required`, ...) carry no
+            // execution surface — they are plain declarative flags or numeric bounds — so allowing
+            // them doesn't change the sanitizer's threat model, only whether a settings page's
+            // checkbox/number input still behaves like one after sanitization.
+            ->allowElement('input', [
+                'name', 'type', 'value', 'placeholder',
+                'checked', 'required', 'disabled', 'readonly', 'min', 'max', 'step',
+            ])
+            // A settings page needs a dropdown as much as it needs a text input; `select`/`option`/
+            // `optgroup` are as inert as `input` and only missing here by omission.
+            ->allowElement('select', ['name', 'required', 'disabled', 'multiple'])
+            ->allowElement('optgroup', ['label', 'disabled'])
+            ->allowElement('option', ['value', 'selected', 'disabled'])
+            ->allowElement('textarea', ['name', 'placeholder', 'required', 'disabled', 'readonly', 'rows', 'cols'])
+            // `name`/`value` let a settings page tell apart multiple submit buttons in the same
+            // form (e.g. "save" vs. "disconnect") the same way plain HTML form submission does.
+            ->allowElement('button', ['type', 'name', 'value'])
             // Every href/action produced by the current plugin markup comes from Twig's path(),
             // which yields a path-absolute URL with no scheme/host. Without this, every such
             // link or form — including the Authorize navigation — would be silently dropped.
