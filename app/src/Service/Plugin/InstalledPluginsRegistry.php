@@ -94,12 +94,13 @@ final class InstalledPluginsRegistry
         private readonly LoggerInterface $logger,
         private readonly ManifestParser $manifestParser = new ManifestParser(),
         /**
-         * The app's own version, same source as `%app.core_version%` — see {@see \App\Kernel}.
-         * Defaults to the same permissive placeholder `services.yaml` uses for the dev
-         * environment (`app.core_version.dev_default`), so a caller that does not care about the
-         * compatibility check (most existing tests) does not need to pass a real one.
+         * The app's own version, same source as `%app.core_version%` — see {@see \App\Kernel}, or
+         * `null` when it could not be determined (issue #565) — see {@see self::isCompatible()},
+         * which fails open on `null` the same way it fails open for `$pluginContractsVersion`
+         * below. Defaults to `null` so a caller that does not care about the compatibility check
+         * (most existing tests) does not need to pass a real one.
          */
-        private readonly string $coreVersion = '99.99.99',
+        private readonly ?string $coreVersion = null,
         /**
          * The installed `anime-db/plugin-contracts` version, or `null` when it could not be
          * determined — see {@see self::isCompatible()}, which fails open on `null` the same way
@@ -427,7 +428,15 @@ final class InstalledPluginsRegistry
      */
     private function isCompatible(Manifest $manifest): bool
     {
-        if (!$this->satisfiesOrFailOpen($manifest->id, 'core', $this->coreVersion, $manifest->require->core)) {
+        if ($this->coreVersion === null) {
+            $this->logFailOpenOnce(
+                $manifest->id,
+                'core',
+                'info',
+                "Unable to determine the app's own core version; treating plugin as compatible.",
+                ['pluginId' => $manifest->id, 'requiredCore' => $manifest->require->core],
+            );
+        } elseif (!$this->satisfiesOrFailOpen($manifest->id, 'core', $this->coreVersion, $manifest->require->core)) {
             return false;
         }
 

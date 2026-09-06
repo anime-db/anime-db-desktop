@@ -380,6 +380,31 @@ final class ZipPluginInstallerTest extends TestCase
     }
 
     /**
+     * A `null` `$coreVersion` (this app build could not determine its own core version, issue
+     * #565) must fail open the same way an unknown `pluginContractsVersion` does — this manifest
+     * requires a core version no installed build could ever satisfy, so a working core-version
+     * check would reject it.
+     */
+    #[Group('runtime-parity')]
+    public function testInstallSucceedsWhenInstalledCoreVersionIsUnknown(): void
+    {
+        $zipPath = $this->createZip([
+            'manifest.json' => $this->validManifestJson('animedb-shikimori', requireCore: '>=99.0.0'),
+        ]);
+
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->once())->method('warning')->with(
+            $this->stringContains('Unable to determine the installed core version'),
+            $this->callback(static fn (array $context): bool => $context['pluginId'] === 'animedb-shikimori'),
+        );
+
+        $installer = $this->installer(coreVersion: null, logger: $logger);
+        $pluginId = $installer->install($zipPath);
+
+        $this->assertSame('animedb-shikimori', (string) $pluginId);
+    }
+
+    /**
      * `ManifestValidator` already rejects a `require.plugin-contracts` that does not parse as a
      * version constraint, at manifest-parse time — before {@see ZipPluginInstaller} ever sees a
      * {@see Manifest} object — so this fail-open branch cannot be reached through a real ZIP
@@ -844,10 +869,11 @@ final class ZipPluginInstallerTest extends TestCase
         ?WsPublisher $wsPublisher = null,
         ?string $pluginContractsVersion = null,
         ?LoggerInterface $logger = null,
+        ?string $coreVersion = self::CORE_VERSION,
     ): ZipPluginInstaller {
         return new ZipPluginInstaller(
             $this->pluginsDir,
-            self::CORE_VERSION,
+            $coreVersion,
             $this->registry,
             $this->cacheWarmer(),
             $wsPublisher ?? $this->createStub(WsPublisher::class),

@@ -27,7 +27,9 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit;
 
+use App\Service\Version\AppVersionResolver;
 use Composer\InstalledVersions;
+use Psr\Log\NullLogger;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 
 /**
@@ -48,6 +50,35 @@ final class KernelTest extends KernelTestCase
         $version = self::getContainer()->getParameter('app.plugin_contracts_version');
 
         $this->assertSame(InstalledVersions::getPrettyVersion('anime-db/plugin-contracts'), $version);
+        $this->assertNotNull($version);
+    }
+
+    /**
+     * Same rationale as the plugin-contracts test above, for issue #565: a unit test constructing
+     * {@see \App\Service\Plugin\InstalledPluginsRegistry} directly and passing `coreVersion` by
+     * hand cannot catch a wiring bug where the compiled container never delivers a real value to
+     * it — this is exactly the failure PR #563 hit for `pluginContractsVersion`. Only booting the
+     * real kernel and reading the compiled `app.core_version` parameter exercises
+     * {@see \App\Kernel::build()}/{@see \App\Kernel::coreVersion()} the same way `bin/console`/
+     * FrankenPHP does. Asserted against {@see AppVersionResolver} directly, the same source
+     * `coreVersion()` reads from when CORE_VERSION is unset — true in this test process, so this
+     * also pins that the parameter is not null in a unit test, one of the three modes issue #565
+     * requires a real version in.
+     */
+    public function testCoreVersionParameterIsSetFromPackageJson(): void
+    {
+        self::bootKernel();
+
+        $version = self::getContainer()->getParameter('app.core_version');
+        $projectDir = self::getContainer()->getParameter('kernel.project_dir');
+        if (!\is_string($projectDir)) {
+            throw new \RuntimeException('kernel.project_dir is expected to be a string.');
+        }
+
+        $this->assertSame(
+            AppVersionResolver::resolve($projectDir, new NullLogger()),
+            $version,
+        );
         $this->assertNotNull($version);
     }
 }

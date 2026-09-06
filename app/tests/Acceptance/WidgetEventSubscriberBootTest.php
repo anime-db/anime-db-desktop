@@ -116,6 +116,7 @@ final class WidgetEventSubscriberBootTest extends KernelTestCase
     private ?string $originalQueueDatabaseUrl;
     private ?string $originalDatabaseUrlEnv;
     private ?string $originalQueueDatabaseUrlEnv;
+    private ?string $originalCoreVersion;
 
     protected function setUp(): void
     {
@@ -128,6 +129,7 @@ final class WidgetEventSubscriberBootTest extends KernelTestCase
         $this->originalQueueDatabaseUrl = $_SERVER['QUEUE_DATABASE_URL'] ?? null;
         $this->originalDatabaseUrlEnv = $_ENV['DATABASE_URL'] ?? null;
         $this->originalQueueDatabaseUrlEnv = $_ENV['QUEUE_DATABASE_URL'] ?? null;
+        $this->originalCoreVersion = $_SERVER['CORE_VERSION'] ?? null;
 
         $this->runtimeDir = $this->createTemporaryDirectory('anime-widget-subscriber-boot-runtime-');
         $this->pluginsDir = $this->createTemporaryDirectory('anime-widget-subscriber-boot-plugins-');
@@ -139,6 +141,11 @@ final class WidgetEventSubscriberBootTest extends KernelTestCase
         $_SERVER['PLUGINS_CONFIG_PATH'] = $this->pluginsDir.'/plugins.json';
         $_SERVER['DATABASE_URL'] = $_ENV['DATABASE_URL'] = 'sqlite:///'.$this->databasePath;
         $_SERVER['QUEUE_DATABASE_URL'] = $_ENV['QUEUE_DATABASE_URL'] = 'sqlite:///'.$this->queueDatabasePath;
+        // Mocks the same Electron-supplied channel native/supervisor/env.js sets in production
+        // (issue #565) — without it, Kernel::coreVersion() would fall back to this checkout's own
+        // package.json version, which does not satisfy the fixture manifest's `require.core`
+        // below and would keep its plugin bundle from registering at all.
+        $_SERVER['CORE_VERSION'] = '2.0.0';
     }
 
     protected function tearDown(): void
@@ -158,6 +165,7 @@ final class WidgetEventSubscriberBootTest extends KernelTestCase
         $this->restoreServerVar('QUEUE_DATABASE_URL', $this->originalQueueDatabaseUrl);
         $this->restoreEnvVar('DATABASE_URL', $this->originalDatabaseUrlEnv);
         $this->restoreEnvVar('QUEUE_DATABASE_URL', $this->originalQueueDatabaseUrlEnv);
+        $this->restoreServerVar('CORE_VERSION', $this->originalCoreVersion);
 
         $this->removeTemporaryDirectories();
     }

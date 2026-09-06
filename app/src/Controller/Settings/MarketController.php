@@ -178,7 +178,14 @@ final class MarketController
         private readonly MarketAssetDownloader $assetDownloader,
         private readonly ZipPluginInstaller $installer,
         private readonly InstalledPluginsRegistry $installedPlugins,
-        private readonly string $coreVersion,
+        /**
+         * The app's own core version (issue #565), or `null` when it could not be determined. Both
+         * comparisons against {@see MarketSnapshot::$coreVersion} below (`installOrUpdate()`,
+         * `renderIndex()`) already treat a mismatch as "no usable snapshot" — a `null` value here
+         * simply never matches a real snapshot's core version, so this fails closed on rendering a
+         * stale/misleading storefront rather than throwing, without needing its own branch.
+         */
+        private readonly ?string $coreVersion,
         private readonly ?string $pluginContractsVersion,
         private readonly CsrfTokenManagerInterface $csrfTokenManager,
         private readonly UrlGeneratorInterface $urlGenerator,
@@ -350,7 +357,7 @@ final class MarketController
             return $this->renderIndex(
                 locale: $request->getLocale(),
                 installError: 'settings_market.install_error_incompatible_core',
-                installErrorParams: ['%requiredCore%' => $plugin->latestVersionCore, '%currentCore%' => $this->coreVersion],
+                installErrorParams: ['%requiredCore%' => $plugin->latestVersionCore, '%currentCore%' => (string) $this->coreVersion],
             );
         }
 
