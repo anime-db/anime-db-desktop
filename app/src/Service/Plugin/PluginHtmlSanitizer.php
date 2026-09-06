@@ -51,10 +51,16 @@ use Symfony\Component\HtmlSanitizer\HtmlSanitizerConfig;
  * extensions a plugin author might enable (`hx-ext`, `hx-sse`, `hx-ws`, ...). Enumerating today's
  * three (`hx-post`/`hx-target`/`hx-swap`) would silently strip a fourth added tomorrow. Instead,
  * {@see self::pluginCustomAttributes()} allows every `hx-*`/`data-*` attribute actually present on
- * the input, tracking htmx by construction rather than by an enumerated list. The one carve-out is
- * `hx-on`/`hx-on:*`: htmx evaluates their value as a JavaScript expression on the named event —
- * the same risk class as `onclick=` — so it never reaches the allow-list even though it matches
- * the prefix.
+ * the input, tracking htmx by construction rather than by an enumerated list — except for a fixed
+ * denylist of attributes whose *value* htmx evaluates as a JavaScript expression rather than
+ * treating as inert data, the same risk class as `onclick=`:
+ * - `hx-on`/`hx-on:*` — runs its value on the named DOM event;
+ * - `hx-vals`/`hx-vars`/`hx-headers` — run their value as JavaScript when it carries a
+ *   `js:`/`javascript:` prefix.
+ * htmx also treats a `data-` prefix as a plain alias for the same attribute (`data-hx-vals` behaves
+ * exactly like `hx-vals`), so the denylist below is checked against the name with any `data-`
+ * prefix stripped first — none of the above ever reaches the allow-list, under either spelling,
+ * even though all of them match the `hx-*`/`data-*` prefix.
  */
 final class PluginHtmlSanitizer
 {
@@ -123,6 +129,15 @@ final class PluginHtmlSanitizer
     }
 
     /**
+     * `hx-*` attributes whose value htmx can evaluate as JavaScript — see the class docblock.
+     * `hx-on`/`hx-on:*` are matched by prefix below, not listed here, since the event name is
+     * part of the attribute name itself.
+     *
+     * @var list<string>
+     */
+    private const DANGEROUS_HX_ATTRIBUTES = ['hx-vals', 'hx-vars', 'hx-headers'];
+
+    /**
      * @return list<string>
      */
     private static function pluginCustomAttributes(string $html): array
@@ -133,9 +148,13 @@ final class PluginHtmlSanitizer
 
         $attributes = [];
         foreach (array_unique(array_map(strtolower(...), $matches[1])) as $attribute) {
-            // hx-on/hx-on:* evaluate their value as JavaScript on the named event — see the
-            // class docblock.
-            if ($attribute === 'hx-on' || str_starts_with($attribute, 'hx-on:')) {
+            // htmx treats a `data-` prefix as a plain alias for the same attribute, so judge
+            // `data-hx-vals` by the same rule as `hx-vals` — see the class docblock.
+            $logicalName = str_starts_with($attribute, 'data-hx-') ? substr($attribute, 5) : $attribute;
+
+            if ($logicalName === 'hx-on' || str_starts_with($logicalName, 'hx-on:')
+                || in_array($logicalName, self::DANGEROUS_HX_ATTRIBUTES, true)
+            ) {
                 continue;
             }
 
