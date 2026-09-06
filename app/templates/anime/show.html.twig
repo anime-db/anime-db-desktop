@@ -26,8 +26,8 @@
     <link rel="stylesheet" href="{{ asset('css/anime-list.css') }}">
     <link rel="stylesheet" href="{{ asset('css/anime-detail.css') }}">
     {% for plugin in plugins_ui %}
-        {% for cssPath in plugin.ui.css %}
-            <link rel="stylesheet" href="{{ plugin_asset(plugin.pluginId, cssPath) }}">
+        {% for cssUrl in plugin.css %}
+            <link rel="stylesheet" href="{{ cssUrl }}">
         {% endfor %}
     {% endfor %}
 {% endblock %}
@@ -35,8 +35,8 @@
 {% block javascripts %}
     <script src="{{ asset('js/anime-detail.js') }}"></script>
     {% for plugin in plugins_ui %}
-        {% for jsPath in plugin.ui.js %}
-            <script src="{{ plugin_asset(plugin.pluginId, jsPath) }}" defer></script>
+        {% for jsUrl in plugin.js %}
+            <script src="{{ jsUrl }}" defer></script>
         {% endfor %}
     {% endfor %}
 {% endblock %}

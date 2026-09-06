@@ -33,7 +33,9 @@ use App\Controller\Settings\PluginSettingsController;
 use App\Message\BackfillExternalIdMessage;
 use App\Message\SyncSeedMessage;
 use App\Service\Plugin\InstalledPluginsRegistry;
+use App\Service\Plugin\PluginAssetResolver;
 use App\Service\Plugin\PluginsConfigStore;
+use App\Service\Plugin\PluginUiAssetsResolver;
 use App\Service\Plugin\SettingsPageRegistry;
 use App\Service\Plugin\SyncRegistry;
 use PHPUnit\Framework\TestCase;
@@ -90,6 +92,7 @@ final class PluginSettingsControllerTest extends TestCase
         ?PluginsConfigStore $pluginsConfigStore = null,
         ?MessageBusInterface $messageBus = null,
         ?UrlGeneratorInterface $urlGenerator = null,
+        ?PluginUiAssetsResolver $pluginUiAssets = null,
     ): PluginSettingsController {
         return new PluginSettingsController(
             $this->installedPlugins,
@@ -100,7 +103,23 @@ final class PluginSettingsControllerTest extends TestCase
             $urlGenerator ?? $this->createStub(UrlGeneratorInterface::class),
             $twig ?? $this->createStub(Environment::class),
             $logger ?? $this->createStub(LoggerInterface::class),
+            $pluginUiAssets ?? $this->createPluginUiAssetsResolver(),
         );
+    }
+
+    private function createPluginUiAssetsResolver(): PluginUiAssetsResolver
+    {
+        $urlGenerator = $this->createStub(UrlGeneratorInterface::class);
+        $urlGenerator->method('generate')->willReturnCallback(
+            static fn (string $name, array $params): string => \sprintf(
+                '/plugin/%s/asset/%s/%s',
+                $params['pluginId'],
+                $params['fingerprint'],
+                $params['path'],
+            ),
+        );
+
+        return new PluginUiAssetsResolver(new PluginAssetResolver($this->installedPlugins), $urlGenerator, new NullLogger());
     }
 
     public function testInvokeRendersThePluginsPageInsideTheSettingsShell(): void
@@ -145,6 +164,7 @@ final class PluginSettingsControllerTest extends TestCase
             'require' => ['core' => '>=2.0.0', 'php' => '>=8.2'],
             'ui' => ['css' => ['assets/carousel.css'], 'js' => []],
         ]));
+        file_put_contents($dir.'/assets/carousel.css', '.carousel {}');
         $this->installedPlugins->reconcile();
 
         $page = $this->createStub(SettingsPageInterface::class);
@@ -155,12 +175,47 @@ final class PluginSettingsControllerTest extends TestCase
         $twig->expects($this->once())
             ->method('render')
             ->with('settings/plugin/page.html.twig', $this->callback(static function (array $params): bool {
-                return $params['pluginUi'] !== null && $params['pluginUi']->css === ['assets/carousel.css'];
+                return \count($params['pluginUi']['css']) === 1
+                    && str_ends_with($params['pluginUi']['css'][0], '/assets/carousel.css')
+                    && $params['pluginUi']['js'] === [];
             }))
             ->willReturn('<html></html>');
 
         $controller = $this->createController($settingsPages, $twig);
         $controller('animedb-shikimori');
+    }
+
+    public function testInvokeRendersThePluginsPageWhenADeclaredUiAssetFileIsMissing(): void
+    {
+        $dir = $this->pluginsDir.'/animedb-shikimori';
+        mkdir($dir.'/assets', recursive: true);
+        file_put_contents($dir.'/manifest.json', (string) json_encode([
+            'id' => 'animedb-shikimori',
+            'name' => 'Shikimori',
+            'version' => '1.0.0',
+            'type' => 'integration',
+            'features' => ['filler' => true],
+            'require' => ['core' => '>=2.0.0', 'php' => '>=8.2'],
+            'ui' => ['css' => ['assets/missing.css'], 'js' => []],
+        ]));
+        $this->installedPlugins->reconcile();
+
+        $page = $this->createStub(SettingsPageInterface::class);
+        $page->method('render')->willReturn('<form>settings</form>');
+        $settingsPages = new SettingsPageRegistry(['animedb-shikimori' => $page], $this->installedPlugins);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('settings/plugin/page.html.twig', $this->callback(
+                static fn (array $params): bool => $params['pluginUi'] === ['css' => [], 'js' => []],
+            ))
+            ->willReturn('<html></html>');
+
+        $controller = $this->createController($settingsPages, $twig);
+        $response = $controller('animedb-shikimori');
+
+        $this->assertSame(200, $response->getStatusCode());
     }
 
     public function testInvokeDispatchesSyncSeedAndBackfillExternalIdAndRedirectsWhenThePluginIsAnActiveSyncPlugin(): void
@@ -365,6 +420,43 @@ final class PluginSettingsControllerTest extends TestCase
             ->method('render')
             ->with('settings/plugin/page.html.twig', $this->callback(
                 static fn (array $params): bool => $params['renderFailed'] === true && $params['content'] === null,
+            ))
+            ->willReturn('<html></html>');
+
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->once())->method('error');
+
+        $controller = $this->createController($settingsPages, $twig, $logger);
+        $response = $controller('animedb-shikimori');
+
+        $this->assertSame(200, $response->getStatusCode());
+    }
+
+    public function testInvokeRendersTheInlineErrorFallbackWhenRenderThrowsAndADeclaredUiAssetFileIsMissing(): void
+    {
+        $dir = $this->pluginsDir.'/animedb-shikimori';
+        mkdir($dir.'/assets', recursive: true);
+        file_put_contents($dir.'/manifest.json', (string) json_encode([
+            'id' => 'animedb-shikimori',
+            'name' => 'Shikimori',
+            'version' => '1.0.0',
+            'type' => 'integration',
+            'features' => ['filler' => true],
+            'require' => ['core' => '>=2.0.0', 'php' => '>=8.2'],
+            'ui' => ['css' => ['assets/missing.css'], 'js' => []],
+        ]));
+        $this->installedPlugins->reconcile();
+
+        $page = $this->createMock(SettingsPageInterface::class);
+        $page->expects($this->once())->method('render')->willThrowException(new \RuntimeException('API unreachable'));
+        $settingsPages = new SettingsPageRegistry(['animedb-shikimori' => $page], $this->installedPlugins);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('settings/plugin/page.html.twig', $this->callback(
+                static fn (array $params): bool => $params['renderFailed'] === true
+                    && $params['pluginUi'] === ['css' => [], 'js' => []],
             ))
             ->willReturn('<html></html>');
 

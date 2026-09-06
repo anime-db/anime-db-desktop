@@ -45,11 +45,14 @@ use App\Service\Plugin\EntryWidgetRegistry;
 use App\Service\Plugin\Filler\FillableFieldsPresenter;
 use App\Service\Plugin\FillerRegistry;
 use App\Service\Plugin\InstalledPluginsRegistry;
+use App\Service\Plugin\PluginAssetResolver;
 use App\Service\Plugin\PluginsConfigStore;
+use App\Service\Plugin\PluginUiAssetsResolver;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RequestStack;
+use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 use Symfony\Contracts\Translation\TranslatorInterface;
 use Twig\Environment;
 
@@ -83,8 +86,25 @@ final class AnimeControllerTest extends TestCase
             $this->createViewFactory(),
             $this->createEntryWidgetRegistry(),
             $this->createFillableFieldsPresenter(),
-            new InstalledPluginsRegistry(sys_get_temp_dir(), new PluginsConfigStore(''), new NullLogger()),
+            $this->createPluginUiAssetsResolver(
+                new InstalledPluginsRegistry(sys_get_temp_dir(), new PluginsConfigStore(''), new NullLogger()),
+            ),
         );
+    }
+
+    private function createPluginUiAssetsResolver(InstalledPluginsRegistry $installedPlugins): PluginUiAssetsResolver
+    {
+        $urlGenerator = $this->createStub(UrlGeneratorInterface::class);
+        $urlGenerator->method('generate')->willReturnCallback(
+            static fn (string $name, array $params): string => \sprintf(
+                '/plugin/%s/asset/%s/%s',
+                $params['pluginId'],
+                $params['fingerprint'],
+                $params['path'],
+            ),
+        );
+
+        return new PluginUiAssetsResolver(new PluginAssetResolver($installedPlugins), $urlGenerator, new NullLogger());
     }
 
     public function testShowPassesFullyPopulatedReferenceFieldsToTemplate(): void
@@ -234,6 +254,7 @@ final class AnimeControllerTest extends TestCase
             'require' => ['core' => '>=2.0.0', 'php' => '>=8.2'],
             'ui' => ['css' => ['assets/carousel.css'], 'js' => []],
         ]));
+        file_put_contents($pluginsDir.'/animedb-shikimori/assets/carousel.css', '.carousel {}');
         // Has an active widget too, but declares no "ui" — must not appear in plugins_ui.
         file_put_contents($pluginsDir.'/animedb-anilist/manifest.json', (string) json_encode([
             'id' => 'animedb-anilist',
@@ -274,7 +295,9 @@ final class AnimeControllerTest extends TestCase
                 }
 
                 return $params['plugins_ui'][0]['pluginId'] === 'animedb-shikimori'
-                    && $params['plugins_ui'][0]['ui']->css === ['assets/carousel.css'];
+                    && \count($params['plugins_ui'][0]['css']) === 1
+                    && str_ends_with($params['plugins_ui'][0]['css'][0], '/assets/carousel.css')
+                    && $params['plugins_ui'][0]['js'] === [];
             }))
             ->willReturn('<html></html>');
 
@@ -284,7 +307,61 @@ final class AnimeControllerTest extends TestCase
                 $this->createViewFactory(),
                 $entryWidgets,
                 $this->createFillableFieldsPresenter(),
-                $installedPlugins,
+                $this->createPluginUiAssetsResolver($installedPlugins),
+            );
+            $response = $controller->show($anime);
+
+            $this->assertSame(200, $response->getStatusCode());
+        } finally {
+            $this->removeDirectory($pluginsDir);
+        }
+    }
+
+    public function testShowRendersNormallyWhenADeclaredUiAssetFileIsMissing(): void
+    {
+        $pluginsDir = sys_get_temp_dir().'/anime-anime-controller-missing-ui-test-'.uniqid();
+        mkdir($pluginsDir.'/animedb-shikimori/assets', recursive: true);
+
+        file_put_contents($pluginsDir.'/animedb-shikimori/manifest.json', (string) json_encode([
+            'id' => 'animedb-shikimori',
+            'name' => 'Shikimori',
+            'version' => '1.0.0',
+            'type' => 'integration',
+            'features' => ['filler' => true],
+            'require' => ['core' => '>=2.0.0', 'php' => '>=8.2'],
+            'ui' => ['css' => ['assets/missing.css'], 'js' => []],
+        ]));
+
+        $pluginsConfigStore = new PluginsConfigStore($pluginsDir.'/plugins.json');
+        file_put_contents($pluginsDir.'/plugins.json', (string) json_encode([
+            'animedb-shikimori' => ['features' => ['related' => true]],
+        ]));
+
+        $installedPlugins = new InstalledPluginsRegistry($pluginsDir, $pluginsConfigStore, new NullLogger());
+        $installedPlugins->reconcile();
+
+        $entryWidgets = new EntryWidgetRegistry(
+            ['animedb-shikimori:related' => $this->createStub(EntryWidgetInterface::class)],
+            $pluginsConfigStore,
+            $this->createStub(TranslatorInterface::class),
+        );
+
+        $anime = new TvAnime();
+        $anime->setTitle('Frieren')->setWatchStatus(WatchStatus::Watching);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('anime/show.html.twig', $this->callback(static fn (array $params): bool => $params['plugins_ui'] === []))
+            ->willReturn('<html></html>');
+
+        try {
+            $controller = new AnimeController(
+                $twig,
+                $this->createViewFactory(),
+                $entryWidgets,
+                $this->createFillableFieldsPresenter(),
+                $this->createPluginUiAssetsResolver($installedPlugins),
             );
             $response = $controller->show($anime);
 

@@ -27,13 +27,12 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
-use AnimeDb\PluginContracts\Manifest\PluginUi;
 use App\Entity\Anime;
 use App\Entity\ValueObject\PluginId;
 use App\Service\AnimeViewFactory;
 use App\Service\Plugin\EntryWidgetRegistry;
 use App\Service\Plugin\Filler\FillableFieldsPresenter;
-use App\Service\Plugin\InstalledPluginsRegistry;
+use App\Service\Plugin\PluginUiAssetsResolver;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
 use Twig\Environment;
@@ -56,6 +55,12 @@ use Twig\Environment;
  * `stylesheets`/`javascripts` blocks), which is what lets `script-src 'self'` work with no
  * per-plugin exception. A plugin with no active widget on this page contributes nothing here,
  * even if it declares `ui` — its markup simply is not reachable from this page.
+ *
+ * {@see PluginUiAssetsResolver} resolves those declared paths to URLs here, in the controller —
+ * never in the template itself — because a resolution failure (a stale or malformed `ui` entry;
+ * arbitrary-zip install, issue #251, does not verify a declared file exists) must degrade to
+ * simply omitting that one tag, not to a 500 for the whole card: exactly the same "a single
+ * failing widget never blocks the page" guarantee issue #212 already gives the widgets themselves.
  */
 final class AnimeController
 {
@@ -64,7 +69,7 @@ final class AnimeController
         private readonly AnimeViewFactory $viewFactory,
         private readonly EntryWidgetRegistry $entryWidgets,
         private readonly FillableFieldsPresenter $fillableFieldsPresenter,
-        private readonly InstalledPluginsRegistry $installedPlugins,
+        private readonly PluginUiAssetsResolver $pluginUiAssets,
     ) {
     }
 
@@ -84,15 +89,15 @@ final class AnimeController
     /**
      * @param list<string> $pluginIds
      *
-     * @return list<array{pluginId: string, ui: PluginUi}>
+     * @return list<array{pluginId: string, css: list<string>, js: list<string>}>
      */
     private function pluginsUiFor(array $pluginIds): array
     {
         $result = [];
         foreach (array_unique($pluginIds) as $pluginId) {
-            $ui = $this->installedPlugins->get(new PluginId($pluginId))?->manifest->ui;
-            if ($ui !== null) {
-                $result[] = ['pluginId' => $pluginId, 'ui' => $ui];
+            $resolved = $this->pluginUiAssets->resolve(new PluginId($pluginId));
+            if ($resolved['css'] !== [] || $resolved['js'] !== []) {
+                $result[] = ['pluginId' => $pluginId, 'css' => $resolved['css'], 'js' => $resolved['js']];
             }
         }
 
