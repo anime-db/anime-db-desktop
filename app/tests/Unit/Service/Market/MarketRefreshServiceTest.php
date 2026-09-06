@@ -162,6 +162,24 @@ final class MarketRefreshServiceTest extends TestCase
         $this->assertSame($snapshotAfterFirstRun, file_get_contents($this->snapshotCachePath));
     }
 
+    /**
+     * A `null` `$coreVersion` (this app build could not determine its own core version, issue
+     * #565) cannot be resolved into a meaningful snapshot — {@see MarketSnapshotBuilder::build()}
+     * resolves every plugin's compatible version against it — so this must be treated as a failed
+     * attempt, not a crash and not a snapshot silently built for an unknown core.
+     */
+    public function testRefreshFailsAndLeavesNoSnapshotWhenInstalledCoreVersionIsUnknown(): void
+    {
+        $result = $this->serviceServing($this->sign($this->registryJson(sequence: 1)), coreVersion: null)->refresh();
+
+        $this->assertFalse($result);
+        $this->assertFileDoesNotExist($this->snapshotCachePath);
+
+        $config = (new AppConfigStore($this->configPath))->read();
+        $this->assertIsString($config[MarketRefreshService::CONFIG_KEY_LAST_REFRESH_ATTEMPT_AT]);
+        $this->assertArrayNotHasKey('marketLastRefreshAt', $config);
+    }
+
     public function testConcurrentInvocationIsANoOpAndLeavesTheSnapshotUntouched(): void
     {
         $lockHandle = fopen($this->lockPath, 'c');
@@ -179,7 +197,7 @@ final class MarketRefreshServiceTest extends TestCase
         }
     }
 
-    private function serviceServing(PluginRegistryDocumentFixture $document): MarketRefreshService
+    private function serviceServing(PluginRegistryDocumentFixture $document, ?string $coreVersion = '2.5.0'): MarketRefreshService
     {
         $httpClient = new MockHttpClient(
             fn (string $method, string $url): MockResponse => str_ends_with($url, '.sig')
@@ -200,7 +218,7 @@ final class MarketRefreshServiceTest extends TestCase
             new MarketSnapshotCache($this->snapshotCachePath),
             new AppConfigStore($this->configPath),
             new NullLogger(),
-            '2.5.0',
+            $coreVersion,
             $this->lockPath,
         );
     }

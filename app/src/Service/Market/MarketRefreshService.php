@@ -86,7 +86,14 @@ final class MarketRefreshService
         private readonly MarketSnapshotCache $snapshotCache,
         private readonly AppConfigStore $configStore,
         private readonly LoggerInterface $logger,
-        private readonly string $coreVersion,
+        /**
+         * The app's own core version (issue #565), or `null` when it could not be determined —
+         * see {@see self::doRefresh()}, which treats that as a failed attempt rather than building
+         * a snapshot for an unknown core: {@see MarketSnapshotBuilder::build()} resolves every
+         * plugin's compatible version *against* this value, so a snapshot built without it would
+         * not describe anything real.
+         */
+        private readonly ?string $coreVersion,
         private readonly string $refreshLockPath,
     ) {
     }
@@ -127,7 +134,10 @@ final class MarketRefreshService
         $registry = $result->registry;
         $success = $registry !== null && $result->error === null;
 
-        if ($success) {
+        if ($success && $this->coreVersion === null) {
+            $this->logger->error('market refresh: unable to determine the installed core version, keeping the existing snapshot.');
+            $success = false;
+        } elseif ($success) {
             $snapshot = $this->snapshotBuilder->build($registry, $this->coreVersion);
             $this->snapshotCache->store($snapshot);
         } else {

@@ -139,7 +139,12 @@ final class ZipPluginInstaller
 
     public function __construct(
         private readonly string $pluginsDir,
-        private readonly string $coreVersion,
+        /**
+         * The app's own core version (issue #565), or `null` when it could not be determined —
+         * see {@see self::assertCoreVersionCompatible()} and the class docblock's plugin-contracts
+         * axis, which fails open the same way.
+         */
+        private readonly ?string $coreVersion,
         private readonly InstalledPluginsRegistry $registry,
         private readonly PluginCacheWarmerInterface $cacheWarmer,
         private readonly WsPublisher $wsPublisher,
@@ -536,10 +541,23 @@ final class ZipPluginInstaller
     }
 
     /**
+     * A `null` {@see self::$coreVersion} (this app build could not determine it) fails open here,
+     * same shape as {@see self::assertPluginContractsCompatible()}'s own `null` branch below:
+     * nothing gets blocked on an axis this app cannot itself evaluate.
+     *
      * @throws IncompatiblePluginCoreVersionException
      */
     private function assertCoreVersionCompatible(Manifest $manifest): void
     {
+        if ($this->coreVersion === null) {
+            $this->logger->warning('Unable to determine the installed core version; skipping the core compatibility check.', [
+                'pluginId' => $manifest->id,
+                'requiredCore' => $manifest->require->core,
+            ]);
+
+            return;
+        }
+
         if (!Semver::satisfies($this->coreVersion, $manifest->require->core)) {
             throw new IncompatiblePluginCoreVersionException($manifest->require->core, $this->coreVersion);
         }
