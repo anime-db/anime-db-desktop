@@ -54,7 +54,7 @@ final class AnimeLabelController
     ) {
     }
 
-    #[Route('/anime/{id}/labels', name: 'anime_labels_update', methods: ['POST'])]
+    #[Route('/anime/{id}/labels', name: 'anime_labels_update', requirements: ['id' => '\d+'], methods: ['POST'])]
     public function update(Anime $anime, Request $request): JsonResponse
     {
         $payload = json_decode($request->getContent(), true);
