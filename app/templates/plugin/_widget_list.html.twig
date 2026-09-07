@@ -22,9 +22,9 @@
  # Optional host-side helper for the common "list of catalog-like records" widget shape (issue
  # #212). A widget plugin is never required to use it — render() only has to return a raw HTML
  # string — but reusing it keeps such widgets visually consistent with anime-list's own cards,
- # since it reuses the very same `.anime-card` classes from css/anime-list.css. Any template that
- # includes this partial (directly, or indirectly by rendering a widget response into the anime
- # detail page) must have that stylesheet loaded.
+ # since it reuses the very same `.anime-card` classes. Those live in the global bundle
+ # (app/assets/scss/_anime-list.scss, compiled into css/app.css), which base.html.twig loads on
+ # every page, so no per-page stylesheet is needed.
  #
  # Expects a single `items` variable: a list of
  #     {thumbnail: string|null, title: string, subtitle: string|null, url: string}

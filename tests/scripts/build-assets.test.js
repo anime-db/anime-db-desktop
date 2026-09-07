@@ -77,6 +77,15 @@ describe('compileStyles', () => {
         expect(css).toContain('background:var(--bs-danger-bg-subtle)');
     });
 
+    test('carries every application stylesheet, not just the globally shared ones', () => {
+        // Стили страниц собираются в тот же бандл (issue #616): постраничных .css больше нет,
+        // и потерянный @import проявился бы только глазами на конкретной странице.
+        expect(css).toContain('.anime-list__grid');
+        expect(css).toContain('.anime-card__badge--watching');
+        expect(css).toContain('.anime-detail__editable-error');
+        expect(css).toContain('.plugin-widget__list');
+    });
+
     test('produces a mirrored stylesheet for RTL locales', () => {
         expect(css).toContain('.text-start{text-align:left !important}');
         expect(rtlCss).toContain('.text-start{text-align:right !important}');

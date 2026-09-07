@@ -23,8 +23,6 @@
 {% block title %}{{ 'anime_detail.title'|trans({'%title%': anime.title}) }}{% endblock %}
 
 {% block stylesheets %}
-    <link rel="stylesheet" href="{{ asset('css/anime-list.css') }}">
-    <link rel="stylesheet" href="{{ asset('css/anime-detail.css') }}">
     {% for plugin in plugins_ui %}
         {% for cssUrl in plugin.css %}
             <link rel="stylesheet" href="{{ cssUrl }}">
