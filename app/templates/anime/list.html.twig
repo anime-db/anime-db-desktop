@@ -22,10 +22,6 @@
 
 {% block title %}{{ 'anime_list.title'|trans }}{% endblock %}
 
-{% block stylesheets %}
-    <link rel="stylesheet" href="{{ asset('css/anime-list.css') }}">
-{% endblock %}
-
 {% block body %}
     <main class="anime-list">
         {% if showOnboarding %}

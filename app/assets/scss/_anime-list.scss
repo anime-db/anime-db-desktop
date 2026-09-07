@@ -27,7 +27,7 @@
     width: 100%;
     max-width: 320px;
     padding: 6px 10px;
-    border: 1px solid #ccc;
+    border: 1px solid var(--bs-border-color);
     border-radius: 4px;
     font-size: 0.9em;
 }
@@ -43,7 +43,7 @@
 .anime-list__error {
     padding: 16px;
     text-align: center;
-    color: #666;
+    color: var(--bs-secondary-color);
 }
 
 .anime-list__pagination {
@@ -66,9 +66,9 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    border: 1px solid #ddd;
+    border: 1px solid var(--bs-border-color);
     border-radius: 6px;
-    background: #fff;
+    background: var(--bs-body-bg);
 }
 
 .anime-card__thumb {
@@ -76,14 +76,14 @@
     width: 100%;
     aspect-ratio: 2 / 3;
     object-fit: cover;
-    background: #eee;
+    background: var(--bs-secondary-bg);
 }
 
 .anime-card__thumb--placeholder {
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #999;
+    color: var(--bs-secondary-color);
     font-size: 0.85em;
 }
 
@@ -109,39 +109,39 @@
     align-self: flex-start;
     padding: 2px 6px;
     border-radius: 4px;
-    background: #eee;
-    color: #333;
+    background: var(--bs-secondary-bg);
+    color: var(--bs-body-color);
     font-size: 0.75em;
 }
 
 .anime-card__badge--watching {
-    background: #dff0d8;
-    color: #3c763d;
+    background: var(--bs-success-bg-subtle);
+    color: var(--bs-success-text-emphasis);
 }
 
 .anime-card__badge--completed {
-    background: #d9edf7;
-    color: #31708f;
+    background: var(--bs-info-bg-subtle);
+    color: var(--bs-info-text-emphasis);
 }
 
 .anime-card__badge--plan {
-    background: #fcf8e3;
-    color: #8a6d3b;
+    background: var(--bs-warning-bg-subtle);
+    color: var(--bs-warning-text-emphasis);
 }
 
 .anime-card__badge--dropped {
-    background: #f2dede;
-    color: #a94442;
+    background: var(--bs-danger-bg-subtle);
+    color: var(--bs-danger-text-emphasis);
 }
 
 .anime-card__badge--on_hold {
-    background: #eee;
-    color: #666;
+    background: var(--bs-secondary-bg-subtle);
+    color: var(--bs-secondary-text-emphasis);
 }
 
 .anime-card__meta {
     margin: 0;
-    color: #555;
+    color: var(--bs-secondary-color);
     font-size: 0.8em;
 }
 
@@ -156,7 +156,7 @@
 .anime-card__tag {
     padding: 1px 6px;
     border-radius: 10px;
-    background: #f0f0f0;
-    color: #555;
+    background: var(--bs-secondary-bg);
+    color: var(--bs-secondary-color);
     font-size: 0.75em;
 }

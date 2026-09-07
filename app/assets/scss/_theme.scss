@@ -1,0 +1,33 @@
+/**
+ * AnimeDb package.
+ *
+ * @author    Peter Gribanov <info@peter-gribanov.ru>
+ * @copyright Copyright (c) 2026, Peter Gribanov
+ * @license   https://www.gnu.org/licenses/gpl-3.0.html GPL-3.0-or-later
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+
+// Собственные токены приложения. Всё, что Bootstrap уже описывает своими переменными
+// (--bs-body-bg, --bs-border-color, --bs-secondary-color, --bs-*-bg-subtle и т.д.),
+// сюда НЕ дублируется: у них уже есть значения для обеих тем, и параллельный набор
+// токенов означал бы два источника истины и рассинхрон в тёмной теме.
+//
+// Здесь только то, чего у Bootstrap нет, — брендовый акцент.
+:root {
+    // Декоративный акцент: подчёркивание активного пункта навигации и подобные элементы,
+    // где цветом не передаётся информация в одиночку. Текстом на светлом фоне не работает
+    // (2.97:1), для текста и заливок под белый текст есть --bs-primary — см. _palette.scss.
+    --adb-accent: #{$adb-accent};
+}

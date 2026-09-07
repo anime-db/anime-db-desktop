@@ -36,7 +36,7 @@
     width: 100%;
     aspect-ratio: 2 / 3;
     border-radius: 6px;
-    background: #eee;
+    background: var(--bs-secondary-bg);
     object-fit: cover;
 }
 
@@ -44,7 +44,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #999;
+    color: var(--bs-secondary-color);
     font-size: 0.85em;
 }
 
@@ -64,7 +64,7 @@
 .anime-detail__labels,
 .anime-detail__summary {
     padding: 16px;
-    border: 1px solid #ddd;
+    border: 1px solid var(--bs-border-color);
     border-radius: 6px;
 }
 
@@ -80,15 +80,15 @@
 
 .anime-detail__placeholder {
     margin: 0;
-    color: #666;
+    color: var(--bs-secondary-color);
 }
 
 .anime-detail__editable-error {
     margin: 0 0 12px;
     padding: 6px 10px;
     border-radius: 4px;
-    background: #f2dede;
-    color: #a94442;
+    background: var(--bs-danger-bg-subtle);
+    color: var(--bs-danger-text-emphasis);
     font-size: 0.85em;
 }
 
@@ -104,33 +104,33 @@
 }
 
 .anime-detail__editable-value:hover {
-    border-color: #ccc;
-    background: #f5f5f5;
+    border-color: var(--bs-border-color);
+    background: var(--bs-tertiary-bg);
 }
 
 .anime-detail__watch-status-badge--plan {
-    background: #eee;
-    color: #333;
+    background: var(--bs-secondary-bg);
+    color: var(--bs-body-color);
 }
 
 .anime-detail__watch-status-badge--watching {
-    background: #d9edf7;
-    color: #31708f;
+    background: var(--bs-info-bg-subtle);
+    color: var(--bs-info-text-emphasis);
 }
 
 .anime-detail__watch-status-badge--completed {
-    background: #dff0d8;
-    color: #3c763d;
+    background: var(--bs-success-bg-subtle);
+    color: var(--bs-success-text-emphasis);
 }
 
 .anime-detail__watch-status-badge--dropped {
-    background: #f2dede;
-    color: #a94442;
+    background: var(--bs-danger-bg-subtle);
+    color: var(--bs-danger-text-emphasis);
 }
 
 .anime-detail__watch-status-badge--on_hold {
-    background: #fcf8e3;
-    color: #8a6d3b;
+    background: var(--bs-warning-bg-subtle);
+    color: var(--bs-warning-text-emphasis);
 }
 
 .anime-detail__inline-form {
@@ -163,9 +163,9 @@
     width: 22px;
     height: 22px;
     padding: 0;
-    border: 1px solid #ccc;
+    border: 1px solid var(--bs-border-color);
     border-radius: 50%;
-    background: #f5f5f5;
+    background: var(--bs-tertiary-bg);
     cursor: pointer;
     line-height: 1;
 }
@@ -175,24 +175,24 @@
     margin-bottom: 12px;
     padding: 2px 8px;
     border-radius: 4px;
-    background: #eee;
-    color: #333;
+    background: var(--bs-secondary-bg);
+    color: var(--bs-body-color);
     font-size: 0.85em;
 }
 
 .anime-detail__status-badge--announced {
-    background: #f2dede;
-    color: #a94442;
+    background: var(--bs-danger-bg-subtle);
+    color: var(--bs-danger-text-emphasis);
 }
 
 .anime-detail__status-badge--ongoing {
-    background: #d9edf7;
-    color: #31708f;
+    background: var(--bs-info-bg-subtle);
+    color: var(--bs-info-text-emphasis);
 }
 
 .anime-detail__status-badge--released {
-    background: #dff0d8;
-    color: #3c763d;
+    background: var(--bs-success-bg-subtle);
+    color: var(--bs-success-text-emphasis);
 }
 
 .anime-detail__fields {
@@ -203,7 +203,7 @@
 }
 
 .anime-detail__fields dt {
-    color: #666;
+    color: var(--bs-secondary-color);
     font-weight: bold;
 }
 
@@ -215,8 +215,8 @@
     margin: 0 0 12px;
     padding: 6px 10px;
     border-radius: 4px;
-    background: #f2dede;
-    color: #a94442;
+    background: var(--bs-danger-bg-subtle);
+    color: var(--bs-danger-text-emphasis);
     font-size: 0.85em;
 }
 
@@ -229,9 +229,9 @@
 
 .anime-detail__fill-button {
     padding: 1px 6px;
-    border: 1px solid #ccc;
+    border: 1px solid var(--bs-border-color);
     border-radius: 4px;
-    background: #f5f5f5;
+    background: var(--bs-tertiary-bg);
     color: inherit;
     font-size: 0.8em;
     cursor: pointer;
@@ -251,7 +251,7 @@
 }
 
 .anime-detail__name-type {
-    color: #666;
+    color: var(--bs-secondary-color);
     font-size: 0.85em;
 }
 
@@ -272,7 +272,7 @@
     background: none;
     cursor: pointer;
     font-size: 1em;
-    color: #666;
+    color: var(--bs-secondary-color);
 }
 
 .anime-detail__labels-list {
@@ -287,14 +287,14 @@
 .anime-detail__open-folder-button {
     margin-inline-start: 8px;
     padding: 2px 10px;
-    border: 1px solid #ccc;
+    border: 1px solid var(--bs-border-color);
     border-radius: 4px;
-    background: #f5f5f5;
+    background: var(--bs-tertiary-bg);
     cursor: pointer;
 }
 
 .anime-detail__open-folder-button:disabled {
-    color: #999;
+    color: var(--bs-secondary-color);
     cursor: not-allowed;
 }
 
@@ -311,18 +311,18 @@
     display: inline-block;
     padding: 2px 8px;
     border-radius: 4px;
-    background: #eee;
-    color: #333;
+    background: var(--bs-secondary-bg);
+    color: var(--bs-body-color);
     font-size: 0.85em;
     text-decoration: none;
 }
 
 .anime-detail__label-link:hover {
-    background: #ddd;
+    background: var(--bs-border-color);
 }
 
 .anime-detail__labels-empty {
-    color: #666;
+    color: var(--bs-secondary-color);
 }
 
 .anime-detail__labels-editor {
@@ -347,8 +347,8 @@
     gap: 4px;
     padding: 2px 4px 2px 8px;
     border-radius: 4px;
-    background: #d9edf7;
-    color: #31708f;
+    background: var(--bs-info-bg-subtle);
+    color: var(--bs-info-text-emphasis);
     font-size: 0.85em;
 }
 
@@ -363,7 +363,7 @@
 
 .anime-detail__labels-input {
     padding: 4px 8px;
-    border: 1px solid #ccc;
+    border: 1px solid var(--bs-border-color);
     border-radius: 4px;
 }
 
@@ -375,11 +375,11 @@
     min-width: 200px;
     margin: 0;
     padding: 4px 0;
-    border: 1px solid #ccc;
+    border: 1px solid var(--bs-border-color);
     border-radius: 4px;
-    background: #fff;
+    background: var(--bs-body-bg);
     list-style: none;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+    box-shadow: var(--bs-box-shadow);
 }
 
 .anime-detail__labels-suggestions li button {
@@ -393,12 +393,12 @@
 }
 
 .anime-detail__labels-suggestions li button:hover {
-    background: #eee;
+    background: var(--bs-secondary-bg);
 }
 
 .anime-detail__labels-error {
     margin: 0;
-    color: #a94442;
+    color: var(--bs-danger-text-emphasis);
     font-size: 0.85em;
 }
 
@@ -430,13 +430,13 @@
 
 .anime-detail__gallery-empty {
     margin: 0;
-    color: #999;
+    color: var(--bs-secondary-color);
     font-size: 0.85em;
 }
 
 .plugin-widget {
     min-height: 1.5em;
-    color: #555;
+    color: var(--bs-secondary-color);
 }
 
 .plugin-widget--error {
@@ -447,7 +447,7 @@
 
 .plugin-widget__error-text {
     margin: 0;
-    color: #a94442;
+    color: var(--bs-danger-text-emphasis);
 }
 
 .plugin-widget__list {
