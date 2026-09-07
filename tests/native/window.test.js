@@ -34,10 +34,11 @@ jest.mock('electron', () => ({
         loadURL: jest.fn(),
         on: jest.fn(),
     })),
+    Menu: { setApplicationMenu: jest.fn() },
     shell: { openExternal: jest.fn() },
 }));
 
-const { shell } = require('electron');
+const { Menu, shell } = require('electron');
 const { createWindow } = require('../../native/window');
 
 const PORT = 8123;
@@ -45,6 +46,10 @@ const PORT = 8123;
 beforeEach(() => {
     jest.clearAllMocks();
     createWindow(PORT);
+});
+
+test('the default Electron application menu is removed on window creation', () => {
+    expect(Menu.setApplicationMenu).toHaveBeenCalledWith(null);
 });
 
 test('will-navigate to the local backend origin is left untouched', () => {

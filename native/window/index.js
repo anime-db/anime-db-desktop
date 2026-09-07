@@ -21,7 +21,7 @@
 
 'use strict';
 
-const { BrowserWindow, shell } = require('electron');
+const { BrowserWindow, Menu, shell } = require('electron');
 const path = require('path');
 
 let win = null;
@@ -108,6 +108,14 @@ function interceptExternalNavigation(browserWindow, port) {
  * @param {number} port
  */
 function createWindow(port) {
+    // Electron's default application menu (File/Edit/View/Window/Help) has no items relevant
+    // to AnimeDB and exposes View → Toggle Developer Tools in release builds. It is removed
+    // instead of replaced: on Windows (the only build target, see build.win in package.json)
+    // copy/paste in input fields is handled natively by Chromium and does not depend on menu
+    // roles. If a macOS build is ever added, an application menu becomes mandatory there and
+    // will need to be set explicitly.
+    Menu.setApplicationMenu(null);
+
     win = new BrowserWindow({
         width: 1200,
         height: 800,
