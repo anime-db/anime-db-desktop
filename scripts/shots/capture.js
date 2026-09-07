@@ -45,6 +45,36 @@ if (!PORT || !OUT_DIR) {
 const WINDOW_WIDTH  = 1280;
 const WINDOW_HEIGHT = 900;
 
+// The catalog grid (app/public/js/anime-list.js) fills in after an async fetch that runs past
+// did-finish-load, so capturePage() right after page load can catch it empty regardless of
+// database contents. Poll for the same DOM state anime-list.js itself uses to decide "loaded":
+// either cards in the grid or the "list is empty" message uncovered.
+const RENDER_POLL_SCRIPT = `(() => {
+    const grid = document.getElementById('anime-list-grid');
+    if (!grid) {
+        return true;
+    }
+    const empty = document.getElementById('anime-list-empty');
+    return grid.children.length > 0 || (empty !== null && !empty.hidden);
+})()`;
+const RENDER_POLL_INTERVAL_MS = 100;
+const RENDER_POLL_TIMEOUT_MS  = 5000;
+
+/**
+ * @param {import('electron').BrowserWindow} win
+ * @returns {Promise<void>}
+ */
+async function waitForRender(win) {
+    const deadline = Date.now() + RENDER_POLL_TIMEOUT_MS;
+    do {
+        if (await win.webContents.executeJavaScript(RENDER_POLL_SCRIPT)) {
+            return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, RENDER_POLL_INTERVAL_MS));
+    } while (Date.now() < deadline);
+    console.warn('[shots] catalog grid did not settle within the timeout — capturing anyway');
+}
+
 /**
  * Pages captured for every theme. `anime-card` is included only when the orchestrator found an
  * existing anime row (ANIME_ID), since the catalog is empty on a fresh clone until demo data is
@@ -54,7 +84,7 @@ const WINDOW_HEIGHT = 900;
  */
 function buildPages() {
     const pages = [
-        { name: 'catalog',    path: '/anime' },
+        { name: 'catalog',    path: '/' },
         { name: 'anime-new',  path: '/anime/new' },
         { name: 'storage',    path: '/storage' },
         { name: 'settings',   path: '/settings' },
@@ -116,6 +146,7 @@ async function main() {
         for (const targetPage of pages) {
             const url = `http://127.0.0.1:${PORT}${targetPage.path}`;
             await loadPage(win, url);
+            await waitForRender(win);
 
             const image = await win.webContents.capturePage();
             fs.writeFileSync(path.join(themeDir, `${targetPage.name}.png`), image.toPNG());
