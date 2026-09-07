@@ -17,8 +17,11 @@ app/.env.*.local
 # Dev-режим SQLite (data.db, queue.db) — в продакшн живёт в AppData, не в репозитории
 data/
 
-# Frontend assets — генерируются при сборке, не хранятся в git
+# Frontend assets — генерируются при сборке (scripts/build-assets.js), не хранятся в git
 app/public/js/htmx.min.js
+app/public/js/bootstrap.bundle.min.js
+app/public/css/app.css
+app/public/css/app.rtl.css
 
 # Отпечаток сборки — стемпуется на каждой сборке в scripts/build.js#writeBuildId, не хранится в git
 scripts/build-id.txt

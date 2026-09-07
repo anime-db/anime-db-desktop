@@ -25,6 +25,13 @@ const js      = require('@eslint/js');
 const globals = require('globals');
 
 module.exports = [
+    // Сторонние скрипты, которые scripts/build-assets.js кладёт рядом с нашими: минифицированный
+    // чужой код правилам проекта не подчиняется и правится не нами. В git этих файлов нет, поэтому
+    // на чистом клоне линтер их и не видел — но стоит собрать ассеты локально, и `npm run lint`
+    // падал бы на них.
+    {
+        ignores: ['app/public/js/*.min.js'],
+    },
     js.configs.recommended,
     {
         languageOptions: {

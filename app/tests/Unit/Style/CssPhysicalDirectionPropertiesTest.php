@@ -34,8 +34,13 @@ use PHPUnit\Framework\TestCase;
  * direction and does not flip for an RTL locale (issue #450). The logical equivalent
  * (margin-inline-start, text-align: start, inset-inline-*, ...) follows the "dir" attribute the
  * core sets from the locale, with no per-locale CSS override needed. This test scans every
- * stylesheet under app/public/css/ so a physical property re-introduced later fails CI instead of
+ * hand-written stylesheet so a physical property re-introduced later fails CI instead of
  * surfacing only when someone looks at an RTL locale with real eyes.
+ *
+ * Build output is out of scope (issue #616): app/public/css/app.css is compiled from
+ * app/assets/scss and contains Bootstrap, whose physical properties are neither ours to fix nor
+ * a problem — the RTL bundle next to it is produced by mirroring that output through RTLCSS. The
+ * sources it is compiled from are scanned instead, so the rule still covers everything we write.
  */
 final class CssPhysicalDirectionPropertiesTest extends TestCase
 {
@@ -58,12 +63,25 @@ final class CssPhysicalDirectionPropertiesTest extends TestCase
         '/(?<![a-z-])right\s*:/i' => 'inset-inline-end',
     ];
 
+    /**
+     * Собранные шагом сборки файлы: лежат рядом с рукописными, но в git не хранятся.
+     */
+    private const GENERATED_STYLESHEETS = ['app.css', 'app.rtl.css'];
+
     public function testNoPhysicalDirectionPropertiesInCss(): void
     {
-        $cssDir = \dirname(__DIR__, 3).'/public/css';
+        $appDir = \dirname(__DIR__, 3);
+
+        $sources = array_merge(
+            array_filter(
+                glob($appDir.'/public/css/*.css') ?: [],
+                static fn (string $file): bool => !\in_array(basename($file), self::GENERATED_STYLESHEETS, true),
+            ),
+            glob($appDir.'/assets/scss/*.scss') ?: [],
+        );
 
         $failures = [];
-        foreach (glob($cssDir.'/*.css') ?: [] as $file) {
+        foreach ($sources as $file) {
             $lines = file($file, FILE_IGNORE_NEW_LINES) ?: [];
 
             foreach ($lines as $lineNumber => $line) {
@@ -84,7 +102,7 @@ final class CssPhysicalDirectionPropertiesTest extends TestCase
         $this->assertSame(
             [],
             $failures,
-            "Physical CSS direction properties found under app/public/css/:\n".implode("\n", $failures),
+            "Physical CSS direction properties found in hand-written stylesheets:\n".implode("\n", $failures),
         );
     }
 }

@@ -25,10 +25,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="htmx-config" content='{"includeIndicatorStyles":false}'>
     <title>{% block title %}AnimeDB{% endblock %}</title>
-    <link rel="stylesheet" href="{{ asset('css/app-notifications.css') }}">
-    <link rel="stylesheet" href="{{ asset('css/htmx.css') }}">
-    <link rel="stylesheet" href="{{ asset('css/app-nav.css') }}">
+    {# Глобальный бандл: Bootstrap + токены палитры + стили шапки, уведомлений и htmx.
+       Собирается из app/assets/scss шагом сборки, в git не хранится. RTL-вариант получается
+       из того же исходника прогоном через RTLCSS — см. scripts/build-assets.js. #}
+    <link rel="stylesheet" href="{{ asset(text_direction(app.request.locale) == 'rtl' ? 'css/app.rtl.css' : 'css/app.css') }}">
     {% block stylesheets %}{% endblock %}
+    {# Синхронно и до отрисовки: иначе на каждой загрузке мигает светлый фон. #}
+    <script src="{{ asset('js/color-mode.js') }}"></script>
 </head>
 <body>
     {% set current_route = app.request.attributes.get('_route')|default('') %}
@@ -61,6 +64,11 @@
         </div>
     </template>
     <script src="{{ asset('js/htmx.min.js') }}"></script>
+    {# Компоненты Bootstrap с data-атрибутами (dropdown, modal, collapse, tab) вешают
+       делегированные обработчики на document, поэтому на разметке, вставленной htmx-свопом,
+       работают без реинициализации. Tooltip и Popover — исключение, они создаются только явно:
+       если появятся, инициализировать их придётся по событию htmx:afterSwap. #}
+    <script src="{{ asset('js/bootstrap.bundle.min.js') }}"></script>
     <script src="{{ asset('js/translations.js') }}"></script>
     <script src="{{ asset('js/app-notifications.js') }}"></script>
     <script src="{{ asset('js/inline-handlers.js') }}"></script>

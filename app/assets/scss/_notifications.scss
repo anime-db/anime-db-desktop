@@ -19,6 +19,8 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+// Всплывающие уведомления приложения (issue #417). Сейчас единственный вид — ошибка,
+// поэтому цвета взяты из danger-набора Bootstrap: он определён для обеих тем.
 .app-notifications {
     position: fixed;
     top: 16px;
@@ -36,9 +38,9 @@
     gap: 8px;
     padding: 10px 12px;
     border-radius: 6px;
-    background: #f2dede;
-    color: #a94442;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+    background: var(--bs-danger-bg-subtle);
+    box-shadow: var(--bs-box-shadow);
+    color: var(--bs-danger-text-emphasis);
 }
 
 .app-notification__text {

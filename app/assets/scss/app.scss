@@ -19,25 +19,16 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-.app-nav {
-    display: flex;
-    gap: 4px;
-    padding: 8px 16px;
-    border-bottom: 1px solid #ddd;
-}
+// Точка входа глобального бандла. Компилируется в app/public/css/app.css шагом сборки
+// (scripts/build.js), в git не хранится. RTL-вариант app.rtl.css получается из этого же
+// файла прогоном через RTLCSS — Bootstrap не умеет собирать RTL средствами одного Sass.
+//
+// Порядок импортов существенный: переменные проекта обязаны идти ДО Bootstrap, иначе его
+// значения уже вычислены; собственные компоненты — ПОСЛЕ, иначе их перекроет reboot.
+@import "palette";
+@import "bootstrap/scss/bootstrap";
+@import "theme";
 
-.app-nav__link {
-    padding: 6px 12px;
-    border-radius: 6px;
-    color: inherit;
-    text-decoration: none;
-}
-
-.app-nav__link:hover {
-    background: #eee;
-}
-
-.app-nav__link--active {
-    background: #ddd;
-    font-weight: bold;
-}
+@import "nav";
+@import "notifications";
+@import "htmx";

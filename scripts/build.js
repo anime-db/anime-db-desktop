@@ -24,6 +24,7 @@
 const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const { main: buildAssets } = require('./build-assets');
 
 const rootDir = path.resolve(__dirname, '..');
 const appDir = path.join(rootDir, 'app');
@@ -89,12 +90,10 @@ function main() {
     fs.rmSync(path.join(appDir, 'var', 'cache'), { recursive: true, force: true });
     fs.rmSync(path.join(appDir, 'var', 'log'), { recursive: true, force: true });
 
-    const jsDir = path.join(appDir, 'public', 'js');
-    fs.mkdirSync(jsDir, { recursive: true });
-    fs.copyFileSync(
-        path.resolve(rootDir, 'node_modules', 'htmx.org', 'dist', 'htmx.min.js'),
-        path.join(jsDir, 'htmx.min.js')
-    );
+    // Фронтенд-ассеты собираются отдельным скриптом, потому что их нужно уметь собрать и без
+    // остальной части этого шага: `npm start` зовёт только его. Тащить сюда весь prebuild
+    // нельзя — он делает `composer install --no-dev` и снёс бы dev-зависимости.
+    buildAssets();
 }
 
 if (require.main === module) {

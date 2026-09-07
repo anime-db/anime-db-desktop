@@ -36,6 +36,7 @@ All paths below are relative to the AnimeDB installation directory.
 | Meilisearch                                                                                  | 1.13.0              | MIT                                                  | separate process, static Rust binary | `Meilisearch-NOTICE.txt`, `texts/meilisearch-MIT.txt`             |
 | qBittorrent-nox, Qt 6, libtorrent-rasterbar, boost, OpenSSL 3.6.3, zlib, PCRE2, MSVC runtime | see the bundle      | GPL-2.0-or-later, LGPL-3.0, BSD, BSL-1.0, Apache-2.0 | separate process                     | `resources/app/bin/qbittorrent-nox/THIRD-PARTY-LICENSES/`         |
 | htmx                                                                                         | 2.0.10              | 0BSD                                                 | JavaScript, loaded by the web UI     | 0BSD requires no attribution; listed for completeness             |
+| Bootstrap                                                                                    | 5.3.8               | MIT                                                  | CSS and JS, loaded by the web UI     | `texts/bootstrap-MIT.txt`                                         |
 | PHP libraries under `app/vendor/`                                                            | see `composer.lock` | MIT, BSD-3-Clause                                    | interpreted PHP sources              | each package ships its own `LICENSE` inside its directory         |
 
 Versions marked as read from the binaries were taken from the PE version
