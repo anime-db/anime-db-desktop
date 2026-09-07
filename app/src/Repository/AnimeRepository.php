@@ -250,9 +250,12 @@ class AnimeRepository
 
     private function createFilteredQueryBuilder(AnimeListFilter $filter): QueryBuilder
     {
-        $qb = $this->entityManager->getRepository(Anime::class)->createQueryBuilder('a')
-            ->andWhere('a.watchStatus = :watchStatus')
-            ->setParameter('watchStatus', $filter->watchStatus);
+        $qb = $this->entityManager->getRepository(Anime::class)->createQueryBuilder('a');
+
+        if ($filter->watchStatus !== null) {
+            $qb->andWhere('a.watchStatus = :watchStatus')
+                ->setParameter('watchStatus', $filter->watchStatus);
+        }
 
         if ($filter->type !== null) {
             $qb->andWhere($qb->expr()->isInstanceOf('a', $filter->type->entityClass()));

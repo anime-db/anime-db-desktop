@@ -51,7 +51,7 @@ final class AnimeListFilter
      *                                   AnimeRepository::createFilteredQueryBuilder()
      */
     public function __construct(
-        public readonly WatchStatus $watchStatus,
+        public readonly ?WatchStatus $watchStatus = null,
         public readonly ?AnimeType $type = null,
         public readonly ?string $country = null,
         public readonly ?string $name = null,

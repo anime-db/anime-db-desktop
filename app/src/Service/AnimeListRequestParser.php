@@ -47,11 +47,7 @@ final class AnimeListRequestParser
 
     public function parseFilter(Request $request): AnimeListFilter
     {
-        $watchStatusRaw = $this->assertScalarParam($request, 'watch_status');
-        $watchStatus = $watchStatusRaw !== null ? WatchStatus::tryFrom((string) $watchStatusRaw) : null;
-        if ($watchStatus === null) {
-            throw new BadRequestHttpException('watch_status is required and must be one of: '.implode(', ', array_column(WatchStatus::cases(), 'value')));
-        }
+        $watchStatus = $this->parseEnumParam($request, 'watch_status', WatchStatus::tryFrom(...));
 
         $type = $this->parseEnumParam($request, 'type', AnimeType::tryFrom(...));
 

@@ -237,6 +237,17 @@ final class AnimeRepositoryTest extends TestCase
         $this->assertEqualsCanonicalizing(['Trigun', 'A Comedy Movie', 'Drama Series'], $this->titlesOf($filter));
     }
 
+    public function testMissingWatchStatusReturnsAnimeOfEveryStatus(): void
+    {
+        $filter = new AnimeListFilter();
+
+        $this->assertSame(4, $this->repository->countByFilter($filter));
+        $this->assertEqualsCanonicalizing(
+            ['Trigun', 'A Comedy Movie', 'Planned Show', 'Drama Series'],
+            $this->titlesOf($filter),
+        );
+    }
+
     public function testFilterByTypeNarrowsToTheGivenAnimeClass(): void
     {
         $filter = new AnimeListFilter(watchStatus: WatchStatus::Watching, type: AnimeType::Movie);
