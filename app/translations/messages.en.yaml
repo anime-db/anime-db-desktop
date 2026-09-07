@@ -433,3 +433,10 @@ plugin_widget:
 
 app_notification:
     close_button: Close
+
+nav:
+    aria_label: Main navigation
+    catalog_link: Catalog
+    storage_link: Storage
+    market_link: Market
+    settings_link: Settings
