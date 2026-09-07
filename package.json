@@ -51,7 +51,6 @@
             "createDesktopShortcut": true,
             "createStartMenuShortcut": true,
             "runAfterFinish": true,
-            "updaterCacheDirName": "anime-db-desktop-updater",
             "include": "build/installer.nsh"
         },
         "files": [

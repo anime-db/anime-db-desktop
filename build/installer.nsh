@@ -26,8 +26,16 @@
 ; uninstall indefinitely and grows with every release. This macro removes that cache directory
 ; as part of uninstallation, without affecting the copy made during installation.
 ;
-; The directory name below must stay in sync with "build.nsis.updaterCacheDirName" in
-; package.json (electron-builder defaults it to "<package.name>-updater" when unset).
+; The directory name below must stay in sync with the "name" field in package.json:
+; electron-builder derives the cache directory name as "<package.name>-updater".
+;
+; The uninstaller also runs as part of installing a new version over an existing one, in
+; which case the update cache must not be touched: it may be the very location the running
+; installer was launched from, and removing it would break the update in progress. Guard the
+; removal so it only runs on an actual uninstall, the same way electron-builder guards its
+; own app-data removal.
 !macro customUnInstall
-  RMDir /r "$LOCALAPPDATA\anime-db-desktop-updater"
+  ${ifNot} ${isUpdated}
+    RMDir /r "$LOCALAPPDATA\anime-db-desktop-updater"
+  ${endif}
 !macroend
