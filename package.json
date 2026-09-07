@@ -50,7 +50,8 @@
             "deleteAppDataOnUninstall": false,
             "createDesktopShortcut": true,
             "createStartMenuShortcut": true,
-            "runAfterFinish": true
+            "runAfterFinish": true,
+            "include": "build/installer.nsh"
         },
         "files": [
             "native/**",
