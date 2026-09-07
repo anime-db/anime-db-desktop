@@ -182,6 +182,7 @@ final class AnimeEditableController
     #[Route(
         '/anime/{id}/editable/watched_episodes/increment',
         name: 'anime_editable_increment_watched_episodes',
+        requirements: ['id' => '\d+'],
         methods: ['POST'],
     )]
     public function incrementWatchedEpisodes(Anime $anime, Request $request): Response

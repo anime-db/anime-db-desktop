@@ -35,15 +35,18 @@ use Symfony\Component\Routing\RouterInterface;
  * Regression coverage for issue #618: `/anime/{id}` (`anime_show`) was declared before
  * `/anime/new` (`anime_new`) in controller-registration order (alphabetical by file name,
  * `AnimeController.php` before `AnimeNewController.php`), and without a requirement on `{id}`
- * a dynamic route declared earlier can match a later static path before Symfony's compiled
- * matcher ever considers its `$staticRoutes` fast path — `"new"` matched `{id}` and the request
- * never reached `anime_new`.
+ * the route compiler could not rule out `anime_show` for the literal path `/anime/new`. At
+ * compile time, Symfony's route dumper only places a static path into the matcher's
+ * `$staticRoutes` fast-path table when no earlier-declared dynamic route can also match it;
+ * since unconstrained `/anime/{id}` could match `/anime/new`, the path was compiled into the
+ * regular (order-dependent) matching branch instead, where declaration order decided the
+ * winner and `anime_show` matched first.
  *
  * This must resolve through the real, compiled service router (`router->match()`) rather than
  * `Symfony\Component\Routing\Matcher\TraceableUrlMatcher` (as `router:match`/`debug:router
  * --format` use under the hood): the traceable matcher walks the route collection in declaration
  * order and reports the first route whose pattern *could* match, which is a different algorithm
- * from the compiled matcher's static-first lookup and would not have caught this defect.
+ * from the compiled matcher and would not have caught this defect.
  */
 final class AnimeRoutingTest extends KernelTestCase
 {
