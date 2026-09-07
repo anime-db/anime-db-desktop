@@ -27,9 +27,28 @@
     <title>{% block title %}AnimeDB{% endblock %}</title>
     <link rel="stylesheet" href="{{ asset('css/app-notifications.css') }}">
     <link rel="stylesheet" href="{{ asset('css/htmx.css') }}">
+    <link rel="stylesheet" href="{{ asset('css/app-nav.css') }}">
     {% block stylesheets %}{% endblock %}
 </head>
 <body>
+    {% set current_route = app.request.attributes.get('_route')|default('') %}
+    {% if current_route starts with 'settings_market' %}
+        {% set current_nav_section = 'market' %}
+    {% elseif current_route starts with 'settings_' %}
+        {% set current_nav_section = 'settings' %}
+    {% elseif current_route starts with 'storage_' %}
+        {% set current_nav_section = 'storage' %}
+    {% elseif current_route starts with 'anime_' or current_route == 'home_index' %}
+        {% set current_nav_section = 'catalog' %}
+    {% else %}
+        {% set current_nav_section = '' %}
+    {% endif %}
+    <nav class="app-nav" aria-label="{{ 'nav.aria_label'|trans }}">
+        <a class="app-nav__link{% if current_nav_section == 'catalog' %} app-nav__link--active{% endif %}" href="{{ path('home_index') }}"{% if current_nav_section == 'catalog' %} aria-current="page"{% endif %}>{{ 'nav.catalog_link'|trans }}</a>
+        <a class="app-nav__link{% if current_nav_section == 'storage' %} app-nav__link--active{% endif %}" href="{{ path('storage_index') }}"{% if current_nav_section == 'storage' %} aria-current="page"{% endif %}>{{ 'nav.storage_link'|trans }}</a>
+        <a class="app-nav__link{% if current_nav_section == 'market' %} app-nav__link--active{% endif %}" href="{{ path('settings_market_index') }}"{% if current_nav_section == 'market' %} aria-current="page"{% endif %}>{{ 'nav.market_link'|trans }}</a>
+        <a class="app-nav__link{% if current_nav_section == 'settings' %} app-nav__link--active{% endif %}" href="{{ path('settings_index') }}"{% if current_nav_section == 'settings' %} aria-current="page"{% endif %}>{{ 'nav.settings_link'|trans }}</a>
+    </nav>
     {% block body %}{% endblock %}
     <div id="app-notifications" class="app-notifications" aria-live="polite"></div>
     <template id="app-notification-template">
