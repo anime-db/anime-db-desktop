@@ -30,6 +30,9 @@ scripts/build-id.txt
 dist/
 out/
 
+# UI screenshots — output of `npm run shots` (scripts/shots/run.js), not checked in
+/shots/
+
 # OS
 .DS_Store
 Thumbs.db
