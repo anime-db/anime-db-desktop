@@ -73,7 +73,7 @@ final class AnimeController
     ) {
     }
 
-    #[Route('/anime/{id}', name: 'anime_show', methods: ['GET'])]
+    #[Route('/anime/{id}', name: 'anime_show', requirements: ['id' => '\d+'], methods: ['GET'])]
     public function show(Anime $anime): Response
     {
         $widgets = $this->entryWidgets->findAllActive();

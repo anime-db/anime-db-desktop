@@ -71,7 +71,7 @@ final class AnimeEditableController
     ) {
     }
 
-    #[Route('/anime/{id}/editable', name: 'anime_editable_view', methods: ['GET'])]
+    #[Route('/anime/{id}/editable', name: 'anime_editable_view', requirements: ['id' => '\d+'], methods: ['GET'])]
     public function view(Anime $anime): Response
     {
         return $this->renderEditable($anime);
@@ -80,7 +80,7 @@ final class AnimeEditableController
     #[Route(
         '/anime/{id}/editable/{field}/edit',
         name: 'anime_editable_edit',
-        requirements: ['field' => 'watch_status|user_rating|notes|watched_episodes'],
+        requirements: ['id' => '\d+', 'field' => 'watch_status|user_rating|notes|watched_episodes'],
         methods: ['GET'],
     )]
     public function edit(Anime $anime, string $field): Response
@@ -88,7 +88,12 @@ final class AnimeEditableController
         return $this->renderEditable($anime, $field);
     }
 
-    #[Route('/anime/{id}/editable/watch_status', name: 'anime_editable_update_watch_status', methods: ['POST'])]
+    #[Route(
+        '/anime/{id}/editable/watch_status',
+        name: 'anime_editable_update_watch_status',
+        requirements: ['id' => '\d+'],
+        methods: ['POST'],
+    )]
     public function updateWatchStatus(Anime $anime, Request $request): Response
     {
         $this->assertValidCsrfToken('anime_editable_watch_status_'.$anime->id, $request);
@@ -109,7 +114,12 @@ final class AnimeEditableController
         return $this->renderEditable($anime);
     }
 
-    #[Route('/anime/{id}/editable/user_rating', name: 'anime_editable_update_user_rating', methods: ['POST'])]
+    #[Route(
+        '/anime/{id}/editable/user_rating',
+        name: 'anime_editable_update_user_rating',
+        requirements: ['id' => '\d+'],
+        methods: ['POST'],
+    )]
     public function updateUserRating(Anime $anime, Request $request): Response
     {
         $this->assertValidCsrfToken('anime_editable_user_rating_'.$anime->id, $request);
@@ -127,7 +137,7 @@ final class AnimeEditableController
         return $this->renderEditable($anime);
     }
 
-    #[Route('/anime/{id}/editable/notes', name: 'anime_editable_update_notes', methods: ['POST'])]
+    #[Route('/anime/{id}/editable/notes', name: 'anime_editable_update_notes', requirements: ['id' => '\d+'], methods: ['POST'])]
     public function updateNotes(Anime $anime, Request $request): Response
     {
         $this->assertValidCsrfToken('anime_editable_notes_'.$anime->id, $request);
@@ -139,7 +149,12 @@ final class AnimeEditableController
         return $this->renderEditable($anime);
     }
 
-    #[Route('/anime/{id}/editable/watched_episodes', name: 'anime_editable_update_watched_episodes', methods: ['POST'])]
+    #[Route(
+        '/anime/{id}/editable/watched_episodes',
+        name: 'anime_editable_update_watched_episodes',
+        requirements: ['id' => '\d+'],
+        methods: ['POST'],
+    )]
     public function updateWatchedEpisodes(Anime $anime, Request $request): Response
     {
         $this->assertValidCsrfToken('anime_editable_watched_episodes_'.$anime->id, $request);

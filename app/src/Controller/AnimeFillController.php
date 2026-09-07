@@ -71,7 +71,10 @@ final class AnimeFillController
     #[Route(
         '/anime/{id}/fill/{field}',
         name: 'anime_fill_field',
-        requirements: ['field' => 'alternativeNames|genres|themes|demographic|studios|durationMinutes|episodesCount|countries|cover|images'],
+        requirements: [
+            'id' => '\d+',
+            'field' => 'alternativeNames|genres|themes|demographic|studios|durationMinutes|episodesCount|countries|cover|images',
+        ],
         methods: ['POST'],
     )]
     public function fill(Anime $anime, string $field, Request $request): Response
