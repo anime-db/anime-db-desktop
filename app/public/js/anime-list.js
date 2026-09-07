@@ -23,9 +23,6 @@
 
 (function () {
     const API_URL = '/anime';
-    // AnimeListController requires watch_status (issue #74); the filter UI itself is a
-    // separate future task, so this is a placeholder default rather than a real choice.
-    const DEFAULT_WATCH_STATUS = 'watching';
     const PAGE_SIZE = 20;
     // A label click on the anime detail page (issue #104) links here with ?labels=<id> — the
     // only filter this page currently understands from the URL, ahead of the full filter UI.
@@ -116,7 +113,6 @@
 
     function buildQuery(offset) {
         const params = new URLSearchParams({
-            watch_status: DEFAULT_WATCH_STATUS,
             limit: String(PAGE_SIZE),
             offset: String(offset),
         });

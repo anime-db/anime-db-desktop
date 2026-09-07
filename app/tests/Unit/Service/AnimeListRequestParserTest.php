@@ -45,11 +45,18 @@ final class AnimeListRequestParserTest extends TestCase
         $this->parser = new AnimeListRequestParser();
     }
 
-    public function testParseFilterRequiresWatchStatus(): void
+    public function testParseFilterDefaultsWatchStatusToNullWhenMissing(): void
     {
-        $this->expectException(BadRequestHttpException::class);
+        $filter = $this->parser->parseFilter(new Request());
 
-        $this->parser->parseFilter(new Request());
+        $this->assertNull($filter->watchStatus);
+    }
+
+    public function testParseFilterAcceptsAValidWatchStatus(): void
+    {
+        $filter = $this->parser->parseFilter(new Request(['watch_status' => 'watching']));
+
+        $this->assertSame(WatchStatus::Watching, $filter->watchStatus);
     }
 
     public function testParseFilterRejectsUnknownEnumValue(): void

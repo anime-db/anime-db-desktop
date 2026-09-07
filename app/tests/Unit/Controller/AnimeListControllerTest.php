@@ -115,11 +115,13 @@ final class AnimeListControllerTest extends TestCase
         $this->entityManager->flush();
     }
 
-    public function testRequiresWatchStatus(): void
+    public function testListsTheWholeCatalogWhenWatchStatusIsMissing(): void
     {
-        $this->expectException(BadRequestHttpException::class);
+        $response = $this->controller->list(new Request());
+        $data = json_decode((string) $response->getContent(), true);
 
-        $this->controller->list(new Request());
+        $this->assertSame(7, $data['total']);
+        $this->assertCount(7, $data['items']);
     }
 
     public function testListsOnlyAnimeMatchingWatchStatus(): void
