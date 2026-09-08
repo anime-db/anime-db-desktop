@@ -19,12 +19,6 @@
     ],
     "minimum-stability": "stable",
     "prefer-stable": true,
-    "repositories": [
-        {
-            "type": "vcs",
-            "url": "https://github.com/anime-db/anime-db-plugin-contracts.git"
-        }
-    ],
     "require": {
         "php": ">=8.5",
         "ext-ctype": "*",
