@@ -49,19 +49,7 @@
                     "AnimeDb\\PluginContracts\\": "src/"
                 }
             },
-            "autoload-dev": {
-                "psr-4": {
-                    "AnimeDb\\PluginContracts\\Tests\\": "tests/"
-                }
-            },
-            "scripts": {
-                "cs-fix": [
-                    "php-cs-fixer fix"
-                ],
-                "cs-check": [
-                    "php-cs-fixer fix --dry-run --diff"
-                ]
-            },
+            "notification-url": "https://packagist.org/downloads/",
             "license": [
                 "GPL-3.0-or-later"
             ],
@@ -74,8 +62,8 @@
             "description": "Plugin contracts (interfaces and DTOs) for AnimeDB v2 plugins",
             "homepage": "https://github.com/anime-db/anime-db-plugin-contracts",
             "support": {
-                "source": "https://github.com/anime-db/anime-db-plugin-contracts/tree/v0.19.0",
-                "issues": "https://github.com/anime-db/anime-db-plugin-contracts/issues"
+                "issues": "https://github.com/anime-db/anime-db-plugin-contracts/issues",
+                "source": "https://github.com/anime-db/anime-db-plugin-contracts/tree/v0.19.0"
             },
             "time": "2026-09-06T11:46:10+00:00"
         },
