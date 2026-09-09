@@ -1,20 +1,16 @@
 # Обложки для демо-данных (issue #181)
 
-`App\Service\Install\SampleAnimeSeeder` при сидинге копирует отсюда обложку каждого демо-тайтла
-в `%AppData%/media/{id}/` (тот же механизм, что и обычные обложки, issue #68).
+`App\Service\Install\SampleAnimeSeeder` при сидинге копирует отсюда обложку демо-тайтла
+в `%AppData%/media/{id}/` (тот же механизм, что и обычные обложки, issue #68) — но только
+если соответствующий файл присутствует в каталоге. Отсутствие файла не является ошибкой:
+`SampleAnimeSeeder::attachCover()` в этом случае молча пропускает копирование, и демо-тайтл
+создаётся без обложки.
 
-Готовых файлов под этот список нет — сервис намеренно не падает, если файл отсутствует
-(демо-тайтл создаётся без обложки). Ожидаемые имена файлов:
+Ожидаемое имя файла для каждого демо-тайтла берётся из поля `cover` соответствующей записи
+в `App\Service\Install\SampleAnimeSeeder::SAMPLES`.
 
-| Тайтл                            | Файл                                   |
-|----------------------------------|----------------------------------------|
-| Fullmetal Alchemist: Brotherhood | `fullmetal-alchemist-brotherhood.webp` |
-| Spirited Away                    | `spirited-away.webp`                   |
-| Gintama                          | `gintama.webp`                         |
-| Hellsing Ultimate                | `hellsing-ultimate.webp`               |
-| Sousou no Frieren                | `sousou-no-frieren.webp`               |
-| One Punch Man                    | `one-punch-man.webp`                   |
-| Solo Leveling                    | `solo-leveling.webp`                   |
+Реальные обложки в дистрибутив принципиально не поставляются — этот каталог пуст и таким
+и останется. Обложку для демо-тайтла в установку пользователя подкладывает плагин.
 
 Формат — только `webp`: протокол `app-media://` (`native/protocols/app-media.js`) отдаёт
 `Content-Type` из whitelist, состоящего из единственной записи `.webp` → `image/webp`; файл
