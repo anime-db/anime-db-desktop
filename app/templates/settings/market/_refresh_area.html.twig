@@ -26,20 +26,20 @@
  # - done:     the success timestamp moved; the response carries `HX-Refresh` so the client never
  #             actually renders this state, but it stays valid markup regardless.
  #}
-<div id="market-refresh-area">
+<div id="market-refresh-area" class="mb-4">
     {% if state == 'checking' %}
         <div hx-get="{{ statusUrl }}" hx-trigger="load delay:2s" hx-target="#market-refresh-area" hx-swap="outerHTML">
-            <button type="button" disabled>{{ 'settings_market.refresh_checking'|trans }}</button>
+            <button type="button" class="btn btn-secondary" disabled>{{ 'settings_market.refresh_checking'|trans }}</button>
         </div>
     {% else %}
         {% if state == 'failed' %}
-            <p class="error">{{ 'settings_market.refresh_failed'|trans }}</p>
+            <p class="alert alert-danger">{{ 'settings_market.refresh_failed'|trans }}</p>
         {% elseif state == 'timeout' %}
-            <p>{{ 'settings_market.refresh_timeout'|trans }}</p>
+            <p class="text-body-secondary">{{ 'settings_market.refresh_timeout'|trans }}</p>
         {% endif %}
         <form hx-post="{{ path('settings_market_refresh') }}" hx-target="#market-refresh-area" hx-swap="outerHTML" hx-disabled-elt="find button">
             <input type="hidden" name="_token" value="{{ csrf_token('settings_market_refresh') }}">
-            <button type="submit">{{ 'settings_market.refresh_button'|trans }}</button>
+            <button type="submit" class="btn btn-secondary">{{ 'settings_market.refresh_button'|trans }}</button>
         </form>
     {% endif %}
 </div>

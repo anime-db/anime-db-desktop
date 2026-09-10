@@ -23,11 +23,11 @@
 {% block title %}{{ 'anime_new.title'|trans }}{% endblock %}
 
 {% block body %}
-    <main class="anime-new">
+    <main class="anime-new container py-4">
         <h1>{{ 'anime_new.heading'|trans }}</h1>
 
         {% if error %}
-            <p class="anime-new__error">{{ error|trans }}</p>
+            <p class="anime-new__error alert alert-danger">{{ error|trans }}</p>
         {% endif %}
 
         <form method="post" action="{{ path('anime_create') }}" class="anime-new__form">
@@ -39,24 +39,32 @@
                 <input type="hidden" name="storage_path" value="{{ storage_path }}">
             {% endif %}
 
-            <label for="anime-new-title">{{ 'anime_new.field_title'|trans }}</label>
-            <input type="text" id="anime-new-title" name="title" value="{{ title }}" required>
+            <div class="mb-3">
+                <label for="anime-new-title" class="form-label">{{ 'anime_new.field_title'|trans }}</label>
+                <input type="text" id="anime-new-title" name="title" value="{{ title }}" required class="form-control">
+            </div>
 
-            <label for="anime-new-type">{{ 'anime_new.field_type'|trans }}</label>
-            <select id="anime-new-type" name="type">
-                {% for value in types %}
-                    <option value="{{ value }}"{% if value == type %} selected{% endif %}>{{ ('anime_type.' ~ value)|trans }}</option>
-                {% endfor %}
-            </select>
+            <div class="row g-3 mb-3">
+                <div class="col-md-6">
+                    <label for="anime-new-type" class="form-label">{{ 'anime_new.field_type'|trans }}</label>
+                    <select id="anime-new-type" name="type" class="form-select">
+                        {% for value in types %}
+                            <option value="{{ value }}"{% if value == type %} selected{% endif %}>{{ ('anime_type.' ~ value)|trans }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
 
-            <label for="anime-new-watch-status">{{ 'anime_new.field_watch_status'|trans }}</label>
-            <select id="anime-new-watch-status" name="watch_status">
-                {% for value in watch_statuses %}
-                    <option value="{{ value }}"{% if value == watch_status %} selected{% endif %}>{{ ('watch_status.' ~ value)|trans }}</option>
-                {% endfor %}
-            </select>
+                <div class="col-md-6">
+                    <label for="anime-new-watch-status" class="form-label">{{ 'anime_new.field_watch_status'|trans }}</label>
+                    <select id="anime-new-watch-status" name="watch_status" class="form-select">
+                        {% for value in watch_statuses %}
+                            <option value="{{ value }}"{% if value == watch_status %} selected{% endif %}>{{ ('watch_status.' ~ value)|trans }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
 
-            <button type="submit">{{ 'anime_new.submit_button'|trans }}</button>
+            <button type="submit" class="btn btn-primary">{{ 'anime_new.submit_button'|trans }}</button>
         </form>
     </main>
 {% endblock %}

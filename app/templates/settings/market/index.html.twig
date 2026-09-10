@@ -23,89 +23,91 @@
 {% block title %}{{ 'settings_market.title'|trans }}{% endblock %}
 
 {% block body %}
-    <p><a href="{{ path('settings_index') }}">{{ 'settings_market.back_link'|trans }}</a></p>
-    <h1>{{ 'settings_market.heading'|trans }}</h1>
+    <div class="container py-4">
+        <a href="{{ path('settings_index') }}" class="btn btn-outline-secondary btn-sm mb-3">{{ 'settings_market.back_link'|trans }}</a>
+        <h1>{{ 'settings_market.heading'|trans }}</h1>
 
-    {% include 'settings/market/_refresh_area.html.twig' with {'state': 'idle'} %}
+        {% include 'settings/market/_refresh_area.html.twig' with {'state': 'idle'} %}
 
-    {% if installedPluginId is not null %}
-        <p class="success">{{ 'settings_market.install_success'|trans({'%pluginId%': installedPluginId}) }}</p>
-    {% endif %}
-
-    {% if updatedPluginId is not null %}
-        <p class="success">{{ 'settings_market.update_success'|trans({'%pluginId%': updatedPluginId}) }}</p>
-    {% endif %}
-
-    {% if installError is not null %}
-        <p class="error">{{ installError|trans(installErrorParams) }}</p>
-    {% endif %}
-
-    {% if registryUnavailable %}
-        <p class="error">{{ 'settings_market.registry_unavailable'|trans }}</p>
-    {% elseif items is empty %}
-        <p>{{ 'settings_market.empty'|trans }}</p>
-    {% else %}
-        {% if hasIncompatiblePlugin %}
-            <p class="warning">{{ 'settings_market.incompatible_plugins_summary'|trans }}</p>
+        {% if installedPluginId is not null %}
+            <p class="alert alert-success">{{ 'settings_market.install_success'|trans({'%pluginId%': installedPluginId}) }}</p>
         {% endif %}
 
-        <table>
-            <thead>
-                <tr>
-                    <th>{{ 'settings_market.name_column'|trans }}</th>
-                    <th>{{ 'settings_market.description_column'|trans }}</th>
-                    <th>{{ 'settings_market.type_column'|trans }}</th>
-                    <th>{{ 'settings_market.version_column'|trans }}</th>
-                    <th>{{ 'settings_market.translation_coverage_column'|trans }}</th>
-                    <th>{{ 'settings_market.locales_column'|trans }}</th>
-                    <th>{{ 'settings_market.actions_column'|trans }}</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for item in items %}
+        {% if updatedPluginId is not null %}
+            <p class="alert alert-success">{{ 'settings_market.update_success'|trans({'%pluginId%': updatedPluginId}) }}</p>
+        {% endif %}
+
+        {% if installError is not null %}
+            <p class="alert alert-danger">{{ installError|trans(installErrorParams) }}</p>
+        {% endif %}
+
+        {% if registryUnavailable %}
+            <p class="text-body-secondary">{{ 'settings_market.registry_unavailable'|trans }}</p>
+        {% elseif items is empty %}
+            <p class="text-body-secondary">{{ 'settings_market.empty'|trans }}</p>
+        {% else %}
+            {% if hasIncompatiblePlugin %}
+                <p class="alert alert-warning">{{ 'settings_market.incompatible_plugins_summary'|trans }}</p>
+            {% endif %}
+
+            <table class="table align-middle">
+                <thead>
                     <tr>
-                        <td>{{ item.plugin.manifest.name }}</td>
-                        <td>{{ item.plugin.manifest.description }}</td>
-                        <td>{{ ('plugin_type.' ~ item.plugin.manifest.type)|trans }}</td>
-                        <td>{{ item.plugin.manifest.version }}</td>
-                        <td>
-                            {% if item.translationCoveragePercent is not null %}
-                                {{ 'settings_market.translation_coverage_badge'|trans({'%percent%': item.translationCoveragePercent}) }}
-                            {% endif %}
-                        </td>
-                        <td>
-                            {% if item.localeInfo.locales is not null %}
-                                <span>{{ item.localeInfo.locales|join(', ') }}</span>
-                                {% if item.localeInfo.interfaceLocaleMissing %}
-                                    <p class="warning">{{ 'settings_market.locale_missing_warning'|trans }}</p>
-                                {% endif %}
-                                {% if item.localeInfo.missingFallbackLocale %}
-                                    <p class="warning">{{ 'settings_market.locale_missing_fallback_warning'|trans }}</p>
-                                {% endif %}
-                            {% endif %}
-                        </td>
-                        <td>
-                            {% if item.installed and item.updateAvailable %}
-                                <form method="post" action="{{ path('settings_market_update', {pluginId: item.plugin.id}) }}">
-                                    <input type="hidden" name="_token" value="{{ csrf_token('settings_market_update_' ~ item.plugin.id) }}">
-                                    <button type="submit">{{ 'settings_market.update_button'|trans }}</button>
-                                </form>
-                            {% elseif item.installed %}
-                                {{ 'settings_market.already_installed'|trans }}
-                            {% elseif item.plugin.resolvedVersion is null and item.plugin.incompatiblePluginContracts %}
-                                {{ 'settings_market.incompatible_plugin_contracts'|trans }}
-                            {% elseif item.plugin.resolvedVersion is null %}
-                                {{ 'settings_market.incompatible_core'|trans({'%requiredCore%': item.plugin.latestVersionCore}) }}
-                            {% else %}
-                                <form method="post" action="{{ path('settings_market_install', {pluginId: item.plugin.id}) }}">
-                                    <input type="hidden" name="_token" value="{{ csrf_token('settings_market_install_' ~ item.plugin.id) }}">
-                                    <button type="submit">{{ 'settings_market.install_button'|trans }}</button>
-                                </form>
-                            {% endif %}
-                        </td>
+                        <th>{{ 'settings_market.name_column'|trans }}</th>
+                        <th>{{ 'settings_market.description_column'|trans }}</th>
+                        <th>{{ 'settings_market.type_column'|trans }}</th>
+                        <th>{{ 'settings_market.version_column'|trans }}</th>
+                        <th>{{ 'settings_market.translation_coverage_column'|trans }}</th>
+                        <th>{{ 'settings_market.locales_column'|trans }}</th>
+                        <th>{{ 'settings_market.actions_column'|trans }}</th>
                     </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    {% endif %}
+                </thead>
+                <tbody>
+                    {% for item in items %}
+                        <tr>
+                            <td>{{ item.plugin.manifest.name }}</td>
+                            <td>{{ item.plugin.manifest.description }}</td>
+                            <td>{{ ('plugin_type.' ~ item.plugin.manifest.type)|trans }}</td>
+                            <td>{{ item.plugin.manifest.version }}</td>
+                            <td>
+                                {% if item.translationCoveragePercent is not null %}
+                                    <span class="badge text-bg-secondary">{{ 'settings_market.translation_coverage_badge'|trans({'%percent%': item.translationCoveragePercent}) }}</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if item.localeInfo.locales is not null %}
+                                    <span>{{ item.localeInfo.locales|join(', ') }}</span>
+                                    {% if item.localeInfo.interfaceLocaleMissing %}
+                                        <p class="text-warning-emphasis small mb-0">{{ 'settings_market.locale_missing_warning'|trans }}</p>
+                                    {% endif %}
+                                    {% if item.localeInfo.missingFallbackLocale %}
+                                        <p class="text-warning-emphasis small mb-0">{{ 'settings_market.locale_missing_fallback_warning'|trans }}</p>
+                                    {% endif %}
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if item.installed and item.updateAvailable %}
+                                    <form method="post" action="{{ path('settings_market_update', {pluginId: item.plugin.id}) }}">
+                                        <input type="hidden" name="_token" value="{{ csrf_token('settings_market_update_' ~ item.plugin.id) }}">
+                                        <button type="submit" class="btn btn-primary btn-sm">{{ 'settings_market.update_button'|trans }}</button>
+                                    </form>
+                                {% elseif item.installed %}
+                                    <span class="text-body-secondary">{{ 'settings_market.already_installed'|trans }}</span>
+                                {% elseif item.plugin.resolvedVersion is null and item.plugin.incompatiblePluginContracts %}
+                                    <span class="text-body-secondary">{{ 'settings_market.incompatible_plugin_contracts'|trans }}</span>
+                                {% elseif item.plugin.resolvedVersion is null %}
+                                    <span class="text-body-secondary">{{ 'settings_market.incompatible_core'|trans({'%requiredCore%': item.plugin.latestVersionCore}) }}</span>
+                                {% else %}
+                                    <form method="post" action="{{ path('settings_market_install', {pluginId: item.plugin.id}) }}">
+                                        <input type="hidden" name="_token" value="{{ csrf_token('settings_market_install_' ~ item.plugin.id) }}">
+                                        <button type="submit" class="btn btn-primary btn-sm">{{ 'settings_market.install_button'|trans }}</button>
+                                    </form>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% endif %}
+    </div>
 {% endblock %}

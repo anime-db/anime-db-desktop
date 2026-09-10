@@ -23,13 +23,13 @@
 {% block title %}{{ 'storage_scan_prompt.title'|trans }}{% endblock %}
 
 {% block body %}
-    <main class="storage-scan-prompt">
+    <main class="storage-scan-prompt container py-4">
         <h1>{{ 'storage_scan_prompt.heading'|trans({'%name%': bidi_isolate(storage.name)}) }}</h1>
-        <p>{{ 'storage_scan_prompt.description'|trans }}</p>
+        <p class="text-body-secondary">{{ 'storage_scan_prompt.description'|trans }}</p>
 
-        <form method="post" action="{{ path('storage_scan', {id: storage.id}) }}">
+        <form method="post" action="{{ path('storage_scan', {id: storage.id}) }}" class="mb-3">
             <input type="hidden" name="_token" value="{{ csrf_token('storage_scan_' ~ storage.id) }}">
-            <button type="submit">{{ 'storage_scan_prompt.scan_button'|trans }}</button>
+            <button type="submit" class="btn btn-primary">{{ 'storage_scan_prompt.scan_button'|trans }}</button>
         </form>
 
         <p><a href="{{ path('home_index') }}">{{ 'storage_scan_prompt.skip_link'|trans }}</a></p>
