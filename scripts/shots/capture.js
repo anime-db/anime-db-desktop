@@ -84,11 +84,17 @@ async function waitForRender(win) {
  */
 function buildPages() {
     const pages = [
-        { name: 'catalog',    path: '/' },
-        { name: 'anime-new',  path: '/anime/new' },
-        { name: 'storage',    path: '/storage' },
-        { name: 'settings',   path: '/settings' },
-        { name: 'market',     path: '/settings/market' },
+        { name: 'catalog',         path: '/' },
+        { name: 'anime-new',       path: '/anime/new' },
+        { name: 'storage',         path: '/storage' },
+        { name: 'storage-new',     path: '/storage/new' },
+        { name: 'settings',        path: '/settings' },
+        { name: 'settings-labels', path: '/settings/labels' },
+        { name: 'settings-proxy',  path: '/settings/proxy' },
+        { name: 'settings-sync-review', path: '/settings/sync-review' },
+        { name: 'market',          path: '/settings/market' },
+        { name: 'plugins',         path: '/settings/plugins' },
+        { name: 'plugin-widgets',  path: '/settings/plugins/widgets' },
     ];
 
     if (ANIME_ID !== null) {

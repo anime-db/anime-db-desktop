@@ -23,109 +23,132 @@
 {% block title %}{{ 'settings_proxy.title'|trans }}{% endblock %}
 
 {% block body %}
-    <p><a href="{{ path('settings_index') }}">{{ 'settings_proxy.back_link'|trans }}</a></p>
-    <h1>{{ 'settings_proxy.heading'|trans }}</h1>
+    <div class="container py-4">
+        <a href="{{ path('settings_index') }}" class="btn btn-outline-secondary btn-sm mb-3">{{ 'settings_proxy.back_link'|trans }}</a>
+        <h1>{{ 'settings_proxy.heading'|trans }}</h1>
 
-    {% if saved %}
-        <p class="success">{{ 'settings_proxy.save_success'|trans }}</p>
-    {% endif %}
-
-    {% if torrentProxyError is defined and torrentProxyError %}
-        <p class="error">{{ 'settings_proxy.torrent_proxy_error'|trans }}</p>
-    {% endif %}
-
-    <form id="proxy-settings-form" method="post" action="{{ path('settings_proxy_save') }}">
-        <input type="hidden" name="_token" value="{{ csrf_token('settings_proxy_save') }}">
-
-        <fieldset>
-            <legend>{{ 'settings_proxy.mode_label'|trans }}</legend>
-            <label>
-                <input type="radio" name="mode" value="none"{% if settings.mode.value == 'none' %} checked{% endif %}>
-                {{ 'settings_proxy.mode.none'|trans }}
-            </label>
-            <label>
-                <input type="radio" name="mode" value="manual"{% if settings.mode.value == 'manual' %} checked{% endif %}>
-                {{ 'settings_proxy.mode.manual'|trans }}
-            </label>
-        </fieldset>
-
-        <label for="protocol">{{ 'settings_proxy.protocol_label'|trans }}</label>
-        <select id="protocol" name="protocol">
-            <option value="http"{% if settings.protocol.value == 'http' %} selected{% endif %}>{{ 'settings_proxy.protocol.http'|trans }}</option>
-            <option value="socks5"{% if settings.protocol.value == 'socks5' %} selected{% endif %}>{{ 'settings_proxy.protocol.socks5'|trans }}</option>
-        </select>
-        <p class="hint">{{ 'settings_proxy.http_protocol_hint'|trans }}</p>
-
-        <label for="host">{{ 'settings_proxy.host_label'|trans }}</label>
-        <input type="text" id="host" name="host" value="{{ settings.host }}">
-
-        <label for="port">{{ 'settings_proxy.port_label'|trans }}</label>
-        <input type="number" id="port" name="port" min="1" max="65535" value="{{ settings.port }}">
-
-        <label for="username">{{ 'settings_proxy.username_label'|trans }}</label>
-        <input type="text" id="username" name="username" value="{{ settings.username }}">
-
-        <label for="password">{{ 'settings_proxy.password_label'|trans }}</label>
-        <input type="password" id="password" name="password" value="{{ settings.password }}">
-
-        <button type="submit">{{ 'settings_proxy.save_button'|trans }}</button>
-    </form>
-
-    <h2>{{ 'settings_proxy.test_heading'|trans }}</h2>
-    <p class="hint">{{ 'settings_proxy.test_note'|trans }}</p>
-
-    <form id="proxy-test-form">
-        {# Named differently from #proxy-settings-form's "_token": hx-include merges both forms
-         # into one POST body, and a duplicate name would let serialization order silently pick
-         # the wrong CSRF token. #}
-        <input type="hidden" name="_token_test" value="{{ csrf_token('settings_proxy_test') }}">
-
-        <label for="test_url">{{ 'settings_proxy.test_url_label'|trans }}</label>
-        <input type="url" id="test_url" name="test_url" value="https://anime-db.org">
-
-        <button
-            type="button"
-            hx-post="{{ path('settings_proxy_test') }}"
-            hx-include="#proxy-settings-form, #proxy-test-form"
-            hx-target="#proxy-test-result"
-            hx-swap="innerHTML"
-        >{{ 'settings_proxy.test_button'|trans }}</button>
-    </form>
-
-    <div id="proxy-test-result"></div>
-
-    {% if isWindows is defined and isWindows %}
-        {% set incomingConnectionsDisabled = not incomingConnectionsEligible and not incomingConnectionsAllowed %}
-
-        <h2>{{ 'settings_proxy.incoming_connections_heading'|trans }}</h2>
-
-        {% if incomingConnectionsSaved is defined and incomingConnectionsSaved %}
-            <p class="success">{{ 'settings_proxy.incoming_connections_save_success'|trans }}</p>
+        {% if saved %}
+            <p class="alert alert-success">{{ 'settings_proxy.save_success'|trans }}</p>
         {% endif %}
 
-        {% if incomingConnectionsError is defined and incomingConnectionsError %}
-            <p class="error">{{ 'settings_proxy.incoming_connections_error'|trans }}</p>
+        {% if torrentProxyError is defined and torrentProxyError %}
+            <p class="alert alert-danger">{{ 'settings_proxy.torrent_proxy_error'|trans }}</p>
         {% endif %}
 
-        {% if not incomingConnectionsEligible %}
-            <p class="hint">{{ 'settings_proxy.incoming_connections_socks5_hint'|trans }}</p>
-        {% endif %}
+        {# The settings form and the test form below stay two separate <form> elements on
+         # purpose — nesting the test form inside this one would make the browser drop it, and
+         # hx-include="#proxy-settings-form, #proxy-test-form" would stop finding _token_test. #}
+        <form id="proxy-settings-form" method="post" action="{{ path('settings_proxy_save') }}" class="mb-4">
+            <input type="hidden" name="_token" value="{{ csrf_token('settings_proxy_save') }}">
 
-        <form method="post" action="{{ path('settings_proxy_incoming_connections') }}">
-            <input type="hidden" name="_token" value="{{ csrf_token('settings_proxy_incoming_connections') }}">
+            <fieldset class="mb-3">
+                <legend class="form-label">{{ 'settings_proxy.mode_label'|trans }}</legend>
+                <div class="form-check">
+                    <input class="form-check-input" type="radio" name="mode" id="proxy-mode-none" value="none"{% if settings.mode.value == 'none' %} checked{% endif %}>
+                    <label class="form-check-label" for="proxy-mode-none">{{ 'settings_proxy.mode.none'|trans }}</label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="radio" name="mode" id="proxy-mode-manual" value="manual"{% if settings.mode.value == 'manual' %} checked{% endif %}>
+                    <label class="form-check-label" for="proxy-mode-manual">{{ 'settings_proxy.mode.manual'|trans }}</label>
+                </div>
+            </fieldset>
 
-            <label>
-                <input
-                    type="checkbox"
-                    name="enabled"
-                    value="1"
-                    {% if incomingConnectionsAllowed %}checked{% endif %}
-                    {% if incomingConnectionsDisabled %}disabled{% endif %}
-                >
-                {{ 'settings_proxy.incoming_connections_toggle_label'|trans }}
-            </label>
+            <div class="mb-3">
+                <label for="protocol" class="form-label">{{ 'settings_proxy.protocol_label'|trans }}</label>
+                <select id="protocol" name="protocol" class="form-select">
+                    <option value="http"{% if settings.protocol.value == 'http' %} selected{% endif %}>{{ 'settings_proxy.protocol.http'|trans }}</option>
+                    <option value="socks5"{% if settings.protocol.value == 'socks5' %} selected{% endif %}>{{ 'settings_proxy.protocol.socks5'|trans }}</option>
+                </select>
+                <div class="form-text">{{ 'settings_proxy.http_protocol_hint'|trans }}</div>
+            </div>
 
-            <button type="submit">{{ 'settings_proxy.save_button'|trans }}</button>
+            <div class="row g-3 mb-3">
+                <div class="col-md-8">
+                    <label for="host" class="form-label">{{ 'settings_proxy.host_label'|trans }}</label>
+                    <input type="text" id="host" name="host" value="{{ settings.host }}" class="form-control">
+                </div>
+                <div class="col-md-4">
+                    <label for="port" class="form-label">{{ 'settings_proxy.port_label'|trans }}</label>
+                    <input type="number" id="port" name="port" min="1" max="65535" value="{{ settings.port }}" class="form-control">
+                </div>
+            </div>
+
+            <div class="row g-3 mb-3">
+                <div class="col-md-6">
+                    <label for="username" class="form-label">{{ 'settings_proxy.username_label'|trans }}</label>
+                    <input type="text" id="username" name="username" value="{{ settings.username }}" class="form-control">
+                </div>
+                <div class="col-md-6">
+                    <label for="password" class="form-label">{{ 'settings_proxy.password_label'|trans }}</label>
+                    <input type="password" id="password" name="password" value="{{ settings.password }}" class="form-control">
+                </div>
+            </div>
+
+            <button type="submit" class="btn btn-primary">{{ 'settings_proxy.save_button'|trans }}</button>
         </form>
-    {% endif %}
+
+        <h2>{{ 'settings_proxy.test_heading'|trans }}</h2>
+        <p class="text-body-secondary">{{ 'settings_proxy.test_note'|trans }}</p>
+
+        <form id="proxy-test-form" class="row g-3 align-items-end mb-3">
+            {# Named differently from #proxy-settings-form's "_token": hx-include merges both forms
+             # into one POST body, and a duplicate name would let serialization order silently pick
+             # the wrong CSRF token. #}
+            <input type="hidden" name="_token_test" value="{{ csrf_token('settings_proxy_test') }}">
+
+            <div class="col-md-6">
+                <label for="test_url" class="form-label">{{ 'settings_proxy.test_url_label'|trans }}</label>
+                <input type="url" id="test_url" name="test_url" value="https://anime-db.org" class="form-control">
+            </div>
+            <div class="col-md-auto">
+                <button
+                    type="button"
+                    class="btn btn-secondary"
+                    hx-post="{{ path('settings_proxy_test') }}"
+                    hx-include="#proxy-settings-form, #proxy-test-form"
+                    hx-target="#proxy-test-result"
+                    hx-swap="innerHTML"
+                >{{ 'settings_proxy.test_button'|trans }}</button>
+            </div>
+        </form>
+
+        <div id="proxy-test-result" class="mb-4"></div>
+
+        {% if isWindows is defined and isWindows %}
+            {% set incomingConnectionsDisabled = not incomingConnectionsEligible and not incomingConnectionsAllowed %}
+
+            <h2>{{ 'settings_proxy.incoming_connections_heading'|trans }}</h2>
+
+            {% if incomingConnectionsSaved is defined and incomingConnectionsSaved %}
+                <p class="alert alert-success">{{ 'settings_proxy.incoming_connections_save_success'|trans }}</p>
+            {% endif %}
+
+            {% if incomingConnectionsError is defined and incomingConnectionsError %}
+                <p class="alert alert-danger">{{ 'settings_proxy.incoming_connections_error'|trans }}</p>
+            {% endif %}
+
+            {% if not incomingConnectionsEligible %}
+                <p class="text-body-secondary">{{ 'settings_proxy.incoming_connections_socks5_hint'|trans }}</p>
+            {% endif %}
+
+            <form method="post" action="{{ path('settings_proxy_incoming_connections') }}">
+                <input type="hidden" name="_token" value="{{ csrf_token('settings_proxy_incoming_connections') }}">
+
+                <div class="form-check mb-3">
+                    <input
+                        class="form-check-input"
+                        type="checkbox"
+                        id="proxy-incoming-connections-enabled"
+                        name="enabled"
+                        value="1"
+                        {% if incomingConnectionsAllowed %}checked{% endif %}
+                        {% if incomingConnectionsDisabled %}disabled{% endif %}
+                    >
+                    <label class="form-check-label" for="proxy-incoming-connections-enabled">{{ 'settings_proxy.incoming_connections_toggle_label'|trans }}</label>
+                </div>
+
+                <button type="submit" class="btn btn-primary">{{ 'settings_proxy.save_button'|trans }}</button>
+            </form>
+        {% endif %}
+    </div>
 {% endblock %}

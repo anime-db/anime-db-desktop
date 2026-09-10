@@ -19,7 +19,7 @@
  # along with this program. If not, see <https://www.gnu.org/licenses/>.
  #}
 {% if result.success %}
-    <p class="success">{{ 'settings_proxy.test_result.success'|trans({'%ms%': result.elapsedMs}) }}</p>
+    <p class="alert alert-success">{{ 'settings_proxy.test_result.success'|trans({'%ms%': result.elapsedMs}) }}</p>
 {% else %}
-    <p class="error">{{ ('settings_proxy.test_result.' ~ result.failureReason.value)|trans }}</p>
+    <p class="alert alert-danger">{{ ('settings_proxy.test_result.' ~ result.failureReason.value)|trans }}</p>
 {% endif %}

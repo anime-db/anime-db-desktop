@@ -24,15 +24,15 @@
 
 {% macro section(placement, widgets, activeCount, hardLimit, recommendedLimit) %}
     {% if widgets is empty %}
-        <p>{{ ('settings_plugin_widgets.'~placement~'.empty')|trans }}</p>
+        <p class="text-body-secondary">{{ ('settings_plugin_widgets.'~placement~'.empty')|trans }}</p>
     {% else %}
-        <p class="settings-plugin-widgets__count">
+        <p class="settings-plugin-widgets__count text-body-secondary">
             {{ 'settings_plugin_widgets.active_count'|trans({'%count%': activeCount, '%limit%': hardLimit}) }}
         </p>
         {% if activeCount > recommendedLimit %}
-            <p class="warning">{{ 'settings_plugin_widgets.recommendation_warning'|trans({'%limit%': recommendedLimit}) }}</p>
+            <p class="alert alert-warning">{{ 'settings_plugin_widgets.recommendation_warning'|trans({'%limit%': recommendedLimit}) }}</p>
         {% endif %}
-        <table>
+        <table class="table align-middle">
             <thead>
                 <tr>
                     <th>{{ 'settings_plugin_widgets.plugin_column'|trans }}</th>
@@ -47,17 +47,18 @@
                         <td>
                             <div class="settings-plugin-widgets__widget-title">{{ widget.title }}</div>
                             {% if widget.description is not empty %}
-                                <div class="settings-plugin-widgets__widget-description">{{ widget.description }}</div>
+                                <div class="settings-plugin-widgets__widget-description text-body-secondary small">{{ widget.description }}</div>
                             {% endif %}
                             <code>{{ widget.widgetName }}</code>
                         </td>
                         <td>
-                            <form method="post" action="{{ path('settings_plugin_widgets_toggle', {pluginId: widget.pluginId, widgetName: widget.widgetName}) }}">
+                            <form method="post" action="{{ path('settings_plugin_widgets_toggle', {pluginId: widget.pluginId, widgetName: widget.widgetName}) }}" class="form-check">
                                 <input type="hidden" name="_token" value="{{ csrf_token('settings_plugin_widgets_toggle_'~widget.pluginId~'_'~widget.widgetName) }}">
                                 <input type="hidden" name="placement" value="{{ placement }}">
                                 <input type="hidden" name="active" value="0">
                                 <input
                                     type="checkbox"
+                                    class="form-check-input"
                                     name="active"
                                     value="1"
                                     data-submit-on-change
@@ -74,18 +75,20 @@
 {% endmacro %}
 
 {% block body %}
-    <p><a href="{{ path('settings_index') }}">{{ 'settings_plugin_widgets.back_link'|trans }}</a></p>
-    <h1>{{ 'settings_plugin_widgets.heading'|trans }}</h1>
+    <div class="container py-4">
+        <a href="{{ path('settings_index') }}" class="btn btn-outline-secondary btn-sm mb-3">{{ 'settings_plugin_widgets.back_link'|trans }}</a>
+        <h1>{{ 'settings_plugin_widgets.heading'|trans }}</h1>
 
-    {% if error == 'hard_limit_exceeded' %}
-        <p class="error">{{ 'settings_plugin_widgets.hard_limit_reached'|trans({'%limit%': hardLimit}) }}</p>
-    {% elseif error == 'busy_retry' %}
-        <p class="error">{{ 'settings_plugin_widgets.busy_retry_error'|trans }}</p>
-    {% endif %}
+        {% if error == 'hard_limit_exceeded' %}
+            <p class="alert alert-danger">{{ 'settings_plugin_widgets.hard_limit_reached'|trans({'%limit%': hardLimit}) }}</p>
+        {% elseif error == 'busy_retry' %}
+            <p class="alert alert-danger">{{ 'settings_plugin_widgets.busy_retry_error'|trans }}</p>
+        {% endif %}
 
-    <h2>{{ 'settings_plugin_widgets.entry.heading'|trans }}</h2>
-    {{ _self.section('entry', entryWidgets, entryActiveCount, hardLimit, recommendedLimit) }}
+        <h2>{{ 'settings_plugin_widgets.entry.heading'|trans }}</h2>
+        {{ _self.section('entry', entryWidgets, entryActiveCount, hardLimit, recommendedLimit) }}
 
-    <h2>{{ 'settings_plugin_widgets.catalog.heading'|trans }}</h2>
-    {{ _self.section('catalog', catalogWidgets, catalogActiveCount, hardLimit, recommendedLimit) }}
+        <h2 class="mt-4">{{ 'settings_plugin_widgets.catalog.heading'|trans }}</h2>
+        {{ _self.section('catalog', catalogWidgets, catalogActiveCount, hardLimit, recommendedLimit) }}
+    </div>
 {% endblock %}

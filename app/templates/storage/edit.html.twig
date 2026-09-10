@@ -23,27 +23,31 @@
 {% block title %}{{ 'storage_edit.title'|trans }}{% endblock %}
 
 {% block body %}
-    <main class="storage-edit">
+    <main class="storage-edit container py-4">
         <h1>{{ 'storage_edit.heading'|trans }}</h1>
 
         {% if error %}
-            <p class="storage-edit__error">{{ error|trans }}</p>
+            <p class="storage-edit__error alert alert-danger">{{ error|trans }}</p>
         {% endif %}
 
         <form method="post" action="{{ path('storage_update', {id: storage.id}) }}" class="storage-edit__form">
             <input type="hidden" name="_token" value="{{ csrf_token('storage_edit_' ~ storage.id) }}">
 
-            <label for="storage-edit-name">{{ 'storage_edit.field_name'|trans }}</label>
-            <input type="text" id="storage-edit-name" name="name" value="{{ name }}" required>
+            <div class="mb-3">
+                <label for="storage-edit-name" class="form-label">{{ 'storage_edit.field_name'|trans }}</label>
+                <input type="text" id="storage-edit-name" name="name" value="{{ name }}" required class="form-control">
+            </div>
 
-            <label for="storage-edit-type">{{ 'storage_edit.field_type'|trans }}</label>
-            <select id="storage-edit-type" name="type">
-                {% for value in types %}
-                    <option value="{{ value }}"{% if value == type %} selected{% endif %}>{{ ('storage_type.' ~ value)|trans }}</option>
-                {% endfor %}
-            </select>
+            <div class="mb-3">
+                <label for="storage-edit-type" class="form-label">{{ 'storage_edit.field_type'|trans }}</label>
+                <select id="storage-edit-type" name="type" class="form-select">
+                    {% for value in types %}
+                        <option value="{{ value }}"{% if value == type %} selected{% endif %}>{{ ('storage_type.' ~ value)|trans }}</option>
+                    {% endfor %}
+                </select>
+            </div>
 
-            <button type="submit">{{ 'storage_edit.submit_button'|trans }}</button>
+            <button type="submit" class="btn btn-primary">{{ 'storage_edit.submit_button'|trans }}</button>
         </form>
     </main>
 {% endblock %}
