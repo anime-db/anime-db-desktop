@@ -89,7 +89,10 @@
     async function onProgress(data) {
         clearNoResponseTimer();
         const percent = data.percent ?? 0;
-        progressBar.value = percent;
+        // Width is set via the style property (CSSOM), not a rendered `style` attribute in Twig
+        // markup — the app's CSP (style-src 'self') blocks inline styles (issue #629).
+        progressBar.style.width = `${percent}%`;
+        progressBar.setAttribute('aria-valuenow', String(percent));
         progressText.textContent = format(
             await window.AppTranslations.trans('storage_list.scan_progress_text'),
             { processed: data.processed, total: data.total, percent },
@@ -107,6 +110,7 @@
 
     async function buildInfoItem(item, labelKey) {
         const li = document.createElement('li');
+        li.className = 'list-group-item';
         li.textContent = format(await window.AppTranslations.trans(labelKey), {
             title: item.anime?.title ?? item.storage_path,
             path: item.storage_path,
@@ -117,6 +121,7 @@
 
     async function buildAutoLinkedItem(item) {
         const li = document.createElement('li');
+        li.className = 'list-group-item';
         li.textContent = format(await window.AppTranslations.trans('storage_list.auto_linked_text'), {
             title: item.anime?.title ?? item.storage_path,
         });
@@ -126,6 +131,7 @@
 
     async function buildManualEntryItem(item) {
         const li = document.createElement('li');
+        li.className = 'list-group-item';
 
         const link = document.createElement('a');
         const params = new URLSearchParams({
@@ -173,7 +179,7 @@
                 radios.forEach((radio) => { radio.disabled = false; });
 
                 const error = document.createElement('p');
-                error.className = 'storage-scan__item-error';
+                error.className = 'alert alert-danger mt-2';
                 error.textContent = await window.AppTranslations.trans('storage_list.confirm_error');
                 li.appendChild(error);
             });
@@ -181,8 +187,10 @@
 
     async function buildConfirmationItem(item, index) {
         const li = document.createElement('li');
+        li.className = 'list-group-item';
 
         const path = document.createElement('p');
+        path.className = 'mb-2';
         path.textContent = item.cleaned_name ?? item.storage_path;
         li.appendChild(path);
 
@@ -190,9 +198,13 @@
         const radioGroupName = `storage-scan-confirm-${index}`;
 
         item.candidates.forEach((candidate, candidateIndex) => {
-            const label = document.createElement('label');
+            const wrapper = document.createElement('div');
+            wrapper.className = 'form-check';
+
             const radio = document.createElement('input');
             radio.type = 'radio';
+            radio.className = 'form-check-input';
+            radio.id = `${radioGroupName}-${candidateIndex}`;
             radio.name = radioGroupName;
             radio.value = String(candidateIndex);
             if (candidateIndex === 0) {
@@ -200,13 +212,19 @@
             }
             radios.push(radio);
 
-            label.appendChild(radio);
-            label.append(` ${candidate.title}`);
-            li.appendChild(label);
+            const label = document.createElement('label');
+            label.className = 'form-check-label';
+            label.htmlFor = radio.id;
+            label.textContent = candidate.title;
+
+            wrapper.appendChild(radio);
+            wrapper.appendChild(label);
+            li.appendChild(wrapper);
         });
 
         const button = document.createElement('button');
         button.type = 'button';
+        button.className = 'btn btn-primary mt-2';
         button.textContent = await window.AppTranslations.trans('storage_list.confirm_button');
         button.addEventListener('click', () => {
             const checked = radios.find((radio) => radio.checked);
@@ -241,13 +259,15 @@
 
     async function buildGroup(group, items) {
         const section = document.createElement('section');
-        section.className = 'storage-scan__group';
+        section.className = 'storage-scan__group mb-4';
 
         const heading = document.createElement('h3');
+        heading.className = 'h6';
         heading.textContent = await window.AppTranslations.trans(group.labelKey);
         section.appendChild(heading);
 
         const list = document.createElement('ul');
+        list.className = 'list-group';
         for (const [index, item] of items.entries()) {
             const li = await buildItem(group.type, item, index);
             if (li !== null) {
@@ -276,6 +296,7 @@
 
         if (resultsBox.children.length === 0) {
             const empty = document.createElement('p');
+            empty.className = 'text-muted';
             empty.textContent = await window.AppTranslations.trans('storage_list.scan_result_empty');
             resultsBox.appendChild(empty);
         }

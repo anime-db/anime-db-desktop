@@ -42,7 +42,9 @@
                 <h2>{{ 'storage_list.scan_heading'|trans }}</h2>
 
                 <div class="storage-scan__progress" id="storage-scan-progress">
-                    <progress id="storage-scan-progress-bar" max="100" value="0"></progress>
+                    <div class="progress">
+                        <div class="progress-bar" id="storage-scan-progress-bar" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+                    </div>
                     <span id="storage-scan-progress-text"></span>
                 </div>
 
