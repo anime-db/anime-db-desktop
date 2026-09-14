@@ -88,23 +88,11 @@ function buildMigrationErrorDialog(err, locale) {
  * @returns {{ title: string, message: string, buttons: [string, string] }}
  */
 function buildSafeModeDialog(locale) {
-    const isRu = locale.startsWith('ru');
-
-    return isRu
-        ? {
-            title: 'Не удаётся запустить приложение',
-            message: 'Приложение не смогло запуститься два раза подряд. Возможная причина — несовместимый '
-                + 'плагин.\n\nМожно запустить приложение без плагинов, чтобы открыть его и удалить '
-                + 'проблемный плагин. Плагины снова будут загружены при обычном перезапуске.',
-            buttons: ['Запустить без плагинов', 'Выход'],
-        }
-        : {
-            title: 'The app failed to start',
-            message: 'The app failed to start two times in a row. An incompatible plugin may be the cause.\n\n'
-                + 'You can start it without plugins to open it and remove the problematic one. Plugins are loaded '
-                + 'again on the next regular restart.',
-            buttons: ['Run without plugins', 'Exit'],
-        };
+    return {
+        title:   i18n.t('dialog.safe_mode_title', locale),
+        message: i18n.t('dialog.safe_mode_message', locale),
+        buttons: [i18n.t('dialog.safe_mode_run', locale), i18n.t('dialog.safe_mode_exit', locale)],
+    };
 }
 
 let quitting   = false;
@@ -250,7 +238,7 @@ if (!gotLock) {
                 dialog.showErrorBox(title, message);
             } else if (err instanceof CacheInvalidationError) {
                 safeModeState.commitDiagnosedFailure();
-                dialog.showErrorBox('Ошибка запуска', err.message);
+                dialog.showErrorBox(i18n.t('dialog.startup_error_title', getLocale()), err.message);
             } else {
                 dialog.showErrorBox(i18n.t('dialog.startup_error_title', getLocale()), err.message);
             }
