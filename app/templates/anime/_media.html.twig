@@ -39,7 +39,7 @@
     {% if anime.cover %}
         <img class="anime-detail__cover" src="app-media://anime/{{ anime.id }}/{{ anime.cover }}" alt="{{ anime.title }}">
     {% else %}
-        <div class="anime-detail__cover anime-detail__cover--placeholder">{{ 'anime_detail.no_cover'|trans }}</div>
+        <div class="anime-detail__cover anime-detail__cover--placeholder"></div>
     {% endif %}
     <h1 class="anime-detail__title"><bdi>{{ anime.title }}</bdi></h1>
 

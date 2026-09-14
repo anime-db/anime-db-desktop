@@ -34,7 +34,7 @@
 
 .anime-detail__cover {
     width: 100%;
-    aspect-ratio: 2 / 3;
+    aspect-ratio: 70 / 99;
     border-radius: 6px;
     background: var(--bs-secondary-bg);
     object-fit: cover;
@@ -44,8 +44,6 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    color: var(--bs-secondary-color);
-    font-size: 0.85em;
 }
 
 .anime-detail__title {

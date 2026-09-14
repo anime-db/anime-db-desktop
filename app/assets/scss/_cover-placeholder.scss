@@ -1,0 +1,42 @@
+/**
+ * AnimeDb package.
+ *
+ * @author    Peter Gribanov <info@peter-gribanov.ru>
+ * @copyright Copyright (c) 2026, Peter Gribanov
+ * @license   https://www.gnu.org/licenses/gpl-3.0.html GPL-3.0-or-later
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+
+// Общий неоформленный по-разному глиф для "нет обложки" (.anime-card__thumb--placeholder,
+// .anime-detail__cover--placeholder) и для той же заглушки, подставляемой вместо не
+// загрузившейся картинки. Один нейтральный значок без вариаций по палитре и без инициалов
+// названия: единственный источник обложек с публикацией (Shikimori) отдаёт постеры без
+// подписи, заглушка должна оставаться на втором плане, а не соревноваться с ними.
+.anime-card__thumb--placeholder::before,
+.anime-detail__cover--placeholder::before {
+    content: '';
+    display: block;
+    width: 35%;
+    aspect-ratio: 1;
+    background-color: var(--bs-secondary-color);
+    mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M4 4h16v16H4V4zm2 2v10.5l3.5-3.5 2 2 4-4L20 15V6H6zm2.5 3a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z'/%3E%3C/svg%3E");
+    mask-repeat: no-repeat;
+    mask-position: center;
+    mask-size: contain;
+    -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M4 4h16v16H4V4zm2 2v10.5l3.5-3.5 2 2 4-4L20 15V6H6zm2.5 3a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z'/%3E%3C/svg%3E");
+    -webkit-mask-repeat: no-repeat;
+    -webkit-mask-position: center;
+    -webkit-mask-size: contain;
+}

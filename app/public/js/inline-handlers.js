@@ -39,4 +39,30 @@
             event.preventDefault();
         }
     });
+
+    // A cover image whose file is missing on disk (record restored from a backup without media,
+    // catalog folder removed by hand, ...) fires an `error` event once app-media:// answers 404.
+    // The image is swapped for the same placeholder tile used for a record without a cover at
+    // all (issue #633). `error` on an <img> does not bubble, so this only sees it during the
+    // capture phase (third argument `true`), unlike every other listener in this file.
+    const COVER_PLACEHOLDER_CLASSES = {
+        'anime-card__thumb': 'anime-card__thumb--placeholder',
+        'anime-detail__cover': 'anime-detail__cover--placeholder',
+    };
+
+    document.addEventListener('error', (event) => {
+        const image = event.target;
+        if (!(image instanceof HTMLImageElement)) {
+            return;
+        }
+
+        const placeholderClass = COVER_PLACEHOLDER_CLASSES[image.className];
+        if (!placeholderClass) {
+            return;
+        }
+
+        const placeholder = document.createElement('div');
+        placeholder.className = `${image.className} ${placeholderClass}`;
+        image.replaceWith(placeholder);
+    }, true);
 })();

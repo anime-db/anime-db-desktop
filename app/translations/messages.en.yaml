@@ -301,7 +301,6 @@ anime_list:
     title: List — AnimeDB
     empty: The list is empty.
     error: Failed to load the list.
-    no_cover: No cover
     search_placeholder: Search by title…
 
 storage_list:
@@ -341,7 +340,6 @@ storage_list:
 
 anime_detail:
     title: '%title% — AnimeDB'
-    no_cover: No cover
     editable_heading: Management
     field_summary: Description
     reference_heading: Reference information

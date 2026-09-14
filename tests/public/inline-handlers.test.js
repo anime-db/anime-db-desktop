@@ -149,3 +149,42 @@ describe('data-confirm', () => {
         expect(submitEvent.defaultPrevented).toBe(true);
     });
 });
+
+// jsdom never triggers a real network load, so `error` is dispatched by hand rather than by
+// pointing `src` at a missing file. The event is not marked `bubbles: true` on purpose: a real
+// image load failure does not bubble either, and the listener is only useful if it still catches
+// it during the capture phase.
+describe('cover image load error', () => {
+    test('replaces an anime card thumbnail with the placeholder tile', () => {
+        document.body.innerHTML = '<img class="anime-card__thumb" src="app-media://anime/1/cover.webp" alt="Title">';
+        const image = document.querySelector('img');
+
+        image.dispatchEvent(new Event('error'));
+
+        expect(document.querySelector('img')).toBeNull();
+        const placeholder = document.querySelector('.anime-card__thumb');
+        expect(placeholder.tagName).toBe('DIV');
+        expect(placeholder.classList.contains('anime-card__thumb--placeholder')).toBe(true);
+    });
+
+    test('replaces the anime detail cover with the placeholder tile', () => {
+        document.body.innerHTML = '<img class="anime-detail__cover" src="app-media://anime/1/cover.webp" alt="Title">';
+        const image = document.querySelector('img');
+
+        image.dispatchEvent(new Event('error'));
+
+        expect(document.querySelector('img')).toBeNull();
+        const placeholder = document.querySelector('.anime-detail__cover');
+        expect(placeholder.tagName).toBe('DIV');
+        expect(placeholder.classList.contains('anime-detail__cover--placeholder')).toBe(true);
+    });
+
+    test('leaves an unrelated image alone', () => {
+        document.body.innerHTML = '<img class="anime-detail__gallery-image" src="app-media://anime/1/shot.webp" alt="">';
+        const image = document.querySelector('img');
+
+        image.dispatchEvent(new Event('error'));
+
+        expect(document.querySelector('img')).toBe(image);
+    });
+});

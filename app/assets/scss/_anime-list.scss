@@ -74,7 +74,7 @@
 .anime-card__thumb {
     display: block;
     width: 100%;
-    aspect-ratio: 2 / 3;
+    aspect-ratio: 70 / 99;
     object-fit: cover;
     background: var(--bs-secondary-bg);
 }
@@ -83,8 +83,6 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    color: var(--bs-secondary-color);
-    font-size: 0.85em;
 }
 
 .anime-card__body {
