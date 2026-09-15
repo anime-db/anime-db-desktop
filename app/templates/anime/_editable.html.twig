@@ -163,7 +163,7 @@
             {% else %}
                 <button
                     type="button"
-                    class="anime-detail__editable-value anime-detail__editable-value--notes"
+                    class="anime-detail__editable-value"
                     hx-get="{{ path('anime_editable_edit', {id: anime.id, field: 'notes'}) }}"
                     hx-target="#anime-editable-{{ anime.id }}" hx-swap="outerHTML"
                 >{{ anime.notes ?: ('anime_detail.empty_value'|trans) }}</button>

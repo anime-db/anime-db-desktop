@@ -23,14 +23,14 @@
 {% block title %}{{ 'anime_new.title'|trans }}{% endblock %}
 
 {% block body %}
-    <main class="anime-new container py-4">
+    <main class="container py-4">
         <h1>{{ 'anime_new.heading'|trans }}</h1>
 
         {% if error %}
-            <p class="anime-new__error alert alert-danger">{{ error|trans }}</p>
+            <p class="alert alert-danger">{{ error|trans }}</p>
         {% endif %}
 
-        <form method="post" action="{{ path('anime_create') }}" class="anime-new__form">
+        <form method="post" action="{{ path('anime_create') }}">
             <input type="hidden" name="_token" value="{{ csrf_token('anime_new') }}">
             {% if storage_id is not null %}
                 <input type="hidden" name="storage_id" value="{{ storage_id }}">
