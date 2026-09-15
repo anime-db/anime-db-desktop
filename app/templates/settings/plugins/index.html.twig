@@ -66,69 +66,71 @@
         {% if installedPlugins is empty %}
             <p class="text-body-secondary">{{ 'settings_plugins.installed_empty'|trans }}</p>
         {% else %}
-            <table class="table align-middle">
-                <thead>
-                    <tr>
-                        <th>{{ 'settings_plugins.name_column'|trans }}</th>
-                        <th>{{ 'settings_plugins.id_column'|trans }}</th>
-                        <th>{{ 'settings_plugins.version_column'|trans }}</th>
-                        <th>{{ 'settings_plugins.type_column'|trans }}</th>
-                        <th>{{ 'settings_plugins.status_column'|trans }}</th>
-                        <th>{{ 'settings_plugins.languages_column'|trans }}</th>
-                        <th>{{ 'settings_plugins.translation_coverage_column'|trans }}</th>
-                        <th>{{ 'settings_plugins.actions_column'|trans }}</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for plugin in installedPlugins %}
+            <div class="table-responsive">
+                <table class="table align-middle">
+                    <thead>
                         <tr>
-                            <td>{{ plugin.manifest.name }}</td>
-                            <td><code>{{ plugin.id }}</code></td>
-                            <td>{{ plugin.manifest.version }}</td>
-                            <td>{{ ('plugin_type.' ~ plugin.manifest.type.value)|trans }}</td>
-                            <td>
-                                {% if not plugin.compatible %}
-                                    <span class="badge text-bg-danger">{{ 'settings_plugins.status_incompatible'|trans }}</span>
-                                {% elseif plugin.enabled %}
-                                    <span class="badge text-bg-success">{{ 'settings_plugins.status_enabled'|trans }}</span>
-                                {% else %}
-                                    <span class="badge text-bg-secondary">{{ 'settings_plugins.status_disabled'|trans }}</span>
-                                {% endif %}
-                            </td>
-                            <td>
-                                {% if pluginLocales[plugin.id ~ ''] is defined %}
-                                    <ul class="settings-plugins__locales-list list-unstyled mb-0">
-                                        {% for locale in pluginLocales[plugin.id ~ ''].locales %}
-                                            <li>{{ locale }}</li>
-                                        {% endfor %}
-                                    </ul>
-                                    {% if pluginLocales[plugin.id ~ ''].missingFallbackLocale %}
-                                        <p class="settings-plugins__missing-fallback-locale text-warning-emphasis small mb-0">{{ 'settings_plugins.missing_fallback_locale'|trans }}</p>
-                                    {% endif %}
-                                {% endif %}
-                            </td>
-                            <td>
-                                {% if translationCoverage[plugin.id ~ ''] is defined %}
-                                    <ul class="settings-plugins__coverage-list list-unstyled mb-0">
-                                        {% for locale, coverage in translationCoverage[plugin.id ~ ''] %}
-                                            <li>{{ 'settings_plugins.translation_coverage_badge'|trans({'%locale%': locale, '%covered%': coverage.covered, '%total%': coverage.total}) }}</li>
-                                        {% endfor %}
-                                    </ul>
-                                {% endif %}
-                            </td>
-                            <td>
-                                {% if (plugin.id ~ '') in settingsPluginIds %}
-                                    <a href="{{ path('settings_plugin_page', {pluginId: plugin.id}) }}" class="btn btn-outline-secondary btn-sm me-2">{{ 'settings_plugins.settings_link'|trans }}</a>
-                                {% endif %}
-                                <form method="post" action="{{ path('settings_plugins_remove', {pluginId: plugin.id}) }}" class="settings-plugins__remove-form d-inline">
-                                    <input type="hidden" name="_token" value="{{ csrf_token('settings_plugins_remove_' ~ plugin.id) }}">
-                                    <button type="submit" class="btn btn-outline-danger btn-sm">{{ 'settings_plugins.remove_button'|trans }}</button>
-                                </form>
-                            </td>
+                            <th>{{ 'settings_plugins.name_column'|trans }}</th>
+                            <th>{{ 'settings_plugins.id_column'|trans }}</th>
+                            <th>{{ 'settings_plugins.version_column'|trans }}</th>
+                            <th>{{ 'settings_plugins.type_column'|trans }}</th>
+                            <th>{{ 'settings_plugins.status_column'|trans }}</th>
+                            <th>{{ 'settings_plugins.languages_column'|trans }}</th>
+                            <th>{{ 'settings_plugins.translation_coverage_column'|trans }}</th>
+                            <th>{{ 'settings_plugins.actions_column'|trans }}</th>
                         </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+                    </thead>
+                    <tbody>
+                        {% for plugin in installedPlugins %}
+                            <tr>
+                                <td>{{ plugin.manifest.name }}</td>
+                                <td><code>{{ plugin.id }}</code></td>
+                                <td>{{ plugin.manifest.version }}</td>
+                                <td>{{ ('plugin_type.' ~ plugin.manifest.type.value)|trans }}</td>
+                                <td>
+                                    {% if not plugin.compatible %}
+                                        <span class="badge text-bg-danger">{{ 'settings_plugins.status_incompatible'|trans }}</span>
+                                    {% elseif plugin.enabled %}
+                                        <span class="badge text-bg-success">{{ 'settings_plugins.status_enabled'|trans }}</span>
+                                    {% else %}
+                                        <span class="badge text-bg-secondary">{{ 'settings_plugins.status_disabled'|trans }}</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if pluginLocales[plugin.id ~ ''] is defined %}
+                                        <ul class="settings-plugins__locales-list list-unstyled mb-0">
+                                            {% for locale in pluginLocales[plugin.id ~ ''].locales %}
+                                                <li>{{ locale }}</li>
+                                            {% endfor %}
+                                        </ul>
+                                        {% if pluginLocales[plugin.id ~ ''].missingFallbackLocale %}
+                                            <p class="settings-plugins__missing-fallback-locale text-warning-emphasis small mb-0">{{ 'settings_plugins.missing_fallback_locale'|trans }}</p>
+                                        {% endif %}
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if translationCoverage[plugin.id ~ ''] is defined %}
+                                        <ul class="settings-plugins__coverage-list list-unstyled mb-0">
+                                            {% for locale, coverage in translationCoverage[plugin.id ~ ''] %}
+                                                <li>{{ 'settings_plugins.translation_coverage_badge'|trans({'%locale%': locale, '%covered%': coverage.covered, '%total%': coverage.total}) }}</li>
+                                            {% endfor %}
+                                        </ul>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if (plugin.id ~ '') in settingsPluginIds %}
+                                        <a href="{{ path('settings_plugin_page', {pluginId: plugin.id}) }}" class="btn btn-outline-secondary btn-sm me-2">{{ 'settings_plugins.settings_link'|trans }}</a>
+                                    {% endif %}
+                                    <form method="post" action="{{ path('settings_plugins_remove', {pluginId: plugin.id}) }}" class="settings-plugins__remove-form d-inline">
+                                        <input type="hidden" name="_token" value="{{ csrf_token('settings_plugins_remove_' ~ plugin.id) }}">
+                                        <button type="submit" class="btn btn-outline-danger btn-sm">{{ 'settings_plugins.remove_button'|trans }}</button>
+                                    </form>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
         {% endif %}
 
         <h2 class="mt-4">{{ 'settings_plugins.install_heading'|trans }}</h2>

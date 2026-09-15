@@ -28,6 +28,8 @@ const mockWebContents = {
     setWindowOpenHandler: jest.fn((handler) => { handlers.windowOpen = handler; }),
 };
 
+let mockWorkAreaSize = { width: 1920, height: 1080 };
+
 jest.mock('electron', () => ({
     BrowserWindow: jest.fn().mockImplementation(() => ({
         webContents: mockWebContents,
@@ -35,17 +37,45 @@ jest.mock('electron', () => ({
         on: jest.fn(),
     })),
     Menu: { setApplicationMenu: jest.fn() },
+    screen: { getPrimaryDisplay: jest.fn(() => ({ workAreaSize: mockWorkAreaSize })) },
     shell: { openExternal: jest.fn() },
 }));
 
-const { Menu, shell } = require('electron');
+const { BrowserWindow, Menu, shell } = require('electron');
 const { createWindow } = require('../../native/window');
 
 const PORT = 8123;
 
 beforeEach(() => {
     jest.clearAllMocks();
+    mockWorkAreaSize = { width: 1920, height: 1080 };
     createWindow(PORT);
+});
+
+test('the window enforces a minimum size so the layout below it stays usable', () => {
+    expect(BrowserWindow).toHaveBeenCalledWith(expect.objectContaining({
+        minWidth: 1000,
+        minHeight: 640,
+    }));
+});
+
+test('the default window size is used when it fits the screen work area', () => {
+    expect(BrowserWindow).toHaveBeenCalledWith(expect.objectContaining({
+        width: 1200,
+        height: 800,
+    }));
+});
+
+test('the default window size is capped to the screen work area on smaller screens', () => {
+    jest.clearAllMocks();
+    mockWorkAreaSize = { width: 1024, height: 728 };
+
+    createWindow(PORT);
+
+    expect(BrowserWindow).toHaveBeenCalledWith(expect.objectContaining({
+        width: 1024,
+        height: 728,
+    }));
 });
 
 test('the default Electron application menu is removed on window creation', () => {

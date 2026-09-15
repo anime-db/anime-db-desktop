@@ -21,10 +21,29 @@
 
 'use strict';
 
-const { BrowserWindow, Menu, shell } = require('electron');
+const { BrowserWindow, Menu, screen, shell } = require('electron');
 const path = require('path');
 
 let win = null;
+
+const DEFAULT_WIDTH = 1200;
+const DEFAULT_HEIGHT = 800;
+
+/**
+ * Возвращает размер окна по умолчанию, не превышающий рабочую область основного
+ * дисплея (экран минус панель задач). На экранах меньше 1200×800 (например,
+ * 1024×768) окно по умолчанию иначе создаётся больше рабочей области и уезжает
+ * за край при первом запуске.
+ *
+ * @returns {{width: number, height: number}}
+ */
+function getDefaultWindowSize() {
+    const { width, height } = screen.getPrimaryDisplay().workAreaSize;
+    return {
+        width: Math.min(DEFAULT_WIDTH, width),
+        height: Math.min(DEFAULT_HEIGHT, height),
+    };
+}
 
 /**
  * Проверяет, ведёт ли url на собственный локальный backend приложения
@@ -117,8 +136,9 @@ function createWindow(port) {
     Menu.setApplicationMenu(null);
 
     win = new BrowserWindow({
-        width: 1200,
-        height: 800,
+        ...getDefaultWindowSize(),
+        minWidth: 1000,
+        minHeight: 640,
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
             contextIsolation: true,
