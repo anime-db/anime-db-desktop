@@ -56,10 +56,11 @@
             return;
         }
 
-        const placeholderClass = COVER_PLACEHOLDER_CLASSES[image.className];
-        if (!placeholderClass) {
+        const coverClass = Object.keys(COVER_PLACEHOLDER_CLASSES).find((className) => image.classList.contains(className));
+        if (!coverClass) {
             return;
         }
+        const placeholderClass = COVER_PLACEHOLDER_CLASSES[coverClass];
 
         const placeholder = document.createElement('div');
         placeholder.className = `${image.className} ${placeholderClass}`;

@@ -179,6 +179,19 @@ describe('cover image load error', () => {
         expect(placeholder.classList.contains('anime-detail__cover--placeholder')).toBe(true);
     });
 
+    test('replaces a thumbnail that also carries an extra class', () => {
+        document.body.innerHTML = '<img class="anime-card__thumb w-100" src="app-media://anime/1/cover.webp" alt="Title">';
+        const image = document.querySelector('img');
+
+        image.dispatchEvent(new Event('error'));
+
+        expect(document.querySelector('img')).toBeNull();
+        const placeholder = document.querySelector('.anime-card__thumb');
+        expect(placeholder.tagName).toBe('DIV');
+        expect(placeholder.classList.contains('w-100')).toBe(true);
+        expect(placeholder.classList.contains('anime-card__thumb--placeholder')).toBe(true);
+    });
+
     test('leaves an unrelated image alone', () => {
         document.body.innerHTML = '<img class="anime-detail__gallery-image" src="app-media://anime/1/shot.webp" alt="">';
         const image = document.querySelector('img');
