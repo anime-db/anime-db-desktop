@@ -129,6 +129,10 @@ settings:
     language_label: Язык интерфейса
     language_unavailable_option: '%language% — недоступно'
     language_plugin_translation_note: Интерфейс плагинов переводят их авторы — на языке, не входящем в число встроенных в приложение, часть интерфейса плагинов может остаться непереведённой.
+    theme_label: Цветовая тема
+    theme_option_system: Системная
+    theme_option_light: Светлая
+    theme_option_dark: Тёмная
     search_reindex_heading: Поисковый индекс
     search_reindex_button: Переиндексировать
     search_reindex_success: Поисковый индекс успешно перестроен.

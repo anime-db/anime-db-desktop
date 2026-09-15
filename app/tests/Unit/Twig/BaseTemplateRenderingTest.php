@@ -48,7 +48,7 @@ final class BaseTemplateRenderingTest extends KernelTestCase
 
         $this->assertStringContainsString('<!DOCTYPE html>', $html);
         $this->assertStringContainsString('AnimeDB', $html);
-        $this->assertStringContainsString('<html lang="en" dir="ltr">', $html);
+        $this->assertStringContainsString('<html lang="en" dir="ltr" data-theme-preference="system">', $html);
     }
 
     /**
@@ -71,6 +71,6 @@ final class BaseTemplateRenderingTest extends KernelTestCase
         $twig = self::getContainer()->get('twig');
         $html = $twig->render('base.html.twig');
 
-        $this->assertStringContainsString('<html lang="ar" dir="rtl">', $html);
+        $this->assertStringContainsString('<html lang="ar" dir="rtl" data-theme-preference="system">', $html);
     }
 }
