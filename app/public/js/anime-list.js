@@ -60,7 +60,6 @@
         } else {
             const placeholder = document.createElement('div');
             placeholder.className = 'anime-card__thumb anime-card__thumb--placeholder';
-            placeholder.textContent = window.AppTranslations.resolveKey(catalogue, 'anime_list.no_cover');
             card.appendChild(placeholder);
         }
 

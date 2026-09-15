@@ -41,7 +41,7 @@
                 {% if item.thumbnail %}
                     <img class="anime-card__thumb" src="{{ item.thumbnail }}" alt="{{ item.title }}" loading="lazy">
                 {% else %}
-                    <div class="anime-card__thumb anime-card__thumb--placeholder">{{ 'anime_detail.no_cover'|trans }}</div>
+                    <div class="anime-card__thumb anime-card__thumb--placeholder"></div>
                 {% endif %}
                 <div class="anime-card__body">
                     <p class="anime-card__title"><bdi>{{ item.title }}</bdi></p>

@@ -301,7 +301,6 @@ anime_list:
     title: Список — AnimeDB
     empty: Список пуст.
     error: Не удалось загрузить список.
-    no_cover: Нет обложки
     search_placeholder: Поиск по названию…
 
 storage_list:
@@ -341,7 +340,6 @@ storage_list:
 
 anime_detail:
     title: '%title% — AnimeDB'
-    no_cover: Нет обложки
     editable_heading: Управление
     field_summary: Описание
     reference_heading: Справочная информация

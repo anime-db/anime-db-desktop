@@ -32,6 +32,12 @@
     {% block stylesheets %}{% endblock %}
     {# Синхронно и до отрисовки: иначе на каждой загрузке мигает светлый фон. #}
     <script src="{{ asset('js/color-mode.js') }}"></script>
+    {# Синхронно в head, а не в конце body: делегированный обработчик error (issue #633) должен
+       быть навешан раньше, чем парсер дойдёт до самого первого <img class="anime-detail__cover">
+       в теле страницы — событие error у сломанной обложки из первичного рендера может
+       произойти раньше, чем скрипт в конце body успеет выполниться, и тогда обработчик его
+       просто не увидит. #}
+    <script src="{{ asset('js/inline-handlers.js') }}"></script>
 </head>
 <body>
     {% set current_route = app.request.attributes.get('_route')|default('') %}
@@ -71,7 +77,6 @@
     <script src="{{ asset('js/bootstrap.bundle.min.js') }}"></script>
     <script src="{{ asset('js/translations.js') }}"></script>
     <script src="{{ asset('js/app-notifications.js') }}"></script>
-    <script src="{{ asset('js/inline-handlers.js') }}"></script>
     {% block javascripts %}{% endblock %}
 </body>
 </html>
