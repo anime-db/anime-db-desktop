@@ -14,6 +14,11 @@
     "dialog.firewall_error_title": "Windows Firewall",
     "dialog.firewall_error_message": "Could not change the inbound rule for the torrent client: %message%",
 
+    "dialog.safe_mode_title": "The app failed to start",
+    "dialog.safe_mode_message": "The app failed to start two times in a row. An incompatible plugin may be the cause.\n\nYou can start it without plugins to open it and remove the problematic one. Plugins are loaded again on the next regular restart.",
+    "dialog.safe_mode_run": "Run without plugins",
+    "dialog.safe_mode_exit": "Exit",
+
     "notification.plugin_activation_failed_title": "Plugin activation",
     "notification.plugin_activation_failed_message": "Could not activate the plugin \"%pluginId%\". The app has been restored to a working state without it.",
 

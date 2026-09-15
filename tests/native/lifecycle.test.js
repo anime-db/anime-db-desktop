@@ -223,6 +223,52 @@ describe('safe mode prompt (issue #403)', () => {
         expect(createSplash).not.toHaveBeenCalled();
         expect(app.quit).toHaveBeenCalledTimes(1);
     });
+
+    test('shows Russian text for a "ru" locale', async () => {
+        const { dialog, safeModeState } = loadLifecycle();
+        safeModeState.beginStartAttempt.mockReturnValue(true);
+        dialog.showMessageBoxSync.mockReturnValue(0);
+
+        await new Promise((r) => setTimeout(r, 500));
+
+        expect(dialog.showMessageBoxSync).toHaveBeenCalledWith(
+            expect.objectContaining({
+                title:   'Не удаётся запустить приложение',
+                buttons: ['Запустить без плагинов', 'Выход'],
+            }),
+        );
+    });
+
+    test('shows English text for an "en" locale', async () => {
+        const { app, dialog, safeModeState } = loadLifecycle();
+        app.getLocale.mockReturnValue('en-US');
+        safeModeState.beginStartAttempt.mockReturnValue(true);
+        dialog.showMessageBoxSync.mockReturnValue(0);
+
+        await new Promise((r) => setTimeout(r, 500));
+
+        expect(dialog.showMessageBoxSync).toHaveBeenCalledWith(
+            expect.objectContaining({
+                title:   'The app failed to start',
+                buttons: ['Run without plugins', 'Exit'],
+            }),
+        );
+    });
+
+    // issue #177: mapOsLocaleToAppLocale() falls back unmapped OS locales to "ru", not "en" —
+    // a manual locale.startsWith('ru') check (the pre-fix implementation) would get this wrong.
+    test('falls back to Russian text for an unmapped "kk" locale', async () => {
+        const { app, dialog, safeModeState } = loadLifecycle();
+        app.getLocale.mockReturnValue('kk-KZ');
+        safeModeState.beginStartAttempt.mockReturnValue(true);
+        dialog.showMessageBoxSync.mockReturnValue(0);
+
+        await new Promise((r) => setTimeout(r, 500));
+
+        expect(dialog.showMessageBoxSync).toHaveBeenCalledWith(
+            expect.objectContaining({ title: 'Не удаётся запустить приложение' }),
+        );
+    });
 });
 
 describe('migration bootstrap errors', () => {

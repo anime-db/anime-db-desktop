@@ -14,6 +14,11 @@
     "dialog.firewall_error_title": "Брандмауэр Windows",
     "dialog.firewall_error_message": "Не удалось изменить правило для входящих подключений торрент-клиента: %message%",
 
+    "dialog.safe_mode_title": "Не удаётся запустить приложение",
+    "dialog.safe_mode_message": "Приложение не смогло запуститься два раза подряд. Возможная причина — несовместимый плагин.\n\nМожно запустить приложение без плагинов, чтобы открыть его и удалить проблемный плагин. Плагины снова будут загружены при обычном перезапуске.",
+    "dialog.safe_mode_run": "Запустить без плагинов",
+    "dialog.safe_mode_exit": "Выход",
+
     "notification.plugin_activation_failed_title": "Активация плагина",
     "notification.plugin_activation_failed_message": "Не удалось активировать плагин «%pluginId%». Приложение восстановлено в рабочее состояние без него.",
 
