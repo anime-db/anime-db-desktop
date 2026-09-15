@@ -44,14 +44,17 @@
 
         <form method="post" action="{{ path('settings_set_theme') }}" class="mb-4">
             <input type="hidden" name="_token" value="{{ csrf_token('settings_set_theme') }}">
-            <div class="mb-3">
-                <label for="theme-preference" class="form-label">{{ 'settings.theme_label'|trans }}</label>
-                <select id="theme-preference" name="themePreference" class="form-select" data-submit-on-change>
-                    <option value="system"{% if themePreference.value == 'system' %} selected{% endif %}>{{ 'settings.theme_option_system'|trans }}</option>
-                    <option value="light"{% if themePreference.value == 'light' %} selected{% endif %}>{{ 'settings.theme_option_light'|trans }}</option>
-                    <option value="dark"{% if themePreference.value == 'dark' %} selected{% endif %}>{{ 'settings.theme_option_dark'|trans }}</option>
-                </select>
-            </div>
+            <fieldset class="mb-3">
+                <legend class="form-label">{{ 'settings.theme_label'|trans }}</legend>
+                <div class="btn-group" role="group" aria-label="{{ 'settings.theme_label'|trans }}">
+                    {% for option in ['system', 'light', 'dark'] %}
+                        <input type="radio" class="btn-check" name="themePreference" id="theme-{{ option }}"
+                               value="{{ option }}"{% if themePreference.value == option %} checked{% endif %}
+                               autocomplete="off" data-submit-on-change>
+                        <label class="btn btn-outline-secondary" for="theme-{{ option }}">{{ ('settings.theme_option_' ~ option)|trans }}</label>
+                    {% endfor %}
+                </div>
+            </fieldset>
         </form>
 
         <div class="list-group mb-4">
