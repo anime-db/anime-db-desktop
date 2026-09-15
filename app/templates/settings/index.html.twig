@@ -45,7 +45,7 @@
         <form method="post" action="{{ path('settings_set_theme') }}" class="mb-4">
             <input type="hidden" name="_token" value="{{ csrf_token('settings_set_theme') }}">
             <fieldset class="mb-3">
-                <legend class="form-label">{{ 'settings.theme_label'|trans }}</legend>
+                <legend class="form-label fs-6">{{ 'settings.theme_label'|trans }}</legend>
                 <div class="btn-group" role="group" aria-label="{{ 'settings.theme_label'|trans }}">
                     {% for option in ['system', 'light', 'dark'] %}
                         <input type="radio" class="btn-check" name="themePreference" id="theme-{{ option }}"
