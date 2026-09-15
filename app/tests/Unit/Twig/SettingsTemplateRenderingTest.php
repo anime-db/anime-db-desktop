@@ -32,6 +32,7 @@ use App\Entity\Enum\ProxyMode;
 use App\Entity\Enum\ProxyProtocol;
 use App\Entity\Enum\ProxyTestOutcome;
 use App\Entity\Enum\SyncReviewItemKind;
+use App\Entity\Enum\ThemePreference;
 use App\Entity\Label;
 use App\Entity\SyncReviewItem;
 use App\Entity\TvAnime;
@@ -105,6 +106,7 @@ final class SettingsTemplateRenderingTest extends KernelTestCase
             'unavailableLocale' => null,
             'reindexStatus' => null,
             'needsCorrectionCount' => 0,
+            'themePreference' => ThemePreference::System,
         ]);
 
         $this->assertStringContainsString('Настройки', $html);
@@ -123,6 +125,7 @@ final class SettingsTemplateRenderingTest extends KernelTestCase
             'unavailableLocale' => null,
             'reindexStatus' => null,
             'needsCorrectionCount' => 0,
+            'themePreference' => ThemePreference::System,
         ]);
 
         $this->assertStringContainsString('<option value="en" selected>English</option>', $html);
@@ -151,6 +154,7 @@ final class SettingsTemplateRenderingTest extends KernelTestCase
             'unavailableLocale' => null,
             'reindexStatus' => null,
             'needsCorrectionCount' => 0,
+            'themePreference' => ThemePreference::System,
         ]);
 
         $this->assertStringContainsString('<option value="ru" selected>Русский</option>', $html);
@@ -181,6 +185,7 @@ final class SettingsTemplateRenderingTest extends KernelTestCase
             'unavailableLocale' => 'de',
             'reindexStatus' => null,
             'needsCorrectionCount' => 0,
+            'themePreference' => ThemePreference::System,
         ]);
 
         $this->assertStringContainsString('<option value="" disabled selected>Deutsch — unavailable</option>', $html);
@@ -206,6 +211,7 @@ final class SettingsTemplateRenderingTest extends KernelTestCase
             'unavailableLocale' => null,
             'reindexStatus' => null,
             'needsCorrectionCount' => 0,
+            'themePreference' => ThemePreference::System,
         ]);
 
         $this->assertStringContainsString('<option value="de">Deutsch</option>', $html);
@@ -228,6 +234,7 @@ final class SettingsTemplateRenderingTest extends KernelTestCase
             'unavailableLocale' => null,
             'reindexStatus' => 'success',
             'needsCorrectionCount' => 0,
+            'themePreference' => ThemePreference::System,
         ]);
 
         $this->assertStringContainsString('Поисковый индекс успешно перестроен.', $html);
@@ -249,6 +256,7 @@ final class SettingsTemplateRenderingTest extends KernelTestCase
             'unavailableLocale' => null,
             'reindexStatus' => 'error',
             'needsCorrectionCount' => 0,
+            'themePreference' => ThemePreference::System,
         ]);
 
         $this->assertStringContainsString('Не удалось перестроить поисковый индекс.', $html);

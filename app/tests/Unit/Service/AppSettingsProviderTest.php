@@ -28,6 +28,7 @@ declare(strict_types=1);
 namespace App\Tests\Unit\Service;
 
 use App\Entity\Enum\PaginationMode;
+use App\Entity\Enum\ThemePreference;
 use App\Entity\ValueObject\PluginId;
 use App\Service\AppConfigStore;
 use App\Service\AppSettingsProvider;
@@ -145,6 +146,44 @@ final class AppSettingsProviderTest extends TestCase
         unlink($configPath.'.lock');
         rmdir(\dirname($configPath));
         rmdir(\dirname($configPath, 2));
+    }
+
+    public function testGetThemePreferenceDefaultsToSystemWhenFileIsMissing(): void
+    {
+        $provider = new AppSettingsProvider(new AppConfigStore($this->configPath));
+
+        $this->assertSame(ThemePreference::System, $provider->getThemePreference());
+    }
+
+    public function testGetThemePreferenceDefaultsToSystemWhenValueIsNotRecognized(): void
+    {
+        file_put_contents($this->configPath, json_encode(['themePreference' => 'bogus']));
+
+        $provider = new AppSettingsProvider(new AppConfigStore($this->configPath));
+
+        $this->assertSame(ThemePreference::System, $provider->getThemePreference());
+    }
+
+    public function testGetThemePreferenceReadsValueFromConfig(): void
+    {
+        file_put_contents($this->configPath, json_encode(['themePreference' => 'dark']));
+
+        $provider = new AppSettingsProvider(new AppConfigStore($this->configPath));
+
+        $this->assertSame(ThemePreference::Dark, $provider->getThemePreference());
+    }
+
+    public function testSetThemePreferenceOverwritesOnlyThatKey(): void
+    {
+        file_put_contents($this->configPath, json_encode(['appSecret' => 'abc']));
+
+        $provider = new AppSettingsProvider(new AppConfigStore($this->configPath));
+        $provider->setThemePreference(ThemePreference::Light);
+
+        $data = json_decode((string) file_get_contents($this->configPath), true);
+
+        $this->assertSame('abc', $data['appSecret']);
+        $this->assertSame('light', $data['themePreference']);
     }
 
     public function testGetDefaultSearchPluginIdReturnsNullWhenFileIsMissing(): void

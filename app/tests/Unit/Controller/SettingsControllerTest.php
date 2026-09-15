@@ -31,6 +31,7 @@ use App\Controller\SettingsController;
 use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
 use App\Entity\Enum\SyncReviewItemKind;
+use App\Entity\Enum\ThemePreference;
 use App\Entity\Enum\WatchStatus;
 use App\Entity\MovieAnime;
 use App\Entity\SyncReviewItem;
@@ -170,6 +171,7 @@ final class SettingsControllerTest extends TestCase
                 'unavailableLocale' => null,
                 'reindexStatus' => null,
                 'needsCorrectionCount' => 0,
+                'themePreference' => ThemePreference::System,
             ])
             ->willReturn('<html></html>');
 
@@ -191,6 +193,7 @@ final class SettingsControllerTest extends TestCase
                 'unavailableLocale' => null,
                 'reindexStatus' => null,
                 'needsCorrectionCount' => 0,
+                'themePreference' => ThemePreference::System,
             ])
             ->willReturn('<html></html>');
 
@@ -215,6 +218,7 @@ final class SettingsControllerTest extends TestCase
                 'unavailableLocale' => 'de',
                 'reindexStatus' => null,
                 'needsCorrectionCount' => 0,
+                'themePreference' => ThemePreference::System,
             ])
             ->willReturn('<html></html>');
 
@@ -239,6 +243,7 @@ final class SettingsControllerTest extends TestCase
                 'unavailableLocale' => null,
                 'reindexStatus' => null,
                 'needsCorrectionCount' => 1,
+                'themePreference' => ThemePreference::System,
             ])
             ->willReturn('<html></html>');
 
@@ -290,6 +295,49 @@ final class SettingsControllerTest extends TestCase
         $controller->setLocale($request);
     }
 
+    /**
+     * Acceptance (issue #638): same PRG shape as the locale switch — the choice is persisted
+     * before the redirect, not rendered in place.
+     */
+    public function testSetThemePersistsChoiceAndRedirectsWithSeeOther(): void
+    {
+        $urlGenerator = $this->createMock(UrlGeneratorInterface::class);
+        $urlGenerator->expects($this->once())->method('generate')->with('settings_index')->willReturn('/settings');
+
+        $controller = $this->createController(urlGenerator: $urlGenerator);
+        $request = Request::create('/settings/theme', 'POST', ['themePreference' => 'dark', '_token' => 'token']);
+
+        $response = $controller->setTheme($request);
+
+        $this->assertInstanceOf(RedirectResponse::class, $response);
+        $this->assertSame(303, $response->getStatusCode());
+        $this->assertSame('/settings', $response->getTargetUrl());
+
+        $data = json_decode((string) file_get_contents($this->configPath), true);
+        $this->assertSame('dark', $data['themePreference']);
+    }
+
+    public function testSetThemeRejectsUnknownValue(): void
+    {
+        $controller = $this->createController();
+        $request = Request::create('/settings/theme', 'POST', ['themePreference' => 'blue', '_token' => 'token']);
+
+        $this->expectException(BadRequestHttpException::class);
+        $controller->setTheme($request);
+    }
+
+    public function testSetThemeRejectsInvalidCsrfToken(): void
+    {
+        $csrf = $this->createStub(CsrfTokenManagerInterface::class);
+        $csrf->method('isTokenValid')->willReturn(false);
+
+        $controller = $this->createController(csrfTokenManager: $csrf);
+        $request = Request::create('/settings/theme', 'POST', ['themePreference' => 'dark', '_token' => 'bad']);
+
+        $this->expectException(BadRequestHttpException::class);
+        $controller->setTheme($request);
+    }
+
     public function testReindexSearchRerendersWithSuccessStatus(): void
     {
         $index = $this->createMock(Indexes::class);
@@ -308,6 +356,7 @@ final class SettingsControllerTest extends TestCase
                 'unavailableLocale' => null,
                 'reindexStatus' => 'success',
                 'needsCorrectionCount' => 0,
+                'themePreference' => ThemePreference::System,
             ])
             ->willReturn('<html></html>');
 
@@ -332,6 +381,7 @@ final class SettingsControllerTest extends TestCase
                 'unavailableLocale' => null,
                 'reindexStatus' => 'error',
                 'needsCorrectionCount' => 0,
+                'themePreference' => ThemePreference::System,
             ])
             ->willReturn('<html></html>');
 
