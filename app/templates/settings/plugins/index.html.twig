@@ -45,7 +45,7 @@
             <p class="alert alert-danger">{{ installError|trans(installErrorParams) }}</p>
 
             {% if syntaxErrors is not empty %}
-                <ul class="settings-plugins__error-list">
+                <ul>
                     {% for syntaxError in syntaxErrors %}
                         <li>{{ syntaxError.relativePath }}: {{ syntaxError.message }}</li>
                     {% endfor %}
@@ -53,7 +53,7 @@
             {% endif %}
 
             {% if manifestErrors is not empty %}
-                <ul class="settings-plugins__error-list">
+                <ul>
                     {% for manifestError in manifestErrors %}
                         <li>{{ manifestError.field }}: {{ manifestError.message }}</li>
                     {% endfor %}
@@ -97,19 +97,19 @@
                             </td>
                             <td>
                                 {% if pluginLocales[plugin.id ~ ''] is defined %}
-                                    <ul class="settings-plugins__locales-list list-unstyled mb-0">
+                                    <ul class="list-unstyled mb-0">
                                         {% for locale in pluginLocales[plugin.id ~ ''].locales %}
                                             <li>{{ locale }}</li>
                                         {% endfor %}
                                     </ul>
                                     {% if pluginLocales[plugin.id ~ ''].missingFallbackLocale %}
-                                        <p class="settings-plugins__missing-fallback-locale text-warning-emphasis small mb-0">{{ 'settings_plugins.missing_fallback_locale'|trans }}</p>
+                                        <p class="text-warning-emphasis small mb-0">{{ 'settings_plugins.missing_fallback_locale'|trans }}</p>
                                     {% endif %}
                                 {% endif %}
                             </td>
                             <td>
                                 {% if translationCoverage[plugin.id ~ ''] is defined %}
-                                    <ul class="settings-plugins__coverage-list list-unstyled mb-0">
+                                    <ul class="list-unstyled mb-0">
                                         {% for locale, coverage in translationCoverage[plugin.id ~ ''] %}
                                             <li>{{ 'settings_plugins.translation_coverage_badge'|trans({'%locale%': locale, '%covered%': coverage.covered, '%total%': coverage.total}) }}</li>
                                         {% endfor %}
@@ -120,7 +120,7 @@
                                 {% if (plugin.id ~ '') in settingsPluginIds %}
                                     <a href="{{ path('settings_plugin_page', {pluginId: plugin.id}) }}" class="btn btn-outline-secondary btn-sm me-2">{{ 'settings_plugins.settings_link'|trans }}</a>
                                 {% endif %}
-                                <form method="post" action="{{ path('settings_plugins_remove', {pluginId: plugin.id}) }}" class="settings-plugins__remove-form d-inline">
+                                <form method="post" action="{{ path('settings_plugins_remove', {pluginId: plugin.id}) }}" class="d-inline">
                                     <input type="hidden" name="_token" value="{{ csrf_token('settings_plugins_remove_' ~ plugin.id) }}">
                                     <button type="submit" class="btn btn-outline-danger btn-sm">{{ 'settings_plugins.remove_button'|trans }}</button>
                                 </form>
@@ -143,7 +143,7 @@
 
             <p class="alert alert-danger" id="plugin-install-client-error" hidden></p>
 
-            <div class="settings-plugins__warning alert alert-warning" id="plugin-install-warning" hidden>
+            <div class="alert alert-warning" id="plugin-install-warning" hidden>
                 <p>{{ 'settings_plugins.third_party_warning'|trans }}</p>
                 <button type="button" id="plugin-install-confirm-button" class="btn btn-warning btn-sm">{{ 'settings_plugins.confirm_button'|trans }}</button>
             </div>

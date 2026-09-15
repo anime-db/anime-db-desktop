@@ -29,7 +29,7 @@
         <p class="mb-4"><a href="{{ path('storage_new') }}" class="btn btn-primary">{{ 'storage_list.new_button'|trans }}</a></p>
 
         {% if scanned %}
-            <p class="storage-list__notice alert alert-info">{{ 'storage_list.scan_started'|trans }}</p>
+            <p class="alert alert-info">{{ 'storage_list.scan_started'|trans }}</p>
         {% endif %}
 
         {% if scannedStorageId is not null %}
@@ -41,16 +41,16 @@
                      data-anime-new-url="{{ path('anime_new') }}">
                 <h2>{{ 'storage_list.scan_heading'|trans }}</h2>
 
-                <div class="storage-scan__progress" id="storage-scan-progress">
+                <div id="storage-scan-progress">
                     <div class="progress">
                         <div class="progress-bar" id="storage-scan-progress-bar" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
                     </div>
                     <span id="storage-scan-progress-text"></span>
                 </div>
 
-                <p class="storage-scan__error" id="storage-scan-error" hidden></p>
+                <p id="storage-scan-error" hidden></p>
 
-                <div class="storage-scan__results" id="storage-scan-results" hidden></div>
+                <div id="storage-scan-results" hidden></div>
             </section>
         {% endif %}
 

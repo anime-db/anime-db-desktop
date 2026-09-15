@@ -26,7 +26,7 @@
     {% if widgets is empty %}
         <p class="text-body-secondary">{{ ('settings_plugin_widgets.'~placement~'.empty')|trans }}</p>
     {% else %}
-        <p class="settings-plugin-widgets__count text-body-secondary">
+        <p class="text-body-secondary">
             {{ 'settings_plugin_widgets.active_count'|trans({'%count%': activeCount, '%limit%': hardLimit}) }}
         </p>
         {% if activeCount > recommendedLimit %}
@@ -45,9 +45,9 @@
                     <tr>
                         <td>{{ widget.pluginName }}</td>
                         <td>
-                            <div class="settings-plugin-widgets__widget-title">{{ widget.title }}</div>
+                            <div>{{ widget.title }}</div>
                             {% if widget.description is not empty %}
-                                <div class="settings-plugin-widgets__widget-description text-body-secondary small">{{ widget.description }}</div>
+                                <div class="text-body-secondary small">{{ widget.description }}</div>
                             {% endif %}
                             <code>{{ widget.widgetName }}</code>
                         </td>
