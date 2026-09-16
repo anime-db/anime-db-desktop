@@ -21,6 +21,11 @@
 
 'use strict';
 
+jest.mock('../../native/paths', () => ({
+    getNativeTranslationsDir:        () => require('path').join(__dirname, '..', '..', 'native', 'translations'),
+    getNativeTranslationsOverlayDir: () => '/fake/does-not-exist/native-translations',
+}));
+
 const fs   = require('fs');
 const path = require('path');
 const { t, textDirection } = require('../../native/i18n');

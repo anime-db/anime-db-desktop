@@ -26,13 +26,6 @@ const path = require('path');
 const paths = require('../paths');
 const { mapOsLocaleToAppLocale } = require('../config');
 
-// Matches paths.getNativeTranslationsDir() (native/translations, resolved from __dirname there).
-// Computed locally rather than via paths.js: unlike the overlay directory below, this one never
-// depends on Electron's userData path, and callers throughout the codebase mock native/paths
-// selectively — routing this lookup through it would make an unrelated, incomplete mock silently
-// erase every built-in translation instead of failing loudly.
-const TRANSLATIONS_DIR = path.join(__dirname, '..', 'translations');
-
 /** @type {Map<string, Record<string, string> | null>} */
 const catalogCache = new Map();
 
@@ -51,7 +44,7 @@ function loadCatalog(locale) {
 
     let catalog = null;
     try {
-        catalog = JSON.parse(fs.readFileSync(path.join(TRANSLATIONS_DIR, `${locale}.json`), 'utf8'));
+        catalog = JSON.parse(fs.readFileSync(path.join(paths.getNativeTranslationsDir(), `${locale}.json`), 'utf8'));
     } catch {
         catalog = null;
     }
@@ -66,9 +59,10 @@ const overlayCache = new Map();
 
 /**
  * Reads and parses <nativeTranslationsOverlayDir>/<locale>.json — the per-key overlay written by
- * the PHP core (a separate task builds it there). Non-string values are dropped: the overlay is
- * data written by another process, and every downstream consumer of a resolved catalog must be
- * able to treat its values as strings without checking again.
+ * the PHP core (a separate task builds it there). Non-string and empty-string values are dropped:
+ * the overlay is data written by another process, every downstream consumer of a resolved catalog
+ * must be able to treat its values as non-empty strings without checking again, and an empty
+ * value must not shadow the fallback chain with a blank label.
  *
  * Cached exactly like loadCatalog(), including a cached `null` for a missing, unreadable or
  * invalid file — and deliberately never invalidated for the lifetime of the process. An overlay
@@ -84,12 +78,14 @@ function loadOverlay(locale) {
         return overlayCache.get(locale);
     }
 
+    const overlayPath = path.join(paths.getNativeTranslationsOverlayDir(), `${locale}.json`);
+
     let overlay = null;
     try {
-        const raw = JSON.parse(
-            fs.readFileSync(path.join(paths.getNativeTranslationsOverlayDir(), `${locale}.json`), 'utf8'),
+        const raw = JSON.parse(fs.readFileSync(overlayPath, 'utf8'));
+        overlay = Object.fromEntries(
+            Object.entries(raw).filter(([, value]) => typeof value === 'string' && value !== ''),
         );
-        overlay = Object.fromEntries(Object.entries(raw).filter(([, value]) => typeof value === 'string'));
     } catch {
         overlay = null;
     }

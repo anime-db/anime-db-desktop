@@ -78,6 +78,13 @@ describe('resolveCatalog() overlay merge', () => {
         expect(t('plugin.bad.key', 'ru')).toBe('plugin.bad.key');
     });
 
+    // An empty overlay value must not shadow the fallback chain with a blank label (issue #646):
+    // "kk" has no built-in catalog, so without this the tray "Open" entry would render as "".
+    test('an empty overlay value is dropped, the fallback chain is used instead', () => {
+        fs.writeFileSync(path.join(overlayDir, 'kk.json'), JSON.stringify({ 'tray.open': '' }));
+        expect(t('tray.open', 'kk')).toBe('Открыть');
+    });
+
     test('a missing overlay file behaves exactly like no overlay at all', () => {
         expect(t('tray.open', 'ru')).toBe('Открыть');
     });
