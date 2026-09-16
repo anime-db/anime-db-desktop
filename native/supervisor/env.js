@@ -76,6 +76,8 @@ function buildCommonEnv({ meiliPort, meiliKey, qbittorrentPort, appPort, safeMod
         CONFIG_PATH:             paths.getConfigPath(),
         PLUGINS_CONFIG_PATH:     paths.getPluginsConfigPath(),
         PLUGINS_DIR:             paths.getPluginsDir(),
+        NATIVE_TRANSLATIONS_DIR:         paths.getNativeTranslationsDir(),
+        NATIVE_TRANSLATIONS_OVERLAY_DIR: paths.getNativeTranslationsOverlayDir(),
         MARKET_REGISTRY_CACHE_PATH: paths.getMarketRegistryCachePath(),
         MARKET_SNAPSHOT_CACHE_PATH: paths.getMarketSnapshotCachePath(),
         MARKET_REFRESH_LOCK_PATH: paths.getMarketRefreshLockPath(),

@@ -34,6 +34,8 @@ jest.mock('../../native/paths', () => ({
     getConfigPath:        jest.fn(() => '/fake/userData/config.json'),
     getPluginsConfigPath: jest.fn(() => '/fake/userData/plugins.json'),
     getPluginsDir:        jest.fn(() => '/fake/userData/plugins'),
+    getNativeTranslationsDir:        jest.fn(() => '/fake/app/native/translations'),
+    getNativeTranslationsOverlayDir: jest.fn(() => '/fake/userData/native-translations'),
     getMarketRegistryCachePath: jest.fn(() => '/fake/userData/market-registry-cache.json'),
     getMarketSnapshotCachePath: jest.fn(() => '/fake/userData/market-snapshot-cache.json'),
     getMarketRefreshLockPath:   jest.fn(() => '/fake/userData/market-refresh.lock'),
@@ -51,6 +53,8 @@ describe('buildCommonEnv', () => {
         const env = buildCommonEnv(CONTEXT);
         expect(env.PLUGINS_DIR).toBe('/fake/userData/plugins');
         expect(env.PLUGINS_CONFIG_PATH).toBe('/fake/userData/plugins.json');
+        expect(env.NATIVE_TRANSLATIONS_DIR).toBe('/fake/app/native/translations');
+        expect(env.NATIVE_TRANSLATIONS_OVERLAY_DIR).toBe('/fake/userData/native-translations');
         expect(env.MARKET_REGISTRY_CACHE_PATH).toBe('/fake/userData/market-registry-cache.json');
         expect(env.MARKET_SNAPSHOT_CACHE_PATH).toBe('/fake/userData/market-snapshot-cache.json');
         expect(env.MARKET_REFRESH_LOCK_PATH).toBe('/fake/userData/market-refresh.lock');
