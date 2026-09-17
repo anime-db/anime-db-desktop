@@ -44,6 +44,7 @@ use App\Service\Plugin\PluginCacheWarmer;
 use App\Service\Plugin\PluginCacheWarmerInterface;
 use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Plugin\ZipPluginInstaller;
+use App\Service\Translation\NativeTranslationsOverlayWriter;
 use App\Service\WsPublisher;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
@@ -69,6 +70,15 @@ final class ZipPluginInstallerTest extends TestCase
     private string $fixturesDir;
     private InstalledPluginsRegistry $registry;
 
+    /**
+     * Extra root directories created by {@see self::installerWithOverlayWriter()}, one per call —
+     * that helper needs its own plugins/reference/overlay directory triplet, separate from
+     * $this->rootDir/$this->pluginsDir every other test in this file shares.
+     *
+     * @var list<string>
+     */
+    private array $overlayTestRootDirs = [];
+
     protected function setUp(): void
     {
         // pluginsDir is nested one level inside rootDir (rather than being sys_get_temp_dir()
@@ -92,6 +102,9 @@ final class ZipPluginInstallerTest extends TestCase
     {
         $this->removeDirectory($this->rootDir);
         $this->removeDirectory($this->fixturesDir);
+        foreach ($this->overlayTestRootDirs as $dir) {
+            $this->removeDirectory($dir);
+        }
     }
 
     #[Group('runtime-parity')]
@@ -863,6 +876,144 @@ final class ZipPluginInstallerTest extends TestCase
             $this->assertSame('1.0.0', $installed->manifest->version);
             $this->assertNoLeftoverTempDirectories();
         }
+    }
+
+    /**
+     * Issue #647 acceptance: installing a `translation`-type plugin that ships a
+     * `translations/native/<locale>.json` produces the flattened overlay file for that locale —
+     * exercised through the real install() path (ZipPluginInstaller::doInstall() calling
+     * InstalledPluginsRegistry::reconcile() calling NativeTranslationsOverlayWriter::write()), not
+     * by calling the writer directly.
+     */
+    #[Group('runtime-parity')]
+    public function testInstallingTranslationPluginBuildsNativeTranslationsOverlay(): void
+    {
+        [$installer, , , $overlayDir] = $this->installerWithOverlayWriter();
+
+        $zipPath = $this->createZip([
+            'manifest.json' => $this->translationManifestJson('lang-kazakh', ['kk']),
+            'translations/native/kk.json' => (string) json_encode(['tray.quit' => 'Шығу']),
+        ]);
+
+        $installer->install($zipPath);
+
+        $this->assertSame(['tray.quit' => 'Шығу'], $this->readOverlay($overlayDir, 'kk'));
+    }
+
+    /**
+     * Issue #647 acceptance: a broken `translations/native/` directory belonging to the plugin
+     * currently being installed fails the install outright — see
+     * ZipPluginInstaller::assertNativeTranslationsAreReadable(), called before anything is moved
+     * into place, same "fail before committing" shape as the PHP syntax check just below it.
+     */
+    public function testInstallFailsWhenItsOwnNativeTranslationsCatalogIsInvalidJson(): void
+    {
+        [$installer, , $pluginsDir] = $this->installerWithOverlayWriter();
+
+        $zipPath = $this->createZip([
+            'manifest.json' => $this->translationManifestJson('lang-kazakh', ['kk']),
+            'translations/native/kk.json' => '{not valid json',
+        ]);
+
+        $this->expectException(PluginInstallException::class);
+
+        try {
+            $installer->install($zipPath);
+        } finally {
+            $this->assertSame([], array_values(array_diff((array) scandir($pluginsDir), self::PLUGINS_DIR_HOUSEKEEPING_ENTRIES)));
+        }
+    }
+
+    /**
+     * Issue #647 acceptance: an unrelated, already-installed translation plugin's broken
+     * `translations/native/` directory does not fail an install of a totally different plugin —
+     * NativeTranslationsOverlayWriter treats a bystander's broken directory as "skip and log", see
+     * its own class docblock, unlike the plugin currently being installed (covered above).
+     */
+    #[Group('runtime-parity')]
+    public function testInstallSucceedsDespiteABystanderTranslationPluginsBrokenNativeCatalog(): void
+    {
+        [$installer, $registry, $pluginsDir] = $this->installerWithOverlayWriter();
+
+        mkdir($pluginsDir.'/lang-broken/translations/native', recursive: true);
+        file_put_contents($pluginsDir.'/lang-broken/manifest.json', $this->translationManifestJson('lang-broken', ['kk']));
+        file_put_contents($pluginsDir.'/lang-broken/translations/native/kk.json', '{not valid json');
+        $registry->reconcile();
+
+        $zipPath = $this->createZip([
+            'manifest.json' => $this->validManifestJson('animedb-shikimori'),
+        ]);
+
+        $pluginId = $installer->install($zipPath);
+
+        $this->assertSame('animedb-shikimori', (string) $pluginId);
+    }
+
+    /**
+     * @return array{0: ZipPluginInstaller, 1: InstalledPluginsRegistry, 2: string, 3: string}
+     *                                                                                         installer, its registry, the plugins dir, the overlay dir
+     */
+    private function installerWithOverlayWriter(): array
+    {
+        $rootDir = sys_get_temp_dir().'/anime-zip-installer-overlay-test-'.uniqid();
+        $pluginsDir = $rootDir.'/plugins';
+        $referenceDir = $rootDir.'/native-translations';
+        $overlayDir = $rootDir.'/overlay';
+        mkdir($pluginsDir, recursive: true);
+        mkdir($referenceDir, recursive: true);
+        file_put_contents($referenceDir.'/en.json', (string) json_encode(['tray.quit' => 'Quit']));
+
+        $this->overlayTestRootDirs[] = $rootDir;
+
+        $registry = new InstalledPluginsRegistry($pluginsDir, new PluginsConfigStore($pluginsDir.'/plugins.json'), new NullLogger());
+        $writer = new NativeTranslationsOverlayWriter($referenceDir, $overlayDir, $registry, new NullLogger());
+        $registryWithWriter = new InstalledPluginsRegistry(
+            $pluginsDir,
+            new PluginsConfigStore($pluginsDir.'/plugins.json'),
+            new NullLogger(),
+            overlayWriter: $writer,
+        );
+
+        $installer = new ZipPluginInstaller(
+            $pluginsDir,
+            self::CORE_VERSION,
+            $registryWithWriter,
+            new PluginCacheWarmer($pluginsDir, \dirname(__DIR__, 4), new NullLogger()),
+            $this->createStub(WsPublisher::class),
+            logger: new NullLogger(),
+        );
+
+        return [$installer, $registryWithWriter, $pluginsDir, $overlayDir];
+    }
+
+    /**
+     * @param list<string> $locales
+     */
+    private function translationManifestJson(string $pluginId, array $locales): string
+    {
+        return (string) json_encode([
+            'id' => $pluginId,
+            'name' => ucfirst($pluginId),
+            'version' => '1.0.0',
+            'type' => 'translation',
+            'locales' => $locales,
+            'require' => ['core' => '>=2.0.0', 'php' => '>=8.2'],
+        ]);
+    }
+
+    /**
+     * @return array<string, string>|null
+     */
+    private function readOverlay(string $overlayDir, string $locale): ?array
+    {
+        $path = $overlayDir.'/'.$locale.'.json';
+        if (!is_file($path)) {
+            return null;
+        }
+
+        $decoded = json_decode((string) file_get_contents($path), true);
+
+        return \is_array($decoded) ? $decoded : null;
     }
 
     private function installer(
