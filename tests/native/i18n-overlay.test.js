@@ -73,9 +73,13 @@ describe('resolveCatalog() overlay merge', () => {
         expect(t('tray.open', 'kk')).toBe('Открыть');
     });
 
-    test('a non-string overlay value is dropped, t() returns the key', () => {
-        fs.writeFileSync(path.join(overlayDir, 'ru.json'), JSON.stringify({ 'plugin.bad.key': 42 }));
-        expect(t('plugin.bad.key', 'ru')).toBe('plugin.bad.key');
+    // A non-string overlay value must not shadow the fallback chain either, for the same reason as
+    // an empty one below: "kk" has no built-in catalog, so a kept (unfiltered) 42 would win the
+    // per-key merge over the fallback's "Открыть" and only get caught by t()'s own totality check,
+    // masking whether loadOverlay() actually filters the value or not.
+    test('a non-string overlay value is dropped, the fallback chain is used instead', () => {
+        fs.writeFileSync(path.join(overlayDir, 'kk.json'), JSON.stringify({ 'tray.open': 42 }));
+        expect(t('tray.open', 'kk')).toBe('Открыть');
     });
 
     // An empty overlay value must not shadow the fallback chain with a blank label (issue #646):
