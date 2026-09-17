@@ -79,8 +79,8 @@ final class NativeTranslationsOverlayWriter
 {
     /**
      * A splash-step translation ends up as a command-line argument to the renderer process
-     * (native/window/index.js), and Windows caps a process's whole command line at 32767
-     * characters. The longest built-in string today is around 400 characters; 1000 leaves ample
+     * (native/window/splash.js), and Windows caps a process's whole command line at 32767
+     * characters. The longest built-in string today is 257 characters; 1000 leaves ample
      * headroom for a plugin's own translation while staying an order of magnitude under the
      * platform limit. A value over this is dropped and logged, never truncated — a truncated
      * translation reads as a bug, a missing one just falls back through the chain
