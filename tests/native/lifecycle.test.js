@@ -364,6 +364,31 @@ describe('abnormal-exit cleanup', () => {
         expect(supervisor.killSync).toHaveBeenCalledTimes(1);
         expect(app.exit).toHaveBeenCalledWith(1);
     });
+
+    test('an unhandled rejection logs the crash, shows a dialog and force-kills children before exiting', () => {
+        const { processHandlers, supervisor, app, dialog } = loadLifecycle();
+        const fs = require('fs');
+
+        processHandlers.unhandledRejection(new Error('boom'));
+
+        expect(fs.appendFileSync).toHaveBeenCalledWith(
+            expect.stringContaining('main-'),
+            expect.stringContaining('boom'),
+        );
+        expect(dialog.showErrorBox).toHaveBeenCalledWith(expect.any(String), expect.stringContaining('boom'));
+        expect(supervisor.killSync).toHaveBeenCalledTimes(1);
+        expect(app.exit).toHaveBeenCalledWith(1);
+    });
+
+    test('an unhandled rejection with a non-Error reason still shows a dialog without throwing', () => {
+        const { processHandlers, supervisor, app, dialog } = loadLifecycle();
+
+        expect(() => processHandlers.unhandledRejection('boom')).not.toThrow();
+
+        expect(dialog.showErrorBox).toHaveBeenCalledWith(expect.any(String), 'boom');
+        expect(supervisor.killSync).toHaveBeenCalledTimes(1);
+        expect(app.exit).toHaveBeenCalledWith(1);
+    });
 });
 
 describe('startup failure', () => {
