@@ -400,12 +400,44 @@ test('a column-count change in classic mode re-pages around the first record of 
     calls[1].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 100, limit: 30, offset: 30 }));
     await flushMicrotasks();
 
-    // newLimit = 10 × 6 = 60; the record at index 30 now falls on page floor(30/60)+1 = 1.
-    triggerResize(resizeObserverInstances, 10);
+    // newLimit = 3 × 6 = 18; the record at index 30 now falls on page floor(30/18)+1 = 2, i.e.
+    // offset 18. A widening resize (e.g. to 10 columns, newLimit 60) would land on page 1 (offset
+    // 0) regardless of whether the anchor math ran at all, since floor(30/60)+1 is always 1 — that
+    // case cannot distinguish real anchoring from an unconditional "reset to page 1".
+    triggerResize(resizeObserverInstances, 3);
     await flushMicrotasks();
 
     expect(calls).toHaveLength(3);
-    expect(queryParams(calls[2].url)).toMatchObject({ offset: '0', limit: '60' });
+    expect(queryParams(calls[2].url)).toMatchObject({ offset: '18', limit: '18' });
+});
+
+test('a resize that arrives before the first response still restores the row invariant', async () => {
+    setGridColumns(8); // initial limit = 8 × 6 = 48
+    const calls = mockFetchQueue();
+    setUpTranslations();
+    loadAnimeListModule();
+    await flushMicrotasks();
+    expect(queryParams(calls[0].url).limit).toBe('48');
+
+    // Resize while the first request is still in flight — paginationMode is still null at this
+    // point, so handleGridResize() alone cannot act on it (issue #665).
+    triggerResize(resizeObserverInstances, 7);
+    await flushMicrotasks();
+
+    const firstPage = Array.from({ length: 48 }, (_, i) => animeItem(i + 1, `Anime ${i + 1}`));
+    calls[0].resolve(jsonResponse({
+        items:            firstPage,
+        pagination_mode:  'infinite_scroll',
+        total:            1000,
+        limit:            48,
+        offset:           0,
+    }));
+    await flushMicrotasks();
+
+    // 48 cards laid out in 7 columns is 6 full rows plus a 6-card remainder — the invariant must
+    // be restored once the response lands, not only on the next resize.
+    expect(calls).toHaveLength(2);
+    expect(queryParams(calls[1].url)).toMatchObject({ offset: '48', limit: '1' });
 });
 
 test('the synthetic initial ResizeObserver callback does not trigger a duplicate request', async () => {

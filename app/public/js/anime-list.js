@@ -233,6 +233,24 @@
         sentinelObserver.observe(sentinel);
     }
 
+    // Re-pages (classic) or tops up the last row (infinite scroll) so the multiple-of-columns
+    // invariant holds under the grid's current column count. Shared by handleGridResize() and by
+    // loadPage()'s post-response reconciliation below (issue #665) — a resize that happens while
+    // a request is still in flight cannot be handled by handleGridResize() itself, since
+    // paginationMode is only known once a response has landed.
+    function applyColumnCountChange(columns) {
+        if (paginationMode === 'classic') {
+            const newLimit = computeLimit(columns);
+            const newPage = Math.floor(currentOffset / newLimit) + 1;
+            loadPage((newPage - 1) * newLimit, true);
+        } else if (paginationMode === 'infinite_scroll') {
+            const deficit = (columns - (loadedCount % columns)) % columns;
+            if (deficit > 0) {
+                loadPage(loadedCount, false, deficit);
+            }
+        }
+    }
+
     // `limitOverride` is used for exactly one caller: the infinite-scroll top-up after a resize,
     // which asks for only the handful of records needed to complete the last row rather than a
     // full page (issue #665). Every other caller lets the limit follow the grid's current column
@@ -248,7 +266,8 @@
         const controller = new AbortController();
         pendingRequest = controller;
 
-        const limit = limitOverride !== undefined ? limitOverride : computeLimit(getColumnCount());
+        const requestColumns = getColumnCount();
+        const limit = limitOverride !== undefined ? limitOverride : computeLimit(requestColumns);
 
         let data;
         try {
@@ -280,6 +299,17 @@
         } else {
             setupInfiniteScroll(data.total, data.limit, data.offset);
         }
+
+        // The column count can change while this request was in flight (paginationMode is not
+        // known until here, so a resize that happened mid-request could not act on it via
+        // handleGridResize() alone). Compare against the column count the just-sent limit was
+        // computed from, not against lastColumnCount, since a resize's own debounced callback may
+        // already have updated lastColumnCount without being able to correct anything (issue #665).
+        const columns = getColumnCount();
+        lastColumnCount = columns;
+        if (columns !== requestColumns) {
+            applyColumnCountChange(columns);
+        }
     }
 
     // Reacts to the grid's column count changing (window resize, scrollbar appearing, filter
@@ -291,17 +321,7 @@
             return;
         }
         lastColumnCount = columns;
-
-        if (paginationMode === 'classic') {
-            const newLimit = computeLimit(columns);
-            const newPage = Math.floor(currentOffset / newLimit) + 1;
-            loadPage((newPage - 1) * newLimit, true);
-        } else if (paginationMode === 'infinite_scroll') {
-            const deficit = (columns - (loadedCount % columns)) % columns;
-            if (deficit > 0) {
-                loadPage(loadedCount, false, deficit);
-            }
-        }
+        applyColumnCountChange(columns);
     }
 
     function setupResizeObserver() {
