@@ -32,6 +32,41 @@
     font-size: 0.9em;
 }
 
+.anime-list__sort {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 8px 16px 0;
+}
+
+.anime-list__sort-label {
+    color: var(--bs-secondary-color);
+    font-size: 0.85em;
+}
+
+.anime-list__sort-field {
+    padding: 2px 8px;
+    border: 1px solid var(--bs-border-color);
+    border-radius: 4px;
+    background: var(--bs-body-bg);
+    color: var(--bs-body-color);
+    font-size: 0.85em;
+}
+
+.anime-list__sort-field[aria-current="true"] {
+    border-color: var(--bs-primary);
+    font-weight: bold;
+}
+
+.anime-list__sort-direction {
+    padding: 2px 8px;
+    border: 1px solid var(--bs-border-color);
+    border-radius: 4px;
+    background: var(--bs-body-bg);
+    color: var(--bs-body-color);
+}
+
 .anime-list__grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));

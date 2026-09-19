@@ -95,6 +95,28 @@ final class AppSettingsProviderTest extends TestCase
         $this->assertSame(PaginationMode::Classic, $provider->getPaginationMode());
     }
 
+    public function testSetPaginationModeCreatesConfigFileWhenMissing(): void
+    {
+        $provider = new AppSettingsProvider(new AppConfigStore($this->configPath));
+
+        $provider->setPaginationMode(PaginationMode::Classic);
+
+        $this->assertSame(PaginationMode::Classic, $provider->getPaginationMode());
+    }
+
+    public function testSetPaginationModeOverwritesOnlyThatKey(): void
+    {
+        file_put_contents($this->configPath, json_encode(['appSecret' => 'abc']));
+
+        $provider = new AppSettingsProvider(new AppConfigStore($this->configPath));
+        $provider->setPaginationMode(PaginationMode::Classic);
+
+        $data = json_decode((string) file_get_contents($this->configPath), true);
+
+        $this->assertSame('abc', $data['appSecret']);
+        $this->assertSame('classic', $data['paginationMode']);
+    }
+
     public function testGetLocaleReturnsNullWhenFileIsMissing(): void
     {
         $provider = new AppSettingsProvider(new AppConfigStore($this->configPath));

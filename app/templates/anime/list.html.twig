@@ -46,6 +46,27 @@
             >
         </div>
 
+        <div class="anime-list__sort" id="anime-list-sort" role="group" aria-label="{{ 'anime_list.sort_label'|trans }}">
+            <span class="anime-list__sort-label">{{ 'anime_list.sort_label'|trans }}</span>
+            {% for field in ['name', 'date_update', 'user_rating', 'date_premiere', 'date_end'] %}
+                <button
+                    type="button"
+                    class="anime-list__sort-field"
+                    data-sort-field="{{ field }}"
+                    {% if field == 'date_update' %}aria-current="true"{% endif %}
+                >{{ ('anime_list.sort_field_' ~ field)|trans }}</button>
+            {% endfor %}
+            <button
+                type="button"
+                class="anime-list__sort-direction"
+                id="anime-list-sort-direction"
+                data-direction="desc"
+                data-label-asc="{{ 'anime_list.sort_direction_asc'|trans }}"
+                data-label-desc="{{ 'anime_list.sort_direction_desc'|trans }}"
+                aria-label="{{ 'anime_list.sort_direction_desc'|trans }}"
+            >↓</button>
+        </div>
+
         <div class="anime-list__grid" id="anime-list-grid"></div>
 
         <p class="anime-list__empty" id="anime-list-empty" hidden>{{ 'anime_list.empty'|trans }}</p>

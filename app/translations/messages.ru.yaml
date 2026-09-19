@@ -133,6 +133,9 @@ settings:
     theme_option_system: Системная
     theme_option_light: Светлая
     theme_option_dark: Тёмная
+    pagination_mode_label: Пагинация каталога
+    pagination_mode_option_infinite_scroll: Бесконечная прокрутка
+    pagination_mode_option_classic: Классическая
     search_reindex_heading: Поисковый индекс
     search_reindex_button: Переиндексировать
     search_reindex_success: Поисковый индекс успешно перестроен.
@@ -306,6 +309,14 @@ anime_list:
     empty: Список пуст.
     error: Не удалось загрузить список.
     search_placeholder: Поиск по названию…
+    sort_label: Сортировка
+    sort_field_name: По названию
+    sort_field_date_update: По дате обновления
+    sort_field_user_rating: По моей оценке
+    sort_field_date_premiere: По дате премьеры
+    sort_field_date_end: По дате окончания
+    sort_direction_asc: По возрастанию
+    sort_direction_desc: По убыванию
 
 storage_list:
     title: Хранилища — AnimeDB
