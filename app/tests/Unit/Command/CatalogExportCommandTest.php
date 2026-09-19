@@ -57,7 +57,7 @@ final class CatalogExportCommandTest extends TestCase
     protected function tearDown(): void
     {
         foreach ([$this->mediaDir, $this->destinationDir] as $dir) {
-            foreach ((array) glob($dir.'/*') as $file) {
+            foreach (glob($dir.'/*') ?: [] as $file) {
                 is_dir($file) ? null : @unlink($file);
             }
             @rmdir($dir);
@@ -96,7 +96,7 @@ final class CatalogExportCommandTest extends TestCase
             {
             }
 
-            public function getFreeBytes(string $path): ?int
+            public function getFreeBytes(string $path): int
             {
                 return $this->bytes;
             }

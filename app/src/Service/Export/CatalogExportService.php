@@ -119,7 +119,7 @@ final class CatalogExportService
             $this->wsPublisher->publish('export.progress', ['phase' => 'database', 'current' => 1, 'total' => 1]);
 
             $snapshot = new \PDO('sqlite:'.$tmpDbPath);
-            $animeCount = (int) $snapshot->query('SELECT COUNT(*) FROM anime')->fetchColumn();
+            $animeCount = (int) $this->querySnapshot($snapshot, 'SELECT COUNT(*) FROM anime')->fetchColumn();
             $mediaEntries = $this->collectMediaEntries($snapshot);
 
             $dbSize = filesize($tmpDbPath);
@@ -225,17 +225,27 @@ final class CatalogExportService
     {
         $entries = [];
 
-        $covers = $snapshot->query('SELECT id, cover FROM anime WHERE cover IS NOT NULL');
+        $covers = $this->querySnapshot($snapshot, 'SELECT id, cover FROM anime WHERE cover IS NOT NULL');
         foreach ($covers as $row) {
             $entries[] = $this->buildMediaEntry((string) $row['id'], (string) $row['cover']);
         }
 
-        $images = $snapshot->query('SELECT anime_id, source FROM anime_image');
+        $images = $this->querySnapshot($snapshot, 'SELECT anime_id, source FROM anime_image');
         foreach ($images as $row) {
             $entries[] = $this->buildMediaEntry((string) $row['anime_id'], (string) $row['source']);
         }
 
         return $entries;
+    }
+
+    private function querySnapshot(\PDO $snapshot, string $sql): \PDOStatement
+    {
+        $statement = $snapshot->query($sql);
+        if ($statement === false) {
+            throw new \RuntimeException(\sprintf('Failed to query the database snapshot: "%s".', $sql));
+        }
+
+        return $statement;
     }
 
     /**

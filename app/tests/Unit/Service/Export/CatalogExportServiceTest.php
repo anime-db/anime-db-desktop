@@ -120,7 +120,9 @@ final class CatalogExportServiceTest extends TestCase
         $zip->close();
 
         $extracted = new \PDO('sqlite:'.$extractedDbPath);
-        $this->assertSame(2, (int) $extracted->query('SELECT COUNT(*) FROM anime')->fetchColumn());
+        $statement = $extracted->query('SELECT COUNT(*) FROM anime');
+        $this->assertInstanceOf(\PDOStatement::class, $statement);
+        $this->assertSame(2, (int) $statement->fetchColumn());
     }
 
     public function testExportSkipsAnUnreadableMediaFileAndLogsAWarningInsteadOfFailing(): void
