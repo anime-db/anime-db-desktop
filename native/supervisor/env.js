@@ -73,6 +73,7 @@ function buildCommonEnv({ meiliPort, meiliKey, qbittorrentPort, appPort, safeMod
         PHPRC:                   paths.getPhpIniDir(),
         APP_RUNTIME_DIR:         paths.getRuntimeDir(),
         MEDIA_DIR:               paths.getMediaDir(),
+        IMPORT_STAGING_DIR:      paths.getImportStagingDir(),
         CONFIG_PATH:             paths.getConfigPath(),
         PLUGINS_CONFIG_PATH:     paths.getPluginsConfigPath(),
         PLUGINS_DIR:             paths.getPluginsDir(),
