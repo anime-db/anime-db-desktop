@@ -182,7 +182,7 @@ final class CatalogExportService
         foreach ($mediaEntries as $entry) {
             ++$current;
 
-            if (!$this->addMediaFile($zip, $tmpZipPath, $entry['fullPath'], $entry['relativePath'])) {
+            if (!$this->addMediaFile($zip, $entry['fullPath'], $entry['relativePath'])) {
                 ++$skipped;
             }
 
@@ -215,24 +215,40 @@ final class CatalogExportService
     /**
      * Adds one media file to $zip via {@see \ZipArchive::addFile()}, which streams the source
      * from disk when the archive is closed instead of holding its content in PHP memory the way
-     * `addFromString()` (the previous approach) would — memory usage stays flat no matter how
-     * much media the catalog holds, where the old approach grew linearly with it and could
-     * exhaust the memory limit on a catalog with hundreds of megabytes of covers.
+     * `addFromString()` would — memory usage stays flat no matter how much media the catalog
+     * holds, where an `addFromString()`-per-file approach grows with it and could exhaust the
+     * memory limit on a catalog with hundreds of megabytes of covers.
      *
-     * The tradeoff is that `addFile()` only reads the file when $zip is closed, not when it is
-     * called — so a file that disappears or changes in between would otherwise fail the whole
-     * archive instead of just this one entry. This method closes and immediately reopens $zip
-     * around every media file, forcing libzip to read *this* file right now: a close() failure
-     * then only ever means this one file went bad, preserving the "skip an unreadable file and
-     * log it" contract (issue #657 acceptance criterion 8). data.db doesn't need the same
-     * treatment because, unlike media/, nothing else touches its temp snapshot file while the
-     * export runs.
+     * `addFile()` only registers $fullPath as a lazy source; libzip does not actually open and
+     * read it until the single {@see \ZipArchive::close()} call in writeArchive() commits the
+     * whole archive. By then, a source that fails to open aborts that entire commit — every
+     * other file queued alongside it, not just this one — so an earlier revision of this method
+     * closed and reopened $zip around every single file to force libzip to read it immediately
+     * and isolate the failure. That made writeArchive() quadratic in the number of media files:
+     * libzip rewrites the archive it already has on disk from scratch on every close(), so each
+     * of n files paid for rewriting the n-1 before it (issue #657 code review, "экспорт
+     * квадратичным по вводу-выводу"). Opening (and immediately closing) a plain read handle here
+     * instead catches the same "unreadable or removed since the snapshot was taken" case — the
+     * only one the acceptance criterion needs (a file that no longer exists stays that way) —
+     * without paying to rewrite the archive per file; the one remaining close() happens once, at
+     * the end of writeArchive(). data.db doesn't need this check because, unlike media/, nothing
+     * else touches its temp snapshot file while the export runs.
      */
-    private function addMediaFile(\ZipArchive $zip, string $tmpZipPath, string $fullPath, string $relativePath): bool
+    private function addMediaFile(\ZipArchive $zip, string $fullPath, string $relativePath): bool
     {
         $entryName = 'media/'.$relativePath;
 
-        if (!@$zip->addFile($fullPath, $entryName)) {
+        $handle = @fopen($fullPath, 'rb');
+        if ($handle === false) {
+            $this->logger->warning('Skipping a media file during catalog export: unreadable or removed since the database snapshot was taken.', [
+                'path' => $relativePath,
+            ]);
+
+            return false;
+        }
+        fclose($handle);
+
+        if (!$zip->addFile($fullPath, $entryName)) {
             $this->logger->warning('Skipping a media file during catalog export: unreadable or removed since the database snapshot was taken.', [
                 'path' => $relativePath,
             ]);
@@ -242,18 +258,7 @@ final class CatalogExportService
 
         $zip->setCompressionName($entryName, \ZipArchive::CM_STORE);
 
-        $added = $zip->close();
-        if (!$added) {
-            $this->logger->warning('Skipping a media file during catalog export: unreadable or removed since the database snapshot was taken.', [
-                'path' => $relativePath,
-            ]);
-        }
-
-        if ($zip->open($tmpZipPath, \ZipArchive::CREATE) !== true) {
-            throw new \RuntimeException(\sprintf('Unable to reopen the archive at "%s".', $tmpZipPath));
-        }
-
-        return $added;
+        return true;
     }
 
     /**
