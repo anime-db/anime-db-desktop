@@ -174,6 +174,62 @@ final class CatalogExportServiceTest extends TestCase
         $this->assertLessThan($fileSize * 4, $peakAfter - $peakBefore);
     }
 
+    public function testExportOfManyMediaFilesWritesTheArchiveInASingleCloseInsteadOfOnceEach(): void
+    {
+        $connection = $this->createConnection();
+        $this->seedSchema($connection);
+
+        $fileCount = 5;
+        for ($i = 1; $i <= $fileCount; ++$i) {
+            $connection->insert('anime', ['id' => $i, 'title' => 'Anime '.$i, 'cover' => 'cover.webp']);
+            mkdir($this->mediaDir.'/'.$i, 0o755, true);
+            file_put_contents($this->mediaDir.'/'.$i.'/cover.webp', 'cover-bytes-'.$i);
+        }
+
+        /** @var \ArrayObject<int, int|null> $tmpArchiveSizesDuringMediaPhase */
+        $tmpArchiveSizesDuringMediaPhase = new \ArrayObject();
+        $wsPublisher = new class(DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]), $this->destinationDir, $tmpArchiveSizesDuringMediaPhase) extends WsPublisher {
+            /**
+             * @param \ArrayObject<int, int|null> $tmpArchiveSizesDuringMediaPhase
+             */
+            public function __construct(
+                Connection $connection,
+                private readonly string $destinationDir,
+                private readonly \ArrayObject $tmpArchiveSizesDuringMediaPhase,
+            ) {
+                parent::__construct($connection);
+            }
+
+            public function publish(string $event, mixed $data): void
+            {
+                if ($event === 'export.progress' && \is_array($data) && ($data['phase'] ?? null) === 'media') {
+                    $tmpZipPaths = glob($this->destinationDir.'/*.zip.tmp') ?: [];
+                    // libzip does not create the underlying file at all until close() commits the
+                    // whole archive, so the expected reading here is "missing", not "zero bytes" —
+                    // recorded as null rather than 0 to keep that distinct from an actually-empty file.
+                    $this->tmpArchiveSizesDuringMediaPhase[] = $tmpZipPaths === [] ? null : (int) filesize($tmpZipPaths[0]);
+                }
+
+                parent::publish($event, $data);
+            }
+        };
+
+        $result = $this->createService($connection, wsPublisher: $wsPublisher)->export($this->destinationDir);
+
+        $this->assertSame(0, $result->skippedMediaFiles);
+        // Regression guard (issue #657 code review): a media file added via addFile() is only
+        // committed to disk by the single close() in writeArchive(), so the temporary archive is
+        // never partially written for any 'media' progress event queued before that close().
+        // Reverting to a close()/reopen() per file — the change that made writeArchive() quadratic
+        // in the number of media files — would make the temporary archive already exist with
+        // non-zero size partway through the loop instead.
+        $this->assertCount($fileCount, $tmpArchiveSizesDuringMediaPhase);
+        foreach ($tmpArchiveSizesDuringMediaPhase as $size) {
+            $this->assertTrue($size === null || $size === 0, 'The temporary archive must not be partially committed before writeArchive()\'s single close() call.');
+        }
+        $this->assertGreaterThan(0, filesize($result->archivePath));
+    }
+
     public function testExportThrowsAndLeavesNothingInTheDestinationWhenTheVolumeDoesNotHaveEnoughFreeSpace(): void
     {
         $connection = $this->createConnection();
@@ -204,7 +260,7 @@ final class CatalogExportServiceTest extends TestCase
         }
     }
 
-    private function createService(Connection $connection, ?LoggerInterface $logger = null, ?int $freeBytes = \PHP_INT_MAX): CatalogExportService
+    private function createService(Connection $connection, ?LoggerInterface $logger = null, ?int $freeBytes = \PHP_INT_MAX, ?WsPublisher $wsPublisher = null): CatalogExportService
     {
         $freeSpaceProvider = new class($freeBytes) implements FreeSpaceProvider {
             public function __construct(private readonly ?int $bytes)
@@ -226,7 +282,7 @@ final class CatalogExportServiceTest extends TestCase
         return new CatalogExportService(
             $connection,
             $freeSpaceProvider,
-            new WsPublisher(DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true])),
+            $wsPublisher ?? new WsPublisher(DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true])),
             $pluginsRegistry,
             $logger ?? new NullLogger(),
             $this->mediaDir,
