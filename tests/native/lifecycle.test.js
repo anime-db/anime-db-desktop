@@ -333,13 +333,20 @@ describe('cache invalidation errors (issue #403 review)', () => {
 });
 
 describe('relaunch (issue #656)', () => {
-    test('relaunch() restarts the app via app.relaunch() + app.exit()', async () => {
-        const { app, relaunch } = loadLifecycle();
+    test('relaunch() restarts the app via app.relaunch() + app.quit(), which gracefully tears down the supervisor before exiting', async () => {
+        const { app, wsClient, supervisor, appHandlers, relaunch } = loadLifecycle();
         await new Promise((r) => setTimeout(r, 500));
 
         relaunch();
 
         expect(app.relaunch).toHaveBeenCalledTimes(1);
+        expect(app.quit).toHaveBeenCalledTimes(1);
+
+        appHandlers['before-quit']({ preventDefault: jest.fn() });
+        await new Promise((r) => setTimeout(r, 0));
+
+        expect(wsClient.disconnect).toHaveBeenCalledTimes(1);
+        expect(supervisor.stop).toHaveBeenCalledTimes(1);
         expect(app.exit).toHaveBeenCalledWith(0);
     });
 
