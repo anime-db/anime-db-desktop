@@ -114,6 +114,7 @@ final class CatalogExportService
         // VACUUM INTO refuses to write to a file that already exists.
         unlink($tmpDbPath);
 
+        $snapshot = null;
         try {
             $this->connection->executeStatement('VACUUM INTO ?', [$tmpDbPath]);
             $this->wsPublisher->publish('export.progress', ['phase' => 'database', 'current' => 1, 'total' => 1]);
@@ -142,6 +143,11 @@ final class CatalogExportService
 
             return $result;
         } finally {
+            // PDO's SQLite driver keeps the snapshot file open until this reference is dropped;
+            // releasing it here (rather than relying on $snapshot going out of scope on its own)
+            // guarantees the handle is closed before the unlink below runs, so the temp snapshot
+            // is actually removed instead of silently surviving as an open-file leak on Windows.
+            $snapshot = null;
             @unlink($tmpDbPath);
         }
     }
