@@ -126,6 +126,7 @@ settings:
     sync_review_link: Requires attention
     sync_review_badge: 'Requires attention: %count%'
     proxy_link: Proxy server
+    backup_link: Catalog export
     language_label: Interface language
     language_unavailable_option: '%language% — unavailable'
     language_plugin_translation_note: Plugin interfaces are translated by their own authors — outside the app's built-in languages, some plugin screens may stay untranslated.
@@ -300,6 +301,22 @@ settings_proxy:
     incoming_connections_save_success: Setting saved. Turning it on will ask Windows to confirm administrator rights to add a firewall rule.
     incoming_connections_error: Not available while a SOCKS5 proxy is selected.
     incoming_connections_socks5_hint: Incoming connections do not work through a SOCKS5 proxy regardless of firewall rules, so enabling is unavailable. An already-enabled setting can still be turned off at any time.
+
+settings_backup:
+    title: Catalog export — Settings — AnimeDB
+    heading: Catalog export
+    description: Saves a copy of the catalog (database and covers) as a single file in the folder you choose. App and plugin settings, including the proxy password and access tokens, are not included.
+    unavailable_outside_app: Export is only available inside the AnimeDB app.
+    destination_label: Destination folder
+    pick_folder_button: Choose folder
+    start_button: Start export
+    cancel_button: Cancel
+    progress_database: 'Database snapshot: %current%/%total%'
+    progress_media: 'Packing covers: %current%/%total%'
+    done_text: 'Catalog exported to: %path%'
+    cancelled_text: Export cancelled.
+    error_insufficient_space: Not enough free space on the selected volume.
+    error_generic: Failed to export the catalog.
 
 anime_list:
     title: List — AnimeDB

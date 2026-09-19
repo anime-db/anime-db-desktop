@@ -1,10 +1,14 @@
+<?php
+
 /**
  * AnimeDb package.
  *
  * @author    Peter Gribanov <info@peter-gribanov.ru>
  * @copyright Copyright (c) 2026, Peter Gribanov
  * @license   https://www.gnu.org/licenses/gpl-3.0.html GPL-3.0-or-later
- *
+ */
+
+/*
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
@@ -19,15 +23,18 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-'use strict';
+declare(strict_types=1);
 
-const { contextBridge, ipcRenderer } = require('electron');
+namespace App\Service\Export\Exception;
 
-contextBridge.exposeInMainWorld('animeDb', {
-    openPath:   (targetPath) => ipcRenderer.invoke('shell:open-path', targetPath),
-    pickFolder: () => ipcRenderer.invoke('dialog:pick-folder'),
-    pickFile:   (filters) => ipcRenderer.invoke('dialog:pick-file', filters),
-    onNotification: (callback) => ipcRenderer.on('app-notification', (_event, data) => callback(data)),
-    catalogExportStart:  (destinationDir) => ipcRenderer.invoke('catalog:export-start', destinationDir),
-    catalogExportCancel: () => ipcRenderer.invoke('catalog:export-cancel'),
-});
+/**
+ * Thrown by {@see \App\Service\Export\CatalogExportService} when the destination volume does not
+ * have enough free space for the estimated archive size (issue #657) — checked via
+ * {@see \App\Service\Download\FreeSpaceProvider::getFreeBytes()} against the destination path
+ * itself, not the downloads root {@see \App\Service\Download\FreeSpaceChecker} is pinned to.
+ * Raised before anything is written to the destination directory, so a failed check never leaves
+ * a partial file behind.
+ */
+final class InsufficientDiskSpaceException extends \RuntimeException
+{
+}

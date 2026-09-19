@@ -100,12 +100,15 @@ let queuedPluginId = null;
  * обработанным. Ошибка инвалидации не перехватывается: пусть прервёт запуск и попадёт в лог
  * (native/crash-log.js) через catch в lifecycle/index.js, а не тихо продолжит работу против
  * устаревшего кэша. Meilisearch и qbittorrent-nox стартуют первыми (независимо друг от друга) —
- * их порты/ключи нужны FrankenPHP в env. Миграции и оба разовых консольных вызова
- * (messenger:setup-transports, app:search:reindex — оба идут через php-command.js, см. issue
- * #400) тоже участвуют в начальной зачистке сирот — тот же PID-файл (см. pid-tracker.js),
- * которым отмечается spawn консольной команды, должен быть проверен и убран до старта хоть
- * одного дочернего процесса текущего сеанса, иначе переиспользованный ОС PID мог бы совпасть с
- * процессом текущего сеанса.
+ * их порты/ключи нужны FrankenPHP в env. Миграции и разовые консольные вызовы
+ * (messenger:setup-transports, app:search:reindex, app:plugin:reconcile, app:catalog:export —
+ * все идут через php-command.js, см. issue #400) тоже участвуют в начальной зачистке сирот — тот
+ * же PID-файл (см. pid-tracker.js), которым отмечается spawn консольной команды, должен быть
+ * проверен и убран до старта хоть одного дочернего процесса текущего сеанса, иначе
+ * переиспользованный ОС PID мог бы совпасть с процессом текущего сеанса. app:catalog:export
+ * (issue #657) не участвует в самой последовательности старта — он запускается по требованию
+ * из native/catalog-export/index.js, — но сирота от прошлого сеанса всё равно должен быть убран
+ * здесь же, до первого дочернего процесса текущего.
  *
  * Doctrine-миграции (issue #392) прогоняются сразу после Meilisearch/qbittorrent и до старта
  * FrankenPHP — migrate не зависит от HTTP/поиска/очереди, только от DATABASE_URL, но схема
@@ -139,6 +142,7 @@ async function start(onProgress, { safeMode = false } = {}) {
         phpCommand.killOrphan('messenger:setup-transports'),
         phpCommand.killOrphan('app:search:reindex'),
         phpCommand.killOrphan('app:plugin:reconcile'),
+        phpCommand.killOrphan('app:catalog:export'),
         qbittorrent.killOrphan(),
     ]);
 
@@ -384,4 +388,17 @@ function killSync() {
     qbittorrent.killSync();
 }
 
-module.exports = { start, stop, killSync, reloadForPlugin, events, TOTAL_STEPS, WORKERS_RELOAD_EVENT };
+/**
+ * Snapshot of the running session's PhpContext (with appPort) for one-off console calls
+ * triggered from outside start() itself — e.g. native/catalog-export/index.js (issue #657), which
+ * spawns `app:catalog:export` on demand from an IPC handler rather than at a fixed point in the
+ * startup sequence. Returns null before start() has finished (liveContext not set yet) so a
+ * caller fails cleanly instead of spawning a process with an incomplete env.
+ *
+ * @returns {(import('./env').PhpContext & { appPort: number }) | null}
+ */
+function getWorkerContext() {
+    return liveContext ? { ...liveContext.phpContext, appPort: liveContext.frankenphpPort } : null;
+}
+
+module.exports = { start, stop, killSync, reloadForPlugin, getWorkerContext, events, TOTAL_STEPS, WORKERS_RELOAD_EVENT };

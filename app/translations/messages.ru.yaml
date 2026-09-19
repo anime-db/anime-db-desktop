@@ -126,6 +126,7 @@ settings:
     sync_review_link: Требует внимания
     sync_review_badge: 'Требует внимания: %count%'
     proxy_link: Прокси-сервер
+    backup_link: Экспорт каталога
     language_label: Язык интерфейса
     language_unavailable_option: '%language% — недоступно'
     language_plugin_translation_note: Интерфейс плагинов переводят их авторы — на языке, не входящем в число встроенных в приложение, часть интерфейса плагинов может остаться непереведённой.
@@ -300,6 +301,22 @@ settings_proxy:
     incoming_connections_save_success: Настройка сохранена. При включении Windows запросит подтверждение прав администратора для добавления правила брандмауэра.
     incoming_connections_error: Недоступно при выбранном SOCKS5-прокси.
     incoming_connections_socks5_hint: Под SOCKS5-прокси входящие подключения не работают независимо от правил брандмауэра, поэтому включение недоступно. Уже включённую настройку можно выключить в любой момент.
+
+settings_backup:
+    title: Экспорт каталога — Настройки — AnimeDB
+    heading: Экспорт каталога
+    description: Сохраняет копию каталога (базу данных и обложки) одним файлом в выбранную папку. Настройки приложения и плагинов, включая пароль прокси и токены доступа, в архив не входят.
+    unavailable_outside_app: Экспорт доступен только в приложении AnimeDB.
+    destination_label: Папка назначения
+    pick_folder_button: Выбрать папку
+    start_button: Начать экспорт
+    cancel_button: Отменить
+    progress_database: 'Снимок базы данных: %current%/%total%'
+    progress_media: 'Упаковка обложек: %current%/%total%'
+    done_text: 'Каталог экспортирован: %path%'
+    cancelled_text: Экспорт отменён.
+    error_insufficient_space: Недостаточно свободного места на выбранном томе.
+    error_generic: Не удалось экспортировать каталог.
 
 anime_list:
     title: Список — AnimeDB
