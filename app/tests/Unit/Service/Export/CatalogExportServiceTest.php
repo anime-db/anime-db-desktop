@@ -144,6 +144,36 @@ final class CatalogExportServiceTest extends TestCase
         $zip->close();
     }
 
+    public function testExportOfManyMediaFilesKeepsPeakMemoryUsageBoundedInsteadOfGrowingWithTheirTotalSize(): void
+    {
+        $connection = $this->createConnection();
+        $this->seedSchema($connection);
+
+        $fileCount = 20;
+        $fileSize = 1024 * 1024; // 20 MB of media across all files.
+        $content = str_repeat('x', $fileSize);
+        for ($i = 1; $i <= $fileCount; ++$i) {
+            $connection->insert('anime', ['id' => $i, 'title' => 'Anime '.$i, 'cover' => 'cover.webp']);
+            mkdir($this->mediaDir.'/'.$i, 0o755, true);
+            file_put_contents($this->mediaDir.'/'.$i.'/cover.webp', $content);
+        }
+        unset($content);
+        gc_collect_cycles();
+
+        $peakBefore = memory_get_peak_usage(true);
+
+        $result = $this->createService($connection)->export($this->destinationDir);
+
+        $peakAfter = memory_get_peak_usage(true);
+
+        $this->assertSame(0, $result->skippedMediaFiles);
+        // Regression guard for issue #657's export OOM: writeArchive() must stream each media
+        // file straight from disk instead of buffering its content in PHP memory, so peak memory
+        // growth stays bounded by roughly one file's size instead of scaling with the archive's
+        // total media size (20 MB across $fileCount files here).
+        $this->assertLessThan($fileSize * 4, $peakAfter - $peakBefore);
+    }
+
     public function testExportThrowsAndLeavesNothingInTheDestinationWhenTheVolumeDoesNotHaveEnoughFreeSpace(): void
     {
         $connection = $this->createConnection();
