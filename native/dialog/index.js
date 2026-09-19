@@ -35,6 +35,25 @@ async function pickFolder() {
     return result.canceled ? null : result.filePaths[0];
 }
 
-ipcMain.handle('dialog:pick-folder', pickFolder);
+/**
+ * Открывает нативный диалог выбора одного файла на диске. Фильтр расширений задаётся
+ * вызывающей стороной, а не хардкодится здесь, так как разные сценарии (например, импорт
+ * каталога) работают с разными форматами файлов.
+ *
+ * @param {Electron.IpcMainInvokeEvent} _event
+ * @param {Electron.FileFilter[]} [filters]
+ * @returns {Promise<string|null>}
+ */
+async function pickFile(_event, filters) {
+    const result = await dialog.showOpenDialog({
+        properties: ['openFile'],
+        filters:    filters || [],
+    });
 
-module.exports = { pickFolder };
+    return result.canceled ? null : result.filePaths[0];
+}
+
+ipcMain.handle('dialog:pick-folder', pickFolder);
+ipcMain.handle('dialog:pick-file', pickFile);
+
+module.exports = { pickFolder, pickFile };

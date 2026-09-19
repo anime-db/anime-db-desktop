@@ -103,6 +103,21 @@ function onQuit() {
     app.quit();
 }
 
+/**
+ * Перезапускает приложение. app.relaunch() лишь планирует повторный запуск после выхода —
+ * само завершение идёт через app.quit(), который эмитит before-quit ниже: тот обходит
+ * mainWindow.on('close', ...) (иначе прячущий окно в трей вместо закрытия) и делает
+ * упорядоченную graceful-остановку (wsClient.disconnect() + supervisor.stop()) перед
+ * app.exit(0) — вместо аварийного supervisor.killSync() из process.on('exit').
+ *
+ * @returns {void}
+ */
+function relaunch() {
+    quitting = true;
+    app.relaunch();
+    app.quit();
+}
+
 const gotLock = app.requestSingleInstanceLock();
 
 if (!gotLock) {
@@ -288,3 +303,5 @@ if (!gotLock) {
         app.exit(1);
     });
 }
+
+module.exports = { relaunch };

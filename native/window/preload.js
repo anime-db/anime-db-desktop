@@ -26,5 +26,6 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('animeDb', {
     openPath:   (targetPath) => ipcRenderer.invoke('shell:open-path', targetPath),
     pickFolder: () => ipcRenderer.invoke('dialog:pick-folder'),
+    pickFile:   (filters) => ipcRenderer.invoke('dialog:pick-file', filters),
     onNotification: (callback) => ipcRenderer.on('app-notification', (_event, data) => callback(data)),
 });
