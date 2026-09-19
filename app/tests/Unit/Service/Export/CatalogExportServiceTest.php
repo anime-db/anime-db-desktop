@@ -1,0 +1,215 @@
+<?php
+
+/**
+ * AnimeDb package.
+ *
+ * @author    Peter Gribanov <info@peter-gribanov.ru>
+ * @copyright Copyright (c) 2026, Peter Gribanov
+ * @license   https://www.gnu.org/licenses/gpl-3.0.html GPL-3.0-or-later
+ */
+
+/*
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+
+declare(strict_types=1);
+
+namespace App\Tests\Unit\Service\Export;
+
+use App\Service\Download\FreeSpaceProvider;
+use App\Service\Export\CatalogExportService;
+use App\Service\Export\Exception\InsufficientDiskSpaceException;
+use App\Service\Plugin\InstalledPluginsRegistry;
+use App\Service\Plugin\PluginsConfigStore;
+use App\Service\WsPublisher;
+use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\DriverManager;
+use PHPUnit\Framework\TestCase;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
+
+final class CatalogExportServiceTest extends TestCase
+{
+    private string $dbPath;
+    private string $mediaDir;
+    private string $destinationDir;
+
+    protected function setUp(): void
+    {
+        $this->dbPath = sys_get_temp_dir().'/animedb-export-test-'.uniqid().'.db';
+        $this->mediaDir = sys_get_temp_dir().'/animedb-export-test-media-'.uniqid();
+        $this->destinationDir = sys_get_temp_dir().'/animedb-export-test-dest-'.uniqid();
+        mkdir($this->mediaDir, 0o755, true);
+        mkdir($this->destinationDir, 0o755, true);
+    }
+
+    protected function tearDown(): void
+    {
+        $this->removeDirectory($this->mediaDir);
+        $this->removeDirectory($this->destinationDir);
+        @unlink($this->dbPath);
+    }
+
+    public function testExportProducesArchiveWithExpectedContentsAndExcludesSecrets(): void
+    {
+        $connection = $this->createConnection();
+        $this->seedSchema($connection);
+        $connection->insert('anime', ['id' => 1, 'title' => 'Cowboy Bebop', 'cover' => 'cover.webp']);
+        $connection->insert('anime_image', ['id' => 1, 'anime_id' => 1, 'source' => 'gallery1.webp']);
+        $connection->insert('doctrine_migration_versions', ['version' => 'Version20260917120000']);
+        mkdir($this->mediaDir.'/1', 0o755, true);
+        file_put_contents($this->mediaDir.'/1/cover.webp', 'cover-bytes');
+        file_put_contents($this->mediaDir.'/1/gallery1.webp', 'gallery-bytes');
+
+        $result = $this->createService($connection)->export($this->destinationDir);
+
+        $this->assertFileExists($result->archivePath);
+        $this->assertSame(1, $result->animeCount);
+        $this->assertSame(2, $result->mediaFileCount);
+        $this->assertSame(0, $result->skippedMediaFiles);
+
+        $zip = new \ZipArchive();
+        $zip->open($result->archivePath);
+        $names = [];
+        for ($i = 0; $i < $zip->numFiles; ++$i) {
+            $names[] = $zip->getNameIndex($i);
+        }
+
+        $this->assertContains('data.db', $names);
+        $this->assertContains('media/1/cover.webp', $names);
+        $this->assertContains('media/1/gallery1.webp', $names);
+        $this->assertContains('manifest.json', $names);
+        $this->assertNotContains('config.json', $names);
+        $this->assertNotContains('plugins.json', $names);
+
+        $manifest = json_decode((string) $zip->getFromName('manifest.json'), true, flags: \JSON_THROW_ON_ERROR);
+        $zip->close();
+
+        $this->assertSame(1, $manifest['formatVersion']);
+        $this->assertSame('2.0.0', $manifest['app']['version']);
+        $this->assertSame('Version20260917120000', $manifest['app']['lastMigration']);
+        $this->assertSame(1, $manifest['counts']['anime']);
+        $this->assertSame(2, $manifest['counts']['mediaFiles']);
+        $this->assertSame([], $manifest['plugins']);
+    }
+
+    public function testExportedArchiveContainsAWorkingDatabaseWithTheSameAnimeCountAsTheSource(): void
+    {
+        $connection = $this->createConnection();
+        $this->seedSchema($connection);
+        $connection->insert('anime', ['id' => 1, 'title' => 'A']);
+        $connection->insert('anime', ['id' => 2, 'title' => 'B']);
+
+        $result = $this->createService($connection)->export($this->destinationDir);
+
+        $zip = new \ZipArchive();
+        $zip->open($result->archivePath);
+        $extractedDbPath = $this->destinationDir.'/extracted.db';
+        file_put_contents($extractedDbPath, (string) $zip->getFromName('data.db'));
+        $zip->close();
+
+        $extracted = new \PDO('sqlite:'.$extractedDbPath);
+        $this->assertSame(2, (int) $extracted->query('SELECT COUNT(*) FROM anime')->fetchColumn());
+    }
+
+    public function testExportSkipsAnUnreadableMediaFileAndLogsAWarningInsteadOfFailing(): void
+    {
+        $connection = $this->createConnection();
+        $this->seedSchema($connection);
+        $connection->insert('anime', ['id' => 1, 'title' => 'A', 'cover' => 'missing.webp']);
+
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->once())->method('warning');
+
+        $result = $this->createService($connection, $logger)->export($this->destinationDir);
+
+        $this->assertSame(1, $result->skippedMediaFiles);
+
+        $zip = new \ZipArchive();
+        $zip->open($result->archivePath);
+        $this->assertFalse($zip->locateName('media/1/missing.webp'));
+        $zip->close();
+    }
+
+    public function testExportThrowsAndLeavesNothingInTheDestinationWhenTheVolumeDoesNotHaveEnoughFreeSpace(): void
+    {
+        $connection = $this->createConnection();
+        $this->seedSchema($connection);
+        $connection->insert('anime', ['id' => 1, 'title' => 'A']);
+
+        $this->expectException(InsufficientDiskSpaceException::class);
+
+        try {
+            $this->createService($connection, freeBytes: 1)->export($this->destinationDir);
+        } finally {
+            $this->assertSame([], array_values(array_diff((array) scandir($this->destinationDir), ['.', '..'])));
+        }
+    }
+
+    private function createService(Connection $connection, ?LoggerInterface $logger = null, ?int $freeBytes = \PHP_INT_MAX): CatalogExportService
+    {
+        $freeSpaceProvider = new class($freeBytes) implements FreeSpaceProvider {
+            public function __construct(private readonly ?int $bytes)
+            {
+            }
+
+            public function getFreeBytes(string $path): ?int
+            {
+                return $this->bytes;
+            }
+        };
+
+        $pluginsRegistry = new InstalledPluginsRegistry(
+            sys_get_temp_dir().'/animedb-export-test-plugins-does-not-exist',
+            new PluginsConfigStore(sys_get_temp_dir().'/animedb-export-test-plugins-'.uniqid().'.json'),
+            new NullLogger(),
+        );
+
+        return new CatalogExportService(
+            $connection,
+            $freeSpaceProvider,
+            new WsPublisher(DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true])),
+            $pluginsRegistry,
+            $logger ?? new NullLogger(),
+            $this->mediaDir,
+            '2.0.0',
+        );
+    }
+
+    private function createConnection(): Connection
+    {
+        return DriverManager::getConnection(['driver' => 'pdo_sqlite', 'path' => $this->dbPath]);
+    }
+
+    private function seedSchema(Connection $connection): void
+    {
+        $connection->executeStatement('CREATE TABLE anime (id INTEGER PRIMARY KEY, title TEXT, cover TEXT)');
+        $connection->executeStatement('CREATE TABLE anime_image (id INTEGER PRIMARY KEY, anime_id INTEGER, source TEXT)');
+        $connection->executeStatement('CREATE TABLE doctrine_migration_versions (version TEXT PRIMARY KEY, executed_at TEXT)');
+    }
+
+    private function removeDirectory(string $dir): void
+    {
+        if (!is_dir($dir)) {
+            return;
+        }
+
+        foreach (array_diff((array) scandir($dir), ['.', '..']) as $item) {
+            $path = $dir.'/'.$item;
+            is_dir($path) ? $this->removeDirectory($path) : unlink($path);
+        }
+
+        rmdir($dir);
+    }
+}
