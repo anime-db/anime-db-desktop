@@ -189,6 +189,21 @@ final class CatalogExportServiceTest extends TestCase
         }
     }
 
+    public function testExportThrowsAndLeavesNothingInTheDestinationWhenFreeSpaceCannotBeDetermined(): void
+    {
+        $connection = $this->createConnection();
+        $this->seedSchema($connection);
+        $connection->insert('anime', ['id' => 1, 'title' => 'A']);
+
+        $this->expectException(InsufficientDiskSpaceException::class);
+
+        try {
+            $this->createService($connection, freeBytes: null)->export($this->destinationDir);
+        } finally {
+            $this->assertSame([], array_values(array_diff((array) scandir($this->destinationDir), ['.', '..'])));
+        }
+    }
+
     private function createService(Connection $connection, ?LoggerInterface $logger = null, ?int $freeBytes = \PHP_INT_MAX): CatalogExportService
     {
         $freeSpaceProvider = new class($freeBytes) implements FreeSpaceProvider {
