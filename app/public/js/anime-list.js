@@ -103,6 +103,9 @@
     function renderCards(items, replace, catalogue) {
         if (replace) {
             grid.replaceChildren();
+            // The grid collapsing to a shorter height would otherwise leave the window scroll
+            // position wherever the browser clamps it, not at the top of the new list.
+            window.scrollTo(0, 0);
         }
         for (const anime of items) {
             grid.appendChild(buildCard(anime, catalogue));

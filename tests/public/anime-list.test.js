@@ -98,6 +98,16 @@ function mockCatalogueQueue() {
     return { calls, getCatalogue };
 }
 
+// jsdom does not implement IntersectionObserver, so setupInfiniteScroll() needs a stand-in.
+// Each constructed instance exposes trigger() to simulate the sentinel entering the viewport.
+function mockIntersectionObserver() {
+    global.IntersectionObserver = jest.fn(function (callback) {
+        this.observe = jest.fn();
+        this.disconnect = jest.fn();
+        this.trigger = () => callback([{ isIntersecting: true }]);
+    });
+}
+
 async function flushMicrotasks() {
     for (let i = 0; i < 10; i += 1) {
         await Promise.resolve();
@@ -118,11 +128,14 @@ beforeEach(() => {
     jest.resetModules();
     jest.useFakeTimers();
     setUpDom();
+    window.scrollTo = jest.fn();
+    mockIntersectionObserver();
 });
 
 afterEach(() => {
     jest.useRealTimers();
     delete global.fetch;
+    delete global.IntersectionObserver;
     delete window.AppTranslations;
 });
 
@@ -149,6 +162,47 @@ test('cards render even when the translations catalogue fails to load', async ()
     const grid = document.getElementById('anime-list-grid');
     expect(grid.children.length).toBeGreaterThan(0);
     expect(cardTitles(grid)).toEqual(['Steins;Gate', 'Mushishi']);
+});
+
+test('a full list replacement resets the window scroll position, an append does not', async () => {
+    const calls = mockFetchQueue();
+    window.AppTranslations = {
+        getCatalogue: jest.fn(() => Promise.resolve({})),
+        resolveKey:   (catalogue, key) => key,
+    };
+
+    loadAnimeListModule(); // fires the initial loadPage(0, true) call
+    await flushMicrotasks();
+
+    expect(calls).toHaveLength(1);
+    calls[0].resolve(jsonResponse({
+        items:            [animeItem(1, 'Steins;Gate')],
+        pagination_mode:  'infinite',
+        total:            2,
+        limit:            1,
+        offset:           0,
+    }));
+    await flushMicrotasks();
+
+    expect(window.scrollTo).toHaveBeenCalledTimes(1);
+
+    // The sentinel entering the viewport triggers an append (loadPage(offset + limit, false)),
+    // which must not reset the scroll position the user is currently reading.
+    const sentinelObserver = global.IntersectionObserver.mock.instances[0];
+    sentinelObserver.trigger();
+    await flushMicrotasks();
+
+    expect(calls).toHaveLength(2);
+    calls[1].resolve(jsonResponse({
+        items:            [animeItem(2, 'Mushishi')],
+        pagination_mode:  'infinite',
+        total:            2,
+        limit:            1,
+        offset:           1,
+    }));
+    await flushMicrotasks();
+
+    expect(window.scrollTo).toHaveBeenCalledTimes(1);
 });
 
 test('a stale response that outlives an abort during the catalogue fetch is dropped', async () => {
