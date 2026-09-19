@@ -29,6 +29,7 @@ namespace App\Controller;
 
 use App\Entity\Enum\StorageType;
 use App\Entity\Exception\InvalidNameException;
+use App\Entity\Exception\InvalidPathException;
 use App\Entity\Storage;
 use App\Service\Storage\StorageMarkerService;
 use Doctrine\ORM\EntityManagerInterface;
@@ -44,13 +45,15 @@ use Twig\Environment;
 
 /**
  * Editing of an existing Storage (issue #168, Таск 3 часть 8/CRUD 4): renaming
- * (Storage::rename()) and changing its type (Storage::setType()) reuse the same
- * validation the entity already enforces at construction time. The path is intentionally not
- * editable here — a legitimate path change (drive letter reassigned) is already covered by the
- * by-marker reconnect flow (issues #150/#162), and manual path editing is out of scope for this
- * form. If the new type is writable, StorageMarkerService::reconcile() is invoked the same way
- * StorageNewController does on create, so a storage switched to a writable type still ends up
- * with a desktop.ini marker without requiring a rescan first.
+ * (Storage::rename()), relocating its path (Storage::relocate(), issue #654), and changing its
+ * type (Storage::setType()) reuse the same validation the entity already enforces at
+ * construction time. Relocating here is a plain manual edit — the user types the new path and
+ * confirms it themselves; it does not search for or guess a replacement, unlike the by-marker
+ * reconnect flow (issues #150/#162), which stays a separate mechanism for drive-letter
+ * reassignment. If the new type is writable, StorageMarkerService::reconcile() is invoked the
+ * same way StorageNewController does on create, so a storage switched to a writable type — or
+ * relocated to a new path — still ends up with a desktop.ini marker without requiring a rescan
+ * first.
  */
 final class StorageEditController
 {
@@ -77,16 +80,18 @@ final class StorageEditController
         $this->assertValidCsrfToken($storageId, $request);
 
         $name = (string) $request->request->get('name', '');
+        $path = (string) $request->request->get('path', '');
         $type = StorageType::tryFrom((string) $request->request->get('type', ''));
 
         if ($type === null) {
-            return $this->renderForm($storage, name: $name, error: 'storage_edit.error_invalid');
+            return $this->renderForm($storage, name: $name, path: $path, error: 'storage_edit.error_invalid');
         }
 
         try {
             $storage->rename($name);
-        } catch (InvalidNameException) {
-            return $this->renderForm($storage, name: $name, type: $type, error: 'storage_edit.error_invalid');
+            $storage->relocate($path);
+        } catch (InvalidNameException|InvalidPathException) {
+            return $this->renderForm($storage, name: $name, path: $path, type: $type, error: 'storage_edit.error_invalid');
         }
 
         $storage->setType($type);
@@ -103,12 +108,14 @@ final class StorageEditController
     private function renderForm(
         Storage $storage,
         ?string $name = null,
+        ?string $path = null,
         ?StorageType $type = null,
         ?string $error = null,
     ): Response {
         return new Response($this->twig->render('storage/edit.html.twig', [
             'storage' => $storage,
             'name' => $name ?? $storage->getName(),
+            'path' => $path ?? $storage->getPath(),
             'type' => ($type ?? $storage->getType())->value,
             'error' => $error,
             'types' => array_column(StorageType::cases(), 'value'),

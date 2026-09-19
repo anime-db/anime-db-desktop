@@ -315,6 +315,7 @@ storage_list:
     name_column: Name
     type_column: Type
     path_column: Path
+    path_unavailable: Path unavailable
     last_scan_column: Last scan
     actions_column: Actions
     edit_button: Edit
@@ -425,8 +426,9 @@ storage_edit:
     heading: Edit Storage
     field_name: Name
     field_type: Type
+    field_path: Path
     submit_button: Save
-    error_invalid: Enter a valid name and storage type.
+    error_invalid: Enter a valid name, path, and storage type.
 
 plugin_widget:
     loading: Loading…

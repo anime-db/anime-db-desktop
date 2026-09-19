@@ -47,6 +47,11 @@
                 </select>
             </div>
 
+            <div class="mb-3">
+                <label for="storage-edit-path" class="form-label">{{ 'storage_edit.field_path'|trans }}</label>
+                <input type="text" id="storage-edit-path" name="path" value="{{ path }}" required class="form-control">
+            </div>
+
             <button type="submit" class="btn btn-primary">{{ 'storage_edit.submit_button'|trans }}</button>
         </form>
     </main>

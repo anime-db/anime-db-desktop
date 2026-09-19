@@ -116,6 +116,7 @@ final class StorageControllerTest extends TestCase
     public function testIndexPassesStoragesToTemplate(): void
     {
         $storage = new Storage('Main folder', 'D:\\Anime', StorageType::Folder);
+        $this->setStorageId($storage, 1);
 
         $storages = $this->createStub(StorageRepository::class);
         $storages->method('findAllOrderedByName')->willReturn([$storage]);
@@ -134,6 +135,74 @@ final class StorageControllerTest extends TestCase
         $response = $controller->index(Request::create('/storage'));
 
         $this->assertSame(200, $response->getStatusCode());
+    }
+
+    public function testIndexMarksStorageWithMissingPathAsUnavailable(): void
+    {
+        $missingPath = sys_get_temp_dir().\DIRECTORY_SEPARATOR.'storage-missing-'.uniqid();
+        $storage = new Storage('Main folder', $missingPath, StorageType::Folder);
+        $this->setStorageId($storage, 7);
+
+        $this->assertFalse(is_readable($missingPath));
+
+        $storages = $this->createStub(StorageRepository::class);
+        $storages->method('findAllOrderedByName')->willReturn([$storage]);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('storage/list.html.twig', $this->callback(
+                static fn (array $params): bool => $params['unavailableStorageIds'] === [7],
+            ))
+            ->willReturn('<html></html>');
+
+        $controller = $this->createController(storages: $storages, twig: $twig);
+        $controller->index(Request::create('/storage'));
+    }
+
+    public function testIndexDoesNotMarkStorageWithExistingPathAsUnavailable(): void
+    {
+        $dir = $this->makeDir();
+        $storage = new Storage('Main folder', $dir, StorageType::Folder);
+        $this->setStorageId($storage, 3);
+
+        $storages = $this->createStub(StorageRepository::class);
+        $storages->method('findAllOrderedByName')->willReturn([$storage]);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('storage/list.html.twig', $this->callback(
+                static fn (array $params): bool => $params['unavailableStorageIds'] === [],
+            ))
+            ->willReturn('<html></html>');
+
+        $controller = $this->createController(storages: $storages, twig: $twig);
+        $controller->index(Request::create('/storage'));
+    }
+
+    public function testDeleteRemovesStorageWithMissingPath(): void
+    {
+        $missingPath = sys_get_temp_dir().\DIRECTORY_SEPARATOR.'storage-missing-'.uniqid();
+        $storage = new Storage('Main folder', $missingPath, StorageType::Folder);
+        $this->setStorageId($storage, 11);
+
+        $entityManager = $this->createMock(EntityManagerInterface::class);
+        $entityManager->expects($this->once())->method('remove')->with($storage);
+        $entityManager->expects($this->once())->method('flush');
+
+        $router = $this->createMock(UrlGeneratorInterface::class);
+        $router->expects($this->once())
+            ->method('generate')
+            ->with('storage_index')
+            ->willReturn('/storage');
+
+        $controller = $this->createController(entityManager: $entityManager, urlGenerator: $router);
+        $request = Request::create('/storage/11/delete', 'POST', ['_token' => 'token']);
+
+        $response = $controller->delete($storage, $request);
+
+        $this->assertSame('/storage', $response->getTargetUrl());
     }
 
     public function testPathsReturnsAllConfiguredStoragePaths(): void
