@@ -207,6 +207,39 @@ final class StorageEditControllerTest extends TestCase
         $this->assertTrue(is_readable($storage->getPath()));
     }
 
+    public function testUpdateRelocationForgetsMarkerAtOldPath(): void
+    {
+        $oldDir = $this->makeDir();
+        $newDir = $this->makeDir();
+        $storage = new Storage('Main folder', $oldDir, StorageType::ExternalR);
+        $this->setStorageId($storage, 11);
+
+        $markerEntityManager = $this->createStub(EntityManagerInterface::class);
+        $markerEntityManager->method('find')->willReturn(null);
+        $markerService = new StorageMarkerService($markerEntityManager);
+        $markerService->reconcile($storage);
+
+        $oldMarker = $oldDir.\DIRECTORY_SEPARATOR.'desktop.ini';
+        $this->assertFileExists($oldMarker);
+
+        $entityManager = $this->createMock(EntityManagerInterface::class);
+        $entityManager->expects($this->once())->method('flush');
+
+        $controller = $this->createController(entityManager: $entityManager, markerService: $markerService);
+        $request = Request::create('/storage/11/edit', 'POST', [
+            'name' => 'Main folder',
+            'path' => $newDir,
+            'type' => 'external-r',
+            '_token' => 'token',
+        ]);
+
+        $response = $controller->update($storage, $request);
+
+        $this->assertInstanceOf(RedirectResponse::class, $response);
+        $this->assertSame($newDir, $storage->getPath());
+        $this->assertFileDoesNotExist($oldMarker);
+    }
+
     public function testUpdateWithInvalidPathDoesNotFlushAndReRendersFormWithError(): void
     {
         $storage = new Storage('Main folder', sys_get_temp_dir(), StorageType::Folder);

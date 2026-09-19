@@ -50,7 +50,10 @@ use Twig\Environment;
  * construction time. Relocating here is a plain manual edit — the user types the new path and
  * confirms it themselves; it does not search for or guess a replacement, unlike the by-marker
  * reconnect flow (issues #150/#162), which stays a separate mechanism for drive-letter
- * reassignment. If the new type is writable, StorageMarkerService::reconcile() is invoked the
+ * reassignment. Relocating away from a path also calls StorageMarkerService::forget() on the
+ * old path, the same call StorageController::delete() makes, so a stale [AnimeDB] id doesn't
+ * linger there for a future storage to collide with (StorageMarkerService::reconcile()'s
+ * Conflict case). If the new type is writable, StorageMarkerService::reconcile() is invoked the
  * same way StorageNewController does on create, so a storage switched to a writable type — or
  * relocated to a new path — still ends up with a desktop.ini marker without requiring a rescan
  * first.
@@ -87,11 +90,17 @@ final class StorageEditController
             return $this->renderForm($storage, name: $name, path: $path, error: 'storage_edit.error_invalid');
         }
 
+        $previousPath = $storage->getPath();
+
         try {
             $storage->rename($name);
             $storage->relocate($path);
         } catch (InvalidNameException|InvalidPathException) {
             return $this->renderForm($storage, name: $name, path: $path, type: $type, error: 'storage_edit.error_invalid');
+        }
+
+        if ($storage->getPath() !== $previousPath) {
+            $this->markerService->forget($storage, $previousPath);
         }
 
         $storage->setType($type);
