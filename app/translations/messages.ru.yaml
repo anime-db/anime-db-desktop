@@ -315,6 +315,7 @@ storage_list:
     name_column: Название
     type_column: Тип
     path_column: Путь
+    path_unavailable: Путь недоступен
     last_scan_column: Последний скан
     actions_column: Действия
     edit_button: Редактировать
@@ -425,8 +426,9 @@ storage_edit:
     heading: Редактирование хранилища
     field_name: Название
     field_type: Тип
+    field_path: Путь
     submit_button: Сохранить
-    error_invalid: Укажите корректные название и тип хранилища.
+    error_invalid: Укажите корректные название, путь и тип хранилища.
 
 plugin_widget:
     loading: Загрузка…

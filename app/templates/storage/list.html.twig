@@ -72,7 +72,12 @@
                         <tr>
                             <td><bdi>{{ storage.name }}</bdi></td>
                             <td>{{ ('storage_type.' ~ storage.type.value)|trans }}</td>
-                            <td><bdi>{{ storage.path }}</bdi></td>
+                            <td>
+                                <bdi>{{ storage.path }}</bdi>
+                                {% if storage.id in unavailableStorageIds %}
+                                    <span class="badge text-bg-warning ms-1">{{ 'storage_list.path_unavailable'|trans }}</span>
+                                {% endif %}
+                            </td>
                             <td>{{ storage.dateUpdate ? storage.dateUpdate|date('Y-m-d H:i') : ('storage_list.never_scanned'|trans) }}</td>
                             <td>
                                 <a href="{{ path('storage_edit', {id: storage.id}) }}" class="btn btn-outline-secondary btn-sm me-2">{{ 'storage_list.edit_button'|trans }}</a>

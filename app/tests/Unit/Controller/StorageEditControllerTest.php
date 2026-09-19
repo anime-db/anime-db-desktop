@@ -143,6 +143,7 @@ final class StorageEditControllerTest extends TestCase
         $controller = $this->createController(entityManager: $entityManager, urlGenerator: $router);
         $request = Request::create('/storage/5/edit', 'POST', [
             'name' => 'New name',
+            'path' => sys_get_temp_dir(),
             'type' => 'external-r',
             '_token' => 'token',
         ]);
@@ -167,6 +168,7 @@ final class StorageEditControllerTest extends TestCase
         $controller = $this->createController(entityManager: $entityManager);
         $request = Request::create('/storage/8/edit', 'POST', [
             'name' => 'Main folder',
+            'path' => $dir,
             'type' => 'folder',
             '_token' => 'token',
         ]);
@@ -176,6 +178,96 @@ final class StorageEditControllerTest extends TestCase
         $marker = parse_ini_file($dir.\DIRECTORY_SEPARATOR.'desktop.ini', true, \INI_SCANNER_RAW);
         $this->assertIsArray($marker);
         $this->assertSame('8', $marker['AnimeDB']['id']);
+    }
+
+    public function testUpdateRelocatesStorageToNewExistingPath(): void
+    {
+        $missingPath = sys_get_temp_dir().\DIRECTORY_SEPARATOR.'storage-edit-missing-'.uniqid();
+        $newPath = $this->makeDir();
+        $storage = new Storage('Main folder', $missingPath, StorageType::Folder);
+        $this->setStorageId($storage, 9);
+
+        $this->assertFalse(is_readable($storage->getPath()));
+
+        $entityManager = $this->createMock(EntityManagerInterface::class);
+        $entityManager->expects($this->once())->method('flush');
+
+        $controller = $this->createController(entityManager: $entityManager);
+        $request = Request::create('/storage/9/edit', 'POST', [
+            'name' => 'Main folder',
+            'path' => $newPath,
+            'type' => 'folder',
+            '_token' => 'token',
+        ]);
+
+        $response = $controller->update($storage, $request);
+
+        $this->assertInstanceOf(RedirectResponse::class, $response);
+        $this->assertSame($newPath, $storage->getPath());
+        $this->assertTrue(is_readable($storage->getPath()));
+    }
+
+    public function testUpdateRelocationForgetsMarkerAtOldPath(): void
+    {
+        $oldDir = $this->makeDir();
+        $newDir = $this->makeDir();
+        $storage = new Storage('Main folder', $oldDir, StorageType::ExternalR);
+        $this->setStorageId($storage, 11);
+
+        $markerEntityManager = $this->createStub(EntityManagerInterface::class);
+        $markerEntityManager->method('find')->willReturn(null);
+        $markerService = new StorageMarkerService($markerEntityManager);
+        $markerService->reconcile($storage);
+
+        $oldMarker = $oldDir.\DIRECTORY_SEPARATOR.'desktop.ini';
+        $this->assertFileExists($oldMarker);
+
+        $entityManager = $this->createMock(EntityManagerInterface::class);
+        $entityManager->expects($this->once())->method('flush');
+
+        $controller = $this->createController(entityManager: $entityManager, markerService: $markerService);
+        $request = Request::create('/storage/11/edit', 'POST', [
+            'name' => 'Main folder',
+            'path' => $newDir,
+            'type' => 'external-r',
+            '_token' => 'token',
+        ]);
+
+        $response = $controller->update($storage, $request);
+
+        $this->assertInstanceOf(RedirectResponse::class, $response);
+        $this->assertSame($newDir, $storage->getPath());
+        $this->assertFileDoesNotExist($oldMarker);
+    }
+
+    public function testUpdateWithInvalidPathDoesNotFlushAndReRendersFormWithError(): void
+    {
+        $storage = new Storage('Main folder', sys_get_temp_dir(), StorageType::Folder);
+        $this->setStorageId($storage, 5);
+
+        $entityManager = $this->createMock(EntityManagerInterface::class);
+        $entityManager->expects($this->never())->method('flush');
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('storage/edit.html.twig', $this->callback(
+                static fn (array $params): bool => $params['error'] === 'storage_edit.error_invalid'
+                    && $params['path'] === 'relative/path',
+            ))
+            ->willReturn('<html></html>');
+
+        $controller = $this->createController(entityManager: $entityManager, twig: $twig);
+        $request = Request::create('/storage/5/edit', 'POST', [
+            'name' => 'Main folder',
+            'path' => 'relative/path',
+            'type' => 'folder',
+            '_token' => 'token',
+        ]);
+
+        $controller->update($storage, $request);
+
+        $this->assertSame(sys_get_temp_dir(), $storage->getPath());
     }
 
     public function testUpdateWithEmptyNameDoesNotFlushAndReRendersFormWithError(): void

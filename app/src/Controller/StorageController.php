@@ -52,6 +52,12 @@ use Twig\Environment;
  * that storage_id and render its live progress/result screen without a page reload.
  *
  * Also handles storage deletion (issue #169, Таск 3 часть 8/CRUD 5).
+ *
+ * index() also flags storages whose path no longer exists on disk (issue #654: disconnected
+ * drive, renamed folder, database moved from another machine) so the list surfaces them instead
+ * of staying silent. The check runs here, once, when this page is opened — not in the
+ * background and not at application startup — and never tries to guess a replacement path;
+ * fixing it is left to the user via storage_edit (StorageEditController) or storage_delete above.
  */
 final class StorageController
 {
@@ -69,11 +75,35 @@ final class StorageController
     #[Route('/storage', name: 'storage_index', methods: ['GET'])]
     public function index(Request $request): Response
     {
+        $storages = $this->storages->findAllOrderedByName();
+
         return new Response($this->twig->render('storage/list.html.twig', [
-            'storages' => $this->storages->findAllOrderedByName(),
+            'storages' => $storages,
+            'unavailableStorageIds' => $this->unavailableStorageIds($storages),
             'scanned' => $request->query->getBoolean('scanned'),
             'scannedStorageId' => $request->query->get('storage_id'),
         ]));
+    }
+
+    /**
+     * Same is_readable() check AnimeViewFactory::serializeStorage() already runs per-anime; here
+     * it runs once per Storage row instead, so a missing drive shows on the storage it belongs to
+     * rather than on every anime linked to it.
+     *
+     * @param Storage[] $storages
+     *
+     * @return list<int>
+     */
+    private function unavailableStorageIds(array $storages): array
+    {
+        $ids = [];
+        foreach ($storages as $storage) {
+            if (!is_readable($storage->getPath())) {
+                $ids[] = $storage->id ?? throw new \LogicException('Storage must be persisted before its path can be checked.');
+            }
+        }
+
+        return $ids;
     }
 
     /**
