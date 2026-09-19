@@ -60,6 +60,7 @@ final class SearchReindexCommandTest extends TestCase
 
         $index = $this->createMock(Indexes::class);
         $index->expects($this->once())->method('updateSettings')->willReturn(['taskUid' => 1]);
+        $index->expects($this->once())->method('deleteAllDocuments')->willReturn(['taskUid' => 3]);
         $index->expects($this->exactly(2))->method('addDocuments')->willReturn(['taskUid' => 2]);
         $index->method('waitForTask');
 

@@ -342,11 +342,12 @@ final class SettingsControllerTest extends TestCase
     {
         $index = $this->createMock(Indexes::class);
         $index->expects($this->once())->method('updateSettings')->willReturn(['taskUid' => 1]);
+        $index->expects($this->once())->method('deleteAllDocuments')->willReturn(['taskUid' => 3]);
         $index->expects($this->once())->method('addDocuments')->willReturn(['taskUid' => 2]);
         $index->method('waitForTask');
 
         $client = $this->createMock(Client::class);
-        $client->expects($this->exactly(2))->method('index')->with('anime')->willReturn($index);
+        $client->expects($this->exactly(3))->method('index')->with('anime')->willReturn($index);
 
         $twig = $this->createMock(Environment::class);
         $twig->expects($this->once())

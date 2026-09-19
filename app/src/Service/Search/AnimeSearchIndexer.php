@@ -87,6 +87,19 @@ final class AnimeSearchIndexer
     }
 
     /**
+     * Removes every document from the index without touching its settings. Call this before
+     * a full rebuild so documents for records no longer present in the source data do not
+     * survive the rebuild alongside the fresh ones.
+     */
+    public function clearIndex(): void
+    {
+        $index = $this->client->index(self::INDEX_UID);
+
+        $task = $index->deleteAllDocuments();
+        $index->waitForTask($task['taskUid']);
+    }
+
+    /**
      * Idempotent: safe to call on every app start/deploy. PATCH /settings auto-creates
      * the index if it does not exist yet (verified empirically), so no explicit
      * createIndex() call is needed beforehand.

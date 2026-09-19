@@ -94,6 +94,7 @@ final class AnimeReindexServiceTest extends TestCase
 
         $index = $this->createMock(Indexes::class);
         $index->expects($this->once())->method('updateSettings')->willReturn(['taskUid' => 1]);
+        $index->expects($this->once())->method('deleteAllDocuments')->willReturn(['taskUid' => 4]);
         $index->expects($this->exactly(3))->method('addDocuments')->willReturn(['taskUid' => 2]);
         $index->method('waitForTask');
 
@@ -109,6 +110,7 @@ final class AnimeReindexServiceTest extends TestCase
     {
         $index = $this->createMock(Indexes::class);
         $index->expects($this->once())->method('updateSettings')->willReturn(['taskUid' => 1]);
+        $index->expects($this->once())->method('deleteAllDocuments')->willReturn(['taskUid' => 4]);
         $index->expects($this->never())->method('addDocuments');
         $index->method('waitForTask');
 
@@ -133,6 +135,7 @@ final class AnimeReindexServiceTest extends TestCase
 
         $index = $this->createMock(Indexes::class);
         $index->method('updateSettings')->willReturn(['taskUid' => 1]);
+        $index->expects($this->once())->method('deleteAllDocuments')->willReturn(['taskUid' => 4]);
         $index->expects($this->exactly($total))->method('addDocuments')->willReturn(['taskUid' => 2]);
         $index->method('waitForTask');
 
@@ -181,6 +184,7 @@ final class AnimeReindexServiceTest extends TestCase
 
         $index = $this->createMock(Indexes::class);
         $index->method('updateSettings')->willReturn(['taskUid' => 1]);
+        $index->method('deleteAllDocuments')->willReturn(['taskUid' => 4]);
         $index->expects($this->exactly($animeCount))->method('addDocuments')->willReturn(['taskUid' => 2]);
         $index->method('waitForTask');
 

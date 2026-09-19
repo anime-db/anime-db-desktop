@@ -46,6 +46,10 @@ use Doctrine\ORM\Tools\Pagination\Paginator;
  * LIMIT applies to joined rows, not distinct Anime rows), so Doctrine's Paginator is used
  * instead: it hydrates each page in two queries (page of Anime ids, then those ids with the
  * joins) regardless of how many rows the joins fan out to.
+ *
+ * The index is cleared after configureIndex() (which also auto-creates it) and before any
+ * document is added, so a full rebuild never leaves behind documents for records that are no
+ * longer present in the source data (issue #655).
  */
 final class AnimeReindexService
 {
@@ -60,6 +64,7 @@ final class AnimeReindexService
     public function reindexAll(): int
     {
         $this->indexer->configureIndex();
+        $this->indexer->clearIndex();
 
         $count = 0;
         $offset = 0;
