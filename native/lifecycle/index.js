@@ -103,6 +103,19 @@ function onQuit() {
     app.quit();
 }
 
+/**
+ * Перезапускает приложение. app.exit() завершает процесс напрямую, минуя обработчик
+ * mainWindow.on('close', ...) ниже, который иначе прячет окно в трей вместо закрытия —
+ * поэтому перезапуск срабатывает и тогда, когда окно уже скрыто.
+ *
+ * @returns {void}
+ */
+function relaunch() {
+    quitting = true;
+    app.relaunch();
+    app.exit(0);
+}
+
 const gotLock = app.requestSingleInstanceLock();
 
 if (!gotLock) {
@@ -288,3 +301,5 @@ if (!gotLock) {
         app.exit(1);
     });
 }
+
+module.exports = { relaunch };

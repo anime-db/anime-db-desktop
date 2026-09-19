@@ -27,7 +27,7 @@ jest.mock('electron', () => ({
 }));
 
 const { ipcMain, dialog } = require('electron');
-const { pickFolder } = require('../../native/dialog');
+const { pickFolder, pickFile } = require('../../native/dialog');
 
 test('registers the dialog:pick-folder IPC handler on module load', () => {
     expect(ipcMain.handle).toHaveBeenCalledWith('dialog:pick-folder', pickFolder);
@@ -43,4 +43,37 @@ test('pickFolder returns null when the dialog is canceled', async () => {
     dialog.showOpenDialog.mockResolvedValueOnce({ canceled: true, filePaths: [] });
 
     await expect(pickFolder()).resolves.toBeNull();
+});
+
+test('registers the dialog:pick-file IPC handler on module load', () => {
+    expect(ipcMain.handle).toHaveBeenCalledWith('dialog:pick-file', pickFile);
+});
+
+test('pickFile returns the selected path', async () => {
+    dialog.showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: ['/anime/export.zip'] });
+
+    await expect(pickFile(null, [{ name: 'Archive', extensions: ['zip'] }])).resolves.toBe('/anime/export.zip');
+});
+
+test('pickFile returns null when the dialog is canceled', async () => {
+    dialog.showOpenDialog.mockResolvedValueOnce({ canceled: true, filePaths: [] });
+
+    await expect(pickFile(null, [{ name: 'Archive', extensions: ['zip'] }])).resolves.toBeNull();
+});
+
+test('pickFile passes the caller-supplied extension filter to the native dialog', async () => {
+    dialog.showOpenDialog.mockResolvedValueOnce({ canceled: true, filePaths: [] });
+    const filters = [{ name: 'Archive', extensions: ['zip'] }];
+
+    await pickFile(null, filters);
+
+    expect(dialog.showOpenDialog).toHaveBeenCalledWith({ properties: ['openFile'], filters });
+});
+
+test('pickFile defaults to no extension filter when the caller omits one', async () => {
+    dialog.showOpenDialog.mockResolvedValueOnce({ canceled: true, filePaths: [] });
+
+    await pickFile();
+
+    expect(dialog.showOpenDialog).toHaveBeenCalledWith({ properties: ['openFile'], filters: [] });
 });

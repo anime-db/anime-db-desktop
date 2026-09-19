@@ -28,6 +28,7 @@ jest.mock('electron', () => ({
         whenReady:  jest.fn(() => Promise.resolve()),
         quit:       jest.fn(),
         exit:       jest.fn(),
+        relaunch:   jest.fn(),
         getPath:    jest.fn(() => '/fake/userData'),
         getLocale:  jest.fn(() => 'ru-RU'),
     },
@@ -132,12 +133,12 @@ function loadLifecycle() {
     };
     createSplash.mockReturnValue(fakeSplash);
 
-    require('../../native/lifecycle');
+    const lifecycle = require('../../native/lifecycle');
 
     return {
         app, dialog, supervisor, migrations, cacheInvalidation, safeModeState, createWindow, createSplash, tray,
         wsClient, proxy, firewall, appHandlers, processHandlers, wsClientHandlers, supervisorEventHandlers,
-        fakeWindow, fakeSplash,
+        fakeWindow, fakeSplash, relaunch: lifecycle.relaunch,
     };
 }
 
@@ -328,6 +329,33 @@ describe('cache invalidation errors (issue #403 review)', () => {
 
         expect(dialog.showErrorBox).toHaveBeenCalledWith('Ошибка запуска', 'unexplained crash');
         expect(safeModeState.commitDiagnosedFailure).not.toHaveBeenCalled();
+    });
+});
+
+describe('relaunch (issue #656)', () => {
+    test('relaunch() restarts the app via app.relaunch() + app.exit()', async () => {
+        const { app, relaunch } = loadLifecycle();
+        await new Promise((r) => setTimeout(r, 500));
+
+        relaunch();
+
+        expect(app.relaunch).toHaveBeenCalledTimes(1);
+        expect(app.exit).toHaveBeenCalledWith(0);
+    });
+
+    test('relaunch() bypasses the tray-hide close handler, even for a window already hidden to tray', async () => {
+        const { relaunch, fakeWindow } = loadLifecycle();
+        await new Promise((r) => setTimeout(r, 500));
+
+        const closeHandler = fakeWindow.on.mock.calls.find(([event]) => event === 'close')[1];
+
+        relaunch();
+
+        const preventDefault = jest.fn();
+        closeHandler({ preventDefault });
+
+        expect(preventDefault).not.toHaveBeenCalled();
+        expect(fakeWindow.hide).not.toHaveBeenCalled();
     });
 });
 
