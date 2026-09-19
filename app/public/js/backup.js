@@ -169,10 +169,17 @@
         }
 
         // export.failed already carries the reason in the common case (see onFailed above) —
-        // this branch only covers the process never even starting (e.g. it could not spawn at
-        // all), which never reaches WsPublisher to publish anything.
+        // this branch only covers outcomes that never reach WsPublisher at all: the process never
+        // even starting (e.g. it could not spawn), and a cancel, since killing the process by PID
+        // (see cancelButton below) bypasses export()'s catch block entirely and so never publishes
+        // export.failed either.
         const outcome = await window.animeDb.catalogExportStart(pathInput.value);
-        if (!outcome.ok && !cancelRequested) {
+        if (cancelRequested) {
+            cancelRequested = false;
+            resetControls();
+            resultBox.hidden = false;
+            resultBox.textContent = await window.AppTranslations.trans('settings_backup.cancelled_text');
+        } else if (!outcome.ok) {
             resetControls();
             errorBox.hidden = false;
             errorBox.textContent = await window.AppTranslations.trans('settings_backup.error_generic');
