@@ -177,7 +177,7 @@ test('a full list replacement resets the window scroll position, an append does 
     expect(calls).toHaveLength(1);
     calls[0].resolve(jsonResponse({
         items:            [animeItem(1, 'Steins;Gate')],
-        pagination_mode:  'infinite',
+        pagination_mode:  'infinite_scroll',
         total:            2,
         limit:            1,
         offset:           0,
@@ -195,7 +195,7 @@ test('a full list replacement resets the window scroll position, an append does 
     expect(calls).toHaveLength(2);
     calls[1].resolve(jsonResponse({
         items:            [animeItem(2, 'Mushishi')],
-        pagination_mode:  'infinite',
+        pagination_mode:  'infinite_scroll',
         total:            2,
         limit:            1,
         offset:           1,
@@ -203,6 +203,49 @@ test('a full list replacement resets the window scroll position, an append does 
     await flushMicrotasks();
 
     expect(window.scrollTo).toHaveBeenCalledTimes(1);
+});
+
+test('navigating to a classic pagination page other than the first does not reset the window scroll', async () => {
+    const calls = mockFetchQueue();
+    window.AppTranslations = {
+        getCatalogue: jest.fn(() => Promise.resolve({})),
+        resolveKey:   (catalogue, key) => key,
+    };
+
+    loadAnimeListModule(); // fires the initial loadPage(0, true) call
+    await flushMicrotasks();
+
+    expect(calls).toHaveLength(1);
+    calls[0].resolve(jsonResponse({
+        items:            [animeItem(1, 'Steins;Gate')],
+        pagination_mode:  'classic',
+        total:            2,
+        limit:            1,
+        offset:           0,
+    }));
+    await flushMicrotasks();
+
+    expect(window.scrollTo).toHaveBeenCalledTimes(1);
+    window.scrollTo.mockClear();
+
+    const pageTwoButton = document.querySelectorAll('#anime-list-pagination button')[1];
+    pageTwoButton.dispatchEvent(new Event('click'));
+    await flushMicrotasks();
+
+    expect(calls).toHaveLength(2);
+    calls[1].resolve(jsonResponse({
+        items:            [animeItem(2, 'Mushishi')],
+        pagination_mode:  'classic',
+        total:            2,
+        limit:            1,
+        offset:           1,
+    }));
+    await flushMicrotasks();
+
+    // Page navigation replaces the grid contents (replace === true) same as a fresh search, but
+    // it is not a "the list composition changed" event from the top — the scroll reset must key
+    // off the target offset, not the replace flag alone.
+    expect(window.scrollTo).not.toHaveBeenCalled();
 });
 
 test('a stale response that outlives an abort during the catalogue fetch is dropped', async () => {
