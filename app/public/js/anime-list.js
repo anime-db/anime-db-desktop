@@ -368,6 +368,10 @@
         setupSearchInput();
         setupSortControls();
         setupResizeObserver();
+        // ResizeObserver delivers a synthetic initial callback right after observe() (spec
+        // behaviour, not a real resize) — seed lastColumnCount now so handleGridResize()
+        // treats it as a no-op instead of re-requesting the page it is about to load anyway.
+        lastColumnCount = getColumnCount();
         loadPage(0, true);
     }
 

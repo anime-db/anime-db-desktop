@@ -407,3 +407,29 @@ test('a column-count change in classic mode re-pages around the first record of 
     expect(calls).toHaveLength(3);
     expect(queryParams(calls[2].url)).toMatchObject({ offset: '0', limit: '60' });
 });
+
+test('the synthetic initial ResizeObserver callback does not trigger a duplicate request', async () => {
+    // Per spec, ResizeObserver delivers one callback right after observe() with the current size,
+    // not just on a later real resize — the shared mock's observe() is a no-op, so this test wires
+    // its own to reproduce that and pin down that the app does not react to it as if it were one.
+    global.ResizeObserver = class {
+        constructor(callback) {
+            this.callback = callback;
+        }
+
+        observe() {
+            this.callback([]);
+        }
+
+        disconnect() {}
+    };
+
+    const calls = mockFetchQueue();
+    setUpTranslations();
+
+    loadAnimeListModule();
+    jest.advanceTimersByTime(150);
+    await flushMicrotasks();
+
+    expect(calls).toHaveLength(1);
+});
