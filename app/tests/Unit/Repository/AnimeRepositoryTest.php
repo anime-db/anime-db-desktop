@@ -36,6 +36,7 @@ use App\Entity\Enum\AnimeType;
 use App\Entity\Enum\GenreCode;
 use App\Entity\Enum\SortDirection;
 use App\Entity\Enum\StorageType;
+use App\Entity\Enum\ThemeCode;
 use App\Entity\Enum\WatchStatus;
 use App\Entity\Label;
 use App\Entity\MovieAnime;
@@ -151,14 +152,14 @@ final class AnimeRepositoryTest extends TestCase
         $this->entityManager->persist($this->toei);
         $this->entityManager->persist($this->favorite);
 
-        // Watching, JP, rating 5, Action, Sunrise, favorite, premiered 2020.
+        // Watching, JP, rating 5, Action, Mecha, Sunrise, favorite, premiered 2020.
         $a1 = new TvAnime();
         $a1->setTitle('Trigun')
             ->setWatchStatus(WatchStatus::Watching)
             ->setCountries(['JP'])
             ->setUserRating(new Rating(5))
             ->setDatePremiere(new \DateTimeImmutable('2020-01-01'));
-        $a1->addGenre(GenreCode::Action)->addStudio($this->sunrise)->addLabel($this->favorite);
+        $a1->addGenre(GenreCode::Action)->addTheme(ThemeCode::Mecha)->addStudio($this->sunrise)->addLabel($this->favorite);
         $a1->addName('Toraiga', AnimeNameType::Synonym);
 
         // Watching, US, rating 3, Comedy, Toei, no label, premiered 2021.
@@ -178,14 +179,14 @@ final class AnimeRepositoryTest extends TestCase
             ->setDatePremiere(new \DateTimeImmutable('2019-01-01'));
         $a3->addGenre(GenreCode::Action)->addStudio($this->sunrise);
 
-        // Watching, JP+US, rating 4, Action AND Drama, Toei, favorite, premiered 2022.
+        // Watching, JP+US, rating 4, Action AND Drama, Isekai, Toei, favorite, premiered 2022.
         $a4 = new TvAnime();
         $a4->setTitle('Drama Series')
             ->setWatchStatus(WatchStatus::Watching)
             ->setCountries(['JP', 'US'])
             ->setUserRating(new Rating(4))
             ->setDatePremiere(new \DateTimeImmutable('2022-01-01'));
-        $a4->addGenre(GenreCode::Action)->addGenre(GenreCode::Drama)->addStudio($this->toei)->addLabel($this->favorite);
+        $a4->addGenre(GenreCode::Action)->addGenre(GenreCode::Drama)->addTheme(ThemeCode::Isekai)->addStudio($this->toei)->addLabel($this->favorite);
 
         foreach ([$a1, $a2, $a3, $a4] as $anime) {
             $this->entityManager->persist($anime);
@@ -231,7 +232,7 @@ final class AnimeRepositoryTest extends TestCase
 
     public function testFilterByWatchStatusOnlyExcludesOtherStatuses(): void
     {
-        $filter = new AnimeListFilter(watchStatus: WatchStatus::Watching);
+        $filter = new AnimeListFilter(watchStatuses: [WatchStatus::Watching]);
 
         $this->assertSame(3, $this->repository->countByFilter($filter));
         $this->assertEqualsCanonicalizing(['Trigun', 'A Comedy Movie', 'Drama Series'], $this->titlesOf($filter));
@@ -250,21 +251,45 @@ final class AnimeRepositoryTest extends TestCase
 
     public function testFilterByTypeNarrowsToTheGivenAnimeClass(): void
     {
-        $filter = new AnimeListFilter(watchStatus: WatchStatus::Watching, type: AnimeType::Movie);
+        $filter = new AnimeListFilter(watchStatuses: [WatchStatus::Watching], types: [AnimeType::Movie]);
 
         $this->assertSame(['A Comedy Movie'], $this->titlesOf($filter));
     }
 
+    public function testFilterByMultipleWatchStatusesUsesOrSemantics(): void
+    {
+        $filter = new AnimeListFilter(watchStatuses: [WatchStatus::Watching, WatchStatus::Plan]);
+
+        $this->assertEqualsCanonicalizing(
+            ['Trigun', 'A Comedy Movie', 'Planned Show', 'Drama Series'],
+            $this->titlesOf($filter),
+        );
+    }
+
+    public function testFilterByMultipleTypesUsesOrSemantics(): void
+    {
+        $filter = new AnimeListFilter(types: [AnimeType::Movie, AnimeType::Tv]);
+
+        $this->assertSame(4, $this->repository->countByFilter($filter));
+    }
+
+    public function testFilterByThemesUsesOrSemantics(): void
+    {
+        $filter = new AnimeListFilter(themes: [ThemeCode::Mecha, ThemeCode::Isekai]);
+
+        $this->assertEqualsCanonicalizing(['Trigun', 'Drama Series'], $this->titlesOf($filter));
+    }
+
     public function testFilterByCountryChecksJsonArrayMembership(): void
     {
-        $filter = new AnimeListFilter(watchStatus: WatchStatus::Watching, country: 'US');
+        $filter = new AnimeListFilter(watchStatuses: [WatchStatus::Watching], country: 'US');
 
         $this->assertEqualsCanonicalizing(['A Comedy Movie', 'Drama Series'], $this->titlesOf($filter));
     }
 
     public function testFilterByNameMatchesTheMainTitle(): void
     {
-        $filter = new AnimeListFilter(watchStatus: WatchStatus::Watching, name: 'Trigun');
+        $filter = new AnimeListFilter(watchStatuses: [WatchStatus::Watching], name: 'Trigun');
 
         $this->assertSame(['Trigun'], $this->titlesOf($filter));
     }
@@ -272,15 +297,15 @@ final class AnimeRepositoryTest extends TestCase
     public function testFilterByNameMatchesAnAlternativeName(): void
     {
         // 'Toraiga' is only in Trigun's anime_name records, never in Anime::$title.
-        $filter = new AnimeListFilter(watchStatus: WatchStatus::Watching, name: 'Toraiga');
+        $filter = new AnimeListFilter(watchStatuses: [WatchStatus::Watching], name: 'Toraiga');
 
         $this->assertSame(['Trigun'], $this->titlesOf($filter));
     }
 
     public function testFilterByNameDoesNotAffectTheQueryWhenEmpty(): void
     {
-        $withoutName = new AnimeListFilter(watchStatus: WatchStatus::Watching);
-        $withNullName = new AnimeListFilter(watchStatus: WatchStatus::Watching, name: null);
+        $withoutName = new AnimeListFilter(watchStatuses: [WatchStatus::Watching]);
+        $withNullName = new AnimeListFilter(watchStatuses: [WatchStatus::Watching], name: null);
 
         $this->assertSame($this->repository->countByFilter($withoutName), $this->repository->countByFilter($withNullName));
         $this->assertEqualsCanonicalizing($this->titlesOf($withoutName), $this->titlesOf($withNullName));
@@ -288,7 +313,7 @@ final class AnimeRepositoryTest extends TestCase
 
     public function testFilterByGenresUsesOrSemantics(): void
     {
-        $filter = new AnimeListFilter(watchStatus: WatchStatus::Watching, genres: [GenreCode::Comedy, GenreCode::Drama]);
+        $filter = new AnimeListFilter(watchStatuses: [WatchStatus::Watching], genres: [GenreCode::Comedy, GenreCode::Drama]);
 
         $this->assertEqualsCanonicalizing(['A Comedy Movie', 'Drama Series'], $this->titlesOf($filter));
     }
@@ -296,7 +321,7 @@ final class AnimeRepositoryTest extends TestCase
     public function testFilterByGenresDoesNotDuplicateAnimeMatchingSeveralSelectedGenres(): void
     {
         // Drama Series has both Action and Drama; selecting both must not double-count it.
-        $filter = new AnimeListFilter(watchStatus: WatchStatus::Watching, genres: [GenreCode::Action, GenreCode::Drama]);
+        $filter = new AnimeListFilter(watchStatuses: [WatchStatus::Watching], genres: [GenreCode::Action, GenreCode::Drama]);
 
         $this->assertSame(2, $this->repository->countByFilter($filter));
         $this->assertEqualsCanonicalizing(['Trigun', 'Drama Series'], $this->titlesOf($filter));
@@ -305,26 +330,26 @@ final class AnimeRepositoryTest extends TestCase
     public function testFilterByStudiosUsesOrSemantics(): void
     {
         $filter = new AnimeListFilter(
-            watchStatus: WatchStatus::Watching,
+            watchStatuses: [WatchStatus::Watching],
             studioIds: [self::requireId($this->sunrise), self::requireId($this->toei)],
         );
 
         $this->assertEqualsCanonicalizing(['Trigun', 'A Comedy Movie', 'Drama Series'], $this->titlesOf($filter));
 
-        $sunriseOnly = new AnimeListFilter(watchStatus: WatchStatus::Watching, studioIds: [self::requireId($this->sunrise)]);
+        $sunriseOnly = new AnimeListFilter(watchStatuses: [WatchStatus::Watching], studioIds: [self::requireId($this->sunrise)]);
         $this->assertSame(['Trigun'], $this->titlesOf($sunriseOnly));
     }
 
     public function testFilterByLabelsUsesOrSemantics(): void
     {
-        $filter = new AnimeListFilter(watchStatus: WatchStatus::Watching, labelIds: [self::requireId($this->favorite)]);
+        $filter = new AnimeListFilter(watchStatuses: [WatchStatus::Watching], labelIds: [self::requireId($this->favorite)]);
 
         $this->assertEqualsCanonicalizing(['Trigun', 'Drama Series'], $this->titlesOf($filter));
     }
 
     public function testFilterByUserRatingRange(): void
     {
-        $filter = new AnimeListFilter(watchStatus: WatchStatus::Watching, userRatingFrom: 4, userRatingTo: 5);
+        $filter = new AnimeListFilter(watchStatuses: [WatchStatus::Watching], userRatingFrom: 4, userRatingTo: 5);
 
         $this->assertEqualsCanonicalizing(['Trigun', 'Drama Series'], $this->titlesOf($filter));
     }
@@ -332,7 +357,7 @@ final class AnimeRepositoryTest extends TestCase
     public function testFilterByDatePremiereRangeIsInclusiveOnBothEnds(): void
     {
         $filter = new AnimeListFilter(
-            watchStatus: WatchStatus::Watching,
+            watchStatuses: [WatchStatus::Watching],
             datePremiereFrom: new \DateTimeImmutable('2021-01-01'),
             datePremiereTo: new \DateTimeImmutable('2022-01-01'),
         );
@@ -340,11 +365,38 @@ final class AnimeRepositoryTest extends TestCase
         $this->assertEqualsCanonicalizing(['A Comedy Movie', 'Drama Series'], $this->titlesOf($filter));
     }
 
+    public function testFilterByUserRatingIsNullMatchesOnlyUnratedAnime(): void
+    {
+        // Only "Planned Show" carries no rating in the fixtures.
+        $filter = new AnimeListFilter(userRatingIsNull: true);
+
+        $this->assertSame(['Planned Show'], $this->titlesOf($filter));
+    }
+
+    public function testFilterByUserRatingIsNullIgnoresTheRangeParams(): void
+    {
+        $filter = new AnimeListFilter(userRatingIsNull: true, userRatingFrom: 4, userRatingTo: 5);
+
+        $this->assertSame(['Planned Show'], $this->titlesOf($filter));
+    }
+
+    public function testFilterByDatePremiereIsNullMatchesOnlyAnimeWithoutAPremiereDate(): void
+    {
+        $undated = new TvAnime();
+        $undated->setTitle('Undated Show')->setWatchStatus(WatchStatus::Plan);
+        $this->entityManager->persist($undated);
+        $this->entityManager->flush();
+
+        $filter = new AnimeListFilter(datePremiereIsNull: true);
+
+        $this->assertSame(['Undated Show'], $this->titlesOf($filter));
+    }
+
     public function testTotalStaysConsistentWithSelectAcrossPaginationUnderAnActiveFilter(): void
     {
         // Combine a to-many OR filter with a range filter to stress the shared query builder.
         $filter = new AnimeListFilter(
-            watchStatus: WatchStatus::Watching,
+            watchStatuses: [WatchStatus::Watching],
             genres: [GenreCode::Action, GenreCode::Comedy, GenreCode::Drama],
             userRatingFrom: 3,
         );

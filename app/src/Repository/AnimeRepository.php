@@ -31,10 +31,15 @@ use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
 use App\Entity\Anime;
 use App\Entity\AnimeExternalId;
+use App\Entity\Enum\AnimeType;
+use App\Entity\Enum\GenreCode;
+use App\Entity\Enum\ThemeCode;
+use App\Entity\Enum\WatchStatus;
 use App\Entity\Storage;
 use App\Entity\ValueObject\PluginId;
 use App\Entity\ValueObject\Rating;
 use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\ORM\Query\Expr\Comparison;
 use Doctrine\ORM\QueryBuilder;
 use Doctrine\ORM\Tools\Pagination\Paginator;
 
@@ -83,6 +88,253 @@ class AnimeRepository
 
         /* @var list<Anime> */
         return $qb->getQuery()->getResult();
+    }
+
+    /**
+     * The eight filter-panel sections (issue #666). Each section is counted against the
+     * filter with that section's own criteria cleared (AnimeListFilter::withoutX()) — the
+     * count answers "how many rows would this value add", not "how many rows are already
+     * selected", which is why it never reuses g/st/lb/th from createFilteredQueryBuilder()
+     * for the to-many sections: those aliases are already narrowed by the very condition
+     * being cleared, so grouping on them would only ever echo back the current selection.
+     */
+    public function facetsByFilter(AnimeListFilter $filter): AnimeFacets
+    {
+        return new AnimeFacets(
+            watchStatuses: $this->facetWatchStatuses($filter),
+            types: $this->facetTypes($filter),
+            datePremiereDecades: $this->facetDatePremiereDecades($filter),
+            userRatings: $this->facetUserRatings($filter),
+            labels: $this->facetLabels($filter),
+            genres: $this->facetGenres($filter),
+            themes: $this->facetThemes($filter),
+            studios: $this->facetStudios($filter),
+        );
+    }
+
+    /** @return list<AnimeFacetValueBucket> */
+    private function facetWatchStatuses(AnimeListFilter $filter): array
+    {
+        $rows = $this->createFilteredQueryBuilder($filter->withoutWatchStatuses())
+            ->select('a.watchStatus AS value', 'COUNT(DISTINCT a.id) AS cnt')
+            ->groupBy('a.watchStatus')
+            ->getQuery()
+            ->getArrayResult();
+
+        return array_values(array_map(
+            static fn (array $row): AnimeFacetValueBucket => new AnimeFacetValueBucket(
+                $row['value'] instanceof WatchStatus ? $row['value']->value : (string) $row['value'],
+                (int) $row['cnt'],
+            ),
+            $rows,
+        ));
+    }
+
+    /**
+     * Anime::$type is a SINGLE_TABLE discriminator, not addressable as a plain field in DQL
+     * (no "a.type" to SELECT/GROUP BY) — counted with one isInstanceOf() check per case
+     * instead, the same construct createFilteredQueryBuilder() already uses for the $types
+     * filter itself.
+     *
+     * @return list<AnimeFacetValueBucket>
+     */
+    private function facetTypes(AnimeListFilter $filter): array
+    {
+        $withoutOwn = $filter->withoutTypes();
+
+        $buckets = [];
+        foreach (AnimeType::cases() as $type) {
+            $qb = $this->createFilteredQueryBuilder($withoutOwn)
+                ->select('COUNT(DISTINCT a.id)');
+            $qb->andWhere($qb->expr()->isInstanceOf('a', $type->entityClass()));
+
+            $count = (int) $qb->getQuery()->getSingleScalarResult();
+            if ($count > 0) {
+                $buckets[] = new AnimeFacetValueBucket($type->value, $count);
+            }
+        }
+
+        return $buckets;
+    }
+
+    /**
+     * Bucketed by decade rather than by exact year (issue #666), plus a "none" bucket for
+     * anime without a premiere date. Fetched as plain (id, datePremiere) pairs and bucketed
+     * in PHP rather than with a native SQL GROUP BY: DQL has no YEAR() function to bucket
+     * with, and re-deriving every other createFilteredQueryBuilder() condition (genre/theme/
+     * studio/label joins, the rating IS NULL branch, the id/name search intersection) as raw
+     * SQL would fork the single source of truth those conditions already have. The catalog
+     * sizes this project targets (see .claude-docs/decisions.md) make this cheap.
+     *
+     * @return list<AnimeFacetValueBucket>
+     */
+    private function facetDatePremiereDecades(AnimeListFilter $filter): array
+    {
+        $rows = $this->createFilteredQueryBuilder($filter->withoutDatePremiere())
+            ->select('a.id AS id', 'a.datePremiere AS datePremiere')
+            ->distinct()
+            ->getQuery()
+            ->getArrayResult();
+
+        $counts = [];
+        foreach ($rows as $row) {
+            $date = $this->toDateTimeOrNull($row['datePremiere']);
+            $key = $date === null ? 'none' : (intdiv((int) $date->format('Y'), 10) * 10).'s';
+            $counts[$key] = ($counts[$key] ?? 0) + 1;
+        }
+
+        uksort($counts, static function (string $a, string $b): int {
+            if ($a === 'none' || $b === 'none') {
+                return $a === $b ? 0 : ($a === 'none' ? 1 : -1);
+            }
+
+            return $a <=> $b;
+        });
+
+        $buckets = [];
+        foreach ($counts as $value => $count) {
+            $buckets[] = new AnimeFacetValueBucket((string) $value, $count);
+        }
+
+        return $buckets;
+    }
+
+    /**
+     * Rating::MIN..MAX (1..5) plus a "none" bucket for anime without a rating — counted with
+     * an explicit "IS NULL" branch rather than a range comparison, since >= 1 would silently
+     * exclude every unrated row instead of counting it (issue #666).
+     *
+     * @return list<AnimeFacetValueBucket>
+     */
+    private function facetUserRatings(AnimeListFilter $filter): array
+    {
+        $withoutOwn = $filter->withoutUserRating();
+
+        $rows = $this->createFilteredQueryBuilder($withoutOwn)
+            ->select('a.userRating AS value', 'COUNT(DISTINCT a.id) AS cnt')
+            ->andWhere('a.userRating IS NOT NULL')
+            ->groupBy('a.userRating')
+            ->getQuery()
+            ->getArrayResult();
+
+        $buckets = array_values(array_map(
+            static fn (array $row): AnimeFacetValueBucket => new AnimeFacetValueBucket(
+                (string) ($row['value'] instanceof Rating ? $row['value']->value : (int) $row['value']),
+                (int) $row['cnt'],
+            ),
+            $rows,
+        ));
+
+        $noneCount = (int) $this->createFilteredQueryBuilder($withoutOwn)
+            ->select('COUNT(DISTINCT a.id)')
+            ->andWhere('a.userRating IS NULL')
+            ->getQuery()
+            ->getSingleScalarResult();
+
+        if ($noneCount > 0) {
+            $buckets[] = new AnimeFacetValueBucket('none', $noneCount);
+        }
+
+        return $buckets;
+    }
+
+    /**
+     * Joins a.genres under a fresh alias rather than reusing "g" from
+     * createFilteredQueryBuilder() — see facetsByFilter() for why that matters.
+     *
+     * @return list<AnimeFacetValueBucket>
+     */
+    private function facetGenres(AnimeListFilter $filter): array
+    {
+        $rows = $this->createFilteredQueryBuilder($filter->withoutGenres())
+            ->innerJoin('a.genres', 'gf')
+            ->select('gf.code AS value', 'COUNT(DISTINCT a.id) AS cnt')
+            ->groupBy('gf.code')
+            ->getQuery()
+            ->getArrayResult();
+
+        return array_values(array_map(
+            static fn (array $row): AnimeFacetValueBucket => new AnimeFacetValueBucket(
+                $row['value'] instanceof GenreCode ? $row['value']->value : (string) $row['value'],
+                (int) $row['cnt'],
+            ),
+            $rows,
+        ));
+    }
+
+    /**
+     * Joins a.themes under a fresh alias rather than reusing "th" from
+     * createFilteredQueryBuilder() — see facetsByFilter() for why that matters.
+     *
+     * @return list<AnimeFacetValueBucket>
+     */
+    private function facetThemes(AnimeListFilter $filter): array
+    {
+        $rows = $this->createFilteredQueryBuilder($filter->withoutThemes())
+            ->innerJoin('a.themes', 'thf')
+            ->select('thf.code AS value', 'COUNT(DISTINCT a.id) AS cnt')
+            ->groupBy('thf.code')
+            ->getQuery()
+            ->getArrayResult();
+
+        return array_values(array_map(
+            static fn (array $row): AnimeFacetValueBucket => new AnimeFacetValueBucket(
+                $row['value'] instanceof ThemeCode ? $row['value']->value : (string) $row['value'],
+                (int) $row['cnt'],
+            ),
+            $rows,
+        ));
+    }
+
+    /**
+     * Joins a.labels under a fresh alias rather than reusing "lb" from
+     * createFilteredQueryBuilder() — see facetsByFilter() for why that matters.
+     *
+     * @return list<AnimeFacetEntityBucket>
+     */
+    private function facetLabels(AnimeListFilter $filter): array
+    {
+        $rows = $this->createFilteredQueryBuilder($filter->withoutLabels())
+            ->innerJoin('a.labels', 'lbf')
+            ->select('lbf.id AS id', 'lbf.name AS name', 'COUNT(DISTINCT a.id) AS cnt')
+            ->groupBy('lbf.id', 'lbf.name')
+            ->getQuery()
+            ->getArrayResult();
+
+        return array_values(array_map(
+            static fn (array $row): AnimeFacetEntityBucket => new AnimeFacetEntityBucket((int) $row['id'], (string) $row['name'], (int) $row['cnt']),
+            $rows,
+        ));
+    }
+
+    /**
+     * Joins a.studios under a fresh alias rather than reusing "st" from
+     * createFilteredQueryBuilder() — see facetsByFilter() for why that matters.
+     *
+     * @return list<AnimeFacetEntityBucket>
+     */
+    private function facetStudios(AnimeListFilter $filter): array
+    {
+        $rows = $this->createFilteredQueryBuilder($filter->withoutStudios())
+            ->innerJoin('a.studios', 'stf')
+            ->select('stf.id AS id', 'stf.name AS name', 'COUNT(DISTINCT a.id) AS cnt')
+            ->groupBy('stf.id', 'stf.name')
+            ->getQuery()
+            ->getArrayResult();
+
+        return array_values(array_map(
+            static fn (array $row): AnimeFacetEntityBucket => new AnimeFacetEntityBucket((int) $row['id'], (string) $row['name'], (int) $row['cnt']),
+            $rows,
+        ));
+    }
+
+    private function toDateTimeOrNull(mixed $value): ?\DateTimeImmutable
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        return $value instanceof \DateTimeImmutable ? $value : (new \DateTimeImmutable())->setTimestamp((int) $value);
     }
 
     /**
@@ -252,13 +504,16 @@ class AnimeRepository
     {
         $qb = $this->entityManager->getRepository(Anime::class)->createQueryBuilder('a');
 
-        if ($filter->watchStatus !== null) {
-            $qb->andWhere('a.watchStatus = :watchStatus')
-                ->setParameter('watchStatus', $filter->watchStatus);
+        if ($filter->watchStatuses !== []) {
+            $qb->andWhere('a.watchStatus IN (:watchStatuses)')
+                ->setParameter('watchStatuses', $filter->watchStatuses);
         }
 
-        if ($filter->type !== null) {
-            $qb->andWhere($qb->expr()->isInstanceOf('a', $filter->type->entityClass()));
+        if ($filter->types !== []) {
+            $qb->andWhere($qb->expr()->orX(...array_map(
+                static fn (AnimeType $type): Comparison => $qb->expr()->isInstanceOf('a', $type->entityClass()),
+                $filter->types,
+            )));
         }
 
         if ($filter->country !== null) {
@@ -295,17 +550,32 @@ class AnimeRepository
                 ->setParameter('labelIds', $filter->labelIds);
         }
 
-        if ($filter->userRatingFrom !== null) {
-            $qb->andWhere('a.userRating >= :userRatingFrom')
-                ->setParameter('userRatingFrom', new Rating($filter->userRatingFrom), RatingType::NAME);
+        if ($filter->themes !== []) {
+            $qb->innerJoin('a.themes', 'th')
+                ->andWhere('th.code IN (:themes)')
+                ->setParameter('themes', $filter->themes);
         }
 
-        if ($filter->userRatingTo !== null) {
-            $qb->andWhere('a.userRating <= :userRatingTo')
-                ->setParameter('userRatingTo', new Rating($filter->userRatingTo), RatingType::NAME);
+        if ($filter->userRatingIsNull) {
+            $qb->andWhere('a.userRating IS NULL');
+        } else {
+            if ($filter->userRatingFrom !== null) {
+                $qb->andWhere('a.userRating >= :userRatingFrom')
+                    ->setParameter('userRatingFrom', new Rating($filter->userRatingFrom), RatingType::NAME);
+            }
+
+            if ($filter->userRatingTo !== null) {
+                $qb->andWhere('a.userRating <= :userRatingTo')
+                    ->setParameter('userRatingTo', new Rating($filter->userRatingTo), RatingType::NAME);
+            }
         }
 
-        $this->applyDateRange($qb, 'a.datePremiere', $filter->datePremiereFrom, $filter->datePremiereTo, 'datePremiere');
+        if ($filter->datePremiereIsNull) {
+            $qb->andWhere('a.datePremiere IS NULL');
+        } else {
+            $this->applyDateRange($qb, 'a.datePremiere', $filter->datePremiereFrom, $filter->datePremiereTo, 'datePremiere');
+        }
+
         $this->applyDateRange($qb, 'a.dateEnd', $filter->dateEndFrom, $filter->dateEndTo, 'dateEnd');
         $this->applyDateRange($qb, 'a.dateAdd', $filter->dateAddFrom, $filter->dateAddTo, 'dateAdd');
 
