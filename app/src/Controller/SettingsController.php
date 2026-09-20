@@ -27,7 +27,9 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
+use App\Entity\Enum\PaginationMode;
 use App\Entity\Enum\SyncReviewItemKind;
+use App\Entity\Enum\ThemePreference;
 use App\Entity\SyncReviewItem;
 use App\Service\AppSettingsProvider;
 use App\Service\Plugin\AvailableLocalesProvider;
@@ -94,6 +96,45 @@ final class SettingsController
     }
 
     /**
+     * Persists the chosen color scheme to %AppData%/config.json (issue #638), same
+     * PRG shape as {@see self::setLocale()}.
+     */
+    #[Route('/settings/theme', name: 'settings_set_theme', methods: ['POST'])]
+    public function setTheme(Request $request): RedirectResponse
+    {
+        $this->assertValidCsrfToken('settings_set_theme', $request);
+
+        $theme = ThemePreference::tryFrom((string) $request->request->get('themePreference', ''));
+        if ($theme === null) {
+            throw new BadRequestHttpException('Unknown theme preference.');
+        }
+
+        $this->settings->setThemePreference($theme);
+
+        return new RedirectResponse($this->urlGenerator->generate('settings_index'), Response::HTTP_SEE_OTHER);
+    }
+
+    /**
+     * Persists the chosen catalog pagination style to %AppData%/config.json (issue #665), same
+     * PRG shape as {@see self::setTheme()}. Defaults to infinite scroll ({@see AppSettingsProvider::getPaginationMode()})
+     * until the user picks classic pagination here — this is the only place that can.
+     */
+    #[Route('/settings/pagination-mode', name: 'settings_set_pagination_mode', methods: ['POST'])]
+    public function setPaginationMode(Request $request): RedirectResponse
+    {
+        $this->assertValidCsrfToken('settings_set_pagination_mode', $request);
+
+        $mode = PaginationMode::tryFrom((string) $request->request->get('paginationMode', ''));
+        if ($mode === null) {
+            throw new BadRequestHttpException('Unknown pagination mode.');
+        }
+
+        $this->settings->setPaginationMode($mode);
+
+        return new RedirectResponse($this->urlGenerator->generate('settings_index'), Response::HTTP_SEE_OTHER);
+    }
+
+    /**
      * Runs the same catalog reindex as bin/console app:search:reindex (issue #198), so a user
      * hitting a stale/broken search index has a recovery option that doesn't require the CLI.
      */
@@ -123,6 +164,8 @@ final class SettingsController
             'unavailableLocale' => $unavailableLocale,
             'reindexStatus' => $reindexStatus,
             'needsCorrectionCount' => $this->needsCorrectionCount(),
+            'themePreference' => $this->settings->getThemePreference(),
+            'paginationMode' => $this->settings->getPaginationMode(),
         ]));
     }
 

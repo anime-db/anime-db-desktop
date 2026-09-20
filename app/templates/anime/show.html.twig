@@ -76,8 +76,8 @@
                     <ul class="anime-detail__labels-suggestions" data-labels-suggestions hidden></ul>
                     <p class="anime-detail__labels-error" data-labels-error hidden>{{ 'anime_detail.labels_save_error'|trans }}</p>
                     <div class="anime-detail__labels-actions">
-                        <button type="button" class="anime-detail__labels-save-button" data-labels-save>{{ 'anime_detail.labels_save_button'|trans }}</button>
-                        <button type="button" class="anime-detail__labels-cancel-button" data-labels-cancel>{{ 'anime_detail.labels_cancel_button'|trans }}</button>
+                        <button type="button" data-labels-save>{{ 'anime_detail.labels_save_button'|trans }}</button>
+                        <button type="button" data-labels-cancel>{{ 'anime_detail.labels_cancel_button'|trans }}</button>
                     </div>
                 </div>
             </section>
@@ -106,7 +106,7 @@
                     <ul class="anime-detail__source-list">
                         {% for source in anime.sources %}
                             <li>
-                                <a href="{{ source.url }}" target="_blank" rel="noopener noreferrer" class="anime-detail__source-link" title="{{ source.domain }}">
+                                <a href="{{ source.url }}" target="_blank" rel="noopener noreferrer" title="{{ source.domain }}">
                                     <img src="https://{{ source.domain }}/favicon.ico" alt="{{ source.domain }}" class="anime-detail__source-icon" loading="lazy">
                                 </a>
                             </li>
@@ -121,7 +121,7 @@
                 {# Async-loaded plugin widget (issue #212): the placeholder loads independently
                  # via HTMX right after the page appears, so a slow or failing plugin never
                  # blocks the rest of the detail page. #}
-                <section class="anime-detail__widget">
+                <section>
                     <div
                         class="plugin-widget"
                         hx-get="{{ path('plugin_widget', {pluginId: widget.pluginId, widgetName: widget.widgetName, entryId: anime.id}) }}"

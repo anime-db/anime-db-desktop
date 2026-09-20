@@ -35,12 +35,14 @@
 {% endblock %}
 
 {% block body %}
-    <p><a href="{{ path('settings_plugins_index') }}">{{ 'settings_plugin_page.back_link'|trans }}</a></p>
-    <h1>{{ pluginName }}</h1>
+    <div class="container py-4">
+        <a href="{{ path('settings_plugins_index') }}" class="btn btn-outline-secondary btn-sm mb-3">{{ 'settings_plugin_page.back_link'|trans }}</a>
+        <h1>{{ pluginName }}</h1>
 
-    {% if renderFailed %}
-        <p class="error">{{ 'settings_plugin_page.render_error'|trans }}</p>
-    {% else %}
-        {{ content|raw }}
-    {% endif %}
+        {% if renderFailed %}
+            <p class="alert alert-danger">{{ 'settings_plugin_page.render_error'|trans }}</p>
+        {% else %}
+            {{ content|raw }}
+        {% endif %}
+    </div>
 {% endblock %}

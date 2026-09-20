@@ -70,6 +70,7 @@ final class SettingsLocaleSwitchAcceptanceTest extends KernelTestCase
     private ?string $originalPluginsConfigPath;
     private ?string $originalDatabaseUrl;
     private ?string $originalQueueDatabaseUrl;
+    private ?string $originalConfigPathEnv;
     private ?string $originalDatabaseUrlEnv;
     private ?string $originalQueueDatabaseUrlEnv;
 
@@ -81,10 +82,12 @@ final class SettingsLocaleSwitchAcceptanceTest extends KernelTestCase
         $this->originalPluginsConfigPath = $_SERVER['PLUGINS_CONFIG_PATH'] ?? null;
         $this->originalDatabaseUrl = $_SERVER['DATABASE_URL'] ?? null;
         $this->originalQueueDatabaseUrl = $_SERVER['QUEUE_DATABASE_URL'] ?? null;
-        // DATABASE_URL/QUEUE_DATABASE_URL (unlike the other overrides above) have defaults in
-        // .env, so tests/bootstrap.php's Dotenv::bootEnv() already populated $_ENV with them
-        // before this test runs. Symfony's container resolves %env(...)% from $_ENV before
-        // $_SERVER, so overriding $_SERVER alone here is silently ignored.
+        // CONFIG_PATH/DATABASE_URL/QUEUE_DATABASE_URL (unlike the other overrides above) have
+        // defaults in .env/.env.test, so tests/bootstrap.php's Dotenv::bootEnv() already
+        // populated $_ENV with them before this test runs. Symfony's container resolves
+        // %env(...)% from $_ENV before $_SERVER, so overriding $_SERVER alone here is silently
+        // ignored.
+        $this->originalConfigPathEnv = $_ENV['CONFIG_PATH'] ?? null;
         $this->originalDatabaseUrlEnv = $_ENV['DATABASE_URL'] ?? null;
         $this->originalQueueDatabaseUrlEnv = $_ENV['QUEUE_DATABASE_URL'] ?? null;
 
@@ -94,7 +97,7 @@ final class SettingsLocaleSwitchAcceptanceTest extends KernelTestCase
         $this->databasePath = sys_get_temp_dir().'/anime-settings-locale-switch-acceptance-db-'.uniqid().'.sqlite';
         $this->queueDatabasePath = sys_get_temp_dir().'/anime-settings-locale-switch-acceptance-queue-'.uniqid().'.sqlite';
 
-        $_SERVER['CONFIG_PATH'] = $this->configPath;
+        $_SERVER['CONFIG_PATH'] = $_ENV['CONFIG_PATH'] = $this->configPath;
         $_SERVER['APP_RUNTIME_DIR'] = $this->runtimeDir;
         $_SERVER['PLUGINS_DIR'] = $this->pluginsDir;
         $_SERVER['PLUGINS_CONFIG_PATH'] = $this->pluginsDir.'/plugins.json';
@@ -120,6 +123,7 @@ final class SettingsLocaleSwitchAcceptanceTest extends KernelTestCase
         $this->restoreServerVar('PLUGINS_CONFIG_PATH', $this->originalPluginsConfigPath);
         $this->restoreServerVar('DATABASE_URL', $this->originalDatabaseUrl);
         $this->restoreServerVar('QUEUE_DATABASE_URL', $this->originalQueueDatabaseUrl);
+        $this->restoreEnvVar('CONFIG_PATH', $this->originalConfigPathEnv);
         $this->restoreEnvVar('DATABASE_URL', $this->originalDatabaseUrlEnv);
         $this->restoreEnvVar('QUEUE_DATABASE_URL', $this->originalQueueDatabaseUrlEnv);
 

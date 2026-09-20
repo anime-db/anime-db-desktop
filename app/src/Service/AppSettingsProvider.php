@@ -28,6 +28,7 @@ declare(strict_types=1);
 namespace App\Service;
 
 use App\Entity\Enum\PaginationMode;
+use App\Entity\Enum\ThemePreference;
 use App\Entity\ValueObject\Exception\InvalidPluginIdException;
 use App\Entity\ValueObject\PluginId;
 
@@ -59,6 +60,15 @@ final class AppSettingsProvider
         return PaginationMode::tryFrom($mode) ?? PaginationMode::InfiniteScroll;
     }
 
+    public function setPaginationMode(PaginationMode $mode): void
+    {
+        $this->configStore->update(static function (array $config) use ($mode): array {
+            $config['paginationMode'] = $mode->value;
+
+            return $config;
+        });
+    }
+
     public function getLocale(): ?string
     {
         $locale = $this->configStore->read()['locale'] ?? null;
@@ -75,6 +85,30 @@ final class AppSettingsProvider
     {
         $this->configStore->update(static function (array $config) use ($locale): array {
             $config['locale'] = $locale;
+
+            return $config;
+        });
+    }
+
+    /**
+     * Defaults to System — the color-mode.js behavior before this setting existed (issue #638),
+     * so an existing config.json with no themePreference key keeps following prefers-color-scheme.
+     */
+    public function getThemePreference(): ThemePreference
+    {
+        $theme = $this->configStore->read()['themePreference'] ?? null;
+
+        if (!\is_string($theme)) {
+            return ThemePreference::System;
+        }
+
+        return ThemePreference::tryFrom($theme) ?? ThemePreference::System;
+    }
+
+    public function setThemePreference(ThemePreference $theme): void
+    {
+        $this->configStore->update(static function (array $config) use ($theme): array {
+            $config['themePreference'] = $theme->value;
 
             return $config;
         });

@@ -28,6 +28,7 @@ jest.mock('electron', () => ({
         whenReady:  jest.fn(() => Promise.resolve()),
         quit:       jest.fn(),
         exit:       jest.fn(),
+        relaunch:   jest.fn(),
         getPath:    jest.fn(() => '/fake/userData'),
         getLocale:  jest.fn(() => 'ru-RU'),
     },
@@ -48,6 +49,7 @@ jest.mock('../../native/accept-language', () => ({}));
 jest.mock('../../native/content-security-policy', () => ({}));
 jest.mock('../../native/shell', () => ({ configure: jest.fn() }));
 jest.mock('../../native/dialog', () => ({}));
+jest.mock('../../native/catalog-export', () => ({}));
 jest.mock('../../native/supervisor', () => ({
     start:              jest.fn(() => Promise.resolve({ frankenphpPort: 8000, wsPort: 8001 })),
     stop:               jest.fn(() => Promise.resolve()),
@@ -132,12 +134,12 @@ function loadLifecycle() {
     };
     createSplash.mockReturnValue(fakeSplash);
 
-    require('../../native/lifecycle');
+    const lifecycle = require('../../native/lifecycle');
 
     return {
         app, dialog, supervisor, migrations, cacheInvalidation, safeModeState, createWindow, createSplash, tray,
         wsClient, proxy, firewall, appHandlers, processHandlers, wsClientHandlers, supervisorEventHandlers,
-        fakeWindow, fakeSplash,
+        fakeWindow, fakeSplash, relaunch: lifecycle.relaunch,
     };
 }
 
@@ -331,6 +333,40 @@ describe('cache invalidation errors (issue #403 review)', () => {
     });
 });
 
+describe('relaunch (issue #656)', () => {
+    test('relaunch() restarts the app via app.relaunch() + app.quit(), which gracefully tears down the supervisor before exiting', async () => {
+        const { app, wsClient, supervisor, appHandlers, relaunch } = loadLifecycle();
+        await new Promise((r) => setTimeout(r, 500));
+
+        relaunch();
+
+        expect(app.relaunch).toHaveBeenCalledTimes(1);
+        expect(app.quit).toHaveBeenCalledTimes(1);
+
+        appHandlers['before-quit']({ preventDefault: jest.fn() });
+        await new Promise((r) => setTimeout(r, 0));
+
+        expect(wsClient.disconnect).toHaveBeenCalledTimes(1);
+        expect(supervisor.stop).toHaveBeenCalledTimes(1);
+        expect(app.exit).toHaveBeenCalledWith(0);
+    });
+
+    test('relaunch() bypasses the tray-hide close handler, even for a window already hidden to tray', async () => {
+        const { relaunch, fakeWindow } = loadLifecycle();
+        await new Promise((r) => setTimeout(r, 500));
+
+        const closeHandler = fakeWindow.on.mock.calls.find(([event]) => event === 'close')[1];
+
+        relaunch();
+
+        const preventDefault = jest.fn();
+        closeHandler({ preventDefault });
+
+        expect(preventDefault).not.toHaveBeenCalled();
+        expect(fakeWindow.hide).not.toHaveBeenCalled();
+    });
+});
+
 describe('abnormal-exit cleanup', () => {
     test('process exit runs a synchronous best-effort kill of all child processes', () => {
         const { processHandlers, supervisor } = loadLifecycle();
@@ -361,6 +397,31 @@ describe('abnormal-exit cleanup', () => {
             expect.stringContaining('boom'),
         );
         expect(dialog.showErrorBox).toHaveBeenCalledWith(expect.any(String), expect.stringContaining('boom'));
+        expect(supervisor.killSync).toHaveBeenCalledTimes(1);
+        expect(app.exit).toHaveBeenCalledWith(1);
+    });
+
+    test('an unhandled rejection logs the crash, shows a dialog and force-kills children before exiting', () => {
+        const { processHandlers, supervisor, app, dialog } = loadLifecycle();
+        const fs = require('fs');
+
+        processHandlers.unhandledRejection(new Error('boom'));
+
+        expect(fs.appendFileSync).toHaveBeenCalledWith(
+            expect.stringContaining('main-'),
+            expect.stringContaining('boom'),
+        );
+        expect(dialog.showErrorBox).toHaveBeenCalledWith(expect.any(String), expect.stringContaining('boom'));
+        expect(supervisor.killSync).toHaveBeenCalledTimes(1);
+        expect(app.exit).toHaveBeenCalledWith(1);
+    });
+
+    test('an unhandled rejection with a non-Error reason still shows a dialog without throwing', () => {
+        const { processHandlers, supervisor, app, dialog } = loadLifecycle();
+
+        expect(() => processHandlers.unhandledRejection('boom')).not.toThrow();
+
+        expect(dialog.showErrorBox).toHaveBeenCalledWith(expect.any(String), 'boom');
         expect(supervisor.killSync).toHaveBeenCalledTimes(1);
         expect(app.exit).toHaveBeenCalledWith(1);
     });

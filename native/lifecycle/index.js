@@ -27,6 +27,7 @@ require('../accept-language');
 require('../content-security-policy');
 const shell = require('../shell');
 require('../dialog');
+require('../catalog-export');
 const supervisor       = require('../supervisor');
 const safeModeState    = require('../supervisor/safe-mode');
 const { createWindow } = require('../window');
@@ -100,6 +101,21 @@ let mainWindow = null;
 
 function onQuit() {
     quitting = true;
+    app.quit();
+}
+
+/**
+ * Перезапускает приложение. app.relaunch() лишь планирует повторный запуск после выхода —
+ * само завершение идёт через app.quit(), который эмитит before-quit ниже: тот обходит
+ * mainWindow.on('close', ...) (иначе прячущий окно в трей вместо закрытия) и делает
+ * упорядоченную graceful-остановку (wsClient.disconnect() + supervisor.stop()) перед
+ * app.exit(0) — вместо аварийного supervisor.killSync() из process.on('exit').
+ *
+ * @returns {void}
+ */
+function relaunch() {
+    quitting = true;
+    app.relaunch();
     app.quit();
 }
 
@@ -271,4 +287,22 @@ if (!gotLock) {
         dialog.showErrorBox(i18n.t('dialog.uncaught_error_title', getLocale()), err && err.stack ? err.stack : String(err));
         app.exit(1);
     });
+
+    /**
+     * The startup sequence in app.whenReady().then(...) above has no .catch() — a rejection
+     * before the inner try (e.g. in beginStartAttempt(), the safe-mode dialog, or createSplash())
+     * would otherwise be an unhandled rejection that uncaughtException does not catch, leaving the
+     * app silently stuck with no dialog and no crash log entry (issue #645).
+     */
+    process.on('unhandledRejection', (reason) => {
+        logCrash(reason);
+        supervisor.killSync();
+        dialog.showErrorBox(
+            i18n.t('dialog.uncaught_error_title', getLocale()),
+            reason && reason.stack ? reason.stack : String(reason),
+        );
+        app.exit(1);
+    });
 }
+
+module.exports = { relaunch };

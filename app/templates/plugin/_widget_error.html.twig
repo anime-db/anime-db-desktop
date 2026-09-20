@@ -25,7 +25,7 @@
  #}
 <div class="plugin-widget plugin-widget--error">
     <p class="plugin-widget__error-text">{{ 'plugin_widget.error'|trans({'%source%': bidi_isolate(pluginId)}) }}</p>
-    <button type="button" class="plugin-widget__retry-button" hx-get="{{ retryUrl }}" hx-target="closest .plugin-widget" hx-swap="outerHTML">
+    <button type="button" hx-get="{{ retryUrl }}" hx-target="closest .plugin-widget" hx-swap="outerHTML">
         {{- 'plugin_widget.retry_button'|trans -}}
     </button>
 </div>

@@ -23,7 +23,17 @@
 
 (function () {
     const API_URL = '/anime';
-    const PAGE_SIZE = 20;
+    // Rows-per-page is the only knob left in code (issue #665) — the page size itself is derived
+    // from the grid's actual column count at request time, not a user-facing setting. Kept in
+    // sync by hand with AnimeListRequestParser::MAX_LIMIT (PHP) since the server is the one that
+    // enforces it; the client only needs it to avoid asking for more than the server will give.
+    const ROWS = 6;
+    const MAX_LIMIT = 100;
+    // Column count changes without a `resize` event too — a scrollbar appearing/disappearing or
+    // the filter panel collapsing both resize the grid without resizing the window — so this
+    // watches the grid itself. Debounced because width can wobble across several frames during a
+    // drag-resize while the column count itself only changes once.
+    const RESIZE_DEBOUNCE_MS = 150;
     // A label click on the anime detail page (issue #104) links here with ?labels=<id> — the
     // only filter this page currently understands from the URL, ahead of the full filter UI.
     const labelFilter = new URLSearchParams(window.location.search).get('labels');
@@ -38,10 +48,26 @@
     const pagination = document.getElementById('anime-list-pagination');
     const sentinel = document.getElementById('anime-list-sentinel');
     const searchInput = document.getElementById('anime-list-search');
+    const sortContainer = document.getElementById('anime-list-sort');
+    const sortDirectionButton = document.getElementById('anime-list-sort-direction');
 
     let sentinelObserver = null;
+    let resizeObserver = null;
+    let resizeDebounceTimer = null;
     let searchDebounceTimer = null;
     let searchQuery = '';
+    let sortField = 'date_update';
+    let sortDirection = 'desc';
+    // Tracked so a grid resize can tell what mode it is reacting to without waiting on another
+    // network round trip (issue #665): infinite scroll tops up the last row, classic re-pages.
+    let paginationMode = null;
+    // Total cards rendered so far in infinite-scroll mode — not a page number, since the limit
+    // (and therefore what a "page" even means) can change mid-session on resize.
+    let loadedCount = 0;
+    // Offset of the first record on the currently displayed page in classic mode — the anchor a
+    // resize re-pages around, so the record the user was looking at stays on screen.
+    let currentOffset = 0;
+    let lastColumnCount = null;
     // Guards against the response race (issue #208): a slow scroll-append response arriving
     // after a faster search response would otherwise splice stale cards into the fresh grid.
     let pendingRequest = null;
@@ -100,9 +126,16 @@
         return card;
     }
 
-    function renderCards(items, replace, catalogue) {
+    function renderCards(items, replace, offset, catalogue) {
         if (replace) {
             grid.replaceChildren();
+        }
+        if (replace && offset === 0) {
+            // The grid collapsing to a shorter height would otherwise leave the window scroll
+            // position wherever the browser clamps it, not at the top of the new list. Gated on
+            // offset === 0 (not just replace) so a classic-pagination page jump or a same-page
+            // requery (e.g. a column-count change) does not also throw the scroll to the top.
+            window.scrollTo(0, 0);
         }
         for (const anime of items) {
             grid.appendChild(buildCard(anime, catalogue));
@@ -110,10 +143,33 @@
         emptyMessage.hidden = grid.children.length > 0;
     }
 
-    function buildQuery(offset) {
+    // The number of columns the grid actually laid out, read from the resolved track list
+    // getComputedStyle() reports (e.g. "182.4px 182.4px 182.4px") — never recomputed from the
+    // `minmax()`/gap/padding values in _anime-list.scss, which would drift from the real CSS the
+    // moment either one is edited without the other. Chromium is the only rendering engine this
+    // app ships on, so there is no cross-browser fallback to account for.
+    function getColumnCount() {
+        const value = getComputedStyle(grid).gridTemplateColumns;
+        const tracks = value ? value.trim().split(/\s+/).filter(Boolean) : [];
+
+        return tracks.length > 0 ? tracks.length : 1;
+    }
+
+    // Keeps the limit a multiple of the column count so a short last row can only mean "the list
+    // ended", never "the page ended" (issue #665) — rows are capped, not the limit directly, so a
+    // narrow window (few columns) still gets ROWS full rows instead of being clipped mid-row.
+    function computeLimit(columns) {
+        const rows = Math.max(1, Math.min(ROWS, Math.floor(MAX_LIMIT / columns)));
+
+        return columns * rows;
+    }
+
+    function buildQuery(offset, limit) {
         const params = new URLSearchParams({
-            limit: String(PAGE_SIZE),
+            limit: String(limit),
             offset: String(offset),
+            sort: sortField,
+            direction: sortDirection,
         });
 
         if (labelFilter) {
@@ -127,8 +183,8 @@
         return `${API_URL}?${params.toString()}`;
     }
 
-    async function fetchPage(offset, signal) {
-        const response = await fetch(buildQuery(offset), { signal });
+    async function fetchPage(offset, limit, signal) {
+        const response = await fetch(buildQuery(offset, limit), { signal });
         if (!response.ok) {
             throw new Error(`Anime list request failed with status ${response.status}`);
         }
@@ -146,6 +202,7 @@
     function setupClassicPagination(total, limit, offset) {
         sentinel.hidden = true;
         disconnectSentinel();
+        currentOffset = offset;
 
         const pageCount = Math.max(1, Math.ceil(total / limit));
         const currentPage = Math.floor(offset / limit) + 1;
@@ -183,7 +240,30 @@
         sentinelObserver.observe(sentinel);
     }
 
-    async function loadPage(offset, replace) {
+    // Re-pages (classic) or tops up the last row (infinite scroll) so the multiple-of-columns
+    // invariant holds under the grid's current column count. Shared by handleGridResize() and by
+    // loadPage()'s post-response reconciliation below (issue #665) — a resize that happens while
+    // a request is still in flight cannot be handled by handleGridResize() itself, since
+    // paginationMode is only known once a response has landed.
+    function applyColumnCountChange(columns) {
+        if (paginationMode === 'classic') {
+            const newLimit = computeLimit(columns);
+            const newPage = Math.floor(currentOffset / newLimit) + 1;
+            loadPage((newPage - 1) * newLimit, true);
+        } else if (paginationMode === 'infinite_scroll') {
+            const deficit = (columns - (loadedCount % columns)) % columns;
+            if (deficit > 0) {
+                loadPage(loadedCount, false, deficit);
+            }
+        }
+    }
+
+    // `limitOverride` is used for exactly one caller: the infinite-scroll top-up after a resize,
+    // which asks for only the handful of records needed to complete the last row rather than a
+    // full page (issue #665). Every other caller lets the limit follow the grid's current column
+    // count. The offset for the *next* request always comes back from the response (`data.limit`,
+    // via setup{Classic,Infinite}), never from what this call sent — the server is free to clamp.
+    async function loadPage(offset, replace, limitOverride) {
         disconnectSentinel();
         errorMessage.hidden = true;
 
@@ -193,9 +273,12 @@
         const controller = new AbortController();
         pendingRequest = controller;
 
+        const requestColumns = getColumnCount();
+        const limit = limitOverride !== undefined ? limitOverride : computeLimit(requestColumns);
+
         let data;
         try {
-            data = await fetchPage(offset, controller.signal);
+            data = await fetchPage(offset, limit, controller.signal);
         } catch (error) {
             if (error.name === 'AbortError') {
                 return;
@@ -214,13 +297,46 @@
             return;
         }
 
-        renderCards(data.items, replace, catalogue);
+        renderCards(data.items, replace, offset, catalogue);
+        loadedCount = replace ? data.items.length : loadedCount + data.items.length;
+        paginationMode = data.pagination_mode;
 
-        if (data.pagination_mode === 'classic') {
+        if (paginationMode === 'classic') {
             setupClassicPagination(data.total, data.limit, data.offset);
         } else {
             setupInfiniteScroll(data.total, data.limit, data.offset);
         }
+
+        // The column count can change while this request was in flight (paginationMode is not
+        // known until here, so a resize that happened mid-request could not act on it via
+        // handleGridResize() alone). Compare against the column count the just-sent limit was
+        // computed from, not against lastColumnCount, since a resize's own debounced callback may
+        // already have updated lastColumnCount without being able to correct anything (issue #665).
+        const columns = getColumnCount();
+        lastColumnCount = columns;
+        if (columns !== requestColumns) {
+            applyColumnCountChange(columns);
+        }
+    }
+
+    // Reacts to the grid's column count changing (window resize, scrollbar appearing, filter
+    // panel collapsing, ...) — never to `window.resize` directly, since none of those besides a
+    // literal window resize fire it (issue #665).
+    function handleGridResize() {
+        const columns = getColumnCount();
+        if (columns === lastColumnCount) {
+            return;
+        }
+        lastColumnCount = columns;
+        applyColumnCountChange(columns);
+    }
+
+    function setupResizeObserver() {
+        resizeObserver = new ResizeObserver(() => {
+            clearTimeout(resizeDebounceTimer);
+            resizeDebounceTimer = setTimeout(handleGridResize, RESIZE_DEBOUNCE_MS);
+        });
+        resizeObserver.observe(grid);
     }
 
     function setupSearchInput() {
@@ -237,8 +353,52 @@
         });
     }
 
+    function updateSortFieldButtons() {
+        sortContainer.querySelectorAll('[data-sort-field]').forEach((button) => {
+            if (button.dataset.sortField === sortField) {
+                button.setAttribute('aria-current', 'true');
+            } else {
+                button.removeAttribute('aria-current');
+            }
+        });
+    }
+
+    function setupSortControls() {
+        if (!sortContainer) {
+            return;
+        }
+
+        sortContainer.addEventListener('click', (event) => {
+            const fieldButton = event.target.closest('[data-sort-field]');
+            if (fieldButton) {
+                sortField = fieldButton.dataset.sortField;
+                updateSortFieldButtons();
+                loadPage(0, true);
+
+                return;
+            }
+
+            if (sortDirectionButton && event.target.closest('#anime-list-sort-direction')) {
+                sortDirection = sortDirection === 'desc' ? 'asc' : 'desc';
+                sortDirectionButton.dataset.direction = sortDirection;
+                sortDirectionButton.textContent = sortDirection === 'desc' ? '↓' : '↑';
+                sortDirectionButton.setAttribute(
+                    'aria-label',
+                    sortDirectionButton.dataset[sortDirection === 'desc' ? 'labelDesc' : 'labelAsc'],
+                );
+                loadPage(0, true);
+            }
+        });
+    }
+
     function init() {
         setupSearchInput();
+        setupSortControls();
+        setupResizeObserver();
+        // ResizeObserver delivers a synthetic initial callback right after observe() (spec
+        // behaviour, not a real resize) — seed lastColumnCount now so handleGridResize()
+        // treats it as a no-op instead of re-requesting the page it is about to load anyway.
+        lastColumnCount = getColumnCount();
         loadPage(0, true);
     }
 

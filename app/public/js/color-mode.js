@@ -22,19 +22,32 @@
 'use strict';
 
 /*
- * Ставит data-bs-theme на <html> по системной теме — цветовые схемы Bootstrap 5.3 включаются
- * этим атрибутом, сам он ниоткуда не появляется.
+ * Ставит data-bs-theme на <html> по сохранённой настройке темы (issue #638) — цветовые схемы
+ * Bootstrap 5.3 включаются этим атрибутом, сам он ниоткуда не появляется.
  *
  * Почему скриптом, а не через $color-mode-type: media-query в Sass: медиазапросная сборка
- * прибивает тему к системной намертво, и переключатель в настройках (отдельная задача) её уже
- * не переопределит. Здесь же достаточно будет выставить атрибут из сохранённой настройки, а на
- * системную тему падать только при её отсутствии.
+ * прибивает тему к системной намертво, и переключатель в настройках не смог бы её переопределить.
+ *
+ * data-theme-preference на <html> — значение AppSettingsProvider::getThemePreference(), отданное
+ * синхронно через ThemePreferenceExtension (base.html.twig), без отдельного запроса к бэкенду.
+ * При "light"/"dark" тема выставляется сразу и без подписки на системную. При "system" или
+ * отсутствии атрибута (значение не распознано) — как раньше: определяем по
+ * prefers-color-scheme и подписываемся на его изменение, чтобы смена системной темы применялась
+ * на лету.
  *
  * Почему отдельный файл, а не инлайн в шаблоне: Content-Security-Policy задаёт script-src 'self'
  * (native/content-security-policy.js), инлайновый <script> ею блокируется. Подключён в <head>
  * синхронно, до отрисовки, иначе на каждой загрузке мигал бы светлый фон.
  */
 (function () {
+    var preference = document.documentElement.dataset.themePreference;
+
+    if (preference === 'light' || preference === 'dark') {
+        document.documentElement.setAttribute('data-bs-theme', preference);
+
+        return;
+    }
+
     var query = window.matchMedia('(prefers-color-scheme: dark)');
 
     function apply() {

@@ -113,11 +113,15 @@ final class StorageMarkerService
      * case). Does nothing if the marker is missing or no longer names $storage (path was already
      * reclaimed by another storage). Any unrelated [.ShellClassInfo] section is preserved; the
      * marker file itself is only deleted once no sections remain.
+     *
+     * $path overrides which location's marker is forgotten — used when $storage is being
+     * relocated (StorageEditController) and the marker to clear is the *old* path, which
+     * $storage->getPath() no longer reflects once relocate() has already run.
      */
-    public function forget(Storage $storage): void
+    public function forget(Storage $storage, ?string $path = null): void
     {
         $id = $storage->id ?? throw new \LogicException('Storage must be persisted before its marker can be forgotten');
-        $path = $storage->getPath();
+        $path ??= $storage->getPath();
 
         if ($this->readMarkerId($path) !== $id) {
             return;

@@ -38,8 +38,10 @@ use AnimeDb\PluginContracts\Manifest\PluginUi;
 use App\Entity\ValueObject\PluginId;
 use App\Service\Plugin\Exception\InstalledPluginsRegistryException;
 use App\Service\Plugin\Exception\InvalidInstalledPluginException;
+use App\Service\Translation\NativeTranslationsOverlayWriter;
 use Composer\Semver\Semver;
 use Psr\Log\LoggerInterface;
+use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
 /**
  * Read-first source of truth for which plugins are installed, backed by a compact, pre-parsed
@@ -114,6 +116,27 @@ final class InstalledPluginsRegistry
          * {@see self::readIndex()}.
          */
         private readonly bool $safeMode = false,
+        /**
+         * Rebuilds the userData native-translations overlay (issue #647) at the end of every
+         * {@see self::reconcile()} — see that method and {@see NativeTranslationsOverlayWriter}'s
+         * own class docblock for why this belongs here rather than at each of reconcile()'s
+         * callers. `null` by default so every existing direct instantiation of this class (this
+         * constructor is called directly, not just through the container, all over the test
+         * suite) keeps working without wiring up a writer it does not care about — reconcile()
+         * simply skips the overlay rebuild in that case.
+         *
+         * Wired lazily (`#[Autowire(lazy: true)]`, a native PHP lazy ghost object, no
+         * proxy-manager needed): in the running app this parameter and `$this` end up being the
+         * very same container singleton (the writer's own `$registry` constructor argument
+         * resolves to this same autowired instance), a reflexive dependency Symfony's compiler
+         * would otherwise reject as {@see \Symfony\Component\DependencyInjection\Exception\ServiceCircularReferenceException}.
+         * A lazy argument defers actually constructing the writer until {@see self::reconcile()}
+         * first calls a method on it — by then this instance is already fully built and
+         * registered in the container, so the writer's own lookup of it resolves to the existing
+         * singleton instead of re-entering this constructor.
+         */
+        #[Autowire(lazy: true)]
+        private readonly ?NativeTranslationsOverlayWriter $overlayWriter = null,
     ) {
     }
 
@@ -198,6 +221,14 @@ final class InstalledPluginsRegistry
             }
 
             $this->writeIndex($entries);
+
+            // Same synchronized() callback, same inter-process lock reconcile() itself already
+            // holds — see the class docblock and NativeTranslationsOverlayWriter's own for why
+            // this is the only call site it needs. A failure here (an unreadable reference
+            // catalog, or a failed overlay file write/rename/remove) propagates out of
+            // reconcile() and rolls back whatever install/update/remove triggered it, same as a
+            // writeIndex() failure above.
+            $this->overlayWriter?->write();
         });
     }
 

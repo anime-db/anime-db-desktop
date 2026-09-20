@@ -126,9 +126,17 @@ settings:
     sync_review_link: Требует внимания
     sync_review_badge: 'Требует внимания: %count%'
     proxy_link: Прокси-сервер
+    backup_link: Экспорт каталога
     language_label: Язык интерфейса
     language_unavailable_option: '%language% — недоступно'
     language_plugin_translation_note: Интерфейс плагинов переводят их авторы — на языке, не входящем в число встроенных в приложение, часть интерфейса плагинов может остаться непереведённой.
+    theme_label: Цветовая тема
+    theme_option_system: Системная
+    theme_option_light: Светлая
+    theme_option_dark: Тёмная
+    pagination_mode_label: Пагинация каталога
+    pagination_mode_option_infinite_scroll: Бесконечная прокрутка
+    pagination_mode_option_classic: Классическая
     search_reindex_heading: Поисковый индекс
     search_reindex_button: Переиндексировать
     search_reindex_success: Поисковый индекс успешно перестроен.
@@ -297,11 +305,43 @@ settings_proxy:
     incoming_connections_error: Недоступно при выбранном SOCKS5-прокси.
     incoming_connections_socks5_hint: Под SOCKS5-прокси входящие подключения не работают независимо от правил брандмауэра, поэтому включение недоступно. Уже включённую настройку можно выключить в любой момент.
 
+settings_backup:
+    title: Экспорт каталога — Настройки — AnimeDB
+    heading: Экспорт каталога
+    description: Сохраняет копию каталога (базу данных и обложки) одним файлом в выбранную папку. Настройки приложения и плагинов, включая пароль прокси и токены доступа, в архив не входят.
+    unavailable_outside_app: Экспорт доступен только в приложении AnimeDB.
+    destination_label: Папка назначения
+    pick_folder_button: Выбрать папку
+    start_button: Начать экспорт
+    cancel_button: Отменить
+    progress_database: 'Снимок базы данных: %current%/%total%'
+    progress_media: 'Упаковка обложек: %current%/%total%'
+    done_text: 'Каталог экспортирован: %path%'
+    cancelled_text: Экспорт отменён.
+    error_insufficient_space: Недостаточно свободного места на выбранном томе.
+    error_generic: Не удалось экспортировать каталог.
+
+catalog_stage:
+    error_unreadable: 'Не удалось прочитать архив каталога «%path%».'
+    error_missing_manifest: 'В архиве каталога «%path%» нет валидного manifest.json.'
+    error_unsupported_format_version: 'Архив каталога «%path%» имеет неподдерживаемую версию формата (%formatVersion%).'
+    error_missing_database: 'В архиве каталога «%path%» нет data.db.'
+    error_unsafe_entry: 'Архив каталога «%path%» содержит небезопасный путь записи «%entry%».'
+    success: 'Архив каталога распакован в %stagingDir% (аниме: %animeCount%, медиафайлов: %mediaFileCount%).'
+
 anime_list:
     title: Список — AnimeDB
     empty: Список пуст.
     error: Не удалось загрузить список.
     search_placeholder: Поиск по названию…
+    sort_label: Сортировка
+    sort_field_name: По названию
+    sort_field_date_update: По дате обновления
+    sort_field_user_rating: По моей оценке
+    sort_field_date_premiere: По дате премьеры
+    sort_field_date_end: По дате окончания
+    sort_direction_asc: По возрастанию
+    sort_direction_desc: По убыванию
 
 storage_list:
     title: Хранилища — AnimeDB
@@ -311,6 +351,7 @@ storage_list:
     name_column: Название
     type_column: Тип
     path_column: Путь
+    path_unavailable: Путь недоступен
     last_scan_column: Последний скан
     actions_column: Действия
     edit_button: Редактировать
@@ -421,8 +462,9 @@ storage_edit:
     heading: Редактирование хранилища
     field_name: Название
     field_type: Тип
+    field_path: Путь
     submit_button: Сохранить
-    error_invalid: Укажите корректные название и тип хранилища.
+    error_invalid: Укажите корректные название, путь и тип хранилища.
 
 plugin_widget:
     loading: Загрузка…

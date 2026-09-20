@@ -23,14 +23,14 @@
 {% block title %}{{ 'storage_edit.title'|trans }}{% endblock %}
 
 {% block body %}
-    <main class="storage-edit container py-4">
+    <main class="container py-4">
         <h1>{{ 'storage_edit.heading'|trans }}</h1>
 
         {% if error %}
-            <p class="storage-edit__error alert alert-danger">{{ error|trans }}</p>
+            <p class="alert alert-danger">{{ error|trans }}</p>
         {% endif %}
 
-        <form method="post" action="{{ path('storage_update', {id: storage.id}) }}" class="storage-edit__form">
+        <form method="post" action="{{ path('storage_update', {id: storage.id}) }}">
             <input type="hidden" name="_token" value="{{ csrf_token('storage_edit_' ~ storage.id) }}">
 
             <div class="mb-3">
@@ -45,6 +45,11 @@
                         <option value="{{ value }}"{% if value == type %} selected{% endif %}>{{ ('storage_type.' ~ value)|trans }}</option>
                     {% endfor %}
                 </select>
+            </div>
+
+            <div class="mb-3">
+                <label for="storage-edit-path" class="form-label">{{ 'storage_edit.field_path'|trans }}</label>
+                <input type="text" id="storage-edit-path" name="path" value="{{ path }}" required class="form-control">
             </div>
 
             <button type="submit" class="btn btn-primary">{{ 'storage_edit.submit_button'|trans }}</button>

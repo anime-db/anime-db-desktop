@@ -37,6 +37,7 @@ use App\Entity\Enum\WatchStatus;
 use App\Entity\Label;
 use App\Entity\MovieAnime;
 use App\Entity\Studio;
+use App\Service\Search\AnimeReindexService;
 use App\Service\Search\AnimeSearchIndexer;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Types\Type;
@@ -177,6 +178,73 @@ final class AnimeSearchIndexerTest extends TestCase
         $hits = $this->client->index('anime')->search('Cowboy Bebop')->getHits();
 
         $this->assertSame([], $hits);
+    }
+
+    public function testClearIndexRemovesEveryDocumentWithoutChangingSettings(): void
+    {
+        $this->indexer->configureIndex();
+
+        $anime = new MovieAnime();
+        $anime->setTitle('Cowboy Bebop')->setWatchStatus(WatchStatus::Plan);
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+
+        $this->indexer->index($anime);
+        $this->indexer->clearIndex();
+
+        $index = $this->client->index('anime');
+
+        $this->assertSame([], $index->search('Cowboy Bebop')->getHits());
+        $this->assertSame(['title', 'names'], $index->getSettings()['searchableAttributes']);
+    }
+
+    /**
+     * Regression test for issue #655: a catalog that shrinks between two reindexes (restore
+     * from a backup, importing a smaller catalog) must not leave documents in the index for
+     * anime that are no longer in the database.
+     */
+    public function testReindexAllRemovesDocumentsForAnimeNoLongerInTheDatabase(): void
+    {
+        $kept = new MovieAnime();
+        $kept->setTitle('Cowboy Bebop')->setWatchStatus(WatchStatus::Plan);
+        $removed = new MovieAnime();
+        $removed->setTitle('Ghost In The Shell')->setWatchStatus(WatchStatus::Plan);
+
+        $this->entityManager->persist($kept);
+        $this->entityManager->persist($removed);
+        $this->entityManager->flush();
+
+        $removedId = $removed->id ?? throw new \LogicException('entity id must be set after persisting');
+
+        $reindexService = new AnimeReindexService($this->entityManager, $this->indexer);
+        $reindexService->reindexAll();
+
+        // reindexAll() detaches entities via EntityManager::clear(), so $removed must be
+        // re-fetched before it can be removed from the (now cleared) unit of work.
+        $removed = $this->entityManager->find(MovieAnime::class, $removedId)
+            ?? throw new \LogicException('previously persisted entity must still exist');
+        $this->entityManager->remove($removed);
+        $this->entityManager->flush();
+
+        $reindexService->reindexAll();
+
+        $index = $this->client->index('anime');
+
+        $this->assertSame(
+            [],
+            $index->search('Ghost In The Shell')->getHits(),
+            'a title removed from the database before reindexing must not be found by search',
+        );
+        $this->assertSame([$kept->id], array_column($index->search('Cowboy Bebop')->getHits(), 'id'));
+        $this->assertSame(1, $index->stats()['numberOfDocuments']);
+    }
+
+    public function testReindexAllOfAnEmptyCatalogProducesAnEmptyIndexWithoutError(): void
+    {
+        $reindexService = new AnimeReindexService($this->entityManager, $this->indexer);
+
+        $this->assertSame(0, $reindexService->reindexAll());
+        $this->assertSame(0, $this->client->index('anime')->stats()['numberOfDocuments']);
     }
 
     private function waitForHealth(): void

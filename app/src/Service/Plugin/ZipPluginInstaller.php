@@ -31,6 +31,7 @@ use AnimeDb\PluginContracts\Manifest\InvalidManifestException;
 use AnimeDb\PluginContracts\Manifest\InvalidManifestJsonException;
 use AnimeDb\PluginContracts\Manifest\Manifest;
 use AnimeDb\PluginContracts\Manifest\ManifestParser;
+use AnimeDb\PluginContracts\Manifest\PluginType;
 use App\Entity\ValueObject\PluginId;
 use App\Service\Plugin\Exception\IncompatiblePluginContractsVersionException;
 use App\Service\Plugin\Exception\IncompatiblePluginCoreVersionException;
@@ -40,6 +41,7 @@ use App\Service\Plugin\Exception\PluginInstallException;
 use App\Service\Plugin\Exception\PluginNotInstalledException;
 use App\Service\Plugin\Exception\PluginSyntaxErrorException;
 use App\Service\WsPublisher;
+use App\Service\Zip\SafeZipEntryNames;
 use Composer\Semver\Semver;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
@@ -222,6 +224,7 @@ final class ZipPluginInstaller
             $manifest = $this->parseManifest($pluginRoot);
             $this->assertCoreVersionCompatible($manifest);
             $this->assertPluginContractsCompatible($manifest);
+            $this->assertNativeTranslationsAreReadable($manifest, $pluginRoot);
             if (!$trusted) {
                 $this->assertNoSyntaxErrors($pluginRoot);
             }
@@ -359,6 +362,7 @@ final class ZipPluginInstaller
             $manifest = $this->parseManifest($pluginRoot);
             $this->assertCoreVersionCompatible($manifest);
             $this->assertPluginContractsCompatible($manifest);
+            $this->assertNativeTranslationsAreReadable($manifest, $pluginRoot);
             if (!$trusted) {
                 $this->assertNoSyntaxErrors($pluginRoot);
             }
@@ -470,27 +474,17 @@ final class ZipPluginInstaller
     /**
      * Defence in depth against zip-slip: an untrusted archive (this is a custom-upload path, not
      * only the CI-packaged marketplace flow from issue #220) could contain entry names with `..`
-     * segments or absolute paths designed to write outside the staging directory. Modern
-     * {@see \ZipArchive::extractTo()} already rejects those, but that behaviour is not part of
-     * its documented contract, so entry names are validated explicitly before extraction rather
-     * than relying on it.
+     * segments or absolute paths designed to write outside the staging directory. The actual
+     * check is {@see SafeZipEntryNames::findUnsafe()}, shared with
+     * {@see \App\Service\Import\CatalogStageService} (issue #669).
      *
      * @throws PluginInstallException
      */
     private function assertSafeEntryNames(\ZipArchive $zip, string $zipPath): void
     {
-        for ($i = 0; $i < $zip->numFiles; ++$i) {
-            $name = $zip->getNameIndex($i);
-            if ($name === false) {
-                continue;
-            }
-
-            $isAbsolute = str_starts_with($name, '/') || str_starts_with($name, '\\') || preg_match('#^[A-Za-z]:#', $name) === 1;
-            $hasParentTraversal = \in_array('..', explode('/', str_replace('\\', '/', $name)), true);
-
-            if ($isAbsolute || $hasParentTraversal) {
-                throw new PluginInstallException(\sprintf('ZIP archive "%s" contains an unsafe entry path "%s".', $zipPath, $name));
-            }
+        $unsafeEntry = SafeZipEntryNames::findUnsafe($zip);
+        if ($unsafeEntry !== null) {
+            throw new PluginInstallException(\sprintf('ZIP archive "%s" contains an unsafe entry path "%s".', $zipPath, $unsafeEntry));
         }
     }
 
@@ -602,6 +596,62 @@ final class ZipPluginInstaller
 
         if (!$satisfies) {
             throw new IncompatiblePluginContractsVersionException($required, $this->pluginContractsVersion);
+        }
+    }
+
+    /**
+     * Validates the unpacked archive's `translations/native/` directory, if any, before anything
+     * is moved into place (issue #647) — the same "fail before committing" philosophy as
+     * {@see self::assertNoSyntaxErrors()} just below. This is the one piece of validation
+     * `App\Service\Translation\NativeTranslationsOverlayWriter` itself deliberately does not
+     * perform for the plugin currently being installed or updated: that class treats a broken
+     * `translations/native/` directory as a bystander's problem — log it and move on, never fail
+     * the unrelated install/update/remove that happened to trigger its rebuild (see its own class
+     * docblock) — precisely because this method already guarantees the directory is readable and
+     * well-formed by the time the new version ever reaches
+     * {@see InstalledPluginsRegistry::reconcile()}.
+     *
+     * Only {@see PluginType::Translation} plugins are checked — the only type the overlay writer
+     * ever reads a `translations/native/` directory from at all. A missing directory is not an
+     * error: most translation plugins ship none, the native layer's own catalog (splash/tray/
+     * dialogs) is a small surface most language packs have no reason to cover.
+     *
+     * Deliberately checks only that each `*.json` file is readable and decodes to a JSON object —
+     * not the sanitization rules (reference key set, string-only values, the 1000-character cap)
+     * {@see \App\Service\Translation\NativeTranslationsOverlayWriter} applies afterwards. Those
+     * are content-filtering rules with a well-defined "drop and log" outcome for a single key, not
+     * "this plugin cannot be installed at all" — nothing here should reject an otherwise-valid
+     * plugin ZIP just because one translation value is too long.
+     *
+     * @throws PluginInstallException if the directory exists but cannot be scanned, or any
+     *                                `*.json` file inside it cannot be read or does not decode to
+     *                                a JSON object
+     */
+    private function assertNativeTranslationsAreReadable(Manifest $manifest, string $pluginRoot): void
+    {
+        if ($manifest->type !== PluginType::Translation) {
+            return;
+        }
+
+        $dir = $pluginRoot.\DIRECTORY_SEPARATOR.'translations'.\DIRECTORY_SEPARATOR.'native';
+        if (!is_dir($dir)) {
+            return;
+        }
+
+        $files = glob($dir.\DIRECTORY_SEPARATOR.'*.json');
+        if ($files === false) {
+            throw new PluginInstallException(\sprintf('Unable to scan the native translations directory "%s".', $dir));
+        }
+
+        foreach ($files as $file) {
+            $contents = is_file($file) ? file_get_contents($file) : false;
+            if ($contents === false) {
+                throw new PluginInstallException(\sprintf('Unable to read native translations catalog "%s".', $file));
+            }
+
+            if (!\is_array(json_decode($contents, true))) {
+                throw new PluginInstallException(\sprintf('Native translations catalog "%s" is not a valid JSON object.', $file));
+            }
         }
     }
 

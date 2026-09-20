@@ -81,6 +81,16 @@ test('getPluginsConfigPath returns plugins.json inside userData', () => {
     expect(paths.getPluginsConfigPath()).toBe(path.join(USER_DATA, 'plugins.json'));
 });
 
+test('getNativeTranslationsDir returns the bundled translations directory', () => {
+    const result = paths.getNativeTranslationsDir();
+    expect(path.isAbsolute(result)).toBe(true);
+    expect(path.basename(result)).toBe('translations');
+});
+
+test('getNativeTranslationsOverlayDir returns native-translations/ inside userData', () => {
+    expect(paths.getNativeTranslationsOverlayDir()).toBe(path.join(USER_DATA, 'native-translations'));
+});
+
 test('getStatePath returns state.json inside userData', () => {
     expect(paths.getStatePath()).toBe(path.join(USER_DATA, 'state.json'));
 });

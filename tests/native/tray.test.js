@@ -34,7 +34,11 @@ jest.mock('electron', () => ({
     nativeImage: { createFromPath: jest.fn(() => 'fake-icon') },
     app:         { getLocale: jest.fn(() => 'ru-RU') },
 }));
-jest.mock('../../native/paths', () => ({ getUserDataDir: jest.fn(() => '/fake/userData-does-not-exist') }));
+jest.mock('../../native/paths', () => ({
+    getUserDataDir:                  jest.fn(() => '/fake/userData-does-not-exist'),
+    getNativeTranslationsDir:        jest.fn(() => require('path').join(__dirname, '../../native/translations')),
+    getNativeTranslationsOverlayDir: jest.fn(() => '/fake/userData-does-not-exist/native-translations'),
+}));
 
 const { app } = require('electron');
 const tray = require('../../native/tray');

@@ -31,6 +31,7 @@ use App\Entity\ValueObject\PluginId;
 use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\PluginRemover;
 use App\Service\Plugin\PluginsConfigStore;
+use App\Service\Translation\NativeTranslationsOverlayWriter;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 
@@ -90,6 +91,45 @@ final class PluginRemoverTest extends TestCase
         (new PluginRemover($this->registry))->remove(new PluginId('animedb-unknown'));
 
         $this->assertFalse($this->registry->has(new PluginId('animedb-unknown')));
+    }
+
+    /**
+     * Issue #647 acceptance: removing the last enabled `translation` plugin covering a locale
+     * removes that locale's overlay file — PluginRemover::remove() -> reconcile() -> the writer,
+     * the same single funnel {@see ZipPluginInstallerTest} exercises for install.
+     */
+    public function testRemoveDeletesTheOverlayLocaleThePluginNoLongerCovers(): void
+    {
+        $referenceDir = $this->rootDir.'/native-translations';
+        $overlayDir = $this->rootDir.'/overlay';
+        mkdir($referenceDir, recursive: true);
+        file_put_contents($referenceDir.'/en.json', (string) json_encode(['tray.quit' => 'Quit']));
+
+        $dir = $this->pluginsDir.'/lang-kazakh';
+        mkdir($dir.'/translations/native', recursive: true);
+        file_put_contents($dir.'/manifest.json', (string) json_encode([
+            'id' => 'lang-kazakh',
+            'name' => 'Lang kazakh',
+            'version' => '1.0.0',
+            'type' => 'translation',
+            'locales' => ['kk'],
+            'require' => ['core' => '>=2.0.0', 'php' => '>=8.2'],
+        ]));
+        file_put_contents($dir.'/translations/native/kk.json', (string) json_encode(['tray.quit' => 'Шығу']));
+
+        $writer = new NativeTranslationsOverlayWriter($referenceDir, $overlayDir, $this->registry, new NullLogger());
+        $registryWithWriter = new InstalledPluginsRegistry(
+            $this->pluginsDir,
+            new PluginsConfigStore($this->pluginsDir.'/plugins.json'),
+            new NullLogger(),
+            overlayWriter: $writer,
+        );
+        $registryWithWriter->reconcile();
+        $this->assertFileExists($overlayDir.'/kk.json');
+
+        (new PluginRemover($registryWithWriter))->remove(new PluginId('lang-kazakh'));
+
+        $this->assertFileDoesNotExist($overlayDir.'/kk.json');
     }
 
     private function installFixture(string $pluginId): void

@@ -30,6 +30,11 @@ jest.mock('../../native/config', () => ({
     getLocale: jest.fn(),
 }));
 
+jest.mock('../../native/paths', () => ({
+    getNativeTranslationsDir:        () => require('path').join(__dirname, '../../native/translations'),
+    getNativeTranslationsOverlayDir: () => '/fake/does-not-exist/native-translations',
+}));
+
 const { BrowserWindow } = require('electron');
 const { getLocale } = require('../../native/config');
 const { createSplash } = require('../../native/window/splash');
