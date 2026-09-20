@@ -30,6 +30,7 @@ namespace App\Tests\Unit\Controller;
 use App\Controller\SettingsController;
 use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
+use App\Entity\Enum\PaginationMode;
 use App\Entity\Enum\SyncReviewItemKind;
 use App\Entity\Enum\ThemePreference;
 use App\Entity\Enum\WatchStatus;
@@ -172,6 +173,7 @@ final class SettingsControllerTest extends TestCase
                 'reindexStatus' => null,
                 'needsCorrectionCount' => 0,
                 'themePreference' => ThemePreference::System,
+                'paginationMode' => PaginationMode::InfiniteScroll,
             ])
             ->willReturn('<html></html>');
 
@@ -194,6 +196,7 @@ final class SettingsControllerTest extends TestCase
                 'reindexStatus' => null,
                 'needsCorrectionCount' => 0,
                 'themePreference' => ThemePreference::System,
+                'paginationMode' => PaginationMode::InfiniteScroll,
             ])
             ->willReturn('<html></html>');
 
@@ -219,6 +222,7 @@ final class SettingsControllerTest extends TestCase
                 'reindexStatus' => null,
                 'needsCorrectionCount' => 0,
                 'themePreference' => ThemePreference::System,
+                'paginationMode' => PaginationMode::InfiniteScroll,
             ])
             ->willReturn('<html></html>');
 
@@ -244,6 +248,7 @@ final class SettingsControllerTest extends TestCase
                 'reindexStatus' => null,
                 'needsCorrectionCount' => 1,
                 'themePreference' => ThemePreference::System,
+                'paginationMode' => PaginationMode::InfiniteScroll,
             ])
             ->willReturn('<html></html>');
 
@@ -338,6 +343,49 @@ final class SettingsControllerTest extends TestCase
         $controller->setTheme($request);
     }
 
+    /**
+     * Acceptance (issue #665): same PRG shape as the theme switch — classic pagination is
+     * unreachable until this endpoint persists the choice.
+     */
+    public function testSetPaginationModePersistsChoiceAndRedirectsWithSeeOther(): void
+    {
+        $urlGenerator = $this->createMock(UrlGeneratorInterface::class);
+        $urlGenerator->expects($this->once())->method('generate')->with('settings_index')->willReturn('/settings');
+
+        $controller = $this->createController(urlGenerator: $urlGenerator);
+        $request = Request::create('/settings/pagination-mode', 'POST', ['paginationMode' => 'classic', '_token' => 'token']);
+
+        $response = $controller->setPaginationMode($request);
+
+        $this->assertInstanceOf(RedirectResponse::class, $response);
+        $this->assertSame(303, $response->getStatusCode());
+        $this->assertSame('/settings', $response->getTargetUrl());
+
+        $data = json_decode((string) file_get_contents($this->configPath), true);
+        $this->assertSame('classic', $data['paginationMode']);
+    }
+
+    public function testSetPaginationModeRejectsUnknownValue(): void
+    {
+        $controller = $this->createController();
+        $request = Request::create('/settings/pagination-mode', 'POST', ['paginationMode' => 'bogus', '_token' => 'token']);
+
+        $this->expectException(BadRequestHttpException::class);
+        $controller->setPaginationMode($request);
+    }
+
+    public function testSetPaginationModeRejectsInvalidCsrfToken(): void
+    {
+        $csrf = $this->createStub(CsrfTokenManagerInterface::class);
+        $csrf->method('isTokenValid')->willReturn(false);
+
+        $controller = $this->createController(csrfTokenManager: $csrf);
+        $request = Request::create('/settings/pagination-mode', 'POST', ['paginationMode' => 'classic', '_token' => 'bad']);
+
+        $this->expectException(BadRequestHttpException::class);
+        $controller->setPaginationMode($request);
+    }
+
     public function testReindexSearchRerendersWithSuccessStatus(): void
     {
         $index = $this->createMock(Indexes::class);
@@ -358,6 +406,7 @@ final class SettingsControllerTest extends TestCase
                 'reindexStatus' => 'success',
                 'needsCorrectionCount' => 0,
                 'themePreference' => ThemePreference::System,
+                'paginationMode' => PaginationMode::InfiniteScroll,
             ])
             ->willReturn('<html></html>');
 
@@ -383,6 +432,7 @@ final class SettingsControllerTest extends TestCase
                 'reindexStatus' => 'error',
                 'needsCorrectionCount' => 0,
                 'themePreference' => ThemePreference::System,
+                'paginationMode' => PaginationMode::InfiniteScroll,
             ])
             ->willReturn('<html></html>');
 

@@ -134,6 +134,9 @@ settings:
     theme_option_system: System
     theme_option_light: Light
     theme_option_dark: Dark
+    pagination_mode_label: Catalog pagination
+    pagination_mode_option_infinite_scroll: Infinite scroll
+    pagination_mode_option_classic: Classic
     search_reindex_heading: Search index
     search_reindex_button: Rebuild search index
     search_reindex_success: The search index has been rebuilt.
@@ -331,6 +334,14 @@ anime_list:
     empty: The list is empty.
     error: Failed to load the list.
     search_placeholder: Search by title…
+    sort_label: Sort
+    sort_field_name: By title
+    sort_field_date_update: By update date
+    sort_field_user_rating: By my rating
+    sort_field_date_premiere: By premiere date
+    sort_field_date_end: By end date
+    sort_direction_asc: Ascending
+    sort_direction_desc: Descending
 
 storage_list:
     title: Storage — AnimeDB

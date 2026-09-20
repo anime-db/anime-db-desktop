@@ -60,6 +60,15 @@ final class AppSettingsProvider
         return PaginationMode::tryFrom($mode) ?? PaginationMode::InfiniteScroll;
     }
 
+    public function setPaginationMode(PaginationMode $mode): void
+    {
+        $this->configStore->update(static function (array $config) use ($mode): array {
+            $config['paginationMode'] = $mode->value;
+
+            return $config;
+        });
+    }
+
     public function getLocale(): ?string
     {
         $locale = $this->configStore->read()['locale'] ?? null;

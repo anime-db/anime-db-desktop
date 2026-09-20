@@ -61,6 +61,23 @@
             </fieldset>
         </form>
 
+        <form method="post" action="{{ path('settings_set_pagination_mode') }}" class="mb-4">
+            <input type="hidden" name="_token" value="{{ csrf_token('settings_set_pagination_mode') }}">
+            <fieldset class="mb-3">
+                <legend class="form-label fs-6">{{ 'settings.pagination_mode_label'|trans }}</legend>
+                <div class="btn-group" role="group" aria-label="{{ 'settings.pagination_mode_label'|trans }}">
+                    {% for option in ['infinite_scroll', 'classic'] %}
+                        <input type="radio" class="btn-check" name="paginationMode" id="pagination-mode-{{ option }}"
+                               value="{{ option }}"{% if paginationMode.value == option %} checked{% endif %}
+                               autocomplete="off" data-submit-on-change>
+                        <label class="btn btn-outline-secondary" for="pagination-mode-{{ option }}">
+                            {{ ('settings.pagination_mode_option_' ~ option)|trans }}
+                        </label>
+                    {% endfor %}
+                </div>
+            </fieldset>
+        </form>
+
         <div class="list-group mb-4">
             <a class="list-group-item list-group-item-action" href="{{ path('settings_labels_index') }}">{{ 'settings.labels_link'|trans }}</a>
             <a class="list-group-item list-group-item-action" href="{{ path('settings_market_index') }}">{{ 'settings.market_link'|trans }}</a>

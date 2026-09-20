@@ -46,15 +46,59 @@ function animeItem(id, title) {
     return { id, title, watch_status: 'watching', type: 'tv', date_premiere: '2024-01-01' };
 }
 
-function setUpDom() {
+// jsdom does not run real layout, so `grid-template-columns: repeat(auto-fill, ...)` never
+// resolves to a track list — the inline style is set directly to whatever getComputedStyle()
+// would report in a real browser for the desired column count, one "<n>px" track per column.
+// The actual pixel width is irrelevant; only tracks.length (the column count) is read.
+function setGridColumns(columns) {
+    document.getElementById('anime-list-grid').style.gridTemplateColumns = Array(columns).fill('160px').join(' ');
+}
+
+function setUpDom(columns = 1) {
     document.body.innerHTML = `
         <input id="anime-list-search" type="search" />
+        <div id="anime-list-sort">
+            <button type="button" data-sort-field="name">Name</button>
+            <button type="button" data-sort-field="date_update" aria-current="true">Updated</button>
+            <button type="button" data-sort-field="user_rating">Rating</button>
+            <button type="button" data-sort-field="date_premiere">Premiere</button>
+            <button type="button" data-sort-field="date_end">End</button>
+            <button type="button" id="anime-list-sort-direction" data-direction="desc"
+                data-label-asc="Ascending" data-label-desc="Descending">↓</button>
+        </div>
         <div id="anime-list-grid"></div>
         <p id="anime-list-empty" hidden></p>
         <p id="anime-list-error" hidden></p>
         <nav id="anime-list-pagination" hidden></nav>
         <div id="anime-list-sentinel" hidden></div>
     `;
+    setGridColumns(columns);
+}
+
+// jsdom does not implement ResizeObserver at all (unlike the real Chromium runtime this app
+// ships on). Stores every constructed instance so a test can fire its callback by hand to
+// simulate a layout resize, since jsdom will never do it for real.
+function mockResizeObserver() {
+    const instances = [];
+
+    global.ResizeObserver = class {
+        constructor(callback) {
+            this.callback = callback;
+            instances.push(this);
+        }
+
+        observe() {}
+
+        disconnect() {}
+    };
+
+    return instances;
+}
+
+function triggerResize(instances, columns) {
+    setGridColumns(columns);
+    instances[0].callback([]);
+    jest.advanceTimersByTime(150);
 }
 
 // Queues one deferred per fetch() call to the anime list endpoint, so the test controls exactly
@@ -66,6 +110,7 @@ function mockFetchQueue() {
 
     global.fetch = jest.fn((url, options) => {
         const call = deferred();
+        call.url = url;
         const signal = options && options.signal;
         if (signal) {
             signal.addEventListener('abort', () => {
@@ -80,6 +125,10 @@ function mockFetchQueue() {
     });
 
     return calls;
+}
+
+function queryParams(url) {
+    return Object.fromEntries(new URL(url, 'http://localhost').searchParams);
 }
 
 // Queues one deferred per getCatalogue() call, mirroring translations.js: a failed catalogue
@@ -124,10 +173,13 @@ function cardTitles(grid) {
     return Array.from(grid.querySelectorAll('.anime-card__title')).map((node) => node.textContent);
 }
 
+let resizeObserverInstances;
+
 beforeEach(() => {
     jest.resetModules();
     jest.useFakeTimers();
     setUpDom();
+    resizeObserverInstances = mockResizeObserver();
     window.scrollTo = jest.fn();
     mockIntersectionObserver();
 });
@@ -135,6 +187,7 @@ beforeEach(() => {
 afterEach(() => {
     jest.useRealTimers();
     delete global.fetch;
+    delete global.ResizeObserver;
     delete global.IntersectionObserver;
     delete window.AppTranslations;
 });
@@ -304,4 +357,195 @@ test('a stale response that outlives an abort during the catalogue fetch is drop
 
     const grid = document.getElementById('anime-list-grid');
     expect(cardTitles(grid)).toEqual(['Gate']);
+});
+
+function setUpTranslations() {
+    window.AppTranslations = {
+        getCatalogue: jest.fn(() => Promise.resolve({})),
+        resolveKey:   (catalogue, key) => key,
+    };
+}
+
+function dispatchClick(element) {
+    element.dispatchEvent(new Event('click', { bubbles: true }));
+}
+
+test('the initial request limit is a multiple of the grid column count, capped at 6 rows', async () => {
+    setGridColumns(5); // columns(5) × min(ROWS=6, floor(MAX_LIMIT=100 / 5)=20) → 5 × 6 = 30
+    const calls = mockFetchQueue();
+    setUpTranslations();
+
+    loadAnimeListModule();
+    await flushMicrotasks();
+
+    expect(calls).toHaveLength(1);
+    expect(queryParams(calls[0].url)).toMatchObject({ limit: '30', offset: '0' });
+});
+
+test('the limit caps rows (not the limit directly) once MAX_LIMIT would otherwise be exceeded', async () => {
+    setGridColumns(21); // floor(100 / 21) = 4 rows → 21 × 4 = 84, not 21 × 6 = 126
+    const calls = mockFetchQueue();
+    setUpTranslations();
+
+    loadAnimeListModule();
+    await flushMicrotasks();
+
+    expect(queryParams(calls[0].url).limit).toBe('84');
+});
+
+test('clicking a sort field reloads from offset 0 with the chosen field and marks it current', async () => {
+    const calls = mockFetchQueue();
+    setUpTranslations();
+    loadAnimeListModule();
+    await flushMicrotasks();
+    calls[0].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 0, limit: 6, offset: 0 }));
+    await flushMicrotasks();
+
+    dispatchClick(document.querySelector('[data-sort-field="name"]'));
+    await flushMicrotasks();
+
+    expect(calls).toHaveLength(2);
+    expect(queryParams(calls[1].url)).toMatchObject({ sort: 'name', direction: 'desc', offset: '0' });
+    expect(document.querySelector('[data-sort-field="name"]').getAttribute('aria-current')).toBe('true');
+    expect(document.querySelector('[data-sort-field="date_update"]').hasAttribute('aria-current')).toBe(false);
+});
+
+test('toggling sort direction flips desc/asc, reloads and updates the button label', async () => {
+    const calls = mockFetchQueue();
+    setUpTranslations();
+    loadAnimeListModule();
+    await flushMicrotasks();
+    calls[0].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 0, limit: 6, offset: 0 }));
+    await flushMicrotasks();
+
+    const directionButton = document.getElementById('anime-list-sort-direction');
+    dispatchClick(directionButton);
+    await flushMicrotasks();
+
+    expect(calls).toHaveLength(2);
+    expect(queryParams(calls[1].url).direction).toBe('asc');
+    expect(directionButton.textContent).toBe('↑');
+    expect(directionButton.getAttribute('aria-label')).toBe('Ascending');
+});
+
+test('a column-count change in infinite scroll tops up the last row to a full row', async () => {
+    setGridColumns(5); // initial limit = 30
+    const calls = mockFetchQueue();
+    setUpTranslations();
+    loadAnimeListModule();
+    await flushMicrotasks();
+
+    const firstPage = Array.from({ length: 30 }, (_, i) => animeItem(i + 1, `Anime ${i + 1}`));
+    calls[0].resolve(jsonResponse({
+        items:            firstPage,
+        pagination_mode:  'infinite_scroll',
+        total:            100,
+        limit:            30,
+        offset:           0,
+    }));
+    await flushMicrotasks();
+
+    // 30 cards laid out in 7 columns is 4 full rows plus a 2-card remainder — topping it up to a
+    // full row needs 5 more (issue #665's own worked example).
+    triggerResize(resizeObserverInstances, 7);
+    await flushMicrotasks();
+
+    expect(calls).toHaveLength(2);
+    expect(queryParams(calls[1].url)).toMatchObject({ offset: '30', limit: '5' });
+
+    const topUp = Array.from({ length: 5 }, (_, i) => animeItem(31 + i, `Extra ${i + 1}`));
+    calls[1].resolve(jsonResponse({
+        items:            topUp,
+        pagination_mode:  'infinite_scroll',
+        total:            100,
+        limit:            5,
+        offset:           30,
+    }));
+    await flushMicrotasks();
+
+    expect(document.getElementById('anime-list-grid').children.length).toBe(35);
+});
+
+test('a column-count change in classic mode re-pages around the first record of the current page', async () => {
+    setGridColumns(5); // initial limit = 30
+    const calls = mockFetchQueue();
+    setUpTranslations();
+    loadAnimeListModule();
+    await flushMicrotasks();
+
+    calls[0].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 100, limit: 30, offset: 0 }));
+    await flushMicrotasks();
+
+    // Navigate to page 2 (offset 30) before the resize, matching the pagination markup loadPage()
+    // itself just rendered.
+    dispatchClick(document.querySelectorAll('#anime-list-pagination button')[1]);
+    await flushMicrotasks();
+    expect(calls).toHaveLength(2);
+    calls[1].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 100, limit: 30, offset: 30 }));
+    await flushMicrotasks();
+
+    // newLimit = 3 × 6 = 18; the record at index 30 now falls on page floor(30/18)+1 = 2, i.e.
+    // offset 18. A widening resize (e.g. to 10 columns, newLimit 60) would land on page 1 (offset
+    // 0) regardless of whether the anchor math ran at all, since floor(30/60)+1 is always 1 — that
+    // case cannot distinguish real anchoring from an unconditional "reset to page 1".
+    triggerResize(resizeObserverInstances, 3);
+    await flushMicrotasks();
+
+    expect(calls).toHaveLength(3);
+    expect(queryParams(calls[2].url)).toMatchObject({ offset: '18', limit: '18' });
+});
+
+test('a resize that arrives before the first response still restores the row invariant', async () => {
+    setGridColumns(8); // initial limit = 8 × 6 = 48
+    const calls = mockFetchQueue();
+    setUpTranslations();
+    loadAnimeListModule();
+    await flushMicrotasks();
+    expect(queryParams(calls[0].url).limit).toBe('48');
+
+    // Resize while the first request is still in flight — paginationMode is still null at this
+    // point, so handleGridResize() alone cannot act on it (issue #665).
+    triggerResize(resizeObserverInstances, 7);
+    await flushMicrotasks();
+
+    const firstPage = Array.from({ length: 48 }, (_, i) => animeItem(i + 1, `Anime ${i + 1}`));
+    calls[0].resolve(jsonResponse({
+        items:            firstPage,
+        pagination_mode:  'infinite_scroll',
+        total:            1000,
+        limit:            48,
+        offset:           0,
+    }));
+    await flushMicrotasks();
+
+    // 48 cards laid out in 7 columns is 6 full rows plus a 6-card remainder — the invariant must
+    // be restored once the response lands, not only on the next resize.
+    expect(calls).toHaveLength(2);
+    expect(queryParams(calls[1].url)).toMatchObject({ offset: '48', limit: '1' });
+});
+
+test('the synthetic initial ResizeObserver callback does not trigger a duplicate request', async () => {
+    // Per spec, ResizeObserver delivers one callback right after observe() with the current size,
+    // not just on a later real resize — the shared mock's observe() is a no-op, so this test wires
+    // its own to reproduce that and pin down that the app does not react to it as if it were one.
+    global.ResizeObserver = class {
+        constructor(callback) {
+            this.callback = callback;
+        }
+
+        observe() {
+            this.callback([]);
+        }
+
+        disconnect() {}
+    };
+
+    const calls = mockFetchQueue();
+    setUpTranslations();
+
+    loadAnimeListModule();
+    jest.advanceTimersByTime(150);
+    await flushMicrotasks();
+
+    expect(calls).toHaveLength(1);
 });
