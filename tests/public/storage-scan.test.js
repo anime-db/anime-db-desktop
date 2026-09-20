@@ -218,3 +218,26 @@ test('an empty scan result renders a muted message instead of an empty results b
     const empty = resultsBox.querySelector('p');
     expect(empty.classList.contains('text-muted')).toBe(true);
 });
+
+// Drives storage-scan.js against the real translations.js (issue #677) instead of the trans()
+// stub used above: bidi isolation is applied to each param value before it reaches the shared
+// resolveKey() substitution, so a placeholder repeated twice in one string must come out wrapped
+// and substituted identically both times, not just on the first occurrence.
+test('a value substituted into a message is bidi-isolated at every occurrence of a repeated placeholder', async () => {
+    const watchers = mockScanWatcher();
+    document.documentElement.lang = 'ru';
+    global.fetch = jest.fn(() => Promise.resolve(jsonResponse({ 'storage_list.auto_linked_text': '%title% / %title%' })));
+    jest.isolateModules(() => {
+        require('../../app/public/js/translations.js');
+    });
+    loadStorageScanModule();
+
+    await watchers['42'].onDone({
+        items: [{ type: 'AutoLinked', storage_path: '/b', anime: { title: 'Mushishi' } }],
+    });
+    await flushMicrotasks();
+
+    const li = document.querySelector('#storage-scan-results li');
+    const isolated = '⁨Mushishi⁩';
+    expect(li.textContent).toBe(`${isolated} / ${isolated}`);
+});

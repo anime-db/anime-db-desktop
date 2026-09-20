@@ -55,22 +55,7 @@
     // 0% forever with no feedback (issue #156).
     const NO_RESPONSE_TIMEOUT_MS = 15000;
 
-    // FIRST STRONG ISOLATE / POP DIRECTIONAL ISOLATE: interpolated values (anime titles, storage
-    // paths) come from sources written in Latin or Japanese script. Rendered as plain text
-    // (.textContent, not HTML — a <bdi> element is not available here), an unisolated value
-    // inside an RTL message can reorder adjacent characters, most visibly brackets and colons
-    // (issue #450).
-    const BIDI_ISOLATE_START = '⁨';
-    const BIDI_ISOLATE_END   = '⁩';
-
     let noResponseTimer = setTimeout(onNoResponse, NO_RESPONSE_TIMEOUT_MS);
-
-    function format(template, params) {
-        return Object.keys(params).reduce(
-            (text, name) => text.replace(`%${name}%`, `${BIDI_ISOLATE_START}${String(params[name])}${BIDI_ISOLATE_END}`),
-            template,
-        );
-    }
 
     function clearNoResponseTimer() {
         if (noResponseTimer !== null) {
@@ -93,8 +78,8 @@
         // markup — the app's CSP (style-src 'self') blocks inline styles (issue #629).
         progressBar.style.width = `${percent}%`;
         progressBar.setAttribute('aria-valuenow', String(percent));
-        progressText.textContent = format(
-            await window.AppTranslations.trans('storage_list.scan_progress_text'),
+        progressText.textContent = await window.AppTranslations.trans(
+            'storage_list.scan_progress_text',
             { processed: data.processed, total: data.total, percent },
         );
     }
@@ -105,13 +90,13 @@
         errorBox.hidden = false;
         errorBox.textContent = data.reason === 'marker_conflict'
             ? await window.AppTranslations.trans('storage_list.scan_failed_marker_conflict')
-            : format(await window.AppTranslations.trans('storage_list.scan_failed_exception'), { message: data.message });
+            : await window.AppTranslations.trans('storage_list.scan_failed_exception', { message: data.message });
     }
 
     async function buildInfoItem(item, labelKey) {
         const li = document.createElement('li');
         li.className = 'list-group-item';
-        li.textContent = format(await window.AppTranslations.trans(labelKey), {
+        li.textContent = await window.AppTranslations.trans(labelKey, {
             title: item.anime?.title ?? item.storage_path,
             path: item.storage_path,
         });
@@ -122,7 +107,7 @@
     async function buildAutoLinkedItem(item) {
         const li = document.createElement('li');
         li.className = 'list-group-item';
-        li.textContent = format(await window.AppTranslations.trans('storage_list.auto_linked_text'), {
+        li.textContent = await window.AppTranslations.trans('storage_list.auto_linked_text', {
             title: item.anime?.title ?? item.storage_path,
         });
 
@@ -140,7 +125,7 @@
             storage_path: item.storage_path,
         });
         link.href = `${animeNewUrl}?${params.toString()}`;
-        link.textContent = format(await window.AppTranslations.trans('storage_list.create_entry_link'), {
+        link.textContent = await window.AppTranslations.trans('storage_list.create_entry_link', {
             title: item.cleaned_name ?? item.storage_path,
         });
 
@@ -170,7 +155,7 @@
             })
             .then(async (data) => {
                 li.replaceChildren();
-                li.textContent = format(await window.AppTranslations.trans('storage_list.confirmed_text'), {
+                li.textContent = await window.AppTranslations.trans('storage_list.confirmed_text', {
                     title: data.anime?.title ?? candidate.title,
                 });
             })

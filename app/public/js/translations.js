@@ -52,6 +52,16 @@
         return cataloguePromise;
     }
 
+    // FIRST STRONG ISOLATE / POP DIRECTIONAL ISOLATE: every substituted value can originate from
+    // arbitrary user- or filesystem-sourced text (anime titles, storage paths, backup archive
+    // paths). Rendered as plain text (.textContent, not HTML — a <bdi> element is not available
+    // everywhere a caller wants this), an unisolated value inside an RTL message can reorder
+    // adjacent characters, most visibly brackets and colons (issue #450). Wrapping every value
+    // here rather than per-caller keeps that protection from depending on each call site
+    // remembering to opt in.
+    const BIDI_ISOLATE_START = '⁨';
+    const BIDI_ISOLATE_END   = '⁩';
+
     // `params` mirrors the Symfony-style %name% placeholders used server-side (see
     // .claude-docs/conventions.md §Локализация) — e.g. resolveKey(messages, 'x', { count: 3 })
     // replaces every "%count%" in the resolved string with "3".
@@ -62,7 +72,9 @@
         }
 
         return Object.keys(params).reduce(
-            (result, paramName) => result.split(`%${paramName}%`).join(String(params[paramName])),
+            (result, paramName) => result.split(`%${paramName}%`).join(
+                `${BIDI_ISOLATE_START}${String(params[paramName])}${BIDI_ISOLATE_END}`,
+            ),
             text,
         );
     }

@@ -122,10 +122,6 @@
         }
     }
 
-    function format(template, params) {
-        return Object.keys(params).reduce((text, name) => text.replace(`%${name}%`, String(params[name])), template);
-    }
-
     function setPercent(bar, percent) {
         bar.style.width = `${percent}%`;
         bar.setAttribute('aria-valuenow', String(percent));
@@ -152,7 +148,7 @@
         setPercent(progressBar, phasePercent(data));
 
         const key = data.phase === 'database' ? 'settings_backup.progress_database' : 'settings_backup.progress_media';
-        progressText.textContent = format(await window.AppTranslations.trans(key), {
+        progressText.textContent = await window.AppTranslations.trans(key, {
             current: data.current,
             total: data.total,
         });
@@ -161,7 +157,7 @@
     async function onDone(data) {
         resetControls();
         resultBox.hidden = false;
-        resultBox.textContent = format(await window.AppTranslations.trans('settings_backup.done_text'), { path: data.path });
+        resultBox.textContent = await window.AppTranslations.trans('settings_backup.done_text', { path: data.path });
     }
 
     async function onFailed(data) {
@@ -185,7 +181,7 @@
         setPercent(importProgressBar, phasePercent(data));
 
         const key = data.phase === 'database' ? 'settings_backup.import_progress_database' : 'settings_backup.import_progress_media';
-        importProgressText.textContent = format(await window.AppTranslations.trans(key), {
+        importProgressText.textContent = await window.AppTranslations.trans(key, {
             current: data.current,
             total: data.total,
         });
@@ -256,7 +252,7 @@
             return;
         }
 
-        const confirmMessage = format(await window.AppTranslations.trans('settings_backup.import_confirm_text'), { path: importPathInput.value });
+        const confirmMessage = await window.AppTranslations.trans('settings_backup.import_confirm_text', { path: importPathInput.value });
         if (!window.confirm(confirmMessage)) {
             return;
         }
@@ -285,7 +281,7 @@
         } else {
             importErrorBox.hidden = false;
             const errorKey = IMPORT_ERROR_KEY_BY_CODE[outcome.code] || 'settings_backup.import_error_generic';
-            importErrorBox.textContent = format(await window.AppTranslations.trans(errorKey), { path: importPathInput.value });
+            importErrorBox.textContent = await window.AppTranslations.trans(errorKey, { path: importPathInput.value });
         }
     });
 })();
