@@ -23,6 +23,7 @@
 
 (function () {
     const API_URL = '/anime';
+    const FACETS_URL = '/anime/facets';
     // Rows-per-page is the only knob left in code (issue #665) — the page size itself is derived
     // from the grid's actual column count at request time, not a user-facing setting. Kept in
     // sync by hand with AnimeListRequestParser::MAX_LIMIT (PHP) since the server is the one that
@@ -35,12 +36,31 @@
     // drag-resize while the column count itself only changes once.
     const RESIZE_DEBOUNCE_MS = 150;
     // A label click on the anime detail page (issue #104) links here with ?labels=<id> — the
-    // only filter this page currently understands from the URL, ahead of the full filter UI.
+    // only filter this page reads from the URL; it seeds the filter panel once at init, nothing
+    // is ever written back to the address bar (issue #666).
     const labelFilter = new URLSearchParams(window.location.search).get('labels');
     // Debounce the search box (issue #199) so a full request isn't fired on every keystroke —
     // AnimeListController resolves this as "name" against Meilisearch, falling back to the
     // FTS5 quick-filter server-side when it is unavailable.
     const SEARCH_DEBOUNCE_MS = 300;
+
+    // The eight filter-panel sections (issue #666), in the fixed display order the issue
+    // requires. Each key doubles as the property name on the filters state objects below and as
+    // the `data-filter-section` attribute in list.html.twig, so a section only has to be named
+    // once. `facetKey` is the matching property on the GET /anime/facets response.
+    const FACET_SECTIONS = {
+        watch_status: { facetKey: 'watch_status', kind: 'enum', translatePrefix: 'watch_status', input: 'checkbox' },
+        type: { facetKey: 'type', kind: 'enum', translatePrefix: 'anime_type', input: 'checkbox' },
+        date_premiere: { facetKey: 'date_premiere_decade', kind: 'decade', input: 'radio' },
+        user_rating: { facetKey: 'user_rating', kind: 'rating', input: 'checkbox' },
+        labels: { facetKey: 'labels', kind: 'entity', input: 'checkbox' },
+        genres: { facetKey: 'genres', kind: 'enum', translatePrefix: 'genre', input: 'checkbox' },
+        themes: { facetKey: 'themes', kind: 'enum', translatePrefix: 'theme', input: 'checkbox' },
+        studios: { facetKey: 'studios', kind: 'entity', input: 'checkbox' },
+    };
+    // Rating facet buckets come back in GROUP BY order, not display order — the issue requires
+    // five checkboxes counting down from 5, plus "no rating" last.
+    const RATING_ORDER = ['5', '4', '3', '2', '1', 'none'];
 
     const grid = document.getElementById('anime-list-grid');
     const emptyMessage = document.getElementById('anime-list-empty');
@@ -50,6 +70,13 @@
     const searchInput = document.getElementById('anime-list-search');
     const sortContainer = document.getElementById('anime-list-sort');
     const sortDirectionButton = document.getElementById('anime-list-sort-direction');
+    const filtersToggleButton = document.getElementById('anime-list-filters-toggle');
+    const filtersCountBadge = document.getElementById('anime-list-filters-count');
+    const filtersPanel = document.getElementById('anime-list-filters');
+    const filterApplyButton = document.getElementById('anime-list-filter-apply');
+    const chipList = document.getElementById('anime-list-chip-list');
+    const chipsShown = document.getElementById('anime-list-chips-shown');
+    const chipsResetButton = document.getElementById('anime-list-chips-reset');
 
     let sentinelObserver = null;
     let resizeObserver = null;
@@ -71,6 +98,110 @@
     // Guards against the response race (issue #208): a slow scroll-append response arriving
     // after a faster search response would otherwise splice stale cards into the fresh grid.
     let pendingRequest = null;
+    // The facets request (issue #666) has its own AbortController, independent of the list
+    // request above: it must fire on every filter change but never on an infinite-scroll
+    // page-append, which pendingRequest above already tracks separately.
+    let pendingFacetsRequest = null;
+    // The filter values a click has actually applied — drives the list/facets query, the chip
+    // row and the "applied" highlight in the panel.
+    let appliedFilters = createEmptyFilters();
+    // The filter values currently marked in the panel but not yet applied — a checkbox toggles
+    // this without touching appliedFilters; the panel's checked state always reflects this, not
+    // appliedFilters (issue #666).
+    let pendingFilters = createEmptyFilters();
+    // Last GET /anime/facets response, kept around so a chip removed from another part of the
+    // page (or the panel patch itself) can resolve a label/studio id back to its display name
+    // without a second request.
+    let lastFacets = null;
+    // Total matches under the current filter — from the list response, refreshed on every
+    // loadPage() call (including scroll-appends, since the filtered total does not change
+    // mid-scroll). Used as the numerator of "Shown X of Y".
+    let currentFilteredTotal = 0;
+    // Unfiltered catalog size, fetched once — the denominator of "Shown X of Y" answers "why are
+    // there so few records" only when compared against the whole catalog, not the current page.
+    let catalogTotal = null;
+
+    function createEmptyFilters() {
+        return {
+            watch_status: new Set(),
+            type: new Set(),
+            date_premiere: null,
+            user_rating: new Set(),
+            labels: new Set(),
+            genres: new Set(),
+            themes: new Set(),
+            studios: new Set(),
+        };
+    }
+
+    function cloneFilters(filters) {
+        return {
+            watch_status: new Set(filters.watch_status),
+            type: new Set(filters.type),
+            date_premiere: filters.date_premiere,
+            user_rating: new Set(filters.user_rating),
+            labels: new Set(filters.labels),
+            genres: new Set(filters.genres),
+            themes: new Set(filters.themes),
+            studios: new Set(filters.studios),
+        };
+    }
+
+    function isFiltersEmpty(filters) {
+        return filters.watch_status.size === 0
+            && filters.type.size === 0
+            && filters.date_premiere === null
+            && filters.user_rating.size === 0
+            && filters.labels.size === 0
+            && filters.genres.size === 0
+            && filters.themes.size === 0
+            && filters.studios.size === 0;
+    }
+
+    // Every entry across every section counts as one — this is what both the "Filters · N"
+    // toggle badge and the chip row must agree on (issue #666 acceptance criterion).
+    function appliedFilterEntries() {
+        const entries = [];
+        ['watch_status', 'type', 'user_rating', 'labels', 'genres', 'themes', 'studios'].forEach((sectionKey) => {
+            appliedFilters[sectionKey].forEach((value) => entries.push({ sectionKey, value }));
+        });
+        if (appliedFilters.date_premiere !== null) {
+            entries.push({ sectionKey: 'date_premiere', value: appliedFilters.date_premiere });
+        }
+
+        return entries;
+    }
+
+    function decadeRange(decade) {
+        const start = parseInt(decade, 10);
+
+        return { from: `${start}-01-01`, to: `${start + 9}-12-31` };
+    }
+
+    function appendFilterParams(params, filters) {
+        filters.watch_status.forEach((value) => params.append('watch_status[]', value));
+        filters.type.forEach((value) => params.append('type[]', value));
+        filters.genres.forEach((value) => params.append('genres[]', value));
+        filters.themes.forEach((value) => params.append('themes[]', value));
+        filters.labels.forEach((value) => params.append('labels[]', value));
+        filters.studios.forEach((value) => params.append('studios[]', value));
+
+        filters.user_rating.forEach((value) => {
+            if (value === 'none') {
+                params.set('user_rating_none', '1');
+            } else {
+                params.append('user_rating[]', value);
+            }
+        });
+
+        if (filters.date_premiere === 'none') {
+            params.set('date_premiere_none', '1');
+        } else if (filters.date_premiere !== null) {
+            const range = decadeRange(filters.date_premiere);
+            params.set('date_premiere_from', range.from);
+            params.set('date_premiere_to', range.to);
+        }
+    }
 
     function buildCard(anime, catalogue) {
         const card = document.createElement('article');
@@ -164,7 +295,7 @@
         return columns * rows;
     }
 
-    function buildQuery(offset, limit) {
+    function buildListQuery(offset, limit) {
         const params = new URLSearchParams({
             limit: String(limit),
             offset: String(offset),
@@ -172,19 +303,27 @@
             direction: sortDirection,
         });
 
-        if (labelFilter) {
-            params.set('labels', labelFilter);
-        }
-
         if (searchQuery) {
             params.set('name', searchQuery);
         }
+        appendFilterParams(params, appliedFilters);
 
         return `${API_URL}?${params.toString()}`;
     }
 
+    function buildFacetsQuery() {
+        const params = new URLSearchParams();
+
+        if (searchQuery) {
+            params.set('name', searchQuery);
+        }
+        appendFilterParams(params, appliedFilters);
+
+        return `${FACETS_URL}?${params.toString()}`;
+    }
+
     async function fetchPage(offset, limit, signal) {
-        const response = await fetch(buildQuery(offset, limit), { signal });
+        const response = await fetch(buildListQuery(offset, limit), { signal });
         if (!response.ok) {
             throw new Error(`Anime list request failed with status ${response.status}`);
         }
@@ -258,6 +397,14 @@
         }
     }
 
+    function updateShownCount(catalogue) {
+        const total = catalogTotal !== null ? catalogTotal : currentFilteredTotal;
+        chipsShown.textContent = window.AppTranslations.resolveKey(catalogue, 'anime_list.filter_shown_count', {
+            shown: currentFilteredTotal,
+            total,
+        });
+    }
+
     // `limitOverride` is used for exactly one caller: the infinite-scroll top-up after a resize,
     // which asks for only the handful of records needed to complete the last row rather than a
     // full page (issue #665). Every other caller lets the limit follow the grid's current column
@@ -300,6 +447,8 @@
         renderCards(data.items, replace, offset, catalogue);
         loadedCount = replace ? data.items.length : loadedCount + data.items.length;
         paginationMode = data.pagination_mode;
+        currentFilteredTotal = data.total;
+        updateShownCount(catalogue);
 
         if (paginationMode === 'classic') {
             setupClassicPagination(data.total, data.limit, data.offset);
@@ -317,6 +466,352 @@
         if (columns !== requestColumns) {
             applyColumnCountChange(columns);
         }
+    }
+
+    // Counters for the filter panel (issue #666), refetched on every filter/search change with
+    // its own AbortController so a page-append from infinite scroll — which never calls this
+    // function — cannot be confused with a facet-affecting change, and so a fast filter click
+    // right after a slow one cannot splice stale counts into the panel.
+    async function loadFacets() {
+        if (pendingFacetsRequest) {
+            pendingFacetsRequest.abort();
+        }
+        const controller = new AbortController();
+        pendingFacetsRequest = controller;
+
+        let data;
+        try {
+            const response = await fetch(buildFacetsQuery(), { signal: controller.signal });
+            if (!response.ok) {
+                throw new Error(`Anime facets request failed with status ${response.status}`);
+            }
+            data = await response.json();
+        } catch {
+            // Facets are supplementary to the list — a failed or superseded fetch just leaves
+            // the panel showing its last known counts instead of surfacing an error state.
+            return;
+        }
+        if (controller.signal.aborted) {
+            return;
+        }
+
+        lastFacets = data;
+        const catalogue = await window.AppTranslations.getCatalogue().catch(() => ({}));
+        if (controller.signal.aborted) {
+            return;
+        }
+
+        renderFilterPanel(data, catalogue);
+        renderChips(catalogue);
+    }
+
+    async function loadCatalogTotal() {
+        try {
+            const response = await fetch(`${API_URL}?limit=1&offset=0`);
+            if (response.ok) {
+                const data = await response.json();
+                catalogTotal = data.total;
+            }
+        } catch {
+            // Best effort — the shown-count denominator falls back to the filtered total until
+            // this resolves, which only matters on the very first paint.
+        }
+
+        const catalogue = await window.AppTranslations.getCatalogue().catch(() => ({}));
+        updateShownCount(catalogue);
+    }
+
+    function nameFromBucket(config, bucket, catalogue) {
+        if (config.kind === 'enum') {
+            return window.AppTranslations.resolveKey(catalogue, `${config.translatePrefix}.${bucket.value}`);
+        }
+        if (config.kind === 'entity') {
+            return bucket.name;
+        }
+        if (config.kind === 'rating') {
+            return bucket.value === 'none'
+                ? window.AppTranslations.resolveKey(catalogue, 'anime_list.filter_no_rating')
+                : bucket.value;
+        }
+
+        return bucket.value === 'none'
+            ? window.AppTranslations.resolveKey(catalogue, 'anime_list.filter_no_date_premiere')
+            : window.AppTranslations.resolveKey(catalogue, 'anime_list.filter_decade_label', {
+                decade: bucket.value.replace(/s$/, ''),
+            });
+    }
+
+    // Chips only carry a section + raw value/id, so an entity chip (label/studio) resolves its
+    // display name back out of the last facets response rather than a bucket it never kept.
+    function resolveValueName(sectionKey, value, catalogue) {
+        const config = FACET_SECTIONS[sectionKey];
+        if (config.kind === 'entity') {
+            const buckets = (lastFacets && lastFacets[config.facetKey]) || [];
+            const bucket = buckets.find((candidate) => String(candidate.id) === value);
+
+            return bucket ? bucket.name : value;
+        }
+
+        return nameFromBucket(config, { value }, catalogue);
+    }
+
+    function sectionTitle(sectionKey, catalogue) {
+        return window.AppTranslations.resolveKey(catalogue, `anime_list.filter_section_${sectionKey}`);
+    }
+
+    function isValueApplied(sectionKey, value) {
+        return sectionKey === 'date_premiere'
+            ? appliedFilters.date_premiere === value
+            : appliedFilters[sectionKey].has(value);
+    }
+
+    function isValuePending(sectionKey, value) {
+        return sectionKey === 'date_premiere'
+            ? pendingFilters.date_premiere === value
+            : pendingFilters[sectionKey].has(value);
+    }
+
+    function handlePendingToggle(sectionKey, value, checked, inputType) {
+        if (inputType === 'radio') {
+            pendingFilters.date_premiere = value;
+        } else if (checked) {
+            pendingFilters[sectionKey].add(value);
+        } else {
+            pendingFilters[sectionKey].delete(value);
+        }
+        updateApplyButtonState();
+    }
+
+    function updateApplyButtonState() {
+        filterApplyButton.disabled = isFiltersEmpty(pendingFilters);
+    }
+
+    // Applies the whole pending accumulation, not just the one value that was clicked — a label
+    // click is a shortcut for "check this box, then press Apply", so any other box already
+    // checked elsewhere in the panel is applied together with it rather than discarded.
+    function applyPending() {
+        appliedFilters = cloneFilters(pendingFilters);
+        loadPage(0, true);
+        loadFacets();
+    }
+
+    function uncheckValueInput(sectionKey, value) {
+        const sectionEl = document.querySelector(`[data-filter-section="${sectionKey}"]`);
+        if (!sectionEl) {
+            return;
+        }
+        const row = Array.from(sectionEl.querySelectorAll('.anime-list__filter-value'))
+            .find((item) => item.dataset.value === value);
+        const input = row ? row.querySelector('.anime-list__filter-checkbox') : null;
+        if (input) {
+            input.checked = false;
+        }
+    }
+
+    function removeAppliedValue(sectionKey, value) {
+        if (sectionKey === 'date_premiere') {
+            appliedFilters.date_premiere = null;
+            if (pendingFilters.date_premiere === value) {
+                pendingFilters.date_premiere = null;
+            }
+        } else {
+            appliedFilters[sectionKey].delete(value);
+            pendingFilters[sectionKey].delete(value);
+        }
+        uncheckValueInput(sectionKey, value);
+        updateApplyButtonState();
+        loadPage(0, true);
+        loadFacets();
+    }
+
+    // "Reset all" clears filters only — sort field/direction and pagination mode are untouched
+    // module-level state the reset never even references (issue #666).
+    function resetAllFilters() {
+        appliedFilters = createEmptyFilters();
+        pendingFilters = createEmptyFilters();
+        document.querySelectorAll('.anime-list__filter-checkbox').forEach((input) => {
+            input.checked = false;
+        });
+        updateApplyButtonState();
+        loadPage(0, true);
+        loadFacets();
+    }
+
+    function buildValueRow(entry, sectionKey, inputType, catalogue) {
+        const row = document.createElement('li');
+        row.className = 'anime-list__filter-value';
+        row.dataset.value = entry.id;
+
+        const checkbox = document.createElement('input');
+        checkbox.type = inputType;
+        checkbox.className = 'anime-list__filter-checkbox';
+        if (inputType === 'radio') {
+            checkbox.name = `anime-list-filter-${sectionKey}`;
+        }
+        checkbox.checked = entry.pending;
+        checkbox.setAttribute('aria-label', entry.name);
+        checkbox.title = window.AppTranslations.resolveKey(catalogue, 'anime_list.filter_value_accumulate_hint');
+        checkbox.addEventListener('change', () => {
+            handlePendingToggle(sectionKey, entry.id, checkbox.checked, inputType);
+        });
+
+        const nameButton = document.createElement('button');
+        nameButton.type = 'button';
+        nameButton.className = 'anime-list__filter-value-name';
+        nameButton.textContent = entry.name;
+        nameButton.title = window.AppTranslations.resolveKey(catalogue, 'anime_list.filter_value_instant_hint');
+        nameButton.addEventListener('click', () => {
+            checkbox.checked = true;
+            handlePendingToggle(sectionKey, entry.id, true, inputType);
+            applyPending();
+        });
+
+        const count = document.createElement('span');
+        count.className = 'anime-list__filter-value-count';
+        count.textContent = String(entry.count);
+
+        row.append(checkbox, nameButton, count);
+        row.classList.toggle('anime-list__filter-value--applied', entry.applied);
+
+        return row;
+    }
+
+    function updateValueRow(row, entry) {
+        row.querySelector('.anime-list__filter-value-count').textContent = String(entry.count);
+        row.querySelector('.anime-list__filter-value-name').textContent = entry.name;
+        row.classList.toggle('anime-list__filter-value--applied', entry.applied);
+        // The checkbox/radio's checked state is deliberately left untouched here: it reflects
+        // pendingFilters, which this patch (a facets refresh) never changes on its own — only a
+        // direct user action on that exact input does (issue #666).
+    }
+
+    // Reconciles the section's <ul> against the latest bucket list without ever calling
+    // replaceChildren() on it — a full teardown would drop the panel's own scrollTop and any
+    // checked-but-not-yet-applied checkbox elsewhere in the section (issue #666).
+    function patchValueList(list, entries, sectionKey, inputType, catalogue) {
+        const existingByValue = new Map();
+        Array.from(list.children).forEach((row) => existingByValue.set(row.dataset.value, row));
+
+        const seen = new Set();
+        let previousNode = null;
+        entries.forEach((entry) => {
+            seen.add(entry.id);
+            let row = existingByValue.get(entry.id);
+            if (row) {
+                updateValueRow(row, entry);
+            } else {
+                row = buildValueRow(entry, sectionKey, inputType, catalogue);
+            }
+
+            const afterNode = previousNode ? previousNode.nextSibling : list.firstChild;
+            if (afterNode !== row) {
+                list.insertBefore(row, afterNode);
+            }
+            previousNode = row;
+        });
+
+        existingByValue.forEach((row, value) => {
+            if (!seen.has(value)) {
+                row.remove();
+            }
+        });
+    }
+
+    function renderFilterPanel(data, catalogue) {
+        Object.keys(FACET_SECTIONS).forEach((sectionKey) => {
+            const config = FACET_SECTIONS[sectionKey];
+            const sectionEl = document.querySelector(`[data-filter-section="${sectionKey}"]`);
+            if (!sectionEl) {
+                return;
+            }
+            const list = sectionEl.querySelector('.anime-list__filter-values');
+            const emptyText = sectionEl.querySelector('.anime-list__filter-section-empty');
+
+            let buckets = data[config.facetKey] || [];
+            if (config.kind === 'rating') {
+                const byValue = new Map(buckets.map((bucket) => [bucket.value, bucket]));
+                buckets = RATING_ORDER.filter((value) => byValue.has(value)).map((value) => byValue.get(value));
+            }
+
+            emptyText.hidden = buckets.length > 0;
+
+            const entries = buckets.map((bucket) => {
+                const id = config.kind === 'entity' ? String(bucket.id) : bucket.value;
+
+                return {
+                    id,
+                    name: nameFromBucket(config, bucket, catalogue),
+                    count: bucket.count,
+                    applied: isValueApplied(sectionKey, id),
+                    pending: isValuePending(sectionKey, id),
+                };
+            });
+
+            patchValueList(list, entries, sectionKey, config.input, catalogue);
+        });
+    }
+
+    function renderChips(catalogue) {
+        const entries = appliedFilterEntries();
+
+        chipList.replaceChildren();
+        entries.forEach(({ sectionKey, value }) => {
+            const name = resolveValueName(sectionKey, value, catalogue);
+            const label = `${sectionTitle(sectionKey, catalogue)}: ${name}`;
+
+            const chip = document.createElement('li');
+            chip.className = 'anime-list__chip';
+
+            const text = document.createElement('span');
+            text.className = 'anime-list__chip-label';
+            text.textContent = label;
+            chip.appendChild(text);
+
+            const remove = document.createElement('button');
+            remove.type = 'button';
+            remove.className = 'anime-list__chip-remove';
+            remove.setAttribute(
+                'aria-label',
+                window.AppTranslations.resolveKey(catalogue, 'anime_list.filter_chip_remove_button', { label: name }),
+            );
+            remove.textContent = '×';
+            remove.addEventListener('click', () => removeAppliedValue(sectionKey, value));
+            chip.appendChild(remove);
+
+            chipList.appendChild(chip);
+        });
+
+        chipsResetButton.disabled = entries.length === 0;
+        filtersCountBadge.textContent = ` · ${entries.length}`;
+        filtersCountBadge.hidden = entries.length === 0;
+        updateShownCount(catalogue);
+    }
+
+    function setupFilterPanel() {
+        filterApplyButton.addEventListener('click', applyPending);
+        chipsResetButton.addEventListener('click', resetAllFilters);
+
+        document.querySelectorAll('.anime-list__filter-section-toggle').forEach((toggle) => {
+            toggle.addEventListener('click', () => {
+                const expanded = toggle.getAttribute('aria-expanded') === 'true';
+                toggle.setAttribute('aria-expanded', String(!expanded));
+                toggle.nextElementSibling.hidden = expanded;
+            });
+        });
+
+        updateApplyButtonState();
+    }
+
+    function setupFiltersToggle() {
+        if (!filtersToggleButton) {
+            return;
+        }
+
+        filtersToggleButton.addEventListener('click', () => {
+            const expanded = filtersToggleButton.getAttribute('aria-expanded') === 'true';
+            filtersToggleButton.setAttribute('aria-expanded', String(!expanded));
+            filtersPanel.hidden = expanded;
+        });
     }
 
     // Reacts to the grid's column count changing (window resize, scrollbar appearing, filter
@@ -349,6 +844,7 @@
             searchDebounceTimer = setTimeout(() => {
                 searchQuery = searchInput.value.trim();
                 loadPage(0, true);
+                loadFacets();
             }, SEARCH_DEBOUNCE_MS);
         });
     }
@@ -391,15 +887,28 @@
         });
     }
 
+    function seedFiltersFromUrl() {
+        if (!labelFilter) {
+            return;
+        }
+        appliedFilters.labels.add(labelFilter);
+        pendingFilters.labels.add(labelFilter);
+    }
+
     function init() {
+        seedFiltersFromUrl();
         setupSearchInput();
         setupSortControls();
+        setupFilterPanel();
+        setupFiltersToggle();
         setupResizeObserver();
         // ResizeObserver delivers a synthetic initial callback right after observe() (spec
         // behaviour, not a real resize) — seed lastColumnCount now so handleGridResize()
         // treats it as a no-op instead of re-requesting the page it is about to load anyway.
         lastColumnCount = getColumnCount();
         loadPage(0, true);
+        loadFacets();
+        loadCatalogTotal();
     }
 
     init();

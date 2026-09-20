@@ -342,6 +342,25 @@ anime_list:
     sort_field_date_end: By end date
     sort_direction_asc: Ascending
     sort_direction_desc: Descending
+    filters_toggle_button: Filters
+    filter_apply_button: Filter
+    filter_reset_all_button: Reset all
+    filter_shown_count: 'Showing: %shown% of %total%.'
+    filter_chip_remove_button: 'Remove filter "%label%"'
+    filter_section_watch_status: Watch status
+    filter_section_type: Type
+    filter_section_date_premiere: Premiere date
+    filter_section_user_rating: Rating
+    filter_section_labels: Labels
+    filter_section_genres: Genres
+    filter_section_themes: Themes
+    filter_section_studios: Studios
+    filter_section_empty: No values in the catalog for this section.
+    filter_no_rating: Not rated
+    filter_no_date_premiere: No premiere date
+    filter_decade_label: '%decade%s'
+    filter_value_instant_hint: Show only this value — applies immediately
+    filter_value_accumulate_hint: Check to apply later with the Filter button
 
 storage_list:
     title: Storage — AnimeDB
