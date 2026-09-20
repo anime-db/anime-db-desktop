@@ -502,6 +502,11 @@
         }
 
         renderFilterPanel(data, catalogue);
+        // Chips are also redrawn synchronously on every appliedFilters mutation (applyPending,
+        // removeAppliedValue, resetAllFilters, the URL seed) — this call never is their only
+        // source. It only upgrades an entity chip (label/studio) from a raw id fallback to its
+        // resolved display name once lastFacets carries that name; a failed or superseded facets
+        // request just leaves that upgrade for the next successful one (issue #676 review).
         renderChips(catalogue);
     }
 
@@ -591,6 +596,7 @@
     // checked elsewhere in the panel is applied together with it rather than discarded.
     function applyPending() {
         appliedFilters = cloneFilters(pendingFilters);
+        refreshChips();
         loadPage(0, true);
         loadFacets();
     }
@@ -620,6 +626,7 @@
         }
         uncheckValueInput(sectionKey, value);
         updateApplyButtonState();
+        refreshChips();
         loadPage(0, true);
         loadFacets();
     }
@@ -633,6 +640,7 @@
             input.checked = false;
         });
         updateApplyButtonState();
+        refreshChips();
         loadPage(0, true);
         loadFacets();
     }
@@ -787,6 +795,15 @@
         updateShownCount(catalogue);
     }
 
+    // Called right after every appliedFilters mutation so the chip row, the "Filters · N" badge
+    // and the reset button track the synchronous state that already drives the list request,
+    // instead of only updating once the separate, abortable facets fetch happens to resolve
+    // (issue #676 review).
+    async function refreshChips() {
+        const catalogue = await window.AppTranslations.getCatalogue().catch(() => ({}));
+        renderChips(catalogue);
+    }
+
     function setupFilterPanel() {
         filterApplyButton.addEventListener('click', applyPending);
         chipsResetButton.addEventListener('click', resetAllFilters);
@@ -893,6 +910,10 @@
         }
         appliedFilters.labels.add(labelFilter);
         pendingFilters.labels.add(labelFilter);
+        // Draws the chip/badge/reset button right away (issue #676 review) instead of leaving
+        // them dependent on the first loadFacets() call below, which is a separate, abortable
+        // network round-trip that can fail independently of this seeding.
+        refreshChips();
     }
 
     function init() {
