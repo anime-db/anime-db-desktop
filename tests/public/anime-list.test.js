@@ -54,9 +54,32 @@ function setGridColumns(columns) {
     document.getElementById('anime-list-grid').style.gridTemplateColumns = Array(columns).fill('160px').join(' ');
 }
 
+const FILTER_SECTIONS = [
+    'watch_status', 'type', 'date_premiere', 'user_rating', 'labels', 'genres', 'themes', 'studios',
+];
+
+function filterSectionsMarkup() {
+    return FILTER_SECTIONS.map((section) => `
+        <section data-filter-section="${section}">
+            <button type="button" class="anime-list__filter-section-toggle" aria-expanded="true">${section}</button>
+            <div class="anime-list__filter-section-body">
+                <p class="anime-list__filter-section-empty" hidden></p>
+                <ul class="anime-list__filter-values"></ul>
+            </div>
+        </section>
+    `).join('');
+}
+
+// Mirrors app/templates/anime/list.html.twig closely enough to drive the real anime-list.js: the
+// eight filter sections, the apply button, the chip row and the collapse toggle all need to
+// exist with their real ids/classes, since setupFilterPanel()/setupFiltersToggle() query them by
+// selector and throw on a missing element the same way a broken template would.
 function setUpDom(columns = 1) {
     document.body.innerHTML = `
         <input id="anime-list-search" type="search" />
+        <button type="button" id="anime-list-filters-toggle" aria-expanded="true">
+            Filters<span id="anime-list-filters-count" hidden></span>
+        </button>
         <div id="anime-list-sort">
             <button type="button" data-sort-field="name">Name</button>
             <button type="button" data-sort-field="date_update" aria-current="true">Updated</button>
@@ -66,11 +89,22 @@ function setUpDom(columns = 1) {
             <button type="button" id="anime-list-sort-direction" data-direction="desc"
                 data-label-asc="Ascending" data-label-desc="Descending">↓</button>
         </div>
+        <div id="anime-list-chips">
+            <ul id="anime-list-chip-list"></ul>
+            <span id="anime-list-chips-shown"></span>
+            <button type="button" id="anime-list-chips-reset" disabled>Reset all</button>
+        </div>
         <div id="anime-list-grid"></div>
         <p id="anime-list-empty" hidden></p>
         <p id="anime-list-error" hidden></p>
         <nav id="anime-list-pagination" hidden></nav>
         <div id="anime-list-sentinel" hidden></div>
+        <aside id="anime-list-filters">
+            <div id="anime-list-filter-sections">${filterSectionsMarkup()}</div>
+            <div class="anime-list__filter-apply-bar">
+                <button type="button" id="anime-list-filter-apply" disabled>Filter</button>
+            </div>
+        </aside>
     `;
     setGridColumns(columns);
 }
@@ -101,10 +135,20 @@ function triggerResize(instances, columns) {
     jest.advanceTimersByTime(150);
 }
 
+// A genuine GET /anime list request always carries `sort`/`direction` (buildListQuery() always
+// sets them) — the loadCatalogTotal() probe hits the same "/anime" path but without them, which
+// is what tells the two apart below.
+function isListRequest(url) {
+    return url.startsWith('/anime?') && new URL(url, 'http://localhost').searchParams.has('sort');
+}
+
 // Queues one deferred per fetch() call to the anime list endpoint, so the test controls exactly
 // when each request settles instead of racing against real timers or network I/O. A signal
 // listener rejects the call with an AbortError, mirroring what a real fetch() does once its
-// AbortController is aborted.
+// AbortController is aborted. GET /anime/facets and the one-off catalog-total probe (issue #666)
+// also go through this same mocked fetch() but are deliberately left out of the returned queue:
+// they are unrelated to what these pagination/sort/search tests assert on, and every request
+// still gets a real (if unresolved) promise back so awaiting it never throws.
 function mockFetchQueue() {
     const calls = [];
 
@@ -119,7 +163,9 @@ function mockFetchQueue() {
                 call.reject(error);
             });
         }
-        calls.push(call);
+        if (isListRequest(url)) {
+            calls.push(call);
+        }
 
         return call.promise;
     });
@@ -190,6 +236,7 @@ afterEach(() => {
     delete global.ResizeObserver;
     delete global.IntersectionObserver;
     delete window.AppTranslations;
+    window.history.replaceState({}, '', '/');
 });
 
 test('cards render even when the translations catalogue fails to load', async () => {
@@ -548,4 +595,275 @@ test('the synthetic initial ResizeObserver callback does not trigger a duplicate
     await flushMicrotasks();
 
     expect(calls).toHaveLength(1);
+});
+
+// The filter-panel tests below need to see every request, not just list ones — unlike
+// mockFetchQueue() above, which exists precisely to hide the facets/catalog-total requests from
+// tests that are not about them (issue #666).
+function classifyRequest(url) {
+    if (url.startsWith('/anime/facets')) {
+        return 'facets';
+    }
+
+    return isListRequest(url) ? 'list' : 'total';
+}
+
+function mockFetchQueueAll() {
+    const calls = [];
+
+    global.fetch = jest.fn((url, options) => {
+        const call = deferred();
+        call.url = url;
+        call.kind = classifyRequest(url);
+        const signal = options && options.signal;
+        if (signal) {
+            signal.addEventListener('abort', () => {
+                const error = new Error('The operation was aborted');
+                error.name = 'AbortError';
+                call.reject(error);
+            });
+        }
+        calls.push(call);
+
+        return call.promise;
+    });
+
+    return calls;
+}
+
+function byKind(calls, kind) {
+    return calls.filter((call) => call.kind === kind);
+}
+
+function emptyFacets() {
+    return jsonResponse({
+        watch_status: [], type: [], date_premiere_decade: [], user_rating: [],
+        labels: [], genres: [], themes: [], studios: [],
+    });
+}
+
+test('the facets request has its own AbortController and does not repeat on an infinite-scroll page append', async () => {
+    const calls = mockFetchQueueAll();
+    setUpTranslations();
+
+    loadAnimeListModule(); // fires the initial loadPage(), loadFacets() and loadCatalogTotal()
+    await flushMicrotasks();
+
+    expect(byKind(calls, 'list')).toHaveLength(1);
+    expect(byKind(calls, 'facets')).toHaveLength(1);
+
+    byKind(calls, 'list')[0].resolve(jsonResponse({
+        items: [animeItem(1, 'Steins;Gate')], pagination_mode: 'infinite_scroll', total: 2, limit: 1, offset: 0,
+    }));
+    byKind(calls, 'facets')[0].resolve(emptyFacets());
+    byKind(calls, 'total')[0].resolve(jsonResponse({ items: [], total: 2, limit: 1, offset: 0 }));
+    await flushMicrotasks();
+
+    const sentinelObserver = global.IntersectionObserver.mock.instances[0];
+    sentinelObserver.trigger();
+    await flushMicrotasks();
+
+    expect(byKind(calls, 'list')).toHaveLength(2);
+    expect(byKind(calls, 'facets')).toHaveLength(1);
+});
+
+test('a checkbox accumulates without firing a request; the value label applies it immediately', async () => {
+    const calls = mockFetchQueueAll();
+    setUpTranslations();
+
+    loadAnimeListModule();
+    await flushMicrotasks();
+    byKind(calls, 'list')[0].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 0, limit: 6, offset: 0 }));
+    byKind(calls, 'facets')[0].resolve(jsonResponse({
+        watch_status: [{ value: 'watching', count: 5 }],
+        type: [], date_premiere_decade: [], user_rating: [], labels: [], genres: [], themes: [], studios: [],
+    }));
+    byKind(calls, 'total')[0].resolve(jsonResponse({ items: [], total: 5, limit: 1, offset: 0 }));
+    await flushMicrotasks();
+
+    const row = document.querySelector('[data-filter-section="watch_status"] .anime-list__filter-value');
+    const checkbox = row.querySelector('.anime-list__filter-checkbox');
+    const applyButton = document.getElementById('anime-list-filter-apply');
+    expect(applyButton.disabled).toBe(true);
+
+    checkbox.checked = true;
+    checkbox.dispatchEvent(new Event('change'));
+
+    // Accumulating must not fire anything — only "Отфильтровать" or the value label does.
+    expect(byKind(calls, 'list')).toHaveLength(1);
+    expect(byKind(calls, 'facets')).toHaveLength(1);
+    expect(applyButton.disabled).toBe(false);
+
+    const nameButton = row.querySelector('.anime-list__filter-value-name');
+    nameButton.dispatchEvent(new Event('click', { bubbles: true }));
+    await flushMicrotasks();
+
+    expect(byKind(calls, 'list')).toHaveLength(2);
+    expect(byKind(calls, 'facets')).toHaveLength(2);
+    expect(queryParams(byKind(calls, 'list')[1].url)['watch_status[]']).toBe('watching');
+});
+
+test('"reset all" clears applied filters and refetches without touching the chosen sort field', async () => {
+    const calls = mockFetchQueueAll();
+    setUpTranslations();
+
+    loadAnimeListModule();
+    await flushMicrotasks();
+    byKind(calls, 'list')[0].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 0, limit: 6, offset: 0 }));
+    byKind(calls, 'facets')[0].resolve(jsonResponse({
+        watch_status: [{ value: 'watching', count: 5 }],
+        type: [], date_premiere_decade: [], user_rating: [], labels: [], genres: [], themes: [], studios: [],
+    }));
+    byKind(calls, 'total')[0].resolve(jsonResponse({ items: [], total: 5, limit: 1, offset: 0 }));
+    await flushMicrotasks();
+
+    dispatchClick(document.querySelector('[data-sort-field="name"]'));
+    await flushMicrotasks();
+    byKind(calls, 'list')[1].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 0, limit: 6, offset: 0 }));
+    await flushMicrotasks();
+
+    const nameButton = document.querySelector('[data-filter-section="watch_status"] .anime-list__filter-value-name');
+    nameButton.dispatchEvent(new Event('click', { bubbles: true }));
+    await flushMicrotasks();
+    expect(byKind(calls, 'list')).toHaveLength(3);
+    byKind(calls, 'list')[2].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 0, limit: 6, offset: 0 }));
+    byKind(calls, 'facets')[1].resolve(jsonResponse({
+        watch_status: [{ value: 'watching', count: 5 }],
+        type: [], date_premiere_decade: [], user_rating: [], labels: [], genres: [], themes: [], studios: [],
+    }));
+    await flushMicrotasks();
+
+    const resetButton = document.getElementById('anime-list-chips-reset');
+    expect(resetButton.disabled).toBe(false);
+    resetButton.dispatchEvent(new Event('click', { bubbles: true }));
+    await flushMicrotasks();
+
+    expect(byKind(calls, 'list')).toHaveLength(4);
+    const resetQuery = queryParams(byKind(calls, 'list')[3].url);
+    expect(resetQuery.sort).toBe('name');
+    expect(resetQuery.direction).toBe('desc');
+    expect(resetQuery).not.toHaveProperty('watch_status[]');
+});
+
+test('the filters badge text always equals the number of applied chips', async () => {
+    const calls = mockFetchQueueAll();
+    setUpTranslations();
+
+    loadAnimeListModule();
+    await flushMicrotasks();
+    byKind(calls, 'list')[0].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 0, limit: 6, offset: 0 }));
+    byKind(calls, 'facets')[0].resolve(jsonResponse({
+        watch_status: [{ value: 'watching', count: 5 }],
+        type: [], date_premiere_decade: [], user_rating: [], labels: [], genres: [], themes: [], studios: [],
+    }));
+    byKind(calls, 'total')[0].resolve(jsonResponse({ items: [], total: 5, limit: 1, offset: 0 }));
+    await flushMicrotasks();
+
+    const badge = document.getElementById('anime-list-filters-count');
+    expect(badge.hidden).toBe(true);
+
+    const nameButton = document.querySelector('[data-filter-section="watch_status"] .anime-list__filter-value-name');
+    nameButton.dispatchEvent(new Event('click', { bubbles: true }));
+    await flushMicrotasks();
+
+    expect(badge.textContent).toBe(' · 1');
+    expect(badge.hidden).toBe(false);
+});
+
+test('a ?labels=<id> URL seeds the list request, the chip row and the filters badge', async () => {
+    window.history.replaceState({}, '', '/anime?labels=7');
+    const calls = mockFetchQueueAll();
+    setUpTranslations();
+
+    loadAnimeListModule(); // fires seedFiltersFromUrl() before the first loadPage()/loadFacets()
+    await flushMicrotasks();
+
+    expect(queryParams(byKind(calls, 'list')[0].url)['labels[]']).toBe('7');
+    expect(document.querySelectorAll('.anime-list__chip-label')).toHaveLength(1);
+    expect(document.getElementById('anime-list-filters-count').textContent).toBe(' · 1');
+    expect(document.getElementById('anime-list-filters-count').hidden).toBe(false);
+});
+
+test('clicking a decade in "date premiere" applies a from/to range and a second click replaces it', async () => {
+    const calls = mockFetchQueueAll();
+    setUpTranslations();
+
+    loadAnimeListModule();
+    await flushMicrotasks();
+    byKind(calls, 'list')[0].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 0, limit: 6, offset: 0 }));
+    byKind(calls, 'facets')[0].resolve(jsonResponse({
+        watch_status: [], type: [],
+        date_premiere_decade: [{ value: '2010s', count: 3 }, { value: '2000s', count: 2 }],
+        user_rating: [], labels: [], genres: [], themes: [], studios: [],
+    }));
+    byKind(calls, 'total')[0].resolve(jsonResponse({ items: [], total: 5, limit: 1, offset: 0 }));
+    await flushMicrotasks();
+
+    const rows = document.querySelectorAll('[data-filter-section="date_premiere"] .anime-list__filter-value');
+    expect(rows).toHaveLength(2);
+    rows.forEach((row) => {
+        expect(row.querySelector('.anime-list__filter-checkbox').type).toBe('radio');
+    });
+
+    rows[0].querySelector('.anime-list__filter-value-name').dispatchEvent(new Event('click', { bubbles: true }));
+    await flushMicrotasks();
+
+    expect(byKind(calls, 'list')).toHaveLength(2);
+    expect(queryParams(byKind(calls, 'list')[1].url)).toMatchObject({
+        date_premiere_from: '2010-01-01',
+        date_premiere_to: '2019-12-31',
+    });
+    byKind(calls, 'list')[1].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 0, limit: 6, offset: 0 }));
+    byKind(calls, 'facets')[1].resolve(jsonResponse({
+        watch_status: [], type: [],
+        date_premiere_decade: [{ value: '2010s', count: 3 }, { value: '2000s', count: 2 }],
+        user_rating: [], labels: [], genres: [], themes: [], studios: [],
+    }));
+    await flushMicrotasks();
+
+    // A second decade replaces the first rather than accumulating alongside it (radio semantics).
+    const rowsAfter = document.querySelectorAll('[data-filter-section="date_premiere"] .anime-list__filter-value');
+    rowsAfter[1].querySelector('.anime-list__filter-value-name').dispatchEvent(new Event('click', { bubbles: true }));
+    await flushMicrotasks();
+
+    expect(byKind(calls, 'list')).toHaveLength(3);
+    const secondQuery = queryParams(byKind(calls, 'list')[2].url);
+    expect(secondQuery).toMatchObject({ date_premiere_from: '2000-01-01', date_premiere_to: '2009-12-31' });
+    expect(document.querySelectorAll('.anime-list__chip-label')).toHaveLength(1);
+});
+
+test('applying a filter does not clear the checkbox marks once the following facets response repaints the panel', async () => {
+    const calls = mockFetchQueueAll();
+    setUpTranslations();
+
+    loadAnimeListModule();
+    await flushMicrotasks();
+    byKind(calls, 'list')[0].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 0, limit: 6, offset: 0 }));
+    byKind(calls, 'facets')[0].resolve(jsonResponse({
+        watch_status: [{ value: 'watching', count: 5 }, { value: 'planned', count: 2 }],
+        type: [], date_premiere_decade: [], user_rating: [], labels: [], genres: [], themes: [], studios: [],
+    }));
+    byKind(calls, 'total')[0].resolve(jsonResponse({ items: [], total: 5, limit: 1, offset: 0 }));
+    await flushMicrotasks();
+
+    const rows = document.querySelectorAll('[data-filter-section="watch_status"] .anime-list__filter-value');
+    const watchingCheckbox = rows[0].querySelector('.anime-list__filter-checkbox');
+    const plannedCheckbox = rows[1].querySelector('.anime-list__filter-checkbox');
+    plannedCheckbox.checked = true;
+    plannedCheckbox.dispatchEvent(new Event('change'));
+
+    rows[0].querySelector('.anime-list__filter-value-name').dispatchEvent(new Event('click', { bubbles: true }));
+    await flushMicrotasks();
+
+    byKind(calls, 'list')[1].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 0, limit: 6, offset: 0 }));
+    byKind(calls, 'facets')[1].resolve(jsonResponse({
+        watch_status: [{ value: 'watching', count: 5 }, { value: 'planned', count: 2 }],
+        type: [], date_premiere_decade: [], user_rating: [], labels: [], genres: [], themes: [], studios: [],
+    }));
+    await flushMicrotasks();
+
+    const rowsAfter = document.querySelectorAll('[data-filter-section="watch_status"] .anime-list__filter-value');
+    expect(rowsAfter[0].querySelector('.anime-list__filter-checkbox').checked).toBe(true);
+    expect(rowsAfter[1].querySelector('.anime-list__filter-checkbox').checked).toBe(true);
+    expect(watchingCheckbox.checked).toBe(true);
 });

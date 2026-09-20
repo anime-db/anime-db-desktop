@@ -342,6 +342,25 @@ anime_list:
     sort_field_date_end: По дате окончания
     sort_direction_asc: По возрастанию
     sort_direction_desc: По убыванию
+    filters_toggle_button: Фильтры
+    filter_apply_button: Отфильтровать
+    filter_reset_all_button: Сбросить все
+    filter_shown_count: 'Показано: %shown% из %total%.'
+    filter_chip_remove_button: 'Убрать фильтр «%label%»'
+    filter_section_watch_status: Статус просмотра
+    filter_section_type: Тип
+    filter_section_date_premiere: Дата премьеры
+    filter_section_user_rating: Оценка
+    filter_section_labels: Метки
+    filter_section_genres: Жанры
+    filter_section_themes: Темы
+    filter_section_studios: Студии
+    filter_section_empty: В каталоге нет значений для этой секции.
+    filter_no_rating: Без оценки
+    filter_no_date_premiere: Без даты премьеры
+    filter_decade_label: '%decade%-е'
+    filter_value_instant_hint: Показать только это значение — применяется сразу
+    filter_value_accumulate_hint: 'Отметить, чтобы применить позже кнопкой «Отфильтровать»'
 
 storage_list:
     title: Хранилища — AnimeDB

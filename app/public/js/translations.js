@@ -52,14 +52,25 @@
         return cataloguePromise;
     }
 
-    function resolveKey(messages, key) {
-        return Object.prototype.hasOwnProperty.call(messages, key) ? messages[key] : key;
+    // `params` mirrors the Symfony-style %name% placeholders used server-side (see
+    // .claude-docs/conventions.md §Локализация) — e.g. resolveKey(messages, 'x', { count: 3 })
+    // replaces every "%count%" in the resolved string with "3".
+    function resolveKey(messages, key, params) {
+        const text = Object.prototype.hasOwnProperty.call(messages, key) ? messages[key] : key;
+        if (!params) {
+            return text;
+        }
+
+        return Object.keys(params).reduce(
+            (result, paramName) => result.split(`%${paramName}%`).join(String(params[paramName])),
+            text,
+        );
     }
 
     // Never rejects: a catalogue fetch failure (missing locale, network error) falls back to the
     // key itself, the same fallback already used for a key missing from an otherwise loaded
     // catalogue, so a translation lookup never blocks unrelated rendering (issue #516 follow-up).
-    async function trans(key) {
+    async function trans(key, params) {
         let messages;
         try {
             messages = await getCatalogue();
@@ -67,7 +78,7 @@
             return key;
         }
 
-        return resolveKey(messages, key);
+        return resolveKey(messages, key, params);
     }
 
     window.AppTranslations = { getCatalogue, trans, resolveKey };

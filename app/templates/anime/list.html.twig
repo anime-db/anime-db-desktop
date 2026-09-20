@@ -44,6 +44,13 @@
                 placeholder="{{ 'anime_list.search_placeholder'|trans }}"
                 aria-label="{{ 'anime_list.search_placeholder'|trans }}"
             >
+            <button
+                type="button"
+                class="anime-list__filters-toggle"
+                id="anime-list-filters-toggle"
+                aria-expanded="true"
+                aria-controls="anime-list-filters"
+            >{{ 'anime_list.filters_toggle_button'|trans }}<span class="anime-list__filters-count" id="anime-list-filters-count" hidden></span></button>
         </div>
 
         <div class="anime-list__sort" id="anime-list-sort" role="group" aria-label="{{ 'anime_list.sort_label'|trans }}">
@@ -67,13 +74,43 @@
             >↓</button>
         </div>
 
-        <div class="anime-list__grid" id="anime-list-grid"></div>
+        <div class="anime-list__layout">
+            <div class="anime-list__main">
+                <div class="anime-list__chips sticky-top" id="anime-list-chips">
+                    <ul class="anime-list__chip-list" id="anime-list-chip-list"></ul>
+                    <span class="anime-list__chips-shown" id="anime-list-chips-shown"></span>
+                    <button type="button" class="anime-list__chips-reset" id="anime-list-chips-reset" disabled>{{ 'anime_list.filter_reset_all_button'|trans }}</button>
+                </div>
 
-        <p class="anime-list__empty" id="anime-list-empty" hidden>{{ 'anime_list.empty'|trans }}</p>
-        <p class="anime-list__error" id="anime-list-error" hidden>{{ 'anime_list.error'|trans }}</p>
+                <div class="anime-list__grid" id="anime-list-grid"></div>
 
-        <nav class="anime-list__pagination" id="anime-list-pagination" hidden></nav>
-        <div class="anime-list__sentinel" id="anime-list-sentinel" hidden></div>
+                <p class="anime-list__empty" id="anime-list-empty" hidden>{{ 'anime_list.empty'|trans }}</p>
+                <p class="anime-list__error" id="anime-list-error" hidden>{{ 'anime_list.error'|trans }}</p>
+
+                <nav class="anime-list__pagination" id="anime-list-pagination" hidden></nav>
+                <div class="anime-list__sentinel" id="anime-list-sentinel" hidden></div>
+            </div>
+
+            <aside class="anime-list__filters" id="anime-list-filters" aria-label="{{ 'anime_list.filters_toggle_button'|trans }}">
+                <div class="anime-list__filter-sections" id="anime-list-filter-sections">
+                    {% for section in ['watch_status', 'type', 'date_premiere', 'user_rating', 'labels', 'genres', 'themes', 'studios'] %}
+                        <section class="anime-list__filter-section" data-filter-section="{{ section }}">
+                            <button type="button" class="anime-list__filter-section-toggle" aria-expanded="true">
+                                <span class="anime-list__filter-section-chevron">▾</span>
+                                {{ ('anime_list.filter_section_' ~ section)|trans }}
+                            </button>
+                            <div class="anime-list__filter-section-body">
+                                <p class="anime-list__filter-section-empty" hidden>{{ 'anime_list.filter_section_empty'|trans }}</p>
+                                <ul class="anime-list__filter-values"></ul>
+                            </div>
+                        </section>
+                    {% endfor %}
+                </div>
+                <div class="anime-list__filter-apply-bar">
+                    <button type="button" class="anime-list__filter-apply-button" id="anime-list-filter-apply" disabled>{{ 'anime_list.filter_apply_button'|trans }}</button>
+                </div>
+            </aside>
+        </div>
     </main>
 {% endblock %}
 
