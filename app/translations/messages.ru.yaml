@@ -348,6 +348,9 @@ catalog_stage:
     error_unsafe_entry: 'Архив каталога «%path%» содержит небезопасный путь записи «%entry%».'
     success: 'Архив каталога распакован в %stagingDir% (аниме: %animeCount%, медиафайлов: %mediaFileCount%).'
 
+queue_purge:
+    success: 'Очередь сообщений очищена (удалено: %count%).'
+
 anime_list:
     title: Список — AnimeDB
     empty: Список пуст.

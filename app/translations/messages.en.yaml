@@ -348,6 +348,9 @@ catalog_stage:
     error_unsafe_entry: 'Catalog archive "%path%" contains an unsafe entry path "%entry%".'
     success: 'Catalog archive staged at %stagingDir% (%animeCount% anime, %mediaFileCount% media files).'
 
+queue_purge:
+    success: 'Queue purged (deleted: %count%).'
+
 anime_list:
     title: List — AnimeDB
     empty: The list is empty.
