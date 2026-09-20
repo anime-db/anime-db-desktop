@@ -27,8 +27,15 @@ declare(strict_types=1);
 
 namespace App\Controller\Settings;
 
+use App\Service\Import\StagedImportService;
+use Symfony\Component\HttpFoundation\RedirectResponse;
+use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\Routing\Attribute\Route;
+use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
+use Symfony\Component\Security\Csrf\CsrfToken;
+use Symfony\Component\Security\Csrf\CsrfTokenManagerInterface;
 use Twig\Environment;
 
 /**
@@ -40,16 +47,45 @@ use Twig\Environment;
  * endpoint on this controller — the export itself runs as a separate `bin/console
  * app:catalog:export` process (native/supervisor/php-command.js), so there is nothing for a
  * synchronous HTTP request here to trigger or wait on.
+ *
+ * The pending-import banner (issue #671) is a plain HTTP GET/POST pair instead, unlike the
+ * export/import sections above: reading the staging marker and removing the staging directory
+ * are both synchronous filesystem operations with nothing to poll over /ws, so a `Response`
+ * with the same PRG shape {@see \App\Controller\SettingsController} uses for its own settings
+ * actions is all this needs.
  */
 final class BackupController
 {
-    public function __construct(private readonly Environment $twig)
-    {
+    public function __construct(
+        private readonly Environment $twig,
+        private readonly StagedImportService $stagedImportService,
+        private readonly CsrfTokenManagerInterface $csrfTokenManager,
+        private readonly UrlGeneratorInterface $urlGenerator,
+    ) {
     }
 
     #[Route('/settings/backup', name: 'settings_backup_index', methods: ['GET'])]
     public function index(): Response
     {
-        return new Response($this->twig->render('settings/backup/index.html.twig'));
+        return new Response($this->twig->render('settings/backup/index.html.twig', [
+            'stagedImport' => $this->stagedImportService->readMarker(),
+        ]));
+    }
+
+    /**
+     * Removes `import-staging/` entirely (acceptance criterion 5) — the next app start then has
+     * nothing staged to look at, same as if the archive had never been prepared.
+     */
+    #[Route('/settings/backup/import/cancel', name: 'settings_backup_import_cancel', methods: ['POST'])]
+    public function cancelImport(Request $request): RedirectResponse
+    {
+        $token = new CsrfToken('settings_backup_import_cancel', (string) $request->request->get('_token'));
+        if (!$this->csrfTokenManager->isTokenValid($token)) {
+            throw new BadRequestHttpException('Invalid CSRF token.');
+        }
+
+        $this->stagedImportService->cancel();
+
+        return new RedirectResponse($this->urlGenerator->generate('settings_backup_index'), Response::HTTP_SEE_OTHER);
     }
 }

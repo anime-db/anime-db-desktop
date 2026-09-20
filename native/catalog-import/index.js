@@ -48,6 +48,13 @@ const TIMEOUT_MS = 30 * 60 * 1000;
  * `*.failed` event of its own, so this handler's return value is the only signal a failure
  * reached the page at all, not just a fallback for one that missed a WS event.
  *
+ * A successful stage triggers the app's own restart (issue #671) rather than waiting for the
+ * user to close the window: the window-close handler only hides to tray
+ * (native/lifecycle/index.js), so without this the user could keep working against the old
+ * catalog for however long the window stays open. `require('../lifecycle')` is deliberately
+ * lazy — lifecycle/index.js requires this module before it assigns its own module.exports, so a
+ * top-level require here would capture that early, still-empty export object.
+ *
  * @param {import('electron').IpcMainInvokeEvent} _event
  * @param {string} archivePath
  * @returns {Promise<{ ok: boolean, code: number | null }>}
@@ -59,6 +66,10 @@ async function startImport(_event, archivePath) {
     }
 
     const { code } = await phpCommand.run(COMMAND, [archivePath], context, TIMEOUT_MS, { rejectOnNonZero: false });
+
+    if (code === 0) {
+        require('../lifecycle').relaunch();
+    }
 
     return { ok: code === 0, code };
 }

@@ -309,6 +309,8 @@ settings_backup:
     title: Catalog backup — Settings — AnimeDB
     heading: Catalog backup
     unavailable_outside_app: This action is only available inside the AnimeDB app.
+    staged_import_banner: 'The archive "%name%" was staged for import on %date% and will be applied on the next app start.'
+    staged_import_cancel_button: Cancel staged import
     export_heading: Export
     description: Saves a copy of the catalog (database and covers) as a single file in the folder you choose. App and plugin settings, including the proxy password and access tokens, are not included.
     destination_label: Destination folder
