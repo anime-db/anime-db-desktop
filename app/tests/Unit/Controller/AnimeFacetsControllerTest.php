@@ -66,6 +66,8 @@ final class AnimeFacetsControllerTest extends TestCase
     private AnimeListController $controller;
     private Studio $sunrise;
     private Studio $toei;
+    private Label $favorite;
+    private Label $sequel;
 
     /** @var array<string, int> anime title => id */
     private array $animeIds = [];
@@ -99,18 +101,20 @@ final class AnimeFacetsControllerTest extends TestCase
         $this->sunrise->rename('Sunrise');
         $this->toei = new Studio();
         $this->toei->rename('Toei');
-        $favorite = new Label('favorite');
+        $this->favorite = new Label('favorite');
+        $this->sequel = new Label('sequel');
 
         $this->entityManager->persist($this->sunrise);
         $this->entityManager->persist($this->toei);
-        $this->entityManager->persist($favorite);
+        $this->entityManager->persist($this->favorite);
+        $this->entityManager->persist($this->sequel);
 
         $tvAction = new TvAnime();
         $tvAction->setTitle('TV Action')
             ->setWatchStatus(WatchStatus::Watching)
             ->setUserRating(new Rating(5))
             ->setDatePremiere(new \DateTimeImmutable('2015-03-01'));
-        $tvAction->addGenre(GenreCode::Action)->addStudio($this->sunrise);
+        $tvAction->addGenre(GenreCode::Action)->addTheme(ThemeCode::Isekai)->addStudio($this->sunrise);
 
         $tvActionComedy = new TvAnime();
         $tvActionComedy->setTitle('TV Action Comedy')
@@ -118,14 +122,14 @@ final class AnimeFacetsControllerTest extends TestCase
             ->setUserRating(new Rating(4))
             ->setDatePremiere(new \DateTimeImmutable('2015-08-01'));
         $tvActionComedy->addGenre(GenreCode::Action)->addGenre(GenreCode::Comedy)
-            ->addStudio($this->sunrise)->addLabel($favorite);
+            ->addStudio($this->sunrise)->addLabel($this->favorite);
 
         $movieComedy = new MovieAnime();
         $movieComedy->setTitle('Movie Comedy')
             ->setWatchStatus(WatchStatus::Watching)
             ->setUserRating(new Rating(3))
             ->setDatePremiere(new \DateTimeImmutable('2020-05-01'));
-        $movieComedy->addGenre(GenreCode::Comedy)->addStudio($this->toei);
+        $movieComedy->addGenre(GenreCode::Comedy)->addStudio($this->toei)->addLabel($this->sequel);
 
         // No rating, premiered before every other fixture (1990s bucket).
         $tvDrama = new TvAnime();
@@ -249,6 +253,51 @@ final class AnimeFacetsControllerTest extends TestCase
         $data = $this->facetsFor();
 
         $this->assertSame(1, self::bucketCount($data['themes'], 'value', 'mecha'));
+    }
+
+    public function testThemeFacetIgnoresItsOwnSelection(): void
+    {
+        // "TV Action" carries Isekai but not Mecha. If the mecha selection leaked into the
+        // theme facet's own base query (i.e. withoutThemes() were skipped), the base rows
+        // would already be narrowed to mecha-only anime and the isekai bucket would vanish.
+        $data = $this->facetsFor(['themes' => [ThemeCode::Mecha->value]]);
+
+        $this->assertSame(1, self::bucketCount($data['themes'], 'value', 'mecha'));
+        $this->assertSame(1, self::bucketCount($data['themes'], 'value', 'isekai'));
+    }
+
+    public function testLabelFacetIgnoresItsOwnSelection(): void
+    {
+        // "Movie Comedy" carries the "sequel" label but not "favorite". If the favorite
+        // selection leaked into the label facet's own base query, "Movie Comedy" would
+        // already be filtered out and the "sequel" bucket would vanish.
+        $data = $this->facetsFor(['labels' => [$this->favorite->id]]);
+
+        $this->assertSame(1, self::bucketCount($data['labels'], 'id', (int) $this->favorite->id));
+        $this->assertSame(1, self::bucketCount($data['labels'], 'id', (int) $this->sequel->id));
+    }
+
+    public function testUserRatingFacetIgnoresItsOwnNoneSelection(): void
+    {
+        // Selecting the "none" bucket alone must not narrow the base query the other rating
+        // buckets are counted against, or every rated anime would drop out of the facet.
+        $data = $this->facetsFor(['user_rating_none' => '1']);
+
+        $this->assertSame(1, self::bucketCount($data['user_rating'], 'value', '5'));
+        $this->assertSame(1, self::bucketCount($data['user_rating'], 'value', '4'));
+        $this->assertSame(1, self::bucketCount($data['user_rating'], 'value', '3'));
+        $this->assertSame(1, self::bucketCount($data['user_rating'], 'value', '2'));
+        $this->assertSame(1, self::bucketCount($data['user_rating'], 'value', 'none'));
+    }
+
+    public function testDatePremiereFacetIgnoresItsOwnNoneSelection(): void
+    {
+        $data = $this->facetsFor(['date_premiere_none' => '1']);
+
+        $this->assertSame(2, self::bucketCount($data['date_premiere_decade'], 'value', '2010s'));
+        $this->assertSame(1, self::bucketCount($data['date_premiere_decade'], 'value', '2020s'));
+        $this->assertSame(1, self::bucketCount($data['date_premiere_decade'], 'value', '1990s'));
+        $this->assertSame(1, self::bucketCount($data['date_premiere_decade'], 'value', 'none'));
     }
 
     public function testValuesAbsentFromTheCatalogAreNotReturned(): void
