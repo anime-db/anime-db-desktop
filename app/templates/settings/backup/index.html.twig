@@ -28,6 +28,16 @@
 
         <p id="settings-backup-unavailable" class="alert alert-warning" hidden>{{ 'settings_backup.unavailable_outside_app'|trans }}</p>
 
+        {% if stagedImport %}
+            <div id="settings-backup-staged-import-banner" class="alert alert-info d-flex justify-content-between align-items-center gap-3">
+                <span>{{ 'settings_backup.staged_import_banner'|trans({'%date%': stagedImport.stagedAt|date('Y-m-d H:i'), '%name%': stagedImport.sourceArchive}) }}</span>
+                <form method="post" action="{{ path('settings_backup_import_cancel') }}" class="m-0">
+                    <input type="hidden" name="_token" value="{{ csrf_token('settings_backup_import_cancel') }}">
+                    <button type="submit" class="btn btn-outline-danger text-nowrap">{{ 'settings_backup.staged_import_cancel_button'|trans }}</button>
+                </form>
+            </div>
+        {% endif %}
+
         <section id="settings-backup-export-section">
             <h2>{{ 'settings_backup.export_heading'|trans }}</h2>
             <p class="text-body-secondary">{{ 'settings_backup.description'|trans }}</p>
