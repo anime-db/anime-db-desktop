@@ -290,6 +290,19 @@ final class AnimeFacetsControllerTest extends TestCase
         $this->assertSame(1, self::bucketCount($data['user_rating'], 'value', 'none'));
     }
 
+    public function testUserRatingFacetIgnoresItsOwnValueSelection(): void
+    {
+        // Selecting a rating value alone must not narrow the base query the other rating
+        // buckets are counted against, or the facet would collapse to just the selection.
+        $data = $this->facetsFor(['user_rating' => ['5']]);
+
+        $this->assertSame(1, self::bucketCount($data['user_rating'], 'value', '5'));
+        $this->assertSame(1, self::bucketCount($data['user_rating'], 'value', '4'));
+        $this->assertSame(1, self::bucketCount($data['user_rating'], 'value', '3'));
+        $this->assertSame(1, self::bucketCount($data['user_rating'], 'value', '2'));
+        $this->assertSame(1, self::bucketCount($data['user_rating'], 'value', 'none'));
+    }
+
     public function testDatePremiereFacetIgnoresItsOwnNoneSelection(): void
     {
         $data = $this->facetsFor(['date_premiere_none' => '1']);
