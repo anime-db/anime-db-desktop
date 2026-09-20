@@ -44,13 +44,28 @@ use Symfony\Contracts\Translation\TranslatorInterface;
  * start. Never touches the live database.
  *
  * Unlike {@see CatalogExportCommand}, whose output is plain English (nothing reads it besides a
- * developer running it by hand), this command's messages go through `trans()`: issue #669 asks
- * for translated `catalog_stage.*` keys specifically, since a later task may surface this
- * command's outcome to the user directly.
+ * developer running it by hand), this command's messages go through `trans()`: issue #669 asked
+ * for translated `catalog_stage.*` keys specifically, since the /settings/backup import section
+ * (issue #670, native/catalog-import/index.js) surfaces this command's outcome to the user
+ * directly, the same way native/catalog-export/index.js already does for
+ * {@see CatalogExportCommand}.
  */
 #[AsCommand(name: 'app:catalog:stage', description: 'Validate and unpack a catalog export archive into the import staging directory')]
 final class CatalogStageCommand extends Command
 {
+    /**
+     * One exit code per {@see InvalidCatalogArchiveException::REASON_*}, same convention as
+     * {@see CatalogExportCommand::EXIT_INSUFFICIENT_SPACE} — the /settings/backup import section
+     * (issue #670) reads this exit code back from native/catalog-import/index.js to show a
+     * specific, translated failure message instead of a generic one, without having to parse
+     * this command's already-translated, locale-dependent output.
+     */
+    private const int EXIT_UNREADABLE = 2;
+    private const int EXIT_MISSING_MANIFEST = 3;
+    private const int EXIT_UNSUPPORTED_FORMAT_VERSION = 4;
+    private const int EXIT_MISSING_DATABASE = 5;
+    private const int EXIT_UNSAFE_ENTRY = 6;
+
     public function __construct(
         private readonly CatalogStageService $stageService,
         private readonly TranslatorInterface $translator,
@@ -75,7 +90,7 @@ final class CatalogStageCommand extends Command
         } catch (InvalidCatalogArchiveException $exception) {
             $io->error($this->translator->trans('catalog_stage.error_'.$exception->reasonKey, $exception->params));
 
-            return Command::FAILURE;
+            return $this->exitCodeForReason($exception->reasonKey);
         }
 
         $io->success($this->translator->trans('catalog_stage.success', [
@@ -85,5 +100,17 @@ final class CatalogStageCommand extends Command
         ]));
 
         return Command::SUCCESS;
+    }
+
+    private function exitCodeForReason(string $reasonKey): int
+    {
+        return match ($reasonKey) {
+            InvalidCatalogArchiveException::REASON_UNREADABLE => self::EXIT_UNREADABLE,
+            InvalidCatalogArchiveException::REASON_MISSING_MANIFEST => self::EXIT_MISSING_MANIFEST,
+            InvalidCatalogArchiveException::REASON_UNSUPPORTED_FORMAT_VERSION => self::EXIT_UNSUPPORTED_FORMAT_VERSION,
+            InvalidCatalogArchiveException::REASON_MISSING_DATABASE => self::EXIT_MISSING_DATABASE,
+            InvalidCatalogArchiveException::REASON_UNSAFE_ENTRY => self::EXIT_UNSAFE_ENTRY,
+            default => Command::FAILURE,
+        };
     }
 }

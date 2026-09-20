@@ -30,18 +30,33 @@
 function setUpDom() {
     document.body.innerHTML = `
         <p id="settings-backup-unavailable" hidden></p>
-        <div id="settings-backup-form">
-            <input type="text" id="settings-backup-path">
-            <button type="button" id="settings-backup-pick-folder"></button>
-            <button type="button" id="settings-backup-start"></button>
-            <button type="button" id="settings-backup-cancel" hidden></button>
-            <div id="settings-backup-progress" hidden>
-                <div class="progress-bar" id="settings-backup-progress-bar" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
-                <span id="settings-backup-progress-text"></span>
+        <section id="settings-backup-export-section">
+            <div id="settings-backup-form">
+                <input type="text" id="settings-backup-path">
+                <button type="button" id="settings-backup-pick-folder"></button>
+                <button type="button" id="settings-backup-start"></button>
+                <button type="button" id="settings-backup-cancel" hidden></button>
+                <div id="settings-backup-progress" hidden>
+                    <div class="progress-bar" id="settings-backup-progress-bar" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+                    <span id="settings-backup-progress-text"></span>
+                </div>
+                <p id="settings-backup-result" hidden></p>
+                <p id="settings-backup-error" hidden></p>
             </div>
-            <p id="settings-backup-result" hidden></p>
-            <p id="settings-backup-error" hidden></p>
-        </div>
+        </section>
+        <section id="settings-backup-import-section">
+            <div id="settings-import-form">
+                <input type="text" id="settings-import-path">
+                <button type="button" id="settings-import-pick-file"></button>
+                <button type="button" id="settings-import-start"></button>
+                <div id="settings-import-progress" hidden>
+                    <div class="progress-bar" id="settings-import-progress-bar" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+                    <span id="settings-import-progress-text"></span>
+                </div>
+                <p id="settings-import-result" hidden></p>
+                <p id="settings-import-error" hidden></p>
+            </div>
+        </section>
     `;
 }
 
@@ -76,7 +91,11 @@ beforeEach(() => {
     setUpDom();
     MockWebSocket.instances = [];
     global.WebSocket = MockWebSocket;
-    window.animeDb = { catalogExportStart: jest.fn(() => new Promise(() => {})), catalogExportCancel: jest.fn() };
+    window.animeDb = {
+        catalogExportStart: jest.fn(() => new Promise(() => {})),
+        catalogExportCancel: jest.fn(),
+        catalogImportStart: jest.fn(() => new Promise(() => {})),
+    };
     document.documentElement.lang = 'ru';
 });
 
