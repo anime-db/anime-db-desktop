@@ -89,10 +89,6 @@
         }
     }
 
-    function format(template, params) {
-        return Object.keys(params).reduce((text, name) => text.replace(`%${name}%`, String(params[name])), template);
-    }
-
     function setPercent(percent) {
         progressBar.style.width = `${percent}%`;
         progressBar.setAttribute('aria-valuenow', String(percent));
@@ -115,7 +111,7 @@
         setPercent(percent);
 
         const key = data.phase === 'database' ? 'settings_backup.progress_database' : 'settings_backup.progress_media';
-        progressText.textContent = format(await window.AppTranslations.trans(key), {
+        progressText.textContent = await window.AppTranslations.trans(key, {
             current: data.current,
             total: data.total,
         });
@@ -124,7 +120,7 @@
     async function onDone(data) {
         resetControls();
         resultBox.hidden = false;
-        resultBox.textContent = format(await window.AppTranslations.trans('settings_backup.done_text'), { path: data.path });
+        resultBox.textContent = await window.AppTranslations.trans('settings_backup.done_text', { path: data.path });
     }
 
     async function onFailed(data) {
