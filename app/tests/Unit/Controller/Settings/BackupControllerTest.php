@@ -101,9 +101,12 @@ final class BackupControllerTest extends TestCase
         $csrfTokenManager = $this->createStub(CsrfTokenManagerInterface::class);
         $csrfTokenManager->method('isTokenValid')->willReturn(false);
 
-        $this->expectException(BadRequestHttpException::class);
-
-        $this->createController(csrfTokenManager: $csrfTokenManager)->cancelImport(new Request());
+        try {
+            $this->createController(csrfTokenManager: $csrfTokenManager)->cancelImport(new Request());
+            self::fail('Expected BadRequestHttpException.');
+        } catch (BadRequestHttpException) {
+            // expected
+        }
 
         self::assertDirectoryExists($this->importStagingDir);
     }
