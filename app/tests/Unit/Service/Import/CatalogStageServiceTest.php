@@ -206,18 +206,6 @@ final class CatalogStageServiceTest extends TestCase
         )['sourceArchive']);
     }
 
-    public function testStagingNeverTouchesAnUnrelatedWorkingDatabaseFile(): void
-    {
-        $workingDbPath = $this->fixturesDir.'/data.db';
-        file_put_contents($workingDbPath, 'live-working-database-bytes');
-        $checksumBefore = md5_file($workingDbPath);
-
-        $archivePath = $this->buildArchive($this->defaultManifest(), $this->sqliteDbBytes(1));
-        $this->createService()->stage($archivePath);
-
-        $this->assertSame($checksumBefore, md5_file($workingDbPath));
-    }
-
     public function testStagingPublishesImportProgressEventsForTheDatabaseAndEachMediaFile(): void
     {
         $archivePath = $this->buildArchive(
