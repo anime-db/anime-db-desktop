@@ -30,4 +30,5 @@ contextBridge.exposeInMainWorld('animeDb', {
     onNotification: (callback) => ipcRenderer.on('app-notification', (_event, data) => callback(data)),
     catalogExportStart:  (destinationDir) => ipcRenderer.invoke('catalog:export-start', destinationDir),
     catalogExportCancel: () => ipcRenderer.invoke('catalog:export-cancel'),
+    catalogImportStart:  (archivePath) => ipcRenderer.invoke('catalog:import-start', archivePath),
 });

@@ -68,7 +68,7 @@ final class CatalogStageCommandTest extends TestCase
         $this->assertStringContainsString($this->importStagingDir, $tester->getDisplay());
     }
 
-    public function testReturnsFailureAndPrintsTheTranslatedMessageWhenTheArchiveIsInvalid(): void
+    public function testReturnsDistinctExitCodeAndPrintsTheTranslatedMessageForAnUnreadableArchive(): void
     {
         $archivePath = $this->fixturesDir.'/corrupt.zip';
         file_put_contents($archivePath, 'not a zip file');
@@ -76,8 +76,73 @@ final class CatalogStageCommandTest extends TestCase
         $tester = new CommandTester(new CatalogStageCommand($this->createService(), $this->createTranslator()));
         $exitCode = $tester->execute(['archive' => $archivePath]);
 
-        $this->assertSame(Command::FAILURE, $exitCode);
+        $this->assertSame(2, $exitCode);
         $this->assertStringContainsString('Unable to read catalog archive', $tester->getDisplay());
+    }
+
+    public function testReturnsDistinctExitCodeForAnArchiveWithoutAManifest(): void
+    {
+        $archivePath = $this->fixturesDir.'/no-manifest.zip';
+        $zip = new \ZipArchive();
+        $zip->open($archivePath, \ZipArchive::CREATE);
+        $zip->addFromString('data.db', '');
+        $zip->close();
+
+        $tester = new CommandTester(new CatalogStageCommand($this->createService(), $this->createTranslator()));
+        $exitCode = $tester->execute(['archive' => $archivePath]);
+
+        $this->assertSame(3, $exitCode);
+        $this->assertStringContainsString('no valid manifest.json', $tester->getDisplay());
+    }
+
+    public function testReturnsDistinctExitCodeForAnArchiveWithAnUnsupportedFormatVersion(): void
+    {
+        $archivePath = $this->fixturesDir.'/bad-version.zip';
+        $zip = new \ZipArchive();
+        $zip->open($archivePath, \ZipArchive::CREATE);
+        $zip->addFromString('data.db', '');
+        $zip->addFromString('manifest.json', json_encode(['formatVersion' => 99], \JSON_THROW_ON_ERROR));
+        $zip->close();
+
+        $tester = new CommandTester(new CatalogStageCommand($this->createService(), $this->createTranslator()));
+        $exitCode = $tester->execute(['archive' => $archivePath]);
+
+        $this->assertSame(4, $exitCode);
+        $this->assertStringContainsString('unsupported format version', $tester->getDisplay());
+    }
+
+    public function testReturnsDistinctExitCodeForAnArchiveWithoutADatabase(): void
+    {
+        $archivePath = $this->fixturesDir.'/no-database.zip';
+        $zip = new \ZipArchive();
+        $zip->open($archivePath, \ZipArchive::CREATE);
+        $zip->addFromString('manifest.json', json_encode(['formatVersion' => 1], \JSON_THROW_ON_ERROR));
+        $zip->close();
+
+        $tester = new CommandTester(new CatalogStageCommand($this->createService(), $this->createTranslator()));
+        $exitCode = $tester->execute(['archive' => $archivePath]);
+
+        $this->assertSame(5, $exitCode);
+        $this->assertStringContainsString('no data.db', $tester->getDisplay());
+    }
+
+    public function testReturnsDistinctExitCodeForAnArchiveWithAnUnsafeEntryName(): void
+    {
+        $archivePath = $this->fixturesDir.'/unsafe-entry.zip';
+        $zip = new \ZipArchive();
+        $zip->open($archivePath, \ZipArchive::CREATE);
+        $zip->addFromString('data.db', '');
+        $zip->addFromString('manifest.json', json_encode(['formatVersion' => 1], \JSON_THROW_ON_ERROR));
+        $zip->addFromString('../escaped.txt', 'zip-slip payload');
+        $zip->close();
+
+        $tester = new CommandTester(new CatalogStageCommand($this->createService(), $this->createTranslator()));
+        $exitCode = $tester->execute(['archive' => $archivePath]);
+
+        $this->assertSame(6, $exitCode);
+        $this->assertStringContainsString('unsafe entry path', $tester->getDisplay());
+
+        @unlink(\dirname($this->importStagingDir).'/escaped.txt');
     }
 
     private function buildValidArchive(): string

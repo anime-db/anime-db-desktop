@@ -306,10 +306,11 @@ settings_proxy:
     incoming_connections_socks5_hint: Incoming connections do not work through a SOCKS5 proxy regardless of firewall rules, so enabling is unavailable. An already-enabled setting can still be turned off at any time.
 
 settings_backup:
-    title: Catalog export — Settings — AnimeDB
-    heading: Catalog export
+    title: Catalog backup — Settings — AnimeDB
+    heading: Catalog backup
+    unavailable_outside_app: This action is only available inside the AnimeDB app.
+    export_heading: Export
     description: Saves a copy of the catalog (database and covers) as a single file in the folder you choose. App and plugin settings, including the proxy password and access tokens, are not included.
-    unavailable_outside_app: Export is only available inside the AnimeDB app.
     destination_label: Destination folder
     pick_folder_button: Choose folder
     start_button: Start export
@@ -320,6 +321,22 @@ settings_backup:
     cancelled_text: Export cancelled.
     error_insufficient_space: Not enough free space on the selected volume.
     error_generic: Failed to export the catalog.
+    import_heading: Import
+    import_description: Prepares a previously exported archive for import. The archive is validated and unpacked now; continuing replaces the current catalog.
+    import_path_label: Archive file
+    import_pick_button: Choose archive
+    import_file_filter_name: AnimeDB catalog archive
+    import_start_button: Start import
+    import_confirm_text: 'Importing "%path%" will replace the current catalog. Continue?'
+    import_progress_database: 'Preparing database: %current%/%total%'
+    import_progress_media: 'Unpacking media: %current%/%total%'
+    import_done_text: The catalog archive has been accepted for import.
+    import_error_unreadable: 'The selected file "%path%" could not be read as an archive.'
+    import_error_missing_manifest: 'The selected archive "%path%" has no valid manifest and cannot be imported.'
+    import_error_unsupported_format_version: 'The selected archive "%path%" was created by an incompatible app version.'
+    import_error_missing_database: 'The selected archive "%path%" has no catalog database.'
+    import_error_unsafe_entry: 'The selected archive "%path%" contains unsafe file paths and was rejected.'
+    import_error_generic: Failed to stage the catalog import.
 
 catalog_stage:
     error_unreadable: 'Unable to read catalog archive "%path%".'
