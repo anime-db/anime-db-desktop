@@ -29,7 +29,10 @@ namespace App\Service;
 
 use App\Entity\Enum\AnimeType;
 use App\Entity\Enum\GenreCode;
+use App\Entity\Enum\ThemeCode;
 use App\Entity\Enum\WatchStatus;
+use App\Entity\ValueObject\Exception\InvalidRatingException;
+use App\Entity\ValueObject\Rating;
 use App\Repository\AnimeListFilter;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
@@ -47,10 +50,6 @@ final class AnimeListRequestParser
 
     public function parseFilter(Request $request): AnimeListFilter
     {
-        $watchStatus = $this->parseEnumParam($request, 'watch_status', WatchStatus::tryFrom(...));
-
-        $type = $this->parseEnumParam($request, 'type', AnimeType::tryFrom(...));
-
         $country = $this->assertScalarParam($request, 'countries');
         $country = \is_string($country) && $country !== '' ? $country : null;
 
@@ -58,17 +57,21 @@ final class AnimeListRequestParser
         $name = \is_string($name) && $name !== '' ? $name : null;
 
         return new AnimeListFilter(
-            watchStatus: $watchStatus,
-            type: $type,
+            watchStatuses: $this->parseEnumListParam($request, 'watch_status', WatchStatus::tryFrom(...)),
+            types: $this->parseEnumListParam($request, 'type', AnimeType::tryFrom(...)),
             country: $country,
             name: $name,
             genres: $this->parseEnumListParam($request, 'genres', GenreCode::tryFrom(...)),
             studioIds: $this->parseIntListParam($request, 'studios'),
             labelIds: $this->parseIntListParam($request, 'labels'),
+            themes: $this->parseEnumListParam($request, 'themes', ThemeCode::tryFrom(...)),
+            userRatings: $this->parseUserRatingListParam($request, 'user_rating'),
             userRatingFrom: $this->parseIntParam($request, 'user_rating_from'),
             userRatingTo: $this->parseIntParam($request, 'user_rating_to'),
+            userRatingIsNull: $request->query->getBoolean('user_rating_none'),
             datePremiereFrom: $this->parseDateParam($request, 'date_premiere_from'),
             datePremiereTo: $this->parseDateParam($request, 'date_premiere_to'),
+            datePremiereIsNull: $request->query->getBoolean('date_premiere_none'),
             dateEndFrom: $this->parseDateParam($request, 'date_end_from'),
             dateEndTo: $this->parseDateParam($request, 'date_end_to'),
             dateAddFrom: $this->parseDateParam($request, 'date_add_from'),
@@ -97,28 +100,6 @@ final class AnimeListRequestParser
      *
      * @param callable(string): (T|null) $tryFrom
      *
-     * @return T|null
-     */
-    private function parseEnumParam(Request $request, string $name, callable $tryFrom): ?object
-    {
-        $raw = $this->assertScalarParam($request, $name);
-        if ($raw === null || $raw === '') {
-            return null;
-        }
-
-        $value = $tryFrom((string) $raw);
-        if ($value === null) {
-            throw new BadRequestHttpException(\sprintf('"%s" is not a valid value for "%s"', $raw, $name));
-        }
-
-        return $value;
-    }
-
-    /**
-     * @template T of \UnitEnum
-     *
-     * @param callable(string): (T|null) $tryFrom
-     *
      * @return list<T>
      */
     private function parseEnumListParam(Request $request, string $name, callable $tryFrom): array
@@ -130,6 +111,27 @@ final class AnimeListRequestParser
                 throw new BadRequestHttpException(\sprintf('"%s" is not a valid value for "%s[]"', $raw, $name));
             }
             $values[] = $value;
+        }
+
+        return $values;
+    }
+
+    /** @return list<int> */
+    private function parseUserRatingListParam(Request $request, string $name): array
+    {
+        $values = [];
+        foreach ($this->queryList($request, $name) as $raw) {
+            if (!is_numeric($raw)) {
+                throw new BadRequestHttpException(\sprintf('"%s" is not a valid value for "%s[]"', $raw, $name));
+            }
+
+            try {
+                new Rating((int) $raw);
+            } catch (InvalidRatingException) {
+                throw new BadRequestHttpException(\sprintf('"%s" is not a valid value for "%s[]"', $raw, $name));
+            }
+
+            $values[] = (int) $raw;
         }
 
         return $values;

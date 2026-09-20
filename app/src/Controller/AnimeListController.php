@@ -30,6 +30,10 @@ namespace App\Controller;
 use App\Entity\Anime;
 use App\Entity\Label;
 use App\Entity\ValueObject\Exception\InvalidRatingException;
+use App\Repository\AnimeFacetEntityBucket;
+use App\Repository\AnimeFacets;
+use App\Repository\AnimeFacetValueBucket;
+use App\Repository\AnimeListFilter;
 use App\Repository\AnimeRepository;
 use App\Service\AnimeListRequestParser;
 use App\Service\AnimeListSortResolver;
@@ -65,13 +69,7 @@ final class AnimeListController
     #[Route('/anime', methods: ['GET'])]
     public function list(Request $request): JsonResponse
     {
-        $filter = $this->requestParser->parseFilter($request);
-        if ($filter->name !== null) {
-            $ids = $this->searchResolver->tryResolveIds($filter->name);
-            if ($ids !== null) {
-                $filter = $filter->withIds($ids);
-            }
-        }
+        $filter = $this->resolveFilter($request);
 
         $sort = $this->sortResolver->resolve(
             $this->requestParser->parseOptionalString($request, 'sort'),
@@ -93,6 +91,66 @@ final class AnimeListController
             'offset' => $offset,
             'pagination_mode' => $this->settings->getPaginationMode()->value,
         ]);
+    }
+
+    /**
+     * Counters for the eight filter-panel sections (issue #666), accepting the same filter
+     * parameters as GET /anime. Reuses the same $name → Meilisearch id resolution as list()
+     * so a facet count under an active search box narrows to the search result the same way
+     * the list itself does.
+     */
+    #[Route('/anime/facets', methods: ['GET'])]
+    public function facets(Request $request): JsonResponse
+    {
+        $filter = $this->resolveFilter($request);
+
+        try {
+            $facets = $this->animeRepository->facetsByFilter($filter);
+        } catch (InvalidRatingException $e) {
+            throw new BadRequestHttpException($e->getMessage(), $e);
+        }
+
+        return new JsonResponse($this->serializeFacets($facets));
+    }
+
+    private function resolveFilter(Request $request): AnimeListFilter
+    {
+        $filter = $this->requestParser->parseFilter($request);
+        if ($filter->name !== null) {
+            $ids = $this->searchResolver->tryResolveIds($filter->name);
+            if ($ids !== null) {
+                $filter = $filter->withIds($ids);
+            }
+        }
+
+        return $filter;
+    }
+
+    /** @return array<string, mixed> */
+    private function serializeFacets(AnimeFacets $facets): array
+    {
+        return [
+            'watch_status' => array_map($this->serializeValueBucket(...), $facets->watchStatuses),
+            'type' => array_map($this->serializeValueBucket(...), $facets->types),
+            'date_premiere_decade' => array_map($this->serializeValueBucket(...), $facets->datePremiereDecades),
+            'user_rating' => array_map($this->serializeValueBucket(...), $facets->userRatings),
+            'labels' => array_map($this->serializeEntityBucket(...), $facets->labels),
+            'genres' => array_map($this->serializeValueBucket(...), $facets->genres),
+            'themes' => array_map($this->serializeValueBucket(...), $facets->themes),
+            'studios' => array_map($this->serializeEntityBucket(...), $facets->studios),
+        ];
+    }
+
+    /** @return array{value: string, count: int} */
+    private function serializeValueBucket(AnimeFacetValueBucket $bucket): array
+    {
+        return ['value' => $bucket->value, 'count' => $bucket->count];
+    }
+
+    /** @return array{id: int, name: string, count: int} */
+    private function serializeEntityBucket(AnimeFacetEntityBucket $bucket): array
+    {
+        return ['id' => $bucket->id, 'name' => $bucket->name, 'count' => $bucket->count];
     }
 
     /** @return array<string, mixed> */
