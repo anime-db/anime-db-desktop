@@ -126,9 +126,16 @@
         return card;
     }
 
-    function renderCards(items, replace, catalogue) {
+    function renderCards(items, replace, offset, catalogue) {
         if (replace) {
             grid.replaceChildren();
+        }
+        if (replace && offset === 0) {
+            // The grid collapsing to a shorter height would otherwise leave the window scroll
+            // position wherever the browser clamps it, not at the top of the new list. Gated on
+            // offset === 0 (not just replace) so a classic-pagination page jump or a same-page
+            // requery (e.g. a column-count change) does not also throw the scroll to the top.
+            window.scrollTo(0, 0);
         }
         for (const anime of items) {
             grid.appendChild(buildCard(anime, catalogue));
@@ -290,7 +297,7 @@
             return;
         }
 
-        renderCards(data.items, replace, catalogue);
+        renderCards(data.items, replace, offset, catalogue);
         loadedCount = replace ? data.items.length : loadedCount + data.items.length;
         paginationMode = data.pagination_mode;
 

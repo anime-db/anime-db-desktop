@@ -1,10 +1,14 @@
+<?php
+
 /**
  * AnimeDb package.
  *
  * @author    Peter Gribanov <info@peter-gribanov.ru>
  * @copyright Copyright (c) 2026, Peter Gribanov
  * @license   https://www.gnu.org/licenses/gpl-3.0.html GPL-3.0-or-later
- *
+ */
+
+/*
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
@@ -19,15 +23,23 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-'use strict';
+declare(strict_types=1);
 
-const { contextBridge, ipcRenderer } = require('electron');
+namespace App\Service\Export;
 
-contextBridge.exposeInMainWorld('animeDb', {
-    openPath:   (targetPath) => ipcRenderer.invoke('shell:open-path', targetPath),
-    pickFolder: () => ipcRenderer.invoke('dialog:pick-folder'),
-    pickFile:   (filters) => ipcRenderer.invoke('dialog:pick-file', filters),
-    onNotification: (callback) => ipcRenderer.on('app-notification', (_event, data) => callback(data)),
-    catalogExportStart:  (destinationDir) => ipcRenderer.invoke('catalog:export-start', destinationDir),
-    catalogExportCancel: () => ipcRenderer.invoke('catalog:export-cancel'),
-});
+/**
+ * Outcome of {@see CatalogExportService::export()} — the finished archive's path plus the counts
+ * printed by {@see \App\Command\CatalogExportCommand}. `skippedMediaFiles` is not an error count:
+ * see the class docblock on {@see CatalogExportService} for why a skipped file does not fail the
+ * export (issue #657).
+ */
+final class CatalogExportResult
+{
+    public function __construct(
+        public readonly string $archivePath,
+        public readonly int $animeCount,
+        public readonly int $mediaFileCount,
+        public readonly int $skippedMediaFiles,
+    ) {
+    }
+}

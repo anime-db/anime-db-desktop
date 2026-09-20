@@ -41,6 +41,7 @@ use App\Service\Plugin\Exception\PluginInstallException;
 use App\Service\Plugin\Exception\PluginNotInstalledException;
 use App\Service\Plugin\Exception\PluginSyntaxErrorException;
 use App\Service\WsPublisher;
+use App\Service\Zip\SafeZipEntryNames;
 use Composer\Semver\Semver;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
@@ -473,27 +474,17 @@ final class ZipPluginInstaller
     /**
      * Defence in depth against zip-slip: an untrusted archive (this is a custom-upload path, not
      * only the CI-packaged marketplace flow from issue #220) could contain entry names with `..`
-     * segments or absolute paths designed to write outside the staging directory. Modern
-     * {@see \ZipArchive::extractTo()} already rejects those, but that behaviour is not part of
-     * its documented contract, so entry names are validated explicitly before extraction rather
-     * than relying on it.
+     * segments or absolute paths designed to write outside the staging directory. The actual
+     * check is {@see SafeZipEntryNames::findUnsafe()}, shared with
+     * {@see \App\Service\Import\CatalogStageService} (issue #669).
      *
      * @throws PluginInstallException
      */
     private function assertSafeEntryNames(\ZipArchive $zip, string $zipPath): void
     {
-        for ($i = 0; $i < $zip->numFiles; ++$i) {
-            $name = $zip->getNameIndex($i);
-            if ($name === false) {
-                continue;
-            }
-
-            $isAbsolute = str_starts_with($name, '/') || str_starts_with($name, '\\') || preg_match('#^[A-Za-z]:#', $name) === 1;
-            $hasParentTraversal = \in_array('..', explode('/', str_replace('\\', '/', $name)), true);
-
-            if ($isAbsolute || $hasParentTraversal) {
-                throw new PluginInstallException(\sprintf('ZIP archive "%s" contains an unsafe entry path "%s".', $zipPath, $name));
-            }
+        $unsafeEntry = SafeZipEntryNames::findUnsafe($zip);
+        if ($unsafeEntry !== null) {
+            throw new PluginInstallException(\sprintf('ZIP archive "%s" contains an unsafe entry path "%s".', $zipPath, $unsafeEntry));
         }
     }
 
