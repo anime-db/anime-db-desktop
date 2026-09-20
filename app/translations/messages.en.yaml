@@ -327,7 +327,7 @@ settings_backup:
     import_pick_button: Choose archive
     import_file_filter_name: AnimeDB catalog archive
     import_start_button: Start import
-    import_confirm_text: 'The archive "%path%" will be validated and staged for import. Continue?'
+    import_confirm_text: 'The archive "%path%" will be staged for import, and the current catalog will be replaced on the next app start. Continue?'
     import_progress_database: 'Preparing database: %current%/%total%'
     import_progress_media: 'Unpacking media: %current%/%total%'
     import_done_text: The catalog archive has been accepted for import.

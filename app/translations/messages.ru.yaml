@@ -327,7 +327,7 @@ settings_backup:
     import_pick_button: Выбрать архив
     import_file_filter_name: Архив каталога AnimeDB
     import_start_button: Начать импорт
-    import_confirm_text: 'Архив «%path%» будет проверен и подготовлен к импорту. Продолжить?'
+    import_confirm_text: 'Архив «%path%» будет подготовлен к импорту, а при следующем запуске приложения текущий каталог будет заменён. Продолжить?'
     import_progress_database: 'Подготовка базы данных: %current%/%total%'
     import_progress_media: 'Распаковка медиафайлов: %current%/%total%'
     import_done_text: Архив каталога принят для импорта.
