@@ -556,7 +556,19 @@ class AnimeRepository
                 ->setParameter('themes', $filter->themes);
         }
 
-        if ($filter->userRatingIsNull) {
+        if ($filter->userRatings !== []) {
+            // OR-matched checkbox selection (issue #667 groundwork): "none" combines with the
+            // selected ratings via OR rather than excluding them, since both can be checked
+            // at once on the panel.
+            $conditions = ['a.userRating IN (:userRatings)'];
+            $qb->setParameter('userRatings', $filter->userRatings);
+
+            if ($filter->userRatingIsNull) {
+                $conditions[] = 'a.userRating IS NULL';
+            }
+
+            $qb->andWhere($qb->expr()->orX(...$conditions));
+        } elseif ($filter->userRatingIsNull) {
             $qb->andWhere('a.userRating IS NULL');
         } else {
             if ($filter->userRatingFrom !== null) {

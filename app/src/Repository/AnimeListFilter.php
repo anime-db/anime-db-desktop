@@ -55,6 +55,10 @@ final class AnimeListFilter
      * @param list<int>         $studioIds     OR-matched: any of the given studios is enough
      * @param list<int>         $labelIds      OR-matched: any of the given labels is enough
      * @param list<ThemeCode>   $themes        OR-matched: any of the given themes is enough
+     * @param list<int>         $userRatings   OR-matched: any of the given ratings (1-5) is
+     *                                         enough; combines with $userRatingIsNull via OR
+     *                                         rather than excluding it — see
+     *                                         AnimeRepository::createFilteredQueryBuilder()
      * @param list<int>|null    $ids           when set (issue #199), restricts the result to
      *                                         exactly these ids and takes precedence over
      *                                         $name — see AnimeRepository::createFilteredQueryBuilder()
@@ -68,6 +72,7 @@ final class AnimeListFilter
         public readonly array $studioIds = [],
         public readonly array $labelIds = [],
         public readonly array $themes = [],
+        public readonly array $userRatings = [],
         public readonly ?int $userRatingFrom = null,
         public readonly ?int $userRatingTo = null,
         public readonly bool $userRatingIsNull = false,
@@ -122,7 +127,12 @@ final class AnimeListFilter
 
     public function withoutUserRating(): self
     {
-        return $this->with(['userRatingFrom' => null, 'userRatingTo' => null, 'userRatingIsNull' => false]);
+        return $this->with([
+            'userRatings' => [],
+            'userRatingFrom' => null,
+            'userRatingTo' => null,
+            'userRatingIsNull' => false,
+        ]);
     }
 
     public function withoutDatePremiere(): self

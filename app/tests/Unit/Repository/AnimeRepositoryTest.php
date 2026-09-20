@@ -365,6 +365,23 @@ final class AnimeRepositoryTest extends TestCase
         $this->assertEqualsCanonicalizing(['A Comedy Movie', 'Drama Series'], $this->titlesOf($filter));
     }
 
+    public function testFilterByUserRatingsUsesOrSemantics(): void
+    {
+        // "Trigun" (5) and "A Comedy Movie" (3) are selected; "Drama Series" (4) is not.
+        $filter = new AnimeListFilter(userRatings: [5, 3]);
+
+        $this->assertEqualsCanonicalizing(['Trigun', 'A Comedy Movie'], $this->titlesOf($filter));
+    }
+
+    public function testFilterByUserRatingsCombinesWithTheNoneBucketViaOr(): void
+    {
+        // "Planned Show" carries no rating at all; selecting rating 5 plus "none" must keep
+        // both "Trigun" (5) and "Planned Show" (none) rather than the none branch excluding it.
+        $filter = new AnimeListFilter(userRatings: [5], userRatingIsNull: true);
+
+        $this->assertEqualsCanonicalizing(['Trigun', 'Planned Show'], $this->titlesOf($filter));
+    }
+
     public function testFilterByUserRatingIsNullMatchesOnlyUnratedAnime(): void
     {
         // Only "Planned Show" carries no rating in the fixtures.

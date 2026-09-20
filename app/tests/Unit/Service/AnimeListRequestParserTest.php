@@ -146,6 +146,27 @@ final class AnimeListRequestParserTest extends TestCase
         $this->assertTrue($filter->userRatingIsNull);
     }
 
+    public function testParseFilterAcceptsAListOfUserRatings(): void
+    {
+        $filter = $this->parser->parseFilter(new Request(['user_rating' => ['3', '5']]));
+
+        $this->assertSame([3, 5], $filter->userRatings);
+    }
+
+    public function testParseFilterRejectsAUserRatingOutOfRange(): void
+    {
+        $this->expectException(BadRequestHttpException::class);
+
+        $this->parser->parseFilter(new Request(['user_rating' => ['0']]));
+    }
+
+    public function testParseFilterRejectsANonNumericUserRating(): void
+    {
+        $this->expectException(BadRequestHttpException::class);
+
+        $this->parser->parseFilter(new Request(['user_rating' => ['not-a-number']]));
+    }
+
     public function testParseFilterAcceptsDatePremiereNoneFlag(): void
     {
         $filter = $this->parser->parseFilter(new Request(['date_premiere_none' => '1']));

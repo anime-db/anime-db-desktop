@@ -31,6 +31,8 @@ use App\Entity\Enum\AnimeType;
 use App\Entity\Enum\GenreCode;
 use App\Entity\Enum\ThemeCode;
 use App\Entity\Enum\WatchStatus;
+use App\Entity\ValueObject\Exception\InvalidRatingException;
+use App\Entity\ValueObject\Rating;
 use App\Repository\AnimeListFilter;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
@@ -63,6 +65,7 @@ final class AnimeListRequestParser
             studioIds: $this->parseIntListParam($request, 'studios'),
             labelIds: $this->parseIntListParam($request, 'labels'),
             themes: $this->parseEnumListParam($request, 'themes', ThemeCode::tryFrom(...)),
+            userRatings: $this->parseUserRatingListParam($request, 'user_rating'),
             userRatingFrom: $this->parseIntParam($request, 'user_rating_from'),
             userRatingTo: $this->parseIntParam($request, 'user_rating_to'),
             userRatingIsNull: $request->query->getBoolean('user_rating_none'),
@@ -108,6 +111,27 @@ final class AnimeListRequestParser
                 throw new BadRequestHttpException(\sprintf('"%s" is not a valid value for "%s[]"', $raw, $name));
             }
             $values[] = $value;
+        }
+
+        return $values;
+    }
+
+    /** @return list<int> */
+    private function parseUserRatingListParam(Request $request, string $name): array
+    {
+        $values = [];
+        foreach ($this->queryList($request, $name) as $raw) {
+            if (!is_numeric($raw)) {
+                throw new BadRequestHttpException(\sprintf('"%s" is not a valid value for "%s[]"', $raw, $name));
+            }
+
+            try {
+                new Rating((int) $raw);
+            } catch (InvalidRatingException) {
+                throw new BadRequestHttpException(\sprintf('"%s" is not a valid value for "%s[]"', $raw, $name));
+            }
+
+            $values[] = (int) $raw;
         }
 
         return $values;
