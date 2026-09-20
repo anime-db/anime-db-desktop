@@ -92,7 +92,7 @@ final class CatalogStageCommandTest extends TestCase
         $exitCode = $tester->execute(['archive' => $archivePath]);
 
         $this->assertSame(3, $exitCode);
-        $this->assertStringContainsString('no valid manifest.json', $tester->getDisplay());
+        $this->assertStringContainsString('no valid manifest.json', $this->normalizeDisplay($tester));
     }
 
     public function testReturnsDistinctExitCodeForAnArchiveWithAnUnsupportedFormatVersion(): void
@@ -108,7 +108,7 @@ final class CatalogStageCommandTest extends TestCase
         $exitCode = $tester->execute(['archive' => $archivePath]);
 
         $this->assertSame(4, $exitCode);
-        $this->assertStringContainsString('unsupported format version', $tester->getDisplay());
+        $this->assertStringContainsString('unsupported format version', $this->normalizeDisplay($tester));
     }
 
     public function testReturnsDistinctExitCodeForAnArchiveWithoutADatabase(): void
@@ -123,7 +123,7 @@ final class CatalogStageCommandTest extends TestCase
         $exitCode = $tester->execute(['archive' => $archivePath]);
 
         $this->assertSame(5, $exitCode);
-        $this->assertStringContainsString('no data.db', $tester->getDisplay());
+        $this->assertStringContainsString('no data.db', $this->normalizeDisplay($tester));
     }
 
     public function testReturnsDistinctExitCodeForAnArchiveWithAnUnsafeEntryName(): void
@@ -140,9 +140,21 @@ final class CatalogStageCommandTest extends TestCase
         $exitCode = $tester->execute(['archive' => $archivePath]);
 
         $this->assertSame(6, $exitCode);
-        $this->assertStringContainsString('unsafe entry path', $tester->getDisplay());
+        $this->assertStringContainsString('unsafe entry path', $this->normalizeDisplay($tester));
 
         @unlink(\dirname($this->importStagingDir).'/escaped.txt');
+    }
+
+    /**
+     * SymfonyStyle::error() word-wraps to the console width (capped at
+     * {@see \Symfony\Component\Console\Style\SymfonyStyle::MAX_LINE_LENGTH}), which depends on
+     * the runner's terminal and can split an otherwise-fixed phrase across lines. Collapsing
+     * whitespace merges wrapped words back together so assertions on the message text don't
+     * depend on where the console happened to wrap it.
+     */
+    private function normalizeDisplay(CommandTester $tester): string
+    {
+        return (string) preg_replace('/\s+/', ' ', $tester->getDisplay());
     }
 
     private function buildValidArchive(): string
