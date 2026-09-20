@@ -236,6 +236,7 @@ afterEach(() => {
     delete global.ResizeObserver;
     delete global.IntersectionObserver;
     delete window.AppTranslations;
+    window.history.replaceState({}, '', '/');
 });
 
 test('cards render even when the translations catalogue fails to load', async () => {
@@ -740,5 +741,129 @@ test('"reset all" clears applied filters and refetches without touching the chos
     expect(byKind(calls, 'list')).toHaveLength(4);
     const resetQuery = queryParams(byKind(calls, 'list')[3].url);
     expect(resetQuery.sort).toBe('name');
+    expect(resetQuery.direction).toBe('desc');
     expect(resetQuery).not.toHaveProperty('watch_status[]');
+});
+
+test('the filters badge text always equals the number of applied chips', async () => {
+    const calls = mockFetchQueueAll();
+    setUpTranslations();
+
+    loadAnimeListModule();
+    await flushMicrotasks();
+    byKind(calls, 'list')[0].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 0, limit: 6, offset: 0 }));
+    byKind(calls, 'facets')[0].resolve(jsonResponse({
+        watch_status: [{ value: 'watching', count: 5 }],
+        type: [], date_premiere_decade: [], user_rating: [], labels: [], genres: [], themes: [], studios: [],
+    }));
+    byKind(calls, 'total')[0].resolve(jsonResponse({ items: [], total: 5, limit: 1, offset: 0 }));
+    await flushMicrotasks();
+
+    const badge = document.getElementById('anime-list-filters-count');
+    expect(badge.hidden).toBe(true);
+
+    const nameButton = document.querySelector('[data-filter-section="watch_status"] .anime-list__filter-value-name');
+    nameButton.dispatchEvent(new Event('click', { bubbles: true }));
+    await flushMicrotasks();
+
+    expect(badge.textContent).toBe(' · 1');
+    expect(badge.hidden).toBe(false);
+});
+
+test('a ?labels=<id> URL seeds the list request, the chip row and the filters badge', async () => {
+    window.history.replaceState({}, '', '/anime?labels=7');
+    const calls = mockFetchQueueAll();
+    setUpTranslations();
+
+    loadAnimeListModule(); // fires seedFiltersFromUrl() before the first loadPage()/loadFacets()
+    await flushMicrotasks();
+
+    expect(queryParams(byKind(calls, 'list')[0].url)['labels[]']).toBe('7');
+    expect(document.querySelectorAll('.anime-list__chip-label')).toHaveLength(1);
+    expect(document.getElementById('anime-list-filters-count').textContent).toBe(' · 1');
+    expect(document.getElementById('anime-list-filters-count').hidden).toBe(false);
+});
+
+test('clicking a decade in "date premiere" applies a from/to range and a second click replaces it', async () => {
+    const calls = mockFetchQueueAll();
+    setUpTranslations();
+
+    loadAnimeListModule();
+    await flushMicrotasks();
+    byKind(calls, 'list')[0].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 0, limit: 6, offset: 0 }));
+    byKind(calls, 'facets')[0].resolve(jsonResponse({
+        watch_status: [], type: [],
+        date_premiere_decade: [{ value: '2010s', count: 3 }, { value: '2000s', count: 2 }],
+        user_rating: [], labels: [], genres: [], themes: [], studios: [],
+    }));
+    byKind(calls, 'total')[0].resolve(jsonResponse({ items: [], total: 5, limit: 1, offset: 0 }));
+    await flushMicrotasks();
+
+    const rows = document.querySelectorAll('[data-filter-section="date_premiere"] .anime-list__filter-value');
+    expect(rows).toHaveLength(2);
+    rows.forEach((row) => {
+        expect(row.querySelector('.anime-list__filter-checkbox').type).toBe('radio');
+    });
+
+    rows[0].querySelector('.anime-list__filter-value-name').dispatchEvent(new Event('click', { bubbles: true }));
+    await flushMicrotasks();
+
+    expect(byKind(calls, 'list')).toHaveLength(2);
+    expect(queryParams(byKind(calls, 'list')[1].url)).toMatchObject({
+        date_premiere_from: '2010-01-01',
+        date_premiere_to: '2019-12-31',
+    });
+    byKind(calls, 'list')[1].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 0, limit: 6, offset: 0 }));
+    byKind(calls, 'facets')[1].resolve(jsonResponse({
+        watch_status: [], type: [],
+        date_premiere_decade: [{ value: '2010s', count: 3 }, { value: '2000s', count: 2 }],
+        user_rating: [], labels: [], genres: [], themes: [], studios: [],
+    }));
+    await flushMicrotasks();
+
+    // A second decade replaces the first rather than accumulating alongside it (radio semantics).
+    const rowsAfter = document.querySelectorAll('[data-filter-section="date_premiere"] .anime-list__filter-value');
+    rowsAfter[1].querySelector('.anime-list__filter-value-name').dispatchEvent(new Event('click', { bubbles: true }));
+    await flushMicrotasks();
+
+    expect(byKind(calls, 'list')).toHaveLength(3);
+    const secondQuery = queryParams(byKind(calls, 'list')[2].url);
+    expect(secondQuery).toMatchObject({ date_premiere_from: '2000-01-01', date_premiere_to: '2009-12-31' });
+    expect(document.querySelectorAll('.anime-list__chip-label')).toHaveLength(1);
+});
+
+test('applying a filter does not clear the checkbox marks once the following facets response repaints the panel', async () => {
+    const calls = mockFetchQueueAll();
+    setUpTranslations();
+
+    loadAnimeListModule();
+    await flushMicrotasks();
+    byKind(calls, 'list')[0].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 0, limit: 6, offset: 0 }));
+    byKind(calls, 'facets')[0].resolve(jsonResponse({
+        watch_status: [{ value: 'watching', count: 5 }, { value: 'planned', count: 2 }],
+        type: [], date_premiere_decade: [], user_rating: [], labels: [], genres: [], themes: [], studios: [],
+    }));
+    byKind(calls, 'total')[0].resolve(jsonResponse({ items: [], total: 5, limit: 1, offset: 0 }));
+    await flushMicrotasks();
+
+    const rows = document.querySelectorAll('[data-filter-section="watch_status"] .anime-list__filter-value');
+    const watchingCheckbox = rows[0].querySelector('.anime-list__filter-checkbox');
+    const plannedCheckbox = rows[1].querySelector('.anime-list__filter-checkbox');
+    plannedCheckbox.checked = true;
+    plannedCheckbox.dispatchEvent(new Event('change'));
+
+    rows[0].querySelector('.anime-list__filter-value-name').dispatchEvent(new Event('click', { bubbles: true }));
+    await flushMicrotasks();
+
+    byKind(calls, 'list')[1].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 0, limit: 6, offset: 0 }));
+    byKind(calls, 'facets')[1].resolve(jsonResponse({
+        watch_status: [{ value: 'watching', count: 5 }, { value: 'planned', count: 2 }],
+        type: [], date_premiere_decade: [], user_rating: [], labels: [], genres: [], themes: [], studios: [],
+    }));
+    await flushMicrotasks();
+
+    const rowsAfter = document.querySelectorAll('[data-filter-section="watch_status"] .anime-list__filter-value');
+    expect(rowsAfter[0].querySelector('.anime-list__filter-checkbox').checked).toBe(true);
+    expect(rowsAfter[1].querySelector('.anime-list__filter-checkbox').checked).toBe(true);
+    expect(watchingCheckbox.checked).toBe(true);
 });

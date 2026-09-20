@@ -694,8 +694,11 @@
     }
 
     // Reconciles the section's <ul> against the latest bucket list without ever calling
-    // replaceChildren() on it — a full teardown would drop the panel's own scrollTop and any
-    // checked-but-not-yet-applied checkbox elsewhere in the section (issue #666).
+    // replaceChildren() on it — a full teardown would tear down existing row nodes (and any focus
+    // resting on one of them) even though nothing about them changed. Checked-but-not-yet-applied
+    // checkboxes survive either way, since buildValueRow() restores checkbox.checked from
+    // entry.pending; the panel's own scrollTop lives on .anime-list__filter-sections, a container
+    // this function never touches (issue #666).
     function patchValueList(list, entries, sectionKey, inputType, catalogue) {
         const existingByValue = new Map();
         Array.from(list.children).forEach((row) => existingByValue.set(row.dataset.value, row));
