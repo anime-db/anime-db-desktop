@@ -13,6 +13,14 @@ parameters:
     app.media_dir.dev_default: '%kernel.project_dir%/public/media'
     app.media_dir: '%env(default:app.media_dir.dev_default:MEDIA_DIR)%'
 
+    # In production Electron passes IMPORT_STAGING_DIR (see native/paths.js,
+    # native/supervisor/env.js), pointing at %AppData%/import-staging/ — where
+    # App\Service\Import\CatalogStageService (issue #669) unpacks a validated catalog export
+    # archive (data.db, media/) plus its import.json marker, ahead of a later, separate import
+    # step that actually applies it.
+    app.import_staging_dir.dev_default: '%kernel.project_dir%/var/import-staging'
+    app.import_staging_dir: '%env(default:app.import_staging_dir.dev_default:IMPORT_STAGING_DIR)%'
+
     # In production Electron passes CONFIG_PATH (see native/paths.js, native/supervisor/frankenphp.js),
     # pointing at %AppData%/config.json — the same file native/config.js writes appSecret to,
     # and where the user's pagination mode preference (issue #74) lives.
@@ -143,6 +151,7 @@ services:
         bind:
             $projectDir: '%kernel.project_dir%'
             $mediaDir: '%app.media_dir%'
+            $importStagingDir: '%app.import_staging_dir%'
             $configPath: '%app.config_path%'
             $pluginsConfigPath: '%app.plugins_config_path%'
             $pluginsDir: '%app.plugins_dir%'

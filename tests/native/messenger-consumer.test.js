@@ -32,6 +32,7 @@ jest.mock('../../native/paths', () => ({
     getPhpIniPath:         jest.fn(() => '/fake/userData/php.ini'),
     getRuntimeDir:         jest.fn(() => '/fake/userData/var'),
     getMediaDir:           jest.fn(() => '/fake/userData/media'),
+    getImportStagingDir:   jest.fn(() => '/fake/userData/import-staging'),
     getConfigPath:         jest.fn(() => '/fake/userData/config.json'),
     getPluginsConfigPath:  jest.fn(() => '/fake/userData/plugins.json'),
     getPluginsDir:         jest.fn(() => '/fake/userData/plugins'),

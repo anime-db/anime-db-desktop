@@ -31,6 +31,7 @@ jest.mock('../../native/paths', () => ({
     getPhpIniDir:         jest.fn(() => '/fake/userData'),
     getRuntimeDir:        jest.fn(() => '/fake/userData/var'),
     getMediaDir:          jest.fn(() => '/fake/userData/media'),
+    getImportStagingDir:  jest.fn(() => '/fake/userData/import-staging'),
     getConfigPath:        jest.fn(() => '/fake/userData/config.json'),
     getPluginsConfigPath: jest.fn(() => '/fake/userData/plugins.json'),
     getPluginsDir:        jest.fn(() => '/fake/userData/plugins'),
@@ -61,6 +62,7 @@ describe('buildCommonEnv', () => {
         expect(env.QBITTORRENT_URL).toBe('http://127.0.0.1:9999');
         expect(env.OAUTH_CALLBACK_ORIGIN).toBe('http://127.0.0.1:8000');
         expect(env.MEDIA_DIR).toBe('/fake/userData/media');
+        expect(env.IMPORT_STAGING_DIR).toBe('/fake/userData/import-staging');
         expect(env.CONFIG_PATH).toBe('/fake/userData/config.json');
         expect(env.APP_RUNTIME_DIR).toBe('/fake/userData/var');
     });
