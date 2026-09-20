@@ -322,6 +322,7 @@ catalog_stage:
     error_unreadable: 'Не удалось прочитать архив каталога «%path%».'
     error_missing_manifest: 'В архиве каталога «%path%» нет валидного manifest.json.'
     error_unsupported_format_version: 'Архив каталога «%path%» имеет неподдерживаемую версию формата (%formatVersion%).'
+    error_missing_database: 'В архиве каталога «%path%» нет data.db.'
     error_unsafe_entry: 'Архив каталога «%path%» содержит небезопасный путь записи «%entry%».'
     success: 'Архив каталога распакован в %stagingDir% (аниме: %animeCount%, медиафайлов: %mediaFileCount%).'
 

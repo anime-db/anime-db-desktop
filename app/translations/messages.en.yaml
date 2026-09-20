@@ -322,6 +322,7 @@ catalog_stage:
     error_unreadable: 'Unable to read catalog archive "%path%".'
     error_missing_manifest: 'Catalog archive "%path%" has no valid manifest.json.'
     error_unsupported_format_version: 'Catalog archive "%path%" has an unsupported format version (%formatVersion%).'
+    error_missing_database: 'Catalog archive "%path%" has no data.db.'
     error_unsafe_entry: 'Catalog archive "%path%" contains an unsafe entry path "%entry%".'
     success: 'Catalog archive staged at %stagingDir% (%animeCount% anime, %mediaFileCount% media files).'
 

@@ -99,6 +99,20 @@ final class CatalogStageServiceTest extends TestCase
         $this->assertDirectoryDoesNotExist($this->importStagingDir);
     }
 
+    public function testArchiveWithoutDatabaseIsRejectedAndStagingDirIsNotCreated(): void
+    {
+        $archivePath = $this->buildArchive($this->defaultManifest(), null);
+
+        try {
+            $this->createService()->stage($archivePath);
+            $this->fail('Expected InvalidCatalogArchiveException.');
+        } catch (InvalidCatalogArchiveException $exception) {
+            $this->assertSame(InvalidCatalogArchiveException::REASON_MISSING_DATABASE, $exception->reasonKey);
+        }
+
+        $this->assertDirectoryDoesNotExist($this->importStagingDir);
+    }
+
     public function testArchiveWithUnsafeEntryNameIsRejectedAndNothingIsWrittenOutsideStaging(): void
     {
         $archivePath = $this->buildArchive(

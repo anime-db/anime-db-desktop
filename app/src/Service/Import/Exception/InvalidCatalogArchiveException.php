@@ -31,7 +31,7 @@ namespace App\Service\Import\Exception;
  * Thrown by {@see \App\Service\Import\CatalogStageService::stage()} for every way an archive can
  * be rejected before anything is written to the staging directory (issue #669): the archive
  * cannot be opened, has no valid `manifest.json`, declares a `formatVersion` this build does not
- * support, or contains an unsafe entry path.
+ * support, has no `data.db`, or contains an unsafe entry path.
  *
  * `$reasonKey` identifies which of those it was, so {@see \App\Command\CatalogStageCommand} can
  * look up a translated `catalog_stage.error_<reasonKey>` message ({@see self::REASON_*} constants
@@ -43,6 +43,7 @@ final class InvalidCatalogArchiveException extends \RuntimeException
     public const string REASON_UNREADABLE = 'unreadable';
     public const string REASON_MISSING_MANIFEST = 'missing_manifest';
     public const string REASON_UNSUPPORTED_FORMAT_VERSION = 'unsupported_format_version';
+    public const string REASON_MISSING_DATABASE = 'missing_database';
     public const string REASON_UNSAFE_ENTRY = 'unsafe_entry';
 
     /**

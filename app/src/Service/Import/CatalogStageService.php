@@ -43,8 +43,8 @@ use Psr\Log\LoggerInterface;
  * out of scope here — separate, not-yet-built subtasks.
  *
  * Every way the archive can be rejected — unreadable/corrupt ZIP, no valid `manifest.json`, an
- * unsupported `formatVersion`, or an unsafe entry path (zip-slip, checked via the same
- * {@see SafeZipEntryNames::findUnsafe()} guard {@see \App\Service\Plugin\ZipPluginInstaller}
+ * unsupported `formatVersion`, no `data.db`, or an unsafe entry path (zip-slip, checked via the
+ * same {@see SafeZipEntryNames::findUnsafe()} guard {@see \App\Service\Plugin\ZipPluginInstaller}
  * uses) — is checked before {@see self::resetStagingDir()} ever runs, so a rejected archive never
  * touches the staging directory at all. `manifest.json`'s `counts` field is the one exception:
  * a mismatch against what actually got staged is logged, not rejected — it is an informational
@@ -142,7 +142,7 @@ final class CatalogStageService
     private function assertDatabasePresent(\ZipArchive $zip, string $archivePath): void
     {
         if ($zip->locateName('data.db') === false) {
-            throw new InvalidCatalogArchiveException(InvalidCatalogArchiveException::REASON_MISSING_MANIFEST, ['%path%' => $archivePath], \sprintf('Catalog archive "%s" has no data.db.', $archivePath));
+            throw new InvalidCatalogArchiveException(InvalidCatalogArchiveException::REASON_MISSING_DATABASE, ['%path%' => $archivePath], \sprintf('Catalog archive "%s" has no data.db.', $archivePath));
         }
     }
 
