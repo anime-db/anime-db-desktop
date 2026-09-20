@@ -322,12 +322,12 @@ settings_backup:
     error_insufficient_space: Not enough free space on the selected volume.
     error_generic: Failed to export the catalog.
     import_heading: Import
-    import_description: Prepares a previously exported archive for import. The archive is validated and unpacked now; continuing replaces the current catalog.
+    import_description: Prepares a previously exported archive for import. The archive is validated and unpacked now; the current catalog is not replaced yet.
     import_path_label: Archive file
     import_pick_button: Choose archive
     import_file_filter_name: AnimeDB catalog archive
     import_start_button: Start import
-    import_confirm_text: 'Importing "%path%" will replace the current catalog. Continue?'
+    import_confirm_text: 'The archive "%path%" will be validated and staged for import. Continue?'
     import_progress_database: 'Preparing database: %current%/%total%'
     import_progress_media: 'Unpacking media: %current%/%total%'
     import_done_text: The catalog archive has been accepted for import.

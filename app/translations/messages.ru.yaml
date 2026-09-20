@@ -322,12 +322,12 @@ settings_backup:
     error_insufficient_space: Недостаточно свободного места на выбранном томе.
     error_generic: Не удалось экспортировать каталог.
     import_heading: Импорт
-    import_description: Подготавливает ранее экспортированный архив к импорту. Архив проверяется и распаковывается сейчас; продолжение заменит текущий каталог.
+    import_description: Подготавливает ранее экспортированный архив к импорту. Архив проверяется и распаковывается сейчас; текущий каталог пока не заменяется.
     import_path_label: Файл архива
     import_pick_button: Выбрать архив
     import_file_filter_name: Архив каталога AnimeDB
     import_start_button: Начать импорт
-    import_confirm_text: 'Импорт архива «%path%» заменит текущий каталог. Продолжить?'
+    import_confirm_text: 'Архив «%path%» будет проверен и подготовлен к импорту. Продолжить?'
     import_progress_database: 'Подготовка базы данных: %current%/%total%'
     import_progress_media: 'Распаковка медиафайлов: %current%/%total%'
     import_done_text: Архив каталога принят для импорта.
