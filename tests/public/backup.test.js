@@ -125,9 +125,11 @@ test('a value substituted twice into a message via export.done comes out identic
 
     const resultBox = document.getElementById('settings-backup-result');
     expect(resultBox.hidden).toBe(false);
-    // No bidi isolation here (issue #677 keeps that scoped to storage-scan.js) — a plain
-    // resolveKey() substitution, repeated at every occurrence of the placeholder.
-    expect(resultBox.textContent).toBe('/backups/catalog.zip (/backups/catalog.zip)');
+    // resolveKey() (translations.js) bidi-isolates every substituted value, including the backup
+    // path — a user-chosen filesystem path is exactly the kind of open value the isolation
+    // protects (issue #677, issue #450) — repeated at every occurrence of the placeholder.
+    const isolatedPath = '⁨/backups/catalog.zip⁩';
+    expect(resultBox.textContent).toBe(`${isolatedPath} (${isolatedPath})`);
 });
 
 test('export progress substitutes both progress placeholders via trans(), not a leftover local format()', async () => {
@@ -147,5 +149,5 @@ test('export progress substitutes both progress placeholders via trans(), not a 
     await flushMicrotasks();
 
     const progressText = document.getElementById('settings-backup-progress-text');
-    expect(progressText.textContent).toBe('3 of 3, total 10');
+    expect(progressText.textContent).toBe('⁨3⁩ of ⁨3⁩, total ⁨10⁩');
 });

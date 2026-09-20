@@ -52,7 +52,7 @@ test('resolveKey() substitutes every occurrence of a repeated placeholder', () =
     const messages = { 'test.repeat': '%name% and %name% again' };
     const result = window.AppTranslations.resolveKey(messages, 'test.repeat', { name: 'X' });
 
-    expect(result).toBe('X and X again');
+    expect(result).toBe('⁨X⁩ and ⁨X⁩ again');
 });
 
 test('trans() substitutes every occurrence of a repeated placeholder via the fetched catalogue', async () => {
@@ -61,8 +61,21 @@ test('trans() substitutes every occurrence of a repeated placeholder via the fet
 
     const result = await window.AppTranslations.trans('test.repeat', { name: 'X' });
 
-    expect(result).toBe('X and X again');
+    expect(result).toBe('⁨X⁩ and ⁨X⁩ again');
     expect(global.fetch).toHaveBeenCalledWith('/translations/ru.json');
+});
+
+// Every substituted value is bidi-isolated (issue #450), regardless of caller — moved here from
+// storage-scan.js's now-removed local isolate() helper so every consumer of trans()/resolveKey()
+// (backup.js, storage-scan.js, anime-list.js) gets the same protection without opting in (issue
+// #677).
+test('resolveKey() wraps every substituted value in bidi isolate marks', () => {
+    loadTranslationsModule();
+
+    const messages = { 'test.path': 'Archive at %path%' };
+    const result = window.AppTranslations.resolveKey(messages, 'test.path', { path: 'C:\\Users\\a' });
+
+    expect(result).toBe('Archive at ⁨C:\\Users\\a⁩');
 });
 
 test('resolveKey() and trans() agree on a repeated placeholder for the same catalogue entry', async () => {

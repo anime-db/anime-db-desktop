@@ -55,26 +55,7 @@
     // 0% forever with no feedback (issue #156).
     const NO_RESPONSE_TIMEOUT_MS = 15000;
 
-    // FIRST STRONG ISOLATE / POP DIRECTIONAL ISOLATE: interpolated values (anime titles, storage
-    // paths) come from sources written in Latin or Japanese script. Rendered as plain text
-    // (.textContent, not HTML — a <bdi> element is not available here), an unisolated value
-    // inside an RTL message can reorder adjacent characters, most visibly brackets and colons
-    // (issue #450).
-    const BIDI_ISOLATE_START = '⁨';
-    const BIDI_ISOLATE_END   = '⁩';
-
     let noResponseTimer = setTimeout(onNoResponse, NO_RESPONSE_TIMEOUT_MS);
-
-    // Wraps each param value in bidi isolates *before* handing it to the shared
-    // resolveKey()/trans() substitution (translations.js) — the isolation stays scoped to this
-    // module's arbitrary filesystem-sourced values (anime titles, storage paths) without
-    // duplicating the %name% substitution loop itself.
-    function isolate(params) {
-        return Object.keys(params).reduce((wrapped, name) => {
-            wrapped[name] = `${BIDI_ISOLATE_START}${String(params[name])}${BIDI_ISOLATE_END}`;
-            return wrapped;
-        }, {});
-    }
 
     function clearNoResponseTimer() {
         if (noResponseTimer !== null) {
@@ -99,7 +80,7 @@
         progressBar.setAttribute('aria-valuenow', String(percent));
         progressText.textContent = await window.AppTranslations.trans(
             'storage_list.scan_progress_text',
-            isolate({ processed: data.processed, total: data.total, percent }),
+            { processed: data.processed, total: data.total, percent },
         );
     }
 
@@ -109,16 +90,16 @@
         errorBox.hidden = false;
         errorBox.textContent = data.reason === 'marker_conflict'
             ? await window.AppTranslations.trans('storage_list.scan_failed_marker_conflict')
-            : await window.AppTranslations.trans('storage_list.scan_failed_exception', isolate({ message: data.message }));
+            : await window.AppTranslations.trans('storage_list.scan_failed_exception', { message: data.message });
     }
 
     async function buildInfoItem(item, labelKey) {
         const li = document.createElement('li');
         li.className = 'list-group-item';
-        li.textContent = await window.AppTranslations.trans(labelKey, isolate({
+        li.textContent = await window.AppTranslations.trans(labelKey, {
             title: item.anime?.title ?? item.storage_path,
             path: item.storage_path,
-        }));
+        });
 
         return li;
     }
@@ -126,9 +107,9 @@
     async function buildAutoLinkedItem(item) {
         const li = document.createElement('li');
         li.className = 'list-group-item';
-        li.textContent = await window.AppTranslations.trans('storage_list.auto_linked_text', isolate({
+        li.textContent = await window.AppTranslations.trans('storage_list.auto_linked_text', {
             title: item.anime?.title ?? item.storage_path,
-        }));
+        });
 
         return li;
     }
@@ -144,9 +125,9 @@
             storage_path: item.storage_path,
         });
         link.href = `${animeNewUrl}?${params.toString()}`;
-        link.textContent = await window.AppTranslations.trans('storage_list.create_entry_link', isolate({
+        link.textContent = await window.AppTranslations.trans('storage_list.create_entry_link', {
             title: item.cleaned_name ?? item.storage_path,
-        }));
+        });
 
         li.appendChild(link);
 
@@ -174,9 +155,9 @@
             })
             .then(async (data) => {
                 li.replaceChildren();
-                li.textContent = await window.AppTranslations.trans('storage_list.confirmed_text', isolate({
+                li.textContent = await window.AppTranslations.trans('storage_list.confirmed_text', {
                     title: data.anime?.title ?? candidate.title,
-                }));
+                });
             })
             .catch(async () => {
                 button.disabled = false;
