@@ -68,7 +68,7 @@ final class CatalogStageCommandTest extends TestCase
         $this->assertStringContainsString($this->importStagingDir, $tester->getDisplay());
     }
 
-    public function testReturnsFailureAndPrintsTheTranslatedMessageWhenTheArchiveIsInvalid(): void
+    public function testReturnsDistinctExitCodeAndPrintsTheTranslatedMessageForAnUnreadableArchive(): void
     {
         $archivePath = $this->fixturesDir.'/corrupt.zip';
         file_put_contents($archivePath, 'not a zip file');
@@ -76,8 +76,85 @@ final class CatalogStageCommandTest extends TestCase
         $tester = new CommandTester(new CatalogStageCommand($this->createService(), $this->createTranslator()));
         $exitCode = $tester->execute(['archive' => $archivePath]);
 
-        $this->assertSame(Command::FAILURE, $exitCode);
+        $this->assertSame(2, $exitCode);
         $this->assertStringContainsString('Unable to read catalog archive', $tester->getDisplay());
+    }
+
+    public function testReturnsDistinctExitCodeForAnArchiveWithoutAManifest(): void
+    {
+        $archivePath = $this->fixturesDir.'/no-manifest.zip';
+        $zip = new \ZipArchive();
+        $zip->open($archivePath, \ZipArchive::CREATE);
+        $zip->addFromString('data.db', '');
+        $zip->close();
+
+        $tester = new CommandTester(new CatalogStageCommand($this->createService(), $this->createTranslator()));
+        $exitCode = $tester->execute(['archive' => $archivePath]);
+
+        $this->assertSame(3, $exitCode);
+        $this->assertStringContainsString('no valid manifest.json', $this->normalizeDisplay($tester));
+    }
+
+    public function testReturnsDistinctExitCodeForAnArchiveWithAnUnsupportedFormatVersion(): void
+    {
+        $archivePath = $this->fixturesDir.'/bad-version.zip';
+        $zip = new \ZipArchive();
+        $zip->open($archivePath, \ZipArchive::CREATE);
+        $zip->addFromString('data.db', '');
+        $zip->addFromString('manifest.json', json_encode(['formatVersion' => 99], \JSON_THROW_ON_ERROR));
+        $zip->close();
+
+        $tester = new CommandTester(new CatalogStageCommand($this->createService(), $this->createTranslator()));
+        $exitCode = $tester->execute(['archive' => $archivePath]);
+
+        $this->assertSame(4, $exitCode);
+        $this->assertStringContainsString('unsupported format version', $this->normalizeDisplay($tester));
+    }
+
+    public function testReturnsDistinctExitCodeForAnArchiveWithoutADatabase(): void
+    {
+        $archivePath = $this->fixturesDir.'/no-database.zip';
+        $zip = new \ZipArchive();
+        $zip->open($archivePath, \ZipArchive::CREATE);
+        $zip->addFromString('manifest.json', json_encode(['formatVersion' => 1], \JSON_THROW_ON_ERROR));
+        $zip->close();
+
+        $tester = new CommandTester(new CatalogStageCommand($this->createService(), $this->createTranslator()));
+        $exitCode = $tester->execute(['archive' => $archivePath]);
+
+        $this->assertSame(5, $exitCode);
+        $this->assertStringContainsString('no data.db', $this->normalizeDisplay($tester));
+    }
+
+    public function testReturnsDistinctExitCodeForAnArchiveWithAnUnsafeEntryName(): void
+    {
+        $archivePath = $this->fixturesDir.'/unsafe-entry.zip';
+        $zip = new \ZipArchive();
+        $zip->open($archivePath, \ZipArchive::CREATE);
+        $zip->addFromString('data.db', '');
+        $zip->addFromString('manifest.json', json_encode(['formatVersion' => 1], \JSON_THROW_ON_ERROR));
+        $zip->addFromString('../escaped.txt', 'zip-slip payload');
+        $zip->close();
+
+        $tester = new CommandTester(new CatalogStageCommand($this->createService(), $this->createTranslator()));
+        $exitCode = $tester->execute(['archive' => $archivePath]);
+
+        $this->assertSame(6, $exitCode);
+        $this->assertStringContainsString('unsafe entry path', $this->normalizeDisplay($tester));
+
+        @unlink(\dirname($this->importStagingDir).'/escaped.txt');
+    }
+
+    /**
+     * SymfonyStyle::error() word-wraps to the console width (capped at
+     * {@see \Symfony\Component\Console\Style\SymfonyStyle::MAX_LINE_LENGTH}), which depends on
+     * the runner's terminal and can split an otherwise-fixed phrase across lines. Collapsing
+     * whitespace merges wrapped words back together so assertions on the message text don't
+     * depend on where the console happened to wrap it.
+     */
+    private function normalizeDisplay(CommandTester $tester): string
+    {
+        return (string) preg_replace('/\s+/', ' ', $tester->getDisplay());
     }
 
     private function buildValidArchive(): string

@@ -306,10 +306,11 @@ settings_proxy:
     incoming_connections_socks5_hint: Под SOCKS5-прокси входящие подключения не работают независимо от правил брандмауэра, поэтому включение недоступно. Уже включённую настройку можно выключить в любой момент.
 
 settings_backup:
-    title: Экспорт каталога — Настройки — AnimeDB
-    heading: Экспорт каталога
+    title: Резервное копирование каталога — Настройки — AnimeDB
+    heading: Резервное копирование каталога
+    unavailable_outside_app: Это действие доступно только в приложении AnimeDB.
+    export_heading: Экспорт
     description: Сохраняет копию каталога (базу данных и обложки) одним файлом в выбранную папку. Настройки приложения и плагинов, включая пароль прокси и токены доступа, в архив не входят.
-    unavailable_outside_app: Экспорт доступен только в приложении AnimeDB.
     destination_label: Папка назначения
     pick_folder_button: Выбрать папку
     start_button: Начать экспорт
@@ -320,6 +321,22 @@ settings_backup:
     cancelled_text: Экспорт отменён.
     error_insufficient_space: Недостаточно свободного места на выбранном томе.
     error_generic: Не удалось экспортировать каталог.
+    import_heading: Импорт
+    import_description: Подготавливает ранее экспортированный архив к импорту. Архив проверяется и распаковывается сейчас; текущий каталог пока не заменяется.
+    import_path_label: Файл архива
+    import_pick_button: Выбрать архив
+    import_file_filter_name: Архив каталога AnimeDB
+    import_start_button: Начать импорт
+    import_confirm_text: 'Архив «%path%» будет подготовлен к импорту, а при следующем запуске приложения текущий каталог будет заменён. Продолжить?'
+    import_progress_database: 'Подготовка базы данных: %current%/%total%'
+    import_progress_media: 'Распаковка медиафайлов: %current%/%total%'
+    import_done_text: Архив каталога принят для импорта.
+    import_error_unreadable: 'Не удалось прочитать выбранный файл «%path%» как архив.'
+    import_error_missing_manifest: 'В выбранном архиве «%path%» нет валидного манифеста, импорт невозможен.'
+    import_error_unsupported_format_version: 'Выбранный архив «%path%» создан несовместимой версией приложения.'
+    import_error_missing_database: 'В выбранном архиве «%path%» нет базы данных каталога.'
+    import_error_unsafe_entry: 'Выбранный архив «%path%» содержит небезопасные пути файлов и был отклонён.'
+    import_error_generic: Не удалось подготовить импорт каталога.
 
 catalog_stage:
     error_unreadable: 'Не удалось прочитать архив каталога «%path%».'

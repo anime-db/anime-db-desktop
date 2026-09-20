@@ -25,32 +25,65 @@
 {% block body %}
     <main class="container py-4">
         <h1>{{ 'settings_backup.heading'|trans }}</h1>
-        <p class="text-body-secondary">{{ 'settings_backup.description'|trans }}</p>
 
         <p id="settings-backup-unavailable" class="alert alert-warning" hidden>{{ 'settings_backup.unavailable_outside_app'|trans }}</p>
 
-        <div id="settings-backup-form">
-            <div class="mb-3">
-                <label for="settings-backup-path" class="form-label">{{ 'settings_backup.destination_label'|trans }}</label>
-                <div class="d-flex gap-2">
-                    <input type="text" id="settings-backup-path" readonly class="form-control">
-                    <button type="button" id="settings-backup-pick-folder" class="btn btn-outline-secondary text-nowrap">{{ 'settings_backup.pick_folder_button'|trans }}</button>
+        <section id="settings-backup-export-section">
+            <h2>{{ 'settings_backup.export_heading'|trans }}</h2>
+            <p class="text-body-secondary">{{ 'settings_backup.description'|trans }}</p>
+
+            <div id="settings-backup-form">
+                <div class="mb-3">
+                    <label for="settings-backup-path" class="form-label">{{ 'settings_backup.destination_label'|trans }}</label>
+                    <div class="d-flex gap-2">
+                        <input type="text" id="settings-backup-path" readonly class="form-control">
+                        <button type="button" id="settings-backup-pick-folder" class="btn btn-outline-secondary text-nowrap">{{ 'settings_backup.pick_folder_button'|trans }}</button>
+                    </div>
                 </div>
+
+                <button type="button" id="settings-backup-start" class="btn btn-primary" disabled>{{ 'settings_backup.start_button'|trans }}</button>
+                <button type="button" id="settings-backup-cancel" class="btn btn-outline-danger" hidden>{{ 'settings_backup.cancel_button'|trans }}</button>
             </div>
 
-            <button type="button" id="settings-backup-start" class="btn btn-primary" disabled>{{ 'settings_backup.start_button'|trans }}</button>
-            <button type="button" id="settings-backup-cancel" class="btn btn-outline-danger" hidden>{{ 'settings_backup.cancel_button'|trans }}</button>
-        </div>
-
-        <div id="settings-backup-progress" class="mt-3" hidden>
-            <div class="progress">
-                <div class="progress-bar" id="settings-backup-progress-bar" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+            <div id="settings-backup-progress" class="mt-3" hidden>
+                <div class="progress">
+                    <div class="progress-bar" id="settings-backup-progress-bar" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+                </div>
+                <span id="settings-backup-progress-text"></span>
             </div>
-            <span id="settings-backup-progress-text"></span>
-        </div>
 
-        <p id="settings-backup-result" class="alert alert-success mt-3" hidden></p>
-        <p id="settings-backup-error" class="alert alert-danger mt-3" hidden></p>
+            <p id="settings-backup-result" class="alert alert-success mt-3" hidden></p>
+            <p id="settings-backup-error" class="alert alert-danger mt-3" hidden></p>
+        </section>
+
+        <hr class="my-4">
+
+        <section id="settings-backup-import-section">
+            <h2>{{ 'settings_backup.import_heading'|trans }}</h2>
+            <p class="text-body-secondary">{{ 'settings_backup.import_description'|trans }}</p>
+
+            <div id="settings-import-form">
+                <div class="mb-3">
+                    <label for="settings-import-path" class="form-label">{{ 'settings_backup.import_path_label'|trans }}</label>
+                    <div class="d-flex gap-2">
+                        <input type="text" id="settings-import-path" readonly class="form-control">
+                        <button type="button" id="settings-import-pick-file" class="btn btn-outline-secondary text-nowrap">{{ 'settings_backup.import_pick_button'|trans }}</button>
+                    </div>
+                </div>
+
+                <button type="button" id="settings-import-start" class="btn btn-danger" disabled>{{ 'settings_backup.import_start_button'|trans }}</button>
+            </div>
+
+            <div id="settings-import-progress" class="mt-3" hidden>
+                <div class="progress">
+                    <div class="progress-bar" id="settings-import-progress-bar" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+                </div>
+                <span id="settings-import-progress-text"></span>
+            </div>
+
+            <p id="settings-import-result" class="alert alert-success mt-3" hidden></p>
+            <p id="settings-import-error" class="alert alert-danger mt-3" hidden></p>
+        </section>
     </main>
 {% endblock %}
 
