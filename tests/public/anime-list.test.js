@@ -446,6 +446,7 @@ test('clicking a sort field reloads from offset 0 with the chosen field and mark
     await flushMicrotasks();
     calls[0].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 0, limit: 6, offset: 0 }));
     await flushMicrotasks();
+    window.scrollTo.mockClear();
 
     dispatchClick(document.querySelector('[data-sort-field="name"]'));
     await flushMicrotasks();
@@ -454,6 +455,13 @@ test('clicking a sort field reloads from offset 0 with the chosen field and mark
     expect(queryParams(calls[1].url)).toMatchObject({ sort: 'name', direction: 'desc', offset: '0' });
     expect(document.querySelector('[data-sort-field="name"]').getAttribute('aria-current')).toBe('true');
     expect(document.querySelector('[data-sort-field="date_update"]').hasAttribute('aria-current')).toBe(false);
+
+    // A sort-field change is a genuinely new result set (issue #687's isNewQuery=true call
+    // sites), so the window scroll position must reset once the reload lands, same as a search
+    // or a filter change.
+    calls[1].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 0, limit: 6, offset: 0 }));
+    await flushMicrotasks();
+    expect(window.scrollTo).toHaveBeenCalledTimes(1);
 });
 
 test('toggling sort direction flips desc/asc, reloads and updates the button label', async () => {
@@ -463,6 +471,7 @@ test('toggling sort direction flips desc/asc, reloads and updates the button lab
     await flushMicrotasks();
     calls[0].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 0, limit: 6, offset: 0 }));
     await flushMicrotasks();
+    window.scrollTo.mockClear();
 
     const directionButton = document.getElementById('anime-list-sort-direction');
     dispatchClick(directionButton);
@@ -472,6 +481,56 @@ test('toggling sort direction flips desc/asc, reloads and updates the button lab
     expect(queryParams(calls[1].url).direction).toBe('asc');
     expect(directionButton.textContent).toBe('↑');
     expect(directionButton.getAttribute('aria-label')).toBe('Ascending');
+
+    // Same as the sort-field case above: a direction flip is a new result set, not a re-page of
+    // the current one (issue #687).
+    calls[1].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 0, limit: 6, offset: 0 }));
+    await flushMicrotasks();
+    expect(window.scrollTo).toHaveBeenCalledTimes(1);
+});
+
+test('a search query change resets the window scroll position', async () => {
+    const calls = mockFetchQueue();
+    setUpTranslations();
+    loadAnimeListModule();
+    await flushMicrotasks();
+    calls[0].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 0, limit: 6, offset: 0 }));
+    await flushMicrotasks();
+    window.scrollTo.mockClear();
+
+    const searchInput = document.getElementById('anime-list-search');
+    searchInput.value = 'gate';
+    searchInput.dispatchEvent(new Event('input'));
+    jest.advanceTimersByTime(300);
+    await flushMicrotasks();
+
+    expect(calls).toHaveLength(2);
+    calls[1].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 0, limit: 6, offset: 0 }));
+    await flushMicrotasks();
+
+    expect(window.scrollTo).toHaveBeenCalledTimes(1);
+});
+
+test('clicking classic pagination page 1 resets the window scroll position', async () => {
+    const calls = mockFetchQueue();
+    setUpTranslations();
+    loadAnimeListModule();
+    await flushMicrotasks();
+    calls[0].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 2, limit: 1, offset: 0 }));
+    await flushMicrotasks();
+    window.scrollTo.mockClear();
+
+    // Jumping back to page 1 is treated the same as a fresh search (issue #687) — unlike a jump
+    // to any other page, which the "does not reset" test above covers.
+    const pageOneButton = document.querySelectorAll('#anime-list-pagination button')[0];
+    pageOneButton.dispatchEvent(new Event('click'));
+    await flushMicrotasks();
+
+    expect(calls).toHaveLength(2);
+    calls[1].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 2, limit: 1, offset: 0 }));
+    await flushMicrotasks();
+
+    expect(window.scrollTo).toHaveBeenCalledTimes(1);
 });
 
 test('a column-count change in infinite scroll tops up the last row to a full row', async () => {
@@ -529,16 +588,54 @@ test('a column-count change in classic mode re-pages around the first record of 
     expect(calls).toHaveLength(2);
     calls[1].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 100, limit: 30, offset: 30 }));
     await flushMicrotasks();
+    window.scrollTo.mockClear();
 
     // newLimit = 3 × 6 = 18; the record at index 30 now falls on page floor(30/18)+1 = 2, i.e.
     // offset 18. A widening resize (e.g. to 10 columns, newLimit 60) would land on page 1 (offset
     // 0) regardless of whether the anchor math ran at all, since floor(30/60)+1 is always 1 — that
-    // case cannot distinguish real anchoring from an unconditional "reset to page 1".
+    // case cannot distinguish real anchoring from an unconditional "reset to page 1" and is
+    // covered separately below (issue #687).
     triggerResize(resizeObserverInstances, 3);
     await flushMicrotasks();
 
     expect(calls).toHaveLength(3);
     expect(queryParams(calls[2].url)).toMatchObject({ offset: '18', limit: '18' });
+    calls[2].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 100, limit: 18, offset: 18 }));
+    await flushMicrotasks();
+    expect(window.scrollTo).not.toHaveBeenCalled();
+});
+
+test('a column-count change in classic mode does not reset the window scroll when the anchor lands back on offset 0', async () => {
+    setGridColumns(5); // initial limit = 30
+    const calls = mockFetchQueue();
+    setUpTranslations();
+    loadAnimeListModule();
+    await flushMicrotasks();
+
+    calls[0].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 100, limit: 30, offset: 0 }));
+    await flushMicrotasks();
+
+    // Navigate to page 2 (offset 30) before the resize, matching the pagination markup loadPage()
+    // itself just rendered.
+    dispatchClick(document.querySelectorAll('#anime-list-pagination button')[1]);
+    await flushMicrotasks();
+    expect(calls).toHaveLength(2);
+    calls[1].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 100, limit: 30, offset: 30 }));
+    await flushMicrotasks();
+    window.scrollTo.mockClear();
+
+    // newLimit = 10 × 6 = 60; floor(30 / 60) + 1 = 1, so the anchor lands back on offset 0 — the
+    // exact same request a brand-new search would send. The gate must tell these apart by an
+    // explicit flag from the caller, not by offset === 0, which is coincidence here, not intent
+    // (issue #687).
+    triggerResize(resizeObserverInstances, 10);
+    await flushMicrotasks();
+
+    expect(calls).toHaveLength(3);
+    expect(queryParams(calls[2].url)).toMatchObject({ offset: '0', limit: '60' });
+    calls[2].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 100, limit: 60, offset: 0 }));
+    await flushMicrotasks();
+    expect(window.scrollTo).not.toHaveBeenCalled();
 });
 
 test('a resize that arrives before the first response still restores the row invariant', async () => {
@@ -649,6 +746,28 @@ test('initializing the catalog fires exactly two requests: GET /anime and GET /a
     expect(byKind(calls, 'list')).toHaveLength(1);
     expect(byKind(calls, 'facets')).toHaveLength(1);
 });
+
+// Shared setup for the applied-filter scroll-reset tests below: resolves the initial load, then
+// applies the "watching" checkbox via its value-label shortcut so there is a chip in place for a
+// removeAppliedValue()/resetAllFilters() call to act on.
+async function applyWatchingFilter(calls) {
+    byKind(calls, 'list')[0].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 0, limit: 6, offset: 0 }));
+    byKind(calls, 'facets')[0].resolve(jsonResponse({
+        watch_status: [{ value: 'watching', count: 5 }],
+        type: [], date_premiere_decade: [], user_rating: [], labels: [], genres: [], themes: [], studios: [],
+    }));
+    await flushMicrotasks();
+
+    document.querySelector('[data-filter-section="watch_status"] .anime-list__filter-value-name')
+        .dispatchEvent(new Event('click', { bubbles: true }));
+    await flushMicrotasks();
+    byKind(calls, 'list')[1].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 0, limit: 6, offset: 0 }));
+    byKind(calls, 'facets')[1].resolve(jsonResponse({
+        watch_status: [{ value: 'watching', count: 5 }],
+        type: [], date_premiere_decade: [], user_rating: [], labels: [], genres: [], themes: [], studios: [],
+    }));
+    await flushMicrotasks();
+}
 
 test('the facets request has its own AbortController and does not repeat on an infinite-scroll page append', async () => {
     const calls = mockFetchQueueAll();
@@ -786,6 +905,69 @@ test('"reset all" clears applied filters and refetches without touching the chos
     expect(resetQuery.sort).toBe('name');
     expect(resetQuery.direction).toBe('desc');
     expect(resetQuery).not.toHaveProperty('watch_status[]');
+});
+
+test('applying a pending filter resets the window scroll position', async () => {
+    const calls = mockFetchQueueAll();
+    setUpTranslations();
+
+    loadAnimeListModule();
+    await flushMicrotasks();
+    byKind(calls, 'list')[0].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 0, limit: 6, offset: 0 }));
+    byKind(calls, 'facets')[0].resolve(jsonResponse({
+        watch_status: [{ value: 'watching', count: 5 }],
+        type: [], date_premiere_decade: [], user_rating: [], labels: [], genres: [], themes: [], studios: [],
+    }));
+    await flushMicrotasks();
+    window.scrollTo.mockClear();
+
+    document.querySelector('[data-filter-section="watch_status"] .anime-list__filter-value-name')
+        .dispatchEvent(new Event('click', { bubbles: true }));
+    await flushMicrotasks();
+
+    expect(byKind(calls, 'list')).toHaveLength(2);
+    byKind(calls, 'list')[1].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 0, limit: 6, offset: 0 }));
+    await flushMicrotasks();
+
+    expect(window.scrollTo).toHaveBeenCalledTimes(1);
+});
+
+test('removing an applied filter chip resets the window scroll position', async () => {
+    const calls = mockFetchQueueAll();
+    setUpTranslations();
+
+    loadAnimeListModule();
+    await flushMicrotasks();
+    await applyWatchingFilter(calls);
+    window.scrollTo.mockClear();
+
+    document.querySelector('.anime-list__chip-remove').dispatchEvent(new Event('click', { bubbles: true }));
+    await flushMicrotasks();
+
+    expect(byKind(calls, 'list')).toHaveLength(3);
+    byKind(calls, 'list')[2].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 0, limit: 6, offset: 0 }));
+    await flushMicrotasks();
+
+    expect(window.scrollTo).toHaveBeenCalledTimes(1);
+});
+
+test('"reset all" resets the window scroll position', async () => {
+    const calls = mockFetchQueueAll();
+    setUpTranslations();
+
+    loadAnimeListModule();
+    await flushMicrotasks();
+    await applyWatchingFilter(calls);
+    window.scrollTo.mockClear();
+
+    document.getElementById('anime-list-chips-reset').dispatchEvent(new Event('click', { bubbles: true }));
+    await flushMicrotasks();
+
+    expect(byKind(calls, 'list')).toHaveLength(3);
+    byKind(calls, 'list')[2].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 0, limit: 6, offset: 0 }));
+    await flushMicrotasks();
+
+    expect(window.scrollTo).toHaveBeenCalledTimes(1);
 });
 
 test('the filters badge text always equals the number of applied chips', async () => {
