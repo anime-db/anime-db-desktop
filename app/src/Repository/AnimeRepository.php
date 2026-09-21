@@ -68,6 +68,19 @@ class AnimeRepository
         return (int) $qb->getQuery()->getSingleScalarResult();
     }
 
+    /**
+     * Full catalog size, ignoring any filter (issue #688) — the denominator of the
+     * filter-panel "Shown X of Y" line, which must answer "how big is the whole catalog", not
+     * "how many rows match the current filter" (that's countByFilter()).
+     */
+    public function countAll(): int
+    {
+        $qb = $this->entityManager->getRepository(Anime::class)->createQueryBuilder('a')
+            ->select('COUNT(a.id)');
+
+        return (int) $qb->getQuery()->getSingleScalarResult();
+    }
+
     public function hasAny(): bool
     {
         $qb = $this->entityManager->getRepository(Anime::class)->createQueryBuilder('a')
@@ -101,6 +114,7 @@ class AnimeRepository
     public function facetsByFilter(AnimeListFilter $filter): AnimeFacets
     {
         return new AnimeFacets(
+            catalogTotal: $this->countAll(),
             watchStatuses: $this->facetWatchStatuses($filter),
             types: $this->facetTypes($filter),
             datePremiereDecades: $this->facetDatePremiereDecades($filter),

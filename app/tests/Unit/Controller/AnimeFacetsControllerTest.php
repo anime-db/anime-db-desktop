@@ -182,6 +182,17 @@ final class AnimeFacetsControllerTest extends TestCase
         return null;
     }
 
+    public function testCatalogTotalIsTheFullCatalogSizeNotTheFilteredSelection(): void
+    {
+        // Five fixtures are seeded in total; narrowing to "movie" alone matches only one of
+        // them. catalog_total (issue #688) must still report the full five — it is the
+        // denominator of "Shown X of Y", not another view of the filtered count.
+        $data = $this->facetsFor(['type' => ['movie']]);
+
+        $this->assertSame(1, self::bucketCount($data['type'], 'value', 'movie'));
+        $this->assertSame(5, $data['catalog_total']);
+    }
+
     public function testGenreFacetIgnoresItsOwnSelectionInsteadOfNarrowingToIt(): void
     {
         // "TV Drama" and "TV Comedy Drama" both carry Drama; only the latter also carries

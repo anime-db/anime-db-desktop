@@ -98,6 +98,10 @@ final class AnimeListController
      * parameters as GET /anime. Reuses the same $name → Meilisearch id resolution as list()
      * so a facet count under an active search box narrows to the search result the same way
      * the list itself does.
+     *
+     * Also carries the unfiltered catalog size (issue #688, `catalog_total`) so the frontend
+     * can build "Shown X of Y" from this single response instead of a separate request — the
+     * filter parameters above never apply to that count.
      */
     #[Route('/anime/facets', methods: ['GET'])]
     public function facets(Request $request): JsonResponse
@@ -130,6 +134,7 @@ final class AnimeListController
     private function serializeFacets(AnimeFacets $facets): array
     {
         return [
+            'catalog_total' => $facets->catalogTotal,
             'watch_status' => array_map($this->serializeValueBucket(...), $facets->watchStatuses),
             'type' => array_map($this->serializeValueBucket(...), $facets->types),
             'date_premiere_decade' => array_map($this->serializeValueBucket(...), $facets->datePremiereDecades),
