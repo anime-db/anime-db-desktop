@@ -57,6 +57,14 @@ function setUpDom() {
                 <p id="settings-import-error" hidden></p>
             </div>
         </section>
+        <section id="settings-backup-snapshots-section">
+            <p id="settings-backup-snapshots-error" hidden></p>
+            <ul id="settings-backup-snapshots-list">
+                <li>
+                    <button type="button" class="settings-backup-restore-button" data-backup-name="data-preimport-20260101-000000.db"></button>
+                </li>
+            </ul>
+        </section>
     `;
 }
 
@@ -95,6 +103,7 @@ beforeEach(() => {
         catalogExportStart: jest.fn(() => new Promise(() => {})),
         catalogExportCancel: jest.fn(),
         catalogImportStart: jest.fn(() => new Promise(() => {})),
+        backupRestoreStart: jest.fn(() => new Promise(() => {})),
     };
     document.documentElement.lang = 'ru';
 });
@@ -150,4 +159,87 @@ test('export progress substitutes both progress placeholders via trans(), not a 
 
     const progressText = document.getElementById('settings-backup-progress-text');
     expect(progressText.textContent).toBe('⁨3⁩ of ⁨3⁩, total ⁨10⁩');
+});
+
+test('clicking a restore button asks for confirmation naming the snapshot, then calls backupRestoreStart()', async () => {
+    global.fetch = jest.fn(() => Promise.resolve(jsonResponse({
+        'settings_backup.restore_confirm_text': 'Replace the current catalog with "%name%"?',
+    })));
+    jest.isolateModules(() => {
+        require('../../app/public/js/translations.js');
+    });
+    window.confirm = jest.fn(() => true);
+    window.animeDb.backupRestoreStart = jest.fn(() => new Promise(() => {}));
+    loadBackupModule();
+    await flushMicrotasks();
+
+    document.querySelector('.settings-backup-restore-button').click();
+    await flushMicrotasks();
+
+    expect(window.confirm).toHaveBeenCalledWith('Replace the current catalog with "⁨data-preimport-20260101-000000.db⁩"?');
+    expect(window.animeDb.backupRestoreStart).toHaveBeenCalledWith('data-preimport-20260101-000000.db');
+});
+
+test('declining the restore confirmation dialog never calls backupRestoreStart()', async () => {
+    global.fetch = jest.fn(() => Promise.resolve(jsonResponse({})));
+    jest.isolateModules(() => {
+        require('../../app/public/js/translations.js');
+    });
+    window.confirm = jest.fn(() => false);
+    window.animeDb.backupRestoreStart = jest.fn();
+    loadBackupModule();
+    await flushMicrotasks();
+
+    document.querySelector('.settings-backup-restore-button').click();
+    await flushMicrotasks();
+
+    expect(window.animeDb.backupRestoreStart).not.toHaveBeenCalled();
+});
+
+test('shows an error and re-enables the button when the restore IPC call reports failure', async () => {
+    global.fetch = jest.fn(() => Promise.resolve(jsonResponse({
+        'settings_backup.restore_error_text': 'Failed to restore the snapshot.',
+    })));
+    jest.isolateModules(() => {
+        require('../../app/public/js/translations.js');
+    });
+    window.confirm = jest.fn(() => true);
+    window.animeDb.backupRestoreStart = jest.fn(() => Promise.resolve({ ok: false }));
+    loadBackupModule();
+    await flushMicrotasks();
+
+    const button = document.querySelector('.settings-backup-restore-button');
+    button.click();
+    await flushMicrotasks();
+
+    const errorBox = document.getElementById('settings-backup-snapshots-error');
+    expect(errorBox.hidden).toBe(false);
+    expect(errorBox.textContent).toBe('Failed to restore the snapshot.');
+    expect(button.disabled).toBe(false);
+});
+
+// Issue #681 review: restoreBackup() in native/backup-restore/index.js runs after
+// supervisor.stop() already tore down the PHP worker, so a failure there (disk full, file locked)
+// rejects this IPC call instead of resolving { ok: false }. Without a catch, the button would stay
+// disabled forever with no error shown and no relaunch.
+test('shows an error and re-enables the button when the restore IPC call rejects', async () => {
+    global.fetch = jest.fn(() => Promise.resolve(jsonResponse({
+        'settings_backup.restore_error_text': 'Failed to restore the snapshot.',
+    })));
+    jest.isolateModules(() => {
+        require('../../app/public/js/translations.js');
+    });
+    window.confirm = jest.fn(() => true);
+    window.animeDb.backupRestoreStart = jest.fn(() => Promise.reject(new Error('copy failed')));
+    loadBackupModule();
+    await flushMicrotasks();
+
+    const button = document.querySelector('.settings-backup-restore-button');
+    button.click();
+    await flushMicrotasks();
+
+    const errorBox = document.getElementById('settings-backup-snapshots-error');
+    expect(errorBox.hidden).toBe(false);
+    expect(errorBox.textContent).toBe('Failed to restore the snapshot.');
+    expect(button.disabled).toBe(false);
 });

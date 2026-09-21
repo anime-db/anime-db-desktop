@@ -40,6 +40,7 @@ jest.mock('../../native/paths', () => ({
     getMarketRegistryCachePath: jest.fn(() => '/fake/userData/market-registry-cache.json'),
     getMarketSnapshotCachePath: jest.fn(() => '/fake/userData/market-snapshot-cache.json'),
     getMarketRefreshLockPath:   jest.fn(() => '/fake/userData/market-refresh.lock'),
+    getBackupsDir:        jest.fn(() => '/fake/userData/backups'),
 }));
 jest.mock('../../native/config', () => ({
     getOrCreateAppSecret: jest.fn(() => 'a'.repeat(64)),
@@ -65,6 +66,7 @@ describe('buildCommonEnv', () => {
         expect(env.IMPORT_STAGING_DIR).toBe('/fake/userData/import-staging');
         expect(env.CONFIG_PATH).toBe('/fake/userData/config.json');
         expect(env.APP_RUNTIME_DIR).toBe('/fake/userData/var');
+        expect(env.BACKUPS_DIR).toBe('/fake/userData/backups');
     });
 
     test('does not include worker-only ports', () => {

@@ -339,6 +339,15 @@ settings_backup:
     import_error_missing_database: 'The selected archive "%path%" has no catalog database.'
     import_error_unsafe_entry: 'The selected archive "%path%" contains unsafe file paths and was rejected.'
     import_error_generic: Failed to stage the catalog import.
+    snapshots_heading: Snapshots
+    snapshots_description: Database backups taken before app updates and catalog imports.
+    snapshots_empty: No snapshots yet.
+    snapshot_preimport_badge: Before import
+    snapshot_size_unit_kb: KB
+    snapshot_size_unit_mb: MB
+    snapshot_restore_button: Restore
+    restore_confirm_text: 'The current catalog will be replaced with the contents of snapshot "%name%". This cannot be undone. Continue?'
+    restore_error_text: Failed to restore the snapshot.
 
 catalog_stage:
     error_unreadable: 'Unable to read catalog archive "%path%".'

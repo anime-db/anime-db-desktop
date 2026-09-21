@@ -26,11 +26,29 @@ jest.mock('../../native/supervisor/php-command', () => ({
     run: (...args) => mockRun(...args),
 }));
 
-const { run } = require('../../native/supervisor/search-reindex');
+jest.mock('../../native/paths', () => ({
+    getStatePath: jest.fn(() => '/fake/userData/state.json'),
+}));
+
+const fs = require('fs');
+const { run, markRequired, consumeRequired } = require('../../native/supervisor/search-reindex');
 
 const CONTEXT = { appPort: 8000, qbittorrentPort: 9999, meiliPort: 7700, meiliKey: 'test-key' };
 
+let stateOnDisk;
+
+beforeEach(() => {
+    stateOnDisk = undefined;
+    jest.spyOn(fs, 'readFileSync').mockImplementation(() => {
+        if (stateOnDisk === undefined) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+        return stateOnDisk;
+    });
+    jest.spyOn(fs, 'writeFileSync').mockImplementation((_, contents) => { stateOnDisk = contents; });
+    jest.spyOn(fs, 'mkdirSync').mockImplementation(() => {});
+});
+
 afterEach(() => {
+    jest.restoreAllMocks();
     jest.clearAllMocks();
 });
 
@@ -52,5 +70,39 @@ describe('run', () => {
 
         mockRun.mockRejectedValueOnce(new Error('app:search:reindex завершился с кодом 1'));
         await expect(run(CONTEXT)).rejects.toThrow('app:search:reindex завершился с кодом 1');
+    });
+});
+
+// Issue #681 review: index.js#start() only reindexes on wiped||migrationsApplied, which both
+// stay false when a restored snapshot has the same schema as the current one — this marker is
+// how native/backup-restore/index.js forces a reindex on the next start regardless.
+describe('markRequired / consumeRequired', () => {
+    test('consumeRequired reports false when nothing was ever marked', () => {
+        expect(consumeRequired()).toBe(false);
+    });
+
+    test('consumeRequired reports true exactly once after markRequired, then reverts to false', () => {
+        markRequired();
+
+        expect(consumeRequired()).toBe(true);
+        expect(consumeRequired()).toBe(false);
+    });
+
+    test('markRequired merges into existing state.json content instead of overwriting other fields', () => {
+        stateOnDisk = JSON.stringify({ someOtherField: 'keep-me' });
+
+        markRequired();
+
+        expect(JSON.parse(stateOnDisk).someOtherField).toBe('keep-me');
+    });
+
+    test('consumeRequired merges when clearing the marker', () => {
+        stateOnDisk = JSON.stringify({ reindexRequired: true, someOtherField: 'keep-me' });
+
+        expect(consumeRequired()).toBe(true);
+
+        const written = JSON.parse(stateOnDisk);
+        expect(written.reindexRequired).toBe(false);
+        expect(written.someOtherField).toBe('keep-me');
     });
 });

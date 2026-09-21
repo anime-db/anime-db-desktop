@@ -143,6 +143,14 @@ parameters:
     app.market_refresh_lock_path.dev_default: '%kernel.project_dir%/var/market-refresh.lock'
     app.market_refresh_lock_path: '%env(default:app.market_refresh_lock_path.dev_default:MARKET_REFRESH_LOCK_PATH)%'
 
+    # In production Electron passes BACKUPS_DIR (see native/paths.js, native/supervisor/env.js),
+    # pointing at %AppData%/backups/ — where native/supervisor/migrations.js writes pre-migration
+    # (and, issue #681, pre-import) snapshots of data.db. App\Service\Backup\BackupListService
+    # only reads this directory, for the /settings/backup snapshot list; creating, pruning and
+    # restoring snapshots all stay native-side.
+    app.backups_dir.dev_default: '%kernel.project_dir%/var/backups'
+    app.backups_dir: '%env(default:app.backups_dir.dev_default:BACKUPS_DIR)%'
+
 services:
     # default configuration for services in *this* file
     _defaults:
@@ -152,6 +160,7 @@ services:
             $projectDir: '%kernel.project_dir%'
             $mediaDir: '%app.media_dir%'
             $importStagingDir: '%app.import_staging_dir%'
+            $backupsDir: '%app.backups_dir%'
             $configPath: '%app.config_path%'
             $pluginsConfigPath: '%app.plugins_config_path%'
             $pluginsDir: '%app.plugins_dir%'

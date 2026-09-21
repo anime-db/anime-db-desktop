@@ -21,6 +21,9 @@
 
 'use strict';
 
+const fs         = require('fs');
+const path       = require('path');
+const paths      = require('../paths');
 const phpCommand = require('./php-command');
 
 const COMMAND = 'app:search:reindex';
@@ -45,4 +48,56 @@ function run(context) {
     return phpCommand.run(COMMAND, [], context, TIMEOUT_MS);
 }
 
-module.exports = { run };
+/**
+ * @returns {object}
+ */
+function readState() {
+    try {
+        const parsed = JSON.parse(fs.readFileSync(paths.getStatePath(), 'utf8'));
+        return (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) ? parsed : {};
+    } catch {
+        return {};
+    }
+}
+
+/**
+ * @param {object} state
+ */
+function writeState(state) {
+    const statePath = paths.getStatePath();
+    fs.mkdirSync(path.dirname(statePath), { recursive: true });
+    fs.writeFileSync(statePath, JSON.stringify(state, null, 2));
+}
+
+/**
+ * Marks that the next start() must run a full reindex regardless of the wiped/migrationsApplied
+ * signals index.js#start() otherwise relies on. Restoring an arbitrary backup snapshot (see
+ * native/backup-restore/index.js, issue #681) swaps in a catalog the current Meilisearch index
+ * was never built against — including same-schema snapshots, where both those signals stay false
+ * and index.js would otherwise skip reindexing entirely, leaving search stale (issue #681 review).
+ * Shares state.json with cache-invalidation.js/safe-mode.js.
+ */
+function markRequired() {
+    const state = readState();
+    state.reindexRequired = true;
+    writeState(state);
+}
+
+/**
+ * Consumes the marker set by markRequired(), so a restore forces exactly one reindex rather than
+ * one on every subsequent start. Must be called unconditionally (not short-circuited behind
+ * wiped/migrationsApplied) so the marker is always cleared once a start reaches this check.
+ *
+ * @returns {boolean} true if a reindex was requested via markRequired()
+ */
+function consumeRequired() {
+    const state = readState();
+    const required = state.reindexRequired === true;
+    if (required) {
+        state.reindexRequired = false;
+        writeState(state);
+    }
+    return required;
+}
+
+module.exports = { run, markRequired, consumeRequired };

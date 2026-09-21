@@ -1,10 +1,14 @@
+<?php
+
 /**
  * AnimeDb package.
  *
  * @author    Peter Gribanov <info@peter-gribanov.ru>
  * @copyright Copyright (c) 2026, Peter Gribanov
  * @license   https://www.gnu.org/licenses/gpl-3.0.html GPL-3.0-or-later
- *
+ */
+
+/*
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
@@ -19,17 +23,23 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-'use strict';
+declare(strict_types=1);
 
-const { contextBridge, ipcRenderer } = require('electron');
+namespace App\Service\Backup;
 
-contextBridge.exposeInMainWorld('animeDb', {
-    openPath:   (targetPath) => ipcRenderer.invoke('shell:open-path', targetPath),
-    pickFolder: () => ipcRenderer.invoke('dialog:pick-folder'),
-    pickFile:   (filters) => ipcRenderer.invoke('dialog:pick-file', filters),
-    onNotification: (callback) => ipcRenderer.on('app-notification', (_event, data) => callback(data)),
-    catalogExportStart:  (destinationDir) => ipcRenderer.invoke('catalog:export-start', destinationDir),
-    catalogExportCancel: () => ipcRenderer.invoke('catalog:export-cancel'),
-    catalogImportStart:  (archivePath) => ipcRenderer.invoke('catalog:import-start', archivePath),
-    backupRestoreStart:  (name) => ipcRenderer.invoke('backup:restore-start', name),
-});
+/**
+ * One `data.db` snapshot from getBackupsDir() (native/supervisor/migrations.js), as listed by
+ * {@see BackupListService} for the /settings/backup snapshot list (issue #681). `$name` is the
+ * bare file name, not a full path — it is what the restore action sends back over IPC
+ * (window.animeDb.backupRestoreStart()), resolved against the backups directory native-side.
+ */
+final class BackupSnapshot
+{
+    public function __construct(
+        public readonly string $name,
+        public readonly \DateTimeImmutable $createdAt,
+        public readonly int $sizeBytes,
+        public readonly bool $isPreImport,
+    ) {
+    }
+}

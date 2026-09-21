@@ -28,6 +28,7 @@ declare(strict_types=1);
 namespace App\Tests\Unit\Controller\Settings;
 
 use App\Controller\Settings\BackupController;
+use App\Service\Backup\BackupListService;
 use App\Service\Import\StagedImportService;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\RedirectResponse;
@@ -47,15 +48,18 @@ use Twig\Environment;
 final class BackupControllerTest extends TestCase
 {
     private string $importStagingDir;
+    private string $backupsDir;
 
     protected function setUp(): void
     {
         $this->importStagingDir = sys_get_temp_dir().'/animedb-backup-controller-test-'.uniqid();
+        $this->backupsDir = sys_get_temp_dir().'/animedb-backup-controller-test-backups-'.uniqid();
     }
 
     protected function tearDown(): void
     {
         $this->removeDirectory($this->importStagingDir);
+        $this->removeDirectory($this->backupsDir);
     }
 
     public function testIndexPassesNullStagedImportWhenNothingIsStaged(): void
@@ -63,7 +67,7 @@ final class BackupControllerTest extends TestCase
         $twig = $this->createMock(Environment::class);
         $twig->expects($this->once())
             ->method('render')
-            ->with('settings/backup/index.html.twig', ['stagedImport' => null])
+            ->with('settings/backup/index.html.twig', ['stagedImport' => null, 'backups' => []])
             ->willReturn('<html></html>');
 
         $response = $this->createController(twig: $twig)->index();
@@ -87,6 +91,24 @@ final class BackupControllerTest extends TestCase
                 return $params['stagedImport'] !== null
                     && $params['stagedImport']->sourceArchive === 'catalog.zip'
                     && $params['stagedImport']->stagedAt->format('Y-m-d\TH:i:sP') === '2026-09-18T12:34:56+00:00';
+            }))
+            ->willReturn('<html></html>');
+
+        $this->createController(twig: $twig)->index();
+    }
+
+    public function testIndexPassesTheBackupSnapshotList(): void
+    {
+        mkdir($this->backupsDir, 0o755, true);
+        file_put_contents($this->backupsDir.'/data-preimport-20260101-000000.db', 'x');
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('settings/backup/index.html.twig', $this->callback(function (array $params): bool {
+                return \count($params['backups']) === 1
+                    && $params['backups'][0]->name === 'data-preimport-20260101-000000.db'
+                    && $params['backups'][0]->isPreImport;
             }))
             ->willReturn('<html></html>');
 
@@ -139,6 +161,7 @@ final class BackupControllerTest extends TestCase
         return new BackupController(
             $twig ?? $this->createStub(Environment::class),
             new StagedImportService($this->importStagingDir),
+            new BackupListService($this->backupsDir),
             $csrfTokenManager,
             $urlGenerator ?? $this->createStub(UrlGeneratorInterface::class),
         );

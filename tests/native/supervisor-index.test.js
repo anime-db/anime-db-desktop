@@ -58,7 +58,8 @@ jest.mock('../../native/supervisor/qbittorrent', () => ({
     events:     { on: jest.fn() },
 }));
 jest.mock('../../native/supervisor/search-reindex', () => ({
-    run: jest.fn(() => Promise.resolve()),
+    run:             jest.fn(() => Promise.resolve()),
+    consumeRequired: jest.fn(() => false),
 }));
 jest.mock('../../native/supervisor/plugin-reconcile', () => ({
     run: jest.fn(() => Promise.resolve()),
@@ -103,6 +104,7 @@ describe('supervisor.start', () => {
         messengerConsumer.start.mockResolvedValue(undefined);
         meilisearch.start.mockResolvedValue({ port: 7700, key: 'k', wiped: false });
         searchReindex.run.mockResolvedValue(undefined);
+        searchReindex.consumeRequired.mockReturnValue(false);
         pluginReconcile.run.mockResolvedValue(undefined);
         marketRefresh.run.mockResolvedValue(undefined);
         migrations.run.mockResolvedValue(undefined);
@@ -224,6 +226,28 @@ describe('supervisor.start', () => {
         });
         expect(onProgress).toHaveBeenCalledWith(4, 5, 'splash.step_reindex');
         expect(onProgress).toHaveBeenCalledWith(5, 5, 'splash.step_done');
+    });
+
+    // Issue #681 review: a restored backup snapshot can have the current schema (wiped and
+    // migrationsApplied both false) yet still belong to a different catalog than the running
+    // Meilisearch index — native/backup-restore/index.js marks this via searchReindex.markRequired()
+    // ahead of its relaunch, and this consumeRequired() check is what honors that marker.
+    test('runs search-reindex when a reindex was marked required, even if not wiped and no migrations applied', async () => {
+        meilisearch.start.mockResolvedValue({ port: 7700, key: 'k', wiped: false });
+        migrations.run.mockResolvedValue(false);
+        searchReindex.consumeRequired.mockReturnValue(true);
+
+        const onProgress = jest.fn();
+        await supervisor.start(onProgress);
+
+        expect(searchReindex.run).toHaveBeenCalledWith({
+            appPort:         8000,
+            qbittorrentPort: 9000,
+            meiliPort:       7700,
+            meiliKey:        'k',
+            safeMode:        false,
+        });
+        expect(onProgress).toHaveBeenCalledWith(4, 5, 'splash.step_reindex');
     });
 
     test('does not fail startup when reindexing errors out', async () => {
