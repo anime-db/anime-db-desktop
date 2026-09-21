@@ -217,3 +217,29 @@ test('shows an error and re-enables the button when the restore IPC call reports
     expect(errorBox.textContent).toBe('Failed to restore the snapshot.');
     expect(button.disabled).toBe(false);
 });
+
+// Issue #681 review: restoreBackup() in native/backup-restore/index.js runs after
+// supervisor.stop() already tore down the PHP worker, so a failure there (disk full, file locked)
+// rejects this IPC call instead of resolving { ok: false }. Without a catch, the button would stay
+// disabled forever with no error shown and no relaunch.
+test('shows an error and re-enables the button when the restore IPC call rejects', async () => {
+    global.fetch = jest.fn(() => Promise.resolve(jsonResponse({
+        'settings_backup.restore_error_text': 'Failed to restore the snapshot.',
+    })));
+    jest.isolateModules(() => {
+        require('../../app/public/js/translations.js');
+    });
+    window.confirm = jest.fn(() => true);
+    window.animeDb.backupRestoreStart = jest.fn(() => Promise.reject(new Error('copy failed')));
+    loadBackupModule();
+    await flushMicrotasks();
+
+    const button = document.querySelector('.settings-backup-restore-button');
+    button.click();
+    await flushMicrotasks();
+
+    const errorBox = document.getElementById('settings-backup-snapshots-error');
+    expect(errorBox.hidden).toBe(false);
+    expect(errorBox.textContent).toBe('Failed to restore the snapshot.');
+    expect(button.disabled).toBe(false);
+});

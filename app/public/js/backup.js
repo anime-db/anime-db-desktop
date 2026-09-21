@@ -305,7 +305,17 @@
             snapshotsErrorBox.hidden = true;
             button.disabled = true;
 
-            const outcome = await window.animeDb.backupRestoreStart(name);
+            // restoreBackup() runs after supervisor.stop() already tore down FrankenPHP/messenger
+            // (see native/backup-restore/index.js) — a copy failure there (no disk space, a locked
+            // file) rejects this call rather than resolving { ok: false }, and without this catch
+            // the button would stay disabled forever with no relaunch and no error shown.
+            let outcome;
+            try {
+                outcome = await window.animeDb.backupRestoreStart(name);
+            } catch {
+                outcome = { ok: false };
+            }
+
             if (!outcome.ok) {
                 button.disabled = false;
                 snapshotsErrorBox.hidden = false;
