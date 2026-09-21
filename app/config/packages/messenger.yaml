@@ -38,6 +38,20 @@ framework:
             # service tagged with that name (#[AsSchedule('downloads_poll')]), not a queue.
             scheduler_downloads_poll: 'schedule://downloads_poll'
 
+            # Background tasks scheduled by plugins via
+            # AnimeDb\PluginContracts\Background\BackgroundTaskQueueInterface (issue #701, part 1
+            # of 3 for #684). Same connection/table as `async`/`media` (queue_name is the only
+            # difference) — consumed by its own long-lived process
+            # (native/supervisor/plugins-consumer.js) rather than sharing a worker with the
+            # transports above, so a long-running plugin task can never occupy the worker
+            # `PushSyncMessage` depends on and get it dropped past its TTL (config/services.yaml,
+            # issue #366). No routing entry below yet — the message that will route here doesn't
+            # exist until part 2 of #684.
+            plugins:
+                dsn: '%env(MESSENGER_TRANSPORT_DSN)%'
+                options:
+                    queue_name: plugins
+
         routing:
             'App\Message\ScanStorageMessage': async
             'App\Message\IndexAnimeMessage': async
