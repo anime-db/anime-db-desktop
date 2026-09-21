@@ -94,6 +94,43 @@
             <p id="settings-import-result" class="alert alert-success mt-3" hidden></p>
             <p id="settings-import-error" class="alert alert-danger mt-3" hidden></p>
         </section>
+
+        <hr class="my-4">
+
+        <section id="settings-backup-snapshots-section">
+            <h2>{{ 'settings_backup.snapshots_heading'|trans }}</h2>
+            <p class="text-body-secondary">{{ 'settings_backup.snapshots_description'|trans }}</p>
+
+            <p id="settings-backup-snapshots-error" class="alert alert-danger" hidden></p>
+
+            {% if backups is empty %}
+                <p id="settings-backup-snapshots-empty" class="text-body-secondary">{{ 'settings_backup.snapshots_empty'|trans }}</p>
+            {% else %}
+                <ul id="settings-backup-snapshots-list" class="list-group">
+                    {% for backup in backups %}
+                        <li class="list-group-item d-flex justify-content-between align-items-center gap-3">
+                            <span>
+                                {{ backup.createdAt|date('Y-m-d H:i:s') }}
+                                &middot;
+                                {% if backup.sizeBytes >= 1024 * 1024 %}
+                                    {{ (backup.sizeBytes / (1024 * 1024))|round(1) }}&nbsp;{{ 'settings_backup.snapshot_size_unit_mb'|trans }}
+                                {% else %}
+                                    {{ (backup.sizeBytes / 1024)|round(1) }}&nbsp;{{ 'settings_backup.snapshot_size_unit_kb'|trans }}
+                                {% endif %}
+                                {% if backup.isPreImport %}
+                                    <span class="badge text-bg-info">{{ 'settings_backup.snapshot_preimport_badge'|trans }}</span>
+                                {% endif %}
+                            </span>
+                            <button
+                                type="button"
+                                class="btn btn-outline-danger settings-backup-restore-button text-nowrap"
+                                data-backup-name="{{ backup.name }}"
+                            >{{ 'settings_backup.snapshot_restore_button'|trans }}</button>
+                        </li>
+                    {% endfor %}
+                </ul>
+            {% endif %}
+        </section>
     </main>
 {% endblock %}
 

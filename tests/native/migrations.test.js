@@ -62,7 +62,9 @@ jest.mock('child_process', () => ({
     spawn: jest.fn(),
 }));
 
-const { run, MigrationBootstrapError, MAX_BACKUPS } = require('../../native/supervisor/migrations');
+const {
+    run, MigrationBootstrapError, MAX_BACKUPS, restoreBackup, createPreImportBackup,
+} = require('../../native/supervisor/migrations');
 
 // Миграции стартуют до веб-воркера, поэтому appPort в их контексте отсутствует (см. env.js).
 const CONTEXT = { qbittorrentPort: 9000, meiliPort: 7700, meiliKey: 'k' };
@@ -270,5 +272,67 @@ describe('run', () => {
             expect(fs.rmSync).toHaveBeenCalledWith(expect.stringContaining(file), expect.anything());
         }
         expect(fs.rmSync).not.toHaveBeenCalledWith(expect.stringContaining(newest), expect.anything());
+    });
+
+    // Issue #681: a pre-import snapshot must survive routine rotation indefinitely, not just
+    // outlast a single prune — assert it is never even considered once MAX_BACKUPS is well
+    // exceeded by routine backups alone.
+    test('never prunes a data-preimport-*.db snapshot, no matter how many routine backups follow', async () => {
+        mockConsoleResponses({
+            'up-to-date': [{ code: 1 }],
+            backup:       [{ code: 0 }],
+            migrate:      [{ code: 0 }],
+        });
+        const preimport = 'data-preimport-20260101-000000.db';
+        const excessCount = 4;
+        const routine = Array.from(
+            { length: MAX_BACKUPS + excessCount },
+            (_, i) => `data-1.9.0-2026020${i + 1}-000000.db`,
+        );
+        fs.readdirSync.mockReturnValue([preimport, ...routine]);
+
+        await run(CONTEXT);
+
+        expect(fs.rmSync).toHaveBeenCalledTimes(excessCount);
+        expect(fs.rmSync).not.toHaveBeenCalledWith(expect.stringContaining(preimport), expect.anything());
+    });
+});
+
+describe('createPreImportBackup', () => {
+    test('snapshots data.db under a data-preimport-<timestamp>.db name and never prunes', async () => {
+        mockConsoleResponses({ backup: [{ code: 0 }] });
+
+        const backupPath = await createPreImportBackup(CONTEXT);
+
+        expect(backupPath).toMatch(/[/\\]data-preimport-\d{8}-\d{6}\.db$/);
+        const backupCall = spawn.mock.calls.find(([, args]) => args.includes('app:database:backup'));
+        expect(backupCall[1]).toEqual(expect.arrayContaining(['app:database:backup', backupPath]));
+        // Unlike createBackup(), this never rotates anything — the whole point is to be immune
+        // to MAX_BACKUPS churn (see pruneOldBackups()'s own exclusion above).
+        expect(fs.readdirSync).not.toHaveBeenCalled();
+        expect(fs.rmSync).not.toHaveBeenCalled();
+    });
+
+    test('throws a backup-failed MigrationBootstrapError when app:database:backup fails', async () => {
+        mockConsoleResponses({ backup: [{ code: 1, stderr: 'disk full' }] });
+
+        await expect(createPreImportBackup(CONTEXT)).rejects.toMatchObject({
+            kind:   'backup-failed',
+            detail: 'disk full',
+        });
+    });
+});
+
+describe('restoreBackup', () => {
+    test('removes -journal/-wal/-shm sidecars before copying the backup over data.db', () => {
+        restoreBackup('/fake/userData/backups/data-preimport-20260101-000000.db');
+
+        expect(fs.rmSync).toHaveBeenCalledWith('/fake/userData/data.db-journal', { force: true });
+        expect(fs.rmSync).toHaveBeenCalledWith('/fake/userData/data.db-wal', { force: true });
+        expect(fs.rmSync).toHaveBeenCalledWith('/fake/userData/data.db-shm', { force: true });
+        expect(fs.copyFileSync).toHaveBeenCalledWith(
+            '/fake/userData/backups/data-preimport-20260101-000000.db',
+            '/fake/userData/data.db',
+        );
     });
 });

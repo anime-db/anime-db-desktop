@@ -23,12 +23,13 @@
 
 // Wires settings/backup/index.html.twig's export section to
 // window.animeDb.catalogExportStart()/catalogExportCancel() (native/catalog-export/index.js,
-// issue #657) and its import section to window.animeDb.pickFile()/catalogImportStart()
-// (native/dialog/index.js, native/catalog-import/index.js, issue #670). Both sections share a
-// single WebSocket rather than each opening its own: unlike scan.js's window.ScanWatcher, a
-// catalog export or import is a single global operation, not one of several concurrent
-// per-storage jobs, so there is nothing to key export.*/import.* events by beyond the event name
-// itself.
+// issue #657), its import section to window.animeDb.pickFile()/catalogImportStart()
+// (native/dialog/index.js, native/catalog-import/index.js, issue #670), and its snapshot list's
+// restore buttons to window.animeDb.backupRestoreStart() (native/backup-restore/index.js, issue
+// #681). All three share a single WebSocket rather than each opening its own: unlike scan.js's
+// window.ScanWatcher, a catalog export or import is a single global operation, not one of several
+// concurrent per-storage jobs, so there is nothing to key export.*/import.* events by beyond the
+// event name itself — and restore has no progress events of its own at all (see below).
 (function () {
     const exportForm = document.getElementById('settings-backup-form');
     const importForm = document.getElementById('settings-import-form');
@@ -39,6 +40,9 @@
     const unavailable = document.getElementById('settings-backup-unavailable');
     const exportSection = document.getElementById('settings-backup-export-section');
     const importSection = document.getElementById('settings-backup-import-section');
+    const snapshotsSection = document.getElementById('settings-backup-snapshots-section');
+    const snapshotsErrorBox = document.getElementById('settings-backup-snapshots-error');
+    const restoreButtons = document.querySelectorAll('.settings-backup-restore-button');
 
     const pathInput = document.getElementById('settings-backup-path');
     const pickButton = document.getElementById('settings-backup-pick-folder');
@@ -59,12 +63,14 @@
     const importResultBox = document.getElementById('settings-import-result');
     const importErrorBox = document.getElementById('settings-import-error');
 
-    // Both sections only run through Electron's native layer (window.animeDb, exposed by
-    // native/window/preload.js) — a plain browser tab has nowhere to spawn app:catalog:export or
-    // app:catalog:stage.
-    if (!window.animeDb || !window.animeDb.catalogExportStart || !window.animeDb.catalogImportStart) {
+    // All three sections only run through Electron's native layer (window.animeDb, exposed by
+    // native/window/preload.js) — a plain browser tab has nowhere to spawn app:catalog:export,
+    // app:catalog:stage, or the restore IPC handler.
+    if (!window.animeDb || !window.animeDb.catalogExportStart || !window.animeDb.catalogImportStart
+        || !window.animeDb.backupRestoreStart) {
         exportSection.hidden = true;
         importSection.hidden = true;
+        if (snapshotsSection) snapshotsSection.hidden = true;
         unavailable.hidden = false;
         return;
     }
@@ -283,5 +289,28 @@
             const errorKey = IMPORT_ERROR_KEY_BY_CODE[outcome.code] || 'settings_backup.import_error_generic';
             importErrorBox.textContent = await window.AppTranslations.trans(errorKey, { path: importPathInput.value });
         }
+    });
+
+    // A successful restore relaunches the whole app from the main process (see
+    // native/backup-restore/index.js) — there is nothing left here to update on success, only on
+    // failure (e.g. the snapshot was removed from disk between the page load and the click).
+    restoreButtons.forEach((button) => {
+        button.addEventListener('click', async () => {
+            const name = button.dataset.backupName;
+            const confirmMessage = await window.AppTranslations.trans('settings_backup.restore_confirm_text', { name });
+            if (!window.confirm(confirmMessage)) {
+                return;
+            }
+
+            snapshotsErrorBox.hidden = true;
+            button.disabled = true;
+
+            const outcome = await window.animeDb.backupRestoreStart(name);
+            if (!outcome.ok) {
+                button.disabled = false;
+                snapshotsErrorBox.hidden = false;
+                snapshotsErrorBox.textContent = await window.AppTranslations.trans('settings_backup.restore_error_text');
+            }
+        });
     });
 })();

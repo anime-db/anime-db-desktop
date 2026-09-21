@@ -339,6 +339,15 @@ settings_backup:
     import_error_missing_database: 'В выбранном архиве «%path%» нет базы данных каталога.'
     import_error_unsafe_entry: 'Выбранный архив «%path%» содержит небезопасные пути файлов и был отклонён.'
     import_error_generic: Не удалось подготовить импорт каталога.
+    snapshots_heading: Снимки
+    snapshots_description: Резервные копии базы данных, снятые перед обновлением и импортом каталога.
+    snapshots_empty: Снимков ещё нет.
+    snapshot_preimport_badge: Перед импортом
+    snapshot_size_unit_kb: КБ
+    snapshot_size_unit_mb: МБ
+    snapshot_restore_button: Восстановить
+    restore_confirm_text: 'Текущий каталог будет заменён содержимым снимка «%name%». Отменить это действие будет нельзя. Продолжить?'
+    restore_error_text: Не удалось восстановить снимок.
 
 catalog_stage:
     error_unreadable: 'Не удалось прочитать архив каталога «%path%».'

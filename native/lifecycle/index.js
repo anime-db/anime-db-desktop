@@ -29,6 +29,7 @@ const shell = require('../shell');
 require('../dialog');
 require('../catalog-export');
 require('../catalog-import');
+require('../backup-restore');
 const supervisor       = require('../supervisor');
 const safeModeState    = require('../supervisor/safe-mode');
 const { createWindow } = require('../window');

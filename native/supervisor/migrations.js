@@ -33,6 +33,14 @@ const LOG_PREFIX = 'migrations';
 /** How many of the most recent pre-migration backups to keep in getBackupsDir(). */
 const MAX_BACKUPS = 5;
 
+/**
+ * Filename prefix (`data-preimport-<timestamp>.db`) that marks a snapshot as taken ahead of a
+ * catalog import rather than a routine pre-migration backup — see createPreImportBackup(). Kept
+ * distinct from the version string createBackup() embeds in the same position so pruneOldBackups()
+ * can tell the two apart by filename alone.
+ */
+const PREIMPORT_PREFIX = 'preimport';
+
 /** doctrine:migrations:up-to-date --fail-on-unregistered exit codes (see vendor/doctrine/migrations). */
 const STATUS_UP_TO_DATE  = 0;
 const STATUS_OUT_OF_DATE = 1;
@@ -113,15 +121,19 @@ function migrate(context) {
 }
 
 /**
- * Deletes the oldest backup files so that at most maxBackups remain. File names are
+ * Deletes the oldest routine backup files so that at most maxBackups remain. File names are
  * `data-<version>-<timestamp>.db`; the version prefix is not sortable (e.g. "1.10.0" sorts
  * before "1.9.0" lexicographically), so files are ordered by the trailing timestamp instead.
+ *
+ * Deliberately excludes `data-preimport-<timestamp>.db` snapshots (see createPreImportBackup()) —
+ * those are not part of the routine pre-migration rotation MAX_BACKUPS bounds, and must survive
+ * it indefinitely (issue #681).
  *
  * @param {string} backupDir
  * @param {number} maxBackups
  */
 function pruneOldBackups(backupDir, maxBackups) {
-    const pattern = /^data-.+-(\d{8}-\d{6})\.db$/;
+    const pattern = new RegExp(`^data-(?!${PREIMPORT_PREFIX}-).+-(\\d{8}-\\d{6})\\.db$`);
     const files = fs.readdirSync(backupDir)
         .map(f => ({ name: f, match: f.match(pattern) }))
         .filter(f => f.match !== null)
@@ -130,6 +142,37 @@ function pruneOldBackups(backupDir, maxBackups) {
     const excess = files.length - maxBackups;
     for (let i = 0; i < excess; i++) {
         fs.rmSync(path.join(backupDir, files[i].name), { force: true });
+    }
+}
+
+/**
+ * @returns {string} the current instant as `YYYYMMDD-HHMMSS`, the timestamp format both
+ *   createBackup() and createPreImportBackup() embed in their filenames.
+ */
+function formatTimestamp(date) {
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}-`
+        + `${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`;
+}
+
+/**
+ * Runs `app:database:backup` (VACUUM INTO, see DatabaseBackupCommand) to snapshot data.db to
+ * backupPath — the step shared by createBackup() and createPreImportBackup().
+ *
+ * @param {string} backupPath
+ * @param {import('./env').PhpContext} context
+ * @returns {Promise<void>}
+ */
+async function runDatabaseBackupCommand(backupPath, context) {
+    const { code, stderr } = await phpCommand.run(
+        'app:database:backup',
+        [backupPath],
+        context,
+        CONSOLE_TIMEOUT_MS,
+        { rejectOnNonZero: false, name: LOG_PREFIX },
+    );
+    if (code !== 0) {
+        throw new MigrationBootstrapError('backup-failed', stderr || `app:database:backup завершился с кодом ${code}`);
     }
 }
 
@@ -144,24 +187,33 @@ async function createBackup(context) {
     const backupDir = paths.getBackupsDir();
     fs.mkdirSync(backupDir, { recursive: true });
 
-    const now = new Date();
-    const pad = (n) => String(n).padStart(2, '0');
-    const timestamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-`
-        + `${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
-    const backupPath = path.join(backupDir, `data-${app.getVersion()}-${timestamp}.db`);
-
-    const { code, stderr } = await phpCommand.run(
-        'app:database:backup',
-        [backupPath],
-        context,
-        CONSOLE_TIMEOUT_MS,
-        { rejectOnNonZero: false, name: LOG_PREFIX },
-    );
-    if (code !== 0) {
-        throw new MigrationBootstrapError('backup-failed', stderr || `app:database:backup завершился с кодом ${code}`);
-    }
+    const backupPath = path.join(backupDir, `data-${app.getVersion()}-${formatTimestamp(new Date())}.db`);
+    await runDatabaseBackupCommand(backupPath, context);
 
     pruneOldBackups(backupDir, MAX_BACKUPS);
+    return backupPath;
+}
+
+/**
+ * Snapshots data.db the same way createBackup() does, but under a `data-preimport-<timestamp>.db`
+ * name instead of `data-<version>-<timestamp>.db` — pruneOldBackups() deliberately excludes this
+ * prefix, so the snapshot survives routine rotation indefinitely (issue #681) instead of being
+ * evicted by MAX_BACKUPS churn while an import is still in progress.
+ *
+ * Not called from anywhere in this codebase yet — reserved for the catalog-import apply step
+ * (issue #659, not yet built), which needs a backup of the pre-import catalog to restore from if
+ * the user reverts.
+ *
+ * @param {import('./env').PhpContext} context
+ * @returns {Promise<string>} path to the backup that was created
+ */
+async function createPreImportBackup(context) {
+    const backupDir = paths.getBackupsDir();
+    fs.mkdirSync(backupDir, { recursive: true });
+
+    const backupPath = path.join(backupDir, `data-${PREIMPORT_PREFIX}-${formatTimestamp(new Date())}.db`);
+    await runDatabaseBackupCommand(backupPath, context);
+
     return backupPath;
 }
 
@@ -239,4 +291,4 @@ async function run(context) {
     }
 }
 
-module.exports = { run, killOrphan, MigrationBootstrapError, MAX_BACKUPS };
+module.exports = { run, killOrphan, MigrationBootstrapError, MAX_BACKUPS, restoreBackup, createPreImportBackup };

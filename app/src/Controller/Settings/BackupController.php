@@ -27,6 +27,7 @@ declare(strict_types=1);
 
 namespace App\Controller\Settings;
 
+use App\Service\Backup\BackupListService;
 use App\Service\Import\StagedImportService;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -53,12 +54,20 @@ use Twig\Environment;
  * are both synchronous filesystem operations with nothing to poll over /ws, so a `Response`
  * with the same PRG shape {@see \App\Controller\SettingsController} uses for its own settings
  * actions is all this needs.
+ *
+ * The snapshot list (issue #681) is rendered the same way — {@see BackupListService::list()} is a
+ * synchronous directory read. Restoring one of those snapshots, unlike everything else on this
+ * page, has no route here at all: the swap has to happen with FrankenPHP itself stopped (it holds
+ * an open Doctrine connection to the very file being replaced), so it goes straight from the
+ * renderer to native/backup-restore/index.js over IPC (window.animeDb.backupRestoreStart()), not
+ * through this controller.
  */
 final class BackupController
 {
     public function __construct(
         private readonly Environment $twig,
         private readonly StagedImportService $stagedImportService,
+        private readonly BackupListService $backupListService,
         private readonly CsrfTokenManagerInterface $csrfTokenManager,
         private readonly UrlGeneratorInterface $urlGenerator,
     ) {
@@ -69,6 +78,7 @@ final class BackupController
     {
         return new Response($this->twig->render('settings/backup/index.html.twig', [
             'stagedImport' => $this->stagedImportService->readMarker(),
+            'backups' => $this->backupListService->list(),
         ]));
     }
 
