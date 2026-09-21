@@ -206,8 +206,10 @@
     }
 
     function buildCard(anime, catalogue) {
-        const card = document.createElement('article');
+        const card = document.createElement('a');
         card.className = 'anime-card';
+        card.href = `/anime/${anime.id}`;
+        card.title = anime.title;
 
         if (anime.cover) {
             const thumb = document.createElement('img');
