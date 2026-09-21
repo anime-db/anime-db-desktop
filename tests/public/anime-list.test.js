@@ -1117,3 +1117,217 @@ test('applying a filter does not clear the checkbox marks once the following fac
     expect(rowsAfter[1].querySelector('.anime-list__filter-checkbox').checked).toBe(true);
     expect(watchingCheckbox.checked).toBe(true);
 });
+
+// Issue #697: the catalog reads its full state back out of the address bar at init, not just
+// the ?labels=<id> scalar from #104 covered above.
+
+function errorResponse(status) {
+    return { ok: false, status, json: () => Promise.resolve({}) };
+}
+
+test('a ?labels[]=<id> URL (the list shape appendFilterParams() itself writes) seeds the same as ?labels=<id>', async () => {
+    window.history.replaceState({}, '', '/anime?labels[]=7');
+    const calls = mockFetchQueueAll();
+    setUpTranslations();
+
+    loadAnimeListModule();
+    await flushMicrotasks();
+
+    expect(queryParams(byKind(calls, 'list')[0].url)['labels[]']).toBe('7');
+    expect(document.querySelectorAll('.anime-list__chip-label')).toHaveLength(1);
+});
+
+test('?date_premiere_from=1990-01-01&date_premiere_to=1999-12-31 seeds the 1990s decade bucket', async () => {
+    window.history.replaceState({}, '', '/anime?date_premiere_from=1990-01-01&date_premiere_to=1999-12-31');
+    const calls = mockFetchQueueAll();
+    setUpTranslations();
+
+    loadAnimeListModule();
+    await flushMicrotasks();
+
+    expect(queryParams(byKind(calls, 'list')[0].url)).toMatchObject({
+        date_premiere_from: '1990-01-01',
+        date_premiere_to: '1999-12-31',
+    });
+    expect(document.querySelectorAll('.anime-list__chip-label')).toHaveLength(1);
+});
+
+test('a date range that does not line up with a whole decade is left unapplied and out of the chips', async () => {
+    window.history.replaceState({}, '', '/anime?date_premiere_from=1990-01-01&date_premiere_to=1999-06-30');
+    const calls = mockFetchQueueAll();
+    setUpTranslations();
+
+    loadAnimeListModule();
+    await flushMicrotasks();
+
+    const listParams = queryParams(byKind(calls, 'list')[0].url);
+    expect(listParams).not.toHaveProperty('date_premiere_from');
+    expect(listParams).not.toHaveProperty('date_premiere_to');
+    expect(document.querySelectorAll('.anime-list__chip-label')).toHaveLength(0);
+});
+
+test('a date range whose "from" year is not a decade start (e.g. 1995) is left unapplied and out of the chips', async () => {
+    window.history.replaceState({}, '', '/anime?date_premiere_from=1995-01-01&date_premiere_to=2004-12-31');
+    const calls = mockFetchQueueAll();
+    setUpTranslations();
+
+    loadAnimeListModule();
+    await flushMicrotasks();
+
+    const listParams = queryParams(byKind(calls, 'list')[0].url);
+    expect(listParams).not.toHaveProperty('date_premiere_from');
+    expect(listParams).not.toHaveProperty('date_premiere_to');
+    expect(document.querySelectorAll('.anime-list__chip-label')).toHaveLength(0);
+});
+
+test('?user_rating[]=5&user_rating_none=1 checks both "5" and "no rating" in the rating section', async () => {
+    window.history.replaceState({}, '', '/anime?user_rating[]=5&user_rating_none=1');
+    const calls = mockFetchQueueAll();
+    setUpTranslations();
+
+    loadAnimeListModule();
+    await flushMicrotasks();
+
+    const listParams = queryParams(byKind(calls, 'list')[0].url);
+    expect(listParams['user_rating[]']).toBe('5');
+    expect(listParams.user_rating_none).toBe('1');
+    expect(document.querySelectorAll('.anime-list__chip-label')).toHaveLength(2);
+});
+
+test('?name=...&sort=...&direction=... seeds the search box and the sort controls', async () => {
+    window.history.replaceState({}, '', '/anime?name=gate&sort=user_rating&direction=asc');
+    const calls = mockFetchQueueAll();
+    setUpTranslations();
+
+    loadAnimeListModule();
+    await flushMicrotasks();
+
+    expect(document.getElementById('anime-list-search').value).toBe('gate');
+    expect(document.querySelector('[data-sort-field="user_rating"]').getAttribute('aria-current')).toBe('true');
+    expect(document.getElementById('anime-list-sort-direction').textContent).toBe('↑');
+    expect(queryParams(byKind(calls, 'list')[0].url)).toMatchObject({
+        name: 'gate', sort: 'user_rating', direction: 'asc',
+    });
+});
+
+test('non-numeric label/studio ids in the URL are dropped rather than sent to the backend', async () => {
+    window.history.replaceState({}, '', '/anime?labels[]=abc&studios[]=xyz');
+    const calls = mockFetchQueueAll();
+    setUpTranslations();
+
+    loadAnimeListModule();
+    await flushMicrotasks();
+
+    const listParams = queryParams(byKind(calls, 'list')[0].url);
+    expect(listParams).not.toHaveProperty('labels[]');
+    expect(listParams).not.toHaveProperty('studios[]');
+    expect(document.querySelectorAll('.anime-list__chip-label')).toHaveLength(0);
+});
+
+test('a catalog opened with an unknown enum value does not throw and stays recoverable via "reset all"', async () => {
+    window.history.replaceState({}, '', '/anime?watch_status[]=not-a-real-status');
+    const calls = mockFetchQueueAll();
+    setUpTranslations();
+
+    // watch_status/type/genres/themes are not validated against their backend enums client-side
+    // (issue #697) — an unknown value is passed through and left for the server to reject, which
+    // this test simulates via a 400 response below. The requirement under test is that parsing it
+    // never throws and the page stays usable, not that the value magically becomes valid.
+    expect(() => loadAnimeListModule()).not.toThrow();
+    await flushMicrotasks();
+
+    expect(queryParams(byKind(calls, 'list')[0].url)['watch_status[]']).toBe('not-a-real-status');
+
+    byKind(calls, 'list')[0].resolve(errorResponse(400));
+    byKind(calls, 'facets')[0].resolve(errorResponse(400));
+    await flushMicrotasks();
+
+    expect(document.getElementById('anime-list-error').hidden).toBe(false);
+
+    const resetButton = document.getElementById('anime-list-chips-reset');
+    expect(resetButton.disabled).toBe(false);
+    resetButton.dispatchEvent(new Event('click', { bubbles: true }));
+    await flushMicrotasks();
+
+    expect(byKind(calls, 'list')).toHaveLength(2);
+    expect(queryParams(byKind(calls, 'list')[1].url)).not.toHaveProperty('watch_status[]');
+});
+
+test('a ?sort= value containing characters invalid in a CSS attribute selector does not throw and stays recoverable', async () => {
+    window.history.replaceState({}, '', '/anime?sort=%22%5D');
+    const calls = mockFetchQueueAll();
+    setUpTranslations();
+
+    expect(() => loadAnimeListModule()).not.toThrow();
+    await flushMicrotasks();
+
+    expect(byKind(calls, 'list')).toHaveLength(1);
+    expect(queryParams(byKind(calls, 'list')[0].url).sort).toBe('date_update');
+});
+
+test('window.location.search is never written to after a filter change seeded from the URL', async () => {
+    window.history.replaceState({}, '', '/anime?watch_status[]=watching');
+    const calls = mockFetchQueueAll();
+    setUpTranslations();
+
+    loadAnimeListModule();
+    await flushMicrotasks();
+    byKind(calls, 'list')[0].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 0, limit: 6, offset: 0 }));
+    byKind(calls, 'facets')[0].resolve(jsonResponse({
+        watch_status: [{ value: 'watching', count: 5 }],
+        type: [], date_premiere_decade: [], user_rating: [], labels: [], genres: [], themes: [], studios: [],
+    }));
+    await flushMicrotasks();
+
+    document.querySelector('[data-filter-section="watch_status"] .anime-list__filter-value-name')
+        .dispatchEvent(new Event('click', { bubbles: true }));
+    await flushMicrotasks();
+
+    expect(window.location.search).toBe('?watch_status[]=watching');
+});
+
+test('state built by appendFilterParams() and placed in the URL restores in full on re-parse (round trip)', async () => {
+    const query = new URLSearchParams({ sort: 'name', direction: 'asc', name: 'steins' });
+    query.append('watch_status[]', 'watching');
+    query.append('type[]', 'tv');
+    query.append('genres[]', 'action');
+    query.append('themes[]', 'mecha');
+    query.append('studios[]', '3');
+    query.append('labels[]', '7');
+    query.append('user_rating[]', '5');
+    query.set('user_rating_none', '1');
+    query.set('date_premiere_from', '1990-01-01');
+    query.set('date_premiere_to', '1999-12-31');
+    window.history.replaceState({}, '', `/anime?${query.toString()}`);
+
+    const calls = mockFetchQueueAll();
+    setUpTranslations();
+
+    loadAnimeListModule();
+    await flushMicrotasks();
+
+    expect(queryParams(byKind(calls, 'list')[0].url)).toMatchObject({
+        'watch_status[]': 'watching',
+        'type[]': 'tv',
+        'genres[]': 'action',
+        'themes[]': 'mecha',
+        'studios[]': '3',
+        'labels[]': '7',
+        'user_rating[]': '5',
+        user_rating_none: '1',
+        date_premiere_from: '1990-01-01',
+        date_premiere_to: '1999-12-31',
+        name: 'steins',
+        sort: 'name',
+        direction: 'asc',
+    });
+
+    expect(document.getElementById('anime-list-search').value).toBe('steins');
+    expect(document.querySelector('[data-sort-field="name"]').getAttribute('aria-current')).toBe('true');
+    expect(document.getElementById('anime-list-sort-direction').textContent).toBe('↑');
+
+    // One chip per applied value: watch_status, type, genres, themes, studios, labels (6) plus
+    // two rating values ('5' and 'none') plus the date_premiere decade bucket = 9.
+    expect(document.querySelectorAll('.anime-list__chip-label')).toHaveLength(9);
+    expect(document.getElementById('anime-list-filters-count').textContent).toBe(' · 9');
+});

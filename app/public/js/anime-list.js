@@ -35,10 +35,13 @@
     // watches the grid itself. Debounced because width can wobble across several frames during a
     // drag-resize while the column count itself only changes once.
     const RESIZE_DEBOUNCE_MS = 150;
-    // A label click on the anime detail page (issue #104) links here with ?labels=<id> — the
-    // only filter this page reads from the URL; it seeds the filter panel once at init, nothing
-    // is ever written back to the address bar (issue #666).
-    const labelFilter = new URLSearchParams(window.location.search).get('labels');
+    // The catalog reads its full state back out of the address bar once at init — every filter
+    // section, the search box and the sort choice (issue #697) — using the same param shapes
+    // appendFilterParams()/buildListQuery() themselves produce, so a link this page built (a
+    // label click on the anime detail page, issue #104, or the panel's own request) reopens the
+    // same state it came from. This is read-only: nothing is ever written back here, seeding
+    // happens once at init in seedFiltersFromUrl() below (issue #666's own read-only rule).
+    const urlParams = new URLSearchParams(window.location.search);
     // Debounce the search box (issue #199) so a full request isn't fired on every keystroke —
     // AnimeListController resolves this as "name" against Meilisearch, falling back to the
     // FTS5 quick-filter server-side when it is unavailable.
@@ -880,6 +883,21 @@
         });
     }
 
+    // Shared by the direction-toggle click handler and the URL seeding below (issue #697), so
+    // the button's arrow/label/dataset stay in one place instead of drifting between the two
+    // call sites.
+    function updateSortDirectionButton() {
+        if (!sortDirectionButton) {
+            return;
+        }
+        sortDirectionButton.dataset.direction = sortDirection;
+        sortDirectionButton.textContent = sortDirection === 'desc' ? '↓' : '↑';
+        sortDirectionButton.setAttribute(
+            'aria-label',
+            sortDirectionButton.dataset[sortDirection === 'desc' ? 'labelDesc' : 'labelAsc'],
+        );
+    }
+
     function setupSortControls() {
         if (!sortContainer) {
             return;
@@ -897,27 +915,137 @@
 
             if (sortDirectionButton && event.target.closest('#anime-list-sort-direction')) {
                 sortDirection = sortDirection === 'desc' ? 'asc' : 'desc';
-                sortDirectionButton.dataset.direction = sortDirection;
-                sortDirectionButton.textContent = sortDirection === 'desc' ? '↓' : '↑';
-                sortDirectionButton.setAttribute(
-                    'aria-label',
-                    sortDirectionButton.dataset[sortDirection === 'desc' ? 'labelDesc' : 'labelAsc'],
-                );
+                updateSortDirectionButton();
                 loadPage(0, true, true);
             }
         });
     }
 
-    function seedFiltersFromUrl() {
-        if (!labelFilter) {
-            return;
+    // watch_status/type/genres/themes are read as-is: validating them would mean duplicating
+    // the WatchStatus/AnimeType/GenreCode/ThemeCode enums here, a second place for them to drift
+    // out of sync with the backend. An unknown value is instead left for AnimeListRequestParser
+    // to reject with a 400 on the resulting GET /anime — a failed list/facets fetch is already
+    // handled without throwing (fetchPage()/loadFacets() above), so a bad link degrades to an
+    // error state instead of breaking the page (issue #697).
+    function parseEnumSectionSet(params, name) {
+        return new Set(params.getAll(`${name}[]`).filter((value) => value !== ''));
+    }
+
+    // Entity ids are always numeric on the wire (AnimeListRequestParser::parseIntListParam) —
+    // unlike the enum sections above, a non-numeric value here could never resolve to a real
+    // studio/label, so it is dropped rather than sent on to fail as a 400 (issue #697).
+    function parseEntityIdSet(params, name) {
+        return new Set(params.getAll(`${name}[]`).filter((value) => /^\d+$/.test(value)));
+    }
+
+    // The one section the URL still has to accept a second shape for: ?labels=<id> is the link a
+    // label click on the anime detail page builds (issue #104), while labels[]=<id> is what
+    // appendFilterParams() itself writes. Both feed the same Set so either one seeds the panel.
+    function parseLabelSet(params) {
+        return new Set([...params.getAll('labels'), ...params.getAll('labels[]')].filter((value) => /^\d+$/.test(value)));
+    }
+
+    function isTruthyFlag(rawValue) {
+        return rawValue !== null && ['1', 'true', 'on', 'yes'].includes(rawValue.toLowerCase());
+    }
+
+    // The wire splits "rating" across two parameters (user_rating[] and user_rating_none), but
+    // the panel has one section where "no rating" is a value like any other (RATING_ORDER already
+    // lists it alongside '5'..'1') — so both are folded into the one Set the panel understands
+    // (issue #697).
+    function parseUserRatingSet(params) {
+        const values = params.getAll('user_rating[]').filter((value) => RATING_ORDER.includes(value));
+        const set = new Set(values);
+        if (isTruthyFlag(params.get('user_rating_none'))) {
+            set.add('none');
         }
-        appliedFilters.labels.add(labelFilter);
-        pendingFilters.labels.add(labelFilter);
-        // Draws the chip/badge/reset button right away (issue #676 review) instead of leaving
-        // them dependent on the first loadFacets() call below, which is a separate, abortable
-        // network round-trip that can fail independently of this seeding.
-        refreshChips();
+
+        return set;
+    }
+
+    // The panel can only ever show a whole decade (issue #666); a from/to pair that does not
+    // line up with one exactly would be an applied filter the chip row and "Filters · N" badge
+    // could never render, so it is left unapplied entirely rather than shown as a lookalike
+    // bucket (issue #697's own resolution of that gap).
+    function parseDatePremiereFilter(params) {
+        if (isTruthyFlag(params.get('date_premiere_none'))) {
+            return 'none';
+        }
+
+        const from = params.get('date_premiere_from');
+        const to = params.get('date_premiere_to');
+        if (!from || !to) {
+            return null;
+        }
+
+        const match = /^(\d{4})-01-01$/.exec(from);
+        if (!match || parseInt(match[1], 10) % 10 !== 0) {
+            return null;
+        }
+
+        const decade = `${match[1]}s`;
+
+        return decadeRange(decade).to === to ? decade : null;
+    }
+
+    // Validated against the sort buttons actually present rather than a hardcoded field list, so
+    // this never drifts from list.html.twig — an unknown field is simply left at the default
+    // (issue #697).
+    function parseSortField(params) {
+        const value = params.get('sort');
+        if (!value || !sortContainer) {
+            return null;
+        }
+
+        const buttons = sortContainer.querySelectorAll('[data-sort-field]');
+        const known = Array.from(buttons).some((button) => button.dataset.sortField === value);
+
+        return known ? value : null;
+    }
+
+    function parseSortDirection(params) {
+        const value = params.get('direction');
+
+        return value === 'asc' || value === 'desc' ? value : null;
+    }
+
+    function seedFiltersFromUrl() {
+        appliedFilters.watch_status = parseEnumSectionSet(urlParams, 'watch_status');
+        appliedFilters.type = parseEnumSectionSet(urlParams, 'type');
+        appliedFilters.genres = parseEnumSectionSet(urlParams, 'genres');
+        appliedFilters.themes = parseEnumSectionSet(urlParams, 'themes');
+        appliedFilters.studios = parseEntityIdSet(urlParams, 'studios');
+        appliedFilters.labels = parseLabelSet(urlParams);
+        appliedFilters.user_rating = parseUserRatingSet(urlParams);
+        appliedFilters.date_premiere = parseDatePremiereFilter(urlParams);
+        pendingFilters = cloneFilters(appliedFilters);
+
+        const name = urlParams.get('name');
+        if (name && name.trim() !== '') {
+            searchQuery = name.trim();
+            if (searchInput) {
+                searchInput.value = searchQuery;
+            }
+        }
+
+        const sortFieldFromUrl = parseSortField(urlParams);
+        if (sortFieldFromUrl) {
+            sortField = sortFieldFromUrl;
+            updateSortFieldButtons();
+        }
+
+        const sortDirectionFromUrl = parseSortDirection(urlParams);
+        if (sortDirectionFromUrl) {
+            sortDirection = sortDirectionFromUrl;
+            updateSortDirectionButton();
+        }
+
+        if (!isFiltersEmpty(appliedFilters)) {
+            // Draws the chip/badge/reset button right away (issue #676 review) instead of leaving
+            // them dependent on the first loadFacets() call below, which is a separate, abortable
+            // network round-trip that can fail independently of this seeding.
+            refreshChips();
+        }
     }
 
     function init() {
