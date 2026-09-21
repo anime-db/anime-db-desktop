@@ -31,6 +31,13 @@ framework:
                 options:
                     queue_name: media
 
+            # Symfony Scheduler transport (issue #685): consuming it is what turns
+            # App\Scheduler\DownloadsPollSchedule's recurring trigger into a dispatched
+            # App\Message\PollDownloadsMessage on every tick. No `dsn` env var here, unlike the
+            # two transports above — 'schedule://<name>' resolves to the ScheduleProviderInterface
+            # service tagged with that name (#[AsSchedule('downloads_poll')]), not a queue.
+            scheduler_downloads_poll: 'schedule://downloads_poll'
+
         routing:
             'App\Message\ScanStorageMessage': async
             'App\Message\IndexAnimeMessage': async
