@@ -202,7 +202,7 @@ describe('safe mode prompt (issue #403)', () => {
         await new Promise((r) => setTimeout(r, 500));
 
         expect(dialog.showMessageBoxSync).not.toHaveBeenCalled();
-        expect(supervisor.start).toHaveBeenCalledWith(expect.any(Function), { safeMode: false });
+        expect(supervisor.start).toHaveBeenCalledWith(expect.any(Function), { safeMode: false, confirmStagedImport: expect.any(Function) });
     });
 
     test('two unclosed starts in a row prompt a dialog before the kernel starts', async () => {
@@ -213,7 +213,7 @@ describe('safe mode prompt (issue #403)', () => {
         await new Promise((r) => setTimeout(r, 500));
 
         expect(dialog.showMessageBoxSync).toHaveBeenCalledTimes(1);
-        expect(supervisor.start).toHaveBeenCalledWith(expect.any(Function), { safeMode: true });
+        expect(supervisor.start).toHaveBeenCalledWith(expect.any(Function), { safeMode: true, confirmStagedImport: expect.any(Function) });
     });
 
     test('choosing "Exit" quits without ever starting the kernel', async () => {
@@ -271,6 +271,66 @@ describe('safe mode prompt (issue #403)', () => {
 
         expect(dialog.showMessageBoxSync).toHaveBeenCalledWith(
             expect.objectContaining({ title: 'Не удаётся запустить приложение' }),
+        );
+    });
+});
+
+// Issue #706: the supervisor's startup decision step (native/supervisor/staged-import.js) takes a
+// confirmStagedImport callback instead of importing `dialog` itself — lifecycle/index.js supplies
+// the actual implementation, so these scenarios are exercised here rather than against the
+// supervisor mock.
+describe('staged import stale confirmation (issue #706)', () => {
+    function getConfirmCallback(supervisor) {
+        const [, options] = supervisor.start.mock.calls[0];
+        return options.confirmStagedImport;
+    }
+
+    test('asks via a dialog naming the source archive and staged date, and confirms on the "Apply" button', async () => {
+        const { supervisor, dialog } = loadLifecycle();
+        await new Promise((r) => setTimeout(r, 500));
+        dialog.showMessageBoxSync.mockReturnValue(0);
+
+        const confirmed = await getConfirmCallback(supervisor)({ stagedAt: '2026-09-18T12:34:56Z', sourceArchive: 'catalog-export.zip' });
+
+        expect(confirmed).toBe(true);
+        expect(dialog.showMessageBoxSync).toHaveBeenCalledWith(
+            expect.objectContaining({
+                buttons: ['Применить импорт', 'Отклонить'],
+                message: expect.stringContaining('catalog-export.zip'),
+            }),
+        );
+    });
+
+    test('declines on the "Discard" button', async () => {
+        const { supervisor, dialog } = loadLifecycle();
+        await new Promise((r) => setTimeout(r, 500));
+        dialog.showMessageBoxSync.mockReturnValue(1);
+
+        const confirmed = await getConfirmCallback(supervisor)({ stagedAt: '2026-09-18T12:34:56Z', sourceArchive: 'catalog-export.zip' });
+
+        expect(confirmed).toBe(false);
+    });
+
+    test('declines when the dialog is dismissed without a button choice (cancelId)', async () => {
+        const { supervisor, dialog } = loadLifecycle();
+        await new Promise((r) => setTimeout(r, 500));
+        dialog.showMessageBoxSync.mockReturnValue(undefined);
+
+        const confirmed = await getConfirmCallback(supervisor)({ stagedAt: '2026-09-18T12:34:56Z', sourceArchive: 'catalog-export.zip' });
+
+        expect(confirmed).toBe(false);
+    });
+
+    test('shows English button text for an "en" locale', async () => {
+        const { app, supervisor, dialog } = loadLifecycle();
+        app.getLocale.mockReturnValue('en-US');
+        await new Promise((r) => setTimeout(r, 500));
+        dialog.showMessageBoxSync.mockReturnValue(0);
+
+        await getConfirmCallback(supervisor)({ stagedAt: '2026-09-18T12:34:56Z', sourceArchive: 'catalog-export.zip' });
+
+        expect(dialog.showMessageBoxSync).toHaveBeenCalledWith(
+            expect.objectContaining({ buttons: ['Apply import', 'Discard'] }),
         );
     });
 });

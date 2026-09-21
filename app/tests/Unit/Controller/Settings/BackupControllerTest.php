@@ -48,17 +48,20 @@ use Twig\Environment;
 final class BackupControllerTest extends TestCase
 {
     private string $importStagingDir;
+    private string $importRejectionPath;
     private string $backupsDir;
 
     protected function setUp(): void
     {
         $this->importStagingDir = sys_get_temp_dir().'/animedb-backup-controller-test-'.uniqid();
+        $this->importRejectionPath = sys_get_temp_dir().'/animedb-backup-controller-test-rejection-'.uniqid().'.json';
         $this->backupsDir = sys_get_temp_dir().'/animedb-backup-controller-test-backups-'.uniqid();
     }
 
     protected function tearDown(): void
     {
         $this->removeDirectory($this->importStagingDir);
+        @unlink($this->importRejectionPath);
         $this->removeDirectory($this->backupsDir);
     }
 
@@ -67,12 +70,25 @@ final class BackupControllerTest extends TestCase
         $twig = $this->createMock(Environment::class);
         $twig->expects($this->once())
             ->method('render')
-            ->with('settings/backup/index.html.twig', ['stagedImport' => null, 'backups' => []])
+            ->with('settings/backup/index.html.twig', ['stagedImport' => null, 'stagedImportRejectionReason' => null, 'backups' => []])
             ->willReturn('<html></html>');
 
         $response = $this->createController(twig: $twig)->index();
 
         self::assertInstanceOf(Response::class, $response);
+    }
+
+    public function testIndexPassesTheRejectionReasonWhenAnImportWasRejected(): void
+    {
+        file_put_contents($this->importRejectionPath, json_encode(['reason' => 'incompatible_schema']));
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('settings/backup/index.html.twig', ['stagedImport' => null, 'stagedImportRejectionReason' => 'incompatible_schema', 'backups' => []])
+            ->willReturn('<html></html>');
+
+        $this->createController(twig: $twig)->index();
     }
 
     public function testIndexPassesTheStagedImportMarkerWhenOneIsPresent(): void
@@ -160,7 +176,7 @@ final class BackupControllerTest extends TestCase
 
         return new BackupController(
             $twig ?? $this->createStub(Environment::class),
-            new StagedImportService($this->importStagingDir),
+            new StagedImportService($this->importStagingDir, $this->importRejectionPath),
             new BackupListService($this->backupsDir),
             $csrfTokenManager,
             $urlGenerator ?? $this->createStub(UrlGeneratorInterface::class),

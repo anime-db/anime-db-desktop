@@ -19,6 +19,11 @@
     "dialog.safe_mode_run": "Запустить без плагинов",
     "dialog.safe_mode_exit": "Выход",
 
+    "dialog.staged_import_stale_title": "Применить подготовленный импорт?",
+    "dialog.staged_import_stale_message": "Импорт каталога из «%sourceArchive%» подготовлен %stagedAt% и старше 24 часов.\n\nПрименить его сейчас, заменив текущий каталог, или отклонить и запустить приложение обычным образом?",
+    "dialog.staged_import_stale_apply": "Применить импорт",
+    "dialog.staged_import_stale_discard": "Отклонить",
+
     "notification.plugin_activation_failed_title": "Активация плагина",
     "notification.plugin_activation_failed_message": "Не удалось активировать плагин «%pluginId%». Приложение восстановлено в рабочее состояние без него.",
 

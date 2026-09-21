@@ -61,6 +61,11 @@ use Twig\Environment;
  * an open Doctrine connection to the very file being replaced), so it goes straight from the
  * renderer to native/backup-restore/index.js over IPC (window.animeDb.backupRestoreStart()), not
  * through this controller.
+ *
+ * `stagedImportRejectionReason` (issue #706) surfaces why the native startup decision step
+ * rejected a staged import (invalid marker, incompatible schema, or a declined confirmation) —
+ * read the same way as `stagedImport` above, a synchronous file read with nothing to poll, and
+ * deliberately independent of FrankenPHP being up at the moment the rejection itself happened.
  */
 final class BackupController
 {
@@ -78,6 +83,7 @@ final class BackupController
     {
         return new Response($this->twig->render('settings/backup/index.html.twig', [
             'stagedImport' => $this->stagedImportService->readMarker(),
+            'stagedImportRejectionReason' => $this->stagedImportService->readRejectionReason(),
             'backups' => $this->backupListService->list(),
         ]));
     }

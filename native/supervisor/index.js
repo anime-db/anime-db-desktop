@@ -35,6 +35,7 @@ const pluginsConsumer   = require('./plugins-consumer');
 const qbittorrent       = require('./qbittorrent');
 const safeModeState     = require('./safe-mode');
 const searchReindex     = require('./search-reindex');
+const stagedImport      = require('./staged-import');
 
 const events = new EventEmitter();
 frankenphp.events.on('exit', (code) => events.emit('exit', code));
@@ -119,6 +120,10 @@ let queuedPluginId = null;
  * консольные вызовы ниже, хотя запускается позже — после messenger-consumer, не блокируя splash
  * (см. комментарий у самого вызова).
  *
+ * `app:import:staged-status` (issue #706, staged-import.js) — тот же принцип: запускается сразу
+ * после миграций, но зачистка сироты этого одноразового вызова здесь же, до первого дочернего
+ * процесса текущего сеанса.
+ *
  * Doctrine-миграции (issue #392) прогоняются сразу после Meilisearch/qbittorrent и до старта
  * FrankenPHP — migrate не зависит от HTTP/поиска/очереди, только от DATABASE_URL, но схема
  * должна быть готова до того, как HTTP-воркер начнёт принимать запросы. На чистом профиле это
@@ -139,12 +144,15 @@ let queuedPluginId = null;
  * @param {((step: number, total: number, translationKey: string) => void) | undefined} onProgress
  *   translationKey is a native/translations/ key, not display text — the caller (native/lifecycle)
  *   resolves it for the current locale (issue #404).
- * @param {{ safeMode?: boolean }} [options]  safeMode (issue #403) — набор незакрытых стартов
- *                                             подряд, отслеживаемый native/lifecycle/index.js,
- *                                             попадает сюда как уже принятое пользователем решение
+ * @param {{ safeMode?: boolean, confirmStagedImport?: (info: { stagedAt: string, sourceArchive: string }) => (Promise<boolean> | boolean) }} [options]
+ *   safeMode (issue #403) — набор незакрытых стартов подряд, отслеживаемый
+ *   native/lifecycle/index.js, попадает сюда как уже принятое пользователем решение.
+ *   confirmStagedImport (issue #706) — колбэк-подтверждение для staging старше 24 часов
+ *   (см. staged-import.js#decide); супервизор не должен знать про `dialog`, поэтому саму реализацию
+ *   передаёт native/lifecycle/index.js, а в тестах подменяется стабом.
  * @returns {Promise<{ frankenphpPort: number, wsPort: number, meiliPort: number, qbittorrentPort: number }>}
  */
-async function start(onProgress, { safeMode = false } = {}) {
+async function start(onProgress, { safeMode = false, confirmStagedImport } = {}) {
     await Promise.all([
         frankenphp.killOrphan(),
         meilisearch.killOrphan(),
@@ -158,6 +166,7 @@ async function start(onProgress, { safeMode = false } = {}) {
         phpCommand.killOrphan('app:downloads:poll'),
         pluginsConsumer.killOrphan(),
         qbittorrent.killOrphan(),
+        stagedImport.killOrphan(),
     ]);
 
     // Смена SAFE_MODE между запусками требует того же вайпа, что и смена сборки (issue #386) —
@@ -203,6 +212,15 @@ async function start(onProgress, { safeMode = false } = {}) {
 
     if (onProgress) onProgress(1, TOTAL_STEPS, 'splash.step_migrations');
     const migrationsApplied = await migrations.run(phpContext);
+
+    // Decides whether a staged catalog import (App\Service\Import\CatalogStageService, issue #669)
+    // may be applied — same place as the migrations/schema-downgrade guard above, and for the same
+    // reason: whatever happens next must not swap in a database this build cannot open. This is
+    // only the decision (issue #706); a separate, not-yet-built task executes 'apply'. Never
+    // touches data.db, media/, or the working database's own migration guard above — it only ever
+    // reads/removes import-staging/, via a staged copy of the schema check
+    // (migrations.js#checkDumpSchema) pointed at the staged file, not the working one.
+    await stagedImport.decide(phpContext, confirmStagedImport);
 
     // Rebuilds installed-plugins.php against the current build's manifest validation, same
     // buildChanged condition as the cache/market-snapshot invalidation above (issue #575) — an

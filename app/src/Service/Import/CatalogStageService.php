@@ -65,7 +65,6 @@ final class CatalogStageService
     private const int SUPPORTED_FORMAT_VERSION = 1;
 
     private const string MARKER_FILENAME = 'import.json';
-    private const int MARKER_VERSION = 1;
 
     public function __construct(
         private readonly WsPublisher $wsPublisher,
@@ -253,7 +252,7 @@ final class CatalogStageService
     private function writeMarker(string $archivePath): void
     {
         $marker = [
-            'markerVersion' => self::MARKER_VERSION,
+            'markerVersion' => StagedImportService::SUPPORTED_MARKER_VERSION,
             'stagedAt' => (new \DateTimeImmutable('now', new \DateTimeZone('UTC')))->format('Y-m-d\TH:i:s\Z'),
             'sourceArchive' => basename($archivePath),
         ];

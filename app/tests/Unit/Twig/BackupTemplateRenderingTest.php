@@ -54,7 +54,7 @@ final class BackupTemplateRenderingTest extends KernelTestCase
 
         /** @var Environment $twig */
         $twig = self::getContainer()->get('twig');
-        $html = $twig->render('settings/backup/index.html.twig', ['stagedImport' => null, 'backups' => []]);
+        $html = $twig->render('settings/backup/index.html.twig', ['stagedImport' => null, 'stagedImportRejectionReason' => null, 'backups' => []]);
 
         self::assertStringContainsString('id="settings-backup-snapshots-empty"', $html);
         self::assertStringNotContainsString('id="settings-backup-snapshots-list"', $html);
@@ -69,6 +69,7 @@ final class BackupTemplateRenderingTest extends KernelTestCase
         $twig = self::getContainer()->get('twig');
         $html = $twig->render('settings/backup/index.html.twig', [
             'stagedImport' => null,
+            'stagedImportRejectionReason' => null,
             'backups' => [
                 new BackupSnapshot('data-preimport-20260102-093000.db', new \DateTimeImmutable('2026-01-02 09:30:00'), 250 * 1024, true),
                 new BackupSnapshot('data-1.2.3-20260101-120000.db', new \DateTimeImmutable('2026-01-01 12:00:00'), 100, false),
@@ -80,5 +81,46 @@ final class BackupTemplateRenderingTest extends KernelTestCase
         self::assertStringContainsString('data-backup-name="data-preimport-20260102-093000.db"', $html);
         self::assertStringContainsString('data-backup-name="data-1.2.3-20260101-120000.db"', $html);
         self::assertStringContainsString('2026-01-02 09:30:00', $html);
+    }
+
+    // Issue #706: the startup decision step can reject a staged import before FrankenPHP ever
+    // starts, deleting import-staging/ entirely — this banner is the only way the user finds out
+    // why, so it must show whenever a reason was recorded and no staged import is currently
+    // pending (the two are mutually exclusive: a rejection always clears the staging directory).
+    public function testRendersTheRejectionBannerWhenAnImportWasRejectedAndNoneIsCurrentlyStaged(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession();
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('settings/backup/index.html.twig', [
+            'stagedImport' => null,
+            'stagedImportRejectionReason' => 'incompatible_schema',
+            'backups' => [],
+        ]);
+
+        self::assertStringContainsString('id="settings-backup-staged-import-rejected-banner"', $html);
+        self::assertStringNotContainsString('id="settings-backup-staged-import-banner"', $html);
+    }
+
+    // A currently-pending staged import takes precedence over a stale rejection reason left over
+    // from a previous, unrelated staging attempt — showing both would be confusing, and the
+    // pending one is the actionable state.
+    public function testDoesNotRenderTheRejectionBannerWhenAStagedImportIsAlreadyPending(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession();
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('settings/backup/index.html.twig', [
+            'stagedImport' => new \App\Service\Import\StagedImportMarker(new \DateTimeImmutable('2026-09-18 12:34:56'), 'catalog.zip'),
+            'stagedImportRejectionReason' => 'incompatible_schema',
+            'backups' => [],
+        ]);
+
+        self::assertStringContainsString('id="settings-backup-staged-import-banner"', $html);
+        self::assertStringNotContainsString('id="settings-backup-staged-import-rejected-banner"', $html);
     }
 }
