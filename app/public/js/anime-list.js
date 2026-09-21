@@ -212,13 +212,12 @@
         const card = document.createElement('a');
         card.className = 'anime-card';
         card.href = `/anime/${anime.id}`;
-        card.title = anime.title;
 
         if (anime.cover) {
             const thumb = document.createElement('img');
             thumb.className = 'anime-card__thumb';
             thumb.loading = 'lazy';
-            thumb.alt = anime.title;
+            thumb.alt = '';
             thumb.src = `app-media://anime/${anime.id}/${anime.cover}`;
             card.appendChild(thumb);
         } else {
@@ -233,6 +232,7 @@
         const title = document.createElement('h3');
         title.className = 'anime-card__title';
         title.textContent = anime.title;
+        title.title = anime.title;
         body.appendChild(title);
 
         const badge = document.createElement('span');

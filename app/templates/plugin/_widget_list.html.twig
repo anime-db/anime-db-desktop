@@ -39,12 +39,12 @@
         <li>
             <a class="anime-card" href="{{ item.url }}" target="_blank" rel="noopener noreferrer">
                 {% if item.thumbnail %}
-                    <img class="anime-card__thumb" src="{{ item.thumbnail }}" alt="{{ item.title }}" loading="lazy">
+                    <img class="anime-card__thumb" src="{{ item.thumbnail }}" alt="" loading="lazy">
                 {% else %}
                     <div class="anime-card__thumb anime-card__thumb--placeholder"></div>
                 {% endif %}
                 <div class="anime-card__body">
-                    <p class="anime-card__title"><bdi>{{ item.title }}</bdi></p>
+                    <p class="anime-card__title" title="{{ item.title }}"><bdi>{{ item.title }}</bdi></p>
                     {% if item.subtitle %}
                         <p class="anime-card__meta">{{ item.subtitle }}</p>
                     {% endif %}
