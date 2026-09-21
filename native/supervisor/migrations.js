@@ -297,18 +297,46 @@ async function createPreImportBackup(context) {
 }
 
 /**
- * Restores data.db from a backup created by createBackup(). Also removes any `-journal`/`-wal`/
- * `-shm` sidecar left behind by the failed migration attempt — those reference the pre-restore
- * file and would otherwise be (incorrectly) replayed against the restored one on next open.
+ * Restores data.db from a backup created by createBackup() or createPreImportBackup(). Also
+ * removes any `-journal`/`-wal`/`-shm` sidecar left behind by the file being replaced — those
+ * reference the pre-restore file and would otherwise be (incorrectly) replayed against the
+ * restored one on next open.
+ *
+ * The copy lands in a temporary file next to data.db first, then fs.renameSync() swaps it into
+ * place — the same atomic-write pattern config.js's writeConfig() uses. copyFileSync() truncates
+ * its destination up front, so copying straight onto dbPath would leave data.db empty or
+ * partially written if the copy failed partway through (e.g. out of disk space — backups and
+ * data.db share a volume, see paths.js, and pre-import snapshots are deliberately never rotated,
+ * so the volume filling up is an expected condition here, not an edge case). A free-space check
+ * ahead of the copy turns that failure into an up-front throw that never touches dbPath at all.
  *
  * @param {string} backupPath
  */
 function restoreBackup(backupPath) {
     const dbPath = paths.getDbPath();
+    const dbDir = path.dirname(dbPath);
+
+    const { size: backupSize } = fs.statSync(backupPath);
+    const { bavail, bsize } = fs.statfsSync(dbDir);
+    if (bavail * bsize < backupSize) {
+        throw new Error(
+            `Not enough free space to restore the backup: need ${backupSize} bytes, `
+            + `${bavail * bsize} available`,
+        );
+    }
+
     for (const suffix of ['-journal', '-wal', '-shm']) {
         fs.rmSync(dbPath + suffix, { force: true });
     }
-    fs.copyFileSync(backupPath, dbPath);
+
+    const tmpPath = path.join(dbDir, `.data.db.${process.pid}.${Date.now()}.tmp`);
+    try {
+        fs.copyFileSync(backupPath, tmpPath);
+        fs.renameSync(tmpPath, dbPath);
+    } catch (err) {
+        fs.rmSync(tmpPath, { force: true });
+        throw err;
+    }
 }
 
 /**

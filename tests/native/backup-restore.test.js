@@ -106,4 +106,19 @@ describe('startRestore', () => {
         expect(fs.existsSync).toHaveBeenCalledWith('/fake/userData/backups/data.db');
         expect(mockRestoreBackup).toHaveBeenCalledWith('/fake/userData/backups/data.db');
     });
+
+    // Reviewer feedback (issue #681): supervisor.stop() has already torn down FrankenPHP and
+    // messenger-consumer by the time restoreBackup() runs, and neither restarts on its own — so a
+    // thrown restoreBackup() (out of disk space, locked file, ...) must still relaunch the app
+    // instead of leaving it with an open window and a dead backend.
+    test('still relaunches, without marking a reindex, when restoreBackup() throws', async () => {
+        fs.existsSync.mockReturnValue(true);
+        mockRestoreBackup.mockImplementation(() => { throw new Error('ENOSPC: no space left on device'); });
+
+        const outcome = await startRestore(null, 'data-preimport-20260101-000000.db');
+
+        expect(outcome).toEqual({ ok: false });
+        expect(mockMarkRequired).not.toHaveBeenCalled();
+        expect(mockRelaunch).toHaveBeenCalledTimes(1);
+    });
 });

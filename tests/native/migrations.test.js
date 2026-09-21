@@ -114,7 +114,10 @@ beforeEach(() => {
     jest.spyOn(fs, 'readdirSync').mockReturnValue([]);
     jest.spyOn(fs, 'rmSync').mockImplementation(() => {});
     jest.spyOn(fs, 'copyFileSync').mockImplementation(() => {});
+    jest.spyOn(fs, 'renameSync').mockImplementation(() => {});
     jest.spyOn(fs, 'writeFileSync').mockImplementation(() => {});
+    jest.spyOn(fs, 'statSync').mockReturnValue({ size: 1024 });
+    jest.spyOn(fs, 'statfsSync').mockReturnValue({ bavail: 1024 * 1024, bsize: 1024 });
     jest.spyOn(fs.promises, 'stat').mockResolvedValue({ isFile: () => true });
 });
 
@@ -326,16 +329,52 @@ describe('createPreImportBackup', () => {
 });
 
 describe('restoreBackup', () => {
-    test('removes -journal/-wal/-shm sidecars before copying the backup over data.db', () => {
-        restoreBackup('/fake/userData/backups/data-preimport-20260101-000000.db');
+    const BACKUP_PATH = '/fake/userData/backups/data-preimport-20260101-000000.db';
+    const TMP_PATH_PATTERN = /^\/fake\/userData\/\.data\.db\.\d+\.\d+\.tmp$/;
+
+    test('removes -journal/-wal/-shm sidecars before copying the backup into a temp file next to data.db', () => {
+        restoreBackup(BACKUP_PATH);
 
         expect(fs.rmSync).toHaveBeenCalledWith('/fake/userData/data.db-journal', { force: true });
         expect(fs.rmSync).toHaveBeenCalledWith('/fake/userData/data.db-wal', { force: true });
         expect(fs.rmSync).toHaveBeenCalledWith('/fake/userData/data.db-shm', { force: true });
-        expect(fs.copyFileSync).toHaveBeenCalledWith(
-            '/fake/userData/backups/data-preimport-20260101-000000.db',
-            '/fake/userData/data.db',
-        );
+        expect(fs.copyFileSync).toHaveBeenCalledWith(BACKUP_PATH, expect.stringMatching(TMP_PATH_PATTERN));
+    });
+
+    // The rename is what makes the swap atomic — copyFileSync() lands the bytes under a throwaway
+    // name first, so a reader (or a crash mid-copy) never observes a partially written data.db.
+    test('renames the temp file over data.db only after the copy succeeds', () => {
+        restoreBackup(BACKUP_PATH);
+
+        const tmpPath = fs.copyFileSync.mock.calls[0][1];
+        expect(fs.renameSync).toHaveBeenCalledWith(tmpPath, '/fake/userData/data.db');
+    });
+
+    // Reviewer feedback (issue #681): copyFileSync() truncates its destination up front, so
+    // copying straight onto data.db would destroy it on a mid-copy failure (most commonly running
+    // out of disk space — backups share a volume with data.db and pre-import snapshots are never
+    // rotated). Copying into a temp file instead means a failure here never touches data.db.
+    test('leaves data.db untouched and cleans up the temp file when the copy fails', () => {
+        const copyError = new Error('ENOSPC: no space left on device');
+        fs.copyFileSync.mockImplementation(() => { throw copyError; });
+
+        expect(() => restoreBackup(BACKUP_PATH)).toThrow(copyError);
+
+        expect(fs.renameSync).not.toHaveBeenCalled();
+        const tmpPath = fs.copyFileSync.mock.calls[0][1];
+        expect(fs.rmSync).toHaveBeenCalledWith(tmpPath, { force: true });
+    });
+
+    // Checked up front, before either the sidecar cleanup or the copy start — a snapshot larger
+    // than the free space on the volume fails loudly instead of copyFileSync() failing mid-write.
+    test('throws without touching any file when there is not enough free space for the backup', () => {
+        fs.statSync.mockReturnValue({ size: 10 * 1024 * 1024 });
+        fs.statfsSync.mockReturnValue({ bavail: 1024, bsize: 1024 });
+
+        expect(() => restoreBackup(BACKUP_PATH)).toThrow(/not enough free space/i);
+
+        expect(fs.rmSync).not.toHaveBeenCalled();
+        expect(fs.copyFileSync).not.toHaveBeenCalled();
     });
 });
 

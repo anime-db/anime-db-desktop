@@ -45,10 +45,19 @@ const searchReindex = require('../supervisor/search-reindex');
  *
  * Unlike migrations.js's own restoreBackup() call (a rollback to the pre-migration state the
  * Meilisearch index already matched), this restores an arbitrary, potentially different snapshot
- * — so it also marks a forced reindex (searchReindex.markRequired(), issue #681 review) for the
- * next start to pick up, since a same-schema restore would otherwise leave both of
+ * — so a successful restore also marks a forced reindex (searchReindex.markRequired(), issue #681
+ * review) for the next start to pick up, since a same-schema restore would otherwise leave both of
  * index.js#start()'s own reindex triggers (wiped, migrationsApplied) false and the search index
  * stale against the restored catalog.
+ *
+ * restoreBackup() can throw (out of disk space, sidecar/target files locked, ...) — supervisor.
+ * stop() has already torn FrankenPHP/messenger-consumer down by that point, and neither restarts
+ * on its own (their own auto-restart is suppressed while stopping, see supervisor/frankenphp.js
+ * and supervisor/messenger-consumer.js), so relaunch() must run on the failure path too. Otherwise
+ * the app would sit with an open window and a dead backend until the user restarts it by hand.
+ * restoreBackup() itself never leaves dbPath partially written on failure (it swaps the restored
+ * file into place via a rename, not an in-place copy — see its own doc comment), so relaunching
+ * after a failed restore brings the app back up against the data.db that was already there.
  *
  * @param {import('electron').IpcMainInvokeEvent} _event
  * @param {string} name  backup file name only, as returned by the /settings/backup snapshot list
@@ -64,15 +73,22 @@ async function startRestore(_event, name) {
     }
 
     await supervisor.stop();
-    restoreBackup(backupPath);
-    searchReindex.markRequired();
 
-    // Lazy require: lifecycle/index.js requires this module before assigning its own
-    // module.exports, so a top-level require here would capture that early, still-empty object
-    // (same reasoning as native/catalog-import/index.js's own lazy require of '../lifecycle').
-    require('../lifecycle').relaunch();
+    let ok = true;
+    try {
+        restoreBackup(backupPath);
+        searchReindex.markRequired();
+    } catch {
+        ok = false;
+    } finally {
+        // Lazy require: lifecycle/index.js requires this module before assigning its own
+        // module.exports, so a top-level require here would capture that early, still-empty
+        // object (same reasoning as native/catalog-import/index.js's own lazy require of
+        // '../lifecycle'). Runs on both the success and failure path — see the doc comment above.
+        require('../lifecycle').relaunch();
+    }
 
-    return { ok: true };
+    return { ok };
 }
 
 ipcMain.handle('backup:restore-start', startRestore);
