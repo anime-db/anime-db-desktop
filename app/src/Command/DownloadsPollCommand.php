@@ -34,11 +34,13 @@ use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 
 /**
- * Runs a single DownloadCompletionPoller::poll() pass (issue #346). This app has no
- * periodic-job/scheduler mechanism yet (see .claude-docs/gotchas.md), so wiring this command to
- * actually run on an interval — a supervised native-side loop, or symfony/scheduler — is left to
- * a follow-up issue, same as #345 was split from #356. Safe to invoke repeatedly (idempotent,
- * see DownloadCompletionPoller's docblock) or manually while that wiring does not exist yet.
+ * Runs a single DownloadCompletionPoller::poll() pass (issue #346). Invoked from
+ * native/supervisor/downloads-poll.js once at app startup (issue #685) — catching a download
+ * that finished while the app was closed, since qBittorrent is a supervised sidecar that does not
+ * run at all in that window. The ongoing periodic run while the app stays open goes through
+ * App\MessageHandler\PollDownloadsMessageHandler on App\Scheduler\DownloadsPollSchedule's tick
+ * instead of this command. Safe to invoke repeatedly, including concurrently with either of
+ * those, or manually from the CLI (idempotent, see DownloadCompletionPoller's docblock).
  */
 #[AsCommand(name: 'app:downloads:poll', description: 'Poll qBittorrent for finished downloads and link/emit for the ones not yet completed')]
 final class DownloadsPollCommand extends Command

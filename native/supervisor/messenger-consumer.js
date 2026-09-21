@@ -86,13 +86,17 @@ function runSetupTransports(context) {
  * пуш-синк (PushSyncMessage) никогда не ждут за пачкой скачиваемых обложек/кадров (issue #508).
  * Второй процесс-потребитель под `media` сознательно не заводится — см. messenger.yaml.
  *
+ * `scheduler_downloads_poll` (issue #685) замыкает этот же список последним по той же логике
+ * приоритета: тик App\Scheduler\DownloadsPollSchedule ждёт, только если `async`/`media` заняты, а
+ * не наоборот — опрос qBittorrent не должен подвинуть пользовательские задачи из очереди.
+ *
  * @param {import('./env').PhpContext} context
  * @param {number} backoffIdx
  */
 function spawnProcess(context, backoffIdx = 0) {
     if (stopping) return;
 
-    child = spawn(BINARY, ['php-cli', CONSOLE, 'messenger:consume', 'async', 'media'], {
+    child = spawn(BINARY, ['php-cli', CONSOLE, 'messenger:consume', 'async', 'media', 'scheduler_downloads_poll'], {
         cwd: paths.getAppRootDir(),
         env: buildEnv(context),
         stdio: ['ignore', 'pipe', 'pipe'],

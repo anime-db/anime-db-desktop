@@ -44,11 +44,12 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
  * whose torrent just finished, links the folder to the catalog entry and dispatches
  * {@see DownloadCompletedEvent} exactly once (issue #346).
  *
- * Nothing in this class triggers poll() on a schedule — this app has no periodic-job mechanism
- * yet (see .claude-docs/gotchas.md); wiring poll() to actually run on an interval (a supervised
- * native-side loop, or symfony/scheduler) is deliberately left to a follow-up issue, same as
- * #345 was split from #356. What poll() itself guarantees does not depend on how often it is
- * called: idempotency comes entirely from Download::$status, persisted in the `downloads` table,
+ * Nothing in this class triggers poll() itself (issue #685): App\Command\DownloadsPollCommand and
+ * App\MessageHandler\PollDownloadsMessageHandler are the only callers, invoked respectively once
+ * at app startup (native/supervisor/downloads-poll.js) and on every tick of
+ * App\Scheduler\DownloadsPollSchedule for as long as the app stays open. What poll() itself
+ * guarantees does not depend on how often it is called or how many of those triggers land at
+ * once: idempotency comes entirely from Download::$status, persisted in the `downloads` table,
  * not from any in-memory state — calling poll() twice in a row, or after a full app restart,
  * never re-links or re-dispatches for a pair already marked Completed.
  *
