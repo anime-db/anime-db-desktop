@@ -31,6 +31,7 @@ const messengerConsumer = require('./messenger-consumer');
 const migrations        = require('./migrations');
 const phpCommand        = require('./php-command');
 const pluginReconcile   = require('./plugin-reconcile');
+const pluginsConsumer   = require('./plugins-consumer');
 const qbittorrent       = require('./qbittorrent');
 const safeModeState     = require('./safe-mode');
 const searchReindex     = require('./search-reindex');
@@ -38,6 +39,7 @@ const searchReindex     = require('./search-reindex');
 const events = new EventEmitter();
 frankenphp.events.on('exit', (code) => events.emit('exit', code));
 messengerConsumer.events.on('exit', (code) => events.emit('exit', code));
+pluginsConsumer.events.on('exit', (code) => events.emit('exit', code));
 qbittorrent.events.on('exit', (code) => events.emit('exit', code));
 
 /**
@@ -88,13 +90,15 @@ let queuedPluginId = null;
 /**
  * Запускает все дочерние процессы и возвращает занятые ими порты.
  * Сначала зачищаются PID-файлы всех процессов-сирот от предыдущего сеанса — до того, как
- * запущен хоть один дочерний процесс текущего сеанса. frankenphp и messenger-consumer делят один
- * и тот же бинарник (frankenphp.exe); если зачистка messenger-consumer выполнялась бы лениво,
- * внутри его собственного start() (после того как frankenphp текущего сеанса уже запущен),
- * переиспользованный ОС PID мог бы совпасть с процессом текущего сеанса и убить его (issue #390).
+ * запущен хоть один дочерний процесс текущего сеанса. frankenphp, messenger-consumer и
+ * plugins-consumer (issue #701) делят один и тот же бинарник (frankenphp.exe); если зачистка
+ * messenger-consumer/plugins-consumer выполнялась бы лениво, внутри их собственного start()
+ * (после того как frankenphp текущего сеанса уже запущен), переиспользованный ОС PID мог бы
+ * совпасть с процессом текущего сеанса и убить его (issue #390).
  * Следом, там же и по той же причине "до первого PHP-процесса" — инвалидация устаревшего
- * скомпилированного контейнера Symfony (issue #386): и frankenphp, и messenger-consumer бутуют
- * одно и то же ядро, а APP_ENV=prod не проверяет свежесть ConfigCache сам, поэтому первый же бут
+ * скомпилированного контейнера Symfony (issue #386): и frankenphp, и messenger-consumer/
+ * plugins-consumer бутуют одно и то же ядро, а APP_ENV=prod не проверяет свежесть ConfigCache
+ * сам, поэтому первый же бут
  * против устаревшего дампа запекает его *.bundles.php для всех последующих. Отпечаток сборки
  * фиксируется отдельно и только после успешного старта всех процессов (см. commitFingerprint
  * ниже) — если бы он писался заранее, падение где-то в середине старта считало бы апгрейд уже
@@ -152,6 +156,7 @@ async function start(onProgress, { safeMode = false } = {}) {
         phpCommand.killOrphan('app:plugin:reconcile'),
         phpCommand.killOrphan('app:catalog:export'),
         phpCommand.killOrphan('app:downloads:poll'),
+        pluginsConsumer.killOrphan(),
         qbittorrent.killOrphan(),
     ]);
 
@@ -224,6 +229,14 @@ async function start(onProgress, { safeMode = false } = {}) {
     const workerContext = { ...phpContext, appPort: frankenphpPort };
 
     await messengerConsumer.start(workerContext);
+
+    // Starts alongside messenger-consumer, under the same splash step above (issue #701, part 1
+    // of #684) — a second long-lived `messenger:consume` worker dedicated to the `plugins`
+    // transport (see app/config/packages/messenger.yaml), so a long-running plugin task can never
+    // occupy the same worker `PushSyncMessage` depends on. Must start after messengerConsumer, not
+    // before or in parallel with it: messenger-consumer.js#start is what runs
+    // `messenger:setup-transports` and creates the shared queue table if it doesn't exist yet.
+    await pluginsConsumer.start(workerContext);
 
     // Fired and forgotten, not awaited, same rationale as marketRefresh below (issue #685): a
     // download that finished while the app was closed must be linked without the appearing
@@ -310,28 +323,29 @@ function reloadForPlugin(pluginId) {
 }
 
 /**
- * Invalidates the real compiled-container cache and restarts FrankenPHP + messenger-consumer in
- * place, on the same ports (see frankenphp.js#start's `preferred` param) so the already-open
- * window and the reconnecting WsClient are unaffected.
+ * Invalidates the real compiled-container cache and restarts FrankenPHP + messenger-consumer +
+ * plugins-consumer (issue #701) in place, on the same ports (see frankenphp.js#start's
+ * `preferred` param) so the already-open window and the reconnecting WsClient are unaffected.
  *
- * If the restarted worker never becomes healthy, both processes' own crash-loop backoff
- * (frankenphp.js/messenger-consumer.js `spawnProcess`) would otherwise keep retrying against the
- * same broken plugin forever — stop() is called again here specifically to break that loop (its
- * `stopping` guard prevents any backoff respawn already scheduled from firing) before rolling
- * back: remove the plugin via the `app:plugin:deactivate` console command (issue #411's rollback
- * requirement) and restart clean, into the pre-plugin state. Every step from here on is
- * best-effort and swallows its own errors — this function must never leave the supervisor's
- * crash-loop backoff to fight a plugin that is already known to be broken, and must never reject
- * (its caller is a fire-and-forget WS event handler with nothing better to do than log).
+ * If the restarted worker never becomes healthy, all three processes' own crash-loop backoff
+ * (frankenphp.js/messenger-consumer.js/plugins-consumer.js `spawnProcess`) would otherwise keep
+ * retrying against the same broken plugin forever — stop() is called again here specifically to
+ * break that loop (its `stopping` guard prevents any backoff respawn already scheduled from
+ * firing) before rolling back: remove the plugin via the `app:plugin:deactivate` console command
+ * (issue #411's rollback requirement) and restart clean, into the pre-plugin state. Every step
+ * from here on is best-effort and swallows its own errors — this function must never leave the
+ * supervisor's crash-loop backoff to fight a plugin that is already known to be broken, and must
+ * never reject (its caller is a fire-and-forget WS event handler with nothing better to do than
+ * log).
  *
- * `frankenphp.start()`/`messengerConsumer.start()` flip their own `stopping` flag back to false
- * as soon as they're called (see frankenphp.js#start), so if the rollback restart itself fails
- * (e.g. `app:plugin:deactivate` couldn't remove a locked plugin and the pre-plugin process never
- * becomes healthy either), the crash-loop backoff that `start()` just armed is left running with
- * `stopping === false` — the exact loop this function exists to prevent, now fighting a state
- * that's already known to be unrecoverable. The outer catch below calls stop() on both again
- * (idempotent — see frankenphp.js#stop) so any respawn timer already scheduled sees `stopping ===
- * true` and no-ops instead of firing (issue #424).
+ * `frankenphp.start()`/`messengerConsumer.start()`/`pluginsConsumer.start()` flip their own
+ * `stopping` flag back to false as soon as they're called (see frankenphp.js#start), so if the
+ * rollback restart itself fails (e.g. `app:plugin:deactivate` couldn't remove a locked plugin and
+ * the pre-plugin process never becomes healthy either), the crash-loop backoff that `start()`
+ * just armed is left running with `stopping === false` — the exact loop this function exists to
+ * prevent, now fighting a state that's already known to be unrecoverable. The outer catch below
+ * calls stop() on all three again (idempotent — see frankenphp.js#stop) so any respawn timer
+ * already scheduled sees `stopping === true` and no-ops instead of firing (issue #424).
  *
  * @param {string} pluginId
  * @returns {Promise<void>}
@@ -346,12 +360,13 @@ async function performReload(pluginId) {
 
     try {
         cacheInvalidation.invalidateCache();
-        await messengerConsumer.stop();
+        await Promise.all([messengerConsumer.stop(), pluginsConsumer.stop()]);
         await frankenphp.stop();
 
         const started = await frankenphp.start(phpContext, { port: frankenphpPort, wsPort });
         liveContext = { phpContext, frankenphpPort: started.httpPort, wsPort: started.wsPort };
         await messengerConsumer.start({ ...phpContext, appPort: started.httpPort });
+        await pluginsConsumer.start({ ...phpContext, appPort: started.httpPort });
 
         events.emit('plugin-activated', { pluginId });
         return;
@@ -361,7 +376,7 @@ async function performReload(pluginId) {
 
     try {
         await frankenphp.stop();
-        await messengerConsumer.stop();
+        await Promise.all([messengerConsumer.stop(), pluginsConsumer.stop()]);
 
         try {
             await phpCommand.run('app:plugin:deactivate', [pluginId], phpContext, PLUGIN_DEACTIVATE_TIMEOUT_MS);
@@ -374,13 +389,14 @@ async function performReload(pluginId) {
         const restarted = await frankenphp.start(phpContext, { port: frankenphpPort, wsPort });
         liveContext = { phpContext, frankenphpPort: restarted.httpPort, wsPort: restarted.wsPort };
         await messengerConsumer.start({ ...phpContext, appPort: restarted.httpPort });
+        await pluginsConsumer.start({ ...phpContext, appPort: restarted.httpPort });
     } catch (rollbackErr) {
         console.error('[supervisor] откат после неудачной активации плагина тоже не удался:', rollbackErr.message);
 
         // Откатный start() выше мог успеть выставить stopping=false и заспавнить процесс до
         // своего падения — без этого их backoff-респаун (setTimeout(spawnProcess, …)) продолжил
         // бы бесконечно перезапускаться против заведомо битого состояния (issue #424).
-        await Promise.all([frankenphp.stop(), messengerConsumer.stop()]);
+        await Promise.all([frankenphp.stop(), messengerConsumer.stop(), pluginsConsumer.stop()]);
         console.error('[supervisor] процессы переведены в stopping — backoff-респаун остановлен.');
     }
 
@@ -389,13 +405,13 @@ async function performReload(pluginId) {
 
 /**
  * Останавливает все дочерние процессы в правильном порядке:
- * сначала messenger-consumer и FrankenPHP (нет новых запросов и задач), затем
- * Meilisearch и qbittorrent-nox.
+ * сначала messenger-consumer, plugins-consumer (issue #701) и FrankenPHP (нет новых запросов и
+ * задач), затем Meilisearch и qbittorrent-nox.
  *
  * @returns {Promise<void>}
  */
 async function stop() {
-    await messengerConsumer.stop();
+    await Promise.all([messengerConsumer.stop(), pluginsConsumer.stop()]);
     await frankenphp.stop();
     await Promise.all([meilisearch.stop(), qbittorrent.stop()]);
 }
@@ -407,6 +423,7 @@ async function stop() {
  */
 function killSync() {
     messengerConsumer.killSync();
+    pluginsConsumer.killSync();
     frankenphp.killSync();
     meilisearch.killSync();
     qbittorrent.killSync();

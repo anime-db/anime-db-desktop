@@ -67,6 +67,12 @@ jest.mock('../../native/supervisor/search-reindex', () => ({
 jest.mock('../../native/supervisor/plugin-reconcile', () => ({
     run: jest.fn(() => Promise.resolve()),
 }));
+jest.mock('../../native/supervisor/plugins-consumer', () => ({
+    start:      jest.fn(() => Promise.resolve()),
+    stop:       jest.fn(() => Promise.resolve()),
+    killOrphan: jest.fn(() => Promise.resolve()),
+    events:     { on: jest.fn() },
+}));
 jest.mock('../../native/supervisor/migrations', () => ({
     run:        jest.fn(() => Promise.resolve()),
     killOrphan: jest.fn(() => Promise.resolve()),
@@ -90,6 +96,7 @@ const messengerConsumer = require('../../native/supervisor/messenger-consumer');
 const migrations        = require('../../native/supervisor/migrations');
 const phpCommand        = require('../../native/supervisor/php-command');
 const pluginReconcile   = require('../../native/supervisor/plugin-reconcile');
+const pluginsConsumer   = require('../../native/supervisor/plugins-consumer');
 const safeModeState     = require('../../native/supervisor/safe-mode');
 const searchReindex     = require('../../native/supervisor/search-reindex');
 const supervisor        = require('../../native/supervisor');
@@ -106,6 +113,7 @@ describe('supervisor.start', () => {
         safeModeState.commitStartSuccess.mockImplementation(() => {});
         frankenphp.start.mockResolvedValue({ httpPort: 8000, wsPort: 8001 });
         messengerConsumer.start.mockResolvedValue(undefined);
+        pluginsConsumer.start.mockResolvedValue(undefined);
         meilisearch.start.mockResolvedValue({ port: 7700, key: 'k', wiped: false });
         searchReindex.run.mockResolvedValue(undefined);
         searchReindex.consumeRequired.mockReturnValue(false);
@@ -181,6 +189,59 @@ describe('supervisor.start', () => {
         expect(phpCommand.killOrphan).toHaveBeenCalledWith('app:search:reindex');
         expect(phpCommand.killOrphan).toHaveBeenCalledWith('app:plugin:reconcile');
         expect(phpCommand.killOrphan).toHaveBeenCalledWith('app:downloads:poll');
+    });
+
+    // issue #701: plugins-consumer shares frankenphp.exe with messenger-consumer, so its orphan
+    // from a previous session must be cleaned up before any child process of the current one
+    // starts — same rationale as messenger-consumer's own killOrphan() above (issue #390).
+    test('kills an orphaned plugins-consumer process before any child process starts', async () => {
+        await supervisor.start(jest.fn());
+
+        expect(pluginsConsumer.killOrphan).toHaveBeenCalled();
+    });
+
+    // Part 1 of #684 (issue #701): a dedicated long-lived `messenger:consume plugins` worker,
+    // separate from messenger-consumer's own `async`/`media`/`scheduler_downloads_poll` list, so a
+    // long-running plugin background task can never occupy the worker PushSyncMessage depends on.
+    // Deleting the pluginsConsumer.start() call from supervisor/index.js must fail this test.
+    describe('plugins-consumer startup (issue #701)', () => {
+        test('starts the plugins consumer after messenger-consumer, with the same worker context', async () => {
+            const callOrder = [];
+            messengerConsumer.start.mockImplementation(() => {
+                callOrder.push('messengerConsumer.start');
+                return Promise.resolve();
+            });
+            pluginsConsumer.start.mockImplementation((context) => {
+                callOrder.push('pluginsConsumer.start');
+                return Promise.resolve(context);
+            });
+
+            await supervisor.start(jest.fn());
+
+            expect(callOrder).toEqual(['messengerConsumer.start', 'pluginsConsumer.start']);
+            expect(pluginsConsumer.start).toHaveBeenCalledWith({
+                appPort:         8000,
+                qbittorrentPort: 9000,
+                meiliPort:       7700,
+                meiliKey:        'k',
+                safeMode:        false,
+            });
+        });
+
+        test('does not start frankenphp before the plugins consumer has started', async () => {
+            await expect(supervisor.start(jest.fn())).resolves.toBeDefined();
+
+            expect(frankenphp.start).toHaveBeenCalledTimes(1);
+            expect(pluginsConsumer.start).toHaveBeenCalledTimes(1);
+        });
+
+        test('propagates a plugins-consumer start failure and never commits the fingerprint', async () => {
+            pluginsConsumer.start.mockRejectedValue(new Error('spawn failed'));
+
+            await expect(supervisor.start(jest.fn())).rejects.toThrow('spawn failed');
+
+            expect(cacheInvalidation.commitFingerprint).not.toHaveBeenCalled();
+        });
     });
 
     test('runs search-reindex when meilisearch reports the index was wiped', async () => {
@@ -486,12 +547,13 @@ describe('supervisor.start', () => {
     // Safe mode (issue #403): SAFE_MODE must reach every PHP process the same way, since
     // migrations.run() boots the same Kernel (and its plugin bundles) as frankenphp.
     describe('safe mode (issue #403)', () => {
-        test('passes safeMode:true through the shared context to migrations, frankenphp and messenger-consumer', async () => {
+        test('passes safeMode:true through the shared context to migrations, frankenphp, messenger-consumer and plugins-consumer', async () => {
             await supervisor.start(jest.fn(), { safeMode: true });
 
             expect(migrations.run).toHaveBeenCalledWith(expect.objectContaining({ safeMode: true }));
             expect(frankenphp.start).toHaveBeenCalledWith(expect.objectContaining({ safeMode: true }));
             expect(messengerConsumer.start).toHaveBeenCalledWith(expect.objectContaining({ safeMode: true }));
+            expect(pluginsConsumer.start).toHaveBeenCalledWith(expect.objectContaining({ safeMode: true }));
         });
 
         test('defaults to safeMode:false when no options are given', async () => {
@@ -552,6 +614,7 @@ describe('supervisor.reloadForPlugin (issue #411)', () => {
         safeModeState.commitStartSuccess.mockImplementation(() => {});
         frankenphp.start.mockResolvedValue({ httpPort: 8000, wsPort: 8001 });
         messengerConsumer.start.mockResolvedValue(undefined);
+        pluginsConsumer.start.mockResolvedValue(undefined);
         meilisearch.start.mockResolvedValue({ port: 7700, key: 'k', wiped: false });
         searchReindex.run.mockResolvedValue(undefined);
         migrations.run.mockResolvedValue(undefined);
@@ -565,6 +628,8 @@ describe('supervisor.reloadForPlugin (issue #411)', () => {
         frankenphp.stop.mockResolvedValue(undefined);
         messengerConsumer.start.mockResolvedValue(undefined);
         messengerConsumer.stop.mockResolvedValue(undefined);
+        pluginsConsumer.start.mockResolvedValue(undefined);
+        pluginsConsumer.stop.mockResolvedValue(undefined);
         cacheInvalidation.invalidateCache.mockImplementation(() => {});
         phpCommand.run.mockResolvedValue(undefined);
     });
@@ -573,21 +638,24 @@ describe('supervisor.reloadForPlugin (issue #411)', () => {
         jest.clearAllMocks();
     });
 
-    test('invalidates the cache and restarts messenger-consumer then frankenphp then messenger-consumer again on the same ports', async () => {
+    test('invalidates the cache and restarts messenger-consumer/plugins-consumer then frankenphp then messenger-consumer/plugins-consumer again on the same ports', async () => {
         const callOrder = [];
         cacheInvalidation.invalidateCache.mockImplementation(() => callOrder.push('invalidateCache'));
         messengerConsumer.stop.mockImplementation(() => { callOrder.push('messengerConsumer.stop'); return Promise.resolve(); });
+        pluginsConsumer.stop.mockImplementation(() => { callOrder.push('pluginsConsumer.stop'); return Promise.resolve(); });
         frankenphp.stop.mockImplementation(() => { callOrder.push('frankenphp.stop'); return Promise.resolve(); });
         frankenphp.start.mockImplementation(() => {
             callOrder.push('frankenphp.start');
             return Promise.resolve({ httpPort: 8000, wsPort: 8001 });
         });
         messengerConsumer.start.mockImplementation(() => { callOrder.push('messengerConsumer.start'); return Promise.resolve(); });
+        pluginsConsumer.start.mockImplementation(() => { callOrder.push('pluginsConsumer.start'); return Promise.resolve(); });
 
         await supervisor.reloadForPlugin('animedb-shikimori');
 
         expect(callOrder).toEqual([
-            'invalidateCache', 'messengerConsumer.stop', 'frankenphp.stop', 'frankenphp.start', 'messengerConsumer.start',
+            'invalidateCache', 'messengerConsumer.stop', 'pluginsConsumer.stop', 'frankenphp.stop',
+            'frankenphp.start', 'messengerConsumer.start', 'pluginsConsumer.start',
         ]);
         // Re-requests the ports the live worker was already bound to (issue #411) — the
         // already-open BrowserWindow and the reconnecting WsClient both assume they don't change.
@@ -619,6 +687,7 @@ describe('supervisor.reloadForPlugin (issue #411)', () => {
         expect(cacheInvalidation.invalidateCache).toHaveBeenCalledTimes(2);
         expect(frankenphp.start).toHaveBeenCalledTimes(2);
         expect(messengerConsumer.start).toHaveBeenCalledTimes(1);
+        expect(pluginsConsumer.start).toHaveBeenCalledTimes(1);
         expect(failedHandler).toHaveBeenCalledWith({ pluginId: 'animedb-broken' });
     });
 
@@ -631,6 +700,7 @@ describe('supervisor.reloadForPlugin (issue #411)', () => {
 
         expect(frankenphp.start).toHaveBeenCalledTimes(2);
         expect(messengerConsumer.start).toHaveBeenCalledTimes(1);
+        expect(pluginsConsumer.start).toHaveBeenCalledTimes(1);
     });
 
     test('never rejects even when the rollback restart also fails', async () => {
@@ -641,13 +711,13 @@ describe('supervisor.reloadForPlugin (issue #411)', () => {
         expect(phpCommand.run).toHaveBeenCalled();
     });
 
-    // issue #424: frankenphp.start()/messengerConsumer.start() flip their own `stopping` flag back
-    // to false as soon as they're called — if the rollback restart itself never becomes healthy
-    // (e.g. a locked plugin folder defeats app:plugin:deactivate, and the pre-plugin process also
-    // fails to come up healthy), that leaves their crash-loop backoff armed with `stopping ===
-    // false`, respawning forever against a state already known to be broken. The extra stop() call
-    // this test checks for is what cancels that armed backoff.
-    test('stops both processes again after a failed deactivate and a failed rollback restart, to cancel any backoff respawn the rollback start armed', async () => {
+    // issue #424: frankenphp.start()/messengerConsumer.start()/pluginsConsumer.start() flip their
+    // own `stopping` flag back to false as soon as they're called — if the rollback restart itself
+    // never becomes healthy (e.g. a locked plugin folder defeats app:plugin:deactivate, and the
+    // pre-plugin process also fails to come up healthy), that leaves their crash-loop backoff
+    // armed with `stopping === false`, respawning forever against a state already known to be
+    // broken. The extra stop() call this test checks for is what cancels that armed backoff.
+    test('stops all three processes again after a failed deactivate and a failed rollback restart, to cancel any backoff respawn the rollback start armed', async () => {
         frankenphp.start.mockRejectedValue(new Error('still broken'));
         phpCommand.run.mockRejectedValue(new Error('plugin folder is locked'));
 
@@ -657,6 +727,7 @@ describe('supervisor.reloadForPlugin (issue #411)', () => {
         // restart, and once more after the rollback restart also fails.
         expect(frankenphp.stop).toHaveBeenCalledTimes(3);
         expect(messengerConsumer.stop).toHaveBeenCalledTimes(3);
+        expect(pluginsConsumer.stop).toHaveBeenCalledTimes(3);
     });
 
     test('a second signal while a reload is in flight coalesces into a single extra run for the latest plugin id', async () => {
