@@ -431,9 +431,10 @@ async function terminate(child) {
 // our own GPLv3 text, the third-party index and the license texts of the bundled binaries. Every
 // path is relative to the installation directory. Three different mechanisms put them there
 // (`extraFiles` for the first two groups, `files` for what download-bins.js extracts into
-// bin/licenses/, and the qbittorrent-nox bundle carrying its own THIRD-PARTY-LICENSES/), and each
-// of them fails silently: a mistyped glob, a skipped extraction or an upstream that stopped
-// shipping its license file all produce a working application that is simply missing attribution.
+// bin/licenses/, and the qbittorrent-nox and ffprobe bundles each carrying their own
+// THIRD-PARTY-LICENSES/), and each of them fails silently: a mistyped glob, a skipped extraction
+// or an upstream that stopped shipping its license file all produce a working application that is
+// simply missing attribution.
 // This is the only place in the pipeline that sees the real shipped tree.
 const REQUIRED_LICENSE_FILES = [
     'LICENSE.txt',
@@ -453,6 +454,7 @@ const REQUIRED_LICENSE_FILES = [
     'resources/app/bin/licenses/frankenphp/license.txt',
     'resources/app/bin/licenses/frankenphp/readme-redist-bins.txt',
     'resources/app/bin/qbittorrent-nox/THIRD-PARTY-LICENSES/README.md',
+    'resources/app/bin/ffprobe/THIRD-PARTY-LICENSES/README.md',
 ];
 
 /**

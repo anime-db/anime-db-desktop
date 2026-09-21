@@ -5,6 +5,7 @@ node_modules/
 bin/frankenphp/
 bin/meilisearch/
 bin/qbittorrent-nox/
+bin/ffprobe/
 # Лицензионные файлы апстримов — извлекаются оттуда же (см. FRANKENPHP_LICENSE_FILES)
 bin/licenses/
 
