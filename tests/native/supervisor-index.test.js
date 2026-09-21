@@ -228,7 +228,7 @@ describe('supervisor.start', () => {
             });
         });
 
-        test('does not start frankenphp before the plugins consumer has started', async () => {
+        test('starts frankenphp and the plugins consumer exactly once each', async () => {
             await expect(supervisor.start(jest.fn())).resolves.toBeDefined();
 
             expect(frankenphp.start).toHaveBeenCalledTimes(1);
