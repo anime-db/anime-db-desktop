@@ -136,8 +136,7 @@ function triggerResize(instances, columns) {
 }
 
 // A genuine GET /anime list request always carries `sort`/`direction` (buildListQuery() always
-// sets them) — the loadCatalogTotal() probe hits the same "/anime" path but without them, which
-// is what tells the two apart below.
+// sets them), which is what tells it apart from GET /anime/facets below.
 function isListRequest(url) {
     return url.startsWith('/anime?') && new URL(url, 'http://localhost').searchParams.has('sort');
 }
@@ -145,10 +144,10 @@ function isListRequest(url) {
 // Queues one deferred per fetch() call to the anime list endpoint, so the test controls exactly
 // when each request settles instead of racing against real timers or network I/O. A signal
 // listener rejects the call with an AbortError, mirroring what a real fetch() does once its
-// AbortController is aborted. GET /anime/facets and the one-off catalog-total probe (issue #666)
-// also go through this same mocked fetch() but are deliberately left out of the returned queue:
-// they are unrelated to what these pagination/sort/search tests assert on, and every request
-// still gets a real (if unresolved) promise back so awaiting it never throws.
+// AbortController is aborted. GET /anime/facets (issue #666) also goes through this same mocked
+// fetch() but is deliberately left out of the returned queue: it is unrelated to what these
+// pagination/sort/search tests assert on, and every request still gets a real (if unresolved)
+// promise back so awaiting it never throws.
 function mockFetchQueue() {
     const calls = [];
 
@@ -695,14 +694,10 @@ test('the synthetic initial ResizeObserver callback does not trigger a duplicate
 });
 
 // The filter-panel tests below need to see every request, not just list ones — unlike
-// mockFetchQueue() above, which exists precisely to hide the facets/catalog-total requests from
-// tests that are not about them (issue #666).
+// mockFetchQueue() above, which exists precisely to hide the facets requests from tests that are
+// not about them (issue #666).
 function classifyRequest(url) {
-    if (url.startsWith('/anime/facets')) {
-        return 'facets';
-    }
-
-    return isListRequest(url) ? 'list' : 'total';
+    return url.startsWith('/anime/facets') ? 'facets' : 'list';
 }
 
 function mockFetchQueueAll() {
@@ -734,10 +729,23 @@ function byKind(calls, kind) {
 
 function emptyFacets() {
     return jsonResponse({
+        catalog_total: 0,
         watch_status: [], type: [], date_premiere_decade: [], user_rating: [],
         labels: [], genres: [], themes: [], studios: [],
     });
 }
+
+test('initializing the catalog fires exactly two requests: GET /anime and GET /anime/facets', async () => {
+    const calls = mockFetchQueueAll();
+    setUpTranslations();
+
+    loadAnimeListModule();
+    await flushMicrotasks();
+
+    expect(calls).toHaveLength(2);
+    expect(byKind(calls, 'list')).toHaveLength(1);
+    expect(byKind(calls, 'facets')).toHaveLength(1);
+});
 
 // Shared setup for the applied-filter scroll-reset tests below: resolves the initial load, then
 // applies the "watching" checkbox via its value-label shortcut so there is a chip in place for a
@@ -766,7 +774,7 @@ test('the facets request has its own AbortController and does not repeat on an i
     const calls = mockFetchQueueAll();
     setUpTranslations();
 
-    loadAnimeListModule(); // fires the initial loadPage(), loadFacets() and loadCatalogTotal()
+    loadAnimeListModule(); // fires the initial loadPage() and loadFacets() calls
     await flushMicrotasks();
 
     expect(byKind(calls, 'list')).toHaveLength(1);
@@ -776,7 +784,6 @@ test('the facets request has its own AbortController and does not repeat on an i
         items: [animeItem(1, 'Steins;Gate')], pagination_mode: 'infinite_scroll', total: 2, limit: 1, offset: 0,
     }));
     byKind(calls, 'facets')[0].resolve(emptyFacets());
-    byKind(calls, 'total')[0].resolve(jsonResponse({ items: [], total: 2, limit: 1, offset: 0 }));
     await flushMicrotasks();
 
     const sentinelObserver = global.IntersectionObserver.mock.instances[0];
@@ -785,6 +792,44 @@ test('the facets request has its own AbortController and does not repeat on an i
 
     expect(byKind(calls, 'list')).toHaveLength(2);
     expect(byKind(calls, 'facets')).toHaveLength(1);
+});
+
+test('the "Shown X of Y" denominator uses the latest facets catalog_total, refreshed on every filter change', async () => {
+    const calls = mockFetchQueueAll();
+    const resolveKey = jest.fn((catalogue, key, params) => (params ? `${key}:${JSON.stringify(params)}` : key));
+    window.AppTranslations = { getCatalogue: jest.fn(() => Promise.resolve({})), resolveKey };
+
+    loadAnimeListModule();
+    await flushMicrotasks();
+    byKind(calls, 'list')[0].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 3, limit: 6, offset: 0 }));
+    byKind(calls, 'facets')[0].resolve(jsonResponse({
+        catalog_total: 10,
+        watch_status: [{ value: 'watching', count: 5 }],
+        type: [], date_premiere_decade: [], user_rating: [], labels: [], genres: [], themes: [], studios: [],
+    }));
+    await flushMicrotasks();
+
+    const chipsShown = document.getElementById('anime-list-chips-shown');
+    expect(chipsShown.textContent).toBe('anime_list.filter_shown_count:{"shown":3,"total":10}');
+
+    const nameButton = document.querySelector('[data-filter-section="watch_status"] .anime-list__filter-value-name');
+    nameButton.dispatchEvent(new Event('click', { bubbles: true }));
+    await flushMicrotasks();
+
+    expect(byKind(calls, 'list')).toHaveLength(2);
+    expect(byKind(calls, 'facets')).toHaveLength(2);
+
+    byKind(calls, 'list')[1].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 1, limit: 6, offset: 0 }));
+    // The catalog grew mid-session (e.g. an import finished) — the fresh facets response must
+    // win over the value fetched at initialization (issue #688).
+    byKind(calls, 'facets')[1].resolve(jsonResponse({
+        catalog_total: 12,
+        watch_status: [{ value: 'watching', count: 5 }],
+        type: [], date_premiere_decade: [], user_rating: [], labels: [], genres: [], themes: [], studios: [],
+    }));
+    await flushMicrotasks();
+
+    expect(chipsShown.textContent).toBe('anime_list.filter_shown_count:{"shown":1,"total":12}');
 });
 
 test('a checkbox accumulates without firing a request; the value label applies it immediately', async () => {
@@ -798,7 +843,6 @@ test('a checkbox accumulates without firing a request; the value label applies i
         watch_status: [{ value: 'watching', count: 5 }],
         type: [], date_premiere_decade: [], user_rating: [], labels: [], genres: [], themes: [], studios: [],
     }));
-    byKind(calls, 'total')[0].resolve(jsonResponse({ items: [], total: 5, limit: 1, offset: 0 }));
     await flushMicrotasks();
 
     const row = document.querySelector('[data-filter-section="watch_status"] .anime-list__filter-value');
@@ -834,7 +878,6 @@ test('"reset all" clears applied filters and refetches without touching the chos
         watch_status: [{ value: 'watching', count: 5 }],
         type: [], date_premiere_decade: [], user_rating: [], labels: [], genres: [], themes: [], studios: [],
     }));
-    byKind(calls, 'total')[0].resolve(jsonResponse({ items: [], total: 5, limit: 1, offset: 0 }));
     await flushMicrotasks();
 
     dispatchClick(document.querySelector('[data-sort-field="name"]'));
@@ -940,7 +983,6 @@ test('the filters badge text always equals the number of applied chips', async (
         watch_status: [{ value: 'watching', count: 5 }],
         type: [], date_premiere_decade: [], user_rating: [], labels: [], genres: [], themes: [], studios: [],
     }));
-    byKind(calls, 'total')[0].resolve(jsonResponse({ items: [], total: 5, limit: 1, offset: 0 }));
     await flushMicrotasks();
 
     const badge = document.getElementById('anime-list-filters-count');
@@ -980,7 +1022,6 @@ test('clicking a decade in "date premiere" applies a from/to range and a second 
         date_premiere_decade: [{ value: '2010s', count: 3 }, { value: '2000s', count: 2 }],
         user_rating: [], labels: [], genres: [], themes: [], studios: [],
     }));
-    byKind(calls, 'total')[0].resolve(jsonResponse({ items: [], total: 5, limit: 1, offset: 0 }));
     await flushMicrotasks();
 
     const rows = document.querySelectorAll('[data-filter-section="date_premiere"] .anime-list__filter-value');
@@ -1027,7 +1068,6 @@ test('applying a filter does not clear the checkbox marks once the following fac
         watch_status: [{ value: 'watching', count: 5 }, { value: 'planned', count: 2 }],
         type: [], date_premiere_decade: [], user_rating: [], labels: [], genres: [], themes: [], studios: [],
     }));
-    byKind(calls, 'total')[0].resolve(jsonResponse({ items: [], total: 5, limit: 1, offset: 0 }));
     await flushMicrotasks();
 
     const rows = document.querySelectorAll('[data-filter-section="watch_status"] .anime-list__filter-value');

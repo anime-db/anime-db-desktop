@@ -117,8 +117,10 @@
     // loadPage() call (including scroll-appends, since the filtered total does not change
     // mid-scroll). Used as the numerator of "Shown X of Y".
     let currentFilteredTotal = 0;
-    // Unfiltered catalog size, fetched once — the denominator of "Shown X of Y" answers "why are
-    // there so few records" only when compared against the whole catalog, not the current page.
+    // Unfiltered catalog size, refreshed from every GET /anime/facets response (issue #688) —
+    // the denominator of "Shown X of Y" answers "why are there so few records" only when
+    // compared against the whole catalog, not the current page, and must not go stale across a
+    // session as records are added, removed, imported or synced.
     let catalogTotal = null;
 
     function createEmptyFilters() {
@@ -508,6 +510,7 @@
         }
 
         lastFacets = data;
+        catalogTotal = data.catalog_total;
         const catalogue = await window.AppTranslations.getCatalogue().catch(() => ({}));
         if (controller.signal.aborted) {
             return;
@@ -520,22 +523,6 @@
         // resolved display name once lastFacets carries that name; a failed or superseded facets
         // request just leaves that upgrade for the next successful one (issue #676 review).
         renderChips(catalogue);
-    }
-
-    async function loadCatalogTotal() {
-        try {
-            const response = await fetch(`${API_URL}?limit=1&offset=0`);
-            if (response.ok) {
-                const data = await response.json();
-                catalogTotal = data.total;
-            }
-        } catch {
-            // Best effort — the shown-count denominator falls back to the filtered total until
-            // this resolves, which only matters on the very first paint.
-        }
-
-        const catalogue = await window.AppTranslations.getCatalogue().catch(() => ({}));
-        updateShownCount(catalogue);
     }
 
     function nameFromBucket(config, bucket, catalogue) {
@@ -944,7 +931,6 @@
         lastColumnCount = getColumnCount();
         loadPage(0, true, true);
         loadFacets();
-        loadCatalogTotal();
     }
 
     init();

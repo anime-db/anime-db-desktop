@@ -46,6 +46,7 @@ final class AnimeFacets
      * @param list<AnimeFacetEntityBucket> $studios
      */
     public function __construct(
+        public readonly int $catalogTotal,
         public readonly array $watchStatuses,
         public readonly array $types,
         public readonly array $datePremiereDecades,

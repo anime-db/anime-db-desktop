@@ -66,10 +66,14 @@ const OUTPUT_TAIL_CHARS = 4000;
  * @param {string} [options.name]  overrides the log file / PID-tracker name derived from
  *                               `command`; lets several distinct subcommands of one multi-step
  *                               flow share a single log file and PID slot
+ * @param {NodeJS.ProcessEnv} [options.envOverride]  merged on top of buildCommonEnv(context) —
+ *                               for callers that need to point a one-off command at a different
+ *                               resource than the running app's own (e.g. checking the schema of
+ *                               an arbitrary database file instead of the working data.db)
  * @returns {Promise<void|{ code: number|null, stdout: string, stderr: string }>}
  */
 function run(command, args, context, timeoutMs, options = {}) {
-    const { rejectOnNonZero = true, name = command.replace(/:/g, '-') } = options;
+    const { rejectOnNonZero = true, name = command.replace(/:/g, '-'), envOverride } = options;
 
     const logDir = path.join(paths.getRuntimeDir(), 'log');
     pruneOldLogs(logDir, name, LOG_MAX);
@@ -79,7 +83,7 @@ function run(command, args, context, timeoutMs, options = {}) {
         const [spawnCommand, ...spawnArgs] = buildPhpCliScriptArgs(BINARY, CONSOLE, command, ...args);
         const child = spawn(spawnCommand, spawnArgs, {
             cwd: paths.getAppRootDir(),
-            env: buildCommonEnv(context),
+            env: envOverride ? { ...buildCommonEnv(context), ...envOverride } : buildCommonEnv(context),
             stdio: ['ignore', 'pipe', 'pipe'],
         });
 
