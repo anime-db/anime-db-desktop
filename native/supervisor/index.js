@@ -116,10 +116,13 @@ let queuedPluginId = null;
  * тот же путь: миграций ещё не применено ни одной, значит есть что применить, и migrate создаёт
  * схему с нуля. Провал (в т.ч. отказ по даунгрейду) прерывает запуск — см. MigrationBootstrapError.
  *
- * Если Meilisearch при старте вайпнул индекс из-за смены версии (issue #389) или если
+ * Если Meilisearch при старте вайпнул индекс из-за смены версии (issue #389), или если
  * migrations.run() реально применил хотя бы одну миграцию (issue #402 — Doctrine-миграции
  * меняют data.db сырым SQL в обход ORM-слушателей, которые диспатчат индексирующие сообщения,
- * поэтому без этого индекс молча расходится с каталогом), после поднятия FrankenPHP и
+ * поэтому без этого индекс молча расходится с каталогом), или если native/backup-restore/index.js
+ * пометил (searchReindex.markRequired(), issue #681) необходимость переиндексации перед своим
+ * relaunch — восстановленный снимок может отличаться от каталога, под который собран текущий
+ * индекс, даже когда схема БД та же и оба предыдущих сигнала молчат, — после поднятия FrankenPHP и
  * messenger-consumer автоматически прогоняется app:search:reindex — без этого приложение либо
  * стартует с пустым поиском, либо каталог расходится с индексом до ручного нажатия кнопки в
  * /settings. Ошибка переиндексации не блокирует старт приложения — только логируется.
@@ -226,7 +229,13 @@ async function start(onProgress, { safeMode = false } = {}) {
         console.error('[market-refresh] не удалось обновить снимок маркета:', err.message);
     });
 
-    if (wiped || migrationsApplied) {
+    // Consumed unconditionally, before the wiped/migrationsApplied check below, so the marker
+    // native/backup-restore/index.js sets ahead of a relaunch is always cleared on the very next
+    // start — short-circuiting it behind `||` would skip consumeRequired() whenever wiped or
+    // migrationsApplied already forces a reindex, leaving the marker to force a second, redundant
+    // one on some later start.
+    const reindexRequired = searchReindex.consumeRequired();
+    if (wiped || migrationsApplied || reindexRequired) {
         if (onProgress) onProgress(4, TOTAL_STEPS, 'splash.step_reindex');
         try {
             await searchReindex.run(workerContext);

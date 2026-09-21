@@ -27,6 +27,7 @@ const path = require('path');
 const paths = require('../paths');
 const supervisor = require('../supervisor');
 const { restoreBackup } = require('../supervisor/migrations');
+const searchReindex = require('../supervisor/search-reindex');
 
 /**
  * Restores data.db from a snapshot picked on /settings/backup (issue #681), reusing
@@ -41,6 +42,13 @@ const { restoreBackup } = require('../supervisor/migrations');
  * native/catalog-import/index.js uses after staging an import — so the whole startup sequence,
  * including doctrine:migrations:up-to-date, runs fresh against the restored file rather than
  * resuming in place.
+ *
+ * Unlike migrations.js's own restoreBackup() call (a rollback to the pre-migration state the
+ * Meilisearch index already matched), this restores an arbitrary, potentially different snapshot
+ * — so it also marks a forced reindex (searchReindex.markRequired(), issue #681 review) for the
+ * next start to pick up, since a same-schema restore would otherwise leave both of
+ * index.js#start()'s own reindex triggers (wiped, migrationsApplied) false and the search index
+ * stale against the restored catalog.
  *
  * @param {import('electron').IpcMainInvokeEvent} _event
  * @param {string} name  backup file name only, as returned by the /settings/backup snapshot list
@@ -57,6 +65,7 @@ async function startRestore(_event, name) {
 
     await supervisor.stop();
     restoreBackup(backupPath);
+    searchReindex.markRequired();
 
     // Lazy require: lifecycle/index.js requires this module before assigning its own
     // module.exports, so a top-level require here would capture that early, still-empty object

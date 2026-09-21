@@ -42,6 +42,11 @@ jest.mock('../../native/supervisor', () => ({
     stop: (...args) => mockStop(...args),
 }));
 
+const mockMarkRequired = jest.fn();
+jest.mock('../../native/supervisor/search-reindex', () => ({
+    markRequired: (...args) => mockMarkRequired(...args),
+}));
+
 const mockRelaunch = jest.fn();
 jest.mock('../../native/lifecycle', () => ({ relaunch: (...args) => mockRelaunch(...args) }));
 
@@ -64,18 +69,30 @@ describe('startRestore', () => {
 
     // Issue #681: the swap must only happen once FrankenPHP/messenger-consumer (and their open
     // Doctrine connection to data.db) are torn down — never while the worker is still live.
-    test('stops the supervisor, restores the backup, then relaunches, in that order', async () => {
+    test('stops the supervisor, restores the backup, marks a reindex, then relaunches, in that order', async () => {
         fs.existsSync.mockReturnValue(true);
         const order = [];
         mockStop.mockImplementation(async () => { order.push('stop'); });
         mockRestoreBackup.mockImplementation(() => { order.push('restore'); });
+        mockMarkRequired.mockImplementation(() => { order.push('mark-reindex'); });
         mockRelaunch.mockImplementation(() => { order.push('relaunch'); });
 
         const outcome = await startRestore(null, 'data-preimport-20260101-000000.db');
 
         expect(outcome).toEqual({ ok: true });
-        expect(order).toEqual(['stop', 'restore', 'relaunch']);
+        expect(order).toEqual(['stop', 'restore', 'mark-reindex', 'relaunch']);
         expect(mockRestoreBackup).toHaveBeenCalledWith('/fake/userData/backups/data-preimport-20260101-000000.db');
+    });
+
+    // Issue #681 review: index.js#start() only reindexes automatically on wiped||migrationsApplied
+    // — both stay false when the restored snapshot has the same schema as the current one, so
+    // without this marker the search index would silently stay stale against the restored catalog.
+    test('marks a forced reindex for the next start even when the file check passed but nothing else did', async () => {
+        fs.existsSync.mockReturnValue(true);
+
+        await startRestore(null, 'data-preimport-20260101-000000.db');
+
+        expect(mockMarkRequired).toHaveBeenCalledTimes(1);
     });
 
     // A compromised or buggy renderer only ever gets file names back from the snapshot list, but
