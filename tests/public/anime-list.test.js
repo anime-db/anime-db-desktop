@@ -542,6 +542,8 @@ test('a column-count change in classic mode re-pages around the first record of 
 
     expect(calls).toHaveLength(3);
     expect(queryParams(calls[2].url)).toMatchObject({ offset: '18', limit: '18' });
+    calls[2].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 100, limit: 18, offset: 18 }));
+    await flushMicrotasks();
     expect(window.scrollTo).not.toHaveBeenCalled();
 });
 
@@ -573,6 +575,8 @@ test('a column-count change in classic mode does not reset the window scroll whe
 
     expect(calls).toHaveLength(3);
     expect(queryParams(calls[2].url)).toMatchObject({ offset: '0', limit: '60' });
+    calls[2].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 100, limit: 60, offset: 0 }));
+    await flushMicrotasks();
     expect(window.scrollTo).not.toHaveBeenCalled();
 });
 
