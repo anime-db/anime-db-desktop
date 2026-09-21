@@ -218,6 +218,10 @@ function cardTitles(grid) {
     return Array.from(grid.querySelectorAll('.anime-card__title')).map((node) => node.textContent);
 }
 
+function cardHrefs(grid) {
+    return Array.from(grid.querySelectorAll('.anime-card')).map((node) => node.getAttribute('href'));
+}
+
 let resizeObserverInstances;
 
 beforeEach(() => {
@@ -261,6 +265,30 @@ test('cards render even when the translations catalogue fails to load', async ()
     const grid = document.getElementById('anime-list-grid');
     expect(grid.children.length).toBeGreaterThan(0);
     expect(cardTitles(grid)).toEqual(['Steins;Gate', 'Mushishi']);
+});
+
+test('each rendered card is a link to its anime detail page', async () => {
+    const calls = mockFetchQueue();
+    setUpTranslations();
+
+    loadAnimeListModule(); // fires the initial loadPage(0, true) call
+    await flushMicrotasks();
+
+    expect(calls).toHaveLength(1);
+    calls[0].resolve(jsonResponse({
+        items:            [animeItem(1, 'Steins;Gate'), animeItem(2, 'Mushishi')],
+        pagination_mode:  'classic',
+        total:            2,
+        limit:            20,
+        offset:           0,
+    }));
+    await flushMicrotasks();
+
+    const grid = document.getElementById('anime-list-grid');
+    const cards = grid.querySelectorAll('.anime-card');
+    expect(cards).toHaveLength(2);
+    cards.forEach((card) => expect(card.tagName).toBe('A'));
+    expect(cardHrefs(grid)).toEqual(['/anime/1', '/anime/2']);
 });
 
 test('a full list replacement resets the window scroll position, an append does not', async () => {
