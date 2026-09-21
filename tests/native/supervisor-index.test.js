@@ -37,6 +37,9 @@ jest.mock('../../native/supervisor/frankenphp', () => ({
     ensurePhpIni:  jest.fn(),
     events:        { on: jest.fn() },
 }));
+jest.mock('../../native/supervisor/downloads-poll', () => ({
+    run: jest.fn(() => Promise.resolve()),
+}));
 jest.mock('../../native/supervisor/market-refresh', () => ({
     run: jest.fn(() => Promise.resolve()),
 }));
@@ -79,6 +82,7 @@ jest.mock('../../native/supervisor/safe-mode', () => ({
 }));
 
 const cacheInvalidation = require('../../native/supervisor/cache-invalidation');
+const downloadsPoll     = require('../../native/supervisor/downloads-poll');
 const frankenphp        = require('../../native/supervisor/frankenphp');
 const marketRefresh     = require('../../native/supervisor/market-refresh');
 const meilisearch       = require('../../native/supervisor/meilisearch');
@@ -107,6 +111,7 @@ describe('supervisor.start', () => {
         searchReindex.consumeRequired.mockReturnValue(false);
         pluginReconcile.run.mockResolvedValue(undefined);
         marketRefresh.run.mockResolvedValue(undefined);
+        downloadsPoll.run.mockResolvedValue(undefined);
         migrations.run.mockResolvedValue(undefined);
     });
 
@@ -175,6 +180,7 @@ describe('supervisor.start', () => {
         expect(phpCommand.killOrphan).toHaveBeenCalledWith('messenger:setup-transports');
         expect(phpCommand.killOrphan).toHaveBeenCalledWith('app:search:reindex');
         expect(phpCommand.killOrphan).toHaveBeenCalledWith('app:plugin:reconcile');
+        expect(phpCommand.killOrphan).toHaveBeenCalledWith('app:downloads:poll');
     });
 
     test('runs search-reindex when meilisearch reports the index was wiped', async () => {
@@ -296,6 +302,52 @@ describe('supervisor.start', () => {
 
         test('does not fail startup when the market refresh errors out', async () => {
             marketRefresh.run.mockRejectedValue(new Error('registry unreachable'));
+
+            await expect(supervisor.start(jest.fn())).resolves.toMatchObject({ frankenphpPort: 8000 });
+        });
+    });
+
+    // issue #685: a download finished while the app was closed must be linked without the
+    // appearing window/splash waiting on it — same fired-and-forget rationale as the market
+    // refresh trigger above, and this is the only thing that ever covers "app was closed" since
+    // App\Scheduler\DownloadsPollSchedule's own tick only runs once messenger-consumer is up and
+    // does not fire until its own interval elapses.
+    describe('downloads-poll startup trigger (issue #685)', () => {
+        test('triggers a downloads poll with the same context as messenger-consumer, after it has started', async () => {
+            const callOrder = [];
+            messengerConsumer.start.mockImplementation(() => {
+                callOrder.push('messengerConsumer.start');
+                return Promise.resolve();
+            });
+            downloadsPoll.run.mockImplementation((context) => {
+                callOrder.push('downloadsPoll.run');
+                return Promise.resolve(context);
+            });
+
+            await supervisor.start(jest.fn());
+
+            expect(callOrder).toEqual(['messengerConsumer.start', 'downloadsPoll.run']);
+            expect(downloadsPoll.run).toHaveBeenCalledWith({
+                appPort:         8000,
+                qbittorrentPort: 9000,
+                meiliPort:       7700,
+                meiliKey:        'k',
+                safeMode:        false,
+            });
+        });
+
+        test('does not block start() from resolving while the poll is still in flight', async () => {
+            let resolvePoll;
+            downloadsPoll.run.mockImplementation(() => new Promise((resolve) => { resolvePoll = resolve; }));
+
+            await expect(supervisor.start(jest.fn())).resolves.toMatchObject({ frankenphpPort: 8000 });
+
+            // Cleans up the still-pending promise so it doesn't leak into another test.
+            resolvePoll(undefined);
+        });
+
+        test('does not fail startup when the downloads poll errors out', async () => {
+            downloadsPoll.run.mockRejectedValue(new Error('app:downloads:poll завершился с кодом 1'));
 
             await expect(supervisor.start(jest.fn())).resolves.toMatchObject({ frankenphpPort: 8000 });
         });

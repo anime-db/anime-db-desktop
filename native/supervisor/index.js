@@ -23,6 +23,7 @@
 
 const { EventEmitter } = require('events');
 const cacheInvalidation = require('./cache-invalidation');
+const downloadsPoll     = require('./downloads-poll');
 const frankenphp        = require('./frankenphp');
 const marketRefresh     = require('./market-refresh');
 const meilisearch       = require('./meilisearch');
@@ -110,6 +111,10 @@ let queuedPluginId = null;
  * из native/catalog-export/index.js, — но сирота от прошлого сеанса всё равно должен быть убран
  * здесь же, до первого дочернего процесса текущего.
  *
+ * `app:downloads:poll` (issue #685) участвует в той же зачистке сирот, что и остальные разовые
+ * консольные вызовы ниже, хотя запускается позже — после messenger-consumer, не блокируя splash
+ * (см. комментарий у самого вызова).
+ *
  * Doctrine-миграции (issue #392) прогоняются сразу после Meilisearch/qbittorrent и до старта
  * FrankenPHP — migrate не зависит от HTTP/поиска/очереди, только от DATABASE_URL, но схема
  * должна быть готова до того, как HTTP-воркер начнёт принимать запросы. На чистом профиле это
@@ -146,6 +151,7 @@ async function start(onProgress, { safeMode = false } = {}) {
         phpCommand.killOrphan('app:search:reindex'),
         phpCommand.killOrphan('app:plugin:reconcile'),
         phpCommand.killOrphan('app:catalog:export'),
+        phpCommand.killOrphan('app:downloads:poll'),
         qbittorrent.killOrphan(),
     ]);
 
@@ -218,6 +224,15 @@ async function start(onProgress, { safeMode = false } = {}) {
     const workerContext = { ...phpContext, appPort: frankenphpPort };
 
     await messengerConsumer.start(workerContext);
+
+    // Fired and forgotten, not awaited, same rationale as marketRefresh below (issue #685): a
+    // download that finished while the app was closed must be linked without the appearing
+    // window waiting on it. See downloads-poll.js for why this startup run is the only thing that
+    // ever covers that case — App\Scheduler\DownloadsPollSchedule's own tick, running inside the
+    // messenger-consumer process just started above, does not fire until its own interval elapses.
+    downloadsPoll.run(workerContext).catch((err) => {
+        console.error('[downloads-poll] не удалось выполнить стартовый прогон поллера загрузок:', err.message);
+    });
 
     // Fired and forgotten, not awaited (issue #440, epic #435 decision №5): a market refresh is a
     // network fetch of the plugin registry (up to market-refresh.js's own TIMEOUT_MS), and the
