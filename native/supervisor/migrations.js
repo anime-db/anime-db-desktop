@@ -46,6 +46,29 @@ const STATUS_UP_TO_DATE  = 0;
 const STATUS_OUT_OF_DATE = 1;
 const STATUS_DOWNGRADE   = 2;
 
+/** Log file / PID-tracker name for checkDumpSchema(), kept separate from LOG_PREFIX so a schema
+ *  check never shares a log file or PID slot with an in-flight run() against the working DB. */
+const DUMP_CHECK_NAME = 'migrations-dump-check';
+
+/**
+ * The three possible outcomes of checkDumpSchema().
+ *
+ * @readonly
+ * @enum {string}
+ */
+const DumpSchemaVerdict = {
+    /** No migrations unknown to this build are present — the file can be applied. Also covers a
+     *  file older than the build: its pending-but-known migrations would just run normally. */
+    COMPATIBLE:   'compatible',
+    /** The file has executed migrations this build does not recognize (STATUS_DOWNGRADE). Not
+     *  necessarily "the file is newer" — a renamed, removed or squashed migration produces the
+     *  same signal. */
+    REJECT:       'reject',
+    /** The file does not exist, isn't a readable SQLite database, or the check process failed or
+     *  timed out — the file's compatibility could not be determined either way. */
+    CHECK_FAILED: 'check-failed',
+};
+
 /**
  * The message doctrine/migrations' up-to-date command prints (to stdout, via SymfonyStyle)
  * when it exits with STATUS_OUT_OF_DATE because there are pending migrations. Symfony also
@@ -90,6 +113,62 @@ class MigrationBootstrapError extends Error {
  */
 function killOrphan() {
     return phpCommand.killOrphan(LOG_PREFIX);
+}
+
+/**
+ * Checks whether an arbitrary SQLite file's schema is compatible with this build — used to vet a
+ * prepared import file *before* anything swaps it in as the working database. This is a separate,
+ * standalone check from the STATUS_DOWNGRADE guard in run() below: that one runs against the
+ * working data.db as part of the normal startup migration flow, while this one runs against a
+ * caller-supplied file and never touches data.db (or its own target file) at all — no backup is
+ * taken, nothing is restored, no migration is applied.
+ *
+ * Runs `doctrine:migrations:up-to-date --fail-on-unregistered` with DATABASE_URL pointed at
+ * `dbPath` instead of the working database (see php-command.js's `envOverride`).
+ *
+ * @param {string} dbPath  path to the file to check
+ * @param {import('./env').PhpContext} context
+ * @returns {Promise<string>} one of DumpSchemaVerdict:
+ *   - COMPATIBLE   — no migrations unknown to this build are present (including a file older
+ *                    than the build, which is a normal, applicable case);
+ *   - REJECT       — the file has executed migrations this build does not recognize; this is not
+ *                    necessarily "the file is newer" — see DumpSchemaVerdict.REJECT;
+ *   - CHECK_FAILED — the file does not exist, isn't a readable SQLite database, or the check
+ *                    process failed or timed out.
+ */
+async function checkDumpSchema(dbPath, context) {
+    try {
+        const stat = await fs.promises.stat(dbPath);
+        if (!stat.isFile()) return DumpSchemaVerdict.CHECK_FAILED;
+    } catch {
+        return DumpSchemaVerdict.CHECK_FAILED;
+    }
+
+    let status;
+    try {
+        status = await phpCommand.run(
+            'doctrine:migrations:up-to-date',
+            ['--fail-on-unregistered'],
+            context,
+            CONSOLE_TIMEOUT_MS,
+            {
+                rejectOnNonZero: false,
+                name: DUMP_CHECK_NAME,
+                envOverride: { DATABASE_URL: `sqlite:///${dbPath}` },
+            },
+        );
+    } catch {
+        return DumpSchemaVerdict.CHECK_FAILED;
+    }
+
+    if (status.code === STATUS_DOWNGRADE) return DumpSchemaVerdict.REJECT;
+
+    const output = [status.stdout, status.stderr].filter(Boolean).join('\n');
+    if (status.code === STATUS_UP_TO_DATE || (status.code === STATUS_OUT_OF_DATE && output.includes(OUT_OF_DATE_MARKER))) {
+        return DumpSchemaVerdict.COMPATIBLE;
+    }
+
+    return DumpSchemaVerdict.CHECK_FAILED;
 }
 
 /**
@@ -291,4 +370,7 @@ async function run(context) {
     }
 }
 
-module.exports = { run, killOrphan, MigrationBootstrapError, MAX_BACKUPS, restoreBackup, createPreImportBackup };
+module.exports = {
+    run, killOrphan, checkDumpSchema, DumpSchemaVerdict, MigrationBootstrapError, MAX_BACKUPS,
+    restoreBackup, createPreImportBackup,
+};

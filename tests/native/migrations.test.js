@@ -63,7 +63,8 @@ jest.mock('child_process', () => ({
 }));
 
 const {
-    run, MigrationBootstrapError, MAX_BACKUPS, restoreBackup, createPreImportBackup,
+    run, checkDumpSchema, DumpSchemaVerdict, MigrationBootstrapError, MAX_BACKUPS,
+    restoreBackup, createPreImportBackup,
 } = require('../../native/supervisor/migrations');
 
 // Миграции стартуют до веб-воркера, поэтому appPort в их контексте отсутствует (см. env.js).
@@ -114,6 +115,7 @@ beforeEach(() => {
     jest.spyOn(fs, 'rmSync').mockImplementation(() => {});
     jest.spyOn(fs, 'copyFileSync').mockImplementation(() => {});
     jest.spyOn(fs, 'writeFileSync').mockImplementation(() => {});
+    jest.spyOn(fs.promises, 'stat').mockResolvedValue({ isFile: () => true });
 });
 
 afterEach(() => {
@@ -334,5 +336,75 @@ describe('restoreBackup', () => {
             '/fake/userData/backups/data-preimport-20260101-000000.db',
             '/fake/userData/data.db',
         );
+    });
+});
+
+describe('checkDumpSchema', () => {
+    const DUMP_PATH = '/fake/import-staging/prepared.db';
+
+    test('resolves "compatible" when the file is already up-to-date (status 0)', async () => {
+        mockConsoleResponses({ 'up-to-date': [{ code: 0 }] });
+
+        await expect(checkDumpSchema(DUMP_PATH, CONTEXT)).resolves.toBe(DumpSchemaVerdict.COMPATIBLE);
+
+        const { env } = spawn.mock.calls[0][2];
+        expect(env.DATABASE_URL).toBe(`sqlite:///${DUMP_PATH}`);
+    });
+
+    test('resolves "compatible" for an older but known schema (status 1 with the "Out-of-date!" marker)', async () => {
+        mockConsoleResponses({ 'up-to-date': [{ code: 1 }] });
+
+        await expect(checkDumpSchema(DUMP_PATH, CONTEXT)).resolves.toBe(DumpSchemaVerdict.COMPATIBLE);
+    });
+
+    test('resolves "reject" when the file has executed migrations unknown to this build (status 2)', async () => {
+        mockConsoleResponses({ 'up-to-date': [{ code: 2 }] });
+
+        await expect(checkDumpSchema(DUMP_PATH, CONTEXT)).resolves.toBe(DumpSchemaVerdict.REJECT);
+    });
+
+    test('resolves "check-failed" when the process exits 1 without the "Out-of-date!" marker (e.g. not a SQLite file)', async () => {
+        mockConsoleResponses({
+            'up-to-date': [{ code: 1, stdout: '', stderr: 'SQLSTATE[HY000]: file is not a database' }],
+        });
+
+        await expect(checkDumpSchema(DUMP_PATH, CONTEXT)).resolves.toBe(DumpSchemaVerdict.CHECK_FAILED);
+    });
+
+    test('resolves "check-failed" without spawning a process when the path does not exist', async () => {
+        fs.promises.stat.mockRejectedValue(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
+
+        await expect(checkDumpSchema(DUMP_PATH, CONTEXT)).resolves.toBe(DumpSchemaVerdict.CHECK_FAILED);
+        expect(spawn).not.toHaveBeenCalled();
+    });
+
+    test('resolves "check-failed" without spawning a process when the path is not a regular file', async () => {
+        fs.promises.stat.mockResolvedValue({ isFile: () => false });
+
+        await expect(checkDumpSchema(DUMP_PATH, CONTEXT)).resolves.toBe(DumpSchemaVerdict.CHECK_FAILED);
+        expect(spawn).not.toHaveBeenCalled();
+    });
+
+    test('resolves "check-failed" instead of rejecting when the console process fails to spawn', async () => {
+        spawn.mockImplementation(() => {
+            const child = new EventEmitter();
+            child.stdout = new EventEmitter();
+            child.stderr = new EventEmitter();
+            setImmediate(() => child.emit('error', new Error('spawn ENOENT')));
+            return child;
+        });
+
+        await expect(checkDumpSchema(DUMP_PATH, CONTEXT)).resolves.toBe(DumpSchemaVerdict.CHECK_FAILED);
+    });
+
+    test('never touches the working data.db or creates a backup', async () => {
+        mockConsoleResponses({ 'up-to-date': [{ code: 2 }] });
+
+        await checkDumpSchema(DUMP_PATH, CONTEXT);
+
+        expect(spawn).toHaveBeenCalledTimes(1);
+        expect(spawn.mock.calls[0][1]).not.toEqual(expect.arrayContaining(['app:database:backup']));
+        expect(fs.copyFileSync).not.toHaveBeenCalled();
+        expect(fs.rmSync).not.toHaveBeenCalled();
     });
 });
