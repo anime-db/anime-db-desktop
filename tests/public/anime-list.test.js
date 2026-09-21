@@ -756,7 +756,6 @@ async function applyWatchingFilter(calls) {
         watch_status: [{ value: 'watching', count: 5 }],
         type: [], date_premiere_decade: [], user_rating: [], labels: [], genres: [], themes: [], studios: [],
     }));
-    byKind(calls, 'total')[0].resolve(jsonResponse({ items: [], total: 5, limit: 1, offset: 0 }));
     await flushMicrotasks();
 
     document.querySelector('[data-filter-section="watch_status"] .anime-list__filter-value-name')
@@ -919,7 +918,6 @@ test('applying a pending filter resets the window scroll position', async () => 
         watch_status: [{ value: 'watching', count: 5 }],
         type: [], date_premiere_decade: [], user_rating: [], labels: [], genres: [], themes: [], studios: [],
     }));
-    byKind(calls, 'total')[0].resolve(jsonResponse({ items: [], total: 5, limit: 1, offset: 0 }));
     await flushMicrotasks();
     window.scrollTo.mockClear();
 
