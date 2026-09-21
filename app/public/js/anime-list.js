@@ -995,7 +995,10 @@
             return null;
         }
 
-        return sortContainer.querySelector(`[data-sort-field="${value}"]`) ? value : null;
+        const buttons = sortContainer.querySelectorAll('[data-sort-field]');
+        const known = Array.from(buttons).some((button) => button.dataset.sortField === value);
+
+        return known ? value : null;
     }
 
     function parseSortDirection(params) {

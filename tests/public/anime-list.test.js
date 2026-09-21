@@ -1211,6 +1211,18 @@ test('a catalog opened with an unknown enum value does not throw and stays recov
     expect(queryParams(byKind(calls, 'list')[1].url)).not.toHaveProperty('watch_status[]');
 });
 
+test('a ?sort= value containing characters invalid in a CSS attribute selector does not throw and stays recoverable', async () => {
+    window.history.replaceState({}, '', '/anime?sort=%22%5D');
+    const calls = mockFetchQueueAll();
+    setUpTranslations();
+
+    expect(() => loadAnimeListModule()).not.toThrow();
+    await flushMicrotasks();
+
+    expect(byKind(calls, 'list')).toHaveLength(1);
+    expect(queryParams(byKind(calls, 'list')[0].url).sort).toBe('date_update');
+});
+
 test('window.location.search is never written to after a filter change seeded from the URL', async () => {
     window.history.replaceState({}, '', '/anime?watch_status[]=watching');
     const calls = mockFetchQueueAll();
