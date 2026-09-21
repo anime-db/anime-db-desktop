@@ -257,15 +257,16 @@
         return card;
     }
 
-    function renderCards(items, replace, offset, catalogue) {
+    function renderCards(items, replace, isNewQuery, catalogue) {
         if (replace) {
             grid.replaceChildren();
         }
-        if (replace && offset === 0) {
+        if (replace && isNewQuery) {
             // The grid collapsing to a shorter height would otherwise leave the window scroll
             // position wherever the browser clamps it, not at the top of the new list. Gated on
-            // offset === 0 (not just replace) so a classic-pagination page jump or a same-page
-            // requery (e.g. a column-count change) does not also throw the scroll to the top.
+            // an explicit isNewQuery flag from the caller (issue #687), not on offset === 0: a
+            // column-count requery of the same page can land back on offset 0 too, and that is
+            // not a "the result set changed" event the way a search/sort/filter change is.
             window.scrollTo(0, 0);
         }
         for (const anime of items) {
@@ -356,7 +357,10 @@
             if (page === currentPage) {
                 button.setAttribute('aria-current', 'true');
             }
-            button.addEventListener('click', () => loadPage((page - 1) * limit, true));
+            // Jumping to page 1 is treated the same as a fresh search (isNewQuery = true) —
+            // it puts the viewport back where a reset expects it. Any other page is just
+            // browsing the same result set at a different offset, so the scroll stays put.
+            button.addEventListener('click', () => loadPage((page - 1) * limit, true, page === 1));
             pagination.appendChild(button);
         }
     }
@@ -373,7 +377,7 @@
 
         sentinelObserver = new IntersectionObserver((entries) => {
             if (entries.some((entry) => entry.isIntersecting)) {
-                loadPage(offset + limit, false);
+                loadPage(offset + limit, false, false);
             }
         });
         sentinelObserver.observe(sentinel);
@@ -388,11 +392,14 @@
         if (paginationMode === 'classic') {
             const newLimit = computeLimit(columns);
             const newPage = Math.floor(currentOffset / newLimit) + 1;
-            loadPage((newPage - 1) * newLimit, true);
+            // isNewQuery is always false here even when the anchor lands back on offset 0
+            // (e.g. widening the window enough that the current record now fits on page 1):
+            // this is a requery of the same result set, not a new one (issue #687).
+            loadPage((newPage - 1) * newLimit, true, false);
         } else if (paginationMode === 'infinite_scroll') {
             const deficit = (columns - (loadedCount % columns)) % columns;
             if (deficit > 0) {
-                loadPage(loadedCount, false, deficit);
+                loadPage(loadedCount, false, false, deficit);
             }
         }
     }
@@ -405,12 +412,17 @@
         });
     }
 
+    // `isNewQuery` tells renderCards() whether this call is fetching a genuinely new result set
+    // (search, sort, filter change, "reset all", or a jump to page 1) as opposed to re-fetching
+    // the same result set at a different window (a column-count requery, an infinite-scroll
+    // top-up, or paging to any page other than the first) — see renderCards() (issue #687).
+    //
     // `limitOverride` is used for exactly one caller: the infinite-scroll top-up after a resize,
     // which asks for only the handful of records needed to complete the last row rather than a
     // full page (issue #665). Every other caller lets the limit follow the grid's current column
     // count. The offset for the *next* request always comes back from the response (`data.limit`,
     // via setup{Classic,Infinite}), never from what this call sent — the server is free to clamp.
-    async function loadPage(offset, replace, limitOverride) {
+    async function loadPage(offset, replace, isNewQuery, limitOverride) {
         disconnectSentinel();
         errorMessage.hidden = true;
 
@@ -444,7 +456,7 @@
             return;
         }
 
-        renderCards(data.items, replace, offset, catalogue);
+        renderCards(data.items, replace, isNewQuery, catalogue);
         loadedCount = replace ? data.items.length : loadedCount + data.items.length;
         paginationMode = data.pagination_mode;
         currentFilteredTotal = data.total;
@@ -597,7 +609,7 @@
     function applyPending() {
         appliedFilters = cloneFilters(pendingFilters);
         refreshChips();
-        loadPage(0, true);
+        loadPage(0, true, true);
         loadFacets();
     }
 
@@ -627,7 +639,7 @@
         uncheckValueInput(sectionKey, value);
         updateApplyButtonState();
         refreshChips();
-        loadPage(0, true);
+        loadPage(0, true, true);
         loadFacets();
     }
 
@@ -641,7 +653,7 @@
         });
         updateApplyButtonState();
         refreshChips();
-        loadPage(0, true);
+        loadPage(0, true, true);
         loadFacets();
     }
 
@@ -863,7 +875,7 @@
             clearTimeout(searchDebounceTimer);
             searchDebounceTimer = setTimeout(() => {
                 searchQuery = searchInput.value.trim();
-                loadPage(0, true);
+                loadPage(0, true, true);
                 loadFacets();
             }, SEARCH_DEBOUNCE_MS);
         });
@@ -889,7 +901,7 @@
             if (fieldButton) {
                 sortField = fieldButton.dataset.sortField;
                 updateSortFieldButtons();
-                loadPage(0, true);
+                loadPage(0, true, true);
 
                 return;
             }
@@ -902,7 +914,7 @@
                     'aria-label',
                     sortDirectionButton.dataset[sortDirection === 'desc' ? 'labelDesc' : 'labelAsc'],
                 );
-                loadPage(0, true);
+                loadPage(0, true, true);
             }
         });
     }
@@ -930,7 +942,7 @@
         // behaviour, not a real resize) — seed lastColumnCount now so handleGridResize()
         // treats it as a no-op instead of re-requesting the page it is about to load anyway.
         lastColumnCount = getColumnCount();
-        loadPage(0, true);
+        loadPage(0, true, true);
         loadFacets();
         loadCatalogTotal();
     }

@@ -530,16 +530,50 @@ test('a column-count change in classic mode re-pages around the first record of 
     expect(calls).toHaveLength(2);
     calls[1].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 100, limit: 30, offset: 30 }));
     await flushMicrotasks();
+    window.scrollTo.mockClear();
 
     // newLimit = 3 × 6 = 18; the record at index 30 now falls on page floor(30/18)+1 = 2, i.e.
     // offset 18. A widening resize (e.g. to 10 columns, newLimit 60) would land on page 1 (offset
     // 0) regardless of whether the anchor math ran at all, since floor(30/60)+1 is always 1 — that
-    // case cannot distinguish real anchoring from an unconditional "reset to page 1".
+    // case cannot distinguish real anchoring from an unconditional "reset to page 1" and is
+    // covered separately below (issue #687).
     triggerResize(resizeObserverInstances, 3);
     await flushMicrotasks();
 
     expect(calls).toHaveLength(3);
     expect(queryParams(calls[2].url)).toMatchObject({ offset: '18', limit: '18' });
+    expect(window.scrollTo).not.toHaveBeenCalled();
+});
+
+test('a column-count change in classic mode does not reset the window scroll when the anchor lands back on offset 0', async () => {
+    setGridColumns(5); // initial limit = 30
+    const calls = mockFetchQueue();
+    setUpTranslations();
+    loadAnimeListModule();
+    await flushMicrotasks();
+
+    calls[0].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 100, limit: 30, offset: 0 }));
+    await flushMicrotasks();
+
+    // Navigate to page 2 (offset 30) before the resize, matching the pagination markup loadPage()
+    // itself just rendered.
+    dispatchClick(document.querySelectorAll('#anime-list-pagination button')[1]);
+    await flushMicrotasks();
+    expect(calls).toHaveLength(2);
+    calls[1].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 100, limit: 30, offset: 30 }));
+    await flushMicrotasks();
+    window.scrollTo.mockClear();
+
+    // newLimit = 10 × 6 = 60; floor(30 / 60) + 1 = 1, so the anchor lands back on offset 0 — the
+    // exact same request a brand-new search would send. The gate must tell these apart by an
+    // explicit flag from the caller, not by offset === 0, which is coincidence here, not intent
+    // (issue #687).
+    triggerResize(resizeObserverInstances, 10);
+    await flushMicrotasks();
+
+    expect(calls).toHaveLength(3);
+    expect(queryParams(calls[2].url)).toMatchObject({ offset: '0', limit: '60' });
+    expect(window.scrollTo).not.toHaveBeenCalled();
 });
 
 test('a resize that arrives before the first response still restores the row invariant', async () => {
