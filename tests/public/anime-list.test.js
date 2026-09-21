@@ -1138,6 +1138,20 @@ test('a date range that does not line up with a whole decade is left unapplied a
     expect(document.querySelectorAll('.anime-list__chip-label')).toHaveLength(0);
 });
 
+test('a date range whose "from" year is not a decade start (e.g. 1995) is left unapplied and out of the chips', async () => {
+    window.history.replaceState({}, '', '/anime?date_premiere_from=1995-01-01&date_premiere_to=2004-12-31');
+    const calls = mockFetchQueueAll();
+    setUpTranslations();
+
+    loadAnimeListModule();
+    await flushMicrotasks();
+
+    const listParams = queryParams(byKind(calls, 'list')[0].url);
+    expect(listParams).not.toHaveProperty('date_premiere_from');
+    expect(listParams).not.toHaveProperty('date_premiere_to');
+    expect(document.querySelectorAll('.anime-list__chip-label')).toHaveLength(0);
+});
+
 test('?user_rating[]=5&user_rating_none=1 checks both "5" and "no rating" in the rating section', async () => {
     window.history.replaceState({}, '', '/anime?user_rating[]=5&user_rating_none=1');
     const calls = mockFetchQueueAll();
