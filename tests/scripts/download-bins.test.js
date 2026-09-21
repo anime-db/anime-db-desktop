@@ -38,8 +38,11 @@ const {
     extractSelectedFromZip,
     downloadBin,
     downloadQbittorrentNox,
+    downloadFfprobe,
     QBITTORRENT_NOX,
     QBITTORRENT_NOX_PUBLIC_KEY,
+    FFPROBE,
+    FFPROBE_PUBLIC_KEY,
 } = require('../../scripts/download-bins');
 
 // Builds a minimal, uncompressed (stored) ZIP archive in memory. CRC-32 is written as 0 since
@@ -161,6 +164,12 @@ describe('verifyEd25519Signature', () => {
     test('the pinned public key is a well-formed Ed25519 SPKI PEM', () => {
         const keyObject = crypto.createPublicKey(QBITTORRENT_NOX_PUBLIC_KEY);
         expect(keyObject.asymmetricKeyType).toBe('ed25519');
+    });
+
+    test('the ffprobe pinned public key is a well-formed Ed25519 SPKI PEM, distinct from qbittorrent-nox', () => {
+        const keyObject = crypto.createPublicKey(FFPROBE_PUBLIC_KEY);
+        expect(keyObject.asymmetricKeyType).toBe('ed25519');
+        expect(FFPROBE_PUBLIC_KEY).not.toBe(QBITTORRENT_NOX_PUBLIC_KEY);
     });
 });
 
@@ -308,6 +317,105 @@ describe('downloadQbittorrentNox (verify-before-extract orchestration)', () => {
 
         expect(fs.readFileSync(bin.dest, 'utf8')).toBe('real-bundle');
         expect(fs.readFileSync(path.join(bin.destDir, '.version'), 'utf8')).toBe(`${bin.version}\n`);
+    });
+});
+
+// Mocks `https.get` so `downloadFfprobe` never touches the network. Covers the same
+// verify-before-extract orchestration as downloadQbittorrentNox above, plus the piece specific to
+// ffprobe: the checksum is checked against BOTH the pinned versions.json value and the upstream
+// SHA256SUMS file, and a mismatch against either one must abort before any extraction.
+describe('downloadFfprobe (verify-before-extract orchestration)', () => {
+    let tmpDir;
+    let bin;
+
+    function mockDownloads({ zip, sums, sig }) {
+        https.get.mockImplementation((url, opts, callback) => {
+            const buffer = { [bin.zipUrl]: zip, [bin.sumsUrl]: sums, [bin.sigUrl]: sig }[url];
+            if (!buffer) throw new Error(`Unexpected URL requested in test: ${url}`);
+
+            const res = new EventEmitter();
+            res.statusCode = 200;
+            callback(res);
+            res.emit('data', buffer);
+            res.emit('end');
+
+            return new EventEmitter();
+        });
+    }
+
+    beforeEach(() => {
+        tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'download-bins-ffprobe-'));
+        bin = {
+            ...FFPROBE,
+            destDir: path.join(tmpDir, 'out'),
+            dest: path.join(tmpDir, 'out', 'ffprobe.exe'),
+        };
+    });
+
+    afterEach(() => {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+        https.get.mockReset();
+        jest.restoreAllMocks();
+    });
+
+    test('aborts before extracting anything when the SHA-256 does not match versions.json', async () => {
+        const zip = buildZip([{ name: 'ffprobe.exe', data: Buffer.from('tampered-bundle') }]);
+        const hash = crypto.createHash('sha256').update(zip).digest('hex');
+        bin.sha256 = 'f'.repeat(64);
+        const sums = Buffer.from(`${hash}  ${bin.zipName}\n`);
+        mockDownloads({ zip, sums, sig: Buffer.from('irrelevant-signature') });
+
+        await expect(downloadFfprobe(bin)).rejects.toThrow(/SHA-256 mismatch.*versions\.json/);
+        expect(fs.existsSync(bin.destDir)).toBe(false);
+    });
+
+    test('aborts before extracting anything when the SHA-256 does not match SHA256SUMS', async () => {
+        const zip = buildZip([{ name: 'ffprobe.exe', data: Buffer.from('real-bundle') }]);
+        bin.sha256 = crypto.createHash('sha256').update(zip).digest('hex');
+        const sums = Buffer.from(`${'f'.repeat(64)}  ${bin.zipName}\n`);
+        mockDownloads({ zip, sums, sig: Buffer.from('irrelevant-signature') });
+
+        await expect(downloadFfprobe(bin)).rejects.toThrow(/SHA-256 mismatch.*SHA256SUMS/);
+        expect(fs.existsSync(bin.destDir)).toBe(false);
+    });
+
+    test('aborts before extracting anything when the Ed25519 signature is invalid', async () => {
+        const zip = buildZip([{ name: 'ffprobe.exe', data: Buffer.from('real-bundle') }]);
+        const hash = crypto.createHash('sha256').update(zip).digest('hex');
+        bin.sha256 = hash;
+        const sums = Buffer.from(`${hash}  ${bin.zipName}\n`);
+        mockDownloads({ zip, sums, sig: Buffer.from('some-signature') });
+        jest.spyOn(crypto, 'verify').mockReturnValueOnce(false);
+
+        await expect(downloadFfprobe(bin)).rejects.toThrow(/signature verification failed/);
+        expect(fs.existsSync(bin.destDir)).toBe(false);
+    });
+
+    test('extracts the whole bundle (including license files) and writes the version file once every check passes', async () => {
+        const zip = buildZip([
+            { name: 'ffprobe.exe', data: Buffer.from('real-bundle') },
+            { name: 'THIRD-PARTY-LICENSES/README.md', data: Buffer.from('licenses') },
+            { name: 'versions.txt', data: Buffer.from('9.0.2_1') },
+        ]);
+        const hash = crypto.createHash('sha256').update(zip).digest('hex');
+        bin.sha256 = hash;
+        const sums = Buffer.from(`${hash}  ${bin.zipName}\n`);
+        mockDownloads({ zip, sums, sig: Buffer.from('a-matching-signature') });
+        jest.spyOn(crypto, 'verify').mockReturnValueOnce(true);
+
+        await downloadFfprobe(bin);
+
+        expect(fs.readFileSync(bin.dest, 'utf8')).toBe('real-bundle');
+        expect(fs.readFileSync(path.join(bin.destDir, 'THIRD-PARTY-LICENSES/README.md'), 'utf8')).toBe('licenses');
+        expect(fs.readFileSync(path.join(bin.destDir, '.version'), 'utf8')).toBe(`${bin.version}\n`);
+    });
+
+    test('throws a "missing pin" error instead of downloading when no SHA-256 is pinned', async () => {
+        bin.sha256 = null;
+
+        await expect(downloadFfprobe(bin)).rejects.toThrow(/Missing pinned SHA-256 for ffprobe/);
+        expect(https.get).not.toHaveBeenCalled();
+        expect(fs.existsSync(bin.destDir)).toBe(false);
     });
 });
 

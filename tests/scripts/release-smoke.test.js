@@ -239,6 +239,7 @@ describe('checkLicenseFiles', () => {
         ['the third-party index (extraFiles)',           'THIRD-PARTY-LICENSES/README.md'],
         ['the PHP license from the upstream archive',    'resources/app/bin/licenses/frankenphp/license.txt'],
         ['the qbittorrent-nox bundle attribution',       'resources/app/bin/qbittorrent-nox/THIRD-PARTY-LICENSES/README.md'],
+        ['the ffprobe bundle attribution',               'resources/app/bin/ffprobe/THIRD-PARTY-LICENSES/README.md'],
     ])('fails when the tree loses %s', (_label, dropped) => {
         const problems = treeWith(REQUIRED_LICENSE_FILES.filter((rel) => rel !== dropped));
 

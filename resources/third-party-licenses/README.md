@@ -35,6 +35,7 @@ All paths below are relative to the AnimeDB installation directory.
 | PCRE2, libmagic, libmbfl, libgd, libzip, xxHash, Lexbor, uriparser a.o.                      | bundled with PHP    | BSD, MIT a.o.                                        | static, inside the PHP binaries      | `resources/app/bin/licenses/frankenphp/readme-redist-bins.txt`    |
 | Meilisearch                                                                                  | 1.13.0              | MIT                                                  | separate process, static Rust binary | `Meilisearch-NOTICE.txt`, `texts/meilisearch-MIT.txt`             |
 | qBittorrent-nox, Qt 6, libtorrent-rasterbar, boost, OpenSSL 3.6.3, zlib, PCRE2, MSVC runtime | see the bundle      | GPL-2.0-or-later, LGPL-3.0, BSD, BSL-1.0, Apache-2.0 | separate process                     | `resources/app/bin/qbittorrent-nox/THIRD-PARTY-LICENSES/`         |
+| ffprobe (FFmpeg), mingw-w64, GCC runtime, zlib, winpthreads                                  | 9.0.2               | LGPL-2.1-or-later a.o.                               | separate process, static binary      | `resources/app/bin/ffprobe/THIRD-PARTY-LICENSES/`                 |
 | htmx                                                                                         | 2.0.10              | 0BSD                                                 | JavaScript, loaded by the web UI     | 0BSD requires no attribution; listed for completeness             |
 | Bootstrap                                                                                    | 5.3.8               | MIT                                                  | CSS and JS, loaded by the web UI     | `texts/bootstrap-MIT.txt`                                         |
 | PHP libraries under `app/vendor/`                                                            | see `composer.lock` | MIT, BSD-3-Clause                                    | interpreted PHP sources              | each package ships its own `LICENSE` inside its directory         |
@@ -60,6 +61,13 @@ versions this product downloads and verifies by SHA-256 are recorded in
   <https://github.com/gpslab/qbittorrent-nox-win-build>, tag `qbt-nox-5.2.3_2`,
   which also carries the build recipe; see
   `resources/app/bin/qbittorrent-nox/THIRD-PARTY-LICENSES/README.md`.
+- **ffprobe (FFmpeg) 9.0.2** —
+  <https://github.com/gpslab/ffprobe-win-build>, tag `ffprobe-9.0.2_1`, which
+  also carries the build recipe. The FFmpeg source tarball,
+  `ffmpeg-9.0.2.tar.xz`, is attached as a release asset to that same tag, so
+  the corresponding source sits alongside the binary rather than on a
+  separate server; see
+  `resources/app/bin/ffprobe/THIRD-PARTY-LICENSES/README.md`.
 
 These sources remain available at the addresses above for as long as the
 corresponding binary builds are distributed.
@@ -71,6 +79,17 @@ build: replace `Qt6*.dll` and the contents of `plugins/` in
 `resources/app/bin/qbittorrent-nox/`. Corresponding source for Qt 6.10.3 is at
 <https://download.qt.io/archive/qt/6.10/6.10.3/>. See
 `resources/app/bin/qbittorrent-nox/THIRD-PARTY-LICENSES/Qt6-LGPL-NOTICE.txt`.
+
+## Rebuilding ffprobe (LGPL-2.1-or-later)
+
+FFmpeg is linked into `ffprobe.exe` **statically**, not as replaceable DLLs, so
+the right to relink is exercised differently than for Qt 6 above: rebuild
+`ffprobe.exe` from the corresponding source attached to the release (see
+"Corresponding source" above) following the build recipe published in
+<https://github.com/gpslab/ffprobe-win-build>, then replace
+`resources/app/bin/ffprobe/ffprobe.exe` with the rebuilt binary. There are no
+DLLs to swap. The application invokes `ffprobe.exe` as a separate process and
+is not linked against any FFmpeg library itself.
 
 ## Microsoft Visual C++ runtime
 

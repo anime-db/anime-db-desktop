@@ -37,6 +37,15 @@ MCowBQYDK2VwAyEAY2beFPHj/tmY6qJY1rDOk4L12YIKdICTzDkW5sgf0xg=
 -----END PUBLIC KEY-----
 `;
 
+// Pinned Ed25519 public key for gpslab/ffprobe-win-build releases. A distinct key pair from
+// QBITTORRENT_NOX_PUBLIC_KEY above: build-repository secrets are held per-repository, so sharing
+// one key across bundles would widen the blast radius of a single compromise. Must match
+// `signing-key.pub` published in that repository. Never fetched from the network.
+const FFPROBE_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
+MCowBQYDK2VwAyEALmmMkE5+6zKiMwmlKYc1/SAb4oFlg0ueTV0szzySnI0=
+-----END PUBLIC KEY-----
+`;
+
 // `frankenphp.exe` is not self-contained: it dynamically links php8ts.dll (the PHP runtime itself)
 // plus four more libraries, and the PHP extensions the app actually needs at runtime — not just
 // what `composer check-platform-reqs --no-dev` in app/ declares, see the note below — load as
@@ -126,6 +135,25 @@ const QBITTORRENT_NOX = {
     zipName: QBITTORRENT_NOX_ZIP_NAME,
     destDir: path.join(binDir, 'qbittorrent-nox'),
     dest: path.join(binDir, 'qbittorrent-nox', 'qbittorrent-nox.exe'),
+};
+
+const FFPROBE_TAG = `ffprobe-${versions.ffprobe}`;
+// Release asset filenames use ONLY the upstream ffprobe version (e.g. "9.0.2");
+// the release tag carries the full "<upstream>_<build>" (e.g. "9.0.2_1").
+const [FFPROBE_UPSTREAM_VERSION] = versions.ffprobe.split('_');
+const FFPROBE_ZIP_NAME = `ffprobe-${FFPROBE_UPSTREAM_VERSION}-win-x64.zip`;
+const FFPROBE_RELEASE_BASE = `https://github.com/gpslab/ffprobe-win-build/releases/download/${FFPROBE_TAG}`;
+
+const FFPROBE = {
+    name: 'ffprobe',
+    version: versions.ffprobe,
+    zipUrl: `${FFPROBE_RELEASE_BASE}/${FFPROBE_ZIP_NAME}`,
+    sigUrl: `${FFPROBE_RELEASE_BASE}/${FFPROBE_ZIP_NAME}.sig`,
+    sumsUrl: `${FFPROBE_RELEASE_BASE}/SHA256SUMS`,
+    zipName: FFPROBE_ZIP_NAME,
+    destDir: path.join(binDir, 'ffprobe'),
+    dest: path.join(binDir, 'ffprobe', 'ffprobe.exe'),
+    sha256: versions.sha256.ffprobe,
 };
 
 function versionFilePath(dest) {
@@ -431,11 +459,69 @@ async function downloadQbittorrentNox(bin) {
     console.log(`${bin.name} v${bin.version} downloaded successfully`);
 }
 
+// Downloads the prebuilt ffprobe bundle and verifies its SHA-256 checksum and Ed25519 signature
+// BEFORE extracting anything. Unlike downloadQbittorrentNox, the checksum is checked against BOTH
+// the pinned value in versions.json AND the upstream SHA256SUMS file: the SHA256SUMS signature
+// answers "who built this", the pinned hash answers "is it exactly the artifact we reviewed" — the
+// upstream build toolchain isn't pinned, so a re-run of the same release tag could otherwise
+// produce a different, validly-signed binary. Throws (and extracts nothing) on any verification
+// failure, and extracts the whole archive rather than a named allowlist so license texts always
+// travel with the binary.
+async function downloadFfprobe(bin) {
+    if (isUpToDate(bin)) {
+        console.log(`${bin.name} v${bin.version} already up to date, skipping`);
+        return;
+    }
+
+    if (!bin.sha256) {
+        throw new Error(
+            `Missing pinned SHA-256 for ${bin.name} — add it to versions.sha256.${bin.name} in scripts/versions.json`,
+        );
+    }
+
+    console.log(`Downloading ${bin.name} v${bin.version}...`);
+    const [zipBuffer, sumsText, sigBase64] = await Promise.all([
+        downloadBufferWithRetry(bin.zipUrl),
+        downloadBufferWithRetry(bin.sumsUrl).then((b) => b.toString('utf8')),
+        downloadBufferWithRetry(bin.sigUrl).then((b) => b.toString('utf8')),
+    ]);
+
+    console.log(`Verifying ${bin.name} SHA-256 checksum...`);
+    const actualHash = crypto.createHash('sha256').update(zipBuffer).digest('hex');
+    if (actualHash !== bin.sha256) {
+        throw new Error(
+            `SHA-256 mismatch for ${bin.zipName}: expected (versions.json) ${bin.sha256}, got ${actualHash}`,
+        );
+    }
+    const sumsHash = parseSha256Sums(sumsText, bin.zipName);
+    if (!sumsHash) {
+        throw new Error(`SHA-256 for ${bin.zipName} not found in SHA256SUMS`);
+    }
+    if (actualHash !== sumsHash) {
+        throw new Error(
+            `SHA-256 mismatch for ${bin.zipName}: expected (SHA256SUMS) ${sumsHash}, got ${actualHash}`,
+        );
+    }
+
+    console.log(`Verifying ${bin.name} Ed25519 signature...`);
+    if (!verifyEd25519Signature(zipBuffer, sigBase64, FFPROBE_PUBLIC_KEY)) {
+        throw new Error(`Ed25519 signature verification failed for ${bin.zipName}`);
+    }
+
+    console.log(`Extracting ${bin.name} archive...`);
+    fs.mkdirSync(bin.destDir, { recursive: true });
+    extractZipToDir(zipBuffer, bin.destDir);
+
+    fs.writeFileSync(versionFilePath(bin.dest), bin.version + '\n');
+    console.log(`${bin.name} v${bin.version} downloaded successfully`);
+}
+
 async function main() {
     for (const bin of BINS) {
         await downloadBin(bin);
     }
     await downloadQbittorrentNox(QBITTORRENT_NOX);
+    await downloadFfprobe(FFPROBE);
 }
 
 if (require.main === module) {
@@ -453,8 +539,11 @@ module.exports = {
     extractSelectedFromZip,
     downloadBin,
     downloadQbittorrentNox,
+    downloadFfprobe,
     BINS,
     FRANKENPHP_FILES,
     QBITTORRENT_NOX,
     QBITTORRENT_NOX_PUBLIC_KEY,
+    FFPROBE,
+    FFPROBE_PUBLIC_KEY,
 };
