@@ -291,6 +291,32 @@ test('each rendered card is a link to its anime detail page', async () => {
     expect(cardHrefs(grid)).toEqual(['/anime/1', '/anime/2']);
 });
 
+test('a card thumbnail has an empty alt and the full title moves to the title element (issue #700)', async () => {
+    const calls = mockFetchQueue();
+    setUpTranslations();
+
+    loadAnimeListModule(); // fires the initial loadPage(0, true) call
+    await flushMicrotasks();
+
+    expect(calls).toHaveLength(1);
+    calls[0].resolve(jsonResponse({
+        items:            [{ ...animeItem(1, 'Steins;Gate'), cover: 'cover.webp' }],
+        pagination_mode:  'classic',
+        total:            1,
+        limit:            20,
+        offset:           0,
+    }));
+    await flushMicrotasks();
+
+    const grid = document.getElementById('anime-list-grid');
+    const card = grid.querySelector('.anime-card');
+    const thumb = grid.querySelector('.anime-card__thumb');
+    const title = grid.querySelector('.anime-card__title');
+    expect(thumb.getAttribute('alt')).toBe('');
+    expect(title.title).toBe('Steins;Gate');
+    expect(card.hasAttribute('title')).toBe(false);
+});
+
 test('a full list replacement resets the window scroll position, an append does not', async () => {
     const calls = mockFetchQueue();
     window.AppTranslations = {
