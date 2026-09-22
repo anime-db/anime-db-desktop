@@ -79,6 +79,7 @@ final class StagedImportServiceTest extends TestCase
     {
         mkdir($this->importStagingDir, 0o755, true);
         file_put_contents($this->importStagingDir.'/import.json', json_encode([
+            'markerVersion' => 1,
             'stagedAt' => 'not-a-date',
             'sourceArchive' => 'catalog.zip',
         ]));
