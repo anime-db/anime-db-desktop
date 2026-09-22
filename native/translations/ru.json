@@ -4,6 +4,7 @@
     "splash.step_frankenphp": "Запуск FrankenPHP...",
     "splash.step_messenger": "Запуск обработчика фоновых задач...",
     "splash.step_reindex": "Обновление поискового индекса...",
+    "splash.step_import": "Применение подготовленного импорта...",
     "splash.step_done": "Готово",
 
     "tray.open": "Открыть",
@@ -23,6 +24,9 @@
     "dialog.staged_import_stale_message": "Импорт каталога из «%sourceArchive%» подготовлен %stagedAt% и старше 24 часов.\n\nПрименить его сейчас, заменив текущий каталог, или отклонить и запустить приложение обычным образом?",
     "dialog.staged_import_stale_apply": "Применить импорт",
     "dialog.staged_import_stale_discard": "Отклонить",
+
+    "dialog.import_failed_title": "Не удалось применить импорт",
+    "dialog.import_failed_message": "Импорт каталога не был применён из-за ошибки. Прежний каталог и его поисковый индекс восстановлены, приложение запущено в обычном режиме.",
 
     "notification.plugin_activation_failed_title": "Активация плагина",
     "notification.plugin_activation_failed_message": "Не удалось активировать плагин «%pluginId%». Приложение восстановлено в рабочее состояние без него.",

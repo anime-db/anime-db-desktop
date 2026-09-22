@@ -226,7 +226,7 @@ if (!gotLock) {
                 text:  i18n.t('splash.step_meilisearch', startupLocale),
             });
 
-            const { frankenphpPort, wsPort } = await supervisor.start((step, total, key) => {
+            const { frankenphpPort, wsPort, importFailed } = await supervisor.start((step, total, key) => {
                 if (!splash.isDestroyed()) {
                     splash.webContents.send('splash-progress', { step, total, text: i18n.t(key, startupLocale) });
                 }
@@ -237,6 +237,17 @@ if (!gotLock) {
 
             await new Promise(r => setTimeout(r, 400));
             splash.close();
+
+            // issue #707: a staged import was applied but had to be rolled back — supervisor.start()
+            // already restored the previous catalog and rebuilt the index for it, so the app is fine
+            // to keep starting; this just tells the user their import did not go through, the same
+            // way buildMigrationErrorDialog() does for the ordinary upgrade path's own failures.
+            if (importFailed) {
+                dialog.showErrorBox(
+                    i18n.t('dialog.import_failed_title', startupLocale),
+                    i18n.t('dialog.import_failed_message', startupLocale),
+                );
+            }
 
             mainWindow = createWindow(frankenphpPort);
 

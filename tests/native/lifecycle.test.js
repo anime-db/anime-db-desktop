@@ -372,6 +372,48 @@ describe('migration bootstrap errors', () => {
     });
 });
 
+// Issue #707: a staged import that had to be rolled back must not stop the app from starting
+// (supervisor.start() already restored the previous catalog and its index) — it only shows a
+// dialog telling the user, the same way the migration-bootstrap dialogs above do for their own
+// failures, but without quitting the app afterwards.
+describe('staged import rollback (issue #707)', () => {
+    test('shows a dialog and still opens the window when supervisor.start() reports importFailed:true', async () => {
+        const { supervisor, dialog, app, createWindow } = loadLifecycle();
+        supervisor.start.mockResolvedValue({ frankenphpPort: 8000, wsPort: 8001, importFailed: true });
+
+        await new Promise((r) => setTimeout(r, 500));
+
+        expect(dialog.showErrorBox).toHaveBeenCalledWith(
+            'Не удалось применить импорт',
+            'Импорт каталога не был применён из-за ошибки. Прежний каталог и его поисковый индекс восстановлены, приложение запущено в обычном режиме.',
+        );
+        expect(createWindow).toHaveBeenCalledTimes(1);
+        expect(app.quit).not.toHaveBeenCalled();
+    });
+
+    test('shows no dialog when supervisor.start() reports importFailed:false', async () => {
+        const { supervisor, dialog } = loadLifecycle();
+        supervisor.start.mockResolvedValue({ frankenphpPort: 8000, wsPort: 8001, importFailed: false });
+
+        await new Promise((r) => setTimeout(r, 500));
+
+        expect(dialog.showErrorBox).not.toHaveBeenCalled();
+    });
+
+    test('shows English text for an "en" locale', async () => {
+        const { app, supervisor, dialog } = loadLifecycle();
+        app.getLocale.mockReturnValue('en-US');
+        supervisor.start.mockResolvedValue({ frankenphpPort: 8000, wsPort: 8001, importFailed: true });
+
+        await new Promise((r) => setTimeout(r, 500));
+
+        expect(dialog.showErrorBox).toHaveBeenCalledWith(
+            'Import failed',
+            'The catalog import could not be applied due to an error. The previous catalog and its search index have been restored, and the app has started normally.',
+        );
+    });
+});
+
 describe('cache invalidation errors (issue #403 review)', () => {
     test('a CacheInvalidationError does not count towards the safe-mode streak', async () => {
         const { supervisor, cacheInvalidation, dialog, app, safeModeState } = loadLifecycle();
