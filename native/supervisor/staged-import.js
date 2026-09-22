@@ -97,6 +97,18 @@ function reject(reason) {
 }
 
 /**
+ * Removes a rejection reason a previous decide() call wrote, once it stops being current —
+ * before returning SKIP (nothing staged, so any past rejection no longer describes anything the
+ * user still needs to act on) or APPLY (the staged import that was rejected before, if any, has
+ * since been superseded by one that passed every check). Otherwise
+ * StagedImportService::readRejectionReason() would keep surfacing a stale reason on
+ * /settings/backup indefinitely, including after an unrelated, successful import.
+ */
+function clearRejection() {
+    fs.rmSync(paths.getImportRejectionPath(), { force: true });
+}
+
+/**
  * Decides whether a staged catalog import (see App\Service\Import\CatalogStageService, issue
  * #669) may be applied — never touches `data.db`, `media/`, or anything else the eventual apply
  * step owns. Must run before frankenphp.start(), the same place migrations.run() and the schema
@@ -123,6 +135,7 @@ function reject(reason) {
 async function decide(context, confirmStaleImport) {
     const stagingDir = paths.getImportStagingDir();
     if (!fs.existsSync(stagingDir)) {
+        clearRejection();
         return { verdict: Verdict.SKIP };
     }
 
@@ -153,6 +166,7 @@ async function decide(context, confirmStaleImport) {
         }
     }
 
+    clearRejection();
     return { verdict: Verdict.APPLY };
 }
 

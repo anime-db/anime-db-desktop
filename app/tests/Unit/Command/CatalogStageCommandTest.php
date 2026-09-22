@@ -42,11 +42,13 @@ final class CatalogStageCommandTest extends TestCase
 {
     private string $fixturesDir;
     private string $importStagingDir;
+    private string $importRejectionPath;
 
     protected function setUp(): void
     {
         $this->fixturesDir = sys_get_temp_dir().'/animedb-stage-cmd-test-'.uniqid();
         $this->importStagingDir = sys_get_temp_dir().'/animedb-stage-cmd-test-staging-'.uniqid();
+        $this->importRejectionPath = sys_get_temp_dir().'/animedb-stage-cmd-test-rejection-'.uniqid().'.json';
         mkdir($this->fixturesDir, 0o755, true);
     }
 
@@ -54,6 +56,7 @@ final class CatalogStageCommandTest extends TestCase
     {
         $this->removeDirectory($this->fixturesDir);
         $this->removeDirectory($this->importStagingDir);
+        @unlink($this->importRejectionPath);
     }
 
     public function testReturnsSuccessAndPrintsTheTranslatedMessageWhenStagingSucceeds(): void
@@ -184,6 +187,7 @@ final class CatalogStageCommandTest extends TestCase
             new WsPublisher(DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true])),
             new NullLogger(),
             $this->importStagingDir,
+            $this->importRejectionPath,
         );
     }
 

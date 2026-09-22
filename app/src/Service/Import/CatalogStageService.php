@@ -70,6 +70,7 @@ final class CatalogStageService
         private readonly WsPublisher $wsPublisher,
         private readonly LoggerInterface $logger,
         private readonly string $importStagingDir,
+        private readonly string $importRejectionPath,
     ) {
     }
 
@@ -156,9 +157,17 @@ final class CatalogStageService
         }
     }
 
+    /**
+     * Also clears any rejection reason a previous native/supervisor/staged-import.js decision
+     * (issue #706) left behind: once a new archive has passed every validation check above and
+     * is about to be staged, that old reason no longer describes anything the user still needs
+     * to act on, and StagedImportService::readRejectionReason() must not keep surfacing it on
+     * /settings/backup after this newly staged import is decided on.
+     */
     private function resetStagingDir(): void
     {
         PluginDirectoryRemover::remove($this->importStagingDir);
+        @unlink($this->importRejectionPath);
 
         if (!mkdir($this->importStagingDir, recursive: true) && !is_dir($this->importStagingDir)) {
             throw new \RuntimeException(\sprintf('Unable to create staging directory "%s".', $this->importStagingDir));

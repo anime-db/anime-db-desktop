@@ -64,8 +64,8 @@ function mockValidMarkerStatus(stagedAt = FRESH_STAGED_AT, sourceArchive = 'cata
 }
 
 describe('decide()', () => {
-    // Acceptance criterion 1: staging absent → skip, nothing touched.
-    test('returns skip and does nothing when the staging directory does not exist', async () => {
+    // Acceptance criterion 1: staging absent → skip, only clearing any stale rejection reason.
+    test('returns skip and clears any stale rejection reason when the staging directory does not exist', async () => {
         fs.existsSync.mockReturnValue(false);
 
         const result = await decide(CONTEXT);
@@ -73,7 +73,8 @@ describe('decide()', () => {
         expect(result).toEqual({ verdict: Verdict.SKIP });
         expect(mockRun).not.toHaveBeenCalled();
         expect(mockCheckDumpSchema).not.toHaveBeenCalled();
-        expect(fs.rmSync).not.toHaveBeenCalled();
+        expect(fs.rmSync).toHaveBeenCalledWith('/fake/userData/import-rejected.json', { force: true });
+        expect(fs.rmSync).toHaveBeenCalledTimes(1);
     });
 
     // Acceptance criterion 2: an invalid/unparseable marker rejects, removing import-staging/
@@ -138,7 +139,10 @@ describe('decide()', () => {
 
         expect(result).toEqual({ verdict: Verdict.APPLY });
         expect(confirmStaleImport).not.toHaveBeenCalled();
-        expect(fs.rmSync).not.toHaveBeenCalled();
+        // An apply verdict clears any rejection reason a previous decision left behind, but must
+        // never remove import-staging/ itself — that belongs to the not-yet-built apply step.
+        expect(fs.rmSync).toHaveBeenCalledWith('/fake/userData/import-rejected.json', { force: true });
+        expect(fs.rmSync).not.toHaveBeenCalledWith('/fake/userData/import-staging', expect.anything());
     });
 
     // Acceptance criterion 7: the confirmation is asked only after the schema check passed, with
@@ -172,7 +176,8 @@ describe('decide()', () => {
             const result = await decide(CONTEXT, () => true);
 
             expect(result).toEqual({ verdict: Verdict.APPLY });
-            expect(fs.rmSync).not.toHaveBeenCalled();
+            expect(fs.rmSync).toHaveBeenCalledWith('/fake/userData/import-rejected.json', { force: true });
+            expect(fs.rmSync).not.toHaveBeenCalledWith('/fake/userData/import-staging', expect.anything());
         });
 
         // Acceptance criteria 8 and 10: declining rejects and removes staging, via a stubbed
