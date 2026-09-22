@@ -27,6 +27,7 @@ declare(strict_types=1);
 
 namespace App;
 
+use App\Service\Plugin\DependencyInjection\Compiler\BackgroundTaskQueueScopePass;
 use App\Service\Plugin\DependencyInjection\Compiler\CatalogReaderScopePass;
 use App\Service\Plugin\DependencyInjection\Compiler\OwnManifestScopePass;
 use App\Service\Plugin\DependencyInjection\Compiler\PluginDataStoreScopePass;
@@ -150,6 +151,12 @@ class Kernel extends BaseKernel
      * `CatalogReaderScopePass` is added after `TagPluginServicesPass` deliberately — it looks up
      * that pass's `app.filler`/`app.sync`/`app.search_by_plugin` tags to pick each plugin's
      * external-id resolver, so it must run once those tags already exist.
+     *
+     * {@see BackgroundTaskQueueScopePass} (issue #702, part 2 of 3 for #684) does the same
+     * `app.filler`/`app.sync`/`app.settings_page`-style scoping for
+     * `AnimeDb\PluginContracts\Background\BackgroundTaskQueueInterface`; `TagPluginServicesPass`
+     * itself also tags any plugin service implementing `BackgroundTaskHandlerInterface` in the
+     * same pass as the other contract tags.
      */
     public function build(ContainerBuilder $container): void
     {
@@ -171,6 +178,7 @@ class Kernel extends BaseKernel
         $container->addCompilerPass(new SettingsStoreScopePass($this->installedPluginsRegistry()));
         $container->addCompilerPass(new OwnManifestScopePass($this->installedPluginsRegistry()));
         $container->addCompilerPass(new CatalogReaderScopePass($this->installedPluginsRegistry()));
+        $container->addCompilerPass(new BackgroundTaskQueueScopePass($this->installedPluginsRegistry()));
     }
 
     private function pluginLoader(): PluginLoader

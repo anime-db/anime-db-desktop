@@ -27,6 +27,7 @@ declare(strict_types=1);
 
 namespace App\Service\Plugin\DependencyInjection\Compiler;
 
+use AnimeDb\PluginContracts\Background\BackgroundTaskHandlerInterface;
 use AnimeDb\PluginContracts\Filler\FillerInterface;
 use AnimeDb\PluginContracts\Search\SearchByPluginInterface;
 use AnimeDb\PluginContracts\Settings\SettingsPageInterface;
@@ -34,6 +35,7 @@ use AnimeDb\PluginContracts\Sync\SyncInterface;
 use AnimeDb\PluginContracts\Widget\CatalogWidgetInterface;
 use AnimeDb\PluginContracts\Widget\EntryWidgetInterface;
 use App\Service\Plugin\Exception\DuplicateWidgetNameException;
+use App\Service\Plugin\Exception\MultipleBackgroundTaskHandlersException;
 use App\Service\Plugin\Exception\MultipleSettingsPagesException;
 use App\Service\Plugin\Exception\ReservedWidgetNameException;
 use App\Service\Plugin\InstalledPluginsRegistry;
@@ -68,12 +70,14 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
  * plugin still needs to show up in {@see \App\Service\Storage\Search\SearchByPluginChain} and a
  * Sync plugin still needs to show up as a Filler.
  *
- * `SettingsPageInterface` (issue #317) is the one contract in the table with an "exactly one per
- * plugin" invariant stated in its own PHPDoc. `#[AutowireIterator(indexAttribute: 'id')]` would
- * otherwise resolve a second service under the same plugin id by silently keeping only one of
- * them — whichever ends up last in compilation order — so this pass instead rejects that case
- * outright with {@see MultipleSettingsPagesException}, surfacing a plugin author's mistake at
- * container-compile time rather than as an unexplained "wrong page renders" bug later.
+ * `SettingsPageInterface` (issue #317) and `BackgroundTaskHandlerInterface` (issue #702) are the
+ * two contracts in the table with an "exactly one per plugin" invariant stated in their own
+ * PHPDoc. `#[AutowireIterator(indexAttribute: 'id')]` would otherwise resolve a second service
+ * under the same plugin id by silently keeping only one of them — whichever ends up last in
+ * compilation order — so this pass instead rejects that case outright with
+ * {@see MultipleSettingsPagesException}/{@see MultipleBackgroundTaskHandlersException}, surfacing
+ * a plugin author's mistake at container-compile time rather than as an unexplained "wrong page
+ * renders"/"half my queued tasks never run" bug later.
  *
  * `EntryWidgetInterface`/`CatalogWidgetInterface` (issue #364) get a compound `id` instead of the
  * plain plugin id every other row uses: a plugin may declare several widgets per placement, and
@@ -97,6 +101,7 @@ final class TagPluginServicesPass implements CompilerPassInterface
         EntryWidgetInterface::class => 'app.entry_widget',
         CatalogWidgetInterface::class => 'app.catalog_widget',
         SettingsPageInterface::class => 'app.settings_page',
+        BackgroundTaskHandlerInterface::class => 'app.background_task_handler',
     ];
 
     /** @var list<string> features keys already used to gate the plugin's own Filler/Sync capabilities */
@@ -117,6 +122,9 @@ final class TagPluginServicesPass implements CompilerPassInterface
 
         /** @var array<string, string> $settingsPageOwners plugin id => service id already tagged app.settings_page */
         $settingsPageOwners = [];
+
+        /** @var array<string, string> $backgroundTaskHandlerOwners plugin id => service id already tagged app.background_task_handler */
+        $backgroundTaskHandlerOwners = [];
 
         /** @var array<string, array<string, string>> $widgetNamesByPlugin plugin id => widget name => owning service id, shared by entry and catalog widgets */
         $widgetNamesByPlugin = [];
@@ -158,6 +166,15 @@ final class TagPluginServicesPass implements CompilerPassInterface
                     }
 
                     $settingsPageOwners[$pluginId] = $serviceId;
+                }
+
+                if ($interface === BackgroundTaskHandlerInterface::class) {
+                    $existingServiceId = $backgroundTaskHandlerOwners[$pluginId] ?? null;
+                    if ($existingServiceId !== null) {
+                        throw new MultipleBackgroundTaskHandlersException($pluginId, $existingServiceId, $serviceId);
+                    }
+
+                    $backgroundTaskHandlerOwners[$pluginId] = $serviceId;
                 }
 
                 if ($interface === EntryWidgetInterface::class || $interface === CatalogWidgetInterface::class) {

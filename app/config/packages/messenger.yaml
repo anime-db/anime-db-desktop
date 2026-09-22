@@ -45,8 +45,8 @@ framework:
             # (native/supervisor/plugins-consumer.js) rather than sharing a worker with the
             # transports above, so a long-running plugin task can never occupy the worker
             # `PushSyncMessage` depends on and get it dropped past its TTL (config/services.yaml,
-            # issue #366). No routing entry below yet — the message that will route here doesn't
-            # exist until part 2 of #684.
+            # issue #366). Routed message: App\Message\RunPluginBackgroundTaskMessage (issue #702,
+            # part 2 of 3 for #684).
             plugins:
                 dsn: '%env(MESSENGER_TRANSPORT_DSN)%'
                 options:
@@ -61,3 +61,4 @@ framework:
             'App\Message\SyncSeedMessage': async
             'App\Message\RefreshMarketSnapshotMessage': async
             'App\Message\DownloadAnimeMediaMessage': media
+            'App\Message\RunPluginBackgroundTaskMessage': plugins
