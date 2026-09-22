@@ -314,6 +314,7 @@ settings_backup:
     staged_import_rejected_banner_invalid_marker: A prepared catalog import was found but could not be applied because its marker file is invalid or was created by an incompatible app version. The staged files have been removed.
     staged_import_rejected_banner_incompatible_schema: A prepared catalog import could not be applied because its database contains migrations this app version does not recognize. The staged files have been removed.
     staged_import_rejected_banner_user_declined: A prepared catalog import was declined at the last app start. The staged files have been removed.
+    staged_import_rejected_banner_import_rolled_back: A prepared catalog import was applied but had to be rolled back, and the catalog was restored to its state before the import. The staged files have been removed.
     export_heading: Export
     description: Saves a copy of the catalog (database and covers) as a single file in the folder you choose. App and plugin settings, including the proxy password and access tokens, are not included.
     destination_label: Destination folder

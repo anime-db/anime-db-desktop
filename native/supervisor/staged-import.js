@@ -54,9 +54,14 @@ const Verdict = {
 };
 
 /**
- * One per way decide() can reject a staged import — written to paths.getImportRejectionPath() so
- * App\Service\Import\StagedImportService::readRejectionReason() can surface it on
- * /settings/backup after import-staging/ itself is gone (issue #706 acceptance criteria 2, 8).
+ * Written to paths.getImportRejectionPath() so App\Service\Import\StagedImportService
+ * ::readRejectionReason() can surface it on /settings/backup after import-staging/ itself is gone
+ * (issue #706 acceptance criteria 2, 8). The first three are one per way decide() itself can
+ * reject a staged import; IMPORT_ROLLED_BACK is the exception — written directly by
+ * import-apply.js#apply() (issue #710) when a staged import was applied but had to be rolled back,
+ * a case decide() never sees as anything other than a marker-less import-staging/ left behind by
+ * swapCatalog() having already removed the marker before the failure. Without this, decide() would
+ * otherwise call reject(INVALID_MARKER) on the next start and overwrite the true reason.
  *
  * @readonly
  * @enum {string}
@@ -65,6 +70,7 @@ const RejectReason = {
     INVALID_MARKER:       'invalid_marker',
     INCOMPATIBLE_SCHEMA:  'incompatible_schema',
     USER_DECLINED:        'user_declined',
+    IMPORT_ROLLED_BACK:   'import_rolled_back',
 };
 
 /**
@@ -78,6 +84,9 @@ function killOrphan() {
 }
 
 /**
+ * Exported for import-apply.js#apply() (issue #710), the one caller of this outside decide()
+ * itself — see RejectReason.IMPORT_ROLLED_BACK.
+ *
  * @param {string} reason  one of RejectReason
  */
 function writeRejection(reason) {
@@ -170,4 +179,4 @@ async function decide(context, confirmStaleImport) {
     return { verdict: Verdict.APPLY };
 }
 
-module.exports = { decide, killOrphan, Verdict, RejectReason };
+module.exports = { decide, killOrphan, writeRejection, Verdict, RejectReason };

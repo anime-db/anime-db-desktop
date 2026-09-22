@@ -104,6 +104,26 @@ final class BackupTemplateRenderingTest extends KernelTestCase
         self::assertStringNotContainsString('id="settings-backup-staged-import-banner"', $html);
     }
 
+    // Issue #710: a staged import that was applied and then rolled back must be reported as such,
+    // not as the invalid_marker reason staged-import.js#decide() would otherwise (wrongly)
+    // attribute a marker-less import-staging/ left behind by that rollback to.
+    public function testRendersTheRollbackReasonRatherThanInvalidMarker(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession();
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('settings/backup/index.html.twig', [
+            'stagedImport' => null,
+            'stagedImportRejectionReason' => 'import_rolled_back',
+            'backups' => [],
+        ]);
+
+        self::assertStringContainsString('rolled back', $html);
+        self::assertStringNotContainsString('marker file', $html);
+    }
+
     // A currently-pending staged import takes precedence over a stale rejection reason left over
     // from a previous, unrelated staging attempt — showing both would be confusing, and the
     // pending one is the actionable state.
