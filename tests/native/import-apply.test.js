@@ -56,6 +56,7 @@ const { apply } = require('../../native/supervisor/import-apply');
 const CONTEXT = { qbittorrentPort: 9000, meiliPort: 7700, meiliKey: 'k' };
 const STAGING_DIR = '/fake/userData/import-staging';
 const MEDIA_DIR = '/fake/userData/media';
+const PRE_IMPORT_MEDIA_DIR = '/fake/userData/media.pre-import';
 const PREIMPORT_BACKUP_PATH = '/fake/userData/backups/data-preimport-20260922-000000.db';
 
 beforeEach(() => {
@@ -118,32 +119,58 @@ describe('apply() — success path', () => {
     });
 
     // Acceptance criterion 13: media/ is replaced wholesale, not merged — the previous media/ is
-    // removed entirely and the staged one takes its place.
-    test('replaces media/ wholesale by removing the existing directory and renaming the staged one into place', async () => {
+    // moved aside (so a rollback can still restore it, see the rollback describe block below) and
+    // the staged one takes its place.
+    test('replaces media/ wholesale by moving the existing directory aside and renaming the staged one into place', async () => {
         const callOrder = [];
-        fs.rmSync.mockImplementation((target) => {
-            if (target === MEDIA_DIR) callOrder.push('rm media');
-        });
         fs.renameSync.mockImplementation((source, dest) => {
+            if (source === MEDIA_DIR && dest === PRE_IMPORT_MEDIA_DIR) callOrder.push('move aside');
             if (source === `${STAGING_DIR}/media` && dest === MEDIA_DIR) callOrder.push('rename media');
         });
 
         await apply(CONTEXT);
 
-        expect(callOrder).toEqual(['rm media', 'rename media']);
-        expect(fs.mkdirSync).not.toHaveBeenCalledWith(MEDIA_DIR, expect.anything());
+        expect(callOrder).toEqual(['move aside', 'rename media']);
+        expect(fs.rmSync).toHaveBeenCalledWith(PRE_IMPORT_MEDIA_DIR, { recursive: true, force: true });
     });
 
     // Acceptance criterion 14: an archive staged without its own media/ must not fail the import —
-    // the previous media/ is still cleared (never merged), just replaced with an empty directory.
+    // the previous media/ is still moved aside (never merged), and mediaDir is replaced with an
+    // empty directory.
     test('clears media/ into an empty directory when the staged archive has none', async () => {
         fs.existsSync.mockImplementation((target) => target !== `${STAGING_DIR}/media`);
 
         await apply(CONTEXT);
 
-        expect(fs.rmSync).toHaveBeenCalledWith(MEDIA_DIR, { recursive: true, force: true });
-        expect(fs.renameSync).not.toHaveBeenCalled();
+        expect(fs.renameSync).toHaveBeenCalledWith(MEDIA_DIR, PRE_IMPORT_MEDIA_DIR);
+        expect(fs.renameSync).not.toHaveBeenCalledWith(`${STAGING_DIR}/media`, MEDIA_DIR);
         expect(fs.mkdirSync).toHaveBeenCalledWith(MEDIA_DIR, { recursive: true });
+    });
+
+    // A leftover from a previous run that crashed mid-swap must not survive into the next one.
+    test('clears any leftover pre-import media/ snapshot before moving the current one aside', async () => {
+        const callOrder = [];
+        fs.rmSync.mockImplementation((target) => {
+            if (target === PRE_IMPORT_MEDIA_DIR) callOrder.push('rm leftover pre-import media');
+        });
+        fs.renameSync.mockImplementation((source, dest) => {
+            if (source === MEDIA_DIR && dest === PRE_IMPORT_MEDIA_DIR) callOrder.push('move aside');
+        });
+
+        await apply(CONTEXT);
+
+        expect(callOrder[0]).toBe('rm leftover pre-import media');
+        expect(callOrder).toContain('move aside');
+    });
+
+    // Once every step has succeeded, the moved-aside previous media/ is no longer needed — on top
+    // of swapCatalog()'s own leftover-clear at the start, apply() removes it again at the end.
+    test('removes the moved-aside previous media/ once the import fully succeeds', async () => {
+        await apply(CONTEXT);
+
+        const preImportMediaRmCalls = fs.rmSync.mock.calls.filter(([target]) => target === PRE_IMPORT_MEDIA_DIR);
+        expect(preImportMediaRmCalls).toHaveLength(2);
+        expect(fs.rmSync).toHaveBeenCalledWith(STAGING_DIR, { recursive: true, force: true });
     });
 
     // Step 3: the swapped-in database goes through the same migration bootstrap the working
@@ -234,6 +261,49 @@ describe('apply() — rollback on failure (acceptance criteria 6, 7, 8)', () => 
         await apply(CONTEXT);
 
         expect(fs.rmSync).not.toHaveBeenCalledWith(STAGING_DIR, { recursive: true, force: true });
+    });
+
+    // The core bug this block guards against: createPreImportBackup() only snapshots data.db, so
+    // the previous media/ (moved aside by swapCatalog(), never deleted) must be renamed back on
+    // rollback, or the catalog restored via restoreBackup() ends up paired with the wrong media/.
+    test('restores the previous media/ on rollback instead of leaving the staged one in place', async () => {
+        mockMigrationsRun.mockRejectedValue(new Error('migrate-failed'));
+
+        await apply(CONTEXT);
+
+        expect(fs.renameSync).toHaveBeenCalledWith(PRE_IMPORT_MEDIA_DIR, MEDIA_DIR);
+    });
+
+    // Never removes the moved-aside previous media/ on rollback — it must never be removed here,
+    // it must always be renamed back into place instead (see the test above).
+    test('never removes the moved-aside previous media/ when a rollback happened', async () => {
+        mockMigrationsRun.mockRejectedValue(new Error('migrate-failed'));
+
+        await apply(CONTEXT);
+
+        const preImportMediaRmCalls = fs.rmSync.mock.calls.filter(([target]) => target === PRE_IMPORT_MEDIA_DIR);
+        expect(preImportMediaRmCalls).toHaveLength(1);
+    });
+
+    // If swapCatalog() itself throws partway through (e.g. the media/ rename fails), the failure
+    // must roll back exactly like a failure in steps 3-5 — it is now inside apply()'s try/catch.
+    test('rolls back when swapCatalog() itself fails partway through the media/ swap', async () => {
+        // The rename that would create PRE_IMPORT_MEDIA_DIR is exactly the one that fails, so it
+        // never exists — restoreCatalog() must see that and know the original media/ was untouched.
+        fs.existsSync.mockImplementation((target) => target !== PRE_IMPORT_MEDIA_DIR);
+        fs.renameSync.mockImplementation((source) => {
+            if (source === MEDIA_DIR) throw new Error('rename failed');
+        });
+
+        const result = await apply(CONTEXT);
+
+        expect(mockRestoreBackup).toHaveBeenCalledWith(PREIMPORT_BACKUP_PATH);
+        expect(mockSearchReindexRun).toHaveBeenCalledWith(CONTEXT);
+        expect(result.applied).toBe(false);
+        expect(result.error).toBeInstanceOf(Error);
+        // swapCatalog() never got far enough to move media/ aside, so restoreCatalog() must leave
+        // the untouched original media/ alone rather than overwriting it with an empty directory.
+        expect(fs.renameSync).not.toHaveBeenCalledWith(PRE_IMPORT_MEDIA_DIR, MEDIA_DIR);
     });
 
     // restoreBackup() runs before the recovery reindex, never after — the index must be rebuilt
