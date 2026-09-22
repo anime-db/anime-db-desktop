@@ -89,11 +89,16 @@ jest.mock('../../native/supervisor/safe-mode', () => ({
 jest.mock('../../native/supervisor/staged-import', () => ({
     decide:     jest.fn(() => Promise.resolve({ verdict: 'skip' })),
     killOrphan: jest.fn(() => Promise.resolve()),
+    Verdict:    { APPLY: 'apply', SKIP: 'skip', REJECT: 'reject' },
+}));
+jest.mock('../../native/supervisor/import-apply', () => ({
+    apply: jest.fn(() => Promise.resolve({ applied: true, error: null })),
 }));
 
 const cacheInvalidation = require('../../native/supervisor/cache-invalidation');
 const downloadsPoll     = require('../../native/supervisor/downloads-poll');
 const frankenphp        = require('../../native/supervisor/frankenphp');
+const importApply       = require('../../native/supervisor/import-apply');
 const marketRefresh     = require('../../native/supervisor/market-refresh');
 const meilisearch       = require('../../native/supervisor/meilisearch');
 const messengerConsumer = require('../../native/supervisor/messenger-consumer');
@@ -127,6 +132,7 @@ describe('supervisor.start', () => {
         downloadsPoll.run.mockResolvedValue(undefined);
         migrations.run.mockResolvedValue(undefined);
         stagedImport.decide.mockResolvedValue({ verdict: 'skip' });
+        importApply.apply.mockResolvedValue({ applied: true, error: null });
     });
 
     afterEach(() => {
@@ -221,6 +227,64 @@ describe('supervisor.start', () => {
         );
     });
 
+    // Issue #707: an APPLY verdict runs the whole swap-and-bootstrap sequence, still before
+    // frankenphp.start() — the only point where replacing data.db is safe (see import-apply.js).
+    describe('staged import apply (issue #707)', () => {
+        test('applies the staged import after deciding APPLY, before starting FrankenPHP', async () => {
+            const callOrder = [];
+            stagedImport.decide.mockImplementation(() => {
+                callOrder.push('stagedImport.decide');
+                return Promise.resolve({ verdict: 'apply' });
+            });
+            importApply.apply.mockImplementation(() => {
+                callOrder.push('importApply.apply');
+                return Promise.resolve({ applied: true, error: null });
+            });
+            frankenphp.start.mockImplementation(() => {
+                callOrder.push('frankenphp.start');
+                return Promise.resolve({ httpPort: 8000, wsPort: 8001 });
+            });
+
+            await supervisor.start(jest.fn());
+
+            expect(callOrder).toEqual(['stagedImport.decide', 'importApply.apply', 'frankenphp.start']);
+            expect(importApply.apply).toHaveBeenCalledWith(
+                { qbittorrentPort: 9000, meiliPort: 7700, meiliKey: 'k', safeMode: false },
+            );
+        });
+
+        test.each([['skip'], ['reject']])('never applies on a %s verdict', async (verdict) => {
+            stagedImport.decide.mockResolvedValue({ verdict });
+
+            await supervisor.start(jest.fn());
+
+            expect(importApply.apply).not.toHaveBeenCalled();
+        });
+
+        // Acceptance criterion 6: a rolled-back import must not stop the app from starting — it
+        // just gets flagged in start()'s own return value for lifecycle/index.js to surface once
+        // the window exists.
+        test('resolves importFailed:true when the apply was rolled back, without throwing', async () => {
+            stagedImport.decide.mockResolvedValue({ verdict: 'apply' });
+            importApply.apply.mockResolvedValue({ applied: false, error: new Error('migrate-failed') });
+
+            await expect(supervisor.start(jest.fn())).resolves.toMatchObject({ importFailed: true });
+        });
+
+        test('resolves importFailed:false when nothing was staged', async () => {
+            stagedImport.decide.mockResolvedValue({ verdict: 'skip' });
+
+            await expect(supervisor.start(jest.fn())).resolves.toMatchObject({ importFailed: false });
+        });
+
+        test('resolves importFailed:false when the apply succeeded', async () => {
+            stagedImport.decide.mockResolvedValue({ verdict: 'apply' });
+            importApply.apply.mockResolvedValue({ applied: true, error: null });
+
+            await expect(supervisor.start(jest.fn())).resolves.toMatchObject({ importFailed: false });
+        });
+    });
+
     // Оба разовых консольных вызова (issue #400) идут через ту же начальную зачистку сирот, что
     // и долгоживущие процессы — до старта любого дочернего процесса текущего сеанса.
     test('kills orphaned one-off console processes before any child process starts', async () => {
@@ -231,6 +295,7 @@ describe('supervisor.start', () => {
         expect(phpCommand.killOrphan).toHaveBeenCalledWith('app:search:reindex');
         expect(phpCommand.killOrphan).toHaveBeenCalledWith('app:plugin:reconcile');
         expect(phpCommand.killOrphan).toHaveBeenCalledWith('app:downloads:poll');
+        expect(phpCommand.killOrphan).toHaveBeenCalledWith('app:queue:purge');
     });
 
     // issue #701: plugins-consumer shares frankenphp.exe with messenger-consumer, so its orphan

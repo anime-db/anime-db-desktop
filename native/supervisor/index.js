@@ -25,6 +25,7 @@ const { EventEmitter } = require('events');
 const cacheInvalidation = require('./cache-invalidation');
 const downloadsPoll     = require('./downloads-poll');
 const frankenphp        = require('./frankenphp');
+const importApply       = require('./import-apply');
 const marketRefresh     = require('./market-refresh');
 const meilisearch       = require('./meilisearch');
 const messengerConsumer = require('./messenger-consumer');
@@ -124,6 +125,9 @@ let queuedPluginId = null;
  * после миграций, но зачистка сироты этого одноразового вызова здесь же, до первого дочернего
  * процесса текущего сеанса.
  *
+ * `app:queue:purge` (issue #707, import-apply.js) — тот же принцип: запускается только на APPLY-
+ * вердикте импорта, до старта FrankenPHP, но зачистка сироты этого одноразового вызова здесь же.
+ *
  * Doctrine-миграции (issue #392) прогоняются сразу после Meilisearch/qbittorrent и до старта
  * FrankenPHP — migrate не зависит от HTTP/поиска/очереди, только от DATABASE_URL, но схема
  * должна быть готова до того, как HTTP-воркер начнёт принимать запросы. На чистом профиле это
@@ -150,7 +154,10 @@ let queuedPluginId = null;
  *   confirmStagedImport (issue #706) — колбэк-подтверждение для staging старше 24 часов
  *   (см. staged-import.js#decide); супервизор не должен знать про `dialog`, поэтому саму реализацию
  *   передаёт native/lifecycle/index.js, а в тестах подменяется стабом.
- * @returns {Promise<{ frankenphpPort: number, wsPort: number, meiliPort: number, qbittorrentPort: number }>}
+ * @returns {Promise<{ frankenphpPort: number, wsPort: number, meiliPort: number, qbittorrentPort: number, importFailed: boolean }>}
+ *   importFailed (issue #707) — true when a staged import was applied but had to be rolled back;
+ *   the app still finishes starting on the restored catalog, lifecycle/index.js just surfaces this
+ *   to the user once the window exists.
  */
 async function start(onProgress, { safeMode = false, confirmStagedImport } = {}) {
     await Promise.all([
@@ -164,6 +171,7 @@ async function start(onProgress, { safeMode = false, confirmStagedImport } = {})
         phpCommand.killOrphan('app:plugin:reconcile'),
         phpCommand.killOrphan('app:catalog:export'),
         phpCommand.killOrphan('app:downloads:poll'),
+        phpCommand.killOrphan('app:queue:purge'),
         pluginsConsumer.killOrphan(),
         qbittorrent.killOrphan(),
         stagedImport.killOrphan(),
@@ -216,11 +224,25 @@ async function start(onProgress, { safeMode = false, confirmStagedImport } = {})
     // Decides whether a staged catalog import (App\Service\Import\CatalogStageService, issue #669)
     // may be applied — same place as the migrations/schema-downgrade guard above, and for the same
     // reason: whatever happens next must not swap in a database this build cannot open. This is
-    // only the decision (issue #706); a separate, not-yet-built task executes 'apply'. Never
-    // touches data.db, media/, or the working database's own migration guard above — it only ever
-    // reads/removes import-staging/, via a staged copy of the schema check
+    // only the decision (issue #706); the actual swap runs immediately below via import-apply.js
+    // (issue #707) on an APPLY verdict, still before frankenphp.start(). A SKIP/REJECT verdict
+    // never touches data.db, media/, or the working database's own migration guard above — it only
+    // ever reads/removes import-staging/, via a staged copy of the schema check
     // (migrations.js#checkDumpSchema) pointed at the staged file, not the working one.
-    await stagedImport.decide(phpContext, confirmStagedImport);
+    const stagedImportDecision = await stagedImport.decide(phpContext, confirmStagedImport);
+
+    // Runs the whole swap-and-bootstrap sequence (issue #707) here, before frankenphp.start() —
+    // the only point where replacing data.db out from under the app is safe (see import-apply.js
+    // for why, and for the load-bearing ordering of its own steps). A failed import is rolled back
+    // internally and does not throw: importFailed just tells lifecycle/index.js to surface it to
+    // the user once the window exists, the app otherwise finishing startup on the restored catalog
+    // exactly as if nothing had been staged at all (acceptance criterion 6).
+    let importFailed = false;
+    if (stagedImportDecision.verdict === stagedImport.Verdict.APPLY) {
+        if (onProgress) onProgress(1, TOTAL_STEPS, 'splash.step_import');
+        const importResult = await importApply.apply(phpContext);
+        importFailed = !importResult.applied;
+    }
 
     // Rebuilds installed-plugins.php against the current build's manifest validation, same
     // buildChanged condition as the cache/market-snapshot invalidation above (issue #575) — an
@@ -297,7 +319,7 @@ async function start(onProgress, { safeMode = false, confirmStagedImport } = {})
 
     liveContext = { phpContext, frankenphpPort, wsPort };
 
-    return { frankenphpPort, wsPort, meiliPort, qbittorrentPort };
+    return { frankenphpPort, wsPort, meiliPort, qbittorrentPort, importFailed };
 }
 
 /**
