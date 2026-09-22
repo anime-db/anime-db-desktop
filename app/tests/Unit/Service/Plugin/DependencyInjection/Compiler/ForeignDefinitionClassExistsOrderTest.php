@@ -27,6 +27,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Service\Plugin\DependencyInjection\Compiler;
 
+use App\Service\Plugin\DependencyInjection\Compiler\BackgroundTaskQueueScopePass;
 use App\Service\Plugin\DependencyInjection\Compiler\OwnManifestScopePass;
 use App\Service\Plugin\DependencyInjection\Compiler\PluginDataStoreScopePass;
 use App\Service\Plugin\DependencyInjection\Compiler\SettingsStoreScopePass;
@@ -111,6 +112,11 @@ final class ForeignDefinitionClassExistsOrderTest extends TestCase
     public function testTagPluginServicesPassSkipsForeignDefinitionBeforeReflectingIt(): void
     {
         $this->assertPassSkipsForeignDefinition(new TagPluginServicesPass($this->registry(), new NullLogger()));
+    }
+
+    public function testBackgroundTaskQueueScopePassSkipsForeignDefinitionBeforeReflectingIt(): void
+    {
+        $this->assertPassSkipsForeignDefinition(new BackgroundTaskQueueScopePass($this->registry()));
     }
 
     private function assertPassSkipsForeignDefinition(CompilerPassInterface $pass): void

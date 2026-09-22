@@ -27,17 +27,20 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Service\Plugin\DependencyInjection\Compiler;
 
+use AnimeDb\Plugins\FakeVendor\FakeBackgroundTaskHandler;
 use AnimeDb\Plugins\FakeVendor\FakeBrokenMetadataEntryWidget;
 use AnimeDb\Plugins\FakeVendor\FakeCatalogWidget;
 use AnimeDb\Plugins\FakeVendor\FakeDuplicateNameCatalogWidget;
 use AnimeDb\Plugins\FakeVendor\FakeEntryWidget;
 use AnimeDb\Plugins\FakeVendor\FakeFiller;
 use AnimeDb\Plugins\FakeVendor\FakeReservedNameEntryWidget;
+use AnimeDb\Plugins\FakeVendor\FakeSecondBackgroundTaskHandler;
 use AnimeDb\Plugins\FakeVendor\FakeSecondSettingsPage;
 use AnimeDb\Plugins\FakeVendor\FakeSettingsPage;
 use AnimeDb\Plugins\FakeVendor\FakeSync;
 use App\Service\Plugin\DependencyInjection\Compiler\TagPluginServicesPass;
 use App\Service\Plugin\Exception\DuplicateWidgetNameException;
+use App\Service\Plugin\Exception\MultipleBackgroundTaskHandlersException;
 use App\Service\Plugin\Exception\MultipleSettingsPagesException;
 use App\Service\Plugin\Exception\ReservedWidgetNameException;
 use App\Service\Plugin\InstalledPluginsRegistry;
@@ -59,6 +62,8 @@ final class TagPluginServicesPassTest extends TestCase
         require_once __DIR__.'/../../../../../Fixtures/Plugin/TagPluginServicesPass/FakeSync.php';
         require_once __DIR__.'/../../../../../Fixtures/Plugin/TagPluginServicesPass/FakeSettingsPage.php';
         require_once __DIR__.'/../../../../../Fixtures/Plugin/TagPluginServicesPass/FakeSecondSettingsPage.php';
+        require_once __DIR__.'/../../../../../Fixtures/Plugin/TagPluginServicesPass/FakeBackgroundTaskHandler.php';
+        require_once __DIR__.'/../../../../../Fixtures/Plugin/TagPluginServicesPass/FakeSecondBackgroundTaskHandler.php';
         require_once __DIR__.'/../../../../../Fixtures/Plugin/TagPluginServicesPass/FakeEntryWidget.php';
         require_once __DIR__.'/../../../../../Fixtures/Plugin/TagPluginServicesPass/FakeCatalogWidget.php';
         require_once __DIR__.'/../../../../../Fixtures/Plugin/TagPluginServicesPass/FakeDuplicateNameCatalogWidget.php';
@@ -118,6 +123,19 @@ final class TagPluginServicesPassTest extends TestCase
 
         $definition = $container->getDefinition(FakeSettingsPage::class);
         $this->assertSame([['id' => 'fake-vendor']], $definition->getTag('app.settings_page'));
+    }
+
+    public function testTagsBackgroundTaskHandlerServiceWithBackgroundTaskHandlerTag(): void
+    {
+        $this->writeManifest('fake-vendor');
+
+        $container = new ContainerBuilder();
+        $container->register(FakeBackgroundTaskHandler::class, FakeBackgroundTaskHandler::class);
+
+        $this->pass()->process($container);
+
+        $definition = $container->getDefinition(FakeBackgroundTaskHandler::class);
+        $this->assertSame([['id' => 'fake-vendor']], $definition->getTag('app.background_task_handler'));
     }
 
     public function testTagsEntryWidgetServiceWithCompoundPluginAndWidgetNameId(): void
@@ -193,6 +211,18 @@ final class TagPluginServicesPassTest extends TestCase
         $container->register(FakeSecondSettingsPage::class, FakeSecondSettingsPage::class);
 
         $this->expectException(MultipleSettingsPagesException::class);
+        $this->pass()->process($container);
+    }
+
+    public function testThrowsWhenAPluginRegistersMoreThanOneBackgroundTaskHandlerService(): void
+    {
+        $this->writeManifest('fake-vendor');
+
+        $container = new ContainerBuilder();
+        $container->register(FakeBackgroundTaskHandler::class, FakeBackgroundTaskHandler::class);
+        $container->register(FakeSecondBackgroundTaskHandler::class, FakeSecondBackgroundTaskHandler::class);
+
+        $this->expectException(MultipleBackgroundTaskHandlersException::class);
         $this->pass()->process($container);
     }
 
