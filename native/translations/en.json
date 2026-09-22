@@ -19,6 +19,11 @@
     "dialog.safe_mode_run": "Run without plugins",
     "dialog.safe_mode_exit": "Exit",
 
+    "dialog.staged_import_stale_title": "Apply prepared import?",
+    "dialog.staged_import_stale_message": "A catalog import from \"%sourceArchive%\" was prepared on %stagedAt% and is more than 24 hours old.\n\nApply it now, replacing the current catalog, or discard it and start normally?",
+    "dialog.staged_import_stale_apply": "Apply import",
+    "dialog.staged_import_stale_discard": "Discard",
+
     "notification.plugin_activation_failed_title": "Plugin activation",
     "notification.plugin_activation_failed_message": "Could not activate the plugin \"%pluginId%\". The app has been restored to a working state without it.",
 

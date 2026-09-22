@@ -98,6 +98,52 @@ function buildSafeModeDialog(locale) {
     };
 }
 
+/**
+ * Shown by confirmStagedImport() below when the supervisor's startup decision step
+ * (native/supervisor/staged-import.js, issue #706) finds a staged catalog import older than 24
+ * hours — the app must ask before applying it, not just before rejecting it, since applying a
+ * stale, possibly-forgotten import is the surprising outcome here. Localized the same way as
+ * {@see buildSafeModeDialog}, for the same reason (issue #403 precedent): recovering from a wrong
+ * default here also requires a user decision, not just an acknowledgement.
+ *
+ * @param {{ stagedAt: string, sourceArchive: string }} info
+ * @param {string} locale
+ * @returns {{ title: string, message: string, buttons: [string, string] }}
+ */
+function buildStagedImportStaleDialog({ stagedAt, sourceArchive }, locale) {
+    return {
+        title:   i18n.t('dialog.staged_import_stale_title', locale),
+        message: i18n.t('dialog.staged_import_stale_message', locale, {
+            stagedAt: new Date(stagedAt).toLocaleString(locale),
+            sourceArchive,
+        }),
+        buttons: [i18n.t('dialog.staged_import_stale_apply', locale), i18n.t('dialog.staged_import_stale_discard', locale)],
+    };
+}
+
+/**
+ * The `confirmStagedImport` callback supervisor.start() takes (see supervisor/index.js) — the
+ * supervisor itself must not know about `dialog` (same separation as the progress callback it
+ * already takes), so the actual implementation lives here and is passed down instead. Declining
+ * (including closing the dialog, cancelId below) is the fail-closed default, matching
+ * staged-import.js#decide()'s own default when no callback is supplied at all.
+ *
+ * @param {{ stagedAt: string, sourceArchive: string }} info
+ * @returns {boolean}
+ */
+function confirmStagedImport(info) {
+    const { title, message, buttons } = buildStagedImportStaleDialog(info, getLocale());
+    const choice = dialog.showMessageBoxSync({
+        type:      'question',
+        buttons,
+        defaultId: 0,
+        cancelId:  1,
+        title,
+        message,
+    });
+    return choice === 0;
+}
+
 let quitting   = false;
 let mainWindow = null;
 
@@ -184,7 +230,7 @@ if (!gotLock) {
                 if (!splash.isDestroyed()) {
                     splash.webContents.send('splash-progress', { step, total, text: i18n.t(key, startupLocale) });
                 }
-            }, { safeMode });
+            }, { safeMode, confirmStagedImport });
 
             shell.configure(frankenphpPort);
             wsClient.connect(wsPort);

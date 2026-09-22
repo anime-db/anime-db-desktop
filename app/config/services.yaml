@@ -21,6 +21,16 @@ parameters:
     app.import_staging_dir.dev_default: '%kernel.project_dir%/var/import-staging'
     app.import_staging_dir: '%env(default:app.import_staging_dir.dev_default:IMPORT_STAGING_DIR)%'
 
+    # In production Electron passes IMPORT_REJECTION_PATH (see native/paths.js,
+    # native/supervisor/env.js), pointing at %AppData%/import-rejected.json — where
+    # native/supervisor/staged-import.js (issue #706) records why the startup decision step
+    # rejected a staged import (invalid marker, incompatible schema, or the user declining a
+    # staging older than 24 hours). Written outside `app.import_staging_dir` deliberately: a
+    # rejection always deletes that directory entirely, and the reason must survive so
+    # App\Service\Import\StagedImportService can still show it on /settings/backup afterwards.
+    app.import_rejection_path.dev_default: '%kernel.project_dir%/var/import-rejected.json'
+    app.import_rejection_path: '%env(default:app.import_rejection_path.dev_default:IMPORT_REJECTION_PATH)%'
+
     # In production Electron passes CONFIG_PATH (see native/paths.js, native/supervisor/frankenphp.js),
     # pointing at %AppData%/config.json — the same file native/config.js writes appSecret to,
     # and where the user's pagination mode preference (issue #74) lives.
@@ -160,6 +170,7 @@ services:
             $projectDir: '%kernel.project_dir%'
             $mediaDir: '%app.media_dir%'
             $importStagingDir: '%app.import_staging_dir%'
+            $importRejectionPath: '%app.import_rejection_path%'
             $backupsDir: '%app.backups_dir%'
             $configPath: '%app.config_path%'
             $pluginsConfigPath: '%app.plugins_config_path%'

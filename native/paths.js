@@ -45,6 +45,7 @@ module.exports = {
     getQbittorrentConfigPath: () => path.join(userDataDir(), 'qbittorrent', 'qBittorrent', 'config', 'qBittorrent.ini'),
     getMediaDir:           () => path.join(userDataDir(), 'media'),
     getImportStagingDir:   () => path.join(userDataDir(), 'import-staging'),
+    getImportRejectionPath: () => path.join(userDataDir(), 'import-rejected.json'),
     getConfigPath:         () => path.join(userDataDir(), 'config.json'),
     getPluginsConfigPath:  () => path.join(userDataDir(), 'plugins.json'),
     getPluginsDir:         () => path.join(userDataDir(), 'plugins'),

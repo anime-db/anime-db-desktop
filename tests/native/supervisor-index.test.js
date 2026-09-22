@@ -86,6 +86,10 @@ jest.mock('../../native/supervisor/safe-mode', () => ({
     hasModeChanged:     jest.fn(() => false),
     commitStartSuccess: jest.fn(),
 }));
+jest.mock('../../native/supervisor/staged-import', () => ({
+    decide:     jest.fn(() => Promise.resolve({ verdict: 'skip' })),
+    killOrphan: jest.fn(() => Promise.resolve()),
+}));
 
 const cacheInvalidation = require('../../native/supervisor/cache-invalidation');
 const downloadsPoll     = require('../../native/supervisor/downloads-poll');
@@ -99,6 +103,7 @@ const pluginReconcile   = require('../../native/supervisor/plugin-reconcile');
 const pluginsConsumer   = require('../../native/supervisor/plugins-consumer');
 const safeModeState     = require('../../native/supervisor/safe-mode');
 const searchReindex     = require('../../native/supervisor/search-reindex');
+const stagedImport      = require('../../native/supervisor/staged-import');
 const supervisor        = require('../../native/supervisor');
 
 describe('supervisor.start', () => {
@@ -121,6 +126,7 @@ describe('supervisor.start', () => {
         marketRefresh.run.mockResolvedValue(undefined);
         downloadsPoll.run.mockResolvedValue(undefined);
         migrations.run.mockResolvedValue(undefined);
+        stagedImport.decide.mockResolvedValue({ verdict: 'skip' });
     });
 
     afterEach(() => {
@@ -177,6 +183,42 @@ describe('supervisor.start', () => {
         await supervisor.start(jest.fn());
 
         expect(migrations.killOrphan).toHaveBeenCalled();
+    });
+
+    // Issue #706: same ordering constraint as the migrations console process above — its orphan
+    // must be cleaned up before any child process of the current session starts.
+    test('kills an orphaned staged-import status console process before any child process starts', async () => {
+        await supervisor.start(jest.fn());
+
+        expect(stagedImport.killOrphan).toHaveBeenCalled();
+    });
+
+    // Issue #706: the staged-import decision must run after the migrations guard for the working
+    // database (same place in the sequence), but before frankenphp.start() — a rejected staged
+    // import must never have a chance to be swapped in.
+    test('decides on a staged import after migrations.run(), before starting FrankenPHP, with the confirmStagedImport callback passed through', async () => {
+        const callOrder = [];
+        migrations.run.mockImplementation(() => {
+            callOrder.push('migrations.run');
+            return Promise.resolve();
+        });
+        stagedImport.decide.mockImplementation(() => {
+            callOrder.push('stagedImport.decide');
+            return Promise.resolve({ verdict: 'skip' });
+        });
+        frankenphp.start.mockImplementation(() => {
+            callOrder.push('frankenphp.start');
+            return Promise.resolve({ httpPort: 8000, wsPort: 8001 });
+        });
+        const confirmStagedImport = jest.fn();
+
+        await supervisor.start(jest.fn(), { confirmStagedImport });
+
+        expect(callOrder).toEqual(['migrations.run', 'stagedImport.decide', 'frankenphp.start']);
+        expect(stagedImport.decide).toHaveBeenCalledWith(
+            { qbittorrentPort: 9000, meiliPort: 7700, meiliKey: 'k', safeMode: false },
+            confirmStagedImport,
+        );
     });
 
     // Оба разовых консольных вызова (issue #400) идут через ту же начальную зачистку сирот, что

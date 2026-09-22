@@ -36,6 +36,10 @@
                     <button type="submit" class="btn btn-outline-danger text-nowrap">{{ 'settings_backup.staged_import_cancel_button'|trans }}</button>
                 </form>
             </div>
+        {% elseif stagedImportRejectionReason %}
+            <div id="settings-backup-staged-import-rejected-banner" class="alert alert-warning">
+                {{ ('settings_backup.staged_import_rejected_banner_' ~ stagedImportRejectionReason)|trans }}
+            </div>
         {% endif %}
 
         <section id="settings-backup-export-section">

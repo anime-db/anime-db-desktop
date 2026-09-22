@@ -33,15 +33,18 @@ use PHPUnit\Framework\TestCase;
 final class StagedImportServiceTest extends TestCase
 {
     private string $importStagingDir;
+    private string $importRejectionPath;
 
     protected function setUp(): void
     {
         $this->importStagingDir = sys_get_temp_dir().'/animedb-staged-import-test-'.uniqid();
+        $this->importRejectionPath = sys_get_temp_dir().'/animedb-staged-import-test-rejection-'.uniqid().'.json';
     }
 
     protected function tearDown(): void
     {
         $this->removeDirectory($this->importStagingDir);
+        @unlink($this->importRejectionPath);
     }
 
     public function testReadMarkerReturnsNullWhenStagingDirDoesNotExist(): void
@@ -76,7 +79,31 @@ final class StagedImportServiceTest extends TestCase
     {
         mkdir($this->importStagingDir, 0o755, true);
         file_put_contents($this->importStagingDir.'/import.json', json_encode([
+            'markerVersion' => 1,
             'stagedAt' => 'not-a-date',
+            'sourceArchive' => 'catalog.zip',
+        ]));
+
+        self::assertNull($this->createService()->readMarker());
+    }
+
+    public function testReadMarkerReturnsNullWhenMarkerVersionIsUnknown(): void
+    {
+        mkdir($this->importStagingDir, 0o755, true);
+        file_put_contents($this->importStagingDir.'/import.json', json_encode([
+            'markerVersion' => 99,
+            'stagedAt' => '2026-09-18T12:34:56Z',
+            'sourceArchive' => 'catalog.zip',
+        ]));
+
+        self::assertNull($this->createService()->readMarker());
+    }
+
+    public function testReadMarkerReturnsNullWhenMarkerVersionIsMissing(): void
+    {
+        mkdir($this->importStagingDir, 0o755, true);
+        file_put_contents($this->importStagingDir.'/import.json', json_encode([
+            'stagedAt' => '2026-09-18T12:34:56Z',
             'sourceArchive' => 'catalog.zip',
         ]));
 
@@ -120,9 +147,35 @@ final class StagedImportServiceTest extends TestCase
         self::assertDirectoryDoesNotExist($this->importStagingDir);
     }
 
+    public function testReadRejectionReasonReturnsNullWhenNothingWasRejected(): void
+    {
+        self::assertNull($this->createService()->readRejectionReason());
+    }
+
+    public function testReadRejectionReasonReturnsNullWhenTheFileIsNotValidJson(): void
+    {
+        file_put_contents($this->importRejectionPath, 'not json');
+
+        self::assertNull($this->createService()->readRejectionReason());
+    }
+
+    public function testReadRejectionReasonReturnsNullForAnUnknownReason(): void
+    {
+        file_put_contents($this->importRejectionPath, json_encode(['reason' => 'something-else']));
+
+        self::assertNull($this->createService()->readRejectionReason());
+    }
+
+    public function testReadRejectionReasonReturnsAKnownReason(): void
+    {
+        file_put_contents($this->importRejectionPath, json_encode(['reason' => 'incompatible_schema']));
+
+        self::assertSame('incompatible_schema', $this->createService()->readRejectionReason());
+    }
+
     private function createService(): StagedImportService
     {
-        return new StagedImportService($this->importStagingDir);
+        return new StagedImportService($this->importStagingDir, $this->importRejectionPath);
     }
 
     private function removeDirectory(string $dir): void

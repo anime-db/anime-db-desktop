@@ -40,11 +40,13 @@ final class CatalogStageServiceTest extends TestCase
 {
     private string $fixturesDir;
     private string $importStagingDir;
+    private string $importRejectionPath;
 
     protected function setUp(): void
     {
         $this->fixturesDir = sys_get_temp_dir().'/animedb-stage-test-fixtures-'.uniqid();
         $this->importStagingDir = sys_get_temp_dir().'/animedb-stage-test-staging-'.uniqid();
+        $this->importRejectionPath = sys_get_temp_dir().'/animedb-stage-test-rejection-'.uniqid().'.json';
         mkdir($this->fixturesDir, 0o755, true);
     }
 
@@ -52,6 +54,7 @@ final class CatalogStageServiceTest extends TestCase
     {
         $this->removeDirectory($this->fixturesDir);
         $this->removeDirectory($this->importStagingDir);
+        @unlink($this->importRejectionPath);
         // The zip-slip test writes one level above importStagingDir when the guard fails to stop it.
         @unlink(\dirname($this->importStagingDir).'/escaped.txt');
     }
@@ -206,6 +209,15 @@ final class CatalogStageServiceTest extends TestCase
         )['sourceArchive']);
     }
 
+    public function testStagingRemovesAStaleRejectionReasonLeftByAPreviousDecision(): void
+    {
+        file_put_contents($this->importRejectionPath, json_encode(['reason' => 'incompatible_schema']));
+
+        $this->createService()->stage($this->buildArchive($this->defaultManifest(), $this->sqliteDbBytes(1)));
+
+        $this->assertFileDoesNotExist($this->importRejectionPath);
+    }
+
     public function testStagingPublishesImportProgressEventsForTheDatabaseAndEachMediaFile(): void
     {
         $archivePath = $this->buildArchive(
@@ -250,6 +262,7 @@ final class CatalogStageServiceTest extends TestCase
             $wsPublisher ?? new WsPublisher(DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true])),
             $logger ?? new NullLogger(),
             $this->importStagingDir,
+            $this->importRejectionPath,
         );
     }
 
