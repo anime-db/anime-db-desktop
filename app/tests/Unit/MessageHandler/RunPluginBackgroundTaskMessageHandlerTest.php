@@ -90,6 +90,35 @@ final class RunPluginBackgroundTaskMessageHandlerTest extends TestCase
         $messageHandler(new RunPluginBackgroundTaskMessage('ghost-vendor', $task));
     }
 
+    /**
+     * A task can sit in the queue long enough for the user to disable its plugin before the
+     * worker consumes it — the handler must not run in that case, same as
+     * {@see \App\Tests\Unit\Service\Plugin\SettingsPageRegistryTest::testFindReturnsNullWhenTheWholePluginIsDisabledEvenThoughAPageIsRegistered}.
+     */
+    public function testLogsAndDropsTheTaskWhenThePluginIsInstalledButDisabled(): void
+    {
+        $this->writeManifest('fake-vendor');
+        file_put_contents($this->pluginsDir.'/plugins.json', (string) json_encode([
+            'fake-vendor' => ['enabled' => false],
+        ]));
+        $task = new BackgroundTask('rescan');
+
+        $handler = $this->createMock(BackgroundTaskHandlerInterface::class);
+        $handler->expects($this->never())->method('handle');
+
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->once())->method('warning')->with(
+            $this->stringContains('Discarding'),
+            $this->callback(static fn (array $context): bool => $context['pluginId'] === 'fake-vendor' && $context['taskName'] === 'rescan'),
+        );
+
+        $messageHandler = new RunPluginBackgroundTaskMessageHandler(
+            new BackgroundTaskHandlerRegistry(['fake-vendor' => $handler], $this->installedPluginsRegistry()),
+            $logger,
+        );
+        $messageHandler(new RunPluginBackgroundTaskMessage('fake-vendor', $task));
+    }
+
     private function installedPluginsRegistry(): InstalledPluginsRegistry
     {
         $registry = new InstalledPluginsRegistry(
