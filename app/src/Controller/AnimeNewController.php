@@ -27,6 +27,9 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
+use AnimeDb\PluginContracts\Catalog\AnimeFilesChangedEvent;
+use AnimeDb\PluginContracts\Catalog\FilesChangeReason;
+use AnimeDb\PluginContracts\Model\AnimeId;
 use App\Entity\Enum\AnimeType;
 use App\Entity\Enum\WatchStatus;
 use App\Entity\Storage;
@@ -39,6 +42,7 @@ use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 use Symfony\Component\Security\Csrf\CsrfToken;
 use Symfony\Component\Security\Csrf\CsrfTokenManagerInterface;
+use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 use Twig\Environment;
 
 /**
@@ -52,6 +56,10 @@ use Twig\Environment;
  * built yet): the optional title/storage_id/storage_path query params prefill the form, and
  * when both storage params are present on submit the new record is linked to that file the
  * same way ScanStorageService::linkToChosenCandidate() links a plugin candidate.
+ *
+ * Dispatches {@see AnimeFilesChangedEvent} with {@see FilesChangeReason::Created} once the new
+ * record has been flushed (issue #703/#684, часть 3): a plugin reacting to a record's files
+ * needs this signal regardless of whether the create form also linked a storage path.
  */
 final class AnimeNewController
 {
@@ -60,6 +68,7 @@ final class AnimeNewController
         private readonly CsrfTokenManagerInterface $csrfTokenManager,
         private readonly UrlGeneratorInterface $urlGenerator,
         private readonly Environment $twig,
+        private readonly EventDispatcherInterface $eventDispatcher,
     ) {
     }
 
@@ -108,6 +117,9 @@ final class AnimeNewController
 
         $this->entityManager->persist($anime);
         $this->entityManager->flush();
+
+        $animeId = $anime->id ?? throw new \LogicException('Anime must have an id once it has been flushed.');
+        $this->eventDispatcher->dispatch(new AnimeFilesChangedEvent(new AnimeId($animeId), FilesChangeReason::Created));
 
         return new RedirectResponse($this->urlGenerator->generate('anime_show', ['id' => $anime->id]));
     }

@@ -27,6 +27,8 @@ declare(strict_types=1);
 
 namespace App\Service\Download;
 
+use AnimeDb\PluginContracts\Catalog\AnimeFilesChangedEvent;
+use AnimeDb\PluginContracts\Catalog\FilesChangeReason;
 use AnimeDb\PluginContracts\Download\DownloadCompletedEvent;
 use AnimeDb\PluginContracts\Download\DownloadTaskId;
 use AnimeDb\PluginContracts\Model\AnimeId;
@@ -42,7 +44,8 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
  * Detects finished torrents by POLLING qBittorrent's WebUI (GET /api/v2/torrents/info) — there is
  * no push/webhook from qbittorrent-nox — and, for each still-Pending (infoHash, anime) pairing
  * whose torrent just finished, links the folder to the catalog entry and dispatches
- * {@see DownloadCompletedEvent} exactly once (issue #346).
+ * {@see DownloadCompletedEvent} exactly once (issue #346), alongside {@see AnimeFilesChangedEvent}
+ * with {@see FilesChangeReason::DownloadFinished} (issue #703/#684, часть 3).
  *
  * Nothing in this class triggers poll() itself (issue #685): App\Command\DownloadsPollCommand and
  * App\MessageHandler\PollDownloadsMessageHandler are the only callers, invoked respectively once
@@ -197,6 +200,7 @@ final class DownloadCompletionPoller
         }
 
         $animeId = $anime->id ?? throw new \LogicException('Anime must have an id once it has a Download row pointing at it.');
+        $this->eventDispatcher->dispatch(new AnimeFilesChangedEvent(new AnimeId($animeId), FilesChangeReason::DownloadFinished));
         $this->eventDispatcher->dispatch(new DownloadCompletedEvent(new AnimeId($animeId), new DownloadTaskId($infoHash)));
     }
 

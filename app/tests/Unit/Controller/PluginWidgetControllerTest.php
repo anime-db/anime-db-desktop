@@ -140,6 +140,89 @@ final class PluginWidgetControllerTest extends TestCase
         $this->assertSame(300, $response->getMaxAge());
     }
 
+    public function testRenderDoesNotCacheAnEntryWidgetResponseMarkedAsPendingUpdate(): void
+    {
+        $anime = $this->anime();
+
+        $widget = $this->createStub(EntryWidgetInterface::class);
+        $widget->method('render')->willReturn('<!--animedb:widget-pending-update--><div>Preparing…</div>');
+
+        $entryWidgets = new EntryWidgetRegistry(
+            ['animedb-shikimori:related' => $widget],
+            $this->activeWidgets('animedb-shikimori', ['related' => true]),
+            $this->createStub(TranslatorInterface::class),
+        );
+
+        $entityManager = $this->createMock(EntityManagerInterface::class);
+        $entityManager->method('find')->with(Anime::class, 5)->willReturn($anime);
+
+        $controller = $this->createController($entryWidgets, $this->emptyCatalogWidgets(), entityManager: $entityManager);
+        $response = $controller->render(
+            'animedb-shikimori',
+            'related',
+            Request::create('/plugin/animedb-shikimori/widget/related', 'GET', ['entryId' => '5']),
+        );
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertSame('<div>Preparing…</div>', $response->getContent());
+        $this->assertNull($response->getMaxAge());
+    }
+
+    /**
+     * Mutation check for the pending-update marker (issue #703/#684): the exact same response as
+     * above, minus the marker, must go back to being cached for the usual 300 s — proving the
+     * marker itself, not just "this widget", is what turns caching off.
+     */
+    public function testRenderCachesTheSameEntryWidgetResponseOnceThePendingUpdateMarkerIsGone(): void
+    {
+        $anime = $this->anime();
+
+        $widget = $this->createStub(EntryWidgetInterface::class);
+        $widget->method('render')->willReturn('<div>Preparing…</div>');
+
+        $entryWidgets = new EntryWidgetRegistry(
+            ['animedb-shikimori:related' => $widget],
+            $this->activeWidgets('animedb-shikimori', ['related' => true]),
+            $this->createStub(TranslatorInterface::class),
+        );
+
+        $entityManager = $this->createMock(EntityManagerInterface::class);
+        $entityManager->method('find')->with(Anime::class, 5)->willReturn($anime);
+
+        $controller = $this->createController($entryWidgets, $this->emptyCatalogWidgets(), entityManager: $entityManager);
+        $response = $controller->render(
+            'animedb-shikimori',
+            'related',
+            Request::create('/plugin/animedb-shikimori/widget/related', 'GET', ['entryId' => '5']),
+        );
+
+        $this->assertSame('<div>Preparing…</div>', $response->getContent());
+        $this->assertTrue($response->headers->getCacheControlDirective('private'));
+        $this->assertSame(300, $response->getMaxAge());
+    }
+
+    public function testRenderDoesNotCacheACatalogWidgetResponseMarkedAsPendingUpdate(): void
+    {
+        $widget = $this->createStub(CatalogWidgetInterface::class);
+        $widget->method('render')->willReturn('<!--animedb:widget-pending-update--><div>Preparing…</div>');
+
+        $catalogWidgets = new CatalogWidgetRegistry(
+            ['animedb-shikimori:new_releases' => $widget],
+            $this->activeWidgets('animedb-shikimori', ['new_releases' => true]),
+            $this->createStub(TranslatorInterface::class),
+        );
+
+        $controller = $this->createController($this->emptyEntryWidgets(), $catalogWidgets);
+        $response = $controller->render(
+            'animedb-shikimori',
+            'new_releases',
+            Request::create('/plugin/animedb-shikimori/widget/new_releases'),
+        );
+
+        $this->assertSame('<div>Preparing…</div>', $response->getContent());
+        $this->assertNull($response->getMaxAge());
+    }
+
     public function testRenderReturnsErrorFragmentAndLogsWhenWidgetThrows(): void
     {
         $anime = $this->anime();

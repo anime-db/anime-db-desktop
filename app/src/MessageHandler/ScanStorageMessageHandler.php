@@ -27,10 +27,14 @@ declare(strict_types=1);
 
 namespace App\MessageHandler;
 
+use AnimeDb\PluginContracts\Catalog\AnimeFilesChangedEvent;
+use AnimeDb\PluginContracts\Catalog\FilesChangeReason;
+use AnimeDb\PluginContracts\Model\AnimeId;
 use App\Entity\Storage;
 use App\Message\ScanStorageMessage;
 use App\Service\JobLock\JobLockService;
 use App\Service\Storage\Scan\ScanCandidate;
+use App\Service\Storage\Scan\ScanItemType;
 use App\Service\Storage\Scan\ScanResultItem;
 use App\Service\Storage\ScanStorageService;
 use App\Service\Storage\StorageMarkerService;
@@ -39,6 +43,7 @@ use Doctrine\ORM\EntityManagerInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 use Symfony\Component\Messenger\Exception\UnrecoverableMessageHandlingException;
+use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
 /**
  * Wraps ScanStorageService::scan() (Таск 3 часть 5) into a real background job (часть 6):
@@ -53,6 +58,9 @@ use Symfony\Component\Messenger\Exception\UnrecoverableMessageHandlingException;
  * supply scan()'s $atPath (issue #162): when the storage's own path is unreadable (drive letter
  * reassigned, external drive reconnected elsewhere), it searches for the storage's desktop.ini
  * marker under every other drive root before giving up.
+ *
+ * Also dispatches {@see AnimeFilesChangedEvent} for every Updated/AutoLinked item in the scan
+ * result — see {@see self::dispatchFilesAddedEvents()}.
  */
 #[AsMessageHandler]
 final class ScanStorageMessageHandler
@@ -64,6 +72,7 @@ final class ScanStorageMessageHandler
         private readonly StorageMarkerService $storageMarkerService,
         private readonly WsPublisher $wsPublisher,
         private readonly LoggerInterface $logger,
+        private readonly EventDispatcherInterface $eventDispatcher,
     ) {
     }
 
@@ -121,6 +130,8 @@ final class ScanStorageMessageHandler
                 'storage_id' => $message->storageId,
                 'items' => array_map($this->serializeItem(...), $result->items),
             ]);
+
+            $this->dispatchFilesAddedEvents($result->items);
         } catch (\Throwable $exception) {
             $this->wsPublisher->publish('scan.failed', [
                 'storage_id' => $message->storageId,
@@ -138,6 +149,56 @@ final class ScanStorageMessageHandler
                 if (!$this->jobLockService->hasActiveLocks()) {
                     $this->wsPublisher->publish('backend.status', ['state' => 'idle']);
                 }
+            }
+        }
+    }
+
+    /**
+     * Dispatches {@see AnimeFilesChangedEvent} for every ScanItemType::Updated / ::AutoLinked item
+     * ScanStorageService::scan() already flushed (issue #703/#684, часть 3) — scan()'s own logic is
+     * not touched; this only reads its already-committed result, from this worker, after flush(),
+     * exactly as the contract requires.
+     *
+     * ::Updated (an already-linked file's mtime moved forward) gets {@see FilesChangeReason::FilesAdded}.
+     * ::AutoLinked carries the same file-to-anime link as StorageScanConfirmController's manual
+     * candidate choice — matchNewEntry() calls the very same ScanStorageService::linkToChosenCandidate()
+     * when exactly one candidate is found automatically — so it gets the matching
+     * {@see FilesChangeReason::PathChanged}.
+     *
+     * Called after `scan.done` is published, not before: plugin subscribers of this event are
+     * registered through Symfony's regular `_instanceof` autoconfig (see {@see \App\Service\Plugin\DependencyInjection\Compiler\TagPluginServicesPass})
+     * and are not wrapped by the host the way {@see ScanStorageService::fillFromPlugin()}
+     * guards a plugin call during scan() itself (issue #233) — so each dispatch is individually
+     * try/caught here too. A scan that already committed successfully must not turn into
+     * `scan.failed` (and the handler must not retry the whole message) just because one plugin's
+     * listener threw.
+     *
+     * @param list<ScanResultItem> $items
+     */
+    private function dispatchFilesAddedEvents(array $items): void
+    {
+        foreach ($items as $item) {
+            $reason = match ($item->type) {
+                ScanItemType::Updated => FilesChangeReason::FilesAdded,
+                ScanItemType::AutoLinked => FilesChangeReason::PathChanged,
+                default => null,
+            };
+
+            if ($reason === null) {
+                continue;
+            }
+
+            $anime = $item->anime ?? throw new \LogicException('ScanResultItem::updated()/autoLinked() must always carry an Anime.');
+            $animeId = $anime->id ?? throw new \LogicException('Anime must have an id once linked to storage.');
+
+            try {
+                $this->eventDispatcher->dispatch(new AnimeFilesChangedEvent(new AnimeId($animeId), $reason));
+            } catch (\Throwable $exception) {
+                $this->logger->error('A plugin subscriber of AnimeFilesChangedEvent failed; the scan itself already succeeded and is not affected.', [
+                    'anime_id' => $animeId,
+                    'reason' => $reason->name,
+                    'exception' => $exception,
+                ]);
             }
         }
     }
