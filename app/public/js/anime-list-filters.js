@@ -31,10 +31,12 @@
 // lands, and getAppliedFilters() is read by the core to build the GET /anime and
 // GET /anime/facets query strings via window.AnimeListQuery.
 (function () {
-    const filtersToggleButton = document.getElementById('anime-list-filters-toggle');
-    const filtersPanel = document.getElementById('anime-list-filters');
-    const filterApplyButton = document.getElementById('anime-list-filter-apply');
-    const chipsResetButton = document.getElementById('anime-list-chips-reset');
+    // Assigned in init(), not queried here at module-load time (issue #734) — see
+    // anime-list-grid.js for the same pattern and its rationale.
+    let filtersToggleButton = null;
+    let filtersPanel = null;
+    let filterApplyButton = null;
+    let chipsResetButton = null;
 
     // The filter values a click has actually applied — drives the list/facets query, the chip
     // row and the "applied" highlight in the panel.
@@ -261,14 +263,20 @@
     // this panel triggers a reload on every filter change but does not own the request/abort
     // machinery, and it draws the chip row but not the "Shown X of Y" text next to it, which is
     // built from list-core totals (issue #712).
-    function init({ onFiltersChanged: onFiltersChangedCallback, refreshShownCount: refreshShownCountCallback }) {
+    function init(root, { onFiltersChanged: onFiltersChangedCallback, refreshShownCount: refreshShownCountCallback }) {
+        filtersToggleButton = root.querySelector('#anime-list-filters-toggle');
+        filtersPanel = root.querySelector('#anime-list-filters');
+        filterApplyButton = root.querySelector('#anime-list-filter-apply');
+        chipsResetButton = root.querySelector('#anime-list-chips-reset');
         onFiltersChanged = onFiltersChangedCallback;
         refreshShownCount = refreshShownCountCallback;
+
+        window.AnimeListFilterRender.init(root);
 
         filterApplyButton.addEventListener('click', applyPending);
         chipsResetButton.addEventListener('click', resetAllFilters);
 
-        document.querySelectorAll('.anime-list__filter-section-toggle').forEach((toggle) => {
+        root.querySelectorAll('.anime-list__filter-section-toggle').forEach((toggle) => {
             toggle.addEventListener('click', () => {
                 const expanded = toggle.getAttribute('aria-expanded') === 'true';
                 toggle.setAttribute('aria-expanded', String(!expanded));

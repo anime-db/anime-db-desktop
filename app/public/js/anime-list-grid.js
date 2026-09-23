@@ -41,10 +41,12 @@
     // drag-resize while the column count itself only changes once.
     const RESIZE_DEBOUNCE_MS = 150;
 
-    const grid = document.getElementById('anime-list-grid');
-    const emptyMessage = document.getElementById('anime-list-empty');
-    const pagination = document.getElementById('anime-list-pagination');
-    const sentinel = document.getElementById('anime-list-sentinel');
+    // Assigned in init(), not queried here at module-load time (issue #734): the control this
+    // module is part of mounts on htmx:load, potentially long after this script tag itself ran.
+    let grid = null;
+    let emptyMessage = null;
+    let pagination = null;
+    let sentinel = null;
 
     let sentinelObserver = null;
     let resizeObserver = null;
@@ -281,7 +283,11 @@
         lastColumnCount = getColumnCount();
     }
 
-    function init({ requestPage: requestPageCallback }) {
+    function init(root, { requestPage: requestPageCallback }) {
+        grid = root.querySelector('#anime-list-grid');
+        emptyMessage = root.querySelector('#anime-list-empty');
+        pagination = root.querySelector('#anime-list-pagination');
+        sentinel = root.querySelector('#anime-list-sentinel');
         requestPage = requestPageCallback;
 
         resizeObserver = new ResizeObserver(() => {
@@ -291,8 +297,33 @@
         resizeObserver.observe(grid);
     }
 
+    // Symmetric with init() (issue #734): disconnects the ResizeObserver init() created and the
+    // IntersectionObserver a pagination call may have created, and resets every piece of state
+    // this module owns so a later init() on a fresh mount starts clean rather than inheriting a
+    // stale paginationMode/loadedCount/currentOffset from whatever the previous mount last saw.
+    function destroy() {
+        clearTimeout(resizeDebounceTimer);
+        resizeDebounceTimer = null;
+        if (resizeObserver) {
+            resizeObserver.disconnect();
+            resizeObserver = null;
+        }
+        disconnectSentinel();
+
+        paginationMode = null;
+        loadedCount = 0;
+        currentOffset = 0;
+        lastColumnCount = null;
+        requestPage = null;
+        grid = null;
+        emptyMessage = null;
+        pagination = null;
+        sentinel = null;
+    }
+
     window.AnimeListGrid = {
         init,
+        destroy,
         seedColumnCount,
         getColumnCount,
         computeLimit,

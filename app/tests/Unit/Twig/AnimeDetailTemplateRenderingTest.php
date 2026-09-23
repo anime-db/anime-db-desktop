@@ -237,7 +237,7 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
         $twig = self::getContainer()->get('twig');
         $html = $twig->render('anime/show.html.twig', ['anime' => $this->fullyPopulatedAnime(), 'widgets' => [], 'plugins_ui' => [], 'fillable_fields' => $this->emptyFillableFields()]);
 
-        $this->assertStringContainsString('data-catalog-back-link', $html);
+        $this->assertStringContainsString('data-control="catalog-back-link"', $html);
         $this->assertStringContainsString('href="/"', $html);
         $this->assertStringContainsString('← Каталог', $html);
     }

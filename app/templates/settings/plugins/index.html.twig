@@ -135,7 +135,7 @@
 
         <h2 class="mt-4">{{ 'settings_plugins.install_heading'|trans }}</h2>
 
-        <form method="post" action="{{ path('settings_plugins_install') }}" enctype="multipart/form-data" id="plugin-install-form">
+        <form method="post" action="{{ path('settings_plugins_install') }}" enctype="multipart/form-data" id="plugin-install-form" data-control="plugin-install">
             <input type="hidden" name="_token" value="{{ csrf_token('settings_plugins_install') }}">
 
             <div class="mb-3">

@@ -23,11 +23,16 @@
 
 // Exercises just the "← Catalog" link wiring in anime-detail.js (issue #719) against a minimal
 // DOM shaped like the link app/templates/anime/show.html.twig renders. Requiring the real module
-// also runs its label-widget and open-folder-button IIFEs, but both no-op safely on a DOM missing
-// their own hooks (existing behavior, unrelated to this test).
+// also registers the label-widget and open-folder-button controls, but neither is mounted here —
+// mountControls() only dispatches htmx:load on the link itself, and mounting is a no-op for any
+// other data-control name not present in this test's DOM (existing behavior, unrelated to this
+// test). controller.js itself is required once at file scope — see controller.test.js for why a
+// fresh require() per test would leak document-level listeners.
+
+require('../../app/public/js/controller.js');
 
 function setUpDom() {
-    document.body.innerHTML = '<a href="/" data-catalog-back-link>Catalog</a>';
+    document.body.innerHTML = '<a href="/" data-control="catalog-back-link">Catalog</a>';
 }
 
 function setHistoryLength(length) {
@@ -38,9 +43,14 @@ function setReferrer(referrer) {
     Object.defineProperty(document, 'referrer', { value: referrer, configurable: true });
 }
 
+function mountControls(root = document.body) {
+    root.dispatchEvent(new CustomEvent('htmx:load', { bubbles: true, detail: { elt: root } }));
+}
+
 function loadModule() {
     jest.resetModules();
     require('../../app/public/js/anime-detail.js');
+    mountControls();
 }
 
 function dispatchClick(link) {
@@ -64,7 +74,7 @@ test('clicking the link goes back through history when arriving from the catalog
     const backSpy = jest.spyOn(window.history, 'back').mockImplementation(() => {});
 
     loadModule();
-    const event = dispatchClick(document.querySelector('[data-catalog-back-link]'));
+    const event = dispatchClick(document.querySelector('[data-control="catalog-back-link"]'));
 
     expect(backSpy).toHaveBeenCalledTimes(1);
     expect(event.defaultPrevented).toBe(true);
@@ -75,7 +85,7 @@ test('the link falls back to plain navigation when the window has no previous en
     const backSpy = jest.spyOn(window.history, 'back').mockImplementation(() => {});
 
     loadModule();
-    const event = dispatchClick(document.querySelector('[data-catalog-back-link]'));
+    const event = dispatchClick(document.querySelector('[data-control="catalog-back-link"]'));
 
     expect(backSpy).not.toHaveBeenCalled();
     expect(event.defaultPrevented).toBe(false);
@@ -87,7 +97,7 @@ test('the link falls back to plain navigation when the previous page is not the 
     const backSpy = jest.spyOn(window.history, 'back').mockImplementation(() => {});
 
     loadModule();
-    const event = dispatchClick(document.querySelector('[data-catalog-back-link]'));
+    const event = dispatchClick(document.querySelector('[data-control="catalog-back-link"]'));
 
     expect(backSpy).not.toHaveBeenCalled();
     expect(event.defaultPrevented).toBe(false);
@@ -99,7 +109,7 @@ test('the link falls back to plain navigation when there is no referrer', () => 
     const backSpy = jest.spyOn(window.history, 'back').mockImplementation(() => {});
 
     loadModule();
-    const event = dispatchClick(document.querySelector('[data-catalog-back-link]'));
+    const event = dispatchClick(document.querySelector('[data-control="catalog-back-link"]'));
 
     expect(backSpy).not.toHaveBeenCalled();
     expect(event.defaultPrevented).toBe(false);

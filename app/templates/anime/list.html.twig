@@ -23,7 +23,7 @@
 {% block title %}{{ 'anime_list.title'|trans }}{% endblock %}
 
 {% block body %}
-    <main class="anime-list">
+    <main class="anime-list" data-control="anime-list">
         {% if showOnboarding %}
             <section class="onboarding-banner">
                 <h2>{{ 'onboarding.heading'|trans }}</h2>

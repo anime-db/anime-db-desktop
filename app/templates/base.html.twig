@@ -59,7 +59,7 @@
         <a class="app-nav__link{% if current_nav_section == 'settings' %} app-nav__link--active{% endif %}" href="{{ path('settings_index') }}"{% if current_nav_section == 'settings' %} aria-current="page"{% endif %}>{{ 'nav.settings_link'|trans }}</a>
     </nav>
     {% block body %}{% endblock %}
-    <div id="app-notifications" class="app-notifications" aria-live="polite"></div>
+    <div id="app-notifications" class="app-notifications" data-control="app-notifications" aria-live="polite"></div>
     <template id="app-notification-template">
         <div class="app-notification" role="alert">
             <div class="app-notification__text">
@@ -75,6 +75,11 @@
        работают без реинициализации. Tooltip и Popover — исключение, они создаются только явно:
        если появятся, инициализировать их придётся по событию htmx:afterSwap. #}
     <script src="{{ asset('js/bootstrap.bundle.min.js') }}"></script>
+    {# Control registry (issue #734): mounts every data-control="name" element on htmx:load, both
+       at initial page load and on every later htmx swap. Loaded before translations.js/
+       app-notifications.js and before any per-page {% block javascripts %} script, since those
+       call registerControl() at load time and expect window.Controller to already exist. #}
+    <script src="{{ asset('js/controller.js') }}"></script>
     <script src="{{ asset('js/translations.js') }}"></script>
     <script src="{{ asset('js/app-notifications.js') }}"></script>
     {% block javascripts %}{% endblock %}

@@ -42,9 +42,17 @@
         studios: { facetKey: 'studios', kind: 'entity', input: 'checkbox' },
     };
 
-    const chipList = document.getElementById('anime-list-chip-list');
-    const chipsResetButton = document.getElementById('anime-list-chips-reset');
-    const filtersCountBadge = document.getElementById('anime-list-filters-count');
+    // Assigned in init(), not queried here at module-load time (issue #734) — see
+    // anime-list-grid.js for the same pattern and its rationale.
+    let chipList = null;
+    let chipsResetButton = null;
+    let filtersCountBadge = null;
+
+    function init(root) {
+        chipList = root.querySelector('#anime-list-chip-list');
+        chipsResetButton = root.querySelector('#anime-list-chips-reset');
+        filtersCountBadge = root.querySelector('#anime-list-filters-count');
+    }
 
     function nameFromBucket(config, bucket, catalogue) {
         if (config.kind === 'enum') {
@@ -237,6 +245,7 @@
     }
 
     window.AnimeListFilterRender = {
+        init,
         renderPanel,
         renderChips,
     };

@@ -26,9 +26,18 @@
 // its own private format() before this refactor (issue #677) — these tests drive it through the
 // real translations.js instead, to prove it now delegates %name% substitution to trans() alone,
 // including for a placeholder repeated twice in a single catalogue string.
+//
+// controller.js is required once at file scope, not inside loadBackupModule() — see
+// controller.test.js for why a fresh require() per test would leak document-level listeners.
+require('../../app/public/js/controller.js');
+
+function mountControls(root = document.body) {
+    root.dispatchEvent(new CustomEvent('htmx:load', { bubbles: true, detail: { elt: root } }));
+}
 
 function setUpDom() {
     document.body.innerHTML = `
+        <main data-control="settings-backup">
         <p id="settings-backup-unavailable" hidden></p>
         <section id="settings-backup-export-section">
             <div id="settings-backup-form">
@@ -65,6 +74,7 @@ function setUpDom() {
                 </li>
             </ul>
         </section>
+        </main>
     `;
 }
 
@@ -86,6 +96,7 @@ function loadBackupModule() {
     jest.isolateModules(() => {
         require('../../app/public/js/backup.js');
     });
+    mountControls();
 }
 
 async function flushMicrotasks() {

@@ -30,7 +30,7 @@
             <p class="alert alert-danger">{{ error|trans }}</p>
         {% endif %}
 
-        <form method="post" action="{{ path('storage_create') }}">
+        <form method="post" action="{{ path('storage_create') }}" data-control="storage-new">
             <input type="hidden" name="_token" value="{{ csrf_token('storage_new') }}">
 
             <div class="mb-3">

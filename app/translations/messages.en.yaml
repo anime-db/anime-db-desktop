@@ -536,6 +536,9 @@ plugin_widget:
 app_notification:
     close_button: Close
 
+controller:
+    unknown_control_text: 'Unknown control: %name%'
+
 nav:
     aria_label: Main navigation
     catalog_link: Catalog

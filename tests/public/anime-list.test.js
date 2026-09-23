@@ -22,10 +22,19 @@
 'use strict';
 
 // Loads the real anime-list.js against a DOM shaped like app/templates/anime/list.html.twig,
-// with fetch() and window.AppTranslations replaced by controllable test doubles. The module is a
-// self-invoking browser script with no exports, so it is driven the same way a page would: by
-// requiring it (which fires the initial loadPage() call) and, for the overlap scenario, by
-// dispatching an `input` event on the search box to trigger a second loadPage() call.
+// with fetch() and window.AppTranslations replaced by controllable test doubles. The module is
+// mounted the same way a page mounts it (issue #734): requiring the five <script> files only
+// registers controls/namespaces, so loadAnimeListModule() below also dispatches a synthetic
+// htmx:load on the <main data-control="anime-list"> root to actually run the initial loadPage()
+// call — the same event htmx itself fires on <body> once the real page finishes loading.
+//
+// controller.js is required once at file scope, not per test — see controller.test.js for why a
+// fresh require() per test would leak document-level listeners.
+require('../../app/public/js/controller.js');
+
+function mountControls(root = document.body) {
+    root.dispatchEvent(new CustomEvent('htmx:load', { bubbles: true, detail: { elt: root } }));
+}
 
 function deferred() {
     let resolve;
@@ -76,6 +85,7 @@ function filterSectionsMarkup() {
 // selector and throw on a missing element the same way a broken template would.
 function setUpDom(columns = 1) {
     document.body.innerHTML = `
+        <main data-control="anime-list">
         <input id="anime-list-search" type="search" />
         <button type="button" id="anime-list-filters-toggle" aria-expanded="true">
             Filters<span id="anime-list-filters-count" hidden></span>
@@ -105,6 +115,7 @@ function setUpDom(columns = 1) {
                 <button type="button" id="anime-list-filter-apply" disabled>Filter</button>
             </div>
         </aside>
+        </main>
     `;
     setGridColumns(columns);
 }
@@ -219,6 +230,7 @@ function loadAnimeListModule() {
         require('../../app/public/js/anime-list-filters.js');
         require('../../app/public/js/anime-list.js');
     });
+    mountControls();
 }
 
 // Same five modules as loadAnimeListModule() above, but required in the exact reverse of the
@@ -232,6 +244,7 @@ function loadAnimeListModuleReversed() {
         require('../../app/public/js/anime-list-grid.js');
         require('../../app/public/js/anime-list-query.js');
     });
+    mountControls();
 }
 
 function cardTitles(grid) {
@@ -813,25 +826,19 @@ function emptyFacets() {
     });
 }
 
-// Simulates the real <script> tags executing before DOMContentLoaded (they sit at the end of
-// <body>, so document.readyState is 'loading' at that point) — a plain call to loadAnimeListModule()
-// in this test file cannot do that, since jsdom's own document is already 'complete' by the time
-// test code runs (see the readyState check in anime-list.js). Without that check, this scenario is
-// exactly the order-dependent bug from issue #729: with the helper modules loaded after
-// anime-list.js, its former immediate init() call would throw on window.AnimeListGrid etc. being
-// undefined; this test instead proves init() only runs once every module has registered and
-// DOMContentLoaded fires.
-test('the catalog initializes correctly even when its five modules load in the reverse of the template order (issue #729)', async () => {
-    const readyStateSpy = jest.spyOn(document, 'readyState', 'get').mockReturnValue('loading');
+// Issue #734 absorbed issue #729: registerControl() only ever stores a mountFn in a registry
+// keyed by name, so requiring the five files in reverse of list.html.twig's <script> order cannot
+// throw the way the old immediate init() call did (it used to reach for window.AnimeListGrid etc.
+// before those scripts had run at all). Nothing runs until the "anime-list" control actually
+// mounts on htmx:load, dispatched here by loadAnimeListModuleReversed() itself — so this test
+// proves order-independence directly, without needing to fake document.readyState/
+// DOMContentLoaded the way the pre-#734 version of this test did.
+test('the catalog initializes correctly even when its five modules are required in the reverse of the template order (issue #729, absorbed by #734)', async () => {
     window.history.replaceState({}, '', '/anime?labels=7');
     const calls = mockFetchQueueAll();
     setUpTranslations();
 
     loadAnimeListModuleReversed();
-    expect(calls).toHaveLength(0);
-
-    readyStateSpy.mockRestore();
-    document.dispatchEvent(new Event('DOMContentLoaded'));
     await flushMicrotasks();
 
     // The grid's request fired (AnimeListGrid.init() ran), the address bar's ?labels=7 seeded the

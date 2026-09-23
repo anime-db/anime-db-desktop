@@ -36,7 +36,6 @@
     // handler (handlePopState()), so a link this page built (a label click on the anime detail
     // page, issue #104, a card navigating to /anime/{id} and back, or the panel's own request)
     // reopens the same state it came from.
-    const urlParams = new URLSearchParams(window.location.search);
     // Debounce the search box (issue #199) so a full request isn't fired on every keystroke —
     // AnimeListController resolves this as "name" against Meilisearch, falling back to the
     // FTS5 quick-filter server-side when it is unavailable.
@@ -47,11 +46,13 @@
     const DEFAULT_SORT_FIELD = 'date_update';
     const DEFAULT_SORT_DIRECTION = 'desc';
 
-    const errorMessage = document.getElementById('anime-list-error');
-    const searchInput = document.getElementById('anime-list-search');
-    const sortContainer = document.getElementById('anime-list-sort');
-    const sortDirectionButton = document.getElementById('anime-list-sort-direction');
-    const chipsShown = document.getElementById('anime-list-chips-shown');
+    // Assigned in mountAnimeList(), not queried here at module-load time (issue #734): the
+    // "anime-list" control mounts on htmx:load, not at script-parse time.
+    let errorMessage = null;
+    let searchInput = null;
+    let sortContainer = null;
+    let sortDirectionButton = null;
+    let chipsShown = null;
 
     let searchDebounceTimer = null;
     let searchQuery = '';
@@ -349,9 +350,22 @@
         loadFacets();
     }
 
-    function init() {
-        window.AnimeListGrid.init({ requestPage: loadPage });
-        window.AnimeListFilterPanel.init({
+    // Mounts the whole catalog page as a single "anime-list" control (issue #734, which also
+    // absorbed issue #729's concern about the five <script> tags' load order): htmx:load itself
+    // fires on <body> once the initial document is ready, in addition to firing on every later
+    // htmx-inserted fragment, so this one registerControl() replaces both the old
+    // DOMContentLoaded/readyState bootstrap and the order dependency between this file and the
+    // four helper modules it calls into below — none of them run anything until this control
+    // actually mounts.
+    function mountAnimeList(root) {
+        errorMessage = root.querySelector('#anime-list-error');
+        searchInput = root.querySelector('#anime-list-search');
+        sortContainer = root.querySelector('#anime-list-sort');
+        sortDirectionButton = root.querySelector('#anime-list-sort-direction');
+        chipsShown = root.querySelector('#anime-list-chips-shown');
+
+        window.AnimeListGrid.init(root, { requestPage: loadPage });
+        window.AnimeListFilterPanel.init(root, {
             // A filter change (apply/remove/reset) must reload the list and refetch facets —
             // starting that request belongs to this module, not the filter panel (issue #712).
             onFiltersChanged: () => {
@@ -368,13 +382,17 @@
         // pushUrlState()/replaceUrlState() only ever run from an interactive handler above, so the
         // page opening at /anime with no params stays exactly that until the first user action
         // (issue #713).
-        seedFiltersFromUrl(urlParams);
+        seedFiltersFromUrl(new URLSearchParams(window.location.search));
         setupSearchInput();
         setupSortControls();
-        // Tracked on window rather than a module-local variable: this IIFE re-runs in full if the
-        // script tag it lives in is ever included twice on the same page, which would otherwise
-        // leave the previous run's popstate listener attached alongside the new one, doubling every
-        // reload/facets fetch it fires.
+        // Deduped on window rather than added unconditionally (issue #734, same concern the old
+        // pre-registry code already had to handle): the popstate listener lives outside this
+        // control's own subtree, so nothing but this mount/unmount pair itself can be relied on to
+        // keep exactly one of them attached — a page that somehow mounts this control a second
+        // time without the first instance's unmount ever running (a remount whose predecessor
+        // skipped htmx:beforeCleanupElement for any reason) would otherwise double every reload/
+        // facets fetch a single popstate fires, same as the double-<script>-tag bug this guarded
+        // against before the registry existed.
         if (window.__animeListPopStateHandler) {
             window.removeEventListener('popstate', window.__animeListPopStateHandler);
         }
@@ -383,18 +401,27 @@
         window.AnimeListGrid.seedColumnCount();
         loadPage(0, true, true);
         loadFacets();
+
+        // Symmetric demount (issue #734): the popstate listener lives on window, outside this
+        // control's own subtree, so a beforeCleanupElement on the root would never reach it on its
+        // own — and both in-flight requests plus the grid's ResizeObserver/IntersectionObserver
+        // need to stop before a fresh mount's own loadPage()/AnimeListGrid.init() replace them,
+        // or a stale response from this instance could still land after a remount.
+        return function unmountAnimeList() {
+            if (window.__animeListPopStateHandler === handlePopState) {
+                window.__animeListPopStateHandler = null;
+            }
+            window.removeEventListener('popstate', handlePopState);
+            clearTimeout(searchDebounceTimer);
+            if (pendingRequest) {
+                pendingRequest.abort();
+            }
+            if (pendingFacetsRequest) {
+                pendingFacetsRequest.abort();
+            }
+            window.AnimeListGrid.destroy();
+        };
     }
 
-    // Guards against the load order of the five <script> tags in list.html.twig: the tags sit at
-    // the end of <body>, so document.readyState is still 'loading' when this file executes today
-    // and the DOMContentLoaded listener below covers that. A readyState check with an immediate
-    // call is added on top so init() also runs correctly if this script is ever loaded after
-    // DOMContentLoaded already fired — e.g. a future template change, or this fragment inserted
-    // via htmx — cases a bare addEventListener('DOMContentLoaded', ...) would silently never fire
-    // for.
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', init);
-    } else {
-        init();
-    }
+    window.Controller.registerControl('anime-list', mountAnimeList);
 })();

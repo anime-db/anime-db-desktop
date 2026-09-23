@@ -34,261 +34,274 @@
         { type: 'NeedsConfirmation', labelKey: 'storage_list.group_needs_confirmation' },
     ];
 
-    const root = document.getElementById('storage-scan');
-    if (!root) {
-        return;
-    }
-
-    const storageId = root.dataset.storageId;
-    const confirmUrl = root.dataset.confirmUrl;
-    const confirmToken = root.dataset.confirmToken;
-    const animeNewUrl = root.dataset.animeNewUrl;
-
-    const progressBox = document.getElementById('storage-scan-progress');
-    const progressBar = document.getElementById('storage-scan-progress-bar');
-    const progressText = document.getElementById('storage-scan-progress-text');
-    const errorBox = document.getElementById('storage-scan-error');
-    const resultsBox = document.getElementById('storage-scan-results');
-
     // Guards against a scan that finished (or is still running) before this page managed to
     // subscribe: without it a missed scan.progress/scan.done leaves the progress bar stuck at
     // 0% forever with no feedback (issue #156).
     const NO_RESPONSE_TIMEOUT_MS = 15000;
 
-    let noResponseTimer = setTimeout(onNoResponse, NO_RESPONSE_TIMEOUT_MS);
+    // One mount = one scan subscription (issue #734): every piece of state below (the no-response
+    // timer, the ScanWatcher subscription itself) lives in this function's closure, created fresh
+    // per mount and torn down by the returned unmount() — nothing is shared across instances at
+    // module scope.
+    function mountStorageScan(root) {
+        const storageId = root.dataset.storageId;
+        const confirmUrl = root.dataset.confirmUrl;
+        const confirmToken = root.dataset.confirmToken;
+        const animeNewUrl = root.dataset.animeNewUrl;
 
-    function clearNoResponseTimer() {
-        if (noResponseTimer !== null) {
-            clearTimeout(noResponseTimer);
-            noResponseTimer = null;
+        const progressBox = root.querySelector('#storage-scan-progress');
+        const progressBar = root.querySelector('#storage-scan-progress-bar');
+        const progressText = root.querySelector('#storage-scan-progress-text');
+        const errorBox = root.querySelector('#storage-scan-error');
+        const resultsBox = root.querySelector('#storage-scan-results');
+
+        let noResponseTimer = setTimeout(onNoResponse, NO_RESPONSE_TIMEOUT_MS);
+
+        function clearNoResponseTimer() {
+            if (noResponseTimer !== null) {
+                clearTimeout(noResponseTimer);
+                noResponseTimer = null;
+            }
         }
-    }
 
-    async function onNoResponse() {
-        noResponseTimer = null;
-        progressBox.hidden = true;
-        errorBox.hidden = false;
-        errorBox.textContent = await window.AppTranslations.trans('storage_list.scan_no_response');
-    }
+        async function onNoResponse() {
+            noResponseTimer = null;
+            progressBox.hidden = true;
+            errorBox.hidden = false;
+            errorBox.textContent = await window.AppTranslations.trans('storage_list.scan_no_response');
+        }
 
-    async function onProgress(data) {
-        clearNoResponseTimer();
-        const percent = data.percent ?? 0;
-        // Width is set via the style property (CSSOM), not a rendered `style` attribute in Twig
-        // markup — the app's CSP (style-src 'self') blocks inline styles (issue #629).
-        progressBar.style.width = `${percent}%`;
-        progressBar.setAttribute('aria-valuenow', String(percent));
-        progressText.textContent = await window.AppTranslations.trans(
-            'storage_list.scan_progress_text',
-            { processed: data.processed, total: data.total, percent },
-        );
-    }
+        async function onProgress(data) {
+            clearNoResponseTimer();
+            const percent = data.percent ?? 0;
+            // Width is set via the style property (CSSOM), not a rendered `style` attribute in Twig
+            // markup — the app's CSP (style-src 'self') blocks inline styles (issue #629).
+            progressBar.style.width = `${percent}%`;
+            progressBar.setAttribute('aria-valuenow', String(percent));
+            progressText.textContent = await window.AppTranslations.trans(
+                'storage_list.scan_progress_text',
+                { processed: data.processed, total: data.total, percent },
+            );
+        }
 
-    async function onFailed(data) {
-        clearNoResponseTimer();
-        progressBox.hidden = true;
-        errorBox.hidden = false;
-        errorBox.textContent = data.reason === 'marker_conflict'
-            ? await window.AppTranslations.trans('storage_list.scan_failed_marker_conflict')
-            : await window.AppTranslations.trans('storage_list.scan_failed_exception', { message: data.message });
-    }
+        async function onFailed(data) {
+            clearNoResponseTimer();
+            progressBox.hidden = true;
+            errorBox.hidden = false;
+            errorBox.textContent = data.reason === 'marker_conflict'
+                ? await window.AppTranslations.trans('storage_list.scan_failed_marker_conflict')
+                : await window.AppTranslations.trans('storage_list.scan_failed_exception', { message: data.message });
+        }
 
-    async function buildInfoItem(item, labelKey) {
-        const li = document.createElement('li');
-        li.className = 'list-group-item';
-        li.textContent = await window.AppTranslations.trans(labelKey, {
-            title: item.anime?.title ?? item.storage_path,
-            path: item.storage_path,
-        });
+        async function buildInfoItem(item, labelKey) {
+            const li = document.createElement('li');
+            li.className = 'list-group-item';
+            li.textContent = await window.AppTranslations.trans(labelKey, {
+                title: item.anime?.title ?? item.storage_path,
+                path: item.storage_path,
+            });
 
-        return li;
-    }
+            return li;
+        }
 
-    async function buildAutoLinkedItem(item) {
-        const li = document.createElement('li');
-        li.className = 'list-group-item';
-        li.textContent = await window.AppTranslations.trans('storage_list.auto_linked_text', {
-            title: item.anime?.title ?? item.storage_path,
-        });
+        async function buildAutoLinkedItem(item) {
+            const li = document.createElement('li');
+            li.className = 'list-group-item';
+            li.textContent = await window.AppTranslations.trans('storage_list.auto_linked_text', {
+                title: item.anime?.title ?? item.storage_path,
+            });
 
-        return li;
-    }
+            return li;
+        }
 
-    async function buildManualEntryItem(item) {
-        const li = document.createElement('li');
-        li.className = 'list-group-item';
+        async function buildManualEntryItem(item) {
+            const li = document.createElement('li');
+            li.className = 'list-group-item';
 
-        const link = document.createElement('a');
-        const params = new URLSearchParams({
-            title: item.cleaned_name ?? '',
-            storage_id: storageId,
-            storage_path: item.storage_path,
-        });
-        link.href = `${animeNewUrl}?${params.toString()}`;
-        link.textContent = await window.AppTranslations.trans('storage_list.create_entry_link', {
-            title: item.cleaned_name ?? item.storage_path,
-        });
+            const link = document.createElement('a');
+            const params = new URLSearchParams({
+                title: item.cleaned_name ?? '',
+                storage_id: storageId,
+                storage_path: item.storage_path,
+            });
+            link.href = `${animeNewUrl}?${params.toString()}`;
+            link.textContent = await window.AppTranslations.trans('storage_list.create_entry_link', {
+                title: item.cleaned_name ?? item.storage_path,
+            });
 
-        li.appendChild(link);
+            li.appendChild(link);
 
-        return li;
-    }
+            return li;
+        }
 
-    function confirmCandidate(item, candidate, li, radios, button) {
-        button.disabled = true;
+        function confirmCandidate(item, candidate, li, radios, button) {
+            button.disabled = true;
 
-        const body = candidate.anime_id !== null
-            ? { token: confirmToken, storage_path: item.storage_path, anime_id: candidate.anime_id }
-            : { token: confirmToken, storage_path: item.storage_path, name: candidate.title };
+            const body = candidate.anime_id !== null
+                ? { token: confirmToken, storage_path: item.storage_path, anime_id: candidate.anime_id }
+                : { token: confirmToken, storage_path: item.storage_path, name: candidate.title };
 
-        fetch(confirmUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body),
-        })
-            .then((response) => {
-                if (!response.ok) {
-                    throw new Error(`Confirm request failed with status ${response.status}`);
+            fetch(confirmUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            })
+                .then((response) => {
+                    if (!response.ok) {
+                        throw new Error(`Confirm request failed with status ${response.status}`);
+                    }
+
+                    return response.json();
+                })
+                .then(async (data) => {
+                    li.replaceChildren();
+                    li.textContent = await window.AppTranslations.trans('storage_list.confirmed_text', {
+                        title: data.anime?.title ?? candidate.title,
+                    });
+                })
+                .catch(async () => {
+                    button.disabled = false;
+                    radios.forEach((radio) => { radio.disabled = false; });
+
+                    const error = document.createElement('p');
+                    error.className = 'alert alert-danger mt-2';
+                    error.textContent = await window.AppTranslations.trans('storage_list.confirm_error');
+                    li.appendChild(error);
+                });
+        }
+
+        async function buildConfirmationItem(item, index) {
+            const li = document.createElement('li');
+            li.className = 'list-group-item';
+
+            const path = document.createElement('p');
+            path.className = 'mb-2';
+            path.textContent = item.cleaned_name ?? item.storage_path;
+            li.appendChild(path);
+
+            const radios = [];
+            const radioGroupName = `storage-scan-confirm-${index}`;
+
+            item.candidates.forEach((candidate, candidateIndex) => {
+                const wrapper = document.createElement('div');
+                wrapper.className = 'form-check';
+
+                const radio = document.createElement('input');
+                radio.type = 'radio';
+                radio.className = 'form-check-input';
+                radio.id = `${radioGroupName}-${candidateIndex}`;
+                radio.name = radioGroupName;
+                radio.value = String(candidateIndex);
+                if (candidateIndex === 0) {
+                    radio.checked = true;
+                }
+                radios.push(radio);
+
+                const label = document.createElement('label');
+                label.className = 'form-check-label';
+                label.htmlFor = radio.id;
+                label.textContent = candidate.title;
+
+                wrapper.appendChild(radio);
+                wrapper.appendChild(label);
+                li.appendChild(wrapper);
+            });
+
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'btn btn-primary mt-2';
+            button.textContent = await window.AppTranslations.trans('storage_list.confirm_button');
+            button.addEventListener('click', () => {
+                const checked = radios.find((radio) => radio.checked);
+                if (!checked) {
+                    return;
                 }
 
-                return response.json();
-            })
-            .then(async (data) => {
-                li.replaceChildren();
-                li.textContent = await window.AppTranslations.trans('storage_list.confirmed_text', {
-                    title: data.anime?.title ?? candidate.title,
-                });
-            })
-            .catch(async () => {
-                button.disabled = false;
-                radios.forEach((radio) => { radio.disabled = false; });
-
-                const error = document.createElement('p');
-                error.className = 'alert alert-danger mt-2';
-                error.textContent = await window.AppTranslations.trans('storage_list.confirm_error');
-                li.appendChild(error);
+                radios.forEach((radio) => { radio.disabled = true; });
+                confirmCandidate(item, item.candidates[Number(checked.value)], li, radios, button);
             });
-    }
+            li.appendChild(button);
 
-    async function buildConfirmationItem(item, index) {
-        const li = document.createElement('li');
-        li.className = 'list-group-item';
-
-        const path = document.createElement('p');
-        path.className = 'mb-2';
-        path.textContent = item.cleaned_name ?? item.storage_path;
-        li.appendChild(path);
-
-        const radios = [];
-        const radioGroupName = `storage-scan-confirm-${index}`;
-
-        item.candidates.forEach((candidate, candidateIndex) => {
-            const wrapper = document.createElement('div');
-            wrapper.className = 'form-check';
-
-            const radio = document.createElement('input');
-            radio.type = 'radio';
-            radio.className = 'form-check-input';
-            radio.id = `${radioGroupName}-${candidateIndex}`;
-            radio.name = radioGroupName;
-            radio.value = String(candidateIndex);
-            if (candidateIndex === 0) {
-                radio.checked = true;
-            }
-            radios.push(radio);
-
-            const label = document.createElement('label');
-            label.className = 'form-check-label';
-            label.htmlFor = radio.id;
-            label.textContent = candidate.title;
-
-            wrapper.appendChild(radio);
-            wrapper.appendChild(label);
-            li.appendChild(wrapper);
-        });
-
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.className = 'btn btn-primary mt-2';
-        button.textContent = await window.AppTranslations.trans('storage_list.confirm_button');
-        button.addEventListener('click', () => {
-            const checked = radios.find((radio) => radio.checked);
-            if (!checked) {
-                return;
-            }
-
-            radios.forEach((radio) => { radio.disabled = true; });
-            confirmCandidate(item, item.candidates[Number(checked.value)], li, radios, button);
-        });
-        li.appendChild(button);
-
-        return li;
-    }
-
-    async function buildItem(type, item, index) {
-        switch (type) {
-            case 'Updated':
-                return buildInfoItem(item, 'storage_list.updated_text');
-            case 'FilesMissing':
-                return buildInfoItem(item, 'storage_list.files_missing_text');
-            case 'AutoLinked':
-                return buildAutoLinkedItem(item);
-            case 'NeedsManualEntry':
-                return buildManualEntryItem(item);
-            case 'NeedsConfirmation':
-                return buildConfirmationItem(item, index);
-            default:
-                return null;
+            return li;
         }
-    }
 
-    async function buildGroup(group, items) {
-        const section = document.createElement('section');
-        section.className = 'storage-scan__group mb-4';
-
-        const heading = document.createElement('h3');
-        heading.className = 'h6';
-        heading.textContent = await window.AppTranslations.trans(group.labelKey);
-        section.appendChild(heading);
-
-        const list = document.createElement('ul');
-        list.className = 'list-group';
-        for (const [index, item] of items.entries()) {
-            const li = await buildItem(group.type, item, index);
-            if (li !== null) {
-                list.appendChild(li);
-            }
-        }
-        section.appendChild(list);
-
-        return section;
-    }
-
-    async function onDone(data) {
-        clearNoResponseTimer();
-        progressBox.hidden = true;
-        resultsBox.hidden = false;
-        resultsBox.replaceChildren();
-
-        const items = Array.isArray(data.items) ? data.items : [];
-
-        for (const group of GROUPS) {
-            const groupItems = items.filter((item) => item.type === group.type);
-            if (groupItems.length > 0) {
-                resultsBox.appendChild(await buildGroup(group, groupItems));
+        async function buildItem(type, item, index) {
+            switch (type) {
+                case 'Updated':
+                    return buildInfoItem(item, 'storage_list.updated_text');
+                case 'FilesMissing':
+                    return buildInfoItem(item, 'storage_list.files_missing_text');
+                case 'AutoLinked':
+                    return buildAutoLinkedItem(item);
+                case 'NeedsManualEntry':
+                    return buildManualEntryItem(item);
+                case 'NeedsConfirmation':
+                    return buildConfirmationItem(item, index);
+                default:
+                    return null;
             }
         }
 
-        if (resultsBox.children.length === 0) {
-            const empty = document.createElement('p');
-            empty.className = 'text-muted';
-            empty.textContent = await window.AppTranslations.trans('storage_list.scan_result_empty');
-            resultsBox.appendChild(empty);
+        async function buildGroup(group, items) {
+            const section = document.createElement('section');
+            section.className = 'storage-scan__group mb-4';
+
+            const heading = document.createElement('h3');
+            heading.className = 'h6';
+            heading.textContent = await window.AppTranslations.trans(group.labelKey);
+            section.appendChild(heading);
+
+            const list = document.createElement('ul');
+            list.className = 'list-group';
+            for (const [index, item] of items.entries()) {
+                const li = await buildItem(group.type, item, index);
+                if (li !== null) {
+                    list.appendChild(li);
+                }
+            }
+            section.appendChild(list);
+
+            return section;
         }
+
+        async function onDone(data) {
+            clearNoResponseTimer();
+            progressBox.hidden = true;
+            resultsBox.hidden = false;
+            resultsBox.replaceChildren();
+
+            const items = Array.isArray(data.items) ? data.items : [];
+
+            for (const group of GROUPS) {
+                const groupItems = items.filter((item) => item.type === group.type);
+                if (groupItems.length > 0) {
+                    resultsBox.appendChild(await buildGroup(group, groupItems));
+                }
+            }
+
+            if (resultsBox.children.length === 0) {
+                const empty = document.createElement('p');
+                empty.className = 'text-muted';
+                empty.textContent = await window.AppTranslations.trans('storage_list.scan_result_empty');
+                resultsBox.appendChild(empty);
+            }
+        }
+
+        // window.AppTranslations.getCatalogue() (see translations.js) is a network round-trip and
+        // scan.progress/scan.done may already be on the bus by the time it resolves — subscribing
+        // does not need to wait on it (issue #156).
+        window.ScanWatcher.watch(storageId, { onProgress, onDone, onFailed });
+
+        // Symmetric demount (issue #734): a node removed by an htmx swap must not leave its timer
+        // running or its ScanWatcher subscription live — the worst case in this app's own markup is
+        // settings/market/_refresh_area.html.twig's hx-trigger="load delay:2s" pattern, which would
+        // otherwise pile up one dangling timer/subscription per reload, forever, on any section that
+        // reused it with a #storage-scan-shaped control.
+        return function unmountStorageScan() {
+            clearNoResponseTimer();
+            window.ScanWatcher.unwatch(storageId);
+        };
     }
 
-    // window.AppTranslations.getCatalogue() (see translations.js) is a network round-trip and
-    // scan.progress/scan.done may already be on the bus by the time it resolves — subscribing
-    // does not need to wait on it (issue #156).
-    window.ScanWatcher.watch(storageId, { onProgress, onDone, onFailed });
+    window.Controller.registerControl('storage-scan', mountStorageScan);
 })();

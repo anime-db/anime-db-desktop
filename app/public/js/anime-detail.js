@@ -25,9 +25,12 @@
 // autocomplete over the existing label catalogue (fetched once and cached, since a personal
 // collection's label set is small enough that server-side search would be overkill). A typed
 // name with no matching suggestion is still accepted as a chip — AnimeLabelController creates
-// it on save.
+// it on save. Registered as the "labels-widget" control (issue #734) — this is the control
+// window.Controller's own registry pattern was written to replace: a bespoke
+// document.querySelectorAll('[data-labels-widget]').forEach(initWidget) that only ever ran once,
+// on the initial page load.
 (function () {
-    function initWidget(widget) {
+    function mountLabelsWidget(widget) {
         const updateUrl = widget.dataset.updateUrl;
         const searchUrl = widget.dataset.searchUrl;
         const csrfToken = widget.dataset.csrfToken;
@@ -234,11 +237,15 @@
         renderView();
     }
 
-    document.querySelectorAll('[data-labels-widget]').forEach(initWidget);
+    window.Controller.registerControl('labels-widget', mountLabelsWidget);
 })();
 
+// _fill_fields.html.twig's "open storage folder" button (issue #734): the whole
+// #anime-fill-fields-{id} fragment it lives in is replaced via hx-swap="outerHTML" whenever any
+// sibling field's own fill form submits, so the button — and its listener — needs remounting on
+// every one of those swaps, not just on the initial page load.
 (function () {
-    document.querySelectorAll('[data-open-folder-path]').forEach((button) => {
+    function mountOpenFolderButton(button) {
         button.addEventListener('click', () => {
             if (button.disabled || !window.animeDb) {
                 return;
@@ -246,7 +253,9 @@
 
             window.animeDb.openPath(button.dataset.openFolderPath);
         });
-    });
+    }
+
+    window.Controller.registerControl('open-folder-button', mountOpenFolderButton);
 })();
 
 // The "← Catalog" link (issue #719). The catalog itself writes its filters/sort/search into its
@@ -260,24 +269,27 @@
 // previous entry actually exists to go back to. Any other referrer (including an empty one, e.g. a
 // deep link) falls through to the plain href to the catalog root.
 (function () {
-    const link = document.querySelector('[data-catalog-back-link]');
-    if (!link || window.history.length <= 1) {
-        return;
+    function mountCatalogBackLink(link) {
+        if (window.history.length <= 1) {
+            return;
+        }
+
+        let referrerUrl;
+        try {
+            referrerUrl = new URL(document.referrer);
+        } catch {
+            return;
+        }
+
+        if (referrerUrl.origin !== window.location.origin || referrerUrl.pathname !== '/') {
+            return;
+        }
+
+        link.addEventListener('click', (event) => {
+            event.preventDefault();
+            window.history.back();
+        });
     }
 
-    let referrerUrl;
-    try {
-        referrerUrl = new URL(document.referrer);
-    } catch {
-        return;
-    }
-
-    if (referrerUrl.origin !== window.location.origin || referrerUrl.pathname !== '/') {
-        return;
-    }
-
-    link.addEventListener('click', (event) => {
-        event.preventDefault();
-        window.history.back();
-    });
+    window.Controller.registerControl('catalog-back-link', mountCatalogBackLink);
 })();
