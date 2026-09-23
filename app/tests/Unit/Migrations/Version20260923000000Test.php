@@ -123,14 +123,36 @@ final class Version20260923000000Test extends TestCase
         $this->assertNull($this->connection->fetchOne('SELECT locale FROM anime_name WHERE id = ?', [$nameId]));
     }
 
-    public function testUpPreservesTheRowId(): void
+    public function testUpPreservesRowIdsWithGapsAndKeepsAnimeFtsInSync(): void
     {
         $animeId = $this->insertAnime('Trigun');
-        $nameId = $this->insertName($animeId, 'Toraiga', 'synonym');
+        // Explicit, non-contiguous ids: a rebuild that drops `id` from the INSERT ... SELECT
+        // would have SQLite renumber the rows 1, 2, 3 via AUTOINCREMENT, which a single-row
+        // fixture (id = 1 either way) cannot distinguish from a correct, id-preserving rebuild.
+        $this->insertNameWithId(5, $animeId, 'Toraiga', 'synonym');
+        $this->insertNameWithId(9, $animeId, 'Vash', 'original');
+        $this->insertNameWithId(14, $animeId, 'Nicholas D. Wolfwood', 'english');
 
         $this->runUp();
 
-        $this->assertSame(1, (int) $this->connection->fetchOne('SELECT COUNT(*) FROM anime_name WHERE id = ?', [$nameId]));
+        $ids = array_map(
+            static fn (array $row): int => (int) $row['id'],
+            $this->connection->fetchAllAssociative('SELECT id FROM anime_name ORDER BY id'),
+        );
+        $this->assertSame([5, 9, 14], $ids);
+
+        // anime_fts addresses rows as rowid = -anime_name.id (Version20260713000000), and each of
+        // these rows already has an anime_fts entry from before the migration ran (via the
+        // pre-existing anime_fts_ai_anime_name trigger, exactly as production rows would). If the
+        // rebuild silently renumbered ids, these inherited anime_fts rows would now point at the
+        // wrong id (or none) instead of following their anime_name row.
+        foreach ($ids as $id) {
+            $this->assertSame(
+                $this->connection->fetchOne('SELECT name FROM anime_name WHERE id = ?', [$id]),
+                $this->connection->fetchOne('SELECT name FROM anime_fts WHERE rowid = ?', [-$id]),
+                "anime_fts row for id {$id} must still address the same anime_name row after the rebuild",
+            );
+        }
     }
 
     public function testUpRecreatesTheThreeFtsTriggersAndAnInsertReachesAnimeFts(): void
@@ -215,6 +237,16 @@ final class Version20260923000000Test extends TestCase
         );
 
         return (int) $this->connection->lastInsertId();
+    }
+
+    private function insertNameWithId(int $id, int $animeId, string $name, string $type): int
+    {
+        $this->connection->executeStatement(
+            'INSERT INTO anime_name (id, anime_id, name, normalized_name, type) VALUES (?, ?, ?, ?, ?)',
+            [$id, $animeId, $name, mb_strtolower($name), $type],
+        );
+
+        return $id;
     }
 
     private function runUp(): void
