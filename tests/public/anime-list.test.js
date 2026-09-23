@@ -1379,6 +1379,16 @@ test('a sort change pushes state; removing the last chip and "reset all" push st
     await flushMicrotasks();
     pushSpy.mockClear();
 
+    // The direction toggle is its own branch in setupSortControls() alongside the field click
+    // above, and must push state exactly like the field click does (issue #717 review).
+    dispatchClick(document.getElementById('anime-list-sort-direction'));
+    await flushMicrotasks();
+    expect(pushSpy).toHaveBeenCalledTimes(1);
+    expect(new URLSearchParams(window.location.search).get('direction')).toBe('asc');
+    byKind(calls, 'list')[3].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 0, limit: 6, offset: 0 }));
+    await flushMicrotasks();
+    pushSpy.mockClear();
+
     document.querySelector('.anime-list__chip-remove').dispatchEvent(new Event('click', { bubbles: true }));
     await flushMicrotasks();
     expect(pushSpy).toHaveBeenCalledTimes(1);
@@ -1456,6 +1466,46 @@ test('a popstate event reseeds filters/search/sort from the new URL, refreshes t
     expect(queryParams(byKind(calls, 'list')[1].url)).toMatchObject({ sort: 'date_update', direction: 'desc' });
     expect(queryParams(byKind(calls, 'list')[1].url)).not.toHaveProperty('watch_status[]');
     expect(byKind(calls, 'facets')).toHaveLength(2);
+});
+
+test('a popstate event cancels a pending search debounce instead of letting it fire afterwards (issue #717 review)', async () => {
+    const calls = mockFetchQueueAll();
+    setUpTranslations();
+
+    loadAnimeListModule();
+    await flushMicrotasks();
+    byKind(calls, 'list')[0].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 0, limit: 6, offset: 0 }));
+    byKind(calls, 'facets')[0].resolve(emptyFacets());
+    await flushMicrotasks();
+
+    const searchInput = document.getElementById('anime-list-search');
+    searchInput.value = 'gate';
+    searchInput.dispatchEvent(new Event('input'));
+    // "Back" lands mid-debounce (issue #717 review) — the 300ms timer from the keystroke above is
+    // still pending when popstate fires.
+    jest.advanceTimersByTime(100);
+
+    window.history.pushState(null, '', '/anime');
+    const replaceSpy = jest.spyOn(window.history, 'replaceState');
+
+    window.dispatchEvent(new PopStateEvent('popstate'));
+    await flushMicrotasks();
+
+    byKind(calls, 'list')[1].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 0, limit: 6, offset: 0 }));
+    byKind(calls, 'facets')[1].resolve(emptyFacets());
+    await flushMicrotasks();
+
+    expect(byKind(calls, 'list')).toHaveLength(2);
+    expect(byKind(calls, 'facets')).toHaveLength(2);
+
+    // Without clearTimeout() in handlePopState(), the stale debounce would fire here and cause a
+    // redundant third list/facets request plus a stray replaceState call.
+    jest.advanceTimersByTime(300);
+    await flushMicrotasks();
+
+    expect(byKind(calls, 'list')).toHaveLength(2);
+    expect(byKind(calls, 'facets')).toHaveLength(2);
+    expect(replaceSpy).not.toHaveBeenCalled();
 });
 
 test('a filter selected before navigating to a card round-trips through a fresh load of the URL it wrote', async () => {
