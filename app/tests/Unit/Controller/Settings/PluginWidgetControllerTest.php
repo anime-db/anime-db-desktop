@@ -149,7 +149,8 @@ final class PluginWidgetControllerTest extends TestCase
                     $params['entryWidgets'],
                 );
                 self::assertSame(0, $params['entryActiveCount']);
-                self::assertSame(5, $params['hardLimit']);
+                self::assertSame(5, $params['entryHardLimit']);
+                self::assertSame(2, $params['catalogHardLimit']);
                 self::assertSame(2, $params['recommendedLimit']);
 
                 return true;
@@ -208,7 +209,7 @@ final class PluginWidgetControllerTest extends TestCase
 
         $widgets = [];
         foreach (['w1', 'w2', 'w3', 'w4', 'w5', 'w6'] as $name) {
-            $widgets["animedb-shikimori:{$name}"] = $this->createStub(EntryWidgetInterface::class);
+            $widgets["animedb-shikimori:{$name}"] = new FakeEntryWidget();
         }
         file_put_contents($this->configPath, json_encode([
             'animedb-shikimori' => ['features' => ['w1' => true, 'w2' => true, 'w3' => true, 'w4' => true, 'w5' => true]],
@@ -218,7 +219,7 @@ final class PluginWidgetControllerTest extends TestCase
 
         $urlGenerator = $this->createMock(UrlGeneratorInterface::class);
         $urlGenerator->method('generate')
-            ->with('settings_plugin_widgets_index', ['error' => 'hard_limit_exceeded'])
+            ->with('settings_plugin_widgets_index', ['error' => 'hard_limit_exceeded', 'limit' => 5])
             ->willReturn('/settings/plugins/widgets?error=hard_limit_exceeded');
 
         $controller = new PluginWidgetController(

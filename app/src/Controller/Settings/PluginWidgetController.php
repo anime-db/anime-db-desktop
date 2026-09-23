@@ -71,7 +71,7 @@ final class PluginWidgetController
     #[Route('/settings/plugins/widgets', name: 'settings_plugin_widgets_index', methods: ['GET'])]
     public function index(Request $request): Response
     {
-        return $this->renderIndex((string) $request->query->get('error'));
+        return $this->renderIndex((string) $request->query->get('error'), (int) $request->query->get('limit', 0));
     }
 
     #[Route('/settings/plugins/widgets/{pluginId}/{widgetName}', name: 'settings_plugin_widgets_toggle', methods: ['POST'])]
@@ -94,8 +94,15 @@ final class PluginWidgetController
                 'catalog' => $this->catalogWidgets->setActive($id, $widgetName, $active),
                 default => throw new BadRequestHttpException('Query parameter "placement" must be "entry" or "catalog".'),
             };
-        } catch (WidgetHardLimitExceededException) {
-            return new RedirectResponse($this->urlGenerator->generate('settings_plugin_widgets_index', ['error' => 'hard_limit_exceeded']));
+        } catch (WidgetHardLimitExceededException $exception) {
+            // The limit itself travels with the exception (issue #728: entry and catalog no
+            // longer share one hard limit — see WidgetActiveTrait::changeActive()) rather than
+            // being re-read from a placement-specific constant here, so the banner always shows
+            // the number that was actually enforced.
+            return new RedirectResponse($this->urlGenerator->generate('settings_plugin_widgets_index', [
+                'error' => 'hard_limit_exceeded',
+                'limit' => $exception->limit,
+            ]));
         } catch (PluginsConfigStoreLockedException) {
             return new RedirectResponse($this->urlGenerator->generate('settings_plugin_widgets_index', ['error' => 'busy_retry']));
         }
@@ -103,7 +110,7 @@ final class PluginWidgetController
         return new RedirectResponse($this->urlGenerator->generate('settings_plugin_widgets_index'));
     }
 
-    private function renderIndex(string $error): Response
+    private function renderIndex(string $error, int $limitReached = 0): Response
     {
         $installedPlugins = $this->installedPlugins->all();
         $pluginNames = array_combine(
@@ -117,9 +124,14 @@ final class PluginWidgetController
             'catalogWidgets' => $this->decorate($this->catalogWidgets->listAll(), $pluginNames, $installOrder),
             'entryActiveCount' => \count($this->entryWidgets->findAllActive()),
             'catalogActiveCount' => \count($this->catalogWidgets->findAllActive()),
-            'hardLimit' => EntryWidgetRegistry::HARD_LIMIT,
+            // Each placement has its own hard limit since issue #728 (catalog: 2, entry: 5) — see
+            // WidgetActiveTrait's docblock — so the table for each section must be told its own,
+            // not a single shared value.
+            'entryHardLimit' => EntryWidgetRegistry::HARD_LIMIT,
+            'catalogHardLimit' => CatalogWidgetRegistry::HARD_LIMIT,
             'recommendedLimit' => EntryWidgetRegistry::RECOMMENDED_LIMIT,
             'error' => $error !== '' ? $error : null,
+            'limitReached' => $limitReached,
         ]));
     }
 

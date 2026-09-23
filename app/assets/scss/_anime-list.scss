@@ -101,23 +101,21 @@
     min-width: 0;
 }
 
-// Catalog widget slots (issue #720): laid out as a grid that wraps into columns rather than a
-// vertical stack, since WidgetActiveTrait::HARD_LIMIT allows up to 5 active widgets at once —
-// stacked, they could push the grid itself off-screen. Grid (not flex) gives each slot an
-// explicit width, so the widget's own internal `repeat(auto-fill, minmax(160px, 1fr))` grid
-// gets a real basis to fill instead of collapsing to its content's min width.
+// Catalog widget slots (issue #720): sits above .anime-list__toolbar (issue #728) so the toolbar
+// itself reads as the boundary between a plugin's data and the user's own catalog below it. A
+// vertical stack, one full-width row per widget, rather than a wrapping grid — each row is now
+// a single-line carousel (plugin/_widget_list.html.twig), so its height no longer depends on how
+// many cards it holds and a height cap is no longer needed. CatalogWidgetRegistry::HARD_LIMIT
+// (2, tighter than EntryWidgetRegistry::HARD_LIMIT) keeps this stack from pushing the toolbar
+// itself off-screen.
+// Horizontal padding matches .anime-list__toolbar's own (16px 16px 0) — .anime-list__widgets is
+// now a sibling of the toolbar rather than nested inside .anime-list__main/.anime-list__layout
+// (which supplied that inset before), so it needs to carry it itself.
 .anime-list__widgets {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    display: flex;
+    flex-direction: column;
     gap: 12px;
-    padding: 12px 0;
-}
-
-// Caps a single widget's height so a long list (up to WidgetActiveTrait::HARD_LIMIT items) can't
-// push the anime grid itself off-screen; overflow scrolls within the slot instead.
-.anime-list__widgets > section {
-    max-height: 320px;
-    overflow: auto;
+    padding: 12px 16px 0;
 }
 
 .anime-list__chips {

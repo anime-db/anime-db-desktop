@@ -23,16 +23,25 @@
  # issue #720): one `hx-get` placeholder per active widget, loaded independently right after the
  # host page appears, so a slow or failing plugin never blocks the rest of the page.
  #
- # Expects: widgets (list<array{pluginId: string, widgetName: string}>), entryId (int, optional).
- # entryId is added to the plugin_widget route only when given — CatalogWidgetInterface::render()
- # takes no entry argument, so a catalog widget's slot must not carry one.
+ # Expects: widgets (list<array{pluginId: string, widgetName: string, title: string, pluginName:
+ # string}>), entryId (int, optional). entryId is added to the plugin_widget route only when
+ # given — CatalogWidgetInterface::render() takes no entry argument, so a catalog widget's slot
+ # must not carry one.
+ #
+ # The header (issue #728) is what tells a widget's data apart from the host's own: title and
+ # plugin name are already resolved (translated, with the widgetName fallback) by
+ # CatalogWidgetRegistry::findAllActive()/EntryWidgetRegistry::findAllActive(), this partial only
+ # displays them.
  #}
 {% for widget in widgets %}
     {% set params = {pluginId: widget.pluginId, widgetName: widget.widgetName} %}
     {% if entryId is defined and entryId is not null %}
         {% set params = params|merge({entryId: entryId}) %}
     {% endif %}
-    <section>
+    <section class="plugin-widget-slot">
+        <h3 class="plugin-widget-slot__heading">
+            {{ 'plugin_widget.slot_heading'|trans({'%title%': widget.title, '%plugin%': widget.pluginName}) }}
+        </h3>
         <div
             class="plugin-widget"
             hx-get="{{ path('plugin_widget', params) }}"

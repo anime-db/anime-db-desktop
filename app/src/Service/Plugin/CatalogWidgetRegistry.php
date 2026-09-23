@@ -43,12 +43,24 @@ final class CatalogWidgetRegistry
 {
     use WidgetActiveTrait;
 
+    /** Issue #728: catalog widgets sit above the toolbar and each takes the full width of the main column, so the placement's own cap is tighter than {@see EntryWidgetRegistry::HARD_LIMIT} — see {@see WidgetActiveTrait::changeActive()}, which reads this via `static::`. */
+    public const int HARD_LIMIT = 2;
+
     /** @param iterable<string, CatalogWidgetInterface> $widgets keyed by "{pluginId}:{widgetName}" */
     public function __construct(
         #[AutowireIterator('app.catalog_widget', indexAttribute: 'id')]
         private readonly iterable $widgets,
         private readonly PluginsConfigStore $pluginsConfigStore,
         private readonly TranslatorInterface $translator,
+        /**
+         * Resolves the plugin's manifest `name` for {@see self::findAllActive()}'s slot header
+         * (issue #728). Nullable with a `null` default, same convention as
+         * {@see InstalledPluginsRegistry}'s own `$overlayWriter` param, so every existing direct
+         * instantiation of this class in tests that predate issue #728 keeps compiling without
+         * wiring up a dependency they do not care about — {@see self::pluginName()} simply falls
+         * back to the raw plugin id in that case.
+         */
+        private readonly ?InstalledPluginsRegistry $installedPlugins = null,
     ) {
     }
 
@@ -60,16 +72,28 @@ final class CatalogWidgetRegistry
     }
 
     /**
-     * @return list<array{pluginId: string, widgetName: string}> active widget identifiers
+     * `title`/`pluginName` are resolved the same way as {@see self::listAll()} (reusing
+     * {@see self::translate()}, plus the manifest lookup in {@see self::pluginName()}) — the
+     * host's slot header (issue #728) needs both to tell the widget's data apart from the user's
+     * own catalog.
+     *
+     * @return list<array{pluginId: string, widgetName: string, title: string, pluginName: string}> active widget slots to render, in registration order
      */
     public function findAllActive(): array
     {
         $result = [];
-        foreach (array_keys($this->all()) as $key) {
+        foreach ($this->all() as $key => $widget) {
             [$pluginId, $widgetName] = explode(':', $key, 2);
-            if ($this->isActive(new PluginId($pluginId), $widgetName)) {
-                $result[] = ['pluginId' => $pluginId, 'widgetName' => $widgetName];
+            if (!$this->isActive(new PluginId($pluginId), $widgetName)) {
+                continue;
             }
+
+            $result[] = [
+                'pluginId' => $pluginId,
+                'widgetName' => $widgetName,
+                'title' => $this->translate($widget::metadata()->titleKey, $pluginId, $widgetName),
+                'pluginName' => $this->pluginName($pluginId),
+            ];
         }
 
         return $result;
@@ -131,6 +155,12 @@ final class CatalogWidgetRegistry
         $translated = $this->translator->trans($key, domain: $pluginId);
 
         return $translated !== $key ? $translated : $widgetName;
+    }
+
+    /** Falls back to the raw plugin id when {@see self::$installedPlugins} is unset or does not know this plugin — same fallback convention as {@see self::translate()}. */
+    private function pluginName(string $pluginId): string
+    {
+        return $this->installedPlugins?->get(new PluginId($pluginId))?->manifest->name ?? $pluginId;
     }
 
     private static function key(PluginId $pluginId, string $widgetName): string
