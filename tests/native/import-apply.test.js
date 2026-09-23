@@ -291,6 +291,24 @@ describe('apply() — imported plugins manifest carry-over (issue #726)', () => 
         expect(fs.rmSync).toHaveBeenCalledWith(IMPORT_APPLIED_PATH, { force: true });
     });
 
+    // The same lock that makes renameSync() fail (e.g. Windows antivirus holding the file open)
+    // can just as easily make the fallback rmSync() cleanup fail too — both target the same
+    // import-applied.json. That must not be allowed to take the already-successful import down
+    // with it either.
+    test('still reports applied:true and removes import-staging/ when both renameSync() and the fallback rmSync() throw', async () => {
+        fs.renameSync.mockImplementation((from, to) => {
+            if (to === IMPORT_APPLIED_PATH) throw new Error('EBUSY: resource busy or locked');
+        });
+        fs.rmSync.mockImplementation((target) => {
+            if (target === IMPORT_APPLIED_PATH) throw new Error('EPERM: operation not permitted, unlink');
+        });
+
+        const result = await apply(CONTEXT);
+
+        expect(result).toEqual({ applied: true, error: null });
+        expect(fs.rmSync).toHaveBeenCalledWith(STAGING_DIR, { recursive: true, force: true });
+    });
+
     // The rollback path (issue #707) is untouched by #726 — a failed import must not carry a
     // manifest over at all, staged or applied, since nothing about the catalog actually changed.
     test('does not touch manifest.json or import-applied.json on the rollback path', async () => {

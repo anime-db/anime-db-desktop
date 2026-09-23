@@ -81,15 +81,24 @@ async function startRestore(_event, name) {
     try {
         restoreBackup(backupPath);
         searchReindex.markRequired();
-        // The restored snapshot is a different catalog than whatever import-applied.json (issue
-        // #726) still describes — remove it rather than leave a stale plugin list pointing at a
-        // catalog this restore just replaced. Only on the success path: restoreBackup() throwing
-        // means data.db was never actually swapped (see its own doc comment), so the file still
-        // describes the catalog that is still there.
-        fs.rmSync(paths.getImportAppliedPath(), { force: true });
     } catch {
         ok = false;
     } finally {
+        if (ok) {
+            // The restored snapshot is a different catalog than whatever import-applied.json
+            // (issue #726) still describes — remove it rather than leave a stale plugin list
+            // pointing at a catalog this restore just replaced. Only on the success path:
+            // restoreBackup() throwing means data.db was never actually swapped (see its own doc
+            // comment), so the file still describes the catalog that is still there. Its own
+            // try/catch, outside the block that computes `ok`: a failure to remove this
+            // informational file must not turn a successful restore into a reported failure.
+            try {
+                fs.rmSync(paths.getImportAppliedPath(), { force: true });
+            } catch (cleanupErr) {
+                console.error('[backup-restore] не удалось удалить import-applied.json:', cleanupErr.message);
+            }
+        }
+
         // Lazy require: lifecycle/index.js requires this module before assigning its own
         // module.exports, so a top-level require here would capture that early, still-empty
         // object (same reasoning as native/catalog-import/index.js's own lazy require of

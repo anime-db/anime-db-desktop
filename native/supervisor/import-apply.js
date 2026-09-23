@@ -213,8 +213,16 @@ async function apply(context) {
         console.error('[import-apply] не удалось перенести manifest.json в import-applied.json:', err.message);
         // The stale file this rename would have replaced no longer describes the catalog that
         // is about to start (the import above already succeeded) — remove it rather than leave
-        // it pointing at plugins used by a catalog that no longer exists.
-        fs.rmSync(importAppliedPath, { force: true });
+        // it pointing at plugins used by a catalog that no longer exists. Its own try/catch: the
+        // same lock that made renameSync() above fail (e.g. Windows antivirus holding the file
+        // open) can just as easily make this rmSync() fail too, and that must not propagate out
+        // of apply() either — the import above already succeeded and must not be reported as
+        // failed over cleanup of an informational file.
+        try {
+            fs.rmSync(importAppliedPath, { force: true });
+        } catch (cleanupErr) {
+            console.error('[import-apply] не удалось удалить устаревший import-applied.json:', cleanupErr.message);
+        }
     }
 
     fs.rmSync(getPreImportMediaDir(), { recursive: true, force: true });

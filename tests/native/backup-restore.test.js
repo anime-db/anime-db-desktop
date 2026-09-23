@@ -147,4 +147,18 @@ describe('startRestore', () => {
 
         expect(fs.rmSync).not.toHaveBeenCalled();
     });
+
+    // Reviewer feedback: this cleanup is purely informational (a stale plugin list, not the
+    // restored data), so its own failure must not flip a successful restore to { ok: false } and
+    // make backup.js report a restore failure that never happened.
+    test('still reports { ok: true } and relaunches when removing import-applied.json throws', async () => {
+        fs.existsSync.mockReturnValue(true);
+        mockRestoreBackup.mockImplementation(() => {});
+        fs.rmSync.mockImplementation(() => { throw new Error('EPERM: operation not permitted, unlink'); });
+
+        const outcome = await startRestore(null, 'data-preimport-20260101-000000.db');
+
+        expect(outcome).toEqual({ ok: true });
+        expect(mockRelaunch).toHaveBeenCalledTimes(1);
+    });
 });
