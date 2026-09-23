@@ -144,8 +144,9 @@ function restoreCatalog(preImportBackupPath) {
  *   5. rebuild the search index, unconditionally — never gated behind the working database's own
  *      wiped/migrationsApplied signals the way the ordinary upgrade path's reindex is, since the
  *      whole catalog just changed regardless of whether step 3's migrate() had anything to do;
- *   6. remove `import-staging/` and the moved-aside previous `media/` — only reached once every
- *      earlier step has succeeded.
+ *   6. best-effort carry `import-staging/manifest.json` over to `import-applied.json` (issue
+ *      #726), then remove `import-staging/` and the moved-aside previous `media/` — only reached
+ *      once every earlier step has succeeded.
  *
  * Any failure across steps 2-5 rolls the entire import back rather than leaving it half-applied:
  * restoreCatalog() to the step-1 snapshot, followed by marking a reindex required on the next start
@@ -197,6 +198,23 @@ async function apply(context) {
         fs.rmSync(stagingDir, { recursive: true, force: true });
 
         return { applied: false, error: err };
+    }
+
+    // Best-effort carry-over of the staged manifest.json (issue #726), for
+    // App\Service\Import\ImportedPluginsService to read on /settings/backup. Its own try/catch,
+    // separate from the one steps 2-5 run under above, so a failure here — e.g. Windows
+    // antivirus holding the just-extracted manifest.json open (EPERM/EBUSY) — can never stop the
+    // already-successful import from finishing: the two rmSync() calls below must always run.
+    // JSON contents are never parsed here; native/ only moves the file, PHP is the only reader.
+    const importAppliedPath = paths.getImportAppliedPath();
+    try {
+        fs.renameSync(path.join(stagingDir, 'manifest.json'), importAppliedPath);
+    } catch (err) {
+        console.error('[import-apply] не удалось перенести manifest.json в import-applied.json:', err.message);
+        // The stale file this rename would have replaced no longer describes the catalog that
+        // is about to start (the import above already succeeded) — remove it rather than leave
+        // it pointing at plugins used by a catalog that no longer exists.
+        fs.rmSync(importAppliedPath, { force: true });
     }
 
     fs.rmSync(getPreImportMediaDir(), { recursive: true, force: true });

@@ -315,6 +315,13 @@ settings_backup:
     staged_import_rejected_banner_incompatible_schema: Подготовленный импорт каталога не может быть применён — его база данных содержит миграции, которых нет в этой версии приложения. Подготовленные файлы удалены.
     staged_import_rejected_banner_user_declined: Подготовленный импорт каталога был отклонён при последнем запуске приложения. Подготовленные файлы удалены.
     staged_import_rejected_banner_import_rolled_back: Подготовленный импорт каталога был применён, но его пришлось откатить — каталог восстановлен к состоянию до импорта. Подготовленные файлы удалены.
+    import_plugins_heading: Плагины импортированного архива
+    import_plugins_description: Эти плагины использовались на исходной машине. Установка не выполняется автоматически — при необходимости установите их вручную через Маркет.
+    import_plugins_dismiss_button: Скрыть
+    import_plugin_status_installed: установлен
+    import_plugin_status_available_in_market: есть в Маркете
+    import_plugin_status_manual_install: ставится вручную
+    import_plugin_status_check_market: проверьте в Маркете
     export_heading: Экспорт
     description: Сохраняет копию каталога (базу данных и обложки) одним файлом в выбранную папку. Настройки приложения и плагинов, включая пароль прокси и токены доступа, в архив не входят.
     destination_label: Папка назначения

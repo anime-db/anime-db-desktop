@@ -342,6 +342,7 @@ final class CatalogExportService
                 static fn (InstalledPlugin $plugin): array => [
                     'id' => (string) $plugin->id,
                     'version' => $plugin->manifest->version,
+                    'name' => $plugin->manifest->name,
                 ],
                 $this->pluginsRegistry->all(),
             ),

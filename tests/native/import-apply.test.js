@@ -24,6 +24,7 @@
 jest.mock('../../native/paths', () => ({
     getImportStagingDir: jest.fn(() => '/fake/userData/import-staging'),
     getMediaDir:          jest.fn(() => '/fake/userData/media'),
+    getImportAppliedPath: jest.fn(() => '/fake/userData/import-applied.json'),
 }));
 
 const mockRestoreBackup = jest.fn();
@@ -66,6 +67,7 @@ const STAGING_DIR = '/fake/userData/import-staging';
 const MEDIA_DIR = '/fake/userData/media';
 const PRE_IMPORT_MEDIA_DIR = '/fake/userData/media.pre-import';
 const PREIMPORT_BACKUP_PATH = '/fake/userData/backups/data-preimport-20260922-000000.db';
+const IMPORT_APPLIED_PATH = '/fake/userData/import-applied.json';
 
 beforeEach(() => {
     jest.clearAllMocks();
@@ -233,6 +235,72 @@ describe('apply() — success path', () => {
 
         expect(fs.rmSync).toHaveBeenCalledWith(STAGING_DIR, { recursive: true, force: true });
         expect(result).toEqual({ applied: true, error: null });
+    });
+});
+
+describe('apply() — imported plugins manifest carry-over (issue #726)', () => {
+    // The plugin list App\Service\Import\ImportedPluginsService shows on /settings/backup is
+    // read from userData/import-applied.json, which only ever gets there via this rename.
+    test('carries the staged manifest.json over to import-applied.json on success', async () => {
+        await apply(CONTEXT);
+
+        expect(fs.renameSync).toHaveBeenCalledWith(`${STAGING_DIR}/manifest.json`, IMPORT_APPLIED_PATH);
+    });
+
+    // The transfer must run strictly before import-staging/ is removed — a failure that swapped
+    // the order would either lose the manifest or leave it inside a directory about to be deleted.
+    test('transfers the manifest before removing import-staging/', async () => {
+        const order = [];
+        fs.renameSync.mockImplementation((from, to) => {
+            if (to === IMPORT_APPLIED_PATH) order.push('rename-manifest');
+        });
+        fs.rmSync.mockImplementation((target) => {
+            if (target === STAGING_DIR) order.push('rm-staging');
+        });
+
+        await apply(CONTEXT);
+
+        expect(order).toEqual(['rename-manifest', 'rm-staging']);
+    });
+
+    // Acceptance criterion 7 (issue #726): a Windows antivirus can hold the just-extracted
+    // manifest.json open and make renameSync() throw (EPERM/EBUSY) on an import that otherwise
+    // succeeded — that must not be allowed to take the whole apply() down or skip the staging
+    // directory cleanup that follows it.
+    test('still reports applied:true and removes import-staging/ when renameSync() throws', async () => {
+        fs.renameSync.mockImplementation((from, to) => {
+            if (to === IMPORT_APPLIED_PATH) throw new Error('EBUSY: resource busy or locked');
+        });
+
+        const result = await apply(CONTEXT);
+
+        expect(result).toEqual({ applied: true, error: null });
+        expect(fs.rmSync).toHaveBeenCalledWith(STAGING_DIR, { recursive: true, force: true });
+    });
+
+    // Same failure, but the acceptance criterion is specifically about not leaving a *stale*
+    // import-applied.json around from a previous import — one that would otherwise keep
+    // describing a catalog this import already replaced.
+    test('removes a stale import-applied.json left by a previous import when renameSync() throws', async () => {
+        fs.renameSync.mockImplementation((from, to) => {
+            if (to === IMPORT_APPLIED_PATH) throw new Error('EBUSY: resource busy or locked');
+        });
+
+        await apply(CONTEXT);
+
+        expect(fs.rmSync).toHaveBeenCalledWith(IMPORT_APPLIED_PATH, { force: true });
+    });
+
+    // The rollback path (issue #707) is untouched by #726 — a failed import must not carry a
+    // manifest over at all, staged or applied, since nothing about the catalog actually changed.
+    test('does not touch manifest.json or import-applied.json on the rollback path', async () => {
+        mockMigrationsRun.mockRejectedValue(new Error('migrate-failed'));
+
+        const result = await apply(CONTEXT);
+
+        expect(result.applied).toBe(false);
+        expect(fs.renameSync).not.toHaveBeenCalledWith(`${STAGING_DIR}/manifest.json`, IMPORT_APPLIED_PATH);
+        expect(fs.rmSync).not.toHaveBeenCalledWith(IMPORT_APPLIED_PATH, { force: true });
     });
 });
 

@@ -48,7 +48,10 @@ const searchReindex = require('../supervisor/search-reindex');
  * — so a successful restore also marks a forced reindex (searchReindex.markRequired(), issue #681
  * review) for the next start to pick up, since a same-schema restore would otherwise leave both of
  * index.js#start()'s own reindex triggers (wiped, migrationsApplied) false and the search index
- * stale against the restored catalog.
+ * stale against the restored catalog. Also removes `userData/import-applied.json` (issue #726)
+ * on the success path — the plugin list App\Service\Import\ImportedPluginsService would otherwise
+ * keep showing on /settings/backup describes the catalog this restore just replaced, not the one
+ * that is about to start.
  *
  * restoreBackup() can throw (out of disk space, sidecar/target files locked, ...) — supervisor.
  * stop() has already torn FrankenPHP/messenger-consumer down by that point, and neither restarts
@@ -78,6 +81,12 @@ async function startRestore(_event, name) {
     try {
         restoreBackup(backupPath);
         searchReindex.markRequired();
+        // The restored snapshot is a different catalog than whatever import-applied.json (issue
+        // #726) still describes — remove it rather than leave a stale plugin list pointing at a
+        // catalog this restore just replaced. Only on the success path: restoreBackup() throwing
+        // means data.db was never actually swapped (see its own doc comment), so the file still
+        // describes the catalog that is still there.
+        fs.rmSync(paths.getImportAppliedPath(), { force: true });
     } catch {
         ok = false;
     } finally {
