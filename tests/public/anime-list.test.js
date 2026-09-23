@@ -208,8 +208,15 @@ async function flushMicrotasks() {
     }
 }
 
+// The module was split (issue #712) into namespace objects on `window`, the same pattern as
+// window.AppTranslations in translations.js — mirrors the <script> order in list.html.twig, since
+// each file assigns a global the next one reads and anime-list.js itself calls init() immediately.
 function loadAnimeListModule() {
     jest.isolateModules(() => {
+        require('../../app/public/js/anime-list-query.js');
+        require('../../app/public/js/anime-list-grid.js');
+        require('../../app/public/js/anime-list-filter-render.js');
+        require('../../app/public/js/anime-list-filters.js');
         require('../../app/public/js/anime-list.js');
     });
 }
