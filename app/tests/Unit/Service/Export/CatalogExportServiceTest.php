@@ -375,6 +375,39 @@ final class CatalogExportServiceTest extends TestCase
         $this->assertSame($expected, $remaining);
     }
 
+    public function testStaleTmpFileIsRemovedWhenDestinationDirNameContainsGlobMetacharactersWithoutTouchingASiblingDirectory(): void
+    {
+        $connection = $this->createConnection();
+        $this->seedSchema($connection);
+        $connection->insert('anime', ['id' => 1, 'title' => 'A']);
+
+        // "a[bc]" and "ab" are both legal directory names on every supported OS, and glob()
+        // interprets the "[bc]" inside "a[bc]" as a character class rather than a literal
+        // substring — a naive glob()-based scan would either miss the stale file inside the
+        // bracketed directory or, worse, match into the differently-named sibling (issue #727
+        // review).
+        $bracketedDir = $this->destinationDir.'/a[bc]';
+        $siblingDir = $this->destinationDir.'/ab';
+        mkdir($bracketedDir, 0o755, true);
+        mkdir($siblingDir, 0o755, true);
+
+        $staleTmpInsideBracketedDir = $bracketedDir.'/animedb-catalog-20200101-000000.zip.tmp';
+        file_put_contents($staleTmpInsideBracketedDir, 'stale-tmp-bytes');
+        touch($staleTmpInsideBracketedDir, time() - 3700);
+
+        $staleTmpInSiblingDir = $siblingDir.'/animedb-catalog-20200101-000000.zip.tmp';
+        file_put_contents($staleTmpInSiblingDir, 'stale-tmp-bytes');
+        touch($staleTmpInSiblingDir, time() - 3700);
+
+        $result = $this->createService($connection)->export($bracketedDir);
+
+        $this->assertFileDoesNotExist($staleTmpInsideBracketedDir);
+        $remaining = array_values(array_diff((array) scandir($bracketedDir), ['.', '..']));
+        $this->assertSame([basename($result->archivePath)], $remaining);
+
+        $this->assertFileExists($staleTmpInSiblingDir);
+    }
+
     public function testSuccessfulExportLeavesExactlyOneFileInTheDestination(): void
     {
         $connection = $this->createConnection();

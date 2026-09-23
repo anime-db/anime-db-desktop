@@ -257,12 +257,25 @@ final class CatalogExportService
      * Only files older than {@see self::STALE_TMP_FILE_AGE_SECONDS} are removed, so this can never
      * delete the `.part` file of an export that happens to be running concurrently in the same
      * destination directory.
+     *
+     * Matches basenames against a regex after {@see scandir()} rather than passing a glob pattern
+     * built from $destinationDir to {@see glob()} — glob() treats `*`, `?`, `[`/`]` appearing
+     * anywhere in the pattern as wildcards, including inside the directory portion, so a
+     * user-chosen destination folder whose name happens to contain one of those characters would
+     * either match nothing (silently skipping cleanup) or, worse, resolve into a sibling directory
+     * and delete files there instead (issue #727 review).
      */
     private function removeStaleTempArchives(string $destinationDir): void
     {
         $threshold = time() - self::STALE_TMP_FILE_AGE_SECONDS;
 
-        foreach (glob($destinationDir.'/animedb-catalog-*.zip.tmp*') ?: [] as $path) {
+        $entries = scandir($destinationDir);
+        foreach ($entries === false ? [] : $entries as $file) {
+            if (preg_match('/^animedb-catalog-.+\.zip\.tmp/', $file) !== 1) {
+                continue;
+            }
+
+            $path = $destinationDir.'/'.$file;
             $mtime = @filemtime($path);
             if (is_file($path) && $mtime !== false && $mtime < $threshold) {
                 @unlink($path);
