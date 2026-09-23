@@ -59,8 +59,8 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
  * reassigned, external drive reconnected elsewhere), it searches for the storage's desktop.ini
  * marker under every other drive root before giving up.
  *
- * Also dispatches {@see AnimeFilesChangedEvent} for every Updated item in the scan result — see
- * {@see self::dispatchFilesAddedEvents()}.
+ * Also dispatches {@see AnimeFilesChangedEvent} for every Updated/AutoLinked item in the scan
+ * result — see {@see self::dispatchFilesAddedEvents()}.
  */
 #[AsMessageHandler]
 final class ScanStorageMessageHandler
@@ -154,23 +154,35 @@ final class ScanStorageMessageHandler
     }
 
     /**
-     * Dispatches {@see AnimeFilesChangedEvent} with {@see FilesChangeReason::FilesAdded} for every
-     * ScanItemType::Updated item ScanStorageService::scan() already flushed (issue #703/#684, часть
-     * 3) — scan()'s own logic is not touched; this only reads its already-committed result, from
-     * this worker, after flush(), exactly as the contract requires.
+     * Dispatches {@see AnimeFilesChangedEvent} for every ScanItemType::Updated / ::AutoLinked item
+     * ScanStorageService::scan() already flushed (issue #703/#684, часть 3) — scan()'s own logic is
+     * not touched; this only reads its already-committed result, from this worker, after flush(),
+     * exactly as the contract requires.
+     *
+     * ::Updated (an already-linked file's mtime moved forward) gets {@see FilesChangeReason::FilesAdded}.
+     * ::AutoLinked carries the same file-to-anime link as StorageScanConfirmController's manual
+     * candidate choice — matchNewEntry() calls the very same ScanStorageService::linkToChosenCandidate()
+     * when exactly one candidate is found automatically — so it gets the matching
+     * {@see FilesChangeReason::PathChanged}.
      *
      * @param list<ScanResultItem> $items
      */
     private function dispatchFilesAddedEvents(array $items): void
     {
         foreach ($items as $item) {
-            if ($item->type !== ScanItemType::Updated) {
+            $reason = match ($item->type) {
+                ScanItemType::Updated => FilesChangeReason::FilesAdded,
+                ScanItemType::AutoLinked => FilesChangeReason::PathChanged,
+                default => null,
+            };
+
+            if ($reason === null) {
                 continue;
             }
 
-            $anime = $item->anime ?? throw new \LogicException('ScanResultItem::updated() must always carry an Anime.');
+            $anime = $item->anime ?? throw new \LogicException('ScanResultItem::updated()/autoLinked() must always carry an Anime.');
             $animeId = $anime->id ?? throw new \LogicException('Anime must have an id once linked to storage.');
-            $this->eventDispatcher->dispatch(new AnimeFilesChangedEvent(new AnimeId($animeId), FilesChangeReason::FilesAdded));
+            $this->eventDispatcher->dispatch(new AnimeFilesChangedEvent(new AnimeId($animeId), $reason));
         }
     }
 

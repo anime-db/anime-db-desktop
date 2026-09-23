@@ -237,6 +237,49 @@ final class ScanStorageMessageHandlerTest extends TestCase
         $this->assertSame('Updated', $done['data']['items'][0]['type']);
     }
 
+    public function testDispatchesAnimeFilesChangedEventWithPathChangedReasonForEachAutoLinkedItem(): void
+    {
+        $dir = $this->makeStorageDir();
+        $this->touchFile($dir.'/Trigun.mkv');
+
+        $storage = new Storage('Main folder', $dir, StorageType::Folder);
+        $this->entityManager->persist($storage);
+
+        // An orphan Anime (no storage linked yet) whose title matches the file — scan()'s 0/1/>1
+        // rule finds exactly one candidate and auto-links it via linkToChosenCandidate(), the same
+        // call StorageScanConfirmController makes for a manual choice.
+        $orphan = new TvAnime();
+        $orphan->setTitle('Trigun')->setWatchStatus(WatchStatus::Plan);
+        $this->entityManager->persist($orphan);
+        $this->entityManager->flush();
+        $storageId = $this->requireId($storage);
+        $orphanId = $orphan->id ?? throw new \LogicException('Anime must have an id once flushed.');
+
+        $eventDispatcher = $this->createMock(EventDispatcherInterface::class);
+        $eventDispatcher->expects($this->once())
+            ->method('dispatch')
+            ->with($this->callback(function (AnimeFilesChangedEvent $event) use ($orphanId): bool {
+                $this->assertSame($orphanId, $event->anime->value);
+                $this->assertSame(FilesChangeReason::PathChanged, $event->reason);
+
+                return true;
+            }));
+
+        $wsPublisher = $this->newWsPublisher();
+        $handler = $this->newHandler(
+            $this->createStub(ProcessLivenessChecker::class),
+            $wsPublisher,
+            eventDispatcher: $eventDispatcher,
+        );
+
+        $handler(new ScanStorageMessage($storageId));
+
+        $events = $wsPublisher->since(0);
+        $done = $events[2];
+        $this->assertSame('scan.done', $done['event']);
+        $this->assertSame('AutoLinked', $done['data']['items'][0]['type']);
+    }
+
     public function testScanRelocatesStorageToThePathFoundByMarkerWhenTheCurrentPathIsUnreadable(): void
     {
         $relocatedDir = $this->makeStorageDir();
