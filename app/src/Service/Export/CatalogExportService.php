@@ -77,6 +77,15 @@ final class CatalogExportService
      */
     private const int MIN_OVERHEAD_BYTES = 10 * 1024 * 1024;
 
+    /**
+     * How stale a leftover `animedb-catalog-*.zip.tmp*` file in the destination directory must be
+     * before {@see self::removeStaleTempArchives()} treats it as garbage from a past run rather
+     * than a concurrently running export's own in-progress file. An hour is far longer than any
+     * real archive build takes, so this needs neither a lock file nor tracking which PID owns
+     * which temp file.
+     */
+    private const int STALE_TMP_FILE_AGE_SECONDS = 3600;
+
     public function __construct(
         private readonly Connection $connection,
         private readonly FreeSpaceProvider $freeSpaceProvider,
@@ -160,56 +169,105 @@ final class CatalogExportService
      */
     private function writeArchive(string $tmpDbPath, string $finalPath, array $mediaEntries, array $manifest): int
     {
+        // Runs before $zip->open() below: at this point nothing from the export about to start
+        // exists on disk yet, so every match is unambiguously left over from an earlier run
+        // (issue #727).
+        $this->removeStaleTempArchives(\dirname($finalPath));
+
         $tmpZipPath = $finalPath.'.tmp';
         @unlink($tmpZipPath);
 
-        $zip = new \ZipArchive();
-        if ($zip->open($tmpZipPath, \ZipArchive::CREATE | \ZipArchive::OVERWRITE) !== true) {
-            throw new \RuntimeException(\sprintf('Unable to create the archive at "%s".', $tmpZipPath));
-        }
-
-        // Already-compressed webp covers gain nothing from DEFLATE and just cost CPU time —
-        // data.db is plain SQLite pages and compresses well, so only it is stored compressed
-        // (issue #657, "Сжатие").
-        if (!$zip->addFile($tmpDbPath, 'data.db')) {
-            throw new \RuntimeException('Unable to add the database snapshot to the archive.');
-        }
-        $zip->setCompressionName('data.db', \ZipArchive::CM_DEFLATE);
-
-        $skipped = 0;
-        $total = \count($mediaEntries);
-        $current = 0;
-        foreach ($mediaEntries as $entry) {
-            ++$current;
-
-            if (!$this->addMediaFile($zip, $entry['fullPath'], $entry['relativePath'])) {
-                ++$skipped;
+        try {
+            $zip = new \ZipArchive();
+            if ($zip->open($tmpZipPath, \ZipArchive::CREATE | \ZipArchive::OVERWRITE) !== true) {
+                throw new \RuntimeException(\sprintf('Unable to create the archive at "%s".', $tmpZipPath));
             }
 
-            $this->wsPublisher->publish('export.progress', [
-                'phase' => 'media',
-                'current' => $current,
-                'total' => $total,
-            ]);
+            // Already-compressed webp covers gain nothing from DEFLATE and just cost CPU time —
+            // data.db is plain SQLite pages and compresses well, so only it is stored compressed
+            // (issue #657, "Сжатие").
+            if (!$zip->addFile($tmpDbPath, 'data.db')) {
+                throw new \RuntimeException('Unable to add the database snapshot to the archive.');
+            }
+            $zip->setCompressionName('data.db', \ZipArchive::CM_DEFLATE);
+
+            $skipped = 0;
+            $total = \count($mediaEntries);
+            $current = 0;
+            foreach ($mediaEntries as $entry) {
+                ++$current;
+
+                if (!$this->addMediaFile($zip, $entry['fullPath'], $entry['relativePath'])) {
+                    ++$skipped;
+                }
+
+                $this->wsPublisher->publish('export.progress', [
+                    'phase' => 'media',
+                    'current' => $current,
+                    'total' => $total,
+                ]);
+            }
+
+            $zip->addFromString('manifest.json', json_encode(
+                $manifest,
+                \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE | \JSON_THROW_ON_ERROR,
+            ));
+
+            if (!$zip->close()) {
+                throw new \RuntimeException('Unable to finalize the archive.');
+            }
+
+            // The archive only appears under its real name once it is fully written — a cancelled
+            // export (the native layer kills this process by PID) never leaves a file that looks
+            // finished but isn't (issue #657 acceptance criterion 5).
+            if (!rename($tmpZipPath, $finalPath)) {
+                throw new \RuntimeException(\sprintf('Unable to move the finished archive to "%s".', $finalPath));
+            }
+
+            return $skipped;
+        } catch (\Throwable $exception) {
+            // ZipArchive's destructor commits whatever was queued so far the moment $zip is
+            // freed — but $zip only goes out of scope (and that destructor only runs) when this
+            // method returns, which is *after* this catch block. Unsetting it here first forces
+            // that commit to happen synchronously, so it can't recreate $tmpZipPath right after
+            // the unlink below removes it. Without this, a mid-export failure (a WsPublisher
+            // subscriber throwing, JSON_THROW_ON_ERROR, a failed close()/rename()) would leave a
+            // full-size stray archive in the user's chosen destination directory (issue #727).
+            unset($zip);
+            @unlink($tmpZipPath);
+
+            throw $exception;
         }
+    }
 
-        $zip->addFromString('manifest.json', json_encode(
-            $manifest,
-            \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE | \JSON_THROW_ON_ERROR,
-        ));
+    /**
+     * Deletes leftovers from past runs of this export that never reached their own cleanup —
+     * either a full archive `writeArchive()`'s catch block did not get a chance to remove (a
+     * crash outside this method, or code that predates it), or libzip's own
+     * "<name>.zip.tmp.XXXXXX.part" sibling, written directly by {@see \ZipArchive::close()} and
+     * renamed to `<name>.zip.tmp` only on a commit that completes — a process killed mid-`close()`
+     * leaves the `.part` file orphaned instead. Both are covered by scanning for
+     * `animedb-catalog-*.zip.tmp*`.
+     *
+     * That kill is exactly how a cancelled export ends today (native/catalog-export/index.js's
+     * cancelExport()) and how an orphaned export left over from a previous app run is cleaned up
+     * on startup (native/supervisor/index.js) — both terminate the PHP process by signal, giving
+     * it no chance to run its own cleanup code.
+     *
+     * Only files older than {@see self::STALE_TMP_FILE_AGE_SECONDS} are removed, so this can never
+     * delete the `.part` file of an export that happens to be running concurrently in the same
+     * destination directory.
+     */
+    private function removeStaleTempArchives(string $destinationDir): void
+    {
+        $threshold = time() - self::STALE_TMP_FILE_AGE_SECONDS;
 
-        if (!$zip->close()) {
-            throw new \RuntimeException('Unable to finalize the archive.');
+        foreach (glob($destinationDir.'/animedb-catalog-*.zip.tmp*') ?: [] as $path) {
+            $mtime = @filemtime($path);
+            if (is_file($path) && $mtime !== false && $mtime < $threshold) {
+                @unlink($path);
+            }
         }
-
-        // The archive only appears under its real name once it is fully written — a cancelled
-        // export (the native layer kills this process by PID) never leaves a file that looks
-        // finished but isn't (issue #657 acceptance criterion 5).
-        if (!rename($tmpZipPath, $finalPath)) {
-            throw new \RuntimeException(\sprintf('Unable to move the finished archive to "%s".', $finalPath));
-        }
-
-        return $skipped;
     }
 
     /**
