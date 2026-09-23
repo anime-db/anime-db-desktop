@@ -52,7 +52,7 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
             'episodes_count' => 25,
             'watched_episodes' => 5,
             'duration_minutes' => 24,
-            'studios' => ['MAPPA'],
+            'studios' => [['id' => 7, 'name' => 'MAPPA']],
             'countries' => ['JP'],
             'storage' => ['name' => 'Local', 'type' => 'folder', 'path' => '/anime/aot', 'path_available' => true],
             'names' => [['name' => '進撃の巨人', 'type' => 'original']],
@@ -159,6 +159,31 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
         $this->assertStringContainsString('https://shikimori.one/animes/16498', $html);
         $this->assertStringContainsString('app-media://anime/1/cover_1720273812345.webp', $html);
         $this->assertStringContainsString('app-media://anime/1/screenshot_1720273812345.webp', $html);
+    }
+
+    /**
+     * Genre, theme, studio and type are links into the catalog with a single filter value
+     * applied (issue #714) — the same pattern the label links already use (issue #104), which
+     * this test does not touch.
+     */
+    public function testShowRendersGenreThemeStudioAndTypeAsCatalogFilterLinks(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession('/anime/1');
+
+        /** @var LocaleSwitcher $localeSwitcher */
+        $localeSwitcher = self::getContainer()->get(LocaleSwitcher::class);
+        $localeSwitcher->setLocale('ru');
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('anime/show.html.twig', ['anime' => $this->fullyPopulatedAnime(), 'widgets' => [], 'plugins_ui' => [], 'fillable_fields' => $this->emptyFillableFields()]);
+
+        $this->assertStringContainsString('href="/?type[]=tv"', $html);
+        $this->assertStringContainsString('href="/?genres[]=action"', $html);
+        $this->assertStringContainsString('href="/?genres[]=drama"', $html);
+        $this->assertStringContainsString('href="/?themes[]=military"', $html);
+        $this->assertStringContainsString('href="/?studios[]=7"', $html);
     }
 
     public function testShowRendersAnimeWithoutOptionalFieldsWithoutErrors(): void
