@@ -29,6 +29,7 @@ namespace App\Controller;
 
 use App\Repository\AnimeRepository;
 use App\Repository\StorageRepository;
+use App\Service\Plugin\CatalogWidgetRegistry;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
 use Twig\Environment;
@@ -42,6 +43,10 @@ use Twig\Environment;
  * dedicated "installed" flag (see decisions.md — Вопросы 6/7), so "wizard not completed" is
  * inferred purely from the catalog being empty (no Storage and no Anime rows). Both "skip"
  * actions leave the catalog empty, so the banner simply reappears on the next visit.
+ *
+ * Issue #720: this is the catalog widgets' counterpart to AnimeController's entry widgets — the
+ * only place in the app that requests {@see CatalogWidgetRegistry::findAllActive()}, so an
+ * active catalog widget has somewhere to render at all.
  */
 final class HomeController
 {
@@ -49,6 +54,7 @@ final class HomeController
         private readonly Environment $twig,
         private readonly StorageRepository $storages,
         private readonly AnimeRepository $animeRepository,
+        private readonly CatalogWidgetRegistry $catalogWidgets,
     ) {
     }
 
@@ -59,6 +65,7 @@ final class HomeController
 
         return new Response($this->twig->render('anime/list.html.twig', [
             'showOnboarding' => $showOnboarding,
+            'widgets' => $this->catalogWidgets->findAllActive(),
         ]));
     }
 }

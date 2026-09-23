@@ -27,18 +27,28 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Controller;
 
+use AnimeDb\PluginContracts\Widget\CatalogWidgetInterface;
 use App\Controller\HomeController;
 use App\Repository\AnimeRepository;
 use App\Repository\StorageRepository;
+use App\Service\Plugin\CatalogWidgetRegistry;
+use App\Service\Plugin\PluginsConfigStore;
 use PHPUnit\Framework\TestCase;
+use Symfony\Contracts\Translation\TranslatorInterface;
 use Twig\Environment;
 
 final class HomeControllerTest extends TestCase
 {
+    private function createEmptyCatalogWidgets(): CatalogWidgetRegistry
+    {
+        return new CatalogWidgetRegistry([], new PluginsConfigStore(''), $this->createStub(TranslatorInterface::class));
+    }
+
     private function createController(
         bool $hasStorage,
         bool $hasAnime,
         Environment $twig,
+        ?CatalogWidgetRegistry $catalogWidgets = null,
     ): HomeController {
         $storages = $this->createStub(StorageRepository::class);
         $storages->method('hasAny')->willReturn($hasStorage);
@@ -46,7 +56,7 @@ final class HomeControllerTest extends TestCase
         $animeRepository = $this->createStub(AnimeRepository::class);
         $animeRepository->method('hasAny')->willReturn($hasAnime);
 
-        return new HomeController($twig, $storages, $animeRepository);
+        return new HomeController($twig, $storages, $animeRepository, $catalogWidgets ?? $this->createEmptyCatalogWidgets());
     }
 
     public function testIndexShowsOnboardingBannerWhenCatalogIsEmpty(): void
@@ -54,7 +64,7 @@ final class HomeControllerTest extends TestCase
         $twig = $this->createMock(Environment::class);
         $twig->expects($this->once())
             ->method('render')
-            ->with('anime/list.html.twig', ['showOnboarding' => true])
+            ->with('anime/list.html.twig', ['showOnboarding' => true, 'widgets' => []])
             ->willReturn('<html></html>');
 
         $controller = $this->createController(hasStorage: false, hasAnime: false, twig: $twig);
@@ -68,7 +78,7 @@ final class HomeControllerTest extends TestCase
         $twig = $this->createMock(Environment::class);
         $twig->expects($this->once())
             ->method('render')
-            ->with('anime/list.html.twig', ['showOnboarding' => false])
+            ->with('anime/list.html.twig', ['showOnboarding' => false, 'widgets' => []])
             ->willReturn('<html></html>');
 
         $controller = $this->createController(hasStorage: true, hasAnime: false, twig: $twig);
@@ -80,10 +90,54 @@ final class HomeControllerTest extends TestCase
         $twig = $this->createMock(Environment::class);
         $twig->expects($this->once())
             ->method('render')
-            ->with('anime/list.html.twig', ['showOnboarding' => false])
+            ->with('anime/list.html.twig', ['showOnboarding' => false, 'widgets' => []])
             ->willReturn('<html></html>');
 
         $controller = $this->createController(hasStorage: false, hasAnime: true, twig: $twig);
         $controller->index();
+    }
+
+    /**
+     * Core of issue #720: an enabled catalog widget must reach the template at all, an
+     * enabled-then-disabled (or never-enabled) one must not — this is what
+     * {@see CatalogWidgetRegistry::findAllActive()} already guarantees, but nothing wired it
+     * into this controller before.
+     */
+    public function testIndexPassesOnlyActiveCatalogWidgetsToTheTemplate(): void
+    {
+        $pluginsDir = sys_get_temp_dir().'/home-controller-catalog-widgets-test-'.uniqid();
+        mkdir($pluginsDir, recursive: true);
+
+        $pluginsConfigStore = new PluginsConfigStore($pluginsDir.'/plugins.json');
+        file_put_contents($pluginsDir.'/plugins.json', (string) json_encode([
+            'animedb-shikimori' => ['features' => ['spotlight' => true]],
+            'animedb-anilist' => ['features' => ['spotlight' => false]],
+        ]));
+
+        $catalogWidgets = new CatalogWidgetRegistry(
+            [
+                'animedb-shikimori:spotlight' => $this->createStub(CatalogWidgetInterface::class),
+                'animedb-anilist:spotlight' => $this->createStub(CatalogWidgetInterface::class),
+            ],
+            $pluginsConfigStore,
+            $this->createStub(TranslatorInterface::class),
+        );
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('anime/list.html.twig', [
+                'showOnboarding' => false,
+                'widgets' => [['pluginId' => 'animedb-shikimori', 'widgetName' => 'spotlight']],
+            ])
+            ->willReturn('<html></html>');
+
+        try {
+            $controller = $this->createController(hasStorage: true, hasAnime: false, twig: $twig, catalogWidgets: $catalogWidgets);
+            $controller->index();
+        } finally {
+            unlink($pluginsDir.'/plugins.json');
+            rmdir($pluginsDir);
+        }
     }
 }
