@@ -33,6 +33,7 @@ jest.mock('../../native/paths', () => ({
     getMediaDir:          jest.fn(() => '/fake/userData/media'),
     getImportStagingDir:  jest.fn(() => '/fake/userData/import-staging'),
     getImportRejectionPath: jest.fn(() => '/fake/userData/import-rejected.json'),
+    getImportAppliedPath: jest.fn(() => '/fake/userData/import-applied.json'),
     getConfigPath:        jest.fn(() => '/fake/userData/config.json'),
     getPluginsConfigPath: jest.fn(() => '/fake/userData/plugins.json'),
     getPluginsDir:        jest.fn(() => '/fake/userData/plugins'),
@@ -66,6 +67,7 @@ describe('buildCommonEnv', () => {
         expect(env.MEDIA_DIR).toBe('/fake/userData/media');
         expect(env.IMPORT_STAGING_DIR).toBe('/fake/userData/import-staging');
         expect(env.IMPORT_REJECTION_PATH).toBe('/fake/userData/import-rejected.json');
+        expect(env.IMPORT_APPLIED_PATH).toBe('/fake/userData/import-applied.json');
         expect(env.CONFIG_PATH).toBe('/fake/userData/config.json');
         expect(env.APP_RUNTIME_DIR).toBe('/fake/userData/var');
         expect(env.BACKUPS_DIR).toBe('/fake/userData/backups');

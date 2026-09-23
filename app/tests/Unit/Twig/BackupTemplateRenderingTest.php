@@ -54,7 +54,7 @@ final class BackupTemplateRenderingTest extends KernelTestCase
 
         /** @var Environment $twig */
         $twig = self::getContainer()->get('twig');
-        $html = $twig->render('settings/backup/index.html.twig', ['stagedImport' => null, 'stagedImportRejectionReason' => null, 'backups' => []]);
+        $html = $twig->render('settings/backup/index.html.twig', ['stagedImport' => null, 'stagedImportRejectionReason' => null, 'backups' => [], 'importedPlugins' => []]);
 
         self::assertStringContainsString('id="settings-backup-snapshots-empty"', $html);
         self::assertStringNotContainsString('id="settings-backup-snapshots-list"', $html);
@@ -74,6 +74,7 @@ final class BackupTemplateRenderingTest extends KernelTestCase
                 new BackupSnapshot('data-preimport-20260102-093000.db', new \DateTimeImmutable('2026-01-02 09:30:00'), 250 * 1024, true),
                 new BackupSnapshot('data-1.2.3-20260101-120000.db', new \DateTimeImmutable('2026-01-01 12:00:00'), 100, false),
             ],
+            'importedPlugins' => [],
         ]);
 
         self::assertStringNotContainsString('id="settings-backup-snapshots-empty"', $html);
@@ -98,6 +99,7 @@ final class BackupTemplateRenderingTest extends KernelTestCase
             'stagedImport' => null,
             'stagedImportRejectionReason' => 'incompatible_schema',
             'backups' => [],
+            'importedPlugins' => [],
         ]);
 
         self::assertStringContainsString('id="settings-backup-staged-import-rejected-banner"', $html);
@@ -118,6 +120,7 @@ final class BackupTemplateRenderingTest extends KernelTestCase
             'stagedImport' => null,
             'stagedImportRejectionReason' => 'import_rolled_back',
             'backups' => [],
+            'importedPlugins' => [],
         ]);
 
         self::assertStringContainsString('rolled back', $html);
@@ -138,9 +141,50 @@ final class BackupTemplateRenderingTest extends KernelTestCase
             'stagedImport' => new \App\Service\Import\StagedImportMarker(new \DateTimeImmutable('2026-09-18 12:34:56'), 'catalog.zip'),
             'stagedImportRejectionReason' => 'incompatible_schema',
             'backups' => [],
+            'importedPlugins' => [],
         ]);
 
         self::assertStringContainsString('id="settings-backup-staged-import-banner"', $html);
         self::assertStringNotContainsString('id="settings-backup-staged-import-rejected-banner"', $html);
+    }
+
+    // Issue #726: the imported-plugins block renders one line per plugin with its resolved
+    // status, and stays hidden entirely when there is nothing to show.
+    public function testRendersOneLinePerImportedPluginWithItsStatus(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession();
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('settings/backup/index.html.twig', [
+            'stagedImport' => null,
+            'stagedImportRejectionReason' => null,
+            'backups' => [],
+            'importedPlugins' => [
+                new \App\Service\Import\ImportedPlugin('animedb-shikimori', 'Shikimori', \App\Service\Import\ImportedPluginStatus::AvailableInMarket),
+            ],
+        ]);
+
+        self::assertStringContainsString('id="settings-backup-imported-plugins-section"', $html);
+        self::assertStringContainsString('Shikimori', $html);
+        self::assertStringContainsString('/settings/backup/import/plugins/dismiss', $html);
+    }
+
+    public function testDoesNotRenderTheImportedPluginsBlockWhenThereIsNothingToShow(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession();
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('settings/backup/index.html.twig', [
+            'stagedImport' => null,
+            'stagedImportRejectionReason' => null,
+            'backups' => [],
+            'importedPlugins' => [],
+        ]);
+
+        self::assertStringNotContainsString('id="settings-backup-imported-plugins-section"', $html);
     }
 }

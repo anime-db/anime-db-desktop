@@ -173,6 +173,15 @@ final class CatalogStageServiceTest extends TestCase
         $this->assertFileExists($this->importStagingDir.'/media/1/cover.webp');
         $this->assertSame('cover-bytes', file_get_contents($this->importStagingDir.'/media/1/cover.webp'));
 
+        // Issue #726: manifest.json is extracted alongside data.db/media/, for
+        // native/supervisor/import-apply.js to later carry over to import-applied.json.
+        $stagedManifestPath = $this->importStagingDir.'/manifest.json';
+        $this->assertFileExists($stagedManifestPath);
+        $this->assertSame(
+            $this->defaultManifest(['counts' => ['anime' => 1, 'mediaFiles' => 1]]),
+            json_decode((string) file_get_contents($stagedManifestPath), true, flags: \JSON_THROW_ON_ERROR),
+        );
+
         $markerPath = $this->importStagingDir.'/import.json';
         $this->assertFileExists($markerPath);
         $marker = json_decode((string) file_get_contents($markerPath), true, flags: \JSON_THROW_ON_ERROR);
@@ -180,6 +189,28 @@ final class CatalogStageServiceTest extends TestCase
         $this->assertSame(1, $marker['markerVersion']);
         $this->assertSame(basename($archivePath), $marker['sourceArchive']);
         $this->assertMatchesRegularExpression('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/', $marker['stagedAt']);
+    }
+
+    /**
+     * Acceptance criterion 9 (issue #726): staging a new import must never remove
+     * `userData/import-applied.json` — that file is only carried over by
+     * native/supervisor/import-apply.js on a successful *apply*, and describes whatever import
+     * was applied last, independent of what is currently being staged (which may never even be
+     * applied at all).
+     */
+    public function testStagingDoesNotTouchAnUnrelatedImportAppliedFile(): void
+    {
+        $importAppliedPath = \dirname($this->importStagingDir).'/import-applied-'.uniqid().'.json';
+        file_put_contents($importAppliedPath, '{"plugins":[{"id":"animedb-shikimori"}]}');
+
+        try {
+            $this->createService()->stage($this->buildArchive($this->defaultManifest(), $this->sqliteDbBytes(0)));
+
+            $this->assertFileExists($importAppliedPath);
+            $this->assertSame('{"plugins":[{"id":"animedb-shikimori"}]}', file_get_contents($importAppliedPath));
+        } finally {
+            @unlink($importAppliedPath);
+        }
     }
 
     public function testRepeatedStagingReplacesThePreviousStagingContentsInsteadOfMerging(): void

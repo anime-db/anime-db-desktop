@@ -29,8 +29,13 @@ namespace App\Tests\Unit\Controller\Settings;
 
 use App\Controller\Settings\BackupController;
 use App\Service\Backup\BackupListService;
+use App\Service\Import\ImportedPluginsService;
 use App\Service\Import\StagedImportService;
+use App\Service\Market\PluginRegistryCache;
+use App\Service\Plugin\InstalledPluginsRegistry;
+use App\Service\Plugin\PluginsConfigStore;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -50,12 +55,18 @@ final class BackupControllerTest extends TestCase
     private string $importStagingDir;
     private string $importRejectionPath;
     private string $backupsDir;
+    private string $pluginsDir;
+    private string $importAppliedPath;
+    private string $marketRegistryCachePath;
 
     protected function setUp(): void
     {
         $this->importStagingDir = sys_get_temp_dir().'/animedb-backup-controller-test-'.uniqid();
         $this->importRejectionPath = sys_get_temp_dir().'/animedb-backup-controller-test-rejection-'.uniqid().'.json';
         $this->backupsDir = sys_get_temp_dir().'/animedb-backup-controller-test-backups-'.uniqid();
+        $this->pluginsDir = sys_get_temp_dir().'/animedb-backup-controller-test-plugins-'.uniqid();
+        $this->importAppliedPath = sys_get_temp_dir().'/animedb-backup-controller-test-applied-'.uniqid().'.json';
+        $this->marketRegistryCachePath = sys_get_temp_dir().'/animedb-backup-controller-test-market-cache-'.uniqid().'.json';
     }
 
     protected function tearDown(): void
@@ -63,6 +74,9 @@ final class BackupControllerTest extends TestCase
         $this->removeDirectory($this->importStagingDir);
         @unlink($this->importRejectionPath);
         $this->removeDirectory($this->backupsDir);
+        $this->removeDirectory($this->pluginsDir);
+        @unlink($this->importAppliedPath);
+        @unlink($this->marketRegistryCachePath);
     }
 
     public function testIndexPassesNullStagedImportWhenNothingIsStaged(): void
@@ -70,7 +84,7 @@ final class BackupControllerTest extends TestCase
         $twig = $this->createMock(Environment::class);
         $twig->expects($this->once())
             ->method('render')
-            ->with('settings/backup/index.html.twig', ['stagedImport' => null, 'stagedImportRejectionReason' => null, 'backups' => []])
+            ->with('settings/backup/index.html.twig', ['stagedImport' => null, 'stagedImportRejectionReason' => null, 'backups' => [], 'importedPlugins' => []])
             ->willReturn('<html></html>');
 
         $response = $this->createController(twig: $twig)->index();
@@ -85,7 +99,7 @@ final class BackupControllerTest extends TestCase
         $twig = $this->createMock(Environment::class);
         $twig->expects($this->once())
             ->method('render')
-            ->with('settings/backup/index.html.twig', ['stagedImport' => null, 'stagedImportRejectionReason' => 'incompatible_schema', 'backups' => []])
+            ->with('settings/backup/index.html.twig', ['stagedImport' => null, 'stagedImportRejectionReason' => 'incompatible_schema', 'backups' => [], 'importedPlugins' => []])
             ->willReturn('<html></html>');
 
         $this->createController(twig: $twig)->index();
@@ -164,6 +178,92 @@ final class BackupControllerTest extends TestCase
         self::assertDirectoryDoesNotExist($this->importStagingDir);
     }
 
+    /**
+     * Acceptance criterion 1/2 (issue #726): a not-yet-installed plugin from the imported
+     * archive's manifest keeps the block visible and passes the plugin list through to the
+     * template — see the twig fixture in {@see \App\Tests\Unit\Service\Import\ImportedPluginsServiceTest}
+     * for the status resolution itself, which this controller only wires up.
+     */
+    public function testIndexPassesTheImportedPluginsListWhenANotInstalledPluginRemains(): void
+    {
+        file_put_contents($this->importAppliedPath, (string) json_encode(['plugins' => [['id' => 'animedb-shikimori']]]));
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('settings/backup/index.html.twig', $this->callback(function (array $params): bool {
+                return \count($params['importedPlugins']) === 1
+                    && $params['importedPlugins'][0]->id === 'animedb-shikimori';
+            }))
+            ->willReturn('<html></html>');
+
+        $this->createController(twig: $twig)->index();
+
+        self::assertFileExists($this->importAppliedPath);
+    }
+
+    /**
+     * Acceptance criterion 2 (issue #726): once every plugin the archive named is already
+     * installed, there is nothing left worth showing — the block hides and the file that would
+     * keep describing an import that has nothing left to say about is removed in this same GET.
+     */
+    public function testIndexHidesTheImportedPluginsBlockAndRemovesTheFileWhenNoneAreLeftToInstall(): void
+    {
+        mkdir($this->pluginsDir.'/animedb-shikimori', 0o755, true);
+        file_put_contents($this->pluginsDir.'/animedb-shikimori/manifest.json', (string) json_encode([
+            'id' => 'animedb-shikimori',
+            'name' => 'Shikimori',
+            'version' => '1.0.0',
+            'type' => 'integration',
+            'features' => ['filler' => true],
+            'require' => ['core' => '>=2.0.0', 'php' => '>=8.2'],
+        ]));
+        (new InstalledPluginsRegistry($this->pluginsDir, new PluginsConfigStore($this->pluginsDir.'/plugins.json'), new NullLogger()))->reconcile();
+
+        file_put_contents($this->importAppliedPath, (string) json_encode(['plugins' => [['id' => 'animedb-shikimori']]]));
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('settings/backup/index.html.twig', $this->callback(fn (array $params): bool => $params['importedPlugins'] === []))
+            ->willReturn('<html></html>');
+
+        $this->createController(twig: $twig)->index();
+
+        self::assertFileDoesNotExist($this->importAppliedPath);
+    }
+
+    public function testDismissImportedPluginsRejectsAnInvalidCsrfToken(): void
+    {
+        file_put_contents($this->importAppliedPath, '{"plugins":[]}');
+
+        $csrfTokenManager = $this->createStub(CsrfTokenManagerInterface::class);
+        $csrfTokenManager->method('isTokenValid')->willReturn(false);
+
+        try {
+            $this->createController(csrfTokenManager: $csrfTokenManager)->dismissImportedPlugins(new Request());
+            self::fail('Expected BadRequestHttpException.');
+        } catch (BadRequestHttpException) {
+            // expected
+        }
+
+        self::assertFileExists($this->importAppliedPath);
+    }
+
+    public function testDismissImportedPluginsRemovesTheFileAndRedirectsBackToTheBackupPage(): void
+    {
+        file_put_contents($this->importAppliedPath, '{"plugins":[]}');
+
+        $urlGenerator = $this->createStub(UrlGeneratorInterface::class);
+        $urlGenerator->method('generate')->willReturn('/settings/backup');
+
+        $response = $this->createController(urlGenerator: $urlGenerator)->dismissImportedPlugins(new Request());
+
+        self::assertInstanceOf(RedirectResponse::class, $response);
+        self::assertSame('/settings/backup', $response->getTargetUrl());
+        self::assertFileDoesNotExist($this->importAppliedPath);
+    }
+
     private function createController(
         ?Environment $twig = null,
         ?CsrfTokenManagerInterface $csrfTokenManager = null,
@@ -174,10 +274,17 @@ final class BackupControllerTest extends TestCase
             $csrfTokenManager->method('isTokenValid')->willReturn(true);
         }
 
+        $importedPluginsService = new ImportedPluginsService(
+            new PluginRegistryCache($this->marketRegistryCachePath, new NullLogger()),
+            new InstalledPluginsRegistry($this->pluginsDir, new PluginsConfigStore($this->pluginsDir.'/plugins.json'), new NullLogger()),
+            $this->importAppliedPath,
+        );
+
         return new BackupController(
             $twig ?? $this->createStub(Environment::class),
             new StagedImportService($this->importStagingDir, $this->importRejectionPath),
             new BackupListService($this->backupsDir),
+            $importedPluginsService,
             $csrfTokenManager,
             $urlGenerator ?? $this->createStub(UrlGeneratorInterface::class),
         );

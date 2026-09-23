@@ -31,6 +31,14 @@ parameters:
     app.import_rejection_path.dev_default: '%kernel.project_dir%/var/import-rejected.json'
     app.import_rejection_path: '%env(default:app.import_rejection_path.dev_default:IMPORT_REJECTION_PATH)%'
 
+    # In production Electron passes IMPORT_APPLIED_PATH (see native/paths.js,
+    # native/supervisor/env.js), pointing at %AppData%/import-applied.json — where
+    # native/supervisor/import-apply.js best-effort carries the staged archive's manifest.json to
+    # after a successful catalog import (issue #726), for
+    # App\Service\Import\ImportedPluginsService to read on /settings/backup.
+    app.import_applied_path.dev_default: '%kernel.project_dir%/var/import-applied.json'
+    app.import_applied_path: '%env(default:app.import_applied_path.dev_default:IMPORT_APPLIED_PATH)%'
+
     # In production Electron passes CONFIG_PATH (see native/paths.js, native/supervisor/frankenphp.js),
     # pointing at %AppData%/config.json — the same file native/config.js writes appSecret to,
     # and where the user's pagination mode preference (issue #74) lives.
@@ -171,6 +179,7 @@ services:
             $mediaDir: '%app.media_dir%'
             $importStagingDir: '%app.import_staging_dir%'
             $importRejectionPath: '%app.import_rejection_path%'
+            $importAppliedPath: '%app.import_applied_path%'
             $backupsDir: '%app.backups_dir%'
             $configPath: '%app.config_path%'
             $pluginsConfigPath: '%app.plugins_config_path%'

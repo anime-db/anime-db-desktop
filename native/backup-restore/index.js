@@ -48,7 +48,10 @@ const searchReindex = require('../supervisor/search-reindex');
  * — so a successful restore also marks a forced reindex (searchReindex.markRequired(), issue #681
  * review) for the next start to pick up, since a same-schema restore would otherwise leave both of
  * index.js#start()'s own reindex triggers (wiped, migrationsApplied) false and the search index
- * stale against the restored catalog.
+ * stale against the restored catalog. Also removes `userData/import-applied.json` (issue #726)
+ * on the success path — the plugin list App\Service\Import\ImportedPluginsService would otherwise
+ * keep showing on /settings/backup describes the catalog this restore just replaced, not the one
+ * that is about to start.
  *
  * restoreBackup() can throw (out of disk space, sidecar/target files locked, ...) — supervisor.
  * stop() has already torn FrankenPHP/messenger-consumer down by that point, and neither restarts
@@ -81,6 +84,21 @@ async function startRestore(_event, name) {
     } catch {
         ok = false;
     } finally {
+        if (ok) {
+            // The restored snapshot is a different catalog than whatever import-applied.json
+            // (issue #726) still describes — remove it rather than leave a stale plugin list
+            // pointing at a catalog this restore just replaced. Only on the success path:
+            // restoreBackup() throwing means data.db was never actually swapped (see its own doc
+            // comment), so the file still describes the catalog that is still there. Its own
+            // try/catch, outside the block that computes `ok`: a failure to remove this
+            // informational file must not turn a successful restore into a reported failure.
+            try {
+                fs.rmSync(paths.getImportAppliedPath(), { force: true });
+            } catch (cleanupErr) {
+                console.error('[backup-restore] не удалось удалить import-applied.json:', cleanupErr.message);
+            }
+        }
+
         // Lazy require: lifecycle/index.js requires this module before assigning its own
         // module.exports, so a top-level require here would capture that early, still-empty
         // object (same reasoning as native/catalog-import/index.js's own lazy require of

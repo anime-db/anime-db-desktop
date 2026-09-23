@@ -28,6 +28,9 @@ declare(strict_types=1);
 namespace App\Controller\Settings;
 
 use App\Service\Backup\BackupListService;
+use App\Service\Import\ImportedPlugin;
+use App\Service\Import\ImportedPluginsService;
+use App\Service\Import\ImportedPluginStatus;
 use App\Service\Import\StagedImportService;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -66,6 +69,13 @@ use Twig\Environment;
  * rejected a staged import (invalid marker, incompatible schema, or a declined confirmation) —
  * read the same way as `stagedImport` above, a synchronous file read with nothing to poll, and
  * deliberately independent of FrankenPHP being up at the moment the rejection itself happened.
+ *
+ * `importedPlugins` (issue #726) lists the plugins the *previously applied* import's archive
+ * named, each resolved to a status by {@see ImportedPluginsService} — read the same synchronous
+ * way as everything else on this page. The block is deliberately self-hiding: once nothing left
+ * in it is still worth acting on (see {@see self::index()}), `import-applied.json` is removed in
+ * the same GET that stops showing it, the same "nothing left to look at" convention {@see
+ * StagedImportService::readMarker()} already uses for a rejected/applied staged import above.
  */
 final class BackupController
 {
@@ -73,6 +83,7 @@ final class BackupController
         private readonly Environment $twig,
         private readonly StagedImportService $stagedImportService,
         private readonly BackupListService $backupListService,
+        private readonly ImportedPluginsService $importedPluginsService,
         private readonly CsrfTokenManagerInterface $csrfTokenManager,
         private readonly UrlGeneratorInterface $urlGenerator,
     ) {
@@ -81,11 +92,49 @@ final class BackupController
     #[Route('/settings/backup', name: 'settings_backup_index', methods: ['GET'])]
     public function index(): Response
     {
+        $importedPlugins = $this->importedPluginsService->list();
+        if (!$this->hasNotInstalledPlugin($importedPlugins)) {
+            $this->importedPluginsService->dismiss();
+            $importedPlugins = [];
+        }
+
         return new Response($this->twig->render('settings/backup/index.html.twig', [
             'stagedImport' => $this->stagedImportService->readMarker(),
             'stagedImportRejectionReason' => $this->stagedImportService->readRejectionReason(),
             'backups' => $this->backupListService->list(),
+            'importedPlugins' => $importedPlugins,
         ]));
+    }
+
+    /**
+     * Removes `import-applied.json` — the next GET then has nothing staged to look at, same as if
+     * the archive it was carried over from had never listed any plugins at all.
+     */
+    #[Route('/settings/backup/import/plugins/dismiss', name: 'settings_backup_import_plugins_dismiss', methods: ['POST'])]
+    public function dismissImportedPlugins(Request $request): RedirectResponse
+    {
+        $token = new CsrfToken('settings_backup_import_plugins_dismiss', (string) $request->request->get('_token'));
+        if (!$this->csrfTokenManager->isTokenValid($token)) {
+            throw new BadRequestHttpException('Invalid CSRF token.');
+        }
+
+        $this->importedPluginsService->dismiss();
+
+        return new RedirectResponse($this->urlGenerator->generate('settings_backup_index'), Response::HTTP_SEE_OTHER);
+    }
+
+    /**
+     * @param list<ImportedPlugin> $importedPlugins
+     */
+    private function hasNotInstalledPlugin(array $importedPlugins): bool
+    {
+        foreach ($importedPlugins as $plugin) {
+            if ($plugin->status !== ImportedPluginStatus::Installed) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

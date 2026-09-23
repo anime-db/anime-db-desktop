@@ -26,10 +26,12 @@ jest.mock('electron', () => ({ ipcMain: { handle: jest.fn() } }));
 const fs = require('fs');
 jest.mock('fs', () => ({
     existsSync: jest.fn(),
+    rmSync: jest.fn(),
 }));
 
 jest.mock('../../native/paths', () => ({
     getBackupsDir: jest.fn(() => '/fake/userData/backups'),
+    getImportAppliedPath: jest.fn(() => '/fake/userData/import-applied.json'),
 }));
 
 const mockRestoreBackup = jest.fn();
@@ -119,6 +121,44 @@ describe('startRestore', () => {
 
         expect(outcome).toEqual({ ok: false });
         expect(mockMarkRequired).not.toHaveBeenCalled();
+        expect(mockRelaunch).toHaveBeenCalledTimes(1);
+    });
+
+    // Issue #726: a successful restore replaces the catalog with an arbitrary, potentially
+    // plugin-free snapshot — the imported-plugins list App\Service\Import\ImportedPluginsService
+    // reads on /settings/backup must not keep describing the catalog this restore just replaced.
+    test('removes import-applied.json on a successful restore', async () => {
+        fs.existsSync.mockReturnValue(true);
+        mockRestoreBackup.mockImplementation(() => {});
+
+        await startRestore(null, 'data-preimport-20260101-000000.db');
+
+        expect(fs.rmSync).toHaveBeenCalledWith('/fake/userData/import-applied.json', { force: true });
+    });
+
+    // A failed restoreBackup() never actually swaps data.db (see its own doc comment) — the
+    // catalog import-applied.json describes is still the one that is about to start, so it must
+    // survive a failed restore attempt.
+    test('does not remove import-applied.json when restoreBackup() throws', async () => {
+        fs.existsSync.mockReturnValue(true);
+        mockRestoreBackup.mockImplementation(() => { throw new Error('ENOSPC: no space left on device'); });
+
+        await startRestore(null, 'data-preimport-20260101-000000.db');
+
+        expect(fs.rmSync).not.toHaveBeenCalled();
+    });
+
+    // Reviewer feedback: this cleanup is purely informational (a stale plugin list, not the
+    // restored data), so its own failure must not flip a successful restore to { ok: false } and
+    // make backup.js report a restore failure that never happened.
+    test('still reports { ok: true } and relaunches when removing import-applied.json throws', async () => {
+        fs.existsSync.mockReturnValue(true);
+        mockRestoreBackup.mockImplementation(() => {});
+        fs.rmSync.mockImplementation(() => { throw new Error('EPERM: operation not permitted, unlink'); });
+
+        const outcome = await startRestore(null, 'data-preimport-20260101-000000.db');
+
+        expect(outcome).toEqual({ ok: true });
         expect(mockRelaunch).toHaveBeenCalledTimes(1);
     });
 });
