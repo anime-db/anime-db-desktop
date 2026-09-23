@@ -338,6 +338,12 @@
     // call pushUrlState()/replaceUrlState() itself: the browser already moved the history pointer,
     // and writing to it again here would fight that traversal instead of following it.
     function handlePopState() {
+        // Cancels any in-flight search debounce (issue #717 review): without this, a "back"
+        // landing within SEARCH_DEBOUNCE_MS of the last keystroke lets that stale timer fire after
+        // seedFiltersFromUrl() below already reseeded the state, triggering a redundant
+        // loadPage()/loadFacets()/replaceUrlState() call on top of the one this handler already
+        // makes.
+        clearTimeout(searchDebounceTimer);
         seedFiltersFromUrl(new URLSearchParams(window.location.search), { forceRefresh: true });
         loadPage(0, true, true);
         loadFacets();
