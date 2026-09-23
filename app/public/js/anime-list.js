@@ -385,5 +385,16 @@
         loadFacets();
     }
 
-    init();
+    // Guards against the load order of the five <script> tags in list.html.twig: the tags sit at
+    // the end of <body>, so document.readyState is still 'loading' when this file executes today
+    // and the DOMContentLoaded listener below covers that. A readyState check with an immediate
+    // call is added on top so init() also runs correctly if this script is ever loaded after
+    // DOMContentLoaded already fired — e.g. a future template change, or this fragment inserted
+    // via htmx — cases a bare addEventListener('DOMContentLoaded', ...) would silently never fire
+    // for.
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
 })();
