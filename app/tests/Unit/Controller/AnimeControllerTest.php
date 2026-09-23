@@ -148,7 +148,7 @@ final class AnimeControllerTest extends TestCase
                     && $view['episodes_count'] === 25
                     && $view['watched_episodes'] === null
                     && $view['duration_minutes'] === 24
-                    && ['MAPPA'] === $view['studios']
+                    && [['id' => null, 'name' => 'MAPPA']] === $view['studios']
                     && ['JP'] === $view['countries']
                     && [
                         'name' => 'Local',
