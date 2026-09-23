@@ -40,6 +40,10 @@
 {% endblock %}
 
 {% block body %}
+    <div class="anime-detail__back">
+        <a href="{{ path('home_index') }}" class="anime-detail__back-link" data-catalog-back-link>{{ 'anime_detail.back_link'|trans }}</a>
+    </div>
+
     <main class="anime-detail">
         {{ include('anime/_media.html.twig', {anime: anime, fillable_fields: fillable_fields}) }}
 

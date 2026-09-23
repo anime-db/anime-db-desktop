@@ -120,6 +120,43 @@ function interceptExternalNavigation(browserWindow, port) {
 }
 
 /**
+ * Wires the window's own navigation history to the mouse back/forward buttons (`app-command`,
+ * fired on Windows - the only build target, see build.win in package.json) and to Alt+Left/
+ * Alt+Right (`before-input-event`). Both route through `webContents.navigationHistory`, which
+ * only ever contains the local backend's own pages - `interceptExternalNavigation()` above stops
+ * an external URL before it is ever committed to the window's history, so there is no separate
+ * check needed here to keep a back/forward step inside the app (issue #719).
+ *
+ * @param {import('electron').BrowserWindow} browserWindow
+ */
+function setupHistoryNavigation(browserWindow) {
+    const { webContents } = browserWindow;
+    const { navigationHistory } = webContents;
+
+    webContents.on('app-command', (event, command) => {
+        if (command === 'browser-backward' && navigationHistory.canGoBack()) {
+            navigationHistory.goBack();
+        } else if (command === 'browser-forward' && navigationHistory.canGoForward()) {
+            navigationHistory.goForward();
+        }
+    });
+
+    webContents.on('before-input-event', (event, input) => {
+        if (input.type !== 'keyDown' || !input.alt || input.control || input.meta || input.shift) {
+            return;
+        }
+
+        if (input.key === 'ArrowLeft' && navigationHistory.canGoBack()) {
+            event.preventDefault();
+            navigationHistory.goBack();
+        } else if (input.key === 'ArrowRight' && navigationHistory.canGoForward()) {
+            event.preventDefault();
+            navigationHistory.goForward();
+        }
+    });
+}
+
+/**
  * Создаёт главное окно и загружает Symfony-приложение по порту. Preload с
  * contextIsolation даёт странице доступ к shell.openPath() через window.animeDb
  * (issue #105), не открывая ей произвольный доступ к Node.js.
@@ -146,6 +183,7 @@ function createWindow(port) {
         },
     });
     interceptExternalNavigation(win, port);
+    setupHistoryNavigation(win);
     win.loadURL(`http://127.0.0.1:${port}`);
     win.on('closed', () => { win = null; });
     return win;

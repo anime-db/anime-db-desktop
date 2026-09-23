@@ -52,7 +52,7 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
             'episodes_count' => 25,
             'watched_episodes' => 5,
             'duration_minutes' => 24,
-            'studios' => ['MAPPA'],
+            'studios' => [['id' => 7, 'name' => 'MAPPA']],
             'countries' => ['JP'],
             'storage' => ['name' => 'Local', 'type' => 'folder', 'path' => '/anime/aot', 'path_available' => true],
             'names' => [['name' => '進撃の巨人', 'type' => 'original']],
@@ -187,6 +187,54 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
         ]);
 
         $this->assertStringContainsString('hx-get="/plugin/animedb-shikimori/widget/related?entryId=1"', $html);
+    }
+
+    /**
+     * Genre, theme, studio and type are links into the catalog with a single filter value
+     * applied (issue #714) — the same pattern the label links already use (issue #104), which
+     * this test does not touch.
+     */
+    public function testShowRendersGenreThemeStudioAndTypeAsCatalogFilterLinks(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession('/anime/1');
+
+        /** @var LocaleSwitcher $localeSwitcher */
+        $localeSwitcher = self::getContainer()->get(LocaleSwitcher::class);
+        $localeSwitcher->setLocale('ru');
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('anime/show.html.twig', ['anime' => $this->fullyPopulatedAnime(), 'widgets' => [], 'plugins_ui' => [], 'fillable_fields' => $this->emptyFillableFields()]);
+
+        $this->assertStringContainsString('href="/?type[]=tv"', $html);
+        $this->assertStringContainsString('href="/?genres[]=action"', $html);
+        $this->assertStringContainsString('href="/?genres[]=drama"', $html);
+        $this->assertStringContainsString('href="/?themes[]=military"', $html);
+        $this->assertStringContainsString('href="/?studios[]=7"', $html);
+    }
+
+    /**
+     * The catalog link (issue #719) must always be present, even with no history to go back to -
+     * anime-detail.js decides at runtime whether a click goes back through history or follows this
+     * href, so the href itself must stay a working plain link to the catalog root.
+     */
+    public function testShowRendersCatalogBackLink(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession('/anime/1');
+
+        /** @var LocaleSwitcher $localeSwitcher */
+        $localeSwitcher = self::getContainer()->get(LocaleSwitcher::class);
+        $localeSwitcher->setLocale('ru');
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('anime/show.html.twig', ['anime' => $this->fullyPopulatedAnime(), 'widgets' => [], 'plugins_ui' => [], 'fillable_fields' => $this->emptyFillableFields()]);
+
+        $this->assertStringContainsString('data-catalog-back-link', $html);
+        $this->assertStringContainsString('href="/"', $html);
+        $this->assertStringContainsString('← Каталог', $html);
     }
 
     public function testShowRendersAnimeWithoutOptionalFieldsWithoutErrors(): void
