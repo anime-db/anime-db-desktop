@@ -29,7 +29,7 @@ namespace App\Tests\Unit\Service\Storage;
 
 use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
-use App\Entity\Enum\AnimeNameType;
+use App\Entity\Enum\AnimeNameRole;
 use App\Entity\Enum\StorageType;
 use App\Entity\Enum\WatchStatus;
 use App\Entity\MovieAnime;
@@ -106,7 +106,7 @@ final class OrphanAnimeMatcherTest extends TestCase
     {
         $anime = new TvAnime();
         $anime->setTitle('Cowboy Bebop')->setWatchStatus(WatchStatus::Plan);
-        $anime->addName('Kaubōi Bibappu', AnimeNameType::Synonym);
+        $anime->addName('Kaubōi Bibappu', null, AnimeNameRole::Synonym);
         $this->entityManager->persist($anime);
         $this->entityManager->flush();
 
@@ -134,7 +134,7 @@ final class OrphanAnimeMatcherTest extends TestCase
         $second = new MovieAnime();
         $second->setTitle('Trigun the Movie');
         $second->setWatchStatus(WatchStatus::Plan);
-        $second->addName('Trigun', AnimeNameType::Synonym);
+        $second->addName('Trigun', null, AnimeNameRole::Synonym);
         $this->entityManager->persist($first);
         $this->entityManager->persist($second);
         $this->entityManager->flush();

@@ -29,12 +29,14 @@ namespace App\Tests\Unit\Service\Plugin;
 
 use AnimeDb\PluginContracts\ExternalIdResolutionInterface;
 use AnimeDb\PluginContracts\Model\AnimeId as ContractAnimeId;
+use AnimeDb\PluginContracts\Model\AnimeName as ContractAnimeName;
 use AnimeDb\PluginContracts\Model\AnimeType as ContractAnimeType;
 use AnimeDb\PluginContracts\Model\GenreCode as ContractGenreCode;
+use AnimeDb\PluginContracts\Model\NameRole as ContractNameRole;
 use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
 use App\Entity\Anime;
-use App\Entity\Enum\AnimeNameType;
+use App\Entity\Enum\AnimeNameRole;
 use App\Entity\Enum\GenreCode;
 use App\Entity\Enum\WatchStatus;
 use App\Entity\MovieAnime;
@@ -90,7 +92,7 @@ final class CatalogReaderTest extends TestCase
         $anime = new TvAnime();
         $anime->setTitle('Cowboy Bebop')
             ->setWatchStatus(WatchStatus::Watching)
-            ->addName('Каубой Бибоп', AnimeNameType::Russian)
+            ->addName('Каубой Бибоп', 'ru', AnimeNameRole::Official)
             ->addGenre(GenreCode::Action)
             ->addSource('https://shikimori.one/animes/1');
         $anime->setEpisodesCount(26);
@@ -102,7 +104,7 @@ final class CatalogReaderTest extends TestCase
 
         self::assertNotNull($view);
         self::assertSame('Cowboy Bebop', $view->title);
-        self::assertSame(['Каубой Бибоп'], $view->alternativeNames);
+        self::assertEquals([new ContractAnimeName('Каубой Бибоп', 'ru', ContractNameRole::Official)], $view->alternativeNames);
         self::assertSame(ContractAnimeType::Tv, $view->type);
         self::assertSame([ContractGenreCode::Action], $view->genres);
         self::assertSame(26, $view->episodesCount);

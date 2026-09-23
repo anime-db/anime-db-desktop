@@ -27,10 +27,17 @@ declare(strict_types=1);
 
 namespace App\Entity\Enum;
 
-enum AnimeNameType: string
+/**
+ * The role a name plays for an anime entry, independent of its language (see AnimeName::$locale).
+ * Mirrors AnimeDb\PluginContracts\Model\NameRole (issue #91) — a name is classified by what it is
+ * (an official title, a synonym, a short form), not by what language it is in.
+ *
+ * There is no Primary/Original case here: the primary display title lives in Anime::$title, a
+ * scalar field of its own, not in this collection.
+ */
+enum AnimeNameRole: string
 {
-    case Original = 'original';
-    case English = 'english';
-    case Russian = 'russian';
+    case Official = 'official';
     case Synonym = 'synonym';
+    case Short = 'short';
 }

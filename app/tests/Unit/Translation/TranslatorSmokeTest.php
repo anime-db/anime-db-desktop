@@ -41,7 +41,7 @@ final class TranslatorSmokeTest extends KernelTestCase
         yield 'genre' => ['genre.romance', 'Romance'];
         yield 'anime_type' => ['anime_type.tv', 'TV Series'];
         yield 'watch_status' => ['watch_status.watching', 'Watching'];
-        yield 'anime_name_type' => ['anime_name_type.original', 'Original'];
+        yield 'anime_name_role' => ['anime_name_role.official', 'Official'];
         yield 'storage_type' => ['storage_type.folder', 'Folder'];
         yield 'production_status' => ['production_status.ongoing', 'Ongoing'];
     }

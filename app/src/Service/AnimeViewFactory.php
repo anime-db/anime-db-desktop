@@ -73,7 +73,7 @@ final class AnimeViewFactory
             'cover' => $anime->getCover(),
             'images' => array_map(static fn (AnimeImage $image): string => $image->source, $anime->getImages()->toArray()),
             'names' => array_map(
-                static fn (AnimeName $name): array => ['name' => $name->name, 'type' => $name->type->value],
+                static fn (AnimeName $name): array => ['name' => $name->name, 'locale' => $name->locale, 'role' => $name->role->value],
                 $anime->getNames()->toArray(),
             ),
             'genres' => array_map(static fn ($code): string => $code->value, $anime->getGenreCodes()),

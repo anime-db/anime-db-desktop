@@ -28,7 +28,7 @@ declare(strict_types=1);
 namespace App\Service\Install;
 
 use App\Entity\Anime;
-use App\Entity\Enum\AnimeNameType;
+use App\Entity\Enum\AnimeNameRole;
 use App\Entity\Enum\AnimeType;
 use App\Entity\Enum\Demographic;
 use App\Entity\Enum\GenreCode;
@@ -68,7 +68,7 @@ class SampleAnimeSeeder
      *     themes: list<ThemeCode>,
      *     demographic: ?Demographic,
      *     cover: string,
-     *     altNames: list<array{type: AnimeNameType, name: string}>,
+     *     altNames: list<array{locale: ?string, role: AnimeNameRole, name: string}>,
      *     sources: list<string>,
      *     datePremiere: string,
      *     dateEnd: string,
@@ -88,12 +88,12 @@ class SampleAnimeSeeder
             'demographic' => Demographic::Shounen,
             'cover' => 'fullmetal-alchemist-brotherhood.webp',
             'altNames' => [
-                ['type' => AnimeNameType::Original, 'name' => '鋼の錬金術師 FULLMETAL ALCHEMIST'],
-                ['type' => AnimeNameType::English, 'name' => 'Fullmetal Alchemist: Brotherhood'],
-                ['type' => AnimeNameType::Russian, 'name' => 'Стальной алхимик: Братство'],
-                ['type' => AnimeNameType::Synonym, 'name' => 'Hagane no Renkinjutsushi: Fullmetal Alchemist'],
-                ['type' => AnimeNameType::Synonym, 'name' => 'FMA'],
-                ['type' => AnimeNameType::Synonym, 'name' => 'FMAB'],
+                ['locale' => 'ja', 'role' => AnimeNameRole::Official, 'name' => '鋼の錬金術師 FULLMETAL ALCHEMIST'],
+                ['locale' => 'en', 'role' => AnimeNameRole::Official, 'name' => 'Fullmetal Alchemist: Brotherhood'],
+                ['locale' => 'ru', 'role' => AnimeNameRole::Official, 'name' => 'Стальной алхимик: Братство'],
+                ['locale' => null, 'role' => AnimeNameRole::Synonym, 'name' => 'Hagane no Renkinjutsushi: Fullmetal Alchemist'],
+                ['locale' => null, 'role' => AnimeNameRole::Short, 'name' => 'FMA'],
+                ['locale' => null, 'role' => AnimeNameRole::Short, 'name' => 'FMAB'],
             ],
             'sources' => [
                 'https://myanimelist.net/anime/5114/Fullmetal_Alchemist__Brotherhood',
@@ -127,11 +127,11 @@ class SampleAnimeSeeder
             'demographic' => null,
             'cover' => 'spirited-away.webp',
             'altNames' => [
-                ['type' => AnimeNameType::Original, 'name' => '千と千尋の神隠し'],
-                ['type' => AnimeNameType::English, 'name' => 'Spirited Away'],
-                ['type' => AnimeNameType::Russian, 'name' => 'Унесённые призраками'],
-                ['type' => AnimeNameType::Synonym, 'name' => 'Sen to Chihiro no Kamikakushi'],
-                ['type' => AnimeNameType::Synonym, 'name' => "Sen and Chihiro's Spiriting Away"],
+                ['locale' => 'ja', 'role' => AnimeNameRole::Official, 'name' => '千と千尋の神隠し'],
+                ['locale' => 'en', 'role' => AnimeNameRole::Official, 'name' => 'Spirited Away'],
+                ['locale' => 'ru', 'role' => AnimeNameRole::Official, 'name' => 'Унесённые призраками'],
+                ['locale' => null, 'role' => AnimeNameRole::Synonym, 'name' => 'Sen to Chihiro no Kamikakushi'],
+                ['locale' => null, 'role' => AnimeNameRole::Synonym, 'name' => "Sen and Chihiro's Spiriting Away"],
             ],
             'sources' => [
                 'https://myanimelist.net/anime/199/Sen_to_Chihiro_no_Kamikakushi',
@@ -163,12 +163,12 @@ class SampleAnimeSeeder
             'demographic' => Demographic::Shounen,
             'cover' => 'gintama.webp',
             'altNames' => [
-                ['type' => AnimeNameType::Original, 'name' => '銀魂'],
-                ['type' => AnimeNameType::English, 'name' => 'Gintama'],
-                ['type' => AnimeNameType::Russian, 'name' => 'Гинтама'],
-                ['type' => AnimeNameType::Synonym, 'name' => 'Gin Tama'],
-                ['type' => AnimeNameType::Synonym, 'name' => 'Silver Soul'],
-                ['type' => AnimeNameType::Synonym, 'name' => 'Yorinuki Gintama-san'],
+                ['locale' => 'ja', 'role' => AnimeNameRole::Official, 'name' => '銀魂'],
+                ['locale' => 'en', 'role' => AnimeNameRole::Official, 'name' => 'Gintama'],
+                ['locale' => 'ru', 'role' => AnimeNameRole::Official, 'name' => 'Гинтама'],
+                ['locale' => null, 'role' => AnimeNameRole::Synonym, 'name' => 'Gin Tama'],
+                ['locale' => null, 'role' => AnimeNameRole::Synonym, 'name' => 'Silver Soul'],
+                ['locale' => null, 'role' => AnimeNameRole::Synonym, 'name' => 'Yorinuki Gintama-san'],
             ],
             'sources' => [
                 'https://myanimelist.net/anime/918/Gintama',
@@ -200,9 +200,9 @@ class SampleAnimeSeeder
             'demographic' => Demographic::Seinen,
             'cover' => 'hellsing-ultimate.webp',
             'altNames' => [
-                ['type' => AnimeNameType::Original, 'name' => 'ヘルシングOVA'],
-                ['type' => AnimeNameType::English, 'name' => 'Hellsing Ultimate'],
-                ['type' => AnimeNameType::Russian, 'name' => 'Хеллсинг: Ультимат'],
+                ['locale' => 'ja', 'role' => AnimeNameRole::Official, 'name' => 'ヘルシングOVA'],
+                ['locale' => 'en', 'role' => AnimeNameRole::Official, 'name' => 'Hellsing Ultimate'],
+                ['locale' => 'ru', 'role' => AnimeNameRole::Official, 'name' => 'Хеллсинг: Ультимат'],
             ],
             'sources' => [
                 'https://myanimelist.net/anime/777/Hellsing_Ultimate',
@@ -234,11 +234,11 @@ class SampleAnimeSeeder
             'demographic' => Demographic::Shounen,
             'cover' => 'sousou-no-frieren.webp',
             'altNames' => [
-                ['type' => AnimeNameType::Original, 'name' => '葬送のフリーレン'],
-                ['type' => AnimeNameType::English, 'name' => 'Sousou no Frieren'],
-                ['type' => AnimeNameType::Russian, 'name' => 'Провожающая в последний путь Фрирен'],
-                ['type' => AnimeNameType::Synonym, 'name' => 'Frieren at the Funeral'],
-                ['type' => AnimeNameType::Synonym, 'name' => "Frieren: Beyond Journey's End"],
+                ['locale' => 'ja', 'role' => AnimeNameRole::Official, 'name' => '葬送のフリーレン'],
+                ['locale' => 'en', 'role' => AnimeNameRole::Official, 'name' => 'Sousou no Frieren'],
+                ['locale' => 'ru', 'role' => AnimeNameRole::Official, 'name' => 'Провожающая в последний путь Фрирен'],
+                ['locale' => null, 'role' => AnimeNameRole::Synonym, 'name' => 'Frieren at the Funeral'],
+                ['locale' => null, 'role' => AnimeNameRole::Synonym, 'name' => "Frieren: Beyond Journey's End"],
             ],
             'sources' => [
                 'https://myanimelist.net/anime/52991/Sousou_no_Frieren',
@@ -272,10 +272,10 @@ class SampleAnimeSeeder
             'demographic' => Demographic::Seinen,
             'cover' => 'one-punch-man.webp',
             'altNames' => [
-                ['type' => AnimeNameType::Original, 'name' => 'ワンパンマン'],
-                ['type' => AnimeNameType::English, 'name' => 'One Punch Man'],
-                ['type' => AnimeNameType::Russian, 'name' => 'Ванпанчмен'],
-                ['type' => AnimeNameType::Synonym, 'name' => 'OPM'],
+                ['locale' => 'ja', 'role' => AnimeNameRole::Official, 'name' => 'ワンパンマン'],
+                ['locale' => 'en', 'role' => AnimeNameRole::Official, 'name' => 'One Punch Man'],
+                ['locale' => 'ru', 'role' => AnimeNameRole::Official, 'name' => 'Ванпанчмен'],
+                ['locale' => null, 'role' => AnimeNameRole::Short, 'name' => 'OPM'],
             ],
             'sources' => [
                 'https://myanimelist.net/anime/30276/One_Punch_Man',
@@ -307,12 +307,14 @@ class SampleAnimeSeeder
             'demographic' => null,
             'cover' => 'solo-leveling.webp',
             'altNames' => [
-                ['type' => AnimeNameType::Original, 'name' => '俺だけレベルアップな件'],
-                ['type' => AnimeNameType::English, 'name' => 'Solo Leveling'],
-                ['type' => AnimeNameType::Russian, 'name' => 'Поднятие уровня в одиночку'],
-                ['type' => AnimeNameType::Synonym, 'name' => 'Na Honjaman Level Up'],
-                ['type' => AnimeNameType::Synonym, 'name' => '나 혼자만 레벨업'],
-                ['type' => AnimeNameType::Synonym, 'name' => 'I Level Up Alone'],
+                ['locale' => 'ja', 'role' => AnimeNameRole::Official, 'name' => '俺だけレベルアップな件'],
+                ['locale' => 'en', 'role' => AnimeNameRole::Official, 'name' => 'Solo Leveling'],
+                ['locale' => 'ru', 'role' => AnimeNameRole::Official, 'name' => 'Поднятие уровня в одиночку'],
+                ['locale' => null, 'role' => AnimeNameRole::Synonym, 'name' => 'Na Honjaman Level Up'],
+                // The Korean webtoon's own official title (unlike the romanization above): the
+                // old mixed enum could only express this as a synonym, see issue #724.
+                ['locale' => 'ko', 'role' => AnimeNameRole::Official, 'name' => '나 혼자만 레벨업'],
+                ['locale' => null, 'role' => AnimeNameRole::Synonym, 'name' => 'I Level Up Alone'],
             ],
             'sources' => [
                 'https://myanimelist.net/anime/52299/Ore_dake_Level_Up_na_Ken',
@@ -383,8 +385,8 @@ class SampleAnimeSeeder
     }
 
     /**
-     * @param array{title: string, type: AnimeType, episodesCount: ?int, durationMinutes: ?int, studios: list<string>, genres: list<GenreCode>, themes: list<ThemeCode>, demographic: ?Demographic, cover: string, altNames: list<array{type: AnimeNameType, name: string}>, sources: list<string>, datePremiere: string, dateEnd: string, countries: list<string>, descriptions: array<string, string>} $sample
-     * @param list<Studio>                                                                                                                                                                                                                                                                                                                                                                               $studios
+     * @param array{title: string, type: AnimeType, episodesCount: ?int, durationMinutes: ?int, studios: list<string>, genres: list<GenreCode>, themes: list<ThemeCode>, demographic: ?Demographic, cover: string, altNames: list<array{locale: ?string, role: AnimeNameRole, name: string}>, sources: list<string>, datePremiere: string, dateEnd: string, countries: list<string>, descriptions: array<string, string>} $sample
+     * @param list<Studio>                                                                                                                                                                                                                                                                                                                                                                                                $studios
      */
     private function buildAnime(array $sample, array $studios): Anime
     {
@@ -419,7 +421,7 @@ class SampleAnimeSeeder
         $anime->setDemographic($sample['demographic']);
 
         foreach ($sample['altNames'] as $altName) {
-            $anime->addName($altName['name'], $altName['type']);
+            $anime->addName($altName['name'], $altName['locale'], $altName['role']);
         }
 
         foreach ($sample['sources'] as $url) {

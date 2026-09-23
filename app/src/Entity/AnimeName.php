@@ -27,12 +27,17 @@ declare(strict_types=1);
 
 namespace App\Entity;
 
-use App\Entity\Enum\AnimeNameType;
+use App\Entity\Enum\AnimeNameRole;
 use Doctrine\ORM\Mapping as ORM;
 
 /**
  * Physical table name is "anime_name" (singular), not "name", to avoid
  * ambiguity with the anime.title column and the generic word "name".
+ *
+ * Carries language and role as two independent axes (issue #724) rather than the single
+ * mixed AnimeNameType enum it replaces: $locale says what language the name is in (or null,
+ * a normal value for an untyped synonym), $role says what the name is for (official title,
+ * synonym, short form) — an official title and a synonym can both exist in the same locale.
  */
 #[ORM\Entity]
 #[ORM\Table(name: 'anime_name')]
@@ -52,14 +57,19 @@ class AnimeName
     #[ORM\Column(length: 256)]
     public readonly string $normalizedName;
 
-    #[ORM\Column(length: 16, enumType: AnimeNameType::class)]
-    public readonly AnimeNameType $type;
+    /** LocaleNormalizer::normalize($locale), computed once here since $locale is readonly. */
+    #[ORM\Column(length: 16, nullable: true)]
+    public readonly ?string $locale;
 
-    public function __construct(Anime $anime, string $name, AnimeNameType $type)
+    #[ORM\Column(length: 16, enumType: AnimeNameRole::class)]
+    public readonly AnimeNameRole $role;
+
+    public function __construct(Anime $anime, string $name, ?string $locale, AnimeNameRole $role)
     {
         $this->anime = $anime;
         $this->name = $name;
         $this->normalizedName = NameNormalizer::normalize($name);
-        $this->type = $type;
+        $this->locale = LocaleNormalizer::normalize($locale);
+        $this->role = $role;
     }
 }

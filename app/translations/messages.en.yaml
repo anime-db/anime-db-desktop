@@ -94,11 +94,10 @@ watch_status:
     dropped: Dropped
     on_hold: On Hold
 
-anime_name_type:
-    original: Original
-    english: English
-    russian: Russian
+anime_name_role:
+    official: Official
     synonym: Synonym
+    short: Short
 
 storage_type:
     folder: Folder

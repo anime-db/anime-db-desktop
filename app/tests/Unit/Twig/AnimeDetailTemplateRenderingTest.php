@@ -55,7 +55,7 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
             'studios' => [['id' => 7, 'name' => 'MAPPA']],
             'countries' => ['JP'],
             'storage' => ['name' => 'Local', 'type' => 'folder', 'path' => '/anime/aot', 'path_available' => true],
-            'names' => [['name' => '進撃の巨人', 'type' => 'original']],
+            'names' => [['name' => '進撃の巨人', 'locale' => 'ja', 'role' => 'official']],
             'genres' => ['action', 'drama'],
             'themes' => ['military'],
             'demographic' => 'shounen',

@@ -28,16 +28,18 @@ declare(strict_types=1);
 namespace App\Service\Plugin\Filler;
 
 use AnimeDb\PluginContracts\Filler\PluginAnimeData;
+use AnimeDb\PluginContracts\Model\AnimeName as ContractsAnimeName;
 use AnimeDb\PluginContracts\Model\Demographic as ContractsDemographic;
 use AnimeDb\PluginContracts\Model\GenreCode as ContractsGenreCode;
 use AnimeDb\PluginContracts\Model\ThemeCode as ContractsThemeCode;
 use App\Entity\Anime;
 use App\Entity\AnimeImage;
 use App\Entity\AnimeName;
-use App\Entity\Enum\AnimeNameType;
+use App\Entity\Enum\AnimeNameRole;
 use App\Entity\Enum\Demographic;
 use App\Entity\Enum\GenreCode;
 use App\Entity\Enum\ThemeCode;
+use App\Entity\LocaleNormalizer;
 use App\Entity\NameNormalizer;
 use App\Entity\SeriesAnime;
 use App\Entity\Studio;
@@ -125,17 +127,48 @@ final class PluginAnimeDataMerger
         return $unapplied;
     }
 
-    /** @param string[] $names */
+    /**
+     * Dedup key is (normalizedName, locale) — issue #724: two names with the same text but
+     * different locales coexist (e.g. an official title with one per language). A catalog row
+     * that already has a locale is never touched; one whose locale is still null yields to an
+     * incoming pair carrying a non-null locale for the same text, on the theory that "unknown
+     * language" is strictly less specific than "known language" and the filler is the one place
+     * that can self-heal a locale nobody had typed yet.
+     *
+     * @param ContractsAnimeName[] $names
+     */
     private function applyAlternativeNames(Anime $anime, array $names): void
     {
-        $existing = array_map(static fn (AnimeName $name): string => $name->normalizedName, $anime->getNames()->toArray());
+        /** @var array<string, array<string, AnimeName>> $existingByKey normalizedName => (locale ?? '') => AnimeName */
+        $existingByKey = [];
+        foreach ($anime->getNames() as $existingName) {
+            $existingByKey[$existingName->normalizedName][$existingName->locale ?? ''] ??= $existingName;
+        }
 
-        foreach ($names as $name) {
-            $normalized = NameNormalizer::normalize($name);
-            if (!\in_array($normalized, $existing, true)) {
-                $anime->addName($name, AnimeNameType::Synonym);
-                $existing[] = $normalized;
+        /** @var array<string, true> $seenInThisBatch */
+        $seenInThisBatch = [];
+
+        foreach ($names as $incoming) {
+            $locale = LocaleNormalizer::normalize($incoming->locale);
+            $normalizedName = NameNormalizer::normalize($incoming->name);
+            $key = $locale ?? '';
+            $batchKey = $normalizedName."\0".$key;
+
+            if (isset($seenInThisBatch[$batchKey])) {
+                continue;
             }
+            $seenInThisBatch[$batchKey] = true;
+
+            if (isset($existingByKey[$normalizedName][$key])) {
+                continue;
+            }
+
+            if ($locale !== null && isset($existingByKey[$normalizedName][''])) {
+                $anime->removeName($existingByKey[$normalizedName]['']);
+                unset($existingByKey[$normalizedName]['']);
+            }
+
+            $anime->addName($incoming->name, $locale, AnimeNameRole::from($incoming->role->value));
         }
     }
 

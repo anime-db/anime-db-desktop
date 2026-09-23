@@ -28,7 +28,7 @@ declare(strict_types=1);
 namespace App\Entity;
 
 use AnimeDb\PluginContracts\ExternalIdResolutionInterface;
-use App\Entity\Enum\AnimeNameType;
+use App\Entity\Enum\AnimeNameRole;
 use App\Entity\Enum\AnimeType;
 use App\Entity\Enum\Demographic;
 use App\Entity\Enum\GenreCode;
@@ -501,7 +501,7 @@ abstract class Anime implements AggregateRootInterface
         }
 
         foreach ($this->getNames() as $name) {
-            $target->addName($name->name, $name->type);
+            $target->addName($name->name, $name->locale, $name->role);
         }
 
         foreach ($this->getImages() as $image) {
@@ -856,9 +856,9 @@ abstract class Anime implements AggregateRootInterface
         return $this->names;
     }
 
-    public function addName(string $name, AnimeNameType $type): self
+    public function addName(string $name, ?string $locale, AnimeNameRole $role): self
     {
-        $this->names->add(new AnimeName($this, $name, $type));
+        $this->names->add(new AnimeName($this, $name, $locale, $role));
 
         return $this;
     }

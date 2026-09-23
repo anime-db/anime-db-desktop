@@ -37,7 +37,7 @@ use App\Entity\AnimePluginData;
 use App\Entity\AnimeSource;
 use App\Entity\AnimeSyncState;
 use App\Entity\AnimeTheme;
-use App\Entity\Enum\AnimeNameType;
+use App\Entity\Enum\AnimeNameRole;
 use App\Entity\Enum\AnimeType;
 use App\Entity\Enum\Demographic;
 use App\Entity\Enum\GenreCode;
@@ -229,7 +229,7 @@ final class AnimeTypeMigratorPersistenceTest extends TestCase
             ->setDemographic(Demographic::Shounen)
             ->addStudio($studio)
             ->addLabel($label)
-            ->addName('Trigun', AnimeNameType::English)
+            ->addName('Trigun', 'en', AnimeNameRole::Official)
             ->addImage('images/frame1.jpg')
             ->addSource('https://shikimori.one/animes/1');
 
