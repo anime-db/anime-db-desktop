@@ -221,6 +221,19 @@ function loadAnimeListModule() {
     });
 }
 
+// Same five modules as loadAnimeListModule() above, but required in the exact reverse of the
+// <script> order in list.html.twig — anime-list.js first, the four helpers after. Used to prove
+// the catalog's init() no longer depends on that order (issue #729).
+function loadAnimeListModuleReversed() {
+    jest.isolateModules(() => {
+        require('../../app/public/js/anime-list.js');
+        require('../../app/public/js/anime-list-filters.js');
+        require('../../app/public/js/anime-list-filter-render.js');
+        require('../../app/public/js/anime-list-grid.js');
+        require('../../app/public/js/anime-list-query.js');
+    });
+}
+
 function cardTitles(grid) {
     return Array.from(grid.querySelectorAll('.anime-card__title')).map((node) => node.textContent);
 }
@@ -799,6 +812,36 @@ function emptyFacets() {
         labels: [], genres: [], themes: [], studios: [],
     });
 }
+
+// Simulates the real <script> tags executing before DOMContentLoaded (they sit at the end of
+// <body>, so document.readyState is 'loading' at that point) — a plain call to loadAnimeListModule()
+// in this test file cannot do that, since jsdom's own document is already 'complete' by the time
+// test code runs (see the readyState check in anime-list.js). Without that check, this scenario is
+// exactly the order-dependent bug from issue #729: with the helper modules loaded after
+// anime-list.js, its former immediate init() call would throw on window.AnimeListGrid etc. being
+// undefined; this test instead proves init() only runs once every module has registered and
+// DOMContentLoaded fires.
+test('the catalog initializes correctly even when its five modules load in the reverse of the template order (issue #729)', async () => {
+    const readyStateSpy = jest.spyOn(document, 'readyState', 'get').mockReturnValue('loading');
+    window.history.replaceState({}, '', '/anime?labels=7');
+    const calls = mockFetchQueueAll();
+    setUpTranslations();
+
+    loadAnimeListModuleReversed();
+    expect(calls).toHaveLength(0);
+
+    readyStateSpy.mockRestore();
+    document.dispatchEvent(new Event('DOMContentLoaded'));
+    await flushMicrotasks();
+
+    // The grid's request fired (AnimeListGrid.init() ran), the address bar's ?labels=7 seeded the
+    // filter panel's chip row (AnimeListFilterPanel.init()/seedFromUrl() ran), and the list request
+    // itself carries that seeded filter (AnimeListQuery.buildListQuery() ran).
+    expect(byKind(calls, 'list')).toHaveLength(1);
+    expect(byKind(calls, 'facets')).toHaveLength(1);
+    expect(queryParams(byKind(calls, 'list')[0].url)['labels[]']).toBe('7');
+    expect(document.querySelectorAll('.anime-list__chip-label')).toHaveLength(1);
+});
 
 test('initializing the catalog fires exactly two requests: GET /anime and GET /anime/facets', async () => {
     const calls = mockFetchQueueAll();
