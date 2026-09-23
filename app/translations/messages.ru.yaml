@@ -435,6 +435,7 @@ storage_list:
 
 anime_detail:
     title: '%title% — AnimeDB'
+    back_link: ← Каталог
     editable_heading: Управление
     field_summary: Описание
     reference_heading: Справочная информация

@@ -23,9 +23,17 @@
 
 const handlers = {};
 
+const mockNavigationHistory = {
+    canGoBack: jest.fn(() => false),
+    goBack: jest.fn(),
+    canGoForward: jest.fn(() => false),
+    goForward: jest.fn(),
+};
+
 const mockWebContents = {
     on: jest.fn((event, handler) => { handlers[event] = handler; }),
     setWindowOpenHandler: jest.fn((handler) => { handlers.windowOpen = handler; }),
+    navigationHistory: mockNavigationHistory,
 };
 
 let mockWorkAreaSize = { width: 1920, height: 1080 };
@@ -48,6 +56,8 @@ const PORT = 8123;
 
 beforeEach(() => {
     jest.clearAllMocks();
+    mockNavigationHistory.canGoBack.mockReturnValue(false);
+    mockNavigationHistory.canGoForward.mockReturnValue(false);
     mockWorkAreaSize = { width: 1920, height: 1080 };
     createWindow(PORT);
 });
@@ -155,4 +165,101 @@ test('a new window request for an smb: URL is denied without opening the system 
 
     expect(shell.openExternal).not.toHaveBeenCalled();
     expect(result).toEqual({ action: 'deny' });
+});
+
+test('the browser-backward mouse button goes back when there is history to go back to', () => {
+    mockNavigationHistory.canGoBack.mockReturnValue(true);
+
+    handlers['app-command']({}, 'browser-backward');
+
+    expect(mockNavigationHistory.goBack).toHaveBeenCalledTimes(1);
+});
+
+test('the browser-backward mouse button does nothing when there is no history to go back to', () => {
+    handlers['app-command']({}, 'browser-backward');
+
+    expect(mockNavigationHistory.goBack).not.toHaveBeenCalled();
+});
+
+test('the browser-forward mouse button goes forward when there is history to go forward to', () => {
+    mockNavigationHistory.canGoForward.mockReturnValue(true);
+
+    handlers['app-command']({}, 'browser-forward');
+
+    expect(mockNavigationHistory.goForward).toHaveBeenCalledTimes(1);
+});
+
+test('the browser-forward mouse button does nothing when there is no history to go forward to', () => {
+    handlers['app-command']({}, 'browser-forward');
+
+    expect(mockNavigationHistory.goForward).not.toHaveBeenCalled();
+});
+
+test('an unrelated app-command is ignored', () => {
+    mockNavigationHistory.canGoBack.mockReturnValue(true);
+    mockNavigationHistory.canGoForward.mockReturnValue(true);
+
+    handlers['app-command']({}, 'media-play-pause');
+
+    expect(mockNavigationHistory.goBack).not.toHaveBeenCalled();
+    expect(mockNavigationHistory.goForward).not.toHaveBeenCalled();
+});
+
+test('Alt+Left goes back when there is history to go back to', () => {
+    mockNavigationHistory.canGoBack.mockReturnValue(true);
+    const event = { preventDefault: jest.fn() };
+
+    handlers['before-input-event'](event, { type: 'keyDown', key: 'ArrowLeft', alt: true, control: false, meta: false, shift: false });
+
+    expect(event.preventDefault).toHaveBeenCalled();
+    expect(mockNavigationHistory.goBack).toHaveBeenCalledTimes(1);
+});
+
+test('Alt+Left does nothing when there is no history to go back to', () => {
+    const event = { preventDefault: jest.fn() };
+
+    handlers['before-input-event'](event, { type: 'keyDown', key: 'ArrowLeft', alt: true, control: false, meta: false, shift: false });
+
+    expect(event.preventDefault).not.toHaveBeenCalled();
+    expect(mockNavigationHistory.goBack).not.toHaveBeenCalled();
+});
+
+test('Alt+Right goes forward when there is history to go forward to', () => {
+    mockNavigationHistory.canGoForward.mockReturnValue(true);
+    const event = { preventDefault: jest.fn() };
+
+    handlers['before-input-event'](event, { type: 'keyDown', key: 'ArrowRight', alt: true, control: false, meta: false, shift: false });
+
+    expect(event.preventDefault).toHaveBeenCalled();
+    expect(mockNavigationHistory.goForward).toHaveBeenCalledTimes(1);
+});
+
+test('ArrowLeft without Alt is left untouched', () => {
+    mockNavigationHistory.canGoBack.mockReturnValue(true);
+    const event = { preventDefault: jest.fn() };
+
+    handlers['before-input-event'](event, { type: 'keyDown', key: 'ArrowLeft', alt: false, control: false, meta: false, shift: false });
+
+    expect(event.preventDefault).not.toHaveBeenCalled();
+    expect(mockNavigationHistory.goBack).not.toHaveBeenCalled();
+});
+
+test('Alt+Left on keyUp is ignored, since the navigation already happened on keyDown', () => {
+    mockNavigationHistory.canGoBack.mockReturnValue(true);
+    const event = { preventDefault: jest.fn() };
+
+    handlers['before-input-event'](event, { type: 'keyUp', key: 'ArrowLeft', alt: true, control: false, meta: false, shift: false });
+
+    expect(event.preventDefault).not.toHaveBeenCalled();
+    expect(mockNavigationHistory.goBack).not.toHaveBeenCalled();
+});
+
+test('Ctrl+Alt+Left is left untouched, since it collides with other shortcuts on some layouts', () => {
+    mockNavigationHistory.canGoBack.mockReturnValue(true);
+    const event = { preventDefault: jest.fn() };
+
+    handlers['before-input-event'](event, { type: 'keyDown', key: 'ArrowLeft', alt: true, control: true, meta: false, shift: false });
+
+    expect(event.preventDefault).not.toHaveBeenCalled();
+    expect(mockNavigationHistory.goBack).not.toHaveBeenCalled();
 });

@@ -248,3 +248,22 @@
         });
     });
 })();
+
+// The "← Catalog" link (issue #719). The catalog itself writes its filters/sort/search into its
+// own URL and reads them back from that same URL on load (issue #713), so a real back navigation
+// through browser history reopens it exactly as it was left - no state needs to be carried here.
+// history.length > 1 is the only reliable signal this page has that such an entry exists: the app
+// always opens on the catalog (native/window/index.js), so an anime page reached any other way
+// has nothing to go back to, and the link's plain href to the catalog root is the correct
+// fallback for that case.
+(function () {
+    const link = document.querySelector('[data-catalog-back-link]');
+    if (!link || window.history.length <= 1) {
+        return;
+    }
+
+    link.addEventListener('click', (event) => {
+        event.preventDefault();
+        window.history.back();
+    });
+})();
