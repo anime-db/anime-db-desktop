@@ -117,19 +117,7 @@
 
             {{ include('anime/_gallery.html.twig', {anime: anime, fillable_fields: fillable_fields}) }}
 
-            {% for widget in widgets %}
-                {# Async-loaded plugin widget (issue #212): the placeholder loads independently
-                 # via HTMX right after the page appears, so a slow or failing plugin never
-                 # blocks the rest of the detail page. #}
-                <section>
-                    <div
-                        class="plugin-widget"
-                        hx-get="{{ path('plugin_widget', {pluginId: widget.pluginId, widgetName: widget.widgetName, entryId: anime.id}) }}"
-                        hx-trigger="load"
-                        hx-swap="innerHTML"
-                    >{{ 'plugin_widget.loading'|trans }}</div>
-                </section>
-            {% endfor %}
+            {{ include('plugin/_widget_slots.html.twig', {widgets: widgets, entryId: anime.id}) }}
         </div>
     </main>
 {% endblock %}

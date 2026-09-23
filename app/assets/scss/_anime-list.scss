@@ -101,6 +101,16 @@
     min-width: 0;
 }
 
+// Catalog widget slots (issue #720): laid out in a row that wraps rather than a vertical stack,
+// since WidgetActiveTrait::HARD_LIMIT allows up to 5 active widgets at once — stacked, they
+// could push the grid itself off-screen.
+.anime-list__widgets {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 12px 0;
+}
+
 .anime-list__chips {
     display: flex;
     flex-wrap: wrap;

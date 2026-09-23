@@ -431,28 +431,3 @@
     color: var(--bs-secondary-color);
     font-size: 0.85em;
 }
-
-.plugin-widget {
-    min-height: 1.5em;
-    color: var(--bs-secondary-color);
-}
-
-.plugin-widget--error {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.plugin-widget__error-text {
-    margin: 0;
-    color: var(--bs-danger-text-emphasis);
-}
-
-.plugin-widget__list {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-    gap: 16px;
-    margin: 0;
-    padding: 0;
-    list-style: none;
-}

@@ -161,6 +161,34 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
         $this->assertStringContainsString('app-media://anime/1/screenshot_1720273812345.webp', $html);
     }
 
+    /**
+     * Issue #720: anime/show.html.twig now delegates its widget slots to the same
+     * plugin/_widget_slots.html.twig partial anime/list.html.twig uses for catalog widgets — this
+     * pins that the entry-widget side of that partial still carries `entryId` (see
+     * WidgetSlotsTemplateRenderingTest for the partial's own coverage of both branches, and
+     * AnimeListTemplateRenderingTest for the catalog-widget side omitting it).
+     */
+    public function testShowRendersAWidgetSlotWithTheAnimeIdAsEntryId(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession('/anime/1');
+
+        /** @var LocaleSwitcher $localeSwitcher */
+        $localeSwitcher = self::getContainer()->get(LocaleSwitcher::class);
+        $localeSwitcher->setLocale('ru');
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('anime/show.html.twig', [
+            'anime' => $this->fullyPopulatedAnime(),
+            'widgets' => [['pluginId' => 'animedb-shikimori', 'widgetName' => 'related']],
+            'plugins_ui' => [],
+            'fillable_fields' => $this->emptyFillableFields(),
+        ]);
+
+        $this->assertStringContainsString('hx-get="/plugin/animedb-shikimori/widget/related?entryId=1"', $html);
+    }
+
     public function testShowRendersAnimeWithoutOptionalFieldsWithoutErrors(): void
     {
         self::bootKernel();

@@ -76,6 +76,12 @@
 
         <div class="anime-list__layout">
             <div class="anime-list__main">
+                {% if widgets is not empty %}
+                    <div class="anime-list__widgets">
+                        {{ include('plugin/_widget_slots.html.twig', {widgets: widgets}) }}
+                    </div>
+                {% endif %}
+
                 <div class="anime-list__chips sticky-top" id="anime-list-chips">
                     <ul class="anime-list__chip-list" id="anime-list-chip-list"></ul>
                     <span class="anime-list__chips-shown" id="anime-list-chips-shown"></span>
