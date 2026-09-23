@@ -101,14 +101,23 @@
     min-width: 0;
 }
 
-// Catalog widget slots (issue #720): laid out in a row that wraps rather than a vertical stack,
-// since WidgetActiveTrait::HARD_LIMIT allows up to 5 active widgets at once — stacked, they
-// could push the grid itself off-screen.
+// Catalog widget slots (issue #720): laid out as a grid that wraps into columns rather than a
+// vertical stack, since WidgetActiveTrait::HARD_LIMIT allows up to 5 active widgets at once —
+// stacked, they could push the grid itself off-screen. Grid (not flex) gives each slot an
+// explicit width, so the widget's own internal `repeat(auto-fill, minmax(160px, 1fr))` grid
+// gets a real basis to fill instead of collapsing to its content's min width.
 .anime-list__widgets {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
     gap: 12px;
     padding: 12px 0;
+}
+
+// Caps a single widget's height so a long list (up to WidgetActiveTrait::HARD_LIMIT items) can't
+// push the anime grid itself off-screen; overflow scrolls within the slot instead.
+.anime-list__widgets > section {
+    max-height: 320px;
+    overflow: auto;
 }
 
 .anime-list__chips {
