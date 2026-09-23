@@ -210,9 +210,17 @@
         refreshShownCount(catalogue);
     }
 
-    // Seeds appliedFilters/pendingFilters from the address bar (issue #697) using the pure parse
-    // layer in window.AnimeListQuery. Read-only: nothing is ever written back to the URL here.
-    function seedFromUrl(urlParams) {
+    // Seeds appliedFilters/pendingFilters from the address bar — at init (issue #697) and, since
+    // the catalog now writes its own state back to the URL (issue #713), on every same-document
+    // "back"/"forward" via the list core's popstate handler too. This function itself never writes
+    // to the URL; the caller decides whether the state it reads back out is worth persisting.
+    //
+    // `forceRefresh` covers the popstate case: the init call only redraws the chip row when the
+    // freshly parsed state is non-empty (issue #676 review) because an empty row is already what
+    // the page's initial markup shows — nothing to redraw. A popstate re-seed can go from a
+    // filtered state back to an empty one, which the caller must force through instead, or the chip
+    // row/badge from the state being left would linger after the URL that produced it is gone.
+    function seedFromUrl(urlParams, { forceRefresh = false } = {}) {
         appliedFilters.watch_status = window.AnimeListQuery.parseEnumSectionSet(urlParams, 'watch_status');
         appliedFilters.type = window.AnimeListQuery.parseEnumSectionSet(urlParams, 'type');
         appliedFilters.genres = window.AnimeListQuery.parseEnumSectionSet(urlParams, 'genres');
@@ -223,10 +231,7 @@
         appliedFilters.date_premiere = window.AnimeListQuery.parseDatePremiereFilter(urlParams);
         pendingFilters = cloneFilters(appliedFilters);
 
-        if (!isFiltersEmpty(appliedFilters)) {
-            // Draws the chip/badge/reset button right away (issue #676 review) instead of leaving
-            // them dependent on the first facets response, which is a separate, abortable network
-            // round-trip that can fail independently of this seeding.
+        if (forceRefresh || !isFiltersEmpty(appliedFilters)) {
             refreshChips();
         }
     }

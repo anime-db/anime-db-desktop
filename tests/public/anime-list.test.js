@@ -247,6 +247,10 @@ afterEach(() => {
     delete global.IntersectionObserver;
     delete window.AppTranslations;
     window.history.replaceState({}, '', '/');
+    // jest.spyOn() on window.history.pushState/replaceState (issue #713's tests) returns the same
+    // mock on a second spy of an already-spied method instead of a fresh one — without restoring
+    // here, a later test's "fresh" spy would inherit an earlier test's call history.
+    jest.restoreAllMocks();
 });
 
 test('cards render even when the translations catalogue fails to load', async () => {
@@ -1298,9 +1302,214 @@ test('a ?sort= value containing characters invalid in a CSS attribute selector d
     expect(queryParams(byKind(calls, 'list')[0].url).sort).toBe('date_update');
 });
 
-test('window.location.search is never written to after a filter change seeded from the URL', async () => {
+// Issue #713 replaces the old "window.location.search is never written to..." contract above with
+// the opposite one: the catalog now keeps the address bar in sync with its own state, so it
+// survives a card navigation and back. The tests below cover, in order: nothing is written before
+// the first user action; a filter/sort change pushes a new history entry; a search keystroke
+// replaces the last one instead of piling up; a same-document popstate reseeds state without
+// writing history itself; and a URL the module wrote re-parses to the same state on a fresh load
+// (the card-navigate-and-return path, since anime cards are real <a href> links and "back" from
+// one is a full navigation, not something this module intercepts).
+
+test('opening /anime with no params does not write to window.location.search until the first user action (issue #713)', async () => {
+    const calls = mockFetchQueueAll();
+    setUpTranslations();
+    const pushSpy = jest.spyOn(window.history, 'pushState');
+    const replaceSpy = jest.spyOn(window.history, 'replaceState');
+
+    loadAnimeListModule();
+    await flushMicrotasks();
+    byKind(calls, 'list')[0].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 0, limit: 6, offset: 0 }));
+    byKind(calls, 'facets')[0].resolve(emptyFacets());
+    await flushMicrotasks();
+
+    expect(window.location.search).toBe('');
+    expect(pushSpy).not.toHaveBeenCalled();
+    expect(replaceSpy).not.toHaveBeenCalled();
+});
+
+test('applying a filter seeded from the URL pushes the merged state back to window.location.search', async () => {
     window.history.replaceState({}, '', '/anime?watch_status[]=watching');
     const calls = mockFetchQueueAll();
+    setUpTranslations();
+    const pushSpy = jest.spyOn(window.history, 'pushState');
+
+    loadAnimeListModule();
+    await flushMicrotasks();
+    byKind(calls, 'list')[0].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 0, limit: 6, offset: 0 }));
+    byKind(calls, 'facets')[0].resolve(jsonResponse({
+        watch_status: [{ value: 'watching', count: 5 }],
+        type: [], date_premiere_decade: [], user_rating: [], labels: [], genres: [], themes: [], studios: [],
+    }));
+    await flushMicrotasks();
+
+    // Nothing written yet — the URL is exactly what the page opened with (issue #713's "first
+    // load must not append anything" requirement).
+    expect(window.location.search).toBe('?watch_status[]=watching');
+    expect(pushSpy).not.toHaveBeenCalled();
+
+    document.querySelector('[data-filter-section="watch_status"] .anime-list__filter-value-name')
+        .dispatchEvent(new Event('click', { bubbles: true }));
+    await flushMicrotasks();
+
+    // A filter apply/remove/reset uses pushState, not replaceState (issue #713): it is a single
+    // discrete action, so "back" should undo it one step at a time, same as a card navigation does.
+    expect(pushSpy).toHaveBeenCalledTimes(1);
+    const written = new URLSearchParams(window.location.search);
+    expect(written.get('sort')).toBe('date_update');
+    expect(written.get('direction')).toBe('desc');
+    expect(written.getAll('watch_status[]')).toEqual(['watching']);
+});
+
+test('a sort change pushes state; removing the last chip and "reset all" push state too', async () => {
+    const calls = mockFetchQueueAll();
+    setUpTranslations();
+    const pushSpy = jest.spyOn(window.history, 'pushState');
+
+    loadAnimeListModule();
+    await flushMicrotasks();
+    await applyWatchingFilter(calls);
+    pushSpy.mockClear();
+
+    dispatchClick(document.querySelector('[data-sort-field="name"]'));
+    await flushMicrotasks();
+    expect(pushSpy).toHaveBeenCalledTimes(1);
+    expect(new URLSearchParams(window.location.search).get('sort')).toBe('name');
+    byKind(calls, 'list')[2].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 0, limit: 6, offset: 0 }));
+    await flushMicrotasks();
+    pushSpy.mockClear();
+
+    // The direction toggle is its own branch in setupSortControls() alongside the field click
+    // above, and must push state exactly like the field click does (issue #717 review).
+    dispatchClick(document.getElementById('anime-list-sort-direction'));
+    await flushMicrotasks();
+    expect(pushSpy).toHaveBeenCalledTimes(1);
+    expect(new URLSearchParams(window.location.search).get('direction')).toBe('asc');
+    byKind(calls, 'list')[3].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 0, limit: 6, offset: 0 }));
+    await flushMicrotasks();
+    pushSpy.mockClear();
+
+    document.querySelector('.anime-list__chip-remove').dispatchEvent(new Event('click', { bubbles: true }));
+    await flushMicrotasks();
+    expect(pushSpy).toHaveBeenCalledTimes(1);
+    // The filter is gone, but the sort choice pushed just above must survive the chip removal.
+    expect(new URLSearchParams(window.location.search).getAll('watch_status[]')).toEqual([]);
+    expect(new URLSearchParams(window.location.search).get('sort')).toBe('name');
+});
+
+test('typing in the search box replaces window.location.search instead of pushing one entry per keystroke (issue #713)', async () => {
+    const calls = mockFetchQueueAll();
+    setUpTranslations();
+
+    loadAnimeListModule();
+    await flushMicrotasks();
+    byKind(calls, 'list')[0].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 0, limit: 6, offset: 0 }));
+    byKind(calls, 'facets')[0].resolve(emptyFacets());
+    await flushMicrotasks();
+    const pushSpy = jest.spyOn(window.history, 'pushState');
+    const replaceSpy = jest.spyOn(window.history, 'replaceState');
+
+    const searchInput = document.getElementById('anime-list-search');
+    // Each keystroke restarts the 300ms debounce, so nothing fires until it settles once at the end
+    // — the search box's own debounce (issue #199) is the boundary the URL write rides on top of.
+    'gate'.split('').forEach((char) => {
+        searchInput.value += char;
+        searchInput.dispatchEvent(new Event('input'));
+        jest.advanceTimersByTime(100);
+    });
+    jest.advanceTimersByTime(300);
+    await flushMicrotasks();
+
+    expect(pushSpy).not.toHaveBeenCalled();
+    expect(replaceSpy).toHaveBeenCalledTimes(1);
+    expect(new URLSearchParams(window.location.search).get('name')).toBe('gate');
+});
+
+test('a popstate event reseeds filters/search/sort from the new URL, refreshes the list/facets/chips and writes no history itself', async () => {
+    window.history.replaceState({}, '', '/anime?watch_status[]=watching&name=gate&sort=name&direction=asc');
+    const calls = mockFetchQueueAll();
+    setUpTranslations();
+
+    loadAnimeListModule();
+    await flushMicrotasks();
+    byKind(calls, 'list')[0].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 0, limit: 6, offset: 0 }));
+    byKind(calls, 'facets')[0].resolve(jsonResponse({
+        watch_status: [{ value: 'watching', count: 5 }],
+        type: [], date_premiere_decade: [], user_rating: [], labels: [], genres: [], themes: [], studios: [],
+    }));
+    await flushMicrotasks();
+
+    expect(document.querySelectorAll('.anime-list__chip-label')).toHaveLength(1);
+    expect(document.getElementById('anime-list-search').value).toBe('gate');
+    expect(document.querySelector('[data-sort-field="name"]').getAttribute('aria-current')).toBe('true');
+
+    // Simulates the browser landing back on the plain /anime entry that pushUrlState() itself
+    // would have created had this filter/search/sort been applied through the UI instead of
+    // already being on the URL the page opened with — a same-document traversal, which is exactly
+    // when the browser fires popstate (unlike the cross-document card-navigate-and-return path
+    // covered by the round-trip test below).
+    window.history.pushState(null, '', '/anime');
+    const pushSpy = jest.spyOn(window.history, 'pushState');
+    const replaceSpy = jest.spyOn(window.history, 'replaceState');
+
+    window.dispatchEvent(new PopStateEvent('popstate'));
+    await flushMicrotasks();
+
+    expect(pushSpy).not.toHaveBeenCalled();
+    expect(replaceSpy).not.toHaveBeenCalled();
+    expect(document.querySelectorAll('.anime-list__chip-label')).toHaveLength(0);
+    expect(document.getElementById('anime-list-search').value).toBe('');
+    expect(document.querySelector('[data-sort-field="date_update"]').getAttribute('aria-current')).toBe('true');
+    expect(document.querySelector('[data-sort-field="name"]').hasAttribute('aria-current')).toBe(false);
+
+    expect(byKind(calls, 'list')).toHaveLength(2);
+    expect(queryParams(byKind(calls, 'list')[1].url)).toMatchObject({ sort: 'date_update', direction: 'desc' });
+    expect(queryParams(byKind(calls, 'list')[1].url)).not.toHaveProperty('watch_status[]');
+    expect(byKind(calls, 'facets')).toHaveLength(2);
+});
+
+test('a popstate event cancels a pending search debounce instead of letting it fire afterwards (issue #717 review)', async () => {
+    const calls = mockFetchQueueAll();
+    setUpTranslations();
+
+    loadAnimeListModule();
+    await flushMicrotasks();
+    byKind(calls, 'list')[0].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 0, limit: 6, offset: 0 }));
+    byKind(calls, 'facets')[0].resolve(emptyFacets());
+    await flushMicrotasks();
+
+    const searchInput = document.getElementById('anime-list-search');
+    searchInput.value = 'gate';
+    searchInput.dispatchEvent(new Event('input'));
+    // "Back" lands mid-debounce (issue #717 review) — the 300ms timer from the keystroke above is
+    // still pending when popstate fires.
+    jest.advanceTimersByTime(100);
+
+    window.history.pushState(null, '', '/anime');
+    const replaceSpy = jest.spyOn(window.history, 'replaceState');
+
+    window.dispatchEvent(new PopStateEvent('popstate'));
+    await flushMicrotasks();
+
+    byKind(calls, 'list')[1].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 0, limit: 6, offset: 0 }));
+    byKind(calls, 'facets')[1].resolve(emptyFacets());
+    await flushMicrotasks();
+
+    expect(byKind(calls, 'list')).toHaveLength(2);
+    expect(byKind(calls, 'facets')).toHaveLength(2);
+
+    // Without clearTimeout() in handlePopState(), the stale debounce would fire here and cause a
+    // redundant third list/facets request plus a stray replaceState call.
+    jest.advanceTimersByTime(300);
+    await flushMicrotasks();
+
+    expect(byKind(calls, 'list')).toHaveLength(2);
+    expect(byKind(calls, 'facets')).toHaveLength(2);
+    expect(replaceSpy).not.toHaveBeenCalled();
+});
+
+test('a filter selected before navigating to a card round-trips through a fresh load of the URL it wrote', async () => {
+    let calls = mockFetchQueueAll();
     setUpTranslations();
 
     loadAnimeListModule();
@@ -1316,7 +1525,26 @@ test('window.location.search is never written to after a filter change seeded fr
         .dispatchEvent(new Event('click', { bubbles: true }));
     await flushMicrotasks();
 
-    expect(window.location.search).toBe('?watch_status[]=watching');
+    // A card is a real <a href="/anime/{id}"> link (issue #104) — opening one and returning is a
+    // full cross-document navigation this module never intercepts, so "return" means a fresh load
+    // of /anime at whatever URL pushUrlState() left behind, exercised here the same way the
+    // existing read-side tests below drive a fresh load from a hand-built URL.
+    const returnUrl = window.location.pathname + window.location.search;
+
+    jest.resetModules();
+    setUpDom();
+    resizeObserverInstances = mockResizeObserver();
+    window.scrollTo = jest.fn();
+    mockIntersectionObserver();
+    window.history.replaceState({}, '', returnUrl);
+    calls = mockFetchQueueAll();
+    setUpTranslations();
+
+    loadAnimeListModule();
+    await flushMicrotasks();
+
+    expect(queryParams(byKind(calls, 'list')[0].url)['watch_status[]']).toBe('watching');
+    expect(document.querySelectorAll('.anime-list__chip-label')).toHaveLength(1);
 });
 
 test('state built by appendFilterParams() and placed in the URL restores in full on re-parse (round trip)', async () => {

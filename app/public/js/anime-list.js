@@ -28,18 +28,24 @@
 // pendingFilters, lastFacets) lives in window.AnimeListFilterPanel, and request/URL building
 // comes from the DOM-free window.AnimeListQuery.
 (function () {
-    // The catalog reads its full state back out of the address bar once at init — every filter
-    // section, the search box and the sort choice (issue #697) — using the same param shapes
-    // window.AnimeListQuery.appendFilterParams()/buildListQuery() themselves produce, so a link
-    // this page built (a label click on the anime detail page, issue #104, or the panel's own
-    // request) reopens the same state it came from. This is read-only: nothing is ever written
-    // back here, seeding happens once at init in seedFiltersFromUrl() below (issue #666's own
-    // read-only rule).
+    // The catalog keeps the address bar in sync with its own state (issue #713): every filter
+    // change, search keystroke and sort choice is written back via pushUrlState()/replaceUrlState()
+    // below, using the same param shapes window.AnimeListQuery.appendFilterParams()/
+    // buildListQuery() themselves produce. The same URL is read back both at init
+    // (seedFiltersFromUrl(), issue #697) and on a same-document "back"/"forward" via the popstate
+    // handler (handlePopState()), so a link this page built (a label click on the anime detail
+    // page, issue #104, a card navigating to /anime/{id} and back, or the panel's own request)
+    // reopens the same state it came from.
     const urlParams = new URLSearchParams(window.location.search);
     // Debounce the search box (issue #199) so a full request isn't fired on every keystroke —
     // AnimeListController resolves this as "name" against Meilisearch, falling back to the
     // FTS5 quick-filter server-side when it is unavailable.
     const SEARCH_DEBOUNCE_MS = 300;
+    // Seeding (both at init and on popstate) falls back to these once a param is absent from the
+    // URL — sortField/sortDirection below start here too, so the two never drift apart (issue
+    // #713).
+    const DEFAULT_SORT_FIELD = 'date_update';
+    const DEFAULT_SORT_DIRECTION = 'desc';
 
     const errorMessage = document.getElementById('anime-list-error');
     const searchInput = document.getElementById('anime-list-search');
@@ -49,8 +55,8 @@
 
     let searchDebounceTimer = null;
     let searchQuery = '';
-    let sortField = 'date_update';
-    let sortDirection = 'desc';
+    let sortField = DEFAULT_SORT_FIELD;
+    let sortDirection = DEFAULT_SORT_DIRECTION;
     // Guards against the response race (issue #208): a slow scroll-append response arriving
     // after a faster search response would otherwise splice stale cards into the fresh grid.
     let pendingRequest = null;
@@ -206,6 +212,12 @@
                 searchQuery = searchInput.value.trim();
                 loadPage(0, true, true);
                 loadFacets();
+                // replaceState, not pushState (issue #713): the debounce above already collapses a
+                // typed word into one call per pause, but pushState here would still turn every
+                // *paused* keystroke into its own history entry, and "back" could never cleanly
+                // unwind a word typed one debounce-pause at a time. This overwrites the same entry
+                // the previous debounced call already wrote instead.
+                replaceUrlState();
             }, SEARCH_DEBOUNCE_MS);
         });
     }
@@ -246,6 +258,10 @@
                 sortField = fieldButton.dataset.sortField;
                 updateSortFieldButtons();
                 loadPage(0, true, true);
+                // pushState (issue #713): a sort change is a single discrete action, not a stream
+                // of keystrokes, so "back" undoing it one step at a time is the useful behaviour
+                // here — the same reasoning a filter apply/remove/reset gets below.
+                pushUrlState();
 
                 return;
             }
@@ -254,6 +270,7 @@
                 sortDirection = sortDirection === 'desc' ? 'asc' : 'desc';
                 updateSortDirectionButton();
                 loadPage(0, true, true);
+                pushUrlState();
             }
         });
     }
@@ -269,28 +286,67 @@
         return Array.from(sortContainer.querySelectorAll('[data-sort-field]')).map((button) => button.dataset.sortField);
     }
 
-    function seedFiltersFromUrl() {
-        window.AnimeListFilterPanel.seedFromUrl(urlParams);
+    // Reseeds every piece of state this module owns from `params` — a full reset, not just an
+    // overlay of whatever `params` happens to contain, so this is equally correct called once at
+    // init (where every field already starts at its default) and repeatedly from the popstate
+    // handler below (issue #713), where a field present in the *previous* URL but absent from the
+    // new one must fall back to its default rather than keep its old value.
+    function seedFiltersFromUrl(params, { forceRefresh = false } = {}) {
+        window.AnimeListFilterPanel.seedFromUrl(params, { forceRefresh });
 
-        const name = urlParams.get('name');
-        if (name && name.trim() !== '') {
-            searchQuery = name.trim();
-            if (searchInput) {
-                searchInput.value = searchQuery;
-            }
+        const name = params.get('name');
+        searchQuery = name && name.trim() !== '' ? name.trim() : '';
+        if (searchInput) {
+            searchInput.value = searchQuery;
         }
 
-        const sortFieldFromUrl = window.AnimeListQuery.parseSortField(urlParams, knownSortFields());
-        if (sortFieldFromUrl) {
-            sortField = sortFieldFromUrl;
-            updateSortFieldButtons();
-        }
+        const sortFieldFromUrl = window.AnimeListQuery.parseSortField(params, knownSortFields());
+        sortField = sortFieldFromUrl || DEFAULT_SORT_FIELD;
+        updateSortFieldButtons();
 
-        const sortDirectionFromUrl = window.AnimeListQuery.parseSortDirection(urlParams);
-        if (sortDirectionFromUrl) {
-            sortDirection = sortDirectionFromUrl;
-            updateSortDirectionButton();
-        }
+        const sortDirectionFromUrl = window.AnimeListQuery.parseSortDirection(params);
+        sortDirection = sortDirectionFromUrl || DEFAULT_SORT_DIRECTION;
+        updateSortDirectionButton();
+    }
+
+    // The address-bar URL for the catalog's current state (issue #713), built through the pure
+    // window.AnimeListQuery.buildStateQuery() so anything written here re-parses through
+    // seedFiltersFromUrl() above without any param-shape change.
+    function currentStateUrl() {
+        const query = window.AnimeListQuery.buildStateQuery({
+            sortField,
+            sortDirection,
+            searchQuery,
+            filters: window.AnimeListFilterPanel.getAppliedFilters(),
+        });
+
+        return `${window.location.pathname}${query}`;
+    }
+
+    function pushUrlState() {
+        window.history.pushState(null, '', currentStateUrl());
+    }
+
+    function replaceUrlState() {
+        window.history.replaceState(null, '', currentStateUrl());
+    }
+
+    // Reacts to a same-document "back"/"forward" landing on a URL this module itself wrote via
+    // pushUrlState()/replaceUrlState() (issue #713) — a filter/sort/search change from earlier in
+    // this session, not just the once-at-init seeding seedFiltersFromUrl() was originally written
+    // for (issue #697). Reseeds every piece of state and reloads the list/facets, but must never
+    // call pushUrlState()/replaceUrlState() itself: the browser already moved the history pointer,
+    // and writing to it again here would fight that traversal instead of following it.
+    function handlePopState() {
+        // Cancels any in-flight search debounce (issue #717 review): without this, a "back"
+        // landing within SEARCH_DEBOUNCE_MS of the last keystroke lets that stale timer fire after
+        // seedFiltersFromUrl() below already reseeded the state, triggering a redundant
+        // loadPage()/loadFacets()/replaceUrlState() call on top of the one this handler already
+        // makes.
+        clearTimeout(searchDebounceTimer);
+        seedFiltersFromUrl(new URLSearchParams(window.location.search), { forceRefresh: true });
+        loadPage(0, true, true);
+        loadFacets();
     }
 
     function init() {
@@ -301,13 +357,29 @@
             onFiltersChanged: () => {
                 loadPage(0, true, true);
                 loadFacets();
+                // pushState (issue #713): applying/removing a filter or resetting them all is a
+                // single discrete action a user thinks of as one step, same as a sort change above.
+                pushUrlState();
             },
             refreshShownCount: updateShownCount,
         });
 
-        seedFiltersFromUrl();
+        // Seeds every piece of state from the URL the page opened with, but never writes back —
+        // pushUrlState()/replaceUrlState() only ever run from an interactive handler above, so the
+        // page opening at /anime with no params stays exactly that until the first user action
+        // (issue #713).
+        seedFiltersFromUrl(urlParams);
         setupSearchInput();
         setupSortControls();
+        // Tracked on window rather than a module-local variable: this IIFE re-runs in full if the
+        // script tag it lives in is ever included twice on the same page, which would otherwise
+        // leave the previous run's popstate listener attached alongside the new one, doubling every
+        // reload/facets fetch it fires.
+        if (window.__animeListPopStateHandler) {
+            window.removeEventListener('popstate', window.__animeListPopStateHandler);
+        }
+        window.__animeListPopStateHandler = handlePopState;
+        window.addEventListener('popstate', handlePopState);
         window.AnimeListGrid.seedColumnCount();
         loadPage(0, true, true);
         loadFacets();
