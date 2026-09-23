@@ -186,6 +186,29 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
         $this->assertStringContainsString('href="/?studios[]=7"', $html);
     }
 
+    /**
+     * The catalog link (issue #719) must always be present, even with no history to go back to -
+     * anime-detail.js decides at runtime whether a click goes back through history or follows this
+     * href, so the href itself must stay a working plain link to the catalog root.
+     */
+    public function testShowRendersCatalogBackLink(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession('/anime/1');
+
+        /** @var LocaleSwitcher $localeSwitcher */
+        $localeSwitcher = self::getContainer()->get(LocaleSwitcher::class);
+        $localeSwitcher->setLocale('ru');
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('anime/show.html.twig', ['anime' => $this->fullyPopulatedAnime(), 'widgets' => [], 'plugins_ui' => [], 'fillable_fields' => $this->emptyFillableFields()]);
+
+        $this->assertStringContainsString('data-catalog-back-link', $html);
+        $this->assertStringContainsString('href="/"', $html);
+        $this->assertStringContainsString('← Каталог', $html);
+    }
+
     public function testShowRendersAnimeWithoutOptionalFieldsWithoutErrors(): void
     {
         self::bootKernel();

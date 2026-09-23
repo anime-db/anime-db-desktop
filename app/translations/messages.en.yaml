@@ -435,6 +435,7 @@ storage_list:
 
 anime_detail:
     title: '%title% — AnimeDB'
+    back_link: ← Catalog
     editable_heading: Management
     field_summary: Description
     reference_heading: Reference information
