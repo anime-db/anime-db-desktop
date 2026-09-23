@@ -27,6 +27,8 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Controller;
 
+use AnimeDb\PluginContracts\Catalog\AnimeFilesChangedEvent;
+use AnimeDb\PluginContracts\Catalog\FilesChangeReason;
 use App\Controller\AnimeNewController;
 use App\Entity\Anime;
 use App\Entity\Enum\StorageType;
@@ -38,6 +40,7 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 use Symfony\Component\Security\Csrf\CsrfTokenManagerInterface;
+use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 use Twig\Environment;
 
 final class AnimeNewControllerTest extends TestCase
@@ -47,6 +50,7 @@ final class AnimeNewControllerTest extends TestCase
         ?CsrfTokenManagerInterface $csrfTokenManager = null,
         ?UrlGeneratorInterface $urlGenerator = null,
         ?Environment $twig = null,
+        ?EventDispatcherInterface $eventDispatcher = null,
     ): AnimeNewController {
         if ($csrfTokenManager === null) {
             $csrfTokenManager = $this->createStub(CsrfTokenManagerInterface::class);
@@ -63,7 +67,28 @@ final class AnimeNewControllerTest extends TestCase
             $csrfTokenManager,
             $urlGenerator,
             $twig ?? $this->createStub(Environment::class),
+            $eventDispatcher ?? $this->createStub(EventDispatcherInterface::class),
         );
+    }
+
+    /** @return EntityManagerInterface&\PHPUnit\Framework\MockObject\MockObject */
+    private function entityManagerAssigningId(int $id, ?Anime &$persistedAnime): EntityManagerInterface
+    {
+        $entityManager = $this->createMock(EntityManagerInterface::class);
+        $entityManager->expects($this->once())
+            ->method('persist')
+            ->with($this->callback(function (Anime $anime) use (&$persistedAnime): bool {
+                $persistedAnime = $anime;
+
+                return true;
+            }));
+        $entityManager->expects($this->once())
+            ->method('flush')
+            ->willReturnCallback(function () use (&$persistedAnime, $id): void {
+                (new \ReflectionProperty(Anime::class, 'id'))->setValue($persistedAnime, $id);
+            });
+
+        return $entityManager;
     }
 
     public function testNewRendersFormWithDefaultWatchStatusPlan(): void
@@ -104,9 +129,8 @@ final class AnimeNewControllerTest extends TestCase
 
     public function testCreatePersistsAnimeOfTheChosenTypeAndRedirectsToShow(): void
     {
-        $entityManager = $this->createMock(EntityManagerInterface::class);
-        $entityManager->expects($this->once())->method('persist')->with($this->isInstanceOf(Anime::class));
-        $entityManager->expects($this->once())->method('flush');
+        $persistedAnime = null;
+        $entityManager = $this->entityManagerAssigningId(1, $persistedAnime);
 
         $urlGenerator = $this->createMock(UrlGeneratorInterface::class);
         $urlGenerator->expects($this->once())
@@ -132,17 +156,9 @@ final class AnimeNewControllerTest extends TestCase
     {
         $storage = new Storage('Local', \sys_get_temp_dir(), StorageType::Folder);
 
-        $entityManager = $this->createMock(EntityManagerInterface::class);
-        $entityManager->method('find')->with(Storage::class, '3')->willReturn($storage);
-
         $persistedAnime = null;
-        $entityManager->expects($this->once())
-            ->method('persist')
-            ->with($this->callback(function (Anime $anime) use (&$persistedAnime): bool {
-                $persistedAnime = $anime;
-
-                return true;
-            }));
+        $entityManager = $this->entityManagerAssigningId(1, $persistedAnime);
+        $entityManager->method('find')->with(Storage::class, '3')->willReturn($storage);
 
         $controller = $this->createController(entityManager: $entityManager);
         $request = Request::create('/anime/new', 'POST', [
@@ -159,6 +175,32 @@ final class AnimeNewControllerTest extends TestCase
         $this->assertNotNull($persistedAnime);
         $this->assertSame($storage, $persistedAnime->getStorage());
         $this->assertSame('Frieren.mkv', $persistedAnime->getStoragePath());
+    }
+
+    public function testCreateDispatchesAnimeFilesChangedEventWithCreatedReasonAfterFlush(): void
+    {
+        $persistedAnime = null;
+        $entityManager = $this->entityManagerAssigningId(7, $persistedAnime);
+
+        $eventDispatcher = $this->createMock(EventDispatcherInterface::class);
+        $eventDispatcher->expects($this->once())
+            ->method('dispatch')
+            ->with($this->callback(function (AnimeFilesChangedEvent $event): bool {
+                $this->assertSame(7, $event->anime->value);
+                $this->assertSame(FilesChangeReason::Created, $event->reason);
+
+                return true;
+            }));
+
+        $controller = $this->createController(entityManager: $entityManager, eventDispatcher: $eventDispatcher);
+        $request = Request::create('/anime/new', 'POST', [
+            'title' => 'Frieren',
+            'type' => 'tv',
+            'watch_status' => 'plan',
+            '_token' => 'token',
+        ]);
+
+        $controller->create($request);
     }
 
     public function testCreateWithEmptyTitleDoesNotPersistAndReRendersFormWithError(): void

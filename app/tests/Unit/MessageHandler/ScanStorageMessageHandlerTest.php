@@ -27,10 +27,14 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\MessageHandler;
 
+use AnimeDb\PluginContracts\Catalog\AnimeFilesChangedEvent;
+use AnimeDb\PluginContracts\Catalog\FilesChangeReason;
 use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
 use App\Entity\Enum\StorageType;
+use App\Entity\Enum\WatchStatus;
 use App\Entity\Storage;
+use App\Entity\TvAnime;
 use App\Message\ScanStorageMessage;
 use App\MessageHandler\ScanStorageMessageHandler;
 use App\Repository\AnimeRepository;
@@ -59,6 +63,7 @@ use Psr\Log\NullLogger;
 use Symfony\Component\Clock\MockClock;
 use Symfony\Component\Messenger\Exception\UnrecoverableMessageHandlingException;
 use Symfony\Component\Messenger\MessageBusInterface;
+use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
 /**
  * Exercises ScanStorageMessageHandler end to end: real EntityManager/SQLite connection for the
@@ -185,6 +190,51 @@ final class ScanStorageMessageHandlerTest extends TestCase
 
         $this->assertNotNull($storage->getDateUpdate());
         $this->assertJobLockReleased($storageId);
+    }
+
+    public function testDispatchesAnimeFilesChangedEventWithFilesAddedReasonForEachUpdatedItem(): void
+    {
+        $dir = $this->makeStorageDir();
+        $filePath = $dir.'/Trigun.mkv';
+        $this->touchFile($filePath, time() - 100);
+
+        $storage = new Storage('Main folder', $dir, StorageType::Folder);
+        $this->entityManager->persist($storage);
+
+        $anime = new TvAnime();
+        $anime->setTitle('Trigun')->setWatchStatus(WatchStatus::Plan);
+        $anime->setStorage($storage)->setStoragePath('Trigun.mkv');
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+        $storageId = $this->requireId($storage);
+        $animeId = $anime->id ?? throw new \LogicException('Anime must have an id once flushed.');
+
+        // Past Anime::$dateUpdate (set at construction, above), so the scan reports it Updated.
+        touch($filePath, time() + 100);
+
+        $eventDispatcher = $this->createMock(EventDispatcherInterface::class);
+        $eventDispatcher->expects($this->once())
+            ->method('dispatch')
+            ->with($this->callback(function (AnimeFilesChangedEvent $event) use ($animeId): bool {
+                $this->assertSame($animeId, $event->anime->value);
+                $this->assertSame(FilesChangeReason::FilesAdded, $event->reason);
+
+                return true;
+            }));
+
+        $wsPublisher = $this->newWsPublisher();
+        $handler = $this->newHandler(
+            $this->createStub(ProcessLivenessChecker::class),
+            $wsPublisher,
+            eventDispatcher: $eventDispatcher,
+        );
+
+        $handler(new ScanStorageMessage($storageId));
+
+        $events = $wsPublisher->since(0);
+        $done = $events[2];
+        $this->assertSame('scan.done', $done['event']);
+        $this->assertSame('Updated', $done['data']['items'][0]['type']);
     }
 
     public function testScanRelocatesStorageToThePathFoundByMarkerWhenTheCurrentPathIsUnreadable(): void
@@ -328,8 +378,12 @@ final class ScanStorageMessageHandlerTest extends TestCase
     }
 
     /** @param ?iterable<string> $driveRoots */
-    private function newHandler(ProcessLivenessChecker $livenessChecker, WsPublisher $wsPublisher, ?iterable $driveRoots = null): ScanStorageMessageHandler
-    {
+    private function newHandler(
+        ProcessLivenessChecker $livenessChecker,
+        WsPublisher $wsPublisher,
+        ?iterable $driveRoots = null,
+        ?EventDispatcherInterface $eventDispatcher = null,
+    ): ScanStorageMessageHandler {
         $animeRepository = new AnimeRepository($this->entityManager);
         $storageMarkerService = new StorageMarkerService($this->entityManager, $driveRoots);
 
@@ -369,6 +423,7 @@ final class ScanStorageMessageHandlerTest extends TestCase
             $storageMarkerService,
             $wsPublisher,
             new NullLogger(),
+            $eventDispatcher ?? $this->createStub(EventDispatcherInterface::class),
         );
     }
 

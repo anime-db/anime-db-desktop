@@ -27,10 +27,14 @@ declare(strict_types=1);
 
 namespace App\MessageHandler;
 
+use AnimeDb\PluginContracts\Catalog\AnimeFilesChangedEvent;
+use AnimeDb\PluginContracts\Catalog\FilesChangeReason;
+use AnimeDb\PluginContracts\Model\AnimeId;
 use App\Entity\Storage;
 use App\Message\ScanStorageMessage;
 use App\Service\JobLock\JobLockService;
 use App\Service\Storage\Scan\ScanCandidate;
+use App\Service\Storage\Scan\ScanItemType;
 use App\Service\Storage\Scan\ScanResultItem;
 use App\Service\Storage\ScanStorageService;
 use App\Service\Storage\StorageMarkerService;
@@ -39,6 +43,7 @@ use Doctrine\ORM\EntityManagerInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 use Symfony\Component\Messenger\Exception\UnrecoverableMessageHandlingException;
+use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
 /**
  * Wraps ScanStorageService::scan() (Таск 3 часть 5) into a real background job (часть 6):
@@ -53,6 +58,9 @@ use Symfony\Component\Messenger\Exception\UnrecoverableMessageHandlingException;
  * supply scan()'s $atPath (issue #162): when the storage's own path is unreadable (drive letter
  * reassigned, external drive reconnected elsewhere), it searches for the storage's desktop.ini
  * marker under every other drive root before giving up.
+ *
+ * Also dispatches {@see AnimeFilesChangedEvent} for every Updated item in the scan result — see
+ * {@see self::dispatchFilesAddedEvents()}.
  */
 #[AsMessageHandler]
 final class ScanStorageMessageHandler
@@ -64,6 +72,7 @@ final class ScanStorageMessageHandler
         private readonly StorageMarkerService $storageMarkerService,
         private readonly WsPublisher $wsPublisher,
         private readonly LoggerInterface $logger,
+        private readonly EventDispatcherInterface $eventDispatcher,
     ) {
     }
 
@@ -117,6 +126,8 @@ final class ScanStorageMessageHandler
                 return;
             }
 
+            $this->dispatchFilesAddedEvents($result->items);
+
             $this->wsPublisher->publish('scan.done', [
                 'storage_id' => $message->storageId,
                 'items' => array_map($this->serializeItem(...), $result->items),
@@ -139,6 +150,27 @@ final class ScanStorageMessageHandler
                     $this->wsPublisher->publish('backend.status', ['state' => 'idle']);
                 }
             }
+        }
+    }
+
+    /**
+     * Dispatches {@see AnimeFilesChangedEvent} with {@see FilesChangeReason::FilesAdded} for every
+     * ScanItemType::Updated item ScanStorageService::scan() already flushed (issue #703/#684, часть
+     * 3) — scan()'s own logic is not touched; this only reads its already-committed result, from
+     * this worker, after flush(), exactly as the contract requires.
+     *
+     * @param list<ScanResultItem> $items
+     */
+    private function dispatchFilesAddedEvents(array $items): void
+    {
+        foreach ($items as $item) {
+            if ($item->type !== ScanItemType::Updated) {
+                continue;
+            }
+
+            $anime = $item->anime ?? throw new \LogicException('ScanResultItem::updated() must always carry an Anime.');
+            $animeId = $anime->id ?? throw new \LogicException('Anime must have an id once linked to storage.');
+            $this->eventDispatcher->dispatch(new AnimeFilesChangedEvent(new AnimeId($animeId), FilesChangeReason::FilesAdded));
         }
     }
 

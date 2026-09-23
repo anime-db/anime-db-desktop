@@ -27,6 +27,8 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Service\Download;
 
+use AnimeDb\PluginContracts\Catalog\AnimeFilesChangedEvent;
+use AnimeDb\PluginContracts\Catalog\FilesChangeReason;
 use AnimeDb\PluginContracts\Download\DownloadCompletedEvent;
 use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
@@ -111,6 +113,27 @@ final class DownloadCompletionPollerTest extends TestCase
     }
 
     /**
+     * A completed download dispatches both AnimeFilesChangedEvent and DownloadCompletedEvent
+     * (issue #703/#684) — capturing every dispatch() call in order, rather than asserting on a
+     * single expected event class, is what lets one test assert on both.
+     *
+     * @param list<AnimeFilesChangedEvent|DownloadCompletedEvent> $dispatched
+     */
+    private function dispatcherCapturingEvents(int $times, array &$dispatched): EventDispatcherInterface
+    {
+        $eventDispatcher = $this->createMock(EventDispatcherInterface::class);
+        $eventDispatcher->expects($this->exactly($times))
+            ->method('dispatch')
+            ->willReturnCallback(function (AnimeFilesChangedEvent|DownloadCompletedEvent $event) use (&$dispatched): object {
+                $dispatched[] = $event;
+
+                return $event;
+            });
+
+        return $eventDispatcher;
+    }
+
+    /**
      * @param array<int, array<string, mixed>> $torrentsInfoResponse
      */
     private function makePoller(
@@ -144,15 +167,9 @@ final class DownloadCompletionPollerTest extends TestCase
         $anime = $this->persistAnime();
         $this->downloads->save(new Download(self::HASH, $anime));
 
-        $eventDispatcher = $this->createMock(EventDispatcherInterface::class);
-        $eventDispatcher->expects($this->once())
-            ->method('dispatch')
-            ->with($this->callback(function (DownloadCompletedEvent $event) use ($anime): bool {
-                $this->assertSame($anime->id, $event->anime->value);
-                $this->assertSame(self::HASH, $event->task->value);
-
-                return true;
-            }));
+        /** @var list<AnimeFilesChangedEvent|DownloadCompletedEvent> $dispatched */
+        $dispatched = [];
+        $eventDispatcher = $this->dispatcherCapturingEvents(2, $dispatched);
 
         $poller = $this->makePoller([[
             'hash' => self::HASH,
@@ -169,6 +186,21 @@ final class DownloadCompletionPollerTest extends TestCase
         $this->assertNotNull($anime->getStorage());
         $this->assertSame(self::ROOT, $anime->getStorage()->getPath());
         $this->assertSame('finished-release', $anime->getStoragePath());
+
+        $this->assertCount(2, $dispatched);
+        $filesChanged = $dispatched[0];
+        if (!$filesChanged instanceof AnimeFilesChangedEvent) {
+            $this->fail('Expected the first dispatched event to be an AnimeFilesChangedEvent.');
+        }
+        $this->assertSame($anime->id, $filesChanged->anime->value);
+        $this->assertSame(FilesChangeReason::DownloadFinished, $filesChanged->reason);
+
+        $downloadCompleted = $dispatched[1];
+        if (!$downloadCompleted instanceof DownloadCompletedEvent) {
+            $this->fail('Expected the second dispatched event to be a DownloadCompletedEvent.');
+        }
+        $this->assertSame($anime->id, $downloadCompleted->anime->value);
+        $this->assertSame(self::HASH, $downloadCompleted->task->value);
     }
 
     public function testPollDoesNotDispatchTwiceAcrossTwoRuns(): void
@@ -176,8 +208,10 @@ final class DownloadCompletionPollerTest extends TestCase
         $anime = $this->persistAnime();
         $this->downloads->save(new Download(self::HASH, $anime));
 
-        $eventDispatcher = $this->createMock(EventDispatcherInterface::class);
-        $eventDispatcher->expects($this->once())->method('dispatch');
+        $dispatched = [];
+        // Two events (AnimeFilesChangedEvent + DownloadCompletedEvent) on the first poll(), none
+        // on the second — a completed pair must not dispatch again.
+        $eventDispatcher = $this->dispatcherCapturingEvents(2, $dispatched);
 
         $poller = $this->makePoller([[
             'hash' => self::HASH,
@@ -234,8 +268,9 @@ final class DownloadCompletionPollerTest extends TestCase
         $this->downloads->save(new Download(self::HASH, $animeOne));
         $this->downloads->save(new Download(self::HASH, $animeTwo));
 
-        $eventDispatcher = $this->createMock(EventDispatcherInterface::class);
-        $eventDispatcher->expects($this->exactly(2))->method('dispatch');
+        $dispatched = [];
+        // Two events per anime (AnimeFilesChangedEvent + DownloadCompletedEvent) for two animes.
+        $eventDispatcher = $this->dispatcherCapturingEvents(4, $dispatched);
 
         $poller = $this->makePoller([[
             'hash' => self::HASH,
@@ -257,14 +292,11 @@ final class DownloadCompletionPollerTest extends TestCase
         $this->downloads->save(new Download($wedgedHash, $wedged));
         $this->downloads->save(new Download(self::HASH, $ok));
 
-        $eventDispatcher = $this->createMock(EventDispatcherInterface::class);
-        $eventDispatcher->expects($this->once())
-            ->method('dispatch')
-            ->with($this->callback(function (DownloadCompletedEvent $event) use ($ok): bool {
-                $this->assertSame($ok->id, $event->anime->value);
-
-                return true;
-            }));
+        /** @var list<AnimeFilesChangedEvent|DownloadCompletedEvent> $dispatched */
+        $dispatched = [];
+        // Only the OK pair completes and dispatches (AnimeFilesChangedEvent + DownloadCompletedEvent);
+        // the wedged pair's DownloadPathOutsideJailException must not dispatch anything for it.
+        $eventDispatcher = $this->dispatcherCapturingEvents(2, $dispatched);
 
         // A real qBittorrent WebUI filters /api/v2/torrents/info by the "hashes" query param sent
         // per infoHash — this mock has to do the same instead of returning a fixed body for every
@@ -316,6 +348,11 @@ final class DownloadCompletionPollerTest extends TestCase
         $okRow = $this->downloads->findByInfoHashAndAnime(self::HASH, (int) $ok->id);
         $this->assertNotNull($okRow);
         $this->assertTrue($okRow->isCompleted());
+
+        $this->assertCount(2, $dispatched);
+        foreach ($dispatched as $event) {
+            $this->assertSame($ok->id, $event->anime->value);
+        }
 
         // The wedged pair keeps being reported as pending and does not permanently jam the poller.
         $poller->poll();

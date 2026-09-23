@@ -27,6 +27,8 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Controller;
 
+use AnimeDb\PluginContracts\Catalog\AnimeFilesChangedEvent;
+use AnimeDb\PluginContracts\Catalog\FilesChangeReason;
 use App\Controller\StorageScanConfirmController;
 use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
@@ -60,6 +62,7 @@ use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Security\Csrf\CsrfTokenManagerInterface;
+use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
 /**
  * Exercises StorageScanConfirmController against a real ScanStorageService/EntityManager
@@ -89,8 +92,10 @@ final class StorageScanConfirmControllerTest extends TestCase
         $schemaTool->createSchema($this->entityManager->getMetadataFactory()->getAllMetadata());
     }
 
-    private function createController(?CsrfTokenManagerInterface $csrfTokenManager = null): StorageScanConfirmController
-    {
+    private function createController(
+        ?CsrfTokenManagerInterface $csrfTokenManager = null,
+        ?EventDispatcherInterface $eventDispatcher = null,
+    ): StorageScanConfirmController {
         if ($csrfTokenManager === null) {
             $csrfTokenManager = $this->createStub(CsrfTokenManagerInterface::class);
             $csrfTokenManager->method('isTokenValid')->willReturn(true);
@@ -118,7 +123,12 @@ final class StorageScanConfirmControllerTest extends TestCase
             new NullLogger(),
         );
 
-        return new StorageScanConfirmController($scanStorageService, $this->entityManager, $csrfTokenManager);
+        return new StorageScanConfirmController(
+            $scanStorageService,
+            $this->entityManager,
+            $csrfTokenManager,
+            $eventDispatcher ?? $this->createStub(EventDispatcherInterface::class),
+        );
     }
 
     private function jsonRequest(mixed $payload): Request
@@ -162,6 +172,34 @@ final class StorageScanConfirmControllerTest extends TestCase
         $reloaded = $this->entityManager->find(Anime::class, $orphanId);
         $this->assertSame($storage->id, $reloaded->getStorage()?->id);
         $this->assertSame('Trigun.mkv', $reloaded->getStoragePath());
+    }
+
+    public function testConfirmDispatchesAnimeFilesChangedEventWithPathChangedReasonAfterFlush(): void
+    {
+        $storage = $this->persistStorage();
+
+        $orphan = new TvAnime();
+        $orphan->setTitle('Trigun')->setWatchStatus(WatchStatus::Plan);
+        $this->entityManager->persist($orphan);
+        $this->entityManager->flush();
+        $orphanId = $orphan->id ?? throw new \LogicException('Orphan must have an id once flushed.');
+
+        $eventDispatcher = $this->createMock(EventDispatcherInterface::class);
+        $eventDispatcher->expects($this->once())
+            ->method('dispatch')
+            ->with($this->callback(function (AnimeFilesChangedEvent $event) use ($orphanId): bool {
+                $this->assertSame($orphanId, $event->anime->value);
+                $this->assertSame(FilesChangeReason::PathChanged, $event->reason);
+
+                return true;
+            }));
+
+        $controller = $this->createController(eventDispatcher: $eventDispatcher);
+        $controller->confirm($storage, $this->jsonRequest([
+            'token' => 'token',
+            'storage_path' => 'Trigun.mkv',
+            'anime_id' => $orphanId,
+        ]));
     }
 
     public function testConfirmWithNameCreatesANewAnimeFromThePluginCandidate(): void

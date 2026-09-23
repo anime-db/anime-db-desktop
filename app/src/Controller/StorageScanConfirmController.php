@@ -27,6 +27,9 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
+use AnimeDb\PluginContracts\Catalog\AnimeFilesChangedEvent;
+use AnimeDb\PluginContracts\Catalog\FilesChangeReason;
+use AnimeDb\PluginContracts\Model\AnimeId;
 use AnimeDb\PluginContracts\Search\SearchByPluginCandidate;
 use App\Entity\Anime;
 use App\Entity\Storage;
@@ -42,6 +45,7 @@ use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Security\Csrf\CsrfToken;
 use Symfony\Component\Security\Csrf\CsrfTokenManagerInterface;
+use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
 /**
  * Binds a scanned storage file to the single candidate the user picked out of a
@@ -53,6 +57,12 @@ use Symfony\Component\Security\Csrf\CsrfTokenManagerInterface;
  * picked is not looked up again in the catalog: it comes back exactly as the frontend received
  * it in the scan.done payload (часть 7.5) — an anime_id for an orphan candidate, or a plugin
  * candidate's bare name (see ScanStorageMessageHandler::serializeCandidate()).
+ *
+ * Dispatches {@see AnimeFilesChangedEvent} with {@see FilesChangeReason::PathChanged} once
+ * flushed (issue #703/#684, часть 3): this is the one caller of
+ * ScanStorageService::linkToChosenCandidate() outside the scan() algorithm itself, so the
+ * dispatch lives here rather than inside ScanStorageService — that class's own scanning logic
+ * stays untouched.
  */
 final class StorageScanConfirmController
 {
@@ -69,6 +79,7 @@ final class StorageScanConfirmController
         private readonly ScanStorageService $scanStorageService,
         private readonly EntityManagerInterface $entityManager,
         private readonly CsrfTokenManagerInterface $csrfTokenManager,
+        private readonly EventDispatcherInterface $eventDispatcher,
     ) {
     }
 
@@ -100,6 +111,9 @@ final class StorageScanConfirmController
             throw new ConflictHttpException($e->getMessage(), $e);
         }
         $this->entityManager->flush();
+
+        $animeId = $anime->id ?? throw new \LogicException('Anime must have an id once it has been flushed.');
+        $this->eventDispatcher->dispatch(new AnimeFilesChangedEvent(new AnimeId($animeId), FilesChangeReason::PathChanged));
 
         return new JsonResponse([
             'storage_path' => $storagePath,

@@ -68,10 +68,20 @@ use Twig\Environment;
  * it is passed through {@see PluginHtmlSanitizer} before becoming this controller's response
  * body — a sanitizer failure is treated the same as `render()` itself throwing, degrading to
  * this widget's own error fragment.
+ *
+ * Issue #703/#684: a widget that still has no data to show (e.g. its own background job has not
+ * finished yet) signals that by prefixing its returned HTML with {@see self::PENDING_UPDATE_MARKER}.
+ * Such a response is served without the usual max-age — the slot's own `hx-trigger` polls it
+ * again shortly, and it must not be served stale out of the browser's HTTP cache once the real
+ * data is ready. `*WidgetInterface::render()` only promises a `string` (see contract), so a
+ * marker prefix on that string is the only signal available without widening the contract
+ * itself.
  */
 final class PluginWidgetController
 {
     private const int CACHE_MAX_AGE_SECONDS = 300;
+
+    private const string PENDING_UPDATE_MARKER = '<!--animedb:widget-pending-update-->';
 
     public function __construct(
         private readonly EntryWidgetRegistry $entryWidgets,
@@ -118,23 +128,23 @@ final class PluginWidgetController
         }
 
         try {
-            $html = $this->htmlSanitizer->sanitize($widget->render(new AnimeId((int) $entryId)));
+            $raw = $widget->render(new AnimeId((int) $entryId));
         } catch (\Throwable $e) {
             return $this->renderWidgetError($pluginId, $request, $e);
         }
 
-        return $this->cacheableResponse($html);
+        return $this->widgetResponse($raw);
     }
 
     private function renderCatalogWidget(CatalogWidgetInterface $widget, PluginId $pluginId, Request $request): Response
     {
         try {
-            $html = $this->htmlSanitizer->sanitize($widget->render());
+            $raw = $widget->render();
         } catch (\Throwable $e) {
             return $this->renderWidgetError($pluginId, $request, $e);
         }
 
-        return $this->cacheableResponse($html);
+        return $this->widgetResponse($raw);
     }
 
     private function renderWidgetError(PluginId $pluginId, Request $request, \Throwable $e): Response
@@ -148,6 +158,18 @@ final class PluginWidgetController
             'pluginId' => (string) $pluginId,
             'retryUrl' => $request->getRequestUri(),
         ]));
+    }
+
+    /**
+     * Strips {@see self::PENDING_UPDATE_MARKER} when present and routes to the cached or
+     * uncached response accordingly — see the class docblock.
+     */
+    private function widgetResponse(string $raw): Response
+    {
+        $pendingUpdate = str_starts_with($raw, self::PENDING_UPDATE_MARKER);
+        $html = $this->htmlSanitizer->sanitize($pendingUpdate ? substr($raw, \strlen(self::PENDING_UPDATE_MARKER)) : $raw);
+
+        return $pendingUpdate ? new Response($html) : $this->cacheableResponse($html);
     }
 
     /**
