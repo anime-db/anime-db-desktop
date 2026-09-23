@@ -93,6 +93,27 @@
         return `${FACETS_URL}?${params.toString()}`;
     }
 
+    // The address-bar query the catalog keeps itself in sync with (issue #713): the same
+    // sort/direction/name/filter parameters buildListQuery() itself sends, minus offset/limit —
+    // pagination position is deliberately not part of the persisted state (a page reload restores
+    // the result set, not the scroll position or page number). Always carries sort/direction,
+    // mirroring buildListQuery()'s own unconditional inclusion of both, so a value written here
+    // re-parses through parseSortField()/parseSortDirection() the same way any other caller's link
+    // would.
+    function buildStateQuery({ sortField, sortDirection, searchQuery, filters }) {
+        const params = new URLSearchParams({
+            sort: sortField,
+            direction: sortDirection,
+        });
+
+        if (searchQuery) {
+            params.set('name', searchQuery);
+        }
+        appendFilterParams(params, filters);
+
+        return `?${params.toString()}`;
+    }
+
     // watch_status/type/genres/themes are read as-is: validating them would mean duplicating
     // the WatchStatus/AnimeType/GenreCode/ThemeCode enums here, a second place for them to drift
     // out of sync with the backend. An unknown value is instead left for AnimeListRequestParser
@@ -185,6 +206,7 @@
         appendFilterParams,
         buildListQuery,
         buildFacetsQuery,
+        buildStateQuery,
         parseEnumSectionSet,
         parseEntityIdSet,
         parseLabelSet,
