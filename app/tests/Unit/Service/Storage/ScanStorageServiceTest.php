@@ -35,7 +35,7 @@ use AnimeDb\PluginContracts\Search\SearchByPluginInterface;
 use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
 use App\Entity\Anime;
-use App\Entity\Enum\AnimeNameType;
+use App\Entity\Enum\AnimeNameRole;
 use App\Entity\Enum\StorageType;
 use App\Entity\Enum\WatchStatus;
 use App\Entity\MovieAnime;
@@ -617,7 +617,7 @@ final class ScanStorageServiceTest extends TestCase
         $first->setTitle('Trigun')->setWatchStatus(WatchStatus::Plan);
         $second = new TvAnime();
         $second->setTitle('Trigun the Other One')->setWatchStatus(WatchStatus::Plan);
-        $second->addName('Trigun', AnimeNameType::Synonym);
+        $second->addName('Trigun', null, AnimeNameRole::Synonym);
         $this->entityManager->persist($first);
         $this->entityManager->persist($second);
         $this->entityManager->flush();
@@ -642,7 +642,7 @@ final class ScanStorageServiceTest extends TestCase
         $first->setTitle('Trigun')->setWatchStatus(WatchStatus::Plan);
         $second = new TvAnime();
         $second->setTitle('Trigun the Other One')->setWatchStatus(WatchStatus::Plan);
-        $second->addName('Trigun', AnimeNameType::Synonym);
+        $second->addName('Trigun', null, AnimeNameRole::Synonym);
         $this->entityManager->persist($first);
         $this->entityManager->persist($second);
         $this->entityManager->flush();
@@ -674,7 +674,7 @@ final class ScanStorageServiceTest extends TestCase
 
         $first = new TvAnime();
         $first->setTitle('Trigun')->setWatchStatus(WatchStatus::Plan);
-        $first->addName('Vash', AnimeNameType::Synonym);
+        $first->addName('Vash', null, AnimeNameRole::Synonym);
         $second = new TvAnime();
         $second->setTitle('Vash')->setWatchStatus(WatchStatus::Plan);
         $this->entityManager->persist($first);

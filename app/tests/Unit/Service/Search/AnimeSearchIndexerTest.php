@@ -29,7 +29,7 @@ namespace App\Tests\Unit\Service\Search;
 
 use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
-use App\Entity\Enum\AnimeNameType;
+use App\Entity\Enum\AnimeNameRole;
 use App\Entity\Enum\Demographic;
 use App\Entity\Enum\GenreCode;
 use App\Entity\Enum\ThemeCode;
@@ -134,7 +134,7 @@ final class AnimeSearchIndexerTest extends TestCase
             ->addTheme(ThemeCode::Isekai)
             ->addStudio($studio)
             ->addLabel($label)
-            ->addName('Kimi no Na wa', AnimeNameType::English);
+            ->addName('Kimi no Na wa', 'en', AnimeNameRole::Official);
 
         $this->entityManager->persist($studio);
         $this->entityManager->persist($label);

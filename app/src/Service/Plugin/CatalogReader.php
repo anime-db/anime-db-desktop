@@ -31,8 +31,10 @@ use AnimeDb\PluginContracts\Catalog\AnimeView;
 use AnimeDb\PluginContracts\Catalog\CatalogReaderInterface;
 use AnimeDb\PluginContracts\ExternalIdResolutionInterface;
 use AnimeDb\PluginContracts\Model\AnimeId;
+use AnimeDb\PluginContracts\Model\AnimeName as ContractAnimeName;
 use AnimeDb\PluginContracts\Model\AnimeType as ContractAnimeType;
 use AnimeDb\PluginContracts\Model\GenreCode as ContractGenreCode;
+use AnimeDb\PluginContracts\Model\NameRole as ContractNameRole;
 use AnimeDb\PluginContracts\Model\ThemeCode as ContractThemeCode;
 use App\Entity\Anime;
 use App\Entity\AnimeName;
@@ -102,7 +104,14 @@ final class CatalogReader implements CatalogReaderInterface
 
         return new AnimeView(
             title: $entity->getTitle(),
-            alternativeNames: array_map(static fn (AnimeName $name): string => $name->name, $entity->getNames()->toArray()),
+            alternativeNames: array_map(
+                static fn (AnimeName $name): ContractAnimeName => new ContractAnimeName(
+                    name: $name->name,
+                    locale: $name->locale,
+                    role: ContractNameRole::from($name->role->value),
+                ),
+                $entity->getNames()->toArray(),
+            ),
             type: ContractAnimeType::from($entity->getType()->value),
             genres: array_map(static fn (GenreCode $code): ContractGenreCode => ContractGenreCode::from($code->value), $entity->getGenreCodes()),
             themes: array_map(static fn (ThemeCode $code): ContractThemeCode => ContractThemeCode::from($code->value), $entity->getThemeCodes()),

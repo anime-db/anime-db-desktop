@@ -27,7 +27,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Service;
 
-use App\Entity\Enum\AnimeNameType;
+use App\Entity\Enum\AnimeNameRole;
 use App\Entity\Enum\AnimeType;
 use App\Entity\Enum\Demographic;
 use App\Entity\Enum\GenreCode;
@@ -150,7 +150,7 @@ final class AnimeTypeMigratorTest extends TestCase
             ->setDemographic(Demographic::Seinen)
             ->addStudio($studio)
             ->addLabel($label)
-            ->addName('Cowboy Bebop', AnimeNameType::English)
+            ->addName('Cowboy Bebop', 'en', AnimeNameRole::Official)
             ->addImage('images/frame1.jpg')
             ->addSource('https://shikimori.one/animes/1');
 

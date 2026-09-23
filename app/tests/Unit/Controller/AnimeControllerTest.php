@@ -29,7 +29,7 @@ namespace App\Tests\Unit\Controller;
 
 use AnimeDb\PluginContracts\Widget\EntryWidgetInterface;
 use App\Controller\AnimeController;
-use App\Entity\Enum\AnimeNameType;
+use App\Entity\Enum\AnimeNameRole;
 use App\Entity\Enum\Demographic;
 use App\Entity\Enum\GenreCode;
 use App\Entity\Enum\StorageType;
@@ -126,7 +126,7 @@ final class AnimeControllerTest extends TestCase
             ->addGenre(GenreCode::Action)
             ->addTheme(ThemeCode::Military)
             ->setDemographic(Demographic::Shounen)
-            ->addName('進撃の巨人', AnimeNameType::Original)
+            ->addName('進撃の巨人', 'ja', AnimeNameRole::Official)
             ->addLabel($label)
             ->addSource('https://shikimori.one/animes/16498')
             ->addImage('screenshot_1720273812345.webp')
@@ -156,7 +156,7 @@ final class AnimeControllerTest extends TestCase
                         'path' => $storage->getPath(),
                         'path_available' => true,
                     ] === $view['storage']
-                    && [['name' => '進撃の巨人', 'type' => 'original']] === $view['names']
+                    && [['name' => '進撃の巨人', 'locale' => 'ja', 'role' => 'official']] === $view['names']
                     && ['action'] === $view['genres']
                     && ['military'] === $view['themes']
                     && $view['demographic'] === 'shounen'

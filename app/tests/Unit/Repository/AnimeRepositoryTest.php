@@ -30,7 +30,7 @@ namespace App\Tests\Unit\Repository;
 use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
 use App\Entity\Anime;
-use App\Entity\Enum\AnimeNameType;
+use App\Entity\Enum\AnimeNameRole;
 use App\Entity\Enum\AnimeSortField;
 use App\Entity\Enum\AnimeType;
 use App\Entity\Enum\GenreCode;
@@ -160,7 +160,7 @@ final class AnimeRepositoryTest extends TestCase
             ->setUserRating(new Rating(5))
             ->setDatePremiere(new \DateTimeImmutable('2020-01-01'));
         $a1->addGenre(GenreCode::Action)->addTheme(ThemeCode::Mecha)->addStudio($this->sunrise)->addLabel($this->favorite);
-        $a1->addName('Toraiga', AnimeNameType::Synonym);
+        $a1->addName('Toraiga', null, AnimeNameRole::Synonym);
 
         // Watching, US, rating 3, Comedy, Toei, no label, premiered 2021.
         $a2 = new MovieAnime();

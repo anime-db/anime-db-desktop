@@ -28,11 +28,14 @@ declare(strict_types=1);
 namespace App\Tests\Unit\Service\Plugin\Filler;
 
 use AnimeDb\PluginContracts\Filler\PluginAnimeData;
+use AnimeDb\PluginContracts\Model\AnimeName as ContractsAnimeName;
 use AnimeDb\PluginContracts\Model\Demographic as ContractsDemographic;
 use AnimeDb\PluginContracts\Model\GenreCode as ContractsGenreCode;
+use AnimeDb\PluginContracts\Model\NameRole as ContractsNameRole;
 use AnimeDb\PluginContracts\Model\ThemeCode as ContractsThemeCode;
 use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
+use App\Entity\Enum\AnimeNameRole;
 use App\Entity\Enum\Demographic;
 use App\Entity\Enum\GenreCode;
 use App\Entity\Enum\ThemeCode;
@@ -47,6 +50,7 @@ use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\EntityManager;
 use Doctrine\ORM\ORMSetup;
 use Doctrine\ORM\Tools\SchemaTool;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -117,17 +121,129 @@ final class PluginAnimeDataMergerTest extends TestCase
     public function testApplyUnionsAlternativeNamesWithoutDuplicatingExisting(): void
     {
         $anime = $this->newAnime();
-        $anime->addName('Existing Synonym', \App\Entity\Enum\AnimeNameType::Synonym);
+        $anime->addName('Existing Synonym', null, AnimeNameRole::Synonym);
 
         $data = new PluginAnimeData(
             title: 'Bleach',
-            alternativeNames: ['Existing Synonym', 'New Synonym'],
+            alternativeNames: [
+                new ContractsAnimeName('Existing Synonym', null, ContractsNameRole::Synonym),
+                new ContractsAnimeName('New Synonym', null, ContractsNameRole::Synonym),
+            ],
         );
 
         $this->newMerger()->apply($anime, $data, ['alternativeNames']);
 
         $names = array_map(static fn ($n): string => $n->name, $anime->getNames()->toArray());
         $this->assertSame(['Existing Synonym', 'New Synonym'], $names);
+    }
+
+    /**
+     * The dedup key is (normalizedName, locale), not normalizedName alone (issue #724) — two
+     * names with identical text but different locales must coexist, e.g. one official title
+     * per language.
+     */
+    public function testApplyKeepsNamesWithTheSameTextInDifferentLocales(): void
+    {
+        $anime = $this->newAnime();
+        $anime->addName('Frieren', 'en', AnimeNameRole::Official);
+
+        $data = new PluginAnimeData(
+            title: 'Frieren',
+            alternativeNames: [new ContractsAnimeName('Frieren', 'de', ContractsNameRole::Official)],
+        );
+
+        $this->newMerger()->apply($anime, $data, ['alternativeNames']);
+
+        $locales = array_map(static fn ($n) => $n->locale, $anime->getNames()->toArray());
+        $this->assertSame(['en', 'de'], $locales);
+    }
+
+    public function testApplyDoesNotDuplicateAnExactNormalizedNameAndLocalePairAlreadyPresent(): void
+    {
+        $anime = $this->newAnime();
+        $anime->addName('Bleach', 'en', AnimeNameRole::Official);
+
+        $data = new PluginAnimeData(
+            title: 'Bleach',
+            alternativeNames: [new ContractsAnimeName('bleach', 'en', ContractsNameRole::Official)],
+        );
+
+        $this->newMerger()->apply($anime, $data, ['alternativeNames']);
+
+        $this->assertCount(1, $anime->getNames());
+    }
+
+    /**
+     * A catalog row whose locale is still unknown (null) yields to an incoming pair for the
+     * same text that carries a known locale — the "нулевая локаль уступает известной" rule.
+     */
+    public function testApplyReplacesANullLocaleEntryWhenTheIncomingPairHasAKnownLocale(): void
+    {
+        $anime = $this->newAnime();
+        $anime->addName('Solo Leveling', null, AnimeNameRole::Synonym);
+
+        $data = new PluginAnimeData(
+            title: 'Solo Leveling',
+            alternativeNames: [new ContractsAnimeName('Solo Leveling', 'en', ContractsNameRole::Official)],
+        );
+
+        $this->newMerger()->apply($anime, $data, ['alternativeNames']);
+
+        // array_values(): the evicted entry leaves a gap in the collection's internal keys,
+        // so the surviving row is not necessarily at index 0.
+        $names = array_values($anime->getNames()->toArray());
+        $this->assertCount(1, $names);
+        $this->assertSame('en', $names[0]->locale);
+        $this->assertSame(AnimeNameRole::Official, $names[0]->role);
+    }
+
+    /**
+     * The reverse direction of the null-locale rule: an already-typed row must never be
+     * touched by the filler, even when the incoming pair for the same text has no locale.
+     */
+    public function testApplyLeavesAnAlreadyTypedEntryUntouchedWhenTheIncomingPairHasNoLocale(): void
+    {
+        $anime = $this->newAnime();
+        $anime->addName('Solo Leveling', 'en', AnimeNameRole::Official);
+
+        $data = new PluginAnimeData(
+            title: 'Solo Leveling',
+            alternativeNames: [new ContractsAnimeName('Solo Leveling', null, ContractsNameRole::Synonym)],
+        );
+
+        $this->newMerger()->apply($anime, $data, ['alternativeNames']);
+
+        $names = $anime->getNames()->toArray();
+        $this->assertCount(2, $names);
+        $this->assertSame('en', $names[0]->locale);
+        $this->assertSame(AnimeNameRole::Official, $names[0]->role);
+        $this->assertNull($names[1]->locale);
+        $this->assertSame(AnimeNameRole::Synonym, $names[1]->role);
+    }
+
+    /**
+     * @return iterable<string, array{string, ?string}>
+     */
+    public static function provideRawLocales(): iterable
+    {
+        yield 'regional subtag is stripped' => ['ru-RU', 'ru'];
+        yield 'uppercase is lowercased' => ['RU', 'ru'];
+        yield 'not a language subtag becomes null' => ['russian', null];
+    }
+
+    #[DataProvider('provideRawLocales')]
+    public function testApplyNormalizesTheIncomingLocale(string $rawLocale, ?string $expectedLocale): void
+    {
+        $anime = $this->newAnime();
+
+        $data = new PluginAnimeData(
+            title: 'Bleach',
+            alternativeNames: [new ContractsAnimeName('Bleach', $rawLocale, ContractsNameRole::Official)],
+        );
+
+        $this->newMerger()->apply($anime, $data, ['alternativeNames']);
+
+        $this->assertSame($expectedLocale, $anime->getNames()->toArray()[0]->locale);
     }
 
     public function testApplyMergesDescriptionsByLocaleWithoutLosingOtherLocales(): void

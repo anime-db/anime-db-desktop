@@ -28,7 +28,7 @@ declare(strict_types=1);
 namespace App\Tests\Unit\Entity;
 
 use AnimeDb\PluginContracts\ExternalIdResolutionInterface;
-use App\Entity\Enum\AnimeNameType;
+use App\Entity\Enum\AnimeNameRole;
 use App\Entity\Enum\AnimeType;
 use App\Entity\Enum\Demographic;
 use App\Entity\Enum\GenreCode;
@@ -459,7 +459,7 @@ final class AnimeTest extends TestCase
     public function testAddNameCreatesAnimeNameOwnedByAnime(): void
     {
         $anime = new MovieAnime();
-        $anime->addName('Cowboy Bebop', AnimeNameType::English);
+        $anime->addName('Cowboy Bebop', 'en', AnimeNameRole::Official);
 
         $names = $anime->getNames();
         $this->assertCount(1, $names);

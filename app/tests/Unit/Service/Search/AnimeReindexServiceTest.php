@@ -29,7 +29,7 @@ namespace App\Tests\Unit\Service\Search;
 
 use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
-use App\Entity\Enum\AnimeNameType;
+use App\Entity\Enum\AnimeNameRole;
 use App\Entity\Enum\GenreCode;
 use App\Entity\Enum\ThemeCode;
 use App\Entity\Enum\WatchStatus;
@@ -220,7 +220,7 @@ final class AnimeReindexServiceTest extends TestCase
         for ($i = 0; $i < $animeCount; ++$i) {
             $anime = new MovieAnime();
             $anime->setTitle('Anime '.$i)->setWatchStatus(WatchStatus::Plan);
-            $anime->addName('Name A', AnimeNameType::English)->addName('Name B', AnimeNameType::Russian);
+            $anime->addName('Name A', 'en', AnimeNameRole::Official)->addName('Name B', 'ru', AnimeNameRole::Official);
             $anime->addGenre(GenreCode::Action)->addGenre(GenreCode::Adventure);
             $anime->addTheme(ThemeCode::AdultCast)->addTheme(ThemeCode::Anthropomorphic);
             foreach ($studios as $studio) {
