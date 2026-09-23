@@ -22,6 +22,15 @@
 // Shared by anime/show.html.twig (entry widgets) and anime/list.html.twig (catalog widgets,
 // issue #720) via plugin/_widget_slots.html.twig — kept out of _anime-detail.scss so the
 // catalog page does not silently depend on the detail page's stylesheet.
+// Issue #728: tells a widget slot's data apart from the host's own catalog — omitted before,
+// which left a plugin's carousel reading as part of the user's own collection.
+.plugin-widget-slot__heading {
+    margin: 0 0 8px;
+    font-size: 0.85em;
+    font-weight: 600;
+    color: var(--bs-secondary-color);
+}
+
 .plugin-widget {
     min-height: 1.5em;
     color: var(--bs-secondary-color);
@@ -38,11 +47,22 @@
     color: var(--bs-danger-text-emphasis);
 }
 
+// Issue #728: a single horizontal row instead of a wrapping grid — the vertical scroll a
+// wrapping grid produced inside a height-capped slot (and the cut-off bottom row that came with
+// it) is exactly what made a widget's carousel read as more of the host's own catalog, whose
+// grid scrolls the same way.
 .plugin-widget__list {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scroll-snap-type: x proximity;
     gap: 16px;
     margin: 0;
     padding: 0;
     list-style: none;
+}
+
+.plugin-widget__list > li {
+    flex: 0 0 160px;
+    scroll-snap-align: start;
 }

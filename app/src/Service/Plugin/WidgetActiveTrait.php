@@ -37,22 +37,27 @@ use App\Service\Plugin\Exception\WidgetHardLimitExceededException;
  * so disabling one widget of a plugin never touches its other widgets or its Filler/Sync features.
  *
  * Issue #213: a placement (anime detail page vs. catalog — each registry covers exactly one)
- * has a hard cap of {@see self::HARD_LIMIT} simultaneously active widgets and a soft
- * {@see self::RECOMMENDED_LIMIT} shown to the user as a performance/clutter hint that never
- * blocks enabling a widget.
+ * has a hard cap of simultaneously active widgets and a soft {@see self::RECOMMENDED_LIMIT}
+ * shown to the user as a performance/clutter hint that never blocks enabling a widget.
+ *
+ * The hard cap itself is *not* declared here (issue #728): each using class declares its own
+ * `HARD_LIMIT` constant instead — {@see EntryWidgetRegistry::HARD_LIMIT} and
+ * {@see CatalogWidgetRegistry::HARD_LIMIT} differ, and a trait cannot itself declare a constant
+ * that a using class then redeclares with a different value (PHP treats that as an incompatible
+ * redeclaration, not an override). {@see self::changeActive()} reads it through `static::`, late
+ * static binding, which resolves to whichever class the trait is actually composed into.
  */
 trait WidgetActiveTrait
 {
-    public const int HARD_LIMIT = 5;
     public const int RECOMMENDED_LIMIT = 2;
 
     private readonly PluginsConfigStore $pluginsConfigStore;
 
     /**
      * A widget without a recorded settings entry yet is treated as inactive: the user must opt
-     * in explicitly. This keeps {@see self::HARD_LIMIT} meaningful for placements with more than
-     * {@see self::HARD_LIMIT} installed widgets — a default-on widget would bypass the cap simply
-     * by never being toggled.
+     * in explicitly. This keeps `HARD_LIMIT` meaningful for placements with more than
+     * `HARD_LIMIT` installed widgets — a default-on widget would bypass the cap simply by never
+     * being toggled.
      */
     private function isActive(PluginId $pluginId, string $widgetName): bool
     {
@@ -64,16 +69,16 @@ trait WidgetActiveTrait
 
     /**
      * Persists `features.{$widgetName}` for a single widget. Turning a widget on is rejected
-     * once $activeCount already reached {@see self::HARD_LIMIT} for this placement — turning one
-     * off, or toggling an already-active widget back on, is always allowed.
+     * once $activeCount already reached `HARD_LIMIT` for this placement — turning one off, or
+     * toggling an already-active widget back on, is always allowed.
      *
      * @throws WidgetHardLimitExceededException
      * @throws PluginsConfigStoreLockedException
      */
     private function changeActive(PluginId $pluginId, string $widgetName, bool $active, int $activeCount): void
     {
-        if ($active && !$this->isActive($pluginId, $widgetName) && $activeCount >= self::HARD_LIMIT) {
-            throw new WidgetHardLimitExceededException($pluginId, $widgetName, self::HARD_LIMIT);
+        if ($active && !$this->isActive($pluginId, $widgetName) && $activeCount >= static::HARD_LIMIT) {
+            throw new WidgetHardLimitExceededException($pluginId, $widgetName, static::HARD_LIMIT);
         }
 
         $this->pluginsConfigStore->updatePluginSettings($pluginId, static function (array $settings) use ($widgetName, $active): array {

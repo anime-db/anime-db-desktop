@@ -80,15 +80,15 @@
         <h1>{{ 'settings_plugin_widgets.heading'|trans }}</h1>
 
         {% if error == 'hard_limit_exceeded' %}
-            <p class="alert alert-danger">{{ 'settings_plugin_widgets.hard_limit_reached'|trans({'%limit%': hardLimit}) }}</p>
+            <p class="alert alert-danger">{{ 'settings_plugin_widgets.hard_limit_reached'|trans({'%limit%': limitReached}) }}</p>
         {% elseif error == 'busy_retry' %}
             <p class="alert alert-danger">{{ 'settings_plugin_widgets.busy_retry_error'|trans }}</p>
         {% endif %}
 
         <h2>{{ 'settings_plugin_widgets.entry.heading'|trans }}</h2>
-        {{ _self.section('entry', entryWidgets, entryActiveCount, hardLimit, recommendedLimit) }}
+        {{ _self.section('entry', entryWidgets, entryActiveCount, entryHardLimit, recommendedLimit) }}
 
         <h2 class="mt-4">{{ 'settings_plugin_widgets.catalog.heading'|trans }}</h2>
-        {{ _self.section('catalog', catalogWidgets, catalogActiveCount, hardLimit, recommendedLimit) }}
+        {{ _self.section('catalog', catalogWidgets, catalogActiveCount, catalogHardLimit, recommendedLimit) }}
     </div>
 {% endblock %}

@@ -181,12 +181,17 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
         $twig = self::getContainer()->get('twig');
         $html = $twig->render('anime/show.html.twig', [
             'anime' => $this->fullyPopulatedAnime(),
-            'widgets' => [['pluginId' => 'animedb-shikimori', 'widgetName' => 'related']],
+            'widgets' => [['pluginId' => 'animedb-shikimori', 'widgetName' => 'related', 'title' => 'Related titles', 'pluginName' => 'Shikimori']],
             'plugins_ui' => [],
             'fillable_fields' => $this->emptyFillableFields(),
         ]);
 
         $this->assertStringContainsString('hx-get="/plugin/animedb-shikimori/widget/related?entryId=1"', $html);
+        // Issue #728: the entry-widget slot gets the same header as the catalog one (see
+        // WidgetSlotsTemplateRenderingTest for the partial's own coverage of the header itself).
+        $this->assertStringContainsString('class="plugin-widget-slot__heading"', $html);
+        $this->assertStringContainsString('Related titles', $html);
+        $this->assertStringContainsString('Shikimori', $html);
     }
 
     /**

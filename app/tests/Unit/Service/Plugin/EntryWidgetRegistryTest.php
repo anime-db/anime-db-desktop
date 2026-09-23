@@ -31,18 +31,23 @@ use AnimeDb\PluginContracts\Widget\EntryWidgetInterface;
 use App\Entity\ValueObject\PluginId;
 use App\Service\Plugin\EntryWidgetRegistry;
 use App\Service\Plugin\Exception\WidgetHardLimitExceededException;
+use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\PluginsConfigStore;
 use App\Tests\Fixtures\Plugin\Widget\FakeEntryWidget;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
 use Symfony\Contracts\Translation\TranslatorInterface;
 
 final class EntryWidgetRegistryTest extends TestCase
 {
     private string $path;
+    private string $pluginsDir;
 
     protected function setUp(): void
     {
         $this->path = sys_get_temp_dir().'/anime-widgets-test-'.uniqid().'.json';
+        $this->pluginsDir = sys_get_temp_dir().'/anime-widgets-test-plugins-'.uniqid();
+        mkdir($this->pluginsDir, recursive: true);
     }
 
     protected function tearDown(): void
@@ -52,6 +57,49 @@ final class EntryWidgetRegistryTest extends TestCase
                 unlink($file);
             }
         }
+
+        $this->removeDirectory($this->pluginsDir);
+    }
+
+    private function removeDirectory(string $dir): void
+    {
+        if (!is_dir($dir)) {
+            return;
+        }
+
+        $entries = scandir($dir);
+        foreach ($entries === false ? [] : $entries as $entry) {
+            if ($entry === '.' || $entry === '..') {
+                continue;
+            }
+
+            $path = $dir.'/'.$entry;
+            is_dir($path) ? $this->removeDirectory($path) : unlink($path);
+        }
+
+        rmdir($dir);
+    }
+
+    private function writeManifest(string $pluginId, string $name): void
+    {
+        $dir = $this->pluginsDir.'/'.$pluginId;
+        mkdir($dir, recursive: true);
+        file_put_contents($dir.'/manifest.json', (string) json_encode([
+            'id' => $pluginId,
+            'name' => $name,
+            'version' => '1.0.0',
+            'type' => 'integration',
+            'features' => ['filler' => true],
+            'require' => ['core' => '>=2.0.0', 'php' => '>=8.2'],
+        ]));
+    }
+
+    private function installedPlugins(): InstalledPluginsRegistry
+    {
+        $registry = new InstalledPluginsRegistry($this->pluginsDir, new PluginsConfigStore($this->path), new NullLogger());
+        $registry->reconcile();
+
+        return $registry;
     }
 
     /**
@@ -121,8 +169,8 @@ final class EntryWidgetRegistryTest extends TestCase
         $registry = new EntryWidgetRegistry(
             [
                 'animedb-shikimori:related' => $this->createStub(EntryWidgetInterface::class),
-                'animedb-shikimori:recommended' => $this->createStub(EntryWidgetInterface::class),
-                'animedb-anilist:related' => $this->createStub(EntryWidgetInterface::class),
+                'animedb-shikimori:recommended' => new FakeEntryWidget(),
+                'animedb-anilist:related' => new FakeEntryWidget(),
             ],
             new PluginsConfigStore($this->path),
             $this->noopTranslator(),
@@ -130,11 +178,75 @@ final class EntryWidgetRegistryTest extends TestCase
 
         $this->assertSame(
             [
-                ['pluginId' => 'animedb-shikimori', 'widgetName' => 'recommended'],
-                ['pluginId' => 'animedb-anilist', 'widgetName' => 'related'],
+                [
+                    'pluginId' => 'animedb-shikimori',
+                    'widgetName' => 'recommended',
+                    'title' => 'recommended',
+                    'pluginName' => 'animedb-shikimori',
+                ],
+                [
+                    'pluginId' => 'animedb-anilist',
+                    'widgetName' => 'related',
+                    'title' => 'related',
+                    'pluginName' => 'animedb-anilist',
+                ],
             ],
             $registry->findAllActive(),
         );
+    }
+
+    /**
+     * Issue #728: the host's slot header needs the widget's display title and the plugin's
+     * manifest name, both already resolved — reusing the same {@see EntryWidgetRegistry::listAll()}
+     * translation logic, not a second implementation.
+     */
+    public function testFindAllActiveResolvesTitleAndPluginNameForEachActiveWidget(): void
+    {
+        $this->writeManifest('animedb-shikimori', 'Shikimori');
+        file_put_contents($this->path, json_encode([
+            'animedb-shikimori' => ['features' => ['related' => true]],
+        ]));
+
+        $translator = $this->createStub(TranslatorInterface::class);
+        $translator->method('trans')->willReturnMap([
+            ['widget.fake_entry_widget.title', [], 'animedb-shikimori', null, 'Related titles'],
+        ]);
+
+        $registry = new EntryWidgetRegistry(
+            ['animedb-shikimori:related' => new FakeEntryWidget()],
+            new PluginsConfigStore($this->path),
+            $translator,
+            $this->installedPlugins(),
+        );
+
+        $this->assertSame(
+            [[
+                'pluginId' => 'animedb-shikimori',
+                'widgetName' => 'related',
+                'title' => 'Related titles',
+                'pluginName' => 'Shikimori',
+            ]],
+            $registry->findAllActive(),
+        );
+    }
+
+    /**
+     * Same fallback rule as {@see EntryWidgetRegistryTest::testListAllIncludesBothActiveAndInactiveWidgets()}:
+     * an untranslated `titleKey` must never reach the slot header as a raw dotted key.
+     */
+    public function testFindAllActiveFallsBackToWidgetNameWhenTitleKeyIsUntranslated(): void
+    {
+        file_put_contents($this->path, json_encode([
+            'animedb-shikimori' => ['features' => ['related' => true]],
+        ]));
+
+        $registry = new EntryWidgetRegistry(
+            ['animedb-shikimori:related' => new FakeEntryWidget()],
+            new PluginsConfigStore($this->path),
+            $this->noopTranslator(),
+        );
+
+        $this->assertSame('related', $registry->findAllActive()[0]['title']);
     }
 
     public function testListAllIncludesBothActiveAndInactiveWidgets(): void
@@ -202,7 +314,7 @@ final class EntryWidgetRegistryTest extends TestCase
     public function testSetActiveTurnsAWidgetOnAndOff(): void
     {
         $registry = new EntryWidgetRegistry(
-            ['animedb-shikimori:related' => $this->createStub(EntryWidgetInterface::class)],
+            ['animedb-shikimori:related' => new FakeEntryWidget()],
             new PluginsConfigStore($this->path),
             $this->noopTranslator(),
         );
@@ -224,7 +336,7 @@ final class EntryWidgetRegistryTest extends TestCase
 
         $widgets = [];
         foreach (['w1', 'w2', 'w3', 'w4', 'w5', 'w6'] as $name) {
-            $widgets["animedb-shikimori:{$name}"] = $this->createStub(EntryWidgetInterface::class);
+            $widgets["animedb-shikimori:{$name}"] = new FakeEntryWidget();
         }
 
         $registry = new EntryWidgetRegistry($widgets, new PluginsConfigStore($this->path), $this->noopTranslator());
@@ -243,7 +355,7 @@ final class EntryWidgetRegistryTest extends TestCase
 
         $widgets = [];
         foreach (['w1', 'w2', 'w3', 'w4', 'w5'] as $name) {
-            $widgets["animedb-shikimori:{$name}"] = $this->createStub(EntryWidgetInterface::class);
+            $widgets["animedb-shikimori:{$name}"] = new FakeEntryWidget();
         }
 
         $registry = new EntryWidgetRegistry($widgets, new PluginsConfigStore($this->path), $this->noopTranslator());
@@ -261,7 +373,7 @@ final class EntryWidgetRegistryTest extends TestCase
 
         $widgets = [];
         foreach (['w1', 'w2', 'w3', 'w4', 'w5'] as $name) {
-            $widgets["animedb-shikimori:{$name}"] = $this->createStub(EntryWidgetInterface::class);
+            $widgets["animedb-shikimori:{$name}"] = new FakeEntryWidget();
         }
 
         $registry = new EntryWidgetRegistry($widgets, new PluginsConfigStore($this->path), $this->noopTranslator());

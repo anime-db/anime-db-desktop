@@ -33,6 +33,7 @@ use App\Repository\AnimeRepository;
 use App\Repository\StorageRepository;
 use App\Service\Plugin\CatalogWidgetRegistry;
 use App\Service\Plugin\PluginsConfigStore;
+use App\Tests\Fixtures\Plugin\Widget\FakeCatalogWidget;
 use PHPUnit\Framework\TestCase;
 use Symfony\Contracts\Translation\TranslatorInterface;
 use Twig\Environment;
@@ -114,13 +115,16 @@ final class HomeControllerTest extends TestCase
             'animedb-anilist' => ['features' => ['spotlight' => false]],
         ]));
 
+        $translator = $this->createStub(TranslatorInterface::class);
+        $translator->method('trans')->willReturnArgument(0);
+
         $catalogWidgets = new CatalogWidgetRegistry(
             [
-                'animedb-shikimori:spotlight' => $this->createStub(CatalogWidgetInterface::class),
+                'animedb-shikimori:spotlight' => new FakeCatalogWidget(),
                 'animedb-anilist:spotlight' => $this->createStub(CatalogWidgetInterface::class),
             ],
             $pluginsConfigStore,
-            $this->createStub(TranslatorInterface::class),
+            $translator,
         );
 
         $twig = $this->createMock(Environment::class);
@@ -128,7 +132,12 @@ final class HomeControllerTest extends TestCase
             ->method('render')
             ->with('anime/list.html.twig', [
                 'showOnboarding' => false,
-                'widgets' => [['pluginId' => 'animedb-shikimori', 'widgetName' => 'spotlight']],
+                'widgets' => [[
+                    'pluginId' => 'animedb-shikimori',
+                    'widgetName' => 'spotlight',
+                    'title' => 'spotlight',
+                    'pluginName' => 'animedb-shikimori',
+                ]],
             ])
             ->willReturn('<html></html>');
 

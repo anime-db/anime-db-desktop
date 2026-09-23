@@ -525,6 +525,7 @@ plugin_widget:
     loading: Loading…
     error: 'Failed to load the "%source%" widget.'
     retry_button: Retry
+    slot_heading: '%title% · %plugin%'
 
 app_notification:
     close_button: Close

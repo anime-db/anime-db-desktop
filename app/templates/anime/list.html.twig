@@ -36,6 +36,15 @@
             </section>
         {% endif %}
 
+        {% if widgets is not empty %}
+            {# Issue #728: sits above the toolbar, not inside .anime-list__main below, so the
+               toolbar itself reads as the boundary between a plugin's data and the user's own
+               catalog — a widget's carousel must never be mistaken for part of the collection. #}
+            <div class="anime-list__widgets">
+                {{ include('plugin/_widget_slots.html.twig', {widgets: widgets}) }}
+            </div>
+        {% endif %}
+
         <div class="anime-list__toolbar">
             <input
                 type="search"
@@ -76,12 +85,6 @@
 
         <div class="anime-list__layout">
             <div class="anime-list__main">
-                {% if widgets is not empty %}
-                    <div class="anime-list__widgets">
-                        {{ include('plugin/_widget_slots.html.twig', {widgets: widgets}) }}
-                    </div>
-                {% endif %}
-
                 <div class="anime-list__chips sticky-top" id="anime-list-chips">
                     <ul class="anime-list__chip-list" id="anime-list-chip-list"></ul>
                     <span class="anime-list__chips-shown" id="anime-list-chips-shown"></span>
