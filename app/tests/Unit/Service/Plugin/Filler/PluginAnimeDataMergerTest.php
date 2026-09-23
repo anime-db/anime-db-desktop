@@ -246,6 +246,31 @@ final class PluginAnimeDataMergerTest extends TestCase
         $this->assertSame($expectedLocale, $anime->getNames()->toArray()[0]->locale);
     }
 
+    /**
+     * The dedup key is built from the *normalized* locale (see applyAlternativeNames()'s
+     * $existingByKey/$key), not the raw incoming one. An existing 'ru' row and an incoming
+     * 'ru-RU'/'RU' pair for the same text must collide into a single row - if the merger ever
+     * stopped normalizing before keying, this would regress into a duplicate even though
+     * testApplyNormalizesTheIncomingLocale() (which only checks the persisted ->locale, already
+     * normalized by AnimeName::__construct() regardless of what the merger does) stays green.
+     */
+    public function testApplyDeduplicatesAgainstAnExistingEntryByNormalizedLocale(): void
+    {
+        $anime = $this->newAnime();
+        $anime->addName('Bleach', 'ru', AnimeNameRole::Official);
+
+        $data = new PluginAnimeData(
+            title: 'Bleach',
+            alternativeNames: [new ContractsAnimeName('Bleach', 'ru-RU', ContractsNameRole::Official)],
+        );
+
+        $this->newMerger()->apply($anime, $data, ['alternativeNames']);
+
+        $names = $anime->getNames()->toArray();
+        $this->assertCount(1, $names);
+        $this->assertSame('ru', $names[0]->locale);
+    }
+
     public function testApplyMergesDescriptionsByLocaleWithoutLosingOtherLocales(): void
     {
         $anime = $this->newAnime();
