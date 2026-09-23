@@ -59,6 +59,7 @@ use Doctrine\ORM\EntityManager;
 use Doctrine\ORM\ORMSetup;
 use Doctrine\ORM\Tools\SchemaTool;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Symfony\Component\Clock\MockClock;
 use Symfony\Component\Messenger\Exception\UnrecoverableMessageHandlingException;
@@ -280,6 +281,55 @@ final class ScanStorageMessageHandlerTest extends TestCase
         $this->assertSame('AutoLinked', $done['data']['items'][0]['type']);
     }
 
+    public function testAThrowingAnimeFilesChangedEventSubscriberDoesNotFailTheScanOrSuppressScanDone(): void
+    {
+        $dir = $this->makeStorageDir();
+        $filePath = $dir.'/Trigun.mkv';
+        $this->touchFile($filePath, time() - 100);
+
+        $storage = new Storage('Main folder', $dir, StorageType::Folder);
+        $this->entityManager->persist($storage);
+
+        $anime = new TvAnime();
+        $anime->setTitle('Trigun')->setWatchStatus(WatchStatus::Plan);
+        $anime->setStorage($storage)->setStoragePath('Trigun.mkv');
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+        $storageId = $this->requireId($storage);
+
+        // Past Anime::$dateUpdate (set at construction, above), so the scan reports it Updated.
+        touch($filePath, time() + 100);
+
+        // A plugin subscriber tagged onto AnimeFilesChangedEvent through Symfony's regular
+        // _instanceof autoconfig (unlike ScanStorageService::fillFromPlugin(), issue #233, this
+        // dispatch has no built-in guard against a throwing listener) — the handler itself must
+        // supply that guard.
+        $eventDispatcher = $this->createMock(EventDispatcherInterface::class);
+        $eventDispatcher->expects($this->once())
+            ->method('dispatch')
+            ->willThrowException(new \RuntimeException('Plugin subscriber exploded.'));
+
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->once())->method('error');
+
+        $wsPublisher = $this->newWsPublisher();
+        $handler = $this->newHandler(
+            $this->createStub(ProcessLivenessChecker::class),
+            $wsPublisher,
+            eventDispatcher: $eventDispatcher,
+            logger: $logger,
+        );
+
+        // No exception propagates out of the handler — a plugin subscriber failing must not turn
+        // an already-committed, already-published scan into scan.failed / a Messenger retry.
+        $handler(new ScanStorageMessage($storageId));
+
+        $events = $wsPublisher->since(0);
+        $done = $events[2];
+        $this->assertSame('scan.done', $done['event']);
+        $this->assertSame('Updated', $done['data']['items'][0]['type']);
+    }
+
     public function testScanRelocatesStorageToThePathFoundByMarkerWhenTheCurrentPathIsUnreadable(): void
     {
         $relocatedDir = $this->makeStorageDir();
@@ -426,6 +476,7 @@ final class ScanStorageMessageHandlerTest extends TestCase
         WsPublisher $wsPublisher,
         ?iterable $driveRoots = null,
         ?EventDispatcherInterface $eventDispatcher = null,
+        ?LoggerInterface $logger = null,
     ): ScanStorageMessageHandler {
         $animeRepository = new AnimeRepository($this->entityManager);
         $storageMarkerService = new StorageMarkerService($this->entityManager, $driveRoots);
@@ -465,7 +516,7 @@ final class ScanStorageMessageHandlerTest extends TestCase
             $scanStorageService,
             $storageMarkerService,
             $wsPublisher,
-            new NullLogger(),
+            $logger ?? new NullLogger(),
             $eventDispatcher ?? $this->createStub(EventDispatcherInterface::class),
         );
     }

@@ -126,12 +126,12 @@ final class ScanStorageMessageHandler
                 return;
             }
 
-            $this->dispatchFilesAddedEvents($result->items);
-
             $this->wsPublisher->publish('scan.done', [
                 'storage_id' => $message->storageId,
                 'items' => array_map($this->serializeItem(...), $result->items),
             ]);
+
+            $this->dispatchFilesAddedEvents($result->items);
         } catch (\Throwable $exception) {
             $this->wsPublisher->publish('scan.failed', [
                 'storage_id' => $message->storageId,
@@ -165,6 +165,14 @@ final class ScanStorageMessageHandler
      * when exactly one candidate is found automatically — so it gets the matching
      * {@see FilesChangeReason::PathChanged}.
      *
+     * Called after `scan.done` is published, not before: plugin subscribers of this event are
+     * registered through Symfony's regular `_instanceof` autoconfig (see {@see \App\Service\Plugin\DependencyInjection\Compiler\TagPluginServicesPass})
+     * and are not wrapped by the host the way {@see ScanStorageService::fillFromPlugin()}
+     * guards a plugin call during scan() itself (issue #233) — so each dispatch is individually
+     * try/caught here too. A scan that already committed successfully must not turn into
+     * `scan.failed` (and the handler must not retry the whole message) just because one plugin's
+     * listener threw.
+     *
      * @param list<ScanResultItem> $items
      */
     private function dispatchFilesAddedEvents(array $items): void
@@ -182,7 +190,16 @@ final class ScanStorageMessageHandler
 
             $anime = $item->anime ?? throw new \LogicException('ScanResultItem::updated()/autoLinked() must always carry an Anime.');
             $animeId = $anime->id ?? throw new \LogicException('Anime must have an id once linked to storage.');
-            $this->eventDispatcher->dispatch(new AnimeFilesChangedEvent(new AnimeId($animeId), $reason));
+
+            try {
+                $this->eventDispatcher->dispatch(new AnimeFilesChangedEvent(new AnimeId($animeId), $reason));
+            } catch (\Throwable $exception) {
+                $this->logger->error('A plugin subscriber of AnimeFilesChangedEvent failed; the scan itself already succeeded and is not affected.', [
+                    'anime_id' => $animeId,
+                    'reason' => $reason->name,
+                    'exception' => $exception,
+                ]);
+            }
         }
     }
 
