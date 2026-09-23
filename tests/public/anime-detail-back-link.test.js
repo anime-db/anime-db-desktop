@@ -34,6 +34,10 @@ function setHistoryLength(length) {
     Object.defineProperty(window.history, 'length', { value: length, configurable: true });
 }
 
+function setReferrer(referrer) {
+    Object.defineProperty(document, 'referrer', { value: referrer, configurable: true });
+}
+
 function loadModule() {
     jest.resetModules();
     require('../../app/public/js/anime-detail.js');
@@ -48,13 +52,14 @@ function dispatchClick(link) {
 
 beforeEach(() => {
     setUpDom();
+    setReferrer(`${window.location.origin}/`);
 });
 
 afterEach(() => {
     jest.restoreAllMocks();
 });
 
-test('clicking the link goes back through history when the window has a previous entry', () => {
+test('clicking the link goes back through history when arriving from the catalog', () => {
     setHistoryLength(2);
     const backSpy = jest.spyOn(window.history, 'back').mockImplementation(() => {});
 
@@ -67,6 +72,30 @@ test('clicking the link goes back through history when the window has a previous
 
 test('the link falls back to plain navigation when the window has no previous entry', () => {
     setHistoryLength(1);
+    const backSpy = jest.spyOn(window.history, 'back').mockImplementation(() => {});
+
+    loadModule();
+    const event = dispatchClick(document.querySelector('[data-catalog-back-link]'));
+
+    expect(backSpy).not.toHaveBeenCalled();
+    expect(event.defaultPrevented).toBe(false);
+});
+
+test('the link falls back to plain navigation when the previous page is not the catalog', () => {
+    setHistoryLength(2);
+    setReferrer(`${window.location.origin}/settings/sync-review`);
+    const backSpy = jest.spyOn(window.history, 'back').mockImplementation(() => {});
+
+    loadModule();
+    const event = dispatchClick(document.querySelector('[data-catalog-back-link]'));
+
+    expect(backSpy).not.toHaveBeenCalled();
+    expect(event.defaultPrevented).toBe(false);
+});
+
+test('the link falls back to plain navigation when there is no referrer', () => {
+    setHistoryLength(2);
+    setReferrer('');
     const backSpy = jest.spyOn(window.history, 'back').mockImplementation(() => {});
 
     loadModule();

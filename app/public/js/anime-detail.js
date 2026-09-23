@@ -252,13 +252,27 @@
 // The "← Catalog" link (issue #719). The catalog itself writes its filters/sort/search into its
 // own URL and reads them back from that same URL on load (issue #713), so a real back navigation
 // through browser history reopens it exactly as it was left - no state needs to be carried here.
-// history.length > 1 is the only reliable signal this page has that such an entry exists: the app
-// always opens on the catalog (native/window/index.js), so an anime page reached any other way
-// has nothing to go back to, and the link's plain href to the catalog root is the correct
-// fallback for that case.
+// The previous history entry is only guaranteed to be the catalog when this page was reached by
+// navigating from it - an anime page can just as well be reached from settings or the "add anime"
+// form, where a plain back navigation would land somewhere other than the catalog. document.referrer
+// is the only signal available for that: the link is intercepted only when the referrer is
+// same-origin and its path is the catalog root ('/'), and window.history.length > 1 confirms a
+// previous entry actually exists to go back to. Any other referrer (including an empty one, e.g. a
+// deep link) falls through to the plain href to the catalog root.
 (function () {
     const link = document.querySelector('[data-catalog-back-link]');
     if (!link || window.history.length <= 1) {
+        return;
+    }
+
+    let referrerUrl;
+    try {
+        referrerUrl = new URL(document.referrer);
+    } catch {
+        return;
+    }
+
+    if (referrerUrl.origin !== window.location.origin || referrerUrl.pathname !== '/') {
         return;
     }
 
