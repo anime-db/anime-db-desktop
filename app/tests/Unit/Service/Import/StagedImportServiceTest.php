@@ -173,6 +173,16 @@ final class StagedImportServiceTest extends TestCase
         self::assertSame('incompatible_schema', $this->createService()->readRejectionReason());
     }
 
+    // Issue #710: native/supervisor/import-apply.js#apply() writes this reason directly when a
+    // staged import was applied but had to be rolled back, so it must be recognized the same way
+    // as the reasons decide() itself produces.
+    public function testReadRejectionReasonRecognizesAnImportRolledBackReason(): void
+    {
+        file_put_contents($this->importRejectionPath, json_encode(['reason' => 'import_rolled_back']));
+
+        self::assertSame('import_rolled_back', $this->createService()->readRejectionReason());
+    }
+
     private function createService(): StagedImportService
     {
         return new StagedImportService($this->importStagingDir, $this->importRejectionPath);

@@ -55,7 +55,12 @@ final class StagedImportService
     /**
      * @var list<string>
      */
-    private const array KNOWN_REJECTION_REASONS = ['invalid_marker', 'incompatible_schema', 'user_declined'];
+    private const array KNOWN_REJECTION_REASONS = [
+        'invalid_marker',
+        'incompatible_schema',
+        'user_declined',
+        'import_rolled_back',
+    ];
 
     public function __construct(
         private readonly string $importStagingDir,

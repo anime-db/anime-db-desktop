@@ -28,6 +28,7 @@ const phpCommand = require('./php-command');
 const migrations = require('./migrations');
 const messengerConsumer = require('./messenger-consumer');
 const searchReindex = require('./search-reindex');
+const stagedImport = require('./staged-import');
 
 /** Same order of magnitude as staged-import.js's STATUS_TIMEOUT_MS — a `DELETE FROM` on a table
  *  the app itself keeps small has no reason to ever take long. */
@@ -147,15 +148,27 @@ function restoreCatalog(preImportBackupPath) {
  *      earlier step has succeeded.
  *
  * Any failure across steps 2-5 rolls the entire import back rather than leaving it half-applied:
- * restoreCatalog() to the step-1 snapshot, followed by an unconditional reindex of the now-restored
- * catalog — by the time a failure here is caught, the index has already been cleared or partially
- * rebuilt against the catalog that is being discarded, so it must be rebuilt again for the one the
- * app is actually about to start against. That second reindex call is deliberately not wrapped in
- * its own try/catch: unlike the ordinary upgrade path's reindex (best-effort, logged and ignored —
- * see index.js), silently losing this one would start the app on a restored catalog paired with a
- * search index that still describes the catalog that was just discarded, which is worse than
- * failing the startup outright. swapCatalog() itself is inside this same try — a failure partway
- * through the swap (e.g. the `media/` rename) must roll back exactly like a failure in steps 3-5.
+ * restoreCatalog() to the step-1 snapshot, followed by marking a reindex required on the next start
+ * rather than running one here and now (issue #710) — by the time a failure here is caught, the
+ * index has already been cleared or partially rebuilt against the catalog that is being discarded,
+ * so it must eventually be rebuilt again for the one the app is actually about to start against, but
+ * running that rebuild synchronously in this same catch, against the same data and the same
+ * timeout that likely just caused the failure being handled, previously meant a reindex timeout
+ * could fail a second time in a row and take the whole startup down with it (issue #710) — the
+ * exact scenario searchReindex.markRequired() (issue #681) already exists to defer instead. The
+ * next start's ordinary reindex (see index.js) already swallows its own failure and only logs it,
+ * so deferring to it turns a startup-blocking failure into a merely stale index. restoreCatalog()
+ * itself is wrapped in its own try/catch here for the same reason: its failure must not propagate
+ * out of apply() either, even though the catalog is then left in whatever state restoreCatalog()
+ * got to before throwing. swapCatalog() is inside this same try — a failure partway through the
+ * swap (e.g. the `media/` rename) must roll back exactly like a failure in steps 3-5.
+ *
+ * Once the rollback (or its own best-effort attempt) is done, import-staging/ is removed here
+ * rather than left for the next start's staged-import.js#decide() to find: swapCatalog() already
+ * removed its marker in step 2, so decide() can only ever see it as an invalid marker and reject it
+ * under that (wrong) reason — see stagedImport.RejectReason.IMPORT_ROLLED_BACK, written directly
+ * to paths.getImportRejectionPath() here instead so /settings/backup reports what actually
+ * happened.
  *
  * @param {import('./env').PhpContext} context
  * @returns {Promise<{ applied: boolean, error: Error | null }>}
@@ -173,8 +186,16 @@ async function apply(context) {
         await phpCommand.run('app:queue:purge', [], context, PURGE_TIMEOUT_MS);
         await searchReindex.run(context);
     } catch (err) {
-        restoreCatalog(preImportBackupPath);
-        await searchReindex.run(context);
+        try {
+            restoreCatalog(preImportBackupPath);
+        } catch (rollbackErr) {
+            console.error('[import-apply] не удалось откатить каталог к состоянию до импорта:', rollbackErr.message);
+        }
+
+        searchReindex.markRequired();
+        stagedImport.writeRejection(stagedImport.RejectReason.IMPORT_ROLLED_BACK);
+        fs.rmSync(stagingDir, { recursive: true, force: true });
+
         return { applied: false, error: err };
     }
 

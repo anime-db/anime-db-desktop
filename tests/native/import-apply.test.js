@@ -46,8 +46,16 @@ jest.mock('../../native/supervisor/php-command', () => ({
 }));
 
 const mockSearchReindexRun = jest.fn();
+const mockSearchReindexMarkRequired = jest.fn();
 jest.mock('../../native/supervisor/search-reindex', () => ({
-    run: (...args) => mockSearchReindexRun(...args),
+    run:          (...args) => mockSearchReindexRun(...args),
+    markRequired: (...args) => mockSearchReindexMarkRequired(...args),
+}));
+
+const mockWriteRejection = jest.fn();
+jest.mock('../../native/supervisor/staged-import', () => ({
+    writeRejection: (...args) => mockWriteRejection(...args),
+    RejectReason:   { IMPORT_ROLLED_BACK: 'import_rolled_back' },
 }));
 
 const fs = require('fs');
@@ -65,6 +73,7 @@ beforeEach(() => {
     jest.spyOn(fs, 'mkdirSync').mockImplementation(() => {});
     jest.spyOn(fs, 'existsSync').mockReturnValue(true);
     jest.spyOn(fs, 'renameSync').mockImplementation(() => {});
+    jest.spyOn(console, 'error').mockImplementation(() => {});
 
     mockCreatePreImportBackup.mockResolvedValue(PREIMPORT_BACKUP_PATH);
     mockMigrationsRun.mockResolvedValue(false);
@@ -227,40 +236,80 @@ describe('apply() — success path', () => {
     });
 });
 
-describe('apply() — rollback on failure (acceptance criteria 6, 7, 8)', () => {
+describe('apply() — rollback on failure (acceptance criteria 6, 7, 8; revised by issue #710)', () => {
     test.each([
         ['migrations.run (step 3)', () => mockMigrationsRun.mockRejectedValue(new Error('migrate-failed'))],
         ['messenger:setup-transports (step 4)', () => mockRunSetupTransports.mockRejectedValue(new Error('setup-transports failed'))],
         ['app:queue:purge (step 4)', () => mockPhpCommandRun.mockRejectedValue(new Error('queue purge failed'))],
-    ])('rolls back to the pre-import backup and rebuilds the index when %s fails', async (_label, breakStep) => {
+    ])('rolls back to the pre-import backup and marks a reindex required when %s fails', async (_label, breakStep) => {
         breakStep();
 
         const result = await apply(CONTEXT);
 
         expect(mockRestoreBackup).toHaveBeenCalledWith(PREIMPORT_BACKUP_PATH);
-        expect(mockSearchReindexRun).toHaveBeenLastCalledWith(CONTEXT);
+        expect(mockSearchReindexRun).not.toHaveBeenCalled();
+        expect(mockSearchReindexMarkRequired).toHaveBeenCalledTimes(1);
         expect(result.applied).toBe(false);
         expect(result.error).toBeInstanceOf(Error);
     });
 
-    // The reindex step (5) itself failing must roll back too — a valid catalog paired with a
-    // stale/missing index is worse than staying on the previous one.
-    test('rolls back when the post-swap reindex itself fails', async () => {
-        mockSearchReindexRun.mockRejectedValueOnce(new Error('reindex failed')).mockResolvedValueOnce(undefined);
+    // Issue #710: the reindex step (5) itself failing must still roll back, but the recovery must
+    // no longer re-run the reindex synchronously (same data, same timeout, as the failure just
+    // handled) — it marks one required on the next start instead, the same mechanism
+    // native/backup-restore/index.js already uses (issue #681).
+    test('rolls back when the post-swap reindex itself fails, without re-running it synchronously', async () => {
+        mockSearchReindexRun.mockRejectedValueOnce(new Error('reindex failed'));
 
         const result = await apply(CONTEXT);
 
         expect(mockRestoreBackup).toHaveBeenCalledWith(PREIMPORT_BACKUP_PATH);
-        expect(mockSearchReindexRun).toHaveBeenCalledTimes(2);
+        expect(mockSearchReindexRun).toHaveBeenCalledTimes(1);
+        expect(mockSearchReindexMarkRequired).toHaveBeenCalledTimes(1);
         expect(result.applied).toBe(false);
     });
 
-    test('never removes import-staging/ when a rollback happened', async () => {
+    // Regression guard for issue #710: previously import-staging/ was left in place (marker-less,
+    // since swapCatalog() already removed it) for the next start's staged-import.js#decide() to
+    // find — which can only ever see that as an invalid marker and mislabel the rejection reason.
+    // Removing it here, alongside recording the real reason directly (see below), means decide()
+    // never gets a chance to overwrite it.
+    test('removes import-staging/ once the rollback has recorded its own rejection reason', async () => {
         mockMigrationsRun.mockRejectedValue(new Error('migrate-failed'));
 
         await apply(CONTEXT);
 
-        expect(fs.rmSync).not.toHaveBeenCalledWith(STAGING_DIR, { recursive: true, force: true });
+        expect(fs.rmSync).toHaveBeenCalledWith(STAGING_DIR, { recursive: true, force: true });
+    });
+
+    // Acceptance criterion 4 (issue #710): /settings/backup must report that the import was rolled
+    // back, not the invalid_marker reason staged-import.js#decide() would otherwise (wrongly)
+    // attribute this to on the next start.
+    test('records the rollback as the rejection reason for /settings/backup', async () => {
+        mockMigrationsRun.mockRejectedValue(new Error('migrate-failed'));
+
+        await apply(CONTEXT);
+
+        expect(mockWriteRejection).toHaveBeenCalledWith('import_rolled_back');
+    });
+
+    // Acceptance criterion 3 (issue #710): restoreCatalog()'s own failure must not propagate out of
+    // apply() — the whole point of this change is that a startup never crashes on a failed import,
+    // even a doubly-failed one.
+    test('does not throw out of apply() even when restoreCatalog() itself fails', async () => {
+        mockMigrationsRun.mockRejectedValue(new Error('migrate-failed'));
+        // swapCatalog() also calls migrations.restoreBackup() (for the staged data.db, step 2) —
+        // that first call must succeed; only the rollback's own second call, restoring
+        // PREIMPORT_BACKUP_PATH, must fail here. Both are queued as *Once so neither implementation
+        // leaks into later tests the way a persistent mockImplementation() would.
+        mockRestoreBackup.mockImplementationOnce(() => {});
+        mockRestoreBackup.mockImplementationOnce(() => {
+            throw new Error('restore also failed');
+        });
+
+        await expect(apply(CONTEXT)).resolves.toEqual({ applied: false, error: expect.any(Error) });
+        expect(mockSearchReindexMarkRequired).toHaveBeenCalledTimes(1);
+        expect(mockWriteRejection).toHaveBeenCalledWith('import_rolled_back');
+        expect(console.error).toHaveBeenCalled();
     });
 
     // The core bug this block guards against: createPreImportBackup() only snapshots data.db, so
@@ -298,7 +347,7 @@ describe('apply() — rollback on failure (acceptance criteria 6, 7, 8)', () => 
         const result = await apply(CONTEXT);
 
         expect(mockRestoreBackup).toHaveBeenCalledWith(PREIMPORT_BACKUP_PATH);
-        expect(mockSearchReindexRun).toHaveBeenCalledWith(CONTEXT);
+        expect(mockSearchReindexMarkRequired).toHaveBeenCalledTimes(1);
         expect(result.applied).toBe(false);
         expect(result.error).toBeInstanceOf(Error);
         // swapCatalog() never got far enough to move media/ aside, so restoreCatalog() must leave
@@ -306,32 +355,33 @@ describe('apply() — rollback on failure (acceptance criteria 6, 7, 8)', () => 
         expect(fs.renameSync).not.toHaveBeenCalledWith(PRE_IMPORT_MEDIA_DIR, MEDIA_DIR);
     });
 
-    // restoreBackup() runs before the recovery reindex, never after — the index must be rebuilt
-    // against the catalog that is actually back in place.
-    test('restores the backup before rebuilding the index during rollback', async () => {
+    // restoreBackup() runs before the reindex is marked required, never after — marking one
+    // required against a catalog that has not actually been restored yet would be premature.
+    test('restores the backup before marking a reindex required during rollback', async () => {
         mockMigrationsRun.mockRejectedValue(new Error('migrate-failed'));
         const callOrder = [];
         mockRestoreBackup.mockImplementation((path) => {
             if (path === PREIMPORT_BACKUP_PATH) callOrder.push('restoreBackup(preimport)');
         });
-        mockSearchReindexRun.mockImplementation(() => {
-            callOrder.push('searchReindex.run');
-            return Promise.resolve();
+        mockSearchReindexMarkRequired.mockImplementation(() => {
+            callOrder.push('searchReindex.markRequired');
         });
 
         await apply(CONTEXT);
 
-        expect(callOrder).toEqual(['restoreBackup(preimport)', 'searchReindex.run']);
+        expect(callOrder).toEqual(['restoreBackup(preimport)', 'searchReindex.markRequired']);
     });
 
-    // Acceptance criterion 8: a reindex failure must never be swallowed — including the recovery
-    // reindex that runs after a rollback. Losing it silently would start the app on a restored
-    // catalog paired with a search index that still describes the discarded one.
-    test('propagates the error when the recovery reindex after a rollback also fails', async () => {
-        mockMigrationsRun.mockRejectedValue(new Error('migrate-failed'));
-        mockSearchReindexRun.mockRejectedValue(new Error('index rebuild also failed'));
+    // Regression guard for issue #710's core bug: the reindex failing on its one and only attempt
+    // (step 5) used to be followed by a synchronous recovery reindex against the same data and the
+    // same timeout, which could fail again and propagate out of apply() and, in turn, out of
+    // supervisor.start() — the app never started. It must now resolve instead, every time, since a
+    // second synchronous attempt no longer exists to fail.
+    test('resolves instead of throwing when the reindex fails', async () => {
+        mockSearchReindexRun.mockRejectedValue(new Error('reindex failed'));
 
-        await expect(apply(CONTEXT)).rejects.toThrow('index rebuild also failed');
+        await expect(apply(CONTEXT)).resolves.toEqual({ applied: false, error: expect.any(Error) });
         expect(mockRestoreBackup).toHaveBeenCalledWith(PREIMPORT_BACKUP_PATH);
+        expect(mockSearchReindexMarkRequired).toHaveBeenCalledTimes(1);
     });
 });
