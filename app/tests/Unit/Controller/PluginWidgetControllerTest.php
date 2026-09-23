@@ -261,6 +261,39 @@ final class PluginWidgetControllerTest extends TestCase
         $this->assertSame('<div>error</div>', $response->getContent());
     }
 
+    public function testRenderReturnsErrorFragmentAndLogsWhenCatalogWidgetThrows(): void
+    {
+        $widget = $this->createMock(CatalogWidgetInterface::class);
+        $widget->method('render')->willThrowException(new \RuntimeException('API unreachable'));
+
+        $catalogWidgets = new CatalogWidgetRegistry(
+            ['animedb-shikimori:new_releases' => $widget],
+            $this->activeWidgets('animedb-shikimori', ['new_releases' => true]),
+            $this->createStub(TranslatorInterface::class),
+        );
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('plugin/_widget_error.html.twig', $this->callback(
+                static fn (array $params): bool => $params['pluginId'] === 'animedb-shikimori' && \is_string($params['retryUrl']),
+            ))
+            ->willReturn('<div>error</div>');
+
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->once())->method('error');
+
+        $controller = $this->createController($this->emptyEntryWidgets(), $catalogWidgets, twig: $twig, logger: $logger);
+        $response = $controller->render(
+            'animedb-shikimori',
+            'new_releases',
+            Request::create('/plugin/animedb-shikimori/widget/new_releases'),
+        );
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertSame('<div>error</div>', $response->getContent());
+    }
+
     public function testRenderThrowsBadRequestWhenEntryIdIsMissing(): void
     {
         $widget = $this->createStub(EntryWidgetInterface::class);
