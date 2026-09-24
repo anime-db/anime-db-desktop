@@ -39,6 +39,13 @@ on:
       - 'app/translations/**'
       - 'app/migrations/**'
       - 'app/public/index.php'
+      # Та же логика, по которой в фильтре уже есть package.json/package-lock.json: бамп
+      # Symfony/Twig/Doctrine ломает страницу так же, как свой код, а .env и bin/console
+      # участвуют ещё и в накате миграций, который run.js делает перед стартом.
+      - 'app/composer.json'
+      - 'app/composer.lock'
+      - 'app/.env'
+      - 'app/bin/console'
       # Правка самого гейта обязана проверяться этим же гейтом.
       - '.github/workflows/frontend-smoke.yml'
 
