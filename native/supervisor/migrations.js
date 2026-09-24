@@ -279,9 +279,8 @@ async function createBackup(context) {
  * prefix, so the snapshot survives routine rotation indefinitely (issue #681) instead of being
  * evicted by MAX_BACKUPS churn while an import is still in progress.
  *
- * Not called from anywhere in this codebase yet — reserved for the catalog-import apply step
- * (issue #659, not yet built), which needs a backup of the pre-import catalog to restore from if
- * the user reverts.
+ * Called from the catalog-import apply step (see import-apply.js's apply()), which needs a
+ * backup of the pre-import catalog to restore from if the user reverts.
  *
  * @param {import('./env').PhpContext} context
  * @returns {Promise<string>} path to the backup that was created

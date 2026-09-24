@@ -303,6 +303,166 @@ final class CatalogExportServiceTest extends TestCase
         }
     }
 
+    public function testWriteArchiveExceptionMidMediaLoopLeavesNoZipOrTmpFileInDestination(): void
+    {
+        $connection = $this->createConnection();
+        $this->seedSchema($connection);
+        for ($i = 1; $i <= 3; ++$i) {
+            $connection->insert('anime', ['id' => $i, 'title' => 'Anime '.$i, 'cover' => 'cover.webp']);
+            mkdir($this->mediaDir.'/'.$i, 0o755, true);
+            file_put_contents($this->mediaDir.'/'.$i.'/cover.webp', 'cover-bytes-'.$i);
+        }
+
+        $wsPublisher = new class(DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true])) extends WsPublisher {
+            public function publish(string $event, mixed $data): void
+            {
+                if ($event === 'export.progress' && \is_array($data) && ($data['phase'] ?? null) === 'media' && ($data['current'] ?? null) === 2) {
+                    throw new \RuntimeException('Simulated failure mid media loop.');
+                }
+
+                parent::publish($event, $data);
+            }
+        };
+
+        try {
+            $this->createService($connection, wsPublisher: $wsPublisher)->export($this->destinationDir);
+            $this->fail('Expected export() to rethrow the WsPublisher exception.');
+        } catch (\RuntimeException $exception) {
+            $this->assertSame('Simulated failure mid media loop.', $exception->getMessage());
+        }
+
+        // Regression guard (issue #727): a failure partway through writeArchive() must not leave
+        // the ".tmp" file behind — PHP's ZipArchive destructor finishes committing it to disk as
+        // part of unwinding the exception, so without an explicit cleanup this would otherwise be
+        // a full-size archive stranded in the user's chosen destination directory.
+        $remaining = array_values(array_diff((array) scandir($this->destinationDir), ['.', '..']));
+        $this->assertSame([], $remaining, 'No archive or temp file should remain in the destination after a failed export.');
+    }
+
+    public function testStaleZipTmpFileOlderThanOneHourIsRemovedOnNextExport(): void
+    {
+        $connection = $this->createConnection();
+        $this->seedSchema($connection);
+        $connection->insert('anime', ['id' => 1, 'title' => 'A']);
+
+        $staleTmp = $this->destinationDir.'/animedb-catalog-20200101-000000.zip.tmp';
+        file_put_contents($staleTmp, 'stale-tmp-bytes');
+        touch($staleTmp, time() - 3700);
+
+        $result = $this->createService($connection)->export($this->destinationDir);
+
+        $this->assertFileDoesNotExist($staleTmp);
+        $remaining = array_values(array_diff((array) scandir($this->destinationDir), ['.', '..']));
+        $this->assertSame([basename($result->archivePath)], $remaining);
+    }
+
+    public function testStaleZipTmpPartFileOlderThanOneHourIsRemovedOnNextExport(): void
+    {
+        $connection = $this->createConnection();
+        $this->seedSchema($connection);
+        $connection->insert('anime', ['id' => 1, 'title' => 'A']);
+
+        $stalePart = $this->destinationDir.'/animedb-catalog-20200101-000000.zip.tmp.abc123.part';
+        file_put_contents($stalePart, 'stale-part-bytes');
+        touch($stalePart, time() - 3700);
+
+        $result = $this->createService($connection)->export($this->destinationDir);
+
+        $this->assertFileDoesNotExist($stalePart);
+        $remaining = array_values(array_diff((array) scandir($this->destinationDir), ['.', '..']));
+        $this->assertSame([basename($result->archivePath)], $remaining);
+    }
+
+    public function testFreshZipTmpFileYoungerThanOneHourIsNotRemoved(): void
+    {
+        $connection = $this->createConnection();
+        $this->seedSchema($connection);
+        $connection->insert('anime', ['id' => 1, 'title' => 'A']);
+
+        $freshTmp = $this->destinationDir.'/animedb-catalog-20200101-000000.zip.tmp';
+        file_put_contents($freshTmp, 'fresh-tmp-bytes');
+        touch($freshTmp, time() - 300);
+
+        $result = $this->createService($connection)->export($this->destinationDir);
+
+        $this->assertFileExists($freshTmp);
+        $remaining = array_values(array_diff((array) scandir($this->destinationDir), ['.', '..']));
+        sort($remaining);
+        $expected = [basename($freshTmp), basename($result->archivePath)];
+        sort($expected);
+        $this->assertSame($expected, $remaining);
+    }
+
+    public function testFilesNotMatchingTheTempArchiveMaskAreNeverRemoved(): void
+    {
+        $connection = $this->createConnection();
+        $this->seedSchema($connection);
+        $connection->insert('anime', ['id' => 1, 'title' => 'A']);
+
+        $oldFinishedArchive = $this->destinationDir.'/animedb-catalog-20200101-000000.zip';
+        file_put_contents($oldFinishedArchive, 'old-finished-archive-bytes');
+        touch($oldFinishedArchive, time() - 7200);
+
+        $unrelatedFile = $this->destinationDir.'/notes.txt';
+        file_put_contents($unrelatedFile, 'unrelated');
+        touch($unrelatedFile, time() - 7200);
+
+        $result = $this->createService($connection)->export($this->destinationDir);
+
+        $this->assertFileExists($oldFinishedArchive);
+        $this->assertFileExists($unrelatedFile);
+        $remaining = array_values(array_diff((array) scandir($this->destinationDir), ['.', '..']));
+        sort($remaining);
+        $expected = [basename($oldFinishedArchive), basename($unrelatedFile), basename($result->archivePath)];
+        sort($expected);
+        $this->assertSame($expected, $remaining);
+    }
+
+    public function testStaleTmpFileIsRemovedWhenDestinationDirNameContainsGlobMetacharactersWithoutTouchingASiblingDirectory(): void
+    {
+        $connection = $this->createConnection();
+        $this->seedSchema($connection);
+        $connection->insert('anime', ['id' => 1, 'title' => 'A']);
+
+        // "a[bc]" and "ab" are both legal directory names on every supported OS, and glob()
+        // interprets the "[bc]" inside "a[bc]" as a character class rather than a literal
+        // substring — a naive glob()-based scan would either miss the stale file inside the
+        // bracketed directory or, worse, match into the differently-named sibling (issue #727
+        // review).
+        $bracketedDir = $this->destinationDir.'/a[bc]';
+        $siblingDir = $this->destinationDir.'/ab';
+        mkdir($bracketedDir, 0o755, true);
+        mkdir($siblingDir, 0o755, true);
+
+        $staleTmpInsideBracketedDir = $bracketedDir.'/animedb-catalog-20200101-000000.zip.tmp';
+        file_put_contents($staleTmpInsideBracketedDir, 'stale-tmp-bytes');
+        touch($staleTmpInsideBracketedDir, time() - 3700);
+
+        $staleTmpInSiblingDir = $siblingDir.'/animedb-catalog-20200101-000000.zip.tmp';
+        file_put_contents($staleTmpInSiblingDir, 'stale-tmp-bytes');
+        touch($staleTmpInSiblingDir, time() - 3700);
+
+        $result = $this->createService($connection)->export($bracketedDir);
+
+        $this->assertFileDoesNotExist($staleTmpInsideBracketedDir);
+        $remaining = array_values(array_diff((array) scandir($bracketedDir), ['.', '..']));
+        $this->assertSame([basename($result->archivePath)], $remaining);
+
+        $this->assertFileExists($staleTmpInSiblingDir);
+    }
+
+    public function testSuccessfulExportLeavesExactlyOneFileInTheDestination(): void
+    {
+        $connection = $this->createConnection();
+        $this->seedSchema($connection);
+        $connection->insert('anime', ['id' => 1, 'title' => 'A']);
+
+        $result = $this->createService($connection)->export($this->destinationDir);
+
+        $remaining = array_values(array_diff((array) scandir($this->destinationDir), ['.', '..']));
+        $this->assertSame([basename($result->archivePath)], $remaining);
+    }
+
     private function createService(Connection $connection, ?LoggerInterface $logger = null, ?int $freeBytes = \PHP_INT_MAX, ?WsPublisher $wsPublisher = null, ?InstalledPluginsRegistry $pluginsRegistry = null): CatalogExportService
     {
         $freeSpaceProvider = new class($freeBytes) implements FreeSpaceProvider {
