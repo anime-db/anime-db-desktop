@@ -93,6 +93,9 @@ function checkBuiltPrerequisites() {
     if (!fs.existsSync(path.join(appDir, 'public', 'css', 'app.css'))) {
         fail('built frontend assets are missing — run `npm run assets` first.');
     }
+    if (!fs.existsSync(path.join(appDir, 'public', 'js', 'main.js'))) {
+        fail('built frontend assets are missing — run `npm run assets` first.');
+    }
     if (!fs.existsSync(path.join(rootDir, 'node_modules', 'electron'))) {
         fail('Electron is missing — run `npm ci` first.');
     }
