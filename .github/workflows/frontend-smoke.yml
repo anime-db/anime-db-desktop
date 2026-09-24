@@ -1,0 +1,106 @@
+name: Frontend smoke
+
+# Единственный прогон в проекте, который поднимает приложение целиком и открывает его
+# страницы: `npm run shots` стартует встроенный PHP-сервер, запускает Electron под Xvfb и
+# снимает каждую страницу в двух темах. Всё остальное в CI проверяет исходники — jest грузит
+# модули напрямую, PHPUnit рендерит шаблоны, и ни то ни другое не видит собранный бандл
+# (issue #736).
+#
+# Отдельный workflow, а не job внутри ci.yml, ради минут: фильтр `paths` ниже не запускает
+# прогон вовсе, если PR не трогает фронтенд, тогда как job-фильтр внутри ci.yml всё равно
+# поднял бы раннер ради решения «пропустить» — а GitHub тарифицирует каждый job с округлением
+# вверх до минуты. Правил ветки в репозитории нет (план не поддерживает branch protection),
+# поэтому workflow, который на части PR не стартует, ничего не блокирует.
+on:
+  pull_request:
+    paths:
+      # Клиентский JS и стили — то, ради чего гейт и заводился.
+      - 'app/assets/**'
+      # Шаблоны: подключение бандла, атрибуты data-control, разметка, по которой ждёт capture.js.
+      - 'app/templates/**'
+      # Сборщик ассетов и сам инструмент прогона.
+      - 'scripts/build-assets.js'
+      - 'scripts/shots/**'
+      # Бампы htmx/bootstrap/esbuild приезжают сюда и ломают страницу так же, как свой код.
+      - 'package.json'
+      - 'package-lock.json'
+      # run.js переиспользует два Electron-независимых модуля супервизора — поиск свободного
+      # порта и ожидание готовности бэкенда. Поломка там роняет сам прогон, а не страницу,
+      # и без этих путей такой PR ушёл бы вообще без живой проверки.
+      - 'native/supervisor/port.js'
+      - 'native/supervisor/healthcheck.js'
+      # Правка самого гейта обязана проверяться этим же гейтом.
+      - '.github/workflows/frontend-smoke.yml'
+
+# Чего в фильтре намеренно НЕТ и почему: серверная часть (app/src/**, app/config/**,
+# app/translations/**, app/migrations/**, app/public/index.php) ломает те же страницы, но
+# ломает их ответом 4xx/5xx — а такую страницу прогон сегодня не отличает от здоровой:
+# документ «загрузился», своих скриптов у страницы ошибки нет, каталожной сетки тоже, и
+# ожидание отрисовки завершается сразу. Пока это так, добавление серверных путей стоило бы
+# минут за проверку, которая структурно не может упасть. Расширить фильтр — вместе с issue
+# #746, где прогон учат падать на статусе основного документа.
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  shots:
+    name: Shots
+    runs-on: ubuntu-latest
+    # Больше, чем 15 у джоб в ci.yml: здесь к composer install и npm ci добавляются установка
+    # системных библиотек Electron и сам прогон под Xvfb (локально — около минуты на 24 снимка).
+    # Это граница «что-то зависло», а не бюджет на выполнение.
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          # Тот же пин, что в ci.yml/build.yml/runtime-parity.yml/i18n-coverage.yml, и менять его
+          # надо вместе с ними: версия обязана совпадать с той, что несёт запиненный в
+          # scripts/versions.json FrankenPHP (issue #536).
+          php-version: '8.5'
+          tools: composer
+          coverage: none
+          extensions: apcu, gd, intl
+          ini-values: apc.enable_cli=1
+
+      - name: Configure Composer auth for private repos
+        run: composer config --global github-oauth.github.com ${{ secrets.COMPOSER_GITHUB_TOKEN }}
+
+      - name: Install PHP dependencies
+        uses: ramsey/composer-install@v3
+        with:
+          working-directory: app
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      # Electron под Xvfb тянет набор системных библиотек, которых нет в образе раннера.
+      # Список — тот же, что scripts/shots/run.js печатает в подсказке при ldd-проверке;
+      # имена с суффиксом t64 — это Ubuntu 24.04, на которой сейчас ubuntu-latest.
+      - name: Install Electron runtime libraries
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            xvfb libatk1.0-0t64 libatk-bridge2.0-0t64 libgtk-3-0t64 libgbm1 libnss3 \
+            libasound2t64 libcups2t64 libdrm2 libxkbcommon0 libpango-1.0-0 libcairo2 \
+            libatspi2.0-0t64 libxdamage1 libxrandr2 libxcomposite1 libxfixes3 libxshmfence1
+
+      - name: Build frontend assets
+        run: npm run assets
+
+      # База данных пустая: миграции накатывает сам run.js, демо-данные не сеются. Проверено —
+      # прогон на пустом каталоге зелёный: снимок карточки тайтла пропускается (нечего
+      # открывать), а сам каталог доходит до состояния «список пуст», которое capture.js и ждёт.
+      - name: Run shots
+        run: npm run shots
