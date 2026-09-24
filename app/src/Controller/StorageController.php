@@ -48,7 +48,7 @@ use Twig\Environment;
  * Minimal storage list and scan trigger (issue #136, Таск 3 часть 7.1): lists every known
  * Storage (name, type, path, last scan time) and dispatches ScanStorageMessage on the async
  * transport for a background scan. The redirect carries the scanned storage's id so the
- * template (issue #140, Таск 3 часть 7.5) can attach ScanWatcher (app/public/js/scan.js) to
+ * template (issue #140, Таск 3 часть 7.5) can attach ScanWatcher (app/assets/js/scan.js) to
  * that storage_id and render its live progress/result screen without a page reload.
  *
  * Also handles storage deletion (issue #169, Таск 3 часть 8/CRUD 5).

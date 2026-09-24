@@ -220,8 +220,8 @@ async function flushMicrotasks() {
 }
 
 // The module was split (issue #712) into namespace objects on `window`, the same pattern as
-// window.AppTranslations in translations.js — mirrors the <script> order in list.html.twig, since
-// each file assigns a global the next one reads and anime-list.js itself calls init() immediately.
+// window.AppTranslations in translations.js — mirrors the require order below, since each file
+// assigns a global the next one reads and anime-list.js itself calls init() immediately.
 function loadAnimeListModule() {
     jest.isolateModules(() => {
         require('../../app/assets/js/anime-list-query.js');
@@ -233,9 +233,9 @@ function loadAnimeListModule() {
     mountControls();
 }
 
-// Same five modules as loadAnimeListModule() above, but required in the exact reverse of the
-// <script> order in list.html.twig — anime-list.js first, the four helpers after. Used to prove
-// the catalog's init() no longer depends on that order (issue #729).
+// Same five modules as loadAnimeListModule() above, but required in the exact reverse order —
+// anime-list.js first, the four helpers after. Used to prove the catalog's init() no longer
+// depends on that order (issue #729).
 function loadAnimeListModuleReversed() {
     jest.isolateModules(() => {
         require('../../app/assets/js/anime-list.js');

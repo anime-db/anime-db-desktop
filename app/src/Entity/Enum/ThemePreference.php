@@ -29,7 +29,7 @@ namespace App\Entity\Enum;
 
 /**
  * User-facing color scheme preference, chosen in %AppData%/config.json (see AppSettingsProvider)
- * and exposed to app/public/js/color-mode.js via a data attribute on <html> (see
+ * and exposed to app/assets/js/color-mode.js via a data attribute on <html> (see
  * App\Twig\ThemePreferenceExtension). System follows prefers-color-scheme and keeps reacting to
  * it changing at runtime; Light/Dark pin the Bootstrap color mode regardless of the OS setting.
  */

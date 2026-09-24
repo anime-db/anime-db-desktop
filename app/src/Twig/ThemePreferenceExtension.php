@@ -33,7 +33,7 @@ use Twig\TwigFunction;
 
 /**
  * Puts the saved theme preference on base.html.twig's <html> element (issue #638), so the
- * synchronous app/public/js/color-mode.js can read it without a request of its own.
+ * synchronous app/assets/js/color-mode.js can read it without a request of its own.
  */
 final class ThemePreferenceExtension extends AbstractExtension
 {

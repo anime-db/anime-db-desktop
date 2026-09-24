@@ -75,7 +75,7 @@ function getPreImportMediaDir() {
  * `media/` is replaced wholesale, never merged: a merge would leave the previous catalog's own
  * media files orphaned under ids the imported catalog reuses. An archive staged without its own
  * `media/` (`app:catalog:stage` allows this) still clears the previous `media/` rather than
- * keeping it — the records it belonged to are gone, and app/public/js/inline-handlers.js already
+ * keeping it — the records it belonged to are gone, and app/assets/js/inline-handlers.js already
  * degrades a missing cover file to a neutral tile. The previous `media/` is renamed to
  * getPreImportMediaDir() rather than deleted here, so restoreCatalog() can still put it back.
  *
