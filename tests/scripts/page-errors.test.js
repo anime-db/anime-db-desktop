@@ -52,6 +52,7 @@ describe('PageErrorTracker.recordFailedResource', () => {
             resourceType: 'script',
             url:          'http://127.0.0.1/js/main.js',
             statusCode:   404,
+            error:        'net::OK',
         });
 
         expect(tracker.hasFailures()).toBe(true);

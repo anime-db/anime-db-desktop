@@ -58,7 +58,8 @@ class PageErrorTracker {
      *   a failed `webRequest` (onCompleted with a non-2xx status, or onErrorOccurred)
      */
     recordFailedResource(pageUrl, { resourceType, url, statusCode, error }) {
-        const detail = error ? error : `HTTP ${statusCode}`;
+        // onCompleted carries both fields (error is 'net::OK'); onErrorOccurred has no statusCode.
+        const detail = typeof statusCode === 'number' && statusCode >= 400 ? `HTTP ${statusCode}` : error;
         this.failures.push({ page: pageUrl, reason: `failed to load ${resourceType} ${url}: ${detail}` });
     }
 
