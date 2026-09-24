@@ -93,11 +93,14 @@ final class PluginWidgetsSettingsTemplateRenderingTest extends KernelTestCase
     /** @return iterable<string, array{int}> */
     public static function everyReachableCatalogActiveCount(): iterable
     {
-        // 0..CatalogWidgetRegistry::HARD_LIMIT is every count the catalog section can ever be
+        // 0..CatalogWidgetRegistry::HARD_LIMIT are the counts the catalog section can actually be
         // rendered with — enabling a third widget is rejected before it reaches this template.
+        // The last case is deliberately above the limit: unreachable through the UI, but it is the
+        // only input that would make the warning branch true if the template kept it.
         yield 'zero active' => [0];
         yield 'one active' => [1];
         yield 'at the hard limit' => [2];
+        yield 'above the hard limit' => [3];
     }
 
     #[DataProvider('everyReachableCatalogActiveCount')]
