@@ -32,6 +32,8 @@ const { app, BrowserWindow, nativeTheme } = require('electron');
 const fs   = require('fs');
 const path = require('path');
 
+const { PageErrorTracker } = require('./page-errors');
+
 const PORT    = process.env.SHOTS_PORT;
 const OUT_DIR = process.env.SHOTS_OUT_DIR;
 // Empty string means the orchestrator found no anime row to link to — set by run.js.
@@ -62,17 +64,17 @@ const RENDER_POLL_TIMEOUT_MS  = 5000;
 
 /**
  * @param {import('electron').BrowserWindow} win
- * @returns {Promise<void>}
+ * @returns {Promise<boolean>} false if the deadline was hit without the grid settling
  */
 async function waitForRender(win) {
     const deadline = Date.now() + RENDER_POLL_TIMEOUT_MS;
     do {
         if (await win.webContents.executeJavaScript(RENDER_POLL_SCRIPT)) {
-            return;
+            return true;
         }
         await new Promise((resolve) => setTimeout(resolve, RENDER_POLL_INTERVAL_MS));
     } while (Date.now() < deadline);
-    console.warn('[shots] catalog grid did not settle within the timeout — capturing anyway');
+    return false;
 }
 
 /**
@@ -127,7 +129,8 @@ function loadPage(win, url) {
 async function main() {
     await app.whenReady();
 
-    const pages = buildPages();
+    const pages   = buildPages();
+    const tracker = new PageErrorTracker();
 
     // One window for the whole run, reused across themes and pages: recreating it between passes
     // was observed to make the first load of the next pass fail with ERR_FAILED.
@@ -141,6 +144,30 @@ async function main() {
         },
     });
 
+    // Attributes console/network failures to whichever page was loading when they fired; set
+    // right before each loadURL() below.
+    let currentPageUrl = null;
+
+    win.webContents.on('console-message', (event) => {
+        tracker.recordConsoleMessage(currentPageUrl, event);
+    });
+
+    // did-fail-load (see loadPage() below) only fires for the document navigation itself — a
+    // missing <script src="...">, e.g. an unbuilt app/public/js/main.js, is a subresource fetch
+    // and never triggers it. webRequest sees every request the page makes, so it is the only
+    // reliable way to catch that case.
+    const { webRequest } = win.webContents.session;
+    webRequest.onCompleted((details) => {
+        if (details.resourceType !== 'script' || details.statusCode < 400) return;
+        tracker.recordFailedResource(currentPageUrl, details);
+    });
+    webRequest.onErrorOccurred((details) => {
+        // ERR_ABORTED is routine when the page navigates away before an in-flight script request
+        // finishes — not a page defect.
+        if (details.resourceType !== 'script' || details.error === 'net::ERR_ABORTED') return;
+        tracker.recordFailedResource(currentPageUrl, details);
+    });
+
     for (const theme of ['light', 'dark']) {
         // app/assets/js/color-mode.js sets data-bs-theme from `prefers-color-scheme`, which this
         // drives directly — no in-page toggle exists yet to click instead.
@@ -151,13 +178,23 @@ async function main() {
 
         for (const targetPage of pages) {
             const url = `http://127.0.0.1:${PORT}${targetPage.path}`;
+            currentPageUrl = url;
             await loadPage(win, url);
-            await waitForRender(win);
+
+            if (!(await waitForRender(win))) {
+                tracker.recordFailure(url, 'catalog grid did not settle within the timeout');
+            }
 
             const image = await win.webContents.capturePage();
             fs.writeFileSync(path.join(themeDir, `${targetPage.name}.png`), image.toPNG());
             console.log(`[shots] ${theme}/${targetPage.name}.png`);
         }
+    }
+
+    if (tracker.hasFailures()) {
+        console.error(`[shots] page errors detected:\n${tracker.formatReport()}`);
+        app.exit(1);
+        return;
     }
 
     app.exit(0);
