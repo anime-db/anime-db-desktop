@@ -46,6 +46,7 @@ module.exports = {
     getMediaDir:           () => path.join(userDataDir(), 'media'),
     getImportStagingDir:   () => path.join(userDataDir(), 'import-staging'),
     getImportRejectionPath: () => path.join(userDataDir(), 'import-rejected.json'),
+    getImportAppliedPath:  () => path.join(userDataDir(), 'import-applied.json'),
     getConfigPath:         () => path.join(userDataDir(), 'config.json'),
     getPluginsConfigPath:  () => path.join(userDataDir(), 'plugins.json'),
     getPluginsDir:         () => path.join(userDataDir(), 'plugins'),

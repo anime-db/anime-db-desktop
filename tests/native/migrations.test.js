@@ -33,6 +33,7 @@ jest.mock('../../native/paths', () => ({
     getMediaDir:           jest.fn(() => '/fake/userData/media'),
     getImportStagingDir:   jest.fn(() => '/fake/userData/import-staging'),
     getImportRejectionPath: jest.fn(() => '/fake/userData/import-rejected.json'),
+    getImportAppliedPath: jest.fn(() => '/fake/userData/import-applied.json'),
     getConfigPath:         jest.fn(() => '/fake/userData/config.json'),
     getPluginsConfigPath:  jest.fn(() => '/fake/userData/plugins.json'),
     getPluginsDir:         jest.fn(() => '/fake/userData/plugins'),

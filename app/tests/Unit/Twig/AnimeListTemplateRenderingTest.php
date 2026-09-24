@@ -57,7 +57,7 @@ final class AnimeListTemplateRenderingTest extends KernelTestCase
         $twig = self::getContainer()->get('twig');
         $html = $twig->render('anime/list.html.twig', [
             'showOnboarding' => false,
-            'widgets' => [['pluginId' => 'animedb-shikimori', 'widgetName' => 'spotlight']],
+            'widgets' => [['pluginId' => 'animedb-shikimori', 'widgetName' => 'spotlight', 'title' => 'Spotlight', 'pluginName' => 'Shikimori']],
         ]);
 
         $this->assertStringContainsString('anime-list__widgets', $html);
@@ -75,6 +75,30 @@ final class AnimeListTemplateRenderingTest extends KernelTestCase
         $this->assertNotFalse($gridPosition);
         $this->assertLessThan($chipsPosition, $widgetsPosition);
         $this->assertLessThan($gridPosition, $widgetsPosition);
+    }
+
+    /**
+     * Issue #728: the widgets row must sit ahead of .anime-list__toolbar, not inside
+     * .anime-list__main below it as before — the toolbar itself is what now reads as the
+     * boundary between a plugin's data and the user's own catalog.
+     */
+    public function testWidgetsRowPrecedesTheToolbarWhenAWidgetIsActive(): void
+    {
+        self::bootKernel();
+        $this->pushRequest();
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('anime/list.html.twig', [
+            'showOnboarding' => false,
+            'widgets' => [['pluginId' => 'animedb-shikimori', 'widgetName' => 'spotlight', 'title' => 'Spotlight', 'pluginName' => 'Shikimori']],
+        ]);
+
+        $widgetsPosition = strpos($html, 'anime-list__widgets');
+        $toolbarPosition = strpos($html, 'anime-list__toolbar');
+        $this->assertNotFalse($widgetsPosition);
+        $this->assertNotFalse($toolbarPosition);
+        $this->assertLessThan($toolbarPosition, $widgetsPosition);
     }
 
     public function testOmitsTheWidgetsRowWhenNoCatalogWidgetIsActive(): void

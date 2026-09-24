@@ -27,7 +27,6 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Controller;
 
-use AnimeDb\PluginContracts\Widget\EntryWidgetInterface;
 use App\Controller\AnimeController;
 use App\Entity\Enum\AnimeNameRole;
 use App\Entity\Enum\Demographic;
@@ -48,6 +47,7 @@ use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\PluginAssetResolver;
 use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Plugin\PluginUiAssetsResolver;
+use App\Tests\Fixtures\Plugin\Widget\FakeEntryWidget;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\Component\HttpFoundation\Request;
@@ -276,8 +276,8 @@ final class AnimeControllerTest extends TestCase
 
         $entryWidgets = new EntryWidgetRegistry(
             [
-                'animedb-shikimori:related' => $this->createStub(EntryWidgetInterface::class),
-                'animedb-anilist:related' => $this->createStub(EntryWidgetInterface::class),
+                'animedb-shikimori:related' => new FakeEntryWidget(),
+                'animedb-anilist:related' => new FakeEntryWidget(),
             ],
             $pluginsConfigStore,
             $this->createStub(TranslatorInterface::class),
@@ -341,7 +341,7 @@ final class AnimeControllerTest extends TestCase
         $installedPlugins->reconcile();
 
         $entryWidgets = new EntryWidgetRegistry(
-            ['animedb-shikimori:related' => $this->createStub(EntryWidgetInterface::class)],
+            ['animedb-shikimori:related' => new FakeEntryWidget()],
             $pluginsConfigStore,
             $this->createStub(TranslatorInterface::class),
         );

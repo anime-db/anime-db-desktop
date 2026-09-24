@@ -104,6 +104,49 @@ final class CatalogExportServiceTest extends TestCase
         $this->assertSame([], $manifest['plugins']);
     }
 
+    /**
+     * Acceptance criterion 13 (issue #726): the plugin list App\Service\Import\ImportedPluginsService
+     * shows after an import falls back to the bare id whenever an archive's manifest carries no
+     * "name" — exporting one is what lets a future import show the friendlier display name instead.
+     */
+    public function testManifestPluginsEntryIncludesTheInstalledPluginsDisplayName(): void
+    {
+        $connection = $this->createConnection();
+        $this->seedSchema($connection);
+
+        $pluginsDir = sys_get_temp_dir().'/animedb-export-test-plugins-'.uniqid();
+        mkdir($pluginsDir.'/animedb-shikimori', 0o755, true);
+        file_put_contents($pluginsDir.'/animedb-shikimori/manifest.json', (string) json_encode([
+            'id' => 'animedb-shikimori',
+            'name' => 'Shikimori',
+            'version' => '1.2.3',
+            'type' => 'integration',
+            'features' => ['filler' => true],
+            'require' => ['core' => '>=2.0.0', 'php' => '>=8.2'],
+        ]));
+        $pluginsRegistry = new InstalledPluginsRegistry(
+            $pluginsDir,
+            new PluginsConfigStore($pluginsDir.'/plugins.json'),
+            new NullLogger(),
+        );
+        $pluginsRegistry->reconcile();
+
+        try {
+            $result = $this->createService($connection, pluginsRegistry: $pluginsRegistry)->export($this->destinationDir);
+
+            $zip = new \ZipArchive();
+            $zip->open($result->archivePath);
+            $manifest = json_decode((string) $zip->getFromName('manifest.json'), true, flags: \JSON_THROW_ON_ERROR);
+            $zip->close();
+
+            $this->assertSame([
+                ['id' => 'animedb-shikimori', 'version' => '1.2.3', 'name' => 'Shikimori'],
+            ], $manifest['plugins']);
+        } finally {
+            $this->removeDirectory($pluginsDir);
+        }
+    }
+
     public function testExportedArchiveContainsAWorkingDatabaseWithTheSameAnimeCountAsTheSource(): void
     {
         $connection = $this->createConnection();
@@ -420,7 +463,7 @@ final class CatalogExportServiceTest extends TestCase
         $this->assertSame([basename($result->archivePath)], $remaining);
     }
 
-    private function createService(Connection $connection, ?LoggerInterface $logger = null, ?int $freeBytes = \PHP_INT_MAX, ?WsPublisher $wsPublisher = null): CatalogExportService
+    private function createService(Connection $connection, ?LoggerInterface $logger = null, ?int $freeBytes = \PHP_INT_MAX, ?WsPublisher $wsPublisher = null, ?InstalledPluginsRegistry $pluginsRegistry = null): CatalogExportService
     {
         $freeSpaceProvider = new class($freeBytes) implements FreeSpaceProvider {
             public function __construct(private readonly ?int $bytes)
@@ -433,7 +476,7 @@ final class CatalogExportServiceTest extends TestCase
             }
         };
 
-        $pluginsRegistry = new InstalledPluginsRegistry(
+        $pluginsRegistry ??= new InstalledPluginsRegistry(
             sys_get_temp_dir().'/animedb-export-test-plugins-does-not-exist',
             new PluginsConfigStore(sys_get_temp_dir().'/animedb-export-test-plugins-'.uniqid().'.json'),
             new NullLogger(),

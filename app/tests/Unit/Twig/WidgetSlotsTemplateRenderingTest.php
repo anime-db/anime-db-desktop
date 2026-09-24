@@ -44,7 +44,7 @@ final class WidgetSlotsTemplateRenderingTest extends KernelTestCase
         /** @var Environment $twig */
         $twig = self::getContainer()->get('twig');
         $html = $twig->render('plugin/_widget_slots.html.twig', [
-            'widgets' => [['pluginId' => 'animedb-shikimori', 'widgetName' => 'related']],
+            'widgets' => [['pluginId' => 'animedb-shikimori', 'widgetName' => 'related', 'title' => 'Related', 'pluginName' => 'Shikimori']],
             'entryId' => 42,
         ]);
 
@@ -60,7 +60,7 @@ final class WidgetSlotsTemplateRenderingTest extends KernelTestCase
         /** @var Environment $twig */
         $twig = self::getContainer()->get('twig');
         $html = $twig->render('plugin/_widget_slots.html.twig', [
-            'widgets' => [['pluginId' => 'animedb-shikimori', 'widgetName' => 'top']],
+            'widgets' => [['pluginId' => 'animedb-shikimori', 'widgetName' => 'top', 'title' => 'Top', 'pluginName' => 'Shikimori']],
         ]);
 
         $this->assertStringContainsString('hx-get="/plugin/animedb-shikimori/widget/top"', $html);
@@ -76,5 +76,50 @@ final class WidgetSlotsTemplateRenderingTest extends KernelTestCase
         $html = $twig->render('plugin/_widget_slots.html.twig', ['widgets' => []]);
 
         $this->assertSame('', trim($html));
+    }
+
+    /**
+     * Issue #728: a slot's header must name both the widget and the plugin behind it — the
+     * whole point being that a widget's carousel is never mistaken for the user's own catalog.
+     */
+    public function testSlotRendersAHeaderWithTheWidgetTitleAndThePluginName(): void
+    {
+        self::bootKernel();
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('plugin/_widget_slots.html.twig', [
+            'widgets' => [['pluginId' => 'animedb-shikimori', 'widgetName' => 'new_releases', 'title' => 'New releases', 'pluginName' => 'Shikimori']],
+        ]);
+
+        $this->assertStringContainsString('class="plugin-widget-slot__heading"', $html);
+        $this->assertStringContainsString('New releases', $html);
+        $this->assertStringContainsString('Shikimori', $html);
+
+        // The header must sit ahead of the hx-get placeholder inside the same slot, not after it.
+        $headingPosition = strpos($html, 'plugin-widget-slot__heading');
+        $placeholderPosition = strpos($html, 'hx-get=');
+        $this->assertNotFalse($headingPosition);
+        $this->assertNotFalse($placeholderPosition);
+        $this->assertLessThan($placeholderPosition, $headingPosition);
+    }
+
+    /**
+     * The registry already falls back to `widgetName` when `titleKey` has no translation (see
+     * CatalogWidgetRegistryTest/EntryWidgetRegistryTest) — this pins that the template simply
+     * displays whatever it is given, so a raw translation key never reaches this far either.
+     */
+    public function testSlotHeaderShowsTheGivenTitleAsIsWithoutReResolvingIt(): void
+    {
+        self::bootKernel();
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('plugin/_widget_slots.html.twig', [
+            'widgets' => [['pluginId' => 'animedb-shikimori', 'widgetName' => 'new_releases', 'title' => 'new_releases', 'pluginName' => 'animedb-shikimori']],
+        ]);
+
+        $this->assertStringNotContainsString('widget.new_releases.title', $html);
+        $this->assertStringContainsString('new_releases', $html);
     }
 }

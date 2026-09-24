@@ -189,6 +189,17 @@ final class CatalogStageService
         if (!$zip->extractTo($this->importStagingDir, 'data.db')) {
             throw new \RuntimeException(\sprintf('Unable to extract data.db into "%s".', $this->importStagingDir));
         }
+
+        // manifest.json is already known to exist and to be valid JSON — readManifest() decoded
+        // it earlier in stage() — so this only makes the same bytes available on disk for
+        // native/supervisor/import-apply.js to carry forward into userData/import-applied.json
+        // after a successful apply() (issue #726). Not part of the {phase, current, total}
+        // progress events below: it is a few bytes copied alongside data.db, not a tracked phase
+        // of its own.
+        if (!$zip->extractTo($this->importStagingDir, 'manifest.json')) {
+            throw new \RuntimeException(\sprintf('Unable to extract manifest.json into "%s".', $this->importStagingDir));
+        }
+
         $this->wsPublisher->publish('import.progress', ['phase' => 'database', 'current' => 1, 'total' => 1]);
 
         $mediaEntries = [];
