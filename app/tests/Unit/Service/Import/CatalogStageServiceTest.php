@@ -287,6 +287,45 @@ final class CatalogStageServiceTest extends TestCase
         $this->assertSame(['phase' => 'media', 'current' => 2, 'total' => 2], $progressEvents[2]['data']);
     }
 
+    public function testStagingManyMediaFilesKeepsPeakMemoryUsageBoundedInsteadOfGrowingWithTheirTotalSize(): void
+    {
+        $fileCount = 40;
+        $fileSize = 256 * 1024; // 10 MB of incompressible media across all entries.
+        $blob = random_bytes($fileSize); // Reused across entries: ZIP compresses each entry on
+        // its own, so the archive still grows with $fileCount even though the source blob lives
+        // in memory only once.
+
+        $mediaEntries = [];
+        for ($i = 1; $i <= $fileCount; ++$i) {
+            $mediaEntries[$i.'/cover.webp'] = $blob;
+        }
+
+        $archivePath = $this->buildArchive(
+            $this->defaultManifest(['counts' => ['anime' => 0, 'mediaFiles' => $fileCount]]),
+            $this->sqliteDbBytes(0),
+            $mediaEntries,
+        );
+
+        // random_bytes() is incompressible, so a naive str_repeat() filler — which ZIP would
+        // deflate to almost nothing — could not accidentally make this test measure an empty
+        // archive instead of a large one.
+        $this->assertGreaterThan((int) ($fileCount * $fileSize * 0.9), filesize($archivePath));
+
+        memory_reset_peak_usage();
+        $peakBeforeStage = memory_get_peak_usage(true);
+
+        $result = $this->createService()->stage($archivePath);
+
+        $peakAfterStage = memory_get_peak_usage(true);
+
+        $this->assertSame($fileCount, $result->mediaFileCount);
+        // Regression guard for issue #740: extract() must extractTo() each media entry straight
+        // to disk instead of reading it fully into memory (e.g. via getFromName()), so peak
+        // memory growth stays bounded by roughly one entry's size instead of scaling with the
+        // archive's total media size ($fileCount * $fileSize here).
+        $this->assertLessThan($fileSize * 4, $peakAfterStage - $peakBeforeStage);
+    }
+
     private function createService(?LoggerInterface $logger = null, ?WsPublisher $wsPublisher = null): CatalogStageService
     {
         return new CatalogStageService(
