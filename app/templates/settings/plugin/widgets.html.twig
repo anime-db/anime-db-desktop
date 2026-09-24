@@ -22,14 +22,14 @@
 
 {% block title %}{{ 'settings_plugin_widgets.title'|trans }}{% endblock %}
 
-{% macro section(placement, widgets, activeCount, hardLimit, recommendedLimit) %}
+{% macro section(placement, widgets, activeCount, hardLimit, recommendedLimit = null) %}
     {% if widgets is empty %}
         <p class="text-body-secondary">{{ ('settings_plugin_widgets.'~placement~'.empty')|trans }}</p>
     {% else %}
         <p class="text-body-secondary">
             {{ 'settings_plugin_widgets.active_count'|trans({'%count%': activeCount, '%limit%': hardLimit}) }}
         </p>
-        {% if activeCount > recommendedLimit %}
+        {% if recommendedLimit is not null and activeCount > recommendedLimit %}
             <p class="alert alert-warning">{{ 'settings_plugin_widgets.recommendation_warning'|trans({'%limit%': recommendedLimit}) }}</p>
         {% endif %}
         <table class="table align-middle">
@@ -89,6 +89,6 @@
         {{ _self.section('entry', entryWidgets, entryActiveCount, entryHardLimit, recommendedLimit) }}
 
         <h2 class="mt-4">{{ 'settings_plugin_widgets.catalog.heading'|trans }}</h2>
-        {{ _self.section('catalog', catalogWidgets, catalogActiveCount, catalogHardLimit, recommendedLimit) }}
+        {{ _self.section('catalog', catalogWidgets, catalogActiveCount, catalogHardLimit) }}
     </div>
 {% endblock %}
