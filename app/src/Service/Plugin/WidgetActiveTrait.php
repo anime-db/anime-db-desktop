@@ -37,11 +37,14 @@ use App\Service\Plugin\Exception\WidgetHardLimitExceededException;
  * so disabling one widget of a plugin never touches its other widgets or its Filler/Sync features.
  *
  * Issue #213: a placement (anime detail page vs. catalog — each registry covers exactly one)
- * has a hard cap of simultaneously active widgets and a soft {@see self::RECOMMENDED_LIMIT}
- * shown to the user as a performance/clutter hint that never blocks enabling a widget.
+ * has a hard cap of simultaneously active widgets. A placement may additionally define its own
+ * soft recommended limit, shown to the user as a performance/clutter hint that never blocks
+ * enabling a widget — issue #742: unlike the hard cap, this is not a property every placement
+ * has, so it is not declared here at all; {@see EntryWidgetRegistry::RECOMMENDED_LIMIT} is the
+ * only one that exists today.
  *
- * The hard cap itself is *not* declared here (issue #728): each using class declares its own
- * `HARD_LIMIT` constant instead — {@see EntryWidgetRegistry::HARD_LIMIT} and
+ * The hard cap itself is *not* declared here either (issue #728): each using class declares its
+ * own `HARD_LIMIT` constant instead — {@see EntryWidgetRegistry::HARD_LIMIT} and
  * {@see CatalogWidgetRegistry::HARD_LIMIT} differ, and a trait cannot itself declare a constant
  * that a using class then redeclares with a different value (PHP treats that as an incompatible
  * redeclaration, not an override). {@see self::changeActive()} reads it through `static::`, late
@@ -49,8 +52,6 @@ use App\Service\Plugin\Exception\WidgetHardLimitExceededException;
  */
 trait WidgetActiveTrait
 {
-    public const int RECOMMENDED_LIMIT = 2;
-
     private readonly PluginsConfigStore $pluginsConfigStore;
 
     /**

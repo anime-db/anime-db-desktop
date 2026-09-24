@@ -55,6 +55,14 @@ final class EntryWidgetRegistry
     /** See {@see WidgetActiveTrait::changeActive()}, which reads this via `static::` — {@see CatalogWidgetRegistry::HARD_LIMIT} overrides it for the catalog placement (issue #728). */
     public const int HARD_LIMIT = 5;
 
+    /**
+     * Soft recommendation shown to the user as a performance/clutter hint once exceeded; never
+     * blocks enabling a widget. Issue #742: {@see CatalogWidgetRegistry} declares no equivalent
+     * constant — its `HARD_LIMIT` (2) already equals this value, so a recommendation there could
+     * never be exceeded and would be dead UI.
+     */
+    public const int RECOMMENDED_LIMIT = 2;
+
     /** @param iterable<string, EntryWidgetInterface> $widgets keyed by "{pluginId}:{widgetName}" */
     public function __construct(
         #[AutowireIterator('app.entry_widget', indexAttribute: 'id')]

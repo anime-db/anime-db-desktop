@@ -301,6 +301,17 @@ final class CatalogWidgetRegistryTest extends TestCase
         );
     }
 
+    /**
+     * Issue #742: the catalog placement's hard limit already equals what the soft recommendation
+     * used to be (2), so a recommendation here could never be exceeded — the constant is not
+     * declared at all rather than kept as dead configuration; see
+     * {@see EntryWidgetRegistryTest::testRecommendedLimitIsTwo()} for the placement that has one.
+     */
+    public function testRecommendedLimitConstantDoesNotExist(): void
+    {
+        $this->assertFalse((new \ReflectionClass(CatalogWidgetRegistry::class))->hasConstant('RECOMMENDED_LIMIT'));
+    }
+
     public function testSetActiveTurnsAWidgetOnAndOff(): void
     {
         $registry = new CatalogWidgetRegistry(

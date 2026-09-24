@@ -311,6 +311,16 @@ final class EntryWidgetRegistryTest extends TestCase
         );
     }
 
+    /**
+     * Issue #742: the recommended limit is a per-placement constant, declared only where a soft
+     * recommendation makes sense — see {@see CatalogWidgetRegistryTest::testRecommendedLimitConstantDoesNotExist()}
+     * for the placement that has none.
+     */
+    public function testRecommendedLimitIsTwo(): void
+    {
+        $this->assertSame(2, EntryWidgetRegistry::RECOMMENDED_LIMIT);
+    }
+
     public function testSetActiveTurnsAWidgetOnAndOff(): void
     {
         $registry = new EntryWidgetRegistry(
