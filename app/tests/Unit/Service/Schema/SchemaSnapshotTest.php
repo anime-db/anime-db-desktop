@@ -70,6 +70,19 @@ final class SchemaSnapshotTest extends TestCase
         $this->assertSame([], SchemaSnapshot::diff($golden, $golden));
     }
 
+    public function testAddedRowYieldsExactlyOneAddedLine(): void
+    {
+        $golden = SchemaSnapshot::parse((string) file_get_contents(__DIR__.'/../../../../migrations/schema.golden.tsv'));
+        $extra = "index\tidx_new\tCREATE INDEX idx_new ON anime (id)";
+
+        $this->assertSame(['> '.$extra], SchemaSnapshot::diff($golden, [...$golden, $extra]));
+    }
+
+    public function testParseIgnoresCrlfLineEndings(): void
+    {
+        $this->assertSame(['a', 'b'], SchemaSnapshot::parse("a\r\nb\r\n"));
+    }
+
     public function testGoldenFileComposition(): void
     {
         $golden = SchemaSnapshot::parse((string) file_get_contents(__DIR__.'/../../../../migrations/schema.golden.tsv'));

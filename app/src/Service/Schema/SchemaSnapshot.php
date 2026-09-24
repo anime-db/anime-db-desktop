@@ -79,7 +79,7 @@ final class SchemaSnapshot
      */
     public static function parse(string $content): array
     {
-        $lines = explode("\n", $content);
+        $lines = explode("\n", str_replace("\r\n", "\n", $content));
         if (end($lines) === '') {
             array_pop($lines);
         }

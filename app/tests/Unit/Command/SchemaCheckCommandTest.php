@@ -70,6 +70,20 @@ final class SchemaCheckCommandTest extends TestCase
         $this->assertStringContainsString("< index\tghost\tX", $tester->getDisplay());
     }
 
+    public function testCheckReportsRowMissingFromGolden(): void
+    {
+        $projectDir = $this->fakeProject();
+        symlink(realpath(self::APP_DIR.'/bin') ?: '', $projectDir.'/bin');
+        $lines = explode("\n", trim((string) file_get_contents(self::APP_DIR.'/migrations/schema.golden.tsv')));
+        $dropped = array_pop($lines);
+        file_put_contents($projectDir.'/migrations/schema.golden.tsv', implode("\n", $lines)."\n");
+
+        $tester = $this->runCommand($projectDir, []);
+
+        $this->assertSame(Command::FAILURE, $tester->getStatusCode());
+        $this->assertStringContainsString('> '.$dropped, $tester->getDisplay());
+    }
+
     public function testFailingMigrationsGiveNonZeroExitAndNoComparison(): void
     {
         $projectDir = $this->fakeProject();
