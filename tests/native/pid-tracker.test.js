@@ -28,7 +28,7 @@ jest.mock('child_process', () => ({ execFile: jest.fn() }));
 
 const fs = require('fs');
 const { execFile } = require('child_process');
-const { writePid, clearPid, killOrphan, pidFilePath } = require('../../native/supervisor/pid-tracker');
+const { writePid, clearPid, killOrphan, killTree, killTreeSync, pidFilePath } = require('../../native/supervisor/pid-tracker');
 
 const originalPlatform = process.platform;
 
@@ -123,7 +123,7 @@ describe('killOrphan', () => {
 
         expect(execFile).toHaveBeenCalledWith(
             'taskkill',
-            ['/PID', '4242', '/F'],
+            ['/PID', '4242', '/T', '/F'],
             { windowsHide: true },
             expect.any(Function),
         );
@@ -172,5 +172,43 @@ describe('killOrphan', () => {
         await killOrphan('frankenphp', 'C:/app/bin/frankenphp/frankenphp.exe');
 
         expect(execFile).not.toHaveBeenCalled();
+    });
+});
+
+describe('killTree', () => {
+    test('runs taskkill with /T /F on Windows', async () => {
+        Object.defineProperty(process, 'platform', { value: 'win32' });
+        execFile.mockImplementation((cmd, args, options, cb) => cb(null, ''));
+
+        await killTree(4242);
+
+        expect(execFile).toHaveBeenCalledWith(
+            'taskkill',
+            ['/PID', '4242', '/T', '/F'],
+            { windowsHide: true },
+            expect.any(Function),
+        );
+    });
+
+    test('kills the whole process group on non-Windows platforms', async () => {
+        Object.defineProperty(process, 'platform', { value: 'linux' });
+        const killSpy = jest.spyOn(process, 'kill').mockImplementation(() => true);
+
+        await killTree(4242);
+
+        expect(killSpy).toHaveBeenCalledWith(-4242, 'SIGKILL');
+        expect(execFile).not.toHaveBeenCalled();
+    });
+
+    test('falls back to the single pid when it is not a group leader', () => {
+        Object.defineProperty(process, 'platform', { value: 'linux' });
+        const killSpy = jest.spyOn(process, 'kill').mockImplementation((pid) => {
+            if (pid < 0) throw new Error('ESRCH');
+            return true;
+        });
+
+        killTreeSync(4242);
+
+        expect(killSpy).toHaveBeenCalledWith(4242, 'SIGKILL');
     });
 });

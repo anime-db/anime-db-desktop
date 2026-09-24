@@ -142,7 +142,10 @@ function stop() {
     child = null;
 
     return new Promise((resolve) => {
-        const timer = setTimeout(() => proc.kill('SIGKILL'), 500);
+        const timer = setTimeout(() => {
+            pidTracker.killTree(proc.pid);
+            proc.kill('SIGKILL');
+        }, 500);
 
         proc.on('exit', () => {
             clearTimeout(timer);
@@ -154,7 +157,13 @@ function stop() {
             resolve();
         });
 
-        proc.kill('SIGTERM');
+        // Windows: SIGTERM = TerminateProcess одного PID, потомки уцелели бы (issue #757), а
+        // taskkill /T после смерти родителя дерево уже не найдёт — поэтому сразу всё дерево.
+        if (process.platform === 'win32') {
+            pidTracker.killTree(proc.pid);
+        } else {
+            proc.kill('SIGTERM');
+        }
     });
 }
 
@@ -166,6 +175,7 @@ function stop() {
 function killSync() {
     if (!child) return;
     try {
+        pidTracker.killTreeSync(child.pid);
         child.kill('SIGKILL');
     } catch {
         // процесс уже завершился

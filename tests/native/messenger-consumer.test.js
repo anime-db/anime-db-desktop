@@ -64,6 +64,8 @@ jest.mock('../../native/supervisor/pid-tracker', () => ({
     writePid:   jest.fn(),
     clearPid:   jest.fn(),
     killOrphan: jest.fn(() => Promise.resolve()),
+    killTree:   jest.fn(() => Promise.resolve()),
+    killTreeSync: jest.fn(),
 }));
 jest.mock('child_process', () => ({ spawn: jest.fn() }));
 

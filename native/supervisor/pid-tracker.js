@@ -21,7 +21,7 @@
 
 'use strict';
 
-const { execFile } = require('child_process');
+const { execFile, spawnSync } = require('child_process');
 const fs   = require('fs');
 const path = require('path');
 const paths = require('../paths');
@@ -85,13 +85,60 @@ function isRunningAs(pid, binaryName) {
 }
 
 /**
+ * `/T` завершает всё дерево процесса, а не только сам PID: внук, запущенный из PHP (внешний
+ * процесс консьюмера), иначе переживает закрытие приложения и держит открытыми файлы (issue #757).
+ *
+ * @param {number} pid
+ * @returns {string[]}
+ */
+function taskkillArgs(pid) {
+    return ['/PID', String(pid), '/T', '/F'];
+}
+
+/**
+ * Завершает процесс вместе с потомками. На Windows — `taskkill /T /F`; на остальных платформах —
+ * SIGKILL всей группе процессов (`-pid`), с откатом на одиночный PID, если процесс не лидер группы.
+ *
  * @param {number} pid
  * @returns {Promise<void>}
  */
-function forceKill(pid) {
+function killTree(pid) {
     return new Promise((resolve) => {
-        execFile('taskkill', ['/PID', String(pid), '/F'], { windowsHide: true }, () => resolve());
+        if (process.platform === 'win32') {
+            execFile('taskkill', taskkillArgs(pid), { windowsHide: true }, () => resolve());
+            return;
+        }
+        killPosixGroup(pid);
+        resolve();
     });
+}
+
+/**
+ * Синхронный вариант killTree() для аварийного выхода, где дожидаться асинхронщины нельзя.
+ *
+ * @param {number} pid
+ */
+function killTreeSync(pid) {
+    if (process.platform === 'win32') {
+        spawnSync('taskkill', taskkillArgs(pid), { windowsHide: true });
+        return;
+    }
+    killPosixGroup(pid);
+}
+
+/**
+ * @param {number} pid
+ */
+function killPosixGroup(pid) {
+    try {
+        process.kill(-pid, 'SIGKILL');
+    } catch {
+        try {
+            process.kill(pid, 'SIGKILL');
+        } catch {
+            // процесс уже завершился
+        }
+    }
 }
 
 /**
@@ -116,8 +163,8 @@ async function killOrphan(name, binaryPath) {
     if (process.platform !== 'win32' || !Number.isInteger(pid) || pid <= 0) return;
 
     if (await isRunningAs(pid, path.basename(binaryPath))) {
-        await forceKill(pid);
+        await killTree(pid);
     }
 }
 
-module.exports = { writePid, clearPid, killOrphan, pidFilePath };
+module.exports = { writePid, clearPid, killOrphan, killTree, killTreeSync, pidFilePath };
