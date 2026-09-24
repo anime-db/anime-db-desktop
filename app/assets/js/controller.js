@@ -157,3 +157,6 @@
 
     window.Controller = { registerControl };
 })();
+
+// ВРЕМЕННО: доказательство красного прогона гейта, следующим коммитом снимается.
+throw new Error("frontend gate proof");
