@@ -44,7 +44,7 @@ use Twig\Environment;
 
 /**
  * Renders /settings/backup (issue #657). The page itself only lays out the markup
- * app/public/js/backup.js drives — starting the export, showing its `export.progress`/
+ * app/assets/js/backup.js drives — starting the export, showing its `export.progress`/
  * `export.done`/`export.failed` events and cancelling it all go through
  * window.animeDb.catalogExport*() (native/catalog-export/index.js) straight from the renderer,
  * the same IPC route as window.animeDb.pickFolder() for the destination folder, not an HTTP

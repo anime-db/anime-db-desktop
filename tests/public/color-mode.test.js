@@ -45,7 +45,7 @@ function mockMatchMedia(matches) {
 
 function loadColorMode() {
     jest.resetModules();
-    require('../../app/public/js/color-mode.js');
+    require('../../app/assets/js/color-mode.js');
 }
 
 beforeEach(() => {

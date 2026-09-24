@@ -324,4 +324,76 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
         $this->assertStringContainsString('hx-post="/anime/1/fill/images"', $html);
         $this->assertStringContainsString('name="plugin_id" value="animedb-shikimori"', $html);
     }
+
+    /**
+     * Issue #735: base.html.twig now loads the host's own JS as a single bundle in <head>, and
+     * {% block javascripts %} narrows to plugin assets only. A plugin script may rely on host
+     * globals such as window.Controller, so the bundle tag must always precede it in the
+     * rendered markup — not just happen to, by virtue of where each block sits in the template.
+     */
+    public function testShowRendersTheHostBundleBeforeAnyPluginScript(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession('/anime/1');
+
+        /** @var LocaleSwitcher $localeSwitcher */
+        $localeSwitcher = self::getContainer()->get(LocaleSwitcher::class);
+        $localeSwitcher->setLocale('ru');
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('anime/show.html.twig', [
+            'anime' => $this->fullyPopulatedAnime(),
+            'widgets' => [],
+            'plugins_ui' => [['css' => [], 'js' => ['/plugin/animedb-shikimori/asset/widget.js']]],
+            'fillable_fields' => $this->emptyFillableFields(),
+        ]);
+
+        $hostBundlePosition = strpos($html, 'js/main.js');
+        $pluginScriptPosition = strpos($html, '/plugin/animedb-shikimori/asset/widget.js');
+
+        $this->assertNotFalse($hostBundlePosition);
+        $this->assertNotFalse($pluginScriptPosition);
+        $this->assertLessThan($pluginScriptPosition, $hostBundlePosition);
+    }
+
+    /**
+     * Issue #735 (color-mode: #638, inline-handlers: #633): the host bundle must run before the
+     * first paint and before the parser reaches the page's own markup, which only holds if the
+     * tag sits inside <head> and has neither `defer` nor `async` — either attribute defers
+     * execution past parsing and would silently bring back the light-flash and the unhandled
+     * cover-image error the two issues fixed.
+     */
+    public function testShowRendersTheHostBundleAsASynchronousHeadScript(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession('/anime/1');
+
+        /** @var LocaleSwitcher $localeSwitcher */
+        $localeSwitcher = self::getContainer()->get(LocaleSwitcher::class);
+        $localeSwitcher->setLocale('ru');
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('anime/show.html.twig', [
+            'anime' => $this->fullyPopulatedAnime(),
+            'widgets' => [],
+            'plugins_ui' => [],
+            'fillable_fields' => $this->emptyFillableFields(),
+        ]);
+
+        $hostBundlePosition = strpos($html, 'js/main.js');
+        $headEndPosition = strpos($html, '</head>');
+
+        $this->assertNotFalse($hostBundlePosition);
+        $this->assertNotFalse($headEndPosition);
+        $this->assertLessThan($headEndPosition, $hostBundlePosition, 'Host bundle <script> must be inside <head>');
+
+        preg_match('/<script[^>]*src="[^"]*js\/main\.js[^"]*"[^>]*>/', $html, $matches);
+        $hostBundleTag = $matches[0] ?? null;
+        $this->assertNotNull($hostBundleTag, 'Host bundle <script> tag not found');
+
+        $this->assertDoesNotMatchRegularExpression('/\bdefer\b/', $hostBundleTag, 'Host bundle <script> must not be deferred');
+        $this->assertDoesNotMatchRegularExpression('/\basync\b/', $hostBundleTag, 'Host bundle <script> must not be async');
+    }
 }

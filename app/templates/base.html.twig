@@ -30,14 +30,16 @@
        из того же исходника прогоном через RTLCSS — см. scripts/build-assets.js. #}
     <link rel="stylesheet" href="{{ asset(text_direction(app.request.locale) == 'rtl' ? 'css/app.rtl.css' : 'css/app.css') }}">
     {% block stylesheets %}{% endblock %}
-    {# Синхронно и до отрисовки: иначе на каждой загрузке мигает светлый фон. #}
-    <script src="{{ asset('js/color-mode.js') }}"></script>
-    {# Синхронно в head, а не в конце body: делегированный обработчик error (issue #633) должен
-       быть навешан раньше, чем парсер дойдёт до самого первого <img class="anime-detail__cover">
-       в теле страницы — событие error у сломанной обложки из первичного рендера может
-       произойти раньше, чем скрипт в конце body успеет выполниться, и тогда обработчик его
-       просто не увидит. #}
-    <script src="{{ asset('js/inline-handlers.js') }}"></script>
+    {# Единственный тег на весь клиентский код хоста (issue #735), синхронный и в head: внутри
+       него color-mode должен отработать до первой отрисовки (иначе мигает светлый фон), а
+       делегированный обработчик error — раньше, чем парсер дойдёт до самого первого
+       <img class="anime-detail__cover"> в теле страницы (issue #633). Остальные модули на
+       загрузке DOM не трогают (issue #734) — они лишь регистрируют контролы, которые
+       controller.js монтирует по htmx:load, — но должны быть готовы раньше любого постраничного
+       блока javascripts (ассеты плагинов), поэтому весь бандл целиком стоит здесь. Собирается
+       из app/assets/js через esbuild шагом сборки, в git не хранится —
+       см. scripts/build-assets.js. #}
+    <script src="{{ asset('js/main.js') }}"></script>
 </head>
 <body>
     {% set current_route = app.request.attributes.get('_route')|default('') %}
@@ -75,13 +77,6 @@
        работают без реинициализации. Tooltip и Popover — исключение, они создаются только явно:
        если появятся, инициализировать их придётся по событию htmx:afterSwap. #}
     <script src="{{ asset('js/bootstrap.bundle.min.js') }}"></script>
-    {# Control registry (issue #734): mounts every data-control="name" element on htmx:load, both
-       at initial page load and on every later htmx swap. Loaded before translations.js/
-       app-notifications.js and before any per-page {% block javascripts %} script, since those
-       call registerControl() at load time and expect window.Controller to already exist. #}
-    <script src="{{ asset('js/controller.js') }}"></script>
-    <script src="{{ asset('js/translations.js') }}"></script>
-    <script src="{{ asset('js/app-notifications.js') }}"></script>
     {% block javascripts %}{% endblock %}
 </body>
 </html>

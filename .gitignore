@@ -21,6 +21,8 @@ data/
 # Frontend assets — генерируются при сборке (scripts/build-assets.js), не хранятся в git
 app/public/js/htmx.min.js
 app/public/js/bootstrap.bundle.min.js
+app/public/js/main.js
+app/public/js/main.js.map
 app/public/css/app.css
 app/public/css/app.rtl.css
 

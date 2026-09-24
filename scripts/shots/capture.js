@@ -45,7 +45,7 @@ if (!PORT || !OUT_DIR) {
 const WINDOW_WIDTH  = 1280;
 const WINDOW_HEIGHT = 900;
 
-// The catalog grid (app/public/js/anime-list.js) fills in after an async fetch that runs past
+// The catalog grid (app/assets/js/anime-list.js) fills in after an async fetch that runs past
 // did-finish-load, so capturePage() right after page load can catch it empty regardless of
 // database contents. Poll for the same DOM state anime-list.js itself uses to decide "loaded":
 // either cards in the grid or the "list is empty" message uncovered.
@@ -142,7 +142,7 @@ async function main() {
     });
 
     for (const theme of ['light', 'dark']) {
-        // app/public/js/color-mode.js sets data-bs-theme from `prefers-color-scheme`, which this
+        // app/assets/js/color-mode.js sets data-bs-theme from `prefers-color-scheme`, which this
         // drives directly — no in-page toggle exists yet to click instead.
         nativeTheme.themeSource = theme;
 

@@ -29,7 +29,7 @@
 //
 // controller.js is required once at file scope, not inside loadBackupModule() — see
 // controller.test.js for why a fresh require() per test would leak document-level listeners.
-require('../../app/public/js/controller.js');
+require('../../app/assets/js/controller.js');
 
 function mountControls(root = document.body) {
     root.dispatchEvent(new CustomEvent('htmx:load', { bubbles: true, detail: { elt: root } }));
@@ -94,7 +94,7 @@ function jsonResponse(body) {
 
 function loadBackupModule() {
     jest.isolateModules(() => {
-        require('../../app/public/js/backup.js');
+        require('../../app/assets/js/backup.js');
     });
     mountControls();
 }
@@ -129,7 +129,7 @@ afterEach(() => {
 test('a value substituted twice into a message via export.done comes out identical at both occurrences, with no format() left in backup.js', async () => {
     global.fetch = jest.fn(() => Promise.resolve(jsonResponse({ 'settings_backup.done_text': '%path% (%path%)' })));
     jest.isolateModules(() => {
-        require('../../app/public/js/translations.js');
+        require('../../app/assets/js/translations.js');
     });
     loadBackupModule();
 
@@ -155,7 +155,7 @@ test('a value substituted twice into a message via export.done comes out identic
 test('export progress substitutes both progress placeholders via trans(), not a leftover local format()', async () => {
     global.fetch = jest.fn(() => Promise.resolve(jsonResponse({ 'settings_backup.progress_media': '%current% of %current%, total %total%' })));
     jest.isolateModules(() => {
-        require('../../app/public/js/translations.js');
+        require('../../app/assets/js/translations.js');
     });
     loadBackupModule();
 
@@ -177,7 +177,7 @@ test('clicking a restore button asks for confirmation naming the snapshot, then 
         'settings_backup.restore_confirm_text': 'Replace the current catalog with "%name%"?',
     })));
     jest.isolateModules(() => {
-        require('../../app/public/js/translations.js');
+        require('../../app/assets/js/translations.js');
     });
     window.confirm = jest.fn(() => true);
     window.animeDb.backupRestoreStart = jest.fn(() => new Promise(() => {}));
@@ -194,7 +194,7 @@ test('clicking a restore button asks for confirmation naming the snapshot, then 
 test('declining the restore confirmation dialog never calls backupRestoreStart()', async () => {
     global.fetch = jest.fn(() => Promise.resolve(jsonResponse({})));
     jest.isolateModules(() => {
-        require('../../app/public/js/translations.js');
+        require('../../app/assets/js/translations.js');
     });
     window.confirm = jest.fn(() => false);
     window.animeDb.backupRestoreStart = jest.fn();
@@ -212,7 +212,7 @@ test('shows an error and re-enables the button when the restore IPC call reports
         'settings_backup.restore_error_text': 'Failed to restore the snapshot.',
     })));
     jest.isolateModules(() => {
-        require('../../app/public/js/translations.js');
+        require('../../app/assets/js/translations.js');
     });
     window.confirm = jest.fn(() => true);
     window.animeDb.backupRestoreStart = jest.fn(() => Promise.resolve({ ok: false }));
@@ -238,7 +238,7 @@ test('shows an error and re-enables the button when the restore IPC call rejects
         'settings_backup.restore_error_text': 'Failed to restore the snapshot.',
     })));
     jest.isolateModules(() => {
-        require('../../app/public/js/translations.js');
+        require('../../app/assets/js/translations.js');
     });
     window.confirm = jest.fn(() => true);
     window.animeDb.backupRestoreStart = jest.fn(() => Promise.reject(new Error('copy failed')));

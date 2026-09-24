@@ -122,16 +122,3 @@
         </div>
     </main>
 {% endblock %}
-
-{% block javascripts %}
-    {# Namespace objects on window (window.AnimeListQuery, window.AnimeListGrid,
-       window.AnimeListFilterRender, window.AnimeListFilterPanel), same pattern as
-       window.AppTranslations in translations.js — see the PR description for why this was
-       chosen over ES modules. Order matters: each script below assigns a global the next one
-       reads, and anime-list.js itself must load last since it calls init() immediately. #}
-    <script src="{{ asset('js/anime-list-query.js') }}"></script>
-    <script src="{{ asset('js/anime-list-grid.js') }}"></script>
-    <script src="{{ asset('js/anime-list-filter-render.js') }}"></script>
-    <script src="{{ asset('js/anime-list-filters.js') }}"></script>
-    <script src="{{ asset('js/anime-list.js') }}"></script>
-{% endblock %}

@@ -32,7 +32,7 @@ function jsonResponse(body) {
 
 function loadTranslationsModule() {
     jest.isolateModules(() => {
-        require('../../app/public/js/translations.js');
+        require('../../app/assets/js/translations.js');
     });
 }
 

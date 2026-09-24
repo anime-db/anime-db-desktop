@@ -64,7 +64,7 @@ use Twig\Environment;
  * ({@see InstalledPluginsRegistry::all()}) and drives an uploaded ZIP through
  * {@see ZipPluginInstaller::install()}. The "third-party source" warning gate the archive must
  * pass through before the upload is submitted lives entirely client-side in
- * `settings/plugins/index.html.twig` / `js/plugin-install.js` — this controller only ever sees
+ * `settings/plugins/index.html.twig` / `app/assets/js/plugin-install.js` — this controller only ever sees
  * an already-confirmed submission, the same way the server has no notion of the storage scan
  * confirm step's own UI state.
  *

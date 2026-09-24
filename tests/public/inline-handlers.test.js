@@ -31,7 +31,7 @@
 // event.preventDefault() actually affects.
 
 beforeAll(() => {
-    require('../../app/public/js/inline-handlers.js');
+    require('../../app/assets/js/inline-handlers.js');
 });
 
 const originalFormSubmit = HTMLFormElement.prototype.submit;

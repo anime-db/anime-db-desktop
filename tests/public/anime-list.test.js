@@ -30,7 +30,7 @@
 //
 // controller.js is required once at file scope, not per test — see controller.test.js for why a
 // fresh require() per test would leak document-level listeners.
-require('../../app/public/js/controller.js');
+require('../../app/assets/js/controller.js');
 
 function mountControls(root = document.body) {
     root.dispatchEvent(new CustomEvent('htmx:load', { bubbles: true, detail: { elt: root } }));
@@ -220,29 +220,29 @@ async function flushMicrotasks() {
 }
 
 // The module was split (issue #712) into namespace objects on `window`, the same pattern as
-// window.AppTranslations in translations.js — mirrors the <script> order in list.html.twig, since
-// each file assigns a global the next one reads and anime-list.js itself calls init() immediately.
+// window.AppTranslations in translations.js — mirrors the require order below, since each file
+// assigns a global the next one reads and anime-list.js itself calls init() immediately.
 function loadAnimeListModule() {
     jest.isolateModules(() => {
-        require('../../app/public/js/anime-list-query.js');
-        require('../../app/public/js/anime-list-grid.js');
-        require('../../app/public/js/anime-list-filter-render.js');
-        require('../../app/public/js/anime-list-filters.js');
-        require('../../app/public/js/anime-list.js');
+        require('../../app/assets/js/anime-list-query.js');
+        require('../../app/assets/js/anime-list-grid.js');
+        require('../../app/assets/js/anime-list-filter-render.js');
+        require('../../app/assets/js/anime-list-filters.js');
+        require('../../app/assets/js/anime-list.js');
     });
     mountControls();
 }
 
-// Same five modules as loadAnimeListModule() above, but required in the exact reverse of the
-// <script> order in list.html.twig — anime-list.js first, the four helpers after. Used to prove
-// the catalog's init() no longer depends on that order (issue #729).
+// Same five modules as loadAnimeListModule() above, but required in the exact reverse order —
+// anime-list.js first, the four helpers after. Used to prove the catalog's init() no longer
+// depends on that order (issue #729).
 function loadAnimeListModuleReversed() {
     jest.isolateModules(() => {
-        require('../../app/public/js/anime-list.js');
-        require('../../app/public/js/anime-list-filters.js');
-        require('../../app/public/js/anime-list-filter-render.js');
-        require('../../app/public/js/anime-list-grid.js');
-        require('../../app/public/js/anime-list-query.js');
+        require('../../app/assets/js/anime-list.js');
+        require('../../app/assets/js/anime-list-filters.js');
+        require('../../app/assets/js/anime-list-filter-render.js');
+        require('../../app/assets/js/anime-list-grid.js');
+        require('../../app/assets/js/anime-list-query.js');
     });
     mountControls();
 }
