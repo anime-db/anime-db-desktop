@@ -31,7 +31,6 @@
 {% endblock %}
 
 {% block javascripts %}
-    <script src="{{ asset('js/anime-detail.js') }}"></script>
     {% for plugin in plugins_ui %}
         {% for jsUrl in plugin.js %}
             <script src="{{ jsUrl }}" defer></script>

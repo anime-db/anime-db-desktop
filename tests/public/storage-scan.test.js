@@ -29,7 +29,7 @@
 //
 // controller.js is required once at file scope, not inside loadStorageScanModule() — see
 // controller.test.js for why a fresh require() per test would leak document-level listeners.
-require('../../app/public/js/controller.js');
+require('../../app/assets/js/controller.js');
 
 function mountControls(root = document.body) {
     root.dispatchEvent(new CustomEvent('htmx:load', { bubbles: true, detail: { elt: root } }));
@@ -87,7 +87,7 @@ function jsonResponse(body) {
 
 function loadStorageScanModule() {
     jest.isolateModules(() => {
-        require('../../app/public/js/storage-scan.js');
+        require('../../app/assets/js/storage-scan.js');
     });
     mountControls();
 }
@@ -245,7 +245,7 @@ test('a value substituted into a message is bidi-isolated at every occurrence of
     document.documentElement.lang = 'ru';
     global.fetch = jest.fn(() => Promise.resolve(jsonResponse({ 'storage_list.auto_linked_text': '%title% / %title%' })));
     jest.isolateModules(() => {
-        require('../../app/public/js/translations.js');
+        require('../../app/assets/js/translations.js');
     });
     loadStorageScanModule();
 

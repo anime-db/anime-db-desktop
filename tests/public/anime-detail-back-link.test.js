@@ -29,7 +29,7 @@
 // test). controller.js itself is required once at file scope — see controller.test.js for why a
 // fresh require() per test would leak document-level listeners.
 
-require('../../app/public/js/controller.js');
+require('../../app/assets/js/controller.js');
 
 function setUpDom() {
     document.body.innerHTML = '<a href="/" data-control="catalog-back-link">Catalog</a>';
@@ -49,7 +49,7 @@ function mountControls(root = document.body) {
 
 function loadModule() {
     jest.resetModules();
-    require('../../app/public/js/anime-detail.js');
+    require('../../app/assets/js/anime-detail.js');
     mountControls();
 }
 

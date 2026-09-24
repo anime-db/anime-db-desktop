@@ -25,7 +25,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const { copyVendorScripts, compileStyles } = require('../../scripts/build-assets');
+const { copyVendorScripts, compileStyles, buildScriptsEntry, bundleScripts } = require('../../scripts/build-assets');
 
 // Реальная компиляция Bootstrap, без моков: смысл этих проверок именно в том, что из
 // исходников получается CSS с нужными значениями, а замоканный sass об этом ничего не скажет.
@@ -95,5 +95,94 @@ describe('compileStyles', () => {
         // Собственные стили уже написаны на логических свойствах, RTLCSS их не трогает —
         // иначе отражение применилось бы дважды и уехало в обратную сторону.
         expect(rtlCss).toContain('inset-inline-end');
+    });
+});
+
+describe('buildScriptsEntry', () => {
+    // fs.readdirSync is mocked here rather than backed by a real directory: its order is not
+    // guaranteed by Node and differs across filesystems, so a fixture built from real files could
+    // pass this test by coincidence on a filesystem that already happens to hand back sorted
+    // entries, even if buildScriptsEntry's own sort() were removed.
+    afterEach(() => {
+        jest.restoreAllMocks();
+    });
+
+    test('orders controller.js first, then the rest of the directory sorted', () => {
+        jest.spyOn(fs, 'readdirSync').mockReturnValue(['zebra.js', 'controller.js', 'alpha.js', 'beta.js']);
+
+        expect(buildScriptsEntry('/fake/dir')).toBe(
+            "import './controller.js';\nimport './alpha.js';\nimport './beta.js';\nimport './zebra.js';\n",
+        );
+    });
+
+    test('ignores non-.js files when building the entry', () => {
+        jest.spyOn(fs, 'readdirSync').mockReturnValue(['controller.js', 'notes.txt']);
+
+        expect(buildScriptsEntry('/fake/dir')).toBe("import './controller.js';\n");
+    });
+
+    test('throws instead of silently building without the control registry', () => {
+        // Covers both ways controller.js can be missing (issue #735's open question): a directory
+        // that has other modules but not controller.js, and one that has nothing at all.
+        const emptyDir = tempDir('js-entry-empty-');
+        expect(() => buildScriptsEntry(emptyDir)).toThrow(/controller\.js/);
+
+        const sourceDir = tempDir('js-entry-no-controller-');
+        fs.writeFileSync(path.join(sourceDir, 'a.js'), '', 'utf8');
+        expect(() => buildScriptsEntry(sourceDir)).toThrow(/controller\.js/);
+    });
+});
+
+describe('bundleScripts', () => {
+    let bundle;
+    let map;
+
+    beforeAll(() => {
+        const outDir = tempDir('scripts-');
+        bundleScripts(undefined, outDir);
+        bundle = fs.readFileSync(path.join(outDir, 'main.js'), 'utf8');
+        map = JSON.parse(fs.readFileSync(path.join(outDir, 'main.js.map'), 'utf8'));
+    }, COMPILE_TIMEOUT_MS);
+
+    test('carries every application module, not just the ones a page used to load directly', () => {
+        // Each marker below used to arrive through its own per-page <script> tag (issue #735) —
+        // a module dropped while generating the bundle would only ever be caught by opening that
+        // one page and reading the console, not by a page-agnostic test like this one.
+        expect(bundle).toContain('window.Controller');
+        expect(bundle).toContain('window.AnimeListQuery');
+        expect(bundle).toContain('window.AnimeListGrid');
+        expect(bundle).toContain('window.AnimeListFilterRender');
+        expect(bundle).toContain('window.AnimeListFilterPanel');
+        expect(bundle).toContain('window.AppTranslations');
+        expect(bundle).toContain('window.ScanWatcher');
+        expect(bundle).toContain('registerControl("anime-list"');
+        expect(bundle).toContain('registerControl("catalog-back-link"');
+        expect(bundle).toContain('registerControl("labels-widget"');
+        expect(bundle).toContain('registerControl("open-folder-button"');
+        expect(bundle).toContain('registerControl("app-notifications"');
+        expect(bundle).toContain('registerControl("settings-backup"');
+        expect(bundle).toContain('registerControl("storage-new"');
+        expect(bundle).toContain('registerControl("storage-scan"');
+        expect(bundle).toContain('registerControl("plugin-install"');
+    });
+
+    test('puts controller.js ahead of every other module, in a deterministic order', () => {
+        const names = map.sources.map((source) => path.basename(source));
+
+        expect(names[0]).toBe('controller.js');
+        expect(names.slice(1)).toEqual([...names.slice(1)].sort());
+    });
+
+    test('embeds every source file, not just its path', () => {
+        // app/assets/** is excluded from the packaged app (see "build.files" in package.json) —
+        // without sourcesContent, a map shipped in an installed build could not show the original
+        // file at all.
+        expect(map.sourcesContent).toHaveLength(map.sources.length);
+        map.sourcesContent.forEach((content) => expect(typeof content).toBe('string'));
+        map.sourcesContent.forEach((content) => expect(content.length).toBeGreaterThan(0));
+    });
+
+    test('points the bundle at its source map', () => {
+        expect(bundle).toContain('//# sourceMappingURL=main.js.map');
     });
 });

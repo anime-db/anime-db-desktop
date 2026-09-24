@@ -30,7 +30,7 @@
 //
 // controller.js is required once at file scope, not per test — see controller.test.js for why a
 // fresh require() per test would leak document-level listeners.
-require('../../app/public/js/controller.js');
+require('../../app/assets/js/controller.js');
 
 function mountControls(root = document.body) {
     root.dispatchEvent(new CustomEvent('htmx:load', { bubbles: true, detail: { elt: root } }));
@@ -224,11 +224,11 @@ async function flushMicrotasks() {
 // each file assigns a global the next one reads and anime-list.js itself calls init() immediately.
 function loadAnimeListModule() {
     jest.isolateModules(() => {
-        require('../../app/public/js/anime-list-query.js');
-        require('../../app/public/js/anime-list-grid.js');
-        require('../../app/public/js/anime-list-filter-render.js');
-        require('../../app/public/js/anime-list-filters.js');
-        require('../../app/public/js/anime-list.js');
+        require('../../app/assets/js/anime-list-query.js');
+        require('../../app/assets/js/anime-list-grid.js');
+        require('../../app/assets/js/anime-list-filter-render.js');
+        require('../../app/assets/js/anime-list-filters.js');
+        require('../../app/assets/js/anime-list.js');
     });
     mountControls();
 }
@@ -238,11 +238,11 @@ function loadAnimeListModule() {
 // the catalog's init() no longer depends on that order (issue #729).
 function loadAnimeListModuleReversed() {
     jest.isolateModules(() => {
-        require('../../app/public/js/anime-list.js');
-        require('../../app/public/js/anime-list-filters.js');
-        require('../../app/public/js/anime-list-filter-render.js');
-        require('../../app/public/js/anime-list-grid.js');
-        require('../../app/public/js/anime-list-query.js');
+        require('../../app/assets/js/anime-list.js');
+        require('../../app/assets/js/anime-list-filters.js');
+        require('../../app/assets/js/anime-list-filter-render.js');
+        require('../../app/assets/js/anime-list-grid.js');
+        require('../../app/assets/js/anime-list-query.js');
     });
     mountControls();
 }

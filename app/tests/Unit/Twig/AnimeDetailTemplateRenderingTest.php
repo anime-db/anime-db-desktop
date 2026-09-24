@@ -324,4 +324,36 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
         $this->assertStringContainsString('hx-post="/anime/1/fill/images"', $html);
         $this->assertStringContainsString('name="plugin_id" value="animedb-shikimori"', $html);
     }
+
+    /**
+     * Issue #735: base.html.twig now loads the host's own JS as a single bundle in <head>, and
+     * {% block javascripts %} narrows to plugin assets only. A plugin script may rely on host
+     * globals such as window.Controller, so the bundle tag must always precede it in the
+     * rendered markup — not just happen to, by virtue of where each block sits in the template.
+     */
+    public function testShowRendersTheHostBundleBeforeAnyPluginScript(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession('/anime/1');
+
+        /** @var LocaleSwitcher $localeSwitcher */
+        $localeSwitcher = self::getContainer()->get(LocaleSwitcher::class);
+        $localeSwitcher->setLocale('ru');
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('anime/show.html.twig', [
+            'anime' => $this->fullyPopulatedAnime(),
+            'widgets' => [],
+            'plugins_ui' => [['css' => [], 'js' => ['/plugin/animedb-shikimori/asset/widget.js']]],
+            'fillable_fields' => $this->emptyFillableFields(),
+        ]);
+
+        $hostBundlePosition = strpos($html, 'js/main.js');
+        $pluginScriptPosition = strpos($html, '/plugin/animedb-shikimori/asset/widget.js');
+
+        $this->assertNotFalse($hostBundlePosition);
+        $this->assertNotFalse($pluginScriptPosition);
+        $this->assertLessThan($pluginScriptPosition, $hostBundlePosition);
+    }
 }

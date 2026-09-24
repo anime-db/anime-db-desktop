@@ -15,14 +15,15 @@
         "check-runtime-parity": "node scripts/check-runtime-parity.js",
         "release-smoke": "node scripts/release-smoke.js",
         "shots": "node scripts/shots/run.js",
-        "lint": "eslint native/ tests/native/ app/public/js/ tests/public/ scripts/",
-        "lint:fix": "eslint native/ tests/native/ app/public/js/ tests/public/ scripts/ --fix",
+        "lint": "eslint native/ tests/native/ app/assets/js/ tests/public/ scripts/",
+        "lint:fix": "eslint native/ tests/native/ app/assets/js/ tests/public/ scripts/ --fix",
         "test": "jest"
     },
     "devDependencies": {
         "bootstrap": "^5.3.8",
         "electron": "^35.0.0",
         "electron-builder": "^25.0.0",
+        "esbuild": "^0.28.2",
         "eslint": "^9.39.4",
         "globals": "^17.7.0",
         "htmx.org": "^2.0.0",

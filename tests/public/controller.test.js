@@ -43,7 +43,7 @@ function dispatchBeforeCleanup(node) {
 // the require() cache, not side effects a past require() already applied to `document`. A real
 // page only ever loads this file once too (one <script> tag in base.html.twig), so requiring it
 // once here — before jest.resetModules() runs for the first time — mirrors that.
-require('../../app/public/js/controller.js');
+require('../../app/assets/js/controller.js');
 
 beforeEach(() => {
     document.body.innerHTML = '';

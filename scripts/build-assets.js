@@ -25,10 +25,12 @@ const fs = require('fs');
 const path = require('path');
 const sass = require('sass');
 const rtlcss = require('rtlcss');
+const esbuild = require('esbuild');
 
 const rootDir = path.resolve(__dirname, '..');
 const nodeModulesDir = path.join(rootDir, 'node_modules');
 const scssEntry = path.join(rootDir, 'app', 'assets', 'scss', 'app.scss');
+const jsSourceDir = path.join(rootDir, 'app', 'assets', 'js');
 const cssDir = path.join(rootDir, 'app', 'public', 'css');
 const jsDir = path.join(rootDir, 'app', 'public', 'js');
 
@@ -86,13 +88,72 @@ function compileStyles(entry = scssEntry, outDir = cssDir) {
     fs.writeFileSync(path.join(outDir, 'app.rtl.css'), rtlcss.process(css), 'utf8');
 }
 
+/**
+ * Builds the esbuild entry that bundleScripts() below feeds to esbuild: an `import` per module in
+ * sourceDir, controller.js first and everything else sorted after it. controller.js defines
+ * window.Controller, which every other module's registerControl() call (issue #734) needs already
+ * in place, and fs.readdirSync's own order is not guaranteed and differs between filesystems, so
+ * the rest is sorted rather than left in whatever order the directory listing came back in.
+ *
+ * Throws if controller.js is missing (including an empty sourceDir) rather than producing a
+ * bundle silently missing the control registry: a `main.js` that mounts nothing is a page that
+ * looks fine until the first htmx swap, with no failing test or build error pointing at why.
+ *
+ * @param {string} sourceDir
+ * @returns {string}
+ */
+function buildScriptsEntry(sourceDir) {
+    const files = fs.readdirSync(sourceDir).filter((name) => name.endsWith('.js'));
+
+    if (!files.includes('controller.js')) {
+        throw new Error(`${sourceDir} has no controller.js — the control registry every other module's registerControl() call depends on.`);
+    }
+
+    const rest = files.filter((name) => name !== 'controller.js').sort();
+
+    return ['controller.js', ...rest].map((name) => `import './${name}';`).join('\n') + '\n';
+}
+
+/**
+ * Bundles every module in app/assets/js into the single app/public/js/main.js base.html.twig
+ * loads (issue #735). Fed through esbuild's `stdin` option rather than a temporary entry file on
+ * disk, so the generated import list never touches the source tree; `resolveDir` is what makes
+ * the relative `./name.js` specifiers in that list resolve against sourceDir.
+ *
+ * Source maps carry `sourcesContent` because app/assets/** is excluded from the packaged app
+ * (see "build.files" in package.json) — a map without embedded sources would be unable to show
+ * the original file in an installed build.
+ *
+ * @param {string} sourceDir
+ * @param {string} outDir
+ */
+function bundleScripts(sourceDir = jsSourceDir, outDir = jsDir) {
+    fs.mkdirSync(outDir, { recursive: true });
+
+    esbuild.buildSync({
+        stdin: {
+            contents:   buildScriptsEntry(sourceDir),
+            resolveDir: sourceDir,
+            sourcefile: 'main.entry.js',
+            loader:     'js',
+        },
+        bundle:         true,
+        platform:       'browser',
+        format:         'iife',
+        outfile:        path.join(outDir, 'main.js'),
+        sourcemap:      true,
+        sourcesContent: true,
+    });
+}
+
 function main() {
     copyVendorScripts();
     compileStyles();
+    bundleScripts();
 }
 
 if (require.main === module) {
     main();
 }
 
-module.exports = { copyVendorScripts, compileStyles, main };
+module.exports = { copyVendorScripts, compileStyles, buildScriptsEntry, bundleScripts, main };
