@@ -94,3 +94,54 @@ describe('PageErrorTracker.formatReport', () => {
         );
     });
 });
+
+describe('PageErrorTracker.recordMainFrameResponse', () => {
+    const page = 'http://127.0.0.1/settings/proxy';
+    const doc  = (statusCode, url = page) => ({ resourceType: 'mainFrame', url, statusCode });
+
+    test.each([500, 404])('a %i main document is a failure naming the page and status', (status) => {
+        const tracker = new PageErrorTracker();
+        tracker.recordMainFrameResponse(page, doc(status));
+
+        expect(tracker.hasFailures()).toBe(true);
+        expect(tracker.formatReport()).toBe(`${page}: main document ${page} responded with HTTP ${status}`);
+    });
+
+    test('a 200 main document is not a failure', () => {
+        const tracker = new PageErrorTracker();
+        tracker.recordMainFrameResponse(page, doc(200));
+
+        expect(tracker.hasFailures()).toBe(false);
+    });
+
+    test('a redirect hop followed by a 200 is not a failure', () => {
+        const tracker = new PageErrorTracker();
+        tracker.recordMainFrameResponse(page, doc(302));
+        tracker.recordMainFrameResponse(page, doc(200, 'http://127.0.0.1/'));
+
+        expect(tracker.hasFailures()).toBe(false);
+    });
+
+    test('a redirect hop followed by a 500 fails on the final status', () => {
+        const tracker = new PageErrorTracker();
+        tracker.recordMainFrameResponse(page, doc(302));
+        tracker.recordMainFrameResponse(page, doc(500, 'http://127.0.0.1/'));
+
+        expect(tracker.failures).toHaveLength(1);
+        expect(tracker.formatReport()).toContain('HTTP 500');
+    });
+
+    test.each(['image', 'stylesheet', 'subFrame'])('a 404 %s is not a failure', (resourceType) => {
+        const tracker = new PageErrorTracker();
+        tracker.recordMainFrameResponse(page, { resourceType, url: 'http://127.0.0.1/x', statusCode: 404 });
+
+        expect(tracker.hasFailures()).toBe(false);
+    });
+
+    test.each([-1, undefined])('a non-HTTP status (%s) is ignored', (statusCode) => {
+        const tracker = new PageErrorTracker();
+        tracker.recordMainFrameResponse(page, doc(statusCode, 'file:///x.html'));
+
+        expect(tracker.hasFailures()).toBe(false);
+    });
+});
