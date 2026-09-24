@@ -42,8 +42,7 @@ final class PluginsIncompatibleRowRenderingTest extends KernelTestCase
     {
         $html = $this->render($this->plugin(false), []);
 
-        self::assertStringContainsString('data-control="plugin-incompatible-market-link"', $html);
-        self::assertStringContainsString('Check the plugin market', $html);
+        self::assertMatchesRegularExpression($this->marketLinkPattern('Check the plugin market'), $html);
         self::assertStringNotContainsString('is available', $html);
     }
 
@@ -51,8 +50,7 @@ final class PluginsIncompatibleRowRenderingTest extends KernelTestCase
     {
         $html = $this->render($this->plugin(false), ['animedb-shikimori' => '1.3.0']);
 
-        self::assertStringContainsString('data-control="plugin-incompatible-market-link"', $html);
-        self::assertStringContainsString('Update to version 1.3.0 is available', $html);
+        self::assertMatchesRegularExpression($this->marketLinkPattern('Update to version 1.3.0 is available'), $html);
         self::assertStringNotContainsString('Check the plugin market', $html);
     }
 
@@ -60,9 +58,17 @@ final class PluginsIncompatibleRowRenderingTest extends KernelTestCase
     {
         $html = $this->render($this->plugin(true), []);
 
-        self::assertStringNotContainsString('plugin-incompatible-market-link', $html);
+        self::assertDoesNotMatchRegularExpression($this->marketLinkPattern('Check the plugin market'), $html);
         self::assertStringNotContainsString('Check the plugin market', $html);
         self::assertStringNotContainsString('is available', $html);
+    }
+
+    /**
+     * The page navigation also links to the market, so match the link by its text.
+     */
+    private function marketLinkPattern(string $text): string
+    {
+        return '#<a href="/settings/market">\s*'.preg_quote($text, '#').'#';
     }
 
     /**
