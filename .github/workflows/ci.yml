@@ -162,7 +162,16 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Сборка фронтенда как проверка: до issue #735 клиентский JS раздавался как есть и
+      # собирать было нечего, теперь `npm run assets` — обязательный шаг перед запуском
+      # приложения (`npm start` зовёт его сам), и сломать его можно, не уронив ни один тест.
+      # Jest трогает функции сборки с временными каталогами, а эта строка проверяет саму
+      # команду и реальные пути вывода. Стоит секунды.
+      - name: Build frontend assets
+        run: npm run assets
+
       - name: Run ESLint
+        if: ${{ !cancelled() }}
         run: npm run lint
 
       - name: Run Jest
