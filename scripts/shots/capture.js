@@ -158,6 +158,8 @@ async function main() {
     // reliable way to catch that case.
     const { webRequest } = win.webContents.session;
     webRequest.onCompleted((details) => {
+        // did-finish-load fires whatever the HTTP status, so a 4xx/5xx document is judged here.
+        tracker.recordMainFrameResponse(currentPageUrl, details);
         if (details.resourceType !== 'script' || details.statusCode < 400) return;
         tracker.recordFailedResource(currentPageUrl, details);
     });

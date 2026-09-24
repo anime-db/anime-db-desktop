@@ -64,6 +64,23 @@ class PageErrorTracker {
     }
 
     /**
+     * Records a 4xx/5xx status of the page's own (main frame) document. Only the main document is
+     * judged: a failing image or stylesheet is not a failure here, because a missing cover
+     * degrades gracefully (app/assets/js/inline-handlers.js swaps in a neutral tile). Scripts are
+     * covered by recordFailedResource(). 3xx (a redirect hop) and non-HTTP responses (statusCode
+     * -1, file:, data:) are ignored, so only the status of the final document counts.
+     *
+     * @param {string} pageUrl
+     * @param {{ resourceType: string, url: string, statusCode?: number }} details `webRequest` onCompleted payload
+     */
+    recordMainFrameResponse(pageUrl, { resourceType, url, statusCode }) {
+        if (resourceType !== 'mainFrame' || typeof statusCode !== 'number' || statusCode < 400) {
+            return;
+        }
+        this.failures.push({ page: pageUrl, reason: `main document ${url} responded with HTTP ${statusCode}` });
+    }
+
+    /**
      * @param {string} pageUrl
      * @param {string} reason
      */
