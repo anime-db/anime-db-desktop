@@ -346,3 +346,6 @@ services:
     # App\Service\JobLock\ProcessLivenessChecker, keeps it autowireable by anything (core or
     # plugin) that type-hints the contract interface (issue #346).
     AnimeDb\PluginContracts\Download\DownloadServiceInterface: '@App\Service\Download\QbittorrentDownloadService'
+
+    # Same read-only-package reason as the DownloadServiceInterface alias above.
+    AnimeDb\PluginContracts\Media\MediaLibraryInterface: '@App\Service\Media\MediaLibrary'

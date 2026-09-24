@@ -35,6 +35,7 @@ use App\Entity\Storage;
 use App\Entity\TvAnime;
 use App\Entity\ValueObject\PluginId;
 use App\Repository\AnimeRepository;
+use App\Service\Media\MediaExtensions;
 use App\Service\Plugin\Filler\BulkFillerService;
 use App\Service\Storage\Exception\StoragePathConflictException;
 use App\Service\Storage\Scan\ScanCandidate;
@@ -150,7 +151,7 @@ final class ScanStorageService
             ->notName('.*');
 
         foreach ($finder as $file) {
-            if ($file->isFile() && !\in_array(strtolower($file->getExtension()), FilenameCleaner::EXTENSIONS, true)) {
+            if ($file->isFile() && !\in_array(strtolower($file->getExtension()), MediaExtensions::VIDEO, true)) {
                 continue;
             }
 
