@@ -110,5 +110,15 @@
         }
     }
 
-    window.ScanWatcher = { watch };
+    /**
+     * Drops the callbacks registered for a storage scan (issue #734's demount hook for
+     * storage-scan.js) — without this, a subscriber torn down by an htmx swap would keep getting
+     * scan.progress/scan.done/scan.failed dispatched into detached DOM until (if ever) a fresh
+     * subscription for the same storageId replaces it via watch() above.
+     */
+    function unwatch(storageId) {
+        watchers.delete(String(storageId));
+    }
+
+    window.ScanWatcher = { watch, unwatch };
 })();

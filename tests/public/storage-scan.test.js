@@ -26,10 +26,23 @@
 // registers. The module is a self-invoking browser script with no exports, so its onProgress/
 // onDone/onFailed handlers are driven directly through that captured object, the same way scan.js
 // would drive them from a real WebSocket message.
+//
+// controller.js is required once at file scope, not inside loadStorageScanModule() — see
+// controller.test.js for why a fresh require() per test would leak document-level listeners.
+require('../../app/public/js/controller.js');
+
+function mountControls(root = document.body) {
+    root.dispatchEvent(new CustomEvent('htmx:load', { bubbles: true, detail: { elt: root } }));
+}
+
+function unmountControls(root) {
+    root.dispatchEvent(new CustomEvent('htmx:beforeCleanupElement', { bubbles: true, detail: { elt: root } }));
+}
 
 function setUpDom() {
     document.body.innerHTML = `
         <section id="storage-scan"
+                 data-control="storage-scan"
                  data-storage-id="42"
                  data-confirm-url="/storage/42/scan/confirm"
                  data-confirm-token="csrf-token"
@@ -53,6 +66,9 @@ function mockScanWatcher() {
         watch: jest.fn((storageId, callbacks) => {
             watchers[storageId] = callbacks;
         }),
+        unwatch: jest.fn((storageId) => {
+            delete watchers[storageId];
+        }),
     };
 
     return watchers;
@@ -73,6 +89,7 @@ function loadStorageScanModule() {
     jest.isolateModules(() => {
         require('../../app/public/js/storage-scan.js');
     });
+    mountControls();
 }
 
 async function flushMicrotasks() {
@@ -240,4 +257,31 @@ test('a value substituted into a message is bidi-isolated at every occurrence of
     const li = document.querySelector('#storage-scan-results li');
     const isolated = '⁨Mushishi⁩';
     expect(li.textContent).toBe(`${isolated} / ${isolated}`);
+});
+
+// Issue #734 acceptance criterion: a node replaced by an htmx swap must not leave a live timer or
+// subscription behind. storage-scan.js has both — the 15s no-response timeout and the
+// window.ScanWatcher subscription — so this drives both across an htmx:beforeCleanupElement on
+// the control's own root and proves neither survives it.
+test('unmounting clears the no-response timer and drops the ScanWatcher subscription', async () => {
+    const watchers = mockScanWatcher();
+    mockTranslations();
+    loadStorageScanModule();
+
+    expect(window.ScanWatcher.watch).toHaveBeenCalledWith('42', expect.anything());
+    expect(watchers['42']).toBeDefined();
+
+    unmountControls(document.getElementById('storage-scan'));
+
+    expect(window.ScanWatcher.unwatch).toHaveBeenCalledWith('42');
+    expect(watchers['42']).toBeUndefined();
+
+    // The no-response timer would otherwise fire at the 15s mark and write into the now-detached
+    // progress/error boxes — advancing fake timers past it must not throw and must not touch them.
+    const errorBox = document.getElementById('storage-scan-error');
+    jest.advanceTimersByTime(15000);
+    await flushMicrotasks();
+
+    expect(errorBox.hidden).toBe(true);
+    expect(window.AppTranslations.trans).not.toHaveBeenCalledWith('storage_list.scan_no_response');
 });

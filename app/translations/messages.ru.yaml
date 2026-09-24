@@ -536,6 +536,9 @@ plugin_widget:
 app_notification:
     close_button: Закрыть
 
+controller:
+    unknown_control_text: 'Неизвестный контрол: %name%'
+
 nav:
     aria_label: Основная навигация
     catalog_link: Каталог

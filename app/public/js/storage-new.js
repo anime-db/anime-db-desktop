@@ -26,31 +26,35 @@
 // inside Electron (window.animeDb exposed by native/window/preload.js); otherwise the path
 // field stays a plain text input, same as when the page is opened in a plain browser.
 (function () {
-    const typeSelect = document.getElementById('storage-new-type');
-    const pathInput = document.getElementById('storage-new-path');
-    const pickButton = document.getElementById('storage-new-pick-folder');
+    function mountStorageNew(form) {
+        const typeSelect = form.querySelector('#storage-new-type');
+        const pathInput = form.querySelector('#storage-new-path');
+        const pickButton = form.querySelector('#storage-new-pick-folder');
 
-    if (!typeSelect || !pathInput || !pickButton) {
-        return;
-    }
-
-    const writableTypes = (typeSelect.dataset.writableTypes || '').split(',').filter(Boolean);
-
-    function updatePickButtonVisibility() {
-        pickButton.hidden = !window.animeDb || !writableTypes.includes(typeSelect.value);
-    }
-
-    typeSelect.addEventListener('change', updatePickButtonVisibility);
-    updatePickButtonVisibility();
-
-    pickButton.addEventListener('click', async () => {
-        if (!window.animeDb) {
+        if (!typeSelect || !pathInput || !pickButton) {
             return;
         }
 
-        const folder = await window.animeDb.pickFolder();
-        if (folder) {
-            pathInput.value = folder;
+        const writableTypes = (typeSelect.dataset.writableTypes || '').split(',').filter(Boolean);
+
+        function updatePickButtonVisibility() {
+            pickButton.hidden = !window.animeDb || !writableTypes.includes(typeSelect.value);
         }
-    });
+
+        typeSelect.addEventListener('change', updatePickButtonVisibility);
+        updatePickButtonVisibility();
+
+        pickButton.addEventListener('click', async () => {
+            if (!window.animeDb) {
+                return;
+            }
+
+            const folder = await window.animeDb.pickFolder();
+            if (folder) {
+                pathInput.value = folder;
+            }
+        });
+    }
+
+    window.Controller.registerControl('storage-new', mountStorageNew);
 })();

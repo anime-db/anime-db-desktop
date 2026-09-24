@@ -35,6 +35,7 @@
         {% if scannedStorageId is not null %}
             <section class="storage-scan mb-4"
                      id="storage-scan"
+                     data-control="storage-scan"
                      data-storage-id="{{ scannedStorageId }}"
                      data-confirm-url="{{ path('storage_scan_confirm', {id: scannedStorageId}) }}"
                      data-confirm-token="{{ csrf_token('storage_scan_confirm_' ~ scannedStorageId) }}"

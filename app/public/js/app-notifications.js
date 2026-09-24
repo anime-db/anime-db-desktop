@@ -26,26 +26,29 @@
 // the Electron main process (issue #417), already localized there via native/i18n before it is
 // sent, but the container/template and delivery channel are generic so a future in-app notification
 // history/list can reuse them without changing this file. Outside Electron (window.animeDb absent),
-// this module is a no-op, same as the window.animeDb guards in storage-new.js/anime-detail.js.
+// mounting is a no-op, same as the window.animeDb guards in storage-new.js/anime-detail.js.
 (function () {
-    const container = document.getElementById('app-notifications');
-    const template = document.getElementById('app-notification-template');
+    function mountAppNotifications(container) {
+        const template = document.getElementById('app-notification-template');
 
-    if (!container || !template || !window.animeDb || !window.animeDb.onNotification) {
-        return;
+        if (!template || !window.animeDb || !window.animeDb.onNotification) {
+            return;
+        }
+
+        function showNotification({ title, message }) {
+            const notification = template.content.firstElementChild.cloneNode(true);
+
+            notification.querySelector('.app-notification__title').textContent = title;
+            notification.querySelector('.app-notification__message').textContent = message;
+            notification.querySelector('.app-notification__close').addEventListener('click', () => {
+                notification.remove();
+            });
+
+            container.append(notification);
+        }
+
+        window.animeDb.onNotification(showNotification);
     }
 
-    function showNotification({ title, message }) {
-        const notification = template.content.firstElementChild.cloneNode(true);
-
-        notification.querySelector('.app-notification__title').textContent = title;
-        notification.querySelector('.app-notification__message').textContent = message;
-        notification.querySelector('.app-notification__close').addEventListener('click', () => {
-            notification.remove();
-        });
-
-        container.append(notification);
-    }
-
-    window.animeDb.onNotification(showNotification);
+    window.Controller.registerControl('app-notifications', mountAppNotifications);
 })();
