@@ -30,6 +30,10 @@ namespace App\Tests\Unit\Controller\Settings;
 use AnimeDb\PluginContracts\Settings\SettingsPageInterface;
 use App\Controller\Settings\PluginController;
 use App\Entity\ValueObject\PluginId;
+use App\Service\Market\MarketSnapshot;
+use App\Service\Market\MarketSnapshotCache;
+use App\Service\Market\MarketSnapshotPlugin;
+use App\Service\Market\MarketUpdateResolver;
 use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\PluginCacheWarmer;
 use App\Service\Plugin\PluginRemover;
@@ -123,6 +127,7 @@ final class PluginControllerTest extends TestCase
         ?CsrfTokenManagerInterface $csrfTokenManager = null,
         ?UrlGeneratorInterface $urlGenerator = null,
         ?Environment $twig = null,
+        ?MarketSnapshotCache $snapshotCache = null,
     ): PluginController {
         return new PluginController(
             $this->registry,
@@ -134,6 +139,7 @@ final class PluginControllerTest extends TestCase
             $csrfTokenManager ?? $this->alwaysValidCsrf(),
             $urlGenerator ?? $this->stubUrlGenerator(),
             $twig ?? $this->createStub(Environment::class),
+            new MarketUpdateResolver($snapshotCache ?? new MarketSnapshotCache($this->rootDir.'/market-snapshot-cache.json'), self::CORE_VERSION),
         );
     }
 
@@ -263,6 +269,39 @@ final class PluginControllerTest extends TestCase
             ->willReturn('<html></html>');
 
         $this->controller(twig: $twig)->index(Request::create('/settings/plugins'));
+    }
+
+    public function testIndexPassesMarketUpdatesOnlyForIncompatiblePlugins(): void
+    {
+        foreach (['animedb-shikimori' => '^0.16', 'animedb-anilist' => null] as $id => $contracts) {
+            mkdir($this->pluginsDir.'/'.$id, recursive: true);
+            file_put_contents($this->pluginsDir.'/'.$id.'/manifest.json', $this->validManifestJson($id, $id, requirePluginContracts: $contracts));
+        }
+        $this->registry = new InstalledPluginsRegistry(
+            $this->pluginsDir,
+            new PluginsConfigStore($this->pluginsDir.'/plugins.json'),
+            new NullLogger(),
+            pluginContractsVersion: 'v0.15.0',
+        );
+        $this->registry->reconcile();
+
+        $snapshotCache = new MarketSnapshotCache($this->rootDir.'/market-snapshot-cache.json');
+        $snapshotCache->store(new MarketSnapshot(self::CORE_VERSION, 1, [], [
+            new MarketSnapshotPlugin('animedb-shikimori', ['id' => 'animedb-shikimori'], '1.1.0', 'sha', '1.1.0', '>=2.0.0'),
+            new MarketSnapshotPlugin('animedb-anilist', ['id' => 'animedb-anilist'], '5.0.0', 'sha', '5.0.0', '>=2.0.0'),
+        ]));
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('settings/plugins/index.html.twig', $this->callback(function (array $params): bool {
+                self::assertSame(['animedb-shikimori' => '1.1.0'], $params['marketUpdates']);
+
+                return true;
+            }))
+            ->willReturn('<html></html>');
+
+        $this->controller(twig: $twig, snapshotCache: $snapshotCache)->index(Request::create('/settings/plugins'));
     }
 
     public function testIndexListsSettingsPluginIdsOnlyForPluginsWithARegisteredAndEnabledSettingsPage(): void

@@ -39,6 +39,7 @@ use App\Service\Market\MarketRefreshService;
 use App\Service\Market\MarketSnapshot;
 use App\Service\Market\MarketSnapshotCache;
 use App\Service\Market\MarketSnapshotPlugin;
+use App\Service\Market\MarketUpdateResolver;
 use App\Service\NearestBuiltInLocale;
 use App\Service\Plugin\Exception\IncompatiblePluginCoreVersionException;
 use App\Service\Plugin\Exception\InvalidInstalledPluginException;
@@ -48,8 +49,6 @@ use App\Service\Plugin\Exception\PluginNotInstalledException;
 use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\ZipPluginInstaller;
 use App\Service\Translation\TranslationCoverageService;
-use Composer\Semver\Comparator;
-use Composer\Semver\VersionParser;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -194,6 +193,7 @@ final class MarketController
         private readonly AppConfigStore $configStore,
         private readonly TranslationCoverageService $translationCoverage,
         private readonly NearestBuiltInLocale $nearestBuiltInLocale,
+        private readonly MarketUpdateResolver $updateResolver,
     ) {
     }
 
@@ -433,7 +433,7 @@ final class MarketController
                     'installed' => $installedPlugin !== null,
                     'updateAvailable' => $installedPlugin !== null
                         && $plugin->resolvedVersion !== null
-                        && $this->isNewerVersion($plugin->resolvedVersion, $installedPlugin->manifest->version),
+                        && $this->updateResolver->isNewerVersion($plugin->resolvedVersion, $installedPlugin->manifest->version),
                     'translationCoveragePercent' => $this->translationCoveragePercent($plugin, $appTranslationKeyCount),
                     'localeInfo' => $this->localeInfo($plugin, $locale),
                 ];
@@ -475,22 +475,6 @@ final class MarketController
         $elapsedSeconds = (new \DateTimeImmutable())->getTimestamp() - $lastAttemptAtDate->getTimestamp();
 
         return $elapsedSeconds >= self::REFRESH_DISPATCH_THROTTLE_SECONDS;
-    }
-
-    /**
-     * `Comparator::greaterThan()` compares its raw arguments with PHP's `version_compare()`, which
-     * does not treat differently-formatted-but-equal versions (e.g. `1.0` and `1.0.0`) as equal —
-     * normalizing both through {@see VersionParser::normalize()} first, the same way
-     * {@see \Composer\Semver\Semver::satisfies()} normalizes its `$version` argument, fixes that.
-     */
-    private function isNewerVersion(string $resolvedVersion, string $installedVersion): bool
-    {
-        $versionParser = new VersionParser();
-
-        return Comparator::greaterThan(
-            $versionParser->normalize($resolvedVersion),
-            $versionParser->normalize($installedVersion),
-        );
     }
 
     /**

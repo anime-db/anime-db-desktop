@@ -31,6 +31,7 @@ use AnimeDb\PluginContracts\Manifest\ManifestValidationError;
 use AnimeDb\PluginContracts\Manifest\PluginType;
 use App\Entity\ValueObject\Exception\InvalidPluginIdException;
 use App\Entity\ValueObject\PluginId;
+use App\Service\Market\MarketUpdateResolver;
 use App\Service\Plugin\Exception\IncompatiblePluginContractsVersionException;
 use App\Service\Plugin\Exception\IncompatiblePluginCoreVersionException;
 use App\Service\Plugin\Exception\InvalidInstalledPluginException;
@@ -105,6 +106,7 @@ final class PluginController
         private readonly CsrfTokenManagerInterface $csrfTokenManager,
         private readonly UrlGeneratorInterface $urlGenerator,
         private readonly Environment $twig,
+        private readonly MarketUpdateResolver $updateResolver,
         private readonly LoggerInterface $logger = new NullLogger(),
     ) {
     }
@@ -248,6 +250,7 @@ final class PluginController
             'settingsPluginIds' => $this->pluginIdsWithASettingsPage($installedPlugins),
             'translationCoverage' => $translationCoverage,
             'pluginLocales' => $pluginLocales,
+            'marketUpdates' => $this->marketUpdatesForIncompatible($installedPlugins),
             'installedPluginId' => $installedPluginId,
             'updatedPluginId' => $updatedPluginId,
             'removedPluginId' => $removedPluginId,
@@ -256,6 +259,31 @@ final class PluginController
             'syntaxErrors' => $syntaxErrors,
             'manifestErrors' => $manifestErrors,
         ]));
+    }
+
+    /**
+     * For each incompatible plugin, the compatible version the market snapshot offers when it is
+     * newer than the installed one. Compatible plugins are not looked up at all.
+     *
+     * @param list<InstalledPlugin> $installedPlugins
+     *
+     * @return array<string, string> update version keyed by plugin id; only plugins with an update
+     */
+    private function marketUpdatesForIncompatible(array $installedPlugins): array
+    {
+        $updates = [];
+        foreach ($installedPlugins as $plugin) {
+            if ($plugin->compatible) {
+                continue;
+            }
+
+            $version = $this->updateResolver->availableUpdate($plugin);
+            if ($version !== null) {
+                $updates[(string) $plugin->id] = $version;
+            }
+        }
+
+        return $updates;
     }
 
     /**
