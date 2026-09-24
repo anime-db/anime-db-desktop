@@ -75,7 +75,19 @@ composer phpstan                                # PHPStan level 8
 composer cs-check   # / cs-fix                  # php-cs-fixer (проверка / автофикс)
 ```
 
-JS (из корня репозитория): `npm run lint` / `npm run lint:fix`.
+JS (из корня репозитория):
+
+```bash
+npm run lint      # / lint:fix — ESLint по app/assets/js/, native/, scripts/, tests/
+npm test          # jest
+npm run assets    # сборка фронтенда: SCSS → app/public/css, app/assets/js → app/public/js/main.js
+npm run shots     # живой прогон приложения под Xvfb со снятием скриншотов (только Linux)
+```
+
+**Исходники клиентского JS — в `app/assets/js/`; `app/public/js/` генерируется сборкой и лежит в
+`.gitignore`.** Модуль там не запускает себя сам: он регистрирует контрол, который монтирует реестр
+по атрибуту `data-control`. Правила и ловушки — [.claude-docs/gotchas.md](.claude-docs/gotchas.md)
+§Реестр контролов.
 
 ### Верификация при работе (важно для стоимости прогона)
 
