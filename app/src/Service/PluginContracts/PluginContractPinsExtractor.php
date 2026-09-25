@@ -43,11 +43,36 @@ use Composer\Semver\VersionParser;
 final class PluginContractPinsExtractor
 {
     /**
+     * Fails on the first plugin-level problem, as a pre-release check must: any of them turns it red.
+     *
      * @return list<PluginContractPins>
      *
      * @throws PluginContractsCheckException
      */
     public function extract(string $rawRegistryJson, PluginRegistry $registry): array
+    {
+        $extraction = $this->extractAll($rawRegistryJson, $registry);
+
+        if ($extraction->entriesWithoutId > 0) {
+            throw new PluginContractsCheckException('The raw registry has a plugin entry without a string "id".');
+        }
+
+        foreach ($extraction->plugins as $plugin) {
+            if ($plugin->problem !== null) {
+                throw new PluginContractsCheckException($plugin->problem);
+            }
+        }
+
+        return $extraction->plugins;
+    }
+
+    /**
+     * Only a registry that cannot be read at all throws; a problem with one plugin is reported on
+     * that plugin ({@see PluginContractPins::$problem}) so it cannot block the others.
+     *
+     * @throws PluginContractsCheckException
+     */
+    public function extractAll(string $rawRegistryJson, PluginRegistry $registry): PluginContractsExtraction
     {
         try {
             $data = json_decode($rawRegistryJson, true, 512, \JSON_THROW_ON_ERROR);
@@ -66,9 +91,12 @@ final class PluginContractPinsExtractor
         }
 
         $result = [];
+        $entriesWithoutId = 0;
         foreach ($rawPlugins as $rawPlugin) {
             if (!\is_array($rawPlugin) || !\is_string($rawPlugin['id'] ?? null)) {
-                throw new PluginContractsCheckException('The raw registry has a plugin entry without a string "id".');
+                ++$entriesWithoutId;
+
+                continue;
             }
 
             $id = $rawPlugin['id'];
@@ -79,7 +107,7 @@ final class PluginContractPinsExtractor
                 : $this->fromRaw($id, $rawPlugin);
         }
 
-        return $result;
+        return new PluginContractsExtraction($result, $entriesWithoutId);
     }
 
     /**
@@ -97,7 +125,7 @@ final class PluginContractPinsExtractor
         $pins = [];
         foreach ($plugin->versions as $version) {
             if ($version->pluginContracts === null && ($rawPinsByVersion[$version->version] ?? null) !== null) {
-                throw new PluginContractsCheckException(\sprintf('Plugin "%s" version %s has a plugin_contracts pin that the app cannot parse.', $id, $version->version));
+                return new PluginContractPins($id, true, [], null, null, \sprintf('Plugin "%s" version %s has a plugin_contracts pin that the app cannot parse.', $id, $version->version));
             }
 
             $pins[] = $version->pluginContracts;
