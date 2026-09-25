@@ -72,6 +72,11 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
  * behind it. The pair that fails is logged and skipped instead; everything else in the batch
  * still gets linked and dispatched this run.
  *
+ * poll() isolates failures per infoHash as well: any \Throwable from one torrent is logged (with
+ * its infoHash and exception class) and the pass moves on to the next one, so a single bad
+ * torrent cannot wedge the rest. If the exception left the EntityManager closed (a failed
+ * flush()), the pass stops with a separate log entry instead — nothing is thrown out of poll().
+ *
  * failIfOutOfSpace() (issue #348) is the async half of the free-space precheck: a `.torrent`
  * file's size is known up front, so QbittorrentDownloadService rejects it synchronously before it
  * is ever added to qBittorrent, but a magnet's size is only known once qBittorrent has fetched
@@ -107,8 +112,31 @@ final class DownloadCompletionPoller
 
     public function poll(): void
     {
-        foreach ($this->downloads->findDistinctPendingInfoHashes() as $infoHash) {
-            $this->pollInfoHash($infoHash);
+        $infoHashes = $this->downloads->findDistinctPendingInfoHashes();
+        $total = \count($infoHashes);
+
+        foreach ($infoHashes as $index => $infoHash) {
+            try {
+                $this->pollInfoHash($infoHash);
+            } catch (\Throwable $exception) {
+                $this->logger->error('Polling a download failed; continuing with the remaining ones.', [
+                    'infoHash' => $infoHash,
+                    'exceptionClass' => $exception::class,
+                    'exception' => $exception,
+                ]);
+
+                // A failed flush() closes the EntityManager for good — every later hash would
+                // fail on it too, so stop the pass instead of throwing; still-Pending rows are
+                // picked up again on the next tick.
+                if (!$this->entityManager->isOpen()) {
+                    $this->logger->error('EntityManager is closed; aborting the poll pass.', [
+                        'infoHash' => $infoHash,
+                        'remaining' => $total - $index - 1,
+                    ]);
+
+                    return;
+                }
+            }
         }
     }
 
