@@ -206,7 +206,7 @@ final class DownloadCompletionPoller
             $download->revertToPending();
             $download->markFailed();
             $this->entityManager->flush();
-            $this->logger->warning('Failing download completion: the content path is already linked to another anime.', [
+            $this->logger->warning('Failing download completion: the content path is already linked to another anime. The info hash stays locked to this anime and cannot be re-enqueued for another one; release it with "app:downloads:unlink" first.', [
                 'infoHash' => $infoHash,
                 'contentPath' => $contentPath,
                 'occupyingAnimeId' => $exception->occupyingAnimeId,

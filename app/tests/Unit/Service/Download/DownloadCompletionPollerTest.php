@@ -55,6 +55,7 @@ use Doctrine\ORM\ORMSetup;
 use Doctrine\ORM\Tools\SchemaTool;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
@@ -341,6 +342,86 @@ final class DownloadCompletionPollerTest extends TestCase
         $stillWedged = $this->downloads->findByInfoHashAndAnime($wedgedHash, (int) $wedged->id);
         $this->assertNotNull($stillWedged);
         $this->assertFalse($stillWedged->isCompleted());
+    }
+
+    public function testPollFailsTheSecondDownloadWhenItsStoragePathIsAlreadyTaken(): void
+    {
+        $secondHash = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+        $thirdHash = 'cccccccccccccccccccccccccccccccccccccccc';
+        $first = $this->persistAnime();
+        $second = $this->persistAnime();
+        $third = $this->persistAnime();
+        $this->downloads->save(new Download(self::HASH, $first));
+        $this->downloads->save(new Download($secondHash, $second));
+        $this->downloads->save(new Download($thirdHash, $third));
+
+        /** @var list<AnimeFilesChangedEvent|DownloadCompletedEvent> $dispatched */
+        $dispatched = [];
+        // First and third complete (two events each); the conflicting second dispatches nothing.
+        $eventDispatcher = $this->dispatcherCapturingEvents(4, $dispatched);
+
+        // Two different torrents whose content_path resolves to the same relative path.
+        $torrentsByHash = [
+            self::HASH => ['hash' => self::HASH, 'progress' => 1, 'state' => 'uploading', 'content_path' => self::ROOT.'\\season-pack'],
+            $secondHash => ['hash' => $secondHash, 'progress' => 1, 'state' => 'uploading', 'content_path' => self::ROOT.'\\season-pack'],
+            $thirdHash => ['hash' => $thirdHash, 'progress' => 1, 'state' => 'uploading', 'content_path' => self::ROOT.'\\other-release'],
+        ];
+        $httpClient = new MockHttpClient(function (string $method, string $url) use ($torrentsByHash): MockResponse {
+            parse_str((string) parse_url($url, \PHP_URL_QUERY), $query);
+            $requestedHash = $query['hashes'] ?? null;
+            $torrent = \is_string($requestedHash) ? $torrentsByHash[$requestedHash] ?? null : null;
+
+            return new MockResponse(
+                json_encode($torrent === null ? [] : [$torrent], \JSON_THROW_ON_ERROR),
+                ['response_headers' => ['content-type' => 'application/json']],
+            );
+        });
+
+        /** @var list<array{message: string, context: array<mixed>}> $logged */
+        $logged = [];
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->method('warning')->willReturnCallback(static function (string|\Stringable $message, array $context = []) use (&$logged): void {
+            $logged[] = ['message' => (string) $message, 'context' => $context];
+        });
+
+        $jail = new DownloadFolderJail(new AppSettingsProvider(new AppConfigStore($this->configPath)));
+        $linker = new AnimeDownloadLinker(new StorageRepository($this->entityManager), new AnimeRepository($this->entityManager), $this->entityManager, $jail);
+        $poller = new DownloadCompletionPoller(
+            new QbittorrentClient($httpClient, self::BASE_URL),
+            $this->downloads,
+            $linker,
+            $eventDispatcher,
+            $this->entityManager,
+            new FreeSpaceChecker($jail, new NativeFreeSpaceProvider()),
+            $logger,
+        );
+
+        $poller->poll();
+
+        $firstRow = $this->downloads->findByInfoHashAndAnime(self::HASH, (int) $first->id);
+        $this->assertNotNull($firstRow);
+        $this->assertTrue($firstRow->isCompleted());
+        $this->assertSame('season-pack', $first->getStoragePath());
+
+        $secondRow = $this->downloads->findByInfoHashAndAnime($secondHash, (int) $second->id);
+        $this->assertNotNull($secondRow);
+        $this->assertSame(DownloadStatus::Failed, $secondRow->getStatus());
+        $this->assertNull($second->getStoragePath());
+
+        // The pass reached the end: the third download after the conflict is still processed.
+        $thirdRow = $this->downloads->findByInfoHashAndAnime($thirdHash, (int) $third->id);
+        $this->assertNotNull($thirdRow);
+        $this->assertTrue($thirdRow->isCompleted());
+        $this->assertSame('other-release', $third->getStoragePath());
+
+        $this->assertCount(4, $dispatched);
+        $this->assertSame([$first->id, $first->id, $third->id, $third->id], array_map(static fn (object $event): int => $event->anime->value, $dispatched));
+
+        $this->assertCount(1, $logged);
+        $this->assertStringContainsString('app:downloads:unlink', $logged[0]['message']);
+        $this->assertSame($secondHash, $logged[0]['context']['infoHash']);
+        $this->assertSame(self::ROOT.'\\season-pack', $logged[0]['context']['contentPath']);
+        $this->assertSame($first->id, $logged[0]['context']['occupyingAnimeId']);
     }
 
     public function testPollPausesAndMarksFailedWhenAMagnetsKnownSizeDoesNotFitFreeSpace(): void
