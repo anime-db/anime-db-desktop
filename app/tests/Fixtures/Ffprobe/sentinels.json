@@ -1,0 +1,7 @@
+{
+  "streams": [
+    {"index": 0, "codec_name": "wmv2", "profile": "unknown", "codec_type": "video", "width": 0, "height": 0, "pix_fmt": "0/0", "r_frame_rate": "0/0", "bit_rate": "N/A"},
+    {"index": 1, "codec_name": "wmav2", "codec_type": "audio", "channels": 0, "channel_layout": "unknown", "sample_rate": "0", "bit_rate": "-99", "tags": {"language": "", "title": "N/A"}}
+  ],
+  "format": {"format_name": "asf", "duration": "N/A", "size": "4096", "bit_rate": "N/A"}
+}
