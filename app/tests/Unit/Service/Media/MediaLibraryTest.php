@@ -233,6 +233,16 @@ final class MediaLibraryTest extends TestCase
         self::assertSame([], $this->list('a/../../outside'));
     }
 
+    public function testSymlinkedDirOutsideIsNotDescendedInto(): void
+    {
+        mkdir($this->base.'/outside');
+        file_put_contents($this->base.'/outside/leak.mkv', 'x');
+        mkdir($this->root.'/a', recursive: true);
+        symlink($this->base.'/outside', $this->root.'/a/linkdir');
+
+        self::assertSame([], $this->list('a'));
+    }
+
     public function testSymlinkedTargetOutsideRootIsRejected(): void
     {
         mkdir($this->base.'/outside');
