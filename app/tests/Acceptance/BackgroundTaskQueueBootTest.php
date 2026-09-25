@@ -36,6 +36,8 @@ use App\Tests\Support\TemporaryDirectories;
 use Psr\Log\NullLogger;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
+use Symfony\Component\Messenger\Bridge\Doctrine\Transport\Connection;
+use Symfony\Component\Messenger\Bridge\Doctrine\Transport\DoctrineTransport;
 use Symfony\Component\Messenger\Event\WorkerMessageFailedEvent;
 use Symfony\Component\Messenger\Event\WorkerMessageHandledEvent;
 use Symfony\Component\Messenger\MessageBusInterface;
@@ -205,6 +207,33 @@ final class BackgroundTaskQueueBootTest extends KernelTestCase
 
         self::assertCount(0, iterator_to_array($asyncTransport->get()));
         self::assertCount(0, iterator_to_array($mediaTransport->get()));
+    }
+
+    /**
+     * Reads the option off the transport's real Doctrine connection in a booted container, not
+     * from the YAML text. `async` and `media` must keep the Doctrine default (3600).
+     */
+    public function testPluginsTransportUsesShortenedRedeliverTimeout(): void
+    {
+        self::bootKernel(['debug' => false]);
+
+        self::assertSame(900, $this->redeliverTimeout('messenger.transport.plugins'));
+        self::assertSame(3600, $this->redeliverTimeout('messenger.transport.async'));
+        self::assertSame(3600, $this->redeliverTimeout('messenger.transport.media'));
+    }
+
+    private function redeliverTimeout(string $serviceId): int
+    {
+        $transport = self::getContainer()->get($serviceId);
+        self::assertInstanceOf(DoctrineTransport::class, $transport);
+
+        $connection = (new \ReflectionProperty(DoctrineTransport::class, 'connection'))->getValue($transport);
+        self::assertInstanceOf(Connection::class, $connection);
+
+        $timeout = $connection->getConfiguration()['redeliver_timeout'];
+        self::assertIsInt($timeout);
+
+        return $timeout;
     }
 
     public static function recordHandledTask(string $taskName): void
