@@ -88,4 +88,11 @@ class DownloadRepository
         $this->entityManager->persist($download);
         $this->entityManager->flush();
     }
+
+    /** Removes only the pairing row; the anime, its storage and the torrent itself are untouched. */
+    public function remove(Download $download): void
+    {
+        $this->entityManager->remove($download);
+        $this->entityManager->flush();
+    }
 }
