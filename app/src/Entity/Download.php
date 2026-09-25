@@ -34,10 +34,9 @@ use Doctrine\ORM\Mapping as ORM;
 /**
  * One (infoHash, anime) pairing row for the qBittorrent-backed download manager (issue #346).
  * qBittorrent itself is the durable store of the torrent's queue/progress/fast-resume data — this
- * table only maps a torrent back to the catalog entries waiting on it, N:M by design: a season
- * pack's single infoHash can pair with several Anime (one row each, {@see DownloadStatus} tracked
- * per row), and a re-download of an infoHash already known under a different Anime only adds a
- * row here, never re-enqueues the torrent (see QbittorrentDownloadService::enqueue()).
+ * table only maps a torrent back to the catalog entries waiting on it. One torrent backs exactly
+ * one Anime: info_hash is UNIQUE, so linking it to a second Anime is rejected by the storage itself
+ * (see QbittorrentDownloadService::enqueue()), not just by a check-then-act in the service.
  *
  * $status is a single flag doubling as "download finished AND folder linked to the catalog
  * entry" (see markCompleted()) — this is what lets DownloadCompletionPoller tell, across
@@ -45,7 +44,7 @@ use Doctrine\ORM\Mapping as ORM;
  */
 #[ORM\Entity]
 #[ORM\Table(name: 'downloads')]
-#[ORM\UniqueConstraint(name: 'uniq_download_infohash_anime', columns: ['info_hash', 'anime_id'])]
+#[ORM\UniqueConstraint(name: 'uniq_download_infohash', columns: ['info_hash'])]
 class Download
 {
     private const INFO_HASH_PATTERN = '/^[0-9a-f]{40}$/';

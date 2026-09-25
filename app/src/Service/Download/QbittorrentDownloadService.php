@@ -35,8 +35,10 @@ use AnimeDb\PluginContracts\Model\AnimeId;
 use App\Entity\Anime;
 use App\Entity\Download;
 use App\Repository\DownloadRepository;
+use App\Service\Exception\DownloadAlreadyLinkedToAnotherAnimeException;
 use App\Service\Exception\InvalidTorrentFileException;
 use App\Service\Qbittorrent\QbittorrentClient;
+use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\ORM\EntityManagerInterface;
 
 /**
@@ -78,15 +80,33 @@ final class QbittorrentDownloadService implements DownloadServiceInterface
             return new DownloadTaskId($infoHash);
         }
 
-        // Known under a DIFFERENT anime already (season pack) — qBittorrent already has it,
-        // only a new pairing row is needed, never a second download of the same infoHash.
-        if (!$this->downloads->hasAnyForInfoHash($infoHash)) {
-            $this->submitToQbittorrent($source, $infoHash, $torrentFileContent);
+        // Already linked to a DIFFERENT anime — one torrent folder must not back two anime records.
+        $occupying = $this->downloads->findByInfoHash($infoHash)[0] ?? null;
+        if ($occupying !== null) {
+            throw new DownloadAlreadyLinkedToAnotherAnimeException($infoHash, (int) $occupying->getAnime()->id);
         }
+
+        $this->submitToQbittorrent($source, $infoHash, $torrentFileContent);
 
         $animeReference = $this->entityManager->getReference(Anime::class, $anime->value)
             ?? throw new \LogicException(\sprintf('Anime #%d does not exist.', $anime->value));
-        $this->downloads->save(new Download($infoHash, $animeReference));
+
+        // The UNIQUE index on info_hash is the real guard: a concurrent enqueue() for another anime
+        // passes the check above too, and only one of the two saves can win.
+        try {
+            $this->downloads->save(new Download($infoHash, $animeReference));
+        } catch (UniqueConstraintViolationException $e) {
+            $occupyingId = $this->downloads->findAnimeIdByInfoHash($infoHash);
+            if ($occupyingId === $anime->value) {
+                // The same anime raced us: an idempotent repeat, not a conflict.
+                return new DownloadTaskId($infoHash);
+            }
+            if ($occupyingId === null) {
+                throw $e;
+            }
+
+            throw new DownloadAlreadyLinkedToAnotherAnimeException($infoHash, $occupyingId);
+        }
 
         return new DownloadTaskId($infoHash);
     }

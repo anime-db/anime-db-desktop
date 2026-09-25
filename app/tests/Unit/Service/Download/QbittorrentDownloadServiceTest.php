@@ -29,6 +29,7 @@ namespace App\Tests\Unit\Service\Download;
 
 use AnimeDb\PluginContracts\Download\DownloadSource;
 use AnimeDb\PluginContracts\Model\AnimeId;
+use App\Command\DownloadsUnlinkCommand;
 use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
 use App\Entity\Enum\WatchStatus;
@@ -42,6 +43,7 @@ use App\Service\Download\FreeSpaceProvider;
 use App\Service\Download\NativeFreeSpaceProvider;
 use App\Service\Download\QbittorrentDownloadService;
 use App\Service\Download\TorrentInfoHashResolver;
+use App\Service\Exception\DownloadAlreadyLinkedToAnotherAnimeException;
 use App\Service\Exception\InsufficientDiskSpaceException;
 use App\Service\Qbittorrent\QbittorrentClient;
 use Doctrine\DBAL\DriverManager;
@@ -50,6 +52,7 @@ use Doctrine\ORM\EntityManager;
 use Doctrine\ORM\ORMSetup;
 use Doctrine\ORM\Tools\SchemaTool;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Console\Tester\CommandTester;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
 
@@ -209,7 +212,7 @@ final class QbittorrentDownloadServiceTest extends TestCase
         $this->assertCount(1, $this->downloads->findByInfoHash(self::MAGNET_HASH));
     }
 
-    public function testEnqueueForASecondAnimeWithTheSameInfoHashOnlyAddsALinkRow(): void
+    public function testEnqueueForASecondAnimeWithTheSameInfoHashThrowsWithOccupyingAnimeId(): void
     {
         $animeOne = $this->persistAnime();
         $animeTwo = $this->persistAnime();
@@ -223,10 +226,45 @@ final class QbittorrentDownloadServiceTest extends TestCase
 
         $source = DownloadSource::magnet('magnet:?xt=urn:btih:'.self::MAGNET_HASH);
         $service->enqueue($source, new AnimeId((int) $animeOne->id));
+
+        try {
+            $service->enqueue($source, new AnimeId((int) $animeTwo->id));
+            $this->fail('Expected DownloadAlreadyLinkedToAnotherAnimeException to be thrown.');
+        } catch (DownloadAlreadyLinkedToAnotherAnimeException $e) {
+            $this->assertSame((int) $animeOne->id, $e->occupyingAnimeId);
+            $this->assertStringContainsString('#'.$animeOne->id, $e->getMessage());
+        }
+
+        $this->assertSame(1, $requestCount, 'The torrent must not be submitted to qBittorrent again.');
+        $this->assertCount(1, $this->downloads->findByInfoHash(self::MAGNET_HASH));
+        $this->assertNull($this->downloads->findByInfoHashAndAnime(self::MAGNET_HASH, (int) $animeTwo->id));
+    }
+
+    public function testEnqueueForAnotherAnimeSucceedsAfterUnlinkingTheOccupyingOne(): void
+    {
+        $animeOne = $this->persistAnime();
+        $animeTwo = $this->persistAnime();
+
+        $service = $this->makeService(static fn (): MockResponse => new MockResponse('Ok.'));
+
+        $source = DownloadSource::magnet('magnet:?xt=urn:btih:'.self::MAGNET_HASH);
+        $service->enqueue($source, new AnimeId((int) $animeOne->id));
+
+        try {
+            $service->enqueue($source, new AnimeId((int) $animeTwo->id));
+            $this->fail('Expected DownloadAlreadyLinkedToAnotherAnimeException to be thrown.');
+        } catch (DownloadAlreadyLinkedToAnotherAnimeException) {
+        }
+
+        $unlink = new CommandTester(new DownloadsUnlinkCommand($this->downloads));
+        $unlink->execute(['info-hash' => self::MAGNET_HASH, 'anime-id' => (string) $animeOne->id]);
+        $this->assertSame(0, $unlink->getStatusCode());
+
         $service->enqueue($source, new AnimeId((int) $animeTwo->id));
 
-        $this->assertSame(1, $requestCount, 'A season pack must only be submitted to qBittorrent once.');
-        $this->assertCount(2, $this->downloads->findByInfoHash(self::MAGNET_HASH));
+        $this->assertNull($this->downloads->findByInfoHashAndAnime(self::MAGNET_HASH, (int) $animeOne->id));
+        $this->assertNotNull($this->downloads->findByInfoHashAndAnime(self::MAGNET_HASH, (int) $animeTwo->id));
+        $this->assertCount(1, $this->downloads->findByInfoHash(self::MAGNET_HASH));
     }
 
     private function torrentFileBytes(int $totalSize, string $name): string
@@ -263,7 +301,7 @@ final class QbittorrentDownloadServiceTest extends TestCase
             // expected — asserted below that nothing was submitted/persisted either.
         }
 
-        $this->assertFalse($this->downloads->hasAnyForInfoHash($infoHash));
+        $this->assertSame([], $this->downloads->findByInfoHash($infoHash));
     }
 
     public function testEnqueueAddsATorrentFileWhenItFitsFreeSpaceWithMargin(): void
@@ -288,34 +326,5 @@ final class QbittorrentDownloadServiceTest extends TestCase
         $this->assertSame($infoHash, $taskId->value);
         $this->assertNotNull($captured);
         $this->assertNotNull($this->downloads->findByInfoHashAndAnime($infoHash, (int) $anime->id));
-    }
-
-    public function testEnqueueForATorrentFileSeasonPackDoesNotCheckFreeSpaceAgain(): void
-    {
-        $animeOne = $this->persistAnime();
-        $animeTwo = $this->persistAnime();
-        $torrentBytes = $this->torrentFileBytes(1_000, 'Season.Pack.mkv');
-        $torrentPath = $this->writeTorrentFile($torrentBytes);
-
-        $freeSpaceCalls = 0;
-        $freeSpaceProvider = $this->createStub(FreeSpaceProvider::class);
-        $freeSpaceProvider->method('getFreeBytes')->willReturnCallback(function () use (&$freeSpaceCalls): int {
-            ++$freeSpaceCalls;
-
-            return 500_000_000;
-        });
-
-        $requestCount = 0;
-        $service = $this->makeService(function () use (&$requestCount): MockResponse {
-            ++$requestCount;
-
-            return new MockResponse('Ok.');
-        }, $freeSpaceProvider);
-
-        $service->enqueue(DownloadSource::torrentFile($torrentPath), new AnimeId((int) $animeOne->id));
-        $service->enqueue(DownloadSource::torrentFile($torrentPath), new AnimeId((int) $animeTwo->id));
-
-        $this->assertSame(1, $requestCount, 'A season pack must only be submitted to qBittorrent once.');
-        $this->assertSame(1, $freeSpaceCalls, 'A season pack (infoHash already known) must not re-check free space.');
     }
 }

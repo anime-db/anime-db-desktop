@@ -25,20 +25,20 @@
 
 declare(strict_types=1);
 
-namespace App\Service\Market;
+namespace App\Service\Exception;
 
 /**
- * The raw bytes {@see PluginRegistryFetcher::fetch()} downloaded from a single mirror: the
- * registry JSON exactly as published, its detached signature, and the URL of the mirror that
- * served them. Kept as plain strings (not
- * decoded/re-encoded) so signature verification runs over precisely what was signed.
+ * Thrown by {@see \App\Service\Download\QbittorrentDownloadService::enqueue()} when a torrent
+ * (identified by its infoHash) is already linked to a different anime record.
  */
-final class PluginRegistryDocument
+final class DownloadAlreadyLinkedToAnotherAnimeException extends \RuntimeException
 {
-    public function __construct(
-        public readonly string $registryJson,
-        public readonly string $signatureBase64,
-        public readonly string $sourceUrl,
-    ) {
+    public function __construct(string $infoHash, public readonly int $occupyingAnimeId)
+    {
+        parent::__construct(\sprintf(
+            'Torrent "%s" is already linked to anime #%d.',
+            $infoHash,
+            $occupyingAnimeId,
+        ));
     }
 }
