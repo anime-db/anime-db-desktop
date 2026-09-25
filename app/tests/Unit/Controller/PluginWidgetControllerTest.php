@@ -30,6 +30,7 @@ namespace App\Tests\Unit\Controller;
 use AnimeDb\PluginContracts\Model\AnimeId;
 use AnimeDb\PluginContracts\Widget\CatalogWidgetInterface;
 use AnimeDb\PluginContracts\Widget\EntryWidgetInterface;
+use AnimeDb\PluginContracts\Widget\WidgetPendingUpdate;
 use App\Controller\PluginWidgetController;
 use App\Entity\Anime;
 use App\Entity\Enum\WatchStatus;
@@ -145,7 +146,7 @@ final class PluginWidgetControllerTest extends TestCase
         $anime = $this->anime();
 
         $widget = $this->createStub(EntryWidgetInterface::class);
-        $widget->method('render')->willReturn('<!--animedb:widget-pending-update--><div>Preparing…</div>');
+        $widget->method('render')->willReturn(WidgetPendingUpdate::MARKER.'<div>Preparing…</div>');
 
         $entryWidgets = new EntryWidgetRegistry(
             ['animedb-shikimori:related' => $widget],
@@ -204,7 +205,7 @@ final class PluginWidgetControllerTest extends TestCase
     public function testRenderDoesNotCacheACatalogWidgetResponseMarkedAsPendingUpdate(): void
     {
         $widget = $this->createStub(CatalogWidgetInterface::class);
-        $widget->method('render')->willReturn('<!--animedb:widget-pending-update--><div>Preparing…</div>');
+        $widget->method('render')->willReturn(WidgetPendingUpdate::MARKER.'<div>Preparing…</div>');
 
         $catalogWidgets = new CatalogWidgetRegistry(
             ['animedb-shikimori:new_releases' => $widget],
