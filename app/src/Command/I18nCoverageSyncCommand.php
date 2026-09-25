@@ -27,6 +27,7 @@ declare(strict_types=1);
 
 namespace App\Command;
 
+use App\Service\I18nCoverage\AmbiguousIssueStateException;
 use App\Service\I18nCoverage\AppReferenceTranslationKeysSource;
 use App\Service\I18nCoverage\Github\GhCliReleaseZipDownloader;
 use App\Service\I18nCoverage\Github\GhCodeownersSource;
@@ -84,15 +85,21 @@ final class I18nCoverageSyncCommand extends Command
         $repo = (string) $input->getOption('repo');
         $dryRun = (bool) $input->getOption('dry-run');
 
-        $decision = (new I18nCoverageSync())->run(
-            $pluginId,
-            new AppReferenceTranslationKeysSource($this->projectDir),
-            new GhPluginReleaseTranslationKeysSource($pluginId, new GhCliReleaseZipDownloader($repo)),
-            new GhIssueStateSource($repo, $pluginId),
-            new GhCodeownersSource($repo),
-            new GhIssueExecutor($repo),
-            $dryRun,
-        );
+        try {
+            $decision = (new I18nCoverageSync())->run(
+                $pluginId,
+                new AppReferenceTranslationKeysSource($this->projectDir),
+                new GhPluginReleaseTranslationKeysSource($pluginId, new GhCliReleaseZipDownloader($repo)),
+                new GhIssueStateSource($repo, $pluginId),
+                new GhCodeownersSource($repo),
+                new GhIssueExecutor($repo),
+                $dryRun,
+            );
+        } catch (AmbiguousIssueStateException $exception) {
+            $io->error(\sprintf('CANNOT CHECK %s: %s', $pluginId, $exception->getMessage()));
+
+            return Command::FAILURE;
+        }
 
         $io->writeln(\sprintf('Action: %s', $decision->action->value));
         $io->writeln(\sprintf('Missing keys: %d', \count($decision->missingKeys)));

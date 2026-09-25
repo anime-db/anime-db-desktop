@@ -123,6 +123,35 @@ final class PluginContractsDriftSyncTest extends TestCase
         self::assertCount(1, $this->executor->comments);
     }
 
+    public function testFailedCommentDoesNotConsumeTheNotification(): void
+    {
+        $this->executor = new class extends FakeI18nCoverageIssueExecutor {
+            public bool $failComments = true;
+
+            public function addComment(int $issueNumber, string $comment): void
+            {
+                if ($this->failComments) {
+                    throw new \RuntimeException('gh failed');
+                }
+                parent::addComment($issueNumber, $comment);
+            }
+        };
+        $issue = I18nCoverageIssueSnapshot::open(7, $this->markedBody('0.21.0', LagReason::NO_ACCEPTING_VERSION));
+
+        try {
+            $this->sync($this->lagging(), $issue);
+            self::fail('The comment failure must propagate');
+        } catch (\RuntimeException) {
+        }
+        self::assertSame([], $this->executor->rewrittenBodies, 'the marker must not advance before the comment is out');
+
+        $this->executor->failComments = false;
+        $decision = $this->sync($this->lagging(), $issue);
+
+        self::assertSame(DriftAction::REWRITE_BODY_AND_COMMENT, $decision->action);
+        self::assertCount(1, $this->executor->comments);
+    }
+
     public function testUnreadableMarkerCommentsOnceThenTheNextRunIsQuiet(): void
     {
         $decision = $this->sync($this->lagging(), I18nCoverageIssueSnapshot::open(7, "edited by hand\n<!-- plugin-contracts-drift:state:{broken -->"));

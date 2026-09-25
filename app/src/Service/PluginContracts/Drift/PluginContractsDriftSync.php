@@ -120,8 +120,10 @@ final class PluginContractsDriftSync
 
             case DriftAction::REWRITE_BODY_AND_COMMENT:
                 \assert($issue->number !== null && $decision->body !== null && $decision->comment !== null);
-                $executor->rewriteBody($issue->number, $decision->body);
+                // Comment first: the body carries the marker that records "notification sent", so a
+                // failure between the two writes must leave the marker stale, not the comment unsent.
                 $executor->addComment($issue->number, $decision->comment);
+                $executor->rewriteBody($issue->number, $decision->body);
                 break;
         }
     }
