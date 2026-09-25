@@ -25,20 +25,13 @@
 
 declare(strict_types=1);
 
-namespace App\Service\Market;
+namespace App\Service\PluginContracts;
 
-/**
- * The raw bytes {@see PluginRegistryFetcher::fetch()} downloaded from a single mirror: the
- * registry JSON exactly as published, its detached signature, and the URL of the mirror that
- * served them. Kept as plain strings (not
- * decoded/re-encoded) so signature verification runs over precisely what was signed.
- */
-final class PluginRegistryDocument
+enum LagReason: string
 {
-    public function __construct(
-        public readonly string $registryJson,
-        public readonly string $signatureBase64,
-        public readonly string $sourceUrl,
-    ) {
-    }
+    /** Every published version pins a plugin-contracts range excluding the app's version. */
+    case NO_ACCEPTING_VERSION = 'no_accepting_version';
+
+    /** The registry parser dropped the plugin: its manifest is not understood by this app version. */
+    case MANIFEST_NOT_PARSEABLE = 'manifest_not_parseable';
 }

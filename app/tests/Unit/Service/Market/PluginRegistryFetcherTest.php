@@ -49,6 +49,7 @@ final class PluginRegistryFetcherTest extends TestCase
 
         $this->assertSame('{"sequence":1}', $document->registryJson);
         $this->assertSame('c2ln', $document->signatureBase64);
+        $this->assertSame('https://mr01.anime-db.org/plugins-registry.json', $document->sourceUrl);
         $this->assertSame([
             'https://mr01.anime-db.org/plugins-registry.json',
             'https://mr01.anime-db.org/plugins-registry.json.sig',
