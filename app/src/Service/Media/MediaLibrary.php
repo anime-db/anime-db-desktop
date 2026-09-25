@@ -93,6 +93,10 @@ final class MediaLibrary implements MediaLibraryInterface
             return $file === null ? [] : $this->issue([$file->relativePath => [$file, $target]], $animeId);
         }
 
+        if (!is_readable($target)) {
+            throw new StorageUnavailableException('Record folder is not readable');
+        }
+
         return $this->issue($this->walk($target), $animeId);
     }
 

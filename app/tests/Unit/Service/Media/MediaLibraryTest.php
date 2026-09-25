@@ -260,6 +260,34 @@ final class MediaLibraryTest extends TestCase
         $this->list('a', $this->base.'/gone');
     }
 
+    public function testUnreadableRecordFolderThrows(): void
+    {
+        $this->touchFile('a/01.mkv');
+        $this->touchFile('b/sub/01.mkv');
+        chmod($this->root.'/a', 0o000);
+
+        try {
+            if (is_readable($this->root.'/a')) {
+                self::markTestSkipped('Directory permissions are not enforced for this user.');
+            }
+
+            try {
+                $this->list('a');
+                self::fail('Expected StorageUnavailableException');
+            } catch (StorageUnavailableException) {
+                // expected
+            }
+
+            // An unreadable subfolder below the record folder is just skipped.
+            chmod($this->root.'/a', 0o755);
+            chmod($this->root.'/b/sub', 0o000);
+            self::assertSame([], $this->list('b'));
+        } finally {
+            chmod($this->root.'/a', 0o755);
+            chmod($this->root.'/b/sub', 0o755);
+        }
+    }
+
     public function testForeignMarkerThrowsAndMissingMarkerIsFine(): void
     {
         $this->touchFile('a/01.mkv');
