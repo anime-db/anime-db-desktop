@@ -83,6 +83,42 @@ final class PluginContractPinsExtractorTest extends TestCase
         $this->extract($this->registryJson([['versions' => []]]));
     }
 
+    public function testExtractAllReportsBrokenPinOnThatPluginOnly(): void
+    {
+        $json = $this->registryJson([
+            $this->plugin('animedb-broken', [['0.9.1', '^^broken']]),
+            $this->plugin('animedb-healthy', [['1.0.0', '^0.22']]),
+        ]);
+
+        $extraction = (new PluginContractPinsExtractor())->extractAll($json, PluginRegistry::fromJson($json, new NullLogger()));
+
+        $byId = [];
+        foreach ($extraction->plugins as $pins) {
+            $byId[$pins->id] = $pins;
+        }
+        self::assertNotNull($byId['animedb-broken']->problem);
+        self::assertNull($byId['animedb-healthy']->problem);
+        self::assertSame(['^0.22'], $byId['animedb-healthy']->pins);
+        self::assertSame(0, $extraction->entriesWithoutId);
+    }
+
+    public function testExtractAllCountsEntriesWithoutIdInsteadOfThrowing(): void
+    {
+        $json = $this->registryJson([['versions' => []], $this->plugin('animedb-healthy', [['1.0.0', '^0.22']])]);
+
+        $extraction = (new PluginContractPinsExtractor())->extractAll($json, PluginRegistry::fromJson($json, new NullLogger()));
+
+        self::assertSame(1, $extraction->entriesWithoutId);
+        self::assertCount(1, $extraction->plugins);
+    }
+
+    public function testExtractAllStillThrowsOnUnreadableRegistry(): void
+    {
+        $this->expectException(PluginContractsCheckException::class);
+
+        (new PluginContractPinsExtractor())->extractAll('{"plugins": 1}', PluginRegistry::fromJson($this->registryJson([]), new NullLogger()));
+    }
+
     /**
      * @return list<\App\Service\PluginContracts\PluginContractPins>
      */
