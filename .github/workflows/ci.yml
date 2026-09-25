@@ -47,7 +47,8 @@ jobs:
           # Значение сверяется со слепком автоматически: scripts/check-runtime-parity.js диффает
           # phpVersion поставочного бинаря (issue #536), поэтому расхождение после бампа
           # scripts/versions.json видно в Runtime parity, а не только глазами при чтении этого
-          # файла. Тот же пин продублирован в build.yml, runtime-parity.yml и i18n-coverage.yml —
+          # файла. Тот же пин продублирован в build.yml, runtime-parity.yml, i18n-coverage.yml,
+          # plugin-contracts-check.yml и plugin-contracts-drift.yml —
           # менять их вместе.
           php-version: '8.5'
           tools: composer
