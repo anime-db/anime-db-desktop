@@ -269,7 +269,7 @@ final class DownloadCompletionPollerTest extends TestCase
         $this->assertFalse($stored->isCompleted());
     }
 
-    public function testPollLeavesTheSecondAnimeOfASeasonPackPendingWhenItsPathIsAlreadyTaken(): void
+    public function testPollFailsTheSecondAnimeOfASeasonPackWhenItsPathIsAlreadyTaken(): void
     {
         $animeOne = $this->persistAnime();
         $animeTwo = $this->persistAnime();
@@ -299,10 +299,13 @@ final class DownloadCompletionPollerTest extends TestCase
         ]], $eventDispatcher, null, $logger);
 
         $poller->poll();
+        // The conflict is terminal: a second pass must neither retry nor log it again.
+        $poller->poll();
 
-        $pending = $this->downloads->findPendingByInfoHash(self::HASH);
-        $this->assertCount(1, $pending);
-        $this->assertSame($animeTwo->id, $pending[0]->getAnime()->id);
+        $this->assertSame([], $this->downloads->findPendingByInfoHash(self::HASH));
+        $rowTwo = $this->downloads->findByInfoHashAndAnime(self::HASH, (int) $animeTwo->id);
+        $this->assertNotNull($rowTwo);
+        $this->assertTrue($rowTwo->isFailed());
         $this->assertNull($animeTwo->getStoragePath());
         $this->assertSame('season-pack', $animeOne->getStoragePath());
         $this->assertCount(1, $logger->records);

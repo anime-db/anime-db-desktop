@@ -80,7 +80,7 @@ final class AnimeDownloadLinker
         // closes the EntityManager. A Storage created just above has no id yet and so no Anime.
         $occupant = $storage->id !== null ? $this->animes->findByStorageAndPath($storage, $relativePath) : null;
         if ($occupant !== null && $occupant->id !== $anime->id) {
-            throw new DownloadStoragePathConflictException($occupant->id ?? 0, $relativePath);
+            throw new DownloadStoragePathConflictException($occupant->id ?? throw new \LogicException('Anime loaded from the database must have an id.'), $relativePath);
         }
 
         $anime->setStorage($storage)->setStoragePath($relativePath);
