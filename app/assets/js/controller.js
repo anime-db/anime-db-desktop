@@ -48,24 +48,12 @@
         return value ? value.split(/\s+/).filter(Boolean) : [];
     }
 
-    // Unknown control names have no devtools to surface in on a release build (devtools are
-    // closed there) — a visible in-page notice next to the offending element is the one signal
-    // guaranteed to reach whoever is looking at the page, on top of the console message devtools
-    // would show a developer.
+    // An unknown control name is only logged: the DOM is left untouched and the element behaves
+    // like markup without data-control. Typos in the application's own templates are caught by
+    // ControlNamesAreRegisteredTest before a build, and a data-control coming from plugin HTML
+    // (the sanitizer lets arbitrary data-* through) must not affect what the user sees.
     function reportUnknownControl(name, node) {
         console.error(`[controller] Unknown control "${name}" requested on`, node);
-
-        if (!window.AppTranslations) {
-            return;
-        }
-
-        window.AppTranslations.trans('controller.unknown_control_text', { name }).then((text) => {
-            const notice = document.createElement('p');
-            notice.className = 'alert alert-danger';
-            notice.setAttribute('role', 'alert');
-            notice.textContent = text;
-            node.prepend(notice);
-        });
     }
 
     function mountNode(node) {
