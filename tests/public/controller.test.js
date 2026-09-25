@@ -51,6 +51,7 @@ beforeEach(() => {
 
 afterEach(() => {
     jest.restoreAllMocks();
+    delete window.AppTranslations;
 });
 
 test('a control declared via data-control mounts on the initial htmx:load', () => {
@@ -126,7 +127,8 @@ test('an exception thrown by one control does not stop the next control on the p
     expect(okMount).toHaveBeenCalledTimes(1);
 });
 
-test('an unknown control name is only logged and leaves the DOM and sibling controls alone', () => {
+test('an unknown control name is only logged and leaves the DOM and sibling controls alone', async () => {
+    window.AppTranslations = { trans: jest.fn(() => Promise.resolve('x')) };
     const okMount = jest.fn();
     window.Controller.registerControl('test-neighbour', okMount);
     jest.spyOn(console, 'error').mockImplementation(() => {});
@@ -136,8 +138,11 @@ test('an unknown control name is only logged and leaves the DOM and sibling cont
     `;
 
     dispatchHtmxLoad(document.body);
+    await Promise.resolve();
+    await Promise.resolve();
 
     expect(console.error).toHaveBeenCalledTimes(1);
+    expect(window.AppTranslations.trans).not.toHaveBeenCalled();
     const args = console.error.mock.calls[0];
     expect(args[0]).toContain('test-does-not-exist');
     expect(args[1]).toBe(document.getElementById('root'));
