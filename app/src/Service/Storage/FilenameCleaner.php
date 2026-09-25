@@ -27,6 +27,8 @@ declare(strict_types=1);
 
 namespace App\Service\Storage;
 
+use App\Service\Media\MediaExtensions;
+
 /**
  * Turns a raw storage file/folder name into a best-guess anime title by
  * stripping rip/quality release tags, bracketed technical info and
@@ -42,11 +44,7 @@ final class FilenameCleaner
      *
      * @var string[]
      */
-    public const EXTENSIONS = [
-        'avi', 'mkv', 'm1v', 'm2v', 'm4v', 'mov', 'qt', 'mpeg', 'mpg', 'mpe',
-        'ogg', 'rm', 'wmv', 'asf', 'wm', 'm2ts', 'mts', 'm2t', 'mp4', '3gp',
-        '3g2', 'k3g', 'mp2', 'mpv2', 'mod', 'vob', 'f4v', 'ismv', 'webm', 'ts',
-    ];
+    public const EXTENSIONS = MediaExtensions::VIDEO;
 
     /**
      * Quality/rip release tags to strip. Extensible via the constructor —

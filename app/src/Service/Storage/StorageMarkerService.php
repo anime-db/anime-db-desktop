@@ -198,7 +198,8 @@ final class StorageMarkerService
         return rtrim($matches[1], '\\/');
     }
 
-    private function readMarkerId(string $storagePath): ?int
+    /** The Storage id recorded in the `[AnimeDB]` section of $storagePath's marker, or null when there is none. */
+    public function readMarkerId(string $storagePath): ?int
     {
         $markerPath = $this->markerPath($storagePath);
 
