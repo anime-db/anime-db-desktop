@@ -225,6 +225,13 @@ final class DownloadCompletionPoller
             ]);
 
             return;
+        } catch (\Throwable $exception) {
+            // Same window as above for any other failure (e.g. a DBAL error before link()'s
+            // flush()): poll() now continues past a failed hash, so a dirty Completed row would
+            // otherwise be flushed by the next hash's flush() with no link and no events.
+            $download->revertToPending();
+
+            throw $exception;
         }
 
         $animeId = $anime->id ?? throw new \LogicException('Anime must have an id once it has a Download row pointing at it.');

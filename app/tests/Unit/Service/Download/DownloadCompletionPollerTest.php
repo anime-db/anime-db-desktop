@@ -35,6 +35,7 @@ use App\Doctrine\Type\UnixTimestampType;
 use App\Entity\Download;
 use App\Entity\Enum\DownloadStatus;
 use App\Entity\Enum\WatchStatus;
+use App\Entity\Storage;
 use App\Entity\TvAnime;
 use App\Repository\DownloadRepository;
 use App\Repository\StorageRepository;
@@ -608,6 +609,74 @@ final class DownloadCompletionPollerTest extends TestCase
 
         $this->assertCount(2, $requested);
         $this->assertSame($failedHash, $requested[0]);
+        $this->assertCount(2, $dispatched);
+    }
+
+    public function testALinkFailureBeforeFlushDoesNotLeakACompletedRowIntoTheNextHash(): void
+    {
+        $otherHash = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+        $animeOne = $this->persistAnime();
+        $animeTwo = $this->persistAnime();
+        $this->downloads->save(new Download(self::HASH, $animeOne));
+        $this->downloads->save(new Download($otherHash, $animeTwo));
+        $failedHash = $this->downloads->findDistinctPendingInfoHashes()[0];
+        $failedAnimeId = $failedHash === self::HASH ? $animeOne->id : $animeTwo->id;
+
+        /** @var list<AnimeFilesChangedEvent|DownloadCompletedEvent> $dispatched */
+        $dispatched = [];
+        // Only the second hash completes.
+        $eventDispatcher = $this->dispatcherCapturingEvents(2, $dispatched);
+
+        $httpClient = new MockHttpClient(static function (string $method, string $url): MockResponse {
+            parse_str((string) parse_url($url, \PHP_URL_QUERY), $query);
+
+            return new MockResponse(
+                json_encode([[
+                    'hash' => $query['hashes'] ?? '',
+                    'progress' => 1,
+                    'state' => 'uploading',
+                    'content_path' => self::ROOT.'\\finished-release',
+                ]], \JSON_THROW_ON_ERROR),
+                ['response_headers' => ['content-type' => 'application/json']],
+            );
+        });
+
+        // findOneByPath() fails (as a DBAL error would) for the first link() only, i.e. after
+        // markCompleted() but before link()'s own flush(); the EntityManager stays open.
+        $storages = new class($this->entityManager) extends StorageRepository {
+            private bool $failed = false;
+
+            public function findOneByPath(string $path): ?Storage
+            {
+                if (!$this->failed) {
+                    $this->failed = true;
+
+                    throw new \RuntimeException('database is locked');
+                }
+
+                return parent::findOneByPath($path);
+            }
+        };
+
+        $jail = new DownloadFolderJail(new AppSettingsProvider(new AppConfigStore($this->configPath)));
+        $linker = new AnimeDownloadLinker($storages, $this->entityManager, $jail);
+        $poller = new DownloadCompletionPoller(
+            new QbittorrentClient($httpClient, self::BASE_URL),
+            $this->downloads,
+            $linker,
+            $eventDispatcher,
+            $this->entityManager,
+            new FreeSpaceChecker($jail, new NativeFreeSpaceProvider()),
+            new NullLogger(),
+        );
+
+        $poller->poll();
+
+        $this->entityManager->clear();
+        $failedRow = $this->downloads->findByInfoHashAndAnime($failedHash, (int) $failedAnimeId);
+        $this->assertNotNull($failedRow);
+        $this->assertFalse($failedRow->isCompleted());
+        $this->assertContains($failedHash, $this->downloads->findDistinctPendingInfoHashes());
         $this->assertCount(2, $dispatched);
     }
 
