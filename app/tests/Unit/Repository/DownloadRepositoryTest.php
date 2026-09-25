@@ -79,6 +79,22 @@ final class DownloadRepositoryTest extends TestCase
         return $anime;
     }
 
+    public function testRemoveDeletesOnlyThePairingRow(): void
+    {
+        $anime = $this->persistAnime('Anime A');
+        $other = $this->persistAnime('Anime B');
+        $this->repository->save(new Download(self::HASH_A, $anime));
+        $this->repository->save($kept = new Download(self::HASH_A, $other));
+
+        $stored = $this->repository->findByInfoHashAndAnime(self::HASH_A, (int) $anime->id);
+        $this->assertNotNull($stored);
+        $this->repository->remove($stored);
+
+        $this->assertNull($this->repository->findByInfoHashAndAnime(self::HASH_A, (int) $anime->id));
+        $this->assertSame($kept, $this->repository->findByInfoHashAndAnime(self::HASH_A, (int) $other->id));
+        $this->assertNotNull($this->entityManager->find(TvAnime::class, $anime->id));
+    }
+
     public function testSavePersistsDownload(): void
     {
         $anime = $this->persistAnime('Anime A');
