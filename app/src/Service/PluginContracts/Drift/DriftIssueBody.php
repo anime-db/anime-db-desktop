@@ -52,7 +52,7 @@ final class DriftIssueBody
             '',
         ];
 
-        foreach (self::steps($plugin->reason) as $step) {
+        foreach (self::steps($plugin->reason, $plugin->id, $contractsVersion) as $step) {
             $lines[] = '- '.$step;
         }
 
@@ -103,14 +103,14 @@ final class DriftIssueBody
     /**
      * @return list<string>
      */
-    private static function steps(LagReason $reason): array
+    private static function steps(LagReason $reason, string $id, string $contractsVersion): array
     {
         return match ($reason) {
             LagReason::NO_ACCEPTING_VERSION => [
-                'поднять `require.plugin-contracts` в `plugins/<id>/manifest.json`, чтобы он принимал версию контрактов приложения;',
+                \sprintf('поднять `require.plugin-contracts` в `plugins/%s/manifest.json`, чтобы он принимал версию контрактов `%s`;', $id, $contractsVersion),
                 'поднять версию плагина в том же PR — иначе `release.yml` пропустит релиз;',
                 'прогнать тесты плагина локально на контрактах этой версии и указать результат в PR (лок-файлы в репозитории плагинов не отслеживаются);',
-                'менять только `plugins/<id>/`;',
+                \sprintf('менять только `plugins/%s/`;', $id),
                 'корневой `composer.json` не трогать — он намеренно широкий.',
             ],
             LagReason::NOT_PARSEABLE => [
