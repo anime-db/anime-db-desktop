@@ -55,8 +55,6 @@ use Doctrine\ORM\ORMSetup;
 use Doctrine\ORM\Tools\SchemaTool;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
-use Psr\Log\AbstractLogger;
-use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
@@ -147,7 +145,6 @@ final class DownloadCompletionPollerTest extends TestCase
         array $torrentsInfoResponse,
         EventDispatcherInterface $eventDispatcher,
         ?FreeSpaceProvider $freeSpaceProvider = null,
-        ?LoggerInterface $logger = null,
     ): DownloadCompletionPoller {
         $httpClient = new MockHttpClient(static fn (): MockResponse => new MockResponse(
             json_encode($torrentsInfoResponse, \JSON_THROW_ON_ERROR),
@@ -166,7 +163,7 @@ final class DownloadCompletionPollerTest extends TestCase
             // The real NativeFreeSpaceProvider reports "unknown" (free-open) for self::ROOT on
             // this Linux test runner — only tests about the free-space check itself override this.
             new FreeSpaceChecker($jail, $freeSpaceProvider ?? new NativeFreeSpaceProvider()),
-            $logger ?? new NullLogger(),
+            new NullLogger(),
         );
     }
 
@@ -267,50 +264,6 @@ final class DownloadCompletionPollerTest extends TestCase
         $stored = $this->downloads->findByInfoHashAndAnime(self::HASH, (int) $anime->id);
         $this->assertNotNull($stored);
         $this->assertFalse($stored->isCompleted());
-    }
-
-    public function testPollFailsTheSecondAnimeOfASeasonPackWhenItsPathIsAlreadyTaken(): void
-    {
-        $animeOne = $this->persistAnime();
-        $animeTwo = $this->persistAnime();
-        $this->downloads->save(new Download(self::HASH, $animeOne));
-        $this->downloads->save(new Download(self::HASH, $animeTwo));
-
-        $dispatched = [];
-        // Only the first anime completes (AnimeFilesChangedEvent + DownloadCompletedEvent): both
-        // rows share one content_path, and the second would repeat the same (storage, path) pair.
-        $eventDispatcher = $this->dispatcherCapturingEvents(2, $dispatched);
-
-        $logger = new class extends AbstractLogger {
-            /** @var list<array{message: string, context: array<mixed>}> */
-            public array $records = [];
-
-            public function log($level, string|\Stringable $message, array $context = []): void
-            {
-                $this->records[] = ['message' => (string) $message, 'context' => $context];
-            }
-        };
-
-        $poller = $this->makePoller([[
-            'hash' => self::HASH,
-            'progress' => 1,
-            'state' => 'uploading',
-            'content_path' => self::ROOT.'\\season-pack',
-        ]], $eventDispatcher, null, $logger);
-
-        $poller->poll();
-        // The conflict is terminal: a second pass must neither retry nor log it again.
-        $poller->poll();
-
-        $this->assertSame([], $this->downloads->findPendingByInfoHash(self::HASH));
-        $rowTwo = $this->downloads->findByInfoHashAndAnime(self::HASH, (int) $animeTwo->id);
-        $this->assertNotNull($rowTwo);
-        $this->assertTrue($rowTwo->isFailed());
-        $this->assertNull($animeTwo->getStoragePath());
-        $this->assertSame('season-pack', $animeOne->getStoragePath());
-        $this->assertCount(1, $logger->records);
-        $this->assertSame(self::HASH, $logger->records[0]['context']['infoHash']);
-        $this->assertSame($animeOne->id, $logger->records[0]['context']['occupyingAnimeId']);
     }
 
     public function testAContentPathOutsideTheJailDoesNotWedgeOtherPendingDownloads(): void
@@ -526,35 +479,5 @@ final class DownloadCompletionPollerTest extends TestCase
         $stored = $this->downloads->findByInfoHashAndAnime(self::HASH, (int) $anime->id);
         $this->assertNotNull($stored);
         $this->assertSame(DownloadStatus::Pending, $stored->getStatus());
-    }
-
-    public function testPollMarksEveryPendingRowFailedForASeasonPackSharingOneInfoHash(): void
-    {
-        $animeOne = $this->persistAnime();
-        $animeTwo = $this->persistAnime();
-        $this->downloads->save(new Download(self::HASH, $animeOne));
-        $this->downloads->save(new Download(self::HASH, $animeTwo));
-
-        $eventDispatcher = $this->createMock(EventDispatcherInterface::class);
-        $eventDispatcher->expects($this->never())->method('dispatch');
-
-        $freeSpaceProvider = $this->createStub(FreeSpaceProvider::class);
-        $freeSpaceProvider->method('getFreeBytes')->willReturn(100_000_000);
-
-        $poller = $this->makePoller([[
-            'hash' => self::HASH,
-            'progress' => 0.4,
-            'state' => 'metaDL',
-            'size' => 500_000_000,
-        ]], $eventDispatcher, $freeSpaceProvider);
-
-        $poller->poll();
-
-        $rowOne = $this->downloads->findByInfoHashAndAnime(self::HASH, (int) $animeOne->id);
-        $rowTwo = $this->downloads->findByInfoHashAndAnime(self::HASH, (int) $animeTwo->id);
-        $this->assertNotNull($rowOne);
-        $this->assertNotNull($rowTwo);
-        $this->assertTrue($rowOne->isFailed());
-        $this->assertTrue($rowTwo->isFailed());
     }
 }

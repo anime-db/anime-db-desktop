@@ -70,7 +70,7 @@ final class PluginRegistryFetcher
                 continue;
             }
 
-            return new PluginRegistryDocument($registryJson, trim($signatureBase64));
+            return new PluginRegistryDocument($registryJson, trim($signatureBase64), $registryUrl);
         }
 
         throw new PluginRegistryFetchException($failuresByMirrorUrl);
