@@ -85,14 +85,14 @@ final class DownloadRepositoryTest extends TestCase
         $anime = $this->persistAnime('Anime A');
         $other = $this->persistAnime('Anime B');
         $this->repository->save(new Download(self::HASH_A, $anime));
-        $this->repository->save($kept = new Download(self::HASH_A, $other));
+        $this->repository->save($kept = new Download(self::HASH_B, $other));
 
         $stored = $this->repository->findByInfoHashAndAnime(self::HASH_A, (int) $anime->id);
         $this->assertNotNull($stored);
         $this->repository->remove($stored);
 
         $this->assertNull($this->repository->findByInfoHashAndAnime(self::HASH_A, (int) $anime->id));
-        $this->assertSame($kept, $this->repository->findByInfoHashAndAnime(self::HASH_A, (int) $other->id));
+        $this->assertSame($kept, $this->repository->findByInfoHashAndAnime(self::HASH_B, (int) $other->id));
         $this->assertNotNull($this->entityManager->find(TvAnime::class, $anime->id));
     }
 

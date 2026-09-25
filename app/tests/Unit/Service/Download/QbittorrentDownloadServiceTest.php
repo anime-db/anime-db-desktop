@@ -29,6 +29,7 @@ namespace App\Tests\Unit\Service\Download;
 
 use AnimeDb\PluginContracts\Download\DownloadSource;
 use AnimeDb\PluginContracts\Model\AnimeId;
+use App\Command\DownloadsUnlinkCommand;
 use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
 use App\Entity\Enum\WatchStatus;
@@ -51,6 +52,7 @@ use Doctrine\ORM\EntityManager;
 use Doctrine\ORM\ORMSetup;
 use Doctrine\ORM\Tools\SchemaTool;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Console\Tester\CommandTester;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
 
@@ -236,6 +238,33 @@ final class QbittorrentDownloadServiceTest extends TestCase
         $this->assertSame(1, $requestCount, 'The torrent must not be submitted to qBittorrent again.');
         $this->assertCount(1, $this->downloads->findByInfoHash(self::MAGNET_HASH));
         $this->assertNull($this->downloads->findByInfoHashAndAnime(self::MAGNET_HASH, (int) $animeTwo->id));
+    }
+
+    public function testEnqueueForAnotherAnimeSucceedsAfterUnlinkingTheOccupyingOne(): void
+    {
+        $animeOne = $this->persistAnime();
+        $animeTwo = $this->persistAnime();
+
+        $service = $this->makeService(static fn (): MockResponse => new MockResponse('Ok.'));
+
+        $source = DownloadSource::magnet('magnet:?xt=urn:btih:'.self::MAGNET_HASH);
+        $service->enqueue($source, new AnimeId((int) $animeOne->id));
+
+        try {
+            $service->enqueue($source, new AnimeId((int) $animeTwo->id));
+            $this->fail('Expected DownloadAlreadyLinkedToAnotherAnimeException to be thrown.');
+        } catch (DownloadAlreadyLinkedToAnotherAnimeException) {
+        }
+
+        $unlink = new CommandTester(new DownloadsUnlinkCommand($this->downloads));
+        $unlink->execute(['info-hash' => self::MAGNET_HASH, 'anime-id' => (string) $animeOne->id]);
+        $this->assertSame(0, $unlink->getStatusCode());
+
+        $service->enqueue($source, new AnimeId((int) $animeTwo->id));
+
+        $this->assertNull($this->downloads->findByInfoHashAndAnime(self::MAGNET_HASH, (int) $animeOne->id));
+        $this->assertNotNull($this->downloads->findByInfoHashAndAnime(self::MAGNET_HASH, (int) $animeTwo->id));
+        $this->assertCount(1, $this->downloads->findByInfoHash(self::MAGNET_HASH));
     }
 
     private function torrentFileBytes(int $totalSize, string $name): string

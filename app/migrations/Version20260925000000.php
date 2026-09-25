@@ -40,6 +40,11 @@ use Doctrine\Migrations\AbstractMigration;
  *
  * The composite (info_hash, anime_id) unique index and the plain info_hash index are superseded
  * by the new unique index and dropped.
+ *
+ * The number of deleted rows is written to the migration log before the deletion. Note that a
+ * deleted row may be a still-pending pairing, which the poller will then never complete.
+ *
+ * down() restores only the previous set of indexes; the rows deleted by up() are NOT restored.
  */
 final class Version20260925000000 extends AbstractMigration
 {
@@ -50,6 +55,11 @@ final class Version20260925000000 extends AbstractMigration
 
     public function up(Schema $schema): void
     {
+        $duplicates = (int) $this->connection->fetchOne(
+            'SELECT COUNT(*) FROM downloads WHERE id NOT IN (SELECT MIN(id) FROM downloads GROUP BY info_hash)',
+        );
+        $this->write(\sprintf('Deleting %d duplicate downloads row(s) that share an info_hash with an older row.', $duplicates));
+
         $this->addSql('DELETE FROM downloads WHERE id NOT IN (SELECT MIN(id) FROM downloads GROUP BY info_hash)');
         $this->addSql('DROP INDEX uniq_download_infohash_anime');
         $this->addSql('DROP INDEX IDX_DOWNLOAD_INFO_HASH');
