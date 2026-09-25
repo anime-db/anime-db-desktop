@@ -51,6 +51,15 @@ framework:
                 dsn: '%env(MESSENGER_TRANSPORT_DSN)%'
                 options:
                     queue_name: plugins
+                    # Not the doctrine default of 3600s: stopping the consumer is routine (app
+                    # close, plugin install/update/removal: SIGTERM, then SIGKILL after 500 ms),
+                    # and the message it was handling stays "in progress" until this timeout
+                    # expires — with the default, an interrupted task would only come back an hour
+                    # later. Not lower either: it must stay well above the longest task (a
+                    # 50-file season folder at a 15 s probe timeout per file is ~12 minutes),
+                    # because a second consumer is a recorded direction and would otherwise pick up
+                    # a task the first one is still running.
+                    redeliver_timeout: 900
 
         routing:
             'App\Message\ScanStorageMessage': async
