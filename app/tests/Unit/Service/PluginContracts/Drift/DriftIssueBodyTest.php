@@ -28,8 +28,8 @@ declare(strict_types=1);
 namespace App\Tests\Unit\Service\PluginContracts\Drift;
 
 use App\Service\PluginContracts\Drift\DriftIssueBody;
-use App\Service\PluginContracts\LagReason;
 use App\Service\PluginContracts\LaggingPlugin;
+use App\Service\PluginContracts\LagReason;
 use PHPUnit\Framework\TestCase;
 
 final class DriftIssueBodyTest extends TestCase
