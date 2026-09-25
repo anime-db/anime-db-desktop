@@ -124,15 +124,20 @@ final class FfprobeMediaProbeTest extends TestCase
 
     public function testTimeoutFails(): void
     {
-        $this->script('exec sleep 5');
+        $this->script('sleep 5; cat '.escapeshellarg(__DIR__.'/../../../Fixtures/Ffprobe/no_subtitles.json'));
 
-        $this->expectException(MediaProbeFailedException::class);
-        $this->probe(0.3)->probe($this->issue('a.mkv'));
+        $start = microtime(true);
+        try {
+            $this->probe(0.3)->probe($this->issue('a.mkv'));
+            self::fail('Expected MediaProbeFailedException');
+        } catch (MediaProbeFailedException) {
+            self::assertLessThan(3.0, microtime(true) - $start);
+        }
     }
 
     public function testNonZeroExitFails(): void
     {
-        $this->script('exit 1');
+        $this->script('cat '.escapeshellarg(__DIR__.'/../../../Fixtures/Ffprobe/no_subtitles.json').'; exit 1');
 
         $this->expectException(MediaProbeFailedException::class);
         $this->probe()->probe($this->issue('a.mkv'));
@@ -148,7 +153,7 @@ final class FfprobeMediaProbeTest extends TestCase
 
     public function testFailedFileIsAbsentWithoutException(): void
     {
-        $this->script('for last; do :; done; case "$last" in *bad*) exit 1;; esac; cat '.escapeshellarg(__DIR__.'/../../../Fixtures/Ffprobe/no_subtitles.json'));
+        $this->script('for last; do :; done; case "$last" in *bad*) cat '.escapeshellarg(__DIR__.'/../../../Fixtures/Ffprobe/no_subtitles.json').'; exit 1;; esac; cat '.escapeshellarg(__DIR__.'/../../../Fixtures/Ffprobe/no_subtitles.json'));
         $result = $this->probe()->probeAll([$this->issue('a.mkv'), $this->issue('bad.mkv'), $this->issue('c.mkv')]);
 
         self::assertSame(['a.mkv', 'c.mkv'], array_keys($result));
@@ -157,7 +162,7 @@ final class FfprobeMediaProbeTest extends TestCase
 
     public function testAllFailedThrows(): void
     {
-        $this->script('exit 1');
+        $this->script('cat '.escapeshellarg(__DIR__.'/../../../Fixtures/Ffprobe/no_subtitles.json').'; exit 1');
 
         $this->expectException(MediaProbeFailedException::class);
         $this->probe()->probeAll([$this->issue('a.mkv'), $this->issue('b.mkv')]);
