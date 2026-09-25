@@ -64,10 +64,7 @@ final class PluginContractsCheckCommandTest extends TestCase
 
         self::assertSame(1, $tester->getStatusCode());
         $display = $tester->getDisplay();
-        self::assertStringContainsString('animedb-shikimori', $display);
-        self::assertStringContainsString('0.9.2', $display);
-        self::assertStringContainsString('^0.21', $display);
-        self::assertStringContainsString('0.22.0', $display);
+        self::assertStringContainsString('LAGS animedb-shikimori: latest version 0.9.2 pins plugin-contracts "^0.21", app has 0.22.0', $display);
     }
 
     public function testBadSignatureCannotCheck(): void
@@ -116,7 +113,7 @@ final class PluginContractsCheckCommandTest extends TestCase
         $tester = $this->runCheck('0.22.0', $this->registryJson('^0.22', brokenManifest: true));
 
         self::assertSame(1, $tester->getStatusCode());
-        self::assertStringContainsString('manifest is not parseable', $tester->getDisplay());
+        self::assertStringContainsString('LAGS animedb-shikimori: the registry entry is not accepted by this app version (latest version: 0.9.2, pin: ^0.22)', $tester->getDisplay());
     }
 
     private function runCheck(?string $contractsVersion, string $registryJson, ?string $signature = null): CommandTester

@@ -32,6 +32,6 @@ enum LagReason: string
     /** Every published version pins a plugin-contracts range excluding the app's version. */
     case NO_ACCEPTING_VERSION = 'no_accepting_version';
 
-    /** The registry parser dropped the plugin: its manifest is not understood by this app version. */
-    case MANIFEST_NOT_PARSEABLE = 'manifest_not_parseable';
+    /** The registry parser dropped the plugin (invalid id, manifest, or no version this app accepts). */
+    case NOT_PARSEABLE = 'not_parseable';
 }

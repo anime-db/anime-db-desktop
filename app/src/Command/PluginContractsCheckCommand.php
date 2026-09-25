@@ -100,8 +100,8 @@ final class PluginContractsCheckCommand extends Command
 
         foreach ($lagging as $plugin) {
             $io->writeln(match ($plugin->reason) {
-                LagReason::MANIFEST_NOT_PARSEABLE => \sprintf(
-                    'LAGS %s: the manifest is not parseable by this app version (latest version: %s, pin: %s)',
+                LagReason::NOT_PARSEABLE => \sprintf(
+                    'LAGS %s: the registry entry is not accepted by this app version (latest version: %s, pin: %s)',
                     $plugin->id,
                     $plugin->latestVersion ?? 'n/a',
                     $plugin->latestPin ?? 'none',

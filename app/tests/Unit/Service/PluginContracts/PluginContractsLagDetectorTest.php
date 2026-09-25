@@ -74,7 +74,7 @@ final class PluginContractsLagDetectorTest extends TestCase
         ]);
 
         self::assertCount(1, $lagging);
-        self::assertSame(LagReason::MANIFEST_NOT_PARSEABLE, $lagging[0]->reason);
+        self::assertSame(LagReason::NOT_PARSEABLE, $lagging[0]->reason);
         self::assertSame('1.0.0', $lagging[0]->latestVersion);
     }
 

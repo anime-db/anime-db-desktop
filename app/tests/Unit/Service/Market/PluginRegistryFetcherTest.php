@@ -70,6 +70,7 @@ final class PluginRegistryFetcherTest extends TestCase
 
         $this->assertSame('{"sequence":1}', $document->registryJson);
         $this->assertSame('c2ln', $document->signatureBase64);
+        $this->assertSame('https://raw.githubusercontent.com/anime-db/anime-db-plugins/master/plugins-registry.json', $document->sourceUrl);
     }
 
     public function testThrowsWhenEveryMirrorFails(): void

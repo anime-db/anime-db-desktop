@@ -69,7 +69,7 @@ final class PluginContractsLagDetector
         $lagging = [];
         foreach ($plugins as $plugin) {
             if (!$plugin->parsed) {
-                $lagging[] = new LaggingPlugin($plugin->id, LagReason::MANIFEST_NOT_PARSEABLE, $plugin->latestVersion, $plugin->latestPin);
+                $lagging[] = new LaggingPlugin($plugin->id, LagReason::NOT_PARSEABLE, $plugin->latestVersion, $plugin->latestPin);
 
                 continue;
             }
