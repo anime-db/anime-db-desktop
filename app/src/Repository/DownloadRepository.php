@@ -51,11 +51,6 @@ class DownloadRepository
         return $this->entityManager->getRepository(Download::class)->findBy(['infoHash' => $infoHash]);
     }
 
-    public function hasAnyForInfoHash(string $infoHash): bool
-    {
-        return $this->findByInfoHash($infoHash) !== [];
-    }
-
     /** @return list<Download> */
     public function findPendingByInfoHash(string $infoHash): array
     {

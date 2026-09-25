@@ -113,13 +113,13 @@ final class DownloadRepositoryTest extends TestCase
         $this->assertNull($this->repository->findByInfoHashAndAnime(self::HASH_A, (int) $anime->id));
     }
 
-    public function testHasAnyForInfoHashDistinguishesKnownFromUnknownHashes(): void
+    public function testFindByInfoHashDistinguishesKnownFromUnknownHashes(): void
     {
         $anime = $this->persistAnime('Anime A');
         $this->repository->save(new Download(self::HASH_A, $anime));
 
-        $this->assertTrue($this->repository->hasAnyForInfoHash(self::HASH_A));
-        $this->assertFalse($this->repository->hasAnyForInfoHash(self::HASH_B));
+        $this->assertCount(1, $this->repository->findByInfoHash(self::HASH_A));
+        $this->assertSame([], $this->repository->findByInfoHash(self::HASH_B));
     }
 
     public function testSameInfoHashCanBeLinkedToSeveralAnimeSeasonPack(): void

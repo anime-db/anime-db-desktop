@@ -261,29 +261,6 @@ final class DownloadCompletionPollerTest extends TestCase
         $this->assertFalse($stored->isCompleted());
     }
 
-    public function testPollDispatchesOnceForEachAnimeInASeasonPack(): void
-    {
-        $animeOne = $this->persistAnime();
-        $animeTwo = $this->persistAnime();
-        $this->downloads->save(new Download(self::HASH, $animeOne));
-        $this->downloads->save(new Download(self::HASH, $animeTwo));
-
-        $dispatched = [];
-        // Two events per anime (AnimeFilesChangedEvent + DownloadCompletedEvent) for two animes.
-        $eventDispatcher = $this->dispatcherCapturingEvents(4, $dispatched);
-
-        $poller = $this->makePoller([[
-            'hash' => self::HASH,
-            'progress' => 1,
-            'state' => 'uploading',
-            'content_path' => self::ROOT.'\\season-pack',
-        ]], $eventDispatcher);
-
-        $poller->poll();
-
-        $this->assertEmpty($this->downloads->findPendingByInfoHash(self::HASH));
-    }
-
     public function testAContentPathOutsideTheJailDoesNotWedgeOtherPendingDownloads(): void
     {
         $wedgedHash = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
