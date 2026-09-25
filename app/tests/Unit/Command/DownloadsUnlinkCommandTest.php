@@ -132,5 +132,6 @@ final class DownloadsUnlinkCommandTest extends TestCase
         $exit = $this->tester->execute(['info-hash' => self::HASH, 'anime-id' => 'abc']);
 
         $this->assertSame(Command::FAILURE, $exit);
+        $this->assertStringContainsString('must be a non-negative integer', $this->tester->getDisplay());
     }
 }
