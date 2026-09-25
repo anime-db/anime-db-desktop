@@ -126,7 +126,8 @@ parameters:
 
     # Bundled ffprobe executable (native/paths.js → FFPROBE_BIN in native/supervisor/env.js).
     # Never looked up in PATH: only this exact file is ever executed.
-    app.ffprobe.bin: '%env(FFPROBE_BIN)%'
+    app.ffprobe.bin.dev_default: '%kernel.project_dir%/../bin/ffprobe/ffprobe.exe'
+    app.ffprobe.bin: '%env(default:app.ffprobe.bin.dev_default:FFPROBE_BIN)%'
 
     # Push-on-edit TTL (issue #366, PushSyncMessageHandler): how long, since dispatch, a queued
     # PushSyncMessage is still trusted as a same-state optimistic write before the standard
