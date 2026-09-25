@@ -34,6 +34,7 @@ use App\Entity\Enum\WatchStatus;
 use App\Entity\TvAnime;
 use App\Repository\DownloadRepository;
 use Doctrine\DBAL\DriverManager;
+use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\EntityManager;
 use Doctrine\ORM\ORMSetup;
@@ -84,14 +85,14 @@ final class DownloadRepositoryTest extends TestCase
         $anime = $this->persistAnime('Anime A');
         $other = $this->persistAnime('Anime B');
         $this->repository->save(new Download(self::HASH_A, $anime));
-        $this->repository->save($kept = new Download(self::HASH_A, $other));
+        $this->repository->save($kept = new Download(self::HASH_B, $other));
 
         $stored = $this->repository->findByInfoHashAndAnime(self::HASH_A, (int) $anime->id);
         $this->assertNotNull($stored);
         $this->repository->remove($stored);
 
         $this->assertNull($this->repository->findByInfoHashAndAnime(self::HASH_A, (int) $anime->id));
-        $this->assertSame($kept, $this->repository->findByInfoHashAndAnime(self::HASH_A, (int) $other->id));
+        $this->assertSame($kept, $this->repository->findByInfoHashAndAnime(self::HASH_B, (int) $other->id));
         $this->assertNotNull($this->entityManager->find(TvAnime::class, $anime->id));
     }
 
@@ -113,33 +114,42 @@ final class DownloadRepositoryTest extends TestCase
         $this->assertNull($this->repository->findByInfoHashAndAnime(self::HASH_A, (int) $anime->id));
     }
 
-    public function testHasAnyForInfoHashDistinguishesKnownFromUnknownHashes(): void
+    public function testFindByInfoHashDistinguishesKnownFromUnknownHashes(): void
     {
         $anime = $this->persistAnime('Anime A');
         $this->repository->save(new Download(self::HASH_A, $anime));
 
-        $this->assertTrue($this->repository->hasAnyForInfoHash(self::HASH_A));
-        $this->assertFalse($this->repository->hasAnyForInfoHash(self::HASH_B));
+        $this->assertCount(1, $this->repository->findByInfoHash(self::HASH_A));
+        $this->assertSame([], $this->repository->findByInfoHash(self::HASH_B));
     }
 
-    public function testSameInfoHashCanBeLinkedToSeveralAnimeSeasonPack(): void
+    public function testSameInfoHashCannotBeLinkedToSeveralAnime(): void
     {
-        $animeOne = $this->persistAnime('Season 1');
-        $animeTwo = $this->persistAnime('Season 2');
+        $animeOne = $this->persistAnime('Anime One');
+        $animeTwo = $this->persistAnime('Anime Two');
 
         $this->repository->save(new Download(self::HASH_A, $animeOne));
-        $this->repository->save(new Download(self::HASH_A, $animeTwo));
 
-        $this->assertCount(2, $this->repository->findByInfoHash(self::HASH_A));
+        $this->expectException(UniqueConstraintViolationException::class);
+        $this->repository->save(new Download(self::HASH_A, $animeTwo));
+    }
+
+    public function testFindAnimeIdByInfoHash(): void
+    {
+        $anime = $this->persistAnime('Anime A');
+        $this->repository->save(new Download(self::HASH_A, $anime));
+
+        $this->assertSame($anime->id, $this->repository->findAnimeIdByInfoHash(self::HASH_A));
+        $this->assertNull($this->repository->findAnimeIdByInfoHash(self::HASH_B));
     }
 
     public function testFindPendingByInfoHashExcludesCompletedRows(): void
     {
-        $animeOne = $this->persistAnime('Season 1');
-        $animeTwo = $this->persistAnime('Season 2');
+        $animeOne = $this->persistAnime('Anime One');
+        $animeTwo = $this->persistAnime('Anime Two');
 
         $pending = new Download(self::HASH_A, $animeOne);
-        $completed = new Download(self::HASH_A, $animeTwo);
+        $completed = new Download(self::HASH_B, $animeTwo);
         $completed->markCompleted();
 
         $this->repository->save($pending);
@@ -149,16 +159,15 @@ final class DownloadRepositoryTest extends TestCase
 
         $this->assertCount(1, $result);
         $this->assertSame($animeOne->id, $result[0]->getAnime()->id);
+        $this->assertSame([], $this->repository->findPendingByInfoHash(self::HASH_B));
     }
 
     public function testFindDistinctPendingInfoHashesReturnsEachHashOnceAndOmitsFullyCompletedOnes(): void
     {
-        $animeOne = $this->persistAnime('Season 1');
-        $animeTwo = $this->persistAnime('Season 2');
+        $animeOne = $this->persistAnime('Anime One');
         $animeThree = $this->persistAnime('Unrelated');
 
         $this->repository->save(new Download(self::HASH_A, $animeOne));
-        $this->repository->save(new Download(self::HASH_A, $animeTwo));
 
         $fullyCompleted = new Download(self::HASH_B, $animeThree);
         $fullyCompleted->markCompleted();

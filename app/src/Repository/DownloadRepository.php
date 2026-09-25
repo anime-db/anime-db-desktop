@@ -45,15 +45,24 @@ class DownloadRepository
         ]);
     }
 
+    /**
+     * Plain DBAL lookup on purpose: it stays usable after a failed flush() has closed the
+     * EntityManager (see QbittorrentDownloadService::enqueue()).
+     */
+    public function findAnimeIdByInfoHash(string $infoHash): ?int
+    {
+        $animeId = $this->entityManager->getConnection()->fetchOne(
+            'SELECT anime_id FROM downloads WHERE info_hash = ?',
+            [$infoHash],
+        );
+
+        return $animeId === false ? null : (int) $animeId;
+    }
+
     /** @return list<Download> */
     public function findByInfoHash(string $infoHash): array
     {
         return $this->entityManager->getRepository(Download::class)->findBy(['infoHash' => $infoHash]);
-    }
-
-    public function hasAnyForInfoHash(string $infoHash): bool
-    {
-        return $this->findByInfoHash($infoHash) !== [];
     }
 
     /** @return list<Download> */

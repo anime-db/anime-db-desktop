@@ -32,8 +32,8 @@ use Doctrine\Migrations\AbstractMigration;
 
 /**
  * Creates the `downloads` table backing the qBittorrent-based DownloadServiceInterface
- * implementation (issue #346): one row per (info_hash, anime_id) pairing, N:M by design so a
- * season pack's single infoHash can be linked to several Anime rows.
+ * implementation (issue #346): one row per (info_hash, anime_id) pairing. This is the original
+ * schema; the one-torrent-one-anime rule was added later (Version20260925000000).
  *
  * No CHECK constraint on `status` (see App\Entity\Enum\DownloadStatus): SQLite has no
  * ALTER-friendly CHECK, so a future extra status would otherwise force a full table rebuild
