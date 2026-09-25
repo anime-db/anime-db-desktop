@@ -31,8 +31,9 @@ use PHPUnit\Framework\TestCase;
 
 /**
  * Every name used in a `data-control` attribute of the application templates must be registered
- * with `registerControl()` in app/assets/js. An unknown name is only reported at runtime by a
- * visible alert inside the element, so nothing else would catch a typo or a missing control.
+ * with `registerControl()` in app/assets/js. At runtime an unknown name is only written to
+ * the console, which nobody watches on a release build, so this static check is the one reliable
+ * signal that catches a typo or a missing control.
  */
 final class ControlNamesAreRegisteredTest extends TestCase
 {

@@ -51,7 +51,6 @@ beforeEach(() => {
 
 afterEach(() => {
     jest.restoreAllMocks();
-    delete window.AppTranslations;
 });
 
 test('a control declared via data-control mounts on the initial htmx:load', () => {
@@ -127,20 +126,23 @@ test('an exception thrown by one control does not stop the next control on the p
     expect(okMount).toHaveBeenCalledTimes(1);
 });
 
-test('an unknown control name logs to the console and renders a visible in-page notice', async () => {
-    window.AppTranslations = { trans: jest.fn((key, params) => Promise.resolve(`${key}:${params.name}`)) };
+test('an unknown control name is only logged and leaves the DOM and sibling controls alone', () => {
+    const okMount = jest.fn();
+    window.Controller.registerControl('test-neighbour', okMount);
     jest.spyOn(console, 'error').mockImplementation(() => {});
-    document.body.innerHTML = '<div id="root" data-control="test-does-not-exist"></div>';
+    document.body.innerHTML = `
+        <div id="root" data-control="test-does-not-exist"></div>
+        <div id="neighbour" data-control="test-neighbour"></div>
+    `;
 
     dispatchHtmxLoad(document.body);
-    await Promise.resolve();
-    await Promise.resolve();
 
-    expect(console.error).toHaveBeenCalled();
-    const root = document.getElementById('root');
-    const notice = root.querySelector('.alert-danger');
-    expect(notice).not.toBeNull();
-    expect(notice.textContent).toBe('controller.unknown_control_text:test-does-not-exist');
+    expect(console.error).toHaveBeenCalledTimes(1);
+    const args = console.error.mock.calls[0];
+    expect(args[0]).toContain('test-does-not-exist');
+    expect(args[1]).toBe(document.getElementById('root'));
+    expect(document.getElementById('root').childNodes).toHaveLength(0);
+    expect(okMount).toHaveBeenCalledTimes(1);
 });
 
 test('unmounting via htmx:beforeCleanupElement calls the cleanup function mountFn returned, exactly once', () => {
