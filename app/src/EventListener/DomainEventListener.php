@@ -42,9 +42,17 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
  * driving the sync push trigger, see App\EventSubscriber\WatchProgressPushSubscriber.
  *
  * postPersist/postUpdate rather than preUpdate/onFlush (the old AnimeSyncPushListener's hook):
- * events must only go out once Doctrine has actually committed the change they describe, and by
- * post*, a freshly-inserted entity already has its id (see AnimeSearchIndexListener, the same
+ * a freshly-inserted entity only gets its id from the INSERT, so events whose factories read the
+ * id can only be built once post* has run (see AnimeSearchIndexListener, the same
  * postPersist/postUpdate pairing used for the same reason).
+ *
+ * Caveat: post* does NOT mean committed. UnitOfWork::commit() runs beginTransaction(), then
+ * executeInserts()/executeUpdates() (where these hooks fire), and only afterwards commit(), so the
+ * events are dispatched inside the still-open transaction, which may yet roll back. A subscriber
+ * must not do anything that survives a rollback (write through another connection such as
+ * enqueueing a job into a separate queue.db, call an external service, send a notification):
+ * either move that to an application service after flush(), or make the consumer tolerate a
+ * missing entity, as IndexAnimeMessageHandler and PushSyncMessageHandler do.
  *
  * A plain Doctrine event listener (fires for every entity) rather than an #[AsEntityListener]
  * tied to a specific entity: it depends on AggregateRootInterface, not on Anime, so it works for
