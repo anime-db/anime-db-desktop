@@ -113,11 +113,23 @@ final class FfprobeOutputMapperTest extends TestCase
     {
         $info = $this->mapFixture('sentinels.json');
 
-        self::assertEquals(new VideoTrack(0, 'wmv2', null, 0, null, null, null, null), $info->video[0]);
+        self::assertEquals(new VideoTrack(0, 'wmv2', null, null, null, null, null, null), $info->video[0]);
         self::assertEquals(new AudioTrack(1, 'wmav2', null, null, null, null, null, null, false), $info->audio[0]);
         self::assertNull($info->durationSeconds);
         self::assertNull($info->bitRate);
         self::assertSame(4096, $info->sizeBytes);
+    }
+
+    public function testInfiniteOrNegativeDurationBecomesNull(): void
+    {
+        foreach (['1e999', '-5'] as $duration) {
+            $data = json_decode((string) file_get_contents($this->path('multitrack.json')), true, 512, \JSON_THROW_ON_ERROR);
+            $data['format']['duration'] = $duration;
+
+            $info = (new FfprobeOutputMapper())->map(json_encode($data, \JSON_THROW_ON_ERROR), 'probe-id');
+
+            self::assertNull($info->durationSeconds);
+        }
     }
 
     public function testFractionalFrameRateBecomesFloat(): void
@@ -205,6 +217,21 @@ final class FfprobeOutputMapperTest extends TestCase
         }];
         yield 'format.size' => [static function (array $d): array {
             unset($d['format']['size']);
+
+            return $d;
+        }];
+        yield 'format.size negative' => [static function (array $d): array {
+            $d['format']['size'] = '-1';
+
+            return $d;
+        }];
+        yield 'format.size overflow' => [static function (array $d): array {
+            $d['format']['size'] = '99999999999999999999';
+
+            return $d;
+        }];
+        yield 'streams[].index negative' => [static function (array $d): array {
+            $d['streams'][2]['index'] = -1;
 
             return $d;
         }];

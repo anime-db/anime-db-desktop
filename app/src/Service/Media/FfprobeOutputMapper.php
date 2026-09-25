@@ -44,7 +44,9 @@ use App\Service\Exception\FfprobeOutputException;
  * construction.
  *
  * The prober's "no data" sentinels (`"0/0"`, `"N/A"`, `"unknown"`, `-99`, empty string) become
- * `null`, never zero. `sizeBytes` comes from `format.size`, i.e. the file as it was when read.
+ * `null`, never zero. Dimensions that cannot really be zero (`width`, `height`, `channels`,
+ * `sample_rate`, `bit_rate`, `r_frame_rate`), which the prober prints as `0` when unknown, are
+ * `null` for any value `<= 0`. `sizeBytes` comes from `format.size`, i.e. the file as it was when read.
  * A missing codec name on a typed track is reported as an empty string, since the contract
  * requires a string there.
  *
@@ -78,7 +80,7 @@ final class FfprobeOutputMapper
             throw new FfprobeOutputException('The prober output has no "format.format_name".');
         }
 
-        $sizeBytes = $this->toInt($format['size'] ?? null);
+        $sizeBytes = $this->toNonNegativeInt($format['size'] ?? null);
         if ($sizeBytes === null) {
             throw new FfprobeOutputException('The prober output has no valid "format.size".');
         }
@@ -94,7 +96,7 @@ final class FfprobeOutputMapper
                 throw new FfprobeOutputException('A stream entry is not a JSON object.');
             }
 
-            $index = $this->toInt($stream['index'] ?? null);
+            $index = $this->toNonNegativeInt($stream['index'] ?? null);
             if ($index === null) {
                 throw new FfprobeOutputException('A stream has no valid "index".');
             }
@@ -115,21 +117,21 @@ final class FfprobeOutputMapper
                         $index,
                         $codec ?? '',
                         $this->toString($stream['profile'] ?? null),
-                        $this->toInt($stream['width'] ?? null),
-                        $this->toInt($stream['height'] ?? null),
+                        $this->toPositiveInt($stream['width'] ?? null),
+                        $this->toPositiveInt($stream['height'] ?? null),
                         $this->toString($stream['pix_fmt'] ?? null),
-                        $this->toFloat($stream['r_frame_rate'] ?? null),
-                        $this->toInt($stream['bit_rate'] ?? null),
+                        $this->toPositiveFloat($stream['r_frame_rate'] ?? null),
+                        $this->toPositiveInt($stream['bit_rate'] ?? null),
                     );
                     break;
                 case 'audio':
                     $audio[] = new AudioTrack(
                         $index,
                         $codec ?? '',
-                        $this->toInt($stream['channels'] ?? null),
+                        $this->toPositiveInt($stream['channels'] ?? null),
                         $this->toString($stream['channel_layout'] ?? null),
-                        $this->toInt($stream['sample_rate'] ?? null),
-                        $this->toInt($stream['bit_rate'] ?? null),
+                        $this->toPositiveInt($stream['sample_rate'] ?? null),
+                        $this->toPositiveInt($stream['bit_rate'] ?? null),
                         $this->toString($tags['language'] ?? null),
                         $this->toString($tags['title'] ?? null),
                         $this->toBool($disposition['default'] ?? null),
@@ -152,9 +154,9 @@ final class FfprobeOutputMapper
 
         return new MediaInfo(
             $containerFormat,
-            $this->toFloat($format['duration'] ?? null),
+            $this->toNonNegativeFloat($format['duration'] ?? null),
             $sizeBytes,
-            $this->toInt($format['bit_rate'] ?? null),
+            $this->toPositiveInt($format['bit_rate'] ?? null),
             \count($streams),
             $video,
             $audio,
@@ -191,6 +193,9 @@ final class FfprobeOutputMapper
         return \is_string($value) ? $value : null;
     }
 
+    /**
+     * Accepts only integers that fit into `int`; anything larger is treated as invalid.
+     */
     private function toInt(mixed $value): ?int
     {
         $value = $this->normalize($value);
@@ -198,32 +203,63 @@ final class FfprobeOutputMapper
             return $value;
         }
         if (\is_string($value) && preg_match('/^-?\d+$/', $value) === 1) {
-            return (int) $value;
+            $int = (int) $value;
+            $digits = ltrim($value, '-');
+            $canonical = ltrim($digits, '0');
+
+            return ltrim((string) $int, '-') === ($canonical === '' ? '0' : $canonical) ? $int : null;
         }
 
         return null;
     }
 
+    private function toNonNegativeInt(mixed $value): ?int
+    {
+        $int = $this->toInt($value);
+
+        return $int !== null && $int >= 0 ? $int : null;
+    }
+
+    private function toPositiveInt(mixed $value): ?int
+    {
+        $int = $this->toInt($value);
+
+        return $int !== null && $int > 0 ? $int : null;
+    }
+
     /**
-     * Accepts numbers, numeric strings and `a/b` fractions such as `24000/1001`.
+     * Accepts finite numbers, numeric strings and `a/b` fractions such as `24000/1001`.
      */
     private function toFloat(mixed $value): ?float
     {
         $value = $this->normalize($value);
         if (\is_int($value) || \is_float($value)) {
-            return (float) $value;
-        }
-        if (!\is_string($value)) {
+            $float = (float) $value;
+        } elseif (!\is_string($value)) {
+            return null;
+        } elseif (\is_numeric($value)) {
+            $float = (float) $value;
+        } elseif (preg_match('/^(-?\d+(?:\.\d+)?)\/(-?\d+(?:\.\d+)?)$/', $value, $m) === 1 && (float) $m[2] !== 0.0) {
+            $float = (float) $m[1] / (float) $m[2];
+        } else {
             return null;
         }
-        if (\is_numeric($value)) {
-            return (float) $value;
-        }
-        if (preg_match('/^(-?\d+(?:\.\d+)?)\/(-?\d+(?:\.\d+)?)$/', $value, $m) === 1 && (float) $m[2] !== 0.0) {
-            return (float) $m[1] / (float) $m[2];
-        }
 
-        return null;
+        return is_finite($float) ? $float : null;
+    }
+
+    private function toNonNegativeFloat(mixed $value): ?float
+    {
+        $float = $this->toFloat($value);
+
+        return $float !== null && $float >= 0.0 ? $float : null;
+    }
+
+    private function toPositiveFloat(mixed $value): ?float
+    {
+        $float = $this->toFloat($value);
+
+        return $float !== null && $float > 0.0 ? $float : null;
     }
 
     private function toBool(mixed $value): bool
