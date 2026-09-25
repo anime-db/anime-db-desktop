@@ -30,6 +30,7 @@ namespace App\Controller;
 use AnimeDb\PluginContracts\Model\AnimeId;
 use AnimeDb\PluginContracts\Widget\CatalogWidgetInterface;
 use AnimeDb\PluginContracts\Widget\EntryWidgetInterface;
+use AnimeDb\PluginContracts\Widget\WidgetPendingUpdate;
 use App\Entity\Anime;
 use App\Entity\ValueObject\Exception\InvalidPluginIdException;
 use App\Entity\ValueObject\PluginId;
@@ -70,7 +71,7 @@ use Twig\Environment;
  * this widget's own error fragment.
  *
  * Issue #703/#684: a widget that still has no data to show (e.g. its own background job has not
- * finished yet) signals that by prefixing its returned HTML with {@see self::PENDING_UPDATE_MARKER}.
+ * finished yet) signals that by prefixing its returned HTML with {@see WidgetPendingUpdate::MARKER}.
  * Such a response is served without the usual max-age, so it is never served stale out of the
  * browser's HTTP cache the next time this slot's URL is requested (page reload, navigating back
  * to it) once the real data is ready — this route is not polled or re-requested by anything on
@@ -84,8 +85,6 @@ use Twig\Environment;
 final class PluginWidgetController
 {
     private const int CACHE_MAX_AGE_SECONDS = 300;
-
-    private const string PENDING_UPDATE_MARKER = '<!--animedb:widget-pending-update-->';
 
     public function __construct(
         private readonly EntryWidgetRegistry $entryWidgets,
@@ -165,13 +164,13 @@ final class PluginWidgetController
     }
 
     /**
-     * Strips {@see self::PENDING_UPDATE_MARKER} when present and routes to the cached or
+     * Strips {@see WidgetPendingUpdate::MARKER} when present and routes to the cached or
      * uncached response accordingly — see the class docblock.
      */
     private function widgetResponse(string $raw): Response
     {
-        $pendingUpdate = str_starts_with($raw, self::PENDING_UPDATE_MARKER);
-        $html = $this->htmlSanitizer->sanitize($pendingUpdate ? substr($raw, \strlen(self::PENDING_UPDATE_MARKER)) : $raw);
+        $pendingUpdate = str_starts_with($raw, WidgetPendingUpdate::MARKER);
+        $html = $this->htmlSanitizer->sanitize($pendingUpdate ? substr($raw, \strlen(WidgetPendingUpdate::MARKER)) : $raw);
 
         return $pendingUpdate ? new Response($html) : $this->cacheableResponse($html);
     }
