@@ -43,6 +43,7 @@ jest.mock('../../native/paths', () => ({
     getMarketSnapshotCachePath: jest.fn(() => '/fake/userData/market-snapshot-cache.json'),
     getMarketRefreshLockPath:   jest.fn(() => '/fake/userData/market-refresh.lock'),
     getBackupsDir:        jest.fn(() => '/fake/userData/backups'),
+    getFfprobeBinPath:    jest.fn(() => '/fake/bin/ffprobe/ffprobe.exe'),
 }));
 jest.mock('../../native/config', () => ({
     getOrCreateAppSecret: jest.fn(() => 'a'.repeat(64)),
@@ -71,6 +72,7 @@ describe('buildCommonEnv', () => {
         expect(env.CONFIG_PATH).toBe('/fake/userData/config.json');
         expect(env.APP_RUNTIME_DIR).toBe('/fake/userData/var');
         expect(env.BACKUPS_DIR).toBe('/fake/userData/backups');
+        expect(env.FFPROBE_BIN).toBe('/fake/bin/ffprobe/ffprobe.exe');
     });
 
     test('does not include worker-only ports', () => {

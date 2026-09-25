@@ -41,6 +41,7 @@ jest.mock('../../native/paths', () => ({
     getImportAppliedPath: jest.fn(() => '/fake/userData/import-applied.json'),
     getConfigPath:         jest.fn(() => '/fake/userData/config.json'),
     getPluginsConfigPath:  jest.fn(() => '/fake/userData/plugins.json'),
+    getFfprobeBinPath:     jest.fn(() => '/fake/bin/ffprobe/ffprobe.exe'),
     getPluginsDir:         jest.fn(() => '/fake/userData/plugins'),
     getNativeTranslationsDir:        jest.fn(() => '/fake/app/native/translations'),
     getNativeTranslationsOverlayDir: jest.fn(() => '/fake/userData/native-translations'),

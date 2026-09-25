@@ -88,6 +88,7 @@ function buildCommonEnv({ meiliPort, meiliKey, qbittorrentPort, appPort, safeMod
         MEILISEARCH_URL:         `http://127.0.0.1:${meiliPort}`,
         MEILISEARCH_KEY:         meiliKey,
         QBITTORRENT_URL:         `http://127.0.0.1:${qbittorrentPort}`,
+        FFPROBE_BIN:             paths.getFfprobeBinPath(),
         // Только для процессов, стартующих после веб-воркера — см. PhpContext.appPort.
         ...(appPort === undefined ? {} : { OAUTH_CALLBACK_ORIGIN: `http://127.0.0.1:${appPort}` }),
         ...(safeMode ? { SAFE_MODE: '1' } : {}),
