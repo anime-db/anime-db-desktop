@@ -61,7 +61,7 @@ final class DownloadsUnlinkCommand extends Command
         $animeId = (string) $input->getArgument('anime-id');
 
         if (!ctype_digit($animeId)) {
-            $output->writeln(\sprintf('<error>Anime id must be a positive integer, "%s" given.</error>', $animeId));
+            $output->writeln(\sprintf('<error>Anime id must be a non-negative integer, "%s" given.</error>', $animeId));
 
             return Command::FAILURE;
         }

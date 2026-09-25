@@ -92,16 +92,29 @@ final class DownloadsUnlinkCommandTest extends TestCase
         $this->assertNotNull($this->entityManager->find(TvAnime::class, $anime->id));
     }
 
-    public function testUnlinkedInfoHashCanBePairedWithAnotherAnime(): void
+    public function testUnlinkedPairingCanBeCreatedAgain(): void
     {
         $anime = $this->persistAnime('Anime A');
-        $other = $this->persistAnime('Anime B');
         $this->repository->save(new Download(self::HASH, $anime));
 
-        $this->tester->execute(['info-hash' => self::HASH, 'anime-id' => (string) $anime->id]);
-        $this->repository->save(new Download(self::HASH, $other));
+        $exit = $this->tester->execute(['info-hash' => self::HASH, 'anime-id' => (string) $anime->id]);
+        $this->assertSame(Command::SUCCESS, $exit);
 
-        $this->assertNotNull($this->repository->findByInfoHashAndAnime(self::HASH, (int) $other->id));
+        // Without the unlink this would violate uniq_download_infohash_anime.
+        $this->repository->save(new Download(self::HASH, $anime));
+
+        $this->assertNotNull($this->repository->findByInfoHashAndAnime(self::HASH, (int) $anime->id));
+    }
+
+    public function testInfoHashIsMatchedCaseInsensitively(): void
+    {
+        $anime = $this->persistAnime('Anime A');
+        $this->repository->save(new Download(self::HASH, $anime));
+
+        $exit = $this->tester->execute(['info-hash' => strtoupper(self::HASH), 'anime-id' => (string) $anime->id]);
+
+        $this->assertSame(Command::SUCCESS, $exit);
+        $this->assertNull($this->repository->findByInfoHashAndAnime(self::HASH, (int) $anime->id));
     }
 
     public function testMissingPairingFailsWithMessage(): void
