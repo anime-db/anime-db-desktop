@@ -25,20 +25,28 @@
 
 declare(strict_types=1);
 
-namespace App\Service\Market;
+namespace App\Service\PluginContracts;
 
 /**
- * The raw bytes {@see PluginRegistryFetcher::fetch()} downloaded from a single mirror: the
- * registry JSON exactly as published, its detached signature, and the URL of the mirror that
- * served them. Kept as plain strings (not
- * decoded/re-encoded) so signature verification runs over precisely what was signed.
+ * One registry plugin reduced to what the lag check needs: the `plugin_contracts` pin of every
+ * published version (`null` = the version declares none, so it accepts any contracts version),
+ * and the latest version for reporting.
+ *
+ * `$parsed` is false for a plugin the app's registry parser dropped (its manifest is not
+ * understood by this app version): the pins are then taken from the raw registry data for
+ * reporting only.
  */
-final class PluginRegistryDocument
+final class PluginContractPins
 {
+    /**
+     * @param list<string|null> $pins
+     */
     public function __construct(
-        public readonly string $registryJson,
-        public readonly string $signatureBase64,
-        public readonly string $sourceUrl,
+        public readonly string $id,
+        public readonly bool $parsed,
+        public readonly array $pins,
+        public readonly ?string $latestVersion,
+        public readonly ?string $latestPin,
     ) {
     }
 }

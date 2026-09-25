@@ -25,20 +25,13 @@
 
 declare(strict_types=1);
 
-namespace App\Service\Market;
+namespace App\Service\PluginContracts;
 
 /**
- * The raw bytes {@see PluginRegistryFetcher::fetch()} downloaded from a single mirror: the
- * registry JSON exactly as published, its detached signature, and the URL of the mirror that
- * served them. Kept as plain strings (not
- * decoded/re-encoded) so signature verification runs over precisely what was signed.
+ * The plugin-contracts lag check cannot produce a trustworthy answer (unusable app contracts
+ * version, or registry data the check cannot interpret). Deliberately distinct from "no plugin
+ * lags" and "some plugin lags": callers must surface it as its own outcome.
  */
-final class PluginRegistryDocument
+final class PluginContractsCheckException extends \RuntimeException
 {
-    public function __construct(
-        public readonly string $registryJson,
-        public readonly string $signatureBase64,
-        public readonly string $sourceUrl,
-    ) {
-    }
 }
