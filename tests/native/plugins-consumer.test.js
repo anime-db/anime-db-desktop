@@ -279,6 +279,13 @@ describe('stop', () => {
         beforeEach(() => Object.defineProperty(process, 'platform', { value: platform }));
         afterEach(() => Object.defineProperty(process, 'platform', { value: original }));
 
+        test(tree ? 'spawns without detached (no process groups on Windows)' : 'spawns as a process group leader', async () => {
+            spawn.mockReturnValueOnce(createFakeChild());
+            await start(CONTEXT);
+
+            expect(spawn.mock.calls[0][2].detached).toBe(!tree);
+        });
+
         test(tree ? 'stops the whole tree instead of SIGTERM' : 'sends SIGTERM to the process', async () => {
             const child = createFakeChild();
             child.pid = 41207;
