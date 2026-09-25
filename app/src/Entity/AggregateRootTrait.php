@@ -42,9 +42,11 @@ namespace App\Entity;
  * A subscriber must therefore not do anything that survives a rollback (write through another
  * connection such as enqueueing a job into a separate queue.db, call an external service, send a
  * notification): either do that from an application service after flush(), or make the consumer
- * tolerate a missing entity, as IndexAnimeMessageHandler and PushSyncMessageHandler do. A caller that calls recordThat() but whose change turns out to be a no-op (nothing
- * for Doctrine to flush) is responsible for not calling it in the first place — this trait does
- * not deduplicate.
+ * tolerate a missing entity, as IndexAnimeMessageHandler and PushSyncMessageHandler do.
+ *
+ * A caller that calls recordThat() but whose change turns out to be a no-op (nothing for Doctrine
+ * to flush) is responsible for not calling it in the first place — this trait does not
+ * deduplicate.
  *
  * recordThat() takes a factory rather than a built event: a domain event is a DTO carrying the
  * entity's id, but on the create path (e.g. AnimeNewController) the id is only assigned by
