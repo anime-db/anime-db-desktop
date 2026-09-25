@@ -64,6 +64,8 @@ jest.mock('../../native/supervisor/pid-tracker', () => ({
     writePid:   jest.fn(),
     clearPid:   jest.fn(),
     killOrphan: jest.fn(() => Promise.resolve()),
+    killTree:   jest.fn(() => Promise.resolve()),
+    killTreeSync: jest.fn(),
 }));
 jest.mock('child_process', () => ({ spawn: jest.fn() }));
 
@@ -254,15 +256,52 @@ describe('stop', () => {
         expect(pidTracker.clearPid).toHaveBeenCalledWith('plugins-consumer');
     });
 
-    test('escalates to SIGKILL if the process does not exit within the grace period', async () => {
+    test('escalates to killTree() only if the process does not exit within the grace period', async () => {
         const child = createFakeChild();
+        child.pid = 41207;
         spawn.mockReturnValueOnce(child);
         await start(CONTEXT);
 
         stop();
+        expect(pidTracker.killTree).not.toHaveBeenCalled();
         jest.advanceTimersByTime(500);
 
-        expect(child.kill).toHaveBeenCalledWith('SIGKILL');
+        // No direct proc.kill('SIGKILL'): on Windows it would race ahead of the async taskkill /T.
+        expect(pidTracker.killTree).toHaveBeenCalledWith(41207);
+        expect(child.kill).not.toHaveBeenCalledWith('SIGKILL');
+    });
+
+    describe.each([
+        ['win32', true],
+        ['linux', false],
+    ])('on %s', (platform, tree) => {
+        const original = process.platform;
+        beforeEach(() => Object.defineProperty(process, 'platform', { value: platform }));
+        afterEach(() => Object.defineProperty(process, 'platform', { value: original }));
+
+        test(tree ? 'spawns without detached (no process groups on Windows)' : 'spawns as a process group leader', async () => {
+            spawn.mockReturnValueOnce(createFakeChild());
+            await start(CONTEXT);
+
+            expect(spawn.mock.calls[0][2].detached).toBe(!tree);
+        });
+
+        test(tree ? 'stops the whole tree instead of SIGTERM' : 'sends SIGTERM to the process', async () => {
+            const child = createFakeChild();
+            child.pid = 41207;
+            spawn.mockReturnValueOnce(child);
+            await start(CONTEXT);
+
+            stop();
+
+            if (tree) {
+                expect(pidTracker.killTree).toHaveBeenCalledWith(41207);
+                expect(child.kill).not.toHaveBeenCalledWith('SIGTERM');
+            } else {
+                expect(child.kill).toHaveBeenCalledWith('SIGTERM');
+                expect(pidTracker.killTree).not.toHaveBeenCalled();
+            }
+        });
     });
 
     test('resolves immediately when no process is running', async () => {
@@ -279,6 +318,17 @@ describe('killSync', () => {
         killSync();
 
         expect(child.kill).toHaveBeenCalledWith('SIGKILL');
+    });
+
+    test('kills the whole tree of the child by its PID', async () => {
+        const child = createFakeChild();
+        child.pid = 41207;
+        spawn.mockReturnValueOnce(child);
+        await start(CONTEXT);
+
+        killSync();
+
+        expect(pidTracker.killTreeSync).toHaveBeenCalledWith(41207);
     });
 
     test('is a no-op when no process is running', () => {

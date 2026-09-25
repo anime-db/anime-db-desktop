@@ -82,6 +82,8 @@ function spawnProcess(context, backoffIdx = 0) {
         cwd: paths.getAppRootDir(),
         env: buildEnv(context),
         stdio: ['ignore', 'pipe', 'pipe'],
+        // Вне Windows процесс — лидер группы, чтобы killTree() мог убить и потомков (`-pid`).
+        detached: process.platform !== 'win32',
     });
 
     pidTracker.writePid(LOG_PREFIX, child.pid);
@@ -142,7 +144,10 @@ function stop() {
     child = null;
 
     return new Promise((resolve) => {
-        const timer = setTimeout(() => proc.kill('SIGKILL'), 500);
+        const timer = setTimeout(() => {
+            // Только killTree: SIGKILL родителю до старта taskkill оставил бы /T без дерева.
+            pidTracker.killTree(proc.pid);
+        }, 500);
 
         proc.on('exit', () => {
             clearTimeout(timer);
@@ -154,7 +159,13 @@ function stop() {
             resolve();
         });
 
-        proc.kill('SIGTERM');
+        // Windows: SIGTERM = TerminateProcess одного PID, потомки уцелели бы (issue #757), а
+        // taskkill /T после смерти родителя дерево уже не найдёт — поэтому сразу всё дерево.
+        if (process.platform === 'win32') {
+            pidTracker.killTree(proc.pid);
+        } else {
+            proc.kill('SIGTERM');
+        }
     });
 }
 
@@ -166,6 +177,7 @@ function stop() {
 function killSync() {
     if (!child) return;
     try {
+        pidTracker.killTreeSync(child.pid);
         child.kill('SIGKILL');
     } catch {
         // процесс уже завершился
