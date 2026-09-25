@@ -100,6 +100,8 @@ function spawnProcess(context, backoffIdx = 0) {
         cwd: paths.getAppRootDir(),
         env: buildEnv(context),
         stdio: ['ignore', 'pipe', 'pipe'],
+        // Вне Windows процесс — лидер группы, чтобы killTree() мог убить и потомков (`-pid`).
+        detached: process.platform !== 'win32',
     });
 
     pidTracker.writePid(LOG_PREFIX, child.pid);
@@ -164,8 +166,8 @@ function stop() {
 
     return new Promise((resolve) => {
         const timer = setTimeout(() => {
+            // Только killTree: SIGKILL родителю до старта taskkill оставил бы /T без дерева.
             pidTracker.killTree(proc.pid);
-            proc.kill('SIGKILL');
         }, 500);
 
         proc.on('exit', () => {
