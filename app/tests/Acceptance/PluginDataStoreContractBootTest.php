@@ -28,7 +28,7 @@ declare(strict_types=1);
 namespace App\Tests\Acceptance;
 
 use AnimeDb\PluginContracts\Model\AnimeId as ContractAnimeId;
-use AnimeDb\PluginContracts\Widget\EntryWidgetInterface;
+use AnimeDb\PluginContracts\PluginData\PluginDataStoreInterface;
 use App\Entity\Enum\WatchStatus;
 use App\Entity\MovieAnime;
 use App\Service\Plugin\InstalledPluginsRegistry;
@@ -41,36 +41,16 @@ use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Messenger\Transport\SetupableTransportInterface;
 
 /**
- * End-to-end coverage for {@see \App\Service\Plugin\DependencyInjection\Compiler\PluginDataStoreScopePass}
- * and {@see \App\Service\Plugin\DependencyInjection\Compiler\SettingsStoreScopePass} (issue #580): a
- * real, cold-compiled container the same way {@see \App\Kernel} boots in production, with an
- * installed integration plugin whose widget injects both `PluginDataStoreInterface` and
- * `SettingsStoreInterface` into its constructor — the same shape Shikimori's widgets/clients use.
- *
- * Before the fix, both scope passes registered their per-plugin `PluginDataStore`/`SettingsStore`
- * definition with a raw `new PluginId($pluginId)` constructor argument. `PhpDumper` cannot dump a
- * raw object argument and throws `Symfony\Component\DependencyInjection\Exception\RuntimeException`
- * ("Unable to dump a service container if a parameter is an object...") the moment any plugin
- * actually consumes either interface — thrown out of `self::bootKernel()`, before any request is
- * handled. A cold compile is required for the same reason as
- * {@see CatalogReaderWidgetBootTest}: reusing a pre-existing compiled container would never
- * actually exercise the fixture plugin below.
- *
- * `DATABASE_URL`/`QUEUE_DATABASE_URL` are pointed at throwaway SQLite files, both `$_SERVER` and
- * `$_ENV` (Symfony resolves `%env(...)%` from `$_ENV` first, see
- * {@see SettingsLocaleSwitchAcceptanceTest}'s docblock and `.claude-docs/gotchas.md`) — otherwise
- * persisting the fixture Anime below would write into the app's real working database.
- * Persisting it also fires `AnimeSearchIndexListener`, which dispatches onto the `async` Messenger
- * transport (unrelated to this test's actual subject) — see the explicit
- * `messenger.transport.async` setup() call below for why.
+ * End-to-end coverage for issue #789: a plugin service whose constructor type-hints the
+ * *contracts* `AnimeDb\PluginContracts\PluginData\PluginDataStoreInterface` must get a store
+ * scoped to its own plugin id from a real, cold-compiled container. Two installed plugins each
+ * hold their own instance, so the assertions below also prove that one plugin never sees the
+ * other's payload slice.
  */
-final class PluginDataAndSettingsStoreWidgetBootTest extends KernelTestCase
+final class PluginDataStoreContractBootTest extends KernelTestCase
 {
     use TemporaryDirectories;
 
-    private const PLUGIN_ID = 'acme-scoped';
-
-    private string $runtimeDir;
     private string $pluginsDir;
     private string $databasePath;
     private string $queueDatabasePath;
@@ -94,20 +74,18 @@ final class PluginDataAndSettingsStoreWidgetBootTest extends KernelTestCase
         $this->originalQueueDatabaseUrlEnv = $_ENV['QUEUE_DATABASE_URL'] ?? null;
         $this->originalCoreVersion = $_SERVER['CORE_VERSION'] ?? null;
 
-        $this->runtimeDir = $this->createTemporaryDirectory('anime-plugin-data-settings-boot-runtime-');
-        $this->pluginsDir = $this->createTemporaryDirectory('anime-plugin-data-settings-boot-plugins-');
-        $this->databasePath = sys_get_temp_dir().'/anime-plugin-data-settings-boot-db-'.uniqid().'.sqlite';
-        $this->queueDatabasePath = sys_get_temp_dir().'/anime-plugin-data-settings-boot-queue-'.uniqid().'.sqlite';
+        $runtimeDir = $this->createTemporaryDirectory('anime-plugin-data-contract-runtime-');
+        $this->pluginsDir = $this->createTemporaryDirectory('anime-plugin-data-contract-plugins-');
+        $this->databasePath = sys_get_temp_dir().'/anime-plugin-data-contract-db-'.uniqid().'.sqlite';
+        $this->queueDatabasePath = sys_get_temp_dir().'/anime-plugin-data-contract-queue-'.uniqid().'.sqlite';
 
-        $_SERVER['APP_RUNTIME_DIR'] = $this->runtimeDir;
+        $_SERVER['APP_RUNTIME_DIR'] = $runtimeDir;
         $_SERVER['PLUGINS_DIR'] = $this->pluginsDir;
         $_SERVER['PLUGINS_CONFIG_PATH'] = $this->pluginsDir.'/plugins.json';
         $_SERVER['DATABASE_URL'] = $_ENV['DATABASE_URL'] = 'sqlite:///'.$this->databasePath;
         $_SERVER['QUEUE_DATABASE_URL'] = $_ENV['QUEUE_DATABASE_URL'] = 'sqlite:///'.$this->queueDatabasePath;
-        // Mocks the same Electron-supplied channel native/supervisor/env.js sets in production
-        // (issue #565) — without it, Kernel::coreVersion() would fall back to this checkout's own
-        // package.json version, which does not satisfy the fixture manifest's `require.core`
-        // below and would keep its plugin bundle from registering at all.
+        // Same Electron-supplied channel native/supervisor/env.js sets in production (issue #565);
+        // the fixture manifests below require core >=2.0.0.
         $_SERVER['CORE_VERSION'] = '2.0.0';
     }
 
@@ -133,29 +111,60 @@ final class PluginDataAndSettingsStoreWidgetBootTest extends KernelTestCase
         $this->removeTemporaryDirectories();
     }
 
-    public function testContainerCompilesAndWidgetUsesBothScopedStores(): void
+    public function testPluginReceivesStoreScopedToItsOwnIdAndDoesNotSeeAnotherPluginsSlice(): void
     {
-        $this->writeWidgetPluginFixture(self::PLUGIN_ID, 'AcmeScoped', 'ScopedWidget');
+        $animeId = $this->bootWithTwoPlugins();
+
+        $alpha = $this->injectedStore('AcmeAlpha');
+        $beta = $this->injectedStore('AcmeBeta');
+
+        // The instance handed to each plugin is the one the scope pass built for its own id.
+        self::assertSame(self::getContainer()->get('app.plugin_data_store.acme-alpha'), $alpha);
+        self::assertSame(self::getContainer()->get('app.plugin_data_store.acme-beta'), $beta);
+
+        $alpha->write($animeId, ['owner' => 'alpha']);
+        $beta->write($animeId, ['owner' => 'beta']);
+
+        self::assertSame(['owner' => 'alpha'], $alpha->read($animeId));
+        self::assertSame(['owner' => 'beta'], $beta->read($animeId));
+    }
+
+    public function testPluginReadingThroughItsOwnStoreGetsEmptyArrayForPayloadWrittenByAnotherPlugin(): void
+    {
+        $animeId = $this->bootWithTwoPlugins();
+
+        $this->injectedStore('AcmeAlpha')->write($animeId, ['secret' => 'alpha-only']);
+
+        self::assertSame([], $this->injectedStore('AcmeBeta')->read($animeId));
+    }
+
+    /**
+     * The contracts-typed store the container injected into the plugin's fixture service.
+     */
+    private function injectedStore(string $studlyVendor): PluginDataStoreInterface
+    {
+        $keeper = self::getContainer()->get('AnimeDb\\Plugins\\'.$studlyVendor.'\\PayloadKeeper');
+
+        $store = (new \ReflectionProperty($keeper, 'store'))->getValue($keeper);
+        self::assertInstanceOf(PluginDataStoreInterface::class, $store);
+
+        return $store;
+    }
+
+    private function bootWithTwoPlugins(): ContractAnimeId
+    {
+        $this->writePluginFixture('acme-alpha', 'AcmeAlpha');
+        $this->writePluginFixture('acme-beta', 'AcmeBeta');
         $this->reconcilePlugins();
 
         self::bootKernel(['debug' => false]);
 
         /** @var EntityManagerInterface $entityManager */
         $entityManager = self::getContainer()->get(EntityManagerInterface::class);
-
-        // Guards against a silently ignored $_SERVER-only override (see .claude-docs/gotchas.md).
-        self::assertSame(
-            $this->databasePath,
-            $entityManager->getConnection()->getParams()['path'] ?? null,
-            'The entity manager must be connected to this test\'s throwaway SQLite file, not the app\'s working database.',
-        );
-
         (new SchemaTool($entityManager))->createSchema($entityManager->getMetadataFactory()->getAllMetadata());
 
-        // Persisting the fixture Anime below fires AnimeSearchIndexListener, which dispatches
-        // onto the `async` transport (unrelated to this test's actual subject) — messenger.yaml
-        // has no auto_setup, so the messenger_messages table needs an explicit setup() here, the
-        // same as `bin/console messenger:setup-transports` does in a real install.
+        // Persisting the Anime fires AnimeSearchIndexListener onto the `async` transport, which
+        // has no auto_setup — see PluginDataAndSettingsStoreWidgetBootTest.
         $asyncTransport = self::getContainer()->get('messenger.transport.async');
         self::assertInstanceOf(SetupableTransportInterface::class, $asyncTransport);
         $asyncTransport->setup();
@@ -164,18 +173,15 @@ final class PluginDataAndSettingsStoreWidgetBootTest extends KernelTestCase
         $anime->setTitle('Cowboy Bebop')->setWatchStatus(WatchStatus::Watching);
         $entityManager->persist($anime);
         $entityManager->flush();
-        $animeId = $anime->id ?? throw new \LogicException('Anime must have an id after persisting.');
 
-        $widget = self::getContainer()->get('AnimeDb\Plugins\AcmeScoped\ScopedWidget');
-        self::assertInstanceOf(EntryWidgetInterface::class, $widget);
-
-        self::assertSame(
-            'data=stored;settings=stored',
-            $widget->render(new ContractAnimeId($animeId)),
-        );
+        return new ContractAnimeId($anime->id ?? throw new \LogicException('Anime must have an id after persisting.'));
     }
 
-    private function writeWidgetPluginFixture(string $pluginId, string $studlyVendor, string $widgetClassName): void
+    /**
+     * The fixture implements `EntryWidgetInterface` only so that `TagPluginServicesPass` tags it
+     * and it survives unused-private-service pruning (same trick as the sibling boot tests).
+     */
+    private function writePluginFixture(string $pluginId, string $studlyVendor): void
     {
         $dir = $this->pluginsDir.'/'.$pluginId;
         mkdir($dir.'/src', recursive: true);
@@ -189,7 +195,7 @@ final class PluginDataAndSettingsStoreWidgetBootTest extends KernelTestCase
             'require' => ['core' => '>=2.0.0', 'php' => '>=8.2'],
         ]));
 
-        file_put_contents($dir.'/src/'.$widgetClassName.'.php', <<<PHP
+        file_put_contents($dir.'/src/PayloadKeeper.php', <<<PHP
             <?php
 
             declare(strict_types=1);
@@ -197,22 +203,20 @@ final class PluginDataAndSettingsStoreWidgetBootTest extends KernelTestCase
             namespace AnimeDb\\Plugins\\{$studlyVendor};
 
             use AnimeDb\\PluginContracts\\Model\\AnimeId;
-            use AnimeDb\\PluginContracts\\Settings\\SettingsStoreInterface;
+            use AnimeDb\\PluginContracts\\PluginData\\PluginDataStoreInterface;
             use AnimeDb\\PluginContracts\\Widget\\EntryWidgetInterface;
             use AnimeDb\\PluginContracts\\Widget\\WidgetMetadata;
-            use AnimeDb\\PluginContracts\\PluginData\\PluginDataStoreInterface;
 
-            final class {$widgetClassName} implements EntryWidgetInterface
+            final class PayloadKeeper implements EntryWidgetInterface
             {
                 public function __construct(
-                    private readonly PluginDataStoreInterface \$pluginDataStore,
-                    private readonly SettingsStoreInterface \$settingsStore,
+                    private readonly PluginDataStoreInterface \$store,
                 ) {
                 }
 
                 public static function metadata(): WidgetMetadata
                 {
-                    return new WidgetMetadata('{$widgetClassName}', 'widget.title', 'widget.description');
+                    return new WidgetMetadata('PayloadKeeper', 'widget.title', 'widget.description');
                 }
 
                 public function resolveExternalId(array \$urls): ?string
@@ -222,13 +226,7 @@ final class PluginDataAndSettingsStoreWidgetBootTest extends KernelTestCase
 
                 public function render(AnimeId \$anime): string
                 {
-                    \$this->pluginDataStore->write(\$anime, ['note' => 'stored']);
-                    \$this->settingsStore->update(static fn (array \$settings): array => [...\$settings, 'note' => 'stored']);
-
-                    \$data = \$this->pluginDataStore->read(\$anime)['note'] ?? 'NONE';
-                    \$settings = \$this->settingsStore->read()['note'] ?? 'NONE';
-
-                    return "data={\$data};settings={\$settings}";
+                    return '';
                 }
             }
 

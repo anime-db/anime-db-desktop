@@ -27,10 +27,10 @@ declare(strict_types=1);
 
 namespace App\Service\Plugin\DependencyInjection\Compiler;
 
+use AnimeDb\PluginContracts\PluginData\PluginDataStoreInterface;
 use App\Entity\ValueObject\PluginId;
 use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\PluginDataStore;
-use App\Service\Plugin\PluginDataStoreInterface;
 use App\Service\Plugin\PluginNamespace;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
