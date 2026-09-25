@@ -35,6 +35,8 @@ module.exports = {
     getPhpIniDir:          () => userDataDir(),
     getPhpIniPath:         () => path.join(userDataDir(), 'php.ini'),
     getAppRootDir:         appRootDir,
+    // Bundled prober, exactly where scripts/download-bins.js puts it (its `.version` file sits next to it).
+    getFfprobeBinPath:     () => path.join(__dirname, '..', 'bin', 'ffprobe', 'ffprobe.exe'),
     getRuntimeDir:         () => path.join(userDataDir(), 'var'),
     getMeilisearchKeyPath: () => path.join(userDataDir(), 'meilisearch-key.txt'),
     // qbittorrent-nox's own "--profile=<dir>" layout (see qBittorrent's CustomProfile,

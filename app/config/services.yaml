@@ -124,6 +124,10 @@ parameters:
     # hardcoded here so the port constant has a single source of truth.
     app.qbittorrent.url: '%env(QBITTORRENT_URL)%'
 
+    # Bundled ffprobe executable (native/paths.js → FFPROBE_BIN in native/supervisor/env.js).
+    # Never looked up in PATH: only this exact file is ever executed.
+    app.ffprobe.bin: '%env(FFPROBE_BIN)%'
+
     # Push-on-edit TTL (issue #366, PushSyncMessageHandler): how long, since dispatch, a queued
     # PushSyncMessage is still trusted as a same-state optimistic write before the standard
     # reconciliation run is left to reconcile the divergence instead — see .claude-docs/sync.md's
@@ -349,3 +353,10 @@ services:
 
     # Same read-only-package reason as the DownloadServiceInterface alias above.
     AnimeDb\PluginContracts\Media\MediaLibraryInterface: '@App\Service\Media\MediaLibrary'
+
+    App\Service\Media\FfprobeMediaProbe:
+        arguments:
+            $ffprobeBin: '%app.ffprobe.bin%'
+
+    # Same read-only-package reason as the DownloadServiceInterface alias above.
+    AnimeDb\PluginContracts\Media\MediaProbeInterface: '@App\Service\Media\FfprobeMediaProbe'
