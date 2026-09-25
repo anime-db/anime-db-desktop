@@ -31,12 +31,14 @@ use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
 use App\Entity\Enum\WatchStatus;
 use App\Entity\TvAnime;
+use App\Repository\AnimeRepository;
 use App\Repository\StorageRepository;
 use App\Service\AppConfigStore;
 use App\Service\AppSettingsProvider;
 use App\Service\Download\AnimeDownloadLinker;
 use App\Service\Download\DownloadFolderJail;
 use App\Service\Exception\DownloadPathOutsideJailException;
+use App\Service\Exception\DownloadStoragePathConflictException;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\EntityManager;
@@ -74,7 +76,7 @@ final class AnimeDownloadLinkerTest extends TestCase
         file_put_contents($this->configPath, json_encode(['downloadsRoot' => self::ROOT]));
 
         $jail = new DownloadFolderJail(new AppSettingsProvider(new AppConfigStore($this->configPath)));
-        $this->linker = new AnimeDownloadLinker(new StorageRepository($this->entityManager), $this->entityManager, $jail);
+        $this->linker = new AnimeDownloadLinker(new StorageRepository($this->entityManager), new AnimeRepository($this->entityManager), $this->entityManager, $jail);
     }
 
     protected function tearDown(): void
@@ -127,5 +129,32 @@ final class AnimeDownloadLinkerTest extends TestCase
         $this->expectException(DownloadPathOutsideJailException::class);
 
         $this->linker->link($anime, 'C:\\Users\\bob\\Documents\\secret');
+    }
+
+    public function testLinkRejectsAPairAlreadyHeldByAnotherAnimeWithoutWriting(): void
+    {
+        $holder = $this->persistAnime();
+        $other = $this->persistAnime();
+        $this->linker->link($holder, self::ROOT.'\\shared-pack');
+
+        try {
+            $this->linker->link($other, self::ROOT.'\\shared-pack');
+            $this->fail('Expected DownloadStoragePathConflictException.');
+        } catch (DownloadStoragePathConflictException $exception) {
+            $this->assertSame($holder->id, $exception->occupyingAnimeId);
+        }
+
+        $this->assertNull($other->getStorage());
+        $this->assertNull($other->getStoragePath());
+    }
+
+    public function testLinkingTheSameAnimeTwiceIsNotAConflict(): void
+    {
+        $anime = $this->persistAnime();
+
+        $this->linker->link($anime, self::ROOT.'\\some-release');
+        $this->linker->link($anime, self::ROOT.'\\some-release');
+
+        $this->assertSame('some-release', $anime->getStoragePath());
     }
 }

@@ -30,7 +30,9 @@ namespace App\Service\Download;
 use App\Entity\Anime;
 use App\Entity\Enum\StorageType;
 use App\Entity\Storage;
+use App\Repository\AnimeRepository;
 use App\Repository\StorageRepository;
+use App\Service\Exception\DownloadStoragePathConflictException;
 use Doctrine\ORM\EntityManagerInterface;
 
 /**
@@ -54,6 +56,7 @@ final class AnimeDownloadLinker
 
     public function __construct(
         private readonly StorageRepository $storages,
+        private readonly AnimeRepository $animes,
         private readonly EntityManagerInterface $entityManager,
         private readonly DownloadFolderJail $jail,
     ) {
@@ -62,6 +65,8 @@ final class AnimeDownloadLinker
     /**
      * @throws \App\Service\Exception\DownloadPathOutsideJailException if $contentPath is not
      *                                                                 inside the configured downloads root
+     * @throws DownloadStoragePathConflictException                    if another Anime already holds the same
+     *                                                                 (storage, relative path) pair
      */
     public function link(Anime $anime, string $contentPath): void
     {
@@ -70,6 +75,13 @@ final class AnimeDownloadLinker
 
         $storage = $this->storages->findOneByPath($root) ?? $this->createDownloadsStorage($root);
         $relativePath = ltrim(substr($resolvedPath, \strlen($root)), '\\/');
+
+        // Checked BEFORE writing: the pair is unique in the schema, and a flush() that violates it
+        // closes the EntityManager. A Storage created just above has no id yet and so no Anime.
+        $occupant = $storage->id !== null ? $this->animes->findByStorageAndPath($storage, $relativePath) : null;
+        if ($occupant !== null && $occupant->id !== $anime->id) {
+            throw new DownloadStoragePathConflictException($occupant->id ?? 0, $relativePath);
+        }
 
         $anime->setStorage($storage)->setStoragePath($relativePath);
         $this->entityManager->flush();

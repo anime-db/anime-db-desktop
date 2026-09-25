@@ -35,6 +35,7 @@ use AnimeDb\PluginContracts\Model\AnimeId;
 use App\Entity\Download;
 use App\Repository\DownloadRepository;
 use App\Service\Exception\DownloadPathOutsideJailException;
+use App\Service\Exception\DownloadStoragePathConflictException;
 use App\Service\Qbittorrent\QbittorrentClient;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Log\LoggerInterface;
@@ -194,6 +195,16 @@ final class DownloadCompletionPoller
                 'infoHash' => $infoHash,
                 'contentPath' => $contentPath,
                 'exception' => $exception->getMessage(),
+            ]);
+
+            return;
+        } catch (DownloadStoragePathConflictException $exception) {
+            // Same rollback as above: link() threw before touching the entity or flushing.
+            $download->revertToPending();
+            $this->logger->warning('Skipping download completion: the content path is already linked to another anime.', [
+                'infoHash' => $infoHash,
+                'contentPath' => $contentPath,
+                'occupyingAnimeId' => $exception->occupyingAnimeId,
             ]);
 
             return;
