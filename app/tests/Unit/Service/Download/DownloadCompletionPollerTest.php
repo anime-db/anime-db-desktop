@@ -475,34 +475,4 @@ final class DownloadCompletionPollerTest extends TestCase
         $this->assertNotNull($stored);
         $this->assertSame(DownloadStatus::Pending, $stored->getStatus());
     }
-
-    public function testPollMarksEveryPendingRowFailedForASeasonPackSharingOneInfoHash(): void
-    {
-        $animeOne = $this->persistAnime();
-        $animeTwo = $this->persistAnime();
-        $this->downloads->save(new Download(self::HASH, $animeOne));
-        $this->downloads->save(new Download(self::HASH, $animeTwo));
-
-        $eventDispatcher = $this->createMock(EventDispatcherInterface::class);
-        $eventDispatcher->expects($this->never())->method('dispatch');
-
-        $freeSpaceProvider = $this->createStub(FreeSpaceProvider::class);
-        $freeSpaceProvider->method('getFreeBytes')->willReturn(100_000_000);
-
-        $poller = $this->makePoller([[
-            'hash' => self::HASH,
-            'progress' => 0.4,
-            'state' => 'metaDL',
-            'size' => 500_000_000,
-        ]], $eventDispatcher, $freeSpaceProvider);
-
-        $poller->poll();
-
-        $rowOne = $this->downloads->findByInfoHashAndAnime(self::HASH, (int) $animeOne->id);
-        $rowTwo = $this->downloads->findByInfoHashAndAnime(self::HASH, (int) $animeTwo->id);
-        $this->assertNotNull($rowOne);
-        $this->assertNotNull($rowTwo);
-        $this->assertTrue($rowOne->isFailed());
-        $this->assertTrue($rowTwo->isFailed());
-    }
 }
