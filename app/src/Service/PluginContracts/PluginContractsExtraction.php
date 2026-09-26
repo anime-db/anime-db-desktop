@@ -27,28 +27,15 @@ declare(strict_types=1);
 
 namespace App\Service\PluginContracts;
 
-/**
- * One registry plugin reduced to what the lag check needs: the `plugin_contracts` pin of every
- * published version (`null` = the version declares none, so it accepts any contracts version),
- * and the latest version for reporting.
- *
- * `$parsed` is false for a plugin the app's registry parser dropped (its manifest is not
- * understood by this app version): the pins are then taken from the raw registry data for
- * reporting only.
- */
-final class PluginContractPins
+final class PluginContractsExtraction
 {
     /**
-     * @param list<string|null> $pins
-     * @param string|null       $problem why this plugin's pins cannot be trusted (plugin-level failure), null when they can
+     * @param list<PluginContractPins> $plugins
+     * @param int                      $entriesWithoutId raw registry entries that cannot be attributed to any plugin
      */
     public function __construct(
-        public readonly string $id,
-        public readonly bool $parsed,
-        public readonly array $pins,
-        public readonly ?string $latestVersion,
-        public readonly ?string $latestPin,
-        public readonly ?string $problem = null,
+        public readonly array $plugins,
+        public readonly int $entriesWithoutId,
     ) {
     }
 }

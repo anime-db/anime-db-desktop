@@ -25,30 +25,19 @@
 
 declare(strict_types=1);
 
-namespace App\Service\PluginContracts;
+namespace App\Service\Exception;
 
 /**
- * One registry plugin reduced to what the lag check needs: the `plugin_contracts` pin of every
- * published version (`null` = the version declares none, so it accepts any contracts version),
- * and the latest version for reporting.
- *
- * `$parsed` is false for a plugin the app's registry parser dropped (its manifest is not
- * understood by this app version): the pins are then taken from the raw registry data for
- * reporting only.
+ * Thrown by {@see \App\Service\Download\AnimeDownloadLinker} when the (storage, relative path)
+ * pair a completed download would be linked to is already held by another Anime — the pair is
+ * unique in the `anime` table, so writing it would violate UNIQ_ANIME_STORAGE_STORAGE_PATH.
  */
-final class PluginContractPins
+final class DownloadStoragePathConflictException extends \RuntimeException
 {
-    /**
-     * @param list<string|null> $pins
-     * @param string|null       $problem why this plugin's pins cannot be trusted (plugin-level failure), null when they can
-     */
     public function __construct(
-        public readonly string $id,
-        public readonly bool $parsed,
-        public readonly array $pins,
-        public readonly ?string $latestVersion,
-        public readonly ?string $latestPin,
-        public readonly ?string $problem = null,
+        public readonly int $occupyingAnimeId,
+        public readonly string $storagePath,
     ) {
+        parent::__construct(sprintf('Storage path "%s" is already linked to anime #%d.', $storagePath, $occupyingAnimeId));
     }
 }

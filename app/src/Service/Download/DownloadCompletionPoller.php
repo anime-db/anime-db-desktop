@@ -35,6 +35,7 @@ use AnimeDb\PluginContracts\Model\AnimeId;
 use App\Entity\Download;
 use App\Repository\DownloadRepository;
 use App\Service\Exception\DownloadPathOutsideJailException;
+use App\Service\Exception\DownloadStoragePathConflictException;
 use App\Service\Qbittorrent\QbittorrentClient;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Log\LoggerInterface;
@@ -222,6 +223,21 @@ final class DownloadCompletionPoller
                 'infoHash' => $infoHash,
                 'contentPath' => $contentPath,
                 'exception' => $exception->getMessage(),
+            ]);
+
+            return;
+        } catch (DownloadStoragePathConflictException $exception) {
+            // Unlike the jail failure, this never resolves itself: the torrent's content_path is
+            // fixed and the occupant keeps the pair, so reverting to Pending would retry (and log)
+            // on every poll forever. link() threw before touching the entity or flushing, so undo
+            // the in-memory Completed and persist a terminal Failed instead.
+            $download->revertToPending();
+            $download->markFailed();
+            $this->entityManager->flush();
+            $this->logger->warning('Failing download completion: the content path is already linked to another anime. The info hash stays locked to this anime and cannot be re-enqueued for another one; release it with "app:downloads:unlink" first.', [
+                'infoHash' => $infoHash,
+                'contentPath' => $contentPath,
+                'occupyingAnimeId' => $exception->occupyingAnimeId,
             ]);
 
             return;

@@ -34,7 +34,7 @@ use App\Service\I18nCoverage\I18nCoverageIssueExecutor;
  * side effects {@see \App\Service\I18nCoverage\I18nCoverageSync} triggered — and, just as
  * importantly, which it did not (a dry run must leave every one of these lists empty).
  */
-final class FakeI18nCoverageIssueExecutor implements I18nCoverageIssueExecutor
+class FakeI18nCoverageIssueExecutor implements I18nCoverageIssueExecutor
 {
     /** @var list<array{title: string, body: string, labels: list<string>}> */
     public array $createdIssues = [];

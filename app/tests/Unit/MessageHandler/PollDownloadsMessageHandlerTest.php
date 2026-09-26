@@ -35,6 +35,7 @@ use App\Entity\Enum\WatchStatus;
 use App\Entity\TvAnime;
 use App\Message\PollDownloadsMessage;
 use App\MessageHandler\PollDownloadsMessageHandler;
+use App\Repository\AnimeRepository;
 use App\Repository\DownloadRepository;
 use App\Repository\StorageRepository;
 use App\Service\AppConfigStore;
@@ -137,7 +138,7 @@ final class PollDownloadsMessageHandlerTest extends TestCase
         ));
 
         $jail = new DownloadFolderJail(new AppSettingsProvider(new AppConfigStore($this->configPath)));
-        $linker = new AnimeDownloadLinker(new StorageRepository($this->entityManager), $this->entityManager, $jail);
+        $linker = new AnimeDownloadLinker(new StorageRepository($this->entityManager), new AnimeRepository($this->entityManager), $this->entityManager, $jail);
 
         $poller = new DownloadCompletionPoller(
             new QbittorrentClient($httpClient, self::BASE_URL),
