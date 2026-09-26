@@ -59,7 +59,7 @@ final class FilenameCleanerTest extends TestCase
                 "Rybka Pon'o na Utjose",
             ],
             'underscores and double-underscore separators' => [
-                'Howls Moving Castle_HDRip_sub__[scarabey.org].avi',
+                'Howls Moving Castle_HDRip_sub__[example.org].avi',
                 'Howls Moving Castle',
             ],
             'releaser tag, dual audio and checksum brackets' => [

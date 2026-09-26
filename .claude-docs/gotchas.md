@@ -136,7 +136,7 @@ PHPUnit не может создать test double (`createStub`/`createMock`) �
 
 ## `matchingStrategy` — параметр поискового запроса, а не настройка индекса Meilisearch
 
-`PATCH /indexes/{uid}/settings` (и, соответственно, `Indexes::updateSettings()` в `meilisearch/meilisearch-php`) **отклоняет** ключ `matchingStrategy` с `400 Unknown field` — проверено эмпирически на реальном бинарнике 1.13.0 (issue #196). Это не персистентная настройка индекса, а параметр конкретного вызова `POST /indexes/{uid}/search` (тело запроса, наравне с `q`/`filter`). `App\Service\Search\AnimeSearchIndexer::configureIndex()` его сознательно не устанавливает — вместо этого `matchingStrategy: "frequency"` должен передавать любой код, который реально шлёт поисковый запрос (обоснование выбора `frequency` вместо дефолтного `last` — `context/tech_decisions.md` в `anime-db-workspace`, issue #196: дефолт `last` даёт 0 результатов на фразах с предлогами вроде «о тетради смерти»).
+`PATCH /indexes/{uid}/settings` (и, соответственно, `Indexes::updateSettings()` в `meilisearch/meilisearch-php`) **отклоняет** ключ `matchingStrategy` с `400 Unknown field` — проверено эмпирически на реальном бинарнике 1.13.0 (issue #196). Это не персистентная настройка индекса, а параметр конкретного вызова `POST /indexes/{uid}/search` (тело запроса, наравне с `q`/`filter`). `App\Service\Search\AnimeSearchIndexer::configureIndex()` его сознательно не устанавливает — вместо этого `matchingStrategy: "frequency"` должен передавать любой код, который реально шлёт поисковый запрос (обоснование выбора `frequency` вместо дефолтного `last` — issue #196: дефолт `last` даёт 0 результатов на фразах с предлогами вроде «о тетради смерти»).
 
 ## Свежий чекаут — `vendor/` не установлен
 

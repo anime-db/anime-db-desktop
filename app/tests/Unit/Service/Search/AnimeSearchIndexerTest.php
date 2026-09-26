@@ -149,7 +149,7 @@ final class AnimeSearchIndexerTest extends TestCase
         $this->assertSame([$anime->id], array_column($byTitle->getHits(), 'id'));
 
         // "имени" is not reachable from "имя" through typo-tolerance alone (verified
-        // empirically — see context/tech_decisions.md); only the synonym dictionary bridges it.
+        // empirically, issue #196); only the synonym dictionary bridges it.
         $byInflectedForm = $index->search('имени', ['matchingStrategy' => 'frequency']);
         $this->assertSame([$anime->id], array_column($byInflectedForm->getHits(), 'id'));
 

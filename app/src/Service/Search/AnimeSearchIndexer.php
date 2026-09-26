@@ -45,7 +45,7 @@ use Meilisearch\Client;
  * persisted index setting — PATCH /indexes/{uid}/settings rejects it outright ("Unknown
  * field `matchingStrategy`"), verified empirically against meilisearch 1.13.0. Whatever
  * component issues the actual search query is responsible for passing
- * `matchingStrategy: frequency` in the search params (see context/tech_decisions.md).
+ * `matchingStrategy: frequency` in the search params (issue #196).
  */
 final class AnimeSearchIndexer
 {

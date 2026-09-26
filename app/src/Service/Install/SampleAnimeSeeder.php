@@ -58,6 +58,10 @@ class SampleAnimeSeeder
     private const LABEL_NAME = 'Sample';
 
     /**
+     * Titles, studios, dates and source links are facts; the `descriptions` synopses are
+     * original texts written for this project, not quotes from MAL, Shikimori or Wikipedia —
+     * keep it that way when editing them.
+     *
      * @var list<array{
      *     title: string,
      *     type: AnimeType,

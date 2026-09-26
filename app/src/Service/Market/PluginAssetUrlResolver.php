@@ -32,8 +32,8 @@ use App\Entity\ValueObject\PluginId;
 /**
  * Derives an asset's download URL from one of the registry's `asset_mirrors` templates by
  * substituting its `<id>`/`<version>`/`<file>` macros. The registry never stores asset URLs
- * directly (only the mirror templates and each version's `sha256`) — see
- * `plugins_marketplace.md` §2 in the workspace notes — so every caller derives the URL itself.
+ * directly (only the mirror templates and each version's `sha256`) — so every
+ * caller derives the URL itself.
  */
 final class PluginAssetUrlResolver
 {

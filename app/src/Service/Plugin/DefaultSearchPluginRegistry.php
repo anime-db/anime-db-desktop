@@ -36,7 +36,7 @@ use Symfony\Component\DependencyInjection\Attribute\AutowireIterator;
  * Tracks which installed {@see SearchByPluginInterface} plugin is the app's default search
  * plugin, cascading automatically once the configured one is no longer available: uninstalled,
  * disabled, or its filler feature turned off (issue #293 item 5, carried over from v1's
- * install-wizard "default search plugin" setting, `context/todo.md` in the workspace).
+ * install-wizard "default search plugin" setting).
  *
  * There is no explicit "plugin removed" event to hook in this app yet (plugin removal itself is
  * a separate, not-yet-built feature, issue #225) — the cascade instead runs lazily on every

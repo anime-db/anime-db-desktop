@@ -59,7 +59,7 @@ anime-db-desktop/
 └── package.json                    # корневой, electron-builder
 ```
 
-**Граница `native/` ↔ `app/`**: `native/` не знает про бизнес-логику. Подробно: [`notes/desktop_native_layer.md`](../../notes/desktop_native_layer.md) в воркспейсе.
+**Граница `native/` ↔ `app/`**: `native/` не знает про бизнес-логику.
 
 **Сборка**: только x64 (FrankenPHP не имеет x32-сборки для Windows).
 
@@ -110,5 +110,5 @@ npm run shots     # живой прогон приложения под Xvfb с�
 ## Workflow
 
 - Ветка по умолчанию: `master`
-- Трекер задач: workspace [`/var/www/anime-db-workspace`](https://github.com/openronin/anime-db-workspace) — `tasks/` и `roadmap/`
+- Трекер задач: GitHub Issues этого репозитория
 - Автоматическое ИИ-ревью каждого PR — `.github/workflows/claude-review.yml` (auth через секрет `CLAUDE_CODE_OAUTH_TOKEN` из подписки Max). Детали и настройка — [.claude-docs/decisions.md](.claude-docs/decisions.md)

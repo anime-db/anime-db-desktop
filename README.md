@@ -159,4 +159,6 @@ FrankenPHP не даёт x32-сборку под Windows, а целевая ау
 
 ## Лицензия
 
-GPL-3.0-or-later. См. [LICENSE](LICENSE).
+GPL-3.0-or-later. См. [LICENSE](LICENSE). Лицензия относится к исходникам этого репозитория;
+сторонние бинарники, которые скачивает `scripts/download-bins.js`, распространяются под своими
+лицензиями — см. [resources/third-party-licenses/README.md](resources/third-party-licenses/README.md).
