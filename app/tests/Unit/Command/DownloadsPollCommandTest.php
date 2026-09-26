@@ -30,6 +30,7 @@ namespace App\Tests\Unit\Command;
 use App\Command\DownloadsPollCommand;
 use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
+use App\Repository\AnimeRepository;
 use App\Repository\DownloadRepository;
 use App\Repository\StorageRepository;
 use App\Service\AppConfigStore;
@@ -81,7 +82,7 @@ final class DownloadsPollCommandTest extends TestCase
             $poller = new DownloadCompletionPoller(
                 new QbittorrentClient($httpClient, 'http://127.0.0.1:18080'),
                 new DownloadRepository($entityManager),
-                new AnimeDownloadLinker(new StorageRepository($entityManager), $entityManager, $jail),
+                new AnimeDownloadLinker(new StorageRepository($entityManager), new AnimeRepository($entityManager), $entityManager, $jail),
                 new EventDispatcher(),
                 $entityManager,
                 new FreeSpaceChecker($jail, new NativeFreeSpaceProvider()),
