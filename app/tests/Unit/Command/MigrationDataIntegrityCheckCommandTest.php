@@ -37,12 +37,12 @@ use Symfony\Component\Console\Tester\CommandTester;
  * hand-crafted migration tests (Version20260801000003Test, Version20260923000000Test) cannot
  * cover on their own, since each of them only exercises a single migration's up() against a
  * schema it builds by hand, never the accumulated effect of the full chain on one populated
- * database. Regression coverage for the two known failure modes this command is meant to catch
- * (removing "PRAGMA foreign_keys = OFF" from Version20260801000003; dropping `id` from the
- * `INSERT ... SELECT` in Version20260923000000) was verified manually while implementing this
- * command by breaking each migration in turn, confirming this check fails with a message naming
- * the lost/desynced rows, and restoring the migration — encoding that as a permanent automated
- * test would mean shipping a real migration file in a temporarily broken state.
+ * database. Only the happy path is asserted here — a green run over the current, correct
+ * migration chain. Regression coverage for what happens when a check actually fails (a lost row,
+ * a renumbered id, a desynced `anime_fts` row, a missing cascade) lives in
+ * {@see \App\Tests\Unit\Service\Migration\MigrationDataIntegrityCheckerTest}, which corrupts a
+ * fully migrated database by hand and asserts on the resulting violation messages, rather than
+ * shipping a real migration file in a temporarily broken state.
  */
 final class MigrationDataIntegrityCheckCommandTest extends TestCase
 {
