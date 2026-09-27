@@ -27,6 +27,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Migrations;
 
+use App\Tests\Support\RunsMigrations;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DriverManager;
 use PHPUnit\Framework\TestCase;
@@ -37,59 +38,23 @@ use PHPUnit\Framework\TestCase;
  * as CatalogSchemaTest: this is the only reliable way to prove trigger-based sync and MATCH
  * queries actually work, since Doctrine's SchemaTool (used by AnimeRepositoryTest) has no
  * concept of virtual tables or triggers.
+ *
+ * The schema is built by running every real migration (see RunsMigrations, issue #762) rather
+ * than hand-copied DDL, so `anime` and `anime_name` here always match what the app actually
+ * creates instead of a simplified stand-in that can silently drift from it.
  */
 final class AnimeFtsSchemaTest extends TestCase
 {
+    use RunsMigrations;
+
     private Connection $connection;
 
     protected function setUp(): void
     {
         $this->connection = DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]);
+        $this->connection->executeStatement('PRAGMA foreign_keys = ON');
 
-        $this->connection->executeStatement('CREATE TABLE anime (
-            id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-            title VARCHAR(256) NOT NULL
-        )');
-
-        $this->connection->executeStatement('CREATE TABLE anime_name (
-            id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-            anime_id INTEGER NOT NULL,
-            name VARCHAR(256) NOT NULL
-        )');
-
-        $this->connection->executeStatement('CREATE VIRTUAL TABLE anime_fts USING fts5(name, anime_id UNINDEXED)');
-
-        $this->connection->executeStatement('
-            CREATE TRIGGER anime_fts_ai_anime AFTER INSERT ON anime BEGIN
-                INSERT INTO anime_fts(rowid, anime_id, name) VALUES (new.id, new.id, new.title);
-            END
-        ');
-        $this->connection->executeStatement('
-            CREATE TRIGGER anime_fts_au_anime AFTER UPDATE OF title ON anime BEGIN
-                UPDATE anime_fts SET name = new.title WHERE rowid = new.id;
-            END
-        ');
-        $this->connection->executeStatement('
-            CREATE TRIGGER anime_fts_ad_anime AFTER DELETE ON anime BEGIN
-                DELETE FROM anime_fts WHERE rowid = old.id;
-            END
-        ');
-
-        $this->connection->executeStatement('
-            CREATE TRIGGER anime_fts_ai_anime_name AFTER INSERT ON anime_name BEGIN
-                INSERT INTO anime_fts(rowid, anime_id, name) VALUES (-new.id, new.anime_id, new.name);
-            END
-        ');
-        $this->connection->executeStatement('
-            CREATE TRIGGER anime_fts_au_anime_name AFTER UPDATE OF name ON anime_name BEGIN
-                UPDATE anime_fts SET name = new.name WHERE rowid = -new.id;
-            END
-        ');
-        $this->connection->executeStatement('
-            CREATE TRIGGER anime_fts_ad_anime_name AFTER DELETE ON anime_name BEGIN
-                DELETE FROM anime_fts WHERE rowid = -old.id;
-            END
-        ');
+        $this->buildSchemaByRunningMigrations($this->connection);
     }
 
     /** @return list<int> */
@@ -103,7 +68,7 @@ final class AnimeFtsSchemaTest extends TestCase
 
     public function testInsertingAnimeAddsItsTitleToFts(): void
     {
-        $this->connection->executeStatement("INSERT INTO anime (title) VALUES ('Trigun')");
+        $this->connection->executeStatement("INSERT INTO anime (title, watch_status, type, date_add, date_update) VALUES ('Trigun', 'plan', 'tv', 0, 0)");
         $animeId = (int) $this->connection->lastInsertId();
 
         $this->assertSame([$animeId], $this->matchAnimeIds('"trigun"*'));
@@ -111,7 +76,7 @@ final class AnimeFtsSchemaTest extends TestCase
 
     public function testUpdatingAnimeTitleUpdatesFts(): void
     {
-        $this->connection->executeStatement("INSERT INTO anime (title) VALUES ('Trigun')");
+        $this->connection->executeStatement("INSERT INTO anime (title, watch_status, type, date_add, date_update) VALUES ('Trigun', 'plan', 'tv', 0, 0)");
         $animeId = (int) $this->connection->lastInsertId();
 
         $this->connection->executeStatement("UPDATE anime SET title = 'Cowboy Bebop' WHERE id = {$animeId}");
@@ -122,7 +87,7 @@ final class AnimeFtsSchemaTest extends TestCase
 
     public function testDeletingAnimeRemovesItFromFts(): void
     {
-        $this->connection->executeStatement("INSERT INTO anime (title) VALUES ('Trigun')");
+        $this->connection->executeStatement("INSERT INTO anime (title, watch_status, type, date_add, date_update) VALUES ('Trigun', 'plan', 'tv', 0, 0)");
         $animeId = (int) $this->connection->lastInsertId();
 
         $this->connection->executeStatement("DELETE FROM anime WHERE id = {$animeId}");
@@ -133,11 +98,11 @@ final class AnimeFtsSchemaTest extends TestCase
 
     public function testInsertingAlternativeNameAddsItToFtsWithoutReplacingTheTitleRow(): void
     {
-        $this->connection->executeStatement("INSERT INTO anime (title) VALUES ('Trigun')");
+        $this->connection->executeStatement("INSERT INTO anime (title, watch_status, type, date_add, date_update) VALUES ('Trigun', 'plan', 'tv', 0, 0)");
         $animeId = (int) $this->connection->lastInsertId();
 
         $this->connection->executeStatement(
-            "INSERT INTO anime_name (anime_id, name) VALUES ({$animeId}, 'Toraiga')",
+            "INSERT INTO anime_name (anime_id, name, role) VALUES ({$animeId}, 'Toraiga', 'synonym')",
         );
 
         $this->assertSame([$animeId], $this->matchAnimeIds('"trigun"*'));
@@ -149,11 +114,11 @@ final class AnimeFtsSchemaTest extends TestCase
 
     public function testDeletingAlternativeNameRemovesOnlyThatFtsRow(): void
     {
-        $this->connection->executeStatement("INSERT INTO anime (title) VALUES ('Trigun')");
+        $this->connection->executeStatement("INSERT INTO anime (title, watch_status, type, date_add, date_update) VALUES ('Trigun', 'plan', 'tv', 0, 0)");
         $animeId = (int) $this->connection->lastInsertId();
 
         $this->connection->executeStatement(
-            "INSERT INTO anime_name (anime_id, name) VALUES ({$animeId}, 'Toraiga')",
+            "INSERT INTO anime_name (anime_id, name, role) VALUES ({$animeId}, 'Toraiga', 'synonym')",
         );
         $nameId = (int) $this->connection->lastInsertId();
 
