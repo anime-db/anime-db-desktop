@@ -170,6 +170,16 @@ jobs:
         run: php bin/console app:migrations:check-data-integrity
         working-directory: app
 
+      # Третья ось: два шага выше проверяют схему саму по себе, о маппинге сущностей они
+      # не знают и остаются зелёными, если удалить из сущности объявление индекса. Здесь
+      # сравнивается маппинг с тем, что построили миграции. `doctrine:schema:validate`
+      # для этого не годится — он неисправимо красный из-за дефекта интроспекции SQLite
+      # в DBAL, разбор в докблоке App\Service\Schema\MappingSchemaComparator.
+      - name: Check the entity mapping against the schema built by migrations
+        if: ${{ !cancelled() }}
+        run: php bin/console app:schema:mapping-check
+        working-directory: app
+
   # Один job на весь JS-тулинг: npm ci один раз, затем lint + jest (та же логика
   # экономии, что и у PHP-джобы выше).
   js:
