@@ -1,0 +1,110 @@
+name: Plugin contracts check
+
+# Обвязка над `app:plugin-contracts:check` (issue #786): до мёржа бампа
+# `anime-db/plugin-contracts` проверяет, что у каждого плагина из подписанного реестра есть
+# опубликованная версия, принимающая новую версию контрактов. Если нет — бамп убьёт плагин у
+# пользователя (так уже было с `animedb-shikimori`, `anime-db/anime-db-plugins#152`), и
+# правильный порядок выпуска такой: контракты → плагины с новым пином → бамп здесь.
+#
+# Скрипт пришёл отдельной задачей; здесь только монтаж — `.github/workflows/` защищённый
+# путь, автоматический исполнитель туда не пишет.
+#
+# Красный прогон — сигнал человеку, который мёржит, а не замок: репозиторий приватный на
+# бесплатном плане, обязательные проверки (branch protection / rulesets) недоступны.
+
+on:
+  # Отдельный воркфлоу, а не джоба в ci.yml: `paths` задаётся только на уровне воркфлоу, а
+  # джоба в ci.yml стартовала бы (и тарифицировалась) на каждом PR. И НЕ на каждом PR по
+  # существу: проверка смотрит на внешнее состояние (реестр), и появление в реестре плагина со
+  # старым пином роняло бы несвязанные PR.
+  pull_request:
+    paths:
+      - app/composer.lock
+      # Правка самого воркфлоу тоже запускает его: иначе сломанный монтаж всплыл бы только на
+      # первом настоящем бампе контрактов — ровно тогда, когда проверка нужнее всего. На таком
+      # PR шаг сравнения даёт «не менялась», и прогон дёшево подтверждает, что воркфлоу
+      # разбирается и детект версии работает.
+      - .github/workflows/plugin-contracts-check.yml
+
+  # Ручной прогон — проверить текущий master (или ветку) против реестра прямо сейчас.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Plugins accept the app's plugin-contracts version
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      # `paths` срабатывает на ЛЮБУЮ правку lock-файла (бамп любой зависимости). Проверять
+      # есть смысл только когда сменилась разрешённая версия контрактов — остальное
+      # отсекается здесь, до установки зависимостей, чтобы не жечь минуты.
+      #
+      # SHA базы прокидывается через `env`, а не подставляется в тело `run:` — тот же приём,
+      # что в `i18n-coverage.yml`.
+      - name: Detect plugin-contracts version change
+        id: bump
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          version_of() {
+            jq -r '.packages[] | select(.name == "anime-db/plugin-contracts") | .version'
+          }
+          head_version="$(version_of < app/composer.lock)"
+          echo "Версия контрактов в этой ветке: ${head_version}"
+
+          if [ "$EVENT_NAME" != "pull_request" ]; then
+            echo "Ручной прогон — проверяем без сравнения с базой."
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          base_version="$(git show "${BASE_SHA}:app/composer.lock" | version_of)"
+          echo "Версия контрактов в базе: ${base_version}"
+
+          if [ "$head_version" = "$base_version" ]; then
+            echo "Версия контрактов не менялась — проверять нечего."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup PHP
+        if: steps.bump.outputs.changed == 'true'
+        uses: shivammathur/setup-php@v2
+        with:
+          # Совпадает с PHP, который несёт запиненный FrankenPHP — обоснование в ci.yml
+          # (issue #536). Менять во всех workflow с этим пином разом — список в ci.yml.
+          php-version: '8.5'
+          tools: composer
+          coverage: none
+          extensions: apcu, gd, intl
+          ini-values: apc.enable_cli=1
+
+      - name: Configure Composer auth for private repos
+        if: steps.bump.outputs.changed == 'true'
+        run: composer config --global github-oauth.github.com ${{ secrets.COMPOSER_GITHUB_TOKEN }}
+
+      - name: Install dependencies
+        if: steps.bump.outputs.changed == 'true'
+        uses: ramsey/composer-install@v3
+        with:
+          working-directory: app
+
+      # Коды выхода команды: 0 — отставших нет; 1 — есть отставшие; 2 — проверить не удалось
+      # (реестр не скачался, подпись не сошлась, версия контрактов нестабильная, данные реестра
+      # не читаются). Любой ненулевой — красный прогон: молчание здесь худший исход.
+      - name: Check plugins against the new plugin-contracts version
+        if: steps.bump.outputs.changed == 'true'
+        run: php app/bin/console app:plugin-contracts:check

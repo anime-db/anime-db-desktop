@@ -81,7 +81,7 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           # Совпадает с PHP, который несёт запиненный FrankenPHP — обоснование в ci.yml
-          # (issue #536). Менять во всех четырёх workflow разом.
+          # (issue #536). Менять во всех workflow с этим пином разом — список в ci.yml.
           php-version: '8.5'
           tools: composer
           coverage: none

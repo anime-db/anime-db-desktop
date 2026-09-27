@@ -1,0 +1,162 @@
+name: Plugin contracts drift
+
+# Обвязка над `app:plugin-contracts-drift:sync` (issue #791): после выпуска релиза приложения
+# сверяет каждый плагин из подписанного реестра с версией `anime-db/plugin-contracts`, которую
+# везёт релиз, и заводит, обновляет или закрывает задачу в публичном `anime-db-plugins`.
+# Страховка к `plugin-contracts-check.yml`: тот ловит отставание на PR с бампом, но не может
+# его запретить — этот сообщает автору плагина, если бамп всё же уехал в релиз.
+#
+# Скрипт пришёл отдельной задачей; здесь только монтаж — `.github/workflows/` защищённый
+# путь, автоматический исполнитель туда не пишет. Метка `plugin-contracts-drift` в
+# `anime-db-plugins` заведена вручную; без неё боевой прогон падает до любых записей.
+#
+# Триггер и фильтр — те же, что в `i18n-coverage.yml`, со всеми разобранными там граблями;
+# здесь они не повторяются, а только отмечены.
+#
+# РЕГЛАМЕНТ: упавшую сборку тега перезапускать через «Re-run» в `build.yml`, а НЕ через
+# «Run workflow». Сборка, запущенная вручную с тега, тоже выпускает релиз, но её событие —
+# `workflow_dispatch`, и фильтр ниже её пропустит (а с ней и `i18n-coverage.yml`). Если так
+# всё же вышло — запустить этот воркфлоу вручную с `ref` = тег релиза и `dry-run` выключенным.
+
+on:
+  # НЕ `release: published` и НЕ `push: tags` — причины в `i18n-coverage.yml`.
+  workflow_run:
+    workflows: ["Build Windows installer"]
+    types: [completed]
+
+  # Ручной прогон: сухая проверка, первый боевой запуск, восстановление после сборки,
+  # запущенной не пушем тега (см. регламент выше).
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Тег релиза vX.Y.Z, который сверять. Обязателен для боевого прогона; пусто допустимо только в сухом (сверяется голова master)'
+        type: string
+        default: ''
+      dry-run:
+        description: 'Только посчитать и напечатать решение, ничего не создавая'
+        type: boolean
+        default: true
+      plugin:
+        description: 'Один плагин вместо всех из реестра (необязательно)'
+        type: string
+        default: ''
+      assume-contracts-version:
+        description: 'Подменить версию контрактов приложения — проверить путь записи вручную (необязательно)'
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+# Прогоны сериализуем: два параллельных могли бы одновременно решить, что открытой задачи нет,
+# и завести по одной каждый.
+concurrency:
+  group: plugin-contracts-drift
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Sync plugin-contracts drift issues
+    # Только после сборки, которая действительно выпустила релиз: успешная, по пушу, с тега
+    # `v*`. Разбор условия — в `i18n-coverage.yml`.
+    if: >-
+      ${{ github.event_name == 'workflow_dispatch' ||
+          (github.event.workflow_run.conclusion == 'success' &&
+           github.event.workflow_run.event == 'push' &&
+           startsWith(github.event.workflow_run.head_branch, 'v')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # Чекаутим ровно выпущенный коммит: версия контрактов (из `app/composer.lock`) и версия
+      # приложения (из `package.json`) в теле задачи берутся из этого дерева. На `workflow_run`
+      # это `head_sha` сборки; на ручном прогоне — вход `ref` (тег). Пустая строка — ветка по
+      # умолчанию: годится для сухой проверки, но это не выпущенное состояние.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || inputs.ref || '' }}
+
+      # Боевой ручной прогон пишет в ПУБЛИЧНЫЙ репозиторий, поэтому обязан сверять выпущенное
+      # состояние: `ref` — существующий тег релиза `vX.Y.Z`. С пустым `ref` чекаутится голова
+      # master, и если туда уже смёржен бамп контрактов, не ушедший в релиз, авторы плагинов
+      # получили бы задачи «отстаёт от приложения», которого у пользователей нет. Имя ветки,
+      # похожее на тег, отсекает проверка тега в origin. Сухой прогон и `workflow_run` не
+      # ограничиваются: первый ничего не пишет, второй и так идёт от тега.
+      - name: Guard manual live run
+        if: github.event_name == 'workflow_dispatch' && inputs.dry-run != true
+        env:
+          REF: ${{ inputs.ref }}
+        run: |
+          set -euo pipefail
+          if ! [[ "$REF" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Боевой ручной прогон требует ref = тег релиза вида vX.Y.Z (получено: '${REF}')."
+            exit 2
+          fi
+          if ! git ls-remote --exit-code --tags origin "refs/tags/${REF}" > /dev/null; then
+            echo "::error::Тега '${REF}' в репозитории нет — боевой прогон возможен только по выпущенному тегу."
+            exit 2
+          fi
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          # Совпадает с PHP, который несёт запиненный FrankenPHP — обоснование в ci.yml
+          # (issue #536). Менять во всех workflow с этим пином разом — список в ci.yml.
+          php-version: '8.5'
+          tools: composer
+          coverage: none
+          extensions: apcu, gd, intl
+          ini-values: apc.enable_cli=1
+
+      - name: Configure Composer auth for private repos
+        run: composer config --global github-oauth.github.com ${{ secrets.COMPOSER_GITHUB_TOKEN }}
+
+      - name: Install dependencies
+        uses: ramsey/composer-install@v3
+        with:
+          working-directory: app
+
+      # Токен приложения `animedbintegration`: около часа, ровно `Issues: read/write`, ровно в
+      # `anime-db-plugins`. Чтение реестра и CODEOWNERS идёт без него: репозиторий публичный.
+      - name: Mint installation token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.BOT_APP_ID }}
+          private-key: ${{ secrets.BOT_PRIVATE_KEY }}
+          owner: anime-db
+          repositories: anime-db-plugins
+
+      # В отличие от `i18n-coverage.yml`, список плагинов здесь НЕ собирается `curl`-ом с raw
+      # master: команда сама берёт все id из подписанного реестра (включая плагины, которые
+      # приложение не смогло разобрать) и сама не даёт одному плагину заблокировать остальные.
+      # Коды выхода: 0 — всё сверено; 1 — хотя бы один плагин не удалось проверить (его задача
+      # не тронута, остальные обработаны); 2 — не удалось вообще (реестр, подпись, версия,
+      # метка) — ни одна задача не тронута.
+      #
+      # Входы прокидываются через `env`, а не подставляются в тело `run:` — иначе свободная
+      # строка из формы ручного запуска выполнялась бы как код на раннере с токеном записи.
+      # На `workflow_run` сухой режим выключен всегда; на ручном — включён по умолчанию.
+      - name: Sync issues
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          DRY_RUN: ${{ inputs.dry-run }}
+          PLUGIN: ${{ inputs.plugin }}
+          ASSUME_CONTRACTS_VERSION: ${{ inputs.assume-contracts-version }}
+        run: |
+          set -euo pipefail
+          args=()
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            if [ "$DRY_RUN" = "true" ]; then
+              args+=(--dry-run)
+              echo "::notice::Сухой прогон — ничего не создаётся и не закрывается."
+            fi
+            if [ -n "$ASSUME_CONTRACTS_VERSION" ]; then
+              args+=("--assume-contracts-version=${ASSUME_CONTRACTS_VERSION}")
+              echo "::warning::Версия контрактов подменена: ${ASSUME_CONTRACTS_VERSION}."
+            fi
+            if [ -n "$PLUGIN" ]; then
+              args+=("$PLUGIN")
+            fi
+          fi
+          php app/bin/console app:plugin-contracts-drift:sync "${args[@]}"

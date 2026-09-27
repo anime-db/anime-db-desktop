@@ -70,7 +70,8 @@ jobs:
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
-          # Тот же пин, что в ci.yml/build.yml/runtime-parity.yml/i18n-coverage.yml, и менять его
+          # Тот же пин, что в ci.yml/build.yml/runtime-parity.yml/i18n-coverage.yml/
+          # plugin-contracts-check.yml/plugin-contracts-drift.yml, и менять его
           # надо вместе с ними: версия обязана совпадать с той, что несёт запиненный в
           # scripts/versions.json FrankenPHP (issue #536).
           php-version: '8.5'
