@@ -104,8 +104,40 @@ test('clicking the close button removes only that notification', () => {
     expect(container.querySelector('.app-notification__title').textContent).toBe('Second');
 });
 
-test('outside Electron, mounting is a no-op and never calls onNotification', () => {
+// Nothing here can deliver a notification, so "children stays empty" alone would pass under any
+// implementation of the guard. What actually distinguishes a correct guard from a missing one is
+// that mounting must not throw: controller.js's mountNode() catches mount errors, so an assert
+// on console.error is what catches a guard that was dropped or narrowed.
+test('outside Electron, mounting is a no-op and does not throw', () => {
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
+
     loadAppNotificationsModule();
 
     expect(document.getElementById('app-notifications').children).toHaveLength(0);
+    expect(consoleError).not.toHaveBeenCalled();
+
+    consoleError.mockRestore();
+});
+
+test('when window.animeDb has no onNotification, mounting is a no-op and does not throw', () => {
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
+    window.animeDb = {};
+
+    loadAppNotificationsModule();
+
+    expect(document.getElementById('app-notifications').children).toHaveLength(0);
+    expect(consoleError).not.toHaveBeenCalled();
+
+    consoleError.mockRestore();
+});
+
+test('without the notification template, mounting is a no-op and never calls onNotification', () => {
+    document.getElementById('app-notification-template').remove();
+    const onNotification = jest.fn();
+    window.animeDb = { onNotification };
+
+    loadAppNotificationsModule();
+
+    expect(document.getElementById('app-notifications').children).toHaveLength(0);
+    expect(onNotification).not.toHaveBeenCalled();
 });

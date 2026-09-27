@@ -154,11 +154,17 @@ test('typing shows autocomplete suggestions from the fetched catalogue, excludin
     loadAnimeDetailModule();
 
     openEditor();
+    // Typed in a different case than the catalogue entry, to also cover the case-insensitive
+    // comparison in the alreadyChipped filter.
+    typeInput('sci-fi');
+    await flushMicrotasks();
+    pressKey('Enter');
+
     typeInput('sci');
     await flushMicrotasks();
 
     const suggestions = Array.from(document.querySelectorAll('[data-labels-suggestions] li button')).map((el) => el.textContent);
-    expect(suggestions).toEqual(['Sci-Fi', 'Sci-Horror']);
+    expect(suggestions).toEqual(['Sci-Horror']);
     expect(document.querySelector('[data-labels-suggestions]').hidden).toBe(false);
 });
 
@@ -206,13 +212,29 @@ test('cancelling the editor discards unsaved chip changes', () => {
     document.querySelector('[data-labels-cancel]').click();
 
     expect(document.querySelector('[data-labels-editor]').hidden).toBe(true);
-    const viewTexts = Array.from(document.querySelectorAll('[data-labels-view] li')).map((el) => el.textContent);
-    expect(viewTexts).toEqual(['Sci-Fi']);
+    expect(document.querySelector('[data-labels-view]').hidden).toBe(false);
+
+    // Reopen the editor to prove the chips were actually reset, not just that the view (which
+    // cancel never touches) still shows the pre-edit labels.
+    openEditor();
+    const chipTexts = Array.from(document.querySelectorAll('[data-labels-chips] li span')).map((el) => el.textContent);
+    expect(chipTexts).toEqual(['Sci-Fi']);
 });
 
 test('saving posts the chip list, including a typed name still sitting in the input, to the update URL', async () => {
     setUpDom([{ id: 1, name: 'Sci-Fi' }]);
-    global.fetch = jest.fn(() => Promise.resolve(jsonResponse({ labels: [{ id: 1, name: 'Sci-Fi' }, { id: 2, name: 'Drama' }] })));
+    // The server response is deliberately different from the posted chips (an extra label the
+    // server tacked on), so that asserting on the rendered view actually proves it is built from
+    // the response, not just re-drawn from the local chip list.
+    global.fetch = jest.fn((url) => {
+        if (url === '/anime/1/labels') {
+            return Promise.resolve(jsonResponse({
+                labels: [{ id: 1, name: 'Sci-Fi' }, { id: 2, name: 'Drama' }, { id: 3, name: 'Extra Tag' }],
+            }));
+        }
+
+        return Promise.resolve(jsonResponse({ labels: [] }));
+    });
     loadAnimeDetailModule();
 
     openEditor();
@@ -224,6 +246,23 @@ test('saving posts the chip list, including a typed name still sitting in the in
         method: 'POST',
         body:   JSON.stringify({ token: 'csrf-token', names: ['Sci-Fi', 'Drama'] }),
     }));
-    const viewTexts = Array.from(document.querySelectorAll('[data-labels-view] li')).map((el) => el.textContent);
-    expect(viewTexts).toEqual(['Sci-Fi', 'Drama']);
+    const view = document.querySelector('[data-labels-view]');
+    const viewTexts = Array.from(view.querySelectorAll('li')).map((el) => el.textContent);
+    const viewHrefs = Array.from(view.querySelectorAll('a')).map((el) => el.getAttribute('href'));
+    expect(viewTexts).toEqual(['Sci-Fi', 'Drama', 'Extra Tag']);
+    expect(viewHrefs).toEqual(['/?labels=1', '/?labels=2', '/?labels=3']);
+});
+
+test('when saving fails, the editor stays open with the error message visible and submit re-enabled', async () => {
+    setUpDom([{ id: 1, name: 'Sci-Fi' }]);
+    global.fetch = jest.fn(() => Promise.resolve({ ok: false, status: 500, json: () => Promise.resolve({}) }));
+    loadAnimeDetailModule();
+
+    openEditor();
+    document.querySelector('[data-labels-save]').click();
+    await flushMicrotasks();
+
+    expect(document.querySelector('[data-labels-editor]').hidden).toBe(false);
+    expect(document.querySelector('[data-labels-error]').hidden).toBe(false);
+    expect(document.querySelector('[data-labels-save]').disabled).toBe(false);
 });

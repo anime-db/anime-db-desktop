@@ -89,8 +89,26 @@ afterEach(() => {
 });
 
 test('submit stays disabled on mount, before any file is picked', () => {
+    // The fixture markup already has the disabled attribute; flip it off first so the assertion
+    // below actually proves mountPluginInstall() enforces the gate, rather than passing on the
+    // fixture's own static state.
+    document.getElementById('plugin-install-submit-button').disabled = false;
+
     loadPluginInstallModule();
 
+    expect(document.getElementById('plugin-install-submit-button').disabled).toBe(true);
+});
+
+test('picking no file shows a client error instead of the warning', async () => {
+    loadPluginInstallModule();
+
+    selectFile(null);
+    await flushMicrotasks();
+
+    const clientError = document.getElementById('plugin-install-client-error');
+    expect(clientError.hidden).toBe(false);
+    expect(clientError.textContent).toBe('settings_plugins.install_error_no_file');
+    expect(document.getElementById('plugin-install-warning').hidden).toBe(true);
     expect(document.getElementById('plugin-install-submit-button').disabled).toBe(true);
 });
 
