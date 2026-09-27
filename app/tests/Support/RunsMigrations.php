@@ -52,24 +52,74 @@ use Psr\Log\NullLogger;
  */
 trait RunsMigrations
 {
-    private function buildSchemaByRunningMigrations(Connection $connection): void
+    /**
+     * @param string|null $throughVersion fully-qualified class name (e.g.
+     *                                    'DoctrineMigrations\Version20260801000002') of the last
+     *                                    migration to run; when given, the golden-snapshot
+     *                                    self-check is skipped (the schema is incomplete) and the
+     *                                    caller is expected to finish the chain later via
+     *                                    {@see finishSchemaByRunningMigrations()}
+     *
+     * @return list<string> absolute paths of the migration files still to run, in chain order;
+     *                      empty when $throughVersion is null, since the whole chain just ran
+     */
+    private function buildSchemaByRunningMigrations(Connection $connection, ?string $throughVersion = null): array
+    {
+        $files = $this->migrationFiles();
+
+        foreach ($files as $index => $file) {
+            $this->runMigrationFile($connection, $file);
+
+            if ($throughVersion !== null && 'DoctrineMigrations\\'.pathinfo($file, \PATHINFO_FILENAME) === $throughVersion) {
+                return \array_slice($files, $index + 1);
+            }
+        }
+
+        if ($throughVersion !== null) {
+            self::fail(\sprintf("Migration '%s' not found among app/migrations files", $throughVersion));
+        }
+
+        $this->assertSchemaMatchesGoldenSnapshot($connection);
+
+        return [];
+    }
+
+    /**
+     * Runs the remainder of the chain returned by a prior {@see buildSchemaByRunningMigrations()}
+     * call made with $throughVersion, then performs the golden-snapshot self-check that call
+     * skipped.
+     *
+     * @param list<string> $remainingMigrationFiles
+     */
+    private function finishSchemaByRunningMigrations(Connection $connection, array $remainingMigrationFiles): void
+    {
+        foreach ($remainingMigrationFiles as $file) {
+            $this->runMigrationFile($connection, $file);
+        }
+
+        $this->assertSchemaMatchesGoldenSnapshot($connection);
+    }
+
+    /** @return list<string> */
+    private function migrationFiles(): array
     {
         $files = glob(__DIR__.'/../../migrations/Version*.php');
         self::assertIsArray($files, 'glob() failed to read app/migrations');
         self::assertNotEmpty($files, 'No migration files found under app/migrations');
         sort($files, \SORT_STRING);
 
-        foreach ($files as $file) {
-            require_once $file;
+        return $files;
+    }
 
-            $class = 'DoctrineMigrations\\'.pathinfo($file, \PATHINFO_FILENAME);
-            $migration = new $class($connection, new NullLogger());
-            \assert($migration instanceof AbstractMigration, \sprintf('%s from %s is not a Doctrine migration', $class, $file));
+    private function runMigrationFile(Connection $connection, string $file): void
+    {
+        require_once $file;
 
-            $this->runMigrationUp($connection, $migration);
-        }
+        $class = 'DoctrineMigrations\\'.pathinfo($file, \PATHINFO_FILENAME);
+        $migration = new $class($connection, new NullLogger());
+        \assert($migration instanceof AbstractMigration, \sprintf('%s from %s is not a Doctrine migration', $class, $file));
 
-        $this->assertSchemaMatchesGoldenSnapshot($connection);
+        $this->runMigrationUp($connection, $migration);
     }
 
     private function assertSchemaMatchesGoldenSnapshot(Connection $connection): void
