@@ -27,8 +27,9 @@ declare(strict_types=1);
 
 namespace App\Command;
 
-use App\Service\Plugin\PhpCliCommand;
+use App\Service\Exception\MigrationsFailedException;
 use App\Service\Schema\MappingSchemaComparator;
+use App\Service\Schema\MigratedDatabase;
 use Doctrine\DBAL\Configuration as DbalConfiguration;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\ORM\EntityManager;
@@ -39,8 +40,6 @@ use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
-use Symfony\Component\Filesystem\Filesystem;
-use Symfony\Component\Process\Process;
 
 /**
  * Compares the entity mapping with the schema the migrations actually build, and fails on any real
@@ -81,34 +80,16 @@ final class SchemaMappingCheckCommand extends Command
     {
         $io = new SymfonyStyle($input, $output);
 
-        $filesystem = new Filesystem();
-        $workDir = sys_get_temp_dir().'/animedb_mapping_check_'.bin2hex(random_bytes(6));
-        $filesystem->mkdir($workDir);
-
         try {
-            $dbPath = $workDir.'/schema.db';
-            $migrate = new Process(
-                PhpCliCommand::forScript(\PHP_BINARY, $this->projectDir.'/bin/console', 'doctrine:migrations:migrate', '--no-interaction'),
-                $this->projectDir,
-                [
-                    'DATABASE_URL' => 'sqlite:///'.$dbPath,
-                    // The parent's Dotenv marks DATABASE_URL as "loaded from .env"; inherited by
-                    // the child, that marker lets the child's Dotenv overwrite our override.
-                    'SYMFONY_DOTENV_VARS' => false,
-                ],
+            $divergences = (new MigratedDatabase($this->projectDir))->build(
+                'animedb_mapping_check_',
+                fn (string $dbPath): array => $this->compare($dbPath),
             );
-            $migrate->setTimeout(300);
-            $migrate->run();
-            if (!$migrate->isSuccessful()) {
-                $io->error('Migrations failed:');
-                $io->writeln($migrate->getOutput().$migrate->getErrorOutput());
+        } catch (MigrationsFailedException $exception) {
+            $io->error('Migrations failed:');
+            $io->writeln($exception->getMessage());
 
-                return $migrate->getExitCode() ?: Command::FAILURE;
-            }
-
-            $divergences = $this->compare($dbPath);
-        } finally {
-            $filesystem->remove($workDir);
+            return $exception->migrationsExitCode;
         }
 
         if ($divergences !== []) {

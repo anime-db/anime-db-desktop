@@ -95,6 +95,35 @@ final class SchemaMappingCheckCommandTest extends KernelTestCase
     }
 
     /**
+     * Migrations that do not run through must surface their own exit code and output, without any
+     * comparison happening: a half-built schema would produce meaningless divergences.
+     */
+    public function testFailingMigrationsGiveNonZeroExitAndNoComparison(): void
+    {
+        self::bootKernel();
+        $entityManager = self::getContainer()->get(EntityManagerInterface::class);
+        self::assertInstanceOf(EntityManagerInterface::class, $entityManager);
+
+        $filesystem = new Filesystem();
+        $projectDir = sys_get_temp_dir().'/animedb_mapping_check_test_'.bin2hex(random_bytes(6));
+        $filesystem->mkdir($projectDir.'/bin');
+        file_put_contents($projectDir.'/bin/console', "<?php\nfwrite(STDERR, \"boom\\n\");\nexit(3);\n");
+
+        try {
+            $before = $this->tempDirs();
+            $tester = new CommandTester(new SchemaMappingCheckCommand($projectDir, $entityManager));
+            $tester->execute([]);
+
+            self::assertSame(3, $tester->getStatusCode(), 'the migrations exit code must be passed through');
+            self::assertStringContainsString('boom', $tester->getDisplay());
+            self::assertStringNotContainsString('missing from the mapping', $tester->getDisplay());
+            self::assertSame($before, $this->tempDirs(), 'the throwaway directory must be removed');
+        } finally {
+            $filesystem->remove($projectDir);
+        }
+    }
+
+    /**
      * @return list<string>
      */
     private function tempDirs(): array
