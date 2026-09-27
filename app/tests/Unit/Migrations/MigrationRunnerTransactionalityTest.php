@@ -33,10 +33,12 @@ use Doctrine\DBAL\DriverManager;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Proves RunsMigrations::runMigrationUp() honours isTransactional() (issue #803). Two migrations,
- * Version20260801000003 and Version20260812000000, run outside a transaction because "PRAGMA
- * foreign_keys" is a no-op inside one, and they toggle it OFF for the duration of an `anime` table
- * rebuild so the implicit DELETE performed by DROP TABLE does not cascade into child rows.
+ * Proves RunsMigrations::runMigrationUp() honours isTransactional() (issue #803). Version20260801000003
+ * runs outside a transaction because "PRAGMA foreign_keys" is a no-op inside one, and it toggles the
+ * pragma OFF for the duration of an `anime` table rebuild so the implicit DELETE performed by DROP
+ * TABLE does not cascade into child rows. Version20260812000000 does the same toggle around its own
+ * `anime` rebuild, but only in down(), which this runner never calls, so that migration stays out of
+ * scope here.
  *
  * CatalogSchemaTest and AnimeFtsSchemaTest replay the whole migration chain over an empty
  * database, so this branch is never observable there: with no child rows to begin with, a stray
