@@ -27,6 +27,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Support;
 
+use App\Service\Schema\SchemaSnapshot;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Schema\Schema;
 use Doctrine\Migrations\AbstractMigration;
@@ -43,6 +44,11 @@ use Psr\Log\NullLogger;
  * observable behaviour: it honours isTransactional() (several migrations toggle
  * "PRAGMA foreign_keys", which SQLite silently ignores inside a transaction) and calls
  * preUp()/postUp() around the planned SQL, not just up()'s addSql() calls.
+ *
+ * A runner that silently drops part of the chain (wrong glob, typo'd directory, a migration file
+ * under a different naming pattern) is caught by comparing the resulting schema against the
+ * committed migrations/schema.golden.tsv (see SchemaSnapshot, SchemaCheckCommand) rather than by
+ * counting loop iterations, which can't fail independently of the loop itself.
  */
 trait RunsMigrations
 {
@@ -53,7 +59,6 @@ trait RunsMigrations
         self::assertNotEmpty($files, 'No migration files found under app/migrations');
         sort($files, \SORT_STRING);
 
-        $applied = [];
         foreach ($files as $file) {
             require_once $file;
 
@@ -62,13 +67,38 @@ trait RunsMigrations
             \assert($migration instanceof AbstractMigration, \sprintf('%s from %s is not a Doctrine migration', $class, $file));
 
             $this->runMigrationUp($connection, $migration);
-            $applied[] = $class;
         }
 
+        $this->assertSchemaMatchesGoldenSnapshot($connection);
+    }
+
+    private function assertSchemaMatchesGoldenSnapshot(Connection $connection): void
+    {
+        $masterRows = array_map(
+            static fn (array $row): array => [
+                'type' => (string) $row['type'],
+                'name' => (string) $row['name'],
+                'sql' => $row['sql'] === null ? null : (string) $row['sql'],
+            ],
+            $connection->fetchAllAssociative('SELECT type, name, sql FROM sqlite_master'),
+        );
+        $actual = SchemaSnapshot::fromMasterRows($masterRows);
+
+        $goldenPath = __DIR__.'/../../migrations/schema.golden.tsv';
+        self::assertFileExists($goldenPath, 'Golden schema snapshot not found; run bin/console app:schema:check --write');
+        // doctrine_migration_versions is created by the migrations bundle's own bookkeeping, not by
+        // any migration in app/migrations, so it's absent here: this trait replays migrations
+        // directly instead of going through doctrine:migrations:migrate.
+        $golden = array_values(array_filter(
+            SchemaSnapshot::parse((string) file_get_contents($goldenPath)),
+            static fn (string $row): bool => !str_starts_with($row, "table\tdoctrine_migration_versions\t"),
+        ));
+
+        $diff = SchemaSnapshot::diff($golden, $actual);
         self::assertSame(
-            \count($files),
-            \count($applied),
-            'Not every migration under app/migrations was applied; the test schema would not match the real one.',
+            [],
+            $diff,
+            "Schema built by running migrations differs from migrations/schema.golden.tsv (< golden, > migrations):\n".implode("\n", $diff),
         );
     }
 
