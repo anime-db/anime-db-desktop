@@ -42,6 +42,18 @@ use Doctrine\Migrations\AbstractMigration;
  * only way to converge with these expectations is from the schema side. Doctrine also expects an
  * index on both association columns; only one side had an index in the database.
  *
+ * `IDX_2C2AD578794BBE89` (anime_studios) and `IDX_3DB864C794BBE89` (anime_labels) duplicate the
+ * first column of the composite PRIMARY KEY of their table ((anime_id, studio_id) and
+ * (anime_id, label_id) respectively) and are therefore redundant for query planning — SQLite can
+ * already use the PRIMARY KEY prefix. They exist solely to match what Doctrine expects to find:
+ * `Doctrine\DBAL\Schema\Index::isFulfilledBy()` does not treat a composite PRIMARY KEY as covering
+ * a single-column index on its first column, so without them `doctrine:schema:update --dump-sql`
+ * reports the mapping and schema as diverged. DO NOT DROP these two indexes as apparent
+ * duplicates — doing so silently reintroduces that divergence. `IDX_2C2AD578446F285F`
+ * (studio_id) and `IDX_3DB864C33B92F39` (label_id) are not affected by this: they sit on the
+ * second PRIMARY KEY column, which does not work as a prefix, so they are genuinely needed for
+ * query planning.
+ *
  * DROP INDEX / CREATE INDEX only: neither table is rebuilt, so no data, triggers or foreign keys
  * are affected.
  */
