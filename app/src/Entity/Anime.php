@@ -86,7 +86,7 @@ abstract class Anime implements AggregateRootInterface
      * computed on read) so AnimeRepository can match against it with a plain indexed
      * column comparison instead of normalizing title/name in SQL on every query.
      */
-    #[ORM\Column(length: 256)]
+    #[ORM\Column(length: 256, options: ['default' => ''])]
     private string $normalizedTitle;
 
     #[ORM\Column(type: 'unix_timestamp', nullable: true)]

@@ -56,7 +56,7 @@ class AnimeName
     public readonly string $name;
 
     /** NameNormalizer::normalize($name), computed once here since $name is readonly. */
-    #[ORM\Column(length: 256)]
+    #[ORM\Column(length: 256, options: ['default' => ''])]
     public readonly string $normalizedName;
 
     /** LocaleNormalizer::normalize($locale), computed once here since $locale is readonly. */
