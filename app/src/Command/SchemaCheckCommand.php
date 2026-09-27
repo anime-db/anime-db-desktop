@@ -27,7 +27,8 @@ declare(strict_types=1);
 
 namespace App\Command;
 
-use App\Service\Plugin\PhpCliCommand;
+use App\Service\Exception\MigrationsFailedException;
+use App\Service\Schema\MigratedDatabase;
 use App\Service\Schema\SchemaSnapshot;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
@@ -36,7 +37,6 @@ use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 use Symfony\Component\Filesystem\Filesystem;
-use Symfony\Component\Process\Process;
 
 /**
  * Applies every migration to an empty database created in a throwaway directory, snapshots
@@ -67,35 +67,19 @@ final class SchemaCheckCommand extends Command
         $io = new SymfonyStyle($input, $output);
         $goldenPath = $this->projectDir.'/'.self::GOLDEN_FILE;
 
-        $filesystem = new Filesystem();
-        $workDir = sys_get_temp_dir().'/animedb_schema_check_'.bin2hex(random_bytes(6));
-        $filesystem->mkdir($workDir);
-
         try {
-            $dbPath = $workDir.'/schema.db';
-            $migrate = new Process(
-                PhpCliCommand::forScript(\PHP_BINARY, $this->projectDir.'/bin/console', 'doctrine:migrations:migrate', '--no-interaction'),
-                $this->projectDir,
-                [
-                    'DATABASE_URL' => 'sqlite:///'.$dbPath,
-                    // The parent's Dotenv marks DATABASE_URL as "loaded from .env"; inherited by
-                    // the child, that marker lets the child's Dotenv overwrite our override.
-                    'SYMFONY_DOTENV_VARS' => false,
-                ],
+            $actual = (new MigratedDatabase($this->projectDir))->build(
+                'animedb_schema_check_',
+                fn (string $dbPath): array => SchemaSnapshot::fromMasterRows($this->readMaster($dbPath)),
             );
-            $migrate->setTimeout(300);
-            $migrate->run();
-            if (!$migrate->isSuccessful()) {
-                $io->error('Migrations failed:');
-                $io->writeln($migrate->getOutput().$migrate->getErrorOutput());
+        } catch (MigrationsFailedException $exception) {
+            $io->error('Migrations failed:');
+            $io->writeln($exception->getMessage());
 
-                return $migrate->getExitCode() ?: Command::FAILURE;
-            }
-
-            $actual = SchemaSnapshot::fromMasterRows($this->readMaster($dbPath));
-        } finally {
-            $filesystem->remove($workDir);
+            return $exception->migrationsExitCode;
         }
+
+        $filesystem = new Filesystem();
 
         if ($input->getOption('write')) {
             $filesystem->dumpFile($goldenPath, SchemaSnapshot::serialize($actual));

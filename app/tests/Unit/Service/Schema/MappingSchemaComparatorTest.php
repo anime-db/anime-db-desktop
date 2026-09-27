@@ -35,132 +35,160 @@ use Doctrine\DBAL\Schema\Table;
 use PHPUnit\Framework\TestCase;
 
 /**
- * The false positive this comparator filters out is narrow on purpose, so the tests below pin both
- * halves of it: the shape that must be swallowed, and every neighbouring shape that must not be.
+ * The false positive this comparator filters out is narrow on purpose, so the tests below pin every
+ * condition of it separately: drop any one of them from the production code and a test here fails.
  */
 final class MappingSchemaComparatorTest extends TestCase
 {
     /**
-     * @param array<string, bool>    $databaseAutoIncrement
-     * @param array<string, bool>    $mappingAutoIncrement
-     * @param non-empty-list<string> $primaryKey
+     * @param callable(Table): void $database
+     * @param callable(Table): void $mapping
      *
      * @return list<string>
      */
-    private function divergences(
-        array $primaryKey,
-        array $databaseAutoIncrement,
-        array $mappingAutoIncrement,
-        ?int $mappingLength = null,
-    ): array {
-        $build = static function (array $autoIncrement, ?int $length) use ($primaryKey): Schema {
+    private function divergences(callable $database, callable $mapping): array
+    {
+        $build = static function (callable $shape): Schema {
             $table = new Table('pairing');
-            $table->addColumn('anime_id', 'integer', ['autoincrement' => $autoIncrement['anime_id'] ?? false]);
-            $table->addColumn('code', 'string', ['length' => $length ?? 32]);
-            $table->setPrimaryKey($primaryKey);
+            $shape($table);
 
             return new Schema([$table]);
         };
 
-        $database = $build($databaseAutoIncrement, null);
-        $mapping = $build($mappingAutoIncrement, $mappingLength);
-
-        $comparator = new Comparator(new SQLitePlatform());
-
-        return MappingSchemaComparator::divergences($comparator->compareSchemas($database, $mapping));
+        return MappingSchemaComparator::divergences(
+            (new Comparator(new SQLitePlatform()))->compareSchemas($build($database), $build($mapping)),
+        );
     }
 
-    public function testCompositeKeyAutoIncrementReportedOnlyByIntrospectionIsFiltered(): void
+    /**
+     * `anime_id` carries the autoincrement flag and is the first column of a composite primary key —
+     * exactly the shape DBAL's SQLite introspection gets wrong.
+     *
+     * @param array{autoincrement?: bool, default?: int} $animeIdOptions
+     * @param non-empty-list<string>|null                $primaryKey
+     */
+    private static function compositeKeyTable(array $animeIdOptions = [], ?array $primaryKey = null): callable
+    {
+        return static function (Table $table) use ($animeIdOptions, $primaryKey): void {
+            $table->addColumn('anime_id', 'integer', $animeIdOptions + ['notnull' => true]);
+            $table->addColumn('code', 'string', ['length' => 32]);
+            $table->setPrimaryKey($primaryKey ?? ['anime_id', 'code']);
+        };
+    }
+
+    public function testAutoIncrementClaimedOnlyByIntrospectionOnACompositeKeyIsFiltered(): void
     {
         self::assertSame([], $this->divergences(
-            ['anime_id', 'code'],
-            ['anime_id' => true],
-            ['anime_id' => false],
+            self::compositeKeyTable(['autoincrement' => true]),
+            self::compositeKeyTable(['autoincrement' => false]),
         ));
     }
 
     public function testAutoIncrementDifferenceOnASingleColumnKeyIsReported(): void
     {
-        $divergences = $this->divergences(['anime_id'], ['anime_id' => true], ['anime_id' => false]);
+        $divergences = $this->divergences(
+            self::compositeKeyTable(['autoincrement' => true], ['anime_id']),
+            self::compositeKeyTable(['autoincrement' => false], ['anime_id']),
+        );
 
-        self::assertCount(1, $divergences);
-        self::assertStringContainsString('autoincrement', $divergences[0]);
+        self::assertSame(['column pairing.anime_id differs: autoincrement'], $divergences);
     }
 
     public function testAutoIncrementDifferenceInTheOppositeDirectionIsReported(): void
     {
         $divergences = $this->divergences(
-            ['anime_id', 'code'],
-            ['anime_id' => false],
-            ['anime_id' => true],
+            self::compositeKeyTable(['autoincrement' => false]),
+            self::compositeKeyTable(['autoincrement' => true]),
+        );
+
+        self::assertSame(['column pairing.anime_id differs: autoincrement'], $divergences);
+    }
+
+    /**
+     * Second difference on the *same* column, so the filter cannot be satisfied by
+     * countChangedProperties() === 1 any more.
+     */
+    public function testAutoIncrementCombinedWithAnotherChangeOnTheSameColumnIsReported(): void
+    {
+        $divergences = $this->divergences(
+            self::compositeKeyTable(['autoincrement' => true]),
+            self::compositeKeyTable(['autoincrement' => false, 'default' => 0]),
         );
 
         self::assertCount(1, $divergences);
+        self::assertStringContainsString('pairing.anime_id differs:', $divergences[0]);
+        self::assertStringContainsString('default', $divergences[0]);
         self::assertStringContainsString('autoincrement', $divergences[0]);
     }
 
-    public function testAutoIncrementDifferenceCombinedWithAnotherChangeIsReported(): void
+    /** The composite key is there, but the differing column is not part of it. */
+    public function testAutoIncrementDifferenceOnAColumnOutsideThePrimaryKeyIsReported(): void
     {
-        $divergences = $this->divergences(
-            ['anime_id', 'code'],
-            ['anime_id' => true],
-            ['anime_id' => false],
-            mappingLength: 16,
-        );
+        $outside = static function (bool $autoincrement): callable {
+            return static function (Table $table) use ($autoincrement): void {
+                $table->addColumn('anime_id', 'integer', ['notnull' => true]);
+                $table->addColumn('code', 'string', ['length' => 32]);
+                $table->addColumn('counter', 'integer', ['autoincrement' => $autoincrement]);
+                $table->setPrimaryKey(['anime_id', 'code']);
+            };
+        };
 
-        self::assertNotSame([], $divergences);
-        self::assertStringContainsString('length', implode("\n", $divergences));
+        self::assertSame(
+            ['column pairing.counter differs: autoincrement'],
+            $this->divergences($outside(true), $outside(false)),
+        );
     }
 
     public function testMigrationsBookkeepingTableIsNotReportedAsUnmapped(): void
     {
-        $bookkeeping = new Table('doctrine_migration_versions');
-        $bookkeeping->addColumn('version', 'string', ['length' => 191]);
-        $bookkeeping->setPrimaryKey(['version']);
-
-        $comparator = new Comparator(new SQLitePlatform());
-
-        self::assertSame([], MappingSchemaComparator::divergences(
-            $comparator->compareSchemas(new Schema([$bookkeeping]), new Schema()),
-        ));
+        self::assertSame([], $this->compareAgainstEmptyMapping('doctrine_migration_versions'));
     }
 
     public function testATableMissingFromTheMappingIsReported(): void
     {
-        $orphan = new Table('left_over');
-        $orphan->addColumn('id', 'integer', ['autoincrement' => true]);
-        $orphan->setPrimaryKey(['id']);
-
-        $comparator = new Comparator(new SQLitePlatform());
-        $divergences = MappingSchemaComparator::divergences(
-            $comparator->compareSchemas(new Schema([$orphan]), new Schema()),
+        self::assertSame(
+            ['table left_over: in the schema, missing from the mapping'],
+            $this->compareAgainstEmptyMapping('left_over'),
         );
-
-        self::assertCount(1, $divergences);
-        self::assertStringContainsString('left_over', $divergences[0]);
-        self::assertStringContainsString('missing from the mapping', $divergences[0]);
     }
 
     public function testAnIndexMissingFromTheMappingIsReported(): void
     {
-        $withIndex = new Table('pairing');
-        $withIndex->addColumn('anime_id', 'integer');
-        $withIndex->addColumn('code', 'string', ['length' => 32]);
-        $withIndex->setPrimaryKey(['anime_id', 'code']);
-        $withIndex->addIndex(['code'], 'IDX_PAIRING_CODE');
-
-        $withoutIndex = new Table('pairing');
-        $withoutIndex->addColumn('anime_id', 'integer');
-        $withoutIndex->addColumn('code', 'string', ['length' => 32]);
-        $withoutIndex->setPrimaryKey(['anime_id', 'code']);
-
-        $comparator = new Comparator(new SQLitePlatform());
-        $divergences = MappingSchemaComparator::divergences(
-            $comparator->compareSchemas(new Schema([$withIndex]), new Schema([$withoutIndex])),
+        $divergences = $this->divergences(
+            static function (Table $table): void {
+                self::compositeKeyTable()($table);
+                $table->addIndex(['code'], 'IDX_PAIRING_CODE');
+            },
+            self::compositeKeyTable(),
         );
 
-        self::assertCount(1, $divergences);
-        self::assertStringContainsString('IDX_PAIRING_CODE', $divergences[0]);
-        self::assertStringContainsString('missing from the mapping', $divergences[0]);
+        self::assertSame(['index IDX_PAIRING_CODE on pairing: in the schema, missing from the mapping'], $divergences);
+    }
+
+    public function testAColumnMissingFromTheMappingIsReported(): void
+    {
+        $divergences = $this->divergences(
+            static function (Table $table): void {
+                self::compositeKeyTable()($table);
+                $table->addColumn('extra', 'string', ['length' => 8]);
+            },
+            self::compositeKeyTable(),
+        );
+
+        self::assertSame(['column pairing.extra: in the schema, missing from the mapping'], $divergences);
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function compareAgainstEmptyMapping(string $tableName): array
+    {
+        $table = new Table($tableName);
+        $table->addColumn('id', 'integer', ['autoincrement' => true]);
+        $table->setPrimaryKey(['id']);
+
+        return MappingSchemaComparator::divergences(
+            (new Comparator(new SQLitePlatform()))->compareSchemas(new Schema([$table]), new Schema()),
+        );
     }
 }
