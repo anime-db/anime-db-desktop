@@ -35,7 +35,6 @@ use AnimeDb\PluginContracts\Widget\EntryWidgetInterface;
 use App\Entity\Enum\WatchStatus;
 use App\Event\WatchProgressChangedManuallyEvent;
 use App\Service\Plugin\InstalledPluginsRegistry;
-use App\Service\Plugin\PluginDataStoreInterface;
 use App\Service\Plugin\PluginsConfigStore;
 use App\Tests\Support\TemporaryDirectories;
 use Psr\Log\NullLogger;
@@ -254,7 +253,7 @@ final class WidgetEventSubscriberBootTest extends KernelTestCase
             use AnimeDb\\PluginContracts\\Widget\\EntryWidgetInterface;
             use AnimeDb\\PluginContracts\\Widget\\WidgetMetadata;
             use App\\Event\\WatchProgressChangedManuallyEvent;
-            use App\\Service\\Plugin\\PluginDataStoreInterface;
+            use AnimeDb\\PluginContracts\\PluginData\\PluginDataStoreInterface;
             use App\\Tests\\Acceptance\\WidgetEventSubscriberBootTest;
             use Symfony\\Component\\EventDispatcher\\EventSubscriberInterface;
 
