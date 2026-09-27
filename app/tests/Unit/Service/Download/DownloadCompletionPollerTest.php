@@ -93,10 +93,6 @@ final class DownloadCompletionPollerTest extends TestCase
         $schemaTool = new SchemaTool($this->entityManager);
         $schemaTool->createSchema($this->entityManager->getMetadataFactory()->getAllMetadata());
 
-        // Not declared in the ORM mapping, so createSchema() omits it — but production has it.
-        // Without it a duplicate (storage_id, storage_path) pair would never be rejected here.
-        $connection->executeStatement('CREATE UNIQUE INDEX UNIQ_ANIME_STORAGE_STORAGE_PATH ON anime (storage_id, storagePath)');
-
         $this->downloads = new DownloadRepository($this->entityManager);
 
         $this->configPath = sys_get_temp_dir().'/anime-download-poller-test-'.uniqid().'.json';

@@ -49,6 +49,10 @@ use Doctrine\Common\Collections\Collection;
 use Doctrine\ORM\Mapping as ORM;
 
 #[ORM\Entity]
+#[ORM\Table(name: 'anime')]
+#[ORM\UniqueConstraint(name: 'UNIQ_ANIME_STORAGE_STORAGE_PATH', fields: ['storage', 'storagePath'])]
+#[ORM\Index(name: 'IDX_ANIME_STORAGE', fields: ['storage'])]
+#[ORM\Index(name: 'IDX_ANIME_NORMALIZED_TITLE', fields: ['normalizedTitle'])]
 #[ORM\InheritanceType('SINGLE_TABLE')]
 #[ORM\DiscriminatorColumn(name: 'type', length: 16, enumType: AnimeType::class)]
 #[ORM\DiscriminatorMap([

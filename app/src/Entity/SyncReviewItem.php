@@ -38,6 +38,7 @@ use Doctrine\ORM\Mapping as ORM;
  * Detecting duplicates and surfacing this list in the UI are out of scope here — this is storage only.
  */
 #[ORM\Entity]
+#[ORM\Index(name: 'IDX_SYNC_REVIEW_ITEM_RESOLVED_AT', fields: ['resolvedAt'])]
 class SyncReviewItem
 {
     #[ORM\Id, ORM\GeneratedValue, ORM\Column]
