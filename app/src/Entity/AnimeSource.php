@@ -33,6 +33,7 @@ use Doctrine\ORM\Mapping as ORM;
  * External reference link (e.g. Shikimori/MAL page) the catalog entry was sourced from.
  */
 #[ORM\Entity]
+#[ORM\Index(name: 'IDX_ANIME_SOURCE_ANIME', fields: ['anime'])]
 class AnimeSource
 {
     #[ORM\Id, ORM\GeneratedValue, ORM\Column]

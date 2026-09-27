@@ -41,6 +41,8 @@ use Doctrine\ORM\Mapping as ORM;
  */
 #[ORM\Entity]
 #[ORM\Table(name: 'anime_name')]
+#[ORM\Index(name: 'IDX_ANIME_NAME_ANIME', fields: ['anime'])]
+#[ORM\Index(name: 'IDX_ANIME_NAME_NORMALIZED_NAME', fields: ['normalizedName'])]
 class AnimeName
 {
     #[ORM\Id, ORM\GeneratedValue, ORM\Column]

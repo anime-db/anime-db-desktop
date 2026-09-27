@@ -33,6 +33,7 @@ use Doctrine\ORM\Mapping as ORM;
  * Additional gallery images (screenshots/frames), not alternative covers.
  */
 #[ORM\Entity]
+#[ORM\Index(name: 'IDX_ANIME_IMAGE_ANIME', fields: ['anime'])]
 class AnimeImage
 {
     #[ORM\Id, ORM\GeneratedValue, ORM\Column]

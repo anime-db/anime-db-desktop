@@ -45,6 +45,7 @@ use Doctrine\ORM\Mapping as ORM;
 #[ORM\Entity]
 #[ORM\Table(name: 'downloads')]
 #[ORM\UniqueConstraint(name: 'uniq_download_infohash', columns: ['info_hash'])]
+#[ORM\Index(name: 'IDX_DOWNLOAD_ANIME', fields: ['anime'])]
 class Download
 {
     private const INFO_HASH_PATTERN = '/^[0-9a-f]{40}$/';
