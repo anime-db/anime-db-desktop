@@ -29,7 +29,7 @@ on:
   workflow_dispatch:
     inputs:
       ref:
-        description: 'Тег релиза, который сверять (пусто — ветка по умолчанию, то есть НЕ выпущенное состояние)'
+        description: 'Тег релиза vX.Y.Z, который сверять. Обязателен для боевого прогона; пусто допустимо только в сухом (сверяется голова master)'
         type: string
         default: ''
       dry-run:
@@ -75,11 +75,32 @@ jobs:
         with:
           ref: ${{ github.event.workflow_run.head_sha || inputs.ref || '' }}
 
+      # Боевой ручной прогон пишет в ПУБЛИЧНЫЙ репозиторий, поэтому обязан сверять выпущенное
+      # состояние: `ref` — существующий тег релиза `vX.Y.Z`. С пустым `ref` чекаутится голова
+      # master, и если туда уже смёржен бамп контрактов, не ушедший в релиз, авторы плагинов
+      # получили бы задачи «отстаёт от приложения», которого у пользователей нет. Имя ветки,
+      # похожее на тег, отсекает проверка тега в origin. Сухой прогон и `workflow_run` не
+      # ограничиваются: первый ничего не пишет, второй и так идёт от тега.
+      - name: Guard manual live run
+        if: github.event_name == 'workflow_dispatch' && inputs.dry-run != true
+        env:
+          REF: ${{ inputs.ref }}
+        run: |
+          set -euo pipefail
+          if ! [[ "$REF" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Боевой ручной прогон требует ref = тег релиза вида vX.Y.Z (получено: '${REF}')."
+            exit 2
+          fi
+          if ! git ls-remote --exit-code --tags origin "refs/tags/${REF}" > /dev/null; then
+            echo "::error::Тега '${REF}' в репозитории нет — боевой прогон возможен только по выпущенному тегу."
+            exit 2
+          fi
+
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
           # Совпадает с PHP, который несёт запиненный FrankenPHP — обоснование в ci.yml
-          # (issue #536). Менять во всех workflow с этим пином разом.
+          # (issue #536). Менять во всех workflow с этим пином разом — список в ci.yml.
           php-version: '8.5'
           tools: composer
           coverage: none
