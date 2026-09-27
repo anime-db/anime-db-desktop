@@ -142,6 +142,34 @@ jobs:
         run: composer cs-check
         working-directory: app
 
+      # Гейты схемы — шагами в этой же джобе, а не отдельной: прогон всей цепочки миграций
+      # занимает около 100 мс, тогда как поднятие раннера с setup-php и composer install —
+      # минуты. Предельная цена обоих шагов здесь примерно ноль.
+      #
+      # `paths`-фильтра намеренно нет. Экономия составила бы доли секунды, а предикат
+      # «задеты миграции или маппинг» неполон: результат меняют ещё
+      # app/config/packages/doctrine.yaml, кастомные типы в app/src/Doctrine/Type/ и
+      # app/composer.lock (бамп doctrine/dbal меняет генерируемый DDL). Забытый путь в
+      # фильтре дал бы зелёный CI на сломанной схеме — ровно тот отказ, от которого
+      # эти шаги и защищают.
+      #
+      # Блока `env:` у шагов нет и на уровне джобы быть не должно: обе команды создают
+      # свою БД во временном каталоге и сами передают DATABASE_URL дочернему процессу
+      # миграций. Заданная снаружи QUEUE_DATABASE_URL уронила бы шаг с PHPUnit —
+      # QueueConnectionTest проверяет, что путь файла очереди заканчивается на queue.db.
+      - name: Check the schema built by migrations against the golden snapshot
+        if: ${{ !cancelled() }}
+        run: php bin/console app:schema:check
+        working-directory: app
+
+      # Дополняет шаг выше: тот сравнивает схему, построенную на пустой БД, и потерю
+      # данных увидеть не может по определению. Этот прогоняет цепочку по непустой базе и
+      # ловит каскадное удаление дочерних строк и разъезд anime_fts по rowid.
+      - name: Check data integrity across the migration chain
+        if: ${{ !cancelled() }}
+        run: php bin/console app:migrations:check-data-integrity
+        working-directory: app
+
   # Один job на весь JS-тулинг: npm ci один раз, затем lint + jest (та же логика
   # экономии, что и у PHP-джобы выше).
   js:
