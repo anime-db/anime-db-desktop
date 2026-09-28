@@ -44,7 +44,7 @@ jobs:
     # лимит стабильно — это повод разобраться, а не молча поднять число.
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
@@ -203,10 +203,10 @@ jobs:
     # это граница «что-то зависло», а не бюджет на выполнение.
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: '22'
           cache: 'npm'

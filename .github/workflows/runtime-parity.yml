@@ -70,7 +70,7 @@ jobs:
     # по-прежнему граница «что-то зависло», а не бюджет на выполнение.
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
@@ -120,7 +120,7 @@ jobs:
 
       - name: Setup Node.js
         if: ${{ !cancelled() }}
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: '22'
           cache: 'npm'
