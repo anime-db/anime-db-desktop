@@ -31,6 +31,11 @@ jobs:
 
     steps:
       - uses: actions/checkout@v5
+        with:
+          # Токен с contents: write нужен только шагу релиза. Не оставляем его в
+          # .git/config, где его прочитал бы любой код из npm ci / composer install
+          # и само собранное приложение на release gate; git с токеном джобе не нужен.
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@v5
