@@ -55,4 +55,48 @@ final class I18nCoverageIssueBodyTest extends TestCase
 
         self::assertStringNotContainsString('cc ', $body);
     }
+
+    public function testRenderOmitsTheOrphanedKeysSectionWhenThereAreNoOrphanedKeys(): void
+    {
+        $body = I18nCoverageIssueBody::render('animedb-language-pack', ['welcome'], []);
+
+        self::assertStringNotContainsString('Ключей больше нет в приложении', $body);
+    }
+
+    public function testRenderIncludesTheOrphanedKeysSectionAfterTheMissingKeysList(): void
+    {
+        $body = I18nCoverageIssueBody::render('animedb-language-pack', ['welcome'], [], ['anime_name_type.english']);
+
+        self::assertStringContainsString('Ключей больше нет в приложении', $body);
+        self::assertStringContainsString('`anime_name_type.english`', $body);
+        self::assertGreaterThan(
+            strpos($body, '`welcome`'),
+            strpos($body, 'Ключей больше нет в приложении'),
+            'Orphaned keys section must come after the missing keys list.',
+        );
+    }
+
+    public function testOrphanedKeysDoNotLeakIntoTheDeltaMarker(): void
+    {
+        $body = I18nCoverageIssueBody::render(
+            'animedb-language-pack',
+            ['welcome'],
+            [],
+            ['anime_name_type.english', 'anime_name_type.original'],
+        );
+
+        self::assertSame(['welcome'], I18nCoverageIssueBody::parsePreviousDelta($body));
+    }
+
+    public function testParsePreviousDeltaRoundTripsWithRenderWhenOrphanedKeysArePresent(): void
+    {
+        $body = I18nCoverageIssueBody::render(
+            'animedb-language-pack',
+            ['goodbye', 'welcome'],
+            [],
+            ['anime_name_type.english'],
+        );
+
+        self::assertSame(['goodbye', 'welcome'], I18nCoverageIssueBody::parsePreviousDelta($body));
+    }
 }

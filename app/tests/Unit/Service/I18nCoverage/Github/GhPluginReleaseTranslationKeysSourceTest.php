@@ -65,6 +65,26 @@ final class GhPluginReleaseTranslationKeysSourceTest extends TestCase
         self::assertSame(['welcome'], $source->keys());
     }
 
+    /**
+     * The reader only globs `translations/messages.*.yaml`; native-i18n JSON catalogs
+     * ({@see \App\Service\I18nCoverage\AppReferenceTranslationKeysSource}'s counterpart for
+     * `native/`) live under a different path and format and must not contribute keys. If that
+     * glob is ever widened to also pick up `translations/native/*.json`, a plugin shipping keys
+     * there but not in the YAML catalog would silently start looking orphaned/missing for keys it
+     * never claimed through this source.
+     */
+    public function testNativeJsonCatalogsAreIgnoredAndOnlyYamlKeysAreReturned(): void
+    {
+        $zip = $this->buildZip([
+            'translations/messages.de.yaml' => "welcome: Hallo\n",
+            'translations/native/de.json' => '{"tray.quit": "Beenden"}',
+        ]);
+
+        $source = new GhPluginReleaseTranslationKeysSource('animedb-language-pack', new FakeGhReleaseZipDownloader($zip));
+
+        self::assertSame(['welcome'], $source->keys());
+    }
+
     public function testEmptyKeySetWhenTheArchiveHasNoLocaleCatalog(): void
     {
         $zip = $this->buildZip(['manifest.json' => '{"id":"animedb-language-pack"}']);

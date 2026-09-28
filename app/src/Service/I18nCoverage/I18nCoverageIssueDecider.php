@@ -39,6 +39,13 @@ namespace App\Service\I18nCoverage;
  * thing carried from the previous run is the previous delta, and that is read back out of the
  * issue's own body ({@see I18nCoverageIssueBody::parsePreviousDelta()}), not out of any state
  * this class keeps.
+ *
+ * Orphaned keys (`pluginKeys \ appKeys` — the reverse subtraction of the same two sets `missing`
+ * comes from) are rendered into the body as a purely informational section
+ * ({@see I18nCoverageIssueBody::render()}) but never feed into the five-row decision table below:
+ * every action here is still a function of `missing` alone. In particular a plugin with orphaned
+ * keys but no missing ones still gets its issue closed — orphaned keys have no bearing on whether
+ * an issue should exist at all.
  */
 final class I18nCoverageIssueDecider
 {
@@ -61,7 +68,10 @@ final class I18nCoverageIssueDecider
             return $issue->exists ? I18nCoverageDecision::close() : I18nCoverageDecision::none();
         }
 
-        $body = I18nCoverageIssueBody::render($pluginId, $missingKeys, $owners);
+        $orphanedKeys = array_values(array_unique(array_diff($pluginKeys, $appKeys)));
+        sort($orphanedKeys);
+
+        $body = I18nCoverageIssueBody::render($pluginId, $missingKeys, $owners, $orphanedKeys);
 
         if (!$issue->exists) {
             return I18nCoverageDecision::create($missingKeys, $body);

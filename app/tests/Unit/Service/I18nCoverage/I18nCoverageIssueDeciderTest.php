@@ -70,6 +70,22 @@ final class I18nCoverageIssueDeciderTest extends TestCase
         self::assertNull($decision->body);
     }
 
+    public function testOrphanedKeysWithEmptyMissingStillClosesTheIssue(): void
+    {
+        $previousBody = I18nCoverageIssueBody::render('animedb-language-pack', ['goodbye'], []);
+
+        $decision = (new I18nCoverageIssueDecider())->decide(
+            'animedb-language-pack',
+            ['welcome', 'goodbye'],
+            ['welcome', 'goodbye', 'orphaned_key'],
+            I18nCoverageIssueSnapshot::open(42, $previousBody),
+            [],
+        );
+
+        self::assertSame(I18nCoverageAction::CLOSE, $decision->action);
+        self::assertNull($decision->body);
+    }
+
     public function testNonEmptyDeltaWithNoOpenIssueCreatesOne(): void
     {
         $decision = (new I18nCoverageIssueDecider())->decide(
