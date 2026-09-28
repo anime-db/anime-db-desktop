@@ -23,6 +23,11 @@ jobs:
     # Успешная сборка укладывается в 3–4 минуты, так что 30 — примерно восьмикратный
     # запас с учётом промахов кеша и медленного раннера.
     timeout-minutes: 30
+    # Шаг «Create GitHub Release» создаёт/обновляет релиз и грузит в него инсталлятор.
+    # Умолчание GITHUB_TOKEN в этом репозитории — только чтение, без явного
+    # contents: write шаг падает с «Resource not accessible by integration».
+    permissions:
+      contents: write
 
     steps:
       - uses: actions/checkout@v5
