@@ -35,14 +35,18 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      # Падение этого шага означает одно из трёх: неверный app-id, нерабочий приватный
+      # Падение этого шага означает одно из трёх: неверный client-id, нерабочий приватный
       # ключ (например, в секрет попал отпечаток `SHA256:…` вместо содержимого .pem),
       # либо приложение не установлено в организацию.
       - name: Mint installation token
         id: app-token
         uses: actions/create-github-app-token@v3
         with:
-          app-id: ${{ vars.BOT_APP_ID }}
+          # `client-id` (вида `Iv23…`), а не числовой `app-id`: `app-id` в v3 объявлен
+          # устаревшим и даёт предупреждение на каждом прогоне. Переменная `BOT_CLIENT_ID`
+          # — Client ID того же приложения `animedbintegration` (App ID 4719937); он
+          # публичный (`GET /apps/animedbintegration`), поэтому это переменная, а не секрет.
+          client-id: ${{ vars.BOT_CLIENT_ID }}
           private-key: ${{ secrets.BOT_PRIVATE_KEY }}
           owner: anime-db
           repositories: anime-db-plugins
