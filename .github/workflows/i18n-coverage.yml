@@ -73,7 +73,7 @@ jobs:
       # с головы master может уже уйти вперёд тега, и дельта описывала бы не выпущенное
       # состояние. На `workflow_dispatch` выражение даёт пустую строку — это штатное
       # «ветка по умолчанию».
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ github.event.workflow_run.head_sha || '' }}
 
@@ -92,7 +92,7 @@ jobs:
         run: composer config --global github-oauth.github.com ${{ secrets.COMPOSER_GITHUB_TOKEN }}
 
       - name: Install dependencies
-        uses: ramsey/composer-install@v3
+        uses: ramsey/composer-install@v4
         with:
           working-directory: app
 
@@ -140,7 +140,7 @@ jobs:
       - name: Mint installation token
         if: steps.plugins.outputs.found == 'true'
         id: app-token
-        uses: actions/create-github-app-token@v2
+        uses: actions/create-github-app-token@v3
         with:
           app-id: ${{ vars.BOT_APP_ID }}
           private-key: ${{ secrets.BOT_PRIVATE_KEY }}
