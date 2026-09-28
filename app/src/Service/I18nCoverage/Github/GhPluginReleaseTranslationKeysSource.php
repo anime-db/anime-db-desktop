@@ -56,6 +56,15 @@ use App\Service\Translation\TranslationCatalog;
  * optimistic (any locale having a key counts) while this notification would still flag the
  * plugin as missing that key (every locale must have it). That divergence is expected, not a
  * bug in either place.
+ *
+ * {@see \App\Service\I18nCoverage\I18nCoverageIssueDecider} also derives the plugin's *orphaned*
+ * keys (`pluginKeys \ appKeys` — the reverse subtraction) from this same intersection, on the
+ * reasoning that a key dead in one locale is still dead weight even if a sibling locale keeps it.
+ * That reasoning only holds while gate #58 in the plugins monorepo keeps every locale of a plugin
+ * on the same key set, making intersection and union coincide today. If #58 is ever relaxed to
+ * allow a partially translated locale, orphaned keys must be recomputed from the *union* of the
+ * per-locale key sets instead of this intersection — otherwise a key genuinely dead in every
+ * locale but missing from just one would be hidden from the orphaned-keys report.
  */
 final class GhPluginReleaseTranslationKeysSource implements PluginTranslationKeysSource
 {

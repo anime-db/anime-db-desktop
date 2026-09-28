@@ -42,10 +42,15 @@ final class I18nCoverageIssueBody
     private const string DELTA_MARKER_SUFFIX = ' -->';
 
     /**
-     * @param list<string> $missingKeys sorted
-     * @param list<string> $owners      `@handle` mentions, empty when CODEOWNERS has no entry
+     * @param list<string> $missingKeys  sorted
+     * @param list<string> $owners       `@handle` mentions, empty when CODEOWNERS has no entry
+     * @param list<string> $orphanedKeys sorted; keys the plugin still ships that the app no longer
+     *                                   references (renamed or removed on the app side). Purely
+     *                                   informational — not part of the delta tracked by
+     *                                   {@see I18nCoverageIssueDecider} or the marker parsed back
+     *                                   out by {@see parsePreviousDelta()}
      */
-    public static function render(string $pluginId, array $missingKeys, array $owners): string
+    public static function render(string $pluginId, array $missingKeys, array $owners, array $orphanedKeys = []): string
     {
         $lines = [
             \sprintf('Перевод плагина `%s` отстаёт от приложения.', $pluginId),
@@ -60,6 +65,18 @@ final class I18nCoverageIssueBody
 
         foreach ($missingKeys as $key) {
             $lines[] = \sprintf('- `%s`', $key);
+        }
+
+        if ($orphanedKeys !== []) {
+            $lines[] = '';
+            $lines[] = 'Ключей больше нет в приложении:';
+            $lines[] = '';
+            $lines[] = 'Их можно удалить из каталога плагина. Если ключ был переименован в приложении, '
+                .'перенесите уже готовый перевод на новое имя вместо того, чтобы переводить его заново.';
+            $lines[] = '';
+            foreach ($orphanedKeys as $key) {
+                $lines[] = \sprintf('- `%s`', $key);
+            }
         }
 
         if ($owners !== []) {
