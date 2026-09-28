@@ -104,6 +104,84 @@ final class I18nCoverageIssueDeciderTest extends TestCase
         self::assertNull($decision->comment);
     }
 
+    public function testNonEmptyDeltaWithNoOpenIssueCreatesOneWithOrphanedSection(): void
+    {
+        $decision = (new I18nCoverageIssueDecider())->decide(
+            'animedb-language-pack',
+            ['welcome', 'goodbye'],
+            ['welcome', 'zzz_old', 'aaa_old', 'aaa_old'],
+            I18nCoverageIssueSnapshot::none(),
+            [],
+        );
+
+        self::assertSame(I18nCoverageAction::CREATE, $decision->action);
+        self::assertSame(['goodbye'], $decision->missingKeys);
+        self::assertNotNull($decision->body);
+
+        $orphanedSectionStart = strpos($decision->body, 'Ключей больше нет в приложении:');
+        self::assertIsInt($orphanedSectionStart);
+        $orphanedSection = substr($decision->body, $orphanedSectionStart);
+
+        self::assertStringContainsString('`aaa_old`', $orphanedSection);
+        self::assertStringContainsString('`zzz_old`', $orphanedSection);
+        self::assertSame(
+            1,
+            substr_count($orphanedSection, '`aaa_old`'),
+            'aaa_old must be listed once despite appearing twice in $pluginKeys',
+        );
+        self::assertLessThan(
+            strpos($orphanedSection, '`zzz_old`'),
+            strpos($orphanedSection, '`aaa_old`'),
+            'orphaned keys must be sorted',
+        );
+
+        self::assertStringNotContainsString('welcome', $orphanedSection);
+    }
+
+    public function testChangedDeltaOnAnOpenIssueRewritesBodyWithOrphanedSection(): void
+    {
+        $previousBody = I18nCoverageIssueBody::render('animedb-language-pack', ['goodbye'], []);
+
+        $decision = (new I18nCoverageIssueDecider())->decide(
+            'animedb-language-pack',
+            ['welcome', 'goodbye'],
+            ['zzz_old', 'aaa_old'],
+            I18nCoverageIssueSnapshot::open(42, $previousBody),
+            [],
+        );
+
+        self::assertSame(I18nCoverageAction::REWRITE_BODY_AND_COMMENT, $decision->action);
+        self::assertSame(['goodbye', 'welcome'], $decision->missingKeys);
+        self::assertNotNull($decision->body);
+
+        $orphanedSectionStart = strpos($decision->body, 'Ключей больше нет в приложении:');
+        self::assertIsInt($orphanedSectionStart);
+        $orphanedSection = substr($decision->body, $orphanedSectionStart);
+
+        self::assertStringContainsString('`aaa_old`', $orphanedSection);
+        self::assertStringContainsString('`zzz_old`', $orphanedSection);
+        self::assertLessThan(
+            strpos($orphanedSection, '`zzz_old`'),
+            strpos($orphanedSection, '`aaa_old`'),
+            'orphaned keys must be sorted',
+        );
+    }
+
+    public function testNonEmptyDeltaWithNoOrphanedKeysOmitsTheSection(): void
+    {
+        $decision = (new I18nCoverageIssueDecider())->decide(
+            'animedb-language-pack',
+            ['welcome', 'goodbye'],
+            [],
+            I18nCoverageIssueSnapshot::none(),
+            [],
+        );
+
+        self::assertSame(I18nCoverageAction::CREATE, $decision->action);
+        self::assertNotNull($decision->body);
+        self::assertStringNotContainsString('Ключей больше нет в приложении:', $decision->body);
+    }
+
     public function testUnchangedDeltaOnAnOpenIssueRewritesBodyWithoutCommenting(): void
     {
         $previousBody = I18nCoverageIssueBody::render('animedb-language-pack', ['goodbye'], []);
