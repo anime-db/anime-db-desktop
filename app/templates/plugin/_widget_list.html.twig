@@ -26,13 +26,12 @@
  # (app/assets/scss/_anime-list.scss, compiled into css/app.css), which base.html.twig loads on
  # every page, so no per-page stylesheet is needed.
  #
- # Expects a single `items` variable: a list of
- #     {thumbnail: string|null, title: string, subtitle: string|null, url: string}
- # - thumbnail: absolute or app-media:// image URL; omitted (null/empty) falls back to a
- #   placeholder box, same as anime-list's own cards without a cover.
- # - title: record title, plain text.
- # - subtitle: short meta line under the title (e.g. type/year/score); omitted if null.
- # - url: link target for the whole card, typically the plugin's own external page for the record.
+ # Expects a single `items` variable: a list of \AnimeDb\PluginContracts\Widget\WidgetListItem
+ # instances — see that class for the field-by-field definition of the shape. A plain array with
+ # the same keys renders the same way, since Twig doesn't distinguish object-property access from
+ # array-key access; that path is kept only for widgets whose plugin manifest omits the optional
+ # `require.plugin-contracts` field and so has nothing to construct the DTO from. Such an array is
+ # tolerated by the template, not a contract in its own right.
  #}
 <ul class="plugin-widget__list">
     {% for item in items %}
