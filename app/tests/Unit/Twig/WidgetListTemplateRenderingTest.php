@@ -27,6 +27,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Twig;
 
+use AnimeDb\PluginContracts\Widget\WidgetListItem;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Twig\Environment;
 
@@ -47,7 +48,12 @@ final class WidgetListTemplateRenderingTest extends KernelTestCase
         $twig = self::getContainer()->get('twig');
         $html = $twig->render('plugin/_widget_list.html.twig', [
             'items' => [
-                ['thumbnail' => 'https://example.test/cover.webp', 'title' => 'Sample Title', 'subtitle' => null, 'url' => 'https://example.test/record'],
+                new WidgetListItem(
+                    thumbnail: 'https://example.test/cover.webp',
+                    title: 'Sample Title',
+                    subtitle: null,
+                    url: 'https://example.test/record',
+                ),
             ],
         ]);
 

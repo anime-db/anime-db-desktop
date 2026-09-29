@@ -27,12 +27,8 @@
  # every page, so no per-page stylesheet is needed.
  #
  # Expects a single `items` variable: a list of
- #     {thumbnail: string|null, title: string, subtitle: string|null, url: string}
- # - thumbnail: absolute or app-media:// image URL; omitted (null/empty) falls back to a
- #   placeholder box, same as anime-list's own cards without a cover.
- # - title: record title, plain text.
- # - subtitle: short meta line under the title (e.g. type/year/score); omitted if null.
- # - url: link target for the whole card, typically the plugin's own external page for the record.
+ # \AnimeDb\PluginContracts\Widget\WidgetListItem (or array with the same keys, since Twig reads
+ # both the same way) — see that class for the field-by-field definition of the shape.
  #}
 <ul class="plugin-widget__list">
     {% for item in items %}
