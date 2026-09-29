@@ -39,10 +39,13 @@ use Twig\Environment;
  * decorative (empty alt) and the visible title text carries the title, once via a `title`
  * attribute for text overflow rather than on the surrounding link.
  *
- * The template's docblock documents two accepted shapes for an `items` entry — a
- * {@see WidgetListItem} instance or a plain array with the same keys, since Twig reads both the
- * same way. Both shapes are exercised here so a future switch to object-specific access (e.g.
- * `is instanceof` or a method call) in the template would be caught by this suite.
+ * The template's docblock defines {@see WidgetListItem} as the single definition of an `items`
+ * entry's shape; a plain array with the same keys is only tolerated because Twig reads
+ * object properties and array keys the same way, kept for widgets whose plugin manifest omits
+ * the optional `require.plugin-contracts` field and so has no DTO to construct. Both shapes are
+ * exercised here to pin down that current tolerance, not to promise it: narrowing the template to
+ * `WidgetListItem` only is an allowed evolution, and the array case here would be deleted along
+ * with the tolerance it covers, not treated as a broken contract.
  */
 final class WidgetListTemplateRenderingTest extends KernelTestCase
 {

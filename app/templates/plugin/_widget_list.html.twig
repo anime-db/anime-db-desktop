@@ -26,9 +26,12 @@
  # (app/assets/scss/_anime-list.scss, compiled into css/app.css), which base.html.twig loads on
  # every page, so no per-page stylesheet is needed.
  #
- # Expects a single `items` variable: a list of
- # \AnimeDb\PluginContracts\Widget\WidgetListItem (or array with the same keys, since Twig reads
- # both the same way) — see that class for the field-by-field definition of the shape.
+ # Expects a single `items` variable: a list of \AnimeDb\PluginContracts\Widget\WidgetListItem
+ # instances — see that class for the field-by-field definition of the shape. A plain array with
+ # the same keys renders the same way, since Twig doesn't distinguish object-property access from
+ # array-key access; that path is kept only for widgets whose plugin manifest omits the optional
+ # `require.plugin-contracts` field and so has nothing to construct the DTO from. Such an array is
+ # tolerated by the template, not a contract in its own right.
  #}
 <ul class="plugin-widget__list">
     {% for item in items %}
