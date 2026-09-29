@@ -103,7 +103,7 @@
 
         <form method="post" action="{{ path('settings_search_reindex') }}">
             <input type="hidden" name="_token" value="{{ csrf_token('settings_search_reindex') }}">
-            <button type="submit" class="btn btn-primary">{{ 'settings.search_reindex_button'|trans }}</button>
+            <button type="submit" class="btn btn-outline-secondary">{{ 'settings.search_reindex_button'|trans }}</button>
         </form>
     </div>
 {% endblock %}
