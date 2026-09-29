@@ -23,6 +23,7 @@
 
 jest.mock('electron', () => ({
     BrowserWindow: jest.fn().mockImplementation(() => ({ loadFile: jest.fn() })),
+    nativeTheme: { shouldUseDarkColors: false },
 }));
 
 jest.mock('../../native/config', () => ({

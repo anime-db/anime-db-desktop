@@ -39,6 +39,7 @@ use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Search\AnimeReindexService;
 use App\Service\Search\AnimeSearchIndexer;
 use App\Service\Sync\SyncReviewService;
+use App\Service\WsPublisher;
 use App\Tests\Support\TemporaryDirectories;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Types\Type;
@@ -196,10 +197,13 @@ final class SettingsControllerLocaleSwitchFunctionalTest extends KernelTestCase
         $csrfTokenManager = self::getContainer()->get(CsrfTokenManagerInterface::class);
         /** @var UrlGeneratorInterface $urlGenerator */
         $urlGenerator = self::getContainer()->get(UrlGeneratorInterface::class);
+        /** @var WsPublisher $wsPublisher */
+        $wsPublisher = self::getContainer()->get(WsPublisher::class);
 
         return new SettingsController(
             $this->availableLocalesProvider(),
             new AppSettingsProvider(new AppConfigStore($this->configPath)),
+            $wsPublisher,
             $csrfTokenManager,
             $twig,
             $this->createReindexService(),
