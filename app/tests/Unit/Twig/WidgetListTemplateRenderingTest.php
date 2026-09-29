@@ -28,6 +28,7 @@ declare(strict_types=1);
 namespace App\Tests\Unit\Twig;
 
 use AnimeDb\PluginContracts\Widget\WidgetListItem;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Twig\Environment;
 
@@ -37,24 +38,45 @@ use Twig\Environment;
  * This pins the card's accessible name to stay non-duplicated (issue #700): the thumbnail is
  * decorative (empty alt) and the visible title text carries the title, once via a `title`
  * attribute for text overflow rather than on the surrounding link.
+ *
+ * The template's docblock documents two accepted shapes for an `items` entry — a
+ * {@see WidgetListItem} instance or a plain array with the same keys, since Twig reads both the
+ * same way. Both shapes are exercised here so a future switch to object-specific access (e.g.
+ * `is instanceof` or a method call) in the template would be caught by this suite.
  */
 final class WidgetListTemplateRenderingTest extends KernelTestCase
 {
-    public function testCardThumbnailIsDecorativeAndLinkDoesNotDuplicateTheTitle(): void
+    /** @return iterable<string, array{0: WidgetListItem|array{thumbnail: string, title: string, subtitle: string|null, url: string}}> */
+    public static function widgetListItemShapes(): iterable
+    {
+        yield 'WidgetListItem instance' => [
+            new WidgetListItem(
+                thumbnail: 'https://example.test/cover.webp',
+                title: 'Sample Title',
+                subtitle: null,
+                url: 'https://example.test/record',
+            ),
+        ];
+        yield 'array with the same keys' => [
+            [
+                'thumbnail' => 'https://example.test/cover.webp',
+                'title' => 'Sample Title',
+                'subtitle' => null,
+                'url' => 'https://example.test/record',
+            ],
+        ];
+    }
+
+    /** @param WidgetListItem|array{thumbnail: string, title: string, subtitle: string|null, url: string} $item */
+    #[DataProvider('widgetListItemShapes')]
+    public function testCardThumbnailIsDecorativeAndLinkDoesNotDuplicateTheTitle(WidgetListItem|array $item): void
     {
         self::bootKernel();
 
         /** @var Environment $twig */
         $twig = self::getContainer()->get('twig');
         $html = $twig->render('plugin/_widget_list.html.twig', [
-            'items' => [
-                new WidgetListItem(
-                    thumbnail: 'https://example.test/cover.webp',
-                    title: 'Sample Title',
-                    subtitle: null,
-                    url: 'https://example.test/record',
-                ),
-            ],
+            'items' => [$item],
         ]);
 
         $this->assertStringContainsString(
