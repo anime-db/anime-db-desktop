@@ -21,8 +21,9 @@
 
 'use strict';
 
-const { BrowserWindow, Menu, screen, shell } = require('electron');
+const { BrowserWindow, Menu, nativeTheme, screen, shell } = require('electron');
 const path = require('path');
+const { getBackgroundColor } = require('../theme');
 
 let win = null;
 
@@ -176,6 +177,7 @@ function createWindow(port) {
         ...getDefaultWindowSize(),
         minWidth: 1000,
         minHeight: 640,
+        backgroundColor: getBackgroundColor(nativeTheme.shouldUseDarkColors),
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
             contextIsolation: true,
