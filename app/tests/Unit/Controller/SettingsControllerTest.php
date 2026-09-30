@@ -59,6 +59,7 @@ use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
+use Symfony\Component\Security\Csrf\CsrfToken;
 use Symfony\Component\Security\Csrf\CsrfTokenManagerInterface;
 use Twig\Environment;
 
@@ -479,6 +480,28 @@ final class SettingsControllerTest extends TestCase
 
         $data = json_decode((string) file_get_contents($this->configPath), true);
         $this->assertSame(['genres', 'studios'], $data['collapsedFilterSections']);
+    }
+
+    /**
+     * The stub CSRF manager used by createController() accepts any token, so it never notices
+     * whether setFilterSections() actually validates against its own token id
+     * ('settings_filter_sections') rather than, say, another endpoint's id — this asserts on the
+     * exact CsrfToken instance isTokenValid() is called with.
+     */
+    public function testSetFilterSectionsValidatesTokenAgainstItsOwnId(): void
+    {
+        $csrf = $this->createMock(CsrfTokenManagerInterface::class);
+        $csrf->expects($this->once())
+            ->method('isTokenValid')
+            ->with($this->equalTo(new CsrfToken('settings_filter_sections', 'token')))
+            ->willReturn(true);
+
+        $controller = $this->createController(csrfTokenManager: $csrf);
+        $request = $this->filterSectionsRequest(['token' => 'token', 'collapsed' => ['genres']]);
+
+        $response = $controller->setFilterSections($request);
+
+        $this->assertSame(204, $response->getStatusCode());
     }
 
     public function testSetFilterSectionsRejectsInvalidCsrfToken(): void
