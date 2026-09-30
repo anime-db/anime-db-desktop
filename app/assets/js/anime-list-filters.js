@@ -457,6 +457,14 @@
 
                 if (expanded) {
                     collapsedSections.add(sectionKey);
+
+                    // Collapsing a truncatable section via its header resets its "Ещё" state
+                    // (issue #821 review), since the button no longer offers a way back to the
+                    // top-8 view on its own — the next expand shows top-8 + "Ещё (k)" again.
+                    if (sectionUiState[sectionKey] && sectionUiState[sectionKey].expanded) {
+                        sectionUiState[sectionKey].expanded = false;
+                        rerenderFromLastFacets();
+                    }
                 } else {
                     collapsedSections.delete(sectionKey);
                 }

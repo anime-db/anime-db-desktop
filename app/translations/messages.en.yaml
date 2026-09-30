@@ -401,7 +401,6 @@ anime_list:
     filter_section_studios: Studios
     filter_section_empty: No values in the catalog for this section.
     filter_section_more_button: 'More (%count%)'
-    filter_section_collapse_button: Collapse
     filter_section_search_placeholder: Search studios…
     filter_no_rating: Not rated
     filter_no_date_premiere: No premiere date

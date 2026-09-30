@@ -1791,13 +1791,47 @@ test('an applied value outside the top 8 is pinned above it and excluded from th
     expect(section.querySelector('.anime-list__filter-section-more').textContent).toBe('anime_list.filter_section_more_button:{"count":3}');
 });
 
-test('a pending (checked but not applied) value outside the top 8 stays pinned after collapsing "Ещё" back (issue #820)', async () => {
+test('clicking "Ещё" hides the button and shows every value — there is no collapse-back control inside the section (issue #821 review)', async () => {
     const calls = mockFetchQueueAll();
     setUpDetailedTranslations();
     await loadAndResolveFacets(calls, { genres: genreBuckets(12) });
 
     const section = document.querySelector('[data-filter-section="genres"]');
-    dispatchClick(section.querySelector('.anime-list__filter-section-more')); // expand
+    dispatchClick(section.querySelector('.anime-list__filter-section-more'));
+    await flushMicrotasks();
+
+    expect(section.querySelectorAll('.anime-list__filter-value')).toHaveLength(12);
+    expect(section.querySelector('.anime-list__filter-section-more').hidden).toBe(true);
+});
+
+test('collapsing a truncatable section via its header resets "Ещё" — re-expanding shows the top 8 and "Ещё (k)" again (issue #821 review)', async () => {
+    const calls = mockFetchQueueAll();
+    setUpDetailedTranslations();
+    await loadAndResolveFacets(calls, { genres: genreBuckets(12) });
+
+    const section = document.querySelector('[data-filter-section="genres"]');
+    dispatchClick(section.querySelector('.anime-list__filter-section-more')); // expand "Ещё"
+    await flushMicrotasks();
+    expect(section.querySelectorAll('.anime-list__filter-value')).toHaveLength(12);
+
+    const toggle = section.querySelector('.anime-list__filter-section-toggle');
+    dispatchClick(toggle); // collapse the section itself
+    await flushMicrotasks();
+    dispatchClick(toggle); // expand it back
+
+    expect(section.querySelectorAll('.anime-list__filter-value')).toHaveLength(8);
+    const moreButton = section.querySelector('.anime-list__filter-section-more');
+    expect(moreButton.hidden).toBe(false);
+    expect(moreButton.textContent).toBe('anime_list.filter_section_more_button:{"count":4}');
+});
+
+test('a pending (checked but not applied) value outside the top 8 stays pinned after the section is collapsed and re-expanded (issue #821 review)', async () => {
+    const calls = mockFetchQueueAll();
+    setUpDetailedTranslations();
+    await loadAndResolveFacets(calls, { genres: genreBuckets(12) });
+
+    const section = document.querySelector('[data-filter-section="genres"]');
+    dispatchClick(section.querySelector('.anime-list__filter-section-more')); // expand "Ещё"
     await flushMicrotasks();
 
     const g11Row = Array.from(section.querySelectorAll('.anime-list__filter-value')).find((row) => row.dataset.value === 'g11');
@@ -1805,7 +1839,10 @@ test('a pending (checked but not applied) value outside the top 8 stays pinned a
     checkbox.checked = true;
     checkbox.dispatchEvent(new Event('change'));
 
-    dispatchClick(section.querySelector('.anime-list__filter-section-more')); // collapse back
+    const toggle = section.querySelector('.anime-list__filter-section-toggle');
+    dispatchClick(toggle); // collapse the section, resetting "Ещё"
+    await flushMicrotasks();
+    dispatchClick(toggle); // expand it back
     await flushMicrotasks();
 
     const idsAfter = Array.from(section.querySelectorAll('.anime-list__filter-value')).map((row) => row.dataset.value);
@@ -1821,6 +1858,7 @@ test('an expanded "Ещё" section stays expanded once an unrelated facets refre
     dispatchClick(section.querySelector('.anime-list__filter-section-more'));
     await flushMicrotasks();
     expect(section.querySelectorAll('.anime-list__filter-value')).toHaveLength(12);
+    expect(section.querySelector('.anime-list__filter-section-more').hidden).toBe(true);
 
     // A facets refresh unrelated to this section — the same one a debounced main-title search
     // keystroke fires — must not collapse it back.

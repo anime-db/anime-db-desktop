@@ -306,22 +306,23 @@
         return (state.search || '').trim() !== '';
     }
 
+    // No collapse-back control inside the section (issue #821 review): once "Ещё" is clicked the
+    // button hides for good — the only way back to the top-8 view is collapsing the section itself
+    // via its header toggle, which resets `expanded` (see anime-list-filters.js's toggle handler).
     function updateMoreButton(sectionEl, sectionKey, truncationEligible, expanded, moreCount, catalogue, hooks) {
         const moreButton = sectionEl.querySelector('.anime-list__filter-section-more');
         if (!moreButton) {
             return;
         }
 
-        if (!truncationEligible) {
+        if (!truncationEligible || expanded) {
             moreButton.hidden = true;
 
             return;
         }
 
         moreButton.hidden = false;
-        moreButton.textContent = expanded
-            ? window.AppTranslations.resolveKey(catalogue, 'anime_list.filter_section_collapse_button')
-            : window.AppTranslations.resolveKey(catalogue, 'anime_list.filter_section_more_button', { count: moreCount });
+        moreButton.textContent = window.AppTranslations.resolveKey(catalogue, 'anime_list.filter_section_more_button', { count: moreCount });
         moreButton.onclick = () => hooks.onToggleMore(sectionKey);
     }
 
