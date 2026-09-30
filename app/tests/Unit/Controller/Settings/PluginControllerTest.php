@@ -477,6 +477,29 @@ final class PluginControllerTest extends TestCase
         $this->assertFileDoesNotExist($zipPath);
     }
 
+    /**
+     * `installIndex()` (issue #822) is the GET counterpart of the install form's own page, split
+     * out of the installed-plugins list — it must render the same template as a fresh, error-free
+     * form, the way `install()`'s own no-error path would.
+     */
+    public function testInstallIndexRendersTheInstallFormWithNoError(): void
+    {
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('settings/plugins/install.html.twig', [
+                'installError' => null,
+                'installErrorParams' => [],
+                'syntaxErrors' => [],
+                'manifestErrors' => [],
+            ])
+            ->willReturn('<html></html>');
+
+        $response = $this->controller(twig: $twig)->installIndex();
+
+        $this->assertSame(200, $response->getStatusCode());
+    }
+
     public function testInstallReRendersWithNoFileErrorWhenNoFileIsUploaded(): void
     {
         $twig = $this->createMock(Environment::class);
