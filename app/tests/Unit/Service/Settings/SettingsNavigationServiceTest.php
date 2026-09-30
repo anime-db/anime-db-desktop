@@ -27,6 +27,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Service\Settings;
 
+use App\Entity\Enum\SyncReviewItemKind;
 use App\Repository\SyncReviewItemRepository;
 use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\PluginsConfigStore;
@@ -111,10 +112,20 @@ final class SettingsNavigationServiceTest extends TestCase
         return $requestStack;
     }
 
+    /**
+     * A stub that returns $count only for {@see SyncReviewItemKind::NeedsCorrection} and a
+     * distinct sentinel for every other kind, so a bug that queries the wrong kind (issue #382:
+     * the badge must count NeedsCorrection only, never PotentialDuplicate) surfaces as a wrong
+     * badge value instead of passing unnoticed.
+     */
     private function syncReview(int $count = 0): SyncReviewService
     {
         $repository = $this->createStub(SyncReviewItemRepository::class);
-        $repository->method('countUnresolvedByKind')->willReturn($count);
+        $repository->method('countUnresolvedByKind')->willReturnMap([
+            [SyncReviewItemKind::NeedsCorrection, $count],
+            [SyncReviewItemKind::PotentialDuplicate, 99],
+            [SyncReviewItemKind::DeletionConflict, 99],
+        ]);
 
         return new SyncReviewService($repository);
     }
@@ -220,6 +231,15 @@ final class SettingsNavigationServiceTest extends TestCase
         $item = $this->findItem($this->findGroupContaining($groups, 'sync_review'), 'sync_review');
 
         self::assertSame(3, $item->badge);
+    }
+
+    public function testTheNeedsCorrectionBadgeIsOmittedWhenTheUnresolvedCountIsZero(): void
+    {
+        $groups = $this->service(syncReview: $this->syncReview(0))->groups();
+
+        $item = $this->findItem($this->findGroupContaining($groups, 'sync_review'), 'sync_review');
+
+        self::assertNull($item->badge);
     }
 
     public function testTheNeedsCorrectionBadgeIsOmittedRatherThanCrashingWhenTheCountQueryFails(): void
