@@ -64,6 +64,26 @@ final class PluginsIncompatibleRowRenderingTest extends KernelTestCase
     }
 
     /**
+     * Regression (issue #817): the status badge must carry only the short "Incompatible" label,
+     * with the longer explanation moved to plain text below it — a badge is sized for one or two
+     * words, not a full sentence.
+     */
+    public function testIncompatiblePluginStatusBadgeShowsShortTextWithExplanationBelow(): void
+    {
+        $html = $this->render($this->plugin(false), []);
+
+        $matched = preg_match('/<span class="badge text-bg-danger">(.*?)<\/span>/s', $html, $matches);
+        self::assertSame(1, $matched, 'Expected the incompatible status badge to be present.');
+        self::assertSame('Incompatible', $matches[1]);
+        self::assertStringNotContainsString('needs a different app version', $matches[1]);
+
+        self::assertStringContainsString(
+            '<div class="small text-body-secondary mt-1">Disabled — this plugin needs a different app version to work.</div>',
+            $html,
+        );
+    }
+
+    /**
      * The page navigation also links to the market, so match the link by its text.
      */
     private function marketLinkPattern(string $text): string

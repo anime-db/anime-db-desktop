@@ -89,7 +89,8 @@
                                 <td>{{ ('plugin_type.' ~ plugin.manifest.type.value)|trans }}</td>
                                 <td>
                                     {% if not plugin.compatible %}
-                                        <span class="badge text-bg-danger">{{ 'settings_plugins.status_incompatible'|trans }}</span>
+                                        <span class="badge text-bg-danger">{{ 'settings_plugins.status_incompatible_badge'|trans }}</span>
+                                        <div class="small text-body-secondary mt-1">{{ 'settings_plugins.status_incompatible'|trans }}</div>
                                         <div class="small mt-1">
                                             <a href="{{ path('settings_market_index') }}">
                                                 {%- if marketUpdates[plugin.id ~ ''] is defined -%}

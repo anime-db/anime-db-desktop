@@ -225,6 +225,7 @@ settings_plugins:
     status_enabled: Включён
     status_disabled: Отключён
     status_incompatible: 'Отключён — плагину нужна другая версия приложения.'
+    status_incompatible_badge: Несовместим
     incompatible_market_link: 'Проверить в маркете плагинов'
     incompatible_market_update: 'Доступно обновление до версии %version% — открыть маркет плагинов'
 
