@@ -29,6 +29,7 @@ namespace App\Controller;
 
 use App\Repository\AnimeRepository;
 use App\Repository\StorageRepository;
+use App\Service\AppSettingsProvider;
 use App\Service\Plugin\CatalogWidgetRegistry;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
@@ -55,6 +56,7 @@ final class HomeController
         private readonly StorageRepository $storages,
         private readonly AnimeRepository $animeRepository,
         private readonly CatalogWidgetRegistry $catalogWidgets,
+        private readonly AppSettingsProvider $settings,
     ) {
     }
 
@@ -66,6 +68,10 @@ final class HomeController
         return new Response($this->twig->render('anime/list.html.twig', [
             'showOnboarding' => $showOnboarding,
             'widgets' => $this->catalogWidgets->findAllActive(),
+            // Issue #820: read once here so the template can render each section's
+            // aria-expanded/hidden state from the saved value on first paint, instead of every
+            // section flashing open before anime-list-filters.js reconciles it client-side.
+            'collapsedFilterSections' => $this->settings->getCollapsedFilterSections(),
         ]));
     }
 }

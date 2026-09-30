@@ -60,6 +60,7 @@ use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
+use Symfony\Component\Security\Csrf\CsrfToken;
 use Symfony\Component\Security\Csrf\CsrfTokenManagerInterface;
 use Twig\Environment;
 
@@ -495,5 +496,82 @@ final class SettingsControllerTest extends TestCase
 
         $this->expectException(BadRequestHttpException::class);
         $controller->reindexSearch($request);
+    }
+
+    /** @param array<string, mixed> $payload */
+    private function filterSectionsRequest(array $payload): Request
+    {
+        return Request::create('/settings/filter-sections', 'POST', [], [], [], [], (string) json_encode($payload));
+    }
+
+    /**
+     * Acceptance (issue #820): a bare 204, not the PRG redirect every other setter above uses —
+     * this endpoint is fired in the background by anime-list-filters.js on every section-toggle
+     * click, with no page reload to redirect back to.
+     */
+    public function testSetFilterSectionsPersistsCollapsedSectionsAndReturnsNoContent(): void
+    {
+        $controller = $this->createController();
+        $request = $this->filterSectionsRequest(['token' => 'token', 'collapsed' => ['genres', 'studios']]);
+
+        $response = $controller->setFilterSections($request);
+
+        $this->assertSame(204, $response->getStatusCode());
+        $this->assertSame('', $response->getContent());
+
+        $data = json_decode((string) file_get_contents($this->configPath), true);
+        $this->assertSame(['genres', 'studios'], $data['collapsedFilterSections']);
+    }
+
+    /**
+     * The stub CSRF manager used by createController() accepts any token, so it never notices
+     * whether setFilterSections() actually validates against its own token id
+     * ('settings_filter_sections') rather than, say, another endpoint's id — this asserts on the
+     * exact CsrfToken instance isTokenValid() is called with.
+     */
+    public function testSetFilterSectionsValidatesTokenAgainstItsOwnId(): void
+    {
+        $csrf = $this->createMock(CsrfTokenManagerInterface::class);
+        $csrf->expects($this->once())
+            ->method('isTokenValid')
+            ->with($this->equalTo(new CsrfToken('settings_filter_sections', 'token')))
+            ->willReturn(true);
+
+        $controller = $this->createController(csrfTokenManager: $csrf);
+        $request = $this->filterSectionsRequest(['token' => 'token', 'collapsed' => ['genres']]);
+
+        $response = $controller->setFilterSections($request);
+
+        $this->assertSame(204, $response->getStatusCode());
+    }
+
+    public function testSetFilterSectionsRejectsInvalidCsrfToken(): void
+    {
+        $csrf = $this->createStub(CsrfTokenManagerInterface::class);
+        $csrf->method('isTokenValid')->willReturn(false);
+
+        $controller = $this->createController(csrfTokenManager: $csrf);
+        $request = $this->filterSectionsRequest(['token' => 'bad', 'collapsed' => ['genres']]);
+
+        $this->expectException(BadRequestHttpException::class);
+        $controller->setFilterSections($request);
+    }
+
+    public function testSetFilterSectionsRejectsNonArrayBody(): void
+    {
+        $controller = $this->createController();
+        $request = Request::create('/settings/filter-sections', 'POST', [], [], [], [], '"not an object"');
+
+        $this->expectException(BadRequestHttpException::class);
+        $controller->setFilterSections($request);
+    }
+
+    public function testSetFilterSectionsRejectsNonArrayCollapsed(): void
+    {
+        $controller = $this->createController();
+        $request = $this->filterSectionsRequest(['token' => 'token', 'collapsed' => 'genres']);
+
+        $this->expectException(BadRequestHttpException::class);
+        $controller->setFilterSections($request);
     }
 }

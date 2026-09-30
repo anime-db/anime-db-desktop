@@ -35,7 +35,9 @@ use App\Entity\Enum\AnimeType;
 use App\Entity\Enum\GenreCode;
 use App\Entity\Enum\ThemeCode;
 use App\Entity\Enum\WatchStatus;
+use App\Entity\Label;
 use App\Entity\Storage;
+use App\Entity\Studio;
 use App\Entity\ValueObject\PluginId;
 use App\Entity\ValueObject\Rating;
 use Doctrine\ORM\EntityManagerInterface;
@@ -267,13 +269,18 @@ class AnimeRepository
             ->getQuery()
             ->getArrayResult();
 
-        return array_values(array_map(
+        $buckets = array_values(array_map(
             static fn (array $row): AnimeFacetValueBucket => new AnimeFacetValueBucket(
                 $row['value'] instanceof GenreCode ? $row['value']->value : (string) $row['value'],
                 (int) $row['cnt'],
             ),
             $rows,
         ));
+
+        return $this->withGuaranteedValueBuckets(
+            $buckets,
+            array_map(static fn (GenreCode $genre): string => $genre->value, $filter->genres),
+        );
     }
 
     /**
@@ -291,13 +298,18 @@ class AnimeRepository
             ->getQuery()
             ->getArrayResult();
 
-        return array_values(array_map(
+        $buckets = array_values(array_map(
             static fn (array $row): AnimeFacetValueBucket => new AnimeFacetValueBucket(
                 $row['value'] instanceof ThemeCode ? $row['value']->value : (string) $row['value'],
                 (int) $row['cnt'],
             ),
             $rows,
         ));
+
+        return $this->withGuaranteedValueBuckets(
+            $buckets,
+            array_map(static fn (ThemeCode $theme): string => $theme->value, $filter->themes),
+        );
     }
 
     /**
@@ -315,10 +327,12 @@ class AnimeRepository
             ->getQuery()
             ->getArrayResult();
 
-        return array_values(array_map(
+        $buckets = array_values(array_map(
             static fn (array $row): AnimeFacetEntityBucket => new AnimeFacetEntityBucket((int) $row['id'], (string) $row['name'], (int) $row['cnt']),
             $rows,
         ));
+
+        return $this->withGuaranteedEntityBuckets($buckets, $filter->labelIds, Label::class);
     }
 
     /**
@@ -336,10 +350,75 @@ class AnimeRepository
             ->getQuery()
             ->getArrayResult();
 
-        return array_values(array_map(
+        $buckets = array_values(array_map(
             static fn (array $row): AnimeFacetEntityBucket => new AnimeFacetEntityBucket((int) $row['id'], (string) $row['name'], (int) $row['cnt']),
             $rows,
         ));
+
+        return $this->withGuaranteedEntityBuckets($buckets, $filter->studioIds, Studio::class);
+    }
+
+    /**
+     * An applied value (from the section's own AnimeListFilter property, before withoutX()
+     * clears it) with no bucket in $buckets — e.g. narrowed to zero rows by another applied
+     * section, or never in the catalog at all — still gets a count: 0 bucket (issue #820): the
+     * client pins every applied value at the top of its section and needs a row (and, for
+     * genres/themes, nothing more than the code already in $appliedValues) to draw it, exactly
+     * like the chip already does once this bucket exists.
+     *
+     * @param list<AnimeFacetValueBucket> $buckets
+     * @param list<string>                $appliedValues
+     *
+     * @return list<AnimeFacetValueBucket>
+     */
+    private function withGuaranteedValueBuckets(array $buckets, array $appliedValues): array
+    {
+        $present = array_map(static fn (AnimeFacetValueBucket $bucket): string => $bucket->value, $buckets);
+
+        foreach ($appliedValues as $value) {
+            if (!\in_array($value, $present, true)) {
+                $buckets[] = new AnimeFacetValueBucket($value, 0);
+            }
+        }
+
+        return $buckets;
+    }
+
+    /**
+     * Same guarantee as {@see self::withGuaranteedValueBuckets()}, but for the two entity
+     * sections (studios, labels): a missing applied id also needs its display name, which
+     * (unlike a genre/theme code) is not self-describing, so it is looked up rather than
+     * fabricated. An id with no matching row (e.g. a stale id from an old URL) is silently
+     * skipped — issue #820 explicitly leaves that case as-is, only ids that still exist but
+     * dropped out of the current selection are guaranteed a bucket here.
+     *
+     * @param list<AnimeFacetEntityBucket> $buckets
+     * @param list<int>                    $appliedIds
+     * @param class-string                 $entityClass Label::class or Studio::class — both expose
+     *                                                  $id/$name, the only columns this lookup needs
+     *
+     * @return list<AnimeFacetEntityBucket>
+     */
+    private function withGuaranteedEntityBuckets(array $buckets, array $appliedIds, string $entityClass): array
+    {
+        $present = array_map(static fn (AnimeFacetEntityBucket $bucket): int => $bucket->id, $buckets);
+        $missingIds = array_values(array_diff($appliedIds, $present));
+        if ($missingIds === []) {
+            return $buckets;
+        }
+
+        $rows = $this->entityManager->getRepository($entityClass)->createQueryBuilder('e')
+            ->select('e.id AS id', 'e.name AS name')
+            ->andWhere('e.id IN (:ids)')
+            ->setParameter('ids', $missingIds)
+            ->getQuery()
+            ->getArrayResult();
+
+        foreach ($rows as $row) {
+            $buckets[] = new AnimeFacetEntityBucket((int) $row['id'], (string) $row['name'], 0);
+        }
+
+        return $buckets;
     }
 
     private function toDateTimeOrNull(mixed $value): ?\DateTimeImmutable
