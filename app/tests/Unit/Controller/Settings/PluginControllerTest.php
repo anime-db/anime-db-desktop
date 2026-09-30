@@ -225,7 +225,6 @@ final class PluginControllerTest extends TestCase
                 self::assertSame([], $params['settingsPluginIds']);
                 self::assertNull($params['installedPluginId']);
                 self::assertNull($params['removedPluginId']);
-                self::assertNull($params['installError']);
 
                 return true;
             }))
@@ -483,7 +482,7 @@ final class PluginControllerTest extends TestCase
         $twig = $this->createMock(Environment::class);
         $twig->expects($this->once())
             ->method('render')
-            ->with('settings/plugins/index.html.twig', $this->callback(
+            ->with('settings/plugins/install.html.twig', $this->callback(
                 static fn (array $params): bool => $params['installError'] === 'settings_plugins.install_error_no_file',
             ))
             ->willReturn('<html></html>');
@@ -500,7 +499,7 @@ final class PluginControllerTest extends TestCase
         $twig = $this->createMock(Environment::class);
         $twig->expects($this->once())
             ->method('render')
-            ->with('settings/plugins/index.html.twig', $this->callback(static function (array $params): bool {
+            ->with('settings/plugins/install.html.twig', $this->callback(static function (array $params): bool {
                 self::assertSame('settings_plugins.install_error_incompatible_core', $params['installError']);
                 self::assertSame(
                     ['%requiredCore%' => '>=99.0.0', '%currentCore%' => self::CORE_VERSION],
@@ -524,7 +523,7 @@ final class PluginControllerTest extends TestCase
         $twig = $this->createMock(Environment::class);
         $twig->expects($this->once())
             ->method('render')
-            ->with('settings/plugins/index.html.twig', $this->callback(static function (array $params): bool {
+            ->with('settings/plugins/install.html.twig', $this->callback(static function (array $params): bool {
                 self::assertSame('settings_plugins.install_error_incompatible_plugin_contracts', $params['installError']);
                 self::assertSame(
                     ['%requiredPluginContracts%' => '^0.16', '%installedPluginContracts%' => 'v0.15.0'],
@@ -553,7 +552,7 @@ final class PluginControllerTest extends TestCase
         $twig = $this->createMock(Environment::class);
         $twig->expects($this->once())
             ->method('render')
-            ->with('settings/plugins/index.html.twig', $this->callback(static function (array $params): bool {
+            ->with('settings/plugins/install.html.twig', $this->callback(static function (array $params): bool {
                 self::assertSame('settings_plugins.install_error_syntax', $params['installError']);
                 self::assertCount(1, $params['syntaxErrors']);
                 self::assertSame('src/Plugin.php', $params['syntaxErrors'][0]->relativePath);
@@ -634,7 +633,7 @@ final class PluginControllerTest extends TestCase
         $twig = $this->createMock(Environment::class);
         $twig->expects($this->once())
             ->method('render')
-            ->with('settings/plugins/index.html.twig', $this->callback(
+            ->with('settings/plugins/install.html.twig', $this->callback(
                 static fn (array $params): bool => $params['installError'] === 'settings_plugins.install_error_invalid_manifest',
             ))
             ->willReturn('<html></html>');
@@ -653,7 +652,7 @@ final class PluginControllerTest extends TestCase
         $twig = $this->createMock(Environment::class);
         $twig->expects($this->once())
             ->method('render')
-            ->with('settings/plugins/index.html.twig', $this->callback(static function (array $params): bool {
+            ->with('settings/plugins/install.html.twig', $this->callback(static function (array $params): bool {
                 self::assertSame('settings_plugins.install_error_generic', $params['installError']);
                 self::assertSame([], $params['installErrorParams']);
 

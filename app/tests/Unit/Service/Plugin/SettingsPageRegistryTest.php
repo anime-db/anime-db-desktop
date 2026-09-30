@@ -34,6 +34,7 @@ use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Plugin\SettingsPageRegistry;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
+use Symfony\Component\DependencyInjection\ServiceLocator;
 
 final class SettingsPageRegistryTest extends TestCase
 {
@@ -112,6 +113,67 @@ final class SettingsPageRegistryTest extends TestCase
         $registry = new SettingsPageRegistry(['animedb-shikimori' => $page], $this->installedPlugins);
 
         $this->assertNull($registry->find(new PluginId('animedb-shikimori')));
+    }
+
+    /**
+     * Acceptance (issue #822): the settings sidebar calls this on every settings page load just to
+     * list which plugins have a page, so it must never construct the page services themselves —
+     * unlike {@see SettingsPageRegistry::find()}'s own `iterator_to_array($this->pages)`, which
+     * does. `$pages` here is a generator so that merely *advancing* it (the shape a naive
+     * `iterator_to_array($this->pages)` implementation would produce) already trips the "must not
+     * construct" guard below, and the locator's own factory throws too, so a `get()` call on it
+     * would fail the same way `has()` must not.
+     */
+    public function testEnabledPluginIdsWithSettingsPageDoesNotInstantiateAnyPageService(): void
+    {
+        $this->writeManifest('animedb-shikimori');
+        $this->installedPlugins->reconcile();
+
+        $pages = (static function (): iterable {
+            yield 'animedb-shikimori' => new class implements SettingsPageInterface {
+                public function __construct()
+                {
+                    throw new \RuntimeException('The page service must not be instantiated.');
+                }
+
+                public function render(): string
+                {
+                    return '';
+                }
+            };
+        })();
+
+        $locator = new ServiceLocator([
+            'animedb-shikimori' => static fn () => throw new \RuntimeException('The locator must only be queried with has(), never get().'),
+        ]);
+
+        $registry = new SettingsPageRegistry($pages, $this->installedPlugins, $locator);
+
+        $this->assertSame(['animedb-shikimori'], $registry->enabledPluginIdsWithSettingsPage());
+    }
+
+    public function testEnabledPluginIdsWithSettingsPageExcludesAPluginWithoutAPageEvenWhenInstalledAndEnabled(): void
+    {
+        $this->writeManifest('animedb-shikimori');
+        $this->installedPlugins->reconcile();
+
+        $registry = new SettingsPageRegistry([], $this->installedPlugins, new ServiceLocator([]));
+
+        $this->assertSame([], $registry->enabledPluginIdsWithSettingsPage());
+    }
+
+    public function testEnabledPluginIdsWithSettingsPageExcludesADisabledPluginEvenThoughItHasAPage(): void
+    {
+        $this->writeManifest('animedb-shikimori');
+        file_put_contents($this->pluginsDir.'/plugins.json', json_encode([
+            'animedb-shikimori' => ['enabled' => false],
+        ]));
+        $this->installedPlugins->reconcile();
+
+        $locator = new ServiceLocator(['animedb-shikimori' => fn () => $this->createStub(SettingsPageInterface::class)]);
+        $registry = new SettingsPageRegistry([], $this->installedPlugins, $locator);
+
+        $this->assertSame([], $registry->enabledPluginIdsWithSettingsPage());
     }
 
     private function removeDirectory(string $dir): void

@@ -99,6 +99,38 @@ final class SyncReviewItemRepositoryTest extends TestCase
         $this->assertSame([], $this->repository->findAllUnresolvedOrderedByCreatedAt());
     }
 
+    /**
+     * Acceptance (issue #822): the settings sidebar badge is computed on every settings page
+     * load, so {@see SyncReviewItemRepository::countUnresolvedByKind()} must count in SQL rather
+     * than loading every unresolved item and counting in PHP — asserted on the generated SQL
+     * itself (an observable artifact), not just the returned count, which a `count(fetchAll())`
+     * rewrite would also get right.
+     */
+    public function testCountUnresolvedByKindCountsInSql(): void
+    {
+        $needsCorrectionUnresolved = new SyncReviewItem(SyncReviewItemKind::NeedsCorrection, ['anime_id' => 1, 'candidates' => []]);
+        $needsCorrectionResolved = new SyncReviewItem(SyncReviewItemKind::NeedsCorrection, ['anime_id' => 2, 'candidates' => []]);
+        $needsCorrectionResolved->resolve();
+        $duplicateUnresolved = new SyncReviewItem(SyncReviewItemKind::PotentialDuplicate, ['anime_ids' => [3, 4]]);
+
+        $this->repository->save($needsCorrectionUnresolved);
+        $this->repository->save($needsCorrectionResolved);
+        $this->repository->save($duplicateUnresolved);
+
+        $this->assertSame(1, $this->repository->countUnresolvedByKind(SyncReviewItemKind::NeedsCorrection));
+        $this->assertSame(0, $this->repository->countUnresolvedByKind(SyncReviewItemKind::DeletionConflict));
+
+        $sql = $this->entityManager->createQueryBuilder()
+            ->select('COUNT(item.id)')
+            ->from(SyncReviewItem::class, 'item')
+            ->andWhere('item.resolvedAt IS NULL')
+            ->andWhere('item.kind = :kind')
+            ->setParameter('kind', SyncReviewItemKind::NeedsCorrection)
+            ->getQuery()
+            ->getSQL();
+        $this->assertStringContainsStringIgnoringCase('COUNT(', \is_array($sql) ? implode(' ', $sql) : $sql);
+    }
+
     public function testSaveOfResolvedItemPersistsResolvedAt(): void
     {
         $item = new SyncReviewItem(SyncReviewItemKind::PotentialDuplicate, ['anime_ids' => [1, 2]]);

@@ -42,13 +42,14 @@
     <script src="{{ asset('js/main.js') }}"></script>
 </head>
 <body>
+    {# Temporary two-item top menu (issue #822): Storage and Market used to be their own tabs here,
+     # but both now live in the settings sidebar (settings/_layout.html.twig) alongside every other
+     # settings-like page, so "Settings" is active for any route under /settings or /storage —
+     # including the pages the sidebar itself highlights via SettingsNavigationService. This bar
+     # goes back to growing a real header (logo, "Add anime" menu) in a separate issue. #}
     {% set current_route = app.request.attributes.get('_route')|default('') %}
-    {% if current_route starts with 'settings_market' %}
-        {% set current_nav_section = 'market' %}
-    {% elseif current_route starts with 'settings_' %}
+    {% if current_route starts with 'settings_' or current_route starts with 'storage_' %}
         {% set current_nav_section = 'settings' %}
-    {% elseif current_route starts with 'storage_' %}
-        {% set current_nav_section = 'storage' %}
     {% elseif current_route starts with 'anime_' or current_route == 'home_index' %}
         {% set current_nav_section = 'catalog' %}
     {% else %}
@@ -56,8 +57,6 @@
     {% endif %}
     <nav class="app-nav" aria-label="{{ 'nav.aria_label'|trans }}">
         <a class="app-nav__link{% if current_nav_section == 'catalog' %} app-nav__link--active{% endif %}" href="{{ path('home_index') }}"{% if current_nav_section == 'catalog' %} aria-current="page"{% endif %}>{{ 'nav.catalog_link'|trans }}</a>
-        <a class="app-nav__link{% if current_nav_section == 'storage' %} app-nav__link--active{% endif %}" href="{{ path('storage_index') }}"{% if current_nav_section == 'storage' %} aria-current="page"{% endif %}>{{ 'nav.storage_link'|trans }}</a>
-        <a class="app-nav__link{% if current_nav_section == 'market' %} app-nav__link--active{% endif %}" href="{{ path('settings_market_index') }}"{% if current_nav_section == 'market' %} aria-current="page"{% endif %}>{{ 'nav.market_link'|trans }}</a>
         <a class="app-nav__link{% if current_nav_section == 'settings' %} app-nav__link--active{% endif %}" href="{{ path('settings_index') }}"{% if current_nav_section == 'settings' %} aria-current="page"{% endif %}>{{ 'nav.settings_link'|trans }}</a>
     </nav>
     {% block body %}{% endblock %}

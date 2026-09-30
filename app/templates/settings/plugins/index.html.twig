@@ -18,16 +18,13 @@
  # You should have received a copy of the GNU General Public License
  # along with this program. If not, see <https://www.gnu.org/licenses/>.
  #}
-{% extends 'base.html.twig' %}
+{% extends 'settings/_layout.html.twig' %}
 
 {% block title %}{{ 'settings_plugins.title'|trans }}{% endblock %}
 
-{% block body %}
-    <div class="container py-4">
-        <a href="{{ path('settings_index') }}" class="btn btn-outline-secondary btn-sm mb-3">{{ 'settings_plugins.back_link'|trans }}</a>
+{% block settings_content %}
+    <div class="py-4">
         <h1>{{ 'settings_plugins.heading'|trans }}</h1>
-
-        <p><a href="{{ path('settings_plugin_widgets_index') }}" class="btn btn-outline-secondary btn-sm">{{ 'settings_plugins.widgets_link'|trans }}</a></p>
 
         {% if installedPluginId is not null %}
             <p class="alert alert-success">{{ 'settings_plugins.install_success'|trans({'%pluginId%': installedPluginId}) }}</p>
@@ -39,26 +36,6 @@
 
         {% if removedPluginId is not null %}
             <p class="alert alert-success">{{ 'settings_plugins.remove_success'|trans({'%pluginId%': removedPluginId}) }}</p>
-        {% endif %}
-
-        {% if installError is not null %}
-            <p class="alert alert-danger">{{ installError|trans(installErrorParams) }}</p>
-
-            {% if syntaxErrors is not empty %}
-                <ul>
-                    {% for syntaxError in syntaxErrors %}
-                        <li>{{ syntaxError.relativePath }}: {{ syntaxError.message }}</li>
-                    {% endfor %}
-                </ul>
-            {% endif %}
-
-            {% if manifestErrors is not empty %}
-                <ul>
-                    {% for manifestError in manifestErrors %}
-                        <li>{{ manifestError.field }}: {{ manifestError.message }}</li>
-                    {% endfor %}
-                </ul>
-            {% endif %}
         {% endif %}
 
         <h2>{{ 'settings_plugins.installed_heading'|trans }}</h2>
@@ -142,25 +119,5 @@
                 </table>
             </div>
         {% endif %}
-
-        <h2 class="mt-4">{{ 'settings_plugins.install_heading'|trans }}</h2>
-
-        <form method="post" action="{{ path('settings_plugins_install') }}" enctype="multipart/form-data" id="plugin-install-form" data-control="plugin-install">
-            <input type="hidden" name="_token" value="{{ csrf_token('settings_plugins_install') }}">
-
-            <div class="mb-3">
-                <label for="plugin-install-file" class="form-label">{{ 'settings_plugins.install_file_label'|trans }}</label>
-                <input type="file" id="plugin-install-file" name="plugin_zip" accept=".zip" required class="form-control">
-            </div>
-
-            <p class="alert alert-danger" id="plugin-install-client-error" hidden></p>
-
-            <div class="alert alert-warning" id="plugin-install-warning" hidden>
-                <p>{{ 'settings_plugins.third_party_warning'|trans }}</p>
-                <button type="button" id="plugin-install-confirm-button" class="btn btn-warning btn-sm">{{ 'settings_plugins.confirm_button'|trans }}</button>
-            </div>
-
-            <button type="submit" id="plugin-install-submit-button" class="btn btn-primary" disabled>{{ 'settings_plugins.install_button'|trans }}</button>
-        </form>
     </div>
 {% endblock %}

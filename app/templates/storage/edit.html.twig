@@ -18,12 +18,12 @@
  # You should have received a copy of the GNU General Public License
  # along with this program. If not, see <https://www.gnu.org/licenses/>.
  #}
-{% extends 'base.html.twig' %}
+{% extends 'settings/_layout.html.twig' %}
 
 {% block title %}{{ 'storage_edit.title'|trans }}{% endblock %}
 
-{% block body %}
-    <main class="container py-4">
+{% block settings_content %}
+    <main class="py-4">
         <h1>{{ 'storage_edit.heading'|trans }}</h1>
 
         {% if error %}

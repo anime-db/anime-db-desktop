@@ -18,12 +18,12 @@
  # You should have received a copy of the GNU General Public License
  # along with this program. If not, see <https://www.gnu.org/licenses/>.
  #}
-{% extends 'base.html.twig' %}
+{% extends 'settings/_layout.html.twig' %}
 
 {% block title %}{{ 'settings.title'|trans }}{% endblock %}
 
-{% block body %}
-    <div class="container py-4">
+{% block settings_content %}
+    <div class="py-4">
         <h1>{{ 'settings.heading'|trans }}</h1>
 
         <form method="post" action="{{ path('settings_set_locale') }}" class="mb-4">
@@ -78,32 +78,5 @@
             </fieldset>
         </form>
 
-        <div class="list-group mb-4">
-            <a class="list-group-item list-group-item-action" href="{{ path('settings_labels_index') }}">{{ 'settings.labels_link'|trans }}</a>
-            <a class="list-group-item list-group-item-action" href="{{ path('settings_market_index') }}">{{ 'settings.market_link'|trans }}</a>
-            <a class="list-group-item list-group-item-action" href="{{ path('settings_plugins_index') }}">{{ 'settings.plugins_link'|trans }}</a>
-            <a class="list-group-item list-group-item-action" href="{{ path('settings_plugin_widgets_index') }}">{{ 'settings.plugin_widgets_link'|trans }}</a>
-            <a class="list-group-item list-group-item-action d-flex justify-content-between align-items-center" href="{{ path('settings_sync_review_index') }}">
-                {{ 'settings.sync_review_link'|trans }}
-                {% if needsCorrectionCount > 0 %}
-                    <span class="badge text-bg-warning">{{ 'settings.sync_review_badge'|trans({'%count%': needsCorrectionCount}) }}</span>
-                {% endif %}
-            </a>
-            <a class="list-group-item list-group-item-action" href="{{ path('settings_proxy_index') }}">{{ 'settings.proxy_link'|trans }}</a>
-            <a class="list-group-item list-group-item-action" href="{{ path('settings_backup_index') }}">{{ 'settings.backup_link'|trans }}</a>
-        </div>
-
-        <h2>{{ 'settings.search_reindex_heading'|trans }}</h2>
-
-        {% if reindexStatus == 'success' %}
-            <p class="alert alert-success">{{ 'settings.search_reindex_success'|trans }}</p>
-        {% elseif reindexStatus == 'error' %}
-            <p class="alert alert-danger">{{ 'settings.search_reindex_error'|trans }}</p>
-        {% endif %}
-
-        <form method="post" action="{{ path('settings_search_reindex') }}">
-            <input type="hidden" name="_token" value="{{ csrf_token('settings_search_reindex') }}">
-            <button type="submit" class="btn btn-outline-secondary">{{ 'settings.search_reindex_button'|trans }}</button>
-        </form>
     </div>
 {% endblock %}

@@ -20,28 +20,21 @@
  #}
 {% extends 'settings/_layout.html.twig' %}
 
-{% block title %}{{ pluginName }} — {{ 'settings_plugin_page.title_suffix'|trans }}{% endblock %}
-
-{% block stylesheets %}
-    {% for cssUrl in pluginUi.css %}
-        <link rel="stylesheet" href="{{ cssUrl }}">
-    {% endfor %}
-{% endblock %}
-
-{% block javascripts %}
-    {% for jsUrl in pluginUi.js %}
-        <script src="{{ jsUrl }}" defer></script>
-    {% endfor %}
-{% endblock %}
+{% block title %}{{ 'settings_search_index.title'|trans }}{% endblock %}
 
 {% block settings_content %}
     <div class="py-4">
-        <h1>{{ pluginName }}</h1>
+        <h1>{{ 'settings_search_index.heading'|trans }}</h1>
 
-        {% if renderFailed %}
-            <p class="alert alert-danger">{{ 'settings_plugin_page.render_error'|trans }}</p>
-        {% else %}
-            {{ content|raw }}
+        {% if reindexStatus == 'success' %}
+            <p class="alert alert-success">{{ 'settings_search_index.reindex_success'|trans }}</p>
+        {% elseif reindexStatus == 'error' %}
+            <p class="alert alert-danger">{{ 'settings_search_index.reindex_error'|trans }}</p>
         {% endif %}
+
+        <form method="post" action="{{ path('settings_search_reindex') }}">
+            <input type="hidden" name="_token" value="{{ csrf_token('settings_search_reindex') }}">
+            <button type="submit" class="btn btn-outline-secondary">{{ 'settings_search_index.reindex_button'|trans }}</button>
+        </form>
     </div>
 {% endblock %}
