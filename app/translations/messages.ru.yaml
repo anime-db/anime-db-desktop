@@ -399,6 +399,9 @@ anime_list:
     filter_section_themes: Темы
     filter_section_studios: Студии
     filter_section_empty: В каталоге нет значений для этой секции.
+    filter_section_more_button: 'Ещё (%count%)'
+    filter_section_collapse_button: Свернуть
+    filter_section_search_placeholder: Поиск по студиям…
     filter_no_rating: Без оценки
     filter_no_date_premiere: Без даты премьеры
     filter_decade_label: '%decade%-е'

@@ -386,4 +386,70 @@ final class AppSettingsProviderTest extends TestCase
         $this->assertSame('abc', $data['appSecret']);
         $this->assertTrue($data['incomingConnectionsAllowed']);
     }
+
+    /**
+     * Acceptance (issue #820): a missing key means every filter-panel section starts expanded.
+     */
+    public function testGetCollapsedFilterSectionsReturnsEmptyArrayWhenKeyIsMissing(): void
+    {
+        $provider = new AppSettingsProvider(new AppConfigStore($this->configPath));
+
+        $this->assertSame([], $provider->getCollapsedFilterSections());
+    }
+
+    public function testGetCollapsedFilterSectionsReadsSavedSections(): void
+    {
+        file_put_contents($this->configPath, json_encode(['collapsedFilterSections' => ['genres', 'studios']]));
+
+        $provider = new AppSettingsProvider(new AppConfigStore($this->configPath));
+
+        $this->assertSame(['genres', 'studios'], $provider->getCollapsedFilterSections());
+    }
+
+    /**
+     * Acceptance (issue #820): garbage and unknown section keys are dropped on read, not
+     * surfaced as a section that can never be expanded again (there is no toggle for a key the
+     * template does not render).
+     */
+    public function testGetCollapsedFilterSectionsDropsGarbageAndUnknownKeys(): void
+    {
+        file_put_contents($this->configPath, json_encode([
+            'collapsedFilterSections' => ['genres', 'not_a_real_section', 42, null, 'genres'],
+        ]));
+
+        $provider = new AppSettingsProvider(new AppConfigStore($this->configPath));
+
+        $this->assertSame(['genres'], $provider->getCollapsedFilterSections());
+    }
+
+    public function testGetCollapsedFilterSectionsReturnsEmptyArrayWhenValueIsNotAnArray(): void
+    {
+        file_put_contents($this->configPath, json_encode(['collapsedFilterSections' => 'genres']));
+
+        $provider = new AppSettingsProvider(new AppConfigStore($this->configPath));
+
+        $this->assertSame([], $provider->getCollapsedFilterSections());
+    }
+
+    public function testSetCollapsedFilterSectionsPersistsOnlyKnownSectionKeys(): void
+    {
+        $provider = new AppSettingsProvider(new AppConfigStore($this->configPath));
+
+        $provider->setCollapsedFilterSections(['genres', 'not_a_real_section', 'studios']);
+
+        $this->assertSame(['genres', 'studios'], $provider->getCollapsedFilterSections());
+    }
+
+    public function testSetCollapsedFilterSectionsOverwritesOnlyThatKey(): void
+    {
+        file_put_contents($this->configPath, json_encode(['appSecret' => 'abc']));
+
+        $provider = new AppSettingsProvider(new AppConfigStore($this->configPath));
+        $provider->setCollapsedFilterSections(['labels']);
+
+        $data = json_decode((string) file_get_contents($this->configPath), true);
+
+        $this->assertSame('abc', $data['appSecret']);
+        $this->assertSame(['labels'], $data['collapsedFilterSections']);
+    }
 }

@@ -36,11 +36,23 @@
         type: { facetKey: 'type', kind: 'enum', translatePrefix: 'anime_type', input: 'checkbox' },
         date_premiere: { facetKey: 'date_premiere_decade', kind: 'decade', input: 'radio' },
         user_rating: { facetKey: 'user_rating', kind: 'rating', input: 'checkbox' },
-        labels: { facetKey: 'labels', kind: 'entity', input: 'checkbox' },
-        genres: { facetKey: 'genres', kind: 'enum', translatePrefix: 'genre', input: 'checkbox' },
-        themes: { facetKey: 'themes', kind: 'enum', translatePrefix: 'theme', input: 'checkbox' },
-        studios: { facetKey: 'studios', kind: 'entity', input: 'checkbox' },
+        labels: { facetKey: 'labels', kind: 'entity', input: 'checkbox', truncatable: true },
+        genres: { facetKey: 'genres', kind: 'enum', translatePrefix: 'genre', input: 'checkbox', truncatable: true },
+        themes: { facetKey: 'themes', kind: 'enum', translatePrefix: 'theme', input: 'checkbox', truncatable: true },
+        studios: { facetKey: 'studios', kind: 'entity', input: 'checkbox', truncatable: true, searchable: true },
     };
+
+    // Truncation (issue #820): a truncatable section shows only its top TRUNCATE_TOP_COUNT
+    // unchecked values plus every applied/pending one (always pinned, never counted against the
+    // limit) once more than TRUNCATE_MIN_UNCHECKED values would otherwise be hidden — a
+    // remainder of 1-2 stays flat rather than being tucked behind a button for almost nothing.
+    const TRUNCATE_TOP_COUNT = 8;
+    const TRUNCATE_MIN_UNCHECKED = 10;
+    // The studios search box (the only searchable section) only appears once the current
+    // response actually has enough rows to be worth searching — exported so
+    // anime-list-filters.js can reset its stored query using the exact same threshold once a
+    // narrower response drops back under it, instead of duplicating the number.
+    const STUDIOS_SEARCH_MIN_VALUES = 20;
 
     // Assigned in init(), not queried here at module-load time (issue #734) — see
     // anime-list-grid.js for the same pattern and its rationale.
@@ -90,6 +102,39 @@
 
     function sectionTitle(sectionKey, catalogue) {
         return window.AppTranslations.resolveKey(catalogue, `anime_list.filter_section_${sectionKey}`);
+    }
+
+    // Count-desc, then display-name-asc via localeCompare in the interface locale (issue #820) —
+    // <html lang>, the same source translations.js itself reads the catalogue's own locale from,
+    // so this never drifts from what the page is actually rendered in.
+    function sortEntries(entries) {
+        const locale = document.documentElement.lang || undefined;
+
+        return entries.slice().sort((a, b) => {
+            if (b.count !== a.count) {
+                return b.count - a.count;
+            }
+
+            return a.name.localeCompare(b.name, locale);
+        });
+    }
+
+    function isPinned(entry) {
+        return entry.applied || entry.pending;
+    }
+
+    // The section-toggle header shows the applied count next to the label (issue #820, "Жанры ·
+    // 2") so a collapsed section with a filter still active is legible without expanding it —
+    // same " · N" shape as the top-bar filtersCountBadge below.
+    function updateSectionHeaderCount(sectionEl, entries) {
+        const countEl = sectionEl.querySelector('.anime-list__filter-section-count');
+        if (!countEl) {
+            return;
+        }
+
+        const appliedCount = entries.filter((entry) => entry.applied).length;
+        countEl.textContent = ` · ${appliedCount}`;
+        countEl.hidden = appliedCount === 0;
     }
 
     function buildValueRow(entry, sectionKey, inputType, catalogue, hooks) {
@@ -174,9 +219,107 @@
         });
     }
 
-    // `hooks`: { isValueApplied(sectionKey, id), isValuePending(sectionKey, id), onToggle, onInstantApply } —
-    // provided by window.AnimeListFilterPanel, which owns appliedFilters/pendingFilters.
-    function renderPanel(data, catalogue, hooks) {
+    // A pending value (checked but not yet applied, issue #666) is never sent to GET
+    // /anime/facets, so the server can never guarantee it a bucket the way it now does for
+    // applied values (issue #820 point 3). If a later, unrelated facets refresh (another
+    // section's apply, a search debounce, popstate) drops that bucket, this synthesizes a
+    // count: 0 row from what the hooks can still resolve without one: an enum/rating/decade name
+    // is always derivable from the value's own code, but an entity (label/studio) name only
+    // survives via hooks.resolveEntityFallbackName()'s memory of an earlier response — see
+    // AnimeListFilterPanel.entityNameCache.
+    function appendMissingPendingEntries(entries, sectionKey, config, catalogue, hooks) {
+        const present = new Set(entries.map((entry) => entry.id));
+        hooks.pendingIdsFor(sectionKey).forEach((id) => {
+            if (present.has(id)) {
+                return;
+            }
+
+            const name = config.kind === 'entity'
+                ? hooks.resolveEntityFallbackName(sectionKey, id)
+                : nameFromBucket(config, { value: id }, catalogue);
+            if (!name) {
+                return;
+            }
+
+            entries.push({
+                id,
+                name,
+                count: 0,
+                applied: hooks.isValueApplied(sectionKey, id),
+                pending: true,
+            });
+        });
+    }
+
+    // Renders/updates a truncatable section's search box (studios only, config.searchable) and
+    // reports whether it is currently narrowing the list — the search box element itself is
+    // static markup (list.html.twig), only its hidden/value/handler are ever touched, so it never
+    // loses focus across a patch the way rebuilding it every render would.
+    function updateSearchBox(sectionEl, sectionKey, config, buckets, state, hooks) {
+        const searchBox = sectionEl.querySelector('.anime-list__filter-section-search');
+        if (!searchBox) {
+            return false;
+        }
+        if (!config.searchable) {
+            searchBox.hidden = true;
+
+            return false;
+        }
+
+        const searchInput = searchBox.querySelector('.anime-list__filter-section-search-input');
+        const showSearch = buckets.length > STUDIOS_SEARCH_MIN_VALUES;
+        searchBox.hidden = !showSearch;
+        if (!showSearch) {
+            // The stored query (state.search) is reset by the panel itself once the response
+            // shrinks (AnimeListFilterPanel.resetSearchIfSectionShrank()) — this mirrors that
+            // reset onto the hidden input's own DOM value so a stale query is not still sitting
+            // there, unseen, if the section ever grows back past the threshold.
+            searchInput.value = '';
+
+            return false;
+        }
+
+        // Never overwrites the input while the user is actively typing in it — setting .value
+        // to the same string it already holds is harmless, but re-syncing mid-keystroke from a
+        // state update this same keystroke just triggered is not worth the risk of moving the
+        // caret in a browser that doesn't no-op an identical assignment.
+        if (document.activeElement !== searchInput) {
+            searchInput.value = state.search || '';
+        }
+        searchInput.oninput = () => hooks.onSearchInput(sectionKey, searchInput.value);
+
+        return (state.search || '').trim() !== '';
+    }
+
+    function updateMoreButton(sectionEl, sectionKey, truncationEligible, expanded, moreCount, catalogue, hooks) {
+        const moreButton = sectionEl.querySelector('.anime-list__filter-section-more');
+        if (!moreButton) {
+            return;
+        }
+
+        if (!truncationEligible) {
+            moreButton.hidden = true;
+
+            return;
+        }
+
+        moreButton.hidden = false;
+        moreButton.textContent = expanded
+            ? window.AppTranslations.resolveKey(catalogue, 'anime_list.filter_section_collapse_button')
+            : window.AppTranslations.resolveKey(catalogue, 'anime_list.filter_section_more_button', { count: moreCount });
+        moreButton.onclick = () => hooks.onToggleMore(sectionKey);
+    }
+
+    // `hooks`: { isValueApplied(sectionKey, id), isValuePending(sectionKey, id), onToggle, onInstantApply,
+    // onToggleMore(sectionKey), onSearchInput(sectionKey, value), pendingIdsFor(sectionKey),
+    // resolveEntityFallbackName(sectionKey, id) } — provided by window.AnimeListFilterPanel,
+    // which owns appliedFilters/pendingFilters and the per-section "Ещё"/search UI state.
+    //
+    // `sectionState`: { [sectionKey]: { expanded, search } } — also owned by the panel (issue
+    // #820): this module never stores it between calls, so a patch triggered by an unrelated
+    // facets refresh (a search debounce keystroke, popstate, another section's apply) can never
+    // reset a section a user had expanded, the bug this split-out state exists to avoid.
+    function renderPanel(data, catalogue, hooks, sectionState) {
         Object.keys(FACET_SECTIONS).forEach((sectionKey) => {
             const config = FACET_SECTIONS[sectionKey];
             const sectionEl = document.querySelector(`[data-filter-section="${sectionKey}"]`);
@@ -194,7 +337,7 @@
 
             emptyText.hidden = buckets.length > 0;
 
-            const entries = buckets.map((bucket) => {
+            let entries = buckets.map((bucket) => {
                 const id = config.kind === 'entity' ? String(bucket.id) : bucket.value;
 
                 return {
@@ -205,8 +348,43 @@
                     pending: hooks.isValuePending(sectionKey, id),
                 };
             });
+            appendMissingPendingEntries(entries, sectionKey, config, catalogue, hooks);
 
-            patchValueList(list, entries, sectionKey, config.input, catalogue, hooks);
+            updateSectionHeaderCount(sectionEl, entries);
+
+            if (!config.truncatable) {
+                patchValueList(list, entries, sectionKey, config.input, catalogue, hooks);
+                updateMoreButton(sectionEl, sectionKey, false, false, 0, catalogue, hooks);
+                const searchBox = sectionEl.querySelector('.anime-list__filter-section-search');
+                if (searchBox) {
+                    searchBox.hidden = true;
+                }
+
+                return;
+            }
+
+            const state = (sectionState && sectionState[sectionKey]) || {};
+            entries = sortEntries(entries);
+
+            const searchActive = updateSearchBox(sectionEl, sectionKey, config, buckets, state, hooks);
+            if (searchActive) {
+                const query = state.search.trim().toLowerCase();
+                entries = entries.filter((entry) => isPinned(entry) || entry.name.toLowerCase().includes(query));
+            }
+
+            const pinned = entries.filter(isPinned);
+            const rest = entries.filter((entry) => !isPinned(entry));
+
+            const truncationEligible = !searchActive && rest.length > TRUNCATE_MIN_UNCHECKED;
+            let visible = pinned.concat(rest);
+            let moreCount = 0;
+            if (truncationEligible && !state.expanded) {
+                visible = pinned.concat(rest.slice(0, TRUNCATE_TOP_COUNT));
+                moreCount = rest.length - TRUNCATE_TOP_COUNT;
+            }
+
+            patchValueList(list, visible, sectionKey, config.input, catalogue, hooks);
+            updateMoreButton(sectionEl, sectionKey, truncationEligible, Boolean(state.expanded), moreCount, catalogue, hooks);
         });
     }
 
@@ -248,5 +426,6 @@
         init,
         renderPanel,
         renderChips,
+        STUDIOS_SEARCH_MIN_VALUES,
     };
 })();

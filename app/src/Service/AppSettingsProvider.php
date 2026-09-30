@@ -44,6 +44,17 @@ use App\Entity\ValueObject\PluginId;
  */
 final class AppSettingsProvider
 {
+    /**
+     * The eight filter-panel sections (issue #666/#820) — the only keys
+     * getCollapsedFilterSections()/setCollapsedFilterSections() accept; anything else in
+     * config.json under "collapsedFilterSections" (a stale key from a renamed section, hand
+     * edited garbage) is silently dropped rather than surfaced as a section that can never be
+     * expanded again.
+     */
+    private const array FILTER_SECTION_KEYS = [
+        'watch_status', 'type', 'date_premiere', 'user_rating', 'labels', 'genres', 'themes', 'studios',
+    ];
+
     public function __construct(private readonly AppConfigStore $configStore)
     {
     }
@@ -199,5 +210,53 @@ final class AppSettingsProvider
 
             return $config;
         });
+    }
+
+    /**
+     * Which of the eight catalog filter-panel sections are collapsed (issue #820), by section
+     * key — e.g. "genres", "studios". Missing key or unreadable JSON both mean "every section
+     * expanded", the behavior before this setting existed, same fallback shape as
+     * getPaginationMode().
+     *
+     * @return list<string>
+     */
+    public function getCollapsedFilterSections(): array
+    {
+        $sections = $this->configStore->read()['collapsedFilterSections'] ?? null;
+        if (!\is_array($sections)) {
+            return [];
+        }
+
+        return $this->filterKnownSections($sections);
+    }
+
+    /**
+     * @param array<mixed> $sections
+     */
+    public function setCollapsedFilterSections(array $sections): void
+    {
+        $filtered = $this->filterKnownSections($sections);
+
+        $this->configStore->update(static function (array $config) use ($filtered): array {
+            $config['collapsedFilterSections'] = $filtered;
+
+            return $config;
+        });
+    }
+
+    /**
+     * @param array<mixed> $sections
+     *
+     * @return list<string>
+     */
+    private function filterKnownSections(array $sections): array
+    {
+        $known = array_values(array_filter(
+            $sections,
+            static fn (mixed $section): bool => \is_string($section) && \in_array($section, self::FILTER_SECTION_KEYS, true),
+        ));
+
+        /* @var list<string> */
+        return array_values(array_unique($known));
     }
 }

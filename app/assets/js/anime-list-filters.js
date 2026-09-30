@@ -50,6 +50,35 @@
     // without a second request.
     let lastFacets = null;
 
+    // "Ещё"/search UI state for the four truncatable sections (issue #820), owned here rather
+    // than the stateless render module — see anime-list-filter-render.js's renderPanel() doc
+    // comment for why: a facets patch triggered by anything other than a direct click on one of
+    // these controls (a search debounce keystroke, popstate, another section's apply) must never
+    // reset it. Not persisted across a page reload — only section collapse (below) is.
+    function createSectionUiState() {
+        return {
+            labels: { expanded: false },
+            genres: { expanded: false },
+            themes: { expanded: false },
+            studios: { expanded: false, search: '' },
+        };
+    }
+    let sectionUiState = createSectionUiState();
+
+    // Remembers a label/studio id's display name across facets responses (issue #820): a
+    // *pending* (checked but not yet applied) entity row has no server-side guarantee the way an
+    // applied one now does (AnimeRepository::withGuaranteedEntityBuckets()), so if its bucket
+    // disappears from a later, unrelated response, this is the only place its name can still
+    // come from — see anime-list-filter-render.js's appendMissingPendingEntries().
+    const entityNameCache = { labels: new Map(), studios: new Map() };
+
+    // Which filter-section-toggle buttons are currently collapsed (issue #820), seeded from the
+    // server-rendered aria-expanded at init() and persisted in the background to
+    // %AppData%/config.json via POST /settings/filter-sections on every toggle click — see
+    // persistCollapsedSections() below.
+    const collapsedSections = new Set();
+    let filterSectionsCsrfToken = null;
+
     // Provided by the list core at init() — a filter change (apply/remove/reset) must reload the
     // list and refetch facets, but starting that request is the core's job, not this panel's
     // (issue #712).
@@ -120,6 +149,34 @@
         return sectionKey === 'date_premiere'
             ? pendingFilters.date_premiere === value
             : pendingFilters[sectionKey].has(value);
+    }
+
+    // Every id currently pending for a section (issue #820) — used by the render module to spot
+    // a pending value whose bucket dropped out of a facets response and needs a synthesized row.
+    function pendingIdsFor(sectionKey) {
+        if (sectionKey === 'date_premiere') {
+            return pendingFilters.date_premiere !== null ? [pendingFilters.date_premiere] : [];
+        }
+
+        return Array.from(pendingFilters[sectionKey]);
+    }
+
+    function resolveEntityFallbackName(sectionKey, id) {
+        const cache = entityNameCache[sectionKey];
+
+        return (cache && cache.get(id)) || null;
+    }
+
+    // Refreshes entityNameCache from a facets response before the panel renders it (issue #820).
+    // "labels"/"studios" double as both the filter-section key and the facets response key
+    // (same coincidence anime-list-filter-render.js's FACET_SECTIONS documents for facetKey), so
+    // no extra mapping is needed between the two.
+    function rememberEntityNames(data) {
+        Object.keys(entityNameCache).forEach((sectionKey) => {
+            (data[sectionKey] || []).forEach((bucket) => {
+                entityNameCache[sectionKey].set(String(bucket.id), bucket.name);
+            });
+        });
     }
 
     function handlePendingToggle(sectionKey, value, checked, inputType) {
@@ -247,16 +304,80 @@
     // abort (mirrors the original single-function ordering this panel was split out of).
     function setFacetsData(data) {
         lastFacets = data;
+        rememberEntityNames(data);
     }
 
-    function render(data, catalogue) {
-        window.AnimeListFilterRender.renderPanel(data, catalogue, {
+    // The studios search box only exists once its section has more than
+    // AnimeListFilterRender.STUDIOS_SEARCH_MIN_VALUES values (issue #820); once a fresher
+    // response drops back to that count or fewer, the box disappears and any query typed into it
+    // is dropped too, so it never resurfaces stale once the section grows past the threshold
+    // again later.
+    function resetSearchIfSectionShrank(data) {
+        const count = (data.studios || []).length;
+        if (count <= window.AnimeListFilterRender.STUDIOS_SEARCH_MIN_VALUES) {
+            sectionUiState.studios.search = '';
+        }
+    }
+
+    function toggleSectionMore(sectionKey) {
+        sectionUiState[sectionKey].expanded = !sectionUiState[sectionKey].expanded;
+        rerenderFromLastFacets();
+    }
+
+    function handleSectionSearchInput(sectionKey, value) {
+        sectionUiState[sectionKey].search = value;
+        rerenderFromLastFacets();
+    }
+
+    // Re-patches the panel from the already-held facets response (issue #820) — used by the
+    // "Ещё"/search controls above, neither of which changes the filter itself, so re-fetching
+    // GET /anime/facets for them would be wasted network I/O.
+    async function rerenderFromLastFacets() {
+        if (!lastFacets) {
+            return;
+        }
+        const catalogue = await window.AppTranslations.getCatalogue().catch(() => ({}));
+        window.AnimeListFilterRender.renderPanel(lastFacets, catalogue, filterRenderHooks(), sectionUiState);
+    }
+
+    function filterRenderHooks() {
+        return {
             isValueApplied,
             isValuePending,
             onToggle: handlePendingToggle,
             onInstantApply: instantApply,
-        });
+            onToggleMore: toggleSectionMore,
+            onSearchInput: handleSectionSearchInput,
+            pendingIdsFor,
+            resolveEntityFallbackName,
+        };
+    }
+
+    function render(data, catalogue) {
+        resetSearchIfSectionShrank(data);
+        window.AnimeListFilterRender.renderPanel(data, catalogue, filterRenderHooks(), sectionUiState);
         renderChipsAndCount(catalogue);
+    }
+
+    // Saves which sections are collapsed to %AppData%/config.json in the background (issue #820)
+    // — fired on every section-toggle click, no page reload, mirroring the JSON+CSRF-in-body
+    // shape AnimeLabelController/anime-detail.js already use rather than the form-field CSRF the
+    // rest of SettingsController's endpoints take, since there is no form here. Best-effort: a
+    // failed save only means the collapse state does not survive the next launch, the toggle
+    // itself already applied in the DOM regardless.
+    function persistCollapsedSections() {
+        if (!filterSectionsCsrfToken) {
+            return;
+        }
+
+        fetch('/settings/filter-sections', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token: filterSectionsCsrfToken, collapsed: Array.from(collapsedSections) }),
+        }).catch(() => {
+            // Best-effort: a failed save only means the collapse state does not survive the next
+            // launch — the toggle itself already applied in the DOM regardless (issue #820).
+        });
     }
 
     // `onFiltersChanged` and `refreshShownCount` are provided by the list core (anime-list.js):
@@ -273,14 +394,36 @@
 
         window.AnimeListFilterRender.init(root);
 
+        // Reset on every (re)mount, not just declared at module scope (issue #820): a remount
+        // (see mountAnimeList()'s unmount/remount symmetry in anime-list.js) must not carry a
+        // previous instance's expanded/search UI state or cached entity names into the fresh DOM.
+        sectionUiState = createSectionUiState();
+        Object.values(entityNameCache).forEach((cache) => cache.clear());
+
         filterApplyButton.addEventListener('click', applyPending);
         chipsResetButton.addEventListener('click', resetAllFilters);
 
+        const sectionsContainer = root.querySelector('#anime-list-filter-sections');
+        filterSectionsCsrfToken = sectionsContainer ? sectionsContainer.dataset.csrfToken : null;
+        collapsedSections.clear();
+
         root.querySelectorAll('.anime-list__filter-section-toggle').forEach((toggle) => {
+            const sectionKey = toggle.closest('[data-filter-section]').dataset.filterSection;
+            if (toggle.getAttribute('aria-expanded') === 'false') {
+                collapsedSections.add(sectionKey);
+            }
+
             toggle.addEventListener('click', () => {
                 const expanded = toggle.getAttribute('aria-expanded') === 'true';
                 toggle.setAttribute('aria-expanded', String(!expanded));
                 toggle.nextElementSibling.hidden = expanded;
+
+                if (expanded) {
+                    collapsedSections.add(sectionKey);
+                } else {
+                    collapsedSections.delete(sectionKey);
+                }
+                persistCollapsedSections();
             });
         });
 

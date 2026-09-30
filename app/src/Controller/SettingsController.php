@@ -135,6 +135,38 @@ final class SettingsController
     }
 
     /**
+     * Persists which catalog filter-panel sections are collapsed (issue #820), read back by
+     * HomeController::index() so the template renders each section already collapsed/expanded
+     * instead of flashing every section open before JS can react. Unlike every other setter
+     * above, this one is fired by anime-list-filters.js in the background on every section
+     * toggle click — no page reload — so it answers with a bare 204 rather than the PRG redirect
+     * those form posts use, and reads its CSRF token from the JSON body (mirrors
+     * AnimeLabelController::update()) rather than a form field, since there is no form here.
+     */
+    #[Route('/settings/filter-sections', name: 'settings_set_filter_sections', methods: ['POST'])]
+    public function setFilterSections(Request $request): Response
+    {
+        $payload = json_decode($request->getContent(), true);
+        if (!\is_array($payload)) {
+            throw new BadRequestHttpException('Request body must be a JSON object.');
+        }
+
+        $token = new CsrfToken('settings_filter_sections', (string) ($payload['token'] ?? ''));
+        if (!$this->csrfTokenManager->isTokenValid($token)) {
+            throw new BadRequestHttpException('Invalid CSRF token.');
+        }
+
+        $collapsed = $payload['collapsed'] ?? [];
+        if (!\is_array($collapsed)) {
+            throw new BadRequestHttpException('"collapsed" must be an array.');
+        }
+
+        $this->settings->setCollapsedFilterSections($collapsed);
+
+        return new Response('', Response::HTTP_NO_CONTENT);
+    }
+
+    /**
      * Runs the same catalog reindex as bin/console app:search:reindex (issue #198), so a user
      * hitting a stale/broken search index has a recovery option that doesn't require the CLI.
      */

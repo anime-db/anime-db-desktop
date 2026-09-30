@@ -31,6 +31,8 @@ use AnimeDb\PluginContracts\Widget\CatalogWidgetInterface;
 use App\Controller\HomeController;
 use App\Repository\AnimeRepository;
 use App\Repository\StorageRepository;
+use App\Service\AppConfigStore;
+use App\Service\AppSettingsProvider;
 use App\Service\Plugin\CatalogWidgetRegistry;
 use App\Service\Plugin\PluginsConfigStore;
 use App\Tests\Fixtures\Plugin\Widget\FakeCatalogWidget;
@@ -50,6 +52,7 @@ final class HomeControllerTest extends TestCase
         bool $hasAnime,
         Environment $twig,
         ?CatalogWidgetRegistry $catalogWidgets = null,
+        ?AppSettingsProvider $settings = null,
     ): HomeController {
         $storages = $this->createStub(StorageRepository::class);
         $storages->method('hasAny')->willReturn($hasStorage);
@@ -57,7 +60,13 @@ final class HomeControllerTest extends TestCase
         $animeRepository = $this->createStub(AnimeRepository::class);
         $animeRepository->method('hasAny')->willReturn($hasAnime);
 
-        return new HomeController($twig, $storages, $animeRepository, $catalogWidgets ?? $this->createEmptyCatalogWidgets());
+        return new HomeController(
+            $twig,
+            $storages,
+            $animeRepository,
+            $catalogWidgets ?? $this->createEmptyCatalogWidgets(),
+            $settings ?? new AppSettingsProvider(new AppConfigStore(sys_get_temp_dir().'/home-controller-settings-test-'.uniqid().'.json')),
+        );
     }
 
     public function testIndexShowsOnboardingBannerWhenCatalogIsEmpty(): void
@@ -65,7 +74,7 @@ final class HomeControllerTest extends TestCase
         $twig = $this->createMock(Environment::class);
         $twig->expects($this->once())
             ->method('render')
-            ->with('anime/list.html.twig', ['showOnboarding' => true, 'widgets' => []])
+            ->with('anime/list.html.twig', ['showOnboarding' => true, 'widgets' => [], 'collapsedFilterSections' => []])
             ->willReturn('<html></html>');
 
         $controller = $this->createController(hasStorage: false, hasAnime: false, twig: $twig);
@@ -79,7 +88,7 @@ final class HomeControllerTest extends TestCase
         $twig = $this->createMock(Environment::class);
         $twig->expects($this->once())
             ->method('render')
-            ->with('anime/list.html.twig', ['showOnboarding' => false, 'widgets' => []])
+            ->with('anime/list.html.twig', ['showOnboarding' => false, 'widgets' => [], 'collapsedFilterSections' => []])
             ->willReturn('<html></html>');
 
         $controller = $this->createController(hasStorage: true, hasAnime: false, twig: $twig);
@@ -91,11 +100,40 @@ final class HomeControllerTest extends TestCase
         $twig = $this->createMock(Environment::class);
         $twig->expects($this->once())
             ->method('render')
-            ->with('anime/list.html.twig', ['showOnboarding' => false, 'widgets' => []])
+            ->with('anime/list.html.twig', ['showOnboarding' => false, 'widgets' => [], 'collapsedFilterSections' => []])
             ->willReturn('<html></html>');
 
         $controller = $this->createController(hasStorage: false, hasAnime: true, twig: $twig);
         $controller->index();
+    }
+
+    /**
+     * Acceptance (issue #820): the saved collapse state reaches the template unchanged, so it
+     * can render aria-expanded/hidden from it on first paint instead of every section flashing
+     * open first.
+     */
+    public function testIndexPassesSavedCollapsedFilterSectionsToTheTemplate(): void
+    {
+        $configPath = sys_get_temp_dir().'/home-controller-settings-test-'.uniqid().'.json';
+        file_put_contents($configPath, (string) json_encode(['collapsedFilterSections' => ['genres', 'studios']]));
+        $settings = new AppSettingsProvider(new AppConfigStore($configPath));
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('anime/list.html.twig', [
+                'showOnboarding' => false,
+                'widgets' => [],
+                'collapsedFilterSections' => ['genres', 'studios'],
+            ])
+            ->willReturn('<html></html>');
+
+        try {
+            $controller = $this->createController(hasStorage: true, hasAnime: false, twig: $twig, settings: $settings);
+            $controller->index();
+        } finally {
+            unlink($configPath);
+        }
     }
 
     /**
@@ -138,6 +176,7 @@ final class HomeControllerTest extends TestCase
                     'title' => 'spotlight',
                     'pluginName' => 'animedb-shikimori',
                 ]],
+                'collapsedFilterSections' => [],
             ])
             ->willReturn('<html></html>');
 

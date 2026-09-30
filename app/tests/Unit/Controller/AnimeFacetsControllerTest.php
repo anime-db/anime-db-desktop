@@ -332,6 +332,66 @@ final class AnimeFacetsControllerTest extends TestCase
         $this->assertNull(self::bucketCount($data['user_rating'], 'value', '1'));
     }
 
+    /**
+     * Issue #820: an applied genre that no longer matches anything under the current filter
+     * (either because nothing in the catalog ever carried it, as here, or because another
+     * applied section narrowed it to zero) still gets a count: 0 bucket — this is what lets the
+     * client pin it and a chip resolve its name instead of the row silently disappearing.
+     */
+    public function testAppliedGenreMissingFromTheFacetGetsAZeroCountBucketWithItsCode(): void
+    {
+        $data = $this->facetsFor(['genres' => [GenreCode::Horror->value]]);
+
+        $this->assertSame(0, self::bucketCount($data['genres'], 'value', 'horror'));
+    }
+
+    public function testAppliedThemeMissingFromTheFacetGetsAZeroCountBucketWithItsCode(): void
+    {
+        // "TV Action" (Sunrise) carries Isekai but not Watching-only... it *is* Watching, so
+        // narrow with a status only "TV Drama" (no Isekai) has instead.
+        $data = $this->facetsFor(['themes' => [ThemeCode::Isekai->value], 'watch_status' => ['plan']]);
+
+        $this->assertSame(0, self::bucketCount($data['themes'], 'value', 'isekai'));
+    }
+
+    /**
+     * Same guarantee as the genre/theme tests above, but for an entity section: the bucket also
+     * needs the studio's name, not just its id, since the client has nothing else to resolve a
+     * pinned row or a chip label from.
+     */
+    public function testAppliedStudioMissingFromTheFacetGetsAZeroCountBucketWithItsName(): void
+    {
+        // Sunrise never carries Drama in the fixtures, so narrowing to Drama zeroes Sunrise's
+        // own bucket out while the id itself is still a real, applied studio.
+        $data = $this->facetsFor(['studios' => [$this->sunrise->id], 'genres' => [GenreCode::Drama->value]]);
+
+        $this->assertSame(0, self::bucketCount($data['studios'], 'id', (int) $this->sunrise->id));
+        $bucket = current(array_filter($data['studios'], fn (array $b): bool => $b['id'] === (int) $this->sunrise->id));
+        $this->assertSame('Sunrise', $bucket['name']);
+    }
+
+    public function testAppliedLabelMissingFromTheFacetGetsAZeroCountBucketWithItsName(): void
+    {
+        // "favorite" is only on "TV Action Comedy", which does not carry Drama.
+        $data = $this->facetsFor(['labels' => [$this->favorite->id], 'genres' => [GenreCode::Drama->value]]);
+
+        $this->assertSame(0, self::bucketCount($data['labels'], 'id', (int) $this->favorite->id));
+        $bucket = current(array_filter($data['labels'], fn (array $b): bool => $b['id'] === (int) $this->favorite->id));
+        $this->assertSame('favorite', $bucket['name']);
+    }
+
+    /**
+     * The guarantee is scoped to values actually in the applied filter — an id that simply does
+     * not exist (a stale id from an old URL) gets no bucket at all, matching the pre-#820
+     * behavior the issue explicitly leaves unchanged for that case.
+     */
+    public function testAnUnknownAppliedStudioIdGetsNoBucketAtAll(): void
+    {
+        $data = $this->facetsFor(['studios' => [999999]]);
+
+        $this->assertNull(self::bucketCount($data['studios'], 'id', 999999));
+    }
+
     public function testFacetsAreRestrictedToTheSearchIntersectionWhenNameIsResolved(): void
     {
         // Only "TV Action" and "Movie Comedy" match — "TV Drama"/"TV Comedy Drama" must not

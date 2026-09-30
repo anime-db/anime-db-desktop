@@ -101,16 +101,31 @@
             </div>
 
             <aside class="anime-list__filters" id="anime-list-filters" aria-label="{{ 'anime_list.filters_toggle_button'|trans }}">
-                <div class="anime-list__filter-sections" id="anime-list-filter-sections">
+                <div
+                    class="anime-list__filter-sections"
+                    id="anime-list-filter-sections"
+                    data-csrf-token="{{ csrf_token('settings_filter_sections') }}"
+                >
                     {% for section in ['watch_status', 'type', 'date_premiere', 'user_rating', 'labels', 'genres', 'themes', 'studios'] %}
+                        {% set collapsed = section in collapsedFilterSections %}
                         <section class="anime-list__filter-section" data-filter-section="{{ section }}">
-                            <button type="button" class="anime-list__filter-section-toggle" aria-expanded="true">
+                            <button type="button" class="anime-list__filter-section-toggle" aria-expanded="{{ collapsed ? 'false' : 'true' }}">
                                 <span class="anime-list__filter-section-chevron">▾</span>
                                 {{ ('anime_list.filter_section_' ~ section)|trans }}
+                                <span class="anime-list__filter-section-count" hidden></span>
                             </button>
-                            <div class="anime-list__filter-section-body">
+                            <div class="anime-list__filter-section-body"{% if collapsed %} hidden{% endif %}>
                                 <p class="anime-list__filter-section-empty" hidden>{{ 'anime_list.filter_section_empty'|trans }}</p>
+                                <div class="anime-list__filter-section-search" hidden>
+                                    <input
+                                        type="search"
+                                        class="anime-list__filter-section-search-input"
+                                        aria-label="{{ 'anime_list.filter_section_search_placeholder'|trans }}"
+                                        placeholder="{{ 'anime_list.filter_section_search_placeholder'|trans }}"
+                                    >
+                                </div>
                                 <ul class="anime-list__filter-values"></ul>
+                                <button type="button" class="anime-list__filter-section-more" hidden></button>
                             </div>
                         </section>
                     {% endfor %}

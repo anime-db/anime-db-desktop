@@ -30,6 +30,8 @@ namespace App\Tests\Unit\Twig;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RequestStack;
+use Symfony\Component\HttpFoundation\Session\Session;
+use Symfony\Component\HttpFoundation\Session\Storage\MockArraySessionStorage;
 use Twig\Environment;
 
 /**
@@ -40,12 +42,20 @@ use Twig\Environment;
  */
 final class AnimeListTemplateRenderingTest extends KernelTestCase
 {
-    /** base.html.twig reads app.request.locale, so a real request cycle needs one on the stack. */
+    /**
+     * base.html.twig reads app.request.locale, so a real request cycle needs one on the stack.
+     * The filter-sections container also calls csrf_token() unconditionally (issue #820), which
+     * reads/writes its token through the session of the current request — a real HTTP
+     * request-response cycle has one already; this manual render needs one pushed by hand.
+     */
     private function pushRequest(): void
     {
+        $request = Request::create('/');
+        $request->setSession(new Session(new MockArraySessionStorage()));
+
         /** @var RequestStack $requestStack */
         $requestStack = self::getContainer()->get('request_stack');
-        $requestStack->push(Request::create('/'));
+        $requestStack->push($request);
     }
 
     public function testRendersACatalogWidgetSlotWithoutAnEntryIdWhenAWidgetIsActive(): void
@@ -57,6 +67,7 @@ final class AnimeListTemplateRenderingTest extends KernelTestCase
         $twig = self::getContainer()->get('twig');
         $html = $twig->render('anime/list.html.twig', [
             'showOnboarding' => false,
+            'collapsedFilterSections' => [],
             'widgets' => [['pluginId' => 'animedb-shikimori', 'widgetName' => 'spotlight', 'title' => 'Spotlight', 'pluginName' => 'Shikimori']],
         ]);
 
@@ -91,6 +102,7 @@ final class AnimeListTemplateRenderingTest extends KernelTestCase
         $twig = self::getContainer()->get('twig');
         $html = $twig->render('anime/list.html.twig', [
             'showOnboarding' => false,
+            'collapsedFilterSections' => [],
             'widgets' => [['pluginId' => 'animedb-shikimori', 'widgetName' => 'spotlight', 'title' => 'Spotlight', 'pluginName' => 'Shikimori']],
         ]);
 
@@ -110,9 +122,51 @@ final class AnimeListTemplateRenderingTest extends KernelTestCase
         $twig = self::getContainer()->get('twig');
         $html = $twig->render('anime/list.html.twig', [
             'showOnboarding' => false,
+            'collapsedFilterSections' => [],
             'widgets' => [],
         ]);
 
         $this->assertStringNotContainsString('anime-list__widgets', $html);
+    }
+
+    /**
+     * Acceptance (issue #820): a section named in collapsedFilterSections renders already
+     * collapsed on first paint — aria-expanded="false" and its body hidden — instead of every
+     * section flashing open before JS can react to the saved state.
+     */
+    public function testRendersASavedCollapsedSectionAlreadyCollapsed(): void
+    {
+        self::bootKernel();
+        $this->pushRequest();
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('anime/list.html.twig', [
+            'showOnboarding' => false,
+            'collapsedFilterSections' => ['genres'],
+            'widgets' => [],
+        ]);
+
+        $this->assertMatchesRegularExpression($this->sectionPattern('genres', expanded: false), $html);
+        $this->assertMatchesRegularExpression($this->sectionPattern('studios', expanded: true), $html);
+    }
+
+    /**
+     * Matches one <section data-filter-section="$section">...</section> block and asserts its
+     * toggle button's aria-expanded and body "hidden" attribute agree with $expanded — "(?!.*
+     * <section)" bounds the match to that one section instead of swallowing every section after
+     * it, since the eight sections share no other closing delimiter in the markup.
+     */
+    private function sectionPattern(string $section, bool $expanded): string
+    {
+        $ariaExpanded = $expanded ? 'true' : 'false';
+        $hidden = $expanded ? '' : ' hidden';
+
+        return '/<section class="anime-list__filter-section" data-filter-section="'.preg_quote($section, '/').'">'
+            .'(?:(?!<section).)*?'
+            .'aria-expanded="'.$ariaExpanded.'"'
+            .'(?:(?!<section).)*?'
+            .'<div class="anime-list__filter-section-body"'.$hidden.'>'
+            .'/s';
     }
 }
