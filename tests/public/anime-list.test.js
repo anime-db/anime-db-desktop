@@ -1848,16 +1848,112 @@ test('the header of a collapsed section with applied values shows the applied co
     expect(countEl.textContent).toBe(' · 2');
 });
 
-test('a chip for an applied studio resolves its display name once the server guarantees it a zero-count bucket (issue #820)', async () => {
-    window.history.replaceState({}, '', '/anime?studios[]=42');
+test('an applied studio with a server-guaranteed zero-count bucket stays pinned above a truncated section (issue #820)', async () => {
+    window.history.replaceState({}, '', '/anime?studios[]=99');
     const calls = mockFetchQueueAll();
     setUpDetailedTranslations();
-    // Simulates AnimeRepository::withGuaranteedEntityBuckets(): the studio dropped out of the
-    // current selection (narrowed to zero elsewhere) but the server still returns its bucket
-    // with count: 0 and its name, instead of the row/name silently disappearing.
-    await loadAndResolveFacets(calls, { studios: [{ id: 42, name: 'Sunrise', count: 0 }] });
+    // Simulates AnimeRepository::withGuaranteedEntityBuckets(): the applied studio dropped out of
+    // the current selection (narrowed to zero elsewhere) but the server still returns its bucket
+    // with count: 0 and its name, instead of the row silently disappearing. studioBuckets(21) alone
+    // makes the section both search-eligible and truncation-eligible, so this also proves the
+    // pinned row survives sorting/truncation, not just name resolution (which predates this PR).
+    await loadAndResolveFacets(calls, { studios: [{ id: 99, name: 'Applied Studio', count: 0 }, ...studioBuckets(21)] });
 
-    expect(document.querySelector('.anime-list__chip-label').textContent).toBe('anime_list.filter_section_studios: Sunrise');
+    const section = document.querySelector('[data-filter-section="studios"]');
+    const rows = Array.from(section.querySelectorAll('.anime-list__filter-value'));
+    expect(rows[0].dataset.value).toBe('99');
+    expect(rows[0].querySelector('.anime-list__filter-value-name').textContent).toBe('Applied Studio');
+    expect(rows[0].querySelector('.anime-list__filter-value-count').textContent).toBe('0');
+    expect(rows[0].classList.contains('anime-list__filter-value--applied')).toBe(true);
+    expect(document.querySelector('.anime-list__chip-label').textContent).toBe('anime_list.filter_section_studios: Applied Studio');
+});
+
+test('the header count for a section without a server-side empty-bucket guarantee (watch_status) stays visible once its applied value falls out of a facets response after being unchecked-but-not-applied (issue #820)', async () => {
+    window.history.replaceState({}, '', '/anime?watch_status[]=plan');
+    const calls = mockFetchQueueAll();
+    setUpDetailedTranslations();
+    await loadAndResolveFacets(calls, { watch_status: [{ value: 'plan', count: 5 }] });
+
+    // Unchecking without pressing Apply drops 'plan' from pendingFilters while appliedFilters keeps
+    // it — the only way the section header count and appendMissingPendingEntries's own pending-only
+    // synthesis can actually disagree.
+    const section = document.querySelector('[data-filter-section="watch_status"]');
+    const row = Array.from(section.querySelectorAll('.anime-list__filter-value')).find((candidate) => candidate.dataset.value === 'plan');
+    const checkbox = row.querySelector('.anime-list__filter-checkbox');
+    checkbox.checked = false;
+    checkbox.dispatchEvent(new Event('change'));
+
+    // An unrelated facets refresh (a search debounce) whose response narrows watch_status=plan to
+    // zero elsewhere. watch_status/type/user_rating/date_premiere have no
+    // AnimeRepository::withGuaranteedValueBuckets() equivalent (GROUP BY never returns an empty
+    // group), so the bucket can legitimately be absent entirely rather than count: 0.
+    document.getElementById('anime-list-search').dispatchEvent(new Event('input'));
+    jest.advanceTimersByTime(300);
+    await flushMicrotasks();
+    byKind(calls, 'list')[1].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 0, limit: 6, offset: 0 }));
+    byKind(calls, 'facets')[1].resolve(facetsWith({ watch_status: [] }));
+    await flushMicrotasks();
+
+    const countEl = section.querySelector('.anime-list__filter-section-count');
+    expect(countEl.hidden).toBe(false);
+    expect(countEl.textContent).toBe(' · 1');
+});
+
+test('a pending enum value survives an unrelated facets refresh whose response no longer includes its bucket (issue #820)', async () => {
+    const calls = mockFetchQueueAll();
+    setUpDetailedTranslations();
+    await loadAndResolveFacets(calls, { genres: genreBuckets(12) });
+
+    const section = document.querySelector('[data-filter-section="genres"]');
+    dispatchClick(section.querySelector('.anime-list__filter-section-more')); // expand
+    await flushMicrotasks();
+
+    const g11Row = Array.from(section.querySelectorAll('.anime-list__filter-value')).find((row) => row.dataset.value === 'g11');
+    g11Row.querySelector('.anime-list__filter-checkbox').checked = true;
+    g11Row.querySelector('.anime-list__filter-checkbox').dispatchEvent(new Event('change'));
+    await flushMicrotasks();
+
+    // An unrelated facets refresh (the same debounced main-title search keystroke as elsewhere in
+    // this suite) whose response drops g11's bucket entirely rather than narrowing it to zero.
+    document.getElementById('anime-list-search').dispatchEvent(new Event('input'));
+    jest.advanceTimersByTime(300);
+    await flushMicrotasks();
+    byKind(calls, 'list')[1].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 0, limit: 6, offset: 0 }));
+    byKind(calls, 'facets')[1].resolve(facetsWith({ genres: genreBuckets(11) })); // g11 no longer present
+    await flushMicrotasks();
+
+    const survivingRow = Array.from(section.querySelectorAll('.anime-list__filter-value')).find((row) => row.dataset.value === 'g11');
+    expect(survivingRow).toBeDefined();
+    expect(survivingRow.querySelector('.anime-list__filter-value-count').textContent).toBe('0');
+    expect(survivingRow.querySelector('.anime-list__filter-checkbox').checked).toBe(true);
+});
+
+test('a pending studio value survives an unrelated facets refresh via its name cached from the previous response (issue #820)', async () => {
+    const calls = mockFetchQueueAll();
+    setUpDetailedTranslations();
+    await loadAndResolveFacets(calls, { studios: studioBuckets(21) });
+
+    const section = document.querySelector('[data-filter-section="studios"]');
+    const row = Array.from(section.querySelectorAll('.anime-list__filter-value')).find((candidate) => candidate.dataset.value === '1');
+    row.querySelector('.anime-list__filter-checkbox').checked = true;
+    row.querySelector('.anime-list__filter-checkbox').dispatchEvent(new Event('change'));
+    await flushMicrotasks();
+
+    // An unrelated facets refresh whose response drops studio id 1's bucket entirely — unlike an
+    // enum value, its name cannot be derived from the id itself, only from
+    // AnimeListFilterPanel.entityNameCache, populated by the previous response.
+    document.getElementById('anime-list-search').dispatchEvent(new Event('input'));
+    jest.advanceTimersByTime(300);
+    await flushMicrotasks();
+    byKind(calls, 'list')[1].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 0, limit: 6, offset: 0 }));
+    byKind(calls, 'facets')[1].resolve(facetsWith({ studios: studioBuckets(20).filter((bucket) => bucket.id !== 1) }));
+    await flushMicrotasks();
+
+    const survivingRow = Array.from(section.querySelectorAll('.anime-list__filter-value')).find((candidate) => candidate.dataset.value === '1');
+    expect(survivingRow).toBeDefined();
+    expect(survivingRow.querySelector('.anime-list__filter-value-name').textContent).toBe('Studio0');
+    expect(survivingRow.querySelector('.anime-list__filter-value-count').textContent).toBe('0');
+    expect(survivingRow.querySelector('.anime-list__filter-checkbox').checked).toBe(true);
 });
 
 test('clicking a section toggle persists the collapsed sections via POST /settings/filter-sections without a page reload (issue #820)', async () => {
@@ -1875,4 +1971,29 @@ test('clicking a section toggle persists the collapsed sections via POST /settin
     const [, options] = persistCall;
     expect(options.method).toBe('POST');
     expect(JSON.parse(options.body)).toEqual({ token: 'test-csrf-token', collapsed: ['genres'] });
+});
+
+test('collapsedSections is seeded from the server-rendered aria-expanded, and toggling a different section preserves it (issue #820)', async () => {
+    document.querySelector('[data-filter-section="studios"] .anime-list__filter-section-toggle').setAttribute('aria-expanded', 'false');
+    const calls = mockFetchQueueAll();
+    setUpDetailedTranslations();
+    await loadAndResolveFacets(calls, {});
+
+    const persistCalls = () => calls.filter((call) => call.url === '/settings/filter-sections');
+    const lastPersistBody = () => JSON.parse(global.fetch.mock.calls.filter(([url]) => url === '/settings/filter-sections').pop()[1].body);
+
+    const genresToggle = document.querySelector('[data-filter-section="genres"] .anime-list__filter-section-toggle');
+    dispatchClick(genresToggle); // collapse genres, on top of the seeded "studios" collapse
+    await flushMicrotasks();
+
+    expect(persistCalls()).toHaveLength(1);
+    expect(lastPersistBody().collapsed.slice().sort()).toEqual(['genres', 'studios']);
+    persistCalls()[0].resolve({ ok: true, status: 204, json: () => Promise.resolve(null) });
+    await flushMicrotasks();
+
+    dispatchClick(genresToggle); // expand genres back
+    await flushMicrotasks();
+
+    expect(persistCalls()).toHaveLength(2);
+    expect(lastPersistBody().collapsed).toEqual(['studios']);
 });

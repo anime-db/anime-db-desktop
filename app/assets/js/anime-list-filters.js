@@ -78,6 +78,15 @@
     // persistCollapsedSections() below.
     const collapsedSections = new Set();
     let filterSectionsCsrfToken = null;
+    // Guards persistCollapsedSections() below against out-of-order writes: FrankenPHP's worker
+    // threads and AppConfigStore's flock only serialize individual writes, they never guarantee
+    // the order two concurrent POSTs are applied in, so two clicks in quick succession could have
+    // the earlier request's state win in config.json even though it was sent first (issue #820
+    // review). Keeping at most one request in flight and re-reading collapsedSections only once
+    // that request settles guarantees strictly sequential writes, each carrying the state that was
+    // current at send time.
+    let persistRequestInFlight = false;
+    let persistRequestQueued = false;
 
     // Provided by the list core at init() — a filter change (apply/remove/reset) must reload the
     // list and refetch facets, but starting that request is the core's job, not this panel's
@@ -159,6 +168,18 @@
         }
 
         return Array.from(pendingFilters[sectionKey]);
+    }
+
+    // Every id currently applied for a section (issue #820 review) — the section-header count
+    // ("Жанры · 2") reads from this rather than from the rendered facets entries, since the
+    // server only guarantees a bucket for an applied value narrowed to zero in genres/themes/
+    // labels/studios, not in watch_status/type/user_rating/date_premiere.
+    function appliedIdsFor(sectionKey) {
+        if (sectionKey === 'date_premiere') {
+            return appliedFilters.date_premiere !== null ? [appliedFilters.date_premiere] : [];
+        }
+
+        return Array.from(appliedFilters[sectionKey]);
     }
 
     function resolveEntityFallbackName(sectionKey, id) {
@@ -349,6 +370,7 @@
             onToggleMore: toggleSectionMore,
             onSearchInput: handleSectionSearchInput,
             pendingIdsFor,
+            appliedIdsFor,
             resolveEntityFallbackName,
         };
     }
@@ -370,6 +392,13 @@
             return;
         }
 
+        if (persistRequestInFlight) {
+            persistRequestQueued = true;
+
+            return;
+        }
+
+        persistRequestInFlight = true;
         fetch('/settings/filter-sections', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -377,6 +406,12 @@
         }).catch(() => {
             // Best-effort: a failed save only means the collapse state does not survive the next
             // launch — the toggle itself already applied in the DOM regardless (issue #820).
+        }).finally(() => {
+            persistRequestInFlight = false;
+            if (persistRequestQueued) {
+                persistRequestQueued = false;
+                persistCollapsedSections();
+            }
         });
     }
 
@@ -406,6 +441,8 @@
         const sectionsContainer = root.querySelector('#anime-list-filter-sections');
         filterSectionsCsrfToken = sectionsContainer ? sectionsContainer.dataset.csrfToken : null;
         collapsedSections.clear();
+        persistRequestInFlight = false;
+        persistRequestQueued = false;
 
         root.querySelectorAll('.anime-list__filter-section-toggle').forEach((toggle) => {
             const sectionKey = toggle.closest('[data-filter-section]').dataset.filterSection;

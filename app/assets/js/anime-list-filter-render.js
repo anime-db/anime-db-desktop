@@ -125,14 +125,20 @@
 
     // The section-toggle header shows the applied count next to the label (issue #820, "Жанры ·
     // 2") so a collapsed section with a filter still active is legible without expanding it —
-    // same " · N" shape as the top-bar filtersCountBadge below.
-    function updateSectionHeaderCount(sectionEl, entries) {
+    // same " · N" shape as the top-bar filtersCountBadge below. Reads the count from the panel's
+    // own applied-filter state (hooks.appliedIdsFor), not from the rendered entries: the server
+    // only guarantees a bucket for an applied genre/theme/label/studio narrowed to zero elsewhere
+    // (AnimeRepository::withGuaranteedValueBuckets()/withGuaranteedEntityBuckets()) — watch_status,
+    // type, user_rating and date_premiere have no such guarantee (GROUP BY never returns an empty
+    // group), so an applied value there that a sibling filter narrows to zero would otherwise drop
+    // out of entries and silently hide the very count this exists to keep visible.
+    function updateSectionHeaderCount(sectionEl, sectionKey, hooks) {
         const countEl = sectionEl.querySelector('.anime-list__filter-section-count');
         if (!countEl) {
             return;
         }
 
-        const appliedCount = entries.filter((entry) => entry.applied).length;
+        const appliedCount = hooks.appliedIdsFor(sectionKey).length;
         countEl.textContent = ` · ${appliedCount}`;
         countEl.hidden = appliedCount === 0;
     }
@@ -312,7 +318,7 @@
 
     // `hooks`: { isValueApplied(sectionKey, id), isValuePending(sectionKey, id), onToggle, onInstantApply,
     // onToggleMore(sectionKey), onSearchInput(sectionKey, value), pendingIdsFor(sectionKey),
-    // resolveEntityFallbackName(sectionKey, id) } — provided by window.AnimeListFilterPanel,
+    // appliedIdsFor(sectionKey), resolveEntityFallbackName(sectionKey, id) } — provided by window.AnimeListFilterPanel,
     // which owns appliedFilters/pendingFilters and the per-section "Ещё"/search UI state.
     //
     // `sectionState`: { [sectionKey]: { expanded, search } } — also owned by the panel (issue
@@ -350,7 +356,7 @@
             });
             appendMissingPendingEntries(entries, sectionKey, config, catalogue, hooks);
 
-            updateSectionHeaderCount(sectionEl, entries);
+            updateSectionHeaderCount(sectionEl, sectionKey, hooks);
 
             if (!config.truncatable) {
                 patchValueList(list, entries, sectionKey, config.input, catalogue, hooks);
