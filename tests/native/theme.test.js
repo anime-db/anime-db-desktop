@@ -75,7 +75,8 @@ describe('applyThemeSource', () => {
         expect(nativeTheme.themeSource).toBe('dark');
     });
 
-    test('falls back to "system" the same way getThemePreference() does for a missing/invalid value', () => {
+    test('assigns whatever getThemePreference() returns, including its "system" fallback value', () => {
+        nativeTheme.themeSource = 'dark';
         getThemePreference.mockReturnValue('system');
 
         applyThemeSource();
