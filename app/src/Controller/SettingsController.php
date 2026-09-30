@@ -35,6 +35,7 @@ use App\Service\AppSettingsProvider;
 use App\Service\Plugin\AvailableLocalesProvider;
 use App\Service\Search\AnimeReindexService;
 use App\Service\Sync\SyncReviewService;
+use App\Service\WsPublisher;
 use Meilisearch\Exceptions\ExceptionInterface as MeilisearchExceptionInterface;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -49,12 +50,22 @@ use Twig\Environment;
 final class SettingsController
 {
     /**
+     * Backend event name published on setTheme() and consumed by native/lifecycle/index.js over
+     * /ws to re-read config.json and re-apply nativeTheme.themeSource without an app restart. Keep
+     * this string in sync with THEME_CHANGED_EVENT in native/theme.js — a mismatch breaks
+     * live-apply silently, the same lesson as ProxyController::PROXY_CHANGED_EVENT (issue #336),
+     * which is why SettingsControllerTest cross-checks both sides against each other.
+     */
+    public const THEME_CHANGED_EVENT = 'theme.changed';
+
+    /**
      * $availableLocalesProvider is the same locale set LocaleSubscriber negotiates against
      * (issue #84), extended by plugin locales (issue #453).
      */
     public function __construct(
         private readonly AvailableLocalesProvider $availableLocalesProvider,
         private readonly AppSettingsProvider $settings,
+        private readonly WsPublisher $wsPublisher,
         private readonly CsrfTokenManagerInterface $csrfTokenManager,
         private readonly Environment $twig,
         private readonly AnimeReindexService $reindexService,
@@ -110,6 +121,11 @@ final class SettingsController
         }
 
         $this->settings->setThemePreference($theme);
+
+        // Native layer already listens to every /ws event (see native/lifecycle/index.js); it
+        // re-reads config.json itself rather than trusting this payload, so the theme value here
+        // is informational only.
+        $this->wsPublisher->publish(self::THEME_CHANGED_EVENT, ['theme' => $theme->value]);
 
         return new RedirectResponse($this->urlGenerator->generate('settings_index'), Response::HTTP_SEE_OTHER);
     }

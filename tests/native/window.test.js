@@ -47,6 +47,7 @@ jest.mock('electron', () => ({
     Menu: { setApplicationMenu: jest.fn() },
     screen: { getPrimaryDisplay: jest.fn(() => ({ workAreaSize: mockWorkAreaSize })) },
     shell: { openExternal: jest.fn() },
+    nativeTheme: { shouldUseDarkColors: false },
 }));
 
 const { BrowserWindow, Menu, shell } = require('electron');

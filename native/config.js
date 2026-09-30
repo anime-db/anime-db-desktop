@@ -144,10 +144,27 @@ function getProxySettings() {
         : null;
 }
 
+/** @type {string[]} */
+const VALID_THEME_PREFERENCES = ['system', 'light', 'dark'];
+
+/**
+ * Reads the "themePreference" key from config.json (written by AppSettingsProvider::setThemePreference()
+ * on the PHP side). Mirrors AppSettingsProvider::getThemePreference() (app/src/Service/AppSettingsProvider.php):
+ * a missing key or a value outside App\Entity\Enum\ThemePreference's cases ('system', 'light', 'dark')
+ * falls back to 'system'.
+ *
+ * @returns {'system' | 'light' | 'dark'}
+ */
+function getThemePreference() {
+    const config = readConfig();
+    return VALID_THEME_PREFERENCES.includes(config.themePreference) ? config.themePreference : 'system';
+}
+
 module.exports = {
     getOrCreateAppSecret,
     getOrCreateLocale,
     getLocale,
     mapOsLocaleToAppLocale,
     getProxySettings,
+    getThemePreference,
 };

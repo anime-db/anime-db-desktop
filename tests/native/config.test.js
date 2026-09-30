@@ -40,6 +40,7 @@ const {
     getLocale,
     mapOsLocaleToAppLocale,
     getProxySettings,
+    getThemePreference,
 } = require('../../native/config');
 
 let tmpDir;
@@ -257,6 +258,38 @@ describe('getProxySettings', () => {
         fs.writeFileSync(configPath, JSON.stringify({ proxy }), 'utf8');
 
         expect(getProxySettings()).toEqual(proxy);
+    });
+});
+
+describe('getThemePreference', () => {
+    test('returns "system" when config.json has no "themePreference" key', () => {
+        expect(getThemePreference()).toBe('system');
+    });
+
+    test.each(['system', 'light', 'dark'])('returns %s as-is when it is a valid value', (value) => {
+        const configPath = path.join(tmpDir, 'config.json');
+        fs.writeFileSync(configPath, JSON.stringify({ themePreference: value }), 'utf8');
+
+        expect(getThemePreference()).toBe(value);
+    });
+
+    test.each([
+        ['an unknown string', 'blue'],
+        ['a number', 1],
+        ['null', null],
+        ['an object', {}],
+    ])('falls back to "system" for %s', (_label, value) => {
+        const configPath = path.join(tmpDir, 'config.json');
+        fs.writeFileSync(configPath, JSON.stringify({ themePreference: value }), 'utf8');
+
+        expect(getThemePreference()).toBe('system');
+    });
+
+    test('falls back to "system" when config.json contains invalid JSON', () => {
+        const configPath = path.join(tmpDir, 'config.json');
+        fs.writeFileSync(configPath, 'not json at all', 'utf8');
+
+        expect(getThemePreference()).toBe('system');
     });
 });
 

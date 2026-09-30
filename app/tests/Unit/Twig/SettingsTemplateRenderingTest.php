@@ -270,6 +270,35 @@ final class SettingsTemplateRenderingTest extends KernelTestCase
         $this->assertStringContainsString('Не удалось перестроить поисковый индекс.', $html);
     }
 
+    /**
+     * Regression (issue #817): rebuilding the search index is an infrequent maintenance action, so
+     * its button must not carry the accented btn-primary styling reserved for a page's main action.
+     */
+    public function testSettingsIndexRendersReindexButtonAsOutlineSecondaryAction(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession();
+
+        /** @var LocaleSwitcher $localeSwitcher */
+        $localeSwitcher = self::getContainer()->get(LocaleSwitcher::class);
+        $localeSwitcher->setLocale('en');
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('settings/index.html.twig', [
+            'availableLocales' => ['en', 'ru'],
+            'unavailableLocale' => null,
+            'reindexStatus' => null,
+            'needsCorrectionCount' => 0,
+            'themePreference' => ThemePreference::System,
+            'paginationMode' => PaginationMode::InfiniteScroll,
+        ]);
+
+        $matched = preg_match('/<button type="submit" class="([^"]*)">Rebuild search index<\/button>/', $html, $matches);
+        self::assertSame(1, $matched, 'Expected the reindex button to be present.');
+        self::assertSame('btn btn-outline-secondary', $matches[1]);
+    }
+
     public function testLabelIndexRendersLabelsWithoutErrors(): void
     {
         self::bootKernel();

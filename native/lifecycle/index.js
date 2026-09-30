@@ -38,6 +38,7 @@ const tray             = require('../tray');
 const wsClient         = require('../ws-client');
 const proxy            = require('../proxy');
 const firewall         = require('../firewall');
+const theme            = require('../theme');
 const paths            = require('../paths');
 const { logCrash }     = require('../crash-log');
 const { getLocale }    = require('../config');
@@ -188,6 +189,11 @@ if (!gotLock) {
     proxy.registerProxyAuthHandler();
 
     app.whenReady().then(async () => {
+        // Must run before the safe-mode dialog and before createSplash() below — the splash
+        // page's prefers-color-scheme (see native/splash/splash.html) reflects whatever
+        // themeSource is set to at the moment its window is created.
+        theme.applyThemeSource();
+
         await proxy.applyProxy(session.defaultSession);
 
         // Should the kernel be trusted this time? See safe-mode.js#beginStartAttempt() — two
@@ -212,6 +218,11 @@ if (!gotLock) {
         }
 
         const splash = createSplash();
+
+        // Covers both the settings-page theme switch (theme.changed below re-runs
+        // applyThemeSource(), which re-assigns themeSource) and the OS theme changing on the fly
+        // while themeSource is 'system'.
+        theme.registerThemeUpdateHandler(() => [splash, mainWindow].filter(Boolean));
 
         await new Promise(resolve => splash.once('ready-to-show', () => {
             splash.show();
@@ -266,6 +277,9 @@ if (!gotLock) {
                     proxy.applyProxy(session.defaultSession).catch((err) => {
                         console.error('[proxy] не удалось применить настройки прокси:', err);
                     });
+                }
+                if (event === theme.THEME_CHANGED_EVENT) {
+                    theme.applyThemeSource();
                 }
                 if (event === firewall.FIREWALL_RULE_CHANGED_EVENT) {
                     firewall.applyIncomingConnections(Boolean(data.enabled)).catch((err) => {

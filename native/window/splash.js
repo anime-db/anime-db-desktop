@@ -21,9 +21,10 @@
 
 'use strict';
 
-const { BrowserWindow } = require('electron');
+const { BrowserWindow, nativeTheme } = require('electron');
 const path           = require('path');
 const { getLocale }  = require('../config');
+const { getBackgroundColor } = require('../theme');
 const i18n           = require('../i18n');
 
 /**
@@ -49,6 +50,7 @@ function createSplash() {
         movable: false,
         skipTaskbar: true,
         show: false,
+        backgroundColor: getBackgroundColor(nativeTheme.shouldUseDarkColors),
         webPreferences: {
             preload: path.join(__dirname, '..', 'splash', 'preload.js'),
             contextIsolation: true,

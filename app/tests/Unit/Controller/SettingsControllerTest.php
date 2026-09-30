@@ -45,6 +45,7 @@ use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Search\AnimeReindexService;
 use App\Service\Search\AnimeSearchIndexer;
 use App\Service\Sync\SyncReviewService;
+use App\Service\WsPublisher;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\EntityManager;
@@ -87,6 +88,7 @@ final class SettingsControllerTest extends TestCase
         ?AnimeReindexService $reindexService = null,
         ?SyncReviewService $syncReview = null,
         ?UrlGeneratorInterface $urlGenerator = null,
+        ?WsPublisher $wsPublisher = null,
     ): SettingsController {
         if ($csrfTokenManager === null) {
             $csrfTokenManager = $this->createStub(CsrfTokenManagerInterface::class);
@@ -101,6 +103,7 @@ final class SettingsControllerTest extends TestCase
         return new SettingsController(
             $this->availableLocalesProvider(['en', 'ru']),
             new AppSettingsProvider(new AppConfigStore($this->configPath)),
+            $wsPublisher ?? $this->createStub(WsPublisher::class),
             $csrfTokenManager,
             $twig ?? $this->createStub(Environment::class),
             $reindexService ?? $this->createReindexService($this->createStub(Client::class)),
@@ -321,6 +324,44 @@ final class SettingsControllerTest extends TestCase
 
         $data = json_decode((string) file_get_contents($this->configPath), true);
         $this->assertSame('dark', $data['themePreference']);
+    }
+
+    /**
+     * native/lifecycle/index.js listens for this event to re-apply nativeTheme.themeSource
+     * without an app restart (see SettingsController::THEME_CHANGED_EVENT).
+     */
+    public function testSetThemePublishesWsNotification(): void
+    {
+        $wsPublisher = $this->createMock(WsPublisher::class);
+        $wsPublisher->expects($this->once())
+            ->method('publish')
+            ->with(SettingsController::THEME_CHANGED_EVENT, ['theme' => 'dark']);
+
+        $controller = $this->createController(wsPublisher: $wsPublisher);
+        $request = Request::create('/settings/theme', 'POST', ['themePreference' => 'dark', '_token' => 'token']);
+
+        $controller->setTheme($request);
+    }
+
+    /**
+     * PHP and native/theme.js each declare the event name as their own literal (they run in
+     * separate processes and cannot share a constant), so nothing stops the two from drifting
+     * apart the way PROXY_CHANGED_EVENT briefly did (issue #336). This test closes that gap by
+     * reading native/theme.js's THEME_CHANGED_EVENT literal straight out of its source and
+     * comparing it against the PHP constant actually published in setTheme().
+     */
+    public function testThemeChangedEventNameMatchesNativeThemeModuleContract(): void
+    {
+        $nativeThemeSource = (string) file_get_contents(\dirname(__DIR__, 4).'/native/theme.js');
+
+        $matched = preg_match("/const THEME_CHANGED_EVENT = '([^']+)';/", $nativeThemeSource, $matches);
+
+        $this->assertSame(1, $matched, 'native/theme.js must declare a THEME_CHANGED_EVENT constant.');
+        $this->assertSame(
+            SettingsController::THEME_CHANGED_EVENT,
+            $matches[1],
+            'SettingsController::THEME_CHANGED_EVENT must match native/theme.js THEME_CHANGED_EVENT — a mismatch silently breaks live theme apply (issue #336).',
+        );
     }
 
     public function testSetThemeRejectsUnknownValue(): void

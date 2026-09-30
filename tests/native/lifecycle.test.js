@@ -34,6 +34,7 @@ jest.mock('electron', () => ({
     },
     dialog:  { showErrorBox: jest.fn(), showMessageBoxSync: jest.fn() },
     session: { defaultSession: {} },
+    nativeTheme: { themeSource: 'system', shouldUseDarkColors: false, on: jest.fn() },
 }));
 jest.mock('fs', () => ({
     mkdirSync:      jest.fn(),
@@ -77,6 +78,11 @@ jest.mock('../../native/firewall', () => ({
     applyIncomingConnections:      jest.fn(() => Promise.resolve()),
     FIREWALL_RULE_CHANGED_EVENT:   'firewall.rule.changed',
 }));
+jest.mock('../../native/theme', () => ({
+    applyThemeSource:            jest.fn(),
+    registerThemeUpdateHandler:  jest.fn(),
+    THEME_CHANGED_EVENT:         'theme.changed',
+}));
 
 /**
  * Loads a fresh copy of lifecycle/index.js and every mocked dependency it pulls in, recording the
@@ -114,6 +120,7 @@ function loadLifecycle() {
     wsClient.on.mockImplementation((event, handler) => { wsClientHandlers[event] = handler; });
     const proxy        = require('../../native/proxy');
     const firewall      = require('../../native/firewall');
+    const theme         = require('../../native/theme');
 
     const fakeWindow = {
         isMinimized: jest.fn(() => false),
@@ -140,7 +147,7 @@ function loadLifecycle() {
 
     return {
         app, dialog, supervisor, migrations, cacheInvalidation, safeModeState, createWindow, createSplash, tray,
-        wsClient, proxy, firewall, appHandlers, processHandlers, wsClientHandlers, supervisorEventHandlers,
+        wsClient, proxy, firewall, theme, appHandlers, processHandlers, wsClientHandlers, supervisorEventHandlers,
         fakeWindow, fakeSplash, relaunch: lifecycle.relaunch,
     };
 }
@@ -643,5 +650,38 @@ describe('plugin activation (issue #411)', () => {
 
         expect(() => supervisorEventHandlers['plugin-activation-failed']({ pluginId: 'animedb-shikimori' })).not.toThrow();
         expect(fakeWindow.webContents.send).not.toHaveBeenCalled();
+    });
+});
+
+// issue #816: nativeTheme.themeSource must follow themePreference from config.json, set before
+// the safe-mode dialog and before createSplash() — otherwise the splash's own prefers-color-scheme
+// (see native/splash/splash.html) would still reflect the previous/default theme.
+describe('theme (issue #816)', () => {
+    test('applyThemeSource() runs before createSplash()', async () => {
+        const { theme, createSplash } = loadLifecycle();
+        await new Promise((r) => setTimeout(r, 500));
+
+        expect(theme.applyThemeSource).toHaveBeenCalledTimes(1);
+        expect(theme.applyThemeSource.mock.invocationCallOrder[0])
+            .toBeLessThan(createSplash.mock.invocationCallOrder[0]);
+    });
+
+    test('registerThemeUpdateHandler() is called with a callback returning the live splash and main window', async () => {
+        const { theme, fakeSplash, fakeWindow } = loadLifecycle();
+        await new Promise((r) => setTimeout(r, 500));
+
+        expect(theme.registerThemeUpdateHandler).toHaveBeenCalledWith(expect.any(Function));
+        const getWindows = theme.registerThemeUpdateHandler.mock.calls[0][0];
+        expect(getWindows()).toEqual(expect.arrayContaining([fakeSplash, fakeWindow]));
+    });
+
+    test('routes THEME_CHANGED_EVENT to theme.applyThemeSource() again', async () => {
+        const { theme, wsClientHandlers } = loadLifecycle();
+        await new Promise((r) => setTimeout(r, 500));
+        theme.applyThemeSource.mockClear();
+
+        wsClientHandlers['backend-event']({ event: 'theme.changed', data: { theme: 'dark' } });
+
+        expect(theme.applyThemeSource).toHaveBeenCalledTimes(1);
     });
 });

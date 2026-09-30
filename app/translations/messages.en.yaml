@@ -225,6 +225,7 @@ settings_plugins:
     status_enabled: Enabled
     status_disabled: Disabled
     status_incompatible: 'Disabled — this plugin needs a different app version to work.'
+    status_incompatible_badge: Incompatible
     incompatible_market_link: 'Check the plugin market'
     incompatible_market_update: 'Update to version %version% is available — open the plugin market'
 
