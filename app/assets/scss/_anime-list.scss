@@ -278,6 +278,47 @@
     font-size: 0.75em;
 }
 
+.anime-list__filter-section-count {
+    color: var(--bs-secondary-color);
+    font-weight: normal;
+}
+
+// box-sizing: border-box + width: 100% keeps this input inside the section body's own column
+// width regardless of its padding/border, instead of the browser's default input size (issue
+// #820 review) — without it the box is wider than the panel content and forces a horizontal
+// scrollbar once .anime-list__filter-sections already has a vertical one.
+.anime-list__filter-section-search {
+    padding: 2px 0 6px;
+}
+
+.anime-list__filter-section-search-input {
+    box-sizing: border-box;
+    width: 100%;
+    padding: 4px 8px;
+    border: 1px solid var(--bs-border-color);
+    border-radius: 4px;
+    background: var(--bs-body-bg);
+    color: var(--bs-body-color);
+    font-size: 0.85em;
+}
+
+// A text link rather than a bordered button (issue #820 review) — it sits among the value rows
+// it expands/collapses and should read as part of that list, not as a competing control.
+.anime-list__filter-section-more {
+    display: block;
+    width: 100%;
+    padding: 4px;
+    border: none;
+    background: transparent;
+    color: var(--bs-primary);
+    font-size: 0.85em;
+    text-align: start;
+}
+
+.anime-list__filter-section-more:hover {
+    text-decoration: underline;
+}
+
 .anime-list__filter-apply-bar {
     flex: 0 0 auto;
     padding: 8px;

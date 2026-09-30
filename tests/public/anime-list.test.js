@@ -1713,11 +1713,27 @@ test('a truncatable section with 10 or fewer unchecked values is not truncated a
 test('watch_status/type/date_premiere/user_rating are never truncated regardless of value count (issue #820)', async () => {
     const calls = mockFetchQueueAll();
     setUpDetailedTranslations();
-    await loadAndResolveFacets(calls, { watch_status: genreBuckets(15) });
+    await loadAndResolveFacets(calls, {
+        watch_status: genreBuckets(15),
+        type: genreBuckets(15),
+        date_premiere_decade: genreBuckets(15),
+        // user_rating's own value domain (RATING_ORDER, anime-list-query.js) caps at 6 buckets —
+        // real data can never reach the 10-unchecked truncation threshold regardless of whether
+        // the section were mistakenly marked truncatable, so this leg only proves it renders every
+        // RATING_ORDER value untruncated, not that a >10-bucket response would survive too.
+        user_rating: ['5', '4', '3', '2', '1', 'none'].map((value, i) => ({ value, count: 10 - i })),
+    });
 
-    const section = document.querySelector('[data-filter-section="watch_status"]');
-    expect(section.querySelectorAll('.anime-list__filter-value')).toHaveLength(15);
-    expect(section.querySelector('.anime-list__filter-section-more').hidden).toBe(true);
+    [
+        ['watch_status', 15],
+        ['type', 15],
+        ['date_premiere', 15],
+        ['user_rating', 6],
+    ].forEach(([sectionKey, expectedCount]) => {
+        const section = document.querySelector(`[data-filter-section="${sectionKey}"]`);
+        expect(section.querySelectorAll('.anime-list__filter-value')).toHaveLength(expectedCount);
+        expect(section.querySelector('.anime-list__filter-section-more').hidden).toBe(true);
+    });
 });
 
 test('a truncatable section sorts by count descending, then by display name ascending on a tie (issue #820)', async () => {
@@ -1734,6 +1750,32 @@ test('a truncatable section sorts by count descending, then by display name asce
     const names = Array.from(document.querySelectorAll('[data-filter-section="genres"] .anime-list__filter-value-name'))
         .map((el) => el.textContent);
     expect(names).toEqual(['genre.c', 'genre.a', 'genre.b']);
+});
+
+test('instant-apply on a value not in the first row keeps keyboard focus on that same value after it is repositioned (issue #820 review)', async () => {
+    const calls = mockFetchQueueAll();
+    setUpDetailedTranslations();
+    await loadAndResolveFacets(calls, { genres: genreBuckets(12) });
+
+    const section = document.querySelector('[data-filter-section="genres"]');
+    const g3Row = Array.from(section.querySelectorAll('.anime-list__filter-value')).find((row) => row.dataset.value === 'g3');
+    const nameButton = g3Row.querySelector('.anime-list__filter-value-name');
+
+    // Simulates a keyboard user who has already tabbed to g3's name button and presses Enter —
+    // the click handler applies g3 and patchValueList() moves its row to the pinned/applied block
+    // at the top, which must not blur it (issue #820 review: Electron 35 does blur a node that
+    // insertBefore() repositions, unlike a no-op move).
+    nameButton.focus();
+    nameButton.dispatchEvent(new Event('click', { bubbles: true }));
+    await flushMicrotasks();
+
+    byKind(calls, 'list')[1].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 0, limit: 6, offset: 0 }));
+    byKind(calls, 'facets')[1].resolve(facetsWith({ genres: genreBuckets(12) }));
+    await flushMicrotasks();
+
+    const g3RowAfter = Array.from(section.querySelectorAll('.anime-list__filter-value')).find((row) => row.dataset.value === 'g3');
+    expect(g3RowAfter.dataset.value).toBe('g3');
+    expect(document.activeElement).toBe(g3RowAfter.querySelector('.anime-list__filter-value-name'));
 });
 
 test('an applied value outside the top 8 is pinned above it and excluded from the "Ещё" count (issue #820)', async () => {
@@ -1812,6 +1854,28 @@ test('the studios search box appears only once there are more than 20 values, fi
     expect(names.length).toBeGreaterThan(8);
     expect(names.every((name) => name.includes('Studio1'))).toBe(true);
     expect(section.querySelector('.anime-list__filter-section-more').hidden).toBe(true);
+});
+
+test('a pinned (applied) studio value stays visible while a search query it does not match is active (issue #820 review)', async () => {
+    window.history.replaceState({}, '', '/anime?studios[]=99');
+    const calls = mockFetchQueueAll();
+    setUpDetailedTranslations();
+    await loadAndResolveFacets(calls, { studios: [{ id: 99, name: 'Applied Studio', count: 3 }, ...studioBuckets(21)] });
+
+    const section = document.querySelector('[data-filter-section="studios"]');
+    const searchInput = section.querySelector('.anime-list__filter-section-search-input');
+    searchInput.value = 'Studio1'; // matches none of "Applied Studio", only the unpinned Studio1x rows
+    searchInput.dispatchEvent(new Event('input'));
+    await flushMicrotasks();
+
+    const rows = Array.from(section.querySelectorAll('.anime-list__filter-value'));
+    const pinnedRow = rows.find((row) => row.dataset.value === '99');
+    expect(pinnedRow).toBeDefined();
+    expect(pinnedRow.querySelector('.anime-list__filter-value-name').textContent).toBe('Applied Studio');
+    // Every other visible row still went through the search filter — the pinned row is the sole
+    // exception, not a sign the filter stopped applying altogether.
+    const unpinnedNames = rows.filter((row) => row !== pinnedRow).map((row) => row.querySelector('.anime-list__filter-value-name').textContent);
+    expect(unpinnedNames.every((name) => name.includes('Studio1'))).toBe(true);
 });
 
 test('the studios search box hides and drops its query once a fresher response has 20 or fewer values (issue #820)', async () => {
@@ -1996,4 +2060,35 @@ test('collapsedSections is seeded from the server-rendered aria-expanded, and to
 
     expect(persistCalls()).toHaveLength(2);
     expect(lastPersistBody().collapsed).toEqual(['studios']);
+});
+
+test('a section-toggle click while a persist POST is still in flight is queued rather than sent immediately, then fires with the final state once the first settles (issue #820 review)', async () => {
+    const calls = mockFetchQueueAll();
+    setUpDetailedTranslations();
+    await loadAndResolveFacets(calls, {});
+
+    const persistCalls = () => calls.filter((call) => call.url === '/settings/filter-sections');
+    const lastPersistBody = () => JSON.parse(global.fetch.mock.calls.filter(([url]) => url === '/settings/filter-sections').pop()[1].body);
+
+    const genresToggle = document.querySelector('[data-filter-section="genres"] .anime-list__filter-section-toggle');
+    const studiosToggle = document.querySelector('[data-filter-section="studios"] .anime-list__filter-section-toggle');
+
+    dispatchClick(genresToggle); // collapse genres — POST #1 goes out, left unresolved
+    await flushMicrotasks();
+    expect(persistCalls()).toHaveLength(1);
+
+    dispatchClick(studiosToggle); // collapse studios while POST #1 is still in flight
+    await flushMicrotasks();
+
+    // Exactly one request in flight: the second click must not fire its own POST yet, or the two
+    // writes could land out of order in config.json (persistRequestInFlight's own reason for being).
+    expect(persistCalls()).toHaveLength(1);
+
+    persistCalls()[0].resolve({ ok: true, status: 204, json: () => Promise.resolve(null) });
+    await flushMicrotasks();
+
+    // Once POST #1 settles, the queued click's own request goes out — carrying the up-to-date
+    // state (both sections), not the stale state POST #1 was built from.
+    expect(persistCalls()).toHaveLength(2);
+    expect(lastPersistBody().collapsed.slice().sort()).toEqual(['genres', 'studios']);
 });

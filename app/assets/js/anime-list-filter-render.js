@@ -213,7 +213,16 @@
 
             const afterNode = previousNode ? previousNode.nextSibling : list.firstChild;
             if (afterNode !== row) {
+                // insertBefore() on a node that already sits elsewhere in this same list moves it
+                // rather than cloning it, but Electron still blurs focus resting inside it during
+                // that move — restore it on the same element once the move is done, or an
+                // instant-apply click on a value below the top row silently drops keyboard focus
+                // to <body> (issue #820 review).
+                const focused = row.contains(document.activeElement) ? document.activeElement : null;
                 list.insertBefore(row, afterNode);
+                if (focused) {
+                    focused.focus();
+                }
             }
             previousNode = row;
         });
