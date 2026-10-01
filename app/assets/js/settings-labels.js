@@ -89,10 +89,16 @@
             }
         });
 
-        input.addEventListener('focusout', () => {
+        input.addEventListener('focusout', (event) => {
             if (cancelled) {
                 cancelled = false;
 
+                return;
+            }
+            // Losing focus to another element inside this same form (e.g. a mousedown on the
+            // Save button) is left to that element's own click/submit handling, so blur-triggered
+            // requestSubmit() never races a native form submission into a duplicate POST.
+            if (form.contains(event.relatedTarget)) {
                 return;
             }
             trySave();

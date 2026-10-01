@@ -151,3 +151,29 @@ test('losing focus with an unchanged value reverts to read mode without submitti
     expect(nameButton().hidden).toBe(false);
     expect(inputGroup().hidden).toBe(true);
 });
+
+test('losing focus outside the form with a changed value submits the rename form', () => {
+    setUpDom('favorite');
+    loadSettingsLabelsModule();
+    const requestSubmit = jest.spyOn(document.querySelector('form'), 'requestSubmit').mockImplementation(() => {});
+
+    nameButton().click();
+    input().value = 'rewatch';
+    input().dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: document.body }));
+
+    expect(requestSubmit).toHaveBeenCalledTimes(1);
+});
+
+test('losing focus to the Save button does not trigger a duplicate submit', () => {
+    setUpDom('favorite');
+    loadSettingsLabelsModule();
+    const requestSubmit = jest.spyOn(document.querySelector('form'), 'requestSubmit').mockImplementation(() => {});
+
+    nameButton().click();
+    input().value = 'rewatch';
+    const saveButton = document.querySelector('[data-settings-label-input-group] button[type="submit"]');
+    input().dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: saveButton }));
+
+    expect(requestSubmit).not.toHaveBeenCalled();
+    expect(inputGroup().hidden).toBe(false);
+});
