@@ -1,0 +1,46 @@
+<?php
+
+/**
+ * AnimeDb package.
+ *
+ * @author    Peter Gribanov <info@peter-gribanov.ru>
+ * @copyright Copyright (c) 2026, Peter Gribanov
+ * @license   https://www.gnu.org/licenses/gpl-3.0.html GPL-3.0-or-later
+ */
+
+/*
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+
+declare(strict_types=1);
+
+namespace App\Service\Storage\Scan;
+
+use App\Entity\Anime;
+
+/**
+ * Outcome of {@see \App\Service\Storage\ScanStorageService::linkToChosenPluginCandidate()}
+ * (issue #832): $filledFromPlugin is false when $anime was created from title alone (no filler
+ * registered for the candidate's plugin, or the plugin could not resolve/was unreachable) —
+ * the storage-scan confirm endpoint reports this back so the frontend can tell the user the new
+ * entry still needs to be filled in by hand.
+ */
+final class LinkedCandidateResult
+{
+    public function __construct(
+        public readonly Anime $anime,
+        public readonly bool $filledFromPlugin,
+    ) {
+    }
+}

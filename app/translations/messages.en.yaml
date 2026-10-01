@@ -446,6 +446,8 @@ storage_list:
     group_auto_linked: Added automatically
     group_needs_manual_entry: Needs a new entry
     group_needs_confirmation: Needs confirmation
+    group_conflict: Already in the catalog
+    group_error: Failed to process
     updated_text: '%title% (%path%)'
     files_missing_text: '%title% (%path%)'
     auto_linked_text: 'Added automatically: %title%'
@@ -453,6 +455,9 @@ storage_list:
     confirm_button: Confirm
     confirm_error: Failed to confirm the selection.
     confirmed_text: 'Confirmed: %title%'
+    confirmed_without_plugin_data_text: 'Added without plugin data: %title%'
+    conflict_text: 'Already in the catalog "%title%", linked to %path%'
+    error_text: 'Error: %path% — %message%'
 
 anime_detail:
     title: '%title% — AnimeDB'

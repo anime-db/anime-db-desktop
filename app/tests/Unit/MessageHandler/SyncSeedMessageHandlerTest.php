@@ -39,6 +39,7 @@ use App\Repository\AnimeSyncStateRepository;
 use App\Repository\StudioRepository;
 use App\Repository\SyncReviewItemRepository;
 use App\Service\Plugin\Filler\BulkFillerService;
+use App\Service\Plugin\Filler\CachedFillerLookup;
 use App\Service\Plugin\Filler\PluginAnimeDataMerger;
 use App\Service\Plugin\Filler\PluginMediaDownloaderInterface;
 use App\Service\Plugin\FillerRegistry;
@@ -59,6 +60,7 @@ use Doctrine\ORM\Tools\SchemaTool;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
+use Symfony\Component\Cache\Adapter\ArrayAdapter;
 use Symfony\Component\Messenger\MessageBusInterface;
 
 /**
@@ -172,6 +174,8 @@ final class SyncSeedMessageHandlerTest extends TestCase
             $this->entityManager,
             new NullLogger(),
             $this->createMock(MessageBusInterface::class),
+            new AnimeRepository($this->entityManager),
+            new CachedFillerLookup(new ArrayAdapter()),
         );
 
         $duplicateDetector = new CrossVendorDuplicateDetector(

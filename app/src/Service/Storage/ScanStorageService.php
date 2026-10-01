@@ -38,6 +38,7 @@ use App\Repository\AnimeRepository;
 use App\Service\Media\MediaExtensions;
 use App\Service\Plugin\Filler\BulkFillerService;
 use App\Service\Storage\Exception\StoragePathConflictException;
+use App\Service\Storage\Scan\LinkedCandidateResult;
 use App\Service\Storage\Scan\ScanCandidate;
 use App\Service\Storage\Scan\ScanResult;
 use App\Service\Storage\Scan\ScanResultItem;
@@ -136,7 +137,23 @@ final class ScanStorageService
 
         $fileModified = filemtime($path);
         $storage->markScanned(new \DateTimeImmutable('@'.($fileModified !== false ? $fileModified : time())));
-        $this->entityManager->flush();
+
+        // A per-item failure (see matchNewEntry()'s own try/catch, issue #832) that happened to
+        // hit a genuine concurrent external-id-claim race can leave this EntityManager closed
+        // (Doctrine's own reaction to any failed flush) even though the race itself was already
+        // turned into a Conflict item rather than an exception. persist()/flush() both check
+        // EntityManager::isOpen() first and throw otherwise — markScanned() above already
+        // mutated the (still managed, still readable) $storage object either way, but this final
+        // flush is skipped rather than letting that throw take the whole scan down after
+        // everything else already succeeded; the storage's scanned timestamp simply does not
+        // move this run and the self-correcting next scan picks it up again.
+        if ($this->entityManager->isOpen()) {
+            $this->entityManager->flush();
+        } else {
+            $this->logger->warning('Skipping the final scan flush: a concurrent create race during this scan already closed the EntityManager.', [
+                'storage_id' => $storage->id,
+            ]);
+        }
 
         return ScanResult::items($items);
     }
@@ -159,20 +176,61 @@ final class ScanStorageService
         }
     }
 
+    /**
+     * Isolates whatever this single entry's processing throws (issue #832) — a plugin's
+     * find()/findById(), the database, or anything else in the chain below — to this one item,
+     * so the rest of the scan still runs and the caller still gets its final markScanned()+
+     * flush(): the storage scan used to abort entirely (and, via ScanStorageMessageHandler's own
+     * catch-all, report `scan.failed` with nothing shown at all) the moment a single top-level
+     * entry's processing threw, which is exactly what a single plugin candidate whose externalId
+     * already belonged to another catalog record used to do (see linkToChosenCandidate()'s
+     * plugin branch and StoragePathConflictException below).
+     */
     private function matchNewEntry(Storage $storage, string $name): ScanResultItem
     {
         $cleanedName = $this->filenameCleaner->clean($name);
 
-        $orphans = $this->orphanMatcher->findCandidates($cleanedName);
-        $pluginCandidates = $this->pluginChain->find($cleanedName);
+        try {
+            $orphans = $this->orphanMatcher->findCandidates($cleanedName);
+            $pluginCandidates = $this->pluginChain->find($cleanedName);
 
-        $candidates = $this->mergeCandidates($orphans, $pluginCandidates);
+            $candidates = $this->mergeCandidates($orphans, $pluginCandidates);
 
-        return match (\count($candidates)) {
-            0 => ScanResultItem::needsManualEntry($name, $cleanedName),
-            1 => ScanResultItem::autoLinked($this->linkToChosenCandidate($storage, $name, $candidates[0]), $name),
-            default => ScanResultItem::needsConfirmation($name, $cleanedName, $candidates),
-        };
+            return match (\count($candidates)) {
+                0 => ScanResultItem::needsManualEntry($name, $cleanedName),
+                1 => $this->autoLinkOrConflict($storage, $name, $candidates[0]),
+                default => ScanResultItem::needsConfirmation($name, $cleanedName, $candidates),
+            };
+        } catch (\Throwable $e) {
+            $this->logger->error('Failed to process a storage scan entry; marking it as an error and continuing with the rest of the scan.', [
+                'storage_id' => $storage->id,
+                'storage_path' => $name,
+                'exception' => $e,
+            ]);
+
+            return ScanResultItem::error($name, $cleanedName, $e->getMessage());
+        }
+    }
+
+    /**
+     * The 0/1/>1 rule's own count===1 case: exactly one candidate. A plugin candidate that
+     * resolves (by pluginId/externalId) to a catalog record already linked to a different
+     * storage path (issue #832) is reported as a Conflict item instead of letting
+     * StoragePathConflictException escape to matchNewEntry()'s own catch-all — this is an
+     * expected, common outcome (the same title found twice, from two different folders), not an
+     * error.
+     */
+    private function autoLinkOrConflict(Storage $storage, string $name, ScanCandidate $candidate): ScanResultItem
+    {
+        try {
+            return ScanResultItem::autoLinked($this->linkToChosenCandidate($storage, $name, $candidate), $name);
+        } catch (StoragePathConflictException $e) {
+            if ($e->anime !== null) {
+                return ScanResultItem::conflict($e->anime, $name, $e->alreadyLinkedStoragePath ?? '');
+            }
+
+            throw $e;
+        }
     }
 
     /**
@@ -248,74 +306,101 @@ final class ScanStorageService
     {
         $orphan = $candidate->orphan;
         if ($orphan !== null) {
-            $this->assertOrphanIsFreeToLink($orphan, $storage, $storagePath);
+            $this->assertAnimeIsFreeToLink($orphan, $storage, $storagePath);
             $this->assertStoragePathIsFree($storage, $storagePath, $orphan);
             $orphan->setStorage($storage)->setStoragePath($storagePath);
 
             return $orphan;
         }
 
-        $this->assertStoragePathIsFree($storage, $storagePath, null);
-
         $plugin = $candidate->plugin ?? throw new \LogicException('ScanCandidate must carry either an orphan or a plugin match');
 
-        // BulkFillerService (issue #227) tries the same plugin's FillerInterface, if it has one,
-        // to create an already-filled-in Anime, passing the externalId already resolved by
-        // SearchByPluginChain's find() call above so it doesn't have to search again (issue #233).
-        // No concrete plugin ships in this repository yet, so this currently always falls back to
-        // the title-only placeholder below.
-        $anime = $this->fillFromPlugin($plugin)
-            ?? (new TvAnime())->setTitle($plugin->getName())->setWatchStatus(WatchStatus::Plan);
-
-        $anime->setStorage($storage)->setStoragePath($storagePath);
-        $this->entityManager->persist($anime);
-
-        return $anime;
+        return $this->linkToChosenPluginCandidate($storage, $storagePath, $plugin)->anime;
     }
 
     /**
-     * A malformed plugin id or a plugin's own find()/findById() throwing must not abort the
-     * whole storage scan over one bad entry (issue #233) — both are treated the same as
-     * BulkFillerService reporting "nothing to fill in", falling back to the title-only
-     * placeholder in linkToChosenCandidate().
+     * Same binding as {@see linkToChosenCandidate()}'s plugin branch, but also reports whether
+     * $plugin's own data actually filled the created Anime in (issue #832, point 3 — the
+     * storage-scan confirm endpoint needs this to tell the user "added without plugin data" when
+     * it did not) — {@see linkToChosenCandidate()} itself only ever returns the Anime, which is
+     * all the internal 0/1/>1 auto-link path (matchNewEntry()) needs.
+     *
+     * Goes through {@see BulkFillerService::findOrCreateFromPlugin()} (issue #832): checks
+     * {@see AnimeRepository::resolve()} for an existing catalog record for
+     * $plugin's (pluginId, externalId) *before* ever creating anything, so a candidate whose
+     * external id already belongs to a catalog record linked elsewhere surfaces as a
+     * StoragePathConflictException (caught in matchNewEntry()'s autoLinkOrConflict() during a
+     * scan; left to the confirm controller otherwise) instead of hitting the create path's own
+     * UNIQUE constraint and closing the EntityManager over it (issue #832's original bug: a
+     * single plugin candidate whose externalId was already claimed used to abort the whole scan
+     * this way).
+     *
+     * @param bool $downloadCoverSynchronously see {@see BulkFillerService::findOrCreateFromPlugin()} —
+     *                                         true only for a single-candidate confirmation, not
+     *                                         for a scan's own auto-link path
      */
-    private function fillFromPlugin(SearchByPluginCandidate $plugin): ?Anime
+    public function linkToChosenPluginCandidate(Storage $storage, string $storagePath, SearchByPluginCandidate $plugin, bool $downloadCoverSynchronously = false): LinkedCandidateResult
     {
+        $this->assertStoragePathIsFree($storage, $storagePath, null);
+
+        $externalId = $plugin->getExternalId();
+        $result = null;
+
         try {
-            return $this->bulkFillerService->fillNewFromPlugin(
-                new PluginId($plugin->getPluginId()),
-                $plugin->getName(),
-                $plugin->getExternalId(),
-            );
+            $pluginId = new PluginId($plugin->getPluginId());
+
+            if ($externalId !== '') {
+                $result = $this->bulkFillerService->findOrCreateFromPlugin($pluginId, $externalId, $plugin->getName(), $downloadCoverSynchronously);
+            }
         } catch (\Throwable $e) {
             $this->logger->warning('Plugin bulk-fill failed, falling back to a title-only placeholder.', [
                 'pluginId' => $plugin->getPluginId(),
                 'exception' => $e,
             ]);
-
-            return null;
         }
+
+        if ($result === null) {
+            $anime = (new TvAnime())->setTitle($plugin->getName())->setWatchStatus(WatchStatus::Plan);
+            $this->entityManager->persist($anime);
+            $anime->setStorage($storage)->setStoragePath($storagePath);
+
+            return new LinkedCandidateResult($anime, filledFromPlugin: false);
+        }
+
+        $anime = $result->anime;
+        if ($result->wasFound) {
+            $this->assertAnimeIsFreeToLink($anime, $storage, $storagePath);
+        }
+        $anime->setStorage($storage)->setStoragePath($storagePath);
+
+        return new LinkedCandidateResult($anime, $result->filledFromPlugin);
     }
 
     /**
-     * Rejects a candidate orphan that is already linked to a storage_path other than the one
+     * Rejects a candidate Anime — an orphan, or (issue #832) a catalog record resolved by
+     * (pluginId, externalId) — that is already linked to a storage_path other than the one
      * being requested (issue #147): the orphan matcher only ever returns Anime with both
      * $storage and $storagePath null (see AnimeRepository::findOrphanCandidatesByNormalizedName()),
      * so a non-null value here means another confirm request won the race between the scan
-     * result being computed and the user's click. Re-confirming the exact same storage/path
-     * the orphan already carries is treated as a harmless no-op rather than a conflict.
+     * result being computed and the user's click — and a plugin-resolved record found by
+     * {@see BulkFillerService::findOrCreateFromPlugin()} may simply already be in the catalog,
+     * linked to an entirely different folder (the same title found twice). Re-confirming the
+     * exact same storage/path the candidate already carries is treated as a harmless no-op
+     * rather than a conflict.
      */
-    private function assertOrphanIsFreeToLink(Anime $orphan, Storage $storage, string $storagePath): void
+    private function assertAnimeIsFreeToLink(Anime $anime, Storage $storage, string $storagePath): void
     {
-        if ($orphan->getStorage() === null && $orphan->getStoragePath() === null) {
+        if ($anime->getStorage() === null && $anime->getStoragePath() === null) {
             return;
         }
 
-        if ($orphan->getStorage()?->id === $storage->id && $orphan->getStoragePath() === $storagePath) {
+        if ($anime->getStorage()?->id === $storage->id && $anime->getStoragePath() === $storagePath) {
             return;
         }
 
-        throw new StoragePathConflictException(\sprintf('Anime #%d is already linked to storage_path "%s" and cannot be re-linked to "%s".', $orphan->id ?? 0, $orphan->getStoragePath() ?? '', $storagePath));
+        $alreadyLinkedPath = $anime->getStoragePath() ?? '';
+
+        throw new StoragePathConflictException(\sprintf('Anime #%d is already linked to storage_path "%s" and cannot be re-linked to "%s".', $anime->id ?? 0, $alreadyLinkedPath, $storagePath), $anime, $alreadyLinkedPath);
     }
 
     /**

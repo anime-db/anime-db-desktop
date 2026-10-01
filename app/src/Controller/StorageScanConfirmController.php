@@ -50,13 +50,15 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 /**
  * Binds a scanned storage file to the single candidate the user picked out of a
  * ScanItemType::NeedsConfirmation item (issue #138, Таск 3 часть 7.3), by calling the same
- * ScanStorageService::linkToChosenCandidate() the 0/1/>1 rule (часть 5) uses for its own
- * exactly-one-candidate case — this action just skips re-running that rule.
+ * ScanStorageService::linkToChosenCandidate()/linkToChosenPluginCandidate() the 0/1/>1 rule
+ * (часть 5) uses for its own exactly-one-candidate case — this action just skips re-running
+ * that rule.
  *
  * The scan result (часть 5) is not persisted anywhere (see #122), so the candidate the user
  * picked is not looked up again in the catalog: it comes back exactly as the frontend received
  * it in the scan.done payload (часть 7.5) — an anime_id for an orphan candidate, or a plugin
- * candidate's bare name (see ScanStorageMessageHandler::serializeCandidate()).
+ * candidate's real pluginId/externalId/name (issue #832; see
+ * ScanStorageMessageHandler::serializeCandidate()) for a plugin match.
  *
  * Dispatches {@see AnimeFilesChangedEvent} with {@see FilesChangeReason::PathChanged} once
  * flushed (issue #703/#684, часть 3): this is the one caller of
@@ -66,15 +68,6 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
  */
 final class StorageScanConfirmController
 {
-    /**
-     * Placeholder plugin id for a candidate confirmed straight from the user rather than found
-     * by a real plugin. No installed filler is ever registered under this id, so
-     * BulkFillerService::fillNewFromPlugin() always reports "nothing to fill in" for it and
-     * ScanStorageService::linkToChosenCandidate() falls back to its title-only placeholder —
-     * this id only needs to be well-formed, not resolvable to anything real.
-     */
-    private const CONFIRMED_PLUGIN_ID = 'storage-scan-confirmed';
-
     public function __construct(
         private readonly ScanStorageService $scanStorageService,
         private readonly EntityManagerInterface $entityManager,
@@ -103,13 +96,90 @@ final class StorageScanConfirmController
             throw new BadRequestHttpException('"storage_path" is required.');
         }
 
-        $candidate = $this->resolveCandidate($payload['anime_id'] ?? null, $payload['name'] ?? null);
+        $animeId = $payload['anime_id'] ?? null;
+        if ($animeId !== null) {
+            return $this->confirmOrphan($storage, $storagePath, $animeId);
+        }
+
+        return $this->confirmPlugin($storage, $storagePath, $payload);
+    }
+
+    private function confirmOrphan(Storage $storage, string $storagePath, mixed $animeId): JsonResponse
+    {
+        if (!\is_int($animeId)) {
+            throw new BadRequestHttpException('"anime_id" must be an integer.');
+        }
+
+        $anime = $this->entityManager->find(Anime::class, $animeId);
+        if (!$anime instanceof Anime) {
+            throw new NotFoundHttpException(\sprintf('Anime #%d not found.', $animeId));
+        }
 
         try {
-            $anime = $this->scanStorageService->linkToChosenCandidate($storage, $storagePath, $candidate);
+            $anime = $this->scanStorageService->linkToChosenCandidate($storage, $storagePath, ScanCandidate::fromOrphan($anime));
         } catch (StoragePathConflictException $e) {
+            // Unlike the plugin-candidate branch below, an anime_id candidate conflict keeps the
+            // plain-message 409 it always had (issue #832's structured "conflict" body is scoped
+            // to a record resolved by pluginId/externalId, not the pre-existing orphan path).
             throw new ConflictHttpException($e->getMessage(), $e);
         }
+
+        return $this->respond($anime, $storagePath, filledFromPlugin: true);
+    }
+
+    /** @param array<string, mixed> $payload */
+    private function confirmPlugin(Storage $storage, string $storagePath, array $payload): JsonResponse
+    {
+        $pluginId = $payload['plugin_id'] ?? null;
+        $name = $payload['name'] ?? null;
+        if (!\is_string($pluginId) || $pluginId === '' || !\is_string($name) || $name === '') {
+            throw new BadRequestHttpException('Either "anime_id" or "plugin_id"+"name" must be provided.');
+        }
+
+        $externalId = $payload['external_id'] ?? '';
+        if (!\is_string($externalId)) {
+            throw new BadRequestHttpException('"external_id" must be a string.');
+        }
+
+        $plugin = new SearchByPluginCandidate($pluginId, $name, $externalId);
+
+        try {
+            // A single confirmed candidate is worth downloading its cover synchronously for
+            // (issue #832, point 5) — unlike the storage scan's own bulk/auto-link path, which
+            // must not block on however many items it is processing, this is exactly one.
+            $result = $this->scanStorageService->linkToChosenPluginCandidate($storage, $storagePath, $plugin, downloadCoverSynchronously: true);
+        } catch (StoragePathConflictException $e) {
+            return $this->conflictResponse($e);
+        }
+
+        return $this->respond($result->anime, $storagePath, $result->filledFromPlugin);
+    }
+
+    /**
+     * A candidate that resolved (by anime_id, or by pluginId/externalId, issue #832) to a
+     * catalog record already linked to a different storage_path reports a structured 409 body —
+     * {anime: {id, title}, storage_path: <the path it is already linked to>} — so the frontend
+     * can point the user at the existing entry instead of showing a bare error. The other
+     * conflict case this exception also carries (the *requested* storage_path already occupied
+     * by a different Anime, issue #147) has no such structured info to report and keeps the
+     * plain-message 409 it always had.
+     */
+    private function conflictResponse(StoragePathConflictException $e): JsonResponse
+    {
+        if ($e->anime === null) {
+            throw new ConflictHttpException($e->getMessage(), $e);
+        }
+
+        return new JsonResponse([
+            'conflict' => [
+                'anime' => ['id' => $e->anime->id, 'title' => $e->anime->getTitle()],
+                'storage_path' => $e->alreadyLinkedStoragePath,
+            ],
+        ], JsonResponse::HTTP_CONFLICT);
+    }
+
+    private function respond(Anime $anime, string $storagePath, bool $filledFromPlugin): JsonResponse
+    {
         $this->entityManager->flush();
 
         $animeId = $anime->id ?? throw new \LogicException('Anime must have an id once it has been flushed.');
@@ -118,28 +188,7 @@ final class StorageScanConfirmController
         return new JsonResponse([
             'storage_path' => $storagePath,
             'anime' => ['id' => $anime->id, 'title' => $anime->getTitle()],
+            'filled_from_plugin' => $filledFromPlugin,
         ]);
-    }
-
-    private function resolveCandidate(mixed $animeId, mixed $name): ScanCandidate
-    {
-        if ($animeId !== null) {
-            if (!\is_int($animeId)) {
-                throw new BadRequestHttpException('"anime_id" must be an integer.');
-            }
-
-            $anime = $this->entityManager->find(Anime::class, $animeId);
-            if (!$anime instanceof Anime) {
-                throw new NotFoundHttpException(\sprintf('Anime #%d not found.', $animeId));
-            }
-
-            return ScanCandidate::fromOrphan($anime);
-        }
-
-        if (\is_string($name) && $name !== '') {
-            return ScanCandidate::fromPlugin(new SearchByPluginCandidate(self::CONFIRMED_PLUGIN_ID, $name, ''));
-        }
-
-        throw new BadRequestHttpException('Either "anime_id" or "name" must be provided.');
     }
 }

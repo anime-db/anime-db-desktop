@@ -446,6 +446,8 @@ storage_list:
     group_auto_linked: Добавлено автоматически
     group_needs_manual_entry: Требуется создание записи
     group_needs_confirmation: Требуется подтверждение
+    group_conflict: Уже в каталоге
+    group_error: Ошибка обработки
     updated_text: '%title% (%path%)'
     files_missing_text: '%title% (%path%)'
     auto_linked_text: 'Добавлено автоматически: %title%'
@@ -453,6 +455,9 @@ storage_list:
     confirm_button: Подтвердить
     confirm_error: Не удалось подтвердить выбор.
     confirmed_text: 'Подтверждено: %title%'
+    confirmed_without_plugin_data_text: 'Добавлено без данных плагина: %title%'
+    conflict_text: 'Уже в каталоге «%title%», привязан к %path%'
+    error_text: 'Ошибка: %path% — %message%'
 
 anime_detail:
     title: '%title% — AnimeDB'

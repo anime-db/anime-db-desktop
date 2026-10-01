@@ -45,6 +45,7 @@ use App\Entity\ValueObject\PluginId;
 use App\Repository\AnimeRepository;
 use App\Repository\StudioRepository;
 use App\Service\Plugin\Filler\BulkFillerService;
+use App\Service\Plugin\Filler\CachedFillerLookup;
 use App\Service\Plugin\Filler\PluginAnimeDataMerger;
 use App\Service\Plugin\Filler\PluginMediaDownloaderInterface;
 use App\Service\Plugin\FillerRegistry;
@@ -65,6 +66,7 @@ use Doctrine\ORM\Tools\SchemaTool;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
+use Symfony\Component\Cache\Adapter\ArrayAdapter;
 use Symfony\Component\Messenger\MessageBusInterface;
 
 /**
@@ -169,6 +171,8 @@ final class ScanStorageServiceTest extends TestCase
             $this->entityManager,
             new NullLogger(),
             $this->createMock(MessageBusInterface::class),
+            $this->animeRepository,
+            new CachedFillerLookup(new ArrayAdapter()),
         );
     }
 
@@ -502,6 +506,8 @@ final class ScanStorageServiceTest extends TestCase
                 $this->entityManager,
                 $bulkFillerLogger,
                 $this->createMock(MessageBusInterface::class),
+                $this->animeRepository,
+                new CachedFillerLookup(new ArrayAdapter()),
             ),
         );
 
@@ -863,6 +869,118 @@ final class ScanStorageServiceTest extends TestCase
 
         $this->assertSame($orphan, $anime);
         $this->assertSame('Trigun.mkv', $anime->getStoragePath());
+    }
+
+    /**
+     * Regression guard (issue #832): on the pre-fix code, a single plugin candidate whose
+     * externalId already belongs to a catalog record linked to a *different* storage_path makes
+     * ScanStorageService::linkToChosenCandidate() hit the anime_external_id UNIQUE constraint,
+     * which closes Doctrine's EntityManager, and the very next line's persist() on that closed
+     * EntityManager throws EntityManagerClosed — aborting the whole scan over one item. Runs on
+     * a *real* EntityManager/SQLite connection (not a mock, per the issue's own test
+     * requirement): a mocked EntityManager would never actually close, so it could not catch a
+     * regression back to the old, UNIQUE-violating code path.
+     */
+    public function testSingleCandidateWhoseExternalIdAlreadyBelongsToAnAnimeLinkedElsewhereIsReportedAsAConflictNotACrash(): void
+    {
+        $dir = $this->makeStorageDir();
+        $this->touchFile($dir.'/Bleach.mkv');
+        $this->touchFile($dir.'/Trigun.mkv');
+        // Already linked, unchanged (old mtime) — produces no item of its own (see
+        // testUnchangedLinkedFileProducesNoItem), so this test's two items below are exactly the
+        // Bleach.mkv conflict and the unrelated Trigun.mkv entry, nothing else.
+        $this->touchFile($dir.'/Bleach (old location).mkv', time() - 100);
+
+        $storage = new Storage('Main folder', $dir, StorageType::Folder);
+        $this->entityManager->persist($storage);
+        $this->entityManager->flush();
+
+        $pluginId = new PluginId('animedb-shikimori');
+
+        $existing = new TvAnime();
+        $existing->setTitle('Bleach')->setWatchStatus(WatchStatus::Plan);
+        $existing->rememberExternalId($pluginId, '104');
+        $existing->setStorage($storage)->setStoragePath('Bleach (old location).mkv');
+        $this->entityManager->persist($existing);
+        $this->entityManager->flush();
+        $existingId = $existing->id;
+
+        $plugin = $this->createStub(SearchByPluginInterface::class);
+        $plugin->method('find')->willReturnCallback(static fn (string $name): array => $name === 'Bleach'
+            ? [new SearchByPluginCandidate((string) $pluginId, 'Bleach', '104')]
+            : []);
+        $pluginChain = new SearchByPluginChain(['test-plugin' => $plugin], new PluginsConfigStore(''));
+
+        $service = $this->newService($pluginChain);
+
+        $result = $service->scan($storage);
+
+        $this->assertFalse($result->conflicted);
+        $this->assertCount(2, $result->items);
+
+        $byPath = [];
+        foreach ($result->items as $item) {
+            $byPath[$item->storagePath] = $item;
+        }
+
+        $conflictItem = $byPath['Bleach.mkv'];
+        $this->assertSame(ScanItemType::Conflict, $conflictItem->type);
+        $this->assertSame($existingId, $conflictItem->anime?->id);
+        $this->assertSame('Bleach (old location).mkv', $conflictItem->alreadyLinkedStoragePath);
+
+        // The *other* item is still processed — the scan did not abort.
+        $this->assertSame(ScanItemType::NeedsManualEntry, $byPath['Trigun.mkv']->type);
+
+        // The final markScanned()+flush() still ran: no genuine concurrent race happened here
+        // (the conflict was caught by AnimeRepository::resolve() up front, never by the UNIQUE
+        // constraint), so the EntityManager was never closed.
+        $this->assertTrue($this->entityManager->isOpen());
+        $this->assertNotNull($storage->getDateUpdate());
+    }
+
+    /**
+     * Isolation guard (issue #832): one entry's processing failing (here, the plugin search
+     * chain itself throwing) must not abort the rest of the scan — the failing entry is reported
+     * as an Error item, every other entry is still processed, and the final markScanned()+
+     * flush() still happens.
+     */
+    public function testOneEntryFailingToProcessIsIsolatedAsAnErrorItemWithoutAbortingTheRestOfTheScan(): void
+    {
+        $dir = $this->makeStorageDir();
+        $this->touchFile($dir.'/Throws.mkv');
+        $this->touchFile($dir.'/Fine.mkv');
+
+        $storage = new Storage('Main folder', $dir, StorageType::Folder);
+        $this->entityManager->persist($storage);
+        $this->entityManager->flush();
+
+        $plugin = $this->createStub(SearchByPluginInterface::class);
+        $plugin->method('find')->willReturnCallback(static function (string $name): array {
+            if ($name === 'Throws') {
+                throw new \RuntimeException('search backend unavailable');
+            }
+
+            return [];
+        });
+        $pluginChain = new SearchByPluginChain(['test-plugin' => $plugin], new PluginsConfigStore(''));
+
+        $service = $this->newService($pluginChain);
+
+        $result = $service->scan($storage);
+
+        $this->assertCount(2, $result->items);
+
+        $byPath = [];
+        foreach ($result->items as $item) {
+            $byPath[$item->storagePath] = $item;
+        }
+
+        $this->assertSame(ScanItemType::Error, $byPath['Throws.mkv']->type);
+        $this->assertNotNull($byPath['Throws.mkv']->errorMessage);
+        $this->assertSame(ScanItemType::NeedsManualEntry, $byPath['Fine.mkv']->type);
+
+        $this->assertTrue($this->entityManager->isOpen());
+        $this->assertNotNull($storage->getDateUpdate());
     }
 
     public function testSuccessfulScanRecordsStorageScanTimestamps(): void

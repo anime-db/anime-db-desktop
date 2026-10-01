@@ -42,6 +42,7 @@ use App\Repository\StudioRepository;
 use App\Service\JobLock\JobLockService;
 use App\Service\JobLock\ProcessLivenessChecker;
 use App\Service\Plugin\Filler\BulkFillerService;
+use App\Service\Plugin\Filler\CachedFillerLookup;
 use App\Service\Plugin\Filler\PluginAnimeDataMerger;
 use App\Service\Plugin\Filler\PluginMediaDownloaderInterface;
 use App\Service\Plugin\FillerRegistry;
@@ -61,6 +62,7 @@ use Doctrine\ORM\Tools\SchemaTool;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
+use Symfony\Component\Cache\Adapter\ArrayAdapter;
 use Symfony\Component\Clock\MockClock;
 use Symfony\Component\Messenger\Exception\UnrecoverableMessageHandlingException;
 use Symfony\Component\Messenger\MessageBusInterface;
@@ -498,6 +500,8 @@ final class ScanStorageMessageHandlerTest extends TestCase
                 $this->entityManager,
                 new NullLogger(),
                 $this->createMock(MessageBusInterface::class),
+                $animeRepository,
+                new CachedFillerLookup(new ArrayAdapter()),
             ),
             new NullLogger(),
         );

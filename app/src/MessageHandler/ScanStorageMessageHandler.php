@@ -203,7 +203,11 @@ final class ScanStorageMessageHandler
         }
     }
 
-    /** @return array{type: string, storage_path: string, cleaned_name: ?string, anime: ?array{id: ?int, title: string}, candidates: list<array{anime_id: ?int, title: string}>} */
+    /**
+     * @return array{type: string, storage_path: string, cleaned_name: ?string, anime: ?array{id: ?int, title: string},
+     *               candidates: list<array{anime_id: ?int, plugin_id: ?string, external_id: ?string, title: string}>,
+     *               already_linked_storage_path: ?string, error_message: ?string}
+     */
     private function serializeItem(ScanResultItem $item): array
     {
         return [
@@ -215,18 +219,33 @@ final class ScanStorageMessageHandler
                 'title' => $item->anime->getTitle(),
             ] : null,
             'candidates' => array_map($this->serializeCandidate(...), $item->candidates),
+            'already_linked_storage_path' => $item->alreadyLinkedStoragePath,
+            'error_message' => $item->errorMessage,
         ];
     }
 
-    /** @return array{anime_id: ?int, title: string} */
+    /**
+     * $plugin_id/$external_id (issue #832) let the storage-scan confirm endpoint resolve the
+     * exact same (pluginId, externalId) pair the scan itself already found, instead of a bare
+     * title the server could never dedupe against the catalog by — see
+     * StorageScanConfirmController, which used to fall back to a placeholder plugin id with no
+     * real filler registered under it for exactly this reason.
+     *
+     * @return array{anime_id: ?int, plugin_id: ?string, external_id: ?string, title: string}
+     */
     private function serializeCandidate(ScanCandidate $candidate): array
     {
         if ($candidate->orphan !== null) {
-            return ['anime_id' => $candidate->orphan->id, 'title' => $candidate->orphan->getTitle()];
+            return ['anime_id' => $candidate->orphan->id, 'plugin_id' => null, 'external_id' => null, 'title' => $candidate->orphan->getTitle()];
         }
 
         $plugin = $candidate->plugin ?? throw new \LogicException('ScanCandidate must carry either an orphan or a plugin match');
 
-        return ['anime_id' => null, 'title' => $plugin->getName()];
+        return [
+            'anime_id' => null,
+            'plugin_id' => $plugin->getPluginId(),
+            'external_id' => $plugin->getExternalId(),
+            'title' => $plugin->getName(),
+        ];
     }
 }

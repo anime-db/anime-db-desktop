@@ -34,8 +34,6 @@ use App\Entity\ValueObject\PluginId;
 use App\Service\Plugin\FillerRegistry;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Log\LoggerInterface;
-use Symfony\Contracts\Cache\CacheInterface;
-use Symfony\Contracts\Cache\ItemInterface;
 
 /**
  * Point fill-in scenario (issue #234): a single field on an already-persisted Anime is filled
@@ -51,18 +49,11 @@ use Symfony\Contracts\Cache\ItemInterface;
  */
 final class FieldFillerService
 {
-    /**
-     * A handful of minutes: long enough to dedupe repeated findById() calls across several
-     * field-fill clicks in the same edit session, short enough that "fill from source" still
-     * means reasonably fresh data rather than an indefinitely stale snapshot.
-     */
-    private const CACHE_TTL_SECONDS = 300;
-
     public function __construct(
         private readonly FillerRegistry $fillerRegistry,
         private readonly PluginAnimeDataMerger $merger,
         private readonly EntityManagerInterface $entityManager,
-        private readonly CacheInterface $cache,
+        private readonly CachedFillerLookup $lookup,
         private readonly LoggerInterface $logger,
     ) {
     }
@@ -118,27 +109,6 @@ final class FieldFillerService
             $anime->rememberExternalId($pluginId, $externalId);
         }
 
-        return $this->findById($filler, $pluginId, $externalId);
-    }
-
-    /**
-     * Cache key is derived, not "pluginId:externalId" literally as the issue describes it:
-     * Symfony's cache keys reject `{}()/\@:` outright, and a third-party plugin's external id
-     * is free-form text a host cannot constrain.
-     */
-    private function findById(FillerInterface $filler, PluginId $pluginId, string $externalId): ?PluginAnimeData
-    {
-        $key = 'filler.'.$pluginId.'.'.hash('xxh128', $externalId);
-
-        return $this->cache->get($key, static function (ItemInterface $item, bool &$save) use ($filler, $externalId): ?PluginAnimeData {
-            $item->expiresAfter(self::CACHE_TTL_SECONDS);
-
-            $data = $filler->findById($externalId);
-            // A transient "not found" (no match yet, source not queried) must not stick around
-            // for CACHE_TTL_SECONDS - only a real result is worth caching.
-            $save = $data !== null;
-
-            return $data;
-        });
+        return $this->lookup->findById($filler, $pluginId, $externalId);
     }
 }

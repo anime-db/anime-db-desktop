@@ -43,4 +43,18 @@ enum ScanItemType
 
     /** No candidate was found; the caller must offer to create a catalog entry manually. */
     case NeedsManualEntry;
+
+    /**
+     * The single plugin candidate resolved (by pluginId/externalId) to a catalog record already
+     * linked to a different storage path (issue #832) — the caller must show this as "already in
+     * the catalog, linked to <path>" rather than silently re-linking or failing the whole scan.
+     */
+    case Conflict;
+
+    /**
+     * Processing this entry (resolving candidates, creating/filling in its Anime) failed (issue
+     * #832) — isolated to this one item so the rest of the scan still completes; the caller
+     * should show this as a per-item error rather than aborting.
+     */
+    case Error;
 }

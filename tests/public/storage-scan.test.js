@@ -197,6 +197,112 @@ test('a candidate needing confirmation renders Bootstrap form-check radios and a
     expect(li.textContent).toBe('storage_list.confirmed_text');
 });
 
+test('confirming a plugin candidate posts its real pluginId/externalId instead of a bare name', async () => {
+    const watchers = mockScanWatcher();
+    mockTranslations();
+    global.fetch = jest.fn(() => Promise.resolve(jsonResponse({ anime: { title: 'Trigun' }, filled_from_plugin: true })));
+    loadStorageScanModule();
+
+    await watchers['42'].onDone({
+        items: [{
+            type:         'NeedsConfirmation',
+            storage_path: '/anime/trigun',
+            cleaned_name: 'Trigun',
+            candidates:   [{ anime_id: null, plugin_id: 'animedb-shikimori', external_id: '104', title: 'Trigun' }],
+        }],
+    });
+    await flushMicrotasks();
+
+    const li = document.querySelector('#storage-scan-results li');
+    li.querySelector('button').click();
+    await flushMicrotasks();
+
+    expect(global.fetch).toHaveBeenCalledWith('/storage/42/scan/confirm', expect.objectContaining({
+        method: 'POST',
+        body:   JSON.stringify({
+            token:        'csrf-token',
+            storage_path: '/anime/trigun',
+            plugin_id:    'animedb-shikimori',
+            external_id:  '104',
+            name:         'Trigun',
+        }),
+    }));
+    expect(li.textContent).toBe('storage_list.confirmed_text');
+});
+
+test('a confirmation response with filled_from_plugin:false shows the without-plugin-data message', async () => {
+    const watchers = mockScanWatcher();
+    mockTranslations();
+    global.fetch = jest.fn(() => Promise.resolve(jsonResponse({ anime: { title: 'Trigun' }, filled_from_plugin: false })));
+    loadStorageScanModule();
+
+    await watchers['42'].onDone({
+        items: [{
+            type:         'NeedsConfirmation',
+            storage_path: '/anime/trigun',
+            cleaned_name: 'Trigun',
+            candidates:   [{ anime_id: null, plugin_id: 'animedb-shikimori', external_id: '104', title: 'Trigun' }],
+        }],
+    });
+    await flushMicrotasks();
+
+    const li = document.querySelector('#storage-scan-results li');
+    li.querySelector('button').click();
+    await flushMicrotasks();
+
+    expect(li.textContent).toBe('storage_list.confirmed_without_plugin_data_text');
+});
+
+test('a 409 conflict response renders the conflict message instead of the generic error alert', async () => {
+    const watchers = mockScanWatcher();
+    mockTranslations();
+    global.fetch = jest.fn(() => Promise.resolve({
+        ok:     false,
+        status: 409,
+        json:   () => Promise.resolve({ conflict: { anime: { id: 7, title: 'Trigun' }, storage_path: 'Trigun (old).mkv' } }),
+    }));
+    loadStorageScanModule();
+
+    await watchers['42'].onDone({
+        items: [{
+            type:         'NeedsConfirmation',
+            storage_path: '/anime/trigun',
+            cleaned_name: 'Trigun',
+            candidates:   [{ anime_id: null, plugin_id: 'animedb-shikimori', external_id: '104', title: 'Trigun' }],
+        }],
+    });
+    await flushMicrotasks();
+
+    const li = document.querySelector('#storage-scan-results li');
+    li.querySelector('button').click();
+    await flushMicrotasks();
+
+    expect(li.textContent).toBe('storage_list.conflict_text');
+    expect(li.querySelector('.alert')).toBeNull();
+});
+
+test('Conflict and Error scan items render instead of being silently dropped', async () => {
+    const watchers = mockScanWatcher();
+    mockTranslations();
+    loadStorageScanModule();
+
+    await watchers['42'].onDone({
+        items: [
+            { type: 'Conflict', storage_path: '/a', anime: { title: 'Trigun' }, already_linked_storage_path: '/old/Trigun.mkv' },
+            { type: 'Error', storage_path: '/b', cleaned_name: 'Bleach', error_message: 'search backend unavailable' },
+        ],
+    });
+    await flushMicrotasks();
+
+    const resultsBox = document.getElementById('storage-scan-results');
+    const groups = resultsBox.querySelectorAll('section.storage-scan__group');
+    expect(groups).toHaveLength(2);
+
+    const items = resultsBox.querySelectorAll('li');
+    expect(items).toHaveLength(2);
+    items.forEach((li) => expect(li.textContent.length).toBeGreaterThan(0));
+});
+
 test('a failed confirmation renders a Bootstrap alert instead of the plain error text it used before', async () => {
     const watchers = mockScanWatcher();
     mockTranslations();
