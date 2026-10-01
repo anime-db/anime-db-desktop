@@ -27,20 +27,103 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Twig;
 
+use App\Twig\Exception\UnknownIconException;
+use App\Twig\IconExtension;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use Twig\Environment;
+use Twig\Error\RuntimeError;
+use Twig\Loader\ArrayLoader;
 
 /**
- * Issue #828: every icon name a template passes to `_icon.html.twig` must resolve to an actual
- * file in templates/icons/, and that directory must not accumulate SVGs nobody references.
+ * Issue #828/#829: the icon name passed to `icon()` must resolve to an actual file in
+ * templates/icons/, and that must hold regardless of how the call is written in a template —
+ * previously this was only checked by a regex scanning the .twig sources for one specific
+ * `include('_icon.html.twig', {name: 'x'})` spelling, so a typo written any other way (different
+ * quoting, whitespace, `with`, a variable from outside a `*Icons*` map, ...) slipped through with
+ * the test still green, and `source()` on the missing file would only blow up at render time in
+ * production (500). IconExtension::render() now validates the name against the real files on
+ * disk on every call, so this is tested directly against the extension instead of the templates'
+ * source text — fail closed, not fail open.
  */
 final class IconRegistryTest extends TestCase
 {
-    private function templatesDir(): string
+    private function iconsDir(): string
     {
-        return \dirname(__DIR__, 3).'/templates';
+        return \dirname(__DIR__, 3).'/templates/icons';
+    }
+
+    public function testKnownIconNameRendersItsFileTaggedWithTheRequestedName(): void
+    {
+        $extension = new IconExtension($this->iconsDir());
+
+        $html = $extension->render('trash');
+
+        self::assertStringStartsWith('<svg data-icon="trash" ', $html);
+        self::assertStringContainsString('aria-hidden="true"', $html);
+        self::assertSame(
+            file_get_contents($this->iconsDir().'/trash.svg'),
+            str_replace('data-icon="trash" ', '', $html),
+            'Expected render() to return the file content unchanged apart from the added data-icon attribute.',
+        );
+    }
+
+    public function testUnknownIconNameThrows(): void
+    {
+        $extension = new IconExtension($this->iconsDir());
+
+        $this->expectException(UnknownIconException::class);
+        $extension->render('not-a-real-icon');
+    }
+
+    #[DataProvider('namesThatMustNeverReachTheFilesystem')]
+    public function testNameWithPathTraversalOrUnexpectedCharactersThrows(string $name): void
+    {
+        $extension = new IconExtension($this->iconsDir());
+
+        $this->expectException(UnknownIconException::class);
+        $extension->render($name);
     }
 
     /**
+     * @return iterable<string, array{string}>
+     */
+    public static function namesThatMustNeverReachTheFilesystem(): iterable
+    {
+        yield 'parent directory traversal' => ['../_icon.html.twig'];
+        yield 'absolute path' => ['/etc/passwd'];
+        yield 'uppercase' => ['Trash'];
+        yield 'empty string' => [''];
+    }
+
+    /**
+     * Issue #829 review comment: a fixture template calling `icon()` with a bad name must fail
+     * this test, exercised through the real Twig rendering pipeline — not just the PHP class
+     * directly above — so a regression in how the function is wired into Twig (not just in
+     * IconExtension itself) is caught too.
+     */
+    public function testRenderingATemplateThatReferencesAnUnknownIconThrows(): void
+    {
+        $twig = new Environment(new ArrayLoader([
+            'broken.html.twig' => "{{ icon('not-a-real-icon') }}",
+        ]));
+        $twig->addExtension(new IconExtension($this->iconsDir()));
+
+        $this->expectException(RuntimeError::class);
+        try {
+            $twig->render('broken.html.twig');
+        } catch (RuntimeError $error) {
+            self::assertInstanceOf(UnknownIconException::class, $error->getPrevious());
+
+            throw $error;
+        }
+    }
+
+    /**
+     * Hygiene, not a safety net: an SVG nobody references is dead weight, but leaving one behind
+     * cannot cause the 500 the `icon()` validation above guards against. Best-effort literal-name
+     * scan is good enough here.
+     *
      * @return list<string>
      */
     private function referencedIconNames(): array
@@ -48,7 +131,7 @@ final class IconRegistryTest extends TestCase
         $names = [];
 
         $finder = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($this->templatesDir(), \FilesystemIterator::SKIP_DOTS),
+            new \RecursiveDirectoryIterator(\dirname(__DIR__, 3).'/templates', \FilesystemIterator::SKIP_DOTS),
         );
 
         foreach ($finder as $file) {
@@ -58,8 +141,8 @@ final class IconRegistryTest extends TestCase
 
             $content = (string) file_get_contents($file->getPathname());
 
-            // Direct includes: {{ include('_icon.html.twig', {name: 'trash'}) }}
-            if (preg_match_all("/_icon\\.html\\.twig',\\s*\\{name:\\s*'([a-z0-9-]+)'/", $content, $matches)) {
+            // Literal calls: {{ icon('trash') }}
+            if (preg_match_all("/icon\\(\\s*'([a-z0-9-]+)'\\s*\\)/", $content, $matches)) {
                 array_push($names, ...$matches[1]);
             }
 
@@ -76,37 +159,14 @@ final class IconRegistryTest extends TestCase
         return array_values(array_unique($names));
     }
 
-    /**
-     * @return list<string>
-     */
-    private function availableIconFiles(): array
-    {
-        $files = glob($this->templatesDir().'/icons/*.svg');
-        self::assertNotFalse($files);
-
-        return array_map(static fn (string $path): string => basename($path, '.svg'), $files);
-    }
-
-    public function testEveryReferencedIconNameHasAFile(): void
+    public function testNoUnusedIconFilesInTheDirectory(): void
     {
         $referenced = $this->referencedIconNames();
         self::assertNotEmpty($referenced, 'Expected to find at least one icon reference in the templates.');
 
-        $available = $this->availableIconFiles();
-
-        foreach ($referenced as $name) {
-            self::assertContains(
-                $name,
-                $available,
-                \sprintf('Template references icon "%s" but templates/icons/%s.svg does not exist.', $name, $name),
-            );
-        }
-    }
-
-    public function testNoUnusedIconFilesInTheDirectory(): void
-    {
-        $referenced = $this->referencedIconNames();
-        $available = $this->availableIconFiles();
+        $files = glob($this->iconsDir().'/*.svg');
+        self::assertNotFalse($files);
+        $available = array_map(static fn (string $path): string => basename($path, '.svg'), $files);
 
         foreach ($available as $name) {
             self::assertContains(

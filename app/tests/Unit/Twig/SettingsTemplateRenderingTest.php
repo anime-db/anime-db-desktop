@@ -113,6 +113,45 @@ final class SettingsTemplateRenderingTest extends KernelTestCase
         $this->assertStringContainsString('/settings/labels', $html);
     }
 
+    /**
+     * Issue #829 review: the theme switcher's `themeIcons` map (settings/index.html.twig) is
+     * keyed separately from the `['system', 'light', 'dark']` option list it's indexed by — a
+     * rename or addition to one without the other would make `themeIcons[option]` resolve to
+     * `null` and, via App\Twig\IconExtension, throw instead of rendering, taking the whole
+     * settings page down with it. No render test exercised this template's theme switcher at all
+     * before; this one renders every option and pins both the icon and the surviving
+     * `visually-hidden` label text for each.
+     */
+    public function testSettingsIndexRendersThemeSwitcherIconAndVisuallyHiddenTextForEveryOption(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession();
+        /** @var LocaleSwitcher $localeSwitcher */
+        $localeSwitcher = self::getContainer()->get(LocaleSwitcher::class);
+        $localeSwitcher->setLocale('en');
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('settings/index.html.twig', [
+            'availableLocales' => ['en', 'ru'],
+            'unavailableLocale' => null,
+            'themePreference' => ThemePreference::System,
+            'paginationMode' => PaginationMode::InfiniteScroll,
+        ]);
+
+        $expectedIconByOption = ['system' => 'display', 'light' => 'sun', 'dark' => 'moon-stars'];
+
+        foreach ($expectedIconByOption as $option => $expectedIcon) {
+            $pattern = '/<label class="btn btn-outline-secondary" for="theme-'.preg_quote($option, '/').'"[^>]*>\s*'
+                .'<svg[^>]*data-icon="'.preg_quote($expectedIcon, '/').'"[^>]*aria-hidden="true"[^>]*>.*?<\/svg>\s*'
+                .'<span class="visually-hidden">([^<]+)<\/span>/s';
+
+            $matched = preg_match($pattern, $html, $matches);
+            self::assertSame(1, $matched, \sprintf('Expected the "%s" theme option to render its "%s" icon with a visually-hidden label.', $option, $expectedIcon));
+            self::assertNotSame('', trim($matches[1]), \sprintf('Expected the "%s" theme option\'s visually-hidden text not to be empty.', $option));
+        }
+    }
+
     public function testSettingsIndexRendersLocaleSwitcherWithCurrentLocaleSelected(): void
     {
         self::bootKernel();

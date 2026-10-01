@@ -43,6 +43,12 @@ use Twig\Environment;
  * Issue #828: action-column buttons in the storage, plugins and labels tables lost their text and
  * became icon-only — every one of them must still carry an `aria-label`/`title` with the original
  * wording, and the icon it wraps must stay decorative (`aria-hidden="true"`).
+ *
+ * Issue #829 review: asserting only that *some* `aria-hidden` svg sits inside the button cannot
+ * tell a correctly-wired button apart from one that got the wrong icon (e.g. "pencil" on a
+ * Delete button) — every file in templates/icons/ carries that same attribute. assertIconButton()
+ * now also pins the `data-icon` App\Twig\IconExtension stamps onto the rendered svg, so a
+ * mismatch between the label and the icon actually shown fails the test.
  */
 final class IconActionButtonsRenderingTest extends KernelTestCase
 {
@@ -57,13 +63,13 @@ final class IconActionButtonsRenderingTest extends KernelTestCase
         $requestStack->push($request);
     }
 
-    private function assertIconButton(string $html, string $label): void
+    private function assertIconButton(string $html, string $label, string $icon): void
     {
-        $pattern = '/<(?:a|button)[^>]*title="'.preg_quote($label, '/').'"[^>]*aria-label="'.preg_quote($label, '/').'"[^>]*>\s*<svg[^>]*aria-hidden="true"/s';
+        $pattern = '/<(?:a|button)[^>]*title="'.preg_quote($label, '/').'"[^>]*aria-label="'.preg_quote($label, '/').'"[^>]*>\s*<svg[^>]*data-icon="'.preg_quote($icon, '/').'"[^>]*aria-hidden="true"/s';
         self::assertMatchesRegularExpression(
             $pattern,
             $html,
-            \sprintf('Expected an icon button labelled "%s" with an aria-hidden icon inside.', $label),
+            \sprintf('Expected an icon button labelled "%s" with its "%s" icon (aria-hidden) inside.', $label, $icon),
         );
     }
 
@@ -84,9 +90,9 @@ final class IconActionButtonsRenderingTest extends KernelTestCase
             'scannedStorageId' => null,
         ]);
 
-        $this->assertIconButton($html, 'Edit');
-        $this->assertIconButton($html, 'Scan');
-        $this->assertIconButton($html, 'Delete');
+        $this->assertIconButton($html, 'Edit', 'pencil');
+        $this->assertIconButton($html, 'Scan', 'arrow-repeat');
+        $this->assertIconButton($html, 'Delete', 'trash');
     }
 
     public function testPluginsIndexActionButtonsCarryTitleAndAriaLabel(): void
@@ -121,8 +127,8 @@ final class IconActionButtonsRenderingTest extends KernelTestCase
             'manifestErrors' => [],
         ]);
 
-        $this->assertIconButton($html, 'Settings');
-        $this->assertIconButton($html, 'Remove');
+        $this->assertIconButton($html, 'Settings', 'gear');
+        $this->assertIconButton($html, 'Remove', 'trash');
     }
 
     public function testLabelsIndexDeleteButtonCarriesTitleAndAriaLabel(): void
@@ -142,6 +148,6 @@ final class IconActionButtonsRenderingTest extends KernelTestCase
             'error' => null,
         ]);
 
-        $this->assertIconButton($html, 'Delete');
+        $this->assertIconButton($html, 'Delete', 'trash');
     }
 }
