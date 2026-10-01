@@ -528,9 +528,16 @@ storage_scan_prompt:
     skip_link: Пропустить
 
 onboarding:
-    heading: Добро пожаловать в AnimeDB
-    description: Каталог пуст. Добавьте хранилище с файлами аниме или загрузите демо-данные, чтобы начать.
+    heading: Каталог пуст
+    description: Добавьте хранилище с файлами аниме или загрузите демо-данные, чтобы начать.
+    add_storage_heading: Добавить хранилище
+    add_storage_description: Укажите папку с файлами аниме, чтобы находить записи автоматически.
     add_storage_button: Добавить хранилище
+    scan_storage_heading: Просканировать хранилище
+    scan_storage_description: Найдите аниме в уже добавленном хранилище.
+    scan_storage_button: Просканировать хранилище
+    load_demo_heading: Загрузить демо-данные
+    load_demo_description: Заполните каталог примерами записей, чтобы посмотреть, как это работает.
     load_demo_button: Загрузить демо-данные
 
 storage_edit:
