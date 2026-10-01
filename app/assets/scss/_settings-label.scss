@@ -34,3 +34,17 @@
 .settings-label__count {
     white-space: nowrap;
 }
+
+// The rename form's input group is toggled with the `hidden` attribute (see
+// settings-labels.js). Bootstrap's `.d-flex` carries `!important` and would override
+// `[hidden]`'s `display: none`, so the flex layout lives here instead of a `d-flex` utility
+// class on the toggled element.
+.settings-label__name-input-group {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+
+    &[hidden] {
+        display: none;
+    }
+}

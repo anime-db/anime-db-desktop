@@ -164,6 +164,8 @@ settings_labels:
     add_button: Add
     empty: No tags yet.
     save_button: Save
+    count_label: 'Entries: %count%'
+    count_link_title: Show entries with this tag
     delete_confirm: Delete tag "%name%"?
     delete_confirm_with_count: 'Delete tag "%name%"? Items with this tag: %count%.'
     delete_button: Delete

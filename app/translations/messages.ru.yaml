@@ -164,6 +164,8 @@ settings_labels:
     add_button: Добавить
     empty: Меток пока нет.
     save_button: Сохранить
+    count_label: 'Записей: %count%'
+    count_link_title: Показать записи с этой меткой
     delete_confirm: Удалить метку «%name%»?
     delete_confirm_with_count: 'Удалить метку «%name%»? Записей с этой меткой: %count%.'
     delete_button: Удалить

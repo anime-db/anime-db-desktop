@@ -51,20 +51,15 @@
                             <button type="button" class="settings-label__name-button" data-settings-label-name-button hidden>
                                 <bdi>{{ label.name }}</bdi>
                             </button>
-                            <span class="settings-label__name-input-group d-flex align-items-center gap-2" data-settings-label-input-group>
+                            <span class="settings-label__name-input-group" data-settings-label-input-group>
                                 <input type="text" name="name" value="{{ label.name }}" maxlength="32" required
                                        class="form-control form-control-sm w-auto" data-settings-label-name-input>
                                 <button type="submit" class="btn btn-outline-primary btn-sm">{{ 'settings_labels.save_button'|trans }}</button>
                             </span>
                             <p class="settings-label__name-error text-danger small mb-0" data-settings-label-name-error hidden>{{ 'settings_labels.empty_name_error'|trans }}</p>
                         </form>
-                        <span class="settings-label__count text-body-secondary">
-                            {% if count > 0 %}
-                                <a href="{{ path('home_index', {labels: label.id}) }}">{{ count }}</a>
-                            {% else %}
-                                {{ count }}
-                            {% endif %}
-                        </span>
+                        {% set countValue = count > 0 ? ('<a href="' ~ path('home_index', {labels: label.id}) ~ '" title="' ~ ('settings_labels.count_link_title'|trans|e) ~ '">' ~ count ~ '</a>') : count %}
+                        <span class="settings-label__count text-body-secondary">{{ ('settings_labels.count_label'|trans({'%count%': countValue}))|raw }}</span>
                         <form method="post" action="{{ path('settings_labels_delete', {id: label.id}) }}"
                               data-confirm="{{ (count > 0 ? 'settings_labels.delete_confirm_with_count' : 'settings_labels.delete_confirm')|trans({'%name%': bidi_isolate(label.name), '%count%': count}) }}">
                             <input type="hidden" name="_token" value="{{ csrf_token('settings_labels_delete_' ~ label.id) }}">

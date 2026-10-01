@@ -321,11 +321,16 @@ final class SettingsTemplateRenderingTest extends KernelTestCase
     // Issue #823: the anime count next to a label is a link into the catalog filtered by that
     // label — the exact href shape the anime card's own label link already uses
     // (anime/show.html.twig: path('home_index', {labels: label.id})) so clicking it really
-    // applies the filter rather than merely looking like it does.
+    // applies the filter rather than merely looking like it does. The number itself is the link;
+    // the surrounding "Records: " caption (see peter-gribanov's review of PR #827) stays plain
+    // text so the count is readable without relying on link styling.
     public function testLabelIndexRendersANonZeroCountAsALinkIntoTheFilteredCatalog(): void
     {
         self::bootKernel();
         $this->pushRequestWithSession();
+        /** @var LocaleSwitcher $localeSwitcher */
+        $localeSwitcher = self::getContainer()->get(LocaleSwitcher::class);
+        $localeSwitcher->setLocale('ru');
 
         $label = $this->createPersistedLabel(5, 'favorite');
 
@@ -333,7 +338,8 @@ final class SettingsTemplateRenderingTest extends KernelTestCase
         $twig = self::getContainer()->get('twig');
         $html = $twig->render('settings/label/index.html.twig', ['labels' => [$label], 'labelCounts' => [5 => 3], 'error' => null]);
 
-        $this->assertStringContainsString('<a href="/?labels=5">3</a>', $html);
+        $this->assertStringContainsString('<a href="/?labels=5" title="Показать записи с этой меткой">3</a>', $html);
+        $this->assertStringContainsString('Записей: <a', $html);
     }
 
     // A label with no anime at all must still show its count (0), but with no link — there is
@@ -342,6 +348,9 @@ final class SettingsTemplateRenderingTest extends KernelTestCase
     {
         self::bootKernel();
         $this->pushRequestWithSession();
+        /** @var LocaleSwitcher $localeSwitcher */
+        $localeSwitcher = self::getContainer()->get(LocaleSwitcher::class);
+        $localeSwitcher->setLocale('ru');
 
         $label = $this->createPersistedLabel(7, 'rewatch');
 
@@ -350,7 +359,33 @@ final class SettingsTemplateRenderingTest extends KernelTestCase
         $html = $twig->render('settings/label/index.html.twig', ['labels' => [$label], 'labelCounts' => [7 => 0], 'error' => null]);
 
         $this->assertStringNotContainsString('href="/?labels=7"', $html);
-        $this->assertMatchesRegularExpression('/settings-label__count[^>]*>\s*0\s*</', $html);
+        $this->assertMatchesRegularExpression('/settings-label__count[^>]*>\s*Записей:\s*0\s*</', $html);
+    }
+
+    // peter-gribanov's review of PR #827: Bootstrap's `.d-flex` carries `!important` and
+    // overrides the `hidden` attribute's `display: none`, so none of the elements this control
+    // toggles with `hidden` (settings-labels.js) may carry a `d-*` display utility class —
+    // jsdom-based JS tests cannot catch this because jsdom does not apply CSS.
+    public function testLabelIndexHiddenToggledElementsCarryNoDisplayUtilityClass(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession();
+
+        $label = $this->createPersistedLabel(1, 'favorite');
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('settings/label/index.html.twig', ['labels' => [$label], 'labelCounts' => [1 => 0], 'error' => null]);
+
+        foreach (['data-settings-label-name-button', 'data-settings-label-input-group', 'data-settings-label-name-error'] as $marker) {
+            $found = preg_match('/<[a-z]+\b[^>]*\b'.preg_quote($marker, '/').'\b[^>]*>/', $html, $matches);
+            $this->assertSame(1, $found, "expected to find the {$marker} element");
+            $this->assertDoesNotMatchRegularExpression(
+                '/\bd-(flex|inline-flex|block)\b/',
+                $matches[0],
+                "the {$marker} element is toggled via [hidden] and must not carry a d-* display utility class",
+            );
+        }
     }
 
     // Issue #823: the delete confirmation names the number of anime that carry the label, so
@@ -434,6 +469,7 @@ final class SettingsTemplateRenderingTest extends KernelTestCase
         // from the name itself rather than as one literal string.
         $this->assertStringContainsString('favorite', $html);
         $this->assertStringContainsString('? Items with this tag: 4.', $html);
+        $this->assertStringContainsString('Entries: <a href="/?labels=2" title="Show entries with this tag">4</a>', $html);
     }
 
     public function testSyncReviewIndexRendersEmptyStateWithoutErrors(): void
