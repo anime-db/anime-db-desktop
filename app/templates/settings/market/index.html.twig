@@ -90,7 +90,7 @@
                                         <form method="post" action="{{ path('settings_market_update', {pluginId: item.plugin.id}) }}">
                                             <input type="hidden" name="_token" value="{{ csrf_token('settings_market_update_' ~ item.plugin.id) }}">
                                             <button type="submit" class="btn btn-primary btn-sm">
-                                                {{ include('_icon.html.twig', {name: 'arrow-up-circle'}) }}
+                                                {{ icon('arrow-up-circle') }}
                                                 {{ 'settings_market.update_button'|trans }}
                                             </button>
                                         </form>
@@ -104,7 +104,7 @@
                                         <form method="post" action="{{ path('settings_market_install', {pluginId: item.plugin.id}) }}">
                                             <input type="hidden" name="_token" value="{{ csrf_token('settings_market_install_' ~ item.plugin.id) }}">
                                             <button type="submit" class="btn btn-primary btn-sm">
-                                                {{ include('_icon.html.twig', {name: 'download'}) }}
+                                                {{ icon('download') }}
                                                 {{ 'settings_market.install_button'|trans }}
                                             </button>
                                         </form>

@@ -28,7 +28,7 @@
 
         <p class="mb-4">
             <a href="{{ path('storage_new') }}" class="btn btn-primary">
-                {{ include('_icon.html.twig', {name: 'plus-lg'}) }}
+                {{ icon('plus-lg') }}
                 {{ 'storage_list.new_button'|trans }}
             </a>
         </p>
@@ -89,18 +89,18 @@
                                 <td>
                                     <div class="d-flex gap-2 align-items-center flex-wrap">
                                         <a href="{{ path('storage_edit', {id: storage.id}) }}" class="btn btn-outline-secondary btn-sm" title="{{ 'storage_list.edit_button'|trans }}" aria-label="{{ 'storage_list.edit_button'|trans }}">
-                                            {{ include('_icon.html.twig', {name: 'pencil'}) }}
+                                            {{ icon('pencil') }}
                                         </a>
                                         <form method="post" action="{{ path('storage_scan', {id: storage.id}) }}">
                                             <input type="hidden" name="_token" value="{{ csrf_token('storage_scan_' ~ storage.id) }}">
                                             <button type="submit" class="btn btn-outline-primary btn-sm" title="{{ 'storage_list.scan_button'|trans }}" aria-label="{{ 'storage_list.scan_button'|trans }}">
-                                                {{ include('_icon.html.twig', {name: 'arrow-repeat'}) }}
+                                                {{ icon('arrow-repeat') }}
                                             </button>
                                         </form>
                                         <form method="post" action="{{ path('storage_delete', {id: storage.id}) }}" data-confirm="{{ 'storage_list.delete_confirm'|trans({'%name%': bidi_isolate(storage.name)}) }}">
                                             <input type="hidden" name="_token" value="{{ csrf_token('storage_delete_' ~ storage.id) }}">
                                             <button type="submit" class="btn btn-outline-danger btn-sm" title="{{ 'storage_list.delete_button'|trans }}" aria-label="{{ 'storage_list.delete_button'|trans }}">
-                                                {{ include('_icon.html.twig', {name: 'trash'}) }}
+                                                {{ icon('trash') }}
                                             </button>
                                         </form>
                                     </div>

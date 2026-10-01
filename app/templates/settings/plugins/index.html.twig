@@ -106,13 +106,13 @@
                                     <div class="d-flex gap-2 align-items-center flex-wrap">
                                         {% if (plugin.id ~ '') in settingsPluginIds %}
                                             <a href="{{ path('settings_plugin_page', {pluginId: plugin.id}) }}" class="btn btn-outline-secondary btn-sm" title="{{ 'settings_plugins.settings_link'|trans }}" aria-label="{{ 'settings_plugins.settings_link'|trans }}">
-                                                {{ include('_icon.html.twig', {name: 'gear'}) }}
+                                                {{ icon('gear') }}
                                             </a>
                                         {% endif %}
                                         <form method="post" action="{{ path('settings_plugins_remove', {pluginId: plugin.id}) }}">
                                             <input type="hidden" name="_token" value="{{ csrf_token('settings_plugins_remove_' ~ plugin.id) }}">
                                             <button type="submit" class="btn btn-outline-danger btn-sm" title="{{ 'settings_plugins.remove_button'|trans }}" aria-label="{{ 'settings_plugins.remove_button'|trans }}">
-                                                {{ include('_icon.html.twig', {name: 'trash'}) }}
+                                                {{ icon('trash') }}
                                             </button>
                                         </form>
                                     </div>

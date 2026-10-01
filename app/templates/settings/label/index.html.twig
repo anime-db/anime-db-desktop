@@ -35,7 +35,7 @@
             <input type="hidden" name="_token" value="{{ csrf_token('settings_labels_add') }}">
             <input type="text" name="name" maxlength="32" required placeholder="{{ 'settings_labels.name_placeholder'|trans }}" class="form-control w-auto">
             <button type="submit" class="btn btn-primary">
-                {{ include('_icon.html.twig', {name: 'plus-lg'}) }}
+                {{ icon('plus-lg') }}
                 {{ 'settings_labels.add_button'|trans }}
             </button>
         </form>
@@ -70,7 +70,7 @@
                               data-confirm="{{ (count > 0 ? 'settings_labels.delete_confirm_with_count' : 'settings_labels.delete_confirm')|trans({'%name%': bidi_isolate(label.name), '%count%': count}) }}">
                             <input type="hidden" name="_token" value="{{ csrf_token('settings_labels_delete_' ~ label.id) }}">
                             <button type="submit" class="btn btn-outline-secondary btn-sm" title="{{ 'settings_labels.delete_button'|trans }}" aria-label="{{ 'settings_labels.delete_button'|trans }}">
-                                {{ include('_icon.html.twig', {name: 'trash'}) }}
+                                {{ icon('trash') }}
                             </button>
                         </form>
                     </li>
