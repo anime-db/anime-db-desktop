@@ -80,7 +80,7 @@ final class LabelControllerTest extends TestCase
         $twig->expects($this->once())
             ->method('render')
             ->with('settings/label/index.html.twig', $this->callback(
-                static fn (array $params): bool => [$label] === $params['labels'] && [1 => 3] === $params['labelCounts'],
+                static fn (array $params): bool => $params['labels'] === [$label] && $params['labelCounts'] === [1 => 3],
             ))
             ->willReturn('<html></html>');
 
