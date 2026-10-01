@@ -89,7 +89,10 @@
                                     {% if item.installed and item.updateAvailable %}
                                         <form method="post" action="{{ path('settings_market_update', {pluginId: item.plugin.id}) }}">
                                             <input type="hidden" name="_token" value="{{ csrf_token('settings_market_update_' ~ item.plugin.id) }}">
-                                            <button type="submit" class="btn btn-primary btn-sm">{{ 'settings_market.update_button'|trans }}</button>
+                                            <button type="submit" class="btn btn-primary btn-sm">
+                                                {{ include('_icon.html.twig', {name: 'arrow-up-circle'}) }}
+                                                {{ 'settings_market.update_button'|trans }}
+                                            </button>
                                         </form>
                                     {% elseif item.installed %}
                                         <span class="text-body-secondary">{{ 'settings_market.already_installed'|trans }}</span>
@@ -100,7 +103,10 @@
                                     {% else %}
                                         <form method="post" action="{{ path('settings_market_install', {pluginId: item.plugin.id}) }}">
                                             <input type="hidden" name="_token" value="{{ csrf_token('settings_market_install_' ~ item.plugin.id) }}">
-                                            <button type="submit" class="btn btn-primary btn-sm">{{ 'settings_market.install_button'|trans }}</button>
+                                            <button type="submit" class="btn btn-primary btn-sm">
+                                                {{ include('_icon.html.twig', {name: 'download'}) }}
+                                                {{ 'settings_market.install_button'|trans }}
+                                            </button>
                                         </form>
                                     {% endif %}
                                 </td>

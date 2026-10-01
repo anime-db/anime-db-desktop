@@ -47,13 +47,14 @@
             <fieldset class="mb-3">
                 <legend class="form-label fs-6">{{ 'settings.theme_label'|trans }}</legend>
                 <div class="btn-group" role="group" aria-label="{{ 'settings.theme_label'|trans }}">
+                    {% set themeIcons = {system: 'display', light: 'sun', dark: 'moon-stars'} %}
                     {% for option in ['system', 'light', 'dark'] %}
                         <input type="radio" class="btn-check" name="themePreference" id="theme-{{ option }}"
                                value="{{ option }}"{% if themePreference.value == option %} checked{% endif %}
                                autocomplete="off" data-submit-on-change>
                         <label class="btn btn-outline-secondary" for="theme-{{ option }}"
                                title="{{ ('settings.theme_option_' ~ option)|trans }}">
-                            {{ include('settings/_theme_icon.html.twig', {icon: option}) }}
+                            {{ include('_icon.html.twig', {name: themeIcons[option]}) }}
                             <span class="visually-hidden">{{ ('settings.theme_option_' ~ option)|trans }}</span>
                         </label>
                     {% endfor %}
