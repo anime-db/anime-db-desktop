@@ -74,12 +74,13 @@ final class LabelControllerTest extends TestCase
 
         $labels = $this->createStub(LabelRepository::class);
         $labels->method('findAllOrderedByName')->willReturn([$label]);
+        $labels->method('countAnimeByLabel')->willReturn([1 => 3]);
 
         $twig = $this->createMock(Environment::class);
         $twig->expects($this->once())
             ->method('render')
             ->with('settings/label/index.html.twig', $this->callback(
-                static fn (array $params): bool => [$label] === $params['labels'],
+                static fn (array $params): bool => $params['labels'] === [$label] && $params['labelCounts'] === [1 => 3],
             ))
             ->willReturn('<html></html>');
 

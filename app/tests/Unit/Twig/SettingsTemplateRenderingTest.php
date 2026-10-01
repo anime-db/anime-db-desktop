@@ -277,7 +277,7 @@ final class SettingsTemplateRenderingTest extends KernelTestCase
 
         /** @var Environment $twig */
         $twig = self::getContainer()->get('twig');
-        $html = $twig->render('settings/label/index.html.twig', ['labels' => [$label], 'error' => null]);
+        $html = $twig->render('settings/label/index.html.twig', ['labels' => [$label], 'labelCounts' => [1 => 0], 'error' => null]);
 
         $this->assertStringContainsString('favorite', $html);
     }
@@ -295,10 +295,205 @@ final class SettingsTemplateRenderingTest extends KernelTestCase
 
         /** @var Environment $twig */
         $twig = self::getContainer()->get('twig');
-        $html = $twig->render('settings/label/index.html.twig', ['labels' => [], 'error' => 'empty_name']);
+        $html = $twig->render('settings/label/index.html.twig', ['labels' => [], 'labelCounts' => [], 'error' => 'empty_name']);
 
         $this->assertStringContainsString('Меток пока нет.', $html);
         $this->assertStringContainsString('Имя метки не может быть пустым.', $html);
+    }
+
+    // Issue #823: the heading alone ("Labels") does not explain what the page is for, so a
+    // one-line description was added right under it.
+    public function testLabelIndexRendersTheExplanationUnderTheHeading(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession();
+        /** @var LocaleSwitcher $localeSwitcher */
+        $localeSwitcher = self::getContainer()->get(LocaleSwitcher::class);
+        $localeSwitcher->setLocale('ru');
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('settings/label/index.html.twig', ['labels' => [], 'labelCounts' => [], 'error' => null]);
+
+        $this->assertStringContainsString('Вешаются на карточке аниме', $html);
+    }
+
+    // Issue #823: the anime count next to a label is a link into the catalog filtered by that
+    // label — the exact href shape the anime card's own label link already uses
+    // (anime/show.html.twig: path('home_index', {labels: label.id})) so clicking it really
+    // applies the filter rather than merely looking like it does. The whole caption (including
+    // the "Records: " prefix) is the link, since building a partial-HTML translation string and
+    // rendering it with |raw (the previous approach) is unsafe for locales coming from plugin
+    // translation catalogs — see peter-gribanov's review of PR #827.
+    public function testLabelIndexRendersANonZeroCountAsALinkIntoTheFilteredCatalog(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession();
+        /** @var LocaleSwitcher $localeSwitcher */
+        $localeSwitcher = self::getContainer()->get(LocaleSwitcher::class);
+        $localeSwitcher->setLocale('ru');
+
+        $label = $this->createPersistedLabel(5, 'favorite');
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('settings/label/index.html.twig', ['labels' => [$label], 'labelCounts' => [5 => 3], 'error' => null]);
+
+        $this->assertStringContainsString('<a href="/?labels=5" class="settings-label__count" title="Показать записи с этой меткой">Записей: 3</a>', $html);
+    }
+
+    // A label with no anime at all must still show its count (0), but with no link — there is
+    // nothing in the catalog that clicking it could filter down to.
+    public function testLabelIndexRendersAZeroCountWithoutALink(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession();
+        /** @var LocaleSwitcher $localeSwitcher */
+        $localeSwitcher = self::getContainer()->get(LocaleSwitcher::class);
+        $localeSwitcher->setLocale('ru');
+
+        $label = $this->createPersistedLabel(7, 'rewatch');
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('settings/label/index.html.twig', ['labels' => [$label], 'labelCounts' => [7 => 0], 'error' => null]);
+
+        $this->assertStringNotContainsString('href="/?labels=7"', $html);
+        $this->assertMatchesRegularExpression('/settings-label__count[^>]*>\s*Записей:\s*0\s*</', $html);
+    }
+
+    // peter-gribanov's review of PR #827: Bootstrap's `.d-flex` carries `!important` and
+    // overrides the `hidden` attribute's `display: none`, so none of the elements this control
+    // toggles with `hidden` (settings-labels.js) may carry a `d-*` display utility class —
+    // jsdom-based JS tests cannot catch this because jsdom does not apply CSS.
+    public function testLabelIndexHiddenToggledElementsCarryNoDisplayUtilityClass(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession();
+
+        $label = $this->createPersistedLabel(1, 'favorite');
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('settings/label/index.html.twig', ['labels' => [$label], 'labelCounts' => [1 => 0], 'error' => null]);
+
+        foreach (['data-settings-label-name-button', 'data-settings-label-input-group', 'data-settings-label-name-error'] as $marker) {
+            $found = preg_match('/<[a-z]+\b[^>]*\b'.preg_quote($marker, '/').'\b[^>]*>/', $html, $matches);
+            $this->assertSame(1, $found, "expected to find the {$marker} element");
+            $this->assertDoesNotMatchRegularExpression(
+                '/\bd-(flex|inline-flex|block)\b/',
+                $matches[0],
+                "the {$marker} element is toggled via [hidden] and must not carry a d-* display utility class",
+            );
+        }
+    }
+
+    // Issue #823: the delete confirmation names the number of anime that carry the label, so
+    // deleting it does not silently detach it from records the user did not expect.
+    public function testLabelIndexDeleteConfirmationNamesTheAnimeCountWhenNonZero(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession();
+        /** @var LocaleSwitcher $localeSwitcher */
+        $localeSwitcher = self::getContainer()->get(LocaleSwitcher::class);
+        $localeSwitcher->setLocale('ru');
+
+        $label = $this->createPersistedLabel(2, 'favorite');
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('settings/label/index.html.twig', ['labels' => [$label], 'labelCounts' => [2 => 4], 'error' => null]);
+
+        $this->assertStringContainsString('Записей с этой меткой: 4.', $html);
+    }
+
+    // At zero linked anime, the confirmation drops the second sentence entirely rather than
+    // reading "Items with this label: 0.", which would needlessly hedge a delete that detaches
+    // nothing.
+    public function testLabelIndexDeleteConfirmationOmitsTheCountSentenceWhenZero(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession();
+        /** @var LocaleSwitcher $localeSwitcher */
+        $localeSwitcher = self::getContainer()->get(LocaleSwitcher::class);
+        $localeSwitcher->setLocale('ru');
+
+        $label = $this->createPersistedLabel(2, 'favorite');
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('settings/label/index.html.twig', ['labels' => [$label], 'labelCounts' => [2 => 0], 'error' => null]);
+
+        $this->assertStringContainsString('Удалить метку', $html);
+        $this->assertStringNotContainsString('Записей с этой меткой', $html);
+    }
+
+    // Issue #823: the rename control is registered under data-control (ControlNamesAreRegisteredTest
+    // checks the name is known to settings-labels.js), and the clickable name button must start
+    // out `hidden` in the markup itself — the JS control flips it visible once it mounts, so a
+    // browser with JS disabled is left with the plain working rename form exactly as before.
+    public function testLabelIndexRegistersTheRenameControlWithTheNameButtonHiddenByDefault(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession();
+
+        $label = $this->createPersistedLabel(1, 'favorite');
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('settings/label/index.html.twig', ['labels' => [$label], 'labelCounts' => [1 => 0], 'error' => null]);
+
+        $this->assertStringContainsString('data-control="settings-label-rename"', $html);
+        $this->assertMatchesRegularExpression('/data-settings-label-name-button\b[^>]*\bhidden\b/', $html);
+    }
+
+    // Issue #823: the en catalog replaces "Labels"/"Label" with "Tags"/"Tag" throughout this page.
+    public function testLabelIndexUsesTagWordingInEnglish(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession();
+        /** @var LocaleSwitcher $localeSwitcher */
+        $localeSwitcher = self::getContainer()->get(LocaleSwitcher::class);
+        $localeSwitcher->setLocale('en');
+
+        $label = $this->createPersistedLabel(2, 'favorite');
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('settings/label/index.html.twig', ['labels' => [$label], 'labelCounts' => [2 => 4], 'error' => null]);
+
+        $this->assertStringContainsString('<h1>Tags</h1>', $html);
+        $this->assertStringContainsString('Tag name', $html);
+        // The label name is wrapped in bidi-isolate characters by bidi_isolate() (see
+        // data-confirm on the delete form), so the exact text around it is asserted separately
+        // from the name itself rather than as one literal string.
+        $this->assertStringContainsString('favorite', $html);
+        $this->assertStringContainsString('? Items with this tag: 4.', $html);
+        $this->assertStringContainsString('<a href="/?labels=2" class="settings-label__count" title="Show entries with this tag">Entries: 4</a>', $html);
+    }
+
+    // peter-gribanov's review of PR #827: Symfony's translator runs ICU plural selection on any
+    // placeholder named "%count%" when it is numeric, and a one-word-plus-colon prefix like
+    // "Entries:" is parsed as a plural category label and stripped — so at zero the en catalog
+    // rendered a bare "0" instead of "Entries: 0". The ru string survived only because Cyrillic
+    // does not match the category-label pattern. Renaming the placeholder to %entries% avoids
+    // triggering plural selection, since this caption is not a pluralized string.
+    public function testLabelIndexRendersZeroCountWithLabelInEnglish(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession();
+        /** @var LocaleSwitcher $localeSwitcher */
+        $localeSwitcher = self::getContainer()->get(LocaleSwitcher::class);
+        $localeSwitcher->setLocale('en');
+
+        $label = $this->createPersistedLabel(9, 'rewatch');
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('settings/label/index.html.twig', ['labels' => [$label], 'labelCounts' => [9 => 0], 'error' => null]);
+
+        $this->assertStringNotContainsString('href="/?labels=9"', $html);
+        $this->assertMatchesRegularExpression('/settings-label__count[^>]*>\s*Entries:\s*0\s*</', $html);
     }
 
     public function testSyncReviewIndexRendersEmptyStateWithoutErrors(): void

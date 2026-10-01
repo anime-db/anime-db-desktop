@@ -1,0 +1,50 @@
+/**
+ * AnimeDb package.
+ *
+ * @author    Peter Gribanov <info@peter-gribanov.ru>
+ * @copyright Copyright (c) 2026, Peter Gribanov
+ * @license   https://www.gnu.org/licenses/gpl-3.0.html GPL-3.0-or-later
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+
+// settings/label/index.html.twig row (issue #823). The read-mode name button must look like plain
+// text, not a button, so clicking into edit mode reads as "this text is editable" rather than
+// "this is a button next to the actual name".
+.settings-label__name-button {
+    padding: 0;
+    border: none;
+    background: none;
+    color: inherit;
+    text-decoration: underline dotted;
+    text-decoration-color: var(--bs-secondary-color);
+}
+
+.settings-label__count {
+    white-space: nowrap;
+}
+
+// The rename form's input group is toggled with the `hidden` attribute (see
+// settings-labels.js). Bootstrap's `.d-flex` carries `!important` and would override
+// `[hidden]`'s `display: none`, so the flex layout lives here instead of a `d-flex` utility
+// class on the toggled element.
+.settings-label__name-input-group {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+
+    &[hidden] {
+        display: none;
+    }
+}

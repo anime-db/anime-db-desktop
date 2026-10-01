@@ -158,14 +158,16 @@ settings_search_index:
 settings_labels:
     title: Метки — Настройки — AnimeDB
     heading: Метки
+    description: Метки — ваши ярлыки для записей каталога. Вешаются на карточке аниме, по ним можно фильтровать каталог.
     empty_name_error: Имя метки не может быть пустым.
     name_placeholder: Название метки
     add_button: Добавить
     empty: Меток пока нет.
-    name_column: Название
-    actions_column: Действия
     save_button: Сохранить
+    count_label: 'Записей: %entries%'
+    count_link_title: Показать записи с этой меткой
     delete_confirm: Удалить метку «%name%»?
+    delete_confirm_with_count: 'Удалить метку «%name%»? Записей с этой меткой: %count%.'
     delete_button: Удалить
 
 settings_plugin_widgets:

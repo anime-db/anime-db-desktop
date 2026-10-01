@@ -57,6 +57,7 @@ final class LabelController
     {
         return new Response($this->twig->render('settings/label/index.html.twig', [
             'labels' => $this->labels->findAllOrderedByName(),
+            'labelCounts' => $this->labels->countAnimeByLabel(),
             'error' => $request->query->get('error'),
         ]));
     }

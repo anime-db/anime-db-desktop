@@ -25,6 +25,7 @@
 {% block settings_content %}
     <div class="py-4">
         <h1>{{ 'settings_labels.heading'|trans }}</h1>
+        <p class="text-body-secondary">{{ 'settings_labels.description'|trans }}</p>
 
         {% if error == 'empty_name' %}
             <p class="alert alert-danger">{{ 'settings_labels.empty_name_error'|trans }}</p>
@@ -39,35 +40,37 @@
         {% if labels is empty %}
             <p class="text-body-secondary">{{ 'settings_labels.empty'|trans }}</p>
         {% else %}
-            <div class="table-responsive">
-                <table class="table align-middle">
-                    <thead>
-                        <tr>
-                            <th>{{ 'settings_labels.name_column'|trans }}</th>
-                            <th>{{ 'settings_labels.actions_column'|trans }}</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for label in labels %}
-                            <tr>
-                                <td>
-                                    <form method="post" action="{{ path('settings_labels_rename', {id: label.id}) }}" class="d-flex gap-2">
-                                        <input type="hidden" name="_token" value="{{ csrf_token('settings_labels_rename_' ~ label.id) }}">
-                                        <input type="text" name="name" value="{{ label.name }}" maxlength="32" required class="form-control form-control-sm w-auto">
-                                        <button type="submit" class="btn btn-outline-primary btn-sm">{{ 'settings_labels.save_button'|trans }}</button>
-                                    </form>
-                                </td>
-                                <td>
-                                    <form method="post" action="{{ path('settings_labels_delete', {id: label.id}) }}" data-confirm="{{ 'settings_labels.delete_confirm'|trans({'%name%': bidi_isolate(label.name)}) }}">
-                                        <input type="hidden" name="_token" value="{{ csrf_token('settings_labels_delete_' ~ label.id) }}">
-                                        <button type="submit" class="btn btn-outline-danger btn-sm">{{ 'settings_labels.delete_button'|trans }}</button>
-                                    </form>
-                                </td>
-                            </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
+            <ul class="list-group">
+                {% for label in labels %}
+                    {% set count = labelCounts[label.id] %}
+                    <li class="list-group-item d-flex align-items-center gap-3">
+                        <form method="post" action="{{ path('settings_labels_rename', {id: label.id}) }}"
+                              class="settings-label__rename-form d-flex align-items-center gap-2 flex-grow-1"
+                              data-control="settings-label-rename">
+                            <input type="hidden" name="_token" value="{{ csrf_token('settings_labels_rename_' ~ label.id) }}">
+                            <button type="button" class="settings-label__name-button" data-settings-label-name-button hidden>
+                                <bdi>{{ label.name }}</bdi>
+                            </button>
+                            <span class="settings-label__name-input-group" data-settings-label-input-group>
+                                <input type="text" name="name" value="{{ label.name }}" maxlength="32" required
+                                       class="form-control form-control-sm w-auto" data-settings-label-name-input>
+                                <button type="submit" class="btn btn-outline-primary btn-sm">{{ 'settings_labels.save_button'|trans }}</button>
+                            </span>
+                            <p class="settings-label__name-error text-danger small mb-0" data-settings-label-name-error hidden>{{ 'settings_labels.empty_name_error'|trans }}</p>
+                        </form>
+                        {% if count > 0 %}
+                            <a href="{{ path('home_index', {labels: label.id}) }}" class="settings-label__count" title="{{ 'settings_labels.count_link_title'|trans }}">{{ 'settings_labels.count_label'|trans({'%entries%': count}) }}</a>
+                        {% else %}
+                            <span class="settings-label__count text-body-secondary">{{ 'settings_labels.count_label'|trans({'%entries%': count}) }}</span>
+                        {% endif %}
+                        <form method="post" action="{{ path('settings_labels_delete', {id: label.id}) }}"
+                              data-confirm="{{ (count > 0 ? 'settings_labels.delete_confirm_with_count' : 'settings_labels.delete_confirm')|trans({'%name%': bidi_isolate(label.name), '%count%': count}) }}">
+                            <input type="hidden" name="_token" value="{{ csrf_token('settings_labels_delete_' ~ label.id) }}">
+                            <button type="submit" class="btn btn-outline-secondary btn-sm">{{ 'settings_labels.delete_button'|trans }}</button>
+                        </form>
+                    </li>
+                {% endfor %}
+            </ul>
         {% endif %}
     </div>
 {% endblock %}
