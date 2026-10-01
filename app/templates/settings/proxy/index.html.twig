@@ -18,13 +18,12 @@
  # You should have received a copy of the GNU General Public License
  # along with this program. If not, see <https://www.gnu.org/licenses/>.
  #}
-{% extends 'base.html.twig' %}
+{% extends 'settings/_layout.html.twig' %}
 
 {% block title %}{{ 'settings_proxy.title'|trans }}{% endblock %}
 
-{% block body %}
-    <div class="container py-4">
-        <a href="{{ path('settings_index') }}" class="btn btn-outline-secondary btn-sm mb-3">{{ 'settings_proxy.back_link'|trans }}</a>
+{% block settings_content %}
+    <div class="py-4">
         <h1>{{ 'settings_proxy.heading'|trans }}</h1>
 
         {% if saved %}

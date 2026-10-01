@@ -118,14 +118,6 @@ production_status:
 settings:
     title: Настройки — AnimeDB
     heading: Настройки
-    labels_link: Метки
-    market_link: Маркет плагинов
-    plugins_link: Плагины
-    plugin_widgets_link: Виджеты плагинов
-    sync_review_link: Требует внимания
-    sync_review_badge: 'Требует внимания: %count%'
-    proxy_link: Прокси-сервер
-    backup_link: Экспорт каталога
     language_label: Язык интерфейса
     language_unavailable_option: '%language% — недоступно'
     language_plugin_translation_note: Интерфейс плагинов переводят их авторы — на языке, не входящем в число встроенных в приложение, часть интерфейса плагинов может остаться непереведённой.
@@ -136,14 +128,35 @@ settings:
     pagination_mode_label: Пагинация каталога
     pagination_mode_option_infinite_scroll: Бесконечная прокрутка
     pagination_mode_option_classic: Классическая
-    search_reindex_heading: Поисковый индекс
-    search_reindex_button: Переиндексировать
-    search_reindex_success: Поисковый индекс успешно перестроен.
-    search_reindex_error: Не удалось перестроить поисковый индекс. Убедитесь, что Meilisearch запущен.
+
+settings_nav:
+    aria_label: Навигация настроек
+    group_general: Общие
+    group_catalog: Каталог
+    group_plugins: Плагины
+    group_plugin_settings: Настройки плагинов
+    group_network: Сеть
+    item_interface: Интерфейс
+    item_storage: Хранилища
+    item_labels: Метки
+    item_sync_review: Требует внимания
+    item_backup: Экспорт и импорт
+    item_search_index: Поисковый индекс
+    item_market: Маркет
+    item_plugins_installed: Установленные
+    item_plugins_install: Установка из ZIP
+    item_plugin_widgets: Виджеты
+    item_proxy: Прокси и входящие соединения
+
+settings_search_index:
+    title: Поисковый индекс — Настройки — AnimeDB
+    heading: Поисковый индекс
+    reindex_button: Переиндексировать
+    reindex_success: Поисковый индекс успешно перестроен.
+    reindex_error: Не удалось перестроить поисковый индекс. Убедитесь, что Meilisearch запущен.
 
 settings_labels:
     title: Метки — Настройки — AnimeDB
-    back_link: ← Настройки
     heading: Метки
     empty_name_error: Имя метки не может быть пустым.
     name_placeholder: Название метки
@@ -157,7 +170,6 @@ settings_labels:
 
 settings_plugin_widgets:
     title: Виджеты плагинов — Настройки — AnimeDB
-    back_link: ← Настройки
     heading: Виджеты плагинов
     busy_retry_error: Настройки плагинов сейчас заняты другим обновлением. Повторите попытку через мгновение.
     plugin_column: Плагин
@@ -175,7 +187,6 @@ settings_plugin_widgets:
 
 settings_sync_review:
     title: Требует внимания — Настройки — AnimeDB
-    back_link: ← Настройки
     heading: Требует внимания
     empty: Нет элементов, требующих внимания.
     kind_potential_duplicate: Возможный дубликат
@@ -190,9 +201,7 @@ settings_sync_review:
 
 settings_plugins:
     title: Плагины — Настройки — AnimeDB
-    back_link: ← Настройки
     heading: Плагины
-    widgets_link: Виджеты плагинов
     installed_heading: Установленные плагины
     installed_empty: Плагинов пока не установлено.
     name_column: Название
@@ -229,9 +238,11 @@ settings_plugins:
     incompatible_market_link: 'Проверить в маркете плагинов'
     incompatible_market_update: 'Доступно обновление до версии %version% — открыть маркет плагинов'
 
+settings_plugins_install:
+    title: Установка из ZIP — Настройки — AnimeDB
+
 settings_market:
     title: Маркет плагинов — Настройки — AnimeDB
-    back_link: ← Настройки
     heading: Маркет плагинов
     empty: В маркете пока нет ни одного плагина.
     name_column: Название
@@ -268,12 +279,10 @@ settings_market:
 
 settings_plugin_page:
     title_suffix: Настройки плагина — AnimeDB
-    back_link: ← Плагины
     render_error: Не удалось отобразить страницу настроек этого плагина. Попробуйте ещё раз позже.
 
 settings_proxy:
     title: Прокси-сервер — Настройки — AnimeDB
-    back_link: ← Настройки
     heading: Прокси-сервер
     save_success: Настройки прокси сохранены.
     torrent_proxy_error: Настройки сохранены, но не удалось применить SOCKS5-прокси к торрент-клиенту. Загрузки остаются на паузе, пока прокси не будет подтверждён.
@@ -544,6 +553,4 @@ app_notification:
 nav:
     aria_label: Основная навигация
     catalog_link: Каталог
-    storage_link: Хранилища
-    market_link: Маркет
     settings_link: Настройки

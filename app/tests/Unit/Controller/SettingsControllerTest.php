@@ -31,12 +31,9 @@ use App\Controller\SettingsController;
 use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
 use App\Entity\Enum\PaginationMode;
-use App\Entity\Enum\SyncReviewItemKind;
 use App\Entity\Enum\ThemePreference;
 use App\Entity\Enum\WatchStatus;
 use App\Entity\MovieAnime;
-use App\Entity\SyncReviewItem;
-use App\Repository\SyncReviewItemRepository;
 use App\Service\AppConfigStore;
 use App\Service\AppSettingsProvider;
 use App\Service\Plugin\AvailableLocalesProvider;
@@ -44,7 +41,6 @@ use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Search\AnimeReindexService;
 use App\Service\Search\AnimeSearchIndexer;
-use App\Service\Sync\SyncReviewService;
 use App\Service\WsPublisher;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Types\Type;
@@ -86,7 +82,6 @@ final class SettingsControllerTest extends TestCase
         ?CsrfTokenManagerInterface $csrfTokenManager = null,
         ?Environment $twig = null,
         ?AnimeReindexService $reindexService = null,
-        ?SyncReviewService $syncReview = null,
         ?UrlGeneratorInterface $urlGenerator = null,
         ?WsPublisher $wsPublisher = null,
     ): SettingsController {
@@ -107,7 +102,6 @@ final class SettingsControllerTest extends TestCase
             $csrfTokenManager,
             $twig ?? $this->createStub(Environment::class),
             $reindexService ?? $this->createReindexService($this->createStub(Client::class)),
-            $syncReview ?? $this->createSyncReview([]),
             $urlGenerator,
         );
     }
@@ -124,15 +118,6 @@ final class SettingsControllerTest extends TestCase
         );
 
         return new AvailableLocalesProvider($registry, $coreLocales);
-    }
-
-    /** @param SyncReviewItem[] $unresolved */
-    private function createSyncReview(array $unresolved): SyncReviewService
-    {
-        $repository = $this->createStub(SyncReviewItemRepository::class);
-        $repository->method('findAllUnresolvedOrderedByCreatedAt')->willReturn($unresolved);
-
-        return new SyncReviewService($repository);
     }
 
     /**
@@ -174,8 +159,6 @@ final class SettingsControllerTest extends TestCase
             ->with('settings/index.html.twig', [
                 'availableLocales' => ['en', 'ru'],
                 'unavailableLocale' => null,
-                'reindexStatus' => null,
-                'needsCorrectionCount' => 0,
                 'themePreference' => ThemePreference::System,
                 'paginationMode' => PaginationMode::InfiniteScroll,
             ])
@@ -197,8 +180,6 @@ final class SettingsControllerTest extends TestCase
             ->with('settings/index.html.twig', [
                 'availableLocales' => ['en', 'ru'],
                 'unavailableLocale' => null,
-                'reindexStatus' => null,
-                'needsCorrectionCount' => 0,
                 'themePreference' => ThemePreference::System,
                 'paginationMode' => PaginationMode::InfiniteScroll,
             ])
@@ -223,40 +204,12 @@ final class SettingsControllerTest extends TestCase
             ->with('settings/index.html.twig', [
                 'availableLocales' => ['en', 'ru'],
                 'unavailableLocale' => 'de',
-                'reindexStatus' => null,
-                'needsCorrectionCount' => 0,
                 'themePreference' => ThemePreference::System,
                 'paginationMode' => PaginationMode::InfiniteScroll,
             ])
             ->willReturn('<html></html>');
 
         $controller = $this->createController(twig: $twig);
-        $controller->index();
-    }
-
-    /**
-     * Acceptance (issue #382): the settings link badge counts only NeedsCorrection items — a
-     * PotentialDuplicate row unresolved at the same time must not inflate it.
-     */
-    public function testIndexCountsOnlyUnresolvedNeedsCorrectionItemsForTheBadge(): void
-    {
-        $needsCorrection = new SyncReviewItem(SyncReviewItemKind::NeedsCorrection, ['anime_id' => 1, 'candidates' => []]);
-        $duplicate = new SyncReviewItem(SyncReviewItemKind::PotentialDuplicate, ['anime_ids' => [1, 2]]);
-
-        $twig = $this->createMock(Environment::class);
-        $twig->expects($this->once())
-            ->method('render')
-            ->with('settings/index.html.twig', [
-                'availableLocales' => ['en', 'ru'],
-                'unavailableLocale' => null,
-                'reindexStatus' => null,
-                'needsCorrectionCount' => 1,
-                'themePreference' => ThemePreference::System,
-                'paginationMode' => PaginationMode::InfiniteScroll,
-            ])
-            ->willReturn('<html></html>');
-
-        $controller = $this->createController(twig: $twig, syncReview: $this->createSyncReview([$needsCorrection, $duplicate]));
         $controller->index();
     }
 
@@ -428,7 +381,7 @@ final class SettingsControllerTest extends TestCase
         $controller->setPaginationMode($request);
     }
 
-    public function testReindexSearchRerendersWithSuccessStatus(): void
+    public function testReindexSearchRedirectsToSearchIndexPageWithSuccessStatus(): void
     {
         $index = $this->createMock(Indexes::class);
         $index->expects($this->once())->method('updateSettings')->willReturn(['taskUid' => 1]);
@@ -439,51 +392,41 @@ final class SettingsControllerTest extends TestCase
         $client = $this->createMock(Client::class);
         $client->expects($this->exactly(3))->method('index')->with('anime')->willReturn($index);
 
-        $twig = $this->createMock(Environment::class);
-        $twig->expects($this->once())
-            ->method('render')
-            ->with('settings/index.html.twig', [
-                'availableLocales' => ['en', 'ru'],
-                'unavailableLocale' => null,
-                'reindexStatus' => 'success',
-                'needsCorrectionCount' => 0,
-                'themePreference' => ThemePreference::System,
-                'paginationMode' => PaginationMode::InfiniteScroll,
-            ])
-            ->willReturn('<html></html>');
+        $urlGenerator = $this->createMock(UrlGeneratorInterface::class);
+        $urlGenerator->expects($this->once())
+            ->method('generate')
+            ->with('settings_search_index', ['status' => 'success'])
+            ->willReturn('/settings/search-index?status=success');
 
-        $controller = $this->createController(twig: $twig, reindexService: $this->createReindexService($client));
+        $controller = $this->createController(urlGenerator: $urlGenerator, reindexService: $this->createReindexService($client));
         $request = Request::create('/settings/search/reindex', 'POST', ['_token' => 'token']);
 
         $response = $controller->reindexSearch($request);
 
-        $this->assertSame(200, $response->getStatusCode());
+        $this->assertInstanceOf(RedirectResponse::class, $response);
+        $this->assertSame(303, $response->getStatusCode());
+        $this->assertSame('/settings/search-index?status=success', $response->getTargetUrl());
     }
 
-    public function testReindexSearchRerendersWithErrorStatusWhenMeilisearchFails(): void
+    public function testReindexSearchRedirectsToSearchIndexPageWithErrorStatusWhenMeilisearchFails(): void
     {
         $client = $this->createMock(Client::class);
         $client->expects($this->once())->method('index')->willThrowException(new CommunicationException('connection refused'));
 
-        $twig = $this->createMock(Environment::class);
-        $twig->expects($this->once())
-            ->method('render')
-            ->with('settings/index.html.twig', [
-                'availableLocales' => ['en', 'ru'],
-                'unavailableLocale' => null,
-                'reindexStatus' => 'error',
-                'needsCorrectionCount' => 0,
-                'themePreference' => ThemePreference::System,
-                'paginationMode' => PaginationMode::InfiniteScroll,
-            ])
-            ->willReturn('<html></html>');
+        $urlGenerator = $this->createMock(UrlGeneratorInterface::class);
+        $urlGenerator->expects($this->once())
+            ->method('generate')
+            ->with('settings_search_index', ['status' => 'error'])
+            ->willReturn('/settings/search-index?status=error');
 
-        $controller = $this->createController(twig: $twig, reindexService: $this->createReindexService($client));
+        $controller = $this->createController(urlGenerator: $urlGenerator, reindexService: $this->createReindexService($client));
         $request = Request::create('/settings/search/reindex', 'POST', ['_token' => 'token']);
 
         $response = $controller->reindexSearch($request);
 
-        $this->assertSame(200, $response->getStatusCode());
+        $this->assertInstanceOf(RedirectResponse::class, $response);
+        $this->assertSame(303, $response->getStatusCode());
+        $this->assertSame('/settings/search-index?status=error', $response->getTargetUrl());
     }
 
     public function testReindexSearchRejectsInvalidCsrfToken(): void

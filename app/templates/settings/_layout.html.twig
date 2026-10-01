@@ -1,0 +1,52 @@
+{#
+ # AnimeDb package.
+ #
+ # @author    Peter Gribanov <info@peter-gribanov.ru>
+ # @copyright Copyright (c) 2026, Peter Gribanov
+ # @license   https://www.gnu.org/licenses/gpl-3.0.html GPL-3.0-or-later
+ #
+ # This program is free software: you can redistribute it and/or modify
+ # it under the terms of the GNU General Public License as published by
+ # the Free Software Foundation, either version 3 of the License, or
+ # (at your option) any later version.
+ #
+ # This program is distributed in the hope that it will be useful,
+ # but WITHOUT ANY WARRANTY; without even the implied warranty of
+ # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ # GNU General Public License for more details.
+ #
+ # You should have received a copy of the GNU General Public License
+ # along with this program. If not, see <https://www.gnu.org/licenses/>.
+ #}
+{% extends 'base.html.twig' %}
+
+{% block body %}
+    <div class="settings-layout">
+        <nav class="settings-sidebar" aria-label="{{ 'settings_nav.aria_label'|trans }}">
+            {% for group in settings_nav_groups() %}
+                <div class="settings-sidebar__group">
+                    <div class="settings-sidebar__group-label">{{ group.label }}</div>
+                    <ul class="settings-sidebar__items list-unstyled">
+                        {% for item in group.items %}
+                            <li>
+                                <a
+                                    class="settings-sidebar__link{% if item.active %} settings-sidebar__link--active{% endif %}"
+                                    href="{{ item.url }}"
+                                    {%- if item.active %} aria-current="page"{% endif %}
+                                >
+                                    <span>{{ item.label }}</span>
+                                    {% if item.badge is not null %}
+                                        <span class="badge text-bg-warning">{{ item.badge }}</span>
+                                    {% endif %}
+                                </a>
+                            </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            {% endfor %}
+        </nav>
+        <div class="settings-content">
+            {% block settings_content %}{% endblock %}
+        </div>
+    </div>
+{% endblock %}

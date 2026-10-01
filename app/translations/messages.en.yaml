@@ -118,14 +118,6 @@ production_status:
 settings:
     title: Settings — AnimeDB
     heading: Settings
-    labels_link: Labels
-    market_link: Plugin market
-    plugins_link: Plugins
-    plugin_widgets_link: Plugin widgets
-    sync_review_link: Requires attention
-    sync_review_badge: 'Requires attention: %count%'
-    proxy_link: Proxy server
-    backup_link: Catalog export
     language_label: Interface language
     language_unavailable_option: '%language% — unavailable'
     language_plugin_translation_note: Plugin interfaces are translated by their own authors — outside the app's built-in languages, some plugin screens may stay untranslated.
@@ -136,14 +128,35 @@ settings:
     pagination_mode_label: Catalog pagination
     pagination_mode_option_infinite_scroll: Infinite scroll
     pagination_mode_option_classic: Classic
-    search_reindex_heading: Search index
-    search_reindex_button: Rebuild search index
-    search_reindex_success: The search index has been rebuilt.
-    search_reindex_error: Failed to rebuild the search index. Make sure Meilisearch is running.
+
+settings_nav:
+    aria_label: Settings navigation
+    group_general: General
+    group_catalog: Catalog
+    group_plugins: Plugins
+    group_plugin_settings: Plugin settings
+    group_network: Network
+    item_interface: Interface
+    item_storage: Storage
+    item_labels: Labels
+    item_sync_review: Requires attention
+    item_backup: Export and import
+    item_search_index: Search index
+    item_market: Market
+    item_plugins_installed: Installed
+    item_plugins_install: Install from ZIP
+    item_plugin_widgets: Widgets
+    item_proxy: Proxy and incoming connections
+
+settings_search_index:
+    title: Search index — Settings — AnimeDB
+    heading: Search index
+    reindex_button: Rebuild search index
+    reindex_success: The search index has been rebuilt.
+    reindex_error: Failed to rebuild the search index. Make sure Meilisearch is running.
 
 settings_labels:
     title: Labels — Settings — AnimeDB
-    back_link: ← Settings
     heading: Labels
     empty_name_error: Label name cannot be empty.
     name_placeholder: Label name
@@ -157,7 +170,6 @@ settings_labels:
 
 settings_plugin_widgets:
     title: Plugin widgets — Settings — AnimeDB
-    back_link: ← Settings
     heading: Plugin widgets
     busy_retry_error: Plugin settings are busy with another update right now. Please try again in a moment.
     plugin_column: Plugin
@@ -175,7 +187,6 @@ settings_plugin_widgets:
 
 settings_sync_review:
     title: Requires attention — Settings — AnimeDB
-    back_link: ← Settings
     heading: Requires attention
     empty: Nothing needs attention right now.
     kind_potential_duplicate: Potential duplicate
@@ -190,9 +201,7 @@ settings_sync_review:
 
 settings_plugins:
     title: Plugins — Settings — AnimeDB
-    back_link: ← Settings
     heading: Plugins
-    widgets_link: Plugin widgets
     installed_heading: Installed plugins
     installed_empty: No plugins installed yet.
     name_column: Name
@@ -229,9 +238,11 @@ settings_plugins:
     incompatible_market_link: 'Check the plugin market'
     incompatible_market_update: 'Update to version %version% is available — open the plugin market'
 
+settings_plugins_install:
+    title: Install from ZIP — Settings — AnimeDB
+
 settings_market:
     title: Plugin market — Settings — AnimeDB
-    back_link: ← Settings
     heading: Plugin market
     empty: The market has no plugins yet.
     name_column: Name
@@ -268,12 +279,10 @@ settings_market:
 
 settings_plugin_page:
     title_suffix: Plugin settings — AnimeDB
-    back_link: ← Plugins
     render_error: Failed to display this plugin's settings page. Please try again later.
 
 settings_proxy:
     title: Proxy server — Settings — AnimeDB
-    back_link: ← Settings
     heading: Proxy server
     save_success: Proxy settings have been saved.
     torrent_proxy_error: Settings were saved, but the SOCKS5 proxy could not be applied to the torrent client. Torrents stay paused until the proxy is confirmed.
@@ -544,6 +553,4 @@ app_notification:
 nav:
     aria_label: Main navigation
     catalog_link: Catalog
-    storage_link: Storage
-    market_link: Market
     settings_link: Settings

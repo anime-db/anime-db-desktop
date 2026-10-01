@@ -126,6 +126,16 @@ final class PluginController
         );
     }
 
+    /**
+     * Own page for the ZIP-install form (issue #822), split out of the installed-plugins list it
+     * used to share — the POST route below stays on the same path, distinguished by method.
+     */
+    #[Route('/settings/plugins/install', name: 'settings_plugins_install_index', methods: ['GET'])]
+    public function installIndex(): Response
+    {
+        return $this->renderInstall();
+    }
+
     #[Route('/settings/plugins/{pluginId}/remove', name: 'settings_plugins_remove', methods: ['POST'])]
     public function remove(string $pluginId, Request $request): Response
     {
@@ -160,14 +170,13 @@ final class PluginController
 
         $file = $request->files->get('plugin_zip');
         if (!$file instanceof UploadedFile || !$file->isValid()) {
-            return $this->renderIndex(currentLocale: $request->getLocale(), installError: 'settings_plugins.install_error_no_file');
+            return $this->renderInstall(installError: 'settings_plugins.install_error_no_file');
         }
 
         try {
             [$pluginId, $updated] = $this->installOrUpdate($file->getPathname());
         } catch (IncompatiblePluginCoreVersionException $exception) {
-            return $this->renderIndex(
-                currentLocale: $request->getLocale(),
+            return $this->renderInstall(
                 installError: 'settings_plugins.install_error_incompatible_core',
                 installErrorParams: [
                     '%requiredCore%' => $exception->requiredCore,
@@ -175,8 +184,7 @@ final class PluginController
                 ],
             );
         } catch (IncompatiblePluginContractsVersionException $exception) {
-            return $this->renderIndex(
-                currentLocale: $request->getLocale(),
+            return $this->renderInstall(
                 installError: 'settings_plugins.install_error_incompatible_plugin_contracts',
                 installErrorParams: [
                     '%requiredPluginContracts%' => $exception->requiredPluginContracts,
@@ -184,19 +192,17 @@ final class PluginController
                 ],
             );
         } catch (PluginSyntaxErrorException $exception) {
-            return $this->renderIndex(
-                currentLocale: $request->getLocale(),
+            return $this->renderInstall(
                 installError: 'settings_plugins.install_error_syntax',
                 syntaxErrors: $exception->errors,
             );
         } catch (InvalidInstalledPluginException $exception) {
-            return $this->renderIndex(
-                currentLocale: $request->getLocale(),
+            return $this->renderInstall(
                 installError: 'settings_plugins.install_error_invalid_manifest',
                 manifestErrors: $exception->errors,
             );
         } catch (PluginInstallException) {
-            return $this->renderIndex(currentLocale: $request->getLocale(), installError: 'settings_plugins.install_error_generic');
+            return $this->renderInstall(installError: 'settings_plugins.install_error_generic');
         } finally {
             @unlink($file->getPathname());
         }
@@ -226,20 +232,11 @@ final class PluginController
         }
     }
 
-    /**
-     * @param array<string, string>     $installErrorParams
-     * @param PluginSyntaxError[]       $syntaxErrors
-     * @param ManifestValidationError[] $manifestErrors
-     */
     private function renderIndex(
         ?string $currentLocale = null,
         ?string $installedPluginId = null,
         ?string $updatedPluginId = null,
         ?string $removedPluginId = null,
-        ?string $installError = null,
-        array $installErrorParams = [],
-        array $syntaxErrors = [],
-        array $manifestErrors = [],
     ): Response {
         $installedPlugins = $this->installedPlugins->all();
 
@@ -254,6 +251,21 @@ final class PluginController
             'installedPluginId' => $installedPluginId,
             'updatedPluginId' => $updatedPluginId,
             'removedPluginId' => $removedPluginId,
+        ]));
+    }
+
+    /**
+     * @param array<string, string>     $installErrorParams
+     * @param PluginSyntaxError[]       $syntaxErrors
+     * @param ManifestValidationError[] $manifestErrors
+     */
+    private function renderInstall(
+        ?string $installError = null,
+        array $installErrorParams = [],
+        array $syntaxErrors = [],
+        array $manifestErrors = [],
+    ): Response {
+        return new Response($this->twig->render('settings/plugins/install.html.twig', [
             'installError' => $installError,
             'installErrorParams' => $installErrorParams,
             'syntaxErrors' => $syntaxErrors,

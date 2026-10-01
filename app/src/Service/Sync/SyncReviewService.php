@@ -57,6 +57,15 @@ final class SyncReviewService
         return $this->repository->findAllUnresolvedOrderedByCreatedAt();
     }
 
+    /**
+     * Backs the settings sidebar's "needs correction" badge (issue #822) — see
+     * {@see SyncReviewItemRepository::countUnresolvedByKind()} for why this is a count query.
+     */
+    public function countUnresolvedNeedsCorrection(): int
+    {
+        return $this->repository->countUnresolvedByKind(SyncReviewItemKind::NeedsCorrection);
+    }
+
     public function resolve(SyncReviewItem $item): void
     {
         $item->resolve();

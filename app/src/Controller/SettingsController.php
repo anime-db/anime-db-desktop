@@ -28,13 +28,10 @@ declare(strict_types=1);
 namespace App\Controller;
 
 use App\Entity\Enum\PaginationMode;
-use App\Entity\Enum\SyncReviewItemKind;
 use App\Entity\Enum\ThemePreference;
-use App\Entity\SyncReviewItem;
 use App\Service\AppSettingsProvider;
 use App\Service\Plugin\AvailableLocalesProvider;
 use App\Service\Search\AnimeReindexService;
-use App\Service\Sync\SyncReviewService;
 use App\Service\WsPublisher;
 use Meilisearch\Exceptions\ExceptionInterface as MeilisearchExceptionInterface;
 use Symfony\Component\HttpFoundation\RedirectResponse;
@@ -69,7 +66,6 @@ final class SettingsController
         private readonly CsrfTokenManagerInterface $csrfTokenManager,
         private readonly Environment $twig,
         private readonly AnimeReindexService $reindexService,
-        private readonly SyncReviewService $syncReview,
         private readonly UrlGeneratorInterface $urlGenerator,
     ) {
     }
@@ -185,23 +181,27 @@ final class SettingsController
     /**
      * Runs the same catalog reindex as bin/console app:search:reindex (issue #198), so a user
      * hitting a stale/broken search index has a recovery option that doesn't require the CLI.
+     *
+     * Redirects (POST-Redirect-GET) to `settings_search_index` with the outcome in the query
+     * string (issue #822) — it used to render `settings/index.html.twig` directly, back when the
+     * reindex button lived on the main settings page instead of its own.
      */
     #[Route('/settings/search/reindex', name: 'settings_search_reindex', methods: ['POST'])]
-    public function reindexSearch(Request $request): Response
+    public function reindexSearch(Request $request): RedirectResponse
     {
         $this->assertValidCsrfToken('settings_search_reindex', $request);
 
         try {
             $this->reindexService->reindexAll();
-            $reindexStatus = 'success';
+            $status = 'success';
         } catch (MeilisearchExceptionInterface) {
-            $reindexStatus = 'error';
+            $status = 'error';
         }
 
-        return $this->renderIndex($reindexStatus);
+        return new RedirectResponse($this->urlGenerator->generate('settings_search_index', ['status' => $status]), Response::HTTP_SEE_OTHER);
     }
 
-    private function renderIndex(?string $reindexStatus = null): Response
+    private function renderIndex(): Response
     {
         $locales = $this->availableLocalesProvider->all();
         $savedLocale = $this->settings->getLocale();
@@ -210,24 +210,9 @@ final class SettingsController
         return new Response($this->twig->render('settings/index.html.twig', [
             'availableLocales' => $locales,
             'unavailableLocale' => $unavailableLocale,
-            'reindexStatus' => $reindexStatus,
-            'needsCorrectionCount' => $this->needsCorrectionCount(),
             'themePreference' => $this->settings->getThemePreference(),
             'paginationMode' => $this->settings->getPaginationMode(),
         ]));
-    }
-
-    /**
-     * Badge count for the "Requires attention" settings link (issue #382): unresolved
-     * NeedsCorrection items specifically, not every SyncReviewItem kind — it is the one kind a
-     * user cannot otherwise notice until they open the page.
-     */
-    private function needsCorrectionCount(): int
-    {
-        return \count(array_filter(
-            $this->syncReview->findUnresolved(),
-            static fn (SyncReviewItem $item): bool => $item->kind === SyncReviewItemKind::NeedsCorrection,
-        ));
     }
 
     private function assertValidCsrfToken(string $tokenId, Request $request): void

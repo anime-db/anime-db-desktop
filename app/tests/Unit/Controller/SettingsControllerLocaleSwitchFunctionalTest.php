@@ -30,7 +30,6 @@ namespace App\Tests\Unit\Controller;
 use App\Controller\SettingsController;
 use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
-use App\Repository\SyncReviewItemRepository;
 use App\Service\AppConfigStore;
 use App\Service\AppSettingsProvider;
 use App\Service\Plugin\AvailableLocalesProvider;
@@ -38,7 +37,6 @@ use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Search\AnimeReindexService;
 use App\Service\Search\AnimeSearchIndexer;
-use App\Service\Sync\SyncReviewService;
 use App\Service\WsPublisher;
 use App\Tests\Support\TemporaryDirectories;
 use Doctrine\DBAL\DriverManager;
@@ -207,7 +205,6 @@ final class SettingsControllerLocaleSwitchFunctionalTest extends KernelTestCase
             $csrfTokenManager,
             $twig,
             $this->createReindexService(),
-            $this->createSyncReview(),
             $urlGenerator,
         );
     }
@@ -240,14 +237,6 @@ final class SettingsControllerLocaleSwitchFunctionalTest extends KernelTestCase
         (new SchemaTool($entityManager))->createSchema($entityManager->getMetadataFactory()->getAllMetadata());
 
         return new AnimeReindexService($entityManager, new AnimeSearchIndexer($this->createStub(Client::class)));
-    }
-
-    private function createSyncReview(): SyncReviewService
-    {
-        $repository = $this->createStub(SyncReviewItemRepository::class);
-        $repository->method('findAllUnresolvedOrderedByCreatedAt')->willReturn([]);
-
-        return new SyncReviewService($repository);
     }
 
     /**

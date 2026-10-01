@@ -33,16 +33,19 @@ use App\Entity\Enum\SyncReviewItemKind;
 use App\Entity\SyncReviewItem;
 use App\Repository\SyncReviewItemRepository;
 use Doctrine\DBAL\DriverManager;
+use Doctrine\DBAL\Logging\Middleware as QueryLoggingMiddleware;
 use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\EntityManager;
 use Doctrine\ORM\ORMSetup;
 use Doctrine\ORM\Tools\SchemaTool;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\AbstractLogger;
 
 final class SyncReviewItemRepositoryTest extends TestCase
 {
     private EntityManager $entityManager;
     private SyncReviewItemRepository $repository;
+    private RecordingSqlLogger $queryLogger;
 
     protected function setUp(): void
     {
@@ -55,6 +58,9 @@ final class SyncReviewItemRepositoryTest extends TestCase
 
         $config = ORMSetup::createAttributeMetadataConfig([\dirname(__DIR__, 3).'/src/Entity'], true);
         $config->enableNativeLazyObjects(true);
+
+        $this->queryLogger = new RecordingSqlLogger();
+        $config->setMiddlewares([new QueryLoggingMiddleware($this->queryLogger)]);
 
         $connection = DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true], $config);
         $this->entityManager = new EntityManager($connection, $config);
@@ -99,6 +105,40 @@ final class SyncReviewItemRepositoryTest extends TestCase
         $this->assertSame([], $this->repository->findAllUnresolvedOrderedByCreatedAt());
     }
 
+    /**
+     * Acceptance (issue #822): the settings sidebar badge is computed on every settings page
+     * load, so {@see SyncReviewItemRepository::countUnresolvedByKind()} must count in SQL rather
+     * than loading every unresolved item and counting in PHP. Asserting on a QueryBuilder built
+     * separately in the test proves nothing about the method under test — instead, a DBAL logging
+     * middleware records the SQL the repository *actually* executes, so a rewrite to
+     * `count($repository->findBy(...))` (loading every row in PHP) is caught: it would issue a
+     * `SELECT` of every column instead of the single `COUNT(...)` query asserted below.
+     */
+    public function testCountUnresolvedByKindCountsInSql(): void
+    {
+        $needsCorrectionUnresolved = new SyncReviewItem(SyncReviewItemKind::NeedsCorrection, ['anime_id' => 1, 'candidates' => []]);
+        $needsCorrectionResolved = new SyncReviewItem(SyncReviewItemKind::NeedsCorrection, ['anime_id' => 2, 'candidates' => []]);
+        $needsCorrectionResolved->resolve();
+        $duplicateUnresolved = new SyncReviewItem(SyncReviewItemKind::PotentialDuplicate, ['anime_ids' => [3, 4]]);
+
+        $this->repository->save($needsCorrectionUnresolved);
+        $this->repository->save($needsCorrectionResolved);
+        $this->repository->save($duplicateUnresolved);
+
+        $this->queryLogger->executedSql = [];
+        $result = $this->repository->countUnresolvedByKind(SyncReviewItemKind::NeedsCorrection);
+
+        $this->assertSame(1, $result);
+        $this->assertCount(1, $this->queryLogger->executedSql, 'countUnresolvedByKind() must run exactly one query.');
+        $this->assertStringContainsStringIgnoringCase('COUNT(', $this->queryLogger->executedSql[0]);
+        $this->assertStringNotContainsStringIgnoringCase('payload', $this->queryLogger->executedSql[0], 'The query must not fetch row data — it must count in SQL, not load rows to count in PHP.');
+
+        $this->queryLogger->executedSql = [];
+        $this->assertSame(0, $this->repository->countUnresolvedByKind(SyncReviewItemKind::DeletionConflict));
+        $this->assertCount(1, $this->queryLogger->executedSql);
+        $this->assertStringContainsStringIgnoringCase('COUNT(', $this->queryLogger->executedSql[0]);
+    }
+
     public function testSaveOfResolvedItemPersistsResolvedAt(): void
     {
         $item = new SyncReviewItem(SyncReviewItemKind::PotentialDuplicate, ['anime_ids' => [1, 2]]);
@@ -111,5 +151,23 @@ final class SyncReviewItemRepositoryTest extends TestCase
         $stored = $this->entityManager->getRepository(SyncReviewItem::class)->find($item->id);
         $this->assertNotNull($stored);
         $this->assertNotNull($stored->resolvedAt);
+    }
+}
+
+/**
+ * Collects the SQL of every statement the DBAL connection actually executes, via
+ * {@see QueryLoggingMiddleware}, so a test can assert on the query a repository method really ran
+ * instead of on a query built separately in the test itself.
+ */
+final class RecordingSqlLogger extends AbstractLogger
+{
+    /** @var list<string> */
+    public array $executedSql = [];
+
+    public function log($level, string|\Stringable $message, array $context = []): void
+    {
+        if (\array_key_exists('sql', $context) && \is_string($context['sql'])) {
+            $this->executedSql[] = $context['sql'];
+        }
     }
 }

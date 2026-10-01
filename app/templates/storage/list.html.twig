@@ -18,12 +18,12 @@
  # You should have received a copy of the GNU General Public License
  # along with this program. If not, see <https://www.gnu.org/licenses/>.
  #}
-{% extends 'base.html.twig' %}
+{% extends 'settings/_layout.html.twig' %}
 
 {% block title %}{{ 'storage_list.title'|trans }}{% endblock %}
 
-{% block body %}
-    <main class="storage-list container py-4">
+{% block settings_content %}
+    <main class="storage-list py-4">
         <h1>{{ 'storage_list.heading'|trans }}</h1>
 
         <p class="mb-4"><a href="{{ path('storage_new') }}" class="btn btn-primary">{{ 'storage_list.new_button'|trans }}</a></p>
@@ -58,43 +58,45 @@
         {% if storages is empty %}
             <p class="text-body-secondary">{{ 'storage_list.empty'|trans }}</p>
         {% else %}
-            <table class="table align-middle">
-                <thead>
-                    <tr>
-                        <th>{{ 'storage_list.name_column'|trans }}</th>
-                        <th>{{ 'storage_list.type_column'|trans }}</th>
-                        <th>{{ 'storage_list.path_column'|trans }}</th>
-                        <th>{{ 'storage_list.last_scan_column'|trans }}</th>
-                        <th>{{ 'storage_list.actions_column'|trans }}</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for storage in storages %}
+            <div class="table-responsive">
+                <table class="table align-middle">
+                    <thead>
                         <tr>
-                            <td><bdi>{{ storage.name }}</bdi></td>
-                            <td>{{ ('storage_type.' ~ storage.type.value)|trans }}</td>
-                            <td>
-                                <bdi>{{ storage.path }}</bdi>
-                                {% if storage.id in unavailableStorageIds %}
-                                    <span class="badge text-bg-warning ms-1">{{ 'storage_list.path_unavailable'|trans }}</span>
-                                {% endif %}
-                            </td>
-                            <td>{{ storage.dateUpdate ? storage.dateUpdate|date('Y-m-d H:i') : ('storage_list.never_scanned'|trans) }}</td>
-                            <td>
-                                <a href="{{ path('storage_edit', {id: storage.id}) }}" class="btn btn-outline-secondary btn-sm me-2">{{ 'storage_list.edit_button'|trans }}</a>
-                                <form method="post" action="{{ path('storage_scan', {id: storage.id}) }}" class="d-inline">
-                                    <input type="hidden" name="_token" value="{{ csrf_token('storage_scan_' ~ storage.id) }}">
-                                    <button type="submit" class="btn btn-outline-primary btn-sm me-2">{{ 'storage_list.scan_button'|trans }}</button>
-                                </form>
-                                <form method="post" action="{{ path('storage_delete', {id: storage.id}) }}" data-confirm="{{ 'storage_list.delete_confirm'|trans({'%name%': bidi_isolate(storage.name)}) }}" class="d-inline">
-                                    <input type="hidden" name="_token" value="{{ csrf_token('storage_delete_' ~ storage.id) }}">
-                                    <button type="submit" class="btn btn-outline-danger btn-sm">{{ 'storage_list.delete_button'|trans }}</button>
-                                </form>
-                            </td>
+                            <th>{{ 'storage_list.name_column'|trans }}</th>
+                            <th>{{ 'storage_list.type_column'|trans }}</th>
+                            <th>{{ 'storage_list.path_column'|trans }}</th>
+                            <th>{{ 'storage_list.last_scan_column'|trans }}</th>
+                            <th>{{ 'storage_list.actions_column'|trans }}</th>
                         </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+                    </thead>
+                    <tbody>
+                        {% for storage in storages %}
+                            <tr>
+                                <td><bdi>{{ storage.name }}</bdi></td>
+                                <td>{{ ('storage_type.' ~ storage.type.value)|trans }}</td>
+                                <td>
+                                    <bdi>{{ storage.path }}</bdi>
+                                    {% if storage.id in unavailableStorageIds %}
+                                        <span class="badge text-bg-warning ms-1">{{ 'storage_list.path_unavailable'|trans }}</span>
+                                    {% endif %}
+                                </td>
+                                <td>{{ storage.dateUpdate ? storage.dateUpdate|date('Y-m-d H:i') : ('storage_list.never_scanned'|trans) }}</td>
+                                <td>
+                                    <a href="{{ path('storage_edit', {id: storage.id}) }}" class="btn btn-outline-secondary btn-sm me-2">{{ 'storage_list.edit_button'|trans }}</a>
+                                    <form method="post" action="{{ path('storage_scan', {id: storage.id}) }}" class="d-inline">
+                                        <input type="hidden" name="_token" value="{{ csrf_token('storage_scan_' ~ storage.id) }}">
+                                        <button type="submit" class="btn btn-outline-primary btn-sm me-2">{{ 'storage_list.scan_button'|trans }}</button>
+                                    </form>
+                                    <form method="post" action="{{ path('storage_delete', {id: storage.id}) }}" data-confirm="{{ 'storage_list.delete_confirm'|trans({'%name%': bidi_isolate(storage.name)}) }}" class="d-inline">
+                                        <input type="hidden" name="_token" value="{{ csrf_token('storage_delete_' ~ storage.id) }}">
+                                        <button type="submit" class="btn btn-outline-danger btn-sm">{{ 'storage_list.delete_button'|trans }}</button>
+                                    </form>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
         {% endif %}
     </main>
 {% endblock %}

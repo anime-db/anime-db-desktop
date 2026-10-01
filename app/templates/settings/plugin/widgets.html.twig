@@ -18,7 +18,7 @@
  # You should have received a copy of the GNU General Public License
  # along with this program. If not, see <https://www.gnu.org/licenses/>.
  #}
-{% extends 'base.html.twig' %}
+{% extends 'settings/_layout.html.twig' %}
 
 {% block title %}{{ 'settings_plugin_widgets.title'|trans }}{% endblock %}
 
@@ -32,51 +32,52 @@
         {% if recommendedLimit is not null and activeCount > recommendedLimit %}
             <p class="alert alert-warning">{{ 'settings_plugin_widgets.recommendation_warning'|trans({'%limit%': recommendedLimit}) }}</p>
         {% endif %}
-        <table class="table align-middle">
-            <thead>
-                <tr>
-                    <th>{{ 'settings_plugin_widgets.plugin_column'|trans }}</th>
-                    <th>{{ 'settings_plugin_widgets.widget_column'|trans }}</th>
-                    <th>{{ 'settings_plugin_widgets.active_column'|trans }}</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for widget in widgets %}
+        <div class="table-responsive">
+            <table class="table align-middle">
+                <thead>
                     <tr>
-                        <td>{{ widget.pluginName }}</td>
-                        <td>
-                            <div>{{ widget.title }}</div>
-                            {% if widget.description is not empty %}
-                                <div class="text-body-secondary small">{{ widget.description }}</div>
-                            {% endif %}
-                            <code>{{ widget.widgetName }}</code>
-                        </td>
-                        <td>
-                            <form method="post" action="{{ path('settings_plugin_widgets_toggle', {pluginId: widget.pluginId, widgetName: widget.widgetName}) }}" class="form-check">
-                                <input type="hidden" name="_token" value="{{ csrf_token('settings_plugin_widgets_toggle_'~widget.pluginId~'_'~widget.widgetName) }}">
-                                <input type="hidden" name="placement" value="{{ placement }}">
-                                <input type="hidden" name="active" value="0">
-                                <input
-                                    type="checkbox"
-                                    class="form-check-input"
-                                    name="active"
-                                    value="1"
-                                    data-submit-on-change
-                                    {% if widget.active %}checked{% endif %}
-                                    {% if not widget.active and activeCount >= hardLimit %}disabled title="{{ 'settings_plugin_widgets.hard_limit_reached'|trans({'%limit%': hardLimit}) }}"{% endif %}
-                                >
-                            </form>
-                        </td>
+                        <th>{{ 'settings_plugin_widgets.plugin_column'|trans }}</th>
+                        <th>{{ 'settings_plugin_widgets.widget_column'|trans }}</th>
+                        <th>{{ 'settings_plugin_widgets.active_column'|trans }}</th>
                     </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+                </thead>
+                <tbody>
+                    {% for widget in widgets %}
+                        <tr>
+                            <td>{{ widget.pluginName }}</td>
+                            <td>
+                                <div>{{ widget.title }}</div>
+                                {% if widget.description is not empty %}
+                                    <div class="text-body-secondary small">{{ widget.description }}</div>
+                                {% endif %}
+                                <code>{{ widget.widgetName }}</code>
+                            </td>
+                            <td>
+                                <form method="post" action="{{ path('settings_plugin_widgets_toggle', {pluginId: widget.pluginId, widgetName: widget.widgetName}) }}" class="form-check">
+                                    <input type="hidden" name="_token" value="{{ csrf_token('settings_plugin_widgets_toggle_'~widget.pluginId~'_'~widget.widgetName) }}">
+                                    <input type="hidden" name="placement" value="{{ placement }}">
+                                    <input type="hidden" name="active" value="0">
+                                    <input
+                                        type="checkbox"
+                                        class="form-check-input"
+                                        name="active"
+                                        value="1"
+                                        data-submit-on-change
+                                        {% if widget.active %}checked{% endif %}
+                                        {% if not widget.active and activeCount >= hardLimit %}disabled title="{{ 'settings_plugin_widgets.hard_limit_reached'|trans({'%limit%': hardLimit}) }}"{% endif %}
+                                    >
+                                </form>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
     {% endif %}
 {% endmacro %}
 
-{% block body %}
-    <div class="container py-4">
-        <a href="{{ path('settings_index') }}" class="btn btn-outline-secondary btn-sm mb-3">{{ 'settings_plugin_widgets.back_link'|trans }}</a>
+{% block settings_content %}
+    <div class="py-4">
         <h1>{{ 'settings_plugin_widgets.heading'|trans }}</h1>
 
         {% if error == 'hard_limit_exceeded' %}
