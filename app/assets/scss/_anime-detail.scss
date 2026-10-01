@@ -419,8 +419,27 @@
 }
 
 .anime-detail__source-icon {
+    display: block;
     width: 24px;
     height: 24px;
+}
+
+// Toggled with the `hidden` attribute by inline-handlers.js when the favicon fails to load
+// (issue #830). Bootstrap's `.d-*` utilities carry `!important` and would override `[hidden]`'s
+// `display: none`, so the flex layout lives here instead of a utility class on the toggled
+// element (same approach as .settings-label__name-input-group).
+.anime-detail__source-fallback {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    font-size: 24px;
+    color: var(--bs-secondary-color);
+
+    &[hidden] {
+        display: none;
+    }
 }
 
 .anime-detail__gallery-list {

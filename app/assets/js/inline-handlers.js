@@ -56,6 +56,23 @@
             return;
         }
 
+        // A source favicon fetched straight from the source's own domain (issue #830) fails for
+        // reasons unrelated to the local catalog (site unreachable, blocked by the host, no
+        // favicon.ico at all), so unlike the cover placeholder below, the <img> itself is kept —
+        // only hidden — and swapped for the neutral `globe` icon already sitting next to it in
+        // the markup as `.anime-detail__source-fallback`, rather than being replaced outright.
+        // The <img> is only hidden once that fallback is actually found: without it, hiding the
+        // image would leave the source link with no visible content at all.
+        if (image.classList.contains('anime-detail__source-icon')) {
+            const fallback = image.nextElementSibling;
+            if (fallback && fallback.classList.contains('anime-detail__source-fallback')) {
+                image.hidden = true;
+                fallback.hidden = false;
+            }
+
+            return;
+        }
+
         const coverClass = Object.keys(COVER_PLACEHOLDER_CLASSES).find((className) => image.classList.contains(className));
         if (!coverClass) {
             return;

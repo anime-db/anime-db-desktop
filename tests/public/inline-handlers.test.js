@@ -201,3 +201,50 @@ describe('cover image load error', () => {
         expect(document.querySelector('img')).toBe(image);
     });
 });
+
+// Issue #830: a source favicon fetched from the source's own domain fails for reasons unrelated
+// to the local catalog (site unreachable, blocked by the host, no favicon.ico at all), so unlike
+// the cover placeholder above, the <img> is kept in the DOM and only hidden, next to the
+// `globe`-icon fallback already present in the markup.
+describe('source favicon load error', () => {
+    test('hides the broken favicon and reveals its fallback sibling', () => {
+        document.body.innerHTML = `
+            <a href="https://example.com" title="example.com">
+                <img class="anime-detail__source-icon" src="https://example.com/favicon.ico" alt="example.com">
+                <span class="anime-detail__source-fallback" hidden><svg class="bi"></svg></span>
+            </a>
+        `;
+        const image = document.querySelector('img');
+
+        image.dispatchEvent(new Event('error'));
+
+        expect(document.querySelector('img')).toBe(image);
+        expect(image.hidden).toBe(true);
+        expect(document.querySelector('.anime-detail__source-fallback').hidden).toBe(false);
+    });
+
+    test('leaves the broken favicon visible when no fallback sibling is present', () => {
+        document.body.innerHTML = `
+            <a href="https://example.com" title="example.com">
+                <img class="anime-detail__source-icon" src="https://example.com/favicon.ico" alt="example.com">
+            </a>
+        `;
+        const image = document.querySelector('img');
+
+        image.dispatchEvent(new Event('error'));
+
+        expect(image.hidden).toBe(false);
+    });
+
+    test('does not change how a cover image load error is handled', () => {
+        document.body.innerHTML = '<img class="anime-card__thumb" src="app-media://anime/1/cover.webp" alt="Title">';
+        const image = document.querySelector('img');
+
+        image.dispatchEvent(new Event('error'));
+
+        expect(document.querySelector('img')).toBeNull();
+        const placeholder = document.querySelector('.anime-card__thumb');
+        expect(placeholder.tagName).toBe('DIV');
+        expect(placeholder.classList.contains('anime-card__thumb--placeholder')).toBe(true);
+    });
+});

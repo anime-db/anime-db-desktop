@@ -111,6 +111,7 @@
                             <li>
                                 <a href="{{ source.url }}" target="_blank" rel="noopener noreferrer" title="{{ source.domain }}">
                                     <img src="https://{{ source.domain }}/favicon.ico" alt="{{ source.domain }}" class="anime-detail__source-icon" loading="lazy">
+                                    <span class="anime-detail__source-fallback" hidden>{{ icon('globe') }}</span>
                                 </a>
                             </li>
                         {% endfor %}
