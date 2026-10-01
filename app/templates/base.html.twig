@@ -46,12 +46,17 @@
      # but both now live in the settings sidebar (settings/_layout.html.twig) alongside every other
      # settings-like page, so "Settings" is active for any route under /settings or /storage —
      # including the pages the sidebar itself highlights via SettingsNavigationService. This bar
-     # goes back to growing a real header (logo, "Add anime" menu) in a separate issue. #}
+     # goes back to growing a real header (logo, "Add anime" menu) in a separate issue.
+     #
+     # `storage_scan_prompt` (issue #825) is the one `storage_*` route excluded from "Settings": it
+     # has no sidebar (see storage/scan_prompt.html.twig, which extends base.html.twig directly,
+     # not settings/_layout.html.twig) because it is a step of adding entries to the catalog, not a
+     # settings screen. #}
     {% set current_route = app.request.attributes.get('_route')|default('') %}
-    {% if current_route starts with 'settings_' or current_route starts with 'storage_' %}
-        {% set current_nav_section = 'settings' %}
-    {% elseif current_route starts with 'anime_' or current_route == 'home_index' %}
+    {% if current_route == 'storage_scan_prompt' or current_route starts with 'anime_' or current_route == 'home_index' %}
         {% set current_nav_section = 'catalog' %}
+    {% elseif current_route starts with 'settings_' or current_route starts with 'storage_' %}
+        {% set current_nav_section = 'settings' %}
     {% else %}
         {% set current_nav_section = '' %}
     {% endif %}

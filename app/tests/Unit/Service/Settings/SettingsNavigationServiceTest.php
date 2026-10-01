@@ -34,6 +34,7 @@ use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Plugin\SettingsPageRegistry;
 use App\Service\Settings\SettingsNavigationService;
 use App\Service\Sync\SyncReviewService;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
@@ -141,7 +142,7 @@ final class SettingsNavigationServiceTest extends TestCase
             $this->urlGenerator(),
             $this->translator(),
             $this->installedPlugins,
-            $settingsPages ?? new SettingsPageRegistry([], $this->installedPlugins),
+            $settingsPages ?? new SettingsPageRegistry($this->installedPlugins),
             $syncReview ?? $this->syncReview(),
             $logger ?? new NullLogger(),
         );
@@ -167,6 +168,68 @@ final class SettingsNavigationServiceTest extends TestCase
                 self::assertFalse($item->active, \sprintf('Item "%s" must not be active for an unmapped route.', $item->id));
             }
         }
+    }
+
+    /**
+     * Acceptance (issue #825): a route absent from {@see SettingsNavigationService::ROUTE_ITEM_MAP}
+     * must resolve to `null` strictly, via `?? null`, not by letting PHP fall through to reading an
+     * undefined array key — which emits an `E_WARNING` instead of failing loudly or silently
+     * returning null on its own. Removing the `?? null` from `activeItemId()` keeps this test's own
+     * assertions about the final `null` value passing (PHP still evaluates an undefined array
+     * access to `null`), but trips the warning this test's error handler captures.
+     */
+    public function testActiveItemIdForAnUnmappedRouteReturnsNullWithoutAPhpWarning(): void
+    {
+        $warnings = [];
+        set_error_handler(static function (int $errno, string $errstr) use (&$warnings): bool {
+            $warnings[] = $errstr;
+
+            return true;
+        }, \E_WARNING);
+
+        try {
+            $groups = $this->service(requestStack: $this->requestStack('a_plugin_declared_route'))->groups();
+        } finally {
+            restore_error_handler();
+        }
+
+        self::assertSame([], $warnings, 'Resolving an unmapped route must not trigger a PHP warning.');
+        foreach ($groups as $group) {
+            foreach ($group->items as $item) {
+                self::assertFalse($item->active, \sprintf('Item "%s" must not be active for an unmapped route.', $item->id));
+            }
+        }
+    }
+
+    /** @return iterable<string, array{0: string, 1: string}> */
+    public static function postOnlyRouteToItemIdProvider(): iterable
+    {
+        yield 'storage_create' => ['storage_create', 'storage'];
+        yield 'storage_update' => ['storage_update', 'storage'];
+        yield 'settings_market_install' => ['settings_market_install', 'market'];
+        yield 'settings_market_update' => ['settings_market_update', 'market'];
+        yield 'settings_plugins_install' => ['settings_plugins_install', 'plugins_install'];
+        yield 'settings_proxy_save' => ['settings_proxy_save', 'proxy'];
+        yield 'settings_proxy_incoming_connections' => ['settings_proxy_incoming_connections', 'proxy'];
+    }
+
+    /**
+     * Acceptance (issue #825): these POST routes never redirect on success and instead re-render a
+     * settings page directly on a validation error, so {@see SettingsNavigationService::ROUTE_ITEM_MAP}'s
+     * entry for each is the *only* path by which the sidebar ever highlights an item for it — no GET
+     * route's own entry covers it. The expected item id is hardcoded here rather than read back out
+     * of the map itself, so deleting one of these entries from the map (which would make
+     * `activeItemId()` return `null` for that route) makes this test fail instead of silently
+     * passing.
+     */
+    #[DataProvider('postOnlyRouteToItemIdProvider')]
+    public function testAPostOnlyRouteInTheMapHighlightsItsSidebarItem(string $route, string $itemId): void
+    {
+        $groups = $this->service(requestStack: $this->requestStack($route))->groups();
+
+        $item = $this->findItem($this->findGroupContaining($groups, $itemId), $itemId);
+
+        self::assertTrue($item->active, \sprintf('Route "%s" must mark sidebar item "%s" active.', $route, $itemId));
     }
 
     /**

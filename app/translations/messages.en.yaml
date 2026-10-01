@@ -201,7 +201,6 @@ settings_sync_review:
 
 settings_plugins:
     title: Plugins — Settings — AnimeDB
-    heading: Plugins
     installed_heading: Installed plugins
     installed_empty: No plugins installed yet.
     name_column: Name

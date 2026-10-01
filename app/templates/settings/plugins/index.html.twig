@@ -24,7 +24,7 @@
 
 {% block settings_content %}
     <div class="py-4">
-        <h1>{{ 'settings_plugins.heading'|trans }}</h1>
+        <h1>{{ 'settings_plugins.installed_heading'|trans }}</h1>
 
         {% if installedPluginId is not null %}
             <p class="alert alert-success">{{ 'settings_plugins.install_success'|trans({'%pluginId%': installedPluginId}) }}</p>
@@ -37,8 +37,6 @@
         {% if removedPluginId is not null %}
             <p class="alert alert-success">{{ 'settings_plugins.remove_success'|trans({'%pluginId%': removedPluginId}) }}</p>
         {% endif %}
-
-        <h2>{{ 'settings_plugins.installed_heading'|trans }}</h2>
 
         {% if installedPlugins is empty %}
             <p class="text-body-secondary">{{ 'settings_plugins.installed_empty'|trans }}</p>

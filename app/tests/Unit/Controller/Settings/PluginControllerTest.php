@@ -44,6 +44,7 @@ use App\Service\Translation\TranslationCoverageService;
 use App\Service\WsPublisher;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
+use Symfony\Component\DependencyInjection\ServiceLocator;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -96,10 +97,15 @@ final class PluginControllerTest extends TestCase
         );
     }
 
-    /** @param iterable<string, SettingsPageInterface> $pages */
-    private function settingsPages(iterable $pages = []): SettingsPageRegistry
+    /** @param array<string, SettingsPageInterface> $pages */
+    private function settingsPages(array $pages = []): SettingsPageRegistry
     {
-        return new SettingsPageRegistry($pages, $this->registry);
+        $locator = new ServiceLocator(array_map(
+            static fn (SettingsPageInterface $page): \Closure => static fn (): SettingsPageInterface => $page,
+            $pages,
+        ));
+
+        return new SettingsPageRegistry($this->registry, $locator);
     }
 
     private function alwaysValidCsrf(): CsrfTokenManagerInterface
@@ -322,6 +328,40 @@ final class PluginControllerTest extends TestCase
             ->willReturn('<html></html>');
 
         $this->controller(settingsPages: $settingsPages, twig: $twig)->index(Request::create('/settings/plugins'));
+    }
+
+    /**
+     * Acceptance (issue #825): a broken settings-page constructor in one installed plugin must not
+     * take down the whole installed-plugins list for every other plugin. `pluginIdsWithASettingsPage()`
+     * used to call {@see SettingsPageRegistry::find()} once per installed plugin, which (before the
+     * fix) constructed every tagged settings page via `iterator_to_array()` on the very first call —
+     * including `animedb-broken`'s, which throws here. Reverting to that shape would make this test
+     * throw instead of asserting 200.
+     */
+    public function testIndexReturns200AndListsOtherPluginsEvenWhenOneInstalledPluginsSettingsPageConstructorThrows(): void
+    {
+        $this->writeManifest('animedb-broken', 'Broken');
+        $this->writeManifest('animedb-shikimori', 'Shikimori');
+        $this->registry->reconcile();
+
+        $workingPage = $this->createStub(SettingsPageInterface::class);
+        $locator = new ServiceLocator([
+            'animedb-broken' => static fn (): SettingsPageInterface => throw new \RuntimeException('Must not be instantiated by the installed-plugins list.'),
+            'animedb-shikimori' => static fn (): SettingsPageInterface => $workingPage,
+        ]);
+        $settingsPages = new SettingsPageRegistry($this->registry, $locator);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('settings/plugins/index.html.twig', $this->callback(
+                static fn (array $params): bool => $params['settingsPluginIds'] === ['animedb-broken', 'animedb-shikimori'],
+            ))
+            ->willReturn('<html></html>');
+
+        $response = $this->controller(settingsPages: $settingsPages, twig: $twig)->index(Request::create('/settings/plugins'));
+
+        $this->assertSame(200, $response->getStatusCode());
     }
 
     /**
