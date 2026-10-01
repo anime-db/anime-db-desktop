@@ -223,6 +223,19 @@ describe('source favicon load error', () => {
         expect(document.querySelector('.anime-detail__source-fallback').hidden).toBe(false);
     });
 
+    test('leaves the broken favicon visible when no fallback sibling is present', () => {
+        document.body.innerHTML = `
+            <a href="https://example.com" title="example.com">
+                <img class="anime-detail__source-icon" src="https://example.com/favicon.ico" alt="example.com">
+            </a>
+        `;
+        const image = document.querySelector('img');
+
+        image.dispatchEvent(new Event('error'));
+
+        expect(image.hidden).toBe(false);
+    });
+
     test('does not change how a cover image load error is handled', () => {
         document.body.innerHTML = '<img class="anime-card__thumb" src="app-media://anime/1/cover.webp" alt="Title">';
         const image = document.querySelector('img');

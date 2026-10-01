@@ -162,6 +162,52 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
     }
 
     /**
+     * Issue #830: a source favicon can fail to load for reasons unrelated to the local catalog, in
+     * which case inline-handlers.js swaps it for the neutral `globe` icon fallback already sitting
+     * next to it in the markup — but only if that fallback is really its next sibling (see
+     * inline-handlers.test.js for the handler's own behaviour when it is not). A substring
+     * assertion would miss the fallback being removed, reordered or wrapped around the icon, so
+     * this walks the actual DOM structure instead.
+     */
+    public function testShowRendersTheSourceFaviconFallbackAsItsNextSibling(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession('/anime/1');
+
+        /** @var LocaleSwitcher $localeSwitcher */
+        $localeSwitcher = self::getContainer()->get(LocaleSwitcher::class);
+        $localeSwitcher->setLocale('ru');
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('anime/show.html.twig', ['anime' => $this->fullyPopulatedAnime(), 'widgets' => [], 'plugins_ui' => [], 'fillable_fields' => $this->emptyFillableFields()]);
+
+        $document = new \DOMDocument();
+        $document->loadHTML($html);
+        $xpath = new \DOMXPath($document);
+
+        $icons = $xpath->query('//img[contains(concat(" ", normalize-space(@class), " "), " anime-detail__source-icon ")]');
+        $this->assertInstanceOf(\DOMNodeList::class, $icons);
+        $this->assertSame(1, $icons->length);
+
+        /** @var \DOMElement $icon */
+        $icon = $icons->item(0);
+        $fallback = $icon->nextSibling;
+        while ($fallback instanceof \DOMText) {
+            $fallback = $fallback->nextSibling;
+        }
+
+        $this->assertInstanceOf(\DOMElement::class, $fallback);
+        $this->assertSame('span', $fallback->tagName);
+        $this->assertStringContainsString('anime-detail__source-fallback', (string) $fallback->getAttribute('class'));
+        $this->assertTrue($fallback->hasAttribute('hidden'));
+
+        $svgs = $xpath->query('.//svg', $fallback);
+        $this->assertInstanceOf(\DOMNodeList::class, $svgs);
+        $this->assertSame(1, $svgs->length);
+    }
+
+    /**
      * Issue #720: anime/show.html.twig now delegates its widget slots to the same
      * plugin/_widget_slots.html.twig partial anime/list.html.twig uses for catalog widgets — this
      * pins that the entry-widget side of that partial still carries `entryId` (see
