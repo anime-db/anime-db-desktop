@@ -26,7 +26,12 @@
     <main class="storage-list py-4">
         <h1>{{ 'storage_list.heading'|trans }}</h1>
 
-        <p class="mb-4"><a href="{{ path('storage_new') }}" class="btn btn-primary">{{ 'storage_list.new_button'|trans }}</a></p>
+        <p class="mb-4">
+            <a href="{{ path('storage_new') }}" class="btn btn-primary d-inline-flex align-items-center gap-2">
+                {{ icon('plus-lg') }}
+                {{ 'storage_list.new_button'|trans }}
+            </a>
+        </p>
 
         {% if scanned %}
             <p class="alert alert-info">{{ 'storage_list.scan_started'|trans }}</p>
@@ -82,15 +87,23 @@
                                 </td>
                                 <td>{{ storage.dateUpdate ? storage.dateUpdate|date('Y-m-d H:i') : ('storage_list.never_scanned'|trans) }}</td>
                                 <td>
-                                    <a href="{{ path('storage_edit', {id: storage.id}) }}" class="btn btn-outline-secondary btn-sm me-2">{{ 'storage_list.edit_button'|trans }}</a>
-                                    <form method="post" action="{{ path('storage_scan', {id: storage.id}) }}" class="d-inline">
-                                        <input type="hidden" name="_token" value="{{ csrf_token('storage_scan_' ~ storage.id) }}">
-                                        <button type="submit" class="btn btn-outline-primary btn-sm me-2">{{ 'storage_list.scan_button'|trans }}</button>
-                                    </form>
-                                    <form method="post" action="{{ path('storage_delete', {id: storage.id}) }}" data-confirm="{{ 'storage_list.delete_confirm'|trans({'%name%': bidi_isolate(storage.name)}) }}" class="d-inline">
-                                        <input type="hidden" name="_token" value="{{ csrf_token('storage_delete_' ~ storage.id) }}">
-                                        <button type="submit" class="btn btn-outline-danger btn-sm">{{ 'storage_list.delete_button'|trans }}</button>
-                                    </form>
+                                    <div class="d-flex gap-2 align-items-center flex-nowrap">
+                                        <a href="{{ path('storage_edit', {id: storage.id}) }}" class="btn btn-outline-secondary btn-sm btn-icon" title="{{ 'storage_list.edit_button'|trans }}" aria-label="{{ 'storage_list.edit_button'|trans }}">
+                                            {{ icon('pencil') }}
+                                        </a>
+                                        <form method="post" action="{{ path('storage_scan', {id: storage.id}) }}">
+                                            <input type="hidden" name="_token" value="{{ csrf_token('storage_scan_' ~ storage.id) }}">
+                                            <button type="submit" class="btn btn-outline-primary btn-sm btn-icon" title="{{ 'storage_list.scan_button'|trans }}" aria-label="{{ 'storage_list.scan_button'|trans }}">
+                                                {{ icon('arrow-repeat') }}
+                                            </button>
+                                        </form>
+                                        <form method="post" action="{{ path('storage_delete', {id: storage.id}) }}" data-confirm="{{ 'storage_list.delete_confirm'|trans({'%name%': bidi_isolate(storage.name)}) }}">
+                                            <input type="hidden" name="_token" value="{{ csrf_token('storage_delete_' ~ storage.id) }}">
+                                            <button type="submit" class="btn btn-outline-danger btn-sm btn-icon" title="{{ 'storage_list.delete_button'|trans }}" aria-label="{{ 'storage_list.delete_button'|trans }}">
+                                                {{ icon('trash') }}
+                                            </button>
+                                        </form>
+                                    </div>
                                 </td>
                             </tr>
                         {% endfor %}

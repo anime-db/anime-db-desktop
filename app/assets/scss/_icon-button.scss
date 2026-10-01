@@ -1,0 +1,45 @@
+/**
+ * AnimeDb package.
+ *
+ * @author    Peter Gribanov <info@peter-gribanov.ru>
+ * @copyright Copyright (c) 2026, Peter Gribanov
+ * @license   https://www.gnu.org/licenses/gpl-3.0.html GPL-3.0-or-later
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+
+// issue #829 review: an icon-only button relies on the `<svg>`'s default `vertical-align: middle`,
+// which centers on the font's x-height rather than the button's geometric center — off by a
+// fraction of a pixel in every icon button (table-row actions, theme switcher). Flex centering
+// does not depend on font metrics at all.
+//
+// `aspect-ratio: 1` does not work here: with only an `<svg>` inside, the button has no text line,
+// so `line-height` contributes nothing to its height — it collapses to the icon's height plus
+// `padding-block`, and `aspect-ratio` on an auto-sized box does not stretch the width to match.
+// Instead, the side length is computed explicitly from the same Bootstrap custom properties that
+// size a regular button, so `.btn-sm` and `.btn` each get the matching square size for free.
+.btn-icon {
+    --btn-icon-size: calc(
+        var(--bs-btn-font-size) * var(--bs-btn-line-height)
+        + 2 * var(--bs-btn-padding-y)
+        + 2 * var(--bs-btn-border-width)
+    );
+
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--btn-icon-size);
+    height: var(--btn-icon-size);
+    padding: 0;
+}

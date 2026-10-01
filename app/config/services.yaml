@@ -114,6 +114,11 @@ parameters:
     # css/js/index.php, not under AppData, since they are app assets, not user data.
     app.sample_covers_dir: '%kernel.project_dir%/public/sample'
 
+    # Vendored Bootstrap Icons SVGs (issue #828) App\Twig\IconExtension's `icon()` function
+    # resolves names against — same "app asset, not user data" reasoning as app.sample_covers_dir
+    # above.
+    app.icons_dir: '%kernel.project_dir%/templates/icons'
+
     # Meilisearch process endpoint (native/supervisor/meilisearch.js) and its master key,
     # both already provisioned in production by Electron (issue #8) — see .env for dev defaults.
     app.meilisearch.url: '%env(MEILISEARCH_URL)%'
@@ -195,6 +200,7 @@ services:
             $pluginContractsVersion: '%app.plugin_contracts_version%'
             $coreLocales: '%app.locales%'
             $sampleCoversDir: '%app.sample_covers_dir%'
+            $iconsDir: '%app.icons_dir%'
             $pushOnEditTtlSeconds: '%app.sync.push_on_edit_ttl_seconds%'
             $cachePath: '%app.market_registry_cache_path%'
             $snapshotCachePath: '%app.market_snapshot_cache_path%'

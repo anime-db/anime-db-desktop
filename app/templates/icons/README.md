@@ -1,0 +1,1 @@
+SVG files in this directory are copied from [Bootstrap Icons](https://github.com/twbs/icons) `v1.13.1`, MIT license — see [`resources/third-party-licenses/texts/bootstrap-icons-MIT.txt`](../../../resources/third-party-licenses/texts/bootstrap-icons-MIT.txt).
