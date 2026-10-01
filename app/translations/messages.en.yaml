@@ -138,7 +138,7 @@ settings_nav:
     group_network: Network
     item_interface: Interface
     item_storage: Storage
-    item_labels: Labels
+    item_labels: Tags
     item_sync_review: Requires attention
     item_backup: Export and import
     item_search_index: Search index
@@ -156,16 +156,16 @@ settings_search_index:
     reindex_error: Failed to rebuild the search index. Make sure Meilisearch is running.
 
 settings_labels:
-    title: Labels — Settings — AnimeDB
-    heading: Labels
-    empty_name_error: Label name cannot be empty.
-    name_placeholder: Label name
+    title: Tags — Settings — AnimeDB
+    heading: Tags
+    description: Tags are your own labels for catalog entries. They are attached to an anime's card, and the catalog can be filtered by them.
+    empty_name_error: Tag name cannot be empty.
+    name_placeholder: Tag name
     add_button: Add
-    empty: No labels yet.
-    name_column: Name
-    actions_column: Actions
+    empty: No tags yet.
     save_button: Save
-    delete_confirm: Delete label "%name%"?
+    delete_confirm: Delete tag "%name%"?
+    delete_confirm_with_count: 'Delete tag "%name%"? Items with this tag: %count%.'
     delete_button: Delete
 
 settings_plugin_widgets:
@@ -404,7 +404,7 @@ anime_list:
     filter_section_type: Type
     filter_section_date_premiere: Premiere date
     filter_section_user_rating: Rating
-    filter_section_labels: Labels
+    filter_section_labels: Tags
     filter_section_genres: Genres
     filter_section_themes: Themes
     filter_section_studios: Studios
@@ -476,12 +476,12 @@ anime_detail:
     field_user_rating: Rating
     duration_minutes_suffix: min
     empty_value: —
-    labels_heading: Labels
-    labels_edit_button: Edit labels
-    labels_input_placeholder: Type a label name and press comma or Enter
+    labels_heading: Tags
+    labels_edit_button: Edit tags
+    labels_input_placeholder: Type a tag name and press comma or Enter
     labels_save_button: Save
     labels_cancel_button: Cancel
-    labels_save_error: Failed to save labels.
+    labels_save_error: Failed to save tags.
     open_folder_button: Open files
     path_unavailable_tooltip: Path is unavailable
     sources_heading: External sources

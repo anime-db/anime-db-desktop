@@ -46,4 +46,26 @@ class LabelRepository
     {
         return $this->entityManager->getRepository(Label::class)->findOneBy(['name' => $name]);
     }
+
+    /**
+     * One aggregating query for the whole label list, rather than a per-label count query —
+     * a label with no linked anime still gets a row (cnt = 0) thanks to the LEFT JOIN.
+     *
+     * @return array<int, int> number of linked anime per label, keyed by label id
+     */
+    public function countAnimeByLabel(): array
+    {
+        $rows = $this->entityManager->createQueryBuilder()
+            ->select('label.id AS id', 'COUNT(anime.id) AS cnt')
+            ->from(Label::class, 'label')
+            ->leftJoin('label.animes', 'anime')
+            ->groupBy('label.id')
+            ->getQuery()
+            ->getArrayResult();
+
+        return array_combine(
+            array_map(static fn (array $row): int => (int) $row['id'], $rows),
+            array_map(static fn (array $row): int => (int) $row['cnt'], $rows),
+        );
+    }
 }
