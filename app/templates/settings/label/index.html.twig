@@ -58,8 +58,11 @@
                             </span>
                             <p class="settings-label__name-error text-danger small mb-0" data-settings-label-name-error hidden>{{ 'settings_labels.empty_name_error'|trans }}</p>
                         </form>
-                        {% set countValue = count > 0 ? ('<a href="' ~ path('home_index', {labels: label.id}) ~ '" title="' ~ ('settings_labels.count_link_title'|trans|e) ~ '">' ~ count ~ '</a>') : count %}
-                        <span class="settings-label__count text-body-secondary">{{ ('settings_labels.count_label'|trans({'%count%': countValue}))|raw }}</span>
+                        {% if count > 0 %}
+                            <a href="{{ path('home_index', {labels: label.id}) }}" class="settings-label__count" title="{{ 'settings_labels.count_link_title'|trans }}">{{ 'settings_labels.count_label'|trans({'%entries%': count}) }}</a>
+                        {% else %}
+                            <span class="settings-label__count text-body-secondary">{{ 'settings_labels.count_label'|trans({'%entries%': count}) }}</span>
+                        {% endif %}
                         <form method="post" action="{{ path('settings_labels_delete', {id: label.id}) }}"
                               data-confirm="{{ (count > 0 ? 'settings_labels.delete_confirm_with_count' : 'settings_labels.delete_confirm')|trans({'%name%': bidi_isolate(label.name), '%count%': count}) }}">
                             <input type="hidden" name="_token" value="{{ csrf_token('settings_labels_delete_' ~ label.id) }}">

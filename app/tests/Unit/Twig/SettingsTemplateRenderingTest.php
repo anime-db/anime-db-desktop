@@ -321,9 +321,10 @@ final class SettingsTemplateRenderingTest extends KernelTestCase
     // Issue #823: the anime count next to a label is a link into the catalog filtered by that
     // label — the exact href shape the anime card's own label link already uses
     // (anime/show.html.twig: path('home_index', {labels: label.id})) so clicking it really
-    // applies the filter rather than merely looking like it does. The number itself is the link;
-    // the surrounding "Records: " caption (see peter-gribanov's review of PR #827) stays plain
-    // text so the count is readable without relying on link styling.
+    // applies the filter rather than merely looking like it does. The whole caption (including
+    // the "Records: " prefix) is the link, since building a partial-HTML translation string and
+    // rendering it with |raw (the previous approach) is unsafe for locales coming from plugin
+    // translation catalogs — see peter-gribanov's review of PR #827.
     public function testLabelIndexRendersANonZeroCountAsALinkIntoTheFilteredCatalog(): void
     {
         self::bootKernel();
@@ -338,8 +339,7 @@ final class SettingsTemplateRenderingTest extends KernelTestCase
         $twig = self::getContainer()->get('twig');
         $html = $twig->render('settings/label/index.html.twig', ['labels' => [$label], 'labelCounts' => [5 => 3], 'error' => null]);
 
-        $this->assertStringContainsString('<a href="/?labels=5" title="Показать записи с этой меткой">3</a>', $html);
-        $this->assertStringContainsString('Записей: <a', $html);
+        $this->assertStringContainsString('<a href="/?labels=5" class="settings-label__count" title="Показать записи с этой меткой">Записей: 3</a>', $html);
     }
 
     // A label with no anime at all must still show its count (0), but with no link — there is
@@ -469,7 +469,31 @@ final class SettingsTemplateRenderingTest extends KernelTestCase
         // from the name itself rather than as one literal string.
         $this->assertStringContainsString('favorite', $html);
         $this->assertStringContainsString('? Items with this tag: 4.', $html);
-        $this->assertStringContainsString('Entries: <a href="/?labels=2" title="Show entries with this tag">4</a>', $html);
+        $this->assertStringContainsString('<a href="/?labels=2" class="settings-label__count" title="Show entries with this tag">Entries: 4</a>', $html);
+    }
+
+    // peter-gribanov's review of PR #827: Symfony's translator runs ICU plural selection on any
+    // placeholder named "%count%" when it is numeric, and a one-word-plus-colon prefix like
+    // "Entries:" is parsed as a plural category label and stripped — so at zero the en catalog
+    // rendered a bare "0" instead of "Entries: 0". The ru string survived only because Cyrillic
+    // does not match the category-label pattern. Renaming the placeholder to %entries% avoids
+    // triggering plural selection, since this caption is not a pluralized string.
+    public function testLabelIndexRendersZeroCountWithLabelInEnglish(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession();
+        /** @var LocaleSwitcher $localeSwitcher */
+        $localeSwitcher = self::getContainer()->get(LocaleSwitcher::class);
+        $localeSwitcher->setLocale('en');
+
+        $label = $this->createPersistedLabel(9, 'rewatch');
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('settings/label/index.html.twig', ['labels' => [$label], 'labelCounts' => [9 => 0], 'error' => null]);
+
+        $this->assertStringNotContainsString('href="/?labels=9"', $html);
+        $this->assertMatchesRegularExpression('/settings-label__count[^>]*>\s*Entries:\s*0\s*</', $html);
     }
 
     public function testSyncReviewIndexRendersEmptyStateWithoutErrors(): void
