@@ -52,7 +52,7 @@
                         <input type="radio" class="btn-check" name="themePreference" id="theme-{{ option }}"
                                value="{{ option }}"{% if themePreference.value == option %} checked{% endif %}
                                autocomplete="off" data-submit-on-change>
-                        <label class="btn btn-outline-secondary" for="theme-{{ option }}"
+                        <label class="btn btn-outline-secondary btn-icon" for="theme-{{ option }}"
                                title="{{ ('settings.theme_option_' ~ option)|trans }}">
                             {{ icon(themeIcons[option]) }}
                             <span class="visually-hidden">{{ ('settings.theme_option_' ~ option)|trans }}</span>

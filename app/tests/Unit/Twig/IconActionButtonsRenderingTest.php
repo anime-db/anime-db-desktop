@@ -49,6 +49,11 @@ use Twig\Environment;
  * Delete button) — every file in templates/icons/ carries that same attribute. assertIconButton()
  * now also pins the `data-icon` App\Twig\IconExtension stamps onto the rendered svg, so a
  * mismatch between the label and the icon actually shown fails the test.
+ *
+ * Issue #829 review (second pass): these buttons also carry `btn-icon`, the class that centers
+ * the icon on the button's geometric center via flexbox instead of the `<svg>`'s default
+ * `vertical-align: middle` (which centers on font x-height, off by a fraction of a pixel).
+ * assertIconButton() pins that class too, so dropping it from one button regresses silently.
  */
 final class IconActionButtonsRenderingTest extends KernelTestCase
 {
@@ -65,11 +70,11 @@ final class IconActionButtonsRenderingTest extends KernelTestCase
 
     private function assertIconButton(string $html, string $label, string $icon): void
     {
-        $pattern = '/<(?:a|button)[^>]*title="'.preg_quote($label, '/').'"[^>]*aria-label="'.preg_quote($label, '/').'"[^>]*>\s*<svg[^>]*data-icon="'.preg_quote($icon, '/').'"[^>]*aria-hidden="true"/s';
+        $pattern = '/<(?:a|button)[^>]*\bclass="[^"]*\bbtn-icon\b[^"]*"[^>]*title="'.preg_quote($label, '/').'"[^>]*aria-label="'.preg_quote($label, '/').'"[^>]*>\s*<svg[^>]*data-icon="'.preg_quote($icon, '/').'"[^>]*aria-hidden="true"/s';
         self::assertMatchesRegularExpression(
             $pattern,
             $html,
-            \sprintf('Expected an icon button labelled "%s" with its "%s" icon (aria-hidden) inside.', $label, $icon),
+            \sprintf('Expected a "btn-icon" button labelled "%s" with its "%s" icon (aria-hidden) inside.', $label, $icon),
         );
     }
 

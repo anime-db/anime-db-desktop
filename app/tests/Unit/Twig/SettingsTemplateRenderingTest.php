@@ -142,7 +142,7 @@ final class SettingsTemplateRenderingTest extends KernelTestCase
         $expectedIconByOption = ['system' => 'display', 'light' => 'sun', 'dark' => 'moon-stars'];
 
         foreach ($expectedIconByOption as $option => $expectedIcon) {
-            $pattern = '/<label class="btn btn-outline-secondary" for="theme-'.preg_quote($option, '/').'"[^>]*>\s*'
+            $pattern = '/<label class="btn btn-outline-secondary btn-icon" for="theme-'.preg_quote($option, '/').'"[^>]*>\s*'
                 .'<svg[^>]*data-icon="'.preg_quote($expectedIcon, '/').'"[^>]*aria-hidden="true"[^>]*>.*?<\/svg>\s*'
                 .'<span class="visually-hidden">([^<]+)<\/span>/s';
 
