@@ -42,6 +42,7 @@ use App\Service\Plugin\SyncRegistry;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
+use Symfony\Component\DependencyInjection\ServiceLocator;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\Messenger\Envelope;
@@ -109,6 +110,17 @@ final class PluginSettingsControllerTest extends TestCase
         );
     }
 
+    /** @param array<string, SettingsPageInterface> $pages */
+    private function settingsPages(array $pages = []): SettingsPageRegistry
+    {
+        $locator = new ServiceLocator(array_map(
+            static fn (SettingsPageInterface $page): \Closure => static fn (): SettingsPageInterface => $page,
+            $pages,
+        ));
+
+        return new SettingsPageRegistry($this->installedPlugins, $locator);
+    }
+
     private function createPluginUiAssetsResolver(): PluginUiAssetsResolver
     {
         $urlGenerator = $this->createStub(UrlGeneratorInterface::class);
@@ -124,6 +136,40 @@ final class PluginSettingsControllerTest extends TestCase
         return new PluginUiAssetsResolver(new PluginAssetResolver($this->installedPlugins), $urlGenerator, new NullLogger());
     }
 
+    /**
+     * Acceptance (issue #825): opening plugin B's own settings page must not touch plugin A's
+     * settings-page service at all, even when A's constructor throws — {@see SettingsPageRegistry::find()}
+     * only ever resolves the one plugin id it was asked for via the locator.
+     */
+    public function testInvokeRendersThePluginsPageEvenWhenAnotherPluginsSettingsPageConstructorThrows(): void
+    {
+        $this->writeManifest('animedb-broken', 'Broken');
+        $this->writeManifest('animedb-shikimori', 'Shikimori');
+        $this->installedPlugins->reconcile();
+
+        $workingPage = $this->createMock(SettingsPageInterface::class);
+        $workingPage->expects($this->once())->method('render')->willReturn('<form>settings</form>');
+
+        $locator = new ServiceLocator([
+            'animedb-broken' => static fn (): SettingsPageInterface => throw new \RuntimeException('Must not be instantiated when opening a different plugin\'s settings page.'),
+            'animedb-shikimori' => static fn (): SettingsPageInterface => $workingPage,
+        ]);
+        $settingsPages = new SettingsPageRegistry($this->installedPlugins, $locator);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('settings/plugin/page.html.twig', $this->callback(
+                static fn (array $params): bool => $params['content'] === '<form>settings</form>' && $params['renderFailed'] === false,
+            ))
+            ->willReturn('<html></html>');
+
+        $controller = $this->createController($settingsPages, $twig);
+        $response = $controller('animedb-shikimori');
+
+        $this->assertSame(200, $response->getStatusCode());
+    }
+
     public function testInvokeRendersThePluginsPageInsideTheSettingsShell(): void
     {
         $this->writeManifest('animedb-shikimori', 'Shikimori');
@@ -132,7 +178,7 @@ final class PluginSettingsControllerTest extends TestCase
         $page = $this->createMock(SettingsPageInterface::class);
         $page->expects($this->once())->method('render')->willReturn('<form>settings</form>');
 
-        $settingsPages = new SettingsPageRegistry(['animedb-shikimori' => $page], $this->installedPlugins);
+        $settingsPages = $this->settingsPages(['animedb-shikimori' => $page]);
 
         $twig = $this->createMock(Environment::class);
         $twig->expects($this->once())
@@ -161,7 +207,7 @@ final class PluginSettingsControllerTest extends TestCase
         $page = $this->createMock(SettingsPageInterface::class);
         $page->expects($this->once())->method('render')->willReturn('<form>settings</form><script>alert(1)</script>');
 
-        $settingsPages = new SettingsPageRegistry(['animedb-shikimori' => $page], $this->installedPlugins);
+        $settingsPages = $this->settingsPages(['animedb-shikimori' => $page]);
 
         $twig = $this->createMock(Environment::class);
         $twig->expects($this->once())
@@ -199,7 +245,7 @@ final class PluginSettingsControllerTest extends TestCase
 
         $page = $this->createStub(SettingsPageInterface::class);
         $page->method('render')->willReturn('<form>settings</form>');
-        $settingsPages = new SettingsPageRegistry(['animedb-shikimori' => $page], $this->installedPlugins);
+        $settingsPages = $this->settingsPages(['animedb-shikimori' => $page]);
 
         $twig = $this->createMock(Environment::class);
         $twig->expects($this->once())
@@ -232,7 +278,7 @@ final class PluginSettingsControllerTest extends TestCase
 
         $page = $this->createStub(SettingsPageInterface::class);
         $page->method('render')->willReturn('<form>settings</form>');
-        $settingsPages = new SettingsPageRegistry(['animedb-shikimori' => $page], $this->installedPlugins);
+        $settingsPages = $this->settingsPages(['animedb-shikimori' => $page]);
 
         $twig = $this->createMock(Environment::class);
         $twig->expects($this->once())
@@ -264,7 +310,7 @@ final class PluginSettingsControllerTest extends TestCase
 
         $page = $this->createMock(SettingsPageInterface::class);
         $page->expects($this->never())->method('render');
-        $settingsPages = new SettingsPageRegistry(['animedb-shikimori' => $page], $this->installedPlugins);
+        $settingsPages = $this->settingsPages(['animedb-shikimori' => $page]);
 
         $dispatched = [];
         $messageBus = $this->createMock(MessageBusInterface::class);
@@ -318,7 +364,7 @@ final class PluginSettingsControllerTest extends TestCase
 
         $page = $this->createMock(SettingsPageInterface::class);
         $page->expects($this->once())->method('render')->willReturn('<form>settings</form>');
-        $settingsPages = new SettingsPageRegistry(['animedb-shikimori' => $page], $this->installedPlugins);
+        $settingsPages = $this->settingsPages(['animedb-shikimori' => $page]);
 
         $messageBus = $this->createMock(MessageBusInterface::class);
         $messageBus->expects($this->exactly(2))
@@ -363,7 +409,7 @@ final class PluginSettingsControllerTest extends TestCase
 
         $page = $this->createMock(SettingsPageInterface::class);
         $page->expects($this->once())->method('render')->willReturn('<form>settings</form>');
-        $settingsPages = new SettingsPageRegistry(['animedb-shikimori' => $page], $this->installedPlugins);
+        $settingsPages = $this->settingsPages(['animedb-shikimori' => $page]);
 
         $messageBus = $this->createMock(MessageBusInterface::class);
         $messageBus->expects($this->never())->method('dispatch');
@@ -398,7 +444,7 @@ final class PluginSettingsControllerTest extends TestCase
 
         $page = $this->createMock(SettingsPageInterface::class);
         $page->expects($this->once())->method('render')->willReturn('<form>settings</form>');
-        $settingsPages = new SettingsPageRegistry(['animedb-shikimori' => $page], $this->installedPlugins);
+        $settingsPages = $this->settingsPages(['animedb-shikimori' => $page]);
 
         $messageBus = $this->createMock(MessageBusInterface::class);
         $messageBus->expects($this->never())->method('dispatch');
@@ -443,7 +489,7 @@ final class PluginSettingsControllerTest extends TestCase
         $page = $this->createMock(SettingsPageInterface::class);
         $page->expects($this->once())->method('render')->willThrowException(new \RuntimeException('API unreachable'));
 
-        $settingsPages = new SettingsPageRegistry(['animedb-shikimori' => $page], $this->installedPlugins);
+        $settingsPages = $this->settingsPages(['animedb-shikimori' => $page]);
 
         $twig = $this->createMock(Environment::class);
         $twig->expects($this->once())
@@ -479,7 +525,7 @@ final class PluginSettingsControllerTest extends TestCase
 
         $page = $this->createMock(SettingsPageInterface::class);
         $page->expects($this->once())->method('render')->willThrowException(new \RuntimeException('API unreachable'));
-        $settingsPages = new SettingsPageRegistry(['animedb-shikimori' => $page], $this->installedPlugins);
+        $settingsPages = $this->settingsPages(['animedb-shikimori' => $page]);
 
         $twig = $this->createMock(Environment::class);
         $twig->expects($this->once())
@@ -501,7 +547,7 @@ final class PluginSettingsControllerTest extends TestCase
 
     public function testInvokeThrowsNotFoundForAMalformedPluginId(): void
     {
-        $controller = $this->createController(new SettingsPageRegistry([], $this->installedPlugins));
+        $controller = $this->createController($this->settingsPages());
 
         $this->expectException(NotFoundHttpException::class);
         $controller('Not A Valid Id');
@@ -512,7 +558,7 @@ final class PluginSettingsControllerTest extends TestCase
         $this->writeManifest('animedb-shikimori', 'Shikimori');
         $this->installedPlugins->reconcile();
 
-        $controller = $this->createController(new SettingsPageRegistry([], $this->installedPlugins));
+        $controller = $this->createController($this->settingsPages());
 
         $this->expectException(NotFoundHttpException::class);
         $controller('animedb-shikimori');
@@ -527,7 +573,7 @@ final class PluginSettingsControllerTest extends TestCase
         $this->installedPlugins->reconcile();
 
         $page = $this->createStub(SettingsPageInterface::class);
-        $settingsPages = new SettingsPageRegistry(['animedb-shikimori' => $page], $this->installedPlugins);
+        $settingsPages = $this->settingsPages(['animedb-shikimori' => $page]);
 
         $controller = $this->createController($settingsPages);
 

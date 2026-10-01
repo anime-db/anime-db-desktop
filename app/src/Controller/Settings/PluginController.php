@@ -244,7 +244,7 @@ final class PluginController
 
         return new Response($this->twig->render('settings/plugins/index.html.twig', [
             'installedPlugins' => $installedPlugins,
-            'settingsPluginIds' => $this->pluginIdsWithASettingsPage($installedPlugins),
+            'settingsPluginIds' => $this->settingsPages->enabledPluginIdsWithSettingsPage(),
             'translationCoverage' => $translationCoverage,
             'pluginLocales' => $pluginLocales,
             'marketUpdates' => $this->marketUpdatesForIncompatible($installedPlugins),
@@ -296,24 +296,6 @@ final class PluginController
         }
 
         return $updates;
-    }
-
-    /**
-     * @param list<InstalledPlugin> $installedPlugins
-     *
-     * @return list<string> ids of plugins with a settings page the user may currently open —
-     *                      {@see SettingsPageRegistry::find()} already folds in the `enabled` gate
-     */
-    private function pluginIdsWithASettingsPage(array $installedPlugins): array
-    {
-        $ids = [];
-        foreach ($installedPlugins as $plugin) {
-            if ($this->settingsPages->find($plugin->id) !== null) {
-                $ids[] = (string) $plugin->id;
-            }
-        }
-
-        return $ids;
     }
 
     /**

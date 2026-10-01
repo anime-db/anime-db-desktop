@@ -74,7 +74,7 @@
                             <tr>
                                 <td><bdi>{{ storage.name }}</bdi></td>
                                 <td>{{ ('storage_type.' ~ storage.type.value)|trans }}</td>
-                                <td>
+                                <td class="storage-list__path">
                                     <bdi>{{ storage.path }}</bdi>
                                     {% if storage.id in unavailableStorageIds %}
                                         <span class="badge text-bg-warning ms-1">{{ 'storage_list.path_unavailable'|trans }}</span>
