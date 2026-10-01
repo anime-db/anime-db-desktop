@@ -22,12 +22,13 @@
 // issue #829 review: an icon-only button relies on the `<svg>`'s default `vertical-align: middle`,
 // which centers on the font's x-height rather than the button's geometric center — off by a
 // fraction of a pixel in every icon button (table-row actions, theme switcher). Flex centering
-// does not depend on font metrics at all. `line-height: 1` plus equal inline/block padding also
-// makes the button a square without a fixed pixel size, so it still scales with font-size/zoom.
+// does not depend on font metrics at all. `aspect-ratio: 1` makes the button a square whose side
+// equals Bootstrap's own standard height for the given button size (`line-height` and
+// `padding-block` are left untouched), instead of shrinking it to fit the icon.
 .btn-icon {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    line-height: 1;
-    padding-inline: var(--bs-btn-padding-y);
+    aspect-ratio: 1;
+    padding-inline: 0;
 }
