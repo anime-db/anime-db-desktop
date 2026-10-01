@@ -78,7 +78,8 @@ final class SettingsPageRegistryTest extends TestCase
         $this->installedPlugins->reconcile();
 
         $page = $this->createStub(SettingsPageInterface::class);
-        $registry = new SettingsPageRegistry(['animedb-shikimori' => $page], $this->installedPlugins);
+        $locator = new ServiceLocator(['animedb-shikimori' => static fn (): SettingsPageInterface => $page]);
+        $registry = new SettingsPageRegistry($this->installedPlugins, $locator);
 
         $this->assertSame($page, $registry->find(new PluginId('animedb-shikimori')));
     }
@@ -88,7 +89,7 @@ final class SettingsPageRegistryTest extends TestCase
         $this->writeManifest('animedb-shikimori');
         $this->installedPlugins->reconcile();
 
-        $registry = new SettingsPageRegistry([], $this->installedPlugins);
+        $registry = new SettingsPageRegistry($this->installedPlugins, new ServiceLocator([]));
 
         $this->assertNull($registry->find(new PluginId('animedb-shikimori')));
     }
@@ -96,7 +97,8 @@ final class SettingsPageRegistryTest extends TestCase
     public function testFindReturnsNullWhenThePluginIsNotInstalled(): void
     {
         $page = $this->createStub(SettingsPageInterface::class);
-        $registry = new SettingsPageRegistry(['animedb-shikimori' => $page], $this->installedPlugins);
+        $locator = new ServiceLocator(['animedb-shikimori' => static fn (): SettingsPageInterface => $page]);
+        $registry = new SettingsPageRegistry($this->installedPlugins, $locator);
 
         $this->assertNull($registry->find(new PluginId('animedb-shikimori')));
     }
@@ -110,44 +112,52 @@ final class SettingsPageRegistryTest extends TestCase
         $this->installedPlugins->reconcile();
 
         $page = $this->createStub(SettingsPageInterface::class);
-        $registry = new SettingsPageRegistry(['animedb-shikimori' => $page], $this->installedPlugins);
+        $locator = new ServiceLocator(['animedb-shikimori' => static fn (): SettingsPageInterface => $page]);
+        $registry = new SettingsPageRegistry($this->installedPlugins, $locator);
 
         $this->assertNull($registry->find(new PluginId('animedb-shikimori')));
     }
 
     /**
+     * Acceptance (issue #825): `find()` must resolve the one requested plugin's settings page
+     * through the locator without ever constructing any other installed plugin's page service as
+     * a side effect — a broken settings-page constructor in one plugin must not take down another
+     * plugin's own settings page. Reverting `find()` to build the page from an injected iterable
+     * (e.g. `iterator_to_array($pages)[$id] ?? null`) would construct every tagged page, including
+     * `animedb-broken`'s, and trip the `RuntimeException` below.
+     */
+    public function testFindDoesNotInstantiateAnotherPluginsSettingsPageService(): void
+    {
+        $this->writeManifest('animedb-broken');
+        $this->writeManifest('animedb-shikimori');
+        $this->installedPlugins->reconcile();
+
+        $workingPage = $this->createStub(SettingsPageInterface::class);
+        $locator = new ServiceLocator([
+            'animedb-broken' => static fn (): SettingsPageInterface => throw new \RuntimeException('Another plugin\'s settings page must not be instantiated.'),
+            'animedb-shikimori' => static fn (): SettingsPageInterface => $workingPage,
+        ]);
+
+        $registry = new SettingsPageRegistry($this->installedPlugins, $locator);
+
+        $this->assertSame($workingPage, $registry->find(new PluginId('animedb-shikimori')));
+    }
+
+    /**
      * Acceptance (issue #822): the settings sidebar calls this on every settings page load just to
      * list which plugins have a page, so it must never construct the page services themselves —
-     * unlike {@see SettingsPageRegistry::find()}'s own `iterator_to_array($this->pages)`, which
-     * does. `$pages` here is a generator so that merely *advancing* it (the shape a naive
-     * `iterator_to_array($this->pages)` implementation would produce) already trips the "must not
-     * construct" guard below, and the locator's own factory throws too, so a `get()` call on it
-     * would fail the same way `has()` must not.
+     * the locator's own factory throws, so a `get()` call on it (rather than `has()`) would fail.
      */
     public function testEnabledPluginIdsWithSettingsPageDoesNotInstantiateAnyPageService(): void
     {
         $this->writeManifest('animedb-shikimori');
         $this->installedPlugins->reconcile();
 
-        $pages = (static function (): iterable {
-            yield 'animedb-shikimori' => new class implements SettingsPageInterface {
-                public function __construct()
-                {
-                    throw new \RuntimeException('The page service must not be instantiated.');
-                }
-
-                public function render(): string
-                {
-                    return '';
-                }
-            };
-        })();
-
         $locator = new ServiceLocator([
             'animedb-shikimori' => static fn () => throw new \RuntimeException('The locator must only be queried with has(), never get().'),
         ]);
 
-        $registry = new SettingsPageRegistry($pages, $this->installedPlugins, $locator);
+        $registry = new SettingsPageRegistry($this->installedPlugins, $locator);
 
         $this->assertSame(['animedb-shikimori'], $registry->enabledPluginIdsWithSettingsPage());
     }
@@ -157,7 +167,7 @@ final class SettingsPageRegistryTest extends TestCase
         $this->writeManifest('animedb-shikimori');
         $this->installedPlugins->reconcile();
 
-        $registry = new SettingsPageRegistry([], $this->installedPlugins, new ServiceLocator([]));
+        $registry = new SettingsPageRegistry($this->installedPlugins, new ServiceLocator([]));
 
         $this->assertSame([], $registry->enabledPluginIdsWithSettingsPage());
     }
@@ -171,7 +181,7 @@ final class SettingsPageRegistryTest extends TestCase
         $this->installedPlugins->reconcile();
 
         $locator = new ServiceLocator(['animedb-shikimori' => fn () => $this->createStub(SettingsPageInterface::class)]);
-        $registry = new SettingsPageRegistry([], $this->installedPlugins, $locator);
+        $registry = new SettingsPageRegistry($this->installedPlugins, $locator);
 
         $this->assertSame([], $registry->enabledPluginIdsWithSettingsPage());
     }

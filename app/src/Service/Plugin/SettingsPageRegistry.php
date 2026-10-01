@@ -30,7 +30,6 @@ namespace App\Service\Plugin;
 use AnimeDb\PluginContracts\Settings\SettingsPageInterface;
 use App\Entity\ValueObject\PluginId;
 use Psr\Container\ContainerInterface;
-use Symfony\Component\DependencyInjection\Attribute\AutowireIterator;
 use Symfony\Component\DependencyInjection\Attribute\AutowireLocator;
 use Symfony\Component\DependencyInjection\ServiceLocator;
 
@@ -44,16 +43,17 @@ use Symfony\Component\DependencyInjection\ServiceLocator;
  * `SettingsPageInterface` lives in the read-only `anime-db/plugin-contracts` package and cannot
  * carry `#[AutoconfigureTag]` itself, so it is tagged 'app.settings_page' at compile time by
  * {@see DependencyInjection\Compiler\TagPluginServicesPass} — same mechanism as
- * `app.filler`/`app.sync`/the widget tags. Unlike the widget registries, a plugin has at most one
- * settings page (the compiler pass rejects a second one under the same plugin id outright), so
- * the injected iterable is keyed by plain {@see PluginId}, the same shape as {@see FillerRegistry}.
+ * `app.filler`/`app.sync`/the widget tags.
  *
- * {@see self::enabledPluginIdsWithSettingsPage()} (issue #822) is deliberately backed by a
- * *locator* over the same tag rather than the iterable above: the settings sidebar calls it on
- * every settings page load just to list which plugins have a page, and `$pagesLocator->has()`
- * never constructs the underlying service the way iterating `$pages` (or `find()`'s own
- * `iterator_to_array($this->pages)`) does. `find()` itself is unaffected — it is only ever called
- * to actually render the one requested plugin's page, where instantiating it is the point.
+ * Both {@see self::find()} and {@see self::enabledPluginIdsWithSettingsPage()} are backed by the
+ * same locator over that tag (issue #825) rather than an injected iterable: a plugin has at most
+ * one settings page (the compiler pass rejects a second one under the same plugin id outright),
+ * and a locator's `has()`/`get()` only ever touch the one id asked for, never instantiating every
+ * other tagged plugin's settings page as a side effect the way iterating the whole tag (or
+ * `iterator_to_array()`-ing it) would. That matters because a plugin's settings page is one of the
+ * pieces the plugin itself controls: a broken constructor in plugin A must not take down plugin
+ * B's settings page, or the installed-plugins list, by being incidentally constructed while
+ * resolving either of those.
  *
  * Not `final`: {@see \App\Service\Settings\SettingsNavigationService} mocks this class to prove it
  * degrades — omits the plugin settings sidebar group and logs, rather than breaking every settings
@@ -61,10 +61,7 @@ use Symfony\Component\DependencyInjection\ServiceLocator;
  */
 class SettingsPageRegistry
 {
-    /** @param iterable<string, SettingsPageInterface> $pages keyed by plugin id */
     public function __construct(
-        #[AutowireIterator('app.settings_page', indexAttribute: 'id')]
-        private readonly iterable $pages,
         private readonly InstalledPluginsRegistry $installedPlugins,
         #[AutowireLocator('app.settings_page', indexAttribute: 'id')]
         private readonly ContainerInterface $pagesLocator = new ServiceLocator([]),
@@ -74,11 +71,14 @@ class SettingsPageRegistry
     public function find(PluginId $pluginId): ?SettingsPageInterface
     {
         $plugin = $this->installedPlugins->get($pluginId);
-        if ($plugin === null || !$plugin->enabled) {
+        if ($plugin === null || !$plugin->enabled || !$this->pagesLocator->has((string) $pluginId)) {
             return null;
         }
 
-        return iterator_to_array($this->pages)[(string) $pluginId] ?? null;
+        $page = $this->pagesLocator->get((string) $pluginId);
+        \assert($page instanceof SettingsPageInterface);
+
+        return $page;
     }
 
     /**
