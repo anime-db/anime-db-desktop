@@ -37,13 +37,15 @@ use Symfony\Component\Routing\RouterInterface;
  * name, so a route present in it is mechanically mapped to exactly one item id. `settings_plugin_page`
  * is the one deliberate exception within scope: it is resolved by `pluginId`, not by this static
  * table (see the service's own docblock). The routes below are excluded for the reasons given in
- * the issue: `storage_scan_prompt` stays on the base layout (a catalog workflow, not a settings
- * page), and the rest are JSON/status endpoints with no page to highlight a sidebar item on.
+ * the issue: `storage_scan_prompt` and `storage_scan_progress` (issue #834) both stay on the base
+ * layout (a catalog workflow, not a settings page), and the rest are JSON/status endpoints with no
+ * page to highlight a sidebar item on.
  */
 final class SettingsNavigationRouteMapTest extends KernelTestCase
 {
     private const array EXCLUDED_ROUTES = [
         'storage_scan_prompt',
+        'storage_scan_progress',
         'settings_market_refresh_status',
         'storage_paths',
     ];

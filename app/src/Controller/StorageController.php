@@ -30,6 +30,7 @@ namespace App\Controller;
 use App\Entity\Storage;
 use App\Message\ScanStorageMessage;
 use App\Repository\StorageRepository;
+use App\Service\Storage\StorageAvailabilityService;
 use App\Service\Storage\StorageMarkerService;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -58,6 +59,10 @@ use Twig\Environment;
  * of staying silent. The check runs here, once, when this page is opened — not in the
  * background and not at application startup — and never tries to guess a replacement path;
  * fixing it is left to the user via storage_edit (StorageEditController) or storage_delete above.
+ *
+ * The scan's own progress/confirmation UI moved to its own page (issue #834, {@see scanProgress()})
+ * — this controller's index() no longer renders it, and no longer accepts the old `scanned`/
+ * `storage_id` query parameters.
  */
 final class StorageController
 {
@@ -69,41 +74,19 @@ final class StorageController
         private readonly UrlGeneratorInterface $urlGenerator,
         private readonly Environment $twig,
         private readonly StorageMarkerService $storageMarker,
+        private readonly StorageAvailabilityService $storageAvailability,
     ) {
     }
 
     #[Route('/storage', name: 'storage_index', methods: ['GET'])]
-    public function index(Request $request): Response
+    public function index(): Response
     {
         $storages = $this->storages->findAllOrderedByName();
 
         return new Response($this->twig->render('storage/list.html.twig', [
             'storages' => $storages,
-            'unavailableStorageIds' => $this->unavailableStorageIds($storages),
-            'scanned' => $request->query->getBoolean('scanned'),
-            'scannedStorageId' => $request->query->get('storage_id'),
+            'unavailableStorageIds' => $this->storageAvailability->unavailableStorageIds($storages),
         ]));
-    }
-
-    /**
-     * Same is_readable() check AnimeViewFactory::serializeStorage() already runs per-anime; here
-     * it runs once per Storage row instead, so a missing drive shows on the storage it belongs to
-     * rather than on every anime linked to it.
-     *
-     * @param Storage[] $storages
-     *
-     * @return list<int>
-     */
-    private function unavailableStorageIds(array $storages): array
-    {
-        $ids = [];
-        foreach ($storages as $storage) {
-            if (!is_readable($storage->getPath())) {
-                $ids[] = $storage->id ?? throw new \LogicException('Storage must be persisted before its path can be checked.');
-            }
-        }
-
-        return $ids;
     }
 
     /**
@@ -132,7 +115,29 @@ final class StorageController
 
         $this->messageBus->dispatch(new ScanStorageMessage($storageId));
 
-        return new RedirectResponse($this->urlGenerator->generate('storage_index', ['scanned' => 1, 'storage_id' => $storageId]));
+        return new RedirectResponse($this->urlGenerator->generate('storage_scan_progress', ['id' => $storageId, 'started' => 1]));
+    }
+
+    /**
+     * The scan progress/candidate-confirmation page (issue #834): a dedicated page outside
+     * /settings, without the sidebar, so it reads as a step of adding entries to the catalog
+     * rather than a settings screen (the same reasoning storage_scan_prompt already follows — see
+     * base.html.twig's top-nav highlighting). Every trigger of a scan — this controller's own
+     * {@see scan()}, the storage list's Scan button, and storage_scan_prompt's form — posts to
+     * `storage_scan`, which redirects here with `started=1`.
+     *
+     * `started` gates which state the template renders: a bare GET without it (a page refresh
+     * once the scan already finished, or a direct link) shows a static "scan not started" prompt
+     * instead of mounting storage-scan.js and its 15-second no-response timeout — there is no
+     * scan to wait for in that case, and nothing here claims otherwise.
+     */
+    #[Route('/storage/{id}/scan-progress', name: 'storage_scan_progress', methods: ['GET'])]
+    public function scanProgress(Storage $storage, Request $request): Response
+    {
+        return new Response($this->twig->render('storage/scan_progress.html.twig', [
+            'storage' => $storage,
+            'started' => $request->query->getBoolean('started'),
+        ]));
     }
 
     /**

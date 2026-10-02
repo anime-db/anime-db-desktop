@@ -32,6 +32,7 @@ use App\Entity\Enum\StorageType;
 use App\Entity\Storage;
 use App\Message\ScanStorageMessage;
 use App\Repository\StorageRepository;
+use App\Service\Storage\StorageAvailabilityService;
 use App\Service\Storage\StorageMarkerService;
 use Doctrine\ORM\EntityManagerInterface;
 use PHPUnit\Framework\TestCase;
@@ -78,6 +79,7 @@ final class StorageControllerTest extends TestCase
         ?UrlGeneratorInterface $urlGenerator = null,
         ?Environment $twig = null,
         ?StorageMarkerService $storageMarker = null,
+        ?StorageAvailabilityService $storageAvailability = null,
     ): StorageController {
         if ($csrfTokenManager === null) {
             $csrfTokenManager = $this->createStub(CsrfTokenManagerInterface::class);
@@ -110,6 +112,7 @@ final class StorageControllerTest extends TestCase
             $urlGenerator,
             $twig ?? $this->createStub(Environment::class),
             $storageMarker,
+            $storageAvailability ?? new StorageAvailabilityService(),
         );
     }
 
@@ -125,14 +128,12 @@ final class StorageControllerTest extends TestCase
         $twig->expects($this->once())
             ->method('render')
             ->with('storage/list.html.twig', $this->callback(
-                static fn (array $params): bool => [$storage] === $params['storages']
-                    && $params['scanned'] === false
-                    && $params['scannedStorageId'] === null,
+                static fn (array $params): bool => [$storage] === $params['storages'],
             ))
             ->willReturn('<html></html>');
 
         $controller = $this->createController(storages: $storages, twig: $twig);
-        $response = $controller->index(Request::create('/storage'));
+        $response = $controller->index();
 
         $this->assertSame(200, $response->getStatusCode());
     }
@@ -157,7 +158,7 @@ final class StorageControllerTest extends TestCase
             ->willReturn('<html></html>');
 
         $controller = $this->createController(storages: $storages, twig: $twig);
-        $controller->index(Request::create('/storage'));
+        $controller->index();
     }
 
     public function testIndexDoesNotMarkStorageWithExistingPathAsUnavailable(): void
@@ -178,7 +179,7 @@ final class StorageControllerTest extends TestCase
             ->willReturn('<html></html>');
 
         $controller = $this->createController(storages: $storages, twig: $twig);
-        $controller->index(Request::create('/storage'));
+        $controller->index();
     }
 
     public function testDeleteRemovesStorageWithMissingPath(): void
@@ -236,15 +237,55 @@ final class StorageControllerTest extends TestCase
         $router = $this->createMock(UrlGeneratorInterface::class);
         $router->expects($this->once())
             ->method('generate')
-            ->with('storage_index', ['scanned' => 1, 'storage_id' => 42])
-            ->willReturn('/storage?scanned=1&storage_id=42');
+            ->with('storage_scan_progress', ['id' => 42, 'started' => 1])
+            ->willReturn('/storage/42/scan-progress?started=1');
 
         $controller = $this->createController(messageBus: $messageBus, urlGenerator: $router);
         $request = Request::create('/storage/42/scan', 'POST', ['_token' => 'token']);
 
         $response = $controller->scan($storage, $request);
 
-        $this->assertSame('/storage?scanned=1&storage_id=42', $response->getTargetUrl());
+        $this->assertSame('/storage/42/scan-progress?started=1', $response->getTargetUrl());
+    }
+
+    public function testScanProgressRendersTheScanProgressTemplateWithStartedFlag(): void
+    {
+        $storage = new Storage('Main folder', 'D:\\Anime', StorageType::Folder);
+        $this->setStorageId($storage, 42);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('storage/scan_progress.html.twig', $this->callback(
+                static fn (array $params): bool => $params['storage'] === $storage && $params['started'] === true,
+            ))
+            ->willReturn('<html></html>');
+
+        $controller = $this->createController(twig: $twig);
+        $request = Request::create('/storage/42/scan-progress', 'GET', ['started' => '1']);
+
+        $response = $controller->scanProgress($storage, $request);
+
+        $this->assertSame(200, $response->getStatusCode());
+    }
+
+    public function testScanProgressWithoutStartedFlagRendersTheNotStartedState(): void
+    {
+        $storage = new Storage('Main folder', 'D:\\Anime', StorageType::Folder);
+        $this->setStorageId($storage, 42);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('storage/scan_progress.html.twig', $this->callback(
+                static fn (array $params): bool => $params['started'] === false,
+            ))
+            ->willReturn('<html></html>');
+
+        $controller = $this->createController(twig: $twig);
+        $request = Request::create('/storage/42/scan-progress');
+
+        $controller->scanProgress($storage, $request);
     }
 
     public function testScanRejectsInvalidCsrfToken(): void

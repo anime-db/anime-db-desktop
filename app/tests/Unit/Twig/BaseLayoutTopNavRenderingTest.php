@@ -39,51 +39,46 @@ use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 use Twig\Environment;
 
 /**
- * Acceptance (issue #825): base.html.twig's top menu highlights "Settings" for every `settings_*`
- * and `storage_*` route except `storage_scan_prompt`, which highlights "Catalog" instead — it is a
- * step of adding entries to the catalog (no sidebar, see
- * {@see self::testScanPromptRendersWithoutTheSettingsSidebar()} below), not a settings screen.
- * Before this fix, `storage_scan_prompt` fell into the generic `storage_*` branch and highlighted
- * "Settings" instead. Removing the `storage_scan_prompt` special case from base.html.twig makes
- * {@see self::testScanPromptHighlightsCatalogNotSettings()} fail.
+ * Acceptance (issue #834): base.html.twig's top menu no longer has a "Catalog" link to highlight —
+ * it was replaced by a word-mark that is never highlighted (see base.html.twig's own comment on
+ * `current_nav_section`). "Settings" is still highlighted for every `settings_*` and `storage_*`
+ * route except the ones that are a step of adding entries to the catalog rather than a settings
+ * screen: `storage_scan_prompt` (issue #825) and `storage_scan_progress` (issue #834). Removing
+ * either special case from base.html.twig would make
+ * {@see self::testScanPromptAndScanProgressHighlightNothing()} fail.
  */
 final class BaseLayoutTopNavRenderingTest extends KernelTestCase
 {
     /** @return iterable<string, array{0: string}> */
-    public static function catalogRouteProvider(): iterable
+    public static function noHighlightRouteProvider(): iterable
     {
         yield 'home_index' => ['home_index'];
         yield 'an anime_* route' => ['anime_editable_view'];
+        yield 'storage_scan_prompt' => ['storage_scan_prompt'];
+        yield 'storage_scan_progress' => ['storage_scan_progress'];
     }
 
     /** @return iterable<string, array{0: string}> */
     public static function settingsRouteProvider(): iterable
     {
         yield 'settings_index' => ['settings_index'];
-        yield 'a storage_* route other than scan-prompt' => ['storage_index'];
+        yield 'a storage_* route other than scan-prompt/scan-progress' => ['storage_index'];
     }
 
-    #[DataProvider('catalogRouteProvider')]
-    public function testCatalogRoutesHighlightCatalogNotSettings(string $route): void
+    #[DataProvider('noHighlightRouteProvider')]
+    public function testCatalogLikeRoutesHighlightNeitherWordmarkNorSettings(string $route): void
     {
         $html = $this->renderBaseLayout($route);
 
-        self::assertCatalogLinkActive($html);
+        self::assertNothingHighlighted($html);
     }
 
     #[DataProvider('settingsRouteProvider')]
-    public function testSettingsRoutesHighlightSettingsNotCatalog(string $route): void
+    public function testSettingsRoutesHighlightSettingsNotWordmark(string $route): void
     {
         $html = $this->renderBaseLayout($route);
 
         self::assertSettingsLinkActive($html);
-    }
-
-    public function testScanPromptHighlightsCatalogNotSettings(): void
-    {
-        $html = $this->renderBaseLayout('storage_scan_prompt');
-
-        self::assertCatalogLinkActive($html);
     }
 
     /**
@@ -129,16 +124,16 @@ final class BaseLayoutTopNavRenderingTest extends KernelTestCase
         $requestStack->push($request);
     }
 
-    private static function assertCatalogLinkActive(string $html): void
+    private static function assertNothingHighlighted(string $html): void
     {
-        self::assertStringContainsString('app-nav__link--active', self::extractLinkClass($html, 'home_index'), 'Expected the catalog link to be active.');
+        self::assertStringNotContainsString('app-nav__link--active', self::extractLinkClass($html, 'home_index'), 'Expected the word-mark to stay inactive.');
         self::assertStringNotContainsString('app-nav__link--active', self::extractLinkClass($html, 'settings_index'), 'Expected the settings link to stay inactive.');
     }
 
     private static function assertSettingsLinkActive(string $html): void
     {
         self::assertStringContainsString('app-nav__link--active', self::extractLinkClass($html, 'settings_index'), 'Expected the settings link to be active.');
-        self::assertStringNotContainsString('app-nav__link--active', self::extractLinkClass($html, 'home_index'), 'Expected the catalog link to stay inactive.');
+        self::assertStringNotContainsString('app-nav__link--active', self::extractLinkClass($html, 'home_index'), 'Expected the word-mark to stay inactive.');
     }
 
     private static function extractLinkClass(string $html, string $routeName): string

@@ -246,6 +246,8 @@ settings_market:
     title: Маркет плагинов — Настройки — AnimeDB
     heading: Маркет плагинов
     empty: В маркете пока нет ни одного плагина.
+    filter_filler_banner: Показаны плагины-источники
+    filter_filler_clear_link: Показать все
     name_column: Название
     description_column: Описание
     type_column: Тип
@@ -434,8 +436,6 @@ storage_list:
     delete_confirm: Удалить хранилище «%name%»?
     never_scanned: Ещё не сканировалось
     scan_button: Скан
-    scan_started: Скан запущен.
-    scan_heading: Результаты скана
     scan_progress_text: '%processed%/%total% (%percent%%)'
     scan_failed_marker_conflict: 'Скан не выполнен: маркер хранилища занят другим хранилищем.'
     scan_failed_exception: 'Скан завершился ошибкой: %message%'
@@ -532,6 +532,13 @@ storage_scan_prompt:
     scan_button: Запустить сканирование
     skip_link: Пропустить
 
+storage_scan_progress:
+    title: Скан хранилища — AnimeDB
+    heading: Результаты скана
+    not_started: Скан не запущен.
+    scan_button: Запустить скан
+    catalog_link: ← Каталог
+
 search_plugins:
     title: Найти в плагинах — AnimeDB
     heading: Найти в плагинах
@@ -599,5 +606,16 @@ app_notification:
 
 nav:
     aria_label: Основная навигация
-    catalog_link: Каталог
+    brand: AnimeDB
+    add_button: Добавить
     settings_link: Настройки
+    add_menu_search_plugins: Найти в плагинах
+    add_menu_search_plugins_hint_not_installed: Плагин-источник не установлен.
+    add_menu_search_plugins_hint_disabled: Заполнение из плагина выключено.
+    add_menu_search_plugins_hint_link: Перейти →
+    add_menu_scan_heading: Сканировать
+    add_menu_scan_loading: Загрузка…
+    add_menu_scan_item: 'Сканировать «%name%»'
+    add_menu_scan_more: 'Ещё %count% не подключены →'
+    add_menu_add_storage: Добавить хранилище…
+    add_menu_empty_entry: Пустая запись

@@ -300,6 +300,81 @@ final class MarketControllerTest extends TestCase
         $controller->index(Request::create('/settings/market'));
     }
 
+    /**
+     * Issue #834: `?feature=filler` keeps only the plugins whose *manifest* declares
+     * `features.filler = true` — {@see self::snapshotPlugin()} always sets that via
+     * {@see self::manifest()}, so this test builds its own {@see MarketSnapshotPlugin} to get one
+     * plugin with the feature and one without.
+     */
+    public function testIndexFiltersToFillerPluginsWhenFeatureFilterIsFiller(): void
+    {
+        $filler = new MarketSnapshotPlugin(
+            'animedb-shikimori',
+            ['id' => 'animedb-shikimori', 'name' => 'Shikimori', 'version' => '1.2.0', 'type' => 'integration', 'features' => ['filler' => true]],
+            '1.2.0',
+            'abc123',
+            '1.2.0',
+            '>=2.0.0',
+        );
+        $nonFiller = new MarketSnapshotPlugin(
+            'animedb-other',
+            ['id' => 'animedb-other', 'name' => 'Other', 'version' => '1.0.0', 'type' => 'integration', 'features' => ['filler' => false]],
+            '1.0.0',
+            'def456',
+            '1.0.0',
+            '>=2.0.0',
+        );
+        $snapshot = $this->snapshot([$filler, $nonFiller]);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('settings/market/index.html.twig', $this->callback(
+                static fn (array $params): bool => \count($params['items']) === 1
+                    && $params['items'][0]['plugin']->id === 'animedb-shikimori'
+                    && $params['featureFilter'] === 'filler',
+            ))
+            ->willReturn('<html></html>');
+
+        $controller = $this->controller($this->snapshotCacheServing($snapshot), $this->assetDownloaderServingPluginZip(), $twig);
+
+        $controller->index(Request::create('/settings/market?feature=filler'));
+    }
+
+    public function testIndexIgnoresAnUnknownFeatureFilterValue(): void
+    {
+        $snapshot = $this->snapshot([
+            $this->snapshotPlugin('animedb-shikimori', resolvedVersion: '1.2.0', sha256: 'abc123'),
+        ]);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('settings/market/index.html.twig', $this->callback(
+                static fn (array $params): bool => \count($params['items']) === 1 && $params['featureFilter'] === null,
+            ))
+            ->willReturn('<html></html>');
+
+        $controller = $this->controller($this->snapshotCacheServing($snapshot), $this->assetDownloaderServingPluginZip(), $twig);
+
+        $controller->index(Request::create('/settings/market?feature=unknown'));
+    }
+
+    public function testIndexNeverShowsTheFeatureFilterWhenTheRegistryIsUnavailable(): void
+    {
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('settings/market/index.html.twig', $this->callback(
+                static fn (array $params): bool => $params['featureFilter'] === null,
+            ))
+            ->willReturn('<html></html>');
+
+        $controller = $this->controller($this->snapshotCacheServing(null), $this->assetDownloaderServingPluginZip(), $twig);
+
+        $controller->index(Request::create('/settings/market?feature=filler'));
+    }
+
     public function testIndexMarksIncompatiblePluginsWithNoResolvedVersion(): void
     {
         $snapshot = $this->snapshot([

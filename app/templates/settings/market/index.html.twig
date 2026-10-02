@@ -28,6 +28,13 @@
 
         {% include 'settings/market/_refresh_area.html.twig' with {'state': 'idle'} %}
 
+        {% if featureFilter == 'filler' %}
+            <p class="alert alert-info">
+                {{ 'settings_market.filter_filler_banner'|trans }}
+                <a href="{{ path('settings_market_index') }}">{{ 'settings_market.filter_filler_clear_link'|trans }}</a>
+            </p>
+        {% endif %}
+
         {% if installedPluginId is not null %}
             <p class="alert alert-success">{{ 'settings_market.install_success'|trans({'%pluginId%': installedPluginId}) }}</p>
         {% endif %}
