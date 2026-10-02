@@ -37,7 +37,7 @@ use App\Entity\ValueObject\Exception\InvalidPluginIdException;
  */
 final class PluginId
 {
-    private const FORMAT = '/^[a-z0-9]+(-[a-z0-9]+)+$/';
+    private const FORMAT = '/^[a-z0-9]+(-[a-z0-9]+)+\z/';
 
     public readonly string $value;
 
