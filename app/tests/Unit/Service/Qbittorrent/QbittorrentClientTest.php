@@ -97,7 +97,7 @@ final class QbittorrentClientTest extends TestCase
         self::assertSame([['hash' => 'abc', 'name' => 'Some Anime']], $result);
     }
 
-    public function testPauseAndResumePostHashes(): void
+    public function testStopAndStartPostHashes(): void
     {
         $calls = [];
         $httpClient = new MockHttpClient(function (string $method, string $url, array $options) use (&$calls): MockResponse {
@@ -107,11 +107,11 @@ final class QbittorrentClientTest extends TestCase
         });
 
         $client = new QbittorrentClient($httpClient, self::BASE_URL);
-        $client->pause('abc');
-        $client->resume('abc');
+        $client->stop('abc');
+        $client->start('abc');
 
-        self::assertSame(['POST', self::BASE_URL.'/api/v2/torrents/pause', 'hashes=abc'], $calls[0]);
-        self::assertSame(['POST', self::BASE_URL.'/api/v2/torrents/resume', 'hashes=abc'], $calls[1]);
+        self::assertSame(['POST', self::BASE_URL.'/api/v2/torrents/stop', 'hashes=abc'], $calls[0]);
+        self::assertSame(['POST', self::BASE_URL.'/api/v2/torrents/start', 'hashes=abc'], $calls[1]);
     }
 
     public function testSetSavePathPostsHashAndLocation(): void
@@ -174,7 +174,7 @@ final class QbittorrentClientTest extends TestCase
         $client = new QbittorrentClient($httpClient, self::BASE_URL);
 
         $this->expectException(QbittorrentClientException::class);
-        $client->pause('unknown-hash');
+        $client->stop('unknown-hash');
     }
 
     public function testInvalidJsonResponseIsWrappedInQbittorrentClientException(): void
