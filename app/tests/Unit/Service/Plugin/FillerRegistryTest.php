@@ -28,18 +28,27 @@ declare(strict_types=1);
 namespace App\Tests\Unit\Service\Plugin;
 
 use AnimeDb\PluginContracts\Filler\FillerInterface;
+use AnimeDb\PluginContracts\Settings\SettingsPageInterface;
 use App\Entity\ValueObject\PluginId;
+use App\Service\Plugin\FillerAvailabilityState;
 use App\Service\Plugin\FillerRegistry;
+use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\PluginsConfigStore;
+use App\Service\Plugin\SettingsPageRegistry;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
+use Symfony\Component\DependencyInjection\ServiceLocator;
 
 final class FillerRegistryTest extends TestCase
 {
     private string $path;
+    private string $pluginsDir;
 
     protected function setUp(): void
     {
         $this->path = sys_get_temp_dir().'/anime-plugins-test-'.uniqid().'.json';
+        $this->pluginsDir = sys_get_temp_dir().'/anime-plugins-dir-test-'.uniqid();
+        mkdir($this->pluginsDir, recursive: true);
     }
 
     protected function tearDown(): void
@@ -49,6 +58,39 @@ final class FillerRegistryTest extends TestCase
                 unlink($file);
             }
         }
+        $this->removeDirectory($this->pluginsDir);
+    }
+
+    private function removeDirectory(string $dir): void
+    {
+        if (!is_dir($dir)) {
+            return;
+        }
+
+        foreach (scandir($dir) ?: [] as $entry) {
+            if ($entry === '.' || $entry === '..') {
+                continue;
+            }
+
+            $path = $dir.'/'.$entry;
+            is_dir($path) ? $this->removeDirectory($path) : unlink($path);
+        }
+
+        rmdir($dir);
+    }
+
+    private function writeManifest(string $pluginId, string $name): void
+    {
+        $dir = $this->pluginsDir.'/'.$pluginId;
+        mkdir($dir, recursive: true);
+        file_put_contents($dir.'/manifest.json', (string) json_encode([
+            'id' => $pluginId,
+            'name' => $name,
+            'version' => '1.0.0',
+            'type' => 'integration',
+            'features' => ['filler' => true],
+            'require' => ['core' => '>=2.0.0', 'php' => '>=8.2'],
+        ]));
     }
 
     /** @param string[] $fillableFields */
@@ -191,5 +233,83 @@ final class FillerRegistryTest extends TestCase
         );
 
         $this->assertNull($registry->findByPluginId(new PluginId('animedb-shikimori')));
+    }
+
+    public function testFindAllActiveExcludesPluginDisabledViaFeaturesFiller(): void
+    {
+        $shikimori = $this->createFiller(['title']);
+        $anilist = $this->createFiller(['title']);
+        file_put_contents($this->path, json_encode([
+            'animedb-anilist' => ['features' => ['filler' => false]],
+        ]));
+
+        $registry = new FillerRegistry(
+            ['animedb-shikimori' => $shikimori, 'animedb-anilist' => $anilist],
+            new PluginsConfigStore($this->path),
+        );
+
+        $this->assertSame(['animedb-shikimori' => $shikimori], $registry->findAllActive());
+    }
+
+    public function testFillerAvailabilityReturnsNotInstalledWhenNoFillerIsRegistered(): void
+    {
+        $registry = new FillerRegistry([], new PluginsConfigStore($this->path));
+        $installedPlugins = new InstalledPluginsRegistry($this->pluginsDir, new PluginsConfigStore($this->path), new NullLogger());
+        $settingsPages = new SettingsPageRegistry($installedPlugins, new ServiceLocator([]));
+
+        $availability = $registry->fillerAvailability($installedPlugins, $settingsPages);
+
+        $this->assertSame(FillerAvailabilityState::NotInstalled, $availability->state);
+        $this->assertNull($availability->pluginId);
+    }
+
+    public function testFillerAvailabilityReturnsDisabledNoSettingsPageWhenTheWholePluginIsDisabled(): void
+    {
+        $this->writeManifest('animedb-shikimori', 'Shikimori');
+
+        file_put_contents($this->path, json_encode([
+            'animedb-shikimori' => ['enabled' => false],
+        ]));
+
+        $installedPlugins = new InstalledPluginsRegistry($this->pluginsDir, new PluginsConfigStore($this->path), new NullLogger());
+        $installedPlugins->reconcile();
+
+        // A disabled whole-plugin never gets its services loaded into the container in prod
+        // (PluginLoader::codePlugins() only loads InstalledPluginsRegistry::enabled()), so $fillers
+        // here must be empty too - fillerAvailability() has to recognise this plugin via the
+        // manifest in $installedPlugins instead.
+        $registry = new FillerRegistry([], new PluginsConfigStore($this->path));
+        $settingsPages = new SettingsPageRegistry($installedPlugins, new ServiceLocator([]));
+
+        $availability = $registry->fillerAvailability($installedPlugins, $settingsPages);
+
+        $this->assertSame(FillerAvailabilityState::DisabledNoSettingsPage, $availability->state);
+    }
+
+    public function testFillerAvailabilityReturnsDisabledWithSettingsPageWhenOnlyTheFillerFeatureIsOff(): void
+    {
+        $this->writeManifest('animedb-shikimori', 'Shikimori');
+
+        $installedPlugins = new InstalledPluginsRegistry($this->pluginsDir, new PluginsConfigStore($this->path), new NullLogger());
+        $installedPlugins->reconcile();
+
+        file_put_contents($this->path, json_encode([
+            'animedb-shikimori' => ['features' => ['filler' => false]],
+        ]));
+
+        $registry = new FillerRegistry(
+            ['animedb-shikimori' => $this->createFiller(['title'])],
+            new PluginsConfigStore($this->path),
+        );
+
+        $settingsPage = $this->createStub(SettingsPageInterface::class);
+        $settingsPages = new SettingsPageRegistry($installedPlugins, new ServiceLocator([
+            'animedb-shikimori' => static fn (): SettingsPageInterface => $settingsPage,
+        ]));
+
+        $availability = $registry->fillerAvailability($installedPlugins, $settingsPages);
+
+        $this->assertSame(FillerAvailabilityState::DisabledWithSettingsPage, $availability->state);
+        $this->assertSame('animedb-shikimori', (string) $availability->pluginId);
     }
 }

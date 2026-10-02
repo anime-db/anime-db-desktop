@@ -456,6 +456,39 @@ class AnimeRepository
     }
 
     /**
+     * Same name match as {@see findOrphanCandidatesByNormalizedName()}, but for the "search in
+     * plugins" screen (issue #833): every Anime — not only storage-less orphans — whose
+     * Anime::$normalizedTitle or one of its AnimeName::$normalizedName records equals
+     * $normalizedName, excluding any Anime that already carries an AnimeExternalId for
+     * $pluginId. A record already linked to $pluginId by external id is the "already in the
+     * catalog" case the caller resolves separately via {@see self::resolve()}; this query is
+     * only for the softer "possibly the same title" suggestion, which does not apply to a record
+     * the plugin has already confirmed is something else (a different externalId for the same
+     * plugin) or already is (an externalId that would have resolved above).
+     *
+     * The exclusion is a LEFT JOIN restricted to $pluginId plus an `IS NULL` check rather than a
+     * `NOT EXISTS` subquery — same shape as a plain "has no related row matching this condition"
+     * lookup elsewhere in this class, cheaper to read than an equivalent correlated subquery.
+     *
+     * @return list<Anime>
+     */
+    public function findCandidatesByNormalizedNameExcludingPlugin(string $normalizedName, PluginId $pluginId): array
+    {
+        $qb = $this->entityManager->getRepository(Anime::class)->createQueryBuilder('a')
+            ->leftJoin('a.names', 'n')
+            ->leftJoin('a.externalIds', 'e', 'WITH', 'e.pluginId = :pluginId')
+            ->andWhere('a.normalizedTitle = :needle OR n.normalizedName = :needle')
+            ->andWhere('e.anime IS NULL')
+            ->setParameter('needle', $normalizedName)
+            ->setParameter('pluginId', (string) $pluginId)
+            ->distinct()
+            ->orderBy('a.id', 'ASC');
+
+        /* @var list<Anime> */
+        return $qb->getQuery()->getResult();
+    }
+
+    /**
      * Anime already linked to $storage (both Anime::$storage and Anime::$storagePath set) —
      * what a storage scan (App\Service\Storage\ScanStorageService) compares found top-level
      * names against to tell "already known" from "new" files.
