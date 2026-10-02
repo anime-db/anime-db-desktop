@@ -98,10 +98,10 @@ final class TorrentProxySubscriberTest extends TestCase
         $subscriber->onProxySettingsChanged(new ProxySettingsChangedEvent($settings));
 
         $this->assertSame([
-            self::BASE_URL.'/api/v2/torrents/pause',
+            self::BASE_URL.'/api/v2/torrents/stop',
             self::BASE_URL.'/api/v2/app/setPreferences',
             self::BASE_URL.'/api/v2/app/preferences',
-            self::BASE_URL.'/api/v2/torrents/resume',
+            self::BASE_URL.'/api/v2/torrents/start',
         ], $calls);
         $this->assertSame('proxy.example', $sentPreferences['proxy_ip']);
         $this->assertSame(51080, $sentPreferences['proxy_port']);

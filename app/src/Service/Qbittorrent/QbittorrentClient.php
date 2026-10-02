@@ -34,7 +34,7 @@ use Symfony\Contracts\HttpClient\ResponseInterface;
 
 /**
  * Thin wrapper around the qbittorrent-nox sidecar's WebUI API (native/supervisor/qbittorrent.js,
- * issue #345) — just enough to add/inspect/pause/resume torrents and read/write app preferences.
+ * issue #345) — just enough to add/inspect/stop/start torrents and read/write app preferences.
  * DownloadService (a separate, follow-up issue) is the intended caller.
  *
  * No login/session handling: the sidecar's WebUI listens on loopback only and is started with
@@ -83,14 +83,14 @@ final class QbittorrentClient
         return $this->requestJsonList('GET', '/api/v2/torrents/info', ['query' => $query]);
     }
 
-    public function pause(string $hash): void
+    public function stop(string $hash): void
     {
-        $this->request('POST', '/api/v2/torrents/pause', ['body' => ['hashes' => $hash]]);
+        $this->request('POST', '/api/v2/torrents/stop', ['body' => ['hashes' => $hash]]);
     }
 
-    public function resume(string $hash): void
+    public function start(string $hash): void
     {
-        $this->request('POST', '/api/v2/torrents/resume', ['body' => ['hashes' => $hash]]);
+        $this->request('POST', '/api/v2/torrents/start', ['body' => ['hashes' => $hash]]);
     }
 
     public function setSavePath(string $hash, string $savePath): void

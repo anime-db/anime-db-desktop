@@ -424,7 +424,7 @@ final class DownloadCompletionPollerTest extends TestCase
         $this->assertSame($first->id, $logged[0]['context']['occupyingAnimeId']);
     }
 
-    public function testPollPausesAndMarksFailedWhenAMagnetsKnownSizeDoesNotFitFreeSpace(): void
+    public function testPollStopsAndMarksFailedWhenAMagnetsKnownSizeDoesNotFitFreeSpace(): void
     {
         $anime = $this->persistAnime();
         $this->downloads->save(new Download(self::HASH, $anime));
@@ -435,10 +435,10 @@ final class DownloadCompletionPollerTest extends TestCase
         $freeSpaceProvider = $this->createStub(FreeSpaceProvider::class);
         $freeSpaceProvider->method('getFreeBytes')->willReturn(100_000_000);
 
-        $pauseCalls = 0;
-        $httpClient = new MockHttpClient(function (string $method, string $url) use (&$pauseCalls): MockResponse {
-            if ($method === 'POST' && str_contains($url, '/api/v2/torrents/pause')) {
-                ++$pauseCalls;
+        $stopCalls = 0;
+        $httpClient = new MockHttpClient(function (string $method, string $url) use (&$stopCalls): MockResponse {
+            if ($method === 'POST' && str_contains($url, '/api/v2/torrents/stop')) {
+                ++$stopCalls;
             }
 
             return new MockResponse(
@@ -467,16 +467,16 @@ final class DownloadCompletionPollerTest extends TestCase
 
         $poller->poll();
 
-        $this->assertSame(1, $pauseCalls);
+        $this->assertSame(1, $stopCalls);
         $stored = $this->downloads->findByInfoHashAndAnime(self::HASH, (int) $anime->id);
         $this->assertNotNull($stored);
         $this->assertTrue($stored->isFailed());
         $this->assertSame(DownloadStatus::Failed, $stored->getStatus());
 
         // Once Failed, the row drops out of findDistinctPendingInfoHashes() — a second poll must
-        // not pause (or log) it again.
+        // not stop (or log) it again.
         $poller->poll();
-        $this->assertSame(1, $pauseCalls);
+        $this->assertSame(1, $stopCalls);
     }
 
     public function testPollDoesNotPauseWhenAMagnetsKnownSizeFitsFreeSpace(): void
