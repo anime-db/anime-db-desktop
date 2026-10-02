@@ -300,7 +300,15 @@ final class DownloadCompletionPoller
             $download->markFailed();
             $this->entityManager->flush();
             $this->logger->warning(\sprintf(
-                'Failing download completion: the content path is already linked to anime #%d. Run app:downloads:unlink to release that anime\'s storage folder pointer via its own pairing, then app:downloads:unlink %s %d to remove this failed pairing before re-adding the download.',
+                'Failing download completion: the content path is already linked to anime #%d. To free it: '
+                .'if anime #%d got this folder from another download of its own, run app:downloads:unlink '
+                .'<that download\'s hash> %d (it clears the pointer only if it still matches that download\'s '
+                .'snapshot); otherwise there is no command for this yet and anime #%d\'s folder pointer has to '
+                .'be cleared by hand. Then run app:downloads:unlink %s %d to remove this failed pairing and '
+                .'enqueue the download again.',
+                $exception->occupyingAnimeId,
+                $exception->occupyingAnimeId,
+                $exception->occupyingAnimeId,
                 $exception->occupyingAnimeId,
                 $infoHash,
                 $anime->id,
