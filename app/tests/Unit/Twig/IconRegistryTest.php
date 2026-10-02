@@ -106,6 +106,10 @@ final class IconRegistryTest extends TestCase
      */
     public function testNameWithTrailingNewlineThrowsEvenWhenAMatchingFileExistsOnDisk(): void
     {
+        if (\PHP_OS_FAMILY === 'Windows') {
+            $this->markTestSkipped('Filenames containing "\n" are not representable on NTFS.');
+        }
+
         $iconsDir = sys_get_temp_dir().'/anime-icon-registry-test-'.uniqid();
         mkdir($iconsDir, recursive: true);
 
