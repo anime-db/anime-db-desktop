@@ -39,6 +39,7 @@ use App\Repository\DownloadRepository;
 use App\Service\AppConfigStore;
 use App\Service\AppSettingsProvider;
 use App\Service\Download\DownloadFolderJail;
+use App\Service\Download\DownloadFolderPointer;
 use App\Service\Download\FreeSpaceChecker;
 use App\Service\Download\FreeSpaceProvider;
 use App\Service\Download\NativeFreeSpaceProvider;
@@ -355,7 +356,7 @@ final class QbittorrentDownloadServiceTest extends TestCase
         } catch (DownloadAlreadyLinkedToAnotherAnimeException) {
         }
 
-        $unlink = new CommandTester(new DownloadsUnlinkCommand($this->downloads));
+        $unlink = new CommandTester(new DownloadsUnlinkCommand($this->downloads, new DownloadFolderPointer(), $this->entityManager));
         $unlink->execute(['info-hash' => self::MAGNET_HASH, 'anime-id' => (string) $animeOne->id]);
         $this->assertSame(0, $unlink->getStatusCode());
 

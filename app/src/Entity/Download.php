@@ -41,11 +41,20 @@ use Doctrine\ORM\Mapping as ORM;
  * $status is a single flag doubling as "download finished AND folder linked to the catalog
  * entry" (see markCompleted()) — this is what lets DownloadCompletionPoller tell, across
  * restarts, which pairs it has already emitted DownloadCompletedEvent for.
+ *
+ * $storage/$storagePath (issue #837) are a snapshot, not a live value: the exact (storage, path)
+ * pair {@see \App\Service\Download\AnimeDownloadLinker::link()} wrote onto the anime when this row
+ * completed, recorded by {@see recordLinkedStorage()} in the same flush as markCompleted(). A row
+ * completed before this snapshot existed keeps both NULL. {@see
+ * \App\Service\Download\DownloadFolderPointer::releaseIfOwnedBy()} is the only reader: it compares
+ * the anime's current pointer against this snapshot before deciding whether unlinking this row may
+ * clear it — a NULL snapshot never matches, so a legacy row never clears the anime's pointer.
  */
 #[ORM\Entity]
 #[ORM\Table(name: 'downloads')]
 #[ORM\UniqueConstraint(name: 'uniq_download_infohash', columns: ['info_hash'])]
 #[ORM\Index(name: 'IDX_DOWNLOAD_ANIME', fields: ['anime'])]
+#[ORM\Index(name: 'IDX_DOWNLOAD_STORAGE', fields: ['storage'])]
 class Download
 {
     private const INFO_HASH_PATTERN = '/^[0-9a-f]{40}\z/';
@@ -70,6 +79,26 @@ class Download
 
     #[ORM\Column(name: 'date_add', type: 'unix_timestamp')]
     private \DateTimeImmutable $dateAdd;
+
+    #[ORM\ManyToOne(targetEntity: Storage::class)]
+    #[ORM\JoinColumn(name: 'storage_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
+    private ?Storage $storage = null;
+
+    #[ORM\Column(name: 'storage_path', length: 1024, nullable: true)]
+    private ?string $storagePath = null;
+
+    /**
+     * Doctrine's optimistic lock: every UPDATE checks this column and bumps it, failing with
+     * {@see \Doctrine\ORM\OptimisticLockException} if another process already changed the row
+     * since this one read it — same mechanism as {@see AnimePluginData::$version}. Guards two
+     * directions of the same race between DownloadCompletionPoller and app:downloads:unlink
+     * (issue #837): a poller flush() racing an unlink that already deleted the row fails loudly
+     * here instead of silently resurrecting a row (and, via its Anime, a pointer) the operator
+     * just removed; DownloadsUnlinkCommand reads this value and makes its own DELETE conditional
+     * on it still matching, so a row the poller just completed is not deleted using stale data.
+     */
+    #[ORM\Version, ORM\Column(type: 'integer')]
+    private int $version = 1;
 
     public function __construct(string $infoHash, Anime $anime)
     {
@@ -96,6 +125,33 @@ class Download
     public function getStatus(): DownloadStatus
     {
         return $this->status;
+    }
+
+    public function getLinkedStorage(): ?Storage
+    {
+        return $this->storage;
+    }
+
+    public function getLinkedStoragePath(): ?string
+    {
+        return $this->storagePath;
+    }
+
+    public function getVersion(): int
+    {
+        return $this->version;
+    }
+
+    /**
+     * Records the (storage, relative path) pair {@see \App\Service\Download\AnimeDownloadLinker}
+     * just wrote onto this row's anime, so a later unlink can tell whether the anime's pointer is
+     * still exactly what this completion put there. Called from inside link() itself, in the same
+     * flush() as markCompleted() (see class docblock) — never on its own.
+     */
+    public function recordLinkedStorage(Storage $storage, string $storagePath): void
+    {
+        $this->storage = $storage;
+        $this->storagePath = $storagePath;
     }
 
     public function isCompleted(): bool

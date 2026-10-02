@@ -277,7 +277,7 @@ final class DownloadCompletionPoller
         $anime = $download->getAnime();
 
         try {
-            $this->linker->link($anime, $contentPath);
+            $this->linker->link($download, $contentPath);
         } catch (DownloadPathOutsideJailException $exception) {
             // markCompleted() above only touched in-memory state — link() never reached its own
             // flush(), so nothing was persisted yet. Revert it so this Download does not sit
@@ -299,7 +299,7 @@ final class DownloadCompletionPoller
             $download->revertToPending();
             $download->markFailed();
             $this->entityManager->flush();
-            $this->logger->warning('Failing download completion: the content path is already linked to another anime. The info hash stays locked to this anime and cannot be re-enqueued for another one; release it with "app:downloads:unlink" first.', [
+            $this->logger->warning(\sprintf('Failing download completion: the content path is already linked to anime #%d. Clear that anime\'s storage folder pointer manually to free the path for this download.', $exception->occupyingAnimeId), [
                 'infoHash' => $infoHash,
                 'contentPath' => $contentPath,
                 'occupyingAnimeId' => $exception->occupyingAnimeId,
