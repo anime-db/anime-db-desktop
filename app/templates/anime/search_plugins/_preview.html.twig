@@ -1,0 +1,106 @@
+{#
+ # AnimeDb package.
+ #
+ # @author    Peter Gribanov <info@peter-gribanov.ru>
+ # @copyright Copyright (c) 2026, Peter Gribanov
+ # @license   https://www.gnu.org/licenses/gpl-3.0.html GPL-3.0-or-later
+ #
+ # This program is free software: you can redistribute it and/or modify
+ # it under the terms of the GNU General Public License as published by
+ # the Free Software Foundation, either version 3 of the License, or
+ # (at your option) any later version.
+ #
+ # This program is distributed in the hope that it will be useful,
+ # but WITHOUT ANY WARRANTY; without even the implied warranty of
+ # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ # GNU General Public License for more details.
+ #
+ # You should have received a copy of the GNU General Public License
+ # along with this program. If not, see <https://www.gnu.org/licenses/>.
+ #}
+{#
+ # Swapped into #search-plugins-preview (aria-live="polite" lives on that container, in
+ # index.html.twig, so it is announced regardless of which state below renders). state is one of
+ # 'error'/'new'/'already_in_catalog'/'possible_match' (issue #833, points 3/5/6) - the cover
+ # reuses anime-detail__cover/anime-detail__cover--placeholder as-is: a broken/CSP-blocked `http:`
+ # image falls back to the same placeholder tile as a local record with no cover, via the
+ # document-level `error` listener already wired for that class in inline-handlers.js.
+ #}
+{% if state == 'error' %}
+    <p class="search-plugins__preview-error">{{ 'search_plugins.preview_error'|trans }}</p>
+{% else %}
+    <div class="search-plugins__preview-card">
+        {% if data.cover %}
+            <img class="anime-detail__cover" src="{{ data.cover }}" alt="{{ data.title }}">
+        {% else %}
+            <div class="anime-detail__cover anime-detail__cover--placeholder"></div>
+        {% endif %}
+
+        <h2 class="search-plugins__preview-title"><bdi>{{ data.title }}</bdi></h2>
+
+        {% if data.alternativeNames is not empty %}
+            <ul class="search-plugins__preview-names">
+                {% for name in data.alternativeNames %}
+                    <li><bdi>{{ name.name }}</bdi>{% if name.locale %} ({{ name.locale }}){% endif %}</li>
+                {% endfor %}
+            </ul>
+        {% endif %}
+
+        <dl class="search-plugins__preview-fields">
+            {% if data.type %}
+                <dt>{{ 'search_plugins.preview_field_type'|trans }}</dt>
+                <dd>{{ ('anime_type.' ~ data.type)|trans }}</dd>
+            {% endif %}
+
+            {% if data.datePremiere or data.dateEnd %}
+                <dt>{{ 'search_plugins.preview_field_dates'|trans }}</dt>
+                <dd>{{ data.datePremiere ?: '…' }} – {{ data.dateEnd ?: '…' }}</dd>
+            {% endif %}
+
+            {% if data.episodesCount is not null %}
+                <dt>{{ 'search_plugins.preview_field_episodes_count'|trans }}</dt>
+                <dd>{{ data.episodesCount }}</dd>
+            {% endif %}
+
+            {% if data.genres is not empty %}
+                <dt>{{ 'search_plugins.preview_field_genres'|trans }}</dt>
+                <dd>{% for code in data.genres %}{{ ('genre.' ~ code)|trans }}{% if not loop.last %}, {% endif %}{% endfor %}</dd>
+            {% endif %}
+        </dl>
+
+        {% if data.description %}
+            <p class="search-plugins__preview-description">{{ data.description }}</p>
+        {% endif %}
+
+        {% if state == 'already_in_catalog' %}
+            <a class="search-plugins__preview-already-link btn btn-outline-primary" href="{{ path('anime_show', {id: existingAnimeId}) }}">{{ 'search_plugins.already_in_catalog_link'|trans }}</a>
+        {% elseif state == 'possible_match' %}
+            <div class="search-plugins__preview-possible-match">
+                <p>{{ 'search_plugins.possible_match_heading'|trans({'%title%': possibleMatch.title}) }}</p>
+
+                <form method="post" action="{{ path('anime_search_plugins_fill_existing', {animeId: possibleMatch.id}) }}">
+                    <input type="hidden" name="_token" value="{{ csrf_token('anime_search_plugins_fill_existing_' ~ possibleMatch.id) }}">
+                    <input type="hidden" name="plugin_id" value="{{ pluginId }}">
+                    <input type="hidden" name="external_id" value="{{ externalId }}">
+                    <button type="submit" class="btn btn-outline-primary">{{ 'search_plugins.fill_existing_button'|trans }}</button>
+                </form>
+
+                <form method="post" action="{{ path('anime_search_plugins_add') }}">
+                    <input type="hidden" name="_token" value="{{ csrf_token('anime_search_plugins_add') }}">
+                    <input type="hidden" name="plugin_id" value="{{ pluginId }}">
+                    <input type="hidden" name="external_id" value="{{ externalId }}">
+                    <input type="hidden" name="name" value="{{ name }}">
+                    <button type="submit" class="btn btn-primary">{{ 'search_plugins.create_new_button'|trans }}</button>
+                </form>
+            </div>
+        {% else %}
+            <form method="post" action="{{ path('anime_search_plugins_add') }}">
+                <input type="hidden" name="_token" value="{{ csrf_token('anime_search_plugins_add') }}">
+                <input type="hidden" name="plugin_id" value="{{ pluginId }}">
+                <input type="hidden" name="external_id" value="{{ externalId }}">
+                <input type="hidden" name="name" value="{{ name }}">
+                <button type="submit" class="search-plugins__preview-add-button btn btn-primary">{{ 'search_plugins.add_button'|trans }}</button>
+            </form>
+        {% endif %}
+    </div>
+{% endif %}

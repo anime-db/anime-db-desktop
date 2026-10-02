@@ -102,4 +102,59 @@ final class FillerRegistry
 
         return $filler !== null && $this->isFillerActive($pluginId) ? $filler : null;
     }
+
+    /**
+     * Every active filler plugin (issue #833), keyed by its own {@see PluginId} — the "search in
+     * plugins" screen queries each one of these separately, one HTMX request per group, rather
+     * than going through {@see \App\Service\Storage\Search\SearchByPluginChain}, which stops at
+     * the first plugin with a non-empty result and also admits "pure" search plugins with no
+     * findById() to fall back on.
+     *
+     * @return array<string, FillerInterface> pluginId string => active filler
+     */
+    public function findAllActive(): array
+    {
+        $result = [];
+        foreach ($this->fillers as $id => $filler) {
+            if ($this->isFillerActive(new PluginId((string) $id))) {
+                $result[(string) $id] = $filler;
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * The three-way "why is there no active filler plugin" signal (issue #833) a caller with an
+     * empty {@see self::findAllActive()} needs to point the user at the right next step: install
+     * one from the market, turn the whole plugin back on, or just flip its `features.filler`
+     * toggle. Only meaningful when {@see self::findAllActive()} is empty — a caller with at least
+     * one active filler has no reason to call this.
+     *
+     * Picks the first installed filler plugin that is enabled as a whole but has its filler
+     * feature switched off, so a mix of "whole-plugin disabled" and "feature disabled" installs
+     * favors the state with an actionable settings page over the one that only points at the
+     * installed-plugins list.
+     */
+    public function fillerAvailability(InstalledPluginsRegistry $installedPlugins, SettingsPageRegistry $settingsPages): FillerAvailability
+    {
+        $fillers = iterator_to_array($this->fillers);
+        if ($fillers === []) {
+            return FillerAvailability::notInstalled();
+        }
+
+        foreach (array_keys($fillers) as $id) {
+            $pluginId = new PluginId((string) $id);
+            $installed = $installedPlugins->get($pluginId);
+            if ($installed === null || !$installed->enabled || $this->isFillerActive($pluginId)) {
+                continue;
+            }
+
+            $page = $settingsPages->find($pluginId);
+
+            return $page !== null ? FillerAvailability::disabledWithSettingsPage($pluginId) : FillerAvailability::disabledNoSettingsPage();
+        }
+
+        return FillerAvailability::disabledNoSettingsPage();
+    }
 }

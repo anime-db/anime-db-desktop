@@ -1,0 +1,68 @@
+{#
+ # AnimeDb package.
+ #
+ # @author    Peter Gribanov <info@peter-gribanov.ru>
+ # @copyright Copyright (c) 2026, Peter Gribanov
+ # @license   https://www.gnu.org/licenses/gpl-3.0.html GPL-3.0-or-later
+ #
+ # This program is free software: you can redistribute it and/or modify
+ # it under the terms of the GNU General Public License as published by
+ # the Free Software Foundation, either version 3 of the License, or
+ # (at your option) any later version.
+ #
+ # This program is distributed in the hope that it will be useful,
+ # but WITHOUT ANY WARRANTY; without even the implied warranty of
+ # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ # GNU General Public License for more details.
+ #
+ # You should have received a copy of the GNU General Public License
+ # along with this program. If not, see <https://www.gnu.org/licenses/>.
+ #}
+{#
+ # "Search in plugins" screen (issue #833): outside /settings (no sidebar, same shape as
+ # storage/scan_prompt.html.twig), with "Catalog" highlighted in the top nav via the 'anime_'
+ # route-name prefix already handled by base.html.twig.
+ #}
+{% extends 'base.html.twig' %}
+
+{% block title %}{{ 'search_plugins.title'|trans }}{% endblock %}
+
+{% block body %}
+    <main class="search-plugins">
+        <h1 class="search-plugins__heading">{{ 'search_plugins.heading'|trans }}</h1>
+
+        {% if not hasActiveFiller %}
+            <p class="search-plugins__unavailable">
+                {{ ('search_plugins.unavailable_' ~ noFillerState.kind)|trans }}
+                <a href="{{ noFillerState.url }}">{{ ('search_plugins.unavailable_' ~ noFillerState.kind ~ '_link')|trans }}</a>
+            </p>
+        {% else %}
+            <form
+                class="search-plugins__form"
+                hx-get="{{ path('anime_search_plugins_results') }}"
+                hx-target="#search-plugins-results"
+                hx-swap="innerHTML"
+                hx-indicator="#search-plugins-indicator"
+            >
+                <label class="visually-hidden" for="search-plugins-query">{{ 'search_plugins.name_label'|trans }}</label>
+                <input
+                    type="search"
+                    id="search-plugins-query"
+                    name="q"
+                    class="search-plugins__input"
+                    value="{{ query }}"
+                    placeholder="{{ 'search_plugins.name_label'|trans }}"
+                    required
+                >
+                <button type="submit" class="search-plugins__submit btn btn-primary">{{ 'search_plugins.search_button'|trans }}</button>
+                <span id="search-plugins-indicator" class="search-plugins__indicator htmx-indicator">{{ 'search_plugins.loading'|trans }}</span>
+            </form>
+
+            <div class="search-plugins__layout">
+                <div class="search-plugins__results" id="search-plugins-results"></div>
+
+                <aside class="search-plugins__preview" id="search-plugins-preview" aria-live="polite"></aside>
+            </div>
+        {% endif %}
+    </main>
+{% endblock %}

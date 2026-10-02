@@ -1,0 +1,50 @@
+{#
+ # AnimeDb package.
+ #
+ # @author    Peter Gribanov <info@peter-gribanov.ru>
+ # @copyright Copyright (c) 2026, Peter Gribanov
+ # @license   https://www.gnu.org/licenses/gpl-3.0.html GPL-3.0-or-later
+ #
+ # This program is free software: you can redistribute it and/or modify
+ # it under the terms of the GNU General Public License as published by
+ # the Free Software Foundation, either version 3 of the License, or
+ # (at your option) any later version.
+ #
+ # This program is distributed in the hope that it will be useful,
+ # but WITHOUT ANY WARRANTY; without even the implied warranty of
+ # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ # GNU General Public License for more details.
+ #
+ # You should have received a copy of the GNU General Public License
+ # along with this program. If not, see <https://www.gnu.org/licenses/>.
+ #}
+{#
+ # Rendered both as the swap target of its own loading placeholder (_results.html.twig) and
+ # directly by AnimeSearchPluginsController::group(). state is one of 'results'/'empty'/'error'
+ # (issue #833, point 2) - a plugin's own find() exception never reaches this far, it is already
+ # turned into 'error' by the controller, so this template only ever displays a state, never
+ # throws one.
+ #}
+<section class="search-plugins__group" id="search-plugins-group-{{ pluginId }}">
+    <h2 class="search-plugins__group-heading"><bdi>{{ pluginName }}</bdi></h2>
+
+    {% if state == 'error' %}
+        <p class="search-plugins__group-error">{{ 'search_plugins.group_error'|trans }}</p>
+    {% elseif state == 'empty' %}
+        <p class="search-plugins__group-empty">{{ 'search_plugins.group_empty'|trans }}</p>
+    {% else %}
+        <ul class="search-plugins__candidates">
+            {% for candidate in candidates %}
+                <li>
+                    <button
+                        type="button"
+                        class="search-plugins__candidate"
+                        hx-get="{{ path('anime_search_plugins_preview', {plugin_id: pluginId, external_id: candidate.externalId, name: candidate.name}) }}"
+                        hx-target="#search-plugins-preview"
+                        hx-swap="innerHTML"
+                    ><bdi>{{ candidate.name }}</bdi></button>
+                </li>
+            {% endfor %}
+        </ul>
+    {% endif %}
+</section>

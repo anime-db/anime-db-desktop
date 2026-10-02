@@ -31,6 +31,7 @@ use App\Repository\AnimeRepository;
 use App\Repository\StorageRepository;
 use App\Service\AppSettingsProvider;
 use App\Service\Plugin\CatalogWidgetRegistry;
+use App\Service\Plugin\FillerAvailabilityPresenter;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
 use Twig\Environment;
@@ -50,6 +51,10 @@ use Twig\Environment;
  * Issue #720: this is the catalog widgets' counterpart to AnimeController's entry widgets — the
  * only place in the app that requests {@see CatalogWidgetRegistry::findAllActive()}, so an
  * active catalog widget has somewhere to render at all.
+ *
+ * Issue #833: the onboarding invitation's third card ("Search in plugins") reuses
+ * {@see FillerAvailabilityPresenter} — the same three-state "why is there no active filler
+ * plugin" resolution the search-plugins screen itself falls back to when opened directly.
  */
 final class HomeController
 {
@@ -59,6 +64,7 @@ final class HomeController
         private readonly AnimeRepository $animeRepository,
         private readonly CatalogWidgetRegistry $catalogWidgets,
         private readonly AppSettingsProvider $settings,
+        private readonly FillerAvailabilityPresenter $fillerAvailability,
     ) {
     }
 
@@ -67,6 +73,7 @@ final class HomeController
     {
         $showOnboarding = !$this->animeRepository->hasAny();
         $scannableStorages = $showOnboarding ? $this->storages->findAllScannable() : [];
+        $hasActiveFiller = $showOnboarding && $this->fillerAvailability->hasActiveFiller();
 
         return new Response($this->twig->render('anime/list.html.twig', [
             'showOnboarding' => $showOnboarding,
@@ -79,6 +86,8 @@ final class HomeController
             // aria-expanded/hidden state from the saved value on first paint, instead of every
             // section flashing open before anime-list-filters.js reconciles it client-side.
             'collapsedFilterSections' => $this->settings->getCollapsedFilterSections(),
+            'hasActiveFillerPlugin' => $hasActiveFiller,
+            'noFillerState' => $showOnboarding && !$hasActiveFiller ? $this->fillerAvailability->describeUnavailable() : null,
         ]));
     }
 }
