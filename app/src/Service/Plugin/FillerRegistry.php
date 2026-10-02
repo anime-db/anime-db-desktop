@@ -102,4 +102,67 @@ final class FillerRegistry
 
         return $filler !== null && $this->isFillerActive($pluginId) ? $filler : null;
     }
+
+    /**
+     * Every active filler plugin (issue #833), keyed by its own {@see PluginId} — the "search in
+     * plugins" screen queries each one of these separately, one HTMX request per group, rather
+     * than going through {@see \App\Service\Storage\Search\SearchByPluginChain}, which stops at
+     * the first plugin with a non-empty result and also admits "pure" search plugins with no
+     * findById() to fall back on.
+     *
+     * @return array<string, FillerInterface> pluginId string => active filler
+     */
+    public function findAllActive(): array
+    {
+        $result = [];
+        foreach ($this->fillers as $id => $filler) {
+            if ($this->isFillerActive(new PluginId((string) $id))) {
+                $result[(string) $id] = $filler;
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * The three-way "why is there no active filler plugin" signal (issue #833) a caller with an
+     * empty {@see self::findAllActive()} needs to point the user at the right next step: install
+     * one from the market, turn the whole plugin back on, or just flip its `features.filler`
+     * toggle. Only meaningful when {@see self::findAllActive()} is empty — a caller with at least
+     * one active filler has no reason to call this.
+     *
+     * Picks the first installed filler plugin that is enabled as a whole but has its filler
+     * feature switched off, so a mix of "whole-plugin disabled" and "feature disabled" installs
+     * favors the state with an actionable settings page over the one that only points at the
+     * installed-plugins list.
+     */
+    public function fillerAvailability(InstalledPluginsRegistry $installedPlugins, SettingsPageRegistry $settingsPages): FillerAvailability
+    {
+        // $this->fillers only carries services of enabled whole-plugins (PluginLoader::codePlugins()
+        // loads only InstalledPluginsRegistry::enabled() into the container, see Kernel::configureContainer()),
+        // so a plugin disabled as a whole never shows up there at all. Which installed plugins are
+        // fillers in the first place has to come from the manifest's own declared role
+        // (`features.filler`, see Manifest's docblock) instead, independent of whether the container
+        // actually instantiated a service for it.
+        $fillerPlugins = array_filter(
+            $installedPlugins->all(),
+            static fn (InstalledPlugin $plugin): bool => (bool) ($plugin->manifest->features['filler'] ?? false),
+        );
+
+        if ($fillerPlugins === []) {
+            return FillerAvailability::notInstalled();
+        }
+
+        foreach ($fillerPlugins as $plugin) {
+            if ($plugin->enabled && $this->isFillerActive($plugin->id)) {
+                continue;
+            }
+
+            $page = $settingsPages->find($plugin->id);
+
+            return $page !== null ? FillerAvailability::disabledWithSettingsPage($plugin->id) : FillerAvailability::disabledNoSettingsPage();
+        }
+
+        return FillerAvailability::disabledNoSettingsPage();
+    }
 }
