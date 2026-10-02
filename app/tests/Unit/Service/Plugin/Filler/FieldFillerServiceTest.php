@@ -36,6 +36,7 @@ use App\Entity\Enum\WatchStatus;
 use App\Entity\TvAnime;
 use App\Entity\ValueObject\PluginId;
 use App\Repository\StudioRepository;
+use App\Service\Plugin\Filler\CachedFillerLookup;
 use App\Service\Plugin\Filler\FieldFillerService;
 use App\Service\Plugin\Filler\FillResult;
 use App\Service\Plugin\Filler\PluginAnimeDataMerger;
@@ -101,7 +102,7 @@ final class FieldFillerServiceTest extends TestCase
                 $mediaDownloader ?? $this->createStub(PluginMediaDownloaderInterface::class),
             ),
             $this->entityManager,
-            $cache ?? new ArrayAdapter(),
+            new CachedFillerLookup($cache ?? new ArrayAdapter()),
             $logger ?? new NullLogger(),
         );
     }

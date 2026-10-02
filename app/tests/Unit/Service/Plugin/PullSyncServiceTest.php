@@ -49,6 +49,7 @@ use App\Repository\AnimeSyncStateRepository;
 use App\Repository\StudioRepository;
 use App\Repository\SyncReviewItemRepository;
 use App\Service\Plugin\Filler\BulkFillerService;
+use App\Service\Plugin\Filler\CachedFillerLookup;
 use App\Service\Plugin\Filler\PluginAnimeDataMerger;
 use App\Service\Plugin\Filler\PluginMediaDownloaderInterface;
 use App\Service\Plugin\FillerRegistry;
@@ -70,6 +71,7 @@ use Doctrine\ORM\ORMSetup;
 use Doctrine\ORM\Tools\SchemaTool;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
+use Symfony\Component\Cache\Adapter\ArrayAdapter;
 use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
@@ -121,6 +123,8 @@ final class PullSyncServiceTest extends TestCase
             $entityManager,
             new NullLogger(),
             $this->createMock(MessageBusInterface::class),
+            $animeRepository,
+            new CachedFillerLookup(new ArrayAdapter()),
         );
 
         // A stub AnimeSearchResolver::tryResolveMatches() defaults to returning null (its
@@ -501,6 +505,8 @@ final class PullSyncServiceTest extends TestCase
             $this->entityManager,
             new NullLogger(),
             $this->createMock(MessageBusInterface::class),
+            new AnimeRepository($this->entityManager),
+            new CachedFillerLookup(new ArrayAdapter()),
         );
         $duplicateDetector = new CrossVendorDuplicateDetector(
             $resolver,
