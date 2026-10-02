@@ -40,6 +40,7 @@ use App\Service\Plugin\Exception\AnimeAlreadyLinkedToDifferentExternalIdExceptio
 use App\Service\Plugin\Exception\ExternalIdAlreadyClaimedException;
 use App\Service\Plugin\Filler\BulkFillerService;
 use App\Service\Plugin\Filler\CachedFillerLookup;
+use App\Service\Plugin\Filler\FillResult;
 use App\Service\Plugin\FillerAvailabilityPresenter;
 use App\Service\Plugin\FillerRegistry;
 use App\Service\Plugin\InstalledPluginsRegistry;
@@ -102,6 +103,7 @@ final class AnimeSearchPluginsController
             'query' => trim((string) $request->query->get('q', '')),
             'hasActiveFiller' => $hasActiveFiller,
             'noFillerState' => $hasActiveFiller ? null : $this->fillerAvailability->describeUnavailable(),
+            'error' => $request->query->get('error') === 'fill_not_found' ? 'search_plugins.error_fill_not_found' : null,
         ]));
     }
 
@@ -271,7 +273,12 @@ final class AnimeSearchPluginsController
      * "Fill in the existing record" (issue #833, point 6's first button): links $externalId to
      * an already-catalogued record the user picked out of the possible-match suggestion and fills
      * only its still-empty fields, via {@see BulkFillerService::fillExistingFromPlugin()} (issue
-     * #832, point 10) — no separate "fill existing" logic lives in this controller.
+     * #832, point 10) — no separate "fill existing" logic lives in this controller. A
+     * {@see FillResult::NotFound} result (the plugin's findById() threw, returned nothing, or
+     * filling got disabled between the preview and this click) sends the user back to the search
+     * screen with an error instead of a silent redirect to a record that was never actually
+     * updated — the same "turn a non-Applied result into user-visible feedback" contract
+     * {@see AnimeFillController} already follows for its own single-field fill.
      */
     #[Route(
         '/anime/search-plugins/fill-existing/{animeId}',
@@ -295,9 +302,13 @@ final class AnimeSearchPluginsController
         }
 
         try {
-            $this->bulkFiller->fillExistingFromPlugin($anime, $pluginId, $externalId);
+            $result = $this->bulkFiller->fillExistingFromPlugin($anime, $pluginId, $externalId);
         } catch (ExternalIdAlreadyClaimedException|AnimeAlreadyLinkedToDifferentExternalIdException $exception) {
             throw new ConflictHttpException($exception->getMessage(), $exception);
+        }
+
+        if ($result === FillResult::NotFound) {
+            return new RedirectResponse($this->urlGenerator->generate('anime_search_plugins', ['error' => 'fill_not_found']));
         }
 
         return new RedirectResponse($this->urlGenerator->generate('anime_show', ['id' => $animeId]));

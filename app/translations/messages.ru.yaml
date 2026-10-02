@@ -543,6 +543,7 @@ search_plugins:
     group_error: Не удалось получить результаты.
     group_empty: Ничего не найдено.
     preview_error: Не удалось загрузить данные тайтла.
+    error_fill_not_found: Не удалось заполнить запись из этого источника. Попробуйте снова или выберите другого кандидата.
     preview_field_type: Тип
     preview_field_dates: Даты показа
     preview_field_episodes_count: Число эпизодов

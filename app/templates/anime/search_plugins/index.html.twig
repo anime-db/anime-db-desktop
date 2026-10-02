@@ -31,6 +31,10 @@
     <main class="search-plugins">
         <h1 class="search-plugins__heading">{{ 'search_plugins.heading'|trans }}</h1>
 
+        {% if error %}
+            <p class="alert alert-danger">{{ error|trans }}</p>
+        {% endif %}
+
         {% if not hasActiveFiller %}
             <p class="search-plugins__unavailable">
                 {{ ('search_plugins.unavailable_' ~ noFillerState.kind)|trans }}
@@ -49,7 +53,7 @@
                     type="search"
                     id="search-plugins-query"
                     name="q"
-                    class="search-plugins__input"
+                    class="search-plugins__input form-control"
                     value="{{ query }}"
                     placeholder="{{ 'search_plugins.name_label'|trans }}"
                     required

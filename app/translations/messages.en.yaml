@@ -543,6 +543,7 @@ search_plugins:
     group_error: Could not fetch results.
     group_empty: Nothing found.
     preview_error: Could not load the title's data.
+    error_fill_not_found: Could not fill in the record from this source. Try again or pick a different candidate.
     preview_field_type: Type
     preview_field_dates: Air dates
     preview_field_episodes_count: Episode count
