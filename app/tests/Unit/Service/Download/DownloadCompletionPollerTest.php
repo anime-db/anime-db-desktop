@@ -412,6 +412,7 @@ final class DownloadCompletionPollerTest extends TestCase
 
         $this->assertCount(1, $logged);
         $this->assertStringContainsString(\sprintf('anime #%d', $first->id), $logged[0]['message']);
+        $this->assertStringContainsString('app:downloads:unlink', $logged[0]['message']);
         $this->assertSame($secondHash, $logged[0]['context']['infoHash']);
         $this->assertSame(self::ROOT.'\\season-pack', $logged[0]['context']['contentPath']);
         $this->assertSame($first->id, $logged[0]['context']['occupyingAnimeId']);

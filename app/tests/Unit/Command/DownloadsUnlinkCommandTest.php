@@ -291,23 +291,27 @@ final class DownloadsUnlinkCommandTest extends TestCase
         $this->assertSame('shared-pack', $animeB->getStoragePath());
     }
 
-    public function testUnlinkFailsAndRetainsTheRowWhenThePollerCompletedItConcurrently(): void
+    public function testUnlinkRollsBackTheClearedPointerWhenTheRowVersionChangedConcurrently(): void
     {
         $anime = $this->persistAnime('Anime A');
-        $this->repository->save(new Download(self::HASH, $anime));
         $storage = $this->persistStorage();
+        $anime->setStorage($storage)->setStoragePath('some-release');
+        $this->entityManager->flush();
+        $this->persistCompletedDownload(self::HASH, $anime, $storage, 'some-release');
 
-        // A repository whose findByInfoHashAndAnime() hands the command a row it read while the
-        // download was still Pending, but then — simulating a DownloadCompletionPoller pass that
-        // completed it in between — mutates the same row's status/snapshot/version directly in the
-        // database before the command gets to delete it, exactly as issue #837's "reverse order"
-        // race describes.
+        // A repository whose findByInfoHashAndAnime() hands the command a row it just read, but
+        // then — simulating a concurrent writer touching the same row, exactly as issue #837's
+        // race between DownloadCompletionPoller and app:downloads:unlink describes — bumps that
+        // row's version directly in the database before the command gets to delete it. The
+        // in-memory Download the command works with already carries a snapshot matching the
+        // anime's pointer, so releaseIfOwnedBy() clears it and flush() writes that clear inside
+        // the transaction; the version-checked DELETE below must then fail and roll the whole
+        // transaction back, including that pointer clear.
         $connection = $this->entityManager->getConnection();
-        $racedRepository = new class($this->entityManager, $connection, $storage) extends DownloadRepository {
+        $racedRepository = new class($this->entityManager, $connection) extends DownloadRepository {
             public function __construct(
                 EntityManagerInterface $entityManager,
                 private readonly Connection $connection,
-                private readonly Storage $storage,
             ) {
                 parent::__construct($entityManager);
             }
@@ -316,10 +320,7 @@ final class DownloadsUnlinkCommandTest extends TestCase
             {
                 $download = parent::findByInfoHashAndAnime($infoHash, $animeId);
                 if ($download !== null) {
-                    $this->connection->executeStatement(
-                        'UPDATE downloads SET status = ?, storage_id = ?, storage_path = ?, version = version + 1 WHERE id = ?',
-                        ['completed', $this->storage->id, 'raced-release', $download->id],
-                    );
+                    $this->connection->executeStatement('UPDATE downloads SET version = version + 1 WHERE id = ?', [$download->id]);
                 }
 
                 return $download;
@@ -337,7 +338,12 @@ final class DownloadsUnlinkCommandTest extends TestCase
         $this->assertNotNull($stillThere);
         $this->assertTrue($stillThere->isCompleted());
         $this->assertSame(2, $stillThere->getVersion());
-        $this->assertNull($anime->getStorage());
-        $this->assertNull($anime->getStoragePath());
+
+        // Read back from the database (not the detached in-memory $anime) to prove the rollback
+        // actually undid the pointer clear, not just that the DELETE was skipped.
+        $reloadedAnime = $this->entityManager->find(TvAnime::class, $anime->id);
+        $this->assertNotNull($reloadedAnime);
+        $this->assertSame($storage->id, $reloadedAnime->getStorage()?->id);
+        $this->assertSame('some-release', $reloadedAnime->getStoragePath());
     }
 }
