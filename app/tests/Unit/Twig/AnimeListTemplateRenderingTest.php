@@ -187,6 +187,8 @@ final class AnimeListTemplateRenderingTest extends KernelTestCase
             'singleScannableStorageId' => null,
             'widgets' => [],
             'collapsedFilterSections' => [],
+            'hasActiveFillerPlugin' => false,
+            'noFillerState' => ['kind' => 'not_installed', 'url' => '/settings/market'],
         ], $context));
     }
 
