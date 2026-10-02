@@ -183,7 +183,7 @@ final class TranslationCoverageService
         }
 
         $translationsDir = $pluginDir.\DIRECTORY_SEPARATOR.'translations';
-        $pattern = '/^'.preg_quote($pluginId, '/').'\.([a-zA-Z_-]+)\.yaml$/';
+        $pattern = '/^'.preg_quote($pluginId, '/').'\.([a-zA-Z_-]+)\.yaml\z/';
 
         $locales = [];
         foreach (glob($translationsDir.'/'.$pluginId.'.*.yaml') ?: [] as $file) {
