@@ -27,6 +27,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Service\Download;
 
+use AnimeDb\PluginContracts\Download\DownloadAlreadyLinkedToAnotherAnimeException;
 use AnimeDb\PluginContracts\Download\DownloadSource;
 use AnimeDb\PluginContracts\Model\AnimeId;
 use App\Command\DownloadsUnlinkCommand;
@@ -43,7 +44,6 @@ use App\Service\Download\FreeSpaceProvider;
 use App\Service\Download\NativeFreeSpaceProvider;
 use App\Service\Download\QbittorrentDownloadService;
 use App\Service\Download\TorrentInfoHashResolver;
-use App\Service\Exception\DownloadAlreadyLinkedToAnotherAnimeException;
 use App\Service\Exception\InsufficientDiskSpaceException;
 use App\Service\Qbittorrent\QbittorrentClient;
 use Doctrine\DBAL\DriverManager;
@@ -231,7 +231,8 @@ final class QbittorrentDownloadServiceTest extends TestCase
             $service->enqueue($source, new AnimeId((int) $animeTwo->id));
             $this->fail('Expected DownloadAlreadyLinkedToAnotherAnimeException to be thrown.');
         } catch (DownloadAlreadyLinkedToAnotherAnimeException $e) {
-            $this->assertSame((int) $animeOne->id, $e->occupyingAnimeId);
+            $this->assertSame(self::MAGNET_HASH, $e->infoHash);
+            $this->assertSame((int) $animeOne->id, $e->occupyingAnimeId->value);
             $this->assertStringContainsString('#'.$animeOne->id, $e->getMessage());
         }
 
