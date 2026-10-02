@@ -74,6 +74,35 @@ final class TorrentInfoHashResolver
         return bin2hex(sha1($this->extractInfoDictBytes($content), true));
     }
 
+    /**
+     * True when the "info" dictionary has no "pieces" key, i.e. the torrent is BitTorrent
+     * v2-only. "pieces" is present for both v1-only and hybrid (v1+v2) torrents — a hybrid keeps
+     * it for v1-compatible clients — so "meta version" alone cannot tell a v2-only torrent apart
+     * from a hybrid, since hybrids carry "meta version" too; "pieces" is the only reliable signal
+     * (issue #843).
+     */
+    public function isV2Only(string $content): bool
+    {
+        return !$this->infoDictHasTopLevelKey($content, 'pieces');
+    }
+
+    private function infoDictHasTopLevelKey(string $content, string $key): bool
+    {
+        $infoBytes = $this->extractInfoDictBytes($content);
+        $length = \strlen($infoBytes);
+        $pos = 1; // skip the dictionary's opening 'd'
+
+        while ($pos < $length && $infoBytes[$pos] !== 'e') {
+            [$currentKey, $pos] = $this->readString($infoBytes, $pos);
+            if ($currentKey === $key) {
+                return true;
+            }
+            $pos = $this->skipValue($infoBytes, $pos, 0);
+        }
+
+        return false;
+    }
+
     private function normalize(string $hash): string
     {
         if (\strlen($hash) === 40) {

@@ -40,6 +40,7 @@ use App\Entity\Enum\ThemeCode;
 use App\Entity\Enum\WatchStatus;
 use App\Entity\Label;
 use App\Entity\MovieAnime;
+use App\Entity\NameNormalizer;
 use App\Entity\Storage;
 use App\Entity\Studio;
 use App\Entity\TvAnime;
@@ -542,5 +543,71 @@ final class AnimeRepositoryTest extends TestCase
     public function testFindByIdsReturnsEmptyArrayForEmptyInput(): void
     {
         $this->assertSame([], $this->repository->findByIds([]));
+    }
+
+    /**
+     * Issue #833: unlike {@see AnimeRepository::findOrphanCandidatesByNormalizedName()}, this
+     * query is not restricted to storage-less orphans - a record already linked to a storage
+     * still matches by normalized title or alternative name.
+     */
+    public function testFindCandidatesByNormalizedNameExcludingPluginMatchesByTitleAndAlternativeName(): void
+    {
+        $shikimori = new PluginId('animedb-shikimori');
+
+        $storage = new Storage('Main', '/tmp', StorageType::Folder);
+        $this->entityManager->persist($storage);
+
+        // "Outlaw Star", not one of seedFixtures()'s own titles (which includes "Trigun"
+        // already), so this query's own matches are not polluted by the shared fixture data.
+        $byTitle = new TvAnime();
+        $byTitle->setTitle('Outlaw Star')->setWatchStatus(WatchStatus::Plan);
+        $byTitle->setStorage($storage)->setStoragePath('Outlaw Star');
+
+        $byAlternativeName = new TvAnime();
+        $byAlternativeName->setTitle('Something Else')->setWatchStatus(WatchStatus::Plan);
+        $byAlternativeName->addName('Outlaw Star', null, AnimeNameRole::Synonym);
+
+        $unrelated = new TvAnime();
+        $unrelated->setTitle('Bleach')->setWatchStatus(WatchStatus::Plan);
+
+        foreach ([$byTitle, $byAlternativeName, $unrelated] as $anime) {
+            $this->entityManager->persist($anime);
+        }
+        $this->entityManager->flush();
+
+        $result = $this->repository->findCandidatesByNormalizedNameExcludingPlugin(NameNormalizer::normalize('Outlaw Star'), $shikimori);
+
+        // Compared by id, not by object identity/equality (Anime <-> AnimeName carries a back
+        // reference, and PHPUnit's comparator recursing into that cycle while building a failure
+        // diff is prohibitively slow) - same reasoning as every other id-keyed assertion below.
+        $this->assertSame([$byTitle->id, $byAlternativeName->id], array_map(static fn (Anime $anime): ?int => $anime->id, $result));
+    }
+
+    /**
+     * Issue #833, point 6: a record whose externalId for *this* plugin is already known is the
+     * "already in the catalog" case (resolve()), not the softer "possibly the same title"
+     * suggestion - it must be excluded here even though its title still matches.
+     */
+    public function testFindCandidatesByNormalizedNameExcludingPluginExcludesAnimeAlreadyLinkedToThatPlugin(): void
+    {
+        $shikimori = new PluginId('animedb-shikimori');
+        $mal = new PluginId('animedb-mal');
+
+        $linkedToShikimori = new TvAnime();
+        $linkedToShikimori->setTitle('Outlaw Star')->setWatchStatus(WatchStatus::Plan);
+        $linkedToShikimori->rememberExternalId($shikimori, '1');
+
+        $linkedToOtherPlugin = new TvAnime();
+        $linkedToOtherPlugin->setTitle('Outlaw Star')->setWatchStatus(WatchStatus::Plan);
+        $linkedToOtherPlugin->rememberExternalId($mal, '1');
+
+        foreach ([$linkedToShikimori, $linkedToOtherPlugin] as $anime) {
+            $this->entityManager->persist($anime);
+        }
+        $this->entityManager->flush();
+
+        $result = $this->repository->findCandidatesByNormalizedNameExcludingPlugin(NameNormalizer::normalize('Outlaw Star'), $shikimori);
+
+        $this->assertSame([$linkedToOtherPlugin->id], array_map(static fn (Anime $anime): ?int => $anime->id, $result));
     }
 }

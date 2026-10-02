@@ -187,6 +187,8 @@ final class AnimeListTemplateRenderingTest extends KernelTestCase
             'singleScannableStorageId' => null,
             'widgets' => [],
             'collapsedFilterSections' => [],
+            'hasActiveFillerPlugin' => false,
+            'noFillerState' => ['kind' => 'not_installed', 'url' => '/settings/market'],
         ], $context));
     }
 
@@ -207,6 +209,38 @@ final class AnimeListTemplateRenderingTest extends KernelTestCase
         $this->assertStringNotContainsString('anime-list__toolbar', $html);
         $this->assertStringNotContainsString('id="anime-list-sort"', $html);
         $this->assertStringNotContainsString('anime-list__filters"', $html);
+    }
+
+    /**
+     * Issue #833, point 2: the empty-catalog "Search in plugins" card must link straight to the
+     * search screen when a filler plugin is active — a mutation removing this branch's link
+     * entirely survived every other test in the suite because nothing asserted on this card's
+     * own href.
+     */
+    public function testEmptyCatalogSearchPluginsCardLinksToTheSearchScreenWhenAFillerPluginIsActive(): void
+    {
+        $html = $this->renderList([
+            'showOnboarding' => true,
+            'hasActiveFillerPlugin' => true,
+        ]);
+
+        $this->assertStringContainsString('href="/anime/search-plugins"', $html);
+    }
+
+    /**
+     * Same card, the other branch: no active filler plugin — it must link to noFillerState's own
+     * URL (the market, here) instead, and never to the search screen.
+     */
+    public function testEmptyCatalogSearchPluginsCardLinksToTheMarketWhenNoFillerPluginIsActive(): void
+    {
+        $html = $this->renderList([
+            'showOnboarding' => true,
+            'hasActiveFillerPlugin' => false,
+            'noFillerState' => ['kind' => 'not_installed', 'url' => '/settings/market'],
+        ]);
+
+        $this->assertStringContainsString('href="/settings/market"', $html);
+        $this->assertStringNotContainsString('href="/anime/search-plugins"', $html);
     }
 
     /**

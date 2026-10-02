@@ -43,6 +43,14 @@ use Symfony\Contracts\HttpClient\ResponseInterface;
  */
 final class QbittorrentClient
 {
+    /**
+     * Tag applied to every torrent this app adds (issue #843) — lets
+     * {@see \App\Service\Download\DownloadCompletionPoller} fetch only its own torrents with a
+     * single `torrents/info?tag=` request per poll pass, instead of one `hashes=` request per
+     * pending download.
+     */
+    public const string TAG = 'animedb';
+
     public function __construct(
         private readonly HttpClientInterface $httpClient,
         private readonly string $baseUrl,
@@ -51,7 +59,7 @@ final class QbittorrentClient
 
     public function addTorrentFromMagnet(string $magnetUri, ?string $savePath = null): void
     {
-        $fields = ['urls' => $magnetUri];
+        $fields = ['urls' => $magnetUri, 'tags' => self::TAG];
         if ($savePath !== null) {
             $fields['savepath'] = $savePath;
         }
@@ -62,7 +70,7 @@ final class QbittorrentClient
     public function addTorrentFromFile(string $filename, string $content, ?string $savePath = null): void
     {
         $boundary = bin2hex(random_bytes(16));
-        $fields = [];
+        $fields = ['tags' => self::TAG];
         if ($savePath !== null) {
             $fields['savepath'] = $savePath;
         }
@@ -76,9 +84,9 @@ final class QbittorrentClient
     /**
      * @return list<array<string, mixed>>
      */
-    public function getTorrentsInfo(?string $hash = null): array
+    public function getTorrentsInfo(?string $tag = null): array
     {
-        $query = $hash !== null ? ['hashes' => $hash] : [];
+        $query = $tag !== null ? ['tag' => $tag] : [];
 
         return $this->requestJsonList('GET', '/api/v2/torrents/info', ['query' => $query]);
     }

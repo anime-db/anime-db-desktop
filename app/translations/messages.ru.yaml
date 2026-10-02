@@ -532,9 +532,40 @@ storage_scan_prompt:
     scan_button: Запустить сканирование
     skip_link: Пропустить
 
+search_plugins:
+    title: Найти в плагинах — AnimeDB
+    heading: Найти в плагинах
+    name_label: Название тайтла
+    search_button: Найти
+    loading: Поиск…
+    enter_query_hint: Введите название и нажмите «Найти».
+    group_loading: Загрузка…
+    group_error: Не удалось получить результаты.
+    group_empty: Ничего не найдено.
+    preview_error: Не удалось загрузить данные тайтла.
+    error_fill_not_found: Не удалось заполнить запись из этого источника. Попробуйте снова или выберите другого кандидата.
+    preview_field_type: Тип
+    preview_field_dates: Даты показа
+    preview_field_episodes_count: Число эпизодов
+    preview_field_genres: Жанры
+    already_in_catalog_link: Уже в каталоге →
+    possible_match_heading: 'Возможно, уже в каталоге: %title%'
+    fill_existing_button: Заполнить существующую
+    create_new_button: Создать новую
+    add_button: Добавить в каталог
+    unavailable_not_installed: Ни один плагин-источник не установлен.
+    unavailable_not_installed_link: Открыть маркет
+    unavailable_disabled: Поиск по источникам выключен для всех установленных плагинов.
+    unavailable_disabled_link: Настроить плагины
+
 onboarding:
     heading: Каталог пуст
-    description: Добавьте хранилище с файлами аниме или загрузите демо-данные, чтобы начать.
+    description: Добавьте хранилище с файлами аниме, загрузите демо-данные или найдите тайтл в плагинах-источниках, чтобы начать.
+    search_plugins_heading: Найти в плагинах
+    search_plugins_description: Найдите тайтл по названию во внешних источниках и добавьте его в каталог.
+    search_plugins_button: Найти в плагинах
+    search_plugins_unavailable_not_installed_button: Открыть маркет
+    search_plugins_unavailable_disabled_button: Настроить плагины
     add_storage_heading: Добавить хранилище
     add_storage_description: Укажите папку с файлами аниме, чтобы находить записи автоматически.
     add_storage_button: Добавить хранилище

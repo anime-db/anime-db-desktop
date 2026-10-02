@@ -36,6 +36,7 @@ use App\Repository\StorageRepository;
 use App\Service\AppConfigStore;
 use App\Service\AppSettingsProvider;
 use App\Service\Plugin\CatalogWidgetRegistry;
+use App\Service\Plugin\FillerAvailabilityPresenter;
 use App\Service\Plugin\PluginsConfigStore;
 use App\Tests\Fixtures\Plugin\Widget\FakeCatalogWidget;
 use PHPUnit\Framework\TestCase;
@@ -50,6 +51,20 @@ final class HomeControllerTest extends TestCase
     }
 
     /**
+     * Default: no active filler plugin, resolved to the "not installed" state — matches the
+     * default empty $fillerIds/no-plugins-installed fixture every existing test here already
+     * implies.
+     */
+    private function createNoActiveFillerPresenter(): FillerAvailabilityPresenter
+    {
+        $presenter = $this->createStub(FillerAvailabilityPresenter::class);
+        $presenter->method('hasActiveFiller')->willReturn(false);
+        $presenter->method('describeUnavailable')->willReturn(['kind' => 'not_installed', 'url' => '/settings/market']);
+
+        return $presenter;
+    }
+
+    /**
      * @param Storage[] $scannableStorages only read by the controller when $hasAnime is false —
      *                                     see the ternary in HomeController::index()
      */
@@ -59,6 +74,7 @@ final class HomeControllerTest extends TestCase
         ?CatalogWidgetRegistry $catalogWidgets = null,
         ?AppSettingsProvider $settings = null,
         array $scannableStorages = [],
+        ?FillerAvailabilityPresenter $fillerAvailability = null,
     ): HomeController {
         $storages = $this->createMock(StorageRepository::class);
         if ($hasAnime) {
@@ -78,6 +94,7 @@ final class HomeControllerTest extends TestCase
             $animeRepository,
             $catalogWidgets ?? $this->createEmptyCatalogWidgets(),
             $settings ?? new AppSettingsProvider(new AppConfigStore(sys_get_temp_dir().'/home-controller-settings-test-'.uniqid().'.json')),
+            $fillerAvailability ?? $this->createNoActiveFillerPresenter(),
         );
     }
 
@@ -92,6 +109,8 @@ final class HomeControllerTest extends TestCase
                 'singleScannableStorageId' => null,
                 'widgets' => [],
                 'collapsedFilterSections' => [],
+                'hasActiveFillerPlugin' => false,
+                'noFillerState' => ['kind' => 'not_installed', 'url' => '/settings/market'],
             ])
             ->willReturn('<html></html>');
 
@@ -121,6 +140,8 @@ final class HomeControllerTest extends TestCase
                 'singleScannableStorageId' => 7,
                 'widgets' => [],
                 'collapsedFilterSections' => [],
+                'hasActiveFillerPlugin' => false,
+                'noFillerState' => ['kind' => 'not_installed', 'url' => '/settings/market'],
             ])
             ->willReturn('<html></html>');
 
@@ -149,6 +170,8 @@ final class HomeControllerTest extends TestCase
                 'singleScannableStorageId' => null,
                 'widgets' => [],
                 'collapsedFilterSections' => [],
+                'hasActiveFillerPlugin' => false,
+                'noFillerState' => ['kind' => 'not_installed', 'url' => '/settings/market'],
             ])
             ->willReturn('<html></html>');
 
@@ -167,6 +190,8 @@ final class HomeControllerTest extends TestCase
                 'singleScannableStorageId' => null,
                 'widgets' => [],
                 'collapsedFilterSections' => [],
+                'hasActiveFillerPlugin' => false,
+                'noFillerState' => null,
             ])
             ->willReturn('<html></html>');
 
@@ -194,6 +219,8 @@ final class HomeControllerTest extends TestCase
                 'singleScannableStorageId' => null,
                 'widgets' => [],
                 'collapsedFilterSections' => ['genres', 'studios'],
+                'hasActiveFillerPlugin' => false,
+                'noFillerState' => null,
             ])
             ->willReturn('<html></html>');
 
@@ -248,6 +275,8 @@ final class HomeControllerTest extends TestCase
                     'pluginName' => 'animedb-shikimori',
                 ]],
                 'collapsedFilterSections' => [],
+                'hasActiveFillerPlugin' => false,
+                'noFillerState' => null,
             ])
             ->willReturn('<html></html>');
 
@@ -258,5 +287,64 @@ final class HomeControllerTest extends TestCase
             unlink($pluginsDir.'/plugins.json');
             rmdir($pluginsDir);
         }
+    }
+
+    /**
+     * Acceptance (issue #833): with at least one active filler plugin, the empty-catalog "Search
+     * in plugins" card links straight to the screen — {@see FillerAvailabilityPresenter::describeUnavailable()}
+     * must not even be called in that case.
+     */
+    public function testIndexPassesActiveFillerFlagToTheEmptyCatalogCard(): void
+    {
+        $presenter = $this->createMock(FillerAvailabilityPresenter::class);
+        $presenter->expects($this->once())->method('hasActiveFiller')->willReturn(true);
+        $presenter->expects($this->never())->method('describeUnavailable');
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('anime/list.html.twig', [
+                'showOnboarding' => true,
+                'hasScannableStorage' => false,
+                'singleScannableStorageId' => null,
+                'widgets' => [],
+                'collapsedFilterSections' => [],
+                'hasActiveFillerPlugin' => true,
+                'noFillerState' => null,
+            ])
+            ->willReturn('<html></html>');
+
+        $controller = $this->createController(hasAnime: false, twig: $twig, fillerAvailability: $presenter);
+        $controller->index();
+    }
+
+    /**
+     * Acceptance (issue #833): a filler plugin installed but with filler disabled resolves to the
+     * "disabled" state — this is the half of the three-state signal
+     * {@see FillerAvailabilityPresenter::describeUnavailable()} itself (not this controller) is
+     * responsible for computing; here only that the controller forwards it unchanged.
+     */
+    public function testIndexPassesDisabledFillerStateToTheEmptyCatalogCard(): void
+    {
+        $presenter = $this->createStub(FillerAvailabilityPresenter::class);
+        $presenter->method('hasActiveFiller')->willReturn(false);
+        $presenter->method('describeUnavailable')->willReturn(['kind' => 'disabled', 'url' => '/settings/plugins/animedb-shikimori']);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('anime/list.html.twig', [
+                'showOnboarding' => true,
+                'hasScannableStorage' => false,
+                'singleScannableStorageId' => null,
+                'widgets' => [],
+                'collapsedFilterSections' => [],
+                'hasActiveFillerPlugin' => false,
+                'noFillerState' => ['kind' => 'disabled', 'url' => '/settings/plugins/animedb-shikimori'],
+            ])
+            ->willReturn('<html></html>');
+
+        $controller = $this->createController(hasAnime: false, twig: $twig, fillerAvailability: $presenter);
+        $controller->index();
     }
 }

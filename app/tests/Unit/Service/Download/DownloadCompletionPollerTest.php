@@ -48,7 +48,6 @@ use App\Service\Download\DownloadFolderJail;
 use App\Service\Download\FreeSpaceChecker;
 use App\Service\Download\FreeSpaceProvider;
 use App\Service\Download\NativeFreeSpaceProvider;
-use App\Service\Exception\QbittorrentClientException;
 use App\Service\Qbittorrent\QbittorrentClient;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Types\Type;
@@ -60,7 +59,6 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
-use Symfony\Component\HttpClient\Exception\TransportException;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
@@ -179,6 +177,7 @@ final class DownloadCompletionPollerTest extends TestCase
 
         $poller = $this->makePoller([[
             'hash' => self::HASH,
+            'infohash_v1' => self::HASH,
             'progress' => 1,
             'state' => 'uploading',
             'content_path' => self::ROOT.'\\finished-release',
@@ -221,6 +220,7 @@ final class DownloadCompletionPollerTest extends TestCase
 
         $poller = $this->makePoller([[
             'hash' => self::HASH,
+            'infohash_v1' => self::HASH,
             'progress' => 1,
             'state' => 'uploading',
             'content_path' => self::ROOT.'\\finished-release',
@@ -255,6 +255,7 @@ final class DownloadCompletionPollerTest extends TestCase
 
         $poller = $this->makePoller([[
             'hash' => self::HASH,
+            'infohash_v1' => self::HASH,
             'progress' => $progress,
             'state' => $state,
             'content_path' => self::ROOT.'\\'.$case,
@@ -281,34 +282,29 @@ final class DownloadCompletionPollerTest extends TestCase
         // the wedged pair's DownloadPathOutsideJailException must not dispatch anything for it.
         $eventDispatcher = $this->dispatcherCapturingEvents(2, $dispatched);
 
-        // A real qBittorrent WebUI filters /api/v2/torrents/info by the "hashes" query param sent
-        // per infoHash — this mock has to do the same instead of returning a fixed body for every
-        // request, otherwise a poll() that queries two distinct pending infoHashes could not be
-        // told apart here.
-        $torrentsByHash = [
-            $wedgedHash => [
-                'hash' => $wedgedHash,
-                'progress' => 1,
-                'state' => 'uploading',
-                'content_path' => 'D:\\elsewhere\\moved-away',
-            ],
-            self::HASH => [
-                'hash' => self::HASH,
-                'progress' => 1,
-                'state' => 'uploading',
-                'content_path' => self::ROOT.'\\finished-release',
-            ],
-        ];
-        $httpClient = new MockHttpClient(function (string $method, string $url) use ($torrentsByHash): MockResponse {
-            parse_str((string) parse_url($url, \PHP_URL_QUERY), $query);
-            $requestedHash = $query['hashes'] ?? null;
-            $torrent = \is_string($requestedHash) ? $torrentsByHash[$requestedHash] ?? null : null;
-
-            return new MockResponse(
-                json_encode($torrent === null ? [] : [$torrent], \JSON_THROW_ON_ERROR),
-                ['response_headers' => ['content-type' => 'application/json']],
-            );
-        });
+        // One /api/v2/torrents/info?tag= request per pass now returns every one of this app's
+        // torrents at once (issue #843) — the mock must not filter by a "hashes" query param
+        // (qBittorrent itself cannot find a hybrid torrent that way, see class docblock), so both
+        // fixtures are always returned together and matched in-process by "infohash_v1".
+        $httpClient = new MockHttpClient(static fn (): MockResponse => new MockResponse(
+            json_encode([
+                [
+                    'hash' => $wedgedHash,
+                    'infohash_v1' => $wedgedHash,
+                    'progress' => 1,
+                    'state' => 'uploading',
+                    'content_path' => 'D:\\elsewhere\\moved-away',
+                ],
+                [
+                    'hash' => self::HASH,
+                    'infohash_v1' => self::HASH,
+                    'progress' => 1,
+                    'state' => 'uploading',
+                    'content_path' => self::ROOT.'\\finished-release',
+                ],
+            ], \JSON_THROW_ON_ERROR),
+            ['response_headers' => ['content-type' => 'application/json']],
+        ));
 
         $jail = new DownloadFolderJail(new AppSettingsProvider(new AppConfigStore($this->configPath)));
         $linker = new AnimeDownloadLinker(new StorageRepository($this->entityManager), new AnimeRepository($this->entityManager), $this->entityManager, $jail);
@@ -360,22 +356,18 @@ final class DownloadCompletionPollerTest extends TestCase
         // First and third complete (two events each); the conflicting second dispatches nothing.
         $eventDispatcher = $this->dispatcherCapturingEvents(4, $dispatched);
 
-        // Two different torrents whose content_path resolves to the same relative path.
-        $torrentsByHash = [
-            self::HASH => ['hash' => self::HASH, 'progress' => 1, 'state' => 'uploading', 'content_path' => self::ROOT.'\\season-pack'],
-            $secondHash => ['hash' => $secondHash, 'progress' => 1, 'state' => 'uploading', 'content_path' => self::ROOT.'\\season-pack'],
-            $thirdHash => ['hash' => $thirdHash, 'progress' => 1, 'state' => 'uploading', 'content_path' => self::ROOT.'\\other-release'],
-        ];
-        $httpClient = new MockHttpClient(function (string $method, string $url) use ($torrentsByHash): MockResponse {
-            parse_str((string) parse_url($url, \PHP_URL_QUERY), $query);
-            $requestedHash = $query['hashes'] ?? null;
-            $torrent = \is_string($requestedHash) ? $torrentsByHash[$requestedHash] ?? null : null;
-
-            return new MockResponse(
-                json_encode($torrent === null ? [] : [$torrent], \JSON_THROW_ON_ERROR),
-                ['response_headers' => ['content-type' => 'application/json']],
-            );
-        });
+        // Two different torrents whose content_path resolves to the same relative path. One
+        // /api/v2/torrents/info?tag= request per pass returns all three at once (issue #843); the
+        // mock must not filter by a "hashes" query param, matching instead happens in-process by
+        // "infohash_v1".
+        $httpClient = new MockHttpClient(static fn (): MockResponse => new MockResponse(
+            json_encode([
+                ['hash' => self::HASH, 'infohash_v1' => self::HASH, 'progress' => 1, 'state' => 'uploading', 'content_path' => self::ROOT.'\\season-pack'],
+                ['hash' => $secondHash, 'infohash_v1' => $secondHash, 'progress' => 1, 'state' => 'uploading', 'content_path' => self::ROOT.'\\season-pack'],
+                ['hash' => $thirdHash, 'infohash_v1' => $thirdHash, 'progress' => 1, 'state' => 'uploading', 'content_path' => self::ROOT.'\\other-release'],
+            ], \JSON_THROW_ON_ERROR),
+            ['response_headers' => ['content-type' => 'application/json']],
+        ));
 
         /** @var list<array{message: string, context: array<mixed>}> $logged */
         $logged = [];
@@ -426,6 +418,11 @@ final class DownloadCompletionPollerTest extends TestCase
 
     public function testPollStopsAndMarksFailedWhenAMagnetsKnownSizeDoesNotFitFreeSpace(): void
     {
+        // Deliberately different from self::HASH (this app's v1 infoHash): qBittorrent's own
+        // torrent id for a hybrid torrent is its truncated v2 hash, not the v1 hash — stop() must
+        // be addressed with THIS value, never self::HASH (issue #843).
+        $qbittorrentHash = 'dddddddddddddddddddddddddddddddddddddddd';
+
         $anime = $this->persistAnime();
         $this->downloads->save(new Download(self::HASH, $anime));
 
@@ -435,16 +432,17 @@ final class DownloadCompletionPollerTest extends TestCase
         $freeSpaceProvider = $this->createStub(FreeSpaceProvider::class);
         $freeSpaceProvider->method('getFreeBytes')->willReturn(100_000_000);
 
-        $stopCalls = 0;
-        $httpClient = new MockHttpClient(function (string $method, string $url) use (&$stopCalls): MockResponse {
+        $stopCalls = [];
+        $httpClient = new MockHttpClient(function (string $method, string $url, array $options) use (&$stopCalls, $qbittorrentHash): MockResponse {
             if ($method === 'POST' && str_contains($url, '/api/v2/torrents/stop')) {
-                ++$stopCalls;
+                $stopCalls[] = $options['body'];
             }
 
             return new MockResponse(
                 json_encode([[
                     // Not yet Completed — a magnet whose metadata just arrived, still downloading.
-                    'hash' => self::HASH,
+                    'hash' => $qbittorrentHash,
+                    'infohash_v1' => self::HASH,
                     'progress' => 0.4,
                     'state' => 'metaDL',
                     'size' => 500_000_000,
@@ -467,7 +465,8 @@ final class DownloadCompletionPollerTest extends TestCase
 
         $poller->poll();
 
-        $this->assertSame(1, $stopCalls);
+        $this->assertCount(1, $stopCalls);
+        $this->assertSame('hashes='.$qbittorrentHash, $stopCalls[0]);
         $stored = $this->downloads->findByInfoHashAndAnime(self::HASH, (int) $anime->id);
         $this->assertNotNull($stored);
         $this->assertTrue($stored->isFailed());
@@ -476,7 +475,7 @@ final class DownloadCompletionPollerTest extends TestCase
         // Once Failed, the row drops out of findDistinctPendingInfoHashes() — a second poll must
         // not stop (or log) it again.
         $poller->poll();
-        $this->assertSame(1, $stopCalls);
+        $this->assertCount(1, $stopCalls);
     }
 
     public function testPollDoesNotPauseWhenAMagnetsKnownSizeFitsFreeSpace(): void
@@ -492,6 +491,7 @@ final class DownloadCompletionPollerTest extends TestCase
 
         $poller = $this->makePoller([[
             'hash' => self::HASH,
+            'infohash_v1' => self::HASH,
             'progress' => 0.4,
             'state' => 'metaDL',
             'size' => 500_000_000,
@@ -528,9 +528,9 @@ final class DownloadCompletionPollerTest extends TestCase
         $pollIndex = 0;
         $torrentsByPoll = [
             // Metadata just arrived: nothing written yet, amount_left equals the full size.
-            [['hash' => self::HASH, 'progress' => 0.0, 'state' => 'metaDL', 'size' => 60_000_000_000, 'amount_left' => 60_000_000_000]],
+            [['hash' => self::HASH, 'infohash_v1' => self::HASH, 'progress' => 0.0, 'state' => 'metaDL', 'size' => 60_000_000_000, 'amount_left' => 60_000_000_000]],
             // 70% written: amount_left has shrunk in step with free space.
-            [['hash' => self::HASH, 'progress' => 0.7, 'state' => 'downloading', 'size' => 60_000_000_000, 'amount_left' => 18_000_000_000]],
+            [['hash' => self::HASH, 'infohash_v1' => self::HASH, 'progress' => 0.7, 'state' => 'downloading', 'size' => 60_000_000_000, 'amount_left' => 18_000_000_000]],
         ];
         $httpClient = new MockHttpClient(function () use (&$pollIndex, $torrentsByPoll): MockResponse {
             $response = new MockResponse(
@@ -563,48 +563,33 @@ final class DownloadCompletionPollerTest extends TestCase
     }
 
     /**
-     * The first infoHash qBittorrent is asked about fails with a transport error; every later one
-     * is a finished torrent. Returns the poller and records the hashes asked about, in order.
-     *
-     * @param list<string> $requested
+     * A DownloadRepository whose findPendingByInfoHash() throws for exactly one infoHash — the
+     * in-process failure poll() must isolate (class docblock) now that fetching torrents from
+     * qBittorrent is a single request per pass rather than one per pending infoHash; a transport
+     * failure on that shared request can no longer be isolated per-hash, so these tests simulate
+     * the isolation point that still exists: a per-hash DB error while completing a download.
      */
-    private function makePollerFailingOnFirstHash(
-        EventDispatcherInterface $eventDispatcher,
-        EntityManagerInterface $entityManager,
-        LoggerInterface $logger,
-        array &$requested,
-    ): DownloadCompletionPoller {
-        $httpClient = new MockHttpClient(static function (string $method, string $url) use (&$requested): MockResponse {
-            parse_str((string) parse_url($url, \PHP_URL_QUERY), $query);
-            $hash = \is_string($query['hashes'] ?? null) ? $query['hashes'] : '';
-            $requested[] = $hash;
-            if (\count($requested) === 1) {
-                throw new TransportException('qBittorrent is unreachable');
+    private function makeDownloadsFailingOnceForOneInfoHash(string $failingInfoHash): DownloadRepository
+    {
+        return new class($this->entityManager, $failingInfoHash) extends DownloadRepository {
+            private bool $failed = false;
+
+            public function __construct(EntityManagerInterface $entityManager, private readonly string $failingInfoHash)
+            {
+                parent::__construct($entityManager);
             }
 
-            return new MockResponse(
-                json_encode([[
-                    'hash' => $hash,
-                    'progress' => 1,
-                    'state' => 'uploading',
-                    'content_path' => self::ROOT.'\\finished-release',
-                ]], \JSON_THROW_ON_ERROR),
-                ['response_headers' => ['content-type' => 'application/json']],
-            );
-        });
+            public function findPendingByInfoHash(string $infoHash): array
+            {
+                if ($infoHash === $this->failingInfoHash && !$this->failed) {
+                    $this->failed = true;
 
-        $jail = new DownloadFolderJail(new AppSettingsProvider(new AppConfigStore($this->configPath)));
-        $linker = new AnimeDownloadLinker(new StorageRepository($this->entityManager), new AnimeRepository($this->entityManager), $this->entityManager, $jail);
+                    throw new \RuntimeException('database is locked');
+                }
 
-        return new DownloadCompletionPoller(
-            new QbittorrentClient($httpClient, self::BASE_URL),
-            $this->downloads,
-            $linker,
-            $eventDispatcher,
-            $entityManager,
-            new FreeSpaceChecker($jail, new NativeFreeSpaceProvider()),
-            $logger,
-        );
+                return parent::findPendingByInfoHash($infoHash);
+            }
+        };
     }
 
     public function testAnExceptionOnOneInfoHashDoesNotStopTheRestOfThePass(): void
@@ -619,24 +604,42 @@ final class DownloadCompletionPollerTest extends TestCase
         $dispatched = [];
         $eventDispatcher = $this->dispatcherCapturingEvents(2, $dispatched);
 
-        // The mock fails whichever pending infoHash is asked about first.
+        // Whichever pending infoHash is listed first fails to complete; the other must still
+        // complete and dispatch normally.
         $failedHash = $this->downloads->findDistinctPendingInfoHashes()[0];
+        $downloads = $this->makeDownloadsFailingOnceForOneInfoHash($failedHash);
+
         $logger = $this->createMock(LoggerInterface::class);
         $logger->expects($this->once())
             ->method('error')
             ->with(
                 $this->anything(),
                 $this->callback(static fn (array $context): bool => ($context['infoHash'] ?? null) === $failedHash
-                    && ($context['exceptionClass'] ?? null) === QbittorrentClientException::class),
+                    && ($context['exceptionClass'] ?? null) === \RuntimeException::class),
             );
 
-        $requested = [];
-        $poller = $this->makePollerFailingOnFirstHash($eventDispatcher, $this->entityManager, $logger, $requested);
+        $httpClient = new MockHttpClient(static fn (): MockResponse => new MockResponse(
+            json_encode([
+                ['hash' => self::HASH, 'infohash_v1' => self::HASH, 'progress' => 1, 'state' => 'uploading', 'content_path' => self::ROOT.'\\finished-release'],
+                ['hash' => $otherHash, 'infohash_v1' => $otherHash, 'progress' => 1, 'state' => 'uploading', 'content_path' => self::ROOT.'\\finished-release'],
+            ], \JSON_THROW_ON_ERROR),
+            ['response_headers' => ['content-type' => 'application/json']],
+        ));
+
+        $jail = new DownloadFolderJail(new AppSettingsProvider(new AppConfigStore($this->configPath)));
+        $linker = new AnimeDownloadLinker(new StorageRepository($this->entityManager), new AnimeRepository($this->entityManager), $this->entityManager, $jail);
+        $poller = new DownloadCompletionPoller(
+            new QbittorrentClient($httpClient, self::BASE_URL),
+            $downloads,
+            $linker,
+            $eventDispatcher,
+            $this->entityManager,
+            new FreeSpaceChecker($jail, new NativeFreeSpaceProvider()),
+            $logger,
+        );
 
         $poller->poll();
 
-        $this->assertCount(2, $requested);
-        $this->assertSame($failedHash, $requested[0]);
         $this->assertCount(2, $dispatched);
     }
 
@@ -655,19 +658,13 @@ final class DownloadCompletionPollerTest extends TestCase
         // Only the second hash completes.
         $eventDispatcher = $this->dispatcherCapturingEvents(2, $dispatched);
 
-        $httpClient = new MockHttpClient(static function (string $method, string $url): MockResponse {
-            parse_str((string) parse_url($url, \PHP_URL_QUERY), $query);
-
-            return new MockResponse(
-                json_encode([[
-                    'hash' => $query['hashes'] ?? '',
-                    'progress' => 1,
-                    'state' => 'uploading',
-                    'content_path' => self::ROOT.'\\finished-release',
-                ]], \JSON_THROW_ON_ERROR),
-                ['response_headers' => ['content-type' => 'application/json']],
-            );
-        });
+        $httpClient = new MockHttpClient(static fn (): MockResponse => new MockResponse(
+            json_encode([
+                ['hash' => self::HASH, 'infohash_v1' => self::HASH, 'progress' => 1, 'state' => 'uploading', 'content_path' => self::ROOT.'\\finished-release'],
+                ['hash' => $otherHash, 'infohash_v1' => $otherHash, 'progress' => 1, 'state' => 'uploading', 'content_path' => self::ROOT.'\\finished-release'],
+            ], \JSON_THROW_ON_ERROR),
+            ['response_headers' => ['content-type' => 'application/json']],
+        ));
 
         // findOneByPath() fails (as a DBAL error would) for the first link() only, i.e. after
         // markCompleted() but before link()'s own flush(); the EntityManager stays open.
@@ -710,8 +707,9 @@ final class DownloadCompletionPollerTest extends TestCase
 
     public function testPollStopsWithoutThrowingWhenTheEntityManagerIsClosedAfterAFailure(): void
     {
+        $otherHash = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
         $this->downloads->save(new Download(self::HASH, $this->persistAnime()));
-        $this->downloads->save(new Download('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', $this->persistAnime()));
+        $this->downloads->save(new Download($otherHash, $this->persistAnime()));
 
         $eventDispatcher = $this->createMock(EventDispatcherInterface::class);
         $eventDispatcher->expects($this->never())->method('dispatch');
@@ -725,16 +723,218 @@ final class DownloadCompletionPollerTest extends TestCase
             $messages[] = [(string) $message, $context];
         });
 
-        $requested = [];
-        $poller = $this->makePollerFailingOnFirstHash($eventDispatcher, $entityManager, $logger, $requested);
+        // Whichever pending infoHash is listed first fails every time it is asked to complete.
+        $failedHash = $this->downloads->findDistinctPendingInfoHashes()[0];
+        $downloads = new class($this->entityManager, $failedHash) extends DownloadRepository {
+            /** @var list<string> */
+            public array $calls = [];
+
+            public function __construct(EntityManagerInterface $entityManager, private readonly string $failingInfoHash)
+            {
+                parent::__construct($entityManager);
+            }
+
+            public function findPendingByInfoHash(string $infoHash): array
+            {
+                $this->calls[] = $infoHash;
+                if ($infoHash === $this->failingInfoHash) {
+                    throw new \RuntimeException('database is locked');
+                }
+
+                return parent::findPendingByInfoHash($infoHash);
+            }
+        };
+
+        $httpClient = new MockHttpClient(static fn (): MockResponse => new MockResponse(
+            json_encode([
+                ['hash' => self::HASH, 'infohash_v1' => self::HASH, 'progress' => 1, 'state' => 'uploading', 'content_path' => self::ROOT.'\\finished-release'],
+                ['hash' => $otherHash, 'infohash_v1' => $otherHash, 'progress' => 1, 'state' => 'uploading', 'content_path' => self::ROOT.'\\finished-release'],
+            ], \JSON_THROW_ON_ERROR),
+            ['response_headers' => ['content-type' => 'application/json']],
+        ));
+
+        $jail = new DownloadFolderJail(new AppSettingsProvider(new AppConfigStore($this->configPath)));
+        $linker = new AnimeDownloadLinker(new StorageRepository($this->entityManager), new AnimeRepository($this->entityManager), $this->entityManager, $jail);
+        $poller = new DownloadCompletionPoller(
+            new QbittorrentClient($httpClient, self::BASE_URL),
+            $downloads,
+            $linker,
+            $eventDispatcher,
+            $entityManager,
+            new FreeSpaceChecker($jail, new NativeFreeSpaceProvider()),
+            $logger,
+        );
 
         $poller->poll();
 
-        $this->assertCount(1, $requested, 'The second infoHash must not be polled on a closed EntityManager.');
+        $this->assertCount(1, $downloads->calls, 'The second infoHash must not be polled on a closed EntityManager.');
         $this->assertCount(2, $messages);
-        $this->assertSame($requested[0], $messages[0][1]['infoHash']);
-        $this->assertSame(QbittorrentClientException::class, $messages[0][1]['exceptionClass']);
+        $this->assertSame($failedHash, $messages[0][1]['infoHash']);
+        $this->assertSame(\RuntimeException::class, $messages[0][1]['exceptionClass']);
         $this->assertStringContainsString('closed', $messages[1][0]);
         $this->assertSame(1, $messages[1][1]['remaining']);
+    }
+
+    /**
+     * qBittorrent 5.x (libtorrent 2) identifies a hybrid v1+v2 torrent by its truncated v2 hash,
+     * not this app's v1 infoHash (issue #843) — "hash" here is deliberately NOT self::HASH, while
+     * "infohash_v1" is, to prove matching happens on "infohash_v1" rather than on "hash".
+     */
+    public function testPollFindsAndCompletesAHybridTorrentWhoseQbittorrentHashDiffersFromInfoHashV1(): void
+    {
+        $truncatedV2Hash = 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
+        $anime = $this->persistAnime();
+        $this->downloads->save(new Download(self::HASH, $anime));
+
+        /** @var list<AnimeFilesChangedEvent|DownloadCompletedEvent> $dispatched */
+        $dispatched = [];
+        $eventDispatcher = $this->dispatcherCapturingEvents(2, $dispatched);
+
+        $poller = $this->makePoller([[
+            'hash' => $truncatedV2Hash,
+            'infohash_v1' => self::HASH,
+            'progress' => 1,
+            'state' => 'uploading',
+            'content_path' => self::ROOT.'\\hybrid-release',
+        ]], $eventDispatcher);
+
+        $poller->poll();
+
+        $stored = $this->downloads->findByInfoHashAndAnime(self::HASH, (int) $anime->id);
+        $this->assertNotNull($stored);
+        $this->assertTrue($stored->isCompleted());
+        $this->assertCount(2, $dispatched);
+    }
+
+    /**
+     * A torrent with an empty "infohash_v1" (not one of ours, or qBittorrent reporting a stray
+     * entry without it) must not match any pending row — it is simply skipped (issue #843).
+     */
+    public function testPollDoesNotMatchAForeignTorrentWithAnEmptyInfoHashV1(): void
+    {
+        $anime = $this->persistAnime();
+        $this->downloads->save(new Download(self::HASH, $anime));
+
+        $eventDispatcher = $this->createMock(EventDispatcherInterface::class);
+        $eventDispatcher->expects($this->never())->method('dispatch');
+
+        $poller = $this->makePoller([[
+            'hash' => 'ffffffffffffffffffffffffffffffffffffffff',
+            'infohash_v1' => '',
+            'progress' => 1,
+            'state' => 'uploading',
+            'content_path' => self::ROOT.'\\someone-elses-release',
+        ]], $eventDispatcher);
+
+        $poller->poll();
+
+        $stored = $this->downloads->findByInfoHashAndAnime(self::HASH, (int) $anime->id);
+        $this->assertNotNull($stored);
+        $this->assertFalse($stored->isCompleted());
+        $this->assertSame(DownloadStatus::Pending, $stored->getStatus());
+    }
+
+    public function testPollMakesNoRequestWhenThereAreNoPendingDownloads(): void
+    {
+        $this->expectNotToPerformAssertions();
+
+        $httpClient = new MockHttpClient(static function (): never {
+            throw new \LogicException('No HTTP request was expected: there are no pending downloads.');
+        });
+
+        $jail = new DownloadFolderJail(new AppSettingsProvider(new AppConfigStore($this->configPath)));
+        $linker = new AnimeDownloadLinker(new StorageRepository($this->entityManager), new AnimeRepository($this->entityManager), $this->entityManager, $jail);
+        $poller = new DownloadCompletionPoller(
+            new QbittorrentClient($httpClient, self::BASE_URL),
+            $this->downloads,
+            $linker,
+            $this->createMock(EventDispatcherInterface::class),
+            $this->entityManager,
+            new FreeSpaceChecker($jail, new NativeFreeSpaceProvider()),
+            new NullLogger(),
+        );
+
+        $poller->poll();
+    }
+
+    public function testPollMakesExactlyOneTorrentsInfoRequestTaggedAnimedbPerPassWhenThereArePendingDownloads(): void
+    {
+        $otherHash = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+        $this->downloads->save(new Download(self::HASH, $this->persistAnime()));
+        $this->downloads->save(new Download($otherHash, $this->persistAnime()));
+
+        /** @var list<array{0: string, 1: string}> $requests */
+        $requests = [];
+        $httpClient = new MockHttpClient(function (string $method, string $url) use (&$requests): MockResponse {
+            $requests[] = [$method, $url];
+
+            return new MockResponse(json_encode([], \JSON_THROW_ON_ERROR), [
+                'response_headers' => ['content-type' => 'application/json'],
+            ]);
+        });
+
+        $jail = new DownloadFolderJail(new AppSettingsProvider(new AppConfigStore($this->configPath)));
+        $linker = new AnimeDownloadLinker(new StorageRepository($this->entityManager), new AnimeRepository($this->entityManager), $this->entityManager, $jail);
+        $poller = new DownloadCompletionPoller(
+            new QbittorrentClient($httpClient, self::BASE_URL),
+            $this->downloads,
+            $linker,
+            $this->createMock(EventDispatcherInterface::class),
+            $this->entityManager,
+            new FreeSpaceChecker($jail, new NativeFreeSpaceProvider()),
+            new NullLogger(),
+        );
+
+        $poller->poll();
+
+        $this->assertCount(1, $requests, 'Exactly one torrents/info request must be made per poll() pass, regardless of how many infoHashes are pending.');
+        [$method, $url] = $requests[0];
+        $this->assertSame('GET', $method);
+        $this->assertStringContainsString('/api/v2/torrents/info', $url);
+        parse_str((string) parse_url($url, \PHP_URL_QUERY), $query);
+        $this->assertSame(['tag' => QbittorrentClient::TAG], $query);
+    }
+
+    /**
+     * A torrent missing from qBittorrent's response (removed by hand in the WebUI, or its tag was
+     * removed) must not change the row's status, and must log its warning only once across
+     * several poll() passes — not on every 5-minute tick (issue #843).
+     */
+    public function testPollLeavesStatusUnchangedAndWarnsOnceForATorrentMissingAcrossSeveralPasses(): void
+    {
+        $anime = $this->persistAnime();
+        $this->downloads->save(new Download(self::HASH, $anime));
+
+        $eventDispatcher = $this->createMock(EventDispatcherInterface::class);
+        $eventDispatcher->expects($this->never())->method('dispatch');
+
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->once())
+            ->method('warning')
+            ->with($this->anything(), $this->callback(static fn (array $context): bool => ($context['infoHash'] ?? null) === self::HASH));
+
+        $httpClient = new MockHttpClient(static fn (): MockResponse => new MockResponse(json_encode([], \JSON_THROW_ON_ERROR), [
+            'response_headers' => ['content-type' => 'application/json'],
+        ]));
+
+        $jail = new DownloadFolderJail(new AppSettingsProvider(new AppConfigStore($this->configPath)));
+        $linker = new AnimeDownloadLinker(new StorageRepository($this->entityManager), new AnimeRepository($this->entityManager), $this->entityManager, $jail);
+        $poller = new DownloadCompletionPoller(
+            new QbittorrentClient($httpClient, self::BASE_URL),
+            $this->downloads,
+            $linker,
+            $eventDispatcher,
+            $this->entityManager,
+            new FreeSpaceChecker($jail, new NativeFreeSpaceProvider()),
+            $logger,
+        );
+
+        $poller->poll();
+        $poller->poll();
+        $poller->poll();
+
+        $stored = $this->downloads->findByInfoHashAndAnime(self::HASH, (int) $anime->id);
+        $this->assertNotNull($stored);
+        $this->assertSame(DownloadStatus::Pending, $stored->getStatus());
     }
 }

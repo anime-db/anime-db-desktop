@@ -29,7 +29,21 @@
                 <h2 class="anime-list__onboarding-heading">{{ 'onboarding.heading'|trans }}</h2>
                 <p class="anime-list__onboarding-description text-body-secondary">{{ 'onboarding.description'|trans }}</p>
 
-                <div class="anime-list__onboarding-cards row row-cols-1 row-cols-sm-2 g-3 justify-content-center mx-auto">
+                <div class="anime-list__onboarding-cards row row-cols-1 row-cols-sm-2 row-cols-lg-3 g-3 justify-content-center mx-auto">
+                    <div class="col">
+                        <div class="card h-100">
+                            <div class="card-body d-flex flex-column align-items-center text-center">
+                                {{ icon('search') }}
+                                <h3 class="card-title h6 mt-3">{{ 'onboarding.search_plugins_heading'|trans }}</h3>
+                                <p class="card-text text-body-secondary small flex-grow-1">{{ 'onboarding.search_plugins_description'|trans }}</p>
+                                {% if hasActiveFillerPlugin %}
+                                    <a href="{{ path('anime_search_plugins') }}" class="btn btn-primary">{{ 'onboarding.search_plugins_button'|trans }}</a>
+                                {% else %}
+                                    <a href="{{ noFillerState.url }}" class="btn btn-outline-primary">{{ ('onboarding.search_plugins_unavailable_' ~ noFillerState.kind ~ '_button')|trans }}</a>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
                     <div class="col">
                         <div class="card h-100">
                             <div class="card-body d-flex flex-column align-items-center text-center">

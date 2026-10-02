@@ -532,9 +532,40 @@ storage_scan_prompt:
     scan_button: Run scan
     skip_link: Skip
 
+search_plugins:
+    title: Search in plugins — AnimeDB
+    heading: Search in plugins
+    name_label: Title
+    search_button: Search
+    loading: Searching…
+    enter_query_hint: Enter a title and press "Search".
+    group_loading: Loading…
+    group_error: Could not fetch results.
+    group_empty: Nothing found.
+    preview_error: Could not load the title's data.
+    error_fill_not_found: Could not fill in the record from this source. Try again or pick a different candidate.
+    preview_field_type: Type
+    preview_field_dates: Air dates
+    preview_field_episodes_count: Episode count
+    preview_field_genres: Genres
+    already_in_catalog_link: Already in the catalog →
+    possible_match_heading: 'Possibly already in the catalog: %title%'
+    fill_existing_button: Fill in the existing record
+    create_new_button: Create new
+    add_button: Add to catalog
+    unavailable_not_installed: No source plugin is installed.
+    unavailable_not_installed_link: Open the market
+    unavailable_disabled: Search by source is disabled for every installed plugin.
+    unavailable_disabled_link: Configure plugins
+
 onboarding:
     heading: The catalog is empty
-    description: Add a storage with your anime files or load demo data to get started.
+    description: Add a storage with your anime files, load demo data, or search a source plugin for a title to get started.
+    search_plugins_heading: Search in plugins
+    search_plugins_description: Look up a title by name in external sources and add it to the catalog.
+    search_plugins_button: Search in plugins
+    search_plugins_unavailable_not_installed_button: Open the market
+    search_plugins_unavailable_disabled_button: Configure plugins
     add_storage_heading: Add storage
     add_storage_description: Point to a folder with your anime files so entries can be found automatically.
     add_storage_button: Add storage
