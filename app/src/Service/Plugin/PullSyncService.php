@@ -192,6 +192,19 @@ final class PullSyncService
                         $anime = $this->bulkFillerService->fillNewFrom($sync, $pluginId, $item->externalId);
                     } catch (ExternalIdAlreadyClaimedException $conflict) {
                         $recoveryEntityManager = $this->openRecoveryEntityManager();
+                        // Issue #839: BulkFillerService no longer closes $this->entityManager to
+                        // report this conflict (it links the external id via a DBAL `INSERT ...
+                        // ON CONFLICT DO NOTHING` instead of a failing ORM flush), so it is no
+                        // longer closing's own side effect (EntityManager::close() clears the
+                        // UnitOfWork first) that wipes $this->entityManager's identity map for
+                        // us. Without an explicit clear() here, $this->entityManager would still
+                        // hold whatever stale copy of the winning Anime it last loaded (e.g. the
+                        // very row $winner above was just persisted through), which this run's
+                        // every remaining update goes through $recoveryEntityManager instead —
+                        // a caller reusing this shared, request-scoped EntityManager after this
+                        // pull() returns needs a clean slate, not a copy this run's own recovery
+                        // writes never touch.
+                        $this->entityManager->clear();
                         $anime = $recoveryEntityManager->find(Anime::class, $conflict->animeId);
                     }
 

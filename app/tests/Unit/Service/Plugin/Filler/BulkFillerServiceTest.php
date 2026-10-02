@@ -41,6 +41,7 @@ use App\Entity\ValueObject\PluginId;
 use App\Message\DownloadAnimeMediaMessage;
 use App\Repository\AnimeRepository;
 use App\Repository\StudioRepository;
+use App\Service\Plugin\Exception\AnimeAlreadyLinkedToDifferentExternalIdException;
 use App\Service\Plugin\Exception\ExternalIdAlreadyClaimedException;
 use App\Service\Plugin\Filler\BulkFillerService;
 use App\Service\Plugin\Filler\CachedFillerLookup;
@@ -429,15 +430,15 @@ final class BulkFillerServiceTest extends TestCase
     }
 
     /**
-     * Regression guard (issue #832): a genuine concurrent create race — two calls resolving
-     * "not found" for the same (pluginId, externalId) before either has linked it — must not
-     * leave findOrCreateFromPlugin() throwing into a closed EntityManager; it must resolve the
-     * winner instead. Simulated on a *real* EntityManager/SQLite connection (not a mock), via an
-     * AnimeRepository double whose resolve() answers "not found" exactly once so the second,
-     * concurrent-in-spirit create attempt still hits the real anime_external_id UNIQUE
-     * constraint — the same technique this class's own
-     * testFillNewFromPluginCallsFindByIdOnlyOnceForRepeatedExternalId() already relies on to
-     * reach that constraint for fillNewFromPlugin().
+     * Regression guard (issue #839, originally #832): a genuine concurrent create race — two
+     * calls resolving "not found" for the same (pluginId, externalId) before either has linked
+     * it — must not leave findOrCreateFromPlugin() throwing into a closed EntityManager; it must
+     * resolve the winner instead, on an EntityManager a caller can still use afterwards.
+     * Simulated on a *real* EntityManager/SQLite connection (not a mock), via an AnimeRepository
+     * double whose resolve() answers "not found" exactly once so the second, concurrent-in-spirit
+     * create attempt still hits the real anime_external_id UNIQUE constraint — the same technique
+     * this class's own testFillNewFromPluginCallsFindByIdOnlyOnceForRepeatedExternalId() already
+     * relies on to reach that constraint for fillNewFromPlugin().
      */
     public function testFindOrCreateFromPluginResolvesTheWinnerWithoutClosingTheEntityManagerWhenARaceIsLost(): void
     {
@@ -485,14 +486,23 @@ final class BulkFillerServiceTest extends TestCase
         // this test is that the constraint, not a prior SELECT, is the authority (issue #297/#832).
         $result = $service->findOrCreateFromPlugin($pluginId, '104', 'Bleach');
 
-        // Doctrine closes the EntityManager for good as its own reaction to any failed flush —
-        // that is expected here, not a regression (see findOrCreateFromPlugin()'s own docblock).
-        // The invariant this test actually guards is narrower: no persist()/flush() happened
-        // *after* the conflict (which would throw EntityManagerClosed) — resolving the winner via
-        // a plain SELECT still works, and that is exactly what wasFound/anime below prove.
         $this->assertTrue($result->wasFound);
         $this->assertSame($winner?->id, $result->anime->id);
         $this->assertSame(1, \count($this->entityManager->getRepository(Anime::class)->findAll()));
+
+        // The whole point of issue #839: losing this race must not close the EntityManager (the
+        // create path links the external id via a DBAL `INSERT ... ON CONFLICT DO NOTHING`
+        // instead of an ORM flush — see BulkFillerService::persistAndLinkExternalId()), so a
+        // caller's own subsequent writes/flush() still work, exactly as they would have if this
+        // pair had simply resolved on the very first check.
+        $this->assertTrue($this->entityManager->isOpen());
+        $result->anime->setStoragePath('Bleach.mkv');
+        $this->entityManager->flush();
+
+        $this->entityManager->clear();
+        /** @var Anime $reloaded */
+        $reloaded = $this->entityManager->find(Anime::class, $winner?->id);
+        $this->assertSame('Bleach.mkv', $reloaded->getStoragePath());
     }
 
     public function testFillExistingFromPluginFillsOnlyEmptyFieldsAndNeverOverwritesAlreadyFilledOnes(): void
@@ -542,5 +552,120 @@ final class BulkFillerServiceTest extends TestCase
 
         $this->expectException(ExternalIdAlreadyClaimedException::class);
         $service->fillExistingFromPlugin($other, $pluginId, '104');
+    }
+
+    /**
+     * Regression guard (issue #839): $anime already carrying a *different* external id for the
+     * same plugin must refuse the new one outright rather than apply the new id's plugin data
+     * while leaving the old link untouched — which would otherwise mix two unrelated titles'
+     * data onto the same catalog record.
+     */
+    public function testFillExistingFromPluginThrowsWhenAnimeAlreadyHasADifferentExternalIdForThePlugin(): void
+    {
+        $pluginId = new PluginId('animedb-shikimori');
+
+        $anime = new TvAnime();
+        $anime->setTitle('Bleach')->setWatchStatus(WatchStatus::Plan);
+        $anime->rememberExternalId($pluginId, '104');
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+
+        $filler = $this->createMock(FillerInterface::class);
+        $filler->expects($this->never())->method('findById');
+
+        $service = $this->newService([(string) $pluginId => $filler]);
+
+        $this->expectException(AnimeAlreadyLinkedToDifferentExternalIdException::class);
+        $service->fillExistingFromPlugin($anime, $pluginId, '205');
+    }
+
+    /**
+     * Regression guard (issue #839): PluginAnimeDataMerger::applyDescriptions() merges by locale
+     * key alone (Anime::setDescription() upserts), so passing it straight through would overwrite
+     * a locale the user already filled in — contradicting this method's own "only empty fields"
+     * contract. A locale $anime has no text for yet is still filled in from the plugin.
+     */
+    public function testFillExistingFromPluginFillsOnlyMissingLocaleDescriptionsWithoutOverwritingAnExistingOne(): void
+    {
+        $pluginId = new PluginId('animedb-shikimori');
+        $data = new PluginAnimeData(title: 'Bleach', descriptions: ['ru' => 'Описание от плагина.', 'en' => 'Plugin summary.']);
+
+        $filler = $this->createStub(FillerInterface::class);
+        $filler->method('findById')->with('104')->willReturn($data);
+        $filler->method('getFillableFields')->willReturn(['title', 'descriptions']);
+
+        $anime = new TvAnime();
+        $anime->setTitle('Bleach')->setWatchStatus(WatchStatus::Plan);
+        $anime->setDescription('ru', 'Пользовательское описание.'); // already filled by the user — must survive
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+
+        $service = $this->newService([(string) $pluginId => $filler]);
+
+        $result = $service->fillExistingFromPlugin($anime, $pluginId, '104');
+
+        $this->assertSame(FillResult::Applied, $result);
+
+        $byLocale = [];
+        foreach ($anime->getDescriptions() as $description) {
+            $byLocale[$description->locale] = $description->description;
+        }
+        $this->assertSame('Пользовательское описание.', $byLocale['ru']);
+        $this->assertSame('Plugin summary.', $byLocale['en']);
+    }
+
+    /**
+     * Regression guard (issue #839): PluginAnimeDataMerger::applyImages() downloads every URL
+     * synchronously in the calling request — fine for build()'s own bulk-scan path, which never
+     * passes 'images' into apply() for exactly this reason, but fillExistingFromPlugin() used to
+     * pass it straight through, blocking a single-record "fill in" request on however many
+     * screenshots the plugin returned. Images are queued on the `media` bus instead, same as
+     * build() does for a freshly created Anime.
+     */
+    public function testFillExistingFromPluginQueuesImagesInsteadOfDownloadingThemSynchronously(): void
+    {
+        $pluginId = new PluginId('animedb-shikimori');
+        $data = new PluginAnimeData(title: 'Bleach', images: ['https://example.test/1.jpg', 'https://example.test/2.jpg']);
+
+        $filler = $this->createStub(FillerInterface::class);
+        $filler->method('findById')->with('104')->willReturn($data);
+        $filler->method('getFillableFields')->willReturn(['title', 'images']);
+
+        $anime = new TvAnime();
+        $anime->setTitle('Bleach')->setWatchStatus(WatchStatus::Plan);
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+        $animeId = $anime->id;
+
+        $mediaDownloader = $this->createMock(PluginMediaDownloaderInterface::class);
+        $mediaDownloader->expects($this->never())->method('download');
+
+        /** @var list<DownloadAnimeMediaMessage> $dispatched */
+        $dispatched = [];
+        $messageBus = $this->createMock(MessageBusInterface::class);
+        $messageBus->method('dispatch')->willReturnCallback(function (DownloadAnimeMediaMessage $message) use (&$dispatched): Envelope {
+            $dispatched[] = $message;
+
+            return new Envelope($message);
+        });
+
+        $service = new BulkFillerService(
+            new FillerRegistry([(string) $pluginId => $filler], new PluginsConfigStore('')),
+            new PluginAnimeDataMerger(new StudioRepository($this->entityManager), $this->entityManager, $mediaDownloader),
+            $this->entityManager,
+            new NullLogger(),
+            $messageBus,
+            $this->animeRepository,
+            new CachedFillerLookup(new ArrayAdapter()),
+        );
+
+        $result = $service->fillExistingFromPlugin($anime, $pluginId, '104');
+
+        $this->assertSame(FillResult::Applied, $result);
+        $this->assertCount(2, $dispatched);
+        $this->assertSame($animeId, $dispatched[0]->animeId);
+        $this->assertSame('https://example.test/1.jpg', $dispatched[0]->url);
+        $this->assertFalse($dispatched[0]->isCover);
+        $this->assertCount(0, $anime->getImages());
     }
 }

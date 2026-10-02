@@ -55,6 +55,7 @@ use App\Service\Storage\FilenameCleaner;
 use App\Service\Storage\OrphanAnimeMatcher;
 use App\Service\Storage\Scan\ScanCandidate;
 use App\Service\Storage\Scan\ScanItemType;
+use App\Service\Storage\Scan\ScanResultItem;
 use App\Service\Storage\ScanStorageService;
 use App\Service\Storage\Search\SearchByPluginChain;
 use App\Service\Storage\StorageMarkerService;
@@ -936,6 +937,108 @@ final class ScanStorageServiceTest extends TestCase
         // constraint), so the EntityManager was never closed.
         $this->assertTrue($this->entityManager->isOpen());
         $this->assertNotNull($storage->getDateUpdate());
+    }
+
+    /**
+     * Regression guard (issue #839): two top-level entries in the *same* scan resolving to the
+     * same plugin candidate (pluginId, externalId) — a genuine concurrent-in-spirit create race,
+     * same technique as BulkFillerServiceTest's own race regression test — must not close the
+     * EntityManager. Before the fix, the second entry's lost race read its "winner" through a
+     * closed EntityManager, so setStorage()/setStoragePath() on it looked fine but the scan's
+     * own final flush() (ScanStorageService::scan()) silently no-opped instead of persisting
+     * either entry's link, and every entry processed after the race would have failed too. Here
+     * the first entry's link must actually be persisted, and the second must be reported as a
+     * Conflict (the same title matched twice, from two different files) rather than a crash or a
+     * false AutoLinked.
+     */
+    public function testConcurrentCreateRaceWithinASingleScanDoesNotCloseTheEntityManagerAndStillPersistsTheWinner(): void
+    {
+        $dir = $this->makeStorageDir();
+        $this->touchFile($dir.'/Bleach.mkv');
+        $this->touchFile($dir.'/Bleach2.mkv');
+
+        $storage = new Storage('Main folder', $dir, StorageType::Folder);
+        $this->entityManager->persist($storage);
+        $this->entityManager->flush();
+
+        $pluginId = new PluginId('animedb-shikimori');
+
+        $racyAnimeRepository = new class($this->entityManager) extends AnimeRepository {
+            public int $calls = 0;
+
+            public function resolve(PluginId $pluginId, string $externalId): ?Anime
+            {
+                ++$this->calls;
+
+                return $this->calls <= 2 ? null : parent::resolve($pluginId, $externalId);
+            }
+        };
+
+        $filler = $this->createStub(FillerInterface::class);
+        $filler->method('findById')->with('104')->willReturn(new PluginAnimeData(title: 'Bleach'));
+        $filler->method('getFillableFields')->willReturn(['title']);
+
+        $bulkFillerService = new BulkFillerService(
+            new FillerRegistry([(string) $pluginId => $filler], new PluginsConfigStore('')),
+            new PluginAnimeDataMerger(
+                new StudioRepository($this->entityManager),
+                $this->entityManager,
+                $this->createStub(PluginMediaDownloaderInterface::class),
+            ),
+            $this->entityManager,
+            new NullLogger(),
+            $this->createMock(MessageBusInterface::class),
+            $racyAnimeRepository,
+            new CachedFillerLookup(new ArrayAdapter()),
+        );
+
+        // Both files resolve to the same plugin candidate regardless of their cleaned name.
+        $plugin = $this->createStub(SearchByPluginInterface::class);
+        $plugin->method('find')->willReturn([new SearchByPluginCandidate((string) $pluginId, 'Bleach', '104')]);
+        $pluginChain = new SearchByPluginChain(['test-plugin' => $plugin], new PluginsConfigStore(''));
+
+        $service = new ScanStorageService(
+            new StorageMarkerService($this->entityManager),
+            new FilenameCleaner(),
+            new OrphanAnimeMatcher($racyAnimeRepository),
+            $pluginChain,
+            $racyAnimeRepository,
+            $this->entityManager,
+            $bulkFillerService,
+            new NullLogger(),
+        );
+
+        $result = $service->scan($storage);
+
+        $this->assertTrue($this->entityManager->isOpen());
+        $this->assertCount(2, $result->items);
+
+        $autoLinked = array_values(array_filter($result->items, static fn (ScanResultItem $item): bool => $item->type === ScanItemType::AutoLinked));
+        $conflicts = array_values(array_filter($result->items, static fn (ScanResultItem $item): bool => $item->type === ScanItemType::Conflict));
+
+        // Finder does not guarantee which of the two files is processed first, so either one may
+        // end up the winner — what matters is that exactly one of them did, with the link
+        // actually recorded, and the other was reported as a conflict against it, not lost.
+        $this->assertCount(1, $autoLinked);
+        $this->assertCount(1, $conflicts);
+
+        $winnerItem = $autoLinked[0];
+        $conflictItem = $conflicts[0];
+        $winnerId = $winnerItem->anime?->id;
+
+        $this->assertSame($winnerId, $conflictItem->anime?->id);
+        $this->assertSame($winnerItem->storagePath, $conflictItem->alreadyLinkedStoragePath);
+
+        // The final markScanned()+flush() still ran (it is skipped, with a warning, only when
+        // the EntityManager was actually closed — see scan()'s own docblock), so the winner's
+        // storage link survived past this test's EntityManager, not just in memory.
+        $this->assertNotNull($storage->getDateUpdate());
+        $this->entityManager->clear();
+        $this->assertCount(1, $this->entityManager->getRepository(Anime::class)->findAll());
+        /** @var Anime $reloaded */
+        $reloaded = $this->entityManager->find(Anime::class, $winnerId);
+        $this->assertSame($winnerItem->storagePath, $reloaded->getStoragePath());
+        $this->assertSame('104', $reloaded->getCachedExternalId($pluginId));
     }
 
     /**

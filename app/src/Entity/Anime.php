@@ -686,6 +686,30 @@ abstract class Anime implements AggregateRootInterface
     }
 
     /**
+     * Attaches an AnimeExternalId row a caller already wrote to the database itself, bypassing
+     * the ORM, and already told Doctrine's UnitOfWork is managed (issue #839 —
+     * {@see \App\Service\Plugin\Filler\BulkFillerService} inserts via DBAL with `ON CONFLICT
+     * DO NOTHING` so the anime_external_id UNIQUE constraint never has to close the
+     * EntityManager to be enforced). Unlike rememberExternalId(), this never constructs a new
+     * row of its own — doing so here would add a second, *unmanaged* AnimeExternalId instance
+     * to the collection, which cascade persist would then schedule as a duplicate INSERT on the
+     * very next flush().
+     */
+    public function attachPersistedExternalId(AnimeExternalId $entry): self
+    {
+        foreach ($this->externalIds as $existing) {
+            if ($existing->pluginId === $entry->pluginId) {
+                $this->externalIds->removeElement($existing);
+                break;
+            }
+        }
+
+        $this->externalIds->add($entry);
+
+        return $this;
+    }
+
+    /**
      * Upserts the AnimeDescription row for $locale, the value getSummary() reads. An
      * existing row for the same locale is mutated in place (UPDATE), not replaced via
      * remove+add: the table has a UNIQUE(anime_id, locale) constraint, and Doctrine's
