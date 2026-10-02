@@ -27,6 +27,7 @@ declare(strict_types=1);
 
 namespace App\Service\Download;
 
+use AnimeDb\PluginContracts\Download\DownloadAlreadyLinkedToAnotherAnimeException;
 use AnimeDb\PluginContracts\Download\DownloadServiceInterface;
 use AnimeDb\PluginContracts\Download\DownloadSource;
 use AnimeDb\PluginContracts\Download\DownloadSourceType;
@@ -35,7 +36,6 @@ use AnimeDb\PluginContracts\Model\AnimeId;
 use App\Entity\Anime;
 use App\Entity\Download;
 use App\Repository\DownloadRepository;
-use App\Service\Exception\DownloadAlreadyLinkedToAnotherAnimeException;
 use App\Service\Exception\InvalidTorrentFileException;
 use App\Service\Qbittorrent\QbittorrentClient;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
@@ -83,7 +83,7 @@ final class QbittorrentDownloadService implements DownloadServiceInterface
         // Already linked to a DIFFERENT anime — one torrent folder must not back two anime records.
         $occupying = $this->downloads->findByInfoHash($infoHash)[0] ?? null;
         if ($occupying !== null) {
-            throw new DownloadAlreadyLinkedToAnotherAnimeException($infoHash, (int) $occupying->getAnime()->id);
+            throw new DownloadAlreadyLinkedToAnotherAnimeException($infoHash, new AnimeId((int) $occupying->getAnime()->id));
         }
 
         $this->submitToQbittorrent($source, $infoHash, $torrentFileContent);
@@ -105,7 +105,7 @@ final class QbittorrentDownloadService implements DownloadServiceInterface
                 throw $e;
             }
 
-            throw new DownloadAlreadyLinkedToAnotherAnimeException($infoHash, $occupyingId);
+            throw new DownloadAlreadyLinkedToAnotherAnimeException($infoHash, new AnimeId($occupyingId));
         }
 
         return new DownloadTaskId($infoHash);
