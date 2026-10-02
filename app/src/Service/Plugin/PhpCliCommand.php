@@ -83,7 +83,7 @@ final class PhpCliCommand
      */
     private static function build(string $phpBinary, string ...$arguments): array
     {
-        if (preg_match('/^frankenphp(\.exe)?$/i', basename($phpBinary)) === 1) {
+        if (preg_match('/^frankenphp(\.exe)?\z/i', basename($phpBinary)) === 1) {
             return array_values([$phpBinary, 'php-cli', ...$arguments]);
         }
 

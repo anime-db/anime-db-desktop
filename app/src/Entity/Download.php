@@ -48,7 +48,7 @@ use Doctrine\ORM\Mapping as ORM;
 #[ORM\Index(name: 'IDX_DOWNLOAD_ANIME', fields: ['anime'])]
 class Download
 {
-    private const INFO_HASH_PATTERN = '/^[0-9a-f]{40}$/';
+    private const INFO_HASH_PATTERN = '/^[0-9a-f]{40}\z/';
 
     #[ORM\Id, ORM\GeneratedValue, ORM\Column]
     public private(set) ?int $id = null;

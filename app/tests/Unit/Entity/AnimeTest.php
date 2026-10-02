@@ -648,6 +648,14 @@ final class AnimeTest extends TestCase
         $anime->setCountries(['JPN']);
     }
 
+    public function testSetCountriesRejectsCodeWithTrailingNewline(): void
+    {
+        $anime = new MovieAnime();
+
+        $this->expectException(InvalidCountryCodeException::class);
+        $anime->setCountries(["JP\n"]);
+    }
+
     public function testSetWatchStatusCompletedThrowsWhenAnnounced(): void
     {
         $anime = new MovieAnime();

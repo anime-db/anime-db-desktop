@@ -63,7 +63,7 @@ final class IconExtension extends AbstractExtension
      */
     public function render(string $name): string
     {
-        if (!preg_match('/^[a-z0-9-]+$/', $name) || !is_file($this->iconsDir.'/'.$name.'.svg')) {
+        if (!preg_match('/^[a-z0-9-]+\z/', $name) || !is_file($this->iconsDir.'/'.$name.'.svg')) {
             throw new UnknownIconException(\sprintf('Unknown icon "%s": no such file in %s.', $name, $this->iconsDir));
         }
 

@@ -326,6 +326,34 @@ final class InstalledPluginsRegistryTest extends TestCase
         $this->assertSame(['animedb-shikimori'], $this->ids($registry->enabled()));
     }
 
+    /**
+     * Same technique as {@see testReadIndexSkipsEntryWithRegionQualifiedLocaleAndKeepsOthers()}, but
+     * for a bare subtag with a trailing newline — PCRE's `$` anchor matches just before a final
+     * `\n`, so `/^[a-z]{2,3}$/` alone would accept it. The registry's locale check must reject it
+     * the same way it rejects a region-qualified locale.
+     */
+    public function testReadIndexSkipsEntryWithLocaleTrailingNewlineAndKeepsOthers(): void
+    {
+        $this->writeManifest('animedb-shikimori');
+        $this->writeManifest('animedb-translation-pack');
+
+        $registry = new InstalledPluginsRegistry($this->pluginsDir, $this->configStore(), new NullLogger());
+        $registry->reconcile();
+
+        $this->rewriteIndexLocales('animedb-translation-pack', ["ru\n"]);
+
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->exactly(2))->method('error')->with(
+            $this->stringContains('invalid index entry'),
+            $this->callback(static fn (array $context): bool => $context['pluginId'] === 'animedb-translation-pack'),
+        );
+
+        $registry = new InstalledPluginsRegistry($this->pluginsDir, $this->configStore(), $logger);
+
+        $this->assertSame(['animedb-shikimori'], $this->ids($registry->all()));
+        $this->assertSame(['animedb-shikimori'], $this->ids($registry->enabled()));
+    }
+
     public function testGetReturnsMatchingPlugin(): void
     {
         $this->writeManifest('animedb-shikimori');
