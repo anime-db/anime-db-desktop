@@ -533,9 +533,16 @@ storage_scan_prompt:
     skip_link: Skip
 
 onboarding:
-    heading: Welcome to AnimeDB
-    description: The catalog is empty. Add a storage with your anime files or load demo data to get started.
+    heading: The catalog is empty
+    description: Add a storage with your anime files or load demo data to get started.
+    add_storage_heading: Add storage
+    add_storage_description: Point to a folder with your anime files so entries can be found automatically.
     add_storage_button: Add storage
+    scan_storage_heading: Scan storage
+    scan_storage_description: Find anime already in a storage you've added.
+    scan_storage_button: Scan storage
+    load_demo_heading: Load demo data
+    load_demo_description: Fill the catalog with sample entries to see how it works.
     load_demo_button: Load demo data
 
 storage_edit:
