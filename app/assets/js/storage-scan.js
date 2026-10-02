@@ -32,7 +32,19 @@
         { type: 'AutoLinked', labelKey: 'storage_list.group_auto_linked' },
         { type: 'NeedsManualEntry', labelKey: 'storage_list.group_needs_manual_entry' },
         { type: 'NeedsConfirmation', labelKey: 'storage_list.group_needs_confirmation' },
+        { type: 'Conflict', labelKey: 'storage_list.group_conflict' },
+        { type: 'Error', labelKey: 'storage_list.group_error' },
     ];
+
+    // Carries the structured 409 conflict body (issue #832) through fetch()'s rejection path,
+    // distinguishing "the candidate is already in the catalog, linked elsewhere" from a plain
+    // network/server failure, which confirmCandidate()'s catch() below needs to render differently.
+    class ConflictError extends Error {
+        constructor(conflict) {
+            super('storage scan confirm conflict');
+            this.conflict = conflict;
+        }
+    }
 
     // Guards against a scan that finished (or is still running) before this page managed to
     // subscribe: without it a missed scan.progress/scan.done leaves the progress bar stuck at
@@ -137,16 +149,29 @@
         function confirmCandidate(item, candidate, li, radios, button) {
             button.disabled = true;
 
+            // A plugin candidate carries its real pluginId/externalId (issue #832) so the server
+            // can find-or-create by that pair instead of a bare title it could never dedupe the
+            // catalog by.
             const body = candidate.anime_id !== null
                 ? { token: confirmToken, storage_path: item.storage_path, anime_id: candidate.anime_id }
-                : { token: confirmToken, storage_path: item.storage_path, name: candidate.title };
+                : {
+                    token: confirmToken,
+                    storage_path: item.storage_path,
+                    plugin_id: candidate.plugin_id,
+                    external_id: candidate.external_id ?? '',
+                    name: candidate.title,
+                };
 
             fetch(confirmUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body),
             })
-                .then((response) => {
+                .then(async (response) => {
+                    if (response.status === 409) {
+                        const data = await response.json();
+                        throw new ConflictError(data.conflict);
+                    }
                     if (!response.ok) {
                         throw new Error(`Confirm request failed with status ${response.status}`);
                     }
@@ -155,11 +180,25 @@
                 })
                 .then(async (data) => {
                     li.replaceChildren();
-                    li.textContent = await window.AppTranslations.trans('storage_list.confirmed_text', {
-                        title: data.anime?.title ?? candidate.title,
-                    });
+                    const title = data.anime?.title ?? candidate.title;
+                    li.textContent = await window.AppTranslations.trans(
+                        data.filled_from_plugin === false
+                            ? 'storage_list.confirmed_without_plugin_data_text'
+                            : 'storage_list.confirmed_text',
+                        { title },
+                    );
                 })
-                .catch(async () => {
+                .catch(async (reason) => {
+                    if (reason instanceof ConflictError && reason.conflict) {
+                        li.replaceChildren();
+                        li.textContent = await window.AppTranslations.trans('storage_list.conflict_text', {
+                            title: reason.conflict.anime?.title ?? candidate.title,
+                            path: reason.conflict.storage_path ?? '',
+                        });
+
+                        return;
+                    }
+
                     button.disabled = false;
                     radios.forEach((radio) => { radio.disabled = false; });
 
@@ -225,6 +264,31 @@
             return li;
         }
 
+        async function buildConflictItem(item) {
+            const li = document.createElement('li');
+            li.className = 'list-group-item';
+            li.textContent = await window.AppTranslations.trans('storage_list.conflict_text', {
+                title: item.anime?.title ?? item.storage_path,
+                path: item.already_linked_storage_path ?? '',
+            });
+
+            return li;
+        }
+
+        async function buildErrorItem(item) {
+            const li = document.createElement('li');
+            li.className = 'list-group-item';
+            li.textContent = await window.AppTranslations.trans('storage_list.error_text', {
+                path: item.storage_path,
+                message: item.error_message ?? '',
+            });
+
+            return li;
+        }
+
+        // Every ScanItemType case is handled here (issue #832) — an item of a type this
+        // function does not recognize used to be silently dropped from the results list, which
+        // is exactly how a new server-side type (Conflict, Error) would have gone unnoticed.
         async function buildItem(type, item, index) {
             switch (type) {
                 case 'Updated':
@@ -237,6 +301,10 @@
                     return buildManualEntryItem(item);
                 case 'NeedsConfirmation':
                     return buildConfirmationItem(item, index);
+                case 'Conflict':
+                    return buildConflictItem(item);
+                case 'Error':
+                    return buildErrorItem(item);
                 default:
                     return null;
             }

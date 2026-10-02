@@ -358,6 +358,14 @@
     // four helper modules it calls into below — none of them run anything until this control
     // actually mounts.
     function mountAnimeList(root) {
+        // Empty-catalog invitation (issue #835): list.html.twig renders none of the toolbar/sort/
+        // grid/filters markup in that case, SSR-decided so nothing flashes before this control
+        // mounts. #anime-list-grid is the one element every other branch below assumes exists, so
+        // its absence is the signal there is nothing here to wire up.
+        if (!root.querySelector('#anime-list-grid')) {
+            return undefined;
+        }
+
         errorMessage = root.querySelector('#anime-list-error');
         searchInput = root.querySelector('#anime-list-search');
         sortContainer = root.querySelector('#anime-list-sort');

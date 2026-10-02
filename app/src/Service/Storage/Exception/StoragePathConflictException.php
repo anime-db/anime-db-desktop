@@ -27,12 +27,27 @@ declare(strict_types=1);
 
 namespace App\Service\Storage\Exception;
 
+use App\Entity\Anime;
+
 /**
  * Thrown by ScanStorageService::linkToChosenCandidate() (issue #147) when the requested
- * storage_path is already occupied by another Anime, or when the chosen orphan candidate
- * is already linked elsewhere — both signal a lost race between two confirm requests
- * (two tabs, a double click, or a stale scan.done payload) rather than a normal error.
+ * storage_path is already occupied by another Anime, or when the chosen candidate — an orphan,
+ * or (issue #832) a catalog record resolved by (pluginId, externalId) — is already linked
+ * elsewhere — both signal a lost race between two confirm requests (two tabs, a double click,
+ * or a stale scan.done payload) rather than a normal error.
+ *
+ * $anime/$alreadyLinkedStoragePath (issue #832) are only populated for the "candidate already
+ * linked elsewhere" case — the one a caller can turn into a structured "already in the catalog,
+ * linked to <path>" response instead of a generic error; the "requested path already occupied"
+ * case still leaves both null and is reported as a plain message.
  */
 final class StoragePathConflictException extends \RuntimeException
 {
+    public function __construct(
+        string $message,
+        public readonly ?Anime $anime = null,
+        public readonly ?string $alreadyLinkedStoragePath = null,
+    ) {
+        parent::__construct($message);
+    }
 }

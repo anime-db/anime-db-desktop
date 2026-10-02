@@ -43,6 +43,8 @@ final class ScanResultItem
         public readonly ?Anime $anime = null,
         public readonly ?string $cleanedName = null,
         public readonly array $candidates = [],
+        public readonly ?string $alreadyLinkedStoragePath = null,
+        public readonly ?string $errorMessage = null,
     ) {
     }
 
@@ -70,5 +72,16 @@ final class ScanResultItem
     public static function needsConfirmation(string $storagePath, string $cleanedName, array $candidates): self
     {
         return new self(ScanItemType::NeedsConfirmation, $storagePath, cleanedName: $cleanedName, candidates: $candidates);
+    }
+
+    /** $alreadyLinkedStoragePath is the path $anime is already linked to (not $storagePath). */
+    public static function conflict(Anime $anime, string $storagePath, string $alreadyLinkedStoragePath): self
+    {
+        return new self(ScanItemType::Conflict, $storagePath, anime: $anime, alreadyLinkedStoragePath: $alreadyLinkedStoragePath);
+    }
+
+    public static function error(string $storagePath, string $cleanedName, string $errorMessage): self
+    {
+        return new self(ScanItemType::Error, $storagePath, cleanedName: $cleanedName, errorMessage: $errorMessage);
     }
 }

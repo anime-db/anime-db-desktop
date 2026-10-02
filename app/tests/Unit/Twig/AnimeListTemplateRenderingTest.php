@@ -169,4 +169,89 @@ final class AnimeListTemplateRenderingTest extends KernelTestCase
             .'<div class="anime-list__filter-section-body"'.$hidden.'>'
             .'/s';
     }
+
+    /**
+     * @param array<string, mixed> $context
+     */
+    private function renderList(array $context): string
+    {
+        self::bootKernel();
+        $this->pushRequest();
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+
+        return $twig->render('anime/list.html.twig', array_merge([
+            'showOnboarding' => false,
+            'hasScannableStorage' => false,
+            'singleScannableStorageId' => null,
+            'widgets' => [],
+            'collapsedFilterSections' => [],
+        ], $context));
+    }
+
+    /**
+     * Acceptance (issue #835), scenario (a): no records and no storage — the invitation shows the
+     * "add storage" card (not "scan"), and none of the search/sort/filters UI is rendered.
+     */
+    public function testEmptyCatalogWithoutStorageShowsAddStorageCardAndHidesListControls(): void
+    {
+        $html = $this->renderList([
+            'showOnboarding' => true,
+            'hasScannableStorage' => false,
+            'singleScannableStorageId' => null,
+        ]);
+
+        $this->assertStringContainsString('anime-list__onboarding', $html);
+        $this->assertStringContainsString('href="/storage/new"', $html);
+        $this->assertStringNotContainsString('anime-list__toolbar', $html);
+        $this->assertStringNotContainsString('id="anime-list-sort"', $html);
+        $this->assertStringNotContainsString('anime-list__filters"', $html);
+    }
+
+    /**
+     * Scenario (b): no records, but a scannable storage exists — the invitation swaps to the
+     * "scan storage" card and, with exactly one candidate, submits that storage's scan directly.
+     */
+    public function testEmptyCatalogWithOneScannableStorageShowsScanStorageCard(): void
+    {
+        $html = $this->renderList([
+            'showOnboarding' => true,
+            'hasScannableStorage' => true,
+            'singleScannableStorageId' => 7,
+        ]);
+
+        $this->assertStringContainsString('action="/storage/7/scan"', $html);
+        $this->assertStringNotContainsString('href="/storage/new"', $html);
+    }
+
+    /**
+     * Scenario (b, variant): more than one scannable storage exists — the card links to the
+     * storage list instead of guessing which one to scan.
+     */
+    public function testEmptyCatalogWithMultipleScannableStoragesLinksToStorageList(): void
+    {
+        $html = $this->renderList([
+            'showOnboarding' => true,
+            'hasScannableStorage' => true,
+            'singleScannableStorageId' => null,
+        ]);
+
+        $this->assertStringContainsString('href="/storage"', $html);
+        $this->assertStringNotContainsString('action="/storage/', $html);
+    }
+
+    /**
+     * Scenario (c): at least one record exists — the ordinary catalog renders, with no onboarding
+     * block at all.
+     */
+    public function testNonEmptyCatalogShowsOrdinaryListWithoutOnboarding(): void
+    {
+        $html = $this->renderList(['showOnboarding' => false]);
+
+        $this->assertStringNotContainsString('anime-list__onboarding', $html);
+        $this->assertStringContainsString('anime-list__toolbar', $html);
+        $this->assertStringContainsString('id="anime-list-sort"', $html);
+        $this->assertStringContainsString('anime-list__filters"', $html);
+    }
 }

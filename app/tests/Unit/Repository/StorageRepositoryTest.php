@@ -77,4 +77,26 @@ final class StorageRepositoryTest extends TestCase
 
         $this->assertTrue($this->repository->hasAny());
     }
+
+    public function testFindAllScannableReturnsEmptyArrayWhenNoStorageExists(): void
+    {
+        $this->assertSame([], $this->repository->findAllScannable());
+    }
+
+    /**
+     * Acceptance (issue #835): only {@see StorageType::isWritable()} types are candidates for the
+     * empty-catalog "scan storage" invitation — ExternalR/Video storages cannot be scanned at all.
+     */
+    public function testFindAllScannableExcludesNonWritableStorageTypes(): void
+    {
+        $this->entityManager->persist(new Storage('Folder', 'D:\\Anime', StorageType::Folder));
+        $this->entityManager->persist(new Storage('External', 'E:\\Anime', StorageType::External));
+        $this->entityManager->persist(new Storage('Read-only external', 'F:\\Anime', StorageType::ExternalR));
+        $this->entityManager->persist(new Storage('Video', 'G:\\Anime', StorageType::Video));
+        $this->entityManager->flush();
+
+        $names = array_map(static fn (Storage $storage): string => $storage->getName(), $this->repository->findAllScannable());
+
+        $this->assertSame(['External', 'Folder'], $names);
+    }
 }
