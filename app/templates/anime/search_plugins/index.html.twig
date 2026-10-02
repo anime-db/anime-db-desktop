@@ -22,6 +22,19 @@
  # "Search in plugins" screen (issue #833): outside /settings (no sidebar, same shape as
  # storage/scan_prompt.html.twig), with "Catalog" highlighted in the top nav via the 'anime_'
  # route-name prefix already handled by base.html.twig.
+ #
+ # `?q=` in the address bar (issue #848, point 4) is pushed by the server, via the `HX-Push-Url`
+ # response header set in {@see \App\Controller\AnimeSearchPluginsController::results()} - not by
+ # a plain `hx-push-url="true"` here, which would push the URL of the request this form itself
+ # fires (the fragment endpoint), not this screen's own URL. The results container's own
+ # `hx-trigger="load"` (only wired up when `query` is non-empty) re-fires that same search as soon
+ # as the page with a restored `q` loads, instead of leaving the user to press "Search" again for
+ # a query already sitting in the input.
+ #
+ # `hx-sync="#search-plugins-preview:replace"` on the form joins the same sync group the candidate
+ # buttons use (_group.html.twig, issue #848, point 1): firing a new search aborts a still-pending
+ # preview request from the previous search, so that preview can never land after _results.html.twig's
+ # own OOB clear and resurrect a stale candidate's "Add" button (issue #848, point 2).
  #}
 {% extends 'base.html.twig' %}
 
@@ -32,7 +45,12 @@
         <h1 class="search-plugins__heading">{{ 'search_plugins.heading'|trans }}</h1>
 
         {% if error %}
-            <p class="alert alert-danger">{{ error|trans }}</p>
+            <p class="alert alert-danger">
+                {{ error.messageKey|trans(error.messageParams) }}
+                {% if error.link %}
+                    <a href="{{ error.link.url }}">{{ error.link.labelKey|trans }}</a>
+                {% endif %}
+            </p>
         {% endif %}
 
         {% if not hasActiveFiller %}
@@ -47,6 +65,7 @@
                 hx-target="#search-plugins-results"
                 hx-swap="innerHTML"
                 hx-indicator="#search-plugins-indicator"
+                hx-sync="#search-plugins-preview:replace"
             >
                 <label class="visually-hidden" for="search-plugins-query">{{ 'search_plugins.name_label'|trans }}</label>
                 <input
@@ -63,7 +82,15 @@
             </form>
 
             <div class="search-plugins__layout">
-                <div class="search-plugins__results" id="search-plugins-results"></div>
+                <div
+                    class="search-plugins__results"
+                    id="search-plugins-results"
+                    {% if query is not empty %}
+                        hx-get="{{ path('anime_search_plugins_results', {q: query}) }}"
+                        hx-trigger="load"
+                        hx-swap="innerHTML"
+                    {% endif %}
+                ></div>
 
                 <aside class="search-plugins__preview" id="search-plugins-preview" aria-live="polite"></aside>
             </div>
