@@ -45,6 +45,7 @@ use App\Service\Download\NativeFreeSpaceProvider;
 use App\Service\Download\QbittorrentDownloadService;
 use App\Service\Download\TorrentInfoHashResolver;
 use App\Service\Exception\InsufficientDiskSpaceException;
+use App\Service\Exception\InvalidTorrentFileException;
 use App\Service\Qbittorrent\QbittorrentClient;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Types\Type;
@@ -147,6 +148,103 @@ final class QbittorrentDownloadServiceTest extends TestCase
         }
 
         return 'd'.$body.'e';
+    }
+
+    /**
+     * @param list<string> $preBencodedItems
+     */
+    private function bencodeList(array $preBencodedItems): string
+    {
+        return 'l'.implode('', $preBencodedItems).'e';
+    }
+
+    /**
+     * A minimal BEP52 "file tree" for a single-file torrent named $name: {name: {"": {length,
+     * "pieces root"}}}. Only used to exercise the "info" dictionary's TOP-LEVEL keys (what
+     * TorrentInfoHashResolver::isV2Only() inspects) — its own internal shape does not need to be
+     * byte-exact to what qBittorrent itself produces.
+     */
+    private function bencodeFileTree(string $name, int $totalSize): string
+    {
+        return $this->bencodeDict([
+            $name => $this->bencodeDict([
+                '' => $this->bencodeDict([
+                    'length' => $this->bencodeInt($totalSize),
+                    'pieces root' => $this->bencodeString(str_repeat('B', 32)),
+                ]),
+            ]),
+        ]);
+    }
+
+    private function bencodeFilesList(string $name, int $totalSize): string
+    {
+        return $this->bencodeList([$this->bencodeDict([
+            'length' => $this->bencodeInt($totalSize),
+            'path' => $this->bencodeList([$this->bencodeString($name)]),
+        ])]);
+    }
+
+    /**
+     * A BitTorrent v1 `.torrent` with the full "info" key set a real v1 torrent carries (issue
+     * #843's "Детали"): files, name, piece length, pieces.
+     */
+    private function v1TorrentFileBytes(string $name, int $totalSize): string
+    {
+        $info = $this->bencodeDict([
+            'files' => $this->bencodeFilesList($name, $totalSize),
+            'name' => $this->bencodeString($name),
+            'piece length' => $this->bencodeInt(16384),
+            'pieces' => $this->bencodeString(str_repeat('A', 20)),
+        ]);
+
+        return $this->bencodeDict([
+            'announce' => $this->bencodeString('http://tracker.local/announce'),
+            'info' => $info,
+        ]);
+    }
+
+    /**
+     * A hybrid (BitTorrent v1+v2) `.torrent` with the full "info" key set a real hybrid torrent
+     * carries (issue #843's "Детали"): file tree, files, meta version, name, piece length,
+     * pieces. Carries "meta version" like a v2-only torrent does, but keeps "pieces" for
+     * v1-compatible clients — the fixture that would wrongly get rejected by a check that only
+     * looked at "meta version" instead of "pieces".
+     */
+    private function hybridTorrentFileBytes(string $name, int $totalSize): string
+    {
+        $info = $this->bencodeDict([
+            'file tree' => $this->bencodeFileTree($name, $totalSize),
+            'files' => $this->bencodeFilesList($name, $totalSize),
+            'meta version' => $this->bencodeInt(2),
+            'name' => $this->bencodeString($name),
+            'piece length' => $this->bencodeInt(16384),
+            'pieces' => $this->bencodeString(str_repeat('A', 20)),
+        ]);
+
+        return $this->bencodeDict([
+            'announce' => $this->bencodeString('http://tracker.local/announce'),
+            'info' => $info,
+        ]);
+    }
+
+    /**
+     * A BitTorrent v2-only `.torrent` with the full "info" key set a real v2-only torrent carries
+     * (issue #843's "Детали"): file tree, meta version, name, piece length — no "pieces" and no
+     * v1 info hash can be derived from it.
+     */
+    private function v2OnlyTorrentFileBytes(string $name, int $totalSize): string
+    {
+        $info = $this->bencodeDict([
+            'file tree' => $this->bencodeFileTree($name, $totalSize),
+            'meta version' => $this->bencodeInt(2),
+            'name' => $this->bencodeString($name),
+            'piece length' => $this->bencodeInt(16384),
+        ]);
+
+        return $this->bencodeDict([
+            'announce' => $this->bencodeString('http://tracker.local/announce'),
+            'info' => $info,
+        ]);
     }
 
     private function writeTorrentFile(string $content): string
@@ -326,6 +424,75 @@ final class QbittorrentDownloadServiceTest extends TestCase
 
         $this->assertSame($infoHash, $taskId->value);
         $this->assertNotNull($captured);
+        $this->assertNotNull($this->downloads->findByInfoHashAndAnime($infoHash, (int) $anime->id));
+    }
+
+    public function testEnqueueRejectsAV2OnlyTorrentFileBeforeTouchingTheDatabaseOrQbittorrent(): void
+    {
+        $anime = $this->persistAnime();
+        $torrentBytes = $this->v2OnlyTorrentFileBytes('V2.Only.Release.mkv', 1_000);
+        $torrentPath = $this->writeTorrentFile($torrentBytes);
+
+        // makeService(null) throws on any HTTP request — the rejection must happen before
+        // submitToQbittorrent() ever runs.
+        $service = $this->makeService(null);
+
+        try {
+            $service->enqueue(DownloadSource::torrentFile($torrentPath), new AnimeId((int) $anime->id));
+            $this->fail('Expected InvalidTorrentFileException to be thrown.');
+        } catch (InvalidTorrentFileException $e) {
+            $this->assertStringContainsString('v2-only', $e->getMessage());
+        }
+
+        $this->assertSame([], $this->downloads->findDistinctPendingInfoHashes());
+    }
+
+    /**
+     * A hybrid torrent carries "meta version" just like a v2-only one does (see
+     * hybridTorrentFileBytes()'s docblock) — this must NOT be rejected, proving the check keys off
+     * "pieces" rather than "meta version". Breaking isV2Only() to check "meta version" instead of
+     * "pieces" turns this test red while testEnqueueRejectsAV2OnlyTorrentFileBeforeTouchingTheDatabaseOrQbittorrent()
+     * stays green, confirming this test is the one guarding that distinction.
+     */
+    public function testEnqueueAcceptsAHybridTorrentFileDespiteCarryingMetaVersion(): void
+    {
+        $anime = $this->persistAnime();
+        $torrentBytes = $this->hybridTorrentFileBytes('Hybrid.Release.mkv', 1_000);
+        $torrentPath = $this->writeTorrentFile($torrentBytes);
+        $infoHash = (new TorrentInfoHashResolver())->fromTorrentFileContent($torrentBytes);
+
+        $freeSpaceProvider = $this->createStub(FreeSpaceProvider::class);
+        $freeSpaceProvider->method('getFreeBytes')->willReturn(500_000_000);
+
+        $captured = null;
+        $service = $this->makeService(function (string $method, string $url, array $options) use (&$captured): MockResponse {
+            $captured = $options;
+
+            return new MockResponse('Ok.');
+        }, $freeSpaceProvider);
+
+        $taskId = $service->enqueue(DownloadSource::torrentFile($torrentPath), new AnimeId((int) $anime->id));
+
+        $this->assertSame($infoHash, $taskId->value);
+        $this->assertNotNull($captured);
+        $this->assertNotNull($this->downloads->findByInfoHashAndAnime($infoHash, (int) $anime->id));
+    }
+
+    public function testEnqueueAcceptsAV1TorrentFileWithTheFullInfoKeySet(): void
+    {
+        $anime = $this->persistAnime();
+        $torrentBytes = $this->v1TorrentFileBytes('V1.Release.mkv', 1_000);
+        $torrentPath = $this->writeTorrentFile($torrentBytes);
+        $infoHash = (new TorrentInfoHashResolver())->fromTorrentFileContent($torrentBytes);
+
+        $freeSpaceProvider = $this->createStub(FreeSpaceProvider::class);
+        $freeSpaceProvider->method('getFreeBytes')->willReturn(500_000_000);
+
+        $service = $this->makeService(static fn (): MockResponse => new MockResponse('Ok.'), $freeSpaceProvider);
+
+        $taskId = $service->enqueue(DownloadSource::torrentFile($torrentPath), new AnimeId((int) $anime->id));
+
+        $this->assertSame($infoHash, $taskId->value);
         $this->assertNotNull($this->downloads->findByInfoHashAndAnime($infoHash, (int) $anime->id));
     }
 }

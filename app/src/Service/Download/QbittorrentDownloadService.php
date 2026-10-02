@@ -72,6 +72,14 @@ final class QbittorrentDownloadService implements DownloadServiceInterface
             ? $this->readTorrentFile($source->value)
             : null;
 
+        // Rejected here, before resolveInfoHash() hashes it and before any database access
+        // (issue #843): a v2-only torrent has no v1 info hash, which is the identity this app
+        // relies on throughout (see class docblock), so there is nothing meaningful to hash it
+        // into. Checked first since downstream code assumes a usable v1 identity already exists.
+        if ($torrentFileContent !== null && $this->infoHashResolver->isV2Only($torrentFileContent)) {
+            throw new InvalidTorrentFileException(\sprintf('Torrent file "%s" is BitTorrent v2-only (it has no v1 info hash); v2-only torrents are not supported.', basename($source->value)));
+        }
+
         $infoHash = $this->resolveInfoHash($source, $torrentFileContent);
 
         // Already paired with this exact anime — nothing to do, return the same task id
