@@ -40,10 +40,12 @@ use Twig\Environment;
  * populated client-side by anime-list.js, which fetches AnimeListController's JSON endpoint
  * (issue #74). This controller only needs to hand the page its static markup.
  *
- * Also decides whether to show the onboarding banner (issue #179, Таск 2 шаг 5): there is no
- * dedicated "installed" flag (see decisions.md — Вопросы 6/7), so "wizard not completed" is
- * inferred purely from the catalog being empty (no Storage and no Anime rows). Both "skip"
- * actions leave the catalog empty, so the banner simply reappears on the next visit.
+ * Also decides whether to show the onboarding invitation (issue #179, Таск 2 шаг 5, reworked by
+ * issue #835): there is no dedicated "installed" flag (see decisions.md — Вопросы 6/7), so
+ * "nothing to show" is inferred purely from the catalog having no Anime rows — unlike before
+ * #835, a Storage already being configured no longer hides it, since an empty catalog looks
+ * equally broken either way and a configured-but-unscanned storage still needs its own call to
+ * action ({@see StorageRepository::findAllScannable()} below).
  *
  * Issue #720: this is the catalog widgets' counterpart to AnimeController's entry widgets — the
  * only place in the app that requests {@see CatalogWidgetRegistry::findAllActive()}, so an
@@ -63,10 +65,15 @@ final class HomeController
     #[Route('/', name: 'home_index', methods: ['GET'])]
     public function index(): Response
     {
-        $showOnboarding = !$this->storages->hasAny() && !$this->animeRepository->hasAny();
+        $showOnboarding = !$this->animeRepository->hasAny();
+        $scannableStorages = $showOnboarding ? $this->storages->findAllScannable() : [];
 
         return new Response($this->twig->render('anime/list.html.twig', [
             'showOnboarding' => $showOnboarding,
+            'hasScannableStorage' => $scannableStorages !== [],
+            // Only set when there is exactly one candidate (issue #835): the invitation card then
+            // submits a scan for that storage directly instead of only linking to the storage list.
+            'singleScannableStorageId' => \count($scannableStorages) === 1 ? $scannableStorages[0]->id : null,
             'widgets' => $this->catalogWidgets->findAllActive(),
             // Issue #820: read once here so the template can render each section's
             // aria-expanded/hidden state from the saved value on first paint, instead of every

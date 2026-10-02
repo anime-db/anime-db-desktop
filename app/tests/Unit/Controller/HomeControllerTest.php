@@ -29,6 +29,8 @@ namespace App\Tests\Unit\Controller;
 
 use AnimeDb\PluginContracts\Widget\CatalogWidgetInterface;
 use App\Controller\HomeController;
+use App\Entity\Enum\StorageType;
+use App\Entity\Storage;
 use App\Repository\AnimeRepository;
 use App\Repository\StorageRepository;
 use App\Service\AppConfigStore;
@@ -47,15 +49,25 @@ final class HomeControllerTest extends TestCase
         return new CatalogWidgetRegistry([], new PluginsConfigStore(''), $this->createStub(TranslatorInterface::class));
     }
 
+    /**
+     * @param Storage[] $scannableStorages only read by the controller when $hasAnime is false —
+     *                                     see the ternary in HomeController::index()
+     */
     private function createController(
-        bool $hasStorage,
         bool $hasAnime,
         Environment $twig,
         ?CatalogWidgetRegistry $catalogWidgets = null,
         ?AppSettingsProvider $settings = null,
+        array $scannableStorages = [],
     ): HomeController {
-        $storages = $this->createStub(StorageRepository::class);
-        $storages->method('hasAny')->willReturn($hasStorage);
+        $storages = $this->createMock(StorageRepository::class);
+        if ($hasAnime) {
+            // Asserts the ternary in HomeController::index() actually short-circuits: a
+            // non-empty catalog must never trigger a findAllScannable() lookup.
+            $storages->expects($this->never())->method('findAllScannable');
+        } else {
+            $storages->expects($this->once())->method('findAllScannable')->willReturn($scannableStorages);
+        }
 
         $animeRepository = $this->createStub(AnimeRepository::class);
         $animeRepository->method('hasAny')->willReturn($hasAnime);
@@ -74,24 +86,73 @@ final class HomeControllerTest extends TestCase
         $twig = $this->createMock(Environment::class);
         $twig->expects($this->once())
             ->method('render')
-            ->with('anime/list.html.twig', ['showOnboarding' => true, 'widgets' => [], 'collapsedFilterSections' => []])
+            ->with('anime/list.html.twig', [
+                'showOnboarding' => true,
+                'hasScannableStorage' => false,
+                'singleScannableStorageId' => null,
+                'widgets' => [],
+                'collapsedFilterSections' => [],
+            ])
             ->willReturn('<html></html>');
 
-        $controller = $this->createController(hasStorage: false, hasAnime: false, twig: $twig);
+        $controller = $this->createController(hasAnime: false, twig: $twig);
         $response = $controller->index();
 
         $this->assertSame(200, $response->getStatusCode());
     }
 
-    public function testIndexHidesOnboardingBannerWhenStorageExists(): void
+    /**
+     * Acceptance (issue #835): the onboarding invitation must not depend on whether a Storage is
+     * configured — only on the catalog actually being empty. A configured-but-unscanned storage
+     * used to hide the old banner entirely; here it must still show, and additionally must switch
+     * its storage card from "add" to "scan" (hasScannableStorage: true).
+     */
+    public function testIndexShowsOnboardingBannerWhenScannableStorageExistsButCatalogIsEmpty(): void
     {
+        $storage = new Storage('Main folder', \sys_get_temp_dir(), StorageType::Folder);
+        (new \ReflectionProperty(Storage::class, 'id'))->setValue($storage, 7);
+
         $twig = $this->createMock(Environment::class);
         $twig->expects($this->once())
             ->method('render')
-            ->with('anime/list.html.twig', ['showOnboarding' => false, 'widgets' => [], 'collapsedFilterSections' => []])
+            ->with('anime/list.html.twig', [
+                'showOnboarding' => true,
+                'hasScannableStorage' => true,
+                'singleScannableStorageId' => 7,
+                'widgets' => [],
+                'collapsedFilterSections' => [],
+            ])
             ->willReturn('<html></html>');
 
-        $controller = $this->createController(hasStorage: true, hasAnime: false, twig: $twig);
+        $controller = $this->createController(hasAnime: false, twig: $twig, scannableStorages: [$storage]);
+        $controller->index();
+    }
+
+    /**
+     * Acceptance (issue #835): with two or more scannable storages, the invitation card must not
+     * pick one of them to auto-scan — \count(...) === 1 in HomeController::index() must stay
+     * strict so a wider condition (e.g. >= 1) would be caught here.
+     */
+    public function testIndexShowsOnboardingBannerWithMultipleScannableStorages(): void
+    {
+        $first = new Storage('Main folder', \sys_get_temp_dir(), StorageType::Folder);
+        (new \ReflectionProperty(Storage::class, 'id'))->setValue($first, 7);
+        $second = new Storage('Second folder', \sys_get_temp_dir(), StorageType::Folder);
+        (new \ReflectionProperty(Storage::class, 'id'))->setValue($second, 8);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('anime/list.html.twig', [
+                'showOnboarding' => true,
+                'hasScannableStorage' => true,
+                'singleScannableStorageId' => null,
+                'widgets' => [],
+                'collapsedFilterSections' => [],
+            ])
+            ->willReturn('<html></html>');
+
+        $controller = $this->createController(hasAnime: false, twig: $twig, scannableStorages: [$first, $second]);
         $controller->index();
     }
 
@@ -100,10 +161,16 @@ final class HomeControllerTest extends TestCase
         $twig = $this->createMock(Environment::class);
         $twig->expects($this->once())
             ->method('render')
-            ->with('anime/list.html.twig', ['showOnboarding' => false, 'widgets' => [], 'collapsedFilterSections' => []])
+            ->with('anime/list.html.twig', [
+                'showOnboarding' => false,
+                'hasScannableStorage' => false,
+                'singleScannableStorageId' => null,
+                'widgets' => [],
+                'collapsedFilterSections' => [],
+            ])
             ->willReturn('<html></html>');
 
-        $controller = $this->createController(hasStorage: false, hasAnime: true, twig: $twig);
+        $controller = $this->createController(hasAnime: true, twig: $twig);
         $controller->index();
     }
 
@@ -123,13 +190,15 @@ final class HomeControllerTest extends TestCase
             ->method('render')
             ->with('anime/list.html.twig', [
                 'showOnboarding' => false,
+                'hasScannableStorage' => false,
+                'singleScannableStorageId' => null,
                 'widgets' => [],
                 'collapsedFilterSections' => ['genres', 'studios'],
             ])
             ->willReturn('<html></html>');
 
         try {
-            $controller = $this->createController(hasStorage: true, hasAnime: false, twig: $twig, settings: $settings);
+            $controller = $this->createController(hasAnime: true, twig: $twig, settings: $settings);
             $controller->index();
         } finally {
             unlink($configPath);
@@ -170,6 +239,8 @@ final class HomeControllerTest extends TestCase
             ->method('render')
             ->with('anime/list.html.twig', [
                 'showOnboarding' => false,
+                'hasScannableStorage' => false,
+                'singleScannableStorageId' => null,
                 'widgets' => [[
                     'pluginId' => 'animedb-shikimori',
                     'widgetName' => 'spotlight',
@@ -181,7 +252,7 @@ final class HomeControllerTest extends TestCase
             ->willReturn('<html></html>');
 
         try {
-            $controller = $this->createController(hasStorage: true, hasAnime: false, twig: $twig, catalogWidgets: $catalogWidgets);
+            $controller = $this->createController(hasAnime: true, twig: $twig, catalogWidgets: $catalogWidgets);
             $controller->index();
         } finally {
             unlink($pluginsDir.'/plugins.json');

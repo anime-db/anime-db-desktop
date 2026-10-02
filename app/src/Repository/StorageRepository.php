@@ -27,6 +27,7 @@ declare(strict_types=1);
 
 namespace App\Repository;
 
+use App\Entity\Enum\StorageType;
 use App\Entity\Storage;
 use Doctrine\ORM\EntityManagerInterface;
 
@@ -49,6 +50,28 @@ class StorageRepository
             ->setMaxResults(1);
 
         return (int) $qb->getQuery()->getSingleScalarResult() > 0;
+    }
+
+    /**
+     * Storages whose {@see StorageType::isWritable()} is true — the ones a scan can actually be
+     * triggered on (issue #835: the empty-catalog invitation offers "scan storage" only for these,
+     * falling back to "add storage" otherwise).
+     *
+     * @return Storage[]
+     */
+    public function findAllScannable(): array
+    {
+        $writableTypes = array_values(array_filter(
+            StorageType::cases(),
+            static fn (StorageType $type): bool => $type->isWritable(),
+        ));
+
+        return $this->entityManager->getRepository(Storage::class)->createQueryBuilder('s')
+            ->where('s.type IN (:types)')
+            ->setParameter('types', $writableTypes)
+            ->orderBy('s.name', 'ASC')
+            ->getQuery()
+            ->getResult();
     }
 
     public function findOneByPath(string $path): ?Storage

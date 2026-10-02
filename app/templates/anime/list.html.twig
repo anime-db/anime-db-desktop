@@ -25,14 +25,46 @@
 {% block body %}
     <main class="anime-list" data-control="anime-list">
         {% if showOnboarding %}
-            <section class="onboarding-banner">
-                <h2>{{ 'onboarding.heading'|trans }}</h2>
-                <p>{{ 'onboarding.description'|trans }}</p>
-                <a href="{{ path('storage_new') }}">{{ 'onboarding.add_storage_button'|trans }}</a>
-                <form method="post" action="{{ path('onboarding_seed_demo') }}" class="onboarding-banner__demo-form">
-                    <input type="hidden" name="_token" value="{{ csrf_token('onboarding_seed_demo') }}">
-                    <button type="submit">{{ 'onboarding.load_demo_button'|trans }}</button>
-                </form>
+            <section class="anime-list__onboarding text-center">
+                <h2 class="anime-list__onboarding-heading">{{ 'onboarding.heading'|trans }}</h2>
+                <p class="anime-list__onboarding-description text-body-secondary">{{ 'onboarding.description'|trans }}</p>
+
+                <div class="anime-list__onboarding-cards row row-cols-1 row-cols-sm-2 g-3 justify-content-center mx-auto">
+                    <div class="col">
+                        <div class="card h-100">
+                            <div class="card-body d-flex flex-column align-items-center text-center">
+                                {{ icon(hasScannableStorage ? 'arrow-repeat' : 'plus-lg') }}
+                                <h3 class="card-title h6 mt-3">{{ (hasScannableStorage ? 'onboarding.scan_storage_heading' : 'onboarding.add_storage_heading')|trans }}</h3>
+                                <p class="card-text text-body-secondary small flex-grow-1">{{ (hasScannableStorage ? 'onboarding.scan_storage_description' : 'onboarding.add_storage_description')|trans }}</p>
+                                {% if hasScannableStorage %}
+                                    {% if singleScannableStorageId is not null %}
+                                        <form method="post" action="{{ path('storage_scan', {id: singleScannableStorageId}) }}">
+                                            <input type="hidden" name="_token" value="{{ csrf_token('storage_scan_' ~ singleScannableStorageId) }}">
+                                            <button type="submit" class="btn btn-primary">{{ 'onboarding.scan_storage_button'|trans }}</button>
+                                        </form>
+                                    {% else %}
+                                        <a href="{{ path('storage_index') }}" class="btn btn-primary">{{ 'onboarding.scan_storage_button'|trans }}</a>
+                                    {% endif %}
+                                {% else %}
+                                    <a href="{{ path('storage_new') }}" class="btn btn-primary">{{ 'onboarding.add_storage_button'|trans }}</a>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col">
+                        <div class="card h-100">
+                            <div class="card-body d-flex flex-column align-items-center text-center">
+                                {{ icon('download') }}
+                                <h3 class="card-title h6 mt-3">{{ 'onboarding.load_demo_heading'|trans }}</h3>
+                                <p class="card-text text-body-secondary small flex-grow-1">{{ 'onboarding.load_demo_description'|trans }}</p>
+                                <form method="post" action="{{ path('onboarding_seed_demo') }}">
+                                    <input type="hidden" name="_token" value="{{ csrf_token('onboarding_seed_demo') }}">
+                                    <button type="submit" class="btn btn-outline-primary">{{ 'onboarding.load_demo_button'|trans }}</button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </section>
         {% endif %}
 
@@ -45,95 +77,97 @@
             </div>
         {% endif %}
 
-        <div class="anime-list__toolbar">
-            <input
-                type="search"
-                id="anime-list-search"
-                class="anime-list__search"
-                placeholder="{{ 'anime_list.search_placeholder'|trans }}"
-                aria-label="{{ 'anime_list.search_placeholder'|trans }}"
-            >
-            <button
-                type="button"
-                class="anime-list__filters-toggle"
-                id="anime-list-filters-toggle"
-                aria-expanded="true"
-                aria-controls="anime-list-filters"
-            >{{ 'anime_list.filters_toggle_button'|trans }}<span class="anime-list__filters-count" id="anime-list-filters-count" hidden></span></button>
-        </div>
-
-        <div class="anime-list__sort" id="anime-list-sort" role="group" aria-label="{{ 'anime_list.sort_label'|trans }}">
-            <span class="anime-list__sort-label">{{ 'anime_list.sort_label'|trans }}</span>
-            {% for field in ['name', 'date_update', 'user_rating', 'date_premiere', 'date_end'] %}
+        {% if not showOnboarding %}
+            <div class="anime-list__toolbar">
+                <input
+                    type="search"
+                    id="anime-list-search"
+                    class="anime-list__search"
+                    placeholder="{{ 'anime_list.search_placeholder'|trans }}"
+                    aria-label="{{ 'anime_list.search_placeholder'|trans }}"
+                >
                 <button
                     type="button"
-                    class="anime-list__sort-field"
-                    data-sort-field="{{ field }}"
-                    {% if field == 'date_update' %}aria-current="true"{% endif %}
-                >{{ ('anime_list.sort_field_' ~ field)|trans }}</button>
-            {% endfor %}
-            <button
-                type="button"
-                class="anime-list__sort-direction"
-                id="anime-list-sort-direction"
-                data-direction="desc"
-                data-label-asc="{{ 'anime_list.sort_direction_asc'|trans }}"
-                data-label-desc="{{ 'anime_list.sort_direction_desc'|trans }}"
-                aria-label="{{ 'anime_list.sort_direction_desc'|trans }}"
-            >↓</button>
-        </div>
-
-        <div class="anime-list__layout">
-            <div class="anime-list__main">
-                <div class="anime-list__chips sticky-top" id="anime-list-chips">
-                    <ul class="anime-list__chip-list" id="anime-list-chip-list"></ul>
-                    <span class="anime-list__chips-shown" id="anime-list-chips-shown"></span>
-                    <button type="button" class="anime-list__chips-reset" id="anime-list-chips-reset" disabled>{{ 'anime_list.filter_reset_all_button'|trans }}</button>
-                </div>
-
-                <div class="anime-list__grid" id="anime-list-grid"></div>
-
-                <p class="anime-list__empty" id="anime-list-empty" hidden>{{ 'anime_list.empty'|trans }}</p>
-                <p class="anime-list__error" id="anime-list-error" hidden>{{ 'anime_list.error'|trans }}</p>
-
-                <nav class="anime-list__pagination" id="anime-list-pagination" hidden></nav>
-                <div class="anime-list__sentinel" id="anime-list-sentinel" hidden></div>
+                    class="anime-list__filters-toggle"
+                    id="anime-list-filters-toggle"
+                    aria-expanded="true"
+                    aria-controls="anime-list-filters"
+                >{{ 'anime_list.filters_toggle_button'|trans }}<span class="anime-list__filters-count" id="anime-list-filters-count" hidden></span></button>
             </div>
 
-            <aside class="anime-list__filters" id="anime-list-filters" aria-label="{{ 'anime_list.filters_toggle_button'|trans }}">
-                <div
-                    class="anime-list__filter-sections"
-                    id="anime-list-filter-sections"
-                    data-csrf-token="{{ csrf_token('settings_filter_sections') }}"
-                >
-                    {% for section in ['watch_status', 'type', 'date_premiere', 'user_rating', 'labels', 'genres', 'themes', 'studios'] %}
-                        {% set collapsed = section in collapsedFilterSections %}
-                        <section class="anime-list__filter-section" data-filter-section="{{ section }}">
-                            <button type="button" class="anime-list__filter-section-toggle" aria-expanded="{{ collapsed ? 'false' : 'true' }}">
-                                <span class="anime-list__filter-section-chevron">▾</span>
-                                {{ ('anime_list.filter_section_' ~ section)|trans }}
-                                <span class="anime-list__filter-section-count" hidden></span>
-                            </button>
-                            <div class="anime-list__filter-section-body"{% if collapsed %} hidden{% endif %}>
-                                <p class="anime-list__filter-section-empty" hidden>{{ 'anime_list.filter_section_empty'|trans }}</p>
-                                <div class="anime-list__filter-section-search" hidden>
-                                    <input
-                                        type="search"
-                                        class="anime-list__filter-section-search-input"
-                                        aria-label="{{ 'anime_list.filter_section_search_placeholder'|trans }}"
-                                        placeholder="{{ 'anime_list.filter_section_search_placeholder'|trans }}"
-                                    >
+            <div class="anime-list__sort" id="anime-list-sort" role="group" aria-label="{{ 'anime_list.sort_label'|trans }}">
+                <span class="anime-list__sort-label">{{ 'anime_list.sort_label'|trans }}</span>
+                {% for field in ['name', 'date_update', 'user_rating', 'date_premiere', 'date_end'] %}
+                    <button
+                        type="button"
+                        class="anime-list__sort-field"
+                        data-sort-field="{{ field }}"
+                        {% if field == 'date_update' %}aria-current="true"{% endif %}
+                    >{{ ('anime_list.sort_field_' ~ field)|trans }}</button>
+                {% endfor %}
+                <button
+                    type="button"
+                    class="anime-list__sort-direction"
+                    id="anime-list-sort-direction"
+                    data-direction="desc"
+                    data-label-asc="{{ 'anime_list.sort_direction_asc'|trans }}"
+                    data-label-desc="{{ 'anime_list.sort_direction_desc'|trans }}"
+                    aria-label="{{ 'anime_list.sort_direction_desc'|trans }}"
+                >↓</button>
+            </div>
+
+            <div class="anime-list__layout">
+                <div class="anime-list__main">
+                    <div class="anime-list__chips sticky-top" id="anime-list-chips">
+                        <ul class="anime-list__chip-list" id="anime-list-chip-list"></ul>
+                        <span class="anime-list__chips-shown" id="anime-list-chips-shown"></span>
+                        <button type="button" class="anime-list__chips-reset" id="anime-list-chips-reset" disabled>{{ 'anime_list.filter_reset_all_button'|trans }}</button>
+                    </div>
+
+                    <div class="anime-list__grid" id="anime-list-grid"></div>
+
+                    <p class="anime-list__empty" id="anime-list-empty" hidden>{{ 'anime_list.empty'|trans }}</p>
+                    <p class="anime-list__error" id="anime-list-error" hidden>{{ 'anime_list.error'|trans }}</p>
+
+                    <nav class="anime-list__pagination" id="anime-list-pagination" hidden></nav>
+                    <div class="anime-list__sentinel" id="anime-list-sentinel" hidden></div>
+                </div>
+
+                <aside class="anime-list__filters" id="anime-list-filters" aria-label="{{ 'anime_list.filters_toggle_button'|trans }}">
+                    <div
+                        class="anime-list__filter-sections"
+                        id="anime-list-filter-sections"
+                        data-csrf-token="{{ csrf_token('settings_filter_sections') }}"
+                    >
+                        {% for section in ['watch_status', 'type', 'date_premiere', 'user_rating', 'labels', 'genres', 'themes', 'studios'] %}
+                            {% set collapsed = section in collapsedFilterSections %}
+                            <section class="anime-list__filter-section" data-filter-section="{{ section }}">
+                                <button type="button" class="anime-list__filter-section-toggle" aria-expanded="{{ collapsed ? 'false' : 'true' }}">
+                                    <span class="anime-list__filter-section-chevron">▾</span>
+                                    {{ ('anime_list.filter_section_' ~ section)|trans }}
+                                    <span class="anime-list__filter-section-count" hidden></span>
+                                </button>
+                                <div class="anime-list__filter-section-body"{% if collapsed %} hidden{% endif %}>
+                                    <p class="anime-list__filter-section-empty" hidden>{{ 'anime_list.filter_section_empty'|trans }}</p>
+                                    <div class="anime-list__filter-section-search" hidden>
+                                        <input
+                                            type="search"
+                                            class="anime-list__filter-section-search-input"
+                                            aria-label="{{ 'anime_list.filter_section_search_placeholder'|trans }}"
+                                            placeholder="{{ 'anime_list.filter_section_search_placeholder'|trans }}"
+                                        >
+                                    </div>
+                                    <ul class="anime-list__filter-values"></ul>
+                                    <button type="button" class="anime-list__filter-section-more" hidden></button>
                                 </div>
-                                <ul class="anime-list__filter-values"></ul>
-                                <button type="button" class="anime-list__filter-section-more" hidden></button>
-                            </div>
-                        </section>
-                    {% endfor %}
-                </div>
-                <div class="anime-list__filter-apply-bar">
-                    <button type="button" class="anime-list__filter-apply-button" id="anime-list-filter-apply" disabled>{{ 'anime_list.filter_apply_button'|trans }}</button>
-                </div>
-            </aside>
-        </div>
+                            </section>
+                        {% endfor %}
+                    </div>
+                    <div class="anime-list__filter-apply-bar">
+                        <button type="button" class="anime-list__filter-apply-button" id="anime-list-filter-apply" disabled>{{ 'anime_list.filter_apply_button'|trans }}</button>
+                    </div>
+                </aside>
+            </div>
+        {% endif %}
     </main>
 {% endblock %}

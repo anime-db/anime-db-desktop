@@ -285,6 +285,25 @@ afterEach(() => {
     jest.restoreAllMocks();
 });
 
+// Issue #835: list.html.twig renders none of the toolbar/sort/grid/filters markup when the
+// catalog is empty, replacing it with the onboarding invitation instead. mountAnimeList() must
+// recognize that shape and do nothing, rather than crash on the now-missing elements it would
+// otherwise assume exist (#anime-list-error, the grid, etc.).
+test('mounting on the empty-catalog onboarding markup does not throw and fetches nothing', () => {
+    document.body.innerHTML = `
+        <main data-control="anime-list">
+            <section class="anime-list__onboarding"></section>
+        </main>
+    `;
+    global.fetch = jest.fn();
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    loadAnimeListModule();
+
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(consoleError).not.toHaveBeenCalled();
+});
+
 test('cards render even when the translations catalogue fails to load', async () => {
     const calls = mockFetchQueue();
     window.AppTranslations = {

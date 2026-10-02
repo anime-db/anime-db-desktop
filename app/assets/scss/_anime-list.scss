@@ -19,6 +19,17 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+// Empty-catalog invitation (issue #835), replacing the previous unstyled onboarding banner.
+// Centered column, capped width so the two action cards below don't stretch edge-to-edge on a
+// wide window — Bootstrap's `.row`/`.card`/spacing utilities do the rest.
+.anime-list__onboarding {
+    padding: 64px 16px;
+}
+
+.anime-list__onboarding-cards {
+    max-width: 640px;
+}
+
 .anime-list__toolbar {
     display: flex;
     align-items: center;
