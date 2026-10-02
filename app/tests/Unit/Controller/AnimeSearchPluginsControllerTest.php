@@ -411,12 +411,188 @@ final class AnimeSearchPluginsControllerTest extends TestCase
         $response = $controller->fillExisting($existingId, Request::create('/anime/search-plugins/fill-existing/'.$existingId, 'POST', [
             'plugin_id' => 'animedb-shikimori',
             'external_id' => '1',
+            'q' => 'Trigun',
             '_token' => 'irrelevant',
         ]));
 
-        $this->assertStringStartsWith('/anime_search_plugins?', $response->headers->get('Location') ?? '');
-        $this->assertStringContainsString('error=fill_not_found', $response->headers->get('Location') ?? '');
+        $location = $response->headers->get('Location') ?? '';
+        $this->assertStringStartsWith('/anime_search_plugins?', $location);
+        $this->assertStringContainsString('error=fill_not_found', $location);
+        $this->assertStringContainsString('q=Trigun', $location, 'the search query must survive the redirect back to the search screen');
         $this->assertNull($existing->getCachedExternalId(new \App\Entity\ValueObject\PluginId('animedb-shikimori')), 'a NotFound result must not link the external id');
+    }
+
+    /**
+     * Issue #848, point 3: when ($pluginId, $externalId) was claimed by a different Anime between
+     * the preview and this click, {@see BulkFillerService::fillExistingFromPlugin()} throws
+     * {@see ExternalIdAlreadyClaimedException} rather than returning a result. Before this issue
+     * the controller turned that into a bare ConflictHttpException (a 409 page with no way back);
+     * it must now redirect to the search screen with an error code, the owning anime's id, and the
+     * original query intact, and must not touch $anime at all.
+     */
+    public function testFillExistingRedirectsToSearchWithConflictClaimedErrorWhenTheExternalIdAlreadyBelongsToAnotherAnime(): void
+    {
+        $this->writeManifest('animedb-shikimori', 'Shikimori');
+
+        $filler = $this->createStub(FillerInterface::class);
+        $filler->method('getFillableFields')->willReturn(['title']);
+        $filler->method('findById')->willReturn(new PluginAnimeData(title: 'Trigun'));
+
+        $controller = $this->createController(['animedb-shikimori' => $filler]);
+
+        // Anime #1 claims external id "1" for this plugin via the ordinary add() flow.
+        $controller->add(Request::create('/anime/search-plugins/add', 'POST', [
+            'plugin_id' => 'animedb-shikimori',
+            'external_id' => '1',
+            'name' => 'Trigun',
+            '_token' => 'irrelevant',
+        ]));
+        /** @var \App\Entity\Anime $owner */
+        $owner = $this->entityManager->getRepository(\App\Entity\Anime::class)->findAll()[0];
+        $ownerId = $owner->id ?? throw new \LogicException('must have id');
+
+        $target = new TvAnime();
+        $target->setTitle('Some other title')->setWatchStatus(WatchStatus::Plan);
+        $this->entityManager->persist($target);
+        $this->entityManager->flush();
+        $targetId = $target->id ?? throw new \LogicException('must have id');
+
+        $response = $controller->fillExisting($targetId, Request::create('/anime/search-plugins/fill-existing/'.$targetId, 'POST', [
+            'plugin_id' => 'animedb-shikimori',
+            'external_id' => '1',
+            'q' => 'Trigun',
+            '_token' => 'irrelevant',
+        ]));
+
+        $location = $response->headers->get('Location') ?? '';
+        $this->assertStringStartsWith('/anime_search_plugins?', $location);
+        $this->assertStringContainsString('error=conflict_claimed', $location);
+        $this->assertStringContainsString('owner_id='.$ownerId, $location);
+        $this->assertStringContainsString('q=Trigun', $location);
+        $this->assertNull($target->getCachedExternalId(new \App\Entity\ValueObject\PluginId('animedb-shikimori')), 'the target anime must not be linked when the external id was already claimed');
+    }
+
+    /**
+     * Issue #848, point 3: when $anime already carries a *different* external id for this plugin,
+     * {@see BulkFillerService::fillExistingFromPlugin()} throws
+     * {@see AnimeAlreadyLinkedToDifferentExternalIdException}. The controller must redirect to the
+     * search screen with its own error code, the plugin id, and the original query, and must not
+     * overwrite the record's existing link.
+     */
+    public function testFillExistingRedirectsToSearchWithConflictLinkedOtherErrorWhenAnimeAlreadyHasADifferentExternalId(): void
+    {
+        $this->writeManifest('animedb-shikimori', 'Shikimori');
+
+        $existing = new TvAnime();
+        $existing->setTitle('Trigun')->setWatchStatus(WatchStatus::Plan);
+        $this->entityManager->persist($existing);
+        $this->entityManager->flush();
+        $existingId = $existing->id ?? throw new \LogicException('must have id');
+
+        $filler = $this->createStub(FillerInterface::class);
+        $filler->method('getFillableFields')->willReturn(['title']);
+        $filler->method('findById')->willReturn(new PluginAnimeData(title: 'Trigun'));
+
+        $controller = $this->createController(['animedb-shikimori' => $filler]);
+
+        // Link the record to external id "1" first.
+        $controller->fillExisting($existingId, Request::create('/anime/search-plugins/fill-existing/'.$existingId, 'POST', [
+            'plugin_id' => 'animedb-shikimori',
+            'external_id' => '1',
+            '_token' => 'irrelevant',
+        ]));
+
+        // Attempting to link it to a different external id for the same plugin must be refused.
+        $response = $controller->fillExisting($existingId, Request::create('/anime/search-plugins/fill-existing/'.$existingId, 'POST', [
+            'plugin_id' => 'animedb-shikimori',
+            'external_id' => '2',
+            'q' => 'Trigun',
+            '_token' => 'irrelevant',
+        ]));
+
+        $location = $response->headers->get('Location') ?? '';
+        $this->assertStringStartsWith('/anime_search_plugins?', $location);
+        $this->assertStringContainsString('error=conflict_linked_other', $location);
+        $this->assertStringContainsString('plugin_id=animedb-shikimori', $location);
+        $this->assertStringContainsString('q=Trigun', $location);
+        $this->assertSame('1', $existing->getCachedExternalId(new \App\Entity\ValueObject\PluginId('animedb-shikimori')), 'the original link must survive the rejected attempt to relink');
+    }
+
+    /**
+     * Issue #848, point 3: index() turns `?error=conflict_claimed&owner_id=<id>` into a link to
+     * the owning record, resolved from the database right there rather than trusting a title
+     * carried in the URL.
+     */
+    public function testIndexResolvesConflictClaimedErrorIntoALinkToTheOwningAnime(): void
+    {
+        $existing = new TvAnime();
+        $existing->setTitle('Trigun')->setWatchStatus(WatchStatus::Plan);
+        $this->entityManager->persist($existing);
+        $this->entityManager->flush();
+        $existingId = $existing->id ?? throw new \LogicException('must have id');
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('anime/search_plugins/index.html.twig', $this->callback(static function (array $params) use ($existingId): bool {
+                self::assertSame('search_plugins.error_conflict_claimed', $params['error']['messageKey']);
+                self::assertNotNull($params['error']['link']);
+                self::assertSame('/anime_show?id='.$existingId, $params['error']['link']['url']);
+                self::assertSame('search_plugins.error_conflict_claimed_link', $params['error']['link']['labelKey']);
+
+                return true;
+            }))
+            ->willReturn('<main></main>');
+
+        $controller = $this->createController([], $twig);
+        $controller->index(Request::create('/anime/search-plugins?error=conflict_claimed&owner_id='.$existingId));
+    }
+
+    /**
+     * Issue #848, point 3: when `owner_id` no longer resolves to a record - deleted between the
+     * redirect and this request, or simply bogus - index() must still show the translated error
+     * message but degrade to no link, rather than link to a record that is not there.
+     */
+    public function testIndexConflictClaimedErrorHasNoLinkWhenTheOwningAnimeDoesNotExist(): void
+    {
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('anime/search_plugins/index.html.twig', $this->callback(static function (array $params): bool {
+                self::assertSame('search_plugins.error_conflict_claimed', $params['error']['messageKey']);
+                self::assertNull($params['error']['link']);
+
+                return true;
+            }))
+            ->willReturn('<main></main>');
+
+        $controller = $this->createController([], $twig);
+        $controller->index(Request::create('/anime/search-plugins?error=conflict_claimed&owner_id=999999'));
+    }
+
+    /**
+     * Issue #848, point 3: index() turns `?error=conflict_linked_other&plugin_id=<id>` into the
+     * plugin's own display name (resolved from its manifest, same as group()'s heading does),
+     * not the raw plugin id.
+     */
+    public function testIndexResolvesConflictLinkedOtherErrorIntoThePluginsDisplayName(): void
+    {
+        $this->writeManifest('animedb-shikimori', 'Shikimori');
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('anime/search_plugins/index.html.twig', $this->callback(static function (array $params): bool {
+                self::assertSame('search_plugins.error_conflict_linked_other', $params['error']['messageKey']);
+                self::assertSame(['%plugin%' => 'Shikimori'], $params['error']['messageParams']);
+                self::assertNull($params['error']['link']);
+
+                return true;
+            }))
+            ->willReturn('<main></main>');
+
+        $controller = $this->createController([], $twig);
+        $controller->index(Request::create('/anime/search-plugins?error=conflict_linked_other&plugin_id=animedb-shikimori'));
     }
 
     public function testFillExistingRejectsInvalidCsrfToken(): void
@@ -524,6 +700,67 @@ final class AnimeSearchPluginsControllerTest extends TestCase
         ]));
 
         $this->assertSame(2, $this->entityManager->getRepository(\App\Entity\Anime::class)->count([]));
+    }
+
+    /**
+     * Issue #848, point 4 (review fix): a plain (non-htmx) GET at this fragment endpoint - a
+     * stale browser-history entry from before this fix, or a direct link - must redirect to the
+     * index screen with the same `q` rather than render a bare HTML fragment with no layout.
+     */
+    public function testResultsRedirectsAPlainNonHtmxRequestToTheIndexScreenWithTheQueryPreserved(): void
+    {
+        $controller = $this->createController([]);
+
+        $response = $controller->results(Request::create('/anime/search-plugins/results?q=Trigun'));
+
+        $this->assertSame('/anime_search_plugins?q=Trigun', $response->headers->get('Location'));
+    }
+
+    public function testResultsRedirectsAPlainNonHtmxRequestToTheIndexScreenWithoutAQueryParamWhenQIsEmpty(): void
+    {
+        $controller = $this->createController([]);
+
+        $response = $controller->results(Request::create('/anime/search-plugins/results'));
+
+        $this->assertSame('/anime_search_plugins', $response->headers->get('Location'));
+    }
+
+    /**
+     * Issue #848, point 4 (review fix): the URL pushed into browser history for a search must be
+     * this fragment endpoint's own caller, the index screen, with `q` set - never this fragment
+     * endpoint's own URL, which has no layout, form, or styles to show on its own.
+     */
+    public function testResultsSetsHxPushUrlHeaderToTheIndexScreenUrlForHtmxRequests(): void
+    {
+        $controller = $this->createController([]);
+
+        $response = $controller->results(Request::create(
+            '/anime/search-plugins/results?q=Trigun',
+            'GET',
+            [],
+            [],
+            [],
+            ['HTTP_HX_REQUEST' => 'true'],
+        ));
+
+        $this->assertSame('/anime_search_plugins?q=Trigun', $response->headers->get('HX-Push-Url'));
+        $this->assertNull($response->headers->get('Location'));
+    }
+
+    public function testResultsHxPushUrlHeaderHasNoQueryParamWhenQIsEmpty(): void
+    {
+        $controller = $this->createController([]);
+
+        $response = $controller->results(Request::create(
+            '/anime/search-plugins/results',
+            'GET',
+            [],
+            [],
+            [],
+            ['HTTP_HX_REQUEST' => 'true'],
+        ));
+
+        $this->assertSame('/anime_search_plugins', $response->headers->get('HX-Push-Url'));
     }
 
     public function testIndexShowsUnavailableStateWhenNoFillerPluginIsInstalled(): void

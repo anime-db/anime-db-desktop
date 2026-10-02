@@ -544,6 +544,9 @@ search_plugins:
     group_empty: Ничего не найдено.
     preview_error: Не удалось загрузить данные тайтла.
     error_fill_not_found: Не удалось заполнить запись из этого источника. Попробуйте снова или выберите другого кандидата.
+    error_conflict_claimed: Этот тайтл уже привязан к другой записи каталога.
+    error_conflict_claimed_link: Перейти к записи →
+    error_conflict_linked_other: 'У этой записи уже есть связь с «%plugin%» на другой тайтл.'
     preview_field_type: Тип
     preview_field_dates: Даты показа
     preview_field_episodes_count: Число эпизодов
@@ -560,7 +563,7 @@ search_plugins:
 
 onboarding:
     heading: Каталог пуст
-    description: Добавьте хранилище с файлами аниме, загрузите демо-данные или найдите тайтл в плагинах-источниках, чтобы начать.
+    description: Найдите тайтл в плагинах-источниках, добавьте хранилище с файлами аниме или загрузите демо-данные, чтобы начать.
     search_plugins_heading: Найти в плагинах
     search_plugins_description: Найдите тайтл по названию во внешних источниках и добавьте его в каталог.
     search_plugins_button: Найти в плагинах

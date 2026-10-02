@@ -544,6 +544,9 @@ search_plugins:
     group_empty: Nothing found.
     preview_error: Could not load the title's data.
     error_fill_not_found: Could not fill in the record from this source. Try again or pick a different candidate.
+    error_conflict_claimed: This title is already linked to a different catalog record.
+    error_conflict_claimed_link: Go to the record →
+    error_conflict_linked_other: 'This record already has a link with "%plugin%" to a different title.'
     preview_field_type: Type
     preview_field_dates: Air dates
     preview_field_episodes_count: Episode count
@@ -560,7 +563,7 @@ search_plugins:
 
 onboarding:
     heading: The catalog is empty
-    description: Add a storage with your anime files, load demo data, or search a source plugin for a title to get started.
+    description: Search a source plugin for a title, add a storage with your anime files, or load demo data to get started.
     search_plugins_heading: Search in plugins
     search_plugins_description: Look up a title by name in external sources and add it to the catalog.
     search_plugins_button: Search in plugins
