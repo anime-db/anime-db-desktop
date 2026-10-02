@@ -191,6 +191,48 @@ function checkResponses(expectations, responses) {
     return problems;
 }
 
+/**
+ * A 404 on any of QBITTORRENT_ENDPOINTS means the client is calling a route the shipped
+ * qbittorrent-nox binary does not register — issue #841's regression (`torrents/pause`/
+ * `torrents/resume` renamed to `torrents/stop`/`torrents/start` in qBittorrent 5.x) verbatim. The
+ * 400s a stub hash or empty body can legitimately trigger are not a problem: they prove the route
+ * exists and was reached.
+ *
+ * `null`, `401`/`403` and `5xx` are treated as problems too, not just 404: qBittorrent's
+ * `WebApplication::doProcessRequest` checks the session before dispatching to the action controller,
+ * so a renamed/missing route can come back as 403 instead of 404 whenever `WebUI\LocalHostAuth` is
+ * not applied (a regression this project has already hit once, see the comment on
+ * `native/supervisor/qbittorrent.js` about issue #552). `null` means qbittorrent-nox never answered
+ * at all (not started yet, crashed, wrong port) — a silent pass there would be the exact false
+ * confidence this gate exists to remove.
+ *
+ * @param {{ port: number, path: string, status: number|null, error?: string }[]} responses
+ * @returns {string[]}
+ */
+function checkQbittorrentEndpoints(responses) {
+    const problems = [];
+
+    for (const response of responses) {
+        if (response.status === null) {
+            problems.push(
+                `127.0.0.1:${response.port}${response.path} — qbittorrent-nox не ответил ` +
+                `(${response.error ?? 'нет деталей'}): нельзя подтвердить, что эндпоинт существует`,
+            );
+        } else if (response.status === 404) {
+            problems.push(`127.0.0.1:${response.port}${response.path} — qbittorrent-nox отвечает 404: эндпоинт не существует в установленной версии`);
+        } else if (response.status === 401 || response.status === 403) {
+            problems.push(
+                `127.0.0.1:${response.port}${response.path} — qbittorrent-nox отвечает ${response.status}: ` +
+                'запрос отклонён до диспетчеризации в контроллер, существование маршрута не подтверждено',
+            );
+        } else if (response.status >= 500) {
+            problems.push(`127.0.0.1:${response.port}${response.path} — qbittorrent-nox отвечает ${response.status}: внутренняя ошибка`);
+        }
+    }
+
+    return problems;
+}
+
 /** @returns {Promise<void>} */
 function delay(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
@@ -244,6 +286,37 @@ const FIXED_PORT_SERVICES = [
 ];
 
 /**
+ * A torrent hash qbittorrent-nox has never heard of. Actions scoped to a hash (stop/start/
+ * setLocation) answer 200 for an unknown hash — they just match nothing — while a path that does
+ * not exist at all answers 404 regardless of the hash. That is the only distinction
+ * QBITTORRENT_ENDPOINTS needs: it is not exercising real torrent behaviour, only whether the route
+ * is still registered.
+ */
+const STUB_TORRENT_HASH = '0'.repeat(40);
+
+/**
+ * Every WebAPI endpoint `App\Service\Qbittorrent\QbittorrentClient` (app/src/Service/Qbittorrent/
+ * QbittorrentClient.php) calls, mirrored here so that a client endpoint renamed upstream — like
+ * issue #841's `torrents/pause`/`torrents/resume` becoming `torrents/stop`/`torrents/start` in
+ * qBittorrent 5.x — fails this gate instead of only failing silently in production. `GET` entries
+ * are probed as-is; `POST` entries carry the minimal body needed to reach the handler without
+ * mutating real state (an unknown hash, an empty preferences object).
+ *
+ * Kept honest by tests/scripts/release-smoke.test.js, which parses QbittorrentClient.php for its
+ * own `/api/v2/...` literals and asserts this list matches exactly — a new client endpoint cannot
+ * silently fall out of this check.
+ */
+const QBITTORRENT_ENDPOINTS = [
+    { method: 'POST', path: '/api/v2/torrents/add', body: '' },
+    { method: 'GET', path: '/api/v2/torrents/info' },
+    { method: 'POST', path: '/api/v2/torrents/setLocation', body: `hashes=${STUB_TORRENT_HASH}&location=` },
+    { method: 'POST', path: '/api/v2/torrents/stop', body: `hashes=${STUB_TORRENT_HASH}` },
+    { method: 'POST', path: '/api/v2/torrents/start', body: `hashes=${STUB_TORRENT_HASH}` },
+    { method: 'GET', path: '/api/v2/app/preferences' },
+    { method: 'POST', path: '/api/v2/app/setPreferences', body: 'json=%7B%7D' },
+];
+
+/**
  * @param {number} port
  * @param {string} requestPath
  * @param {boolean} [withBody] capture the first bytes of the response — diagnostics only
@@ -284,6 +357,49 @@ function probe(port, requestPath, withBody = false) {
         request.on('error', (err) => {
             resolve({ port, path: requestPath, status: null, error: err.message });
         });
+    });
+}
+
+/**
+ * Same contract as {@see probe}, but for the `POST` entries of QBITTORRENT_ENDPOINTS: qBittorrent's
+ * WebAPI registers actions on the method the real client uses, so probing with `GET` would say
+ * nothing about whether the `POST` route still exists.
+ *
+ * @param {number} port
+ * @param {string} requestPath
+ * @param {string} body url-encoded form body
+ * @returns {Promise<{ port: number, path: string, status: number|null, error?: string }>}
+ */
+function probePost(port, requestPath, body) {
+    return new Promise((resolve) => {
+        const request = http.request(
+            {
+                host: '127.0.0.1',
+                port,
+                path: requestPath,
+                method: 'POST',
+                timeout: PROBE_TIMEOUT_MS,
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'Content-Length': Buffer.byteLength(body),
+                },
+            },
+            (response) => {
+                response.resume();
+                response.on('end', () => resolve({ port, path: requestPath, status: response.statusCode }));
+            },
+        );
+
+        request.on('timeout', () => {
+            request.destroy();
+            resolve({ port, path: requestPath, status: null, error: `нет ответа за ${PROBE_TIMEOUT_MS} мс` });
+        });
+
+        request.on('error', (err) => {
+            resolve({ port, path: requestPath, status: null, error: err.message });
+        });
+
+        request.end(body);
     });
 }
 
@@ -555,6 +671,20 @@ async function run({
 
         problems.push(...checkResponses(EXPECTATIONS, responses));
 
+        const qbittorrentPort = FIXED_PORT_SERVICES.find((service) => service.name === 'qBittorrent WebUI').port;
+        const qbittorrentResponses = [];
+        for (const endpoint of QBITTORRENT_ENDPOINTS) {
+            const response = endpoint.method === 'GET'
+                ? await probe(qbittorrentPort, endpoint.path)
+                : await probePost(qbittorrentPort, endpoint.path, endpoint.body);
+            console.log(
+                `  127.0.0.1:${qbittorrentPort}${endpoint.path} [${endpoint.method}] -> ${response.error ?? response.status}`,
+            );
+            qbittorrentResponses.push(response);
+        }
+
+        problems.push(...checkQbittorrentEndpoints(qbittorrentResponses));
+
         if (problems.length > 0) {
             dumpLogs(profileDir);
             return { ok: false, exitCode: 1, message: 'Собранное приложение работает не так, как должно.', problems };
@@ -603,9 +733,12 @@ module.exports = {
     parseListeners,
     checkListeners,
     checkResponses,
+    checkQbittorrentEndpoints,
     checkLicenseFiles,
     pidFilePath,
     EXPECTATIONS,
+    QBITTORRENT_ENDPOINTS,
+    STUB_TORRENT_HASH,
     REQUIRED_LICENSE_FILES,
     DEFAULT_APP_PATH,
 };

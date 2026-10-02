@@ -40,11 +40,11 @@ use App\Service\Exception\TorrentProxyApplyException;
  *
  * Protocol-dependent behaviour (deliberate, not a gap):
  * - SOCKS5 is the only protocol libtorrent can tunnel P2P (peer/tracker/DHT/UDP) traffic through,
- *   so it is applied fail-closed: {@see applySocks5FailClosed()} pauses every torrent BEFORE
+ *   so it is applied fail-closed: {@see applySocks5FailClosed()} stops every torrent BEFORE
  *   touching the proxy, applies the new settings, reads them back to confirm qbittorrent-nox
- *   actually accepted them, and only resumes once that confirmation succeeds. Any failure along
- *   the way — the pause call, the apply call, or a readback that doesn't match — leaves every
- *   torrent paused and throws, so egress never resumes unproxied by accident.
+ *   actually accepted them, and only starts them again once that confirmation succeeds. Any
+ *   failure along the way — the stop call, the apply call, or a readback that doesn't match —
+ *   leaves every torrent stopped and throws, so egress never resumes unproxied by accident.
  * - HTTP does not cover P2P traffic at the protocol level (it has no notion of a UDP/tracker
  *   tunnel), so the torrent leg is intentionally left running direct rather than blocked — the
  *   settings page already warns the user about this via http_protocol_hint (issue #328).
@@ -86,15 +86,15 @@ final class TorrentProxySynchronizer
         $preferences = self::socks5Preferences($settings);
 
         try {
-            // Pause BEFORE touching the proxy: a torrent that is already connected must not keep
+            // Stop BEFORE touching the proxy: a torrent that is already connected must not keep
             // exchanging peer/tracker traffic unproxied while the new setting is being applied.
-            $this->client->pause('all');
+            $this->client->stop('all');
             $this->client->setPreferences($preferences);
             $this->confirmApplied($preferences);
-            // Resume is inside the same try/catch: a failure here means the proxy is confirmed
-            // but torrents did not resume, which must surface as the same visible fail-closed
-            // error rather than an unhandled exception — torrents simply stay paused either way.
-            $this->client->resume('all');
+            // Start is inside the same try/catch: a failure here means the proxy is confirmed
+            // but torrents did not start again, which must surface as the same visible fail-closed
+            // error rather than an unhandled exception — torrents simply stay stopped either way.
+            $this->client->start('all');
         } catch (QbittorrentClientException $exception) {
             throw new TorrentProxyApplyException('Failed to apply the SOCKS5 proxy to qbittorrent-nox; torrent egress stays paused (fail-closed).', previous: $exception);
         }
