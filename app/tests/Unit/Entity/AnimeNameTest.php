@@ -59,6 +59,11 @@ final class AnimeNameTest extends TestCase
         yield 'null stays null' => [null, null];
         yield 'not a language subtag becomes null' => ['russian', null];
         yield 'empty string becomes null' => ['', null];
+        // Issue #844: a plain trailing "\n" on the whole value is stripped by normalize()'s own
+        // trim() before the format check ever runs, so it cannot exercise the `$` vs `\z` anchor.
+        // A newline landing on the primary subtag itself (ahead of the regional-subtag separator)
+        // survives that trim and must still be rejected by the pattern.
+        yield 'newline on primary subtag is not stripped by trim and is rejected' => ["ru\n-RU", null];
     }
 
     #[DataProvider('provideLocales')]

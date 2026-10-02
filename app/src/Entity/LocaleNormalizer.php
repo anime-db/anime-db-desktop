@@ -41,7 +41,7 @@ namespace App\Entity;
  */
 final class LocaleNormalizer
 {
-    private const PATTERN = '/^[a-z]{2,3}$/';
+    private const PATTERN = '/^[a-z]{2,3}\z/';
 
     public static function normalize(?string $locale): ?string
     {

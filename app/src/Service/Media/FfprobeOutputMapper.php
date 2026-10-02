@@ -202,7 +202,7 @@ final class FfprobeOutputMapper
         if (\is_int($value)) {
             return $value;
         }
-        if (\is_string($value) && preg_match('/^-?\d+$/', $value) === 1) {
+        if (\is_string($value) && preg_match('/^-?\d+\z/', $value) === 1) {
             $int = (int) $value;
             $digits = ltrim($value, '-');
             $canonical = ltrim($digits, '0');
@@ -239,7 +239,7 @@ final class FfprobeOutputMapper
             return null;
         } elseif (\is_numeric($value)) {
             $float = (float) $value;
-        } elseif (preg_match('/^(-?\d+(?:\.\d+)?)\/(-?\d+(?:\.\d+)?)$/', $value, $m) === 1 && (float) $m[2] !== 0.0) {
+        } elseif (preg_match('/^(-?\d+(?:\.\d+)?)\/(-?\d+(?:\.\d+)?)\z/', $value, $m) === 1 && (float) $m[2] !== 0.0) {
             $float = (float) $m[1] / (float) $m[2];
         } else {
             return null;

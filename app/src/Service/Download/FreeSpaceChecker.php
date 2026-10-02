@@ -191,7 +191,7 @@ final class FreeSpaceChecker
         $value = substr($data, $pos + 1, $end - $pos - 1);
         $pos = $end + 1;
 
-        if ($value === '' || preg_match('/^-?\d+$/', $value) !== 1) {
+        if ($value === '' || preg_match('/^-?\d+\z/', $value) !== 1) {
             throw new InvalidTorrentFileException('Invalid bencoded integer.');
         }
 

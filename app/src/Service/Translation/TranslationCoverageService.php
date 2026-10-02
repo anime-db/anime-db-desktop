@@ -132,7 +132,7 @@ final class TranslationCoverageService
         $coverage = [];
         $translationsDir = $pluginDir.\DIRECTORY_SEPARATOR.'translations';
         foreach (glob($translationsDir.'/messages.*.yaml') ?: [] as $file) {
-            if (preg_match('/^messages\.([a-zA-Z_-]+)\.yaml$/', basename($file), $matches) !== 1) {
+            if (preg_match('/^messages\.([a-zA-Z_-]+)\.yaml\z/', basename($file), $matches) !== 1) {
                 continue;
             }
 
@@ -183,7 +183,7 @@ final class TranslationCoverageService
         }
 
         $translationsDir = $pluginDir.\DIRECTORY_SEPARATOR.'translations';
-        $pattern = '/^'.preg_quote($pluginId, '/').'\.([a-zA-Z_-]+)\.yaml$/';
+        $pattern = '/^'.preg_quote($pluginId, '/').'\.([a-zA-Z_-]+)\.yaml\z/';
 
         $locales = [];
         foreach (glob($translationsDir.'/'.$pluginId.'.*.yaml') ?: [] as $file) {

@@ -377,7 +377,7 @@ final class InstalledPluginsRegistry
         }
 
         foreach ($locales as $locale) {
-            if (!\is_string($locale) || preg_match('/^[a-z]{2,3}$/', $locale) !== 1) {
+            if (!\is_string($locale) || preg_match('/^[a-z]{2,3}\z/', $locale) !== 1) {
                 throw new \UnexpectedValueException('Locale code in installed plugin index must be a bare lowercase language subtag.');
             }
         }
