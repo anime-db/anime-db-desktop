@@ -82,6 +82,7 @@
                     <input type="hidden" name="_token" value="{{ csrf_token('anime_search_plugins_fill_existing_' ~ possibleMatch.id) }}">
                     <input type="hidden" name="plugin_id" value="{{ pluginId }}">
                     <input type="hidden" name="external_id" value="{{ externalId }}">
+                    <input type="hidden" name="q" value="{{ query }}">
                     <button type="submit" class="btn btn-outline-primary">{{ 'search_plugins.fill_existing_button'|trans }}</button>
                 </form>
 

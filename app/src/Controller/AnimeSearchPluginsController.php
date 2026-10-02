@@ -50,7 +50,6 @@ use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
-use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
@@ -103,8 +102,58 @@ final class AnimeSearchPluginsController
             'query' => trim((string) $request->query->get('q', '')),
             'hasActiveFiller' => $hasActiveFiller,
             'noFillerState' => $hasActiveFiller ? null : $this->fillerAvailability->describeUnavailable(),
-            'error' => $request->query->get('error') === 'fill_not_found' ? 'search_plugins.error_fill_not_found' : null,
+            'error' => $this->resolveError($request),
         ]));
+    }
+
+    /**
+     * Turns the `?error=` code a redirect (issue #848, points 3-4) carries back onto this screen
+     * into a translation key plus, for `conflict_claimed`, a link to the catalog record that
+     * already owns the external id — `owner_id` is only ever present for that one error code, and
+     * a record deleted between the redirect and this request simply degrades to no link.
+     *
+     * @return array{messageKey: string, messageParams: array<string, string>, link: array{url: string, labelKey: string}|null}|null
+     */
+    private function resolveError(Request $request): ?array
+    {
+        return match ((string) $request->query->get('error', '')) {
+            'fill_not_found' => ['messageKey' => 'search_plugins.error_fill_not_found', 'messageParams' => [], 'link' => null],
+            'conflict_claimed' => $this->resolveConflictClaimedError($request),
+            'conflict_linked_other' => $this->resolveConflictLinkedOtherError($request),
+            default => null,
+        };
+    }
+
+    /** @return array{messageKey: string, messageParams: array<string, string>, link: array{url: string, labelKey: string}|null} */
+    private function resolveConflictClaimedError(Request $request): array
+    {
+        $ownerId = (int) $request->query->get('owner_id', 0);
+        $owner = $ownerId > 0 ? $this->entityManager->find(Anime::class, $ownerId) : null;
+
+        return [
+            'messageKey' => 'search_plugins.error_conflict_claimed',
+            'messageParams' => [],
+            'link' => $owner instanceof Anime
+                ? ['url' => $this->urlGenerator->generate('anime_show', ['id' => $owner->id]), 'labelKey' => 'search_plugins.error_conflict_claimed_link']
+                : null,
+        ];
+    }
+
+    /** @return array{messageKey: string, messageParams: array<string, string>, link: null} */
+    private function resolveConflictLinkedOtherError(Request $request): array
+    {
+        $rawPluginId = (string) $request->query->get('plugin_id', '');
+        $pluginName = $rawPluginId;
+        try {
+            $pluginName = $this->installedPlugins->get(new PluginId($rawPluginId))?->manifest->name ?? $rawPluginId;
+        } catch (InvalidPluginIdException) {
+        }
+
+        return [
+            'messageKey' => 'search_plugins.error_conflict_linked_other',
+            'messageParams' => ['%plugin%' => $pluginName],
+            'link' => null,
+        ];
     }
 
     /**
@@ -148,7 +197,7 @@ final class AnimeSearchPluginsController
         $filler = $this->fillerRegistry->findByPluginId($id);
 
         if ($filler === null || $query === '') {
-            return $this->renderGroup($pluginId, $pluginName, 'empty', []);
+            return $this->renderGroup($pluginId, $pluginName, 'empty', [], $query);
         }
 
         try {
@@ -159,13 +208,13 @@ final class AnimeSearchPluginsController
                 'exception' => $exception,
             ]);
 
-            return $this->renderGroup($pluginId, $pluginName, 'error', []);
+            return $this->renderGroup($pluginId, $pluginName, 'error', [], $query);
         }
 
         return $this->renderGroup($pluginId, $pluginName, $candidates === [] ? 'empty' : 'results', array_map(
             static fn ($candidate): array => ['name' => $candidate->getName(), 'externalId' => $candidate->getExternalId()],
             $candidates,
-        ));
+        ), $query);
     }
 
     /**
@@ -180,6 +229,7 @@ final class AnimeSearchPluginsController
         $rawPluginId = (string) $request->query->get('plugin_id', '');
         $externalId = (string) $request->query->get('external_id', '');
         $name = (string) $request->query->get('name', '');
+        $query = trim((string) $request->query->get('q', ''));
 
         try {
             $pluginId = new PluginId($rawPluginId);
@@ -216,6 +266,7 @@ final class AnimeSearchPluginsController
             'pluginId' => $rawPluginId,
             'externalId' => $externalId,
             'name' => $name,
+            'query' => $query,
         ];
 
         $existing = $this->animeRepository->resolve($pluginId, $externalId);
@@ -300,15 +351,26 @@ final class AnimeSearchPluginsController
         if ($externalId === '') {
             throw new BadRequestHttpException('"external_id" is required.');
         }
+        $query = trim((string) $request->request->get('q', ''));
 
         try {
             $result = $this->bulkFiller->fillExistingFromPlugin($anime, $pluginId, $externalId);
-        } catch (ExternalIdAlreadyClaimedException|AnimeAlreadyLinkedToDifferentExternalIdException $exception) {
-            throw new ConflictHttpException($exception->getMessage(), $exception);
+        } catch (ExternalIdAlreadyClaimedException $exception) {
+            return new RedirectResponse($this->urlGenerator->generate('anime_search_plugins', [
+                'error' => 'conflict_claimed',
+                'owner_id' => $exception->animeId,
+                'q' => $query,
+            ]));
+        } catch (AnimeAlreadyLinkedToDifferentExternalIdException) {
+            return new RedirectResponse($this->urlGenerator->generate('anime_search_plugins', [
+                'error' => 'conflict_linked_other',
+                'plugin_id' => (string) $pluginId,
+                'q' => $query,
+            ]));
         }
 
         if ($result === FillResult::NotFound) {
-            return new RedirectResponse($this->urlGenerator->generate('anime_search_plugins', ['error' => 'fill_not_found']));
+            return new RedirectResponse($this->urlGenerator->generate('anime_search_plugins', ['error' => 'fill_not_found', 'q' => $query]));
         }
 
         return new RedirectResponse($this->urlGenerator->generate('anime_show', ['id' => $animeId]));
@@ -324,13 +386,14 @@ final class AnimeSearchPluginsController
     }
 
     /** @param list<array{name: string, externalId: string}> $candidates */
-    private function renderGroup(string $pluginId, string $pluginName, string $state, array $candidates): Response
+    private function renderGroup(string $pluginId, string $pluginName, string $state, array $candidates, string $query): Response
     {
         return new Response($this->twig->render('anime/search_plugins/_group.html.twig', [
             'pluginId' => $pluginId,
             'pluginName' => $pluginName,
             'state' => $state,
             'candidates' => $candidates,
+            'query' => $query,
         ]));
     }
 

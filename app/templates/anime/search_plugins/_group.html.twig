@@ -24,6 +24,12 @@
  # (issue #833, point 2) - a plugin's own find() exception never reaches this far, it is already
  # turned into 'error' by the controller, so this template only ever displays a state, never
  # throws one.
+ #
+ # Every candidate button shares the same `` (issue
+ # #848, point 1): htmx treats requests as belonging to the same sync group when their hx-sync
+ # selector resolves to the same element, so clicking a second candidate while the first
+ # candidate's preview is still loading aborts that first request instead of letting its response
+ # land after the second one and overwrite it.
  #}
 <section class="search-plugins__group" id="search-plugins-group-{{ pluginId }}">
     <h2 class="search-plugins__group-heading"><bdi>{{ pluginName }}</bdi></h2>
@@ -39,9 +45,10 @@
                     <button
                         type="button"
                         class="search-plugins__candidate"
-                        hx-get="{{ path('anime_search_plugins_preview', {plugin_id: pluginId, external_id: candidate.externalId, name: candidate.name}) }}"
+                        hx-get="{{ path('anime_search_plugins_preview', {plugin_id: pluginId, external_id: candidate.externalId, name: candidate.name, q: query}) }}"
                         hx-target="#search-plugins-preview"
                         hx-swap="innerHTML"
+                        hx-sync="#search-plugins-preview:replace"
                     ><bdi>{{ candidate.name }}</bdi></button>
                 </li>
             {% endfor %}

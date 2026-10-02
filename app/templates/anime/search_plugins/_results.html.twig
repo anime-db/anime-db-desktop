@@ -22,17 +22,26 @@
  # One placeholder per active plugin (issue #833, point 2), each with its own `hx-get` fired
  # right after this fragment is swapped in (hx-trigger="load", same shape as
  # plugin/_widget_slots.html.twig) — the page's own delay is the slowest plugin, not their sum.
+ # The `hx-get`/`hx-trigger`/`hx-swap` sit directly on the placeholder `<section>` itself rather
+ # than a wrapper div (issue #848, point 5): group()'s own response is a `<section>` with the same
+ # id, so swapping this one's outerHTML replaces it one-for-one — a nested div here would leave
+ # two sections sharing that id after the swap.
+ #
+ # The out-of-band `#search-plugins-preview` clear (issue #848, point 2) rides along on every
+ # response from this endpoint, so a new search never leaves a candidate from the previous one
+ # on screen with a still-working "Add" button.
  #}
+<div id="search-plugins-preview" hx-swap-oob="innerHTML"></div>
 {% if query is empty %}
     <p class="search-plugins__hint">{{ 'search_plugins.enter_query_hint'|trans }}</p>
 {% else %}
     {% for pluginId in pluginIds %}
-        <section class="search-plugins__group" id="search-plugins-group-{{ pluginId }}">
-            <div
-                hx-get="{{ path('anime_search_plugins_group', {pluginId: pluginId, q: query}) }}"
-                hx-trigger="load"
-                hx-swap="outerHTML"
-            >{{ 'search_plugins.group_loading'|trans }}</div>
-        </section>
+        <section
+            class="search-plugins__group"
+            id="search-plugins-group-{{ pluginId }}"
+            hx-get="{{ path('anime_search_plugins_group', {pluginId: pluginId, q: query}) }}"
+            hx-trigger="load"
+            hx-swap="outerHTML"
+        >{{ 'search_plugins.group_loading'|trans }}</section>
     {% endfor %}
 {% endif %}

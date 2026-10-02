@@ -22,6 +22,12 @@
  # "Search in plugins" screen (issue #833): outside /settings (no sidebar, same shape as
  # storage/scan_prompt.html.twig), with "Catalog" highlighted in the top nav via the 'anime_'
  # route-name prefix already handled by base.html.twig.
+ #
+ # `hx-push-url="true"` on the form (issue #848, point 4) puts `?q=` in the address bar, so the
+ # browser's own "back" after an add/fill-existing redirect returns to this same search instead
+ # of a blank form. The results container's own `hx-trigger="load"` (only wired up when `query`
+ # is non-empty) re-fires that same search as soon as the page with a restored `q` loads, instead
+ # of leaving the user to press "Search" again for a query already sitting in the input.
  #}
 {% extends 'base.html.twig' %}
 
@@ -32,7 +38,12 @@
         <h1 class="search-plugins__heading">{{ 'search_plugins.heading'|trans }}</h1>
 
         {% if error %}
-            <p class="alert alert-danger">{{ error|trans }}</p>
+            <p class="alert alert-danger">
+                {{ error.messageKey|trans(error.messageParams) }}
+                {% if error.link %}
+                    <a href="{{ error.link.url }}">{{ error.link.labelKey|trans }}</a>
+                {% endif %}
+            </p>
         {% endif %}
 
         {% if not hasActiveFiller %}
@@ -47,6 +58,7 @@
                 hx-target="#search-plugins-results"
                 hx-swap="innerHTML"
                 hx-indicator="#search-plugins-indicator"
+                hx-push-url="true"
             >
                 <label class="visually-hidden" for="search-plugins-query">{{ 'search_plugins.name_label'|trans }}</label>
                 <input
@@ -63,7 +75,15 @@
             </form>
 
             <div class="search-plugins__layout">
-                <div class="search-plugins__results" id="search-plugins-results"></div>
+                <div
+                    class="search-plugins__results"
+                    id="search-plugins-results"
+                    {% if query is not empty %}
+                        hx-get="{{ path('anime_search_plugins_results', {q: query}) }}"
+                        hx-trigger="load"
+                        hx-swap="innerHTML"
+                    {% endif %}
+                ></div>
 
                 <aside class="search-plugins__preview" id="search-plugins-preview" aria-live="polite"></aside>
             </div>

@@ -64,10 +64,91 @@ final class SearchPluginsTemplateRenderingTest extends KernelTestCase
             'pluginName' => 'Shikimori',
             'state' => 'results',
             'candidates' => [['name' => 'Trigun', 'externalId' => '1']],
+            'query' => 'Trigun',
         ]);
 
         $this->assertStringContainsString('<button', $html);
         $this->assertStringNotContainsString('<a ', $html);
+    }
+
+    /**
+     * Issue #848, point 1: without a shared `hx-sync`, clicking candidate A and then candidate B
+     * before A's preview response lands can let A's response arrive last and overwrite B's
+     * preview — the "Add" button would then add A while the screen still shows B. Every candidate
+     * button must synchronize against the same `#search-plugins-preview` selector so a second
+     * click aborts the first click's still-pending request instead of racing it.
+     */
+    public function testGroupCandidateButtonsSynchronizeAgainstThePreviewPanel(): void
+    {
+        self::bootKernel();
+        $this->pushRequest();
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('anime/search_plugins/_group.html.twig', [
+            'pluginId' => 'animedb-shikimori',
+            'pluginName' => 'Shikimori',
+            'state' => 'results',
+            'candidates' => [['name' => 'Trigun', 'externalId' => '1']],
+            'query' => 'Trigun',
+        ]);
+
+        $this->assertStringContainsString('hx-sync="#search-plugins-preview:replace"', $html);
+    }
+
+    /**
+     * Issue #848, point 5: _results.html.twig's placeholder used to wrap its `hx-get`/`hx-trigger`
+     * in a nested `<div>` inside the `<section id="search-plugins-group-...">`. group()'s own
+     * response is again a `<section>` with that same id, so swapping the nested div's outerHTML
+     * left two elements sharing one id. The placeholder must now put `hx-get`/`hx-trigger`/
+     * `hx-swap` directly on the `<section>` itself, with no nested `<section>` or `<div hx-get`
+     * inside it.
+     */
+    public function testResultsPlaceholderPutsHxGetDirectlyOnTheSectionWithNoNestedElement(): void
+    {
+        self::bootKernel();
+        $this->pushRequest();
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('anime/search_plugins/_results.html.twig', [
+            'query' => 'Trigun',
+            'pluginIds' => ['animedb-shikimori'],
+        ]);
+
+        $this->assertSame(1, preg_match_all('/<section[^>]*id="search-plugins-group-animedb-shikimori"/', $html), 'exactly one section with this id, no nested duplicate');
+        $this->assertMatchesRegularExpression(
+            '/<section[^>]*id="search-plugins-group-animedb-shikimori"[^>]*hx-get=/',
+            $html,
+        );
+        $this->assertStringNotContainsString('<div hx-get', $html, 'the placeholder must carry hx-get itself, not wrap it in a nested div');
+    }
+
+    /**
+     * Issue #848, point 2: a brand new search must not leave the previous candidate's preview
+     * (with its still-working "Add" button) on screen. results() rides an out-of-band swap that
+     * clears #search-plugins-preview's content on every response, regardless of whether the query
+     * is empty.
+     */
+    public function testResultsClearsThePreviewPanelViaAnOutOfBandSwap(): void
+    {
+        self::bootKernel();
+        $this->pushRequest();
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+
+        $withQuery = $twig->render('anime/search_plugins/_results.html.twig', [
+            'query' => 'Trigun',
+            'pluginIds' => ['animedb-shikimori'],
+        ]);
+        $this->assertStringContainsString('id="search-plugins-preview" hx-swap-oob="innerHTML"', $withQuery);
+
+        $withoutQuery = $twig->render('anime/search_plugins/_results.html.twig', [
+            'query' => '',
+            'pluginIds' => ['animedb-shikimori'],
+        ]);
+        $this->assertStringContainsString('id="search-plugins-preview" hx-swap-oob="innerHTML"', $withoutQuery);
     }
 
     public function testIndexPreviewPanelHasAnAriaLiveRegion(): void
@@ -88,5 +169,85 @@ final class SearchPluginsTemplateRenderingTest extends KernelTestCase
             '/<aside[^>]*id="search-plugins-preview"[^>]*aria-live="polite"/',
             $html,
         );
+    }
+
+    /**
+     * Issue #848, point 4: `?q=` must land in the address bar so the browser's own "back" after
+     * an add/fill-existing redirect returns to the search results instead of a blank form.
+     */
+    public function testIndexFormHasHxPushUrl(): void
+    {
+        self::bootKernel();
+        $this->pushRequest();
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('anime/search_plugins/index.html.twig', [
+            'query' => '',
+            'hasActiveFiller' => true,
+            'noFillerState' => null,
+            'error' => null,
+        ]);
+
+        $this->assertStringContainsString('hx-push-url="true"', $html);
+    }
+
+    /**
+     * Issue #848, point 4: a non-empty `q` (restored from `?q=` or a redirect back from
+     * fill_not_found/a conflict) must fire the search automatically on page load; a blank query
+     * must not trigger a round trip for nothing.
+     */
+    public function testIndexResultsContainerAutoLoadsOnlyWhenQueryIsNotEmpty(): void
+    {
+        self::bootKernel();
+        $this->pushRequest();
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+
+        $withQuery = $twig->render('anime/search_plugins/index.html.twig', [
+            'query' => 'Trigun',
+            'hasActiveFiller' => true,
+            'noFillerState' => null,
+            'error' => null,
+        ]);
+        $this->assertMatchesRegularExpression(
+            '/<div[^>]*id="search-plugins-results"[^>]*hx-trigger="load"/',
+            $withQuery,
+        );
+
+        $withoutQuery = $twig->render('anime/search_plugins/index.html.twig', [
+            'query' => '',
+            'hasActiveFiller' => true,
+            'noFillerState' => null,
+            'error' => null,
+        ]);
+        $this->assertStringNotContainsString('hx-trigger="load"', $withoutQuery);
+    }
+
+    /**
+     * Issue #848, point 3: a conflict error must render as a translated message plus, when a link
+     * is supplied, an anchor to the owning record - never raw HTML smuggled through `|raw`.
+     */
+    public function testIndexRendersTheConflictErrorMessageWithItsLink(): void
+    {
+        self::bootKernel();
+        $this->pushRequest();
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('anime/search_plugins/index.html.twig', [
+            'query' => '',
+            'hasActiveFiller' => true,
+            'noFillerState' => null,
+            'error' => [
+                'messageKey' => 'search_plugins.error_conflict_claimed',
+                'messageParams' => [],
+                'link' => ['url' => '/anime/42', 'labelKey' => 'search_plugins.error_conflict_claimed_link'],
+            ],
+        ]);
+
+        $this->assertStringContainsString('alert-danger', $html);
+        $this->assertStringContainsString('<a href="/anime/42"', $html);
     }
 }
