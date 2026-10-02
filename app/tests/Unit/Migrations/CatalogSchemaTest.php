@@ -86,6 +86,43 @@ final class CatalogSchemaTest extends TestCase
         );
     }
 
+    public function testDeletingStorageSetsDownloadStorageIdToNullButKeepsStoragePath(): void
+    {
+        $this->connection->executeStatement(
+            "INSERT INTO storage (name, type, path) VALUES ('Main', 'folder', 'D:\\Anime')",
+        );
+        $storageId = (int) $this->connection->lastInsertId();
+
+        $this->connection->executeStatement(
+            "INSERT INTO anime (title, watch_status, type, date_add, date_update) VALUES ('Trigun', 'plan', 'tv', 0, 0)",
+        );
+        $animeId = (int) $this->connection->lastInsertId();
+
+        $this->connection->executeStatement(
+            'INSERT INTO downloads (info_hash, anime_id, status, date_add, storage_id, storage_path, version) '
+            ."VALUES ('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', {$animeId}, 'completed', 0, {$storageId}, 'D:\\Anime\\Trigun', 1)",
+        );
+        $downloadId = (int) $this->connection->lastInsertId();
+
+        $this->connection->executeStatement("DELETE FROM storage WHERE id = {$storageId}");
+
+        $this->assertSame(
+            0,
+            (int) $this->connection->fetchOne('SELECT COUNT(*) FROM storage'),
+        );
+        $this->assertSame(
+            1,
+            (int) $this->connection->fetchOne('SELECT COUNT(*) FROM downloads WHERE id = ?', [$downloadId]),
+        );
+        $this->assertNull(
+            $this->connection->fetchOne('SELECT storage_id FROM downloads WHERE id = ?', [$downloadId]),
+        );
+        $this->assertSame(
+            'D:\\Anime\\Trigun',
+            $this->connection->fetchOne('SELECT storage_path FROM downloads WHERE id = ?', [$downloadId]),
+        );
+    }
+
     public function testDeletingStudioLinkedToAnimeIsRejected(): void
     {
         $this->connection->executeStatement("INSERT INTO studio (name) VALUES ('Sunrise')");

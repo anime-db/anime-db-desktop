@@ -29,6 +29,7 @@ namespace App\Tests\Unit\Service\Download;
 
 use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
+use App\Entity\Download;
 use App\Entity\Enum\WatchStatus;
 use App\Entity\TvAnime;
 use App\Repository\AnimeRepository;
@@ -98,24 +99,48 @@ final class AnimeDownloadLinkerTest extends TestCase
         return $anime;
     }
 
+    private function persistDownload(string $infoHash, TvAnime $anime): Download
+    {
+        $download = new Download($infoHash, $anime);
+        $this->entityManager->persist($download);
+        $this->entityManager->flush();
+
+        return $download;
+    }
+
     public function testLinkSetsStorageAndRelativeStoragePath(): void
     {
         $anime = $this->persistAnime();
+        $download = $this->persistDownload('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', $anime);
 
-        $this->linker->link($anime, self::ROOT.'\\some-release');
+        $this->linker->link($download, self::ROOT.'\\some-release');
 
         $this->assertNotNull($anime->getStorage());
         $this->assertSame(self::ROOT, $anime->getStorage()->getPath());
         $this->assertSame('some-release', $anime->getStoragePath());
     }
 
+    public function testLinkRecordsTheSameSnapshotOnTheDownload(): void
+    {
+        $anime = $this->persistAnime();
+        $download = $this->persistDownload('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', $anime);
+
+        $this->linker->link($download, self::ROOT.'\\some-release');
+
+        $this->assertNotNull($download->getLinkedStorage());
+        $this->assertSame($anime->getStorage()?->id, $download->getLinkedStorage()->id);
+        $this->assertSame('some-release', $download->getLinkedStoragePath());
+    }
+
     public function testLinkReusesTheSameStorageRowForASecondAnime(): void
     {
         $first = $this->persistAnime();
         $second = $this->persistAnime();
+        $firstDownload = $this->persistDownload('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', $first);
+        $secondDownload = $this->persistDownload('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', $second);
 
-        $this->linker->link($first, self::ROOT.'\\release-one');
-        $this->linker->link($second, self::ROOT.'\\release-two');
+        $this->linker->link($firstDownload, self::ROOT.'\\release-one');
+        $this->linker->link($secondDownload, self::ROOT.'\\release-two');
 
         $this->assertNotNull($first->getStorage());
         $this->assertNotNull($second->getStorage());
@@ -125,20 +150,23 @@ final class AnimeDownloadLinkerTest extends TestCase
     public function testLinkRejectsAPathOutsideTheDownloadsRoot(): void
     {
         $anime = $this->persistAnime();
+        $download = $this->persistDownload('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', $anime);
 
         $this->expectException(DownloadPathOutsideJailException::class);
 
-        $this->linker->link($anime, 'C:\\Users\\bob\\Documents\\secret');
+        $this->linker->link($download, 'C:\\Users\\bob\\Documents\\secret');
     }
 
     public function testLinkRejectsAPairAlreadyHeldByAnotherAnimeWithoutWriting(): void
     {
         $holder = $this->persistAnime();
         $other = $this->persistAnime();
-        $this->linker->link($holder, self::ROOT.'\\shared-pack');
+        $holderDownload = $this->persistDownload('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', $holder);
+        $otherDownload = $this->persistDownload('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', $other);
+        $this->linker->link($holderDownload, self::ROOT.'\\shared-pack');
 
         try {
-            $this->linker->link($other, self::ROOT.'\\shared-pack');
+            $this->linker->link($otherDownload, self::ROOT.'\\shared-pack');
             $this->fail('Expected DownloadStoragePathConflictException.');
         } catch (DownloadStoragePathConflictException $exception) {
             $this->assertSame($holder->id, $exception->occupyingAnimeId);
@@ -146,14 +174,17 @@ final class AnimeDownloadLinkerTest extends TestCase
 
         $this->assertNull($other->getStorage());
         $this->assertNull($other->getStoragePath());
+        $this->assertNull($otherDownload->getLinkedStorage());
+        $this->assertNull($otherDownload->getLinkedStoragePath());
     }
 
     public function testLinkingTheSameAnimeTwiceIsNotAConflict(): void
     {
         $anime = $this->persistAnime();
+        $download = $this->persistDownload('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', $anime);
 
-        $this->linker->link($anime, self::ROOT.'\\some-release');
-        $this->linker->link($anime, self::ROOT.'\\some-release');
+        $this->linker->link($download, self::ROOT.'\\some-release');
+        $this->linker->link($download, self::ROOT.'\\some-release');
 
         $this->assertSame('some-release', $anime->getStoragePath());
     }

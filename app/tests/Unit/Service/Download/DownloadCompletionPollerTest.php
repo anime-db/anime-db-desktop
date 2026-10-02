@@ -49,6 +49,7 @@ use App\Service\Download\FreeSpaceChecker;
 use App\Service\Download\FreeSpaceProvider;
 use App\Service\Download\NativeFreeSpaceProvider;
 use App\Service\Qbittorrent\QbittorrentClient;
+use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\EntityManager;
@@ -410,6 +411,7 @@ final class DownloadCompletionPollerTest extends TestCase
         $this->assertSame([$first->id, $first->id, $third->id, $third->id], array_map(static fn (object $event): int => $event->anime->value, $dispatched));
 
         $this->assertCount(1, $logged);
+        $this->assertStringContainsString(\sprintf('anime #%d', $first->id), $logged[0]['message']);
         $this->assertStringContainsString('app:downloads:unlink', $logged[0]['message']);
         $this->assertSame($secondHash, $logged[0]['context']['infoHash']);
         $this->assertSame(self::ROOT.'\\season-pack', $logged[0]['context']['contentPath']);
@@ -773,6 +775,127 @@ final class DownloadCompletionPollerTest extends TestCase
         $this->assertSame(\RuntimeException::class, $messages[0][1]['exceptionClass']);
         $this->assertStringContainsString('closed', $messages[1][0]);
         $this->assertSame(1, $messages[1][1]['remaining']);
+    }
+
+    /**
+     * Issue #837: markCompleted() and the (storage, path) snapshot written onto the Download row
+     * (see Download::recordLinkedStorage()) must land in the very same flush() as the anime's
+     * pointer — otherwise a crash between them would leave a Completed row with no snapshot,
+     * which DownloadFolderPointer::releaseIfOwnedBy() can never tell apart from one that legitimately
+     * owns no pointer. Simulated the same way testALinkFailureBeforeFlushDoesNotLeakACompletedRowIntoTheNextHash
+     * does: a DBAL-like error inside link(), after markCompleted() but strictly before link()'s own
+     * flush() ever runs.
+     */
+    public function testAFailureBeforeTheCompletionFlushLeavesNoPartialSnapshotOrPointer(): void
+    {
+        $anime = $this->persistAnime();
+        $this->downloads->save(new Download(self::HASH, $anime));
+
+        $eventDispatcher = $this->createMock(EventDispatcherInterface::class);
+        $eventDispatcher->expects($this->never())->method('dispatch');
+
+        $storages = new class($this->entityManager) extends StorageRepository {
+            public function findOneByPath(string $path): ?Storage
+            {
+                throw new \RuntimeException('database is locked');
+            }
+        };
+
+        $jail = new DownloadFolderJail(new AppSettingsProvider(new AppConfigStore($this->configPath)));
+        $linker = new AnimeDownloadLinker($storages, new AnimeRepository($this->entityManager), $this->entityManager, $jail);
+        $poller = new DownloadCompletionPoller(
+            new QbittorrentClient(new MockHttpClient(static fn (): MockResponse => new MockResponse(
+                json_encode([['hash' => self::HASH, 'infohash_v1' => self::HASH, 'progress' => 1, 'state' => 'uploading', 'content_path' => self::ROOT.'\\some-release']], \JSON_THROW_ON_ERROR),
+                ['response_headers' => ['content-type' => 'application/json']],
+            )), self::BASE_URL),
+            $this->downloads,
+            $linker,
+            $eventDispatcher,
+            $this->entityManager,
+            new FreeSpaceChecker($jail, new NativeFreeSpaceProvider()),
+            new NullLogger(),
+        );
+
+        $poller->poll();
+
+        $this->entityManager->clear();
+        $row = $this->downloads->findByInfoHashAndAnime(self::HASH, (int) $anime->id);
+        $this->assertNotNull($row);
+        $this->assertFalse($row->isCompleted());
+        $this->assertNull($row->getLinkedStorage());
+        $this->assertNull($row->getLinkedStoragePath());
+        $reloadedAnime = $this->entityManager->find(TvAnime::class, $anime->id);
+        $this->assertNotNull($reloadedAnime);
+        $this->assertNull($reloadedAnime->getStorage());
+        $this->assertNull($reloadedAnime->getStoragePath());
+    }
+
+    /**
+     * Issue #837, "forward order" race: app:downloads:unlink deletes the Download row between
+     * DownloadCompletionPoller loading it (findPendingByInfoHash()) and link()'s own flush(). The
+     * row's #[ORM\Version] column makes that UPDATE affect zero rows, so Doctrine raises
+     * OptimisticLockException; the anime's pointer is never set, and poll() itself does not
+     * propagate the exception to its caller (PollDownloadsMessageHandler) — the same per-infoHash
+     * isolation the class docblock already documents for any other \Throwable from link().
+     */
+    public function testTheRowBeingDeletedBetweenLoadAndFlushDoesNotSetThePointerOrThrow(): void
+    {
+        $anime = $this->persistAnime();
+        $download = new Download(self::HASH, $anime);
+        $this->downloads->save($download);
+        $downloadId = $download->id;
+
+        $eventDispatcher = $this->createMock(EventDispatcherInterface::class);
+        $eventDispatcher->expects($this->never())->method('dispatch');
+
+        $connection = $this->entityManager->getConnection();
+        $storages = new class($this->entityManager, $connection, (int) $downloadId) extends StorageRepository {
+            public function __construct(
+                EntityManagerInterface $entityManager,
+                private readonly Connection $connection,
+                private readonly int $downloadId,
+            ) {
+                parent::__construct($entityManager);
+            }
+
+            public function findOneByPath(string $path): ?Storage
+            {
+                // Simulates a concurrent "app:downloads:unlink" deleting the row, between this
+                // poll() loading it and link()'s own flush() further down the call stack.
+                $this->connection->executeStatement('DELETE FROM downloads WHERE id = ?', [$this->downloadId]);
+
+                return parent::findOneByPath($path);
+            }
+        };
+
+        $jail = new DownloadFolderJail(new AppSettingsProvider(new AppConfigStore($this->configPath)));
+        $linker = new AnimeDownloadLinker($storages, new AnimeRepository($this->entityManager), $this->entityManager, $jail);
+        $poller = new DownloadCompletionPoller(
+            new QbittorrentClient(new MockHttpClient(static fn (): MockResponse => new MockResponse(
+                json_encode([['hash' => self::HASH, 'infohash_v1' => self::HASH, 'progress' => 1, 'state' => 'uploading', 'content_path' => self::ROOT.'\\some-release']], \JSON_THROW_ON_ERROR),
+                ['response_headers' => ['content-type' => 'application/json']],
+            )), self::BASE_URL),
+            $this->downloads,
+            $linker,
+            $eventDispatcher,
+            $this->entityManager,
+            new FreeSpaceChecker($jail, new NativeFreeSpaceProvider()),
+            new NullLogger(),
+        );
+
+        // Must not throw: poll() isolates this failure the same way it does any other.
+        $poller->poll();
+
+        $this->assertSame(0, (int) $connection->fetchOne('SELECT COUNT(*) FROM downloads WHERE id = ?', [$downloadId]));
+
+        // The failed flush() closes $this->entityManager (a standing Doctrine behaviour this
+        // class's docblock already documents for any \Throwable from link()) — a fresh
+        // EntityManager over the same connection and configuration reads the committed state back.
+        $freshEntityManager = new EntityManager($connection, $this->entityManager->getConfiguration());
+        $reloadedAnime = $freshEntityManager->find(TvAnime::class, $anime->id);
+        $this->assertNotNull($reloadedAnime);
+        $this->assertNull($reloadedAnime->getStorage());
+        $this->assertNull($reloadedAnime->getStoragePath());
     }
 
     /**

@@ -31,12 +31,23 @@ use App\Command\DownloadsUnlinkCommand;
 use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
 use App\Entity\Download;
+use App\Entity\Enum\StorageType;
 use App\Entity\Enum\WatchStatus;
+use App\Entity\Storage;
 use App\Entity\TvAnime;
+use App\Repository\AnimeRepository;
 use App\Repository\DownloadRepository;
+use App\Repository\StorageRepository;
+use App\Service\AppConfigStore;
+use App\Service\AppSettingsProvider;
+use App\Service\Download\AnimeDownloadLinker;
+use App\Service\Download\DownloadFolderJail;
+use App\Service\Download\DownloadFolderPointer;
+use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\EntityManager;
+use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\ORMSetup;
 use Doctrine\ORM\Tools\SchemaTool;
 use PHPUnit\Framework\TestCase;
@@ -46,6 +57,7 @@ use Symfony\Component\Console\Tester\CommandTester;
 final class DownloadsUnlinkCommandTest extends TestCase
 {
     private const string HASH = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+    private const string ROOT = 'C:\\Users\\bob\\Downloads';
 
     private EntityManager $entityManager;
     private DownloadRepository $repository;
@@ -67,7 +79,12 @@ final class DownloadsUnlinkCommandTest extends TestCase
         (new SchemaTool($this->entityManager))->createSchema($this->entityManager->getMetadataFactory()->getAllMetadata());
 
         $this->repository = new DownloadRepository($this->entityManager);
-        $this->tester = new CommandTester(new DownloadsUnlinkCommand($this->repository));
+        $this->tester = new CommandTester($this->makeCommand($this->repository));
+    }
+
+    private function makeCommand(DownloadRepository $repository): DownloadsUnlinkCommand
+    {
+        return new DownloadsUnlinkCommand($repository, new DownloadFolderPointer(), $this->entityManager);
     }
 
     private function persistAnime(string $title): TvAnime
@@ -78,6 +95,33 @@ final class DownloadsUnlinkCommandTest extends TestCase
         $this->entityManager->flush();
 
         return $anime;
+    }
+
+    private function persistStorage(string $path = self::ROOT): Storage
+    {
+        $storage = new Storage('Downloads', $path, StorageType::Folder);
+        $this->entityManager->persist($storage);
+        $this->entityManager->flush();
+
+        return $storage;
+    }
+
+    /**
+     * Persists a Download already in the Completed state with a given completion snapshot, as if
+     * AnimeDownloadLinker::link() had already run for it — without going through the poller, since
+     * these tests are about the unlink command, not completion itself.
+     */
+    private function persistCompletedDownload(string $infoHash, TvAnime $anime, ?Storage $snapshotStorage, ?string $snapshotPath): Download
+    {
+        $download = new Download($infoHash, $anime);
+        $download->markCompleted();
+        if ($snapshotStorage !== null && $snapshotPath !== null) {
+            $download->recordLinkedStorage($snapshotStorage, $snapshotPath);
+        }
+        $this->entityManager->persist($download);
+        $this->entityManager->flush();
+
+        return $download;
     }
 
     public function testUnlinkRemovesThePairingAndKeepsTheAnime(): void
@@ -133,5 +177,173 @@ final class DownloadsUnlinkCommandTest extends TestCase
 
         $this->assertSame(Command::FAILURE, $exit);
         $this->assertStringContainsString('must be a non-negative integer', $this->tester->getDisplay());
+    }
+
+    public function testUnlinkClearsTheAnimePointerWhenItMatchesTheDownloadsSnapshot(): void
+    {
+        $anime = $this->persistAnime('Anime A');
+        $storage = $this->persistStorage();
+        $anime->setStorage($storage)->setStoragePath('some-release');
+        $this->entityManager->flush();
+        $this->persistCompletedDownload(self::HASH, $anime, $storage, 'some-release');
+
+        $exit = $this->tester->execute(['info-hash' => self::HASH, 'anime-id' => (string) $anime->id]);
+
+        $this->assertSame(Command::SUCCESS, $exit);
+        $this->assertStringContainsString('storage folder pointer was removed', $this->tester->getDisplay());
+        $this->entityManager->refresh($anime);
+        $this->assertNull($anime->getStorage());
+        $this->assertNull($anime->getStoragePath());
+    }
+
+    public function testUnlinkKeepsTheAnimePointerWhenItPointsAtADifferentStorage(): void
+    {
+        $anime = $this->persistAnime('Anime A');
+        $linkedStorage = $this->persistStorage(self::ROOT);
+        $currentStorage = $this->persistStorage('Z:\\Elsewhere');
+        $anime->setStorage($currentStorage)->setStoragePath('some-release');
+        $this->entityManager->flush();
+        $this->persistCompletedDownload(self::HASH, $anime, $linkedStorage, 'some-release');
+
+        $exit = $this->tester->execute(['info-hash' => self::HASH, 'anime-id' => (string) $anime->id]);
+
+        $this->assertSame(Command::SUCCESS, $exit);
+        $this->assertStringContainsString('storage folder pointer was kept', $this->tester->getDisplay());
+        $this->entityManager->refresh($anime);
+        $this->assertSame($currentStorage->id, $anime->getStorage()?->id);
+        $this->assertSame('some-release', $anime->getStoragePath());
+    }
+
+    public function testUnlinkKeepsTheAnimePointerWhenItPointsAtADifferentPath(): void
+    {
+        $anime = $this->persistAnime('Anime A');
+        $storage = $this->persistStorage();
+        $anime->setStorage($storage)->setStoragePath('a-different-release');
+        $this->entityManager->flush();
+        $this->persistCompletedDownload(self::HASH, $anime, $storage, 'some-release');
+
+        $exit = $this->tester->execute(['info-hash' => self::HASH, 'anime-id' => (string) $anime->id]);
+
+        $this->assertSame(Command::SUCCESS, $exit);
+        $this->assertStringContainsString('storage folder pointer was kept', $this->tester->getDisplay());
+        $this->entityManager->refresh($anime);
+        $this->assertNotNull($anime->getStorage());
+        $this->assertSame('a-different-release', $anime->getStoragePath());
+    }
+
+    public function testUnlinkKeepsTheAnimePointerForALegacyRowWithNoSnapshot(): void
+    {
+        $anime = $this->persistAnime('Anime A');
+        $storage = $this->persistStorage();
+        $anime->setStorage($storage)->setStoragePath('some-release');
+        $this->entityManager->flush();
+        // Completed before this feature existed: no snapshot was ever recorded.
+        $this->persistCompletedDownload(self::HASH, $anime, null, null);
+
+        $exit = $this->tester->execute(['info-hash' => self::HASH, 'anime-id' => (string) $anime->id]);
+
+        $this->assertSame(Command::SUCCESS, $exit);
+        $this->assertStringContainsString('storage folder pointer was kept', $this->tester->getDisplay());
+        $this->entityManager->refresh($anime);
+        $this->assertNotNull($anime->getStorage());
+        $this->assertSame('some-release', $anime->getStoragePath());
+    }
+
+    public function testDownloadFreedByUnlinkCanBeRelinkedToAnotherAnimeWithoutConflict(): void
+    {
+        $animeA = $this->persistAnime('Anime A');
+        $storage = $this->persistStorage();
+        $animeA->setStorage($storage)->setStoragePath('shared-pack');
+        $this->entityManager->flush();
+        $this->persistCompletedDownload(self::HASH, $animeA, $storage, 'shared-pack');
+
+        $exit = $this->tester->execute(['info-hash' => self::HASH, 'anime-id' => (string) $animeA->id]);
+        $this->assertSame(Command::SUCCESS, $exit);
+
+        $animeB = $this->persistAnime('Anime B');
+        $newDownload = new Download(self::HASH, $animeB);
+        $this->entityManager->persist($newDownload);
+        $this->entityManager->flush();
+
+        $configPath = sys_get_temp_dir().'/anime-downloads-unlink-test-'.uniqid().'.json';
+        file_put_contents($configPath, json_encode(['downloadsRoot' => self::ROOT]));
+
+        try {
+            $jail = new DownloadFolderJail(new AppSettingsProvider(new AppConfigStore($configPath)));
+            $linker = new AnimeDownloadLinker(
+                new StorageRepository($this->entityManager),
+                new AnimeRepository($this->entityManager),
+                $this->entityManager,
+                $jail,
+            );
+
+            // Would throw DownloadStoragePathConflictException before the unlink above freed the
+            // (storage, path) pair — this is the whole point of issue #837.
+            $linker->link($newDownload, self::ROOT.'\\shared-pack');
+        } finally {
+            foreach ([$configPath, $configPath.'.tmp', $configPath.'.lock'] as $file) {
+                if (is_file($file)) {
+                    unlink($file);
+                }
+            }
+        }
+
+        $this->assertSame('shared-pack', $animeB->getStoragePath());
+    }
+
+    public function testUnlinkRollsBackTheClearedPointerWhenTheRowVersionChangedConcurrently(): void
+    {
+        $anime = $this->persistAnime('Anime A');
+        $storage = $this->persistStorage();
+        $anime->setStorage($storage)->setStoragePath('some-release');
+        $this->entityManager->flush();
+        $this->persistCompletedDownload(self::HASH, $anime, $storage, 'some-release');
+
+        // A repository whose findByInfoHashAndAnime() hands the command a row it just read, but
+        // then — simulating a concurrent writer touching the same row, exactly as issue #837's
+        // race between DownloadCompletionPoller and app:downloads:unlink describes — bumps that
+        // row's version directly in the database before the command gets to delete it. The
+        // in-memory Download the command works with already carries a snapshot matching the
+        // anime's pointer, so releaseIfOwnedBy() clears it and flush() writes that clear inside
+        // the transaction; the version-checked DELETE below must then fail and roll the whole
+        // transaction back, including that pointer clear.
+        $connection = $this->entityManager->getConnection();
+        $racedRepository = new class($this->entityManager, $connection) extends DownloadRepository {
+            public function __construct(
+                EntityManagerInterface $entityManager,
+                private readonly Connection $connection,
+            ) {
+                parent::__construct($entityManager);
+            }
+
+            public function findByInfoHashAndAnime(string $infoHash, int $animeId): ?Download
+            {
+                $download = parent::findByInfoHashAndAnime($infoHash, $animeId);
+                if ($download !== null) {
+                    $this->connection->executeStatement('UPDATE downloads SET version = version + 1 WHERE id = ?', [$download->id]);
+                }
+
+                return $download;
+            }
+        };
+
+        $tester = new CommandTester($this->makeCommand($racedRepository));
+        $exit = $tester->execute(['info-hash' => self::HASH, 'anime-id' => (string) $anime->id]);
+
+        $this->assertSame(Command::FAILURE, $exit);
+        $this->assertStringContainsString('please retry', $tester->getDisplay());
+
+        $this->entityManager->clear();
+        $stillThere = $this->repository->findByInfoHashAndAnime(self::HASH, (int) $anime->id);
+        $this->assertNotNull($stillThere);
+        $this->assertTrue($stillThere->isCompleted());
+        $this->assertSame(2, $stillThere->getVersion());
+
+        // Read back from the database (not the detached in-memory $anime) to prove the rollback
+        // actually undid the pointer clear, not just that the DELETE was skipped.
+        $reloadedAnime = $this->entityManager->find(TvAnime::class, $anime->id);
+        $this->assertNotNull($reloadedAnime);
+        $this->assertSame($storage->id, $reloadedAnime->getStorage()?->id);
+        $this->assertSame('some-release', $reloadedAnime->getStoragePath());
     }
 }

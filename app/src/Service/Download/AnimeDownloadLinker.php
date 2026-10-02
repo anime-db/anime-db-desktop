@@ -27,7 +27,7 @@ declare(strict_types=1);
 
 namespace App\Service\Download;
 
-use App\Entity\Anime;
+use App\Entity\Download;
 use App\Entity\Enum\StorageType;
 use App\Entity\Storage;
 use App\Repository\AnimeRepository;
@@ -63,13 +63,18 @@ final class AnimeDownloadLinker
     }
 
     /**
+     * Links $download's anime to $contentPath AND records the same (storage, relative path) pair
+     * onto $download itself (see Download::recordLinkedStorage()) in one flush() — so a Completed
+     * row never exists in the database without the snapshot a later unlink needs (issue #837).
+     *
      * @throws \App\Service\Exception\DownloadPathOutsideJailException if $contentPath is not
      *                                                                 inside the configured downloads root
      * @throws DownloadStoragePathConflictException                    if another Anime already holds the same
      *                                                                 (storage, relative path) pair
      */
-    public function link(Anime $anime, string $contentPath): void
+    public function link(Download $download, string $contentPath): void
     {
+        $anime = $download->getAnime();
         $root = $this->jail->getRoot();
         $resolvedPath = $this->jail->assertWithinRoot($contentPath);
 
@@ -84,6 +89,7 @@ final class AnimeDownloadLinker
         }
 
         $anime->setStorage($storage)->setStoragePath($relativePath);
+        $download->recordLinkedStorage($storage, $relativePath);
         $this->entityManager->flush();
     }
 
