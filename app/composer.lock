@@ -8,16 +8,16 @@
     "packages": [
         {
             "name": "anime-db/plugin-contracts",
-            "version": "v0.24.0",
+            "version": "v0.24.1",
             "source": {
                 "type": "git",
                 "url": "https://github.com/anime-db/anime-db-plugin-contracts.git",
-                "reference": "b8ce10745b0ecba50d0a1e838ec97d0b207b196c"
+                "reference": "28d63ca047ac77ef6b09c12108c118435ba7e4db"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/anime-db/anime-db-plugin-contracts/zipball/b8ce10745b0ecba50d0a1e838ec97d0b207b196c",
-                "reference": "b8ce10745b0ecba50d0a1e838ec97d0b207b196c",
+                "url": "https://api.github.com/repos/anime-db/anime-db-plugin-contracts/zipball/28d63ca047ac77ef6b09c12108c118435ba7e4db",
+                "reference": "28d63ca047ac77ef6b09c12108c118435ba7e4db",
                 "shasum": ""
             },
             "require": {
@@ -63,9 +63,9 @@
             "homepage": "https://github.com/anime-db/anime-db-plugin-contracts",
             "support": {
                 "issues": "https://github.com/anime-db/anime-db-plugin-contracts/issues",
-                "source": "https://github.com/anime-db/anime-db-plugin-contracts/tree/v0.24.0"
+                "source": "https://github.com/anime-db/anime-db-plugin-contracts/tree/v0.24.1"
             },
-            "time": "2026-10-01T19:51:00+00:00"
+            "time": "2026-10-02T12:02:03+00:00"
         },
         {
             "name": "composer/semver",
