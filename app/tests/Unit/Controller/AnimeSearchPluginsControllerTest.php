@@ -136,8 +136,12 @@ final class AnimeSearchPluginsControllerTest extends TestCase
     }
 
     /** @param iterable<string, FillerInterface> $fillers */
-    private function createController(iterable $fillers, ?Environment $twig = null, ?UrlGeneratorInterface $urlGenerator = null): AnimeSearchPluginsController
-    {
+    private function createController(
+        iterable $fillers,
+        ?Environment $twig = null,
+        ?UrlGeneratorInterface $urlGenerator = null,
+        ?CsrfTokenManagerInterface $csrfTokenManager = null,
+    ): AnimeSearchPluginsController {
         $pluginsConfigStore = new PluginsConfigStore($this->pluginsConfigPath);
         $fillerRegistry = new FillerRegistry($fillers, $pluginsConfigStore);
         $installedPlugins = new InstalledPluginsRegistry($this->pluginsDir, $pluginsConfigStore, new NullLogger());
@@ -162,8 +166,10 @@ final class AnimeSearchPluginsControllerTest extends TestCase
             $lookup,
         );
 
-        $csrfTokenManager = $this->createStub(CsrfTokenManagerInterface::class);
-        $csrfTokenManager->method('isTokenValid')->willReturn(true);
+        if ($csrfTokenManager === null) {
+            $csrfTokenManager = $this->createStub(CsrfTokenManagerInterface::class);
+            $csrfTokenManager->method('isTokenValid')->willReturn(true);
+        }
 
         return new AnimeSearchPluginsController(
             $fillerRegistry,
@@ -377,6 +383,118 @@ final class AnimeSearchPluginsControllerTest extends TestCase
         $this->assertSame('1', $existing->getCachedExternalId(new \App\Entity\ValueObject\PluginId('animedb-shikimori')));
         $this->assertSame(26, $existing->getEpisodesCount(), 'the empty episodesCount field must be filled in from the plugin');
         $this->assertSame(24, $existing->getDurationMinutes(), 'a durationMinutes already set on the record must not be overwritten by the plugin');
+    }
+
+    /**
+     * When the plugin's findById() has nothing for this externalId any more (cache expired and
+     * the lookup failed or returned null between the preview and this click),
+     * BulkFillerService::fillExistingFromPlugin() returns FillResult::NotFound without linking
+     * anything — the controller must send the user back to the search screen with an error
+     * instead of silently redirecting to the (untouched) record.
+     */
+    public function testFillExistingRedirectsBackToSearchWithAnErrorWhenThePluginFindsNothing(): void
+    {
+        $this->writeManifest('animedb-shikimori', 'Shikimori');
+
+        $existing = new TvAnime();
+        $existing->setTitle('Trigun')->setWatchStatus(WatchStatus::Plan);
+        $this->entityManager->persist($existing);
+        $this->entityManager->flush();
+        $existingId = $existing->id ?? throw new \LogicException('must have id');
+
+        $filler = $this->createStub(FillerInterface::class);
+        $filler->method('getFillableFields')->willReturn(['title']);
+        $filler->method('findById')->willReturn(null);
+
+        $controller = $this->createController(['animedb-shikimori' => $filler]);
+
+        $response = $controller->fillExisting($existingId, Request::create('/anime/search-plugins/fill-existing/'.$existingId, 'POST', [
+            'plugin_id' => 'animedb-shikimori',
+            'external_id' => '1',
+            '_token' => 'irrelevant',
+        ]));
+
+        $this->assertStringStartsWith('/anime_search_plugins?', $response->headers->get('Location') ?? '');
+        $this->assertStringContainsString('error=fill_not_found', $response->headers->get('Location') ?? '');
+        $this->assertNull($existing->getCachedExternalId(new \App\Entity\ValueObject\PluginId('animedb-shikimori')), 'a NotFound result must not link the external id');
+    }
+
+    public function testFillExistingRejectsInvalidCsrfToken(): void
+    {
+        $this->writeManifest('animedb-shikimori', 'Shikimori');
+
+        $existing = new TvAnime();
+        $existing->setTitle('Trigun')->setWatchStatus(WatchStatus::Plan);
+        $this->entityManager->persist($existing);
+        $this->entityManager->flush();
+        $existingId = $existing->id ?? throw new \LogicException('must have id');
+
+        $csrf = $this->createStub(CsrfTokenManagerInterface::class);
+        $csrf->method('isTokenValid')->willReturn(false);
+
+        $controller = $this->createController([], csrfTokenManager: $csrf);
+
+        $this->expectException(\Symfony\Component\HttpKernel\Exception\BadRequestHttpException::class);
+        $controller->fillExisting($existingId, Request::create('/anime/search-plugins/fill-existing/'.$existingId, 'POST', [
+            'plugin_id' => 'animedb-shikimori',
+            'external_id' => '1',
+            '_token' => 'bad',
+        ]));
+    }
+
+    public function testAddRejectsInvalidCsrfToken(): void
+    {
+        $csrf = $this->createStub(CsrfTokenManagerInterface::class);
+        $csrf->method('isTokenValid')->willReturn(false);
+
+        $controller = $this->createController([], csrfTokenManager: $csrf);
+
+        $this->expectException(\Symfony\Component\HttpKernel\Exception\BadRequestHttpException::class);
+        $controller->add(Request::create('/anime/search-plugins/add', 'POST', [
+            'plugin_id' => 'animedb-shikimori',
+            'external_id' => '1',
+            'name' => 'Trigun',
+            '_token' => 'bad',
+        ]));
+    }
+
+    /**
+     * Issue #833, points 5/6: a candidate whose (pluginId, externalId) already resolves to a
+     * catalog record (here, linked by a prior add()) must preview as 'already_in_catalog' with a
+     * link to that record, not fall through to 'new'/'possible_match'.
+     */
+    public function testPreviewShowsAlreadyInCatalogLinkWhenTheExternalIdIsAlreadyLinked(): void
+    {
+        $this->writeManifest('animedb-shikimori', 'Shikimori');
+
+        $filler = $this->createStub(FillerInterface::class);
+        $filler->method('getFillableFields')->willReturn(['title']);
+        $filler->method('findById')->willReturn(new PluginAnimeData(title: 'Trigun'));
+
+        $this->createController(['animedb-shikimori' => $filler])->add(Request::create('/anime/search-plugins/add', 'POST', [
+            'plugin_id' => 'animedb-shikimori',
+            'external_id' => '1',
+            'name' => 'Trigun',
+            '_token' => 'irrelevant',
+        ]));
+
+        /** @var \App\Entity\Anime $existing */
+        $existing = $this->entityManager->getRepository(\App\Entity\Anime::class)->findAll()[0];
+        $existingId = $existing->id ?? throw new \LogicException('must have id');
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('anime/search_plugins/_preview.html.twig', $this->callback(static function (array $params) use ($existingId): bool {
+                self::assertSame('already_in_catalog', $params['state']);
+                self::assertSame($existingId, $params['existingAnimeId']);
+
+                return true;
+            }))
+            ->willReturn('<div></div>');
+
+        $controller = $this->createController(['animedb-shikimori' => $filler], $twig);
+        $controller->preview(Request::create('/anime/search-plugins/preview?plugin_id=animedb-shikimori&external_id=1&name=Trigun'));
     }
 
     /**

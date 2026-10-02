@@ -212,6 +212,38 @@ final class AnimeListTemplateRenderingTest extends KernelTestCase
     }
 
     /**
+     * Issue #833, point 2: the empty-catalog "Search in plugins" card must link straight to the
+     * search screen when a filler plugin is active — a mutation removing this branch's link
+     * entirely survived every other test in the suite because nothing asserted on this card's
+     * own href.
+     */
+    public function testEmptyCatalogSearchPluginsCardLinksToTheSearchScreenWhenAFillerPluginIsActive(): void
+    {
+        $html = $this->renderList([
+            'showOnboarding' => true,
+            'hasActiveFillerPlugin' => true,
+        ]);
+
+        $this->assertStringContainsString('href="/anime/search-plugins"', $html);
+    }
+
+    /**
+     * Same card, the other branch: no active filler plugin — it must link to noFillerState's own
+     * URL (the market, here) instead, and never to the search screen.
+     */
+    public function testEmptyCatalogSearchPluginsCardLinksToTheMarketWhenNoFillerPluginIsActive(): void
+    {
+        $html = $this->renderList([
+            'showOnboarding' => true,
+            'hasActiveFillerPlugin' => false,
+            'noFillerState' => ['kind' => 'not_installed', 'url' => '/settings/market'],
+        ]);
+
+        $this->assertStringContainsString('href="/settings/market"', $html);
+        $this->assertStringNotContainsString('href="/anime/search-plugins"', $html);
+    }
+
+    /**
      * Scenario (b): no records, but a scannable storage exists — the invitation swaps to the
      * "scan storage" card and, with exactly one candidate, submits that storage's scan directly.
      */
