@@ -130,6 +130,7 @@ final class PollDownloadsMessageHandlerTest extends TestCase
         $httpClient = new MockHttpClient(static fn (): MockResponse => new MockResponse(
             json_encode([[
                 'hash' => self::HASH,
+                'infohash_v1' => self::HASH,
                 'progress' => 1,
                 'state' => 'uploading',
                 'content_path' => self::ROOT.'\\finished-release',
