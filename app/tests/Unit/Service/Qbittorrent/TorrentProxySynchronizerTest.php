@@ -42,7 +42,7 @@ final class TorrentProxySynchronizerTest extends TestCase
 {
     private const BASE_URL = 'http://127.0.0.1:18080';
 
-    public function testSocks5AppliesFailClosedPauseApplyConfirmResumeInOrder(): void
+    public function testSocks5AppliesFailClosedStopApplyConfirmStartInOrder(): void
     {
         $calls = [];
         $httpClient = new MockHttpClient(function (string $method, string $url, array $options) use (&$calls): MockResponse {
@@ -61,18 +61,18 @@ final class TorrentProxySynchronizerTest extends TestCase
         $synchronizer->apply($this->socks5Settings());
 
         $this->assertSame([
-            self::BASE_URL.'/api/v2/torrents/pause',
+            self::BASE_URL.'/api/v2/torrents/stop',
             self::BASE_URL.'/api/v2/app/setPreferences',
             self::BASE_URL.'/api/v2/app/preferences',
-            self::BASE_URL.'/api/v2/torrents/resume',
+            self::BASE_URL.'/api/v2/torrents/start',
         ], $calls);
     }
 
-    public function testSocks5PausesAllTorrentsAndSendsDnsLeakGuardsAndCredentials(): void
+    public function testSocks5StopsAllTorrentsAndSendsDnsLeakGuardsAndCredentials(): void
     {
         $captured = [];
         $httpClient = new MockHttpClient(function (string $method, string $url, array $options) use (&$captured): MockResponse {
-            if (str_ends_with($url, '/api/v2/torrents/pause') || str_ends_with($url, '/api/v2/torrents/resume')) {
+            if (str_ends_with($url, '/api/v2/torrents/stop') || str_ends_with($url, '/api/v2/torrents/start')) {
                 $captured['hashes_'.basename($url)] = $options['body'];
             }
             if (str_ends_with($url, '/api/v2/app/setPreferences')) {
@@ -90,8 +90,8 @@ final class TorrentProxySynchronizerTest extends TestCase
         $synchronizer = new TorrentProxySynchronizer(new QbittorrentClient($httpClient, self::BASE_URL));
         $synchronizer->apply($this->socks5Settings(withAuth: true));
 
-        $this->assertSame('hashes=all', $captured['hashes_pause']);
-        $this->assertSame('hashes=all', $captured['hashes_resume']);
+        $this->assertSame('hashes=all', $captured['hashes_stop']);
+        $this->assertSame('hashes=all', $captured['hashes_start']);
 
         $sentPreferences = json_decode(
             urldecode(substr($captured['preferences'], \strlen('json='))),
@@ -109,12 +109,12 @@ final class TorrentProxySynchronizerTest extends TestCase
         $this->assertSame('p4ss', $sentPreferences['proxy_password']);
     }
 
-    public function testSocks5LeavesTorrentsPausedAndThrowsWhenApplyCallFails(): void
+    public function testSocks5LeavesTorrentsStoppedAndThrowsWhenApplyCallFails(): void
     {
-        $resumeCalled = false;
-        $httpClient = new MockHttpClient(function (string $method, string $url) use (&$resumeCalled): MockResponse {
-            if (str_ends_with($url, '/api/v2/torrents/resume')) {
-                $resumeCalled = true;
+        $startCalled = false;
+        $httpClient = new MockHttpClient(function (string $method, string $url) use (&$startCalled): MockResponse {
+            if (str_ends_with($url, '/api/v2/torrents/start')) {
+                $startCalled = true;
             }
             if (str_ends_with($url, '/api/v2/app/setPreferences')) {
                 throw new TransportException('Connection refused');
@@ -129,7 +129,7 @@ final class TorrentProxySynchronizerTest extends TestCase
         try {
             $synchronizer->apply($this->socks5Settings());
         } finally {
-            $this->assertFalse($resumeCalled, 'resume() must not be called when the apply call itself fails.');
+            $this->assertFalse($startCalled, 'start() must not be called when the apply call itself fails.');
         }
     }
 
@@ -138,12 +138,12 @@ final class TorrentProxySynchronizerTest extends TestCase
      * successful setPreferences() call is not enough — if the readback doesn't match what was
      * requested, torrents must stay paused and a visible error must be thrown.
      */
-    public function testSocks5LeavesTorrentsPausedAndThrowsWhenReadbackDoesNotConfirmProxyType(): void
+    public function testSocks5LeavesTorrentsStoppedAndThrowsWhenReadbackDoesNotConfirmProxyType(): void
     {
-        $resumeCalled = false;
-        $httpClient = new MockHttpClient(function (string $method, string $url) use (&$resumeCalled): MockResponse {
-            if (str_ends_with($url, '/api/v2/torrents/resume')) {
-                $resumeCalled = true;
+        $startCalled = false;
+        $httpClient = new MockHttpClient(function (string $method, string $url) use (&$startCalled): MockResponse {
+            if (str_ends_with($url, '/api/v2/torrents/start')) {
+                $startCalled = true;
             }
             if (str_ends_with($url, '/api/v2/app/preferences')) {
                 // qbittorrent-nox silently kept the proxy off despite the setPreferences() call.
@@ -161,7 +161,7 @@ final class TorrentProxySynchronizerTest extends TestCase
         try {
             $synchronizer->apply($this->socks5Settings());
         } finally {
-            $this->assertFalse($resumeCalled, 'resume() must not be called when the applied proxy is not confirmed.');
+            $this->assertFalse($startCalled, 'start() must not be called when the applied proxy is not confirmed.');
         }
     }
 
@@ -170,12 +170,12 @@ final class TorrentProxySynchronizerTest extends TestCase
      * not applied) must be treated the same as a total failure — never a silent, half-proxied
      * state.
      */
-    public function testSocks5LeavesTorrentsPausedWhenOnlyDnsLeakGuardFailsToConfirm(): void
+    public function testSocks5LeavesTorrentsStoppedWhenOnlyDnsLeakGuardFailsToConfirm(): void
     {
-        $resumeCalled = false;
-        $httpClient = new MockHttpClient(function (string $method, string $url) use (&$resumeCalled): MockResponse {
-            if (str_ends_with($url, '/api/v2/torrents/resume')) {
-                $resumeCalled = true;
+        $startCalled = false;
+        $httpClient = new MockHttpClient(function (string $method, string $url) use (&$startCalled): MockResponse {
+            if (str_ends_with($url, '/api/v2/torrents/start')) {
+                $startCalled = true;
             }
             if (str_ends_with($url, '/api/v2/app/preferences')) {
                 $preferences = $this->realQbittorrentPreferencesResponse();
@@ -195,18 +195,18 @@ final class TorrentProxySynchronizerTest extends TestCase
         try {
             $synchronizer->apply($this->socks5Settings());
         } finally {
-            $this->assertFalse($resumeCalled);
+            $this->assertFalse($startCalled);
         }
     }
 
-    public function testSocks5LeavesTorrentsPausedWhenPauseAllItselfFails(): void
+    public function testSocks5LeavesTorrentsStoppedWhenStopAllItselfFails(): void
     {
         $setPreferencesCalled = false;
         $httpClient = new MockHttpClient(function (string $method, string $url) use (&$setPreferencesCalled): MockResponse {
             if (str_ends_with($url, '/api/v2/app/setPreferences')) {
                 $setPreferencesCalled = true;
             }
-            if (str_ends_with($url, '/api/v2/torrents/pause')) {
+            if (str_ends_with($url, '/api/v2/torrents/stop')) {
                 throw new TransportException('Connection refused');
             }
 
@@ -219,7 +219,7 @@ final class TorrentProxySynchronizerTest extends TestCase
         try {
             $synchronizer->apply($this->socks5Settings());
         } finally {
-            $this->assertFalse($setPreferencesCalled, 'The proxy must never be applied if the fail-closed pause could not be confirmed to have been sent.');
+            $this->assertFalse($setPreferencesCalled, 'The proxy must never be applied if the fail-closed stop could not be confirmed to have been sent.');
         }
     }
 
@@ -243,7 +243,7 @@ final class TorrentProxySynchronizerTest extends TestCase
         $synchronizer = new TorrentProxySynchronizer(new QbittorrentClient($httpClient, self::BASE_URL));
         $synchronizer->apply($settings);
 
-        $this->assertSame([self::BASE_URL.'/api/v2/app/setPreferences'], $calls, 'HTTP proxy must run torrent traffic direct — no pause/resume, no proxy applied to qbittorrent-nox.');
+        $this->assertSame([self::BASE_URL.'/api/v2/app/setPreferences'], $calls, 'HTTP proxy must run torrent traffic direct — no stop/start, no proxy applied to qbittorrent-nox.');
     }
 
     public function testNoProxyAppliesDirectPreferencesWithoutPausingAnything(): void

@@ -31,9 +31,12 @@ const {
     parseListeners,
     checkListeners,
     checkResponses,
+    checkQbittorrentEndpoints,
     checkLicenseFiles,
     pidFilePath,
     EXPECTATIONS,
+    QBITTORRENT_ENDPOINTS,
+    STUB_TORRENT_HASH,
     REQUIRED_LICENSE_FILES,
 } = require('../../scripts/release-smoke');
 
@@ -162,6 +165,105 @@ describe('checkResponses', () => {
 
         expect(problems).toHaveLength(1);
         expect(problems[0]).toContain('нет ответа');
+    });
+});
+
+describe('checkQbittorrentEndpoints', () => {
+    const okResponses = QBITTORRENT_ENDPOINTS.map((e) => ({ port: 18080, path: e.path, status: 200 }));
+
+    test('accepts every endpoint answering 200', () => {
+        expect(checkQbittorrentEndpoints(okResponses)).toEqual([]);
+    });
+
+    /**
+     * A stub hash or empty body can legitimately earn a 400 from qbittorrent-nox (bad path, missing
+     * urls, ...) — that still proves the route exists and must not be reported.
+     */
+    test('does not report a 400', () => {
+        const responses = okResponses.map((r) => (r.path === '/api/v2/torrents/add' ? { ...r, status: 400 } : r));
+
+        expect(checkQbittorrentEndpoints(responses)).toEqual([]);
+    });
+
+    /**
+     * Issue #841 verbatim: qBittorrent 5.x renamed `torrents/pause`/`torrents/resume` to
+     * `torrents/stop`/`torrents/start`, so the old names 404 on the real binary while the mocked
+     * tests kept passing. This is the scenario that regression must trip.
+     */
+    test('reports a renamed endpoint answering 404', () => {
+        const responses = [
+            ...okResponses,
+            { port: 18080, path: '/api/v2/torrents/pause', status: 404 },
+        ];
+
+        const problems = checkQbittorrentEndpoints(responses);
+
+        expect(problems).toHaveLength(1);
+        expect(problems[0]).toContain('/api/v2/torrents/pause');
+        expect(problems[0]).toContain('404');
+    });
+
+    /**
+     * A `null` status means qbittorrent-nox never answered at all — not started yet, crashed, or
+     * listening on the wrong port. Treating that as "route exists" would be the exact false
+     * confidence issue #841 found: every probe in the whole gate would come back `null` and the run
+     * would be reported green.
+     */
+    test('reports an endpoint that never answered', () => {
+        const responses = okResponses.map((r) => (
+            r.path === '/api/v2/torrents/stop' ? { port: 18080, path: r.path, status: null, error: 'ECONNREFUSED' } : r
+        ));
+
+        const problems = checkQbittorrentEndpoints(responses);
+
+        expect(problems).toHaveLength(1);
+        expect(problems[0]).toContain('/api/v2/torrents/stop');
+        expect(problems[0]).toContain('ECONNREFUSED');
+    });
+
+    /**
+     * qBittorrent's WebApplication checks the session before dispatching to the action controller,
+     * so a missing/renamed route can come back 403 instead of 404 whenever `WebUI\LocalHostAuth` is
+     * not applied (this project already hit that regression once, issue #552). A 403 must not be
+     * read as "route exists" — it means the request never reached the handler that would know.
+     */
+    test('reports an endpoint answering 403', () => {
+        const responses = okResponses.map((r) => (r.path === '/api/v2/torrents/start' ? { ...r, status: 403 } : r));
+
+        const problems = checkQbittorrentEndpoints(responses);
+
+        expect(problems).toHaveLength(1);
+        expect(problems[0]).toContain('/api/v2/torrents/start');
+        expect(problems[0]).toContain('403');
+    });
+});
+
+describe('QBITTORRENT_ENDPOINTS', () => {
+    /**
+     * Ties this list to the actual client source: a new `/api/v2/...` call added to
+     * QbittorrentClient.php without a matching entry here would otherwise pass release-smoke
+     * silently even if the real binary 404s on it — exactly the gap issue #841 found.
+     */
+    test('matches every endpoint path QbittorrentClient.php calls', () => {
+        const clientSource = fs.readFileSync(
+            path.join(__dirname, '..', '..', 'app', 'src', 'Service', 'Qbittorrent', 'QbittorrentClient.php'),
+            'utf8',
+        );
+        const pathsInClient = new Set(
+            [...clientSource.matchAll(/'(\/api\/v2\/[A-Za-z0-9/]+)'/g)].map(([, p]) => p),
+        );
+
+        expect(pathsInClient.size).toBeGreaterThan(0);
+        expect(new Set(QBITTORRENT_ENDPOINTS.map((e) => e.path))).toEqual(pathsInClient);
+    });
+
+    test('every torrent-scoped action uses the stub hash, not a real one', () => {
+        const torrentActions = QBITTORRENT_ENDPOINTS.filter((e) => e.path.startsWith('/api/v2/torrents/') && e.method === 'POST' && e.path !== '/api/v2/torrents/add');
+
+        expect(torrentActions.length).toBeGreaterThan(0);
+        for (const action of torrentActions) {
+            expect(action.body).toContain(STUB_TORRENT_HASH);
+        }
     });
 });
 

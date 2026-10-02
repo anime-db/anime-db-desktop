@@ -186,7 +186,7 @@ final class DownloadCompletionPoller
             return;
         }
 
-        $this->client->pause($infoHash);
+        $this->client->stop($infoHash);
 
         $pending = $this->downloads->findPendingByInfoHash($infoHash);
         foreach ($pending as $download) {
