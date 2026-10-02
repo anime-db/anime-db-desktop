@@ -86,6 +86,26 @@ final class BackupListServiceTest extends TestCase
         self::assertSame('2026-01-02T09:30:00', $preImport->createdAt->format('Y-m-d\TH:i:s'));
     }
 
+    /**
+     * Issue #844: PCRE's `$` anchor (without the `D` modifier) matches just before a final `\n`,
+     * so `/^...$/` alone would accept a snapshot filename with a trailing newline as if it were
+     * absent. Unlike the directory-scan patterns in TranslationCoverageService, this one is
+     * exercised through scandir() rather than glob(), which returns every directory entry
+     * verbatim (no suffix-match filtering), so a file literally named with a trailing "\n" really
+     * does reach the regex here. NTFS does not allow "\n" in a filename, so this is Linux-only.
+     */
+    public function testListIgnoresASnapshotFilenameWithATrailingNewline(): void
+    {
+        if (\PHP_OS_FAMILY === 'Windows') {
+            $this->markTestSkipped('Filenames containing "\n" are not representable on NTFS.');
+        }
+
+        mkdir($this->backupsDir, 0o755, true);
+        file_put_contents($this->backupsDir."/data-1.2.3-20260101-120000.db\n", 'a');
+
+        self::assertSame([], (new BackupListService($this->backupsDir))->list());
+    }
+
     public function testListOrdersSnapshotsNewestFirst(): void
     {
         mkdir($this->backupsDir, 0o755, true);

@@ -97,6 +97,36 @@ final class IconRegistryTest extends TestCase
     }
 
     /**
+     * Issue #844: PCRE's `$` anchor (without the `D` modifier) matches just before a final `\n`,
+     * so `/^[a-z0-9-]+$/` alone would accept "trash\n". Against the real templates/icons directory
+     * that alone would not be observable — "trash\n.svg" is simply not a file that exists, so
+     * is_file() rejects it regardless of the regex. This test instead points at a fixture
+     * directory that *does* contain a file literally named with a trailing newline, so only the
+     * regex anchor stands between a crafted icon name and that file being served.
+     */
+    public function testNameWithTrailingNewlineThrowsEvenWhenAMatchingFileExistsOnDisk(): void
+    {
+        if (\PHP_OS_FAMILY === 'Windows') {
+            $this->markTestSkipped('Filenames containing "\n" are not representable on NTFS.');
+        }
+
+        $iconsDir = sys_get_temp_dir().'/anime-icon-registry-test-'.uniqid();
+        mkdir($iconsDir, recursive: true);
+
+        try {
+            file_put_contents($iconsDir."/trash\n.svg", '<svg></svg>');
+
+            $extension = new IconExtension($iconsDir);
+
+            $this->expectException(UnknownIconException::class);
+            $extension->render("trash\n");
+        } finally {
+            unlink($iconsDir."/trash\n.svg");
+            rmdir($iconsDir);
+        }
+    }
+
+    /**
      * Issue #829 review comment: a fixture template calling `icon()` with a bad name must fail
      * this test, exercised through the real Twig rendering pipeline — not just the PHP class
      * directly above — so a regression in how the function is wired into Twig (not just in

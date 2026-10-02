@@ -169,6 +169,33 @@ final class FreeSpaceCheckerTest extends TestCase
         $checker->assertEnoughSpaceForTorrentFile($this->multiFileTorrent([\PHP_INT_MAX, \PHP_INT_MAX]));
     }
 
+    /**
+     * Issue #844: PCRE's `$` anchor (without the `D` modifier) matches just before a final `\n`,
+     * so `/^-?\d+$/` alone would accept "1000\n" as a valid bencoded integer and silently read it
+     * as 1000 via `(int)` cast. A bencode token spells its own end ("i1000\ne"), so this is
+     * directly craftable in a `.torrent` file's bytes — no secondary filesystem or type guard
+     * stands in the way the way it does for IconExtension.
+     */
+    public function testAssertEnoughSpaceForTorrentFileRejectsALengthWithTrailingNewline(): void
+    {
+        $checker = $this->makeChecker(10_000_000_000);
+
+        $infoBytes = $this->bencodeDict([
+            'length' => "i1000\ne",
+            'name' => $this->bencodeString('Test.Release.mkv'),
+            'piece length' => $this->bencodeInt(16384),
+            'pieces' => $this->bencodeString(str_repeat('A', 20)),
+        ]);
+        $torrent = $this->bencodeDict([
+            'announce' => $this->bencodeString('http://tracker.local/announce'),
+            'info' => $infoBytes,
+        ]);
+
+        $this->expectException(InvalidTorrentFileException::class);
+
+        $checker->assertEnoughSpaceForTorrentFile($torrent);
+    }
+
     private function singleFileTorrent(int $length): string
     {
         $infoBytes = $this->bencodeDict([

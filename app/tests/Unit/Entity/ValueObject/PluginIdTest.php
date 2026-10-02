@@ -71,4 +71,15 @@ final class PluginIdTest extends TestCase
         $this->expectException(InvalidPluginIdException::class);
         new PluginId('animedb-');
     }
+
+    /**
+     * Issue #844: PCRE's `$` anchor (without the `D` modifier) matches just before a final `\n`,
+     * so `/^...$/` alone would accept "animedb-shikimori\n" as a valid id even though it is not
+     * the id anything else in the app ever produces or expects.
+     */
+    public function testRejectsTrailingNewline(): void
+    {
+        $this->expectException(InvalidPluginIdException::class);
+        new PluginId("animedb-shikimori\n");
+    }
 }

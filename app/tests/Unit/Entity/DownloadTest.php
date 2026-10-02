@@ -69,6 +69,13 @@ final class DownloadTest extends TestCase
         new Download('abc', $this->makeAnime());
     }
 
+    public function testConstructorRejectsInfoHashWithTrailingNewline(): void
+    {
+        $this->expectException(InvalidInfoHashException::class);
+
+        new Download(self::INFO_HASH."\n", $this->makeAnime());
+    }
+
     public function testMarkCompletedTransitionsOnceAndReportsSecondCallAsNoOp(): void
     {
         $download = new Download(self::INFO_HASH, $this->makeAnime());

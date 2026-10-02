@@ -546,7 +546,7 @@ abstract class Anime implements AggregateRootInterface
     {
         if ($countries !== null) {
             foreach ($countries as $code) {
-                if (preg_match('/^[A-Z]{2}$/', $code) !== 1) {
+                if (preg_match('/^[A-Z]{2}\z/', $code) !== 1) {
                     throw new InvalidCountryCodeException(\sprintf('country code "%s" must be two uppercase ASCII letters', $code));
                 }
             }

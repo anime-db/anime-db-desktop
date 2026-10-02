@@ -71,7 +71,7 @@ final class BackupListService
     private function toSnapshot(string $file): ?BackupSnapshot
     {
         $isPreImport = str_starts_with($file, self::PREIMPORT_PREFIX);
-        $pattern = $isPreImport ? '/^data-preimport-(\d{8})-(\d{6})\.db$/' : '/^data-.+-(\d{8})-(\d{6})\.db$/';
+        $pattern = $isPreImport ? '/^data-preimport-(\d{8})-(\d{6})\.db\z/' : '/^data-.+-(\d{8})-(\d{6})\.db\z/';
 
         if (preg_match($pattern, $file, $matches) !== 1) {
             return null;
