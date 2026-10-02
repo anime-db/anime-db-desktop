@@ -161,14 +161,33 @@ final class AnimeSearchPluginsController
      * `hx-get` to {@see self::group()} with `hx-trigger="load"` — the same "fire every slot's own
      * request right after the shell appears" shape as plugin/_widget_slots.html.twig. A blank
      * query renders no placeholders at all rather than firing a round trip per plugin for nothing.
+     *
+     * The URL pushed into browser history for this search (issue #848, point 4) is this
+     * endpoint's own caller, {@see self::index()}, with `q` set — never this fragment endpoint's
+     * own URL, which has no layout, form, or styles to show on its own. That is why history is
+     * pushed here, via the `HX-Push-Url` response header, rather than left to a plain
+     * `hx-push-url="true"` on the search form: htmx would push the URL of the request the form
+     * itself fires, i.e. this endpoint. A plain (non-htmx) GET here — a stale history entry from
+     * before this fix, or a direct link — redirects to that same index URL instead of rendering
+     * the bare fragment.
      */
     #[Route('/anime/search-plugins/results', name: 'anime_search_plugins_results', methods: ['GET'])]
     public function results(Request $request): Response
     {
-        return new Response($this->twig->render('anime/search_plugins/_results.html.twig', [
-            'query' => trim((string) $request->query->get('q', '')),
+        $query = trim((string) $request->query->get('q', ''));
+        $indexUrl = $this->urlGenerator->generate('anime_search_plugins', $query === '' ? [] : ['q' => $query]);
+
+        if ($request->headers->get('HX-Request') !== 'true') {
+            return new RedirectResponse($indexUrl);
+        }
+
+        $response = new Response($this->twig->render('anime/search_plugins/_results.html.twig', [
+            'query' => $query,
             'pluginIds' => array_keys($this->fillerRegistry->findAllActive()),
         ]));
+        $response->headers->set('HX-Push-Url', $indexUrl);
+
+        return $response;
     }
 
     /**

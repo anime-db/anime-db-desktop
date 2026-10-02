@@ -172,10 +172,15 @@ final class SearchPluginsTemplateRenderingTest extends KernelTestCase
     }
 
     /**
-     * Issue #848, point 4: `?q=` must land in the address bar so the browser's own "back" after
-     * an add/fill-existing redirect returns to the search results instead of a blank form.
+     * Issue #848, point 4 (review fix): a plain `hx-push-url="true"` on this form would push the
+     * URL of the request the form itself fires - the fragment endpoint
+     * `anime_search_plugins_results` - not this screen's own URL. A browser "back" or an F5
+     * against that fragment URL then renders the bare HTML fragment with no layout, form, or
+     * styles. History is pushed from the server instead, via the `HX-Push-Url` response header
+     * set in {@see \App\Controller\AnimeSearchPluginsController::results()}, so this template
+     * must not reintroduce the client-side attribute.
      */
-    public function testIndexFormHasHxPushUrl(): void
+    public function testIndexFormDoesNotPushTheFragmentUrlItself(): void
     {
         self::bootKernel();
         $this->pushRequest();
@@ -189,7 +194,32 @@ final class SearchPluginsTemplateRenderingTest extends KernelTestCase
             'error' => null,
         ]);
 
-        $this->assertStringContainsString('hx-push-url="true"', $html);
+        $this->assertStringNotContainsString('hx-push-url', $html);
+    }
+
+    /**
+     * Issue #848, point 2 (review fix): _results.html.twig's OOB clear only fires at the moment a
+     * new search's results arrive - a preview request for a candidate from the *previous* search
+     * can still be in flight and land afterwards, putting a stale candidate with a working "Add"
+     * button back on screen. The search form must join the candidate buttons' own `hx-sync` group
+     * (_group.html.twig) with the `replace` strategy, so firing a new search aborts any such
+     * pending preview request.
+     */
+    public function testIndexFormAbortsAPendingPreviewRequestWhenANewSearchFires(): void
+    {
+        self::bootKernel();
+        $this->pushRequest();
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('anime/search_plugins/index.html.twig', [
+            'query' => '',
+            'hasActiveFiller' => true,
+            'noFillerState' => null,
+            'error' => null,
+        ]);
+
+        $this->assertStringContainsString('hx-sync="#search-plugins-preview:replace"', $html);
     }
 
     /**

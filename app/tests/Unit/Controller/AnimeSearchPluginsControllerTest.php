@@ -537,7 +537,8 @@ final class AnimeSearchPluginsControllerTest extends TestCase
             ->with('anime/search_plugins/index.html.twig', $this->callback(static function (array $params) use ($existingId): bool {
                 self::assertSame('search_plugins.error_conflict_claimed', $params['error']['messageKey']);
                 self::assertNotNull($params['error']['link']);
-                self::assertStringContainsString((string) $existingId, $params['error']['link']['url']);
+                self::assertSame('/anime_show?id='.$existingId, $params['error']['link']['url']);
+                self::assertSame('search_plugins.error_conflict_claimed_link', $params['error']['link']['labelKey']);
 
                 return true;
             }))
@@ -545,6 +546,28 @@ final class AnimeSearchPluginsControllerTest extends TestCase
 
         $controller = $this->createController([], $twig);
         $controller->index(Request::create('/anime/search-plugins?error=conflict_claimed&owner_id='.$existingId));
+    }
+
+    /**
+     * Issue #848, point 3: when `owner_id` no longer resolves to a record - deleted between the
+     * redirect and this request, or simply bogus - index() must still show the translated error
+     * message but degrade to no link, rather than link to a record that is not there.
+     */
+    public function testIndexConflictClaimedErrorHasNoLinkWhenTheOwningAnimeDoesNotExist(): void
+    {
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('anime/search_plugins/index.html.twig', $this->callback(static function (array $params): bool {
+                self::assertSame('search_plugins.error_conflict_claimed', $params['error']['messageKey']);
+                self::assertNull($params['error']['link']);
+
+                return true;
+            }))
+            ->willReturn('<main></main>');
+
+        $controller = $this->createController([], $twig);
+        $controller->index(Request::create('/anime/search-plugins?error=conflict_claimed&owner_id=999999'));
     }
 
     /**
@@ -677,6 +700,67 @@ final class AnimeSearchPluginsControllerTest extends TestCase
         ]));
 
         $this->assertSame(2, $this->entityManager->getRepository(\App\Entity\Anime::class)->count([]));
+    }
+
+    /**
+     * Issue #848, point 4 (review fix): a plain (non-htmx) GET at this fragment endpoint - a
+     * stale browser-history entry from before this fix, or a direct link - must redirect to the
+     * index screen with the same `q` rather than render a bare HTML fragment with no layout.
+     */
+    public function testResultsRedirectsAPlainNonHtmxRequestToTheIndexScreenWithTheQueryPreserved(): void
+    {
+        $controller = $this->createController([]);
+
+        $response = $controller->results(Request::create('/anime/search-plugins/results?q=Trigun'));
+
+        $this->assertSame('/anime_search_plugins?q=Trigun', $response->headers->get('Location'));
+    }
+
+    public function testResultsRedirectsAPlainNonHtmxRequestToTheIndexScreenWithoutAQueryParamWhenQIsEmpty(): void
+    {
+        $controller = $this->createController([]);
+
+        $response = $controller->results(Request::create('/anime/search-plugins/results'));
+
+        $this->assertSame('/anime_search_plugins', $response->headers->get('Location'));
+    }
+
+    /**
+     * Issue #848, point 4 (review fix): the URL pushed into browser history for a search must be
+     * this fragment endpoint's own caller, the index screen, with `q` set - never this fragment
+     * endpoint's own URL, which has no layout, form, or styles to show on its own.
+     */
+    public function testResultsSetsHxPushUrlHeaderToTheIndexScreenUrlForHtmxRequests(): void
+    {
+        $controller = $this->createController([]);
+
+        $response = $controller->results(Request::create(
+            '/anime/search-plugins/results?q=Trigun',
+            'GET',
+            [],
+            [],
+            [],
+            ['HTTP_HX_REQUEST' => 'true'],
+        ));
+
+        $this->assertSame('/anime_search_plugins?q=Trigun', $response->headers->get('HX-Push-Url'));
+        $this->assertNull($response->headers->get('Location'));
+    }
+
+    public function testResultsHxPushUrlHeaderHasNoQueryParamWhenQIsEmpty(): void
+    {
+        $controller = $this->createController([]);
+
+        $response = $controller->results(Request::create(
+            '/anime/search-plugins/results',
+            'GET',
+            [],
+            [],
+            [],
+            ['HTTP_HX_REQUEST' => 'true'],
+        ));
+
+        $this->assertSame('/anime_search_plugins', $response->headers->get('HX-Push-Url'));
     }
 
     public function testIndexShowsUnavailableStateWhenNoFillerPluginIsInstalled(): void
