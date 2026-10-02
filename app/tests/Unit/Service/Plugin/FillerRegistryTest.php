@@ -274,10 +274,11 @@ final class FillerRegistryTest extends TestCase
         $installedPlugins = new InstalledPluginsRegistry($this->pluginsDir, new PluginsConfigStore($this->path), new NullLogger());
         $installedPlugins->reconcile();
 
-        $registry = new FillerRegistry(
-            ['animedb-shikimori' => $this->createFiller(['title'])],
-            new PluginsConfigStore($this->path),
-        );
+        // A disabled whole-plugin never gets its services loaded into the container in prod
+        // (PluginLoader::codePlugins() only loads InstalledPluginsRegistry::enabled()), so $fillers
+        // here must be empty too - fillerAvailability() has to recognise this plugin via the
+        // manifest in $installedPlugins instead.
+        $registry = new FillerRegistry([], new PluginsConfigStore($this->path));
         $settingsPages = new SettingsPageRegistry($installedPlugins, new ServiceLocator([]));
 
         $availability = $registry->fillerAvailability($installedPlugins, $settingsPages);

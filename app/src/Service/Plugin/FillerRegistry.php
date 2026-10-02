@@ -138,21 +138,29 @@ final class FillerRegistry
      */
     public function fillerAvailability(InstalledPluginsRegistry $installedPlugins, SettingsPageRegistry $settingsPages): FillerAvailability
     {
-        $fillers = iterator_to_array($this->fillers);
-        if ($fillers === []) {
+        // $this->fillers only carries services of enabled whole-plugins (PluginLoader::codePlugins()
+        // loads only InstalledPluginsRegistry::enabled() into the container, see Kernel::configureContainer()),
+        // so a plugin disabled as a whole never shows up there at all. Which installed plugins are
+        // fillers in the first place has to come from the manifest's own declared role
+        // (`features.filler`, see Manifest's docblock) instead, independent of whether the container
+        // actually instantiated a service for it.
+        $fillerPlugins = array_filter(
+            $installedPlugins->all(),
+            static fn (InstalledPlugin $plugin): bool => (bool) ($plugin->manifest->features['filler'] ?? false),
+        );
+
+        if ($fillerPlugins === []) {
             return FillerAvailability::notInstalled();
         }
 
-        foreach (array_keys($fillers) as $id) {
-            $pluginId = new PluginId((string) $id);
-            $installed = $installedPlugins->get($pluginId);
-            if ($installed === null || !$installed->enabled || $this->isFillerActive($pluginId)) {
+        foreach ($fillerPlugins as $plugin) {
+            if ($plugin->enabled && $this->isFillerActive($plugin->id)) {
                 continue;
             }
 
-            $page = $settingsPages->find($pluginId);
+            $page = $settingsPages->find($plugin->id);
 
-            return $page !== null ? FillerAvailability::disabledWithSettingsPage($pluginId) : FillerAvailability::disabledNoSettingsPage();
+            return $page !== null ? FillerAvailability::disabledWithSettingsPage($plugin->id) : FillerAvailability::disabledNoSettingsPage();
         }
 
         return FillerAvailability::disabledNoSettingsPage();

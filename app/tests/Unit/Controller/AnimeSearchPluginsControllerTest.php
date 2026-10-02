@@ -355,14 +355,14 @@ final class AnimeSearchPluginsControllerTest extends TestCase
         $this->writeManifest('animedb-shikimori', 'Shikimori');
 
         $existing = new TvAnime();
-        $existing->setTitle('Trigun')->setWatchStatus(WatchStatus::Plan);
+        $existing->setTitle('Trigun')->setWatchStatus(WatchStatus::Plan)->setDurationMinutes(24);
         $this->entityManager->persist($existing);
         $this->entityManager->flush();
         $existingId = $existing->id ?? throw new \LogicException('must have id');
 
         $filler = $this->createStub(FillerInterface::class);
-        $filler->method('getFillableFields')->willReturn(['title', 'episodesCount']);
-        $filler->method('findById')->willReturn(new PluginAnimeData(title: 'Trigun', episodesCount: 26));
+        $filler->method('getFillableFields')->willReturn(['title', 'episodesCount', 'durationMinutes']);
+        $filler->method('findById')->willReturn(new PluginAnimeData(title: 'Trigun', episodesCount: 26, durationMinutes: 30));
 
         $controller = $this->createController(['animedb-shikimori' => $filler]);
 
@@ -375,6 +375,8 @@ final class AnimeSearchPluginsControllerTest extends TestCase
         $this->assertStringStartsWith('/anime_show?', $response->headers->get('Location') ?? '');
         $this->assertSame(1, $this->entityManager->getRepository(\App\Entity\Anime::class)->count([]));
         $this->assertSame('1', $existing->getCachedExternalId(new \App\Entity\ValueObject\PluginId('animedb-shikimori')));
+        $this->assertSame(26, $existing->getEpisodesCount(), 'the empty episodesCount field must be filled in from the plugin');
+        $this->assertSame(24, $existing->getDurationMinutes(), 'a durationMinutes already set on the record must not be overwritten by the plugin');
     }
 
     /**
