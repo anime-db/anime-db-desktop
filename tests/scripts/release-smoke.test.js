@@ -171,7 +171,7 @@ describe('checkResponses', () => {
 describe('checkQbittorrentEndpoints', () => {
     const okResponses = QBITTORRENT_ENDPOINTS.map((e) => ({ port: 18080, path: e.path, status: 200 }));
 
-    test('accepts every endpoint answering anything other than 404', () => {
+    test('accepts every endpoint answering 200', () => {
         expect(checkQbittorrentEndpoints(okResponses)).toEqual([]);
     });
 
@@ -201,6 +201,40 @@ describe('checkQbittorrentEndpoints', () => {
         expect(problems).toHaveLength(1);
         expect(problems[0]).toContain('/api/v2/torrents/pause');
         expect(problems[0]).toContain('404');
+    });
+
+    /**
+     * A `null` status means qbittorrent-nox never answered at all — not started yet, crashed, or
+     * listening on the wrong port. Treating that as "route exists" would be the exact false
+     * confidence issue #841 found: every probe in the whole gate would come back `null` and the run
+     * would be reported green.
+     */
+    test('reports an endpoint that never answered', () => {
+        const responses = okResponses.map((r) => (
+            r.path === '/api/v2/torrents/stop' ? { port: 18080, path: r.path, status: null, error: 'ECONNREFUSED' } : r
+        ));
+
+        const problems = checkQbittorrentEndpoints(responses);
+
+        expect(problems).toHaveLength(1);
+        expect(problems[0]).toContain('/api/v2/torrents/stop');
+        expect(problems[0]).toContain('ECONNREFUSED');
+    });
+
+    /**
+     * qBittorrent's WebApplication checks the session before dispatching to the action controller,
+     * so a missing/renamed route can come back 403 instead of 404 whenever `WebUI\LocalHostAuth` is
+     * not applied (this project already hit that regression once, issue #552). A 403 must not be
+     * read as "route exists" — it means the request never reached the handler that would know.
+     */
+    test('reports an endpoint answering 403', () => {
+        const responses = okResponses.map((r) => (r.path === '/api/v2/torrents/start' ? { ...r, status: 403 } : r));
+
+        const problems = checkQbittorrentEndpoints(responses);
+
+        expect(problems).toHaveLength(1);
+        expect(problems[0]).toContain('/api/v2/torrents/start');
+        expect(problems[0]).toContain('403');
     });
 });
 

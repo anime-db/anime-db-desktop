@@ -194,17 +194,43 @@ function checkResponses(expectations, responses) {
 /**
  * A 404 on any of QBITTORRENT_ENDPOINTS means the client is calling a route the shipped
  * qbittorrent-nox binary does not register — issue #841's regression (`torrents/pause`/
- * `torrents/resume` renamed to `torrents/stop`/`torrents/start` in qBittorrent 5.x) verbatim. Any
- * other status, including the 400s a stub hash or empty body can legitimately trigger, means the
- * route exists and is not this gate's concern.
+ * `torrents/resume` renamed to `torrents/stop`/`torrents/start` in qBittorrent 5.x) verbatim. The
+ * 400s a stub hash or empty body can legitimately trigger are not a problem: they prove the route
+ * exists and was reached.
+ *
+ * `null`, `401`/`403` and `5xx` are treated as problems too, not just 404: qBittorrent's
+ * `WebApplication::doProcessRequest` checks the session before dispatching to the action controller,
+ * so a renamed/missing route can come back as 403 instead of 404 whenever `WebUI\LocalHostAuth` is
+ * not applied (a regression this project has already hit once, see the comment on
+ * `native/supervisor/qbittorrent.js` about issue #552). `null` means qbittorrent-nox never answered
+ * at all (not started yet, crashed, wrong port) — a silent pass there would be the exact false
+ * confidence this gate exists to remove.
  *
  * @param {{ port: number, path: string, status: number|null, error?: string }[]} responses
  * @returns {string[]}
  */
 function checkQbittorrentEndpoints(responses) {
-    return responses
-        .filter((response) => response.status === 404)
-        .map((response) => `127.0.0.1:${response.port}${response.path} — qbittorrent-nox отвечает 404: эндпоинт не существует в установленной версии`);
+    const problems = [];
+
+    for (const response of responses) {
+        if (response.status === null) {
+            problems.push(
+                `127.0.0.1:${response.port}${response.path} — qbittorrent-nox не ответил ` +
+                `(${response.error ?? 'нет деталей'}): нельзя подтвердить, что эндпоинт существует`,
+            );
+        } else if (response.status === 404) {
+            problems.push(`127.0.0.1:${response.port}${response.path} — qbittorrent-nox отвечает 404: эндпоинт не существует в установленной версии`);
+        } else if (response.status === 401 || response.status === 403) {
+            problems.push(
+                `127.0.0.1:${response.port}${response.path} — qbittorrent-nox отвечает ${response.status}: ` +
+                'запрос отклонён до диспетчеризации в контроллер, существование маршрута не подтверждено',
+            );
+        } else if (response.status >= 500) {
+            problems.push(`127.0.0.1:${response.port}${response.path} — qbittorrent-nox отвечает ${response.status}: внутренняя ошибка`);
+        }
+    }
+
+    return problems;
 }
 
 /** @returns {Promise<void>} */
