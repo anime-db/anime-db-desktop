@@ -141,6 +141,28 @@ test('reopening the menu after a failed fetch retries the request', async () => 
     expect(global.fetch).toHaveBeenCalledTimes(2);
 });
 
+test('reopening the menu after a failed fetch shows the spinner again while the retry is in flight', async () => {
+    global.fetch = jest.fn(() => Promise.resolve({ ok: false, status: 500 }));
+    setUpDom();
+    loadNavAddMenuModule();
+
+    showDropdown();
+    await flushMicrotasks();
+
+    let resolveRetry;
+    global.fetch = jest.fn(() => new Promise((resolve) => {
+        resolveRetry = resolve;
+    }));
+    showDropdown();
+    await flushMicrotasks();
+
+    expect(document.querySelector('[data-nav-scan-error]').hidden).toBe(true);
+    expect(document.querySelector('[data-nav-scan-loading]').hidden).toBe(false);
+
+    resolveRetry({ ok: true, text: () => Promise.resolve('<li>Scan "Main"</li>') });
+    await flushMicrotasks();
+});
+
 test('a retry that succeeds hides the error message and does not fetch again afterwards', async () => {
     global.fetch = jest.fn(() => Promise.resolve({ ok: false, status: 500 }));
     setUpDom();
