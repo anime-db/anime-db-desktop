@@ -39,6 +39,14 @@ interface DownloadStorageFilesystem
     public function pathExists(string $path): bool;
 
     /**
+     * Creates $path if it does not already exist, left visible — used by
+     * {@see PresetDownloadsStorageProvider} to bring the lazily-created
+     * preset storage's own root into existence before anything (its desktop.ini marker, a
+     * download's save-path) is written under it.
+     */
+    public function ensureDirectoryExists(string $path): void;
+
+    /**
      * Creates $path if it does not already exist and marks it hidden (Windows `attrib +H`) —
      * used to create and hide a storage's `.anime-db` incoming directory before any save-path
      * under it is handed to qBittorrent.

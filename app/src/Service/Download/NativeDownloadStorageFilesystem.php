@@ -41,11 +41,16 @@ final class NativeDownloadStorageFilesystem implements DownloadStorageFilesystem
         return is_dir($path);
     }
 
-    public function ensureHiddenDirectoryExists(string $path): void
+    public function ensureDirectoryExists(string $path): void
     {
         if (!is_dir($path)) {
             mkdir($path, recursive: true);
         }
+    }
+
+    public function ensureHiddenDirectoryExists(string $path): void
+    {
+        $this->ensureDirectoryExists($path);
 
         if (\PHP_OS_FAMILY === 'Windows') {
             exec('attrib +H '.escapeshellarg($path));

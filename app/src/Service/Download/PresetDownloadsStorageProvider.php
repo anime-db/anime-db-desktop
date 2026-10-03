@@ -53,6 +53,7 @@ final class PresetDownloadsStorageProvider
         private readonly EntityManagerInterface $entityManager,
         private readonly AppSettingsProvider $settings,
         private readonly StorageMarkerService $markerService,
+        private readonly DownloadStorageFilesystem $storageFilesystem,
     ) {
     }
 
@@ -71,7 +72,14 @@ final class PresetDownloadsStorageProvider
 
     private function create(): Storage
     {
-        $storage = new Storage(self::PRESET_NAME, $this->defaultPath(), StorageType::Folder);
+        $path = $this->defaultPath();
+        // Created before anything is persisted (not after, as it was before — see issue #851's
+        // review): a clean install has no "%USERPROFILE%\Downloads\AnimeDB" yet, and a Storage
+        // row surviving a failure here would leave the preset "created" with no id ever recorded
+        // in settings, so every later enqueue() would retry create() and pile up duplicate rows.
+        $this->storageFilesystem->ensureDirectoryExists($path);
+
+        $storage = new Storage(self::PRESET_NAME, $path, StorageType::Folder);
         $this->entityManager->persist($storage);
         $this->entityManager->flush();
 

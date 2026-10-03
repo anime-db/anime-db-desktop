@@ -33,6 +33,7 @@ use App\Entity\Enum\StorageType;
 use App\Entity\Storage;
 use App\Service\AppConfigStore;
 use App\Service\AppSettingsProvider;
+use App\Service\Download\NativeDownloadStorageFilesystem;
 use App\Service\Download\PresetDownloadsStorageProvider;
 use App\Service\Storage\StorageMarkerService;
 use Doctrine\DBAL\DriverManager;
@@ -71,8 +72,10 @@ final class PresetDownloadsStorageProviderTest extends TestCase
         $this->settings = new AppSettingsProvider(new AppConfigStore($this->configPath));
         $this->markerService = new StorageMarkerService($this->entityManager);
 
+        // Deliberately NOT pre-created: a clean install has no "Downloads/AnimeDB" yet, and
+        // getOrCreate() must bring it into existence itself (issue #851's review) rather than
+        // assume a directory a prior test's setUp() happened to leave behind.
         $this->homeDir = sys_get_temp_dir().'/anime-preset-storage-home-'.uniqid();
-        mkdir($this->homeDir.'/Downloads/AnimeDB', recursive: true);
 
         $this->previousHome = getenv('HOME');
         $this->previousUserprofile = getenv('USERPROFILE');
@@ -110,7 +113,7 @@ final class PresetDownloadsStorageProviderTest extends TestCase
 
     private function provider(): PresetDownloadsStorageProvider
     {
-        return new PresetDownloadsStorageProvider($this->entityManager, $this->settings, $this->markerService);
+        return new PresetDownloadsStorageProvider($this->entityManager, $this->settings, $this->markerService, new NativeDownloadStorageFilesystem());
     }
 
     public function testGetOrCreateCreatesAFolderStorageUnderDownloadsAndRecordsItsIdInSettings(): void
@@ -126,6 +129,7 @@ final class PresetDownloadsStorageProviderTest extends TestCase
     {
         $storage = $this->provider()->getOrCreate();
 
+        $this->assertDirectoryExists($storage->getPath());
         $this->assertSame($storage->id, $this->markerService->readMarkerId($storage->getPath()));
     }
 

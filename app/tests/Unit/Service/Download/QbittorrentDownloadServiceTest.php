@@ -45,6 +45,7 @@ use App\Service\Download\DownloadFolderPointer;
 use App\Service\Download\DownloadStorageFilesystem;
 use App\Service\Download\FreeSpaceChecker;
 use App\Service\Download\FreeSpaceProvider;
+use App\Service\Download\NativeDownloadStorageFilesystem;
 use App\Service\Download\NativeFreeSpaceProvider;
 use App\Service\Download\PresetDownloadsStorageProvider;
 use App\Service\Download\QbittorrentDownloadService;
@@ -162,7 +163,7 @@ final class QbittorrentDownloadServiceTest extends TestCase
             // The real NativeFreeSpaceProvider reports "unknown" (free-open) for a real-but-empty
             // temp directory — only tests about the free-space check itself need to override this.
             new FreeSpaceChecker($freeSpaceProvider ?? new NativeFreeSpaceProvider()),
-            new PresetDownloadsStorageProvider($this->entityManager, $settings, $this->markerService),
+            new PresetDownloadsStorageProvider($this->entityManager, $settings, $this->markerService, new NativeDownloadStorageFilesystem()),
             $this->markerService,
             $storageFilesystem ?? new FakeDownloadStorageFilesystem(),
         );
@@ -532,9 +533,6 @@ final class QbittorrentDownloadServiceTest extends TestCase
         $configPath = sys_get_temp_dir().'/anime-download-service-preset-test-'.uniqid().'.json';
         $settings = new AppSettingsProvider(new AppConfigStore($configPath));
         $presetDir = sys_get_temp_dir().'/anime-download-service-preset-storage-'.uniqid();
-        // PresetDownloadsStorageProvider's own reconcile() must find a real directory to write
-        // desktop.ini into — the default path it resolves is "<home>/Downloads/AnimeDB".
-        mkdir($presetDir.'/Downloads/AnimeDB', recursive: true);
 
         // PresetDownloadsStorageProvider resolves its path from %USERPROFILE%/%HOME% — point that
         // at a real, empty temp directory for the duration of this test so the marker it writes
@@ -553,7 +551,7 @@ final class QbittorrentDownloadServiceTest extends TestCase
                 new DownloadFolderJail(),
                 new TorrentInfoHashResolver(),
                 new FreeSpaceChecker(new NativeFreeSpaceProvider()),
-                new PresetDownloadsStorageProvider($this->entityManager, $settings, $this->markerService),
+                new PresetDownloadsStorageProvider($this->entityManager, $settings, $this->markerService, new NativeDownloadStorageFilesystem()),
                 $this->markerService,
                 new FakeDownloadStorageFilesystem(),
             );
@@ -566,7 +564,11 @@ final class QbittorrentDownloadServiceTest extends TestCase
             $presetId = $settings->getPresetDownloadsStorageId();
             $this->assertNotNull($presetId);
             $this->assertSame($presetId, $stored->getTargetStorage()?->id);
-            $this->assertSame($presetDir.\DIRECTORY_SEPARATOR.'Downloads'.\DIRECTORY_SEPARATOR.'AnimeDB', $stored->getTargetStorage()->getPath());
+            $presetPath = $stored->getTargetStorage()->getPath();
+            $this->assertSame($presetDir.\DIRECTORY_SEPARATOR.'Downloads'.\DIRECTORY_SEPARATOR.'AnimeDB', $presetPath);
+            // Started on a clean install (no mkdir() above) — getOrCreate() must have created
+            // the directory itself, not merely assumed it already existed.
+            $this->assertDirectoryExists($presetPath);
         } finally {
             putenv($previousUserprofile === false ? 'USERPROFILE' : 'USERPROFILE='.$previousUserprofile);
             putenv($previousHome === false ? 'HOME' : 'HOME='.$previousHome);
@@ -824,6 +826,9 @@ final class FakeDownloadStorageFilesystem implements DownloadStorageFilesystem
     /** @var list<string> */
     public array $hiddenDirectoryCalls = [];
 
+    /** @var list<string> */
+    public array $directoryCalls = [];
+
     public function __construct(private readonly bool $pathExists = true)
     {
     }
@@ -831,6 +836,11 @@ final class FakeDownloadStorageFilesystem implements DownloadStorageFilesystem
     public function pathExists(string $path): bool
     {
         return $this->pathExists;
+    }
+
+    public function ensureDirectoryExists(string $path): void
+    {
+        $this->directoryCalls[] = $path;
     }
 
     public function ensureHiddenDirectoryExists(string $path): void
