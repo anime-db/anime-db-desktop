@@ -425,6 +425,61 @@ final class DownloadCompletionPollerTest extends TestCase
         $this->assertSame($first->id, $logged[0]['context']['occupyingAnimeId']);
     }
 
+    /**
+     * target_storage_id is ON DELETE SET NULL (see Download entity): a Pending download whose
+     * Storage was deleted while still in flight reaches completeDownload() with a null target
+     * storage, not a conflicting one. Unlike the jail/path-conflict cases above, there is nothing
+     * to retry — the storage is gone for good — so this must end in Failed, not loop forever.
+     */
+    public function testPollFailsADownloadWhoseTargetStorageWasDeletedWhileInFlight(): void
+    {
+        $anime = $this->persistAnime();
+        // Deliberately not assignTargetStorage(): simulates ON DELETE SET NULL firing on a
+        // still-Pending row after its Storage was removed.
+        $download = new Download(self::HASH, $anime);
+        $this->downloads->save($download);
+
+        $eventDispatcher = $this->createMock(EventDispatcherInterface::class);
+        $eventDispatcher->expects($this->never())->method('dispatch');
+
+        /** @var list<array{message: string, context: array<mixed>}> $logged */
+        $logged = [];
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->method('warning')->willReturnCallback(static function (string|\Stringable $message, array $context = []) use (&$logged): void {
+            $logged[] = ['message' => (string) $message, 'context' => $context];
+        });
+
+        $httpClient = new MockHttpClient(static fn (): MockResponse => new MockResponse(
+            json_encode([
+                ['hash' => self::HASH, 'infohash_v1' => self::HASH, 'progress' => 1, 'state' => 'uploading', 'content_path' => self::ROOT.'\\finished-release'],
+            ], \JSON_THROW_ON_ERROR),
+            ['response_headers' => ['content-type' => 'application/json']],
+        ));
+
+        $jail = new DownloadFolderJail();
+        $linker = new AnimeDownloadLinker(new AnimeRepository($this->entityManager), $this->entityManager, $jail);
+        $poller = new DownloadCompletionPoller(
+            new QbittorrentClient($httpClient, self::BASE_URL),
+            $this->downloads,
+            $linker,
+            $eventDispatcher,
+            $this->entityManager,
+            new FreeSpaceChecker(new NativeFreeSpaceProvider()),
+            $logger,
+        );
+
+        $poller->poll();
+
+        $stored = $this->downloads->findByInfoHashAndAnime(self::HASH, (int) $anime->id);
+        $this->assertNotNull($stored);
+        $this->assertSame(DownloadStatus::Failed, $stored->getStatus());
+        $this->assertNull($anime->getStorage());
+        $this->assertNull($anime->getStoragePath());
+
+        $this->assertCount(1, $logged);
+        $this->assertSame(self::HASH, $logged[0]['context']['infoHash']);
+    }
+
     public function testPollStopsAndMarksFailedWhenAMagnetsKnownSizeDoesNotFitFreeSpace(): void
     {
         // Deliberately different from self::HASH (this app's v1 infoHash): qBittorrent's own

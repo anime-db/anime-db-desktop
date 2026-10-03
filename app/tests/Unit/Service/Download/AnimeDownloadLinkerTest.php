@@ -39,6 +39,7 @@ use App\Service\Download\AnimeDownloadLinker;
 use App\Service\Download\DownloadFolderJail;
 use App\Service\Exception\DownloadPathOutsideJailException;
 use App\Service\Exception\DownloadStoragePathConflictException;
+use App\Service\Exception\DownloadTargetStorageMissingException;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\EntityManager;
@@ -179,5 +180,28 @@ final class AnimeDownloadLinkerTest extends TestCase
         $this->linker->link($download, self::ROOT.'\\some-release');
 
         $this->assertSame('some-release', $anime->getStoragePath());
+    }
+
+    /**
+     * Reachable without any malformed row: target_storage_id is ON DELETE SET NULL (see Download
+     * entity), so a Pending download whose Storage was deleted while still in flight loses its
+     * target storage this way, not by ever having been invalid.
+     */
+    public function testLinkThrowsADedicatedExceptionWhenTheTargetStorageIsMissing(): void
+    {
+        $anime = $this->persistAnime();
+        $download = new Download('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', $anime);
+        $this->entityManager->persist($download);
+        $this->entityManager->flush();
+
+        try {
+            $this->linker->link($download, self::ROOT.'\\some-release');
+            $this->fail('Expected DownloadTargetStorageMissingException.');
+        } catch (DownloadTargetStorageMissingException $exception) {
+            $this->assertSame($download->getInfoHash(), $exception->infoHash);
+        }
+
+        $this->assertNull($anime->getStorage());
+        $this->assertNull($anime->getStoragePath());
     }
 }

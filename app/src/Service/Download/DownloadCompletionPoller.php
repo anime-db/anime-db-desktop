@@ -36,6 +36,7 @@ use App\Entity\Download;
 use App\Repository\DownloadRepository;
 use App\Service\Exception\DownloadPathOutsideJailException;
 use App\Service\Exception\DownloadStoragePathConflictException;
+use App\Service\Exception\DownloadTargetStorageMissingException;
 use App\Service\Qbittorrent\QbittorrentClient;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Log\LoggerInterface;
@@ -319,6 +320,21 @@ final class DownloadCompletionPoller
                 'infoHash' => $infoHash,
                 'contentPath' => $contentPath,
                 'occupyingAnimeId' => $exception->occupyingAnimeId,
+            ]);
+
+            return;
+        } catch (DownloadTargetStorageMissingException $exception) {
+            // Unlike the jail failure above, this never resolves itself either: the Storage this
+            // download targeted is gone (deleted while it was still in flight — ON DELETE SET
+            // NULL on target_storage_id), and reverting to Pending would just retry (and log) on
+            // every poll forever, wedging findDistinctPendingInfoHashes() on this hash for good.
+            $download->revertToPending();
+            $download->markFailed();
+            $this->entityManager->flush();
+            $this->logger->warning('Failing download completion: its target storage was deleted while the download was still in flight.', [
+                'infoHash' => $infoHash,
+                'contentPath' => $contentPath,
+                'exception' => $exception->getMessage(),
             ]);
 
             return;

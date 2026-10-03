@@ -30,6 +30,7 @@ namespace App\Service\Download;
 use App\Entity\Download;
 use App\Repository\AnimeRepository;
 use App\Service\Exception\DownloadStoragePathConflictException;
+use App\Service\Exception\DownloadTargetStorageMissingException;
 use Doctrine\ORM\EntityManagerInterface;
 
 /**
@@ -66,11 +67,13 @@ final class AnimeDownloadLinker
      *                                                                 inside $download's target storage
      * @throws DownloadStoragePathConflictException                    if another Anime already holds the same
      *                                                                 (storage, relative path) pair
+     * @throws DownloadTargetStorageMissingException                   if $download's target storage was
+     *                                                                 deleted while it was still in flight
      */
     public function link(Download $download, string $contentPath): void
     {
         $anime = $download->getAnime();
-        $storage = $download->getTargetStorage() ?? throw new \LogicException('Download must have a target storage before it can be linked.');
+        $storage = $download->getTargetStorage() ?? throw new DownloadTargetStorageMissingException($download->getInfoHash());
         $root = $storage->getPath();
         $resolvedPath = $this->jail->assertWithinRoot($root, $contentPath);
 
