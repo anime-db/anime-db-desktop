@@ -114,4 +114,31 @@ class DownloadRepository
         $this->entityManager->remove($download);
         $this->entityManager->flush();
     }
+
+    /**
+     * Whether $storageId has a row that is not yet Completed with it as $targetStorage —
+     * the guard StorageController::delete() and StorageEditController::update() (issue #853)
+     * consult before letting a storage's path change or the storage itself disappear out from
+     * under a download qBittorrent is still writing or still holding torrent data for.
+     *
+     * Failed is included on purpose even though it is currently terminal: a Failed row's torrent
+     * still sits in qBittorrent with data under this storage's path, and issue #856's planned
+     * retry() will move some Failed rows back to Pending, which would break if the storage (or
+     * its target_storage_id, cleared via ON DELETE SET NULL) had already been removed or
+     * relocated out from under it. A storage only stops being blocked once its Failed rows are
+     * removed by the user.
+     */
+    public function hasUnfinishedDownloadsForTargetStorage(int $storageId): bool
+    {
+        $count = $this->entityManager->getRepository(Download::class)->createQueryBuilder('d')
+            ->select('COUNT(d.id)')
+            ->where('d.targetStorage = :storageId')
+            ->andWhere('d.status != :completed')
+            ->setParameter('storageId', $storageId)
+            ->setParameter('completed', DownloadStatus::Completed)
+            ->getQuery()
+            ->getSingleScalarResult();
+
+        return (int) $count > 0;
+    }
 }

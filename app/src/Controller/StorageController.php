@@ -29,7 +29,9 @@ namespace App\Controller;
 
 use App\Entity\Storage;
 use App\Message\ScanStorageMessage;
+use App\Repository\DownloadRepository;
 use App\Repository\StorageRepository;
+use App\Service\AppSettingsProvider;
 use App\Service\JobLock\JobLockService;
 use App\Service\Storage\StorageAvailabilityService;
 use App\Service\Storage\StorageMarkerService;
@@ -77,17 +79,28 @@ final class StorageController
         private readonly StorageMarkerService $storageMarker,
         private readonly StorageAvailabilityService $storageAvailability,
         private readonly JobLockService $jobLockService,
+        private readonly DownloadRepository $downloads,
+        private readonly AppSettingsProvider $settings,
     ) {
     }
 
     #[Route('/storage', name: 'storage_index', methods: ['GET'])]
     public function index(): Response
     {
+        return $this->renderIndex();
+    }
+
+    /** @param array<string, string> $errorParams */
+    private function renderIndex(?string $error = null, array $errorParams = []): Response
+    {
         $storages = $this->storages->findAllOrderedByName();
 
         return new Response($this->twig->render('storage/list.html.twig', [
             'storages' => $storages,
             'unavailableStorageIds' => $this->storageAvailability->unavailableStorageIds($storages),
+            'presetStorageId' => $this->settings->getPresetDownloadsStorageId(),
+            'error' => $error,
+            'errorParams' => $errorParams,
         ]));
     }
 
@@ -159,13 +172,27 @@ final class StorageController
      * desktop.ini marker's [AnimeDB] id record is removed via StorageMarkerService::forget()
      * so the path is immediately free, rather than waiting for the "Reclaimed" branch of
      * StorageMarkerService::reconcile() on some future scan.
+     *
+     * Issue #853: refused outright, before forget() runs, when the storage is the preset
+     * downloads storage (identified by id, see AppSettingsProvider::getPresetDownloadsStorageId())
+     * or still has a downloads row targeting it that isn't Completed yet — qBittorrent may still be
+     * writing into it, and downloads.target_storage_id is ON DELETE SET NULL, which would strand
+     * that row with no root to compare its content_path against.
      */
     #[Route('/storage/{id}/delete', name: 'storage_delete', methods: ['POST'])]
-    public function delete(Storage $storage, Request $request): RedirectResponse
+    public function delete(Storage $storage, Request $request): Response
     {
         $storageId = $storage->id ?? throw new \LogicException('Storage must be persisted before it can be deleted.');
 
         $this->assertValidCsrfToken('storage_delete_'.$storageId, $request);
+
+        if ($storageId === $this->settings->getPresetDownloadsStorageId()) {
+            return $this->renderIndex('storage_list.delete_error_preset', ['%name%' => $storage->getName()]);
+        }
+
+        if ($this->downloads->hasUnfinishedDownloadsForTargetStorage($storageId)) {
+            return $this->renderIndex('storage_list.delete_error_unfinished_downloads', ['%name%' => $storage->getName()]);
+        }
 
         $this->storageMarker->forget($storage);
         $this->entityManager->remove($storage);
