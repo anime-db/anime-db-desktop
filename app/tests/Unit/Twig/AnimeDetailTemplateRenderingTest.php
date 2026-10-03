@@ -32,6 +32,8 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\HttpFoundation\Session\Session;
 use Symfony\Component\HttpFoundation\Session\Storage\MockArraySessionStorage;
+use Symfony\Component\Security\Csrf\CsrfToken;
+use Symfony\Component\Security\Csrf\CsrfTokenManagerInterface;
 use Symfony\Component\Translation\LocaleSwitcher;
 use Twig\Environment;
 
@@ -464,5 +466,55 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
 
         $this->assertDoesNotMatchRegularExpression('/\bdefer\b/', $hostBundleTag, 'Host bundle <script> must not be deferred');
         $this->assertDoesNotMatchRegularExpression('/\basync\b/', $hostBundleTag, 'Host bundle <script> must not be async');
+    }
+
+    /**
+     * Issue #857 review: every other test in this file passes an empty `downloads` list, so the
+     * "Downloads for this entry" block's non-empty branch — the unlink button, its
+     * `download_unlink_{id}` CSRF token, the `download_unlink` route, the hx-target/section id
+     * pairing, the translated status, and the conflict error — was never actually rendered. A
+     * mismatch in any of them (e.g. the token id drifting from what
+     * DownloadUnlinkController::unlink() checks) would still leave every existing test green.
+     */
+    public function testShowRendersTheDownloadsBlockWithAnUnlinkButtonAndAConflictError(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession('/anime/1');
+
+        /** @var LocaleSwitcher $localeSwitcher */
+        $localeSwitcher = self::getContainer()->get(LocaleSwitcher::class);
+        $localeSwitcher->setLocale('ru');
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('anime/show.html.twig', [
+            'anime' => $this->fullyPopulatedAnime(),
+            'widgets' => [],
+            'plugins_ui' => [],
+            'fillable_fields' => $this->emptyFillableFields(),
+            'downloads' => [['id' => 42, 'info_hash' => str_repeat('a', 40), 'status' => 'pending']],
+            'downloads_unlink_error' => 'anime_detail.downloads_unlink_conflict_error',
+        ]);
+
+        $this->assertStringContainsString('id="anime-downloads-1"', $html);
+        $this->assertStringContainsString('hx-post="/downloads/42/unlink"', $html);
+        $this->assertStringContainsString('hx-target="#anime-downloads-1"', $html);
+        $this->assertStringContainsString('Загружается', $html);
+        $this->assertStringContainsString('Отвязать', $html);
+        $this->assertStringContainsString('Состояние изменилось, обновите страницу.', $html);
+
+        $formStart = strpos($html, 'hx-post="/downloads/42/unlink"');
+        $this->assertNotFalse($formStart);
+        $matched = preg_match('/name="_token" value="([^"]+)"/', $html, $matches, 0, $formStart);
+        $this->assertSame(1, $matched, 'Expected a CSRF token field in the unlink form.');
+        $token = $matches[1];
+
+        /** @var CsrfTokenManagerInterface $csrfTokenManager */
+        $csrfTokenManager = self::getContainer()->get(CsrfTokenManagerInterface::class);
+        $this->assertTrue($csrfTokenManager->isTokenValid(new CsrfToken('download_unlink_42', $token)));
+        // The token is scoped to this exact row — neither a different row's id nor the bare
+        // `download_unlink` id (a single id shared across all rows) must accept it.
+        $this->assertFalse($csrfTokenManager->isTokenValid(new CsrfToken('download_unlink_43', $token)));
+        $this->assertFalse($csrfTokenManager->isTokenValid(new CsrfToken('download_unlink', $token)));
     }
 }
