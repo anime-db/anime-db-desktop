@@ -107,6 +107,19 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
     }
 
     /**
+     * The `<main>` detail content on its own, excluding base.html.twig's top-nav, whose "Add"
+     * menu (issue #834) can carry an unrelated "disabled" dropdown item depending on this test's
+     * container-wired plugin state.
+     */
+    private function mainContent(string $html): string
+    {
+        $matched = preg_match('/<main\b.*<\/main>/s', $html, $matches);
+        $this->assertSame(1, $matched, 'Expected to find the <main> detail content.');
+
+        return $matches[0];
+    }
+
+    /**
      * csrf_token() (used by the always-visible episode-increment form and by the labels
      * editor) reads/writes the CSRF token through the session of the current request, so
      * rendering the editable fragment outside a real HTTP request-response cycle needs one
@@ -154,7 +167,11 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
         $this->assertStringContainsString('favorite', $html);
         $this->assertStringContainsString('/?labels=3', $html);
         $this->assertStringContainsString('data-open-folder-path="/anime/aot"', $html);
-        $this->assertStringNotContainsString('disabled', $html);
+        // Scoped to the <main> detail content itself, not the whole page: base.html.twig's
+        // top-nav "Add" menu (issue #834) can render a disabled "Search in plugins" item whenever
+        // this test's container has no active filler plugin wired up — unrelated to whether this
+        // page's own fields are disabled, which is what this assertion is actually about.
+        $this->assertStringNotContainsString('disabled', $this->mainContent($html));
         $this->assertStringContainsString('https://shikimori.one/favicon.ico', $html);
         $this->assertStringContainsString('https://shikimori.one/animes/16498', $html);
         $this->assertStringContainsString('app-media://anime/1/cover_1720273812345.webp', $html);

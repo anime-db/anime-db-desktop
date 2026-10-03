@@ -109,6 +109,7 @@ afterEach(() => {
     delete global.fetch;
     delete window.AppTranslations;
     delete window.ScanWatcher;
+    window.history.replaceState(null, '', '/');
 });
 
 test('progress updates set the bar width via style, not the removed native value attribute', async () => {
@@ -390,4 +391,20 @@ test('unmounting clears the no-response timer and drops the ScanWatcher subscrip
 
     expect(errorBox.hidden).toBe(true);
     expect(window.AppTranslations.trans).not.toHaveBeenCalledWith('storage_list.scan_no_response');
+});
+
+// Issue #834 review: the server now decides whether a scan is running from its own job lock, not
+// from this page's `?started=1` query string, so that parameter must not linger in the address
+// bar after mount — an F5/back-forward hitting the stale URL would otherwise still look like a
+// freshly-triggered scan to a human reading the URL, even though the server itself no longer
+// reads it.
+test('mounting strips the started query parameter from the address bar', () => {
+    window.history.pushState(null, '', '/storage/42/scan-progress?started=1');
+    mockScanWatcher();
+    mockTranslations();
+
+    loadStorageScanModule();
+
+    expect(window.location.search).toBe('');
+    expect(window.location.pathname).toBe('/storage/42/scan-progress');
 });

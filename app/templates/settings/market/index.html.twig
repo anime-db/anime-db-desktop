@@ -28,6 +28,14 @@
 
         {% include 'settings/market/_refresh_area.html.twig' with {'state': 'idle'} %}
 
+        {% if featureFilter == 'filler' %}
+            <p class="alert alert-info">
+                {{ 'settings_market.filter_filler_banner'|trans }}
+                ·
+                <a href="{{ path('settings_market_index') }}">{{ 'settings_market.filter_filler_clear_link'|trans }}</a>
+            </p>
+        {% endif %}
+
         {% if installedPluginId is not null %}
             <p class="alert alert-success">{{ 'settings_market.install_success'|trans({'%pluginId%': installedPluginId}) }}</p>
         {% endif %}
@@ -43,7 +51,11 @@
         {% if registryUnavailable %}
             <p class="text-body-secondary">{{ 'settings_market.registry_unavailable'|trans }}</p>
         {% elseif items is empty %}
-            <p class="text-body-secondary">{{ 'settings_market.empty'|trans }}</p>
+            {% if featureFilter == 'filler' %}
+                <p class="text-body-secondary">{{ 'settings_market.filter_filler_empty'|trans }}</p>
+            {% else %}
+                <p class="text-body-secondary">{{ 'settings_market.empty'|trans }}</p>
+            {% endif %}
         {% else %}
             {% if hasIncompatiblePlugin %}
                 <p class="alert alert-warning">{{ 'settings_market.incompatible_plugins_summary'|trans }}</p>

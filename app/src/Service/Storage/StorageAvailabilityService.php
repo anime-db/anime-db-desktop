@@ -25,28 +25,32 @@
 
 declare(strict_types=1);
 
-namespace App\Message;
+namespace App\Service\Storage;
+
+use App\Entity\Storage;
 
 /**
- * Dispatched on the `async` transport to scan a single Storage in the background
- * (Таск 3 часть 6) — carries only the id, the handler loads the current entity state itself.
+ * The `is_readable()` check AnimeViewFactory::serializeStorage() already runs per-anime (issue
+ * #654), extracted here (issue #834) so both {@see \App\Controller\StorageController} (the
+ * storage list) and the top nav "Add" menu's scan section can share the same notion of "connected"
+ * without each reimplementing the file check.
  */
-final readonly class ScanStorageMessage
+final class StorageAvailabilityService
 {
-    public function __construct(
-        public int $storageId,
-    ) {
-    }
-
     /**
-     * The {@see \App\Service\JobLock\JobLockService} key a scan of $storageId runs under —
-     * shared by {@see \App\MessageHandler\ScanStorageMessageHandler}, which acquires it, and
-     * {@see \App\Controller\StorageController::scanProgress()} (issue #834 review), which only
-     * reads whether it is currently held, so both sides can never drift onto different keys for
-     * the same storage.
+     * @param Storage[] $storages
+     *
+     * @return list<int>
      */
-    public static function jobKey(int $storageId): string
+    public function unavailableStorageIds(array $storages): array
     {
-        return \sprintf('scan:storage:%d', $storageId);
+        $ids = [];
+        foreach ($storages as $storage) {
+            if (!is_readable($storage->getPath())) {
+                $ids[] = $storage->id ?? throw new \LogicException('Storage must be persisted before its path can be checked.');
+            }
+        }
+
+        return $ids;
     }
 }

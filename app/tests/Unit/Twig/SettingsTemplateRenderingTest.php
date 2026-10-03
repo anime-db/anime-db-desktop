@@ -820,6 +820,119 @@ final class SettingsTemplateRenderingTest extends KernelTestCase
         $this->assertStringContainsString('120', $html);
     }
 
+    /**
+     * Regression (issue #834 review): filtering the market to `?feature=filler` and finding no
+     * plugin source must say so, not fall back to {@see MarketController::renderIndex()}'s generic
+     * "the market has no plugins yet" text — the market itself is not empty, only the filtered
+     * view is.
+     */
+    public function testMarketIndexRendersFillerFilterSpecificEmptyMessageWhenFilteredListIsEmpty(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession();
+        /** @var LocaleSwitcher $localeSwitcher */
+        $localeSwitcher = self::getContainer()->get(LocaleSwitcher::class);
+        $localeSwitcher->setLocale('ru');
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('settings/market/index.html.twig', [
+            'items' => [],
+            'registryUnavailable' => false,
+            'hasIncompatiblePlugin' => false,
+            'installedPluginId' => null,
+            'updatedPluginId' => null,
+            'installError' => null,
+            'installErrorParams' => [],
+            'featureFilter' => 'filler',
+        ]);
+
+        $this->assertStringContainsString('Среди плагинов маркета пока нет ни одного источника.', $html);
+        $this->assertStringNotContainsString('В маркете пока нет ни одного плагина.', $html);
+    }
+
+    /**
+     * Regression (issue #834 review): the `?feature=filler` banner itself — wrapping it in an
+     * always-false condition would still pass every other market-rendering test, since none of
+     * them look for its text. Also pins the "·" separator between the banner text and its
+     * "Show all" link, called for by the original task.
+     */
+    public function testMarketIndexRendersTheFillerFilterBannerWithASeparatorBeforeTheClearLink(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession();
+        /** @var LocaleSwitcher $localeSwitcher */
+        $localeSwitcher = self::getContainer()->get(LocaleSwitcher::class);
+        $localeSwitcher->setLocale('ru');
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('settings/market/index.html.twig', [
+            'items' => [],
+            'registryUnavailable' => false,
+            'hasIncompatiblePlugin' => false,
+            'installedPluginId' => null,
+            'updatedPluginId' => null,
+            'installError' => null,
+            'installErrorParams' => [],
+            'featureFilter' => 'filler',
+        ]);
+
+        $this->assertMatchesRegularExpression(
+            '/Показаны плагины-источники\s*·\s*<a href="[^"]*">Показать все<\/a>/',
+            $html,
+        );
+    }
+
+    public function testMarketIndexDoesNotRenderTheFillerFilterBannerWhenUnfiltered(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession();
+        /** @var LocaleSwitcher $localeSwitcher */
+        $localeSwitcher = self::getContainer()->get(LocaleSwitcher::class);
+        $localeSwitcher->setLocale('ru');
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('settings/market/index.html.twig', [
+            'items' => [],
+            'registryUnavailable' => false,
+            'hasIncompatiblePlugin' => false,
+            'installedPluginId' => null,
+            'updatedPluginId' => null,
+            'installError' => null,
+            'installErrorParams' => [],
+            'featureFilter' => null,
+        ]);
+
+        $this->assertStringNotContainsString('Показаны плагины-источники', $html);
+    }
+
+    public function testMarketIndexRendersGenericEmptyMessageWhenUnfilteredListIsEmpty(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession();
+        /** @var LocaleSwitcher $localeSwitcher */
+        $localeSwitcher = self::getContainer()->get(LocaleSwitcher::class);
+        $localeSwitcher->setLocale('ru');
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('settings/market/index.html.twig', [
+            'items' => [],
+            'registryUnavailable' => false,
+            'hasIncompatiblePlugin' => false,
+            'installedPluginId' => null,
+            'updatedPluginId' => null,
+            'installError' => null,
+            'installErrorParams' => [],
+            'featureFilter' => null,
+        ]);
+
+        $this->assertStringContainsString('В маркете пока нет ни одного плагина.', $html);
+        $this->assertStringNotContainsString('Среди плагинов маркета пока нет ни одного источника.', $html);
+    }
+
     public function testProxyTestResultFragmentRendersFailureWithoutErrors(): void
     {
         self::bootKernel();

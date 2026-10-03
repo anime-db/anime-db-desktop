@@ -78,7 +78,7 @@ final class ScanStorageMessageHandler
 
     public function __invoke(ScanStorageMessage $message): void
     {
-        $jobKey = \sprintf('scan:storage:%d', $message->storageId);
+        $jobKey = ScanStorageMessage::jobKey($message->storageId);
         $lockAcquired = false;
 
         try {

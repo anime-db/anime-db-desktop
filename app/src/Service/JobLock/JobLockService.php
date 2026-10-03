@@ -145,6 +145,24 @@ final class JobLockService
         return false;
     }
 
+    /**
+     * Read-only variant of {@see self::hasActiveLocks()} scoped to a single $jobKey (issue #834
+     * review): lets a caller that only wants to know "is this one job currently running" (e.g. the
+     * scan-progress page deciding whether to render the live progress UI) answer that without the
+     * side effects acquire() has — no insert, no takeover of a stale lock.
+     */
+    public function isLocked(string $jobKey): bool
+    {
+        $this->ensureSchemaExists();
+
+        $heartbeatAt = $this->connection->fetchOne(
+            'SELECT heartbeat_at FROM job_locks WHERE job_key = :jobKey',
+            ['jobKey' => $jobKey],
+        );
+
+        return $heartbeatAt !== false && !$this->isHeartbeatStale((int) $heartbeatAt);
+    }
+
     private function tryInsertLock(string $jobKey): bool
     {
         $now = $this->now();

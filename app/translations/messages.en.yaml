@@ -246,6 +246,9 @@ settings_market:
     title: Plugin market — Settings — AnimeDB
     heading: Plugin market
     empty: The market has no plugins yet.
+    filter_filler_empty: No plugin sources are available in the market right now.
+    filter_filler_banner: Showing plugin sources
+    filter_filler_clear_link: Show all
     name_column: Name
     description_column: Description
     type_column: Type
@@ -434,8 +437,6 @@ storage_list:
     delete_confirm: 'Delete storage "%name%"?'
     never_scanned: Never scanned
     scan_button: Scan
-    scan_started: Scan started.
-    scan_heading: Scan results
     scan_progress_text: '%processed%/%total% (%percent%%)'
     scan_failed_marker_conflict: 'Scan failed: the storage marker is owned by another storage.'
     scan_failed_exception: 'Scan failed: %message%'
@@ -532,6 +533,13 @@ storage_scan_prompt:
     scan_button: Run scan
     skip_link: Skip
 
+storage_scan_progress:
+    title: Storage scan — AnimeDB
+    heading: Scan results
+    not_started: The scan has not been started.
+    scan_button: Run scan
+    catalog_link: ← Catalog
+
 search_plugins:
     title: Search in plugins — AnimeDB
     heading: Search in plugins
@@ -599,5 +607,16 @@ app_notification:
 
 nav:
     aria_label: Main navigation
-    catalog_link: Catalog
+    brand: AnimeDB
+    add_button: Add
     settings_link: Settings
+    add_menu_search_plugins: Search in plugins
+    add_menu_search_plugins_hint_not_installed: No plugin source is installed.
+    add_menu_search_plugins_hint_disabled: Filling from the plugin is turned off.
+    add_menu_search_plugins_hint_link: Go →
+    add_menu_scan_heading: Scan
+    add_menu_scan_loading: Loading…
+    add_menu_scan_item: 'Scan "%name%"'
+    add_menu_scan_more: '%count% more not connected →'
+    add_menu_add_storage: Add storage…
+    add_menu_empty_entry: Empty entry

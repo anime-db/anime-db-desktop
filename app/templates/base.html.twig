@@ -42,27 +42,69 @@
     <script src="{{ asset('js/main.js') }}"></script>
 </head>
 <body>
-    {# Temporary two-item top menu (issue #822): Storage and Market used to be their own tabs here,
-     # but both now live in the settings sidebar (settings/_layout.html.twig) alongside every other
-     # settings-like page, so "Settings" is active for any route under /settings or /storage —
-     # including the pages the sidebar itself highlights via SettingsNavigationService. This bar
-     # goes back to growing a real header (logo, "Add anime" menu) in a separate issue.
+    {# Header (issue #834): a word-mark link to the catalog on the left, "Add" (a dropdown menu)
+     # and "Settings" buttons on the right. Hand-rolled, not Bootstrap's .navbar — that pulls in
+     # breakpoint collapse-to-burger logic this desktop-only window never needs (see _nav.scss).
      #
-     # `storage_scan_prompt` (issue #825) is the one `storage_*` route excluded from "Settings": it
-     # has no sidebar (see storage/scan_prompt.html.twig, which extends base.html.twig directly,
-     # not settings/_layout.html.twig) because it is a step of adding entries to the catalog, not a
-     # settings screen. #}
+     # `current_nav_section` still distinguishes "catalog" from "settings" routes, the same
+     # computation the earlier two-link bar used (issue #822/#825): "Settings" stays highlighted
+     # for every settings_*/storage_* route, except the ones that are a step of adding entries to
+     # the catalog rather than a settings screen — storage_scan_prompt and, since issue #834,
+     # storage_scan_progress (both extend base.html.twig directly, with no sidebar). The word-mark
+     # itself is never highlighted — there is no visual "catalog" state anymore — but the section
+     # is still computed so a catalog-ish route is reliably excluded from "settings".
+     #}
     {% set current_route = app.request.attributes.get('_route')|default('') %}
-    {% if current_route == 'storage_scan_prompt' or current_route starts with 'anime_' or current_route == 'home_index' %}
+    {% if current_route in ['storage_scan_prompt', 'storage_scan_progress'] or current_route starts with 'anime_' or current_route == 'home_index' %}
         {% set current_nav_section = 'catalog' %}
     {% elseif current_route starts with 'settings_' or current_route starts with 'storage_' %}
         {% set current_nav_section = 'settings' %}
     {% else %}
         {% set current_nav_section = '' %}
     {% endif %}
+    {% set searchPluginsState = top_nav_search_plugins_state() %}
     <nav class="app-nav" aria-label="{{ 'nav.aria_label'|trans }}">
-        <a class="app-nav__link{% if current_nav_section == 'catalog' %} app-nav__link--active{% endif %}" href="{{ path('home_index') }}"{% if current_nav_section == 'catalog' %} aria-current="page"{% endif %}>{{ 'nav.catalog_link'|trans }}</a>
-        <a class="app-nav__link{% if current_nav_section == 'settings' %} app-nav__link--active{% endif %}" href="{{ path('settings_index') }}"{% if current_nav_section == 'settings' %} aria-current="page"{% endif %}>{{ 'nav.settings_link'|trans }}</a>
+        <a class="app-nav__brand" href="{{ path('home_index') }}">{{ 'nav.brand'|trans }}</a>
+
+        <div class="app-nav__actions">
+            <div class="dropdown app-nav__add" data-control="nav-add-menu" data-scan-section-url="{{ path('nav_add_menu_scan_section') }}">
+                <button type="button" class="btn btn-primary dropdown-toggle d-inline-flex align-items-center gap-1" data-bs-toggle="dropdown" aria-expanded="false">
+                    {{ icon('plus-lg') }}
+                    {{ 'nav.add_button'|trans }}
+                </button>
+                <ul class="dropdown-menu dropdown-menu-end">
+                    <li>
+                        {% if searchPluginsState.active %}
+                            <a class="dropdown-item" href="{{ path('anime_search_plugins') }}">{{ 'nav.add_menu_search_plugins'|trans }}</a>
+                        {% else %}
+                            <span class="dropdown-item disabled" aria-disabled="true">{{ 'nav.add_menu_search_plugins'|trans }}</span>
+                            {% if searchPluginsState.hint is not null %}
+                                <div class="app-nav__hint px-3 pb-2 small text-body-secondary">
+                                    {{ ('nav.add_menu_search_plugins_hint_' ~ searchPluginsState.hint.kind)|trans }}
+                                    <a href="{{ searchPluginsState.hint.kind == 'not_installed' ? path('settings_market_index', {feature: 'filler'}) : searchPluginsState.hint.url }}">{{ 'nav.add_menu_search_plugins_hint_link'|trans }}</a>
+                                </div>
+                            {% endif %}
+                        {% endif %}
+                    </li>
+                    <li><hr class="dropdown-divider"></li>
+                    <li class="dropdown-header">{{ 'nav.add_menu_scan_heading'|trans }}</li>
+                    <li class="app-nav__scan-section" data-nav-scan-section>
+                        <div class="dropdown-item-text d-flex align-items-center gap-2">
+                            <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                            {{ 'nav.add_menu_scan_loading'|trans }}
+                        </div>
+                    </li>
+                    <li><hr class="dropdown-divider"></li>
+                    <li><a class="dropdown-item" href="{{ path('storage_new') }}">{{ 'nav.add_menu_add_storage'|trans }}</a></li>
+                    <li><a class="dropdown-item" href="{{ path('anime_new') }}">{{ 'nav.add_menu_empty_entry'|trans }}</a></li>
+                </ul>
+            </div>
+
+            <a class="app-nav__link{% if current_nav_section == 'settings' %} app-nav__link--active{% endif %} btn btn-outline-secondary d-inline-flex align-items-center gap-1" href="{{ path('settings_index') }}"{% if current_nav_section == 'settings' %} aria-current="page"{% endif %}>
+                {{ icon('gear') }}
+                {{ 'nav.settings_link'|trans }}
+            </a>
+        </div>
     </nav>
     {% block body %}{% endblock %}
     <div id="app-notifications" class="app-notifications" data-control="app-notifications" aria-live="polite"></div>

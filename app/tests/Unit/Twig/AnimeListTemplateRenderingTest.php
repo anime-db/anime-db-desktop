@@ -171,6 +171,19 @@ final class AnimeListTemplateRenderingTest extends KernelTestCase
     }
 
     /**
+     * The onboarding `<section>` on its own, excluding the rest of the page — in particular
+     * base.html.twig's top-nav "Add" menu, which (issue #834) always links to storage_new/
+     * anime_new regardless of which onboarding card is showing.
+     */
+    private function onboardingSection(string $html): string
+    {
+        $matched = preg_match('/<section class="anime-list__onboarding.*?<\/section>/s', $html, $matches);
+        $this->assertSame(1, $matched, 'Expected to find the onboarding section.');
+
+        return $matches[0];
+    }
+
+    /**
      * @param array<string, mixed> $context
      */
     private function renderList(array $context): string
@@ -256,7 +269,10 @@ final class AnimeListTemplateRenderingTest extends KernelTestCase
         ]);
 
         $this->assertStringContainsString('action="/storage/7/scan"', $html);
-        $this->assertStringNotContainsString('href="/storage/new"', $html);
+        // Scoped to the onboarding section itself, not the whole page: base.html.twig's top-nav
+        // "Add" menu (issue #834) always links to storage_new, regardless of this scenario — only
+        // the onboarding card's own link is what this scenario must not show.
+        $this->assertStringNotContainsString('href="/storage/new"', $this->onboardingSection($html));
     }
 
     /**

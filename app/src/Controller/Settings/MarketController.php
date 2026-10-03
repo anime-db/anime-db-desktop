@@ -202,11 +202,13 @@ final class MarketController
     {
         $installedPluginId = (string) $request->query->get('installed', '');
         $updatedPluginId = (string) $request->query->get('updated', '');
+        $feature = (string) $request->query->get('feature', '');
 
         return $this->renderIndex(
             locale: $request->getLocale(),
             installedPluginId: $installedPluginId !== '' ? $installedPluginId : null,
             updatedPluginId: $updatedPluginId !== '' ? $updatedPluginId : null,
+            featureFilter: $feature === 'filler' ? 'filler' : null,
         );
     }
 
@@ -404,6 +406,10 @@ final class MarketController
     }
 
     /**
+     * $featureFilter is either `'filler'` or `null` (issue #834) — {@see self::index()} is the
+     * only caller that ever passes a non-null value, and it already collapses any `?feature=`
+     * value other than `filler` down to `null`.
+     *
      * @param array<string, string> $installErrorParams
      */
     private function renderIndex(
@@ -412,6 +418,7 @@ final class MarketController
         ?string $updatedPluginId = null,
         ?string $installError = null,
         array $installErrorParams = [],
+        ?string $featureFilter = null,
     ): Response {
         $snapshot = $this->snapshotCache->load();
         $snapshotReady = $snapshot !== null && $snapshot->coreVersion === $this->coreVersion;
@@ -425,6 +432,10 @@ final class MarketController
         if ($snapshotReady) {
             $appTranslationKeyCount = null;
             foreach ($snapshot->plugins as $plugin) {
+                if ($featureFilter === 'filler' && ($plugin->manifest['features']['filler'] ?? false) !== true) {
+                    continue;
+                }
+
                 $installedPlugin = $this->installedPlugins->get(new PluginId($plugin->id));
                 $hasIncompatiblePlugin = $hasIncompatiblePlugin || $plugin->resolvedVersion === null;
 
@@ -448,6 +459,9 @@ final class MarketController
             'updatedPluginId' => $updatedPluginId,
             'installError' => $installError,
             'installErrorParams' => $installErrorParams,
+            // Only rendered when the snapshot is ready (see the template): a filter banner over
+            // the "not ready yet" placeholder would claim a filtered view that was never computed.
+            'featureFilter' => $snapshotReady ? $featureFilter : null,
         ]));
     }
 

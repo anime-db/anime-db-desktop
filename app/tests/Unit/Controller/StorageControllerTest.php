@@ -32,9 +32,14 @@ use App\Entity\Enum\StorageType;
 use App\Entity\Storage;
 use App\Message\ScanStorageMessage;
 use App\Repository\StorageRepository;
+use App\Service\JobLock\JobLockService;
+use App\Service\JobLock\ProcessLivenessChecker;
+use App\Service\Storage\StorageAvailabilityService;
 use App\Service\Storage\StorageMarkerService;
+use Doctrine\DBAL\DriverManager;
 use Doctrine\ORM\EntityManagerInterface;
 use PHPUnit\Framework\TestCase;
+use Psr\Clock\ClockInterface;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\Messenger\Envelope;
@@ -70,6 +75,26 @@ final class StorageControllerTest extends TestCase
         return $dir;
     }
 
+    /**
+     * JobLockService is final (by design — see its own docblock), so it cannot be doubled; this
+     * builds a real one over an isolated in-memory "queue" connection instead, optionally with
+     * $jobKey's lock already held.
+     */
+    private function createJobLockService(?string $heldJobKey = null): JobLockService
+    {
+        $connection = DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]);
+        $clock = $this->createStub(ClockInterface::class);
+        $clock->method('now')->willReturn(new \DateTimeImmutable('@1000'));
+
+        $jobLockService = new JobLockService($connection, $this->createStub(ProcessLivenessChecker::class), $clock);
+
+        if ($heldJobKey !== null) {
+            $jobLockService->acquire($heldJobKey);
+        }
+
+        return $jobLockService;
+    }
+
     private function createController(
         ?StorageRepository $storages = null,
         ?MessageBusInterface $messageBus = null,
@@ -78,6 +103,8 @@ final class StorageControllerTest extends TestCase
         ?UrlGeneratorInterface $urlGenerator = null,
         ?Environment $twig = null,
         ?StorageMarkerService $storageMarker = null,
+        ?StorageAvailabilityService $storageAvailability = null,
+        ?JobLockService $jobLockService = null,
     ): StorageController {
         if ($csrfTokenManager === null) {
             $csrfTokenManager = $this->createStub(CsrfTokenManagerInterface::class);
@@ -102,6 +129,8 @@ final class StorageControllerTest extends TestCase
             $storageMarker = new StorageMarkerService($markerEntityManager);
         }
 
+        $jobLockService ??= $this->createJobLockService();
+
         return new StorageController(
             $storages ?? $this->createStub(StorageRepository::class),
             $messageBus,
@@ -110,6 +139,8 @@ final class StorageControllerTest extends TestCase
             $urlGenerator,
             $twig ?? $this->createStub(Environment::class),
             $storageMarker,
+            $storageAvailability ?? new StorageAvailabilityService(),
+            $jobLockService,
         );
     }
 
@@ -125,14 +156,12 @@ final class StorageControllerTest extends TestCase
         $twig->expects($this->once())
             ->method('render')
             ->with('storage/list.html.twig', $this->callback(
-                static fn (array $params): bool => [$storage] === $params['storages']
-                    && $params['scanned'] === false
-                    && $params['scannedStorageId'] === null,
+                static fn (array $params): bool => [$storage] === $params['storages'],
             ))
             ->willReturn('<html></html>');
 
         $controller = $this->createController(storages: $storages, twig: $twig);
-        $response = $controller->index(Request::create('/storage'));
+        $response = $controller->index();
 
         $this->assertSame(200, $response->getStatusCode());
     }
@@ -157,7 +186,7 @@ final class StorageControllerTest extends TestCase
             ->willReturn('<html></html>');
 
         $controller = $this->createController(storages: $storages, twig: $twig);
-        $controller->index(Request::create('/storage'));
+        $controller->index();
     }
 
     public function testIndexDoesNotMarkStorageWithExistingPathAsUnavailable(): void
@@ -178,7 +207,7 @@ final class StorageControllerTest extends TestCase
             ->willReturn('<html></html>');
 
         $controller = $this->createController(storages: $storages, twig: $twig);
-        $controller->index(Request::create('/storage'));
+        $controller->index();
     }
 
     public function testDeleteRemovesStorageWithMissingPath(): void
@@ -236,15 +265,88 @@ final class StorageControllerTest extends TestCase
         $router = $this->createMock(UrlGeneratorInterface::class);
         $router->expects($this->once())
             ->method('generate')
-            ->with('storage_index', ['scanned' => 1, 'storage_id' => 42])
-            ->willReturn('/storage?scanned=1&storage_id=42');
+            ->with('storage_scan_progress', ['id' => 42, 'started' => 1])
+            ->willReturn('/storage/42/scan-progress?started=1');
 
         $controller = $this->createController(messageBus: $messageBus, urlGenerator: $router);
         $request = Request::create('/storage/42/scan', 'POST', ['_token' => 'token']);
 
         $response = $controller->scan($storage, $request);
 
-        $this->assertSame('/storage?scanned=1&storage_id=42', $response->getTargetUrl());
+        $this->assertSame('/storage/42/scan-progress?started=1', $response->getTargetUrl());
+    }
+
+    public function testScanProgressRendersTheLiveScanSectionWhenAScanLockIsHeld(): void
+    {
+        $storage = new Storage('Main folder', 'D:\\Anime', StorageType::Folder);
+        $this->setStorageId($storage, 42);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('storage/scan_progress.html.twig', $this->callback(
+                static fn (array $params): bool => $params['storage'] === $storage && $params['started'] === true,
+            ))
+            ->willReturn('<html></html>');
+
+        $jobLockService = $this->createJobLockService(heldJobKey: ScanStorageMessage::jobKey(42));
+
+        $controller = $this->createController(twig: $twig, jobLockService: $jobLockService);
+
+        $response = $controller->scanProgress($storage, Request::create('/storage/42/scan-progress'));
+
+        $this->assertSame(200, $response->getStatusCode());
+    }
+
+    /**
+     * Regression (issue #834 review, round 2): a request landing right after scan() redirects
+     * here — before the async consumer picks the message up and takes the job lock — must still
+     * show the live-scan section. The one-shot `?started=1` marker scan() puts on that redirect
+     * covers exactly that gap; storage-scan.js strips it from the URL once it mounts, so it is
+     * never present on a later F5/back-forward/bookmarked visit.
+     */
+    public function testScanProgressRendersTheLiveScanSectionWhenStartedQueryParamIsPresentEvenWithoutLock(): void
+    {
+        $storage = new Storage('Main folder', 'D:\\Anime', StorageType::Folder);
+        $this->setStorageId($storage, 42);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('storage/scan_progress.html.twig', $this->callback(
+                static fn (array $params): bool => $params['started'] === true,
+            ))
+            ->willReturn('<html></html>');
+
+        $controller = $this->createController(twig: $twig, jobLockService: $this->createJobLockService());
+
+        $controller->scanProgress($storage, Request::create('/storage/42/scan-progress?started=1'));
+    }
+
+    /**
+     * Regression (issue #834 review): the template's live-scan-section state must come from
+     * whether a scan is actually running (the job lock) or was just triggered (`?started=1`), not
+     * stay true forever once that query string shows up once — an F5/back-forward/bookmarked
+     * visit without the parameter and without the lock held must fall back to "scan not started"
+     * rather than showing the live section after the scan already finished (storage-scan.js's
+     * 15-second no-response timeout, then a dead-end error).
+     */
+    public function testScanProgressRendersTheNotStartedStateWhenNoScanLockIsHeldAndNoStartedQueryParam(): void
+    {
+        $storage = new Storage('Main folder', 'D:\\Anime', StorageType::Folder);
+        $this->setStorageId($storage, 42);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('storage/scan_progress.html.twig', $this->callback(
+                static fn (array $params): bool => $params['started'] === false,
+            ))
+            ->willReturn('<html></html>');
+
+        $controller = $this->createController(twig: $twig, jobLockService: $this->createJobLockService());
+
+        $controller->scanProgress($storage, Request::create('/storage/42/scan-progress'));
     }
 
     public function testScanRejectsInvalidCsrfToken(): void

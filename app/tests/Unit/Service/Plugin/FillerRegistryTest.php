@@ -312,4 +312,40 @@ final class FillerRegistryTest extends TestCase
         $this->assertSame(FillerAvailabilityState::DisabledWithSettingsPage, $availability->state);
         $this->assertSame('animedb-shikimori', (string) $availability->pluginId);
     }
+
+    /**
+     * Regression (issue #834 review): fillerAvailability() runs on every page via
+     * TopNavExtension, so it must never instantiate a plugin's settings-page service just to
+     * check whether one exists — a broken constructor there would otherwise take down every
+     * page, not just the settings pages that actually need the instance (issue #825's reasoning,
+     * applied here). The factory below throws if invoked; this only passes because
+     * fillerAvailability() never calls it.
+     */
+    public function testFillerAvailabilityNeverInstantiatesTheSettingsPageServiceToCheckItExists(): void
+    {
+        $this->writeManifest('animedb-shikimori', 'Shikimori');
+
+        $installedPlugins = new InstalledPluginsRegistry($this->pluginsDir, new PluginsConfigStore($this->path), new NullLogger());
+        $installedPlugins->reconcile();
+
+        file_put_contents($this->path, json_encode([
+            'animedb-shikimori' => ['features' => ['filler' => false]],
+        ]));
+
+        $registry = new FillerRegistry(
+            ['animedb-shikimori' => $this->createFiller(['title'])],
+            new PluginsConfigStore($this->path),
+        );
+
+        $settingsPages = new SettingsPageRegistry($installedPlugins, new ServiceLocator([
+            'animedb-shikimori' => static function (): SettingsPageInterface {
+                throw new \RuntimeException('broken plugin settings-page constructor');
+            },
+        ]));
+
+        $availability = $registry->fillerAvailability($installedPlugins, $settingsPages);
+
+        $this->assertSame(FillerAvailabilityState::DisabledWithSettingsPage, $availability->state);
+        $this->assertSame('animedb-shikimori', (string) $availability->pluginId);
+    }
 }
