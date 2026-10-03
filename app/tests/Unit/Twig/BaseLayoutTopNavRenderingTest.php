@@ -147,6 +147,19 @@ final class BaseLayoutTopNavRenderingTest extends KernelTestCase
         $this->assertStringNotContainsString('feature=filler', $html);
     }
 
+    /**
+     * Regression (issue #834 review): the Add menu's "Add storage…"/"Empty entry" `<li>`s have no
+     * conditional around them in base.html.twig, so dropping either one from the markup passed no
+     * existing test.
+     */
+    public function testAddMenuAlwaysRendersTheAddStorageAndEmptyEntryLinks(): void
+    {
+        $html = $this->renderBaseLayout('home_index');
+
+        $this->assertStringContainsString('href="/storage/new"', $html);
+        $this->assertStringContainsString('href="/anime/new"', $html);
+    }
+
     private function renderBaseLayoutWithFillerPresenter(string $route, FillerAvailabilityPresenter $presenter): string
     {
         self::bootKernel();

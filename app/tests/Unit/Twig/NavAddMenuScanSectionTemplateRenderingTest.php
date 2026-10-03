@@ -34,6 +34,8 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\HttpFoundation\Session\Session;
 use Symfony\Component\HttpFoundation\Session\Storage\MockArraySessionStorage;
+use Symfony\Component\Security\Csrf\CsrfToken;
+use Symfony\Component\Security\Csrf\CsrfTokenManagerInterface;
 use Twig\Environment;
 
 /**
@@ -79,6 +81,53 @@ final class NavAddMenuScanSectionTemplateRenderingTest extends KernelTestCase
         $this->assertStringContainsString('Main folder', $html);
         $this->assertStringContainsString('2 more not connected', $html);
         $this->assertStringNotContainsString('href="/storage/new"', $html);
+    }
+
+    /**
+     * Regression (issue #834 review): each storage's "Scan" button must carry *its own*
+     * `storage_scan_{id}` CSRF token — StorageController::scan() validates against that exact
+     * token id, so a template regression that hardcoded a single shared token (e.g.
+     * `csrf_token('storage_scan')`) would pass {@see self::testRendersOneFormPerConnectedStorageAndTheDisconnectedCount()}
+     * (which never looks at the token value) yet make every scan from this menu fail CSRF
+     * validation silently.
+     */
+    public function testEachStorageFormCarriesItsOwnCsrfToken(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession();
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('nav/_add_menu_scan_section.html.twig', [
+            'connectedStorages' => [$this->storage(7, 'Main folder'), $this->storage(9, 'Backup folder')],
+            'disconnectedCount' => 0,
+            'hasScannableStorages' => true,
+        ]);
+
+        $tokenForStorage7 = $this->extractTokenAfter($html, 'action="/storage/7/scan"');
+        $tokenForStorage9 = $this->extractTokenAfter($html, 'action="/storage/9/scan"');
+
+        /** @var CsrfTokenManagerInterface $csrfTokenManager */
+        $csrfTokenManager = self::getContainer()->get(CsrfTokenManagerInterface::class);
+
+        // Each token must validate against its own storage's token id...
+        $this->assertTrue($csrfTokenManager->isTokenValid(new CsrfToken('storage_scan_7', $tokenForStorage7)));
+        $this->assertTrue($csrfTokenManager->isTokenValid(new CsrfToken('storage_scan_9', $tokenForStorage9)));
+        // ...and must not validate against the other storage's id, or a single shared id a
+        // template regression could have hardcoded instead of interpolating the storage's own id.
+        $this->assertFalse($csrfTokenManager->isTokenValid(new CsrfToken('storage_scan_9', $tokenForStorage7)));
+        $this->assertFalse($csrfTokenManager->isTokenValid(new CsrfToken('storage_scan', $tokenForStorage7)));
+    }
+
+    private function extractTokenAfter(string $html, string $formActionNeedle): string
+    {
+        $formStart = strpos($html, $formActionNeedle);
+        self::assertNotFalse($formStart, \sprintf('Expected to find a form with %s.', $formActionNeedle));
+
+        $matched = preg_match('/name="_token" value="([^"]+)"/', $html, $matches, 0, $formStart);
+        self::assertSame(1, $matched, \sprintf('Expected a CSRF token field after %s.', $formActionNeedle));
+
+        return $matches[1];
     }
 
     public function testRendersTheAddStorageFallbackWhenNoneAreScannable(): void

@@ -851,6 +851,63 @@ final class SettingsTemplateRenderingTest extends KernelTestCase
         $this->assertStringNotContainsString('В маркете пока нет ни одного плагина.', $html);
     }
 
+    /**
+     * Regression (issue #834 review): the `?feature=filler` banner itself — wrapping it in an
+     * always-false condition would still pass every other market-rendering test, since none of
+     * them look for its text. Also pins the "·" separator between the banner text and its
+     * "Show all" link, called for by the original task.
+     */
+    public function testMarketIndexRendersTheFillerFilterBannerWithASeparatorBeforeTheClearLink(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession();
+        /** @var LocaleSwitcher $localeSwitcher */
+        $localeSwitcher = self::getContainer()->get(LocaleSwitcher::class);
+        $localeSwitcher->setLocale('ru');
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('settings/market/index.html.twig', [
+            'items' => [],
+            'registryUnavailable' => false,
+            'hasIncompatiblePlugin' => false,
+            'installedPluginId' => null,
+            'updatedPluginId' => null,
+            'installError' => null,
+            'installErrorParams' => [],
+            'featureFilter' => 'filler',
+        ]);
+
+        $this->assertMatchesRegularExpression(
+            '/Показаны плагины-источники\s*·\s*<a href="[^"]*">Показать все<\/a>/',
+            $html,
+        );
+    }
+
+    public function testMarketIndexDoesNotRenderTheFillerFilterBannerWhenUnfiltered(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession();
+        /** @var LocaleSwitcher $localeSwitcher */
+        $localeSwitcher = self::getContainer()->get(LocaleSwitcher::class);
+        $localeSwitcher->setLocale('ru');
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('settings/market/index.html.twig', [
+            'items' => [],
+            'registryUnavailable' => false,
+            'hasIncompatiblePlugin' => false,
+            'installedPluginId' => null,
+            'updatedPluginId' => null,
+            'installError' => null,
+            'installErrorParams' => [],
+            'featureFilter' => null,
+        ]);
+
+        $this->assertStringNotContainsString('Показаны плагины-источники', $html);
+    }
+
     public function testMarketIndexRendersGenericEmptyMessageWhenUnfilteredListIsEmpty(): void
     {
         self::bootKernel();

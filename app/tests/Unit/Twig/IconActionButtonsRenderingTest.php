@@ -91,13 +91,35 @@ final class IconActionButtonsRenderingTest extends KernelTestCase
         $html = $twig->render('storage/list.html.twig', [
             'storages' => [$storage],
             'unavailableStorageIds' => [],
-            'scanned' => false,
-            'scannedStorageId' => null,
         ]);
 
         $this->assertIconButton($html, 'Edit', 'pencil');
         $this->assertIconButton($html, 'Scan', 'arrow-repeat');
         $this->assertIconButton($html, 'Delete', 'trash');
+    }
+
+    /**
+     * Regression (issue #834 review): the scan progress/confirmation block moved off this list
+     * entirely, onto its own page (storage/scan_progress.html.twig) — re-adding
+     * `data-control="storage-scan"` here would duplicate the ScanWatcher subscription the new
+     * page already owns.
+     */
+    public function testStorageListNoLongerRendersTheScanProgressSection(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession('/storage');
+
+        $storage = new Storage('Main folder', 'D:\\Anime', StorageType::Folder);
+        (new \ReflectionProperty(Storage::class, 'id'))->setValue($storage, 1);
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('storage/list.html.twig', [
+            'storages' => [$storage],
+            'unavailableStorageIds' => [],
+        ]);
+
+        $this->assertStringNotContainsString('data-control="storage-scan"', $html);
     }
 
     public function testPluginsIndexActionButtonsCarryTitleAndAriaLabel(): void
