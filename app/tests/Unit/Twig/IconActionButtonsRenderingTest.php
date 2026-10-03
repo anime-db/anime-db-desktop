@@ -91,6 +91,8 @@ final class IconActionButtonsRenderingTest extends KernelTestCase
         $html = $twig->render('storage/list.html.twig', [
             'storages' => [$storage],
             'unavailableStorageIds' => [],
+            'presetStorageId' => null,
+            'error' => null,
         ]);
 
         $this->assertIconButton($html, 'Edit', 'pencil');
@@ -117,6 +119,8 @@ final class IconActionButtonsRenderingTest extends KernelTestCase
         $html = $twig->render('storage/list.html.twig', [
             'storages' => [$storage],
             'unavailableStorageIds' => [],
+            'presetStorageId' => null,
+            'error' => null,
         ]);
 
         $this->assertStringNotContainsString('data-control="storage-scan"', $html);

@@ -31,7 +31,10 @@ use App\Controller\StorageController;
 use App\Entity\Enum\StorageType;
 use App\Entity\Storage;
 use App\Message\ScanStorageMessage;
+use App\Repository\DownloadRepository;
 use App\Repository\StorageRepository;
+use App\Service\AppConfigStore;
+use App\Service\AppSettingsProvider;
 use App\Service\JobLock\JobLockService;
 use App\Service\JobLock\ProcessLivenessChecker;
 use App\Service\Storage\StorageAvailabilityService;
@@ -40,6 +43,7 @@ use Doctrine\DBAL\DriverManager;
 use Doctrine\ORM\EntityManagerInterface;
 use PHPUnit\Framework\TestCase;
 use Psr\Clock\ClockInterface;
+use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\Messenger\Envelope;
@@ -53,6 +57,9 @@ final class StorageControllerTest extends TestCase
     /** @var list<string> */
     private array $dirsToClean = [];
 
+    /** @var list<string> */
+    private array $filesToClean = [];
+
     protected function tearDown(): void
     {
         foreach ($this->dirsToClean as $dir) {
@@ -64,6 +71,12 @@ final class StorageControllerTest extends TestCase
                 rmdir($dir);
             }
         }
+
+        foreach ($this->filesToClean as $file) {
+            if (is_file($file)) {
+                unlink($file);
+            }
+        }
     }
 
     private function makeDir(): string
@@ -73,6 +86,15 @@ final class StorageControllerTest extends TestCase
         $this->dirsToClean[] = $dir;
 
         return $dir;
+    }
+
+    /** A real AppSettingsProvider over a scratch config.json — it's final, so it can't be doubled. */
+    private function createSettings(): AppSettingsProvider
+    {
+        $configPath = sys_get_temp_dir().'/storage-delete-test-config-'.uniqid().'.json';
+        $this->filesToClean[] = $configPath;
+
+        return new AppSettingsProvider(new AppConfigStore($configPath));
     }
 
     /**
@@ -105,6 +127,8 @@ final class StorageControllerTest extends TestCase
         ?StorageMarkerService $storageMarker = null,
         ?StorageAvailabilityService $storageAvailability = null,
         ?JobLockService $jobLockService = null,
+        ?DownloadRepository $downloads = null,
+        ?AppSettingsProvider $settings = null,
     ): StorageController {
         if ($csrfTokenManager === null) {
             $csrfTokenManager = $this->createStub(CsrfTokenManagerInterface::class);
@@ -131,6 +155,11 @@ final class StorageControllerTest extends TestCase
 
         $jobLockService ??= $this->createJobLockService();
 
+        if ($downloads === null) {
+            $downloads = $this->createStub(DownloadRepository::class);
+            $downloads->method('hasUnfinishedDownloadsForTargetStorage')->willReturn(false);
+        }
+
         return new StorageController(
             $storages ?? $this->createStub(StorageRepository::class),
             $messageBus,
@@ -141,6 +170,8 @@ final class StorageControllerTest extends TestCase
             $storageMarker,
             $storageAvailability ?? new StorageAvailabilityService(),
             $jobLockService,
+            $downloads,
+            $settings ?? $this->createSettings(),
         );
     }
 
@@ -231,6 +262,7 @@ final class StorageControllerTest extends TestCase
 
         $response = $controller->delete($storage, $request);
 
+        $this->assertInstanceOf(RedirectResponse::class, $response);
         $this->assertSame('/storage', $response->getTargetUrl());
     }
 
@@ -387,6 +419,7 @@ final class StorageControllerTest extends TestCase
 
         $response = $controller->delete($storage, $request);
 
+        $this->assertInstanceOf(RedirectResponse::class, $response);
         $this->assertSame('/storage', $response->getTargetUrl());
     }
 
@@ -425,6 +458,96 @@ final class StorageControllerTest extends TestCase
 
         $this->expectException(BadRequestHttpException::class);
         $controller->delete($storage, $request);
+    }
+
+    /**
+     * Acceptance (issue #853): a storage with a still-Pending (or Failed) download targeting it
+     * must be refused — the row is not Completed, and downloads.target_storage_id is ON DELETE SET
+     * NULL, so deleting here would strand it with no root to compare against. The marker must not
+     * be touched either: forget() runs before remove()/flush() in delete(), so leaving the marker
+     * file in place proves forget() itself was skipped, not just that it happened to no-op.
+     */
+    public function testDeleteRejectsStorageWithUnfinishedDownloads(): void
+    {
+        $dir = $this->makeDir();
+        file_put_contents($dir.\DIRECTORY_SEPARATOR.'desktop.ini', "[AnimeDB]\nid=42\n");
+        $storage = new Storage('Main folder', $dir, StorageType::Folder);
+        $this->setStorageId($storage, 42);
+
+        $downloads = $this->createMock(DownloadRepository::class);
+        $downloads->expects($this->once())
+            ->method('hasUnfinishedDownloadsForTargetStorage')
+            ->with(42)
+            ->willReturn(true);
+
+        $entityManager = $this->createMock(EntityManagerInterface::class);
+        $entityManager->expects($this->never())->method('remove');
+        $entityManager->expects($this->never())->method('flush');
+
+        $storages = $this->createStub(StorageRepository::class);
+        $storages->method('findAllOrderedByName')->willReturn([$storage]);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('storage/list.html.twig', $this->callback(
+                static fn (array $params): bool => $params['error'] === 'storage_list.delete_error_unfinished_downloads'
+                    && $params['errorParams'] === ['%name%' => 'Main folder'],
+            ))
+            ->willReturn('<html></html>');
+
+        $controller = $this->createController(storages: $storages, entityManager: $entityManager, twig: $twig, downloads: $downloads);
+        $request = Request::create('/storage/42/delete', 'POST', ['_token' => 'token']);
+
+        $response = $controller->delete($storage, $request);
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertFileExists($dir.\DIRECTORY_SEPARATOR.'desktop.ini');
+    }
+
+    /**
+     * Acceptance (issue #853): the preset downloads storage can never be deleted, regardless of
+     * whether it currently has any downloads at all — the DownloadRepository stub here always
+     * reports no unfinished downloads, so the refusal can only be coming from the preset check.
+     */
+    public function testDeletePresetStorageIsRejectedEvenWithoutDownloads(): void
+    {
+        $storage = new Storage('AnimeDB', 'D:\\Downloads\\AnimeDB', StorageType::Folder);
+        $this->setStorageId($storage, 7);
+
+        $settings = $this->createSettings();
+        $settings->setPresetDownloadsStorageId(7);
+
+        $downloads = $this->createStub(DownloadRepository::class);
+        $downloads->method('hasUnfinishedDownloadsForTargetStorage')->willReturn(false);
+
+        $entityManager = $this->createMock(EntityManagerInterface::class);
+        $entityManager->expects($this->never())->method('remove');
+        $entityManager->expects($this->never())->method('flush');
+
+        $storages = $this->createStub(StorageRepository::class);
+        $storages->method('findAllOrderedByName')->willReturn([$storage]);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('storage/list.html.twig', $this->callback(
+                static fn (array $params): bool => $params['error'] === 'storage_list.delete_error_preset',
+            ))
+            ->willReturn('<html></html>');
+
+        $controller = $this->createController(
+            storages: $storages,
+            entityManager: $entityManager,
+            twig: $twig,
+            downloads: $downloads,
+            settings: $settings,
+        );
+        $request = Request::create('/storage/7/delete', 'POST', ['_token' => 'token']);
+
+        $response = $controller->delete($storage, $request);
+
+        $this->assertSame(200, $response->getStatusCode());
     }
 
     private function setStorageId(Storage $storage, int $id): void

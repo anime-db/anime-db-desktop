@@ -26,6 +26,10 @@
     <main class="storage-list py-4">
         <h1>{{ 'storage_list.heading'|trans }}</h1>
 
+        {% if error %}
+            <p class="alert alert-danger">{{ error|trans(errorParams|default({})) }}</p>
+        {% endif %}
+
         <p class="mb-4">
             <a href="{{ path('storage_new') }}" class="btn btn-primary d-inline-flex align-items-center gap-2">
                 {{ icon('plus-lg') }}
@@ -70,12 +74,14 @@
                                                 {{ icon('arrow-repeat') }}
                                             </button>
                                         </form>
-                                        <form method="post" action="{{ path('storage_delete', {id: storage.id}) }}" data-confirm="{{ 'storage_list.delete_confirm'|trans({'%name%': bidi_isolate(storage.name)}) }}">
-                                            <input type="hidden" name="_token" value="{{ csrf_token('storage_delete_' ~ storage.id) }}">
-                                            <button type="submit" class="btn btn-outline-danger btn-sm btn-icon" title="{{ 'storage_list.delete_button'|trans }}" aria-label="{{ 'storage_list.delete_button'|trans }}">
-                                                {{ icon('trash') }}
-                                            </button>
-                                        </form>
+                                        {% if storage.id != presetStorageId %}
+                                            <form method="post" action="{{ path('storage_delete', {id: storage.id}) }}" data-confirm="{{ 'storage_list.delete_confirm'|trans({'%name%': bidi_isolate(storage.name)}) }}">
+                                                <input type="hidden" name="_token" value="{{ csrf_token('storage_delete_' ~ storage.id) }}">
+                                                <button type="submit" class="btn btn-outline-danger btn-sm btn-icon" title="{{ 'storage_list.delete_button'|trans }}" aria-label="{{ 'storage_list.delete_button'|trans }}">
+                                                    {{ icon('trash') }}
+                                                </button>
+                                            </form>
+                                        {% endif %}
                                     </div>
                                 </td>
                             </tr>
