@@ -34,7 +34,6 @@ use App\Service\Market\MarketRefreshService;
 use App\Service\Market\MarketSnapshot;
 use App\Service\Market\MarketSnapshotBuilder;
 use App\Service\Market\MarketSnapshotCache;
-use App\Service\Market\MarketSnapshotReadiness;
 use App\Service\Market\PluginRegistryCache;
 use App\Service\Market\PluginRegistryFetcher;
 use App\Service\Market\PluginRegistryHighWaterMarkStore;
@@ -147,6 +146,26 @@ final class MarketRefreshTickMessageHandlerTest extends TestCase
         $this->assertRefreshWasNotTriggered();
     }
 
+    public function testRefreshesWhenLastRefreshAtIsNotAString(): void
+    {
+        $this->writeSnapshot(coreVersion: self::CORE_VERSION);
+        $this->writeRawLastRefreshAt(123);
+
+        $this->invokeHandler();
+
+        $this->assertRefreshWasTriggered();
+    }
+
+    public function testRefreshesWhenLastRefreshAtDoesNotParseAsAnAtomDate(): void
+    {
+        $this->writeSnapshot(coreVersion: self::CORE_VERSION);
+        $this->writeRawLastRefreshAt('garbage');
+
+        $this->invokeHandler();
+
+        $this->assertRefreshWasTriggered();
+    }
+
     private function invokeHandler(): void
     {
         $registryJson = json_encode(['sequence' => 1, 'asset_mirrors' => [], 'plugins' => []], \JSON_THROW_ON_ERROR);
@@ -163,7 +182,6 @@ final class MarketRefreshTickMessageHandlerTest extends TestCase
 
         $handler = new MarketRefreshTickMessageHandler(
             new MarketSnapshotCache($this->snapshotCachePath),
-            new MarketSnapshotReadiness(),
             $configStore,
             new MarketRefreshService(
                 new PluginRegistryLoader(
@@ -193,8 +211,13 @@ final class MarketRefreshTickMessageHandlerTest extends TestCase
 
     private function writeLastRefreshAt(\DateTimeImmutable $lastRefreshAt): void
     {
+        $this->writeRawLastRefreshAt($lastRefreshAt->format(\DateTimeInterface::ATOM));
+    }
+
+    private function writeRawLastRefreshAt(string|int $lastRefreshAt): void
+    {
         (new AppConfigStore($this->configPath))->update(static function (array $config) use ($lastRefreshAt): array {
-            $config[MarketRefreshService::CONFIG_KEY_LAST_REFRESH_AT] = $lastRefreshAt->format(\DateTimeInterface::ATOM);
+            $config[MarketRefreshService::CONFIG_KEY_LAST_REFRESH_AT] = $lastRefreshAt;
 
             return $config;
         });
