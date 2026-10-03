@@ -205,7 +205,11 @@ final class DownloadRepositoryTest extends TestCase
         $this->assertTrue($this->repository->hasUnfinishedDownloadsForTargetStorage((int) $storage->id));
     }
 
-    public function testHasUnfinishedDownloadsForTargetStorageReturnsTrueForAFailedRow(): void
+    /**
+     * Failed is terminal (nothing transitions a row back out of it, see Download::markFailed()),
+     * so unlike Pending it must not keep blocking the storage forever.
+     */
+    public function testHasUnfinishedDownloadsForTargetStorageReturnsFalseForAFailedRow(): void
     {
         $storage = $this->persistStorage('Main folder');
         $anime = $this->persistAnime('Anime A');
@@ -214,7 +218,7 @@ final class DownloadRepositoryTest extends TestCase
         $download->markFailed();
         $this->repository->save($download);
 
-        $this->assertTrue($this->repository->hasUnfinishedDownloadsForTargetStorage((int) $storage->id));
+        $this->assertFalse($this->repository->hasUnfinishedDownloadsForTargetStorage((int) $storage->id));
     }
 
     public function testHasUnfinishedDownloadsForTargetStorageReturnsFalseWhenOnlyCompletedRowsRemain(): void

@@ -106,19 +106,24 @@ class DownloadRepository
     }
 
     /**
-     * Whether $storageId has a row still in progress (any status other than Completed) with it
-     * as $targetStorage — the guard StorageController::delete() and StorageEditController::update()
-     * (issue #853) consult before letting a storage's path change or the storage itself disappear
-     * out from under a download qBittorrent is still writing.
+     * Whether $storageId has a row still in progress (status Pending) with it as $targetStorage —
+     * the guard StorageController::delete() and StorageEditController::update() (issue #853)
+     * consult before letting a storage's path change or the storage itself disappear out from
+     * under a download qBittorrent is still writing.
+     *
+     * Failed is excluded on purpose: it is terminal ({@see Download::markFailed()} only leaves
+     * Pending, and nothing transitions a row back out of Failed), so a storage that once had a
+     * failed download would otherwise stay un-deletable/un-relocatable forever even once nothing
+     * is writing into it.
      */
     public function hasUnfinishedDownloadsForTargetStorage(int $storageId): bool
     {
         $count = $this->entityManager->getRepository(Download::class)->createQueryBuilder('d')
             ->select('COUNT(d.id)')
             ->where('d.targetStorage = :storageId')
-            ->andWhere('d.status != :completed')
+            ->andWhere('d.status = :pending')
             ->setParameter('storageId', $storageId)
-            ->setParameter('completed', DownloadStatus::Completed)
+            ->setParameter('pending', DownloadStatus::Pending)
             ->getQuery()
             ->getSingleScalarResult();
 
