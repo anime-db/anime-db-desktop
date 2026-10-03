@@ -30,12 +30,11 @@ namespace App\Tests\Unit\Service\Download;
 use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
 use App\Entity\Download;
+use App\Entity\Enum\StorageType;
 use App\Entity\Enum\WatchStatus;
+use App\Entity\Storage;
 use App\Entity\TvAnime;
 use App\Repository\AnimeRepository;
-use App\Repository\StorageRepository;
-use App\Service\AppConfigStore;
-use App\Service\AppSettingsProvider;
 use App\Service\Download\AnimeDownloadLinker;
 use App\Service\Download\DownloadFolderJail;
 use App\Service\Exception\DownloadPathOutsideJailException;
@@ -53,7 +52,7 @@ final class AnimeDownloadLinkerTest extends TestCase
 
     private EntityManager $entityManager;
     private AnimeDownloadLinker $linker;
-    private string $configPath;
+    private Storage $storage;
 
     protected function setUp(): void
     {
@@ -73,20 +72,12 @@ final class AnimeDownloadLinkerTest extends TestCase
         $schemaTool = new SchemaTool($this->entityManager);
         $schemaTool->createSchema($this->entityManager->getMetadataFactory()->getAllMetadata());
 
-        $this->configPath = sys_get_temp_dir().'/anime-download-linker-test-'.uniqid().'.json';
-        file_put_contents($this->configPath, json_encode(['downloadsRoot' => self::ROOT]));
+        $this->storage = new Storage('AnimeDB', self::ROOT, StorageType::Folder);
+        $this->entityManager->persist($this->storage);
+        $this->entityManager->flush();
 
-        $jail = new DownloadFolderJail(new AppSettingsProvider(new AppConfigStore($this->configPath)));
-        $this->linker = new AnimeDownloadLinker(new StorageRepository($this->entityManager), new AnimeRepository($this->entityManager), $this->entityManager, $jail);
-    }
-
-    protected function tearDown(): void
-    {
-        foreach ([$this->configPath, $this->configPath.'.tmp', $this->configPath.'.lock'] as $file) {
-            if (is_file($file)) {
-                unlink($file);
-            }
-        }
+        $jail = new DownloadFolderJail();
+        $this->linker = new AnimeDownloadLinker(new AnimeRepository($this->entityManager), $this->entityManager, $jail);
     }
 
     private function persistAnime(): TvAnime
@@ -102,6 +93,7 @@ final class AnimeDownloadLinkerTest extends TestCase
     private function persistDownload(string $infoHash, TvAnime $anime): Download
     {
         $download = new Download($infoHash, $anime);
+        $download->assignTargetStorage($this->storage);
         $this->entityManager->persist($download);
         $this->entityManager->flush();
 

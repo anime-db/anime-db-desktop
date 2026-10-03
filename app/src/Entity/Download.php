@@ -49,12 +49,22 @@ use Doctrine\ORM\Mapping as ORM;
  * \App\Service\Download\DownloadFolderPointer::releaseIfOwnedBy()} is the only reader: it compares
  * the anime's current pointer against this snapshot before deciding whether unlinking this row may
  * clear it — a NULL snapshot never matches, so a legacy row never clears the anime's pointer.
+ *
+ * $targetStorage (issue #851) is a DIFFERENT pointer than $storage above: it is the Storage this
+ * row was enqueued INTO ({@see \App\Service\Download\QbittorrentDownloadService::enqueueTo()}
+ * assigns it before the row is ever written), while $storage is the completion snapshot the
+ * linker writes later. {@see \App\Service\Download\AnimeDownloadLinker::link()} reads
+ * $targetStorage to know which Storage a completed torrent's content_path is relative to.
+ * $failureReason is only ever written by the migration that introduced it (issue #851,
+ * "legacy_layout" for a pre-#851 Pending row with no target storage); later failure codes are a
+ * follow-up (issue #852).
  */
 #[ORM\Entity]
 #[ORM\Table(name: 'downloads')]
 #[ORM\UniqueConstraint(name: 'uniq_download_infohash', columns: ['info_hash'])]
 #[ORM\Index(name: 'IDX_DOWNLOAD_ANIME', fields: ['anime'])]
 #[ORM\Index(name: 'IDX_DOWNLOAD_STORAGE', fields: ['storage'])]
+#[ORM\Index(name: 'IDX_DOWNLOAD_TARGET_STORAGE', fields: ['targetStorage'])]
 class Download
 {
     private const INFO_HASH_PATTERN = '/^[0-9a-f]{40}\z/';
@@ -86,6 +96,13 @@ class Download
 
     #[ORM\Column(name: 'storage_path', length: 1024, nullable: true)]
     private ?string $storagePath = null;
+
+    #[ORM\ManyToOne(targetEntity: Storage::class)]
+    #[ORM\JoinColumn(name: 'target_storage_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
+    private ?Storage $targetStorage = null;
+
+    #[ORM\Column(name: 'failure_reason', length: 32, nullable: true)]
+    private ?string $failureReason = null;
 
     /**
      * Doctrine's optimistic lock: every UPDATE checks this column and bumps it, failing with
@@ -140,6 +157,26 @@ class Download
     public function getVersion(): int
     {
         return $this->version;
+    }
+
+    public function getTargetStorage(): ?Storage
+    {
+        return $this->targetStorage;
+    }
+
+    public function getFailureReason(): ?string
+    {
+        return $this->failureReason;
+    }
+
+    /**
+     * Records which Storage {@see \App\Service\Download\QbittorrentDownloadService::enqueueTo()}
+     * put this row's torrent into — called once, before the row is first persisted, never changed
+     * afterwards.
+     */
+    public function assignTargetStorage(Storage $storage): void
+    {
+        $this->targetStorage = $storage;
     }
 
     /**

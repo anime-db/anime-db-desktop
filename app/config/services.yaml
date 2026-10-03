@@ -256,6 +256,11 @@ services:
     # interface instead so it stays unit-testable without touching a real volume.
     App\Service\Download\FreeSpaceProvider: '@App\Service\Download\NativeFreeSpaceProvider'
 
+    # Same reason as FreeSpaceProvider above: QbittorrentDownloadService (issue #851) needs to
+    # check/create storage-root paths that only exist on a real Windows machine, so it depends on
+    # this interface instead of calling is_dir()/mkdir() directly.
+    App\Service\Download\DownloadStorageFilesystem: '@App\Service\Download\NativeDownloadStorageFilesystem'
+
     # Left to its default PSR-18 client discovery, Meilisearch\Client would inherit whatever
     # timeout that client defaults to — potentially none. The list search box (issue #199)
     # needs a fast, bounded failure when Meilisearch is unreachable so it can fall back to the

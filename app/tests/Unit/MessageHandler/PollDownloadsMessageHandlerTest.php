@@ -31,15 +31,14 @@ use AnimeDb\PluginContracts\Download\DownloadCompletedEvent;
 use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
 use App\Entity\Download;
+use App\Entity\Enum\StorageType;
 use App\Entity\Enum\WatchStatus;
+use App\Entity\Storage;
 use App\Entity\TvAnime;
 use App\Message\PollDownloadsMessage;
 use App\MessageHandler\PollDownloadsMessageHandler;
 use App\Repository\AnimeRepository;
 use App\Repository\DownloadRepository;
-use App\Repository\StorageRepository;
-use App\Service\AppConfigStore;
-use App\Service\AppSettingsProvider;
 use App\Service\Download\AnimeDownloadLinker;
 use App\Service\Download\DownloadCompletionPoller;
 use App\Service\Download\DownloadFolderJail;
@@ -80,7 +79,7 @@ final class PollDownloadsMessageHandlerTest extends TestCase
 
     private EntityManager $entityManager;
     private DownloadRepository $downloads;
-    private string $configPath;
+    private Storage $storage;
 
     protected function setUp(): void
     {
@@ -102,17 +101,9 @@ final class PollDownloadsMessageHandlerTest extends TestCase
 
         $this->downloads = new DownloadRepository($this->entityManager);
 
-        $this->configPath = sys_get_temp_dir().'/anime-poll-downloads-message-handler-test-'.uniqid().'.json';
-        file_put_contents($this->configPath, json_encode(['downloadsRoot' => self::ROOT]));
-    }
-
-    protected function tearDown(): void
-    {
-        foreach ([$this->configPath, $this->configPath.'.tmp', $this->configPath.'.lock'] as $file) {
-            if (is_file($file)) {
-                unlink($file);
-            }
-        }
+        $this->storage = new Storage('AnimeDB', self::ROOT, StorageType::Folder);
+        $this->entityManager->persist($this->storage);
+        $this->entityManager->flush();
     }
 
     private function persistAnime(): TvAnime
@@ -123,6 +114,15 @@ final class PollDownloadsMessageHandlerTest extends TestCase
         $this->entityManager->flush();
 
         return $anime;
+    }
+
+    private function saveDownload(string $infoHash, TvAnime $anime): Download
+    {
+        $download = new Download($infoHash, $anime);
+        $download->assignTargetStorage($this->storage);
+        $this->downloads->save($download);
+
+        return $download;
     }
 
     private function makeBus(EventDispatcher $eventDispatcher): MessageBusInterface
@@ -138,8 +138,8 @@ final class PollDownloadsMessageHandlerTest extends TestCase
             ['response_headers' => ['content-type' => 'application/json']],
         ));
 
-        $jail = new DownloadFolderJail(new AppSettingsProvider(new AppConfigStore($this->configPath)));
-        $linker = new AnimeDownloadLinker(new StorageRepository($this->entityManager), new AnimeRepository($this->entityManager), $this->entityManager, $jail);
+        $jail = new DownloadFolderJail();
+        $linker = new AnimeDownloadLinker(new AnimeRepository($this->entityManager), $this->entityManager, $jail);
 
         $poller = new DownloadCompletionPoller(
             new QbittorrentClient($httpClient, self::BASE_URL),
@@ -147,7 +147,7 @@ final class PollDownloadsMessageHandlerTest extends TestCase
             $linker,
             $eventDispatcher,
             $this->entityManager,
-            new FreeSpaceChecker($jail, new NativeFreeSpaceProvider()),
+            new FreeSpaceChecker(new NativeFreeSpaceProvider()),
             new NullLogger(),
         );
 
@@ -163,7 +163,7 @@ final class PollDownloadsMessageHandlerTest extends TestCase
     public function testDispatchingThePollMessageOnTheBusLinksTheDownloadAndDispatchesTheEvent(): void
     {
         $anime = $this->persistAnime();
-        $this->downloads->save(new Download(self::HASH, $anime));
+        $this->saveDownload(self::HASH, $anime);
 
         $dispatchedEvents = [];
         $eventDispatcher = new EventDispatcher();
@@ -194,7 +194,7 @@ final class PollDownloadsMessageHandlerTest extends TestCase
     public function testDispatchingThePollMessageTwiceDoesNotDispatchTheEventTwice(): void
     {
         $anime = $this->persistAnime();
-        $this->downloads->save(new Download(self::HASH, $anime));
+        $this->saveDownload(self::HASH, $anime);
 
         $dispatchedEvents = [];
         $eventDispatcher = new EventDispatcher();

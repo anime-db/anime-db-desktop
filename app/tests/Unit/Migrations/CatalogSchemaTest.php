@@ -123,6 +123,39 @@ final class CatalogSchemaTest extends TestCase
         );
     }
 
+    public function testDeletingStorageSetsDownloadTargetStorageIdToNullButKeepsCompletedRow(): void
+    {
+        $this->connection->executeStatement(
+            "INSERT INTO storage (name, type, path) VALUES ('AnimeDB', 'folder', 'D:\\Anime\\AnimeDB')",
+        );
+        $storageId = (int) $this->connection->lastInsertId();
+
+        $this->connection->executeStatement(
+            "INSERT INTO anime (title, watch_status, type, date_add, date_update) VALUES ('Trigun', 'plan', 'tv', 0, 0)",
+        );
+        $animeId = (int) $this->connection->lastInsertId();
+
+        $this->connection->executeStatement(
+            'INSERT INTO downloads (info_hash, anime_id, status, date_add, target_storage_id, version) '
+            ."VALUES ('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', {$animeId}, 'completed', 0, {$storageId}, 1)",
+        );
+        $downloadId = (int) $this->connection->lastInsertId();
+
+        $this->connection->executeStatement("DELETE FROM storage WHERE id = {$storageId}");
+
+        $this->assertSame(
+            1,
+            (int) $this->connection->fetchOne('SELECT COUNT(*) FROM downloads WHERE id = ?', [$downloadId]),
+        );
+        $this->assertNull(
+            $this->connection->fetchOne('SELECT target_storage_id FROM downloads WHERE id = ?', [$downloadId]),
+        );
+        $this->assertSame(
+            'completed',
+            $this->connection->fetchOne('SELECT status FROM downloads WHERE id = ?', [$downloadId]),
+        );
+    }
+
     public function testDeletingStudioLinkedToAnimeIsRejected(): void
     {
         $this->connection->executeStatement("INSERT INTO studio (name) VALUES ('Sunrise')");

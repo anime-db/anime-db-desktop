@@ -282,34 +282,42 @@ final class AppSettingsProviderTest extends TestCase
         $this->assertSame('animedb-shikimori', $data['defaultSearchPluginId']);
     }
 
-    public function testGetDownloadsRootDefaultsToUserprofileDownloadsWhenFileIsMissing(): void
+    public function testGetPresetDownloadsStorageIdReturnsNullWhenFileIsMissing(): void
     {
         $provider = new AppSettingsProvider(new AppConfigStore($this->configPath));
 
-        $expected = rtrim((string) (getenv('USERPROFILE') ?: getenv('HOME') ?: sys_get_temp_dir()), '\\/').\DIRECTORY_SEPARATOR.'Downloads';
-        $this->assertSame($expected, $provider->getDownloadsRoot());
+        $this->assertNull($provider->getPresetDownloadsStorageId());
     }
 
-    public function testGetDownloadsRootReadsConfiguredValue(): void
+    public function testGetPresetDownloadsStorageIdReturnsNullWhenValueIsNotAnInt(): void
     {
-        file_put_contents($this->configPath, json_encode(['downloadsRoot' => 'D:\\Anime\\Downloads']));
+        file_put_contents($this->configPath, json_encode(['presetDownloadsStorageId' => 'not-an-id']));
 
         $provider = new AppSettingsProvider(new AppConfigStore($this->configPath));
 
-        $this->assertSame('D:\\Anime\\Downloads', $provider->getDownloadsRoot());
+        $this->assertNull($provider->getPresetDownloadsStorageId());
     }
 
-    public function testSetDownloadsRootOverwritesOnlyThatKey(): void
+    public function testGetPresetDownloadsStorageIdReadsConfiguredValue(): void
+    {
+        file_put_contents($this->configPath, json_encode(['presetDownloadsStorageId' => 7]));
+
+        $provider = new AppSettingsProvider(new AppConfigStore($this->configPath));
+
+        $this->assertSame(7, $provider->getPresetDownloadsStorageId());
+    }
+
+    public function testSetPresetDownloadsStorageIdOverwritesOnlyThatKey(): void
     {
         file_put_contents($this->configPath, json_encode(['appSecret' => 'abc']));
 
         $provider = new AppSettingsProvider(new AppConfigStore($this->configPath));
-        $provider->setDownloadsRoot('D:\\Anime\\Downloads');
+        $provider->setPresetDownloadsStorageId(7);
 
         $data = json_decode((string) file_get_contents($this->configPath), true);
 
         $this->assertSame('abc', $data['appSecret']);
-        $this->assertSame('D:\\Anime\\Downloads', $data['downloadsRoot']);
+        $this->assertSame(7, $data['presetDownloadsStorageId']);
     }
 
     public function testWriteConfigThrowsAndLeavesValidFileIntactWhenTemporaryWriteFails(): void

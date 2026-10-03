@@ -31,10 +31,11 @@ use App\Service\Exception\InsufficientDiskSpaceException;
 use App\Service\Exception\InvalidTorrentFileException;
 
 /**
- * A cheap, best-effort precheck that a torrent's total size fits the free space on the
- * configured downloads root's volume (issue #348) — a UX smoothing, NOT a guarantee: qBittorrent
- * itself still has to handle a real ENOSPC gracefully (a race between this check and the actual
- * write, another process filling the disk, etc. are all still possible).
+ * A cheap, best-effort precheck that a torrent's total size fits the free space on the TARGET
+ * storage's volume (issue #851: every download is enqueued into a specific Storage, not a single
+ * shared downloads root) — a UX smoothing, NOT a guarantee: qBittorrent itself still has to
+ * handle a real ENOSPC gracefully (a race between this check and the actual write, another
+ * process filling the disk, etc. are all still possible).
  *
  * A `.torrent` file's size is known up front (see parseTotalSize()), so
  * {@see QbittorrentDownloadService} calls
@@ -62,34 +63,32 @@ final class FreeSpaceChecker
     private const int MAX_NESTING_DEPTH = 100;
 
     public function __construct(
-        private readonly DownloadFolderJail $jail,
         private readonly FreeSpaceProvider $freeSpaceProvider,
     ) {
     }
 
     /**
      * @throws InsufficientDiskSpaceException if the torrent's total size (plus overhead) does
-     *                                        not fit the downloads root's free space
+     *                                        not fit $storageRoot's free space
      * @throws InvalidTorrentFileException    if $torrentFileContent is not a well-formed
      *                                        bencoded dictionary with a usable "info" dict
      */
-    public function assertEnoughSpaceForTorrentFile(string $torrentFileContent): void
+    public function assertEnoughSpaceForTorrentFile(string $torrentFileContent, string $storageRoot): void
     {
         $totalSize = $this->parseTotalSize($torrentFileContent);
 
-        if (!$this->hasEnoughFreeSpace($totalSize)) {
-            throw new InsufficientDiskSpaceException(\sprintf('Torrent needs %d bytes (+ overhead) but the downloads root does not have enough free space.', $totalSize));
+        if (!$this->hasEnoughFreeSpace($totalSize, $storageRoot)) {
+            throw new InsufficientDiskSpaceException(\sprintf('Torrent needs %d bytes (+ overhead) but "%s" does not have enough free space.', $totalSize, $storageRoot));
         }
     }
 
-    public function hasEnoughFreeSpace(int $totalSize): bool
+    public function hasEnoughFreeSpace(int $totalSize, string $storageRoot): bool
     {
-        $free = $this->freeSpaceProvider->getFreeBytes($this->jail->getRoot());
+        $free = $this->freeSpaceProvider->getFreeBytes($storageRoot);
 
-        // Unknown free space (e.g. the downloads root does not exist yet, a brand-new install
-        // before qBittorrent has created it) must not block a legitimate download — this check
-        // is a smoothing, not a guarantee (see class docblock); qBittorrent's own ENOSPC
-        // handling remains the real backstop either way.
+        // Unknown free space (e.g. the storage root does not exist yet) must not block a
+        // legitimate download — this check is a smoothing, not a guarantee (see class docblock);
+        // qBittorrent's own ENOSPC handling remains the real backstop either way.
         if ($free === null) {
             return true;
         }

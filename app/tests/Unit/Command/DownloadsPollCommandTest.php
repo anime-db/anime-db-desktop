@@ -32,9 +32,6 @@ use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
 use App\Repository\AnimeRepository;
 use App\Repository\DownloadRepository;
-use App\Repository\StorageRepository;
-use App\Service\AppConfigStore;
-use App\Service\AppSettingsProvider;
 use App\Service\Download\AnimeDownloadLinker;
 use App\Service\Download\DownloadCompletionPoller;
 use App\Service\Download\DownloadFolderJail;
@@ -74,31 +71,20 @@ final class DownloadsPollCommandTest extends TestCase
             throw new \LogicException('No pending download should trigger an HTTP call.');
         });
 
-        $configPath = sys_get_temp_dir().'/anime-downloads-poll-command-test-'.uniqid().'.json';
-        file_put_contents($configPath, json_encode(['downloadsRoot' => 'C:\\Users\\bob\\Downloads']));
+        $jail = new DownloadFolderJail();
+        $poller = new DownloadCompletionPoller(
+            new QbittorrentClient($httpClient, 'http://127.0.0.1:18080'),
+            new DownloadRepository($entityManager),
+            new AnimeDownloadLinker(new AnimeRepository($entityManager), $entityManager, $jail),
+            new EventDispatcher(),
+            $entityManager,
+            new FreeSpaceChecker(new NativeFreeSpaceProvider()),
+            new NullLogger(),
+        );
 
-        try {
-            $jail = new DownloadFolderJail(new AppSettingsProvider(new AppConfigStore($configPath)));
-            $poller = new DownloadCompletionPoller(
-                new QbittorrentClient($httpClient, 'http://127.0.0.1:18080'),
-                new DownloadRepository($entityManager),
-                new AnimeDownloadLinker(new StorageRepository($entityManager), new AnimeRepository($entityManager), $entityManager, $jail),
-                new EventDispatcher(),
-                $entityManager,
-                new FreeSpaceChecker($jail, new NativeFreeSpaceProvider()),
-                new NullLogger(),
-            );
+        $tester = new CommandTester(new DownloadsPollCommand($poller));
+        $tester->execute([]);
 
-            $tester = new CommandTester(new DownloadsPollCommand($poller));
-            $tester->execute([]);
-
-            $this->assertSame(Command::SUCCESS, $tester->getStatusCode());
-        } finally {
-            foreach ([$configPath, $configPath.'.tmp', $configPath.'.lock'] as $file) {
-                if (is_file($file)) {
-                    unlink($file);
-                }
-            }
-        }
+        $this->assertSame(Command::SUCCESS, $tester->getStatusCode());
     }
 }

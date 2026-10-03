@@ -240,11 +240,17 @@ final class DownloadCompletionPoller
             return;
         }
 
+        $pending = $this->downloads->findPendingByInfoHash($infoHash);
+        $storage = ($pending[0] ?? null)?->getTargetStorage();
+        if ($storage === null) {
+            return;
+        }
+
         // Compare against what is still left to write, not the torrent's total size — free space
-        // on the downloads root shrinks as this same torrent downloads, so a full-size comparison
+        // on the target storage shrinks as this same torrent downloads, so a full-size comparison
         // would false-positive on a healthy torrent partway through (see class docblock).
         $amountLeft = (int) ($torrent['amount_left'] ?? $size);
-        if ($this->freeSpaceChecker->hasEnoughFreeSpace($amountLeft)) {
+        if ($this->freeSpaceChecker->hasEnoughFreeSpace($amountLeft, $storage->getPath())) {
             return;
         }
 
@@ -253,13 +259,10 @@ final class DownloadCompletionPoller
         // commands, and "stop" on an unknown id answers 200 while silently doing nothing.
         $this->client->stop((string) ($torrent['hash'] ?? ''));
 
-        $pending = $this->downloads->findPendingByInfoHash($infoHash);
         foreach ($pending as $download) {
             $download->markFailed();
         }
-        if ($pending !== []) {
-            $this->entityManager->flush();
-        }
+        $this->entityManager->flush();
 
         $this->logger->warning('Paused download: not enough free disk space for its remaining bytes.', [
             'infoHash' => $infoHash,

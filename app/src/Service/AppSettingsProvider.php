@@ -162,33 +162,26 @@ final class AppSettingsProvider
     }
 
     /**
-     * Root directory the qBittorrent download service (issue #346) is jailed to — every torrent
-     * is saved under it, and a completed torrent's reported path must fall inside it before
-     * AnimeDownloadLinker will read anything from it. Defaults to "%USERPROFILE%\Downloads"
-     * (falling back to $HOME, then the system temp dir, on the non-Windows CI/dev environment
-     * this test suite runs in) until the user picks a different folder on the settings page.
+     * The id of the lazily created preset Storage {@see Download\QbittorrentDownloadService::enqueue()}
+     * (the plugin-contract path, with no UI to pick a storage) puts every download into — issue
+     * #851. Identified by id, not by name or path: the storage's name is user-editable and
+     * `storage.path` is not UNIQUE, so either could coincidentally collide with a storage the
+     * user created themselves. Null means no preset has been created yet.
      */
-    public function getDownloadsRoot(): string
+    public function getPresetDownloadsStorageId(): ?int
     {
-        $root = $this->configStore->read()['downloadsRoot'] ?? null;
+        $id = $this->configStore->read()['presetDownloadsStorageId'] ?? null;
 
-        return \is_string($root) && $root !== '' ? $root : $this->defaultDownloadsRoot();
+        return \is_int($id) ? $id : null;
     }
 
-    public function setDownloadsRoot(string $root): void
+    public function setPresetDownloadsStorageId(int $id): void
     {
-        $this->configStore->update(static function (array $config) use ($root): array {
-            $config['downloadsRoot'] = $root;
+        $this->configStore->update(static function (array $config) use ($id): array {
+            $config['presetDownloadsStorageId'] = $id;
 
             return $config;
         });
-    }
-
-    private function defaultDownloadsRoot(): string
-    {
-        $home = getenv('USERPROFILE') ?: getenv('HOME') ?: sys_get_temp_dir();
-
-        return rtrim($home, '\\/').\DIRECTORY_SEPARATOR.'Downloads';
     }
 
     /**

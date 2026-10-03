@@ -32,16 +32,15 @@ use AnimeDb\PluginContracts\Catalog\FilesChangeReason;
 use AnimeDb\PluginContracts\Download\DownloadCompletedEvent;
 use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
+use App\Entity\Anime;
 use App\Entity\Download;
 use App\Entity\Enum\DownloadStatus;
+use App\Entity\Enum\StorageType;
 use App\Entity\Enum\WatchStatus;
 use App\Entity\Storage;
 use App\Entity\TvAnime;
 use App\Repository\AnimeRepository;
 use App\Repository\DownloadRepository;
-use App\Repository\StorageRepository;
-use App\Service\AppConfigStore;
-use App\Service\AppSettingsProvider;
 use App\Service\Download\AnimeDownloadLinker;
 use App\Service\Download\DownloadCompletionPoller;
 use App\Service\Download\DownloadFolderJail;
@@ -72,7 +71,7 @@ final class DownloadCompletionPollerTest extends TestCase
 
     private EntityManager $entityManager;
     private DownloadRepository $downloads;
-    private string $configPath;
+    private Storage $storage;
 
     protected function setUp(): void
     {
@@ -94,17 +93,9 @@ final class DownloadCompletionPollerTest extends TestCase
 
         $this->downloads = new DownloadRepository($this->entityManager);
 
-        $this->configPath = sys_get_temp_dir().'/anime-download-poller-test-'.uniqid().'.json';
-        file_put_contents($this->configPath, json_encode(['downloadsRoot' => self::ROOT]));
-    }
-
-    protected function tearDown(): void
-    {
-        foreach ([$this->configPath, $this->configPath.'.tmp', $this->configPath.'.lock'] as $file) {
-            if (is_file($file)) {
-                unlink($file);
-            }
-        }
+        $this->storage = new Storage('AnimeDB', self::ROOT, StorageType::Folder);
+        $this->entityManager->persist($this->storage);
+        $this->entityManager->flush();
     }
 
     private function persistAnime(): TvAnime
@@ -115,6 +106,22 @@ final class DownloadCompletionPollerTest extends TestCase
         $this->entityManager->flush();
 
         return $anime;
+    }
+
+    private function newDownload(string $infoHash, TvAnime $anime): Download
+    {
+        $download = new Download($infoHash, $anime);
+        $download->assignTargetStorage($this->storage);
+
+        return $download;
+    }
+
+    private function saveDownload(string $infoHash, TvAnime $anime): Download
+    {
+        $download = $this->newDownload($infoHash, $anime);
+        $this->downloads->save($download);
+
+        return $download;
     }
 
     /**
@@ -151,8 +158,8 @@ final class DownloadCompletionPollerTest extends TestCase
             ['response_headers' => ['content-type' => 'application/json']],
         ));
 
-        $jail = new DownloadFolderJail(new AppSettingsProvider(new AppConfigStore($this->configPath)));
-        $linker = new AnimeDownloadLinker(new StorageRepository($this->entityManager), new AnimeRepository($this->entityManager), $this->entityManager, $jail);
+        $jail = new DownloadFolderJail();
+        $linker = new AnimeDownloadLinker(new AnimeRepository($this->entityManager), $this->entityManager, $jail);
 
         return new DownloadCompletionPoller(
             new QbittorrentClient($httpClient, self::BASE_URL),
@@ -162,7 +169,7 @@ final class DownloadCompletionPollerTest extends TestCase
             $this->entityManager,
             // The real NativeFreeSpaceProvider reports "unknown" (free-open) for self::ROOT on
             // this Linux test runner — only tests about the free-space check itself override this.
-            new FreeSpaceChecker($jail, $freeSpaceProvider ?? new NativeFreeSpaceProvider()),
+            new FreeSpaceChecker($freeSpaceProvider ?? new NativeFreeSpaceProvider()),
             new NullLogger(),
         );
     }
@@ -170,7 +177,7 @@ final class DownloadCompletionPollerTest extends TestCase
     public function testPollLinksFolderAndDispatchesEventForAFinishedTorrent(): void
     {
         $anime = $this->persistAnime();
-        $this->downloads->save(new Download(self::HASH, $anime));
+        $this->saveDownload(self::HASH, $anime);
 
         /** @var list<AnimeFilesChangedEvent|DownloadCompletedEvent> $dispatched */
         $dispatched = [];
@@ -212,7 +219,7 @@ final class DownloadCompletionPollerTest extends TestCase
     public function testPollDoesNotDispatchTwiceAcrossTwoRuns(): void
     {
         $anime = $this->persistAnime();
-        $this->downloads->save(new Download(self::HASH, $anime));
+        $this->saveDownload(self::HASH, $anime);
 
         $dispatched = [];
         // Two events (AnimeFilesChangedEvent + DownloadCompletedEvent) on the first poll(), none
@@ -249,7 +256,7 @@ final class DownloadCompletionPollerTest extends TestCase
     public function testPollDoesNotCompleteATorrentThatIsNotActuallyDone(string $case, float $progress, string $state): void
     {
         $anime = $this->persistAnime();
-        $this->downloads->save(new Download(self::HASH, $anime));
+        $this->saveDownload(self::HASH, $anime);
 
         $eventDispatcher = $this->createMock(EventDispatcherInterface::class);
         $eventDispatcher->expects($this->never())->method('dispatch');
@@ -274,8 +281,8 @@ final class DownloadCompletionPollerTest extends TestCase
         $wedgedHash = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
         $wedged = $this->persistAnime();
         $ok = $this->persistAnime();
-        $this->downloads->save(new Download($wedgedHash, $wedged));
-        $this->downloads->save(new Download(self::HASH, $ok));
+        $this->saveDownload($wedgedHash, $wedged);
+        $this->saveDownload(self::HASH, $ok);
 
         /** @var list<AnimeFilesChangedEvent|DownloadCompletedEvent> $dispatched */
         $dispatched = [];
@@ -307,15 +314,15 @@ final class DownloadCompletionPollerTest extends TestCase
             ['response_headers' => ['content-type' => 'application/json']],
         ));
 
-        $jail = new DownloadFolderJail(new AppSettingsProvider(new AppConfigStore($this->configPath)));
-        $linker = new AnimeDownloadLinker(new StorageRepository($this->entityManager), new AnimeRepository($this->entityManager), $this->entityManager, $jail);
+        $jail = new DownloadFolderJail();
+        $linker = new AnimeDownloadLinker(new AnimeRepository($this->entityManager), $this->entityManager, $jail);
         $poller = new DownloadCompletionPoller(
             new QbittorrentClient($httpClient, self::BASE_URL),
             $this->downloads,
             $linker,
             $eventDispatcher,
             $this->entityManager,
-            new FreeSpaceChecker($jail, new NativeFreeSpaceProvider()),
+            new FreeSpaceChecker(new NativeFreeSpaceProvider()),
             new NullLogger(),
         );
 
@@ -348,9 +355,9 @@ final class DownloadCompletionPollerTest extends TestCase
         $first = $this->persistAnime();
         $second = $this->persistAnime();
         $third = $this->persistAnime();
-        $this->downloads->save(new Download(self::HASH, $first));
-        $this->downloads->save(new Download($secondHash, $second));
-        $this->downloads->save(new Download($thirdHash, $third));
+        $this->saveDownload(self::HASH, $first);
+        $this->saveDownload($secondHash, $second);
+        $this->saveDownload($thirdHash, $third);
 
         /** @var list<AnimeFilesChangedEvent|DownloadCompletedEvent> $dispatched */
         $dispatched = [];
@@ -377,15 +384,15 @@ final class DownloadCompletionPollerTest extends TestCase
             $logged[] = ['message' => (string) $message, 'context' => $context];
         });
 
-        $jail = new DownloadFolderJail(new AppSettingsProvider(new AppConfigStore($this->configPath)));
-        $linker = new AnimeDownloadLinker(new StorageRepository($this->entityManager), new AnimeRepository($this->entityManager), $this->entityManager, $jail);
+        $jail = new DownloadFolderJail();
+        $linker = new AnimeDownloadLinker(new AnimeRepository($this->entityManager), $this->entityManager, $jail);
         $poller = new DownloadCompletionPoller(
             new QbittorrentClient($httpClient, self::BASE_URL),
             $this->downloads,
             $linker,
             $eventDispatcher,
             $this->entityManager,
-            new FreeSpaceChecker($jail, new NativeFreeSpaceProvider()),
+            new FreeSpaceChecker(new NativeFreeSpaceProvider()),
             $logger,
         );
 
@@ -426,7 +433,7 @@ final class DownloadCompletionPollerTest extends TestCase
         $qbittorrentHash = 'dddddddddddddddddddddddddddddddddddddddd';
 
         $anime = $this->persistAnime();
-        $this->downloads->save(new Download(self::HASH, $anime));
+        $this->saveDownload(self::HASH, $anime);
 
         $eventDispatcher = $this->createMock(EventDispatcherInterface::class);
         $eventDispatcher->expects($this->never())->method('dispatch');
@@ -453,15 +460,15 @@ final class DownloadCompletionPollerTest extends TestCase
             );
         });
 
-        $jail = new DownloadFolderJail(new AppSettingsProvider(new AppConfigStore($this->configPath)));
-        $linker = new AnimeDownloadLinker(new StorageRepository($this->entityManager), new AnimeRepository($this->entityManager), $this->entityManager, $jail);
+        $jail = new DownloadFolderJail();
+        $linker = new AnimeDownloadLinker(new AnimeRepository($this->entityManager), $this->entityManager, $jail);
         $poller = new DownloadCompletionPoller(
             new QbittorrentClient($httpClient, self::BASE_URL),
             $this->downloads,
             $linker,
             $eventDispatcher,
             $this->entityManager,
-            new FreeSpaceChecker($jail, $freeSpaceProvider),
+            new FreeSpaceChecker($freeSpaceProvider),
             new NullLogger(),
         );
 
@@ -483,7 +490,7 @@ final class DownloadCompletionPollerTest extends TestCase
     public function testPollDoesNotPauseWhenAMagnetsKnownSizeFitsFreeSpace(): void
     {
         $anime = $this->persistAnime();
-        $this->downloads->save(new Download(self::HASH, $anime));
+        $this->saveDownload(self::HASH, $anime);
 
         $eventDispatcher = $this->createMock(EventDispatcherInterface::class);
         $eventDispatcher->expects($this->never())->method('dispatch');
@@ -509,7 +516,7 @@ final class DownloadCompletionPollerTest extends TestCase
     public function testPollDoesNotFalselyFailAHealthyMagnetAsFreeSpaceShrinksWhileItDownloads(): void
     {
         $anime = $this->persistAnime();
-        $this->downloads->save(new Download(self::HASH, $anime));
+        $this->saveDownload(self::HASH, $anime);
 
         $eventDispatcher = $this->createMock(EventDispatcherInterface::class);
         $eventDispatcher->expects($this->never())->method('dispatch');
@@ -544,15 +551,15 @@ final class DownloadCompletionPollerTest extends TestCase
             return $response;
         });
 
-        $jail = new DownloadFolderJail(new AppSettingsProvider(new AppConfigStore($this->configPath)));
-        $linker = new AnimeDownloadLinker(new StorageRepository($this->entityManager), new AnimeRepository($this->entityManager), $this->entityManager, $jail);
+        $jail = new DownloadFolderJail();
+        $linker = new AnimeDownloadLinker(new AnimeRepository($this->entityManager), $this->entityManager, $jail);
         $poller = new DownloadCompletionPoller(
             new QbittorrentClient($httpClient, self::BASE_URL),
             $this->downloads,
             $linker,
             $eventDispatcher,
             $this->entityManager,
-            new FreeSpaceChecker($jail, $freeSpaceProvider),
+            new FreeSpaceChecker($freeSpaceProvider),
             new NullLogger(),
         );
 
@@ -599,8 +606,8 @@ final class DownloadCompletionPollerTest extends TestCase
         $otherHash = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
         $animeOne = $this->persistAnime();
         $animeTwo = $this->persistAnime();
-        $this->downloads->save(new Download(self::HASH, $animeOne));
-        $this->downloads->save(new Download($otherHash, $animeTwo));
+        $this->saveDownload(self::HASH, $animeOne);
+        $this->saveDownload($otherHash, $animeTwo);
 
         /** @var list<AnimeFilesChangedEvent|DownloadCompletedEvent> $dispatched */
         $dispatched = [];
@@ -628,15 +635,15 @@ final class DownloadCompletionPollerTest extends TestCase
             ['response_headers' => ['content-type' => 'application/json']],
         ));
 
-        $jail = new DownloadFolderJail(new AppSettingsProvider(new AppConfigStore($this->configPath)));
-        $linker = new AnimeDownloadLinker(new StorageRepository($this->entityManager), new AnimeRepository($this->entityManager), $this->entityManager, $jail);
+        $jail = new DownloadFolderJail();
+        $linker = new AnimeDownloadLinker(new AnimeRepository($this->entityManager), $this->entityManager, $jail);
         $poller = new DownloadCompletionPoller(
             new QbittorrentClient($httpClient, self::BASE_URL),
             $downloads,
             $linker,
             $eventDispatcher,
             $this->entityManager,
-            new FreeSpaceChecker($jail, new NativeFreeSpaceProvider()),
+            new FreeSpaceChecker(new NativeFreeSpaceProvider()),
             $logger,
         );
 
@@ -650,8 +657,8 @@ final class DownloadCompletionPollerTest extends TestCase
         $otherHash = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
         $animeOne = $this->persistAnime();
         $animeTwo = $this->persistAnime();
-        $this->downloads->save(new Download(self::HASH, $animeOne));
-        $this->downloads->save(new Download($otherHash, $animeTwo));
+        $this->saveDownload(self::HASH, $animeOne);
+        $this->saveDownload($otherHash, $animeTwo);
         $failedHash = $this->downloads->findDistinctPendingInfoHashes()[0];
         $failedAnimeId = $failedHash === self::HASH ? $animeOne->id : $animeTwo->id;
 
@@ -668,12 +675,12 @@ final class DownloadCompletionPollerTest extends TestCase
             ['response_headers' => ['content-type' => 'application/json']],
         ));
 
-        // findOneByPath() fails (as a DBAL error would) for the first link() only, i.e. after
-        // markCompleted() but before link()'s own flush(); the EntityManager stays open.
-        $storages = new class($this->entityManager) extends StorageRepository {
+        // findByStorageAndPath() fails (as a DBAL error would) for the first link() only, i.e.
+        // after markCompleted() but before link()'s own flush(); the EntityManager stays open.
+        $animes = new class($this->entityManager) extends AnimeRepository {
             private bool $failed = false;
 
-            public function findOneByPath(string $path): ?Storage
+            public function findByStorageAndPath(Storage $storage, string $storagePath): ?Anime
             {
                 if (!$this->failed) {
                     $this->failed = true;
@@ -681,19 +688,19 @@ final class DownloadCompletionPollerTest extends TestCase
                     throw new \RuntimeException('database is locked');
                 }
 
-                return parent::findOneByPath($path);
+                return parent::findByStorageAndPath($storage, $storagePath);
             }
         };
 
-        $jail = new DownloadFolderJail(new AppSettingsProvider(new AppConfigStore($this->configPath)));
-        $linker = new AnimeDownloadLinker($storages, new AnimeRepository($this->entityManager), $this->entityManager, $jail);
+        $jail = new DownloadFolderJail();
+        $linker = new AnimeDownloadLinker($animes, $this->entityManager, $jail);
         $poller = new DownloadCompletionPoller(
             new QbittorrentClient($httpClient, self::BASE_URL),
             $this->downloads,
             $linker,
             $eventDispatcher,
             $this->entityManager,
-            new FreeSpaceChecker($jail, new NativeFreeSpaceProvider()),
+            new FreeSpaceChecker(new NativeFreeSpaceProvider()),
             new NullLogger(),
         );
 
@@ -710,8 +717,8 @@ final class DownloadCompletionPollerTest extends TestCase
     public function testPollStopsWithoutThrowingWhenTheEntityManagerIsClosedAfterAFailure(): void
     {
         $otherHash = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
-        $this->downloads->save(new Download(self::HASH, $this->persistAnime()));
-        $this->downloads->save(new Download($otherHash, $this->persistAnime()));
+        $this->saveDownload(self::HASH, $this->persistAnime());
+        $this->saveDownload($otherHash, $this->persistAnime());
 
         $eventDispatcher = $this->createMock(EventDispatcherInterface::class);
         $eventDispatcher->expects($this->never())->method('dispatch');
@@ -755,15 +762,15 @@ final class DownloadCompletionPollerTest extends TestCase
             ['response_headers' => ['content-type' => 'application/json']],
         ));
 
-        $jail = new DownloadFolderJail(new AppSettingsProvider(new AppConfigStore($this->configPath)));
-        $linker = new AnimeDownloadLinker(new StorageRepository($this->entityManager), new AnimeRepository($this->entityManager), $this->entityManager, $jail);
+        $jail = new DownloadFolderJail();
+        $linker = new AnimeDownloadLinker(new AnimeRepository($this->entityManager), $this->entityManager, $jail);
         $poller = new DownloadCompletionPoller(
             new QbittorrentClient($httpClient, self::BASE_URL),
             $downloads,
             $linker,
             $eventDispatcher,
             $entityManager,
-            new FreeSpaceChecker($jail, new NativeFreeSpaceProvider()),
+            new FreeSpaceChecker(new NativeFreeSpaceProvider()),
             $logger,
         );
 
@@ -789,20 +796,20 @@ final class DownloadCompletionPollerTest extends TestCase
     public function testAFailureBeforeTheCompletionFlushLeavesNoPartialSnapshotOrPointer(): void
     {
         $anime = $this->persistAnime();
-        $this->downloads->save(new Download(self::HASH, $anime));
+        $this->saveDownload(self::HASH, $anime);
 
         $eventDispatcher = $this->createMock(EventDispatcherInterface::class);
         $eventDispatcher->expects($this->never())->method('dispatch');
 
-        $storages = new class($this->entityManager) extends StorageRepository {
-            public function findOneByPath(string $path): ?Storage
+        $animes = new class($this->entityManager) extends AnimeRepository {
+            public function findByStorageAndPath(Storage $storage, string $storagePath): ?Anime
             {
                 throw new \RuntimeException('database is locked');
             }
         };
 
-        $jail = new DownloadFolderJail(new AppSettingsProvider(new AppConfigStore($this->configPath)));
-        $linker = new AnimeDownloadLinker($storages, new AnimeRepository($this->entityManager), $this->entityManager, $jail);
+        $jail = new DownloadFolderJail();
+        $linker = new AnimeDownloadLinker($animes, $this->entityManager, $jail);
         $poller = new DownloadCompletionPoller(
             new QbittorrentClient(new MockHttpClient(static fn (): MockResponse => new MockResponse(
                 json_encode([['hash' => self::HASH, 'infohash_v1' => self::HASH, 'progress' => 1, 'state' => 'uploading', 'content_path' => self::ROOT.'\\some-release']], \JSON_THROW_ON_ERROR),
@@ -812,7 +819,7 @@ final class DownloadCompletionPollerTest extends TestCase
             $linker,
             $eventDispatcher,
             $this->entityManager,
-            new FreeSpaceChecker($jail, new NativeFreeSpaceProvider()),
+            new FreeSpaceChecker(new NativeFreeSpaceProvider()),
             new NullLogger(),
         );
 
@@ -841,7 +848,7 @@ final class DownloadCompletionPollerTest extends TestCase
     public function testTheRowBeingDeletedBetweenLoadAndFlushDoesNotSetThePointerOrThrow(): void
     {
         $anime = $this->persistAnime();
-        $download = new Download(self::HASH, $anime);
+        $download = $this->newDownload(self::HASH, $anime);
         $this->downloads->save($download);
         $downloadId = $download->id;
 
@@ -849,7 +856,7 @@ final class DownloadCompletionPollerTest extends TestCase
         $eventDispatcher->expects($this->never())->method('dispatch');
 
         $connection = $this->entityManager->getConnection();
-        $storages = new class($this->entityManager, $connection, (int) $downloadId) extends StorageRepository {
+        $animes = new class($this->entityManager, $connection, (int) $downloadId) extends AnimeRepository {
             public function __construct(
                 EntityManagerInterface $entityManager,
                 private readonly Connection $connection,
@@ -858,18 +865,18 @@ final class DownloadCompletionPollerTest extends TestCase
                 parent::__construct($entityManager);
             }
 
-            public function findOneByPath(string $path): ?Storage
+            public function findByStorageAndPath(Storage $storage, string $storagePath): ?Anime
             {
                 // Simulates a concurrent "app:downloads:unlink" deleting the row, between this
                 // poll() loading it and link()'s own flush() further down the call stack.
                 $this->connection->executeStatement('DELETE FROM downloads WHERE id = ?', [$this->downloadId]);
 
-                return parent::findOneByPath($path);
+                return parent::findByStorageAndPath($storage, $storagePath);
             }
         };
 
-        $jail = new DownloadFolderJail(new AppSettingsProvider(new AppConfigStore($this->configPath)));
-        $linker = new AnimeDownloadLinker($storages, new AnimeRepository($this->entityManager), $this->entityManager, $jail);
+        $jail = new DownloadFolderJail();
+        $linker = new AnimeDownloadLinker($animes, $this->entityManager, $jail);
         $poller = new DownloadCompletionPoller(
             new QbittorrentClient(new MockHttpClient(static fn (): MockResponse => new MockResponse(
                 json_encode([['hash' => self::HASH, 'infohash_v1' => self::HASH, 'progress' => 1, 'state' => 'uploading', 'content_path' => self::ROOT.'\\some-release']], \JSON_THROW_ON_ERROR),
@@ -879,7 +886,7 @@ final class DownloadCompletionPollerTest extends TestCase
             $linker,
             $eventDispatcher,
             $this->entityManager,
-            new FreeSpaceChecker($jail, new NativeFreeSpaceProvider()),
+            new FreeSpaceChecker(new NativeFreeSpaceProvider()),
             new NullLogger(),
         );
 
@@ -907,7 +914,7 @@ final class DownloadCompletionPollerTest extends TestCase
     {
         $truncatedV2Hash = 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
         $anime = $this->persistAnime();
-        $this->downloads->save(new Download(self::HASH, $anime));
+        $this->saveDownload(self::HASH, $anime);
 
         /** @var list<AnimeFilesChangedEvent|DownloadCompletedEvent> $dispatched */
         $dispatched = [];
@@ -936,7 +943,7 @@ final class DownloadCompletionPollerTest extends TestCase
     public function testPollDoesNotMatchAForeignTorrentWithAnEmptyInfoHashV1(): void
     {
         $anime = $this->persistAnime();
-        $this->downloads->save(new Download(self::HASH, $anime));
+        $this->saveDownload(self::HASH, $anime);
 
         $eventDispatcher = $this->createMock(EventDispatcherInterface::class);
         $eventDispatcher->expects($this->never())->method('dispatch');
@@ -965,15 +972,15 @@ final class DownloadCompletionPollerTest extends TestCase
             throw new \LogicException('No HTTP request was expected: there are no pending downloads.');
         });
 
-        $jail = new DownloadFolderJail(new AppSettingsProvider(new AppConfigStore($this->configPath)));
-        $linker = new AnimeDownloadLinker(new StorageRepository($this->entityManager), new AnimeRepository($this->entityManager), $this->entityManager, $jail);
+        $jail = new DownloadFolderJail();
+        $linker = new AnimeDownloadLinker(new AnimeRepository($this->entityManager), $this->entityManager, $jail);
         $poller = new DownloadCompletionPoller(
             new QbittorrentClient($httpClient, self::BASE_URL),
             $this->downloads,
             $linker,
             $this->createMock(EventDispatcherInterface::class),
             $this->entityManager,
-            new FreeSpaceChecker($jail, new NativeFreeSpaceProvider()),
+            new FreeSpaceChecker(new NativeFreeSpaceProvider()),
             new NullLogger(),
         );
 
@@ -983,8 +990,8 @@ final class DownloadCompletionPollerTest extends TestCase
     public function testPollMakesExactlyOneTorrentsInfoRequestTaggedAnimedbPerPassWhenThereArePendingDownloads(): void
     {
         $otherHash = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
-        $this->downloads->save(new Download(self::HASH, $this->persistAnime()));
-        $this->downloads->save(new Download($otherHash, $this->persistAnime()));
+        $this->saveDownload(self::HASH, $this->persistAnime());
+        $this->saveDownload($otherHash, $this->persistAnime());
 
         /** @var list<array{0: string, 1: string}> $requests */
         $requests = [];
@@ -996,15 +1003,15 @@ final class DownloadCompletionPollerTest extends TestCase
             ]);
         });
 
-        $jail = new DownloadFolderJail(new AppSettingsProvider(new AppConfigStore($this->configPath)));
-        $linker = new AnimeDownloadLinker(new StorageRepository($this->entityManager), new AnimeRepository($this->entityManager), $this->entityManager, $jail);
+        $jail = new DownloadFolderJail();
+        $linker = new AnimeDownloadLinker(new AnimeRepository($this->entityManager), $this->entityManager, $jail);
         $poller = new DownloadCompletionPoller(
             new QbittorrentClient($httpClient, self::BASE_URL),
             $this->downloads,
             $linker,
             $this->createMock(EventDispatcherInterface::class),
             $this->entityManager,
-            new FreeSpaceChecker($jail, new NativeFreeSpaceProvider()),
+            new FreeSpaceChecker(new NativeFreeSpaceProvider()),
             new NullLogger(),
         );
 
@@ -1026,7 +1033,7 @@ final class DownloadCompletionPollerTest extends TestCase
     public function testPollLeavesStatusUnchangedAndWarnsOnceForATorrentMissingAcrossSeveralPasses(): void
     {
         $anime = $this->persistAnime();
-        $this->downloads->save(new Download(self::HASH, $anime));
+        $this->saveDownload(self::HASH, $anime);
 
         $eventDispatcher = $this->createMock(EventDispatcherInterface::class);
         $eventDispatcher->expects($this->never())->method('dispatch');
@@ -1040,15 +1047,15 @@ final class DownloadCompletionPollerTest extends TestCase
             'response_headers' => ['content-type' => 'application/json'],
         ]));
 
-        $jail = new DownloadFolderJail(new AppSettingsProvider(new AppConfigStore($this->configPath)));
-        $linker = new AnimeDownloadLinker(new StorageRepository($this->entityManager), new AnimeRepository($this->entityManager), $this->entityManager, $jail);
+        $jail = new DownloadFolderJail();
+        $linker = new AnimeDownloadLinker(new AnimeRepository($this->entityManager), $this->entityManager, $jail);
         $poller = new DownloadCompletionPoller(
             new QbittorrentClient($httpClient, self::BASE_URL),
             $this->downloads,
             $linker,
             $eventDispatcher,
             $this->entityManager,
-            new FreeSpaceChecker($jail, new NativeFreeSpaceProvider()),
+            new FreeSpaceChecker(new NativeFreeSpaceProvider()),
             $logger,
         );
 

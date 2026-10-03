@@ -73,9 +73,4 @@ class StorageRepository
             ->getQuery()
             ->getResult();
     }
-
-    public function findOneByPath(string $path): ?Storage
-    {
-        return $this->entityManager->getRepository(Storage::class)->findOneBy(['path' => $path]);
-    }
 }
