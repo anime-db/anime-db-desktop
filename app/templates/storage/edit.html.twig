@@ -27,7 +27,7 @@
         <h1>{{ 'storage_edit.heading'|trans }}</h1>
 
         {% if error %}
-            <p class="alert alert-danger">{{ error|trans }}</p>
+            <p class="alert alert-danger">{{ error|trans(errorParams|default({})) }}</p>
         {% endif %}
 
         <form method="post" action="{{ path('storage_update', {id: storage.id}) }}">
@@ -49,7 +49,10 @@
 
             <div class="mb-3">
                 <label for="storage-edit-path" class="form-label">{{ 'storage_edit.field_path'|trans }}</label>
-                <input type="text" id="storage-edit-path" name="path" value="{{ path }}" required class="form-control">
+                <input type="text" id="storage-edit-path" name="path" value="{{ path }}" required class="form-control"{% if isPreset %} readonly{% endif %}>
+                {% if isPreset %}
+                    <div class="form-text">{{ 'storage_edit.preset_path_hint'|trans }}</div>
+                {% endif %}
             </div>
 
             <button type="submit" class="btn btn-primary">{{ 'storage_edit.submit_button'|trans }}</button>

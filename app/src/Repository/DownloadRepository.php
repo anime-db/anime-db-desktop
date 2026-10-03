@@ -104,4 +104,24 @@ class DownloadRepository
         $this->entityManager->remove($download);
         $this->entityManager->flush();
     }
+
+    /**
+     * Whether $storageId has a row still in progress (any status other than Completed) with it
+     * as $targetStorage — the guard StorageController::delete() and StorageEditController::update()
+     * (issue #853) consult before letting a storage's path change or the storage itself disappear
+     * out from under a download qBittorrent is still writing.
+     */
+    public function hasUnfinishedDownloadsForTargetStorage(int $storageId): bool
+    {
+        $count = $this->entityManager->getRepository(Download::class)->createQueryBuilder('d')
+            ->select('COUNT(d.id)')
+            ->where('d.targetStorage = :storageId')
+            ->andWhere('d.status != :completed')
+            ->setParameter('storageId', $storageId)
+            ->setParameter('completed', DownloadStatus::Completed)
+            ->getQuery()
+            ->getSingleScalarResult();
+
+        return (int) $count > 0;
+    }
 }
