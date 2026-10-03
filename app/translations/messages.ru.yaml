@@ -246,6 +246,7 @@ settings_market:
     title: Маркет плагинов — Настройки — AnimeDB
     heading: Маркет плагинов
     empty: В маркете пока нет ни одного плагина.
+    filter_filler_empty: Среди плагинов маркета пока нет ни одного источника.
     filter_filler_banner: Показаны плагины-источники
     filter_filler_clear_link: Показать все
     name_column: Название

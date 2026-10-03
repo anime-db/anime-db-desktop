@@ -246,6 +246,7 @@ settings_market:
     title: Plugin market — Settings — AnimeDB
     heading: Plugin market
     empty: The market has no plugins yet.
+    filter_filler_empty: No plugin sources are available in the market right now.
     filter_filler_banner: Showing plugin sources
     filter_filler_clear_link: Show all
     name_column: Name
