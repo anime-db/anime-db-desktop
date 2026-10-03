@@ -128,24 +128,27 @@ final class StorageController
      * {@see scan()}, the storage list's Scan button, and storage_scan_prompt's form — posts to
      * `storage_scan`, which redirects here with `?started=1`.
      *
-     * The template's "is a scan actually running" state (`started`, despite the name) is read from
-     * {@see JobLockService::isLocked()} on {@see ScanStorageMessage::jobKey()} — the same lock
-     * {@see \App\MessageHandler\ScanStorageMessageHandler} holds while scanning — rather than from
-     * the `?started=1` query string (issue #834 review): that parameter only reflects the moment
-     * the redirect was built, so F5, a back/forward navigation, or a bookmarked link kept it
-     * claiming a scan was running long after it had already finished, and the page sat mounting
-     * storage-scan.js's 15-second no-response timeout for a scan that would never report in. A
-     * bare GET with no lock held — whether `started` is present or not — renders the static "scan
-     * not started" prompt instead.
+     * The template's "is a scan actually running" state (`started`, despite the name) is true
+     * when either {@see JobLockService::isLocked()} holds on {@see ScanStorageMessage::jobKey()}
+     * — the same lock {@see \App\MessageHandler\ScanStorageMessageHandler} holds while scanning —
+     * or the request carries `?started=1`, the one-shot marker {@see scan()} redirects here with
+     * right after dispatching the message. The lock alone is not enough: it is only taken when
+     * the async transport's consumer picks the message up, not when scan() enqueues it, so a
+     * request landing in that gap would otherwise see no lock yet and render "scan not started"
+     * even though a scan was just requested (issue #834 review). storage-scan.js strips `started`
+     * from the URL once it mounts (via history.replaceState), so a later F5, back/forward
+     * navigation, or bookmarked link carries no such marker and the lock alone decides — the
+     * original "stuck claiming a scan is running" defect this flag was meant to fix stays fixed.
      */
     #[Route('/storage/{id}/scan-progress', name: 'storage_scan_progress', methods: ['GET'])]
-    public function scanProgress(Storage $storage): Response
+    public function scanProgress(Storage $storage, Request $request): Response
     {
         $storageId = $storage->id ?? throw new \LogicException('Storage must be persisted before its scan progress can be shown.');
 
         return new Response($this->twig->render('storage/scan_progress.html.twig', [
             'storage' => $storage,
-            'started' => $this->jobLockService->isLocked(ScanStorageMessage::jobKey($storageId)),
+            'started' => $request->query->getBoolean('started')
+                || $this->jobLockService->isLocked(ScanStorageMessage::jobKey($storageId)),
         ]));
     }
 

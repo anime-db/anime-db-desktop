@@ -293,19 +293,45 @@ final class StorageControllerTest extends TestCase
 
         $controller = $this->createController(twig: $twig, jobLockService: $jobLockService);
 
-        $response = $controller->scanProgress($storage);
+        $response = $controller->scanProgress($storage, Request::create('/storage/42/scan-progress'));
 
         $this->assertSame(200, $response->getStatusCode());
     }
 
     /**
-     * Regression (issue #834 review): the template's live-scan-section state must come from
-     * whether a scan is actually running (the job lock), not from a `?started=1` query string —
-     * `scanProgress()` no longer even reads a Request, so an F5/back-forward/bookmarked visit
-     * showing the live section after the scan already finished (storage-scan.js's 15-second
-     * no-response timeout, then a dead-end error) is no longer possible.
+     * Regression (issue #834 review, round 2): a request landing right after scan() redirects
+     * here — before the async consumer picks the message up and takes the job lock — must still
+     * show the live-scan section. The one-shot `?started=1` marker scan() puts on that redirect
+     * covers exactly that gap; storage-scan.js strips it from the URL once it mounts, so it is
+     * never present on a later F5/back-forward/bookmarked visit.
      */
-    public function testScanProgressRendersTheNotStartedStateWhenNoScanLockIsHeld(): void
+    public function testScanProgressRendersTheLiveScanSectionWhenStartedQueryParamIsPresentEvenWithoutLock(): void
+    {
+        $storage = new Storage('Main folder', 'D:\\Anime', StorageType::Folder);
+        $this->setStorageId($storage, 42);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('storage/scan_progress.html.twig', $this->callback(
+                static fn (array $params): bool => $params['started'] === true,
+            ))
+            ->willReturn('<html></html>');
+
+        $controller = $this->createController(twig: $twig, jobLockService: $this->createJobLockService());
+
+        $controller->scanProgress($storage, Request::create('/storage/42/scan-progress?started=1'));
+    }
+
+    /**
+     * Regression (issue #834 review): the template's live-scan-section state must come from
+     * whether a scan is actually running (the job lock) or was just triggered (`?started=1`), not
+     * stay true forever once that query string shows up once — an F5/back-forward/bookmarked
+     * visit without the parameter and without the lock held must fall back to "scan not started"
+     * rather than showing the live section after the scan already finished (storage-scan.js's
+     * 15-second no-response timeout, then a dead-end error).
+     */
+    public function testScanProgressRendersTheNotStartedStateWhenNoScanLockIsHeldAndNoStartedQueryParam(): void
     {
         $storage = new Storage('Main folder', 'D:\\Anime', StorageType::Folder);
         $this->setStorageId($storage, 42);
@@ -320,7 +346,7 @@ final class StorageControllerTest extends TestCase
 
         $controller = $this->createController(twig: $twig, jobLockService: $this->createJobLockService());
 
-        $controller->scanProgress($storage);
+        $controller->scanProgress($storage, Request::create('/storage/42/scan-progress'));
     }
 
     public function testScanRejectsInvalidCsrfToken(): void
