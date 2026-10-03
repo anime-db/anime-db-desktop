@@ -45,6 +45,7 @@ use Doctrine\ORM\Tools\SchemaTool;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
+use Symfony\Component\Security\Csrf\CsrfToken;
 use Symfony\Component\Security\Csrf\CsrfTokenManagerInterface;
 use Twig\Environment;
 
@@ -89,18 +90,30 @@ final class DownloadUnlinkControllerTest extends TestCase
         ?CsrfTokenManagerInterface $csrfTokenManager = null,
         ?Environment $twig = null,
     ): DownloadUnlinkController {
-        if ($csrfTokenManager === null) {
-            $csrfTokenManager = $this->createStub(CsrfTokenManagerInterface::class);
-            $csrfTokenManager->method('isTokenValid')->willReturn(true);
-        }
-
         return new DownloadUnlinkController(
             $this->repository,
             $this->unlinker,
             new DownloadViewFactory(),
-            $csrfTokenManager,
+            $csrfTokenManager ?? $this->createStub(CsrfTokenManagerInterface::class),
             $twig ?? $this->createStub(Environment::class),
         );
+    }
+
+    /**
+     * Mirrors what a real CsrfTokenManager does: valid only for the exact `download_unlink_<id>`
+     * id and value this row's form would have been rendered with. A stub that returns `true`
+     * unconditionally (as this test previously did) would stay green even if the controller read
+     * the token under the wrong id or field — see DownloadUnlinkController::unlink() (issue #857
+     * review).
+     */
+    private function csrfTokenManagerValidFor(int $downloadId, string $value = 'token'): CsrfTokenManagerInterface
+    {
+        $csrfTokenManager = $this->createStub(CsrfTokenManagerInterface::class);
+        $csrfTokenManager->method('isTokenValid')->willReturnCallback(
+            static fn (CsrfToken $token): bool => $token->getId() === 'download_unlink_'.$downloadId && $token->getValue() === $value,
+        );
+
+        return $csrfTokenManager;
     }
 
     public function testUnlinkDeletesTheRowAndRendersTheRefreshedBlockWithoutAnError(): void
@@ -119,7 +132,7 @@ final class DownloadUnlinkControllerTest extends TestCase
             ))
             ->willReturn('<section></section>');
 
-        $controller = $this->createController(twig: $twig);
+        $controller = $this->createController($this->csrfTokenManagerValidFor((int) $download->id), $twig);
         $request = Request::create('/downloads/'.$download->id.'/unlink', 'POST', ['_token' => 'token']);
 
         $response = $controller->unlink($download, $request);
@@ -149,13 +162,38 @@ final class DownloadUnlinkControllerTest extends TestCase
             ))
             ->willReturn('<section></section>');
 
-        $controller = $this->createController(twig: $twig);
+        $controller = $this->createController($this->csrfTokenManagerValidFor((int) $download->id), $twig);
         $request = Request::create('/downloads/'.$download->id.'/unlink', 'POST', ['_token' => 'token']);
 
         $controller->unlink($download, $request);
 
         $this->entityManager->clear();
         $this->assertNotNull($this->repository->findByInfoHashAndAnime(self::HASH, (int) $anime->id));
+    }
+
+    /**
+     * The token id is per-row (`download_unlink_<id>`), not a single id shared across the whole
+     * form — a token that validates for one row's id must not be accepted for a different row
+     * (issue #857 review).
+     */
+    public function testUnlinkRejectsATokenValidForADifferentDownloadRow(): void
+    {
+        $anime = $this->persistAnime();
+        $downloadA = new Download('a'.str_repeat('0', 39), $anime);
+        $this->repository->save($downloadA);
+        $downloadB = new Download('b'.str_repeat('0', 39), $anime);
+        $this->repository->save($downloadB);
+
+        $controller = $this->createController($this->csrfTokenManagerValidFor((int) $downloadA->id));
+        $request = Request::create('/downloads/'.$downloadB->id.'/unlink', 'POST', ['_token' => 'token']);
+
+        $this->expectException(BadRequestHttpException::class);
+
+        try {
+            $controller->unlink($downloadB, $request);
+        } finally {
+            $this->assertNotNull($this->repository->findByInfoHashAndAnime($downloadB->getInfoHash(), (int) $anime->id));
+        }
     }
 
     public function testUnlinkRejectsInvalidCsrfTokenAndNeverCallsTheService(): void
