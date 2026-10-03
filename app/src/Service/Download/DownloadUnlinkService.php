@@ -61,15 +61,28 @@ final class DownloadUnlinkService
     {
         $downloadId = $download->id ?? throw new \LogicException('Download must be persisted before it can be unlinked.');
         $version = $download->getVersion();
+        $anime = $download->getAnime();
         $released = $this->folderPointer->releaseIfOwnedBy($download);
 
         $connection = $this->entityManager->getConnection();
         $connection->beginTransaction();
-        $this->entityManager->flush();
-        $affected = $connection->executeStatement('DELETE FROM downloads WHERE id = ? AND version = ?', [$downloadId, $version]);
+        try {
+            $this->entityManager->flush();
+            $affected = $connection->executeStatement('DELETE FROM downloads WHERE id = ? AND version = ?', [$downloadId, $version]);
+        } catch (\Throwable $exception) {
+            $connection->rollBack();
+
+            throw $exception;
+        }
 
         if ($affected === 0) {
             $connection->rollBack();
+            // The rollback only undoes the DB write; $download and $anime in the identity map still
+            // hold the pointer-release mutation flush() applied before the DELETE lost its race, so
+            // the caller would otherwise re-render a stale status/pointer instead of what is really
+            // on disk now (issue #857 review).
+            $this->entityManager->refresh($download);
+            $this->entityManager->refresh($anime);
 
             return DownloadUnlinkResult::versionConflict();
         }

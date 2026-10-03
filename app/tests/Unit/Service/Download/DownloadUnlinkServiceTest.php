@@ -30,6 +30,7 @@ namespace App\Tests\Unit\Service\Download;
 use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
 use App\Entity\Download;
+use App\Entity\Enum\DownloadStatus;
 use App\Entity\Enum\StorageType;
 use App\Entity\Enum\WatchStatus;
 use App\Entity\Storage;
@@ -37,6 +38,7 @@ use App\Entity\TvAnime;
 use App\Repository\DownloadRepository;
 use App\Service\Download\DownloadFolderPointer;
 use App\Service\Download\DownloadUnlinkService;
+use App\Tests\Fixtures\Service\Download\ThrowingOnDeleteConnection;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\EntityManager;
@@ -158,5 +160,76 @@ final class DownloadUnlinkServiceTest extends TestCase
         $this->assertNotNull($reloadedAnime);
         $this->assertSame($storage->id, $reloadedAnime->getStorage()?->id);
         $this->assertSame('some-release', $reloadedAnime->getStoragePath());
+    }
+
+    /**
+     * The $download and $anime instances passed in are the same ones the caller (the HTTP
+     * controller or the console command) goes on to re-render or re-flush after a version conflict.
+     * Rolling back the DB transaction does not undo the pointer-release mutation already applied to
+     * the in-memory $anime, nor does it refresh $download's stale status — both must be reloaded
+     * from the DB the rollback actually left behind, or the caller shows a lie (issue #857 review).
+     */
+    public function testUnlinkRefreshesTheDownloadAndAnimeAfterAVersionConflict(): void
+    {
+        $anime = $this->persistAnime();
+        $storage = $this->persistStorage();
+        $anime->setStorage($storage)->setStoragePath('some-release');
+        $this->entityManager->flush();
+
+        $download = new Download(self::HASH, $anime);
+        $download->recordLinkedStorage($storage, 'some-release');
+        $this->repository->save($download);
+
+        // Simulates DownloadCompletionPoller completing the row from a separate process after this
+        // request already loaded $download as still Pending.
+        $this->entityManager->getConnection()->executeStatement(
+            'UPDATE downloads SET status = ?, version = version + 1 WHERE id = ?',
+            [DownloadStatus::Completed->value, $download->id],
+        );
+
+        $result = $this->service->unlink($download);
+
+        $this->assertFalse($result->succeeded);
+        $this->assertSame(DownloadStatus::Completed, $download->getStatus());
+        $this->assertSame($storage->id, $anime->getStorage()?->id);
+        $this->assertSame('some-release', $anime->getStoragePath());
+    }
+
+    /**
+     * A failure mid-transaction (flush() or the DELETE itself throwing, e.g. SQLITE_BUSY from
+     * DownloadCompletionPoller writing the same row concurrently) must not leave the transaction
+     * open on the connection — FrankenPHP's worker mode reuses this connection across requests, so a
+     * leaked transaction would make every later commit() in the same worker a no-op (issue #857
+     * review).
+     */
+    public function testUnlinkRollsBackTheTransactionWhenTheDeleteThrows(): void
+    {
+        $config = ORMSetup::createAttributeMetadataConfig([\dirname(__DIR__, 4).'/src/Entity'], true);
+        $config->enableNativeLazyObjects(true);
+        $connection = DriverManager::getConnection(
+            ['driver' => 'pdo_sqlite', 'memory' => true, 'wrapperClass' => ThrowingOnDeleteConnection::class],
+            $config,
+        );
+        $entityManager = new EntityManager($connection, $config);
+        (new SchemaTool($entityManager))->createSchema($entityManager->getMetadataFactory()->getAllMetadata());
+
+        $repository = new DownloadRepository($entityManager);
+        $service = new DownloadUnlinkService(new DownloadFolderPointer(), $entityManager);
+
+        $anime = new TvAnime();
+        $anime->setTitle('Anime A')->setWatchStatus(WatchStatus::Plan);
+        $entityManager->persist($anime);
+        $entityManager->flush();
+
+        $download = new Download(self::HASH, $anime);
+        $repository->save($download);
+
+        $this->expectException(\RuntimeException::class);
+
+        try {
+            $service->unlink($download);
+        } finally {
+            $this->assertFalse($connection->isTransactionActive());
+        }
     }
 }
