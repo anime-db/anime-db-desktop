@@ -39,6 +39,7 @@ use App\Service\Market\MarketRefreshService;
 use App\Service\Market\MarketSnapshot;
 use App\Service\Market\MarketSnapshotCache;
 use App\Service\Market\MarketSnapshotPlugin;
+use App\Service\Market\MarketSnapshotReadiness;
 use App\Service\Market\MarketUpdateResolver;
 use App\Service\NearestBuiltInLocale;
 use App\Service\Plugin\Exception\IncompatiblePluginCoreVersionException;
@@ -194,6 +195,7 @@ final class MarketController
         private readonly TranslationCoverageService $translationCoverage,
         private readonly NearestBuiltInLocale $nearestBuiltInLocale,
         private readonly MarketUpdateResolver $updateResolver,
+        private readonly MarketSnapshotReadiness $snapshotReadiness,
     ) {
     }
 
@@ -421,7 +423,7 @@ final class MarketController
         ?string $featureFilter = null,
     ): Response {
         $snapshot = $this->snapshotCache->load();
-        $snapshotReady = $snapshot !== null && $snapshot->coreVersion === $this->coreVersion;
+        $snapshotReady = $this->snapshotReadiness->isReady($snapshot, $this->coreVersion);
 
         if (!$snapshotReady && $this->shouldDispatchRefresh()) {
             $this->messageBus->dispatch(new RefreshMarketSnapshotMessage());
@@ -429,7 +431,7 @@ final class MarketController
 
         $items = [];
         $hasIncompatiblePlugin = false;
-        if ($snapshotReady) {
+        if ($snapshotReady && $snapshot !== null) {
             $appTranslationKeyCount = null;
             foreach ($snapshot->plugins as $plugin) {
                 if ($featureFilter === 'filler' && ($plugin->manifest['features']['filler'] ?? false) !== true) {

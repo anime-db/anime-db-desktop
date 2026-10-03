@@ -86,9 +86,12 @@ function runSetupTransports(context) {
  * пуш-синк (PushSyncMessage) никогда не ждут за пачкой скачиваемых обложек/кадров (issue #508).
  * Второй процесс-потребитель под `media` сознательно не заводится — см. messenger.yaml.
  *
- * `scheduler_downloads_poll` (issue #685) замыкает этот же список последним по той же логике
- * приоритета: тик App\Scheduler\DownloadsPollSchedule ждёт, только если `async`/`media` заняты, а
- * не наоборот — опрос qBittorrent не должен подвинуть пользовательские задачи из очереди.
+ * `scheduler_downloads_poll` (issue #685) и `scheduler_market_refresh` (issue #448) замыкают этот
+ * же список по той же логике приоритета: ни тик App\Scheduler\DownloadsPollSchedule, ни тик
+ * App\Scheduler\MarketRefreshSchedule не должны подвинуть пользовательские задачи из очереди
+ * `async`/`media`. `scheduler_market_refresh` стоит последним, после `scheduler_downloads_poll`,
+ * просто по порядку появления (issue #448 добавлен позже #685) — порядок между двумя
+ * schedule-транспортами друг относительно друга не несёт собственного смысла приоритета.
  *
  * @param {import('./env').PhpContext} context
  * @param {number} backoffIdx
@@ -96,7 +99,7 @@ function runSetupTransports(context) {
 function spawnProcess(context, backoffIdx = 0) {
     if (stopping) return;
 
-    child = spawn(BINARY, ['php-cli', CONSOLE, 'messenger:consume', 'async', 'media', 'scheduler_downloads_poll'], {
+    child = spawn(BINARY, ['php-cli', CONSOLE, 'messenger:consume', 'async', 'media', 'scheduler_downloads_poll', 'scheduler_market_refresh'], {
         cwd: paths.getAppRootDir(),
         env: buildEnv(context),
         stdio: ['ignore', 'pipe', 'pipe'],

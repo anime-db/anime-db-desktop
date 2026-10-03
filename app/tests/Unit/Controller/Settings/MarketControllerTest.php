@@ -36,6 +36,7 @@ use App\Service\Market\MarketRefreshService;
 use App\Service\Market\MarketSnapshot;
 use App\Service\Market\MarketSnapshotCache;
 use App\Service\Market\MarketSnapshotPlugin;
+use App\Service\Market\MarketSnapshotReadiness;
 use App\Service\Market\MarketUpdateResolver;
 use App\Service\NearestBuiltInLocale;
 use App\Service\Plugin\InstalledPluginsRegistry;
@@ -157,6 +158,7 @@ final class MarketControllerTest extends TestCase
             $translationCoverage ?? new TranslationCoverageService($this->installedPlugins, $this->rootDir),
             new NearestBuiltInLocale(),
             new MarketUpdateResolver($snapshotCache, self::CORE_VERSION),
+            new MarketSnapshotReadiness(),
         );
     }
 
