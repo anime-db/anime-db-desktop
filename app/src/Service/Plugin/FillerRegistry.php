@@ -135,6 +135,13 @@ final class FillerRegistry
      * feature switched off, so a mix of "whole-plugin disabled" and "feature disabled" installs
      * favors the state with an actionable settings page over the one that only points at the
      * installed-plugins list.
+     *
+     * Checks for a settings page via {@see SettingsPageRegistry::enabledPluginIdsWithSettingsPage()}
+     * rather than {@see SettingsPageRegistry::find()} (issue #834 review): this runs on every page
+     * load (through {@see \App\Twig\TopNavExtension}), and find() instantiates the plugin's
+     * settings-page service — a broken constructor there would take down every page's header, not
+     * just the settings pages that actually need the instance, which is exactly the blast radius
+     * {@see SettingsPageRegistry}'s own docblock and issue #825 already guard against elsewhere.
      */
     public function fillerAvailability(InstalledPluginsRegistry $installedPlugins, SettingsPageRegistry $settingsPages): FillerAvailability
     {
@@ -153,14 +160,16 @@ final class FillerRegistry
             return FillerAvailability::notInstalled();
         }
 
+        $idsWithSettingsPage = $settingsPages->enabledPluginIdsWithSettingsPage();
+
         foreach ($fillerPlugins as $plugin) {
             if ($plugin->enabled && $this->isFillerActive($plugin->id)) {
                 continue;
             }
 
-            $page = $settingsPages->find($plugin->id);
+            $hasSettingsPage = \in_array((string) $plugin->id, $idsWithSettingsPage, true);
 
-            return $page !== null ? FillerAvailability::disabledWithSettingsPage($plugin->id) : FillerAvailability::disabledNoSettingsPage();
+            return $hasSettingsPage ? FillerAvailability::disabledWithSettingsPage($plugin->id) : FillerAvailability::disabledNoSettingsPage();
         }
 
         return FillerAvailability::disabledNoSettingsPage();

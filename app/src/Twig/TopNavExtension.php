@@ -28,6 +28,7 @@ declare(strict_types=1);
 namespace App\Twig;
 
 use App\Service\Plugin\FillerAvailabilityPresenter;
+use Psr\Log\LoggerInterface;
 use Twig\Extension\AbstractExtension;
 use Twig\TwigFunction;
 
@@ -40,8 +41,10 @@ use Twig\TwigFunction;
  */
 final class TopNavExtension extends AbstractExtension
 {
-    public function __construct(private readonly FillerAvailabilityPresenter $fillerAvailability)
-    {
+    public function __construct(
+        private readonly FillerAvailabilityPresenter $fillerAvailability,
+        private readonly LoggerInterface $logger,
+    ) {
     }
 
     public function getFunctions(): array
@@ -52,15 +55,30 @@ final class TopNavExtension extends AbstractExtension
     }
 
     /**
+     * Runs on every page via base.html.twig, so a failure here must not take the whole page down
+     * with it (issue #834 review) — the underlying lookup already avoids instantiating a broken
+     * plugin's settings page (see {@see \App\Service\Plugin\FillerRegistry::fillerAvailability()}),
+     * but this still fails open to "inactive, no hint" against anything else that could go wrong
+     * resolving plugin state, the same way {@see \App\Service\Settings\SettingsNavigationService}
+     * degrades its plugin settings sidebar group instead of breaking every settings page (issue #822).
+     *
      * @return array{active: bool, hint: array{kind: string, url: string}|null}
      */
     public function searchPluginsState(): array
     {
-        $active = $this->fillerAvailability->hasActiveFiller();
+        try {
+            $active = $this->fillerAvailability->hasActiveFiller();
 
-        return [
-            'active' => $active,
-            'hint' => $active ? null : $this->fillerAvailability->describeUnavailable(),
-        ];
+            return [
+                'active' => $active,
+                'hint' => $active ? null : $this->fillerAvailability->describeUnavailable(),
+            ];
+        } catch (\Throwable $exception) {
+            $this->logger->error('Failed to resolve filler plugin availability for the top nav Add menu; showing "Search in plugins" as inactive without a hint.', [
+                'exception' => $exception,
+            ]);
+
+            return ['active' => false, 'hint' => null];
+        }
     }
 }

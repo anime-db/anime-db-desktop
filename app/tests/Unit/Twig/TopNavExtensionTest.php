@@ -30,6 +30,7 @@ namespace App\Tests\Unit\Twig;
 use App\Service\Plugin\FillerAvailabilityPresenter;
 use App\Twig\TopNavExtension;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
 
 final class TopNavExtensionTest extends TestCase
 {
@@ -38,7 +39,7 @@ final class TopNavExtensionTest extends TestCase
         $presenter = $this->createStub(FillerAvailabilityPresenter::class);
         $presenter->method('hasActiveFiller')->willReturn(true);
 
-        $state = (new TopNavExtension($presenter))->searchPluginsState();
+        $state = (new TopNavExtension($presenter, new NullLogger()))->searchPluginsState();
 
         $this->assertSame(['active' => true, 'hint' => null], $state);
     }
@@ -49,11 +50,30 @@ final class TopNavExtensionTest extends TestCase
         $presenter->method('hasActiveFiller')->willReturn(false);
         $presenter->method('describeUnavailable')->willReturn(['kind' => 'not_installed', 'url' => '/settings/market']);
 
-        $state = (new TopNavExtension($presenter))->searchPluginsState();
+        $state = (new TopNavExtension($presenter, new NullLogger()))->searchPluginsState();
 
         $this->assertSame([
             'active' => false,
             'hint' => ['kind' => 'not_installed', 'url' => '/settings/market'],
         ], $state);
+    }
+
+    /**
+     * Regression (issue #834 review): this runs on every page via base.html.twig, so a plugin
+     * whose settings-page construction blows up resolving filler availability must not take the
+     * whole page down with it — it degrades to "inactive, no hint" and logs, the same way
+     * SettingsNavigationService degrades its plugin settings sidebar group (issue #822).
+     */
+    public function testSearchPluginsStateDegradesToInactiveWithNoHintWhenThePresenterThrows(): void
+    {
+        $presenter = $this->createStub(FillerAvailabilityPresenter::class);
+        $presenter->method('hasActiveFiller')->willThrowException(new \RuntimeException('broken plugin constructor'));
+
+        $logger = $this->createMock(\Psr\Log\LoggerInterface::class);
+        $logger->expects($this->once())->method('error');
+
+        $state = (new TopNavExtension($presenter, $logger))->searchPluginsState();
+
+        $this->assertSame(['active' => false, 'hint' => null], $state);
     }
 }
