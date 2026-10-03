@@ -61,6 +61,13 @@
         const confirmToken = root.dataset.confirmToken;
         const animeNewUrl = root.dataset.animeNewUrl;
 
+        // The server now decides whether a scan is running from its own job lock, not from this
+        // URL's `?started=1` (issue #834 review) — stripping it here keeps a later F5 or
+        // back/forward navigation from looking like a fresh "just triggered a scan" request.
+        if (window.history && window.location.search !== '') {
+            window.history.replaceState(null, '', window.location.pathname);
+        }
+
         const progressBox = root.querySelector('#storage-scan-progress');
         const progressBar = root.querySelector('#storage-scan-progress-bar');
         const progressText = root.querySelector('#storage-scan-progress-text');

@@ -37,4 +37,16 @@ final readonly class ScanStorageMessage
         public int $storageId,
     ) {
     }
+
+    /**
+     * The {@see \App\Service\JobLock\JobLockService} key a scan of $storageId runs under —
+     * shared by {@see \App\MessageHandler\ScanStorageMessageHandler}, which acquires it, and
+     * {@see \App\Controller\StorageController::scanProgress()} (issue #834 review), which only
+     * reads whether it is currently held, so both sides can never drift onto different keys for
+     * the same storage.
+     */
+    public static function jobKey(int $storageId): string
+    {
+        return \sprintf('scan:storage:%d', $storageId);
+    }
 }

@@ -30,6 +30,7 @@ namespace App\Controller;
 use App\Entity\Storage;
 use App\Message\ScanStorageMessage;
 use App\Repository\StorageRepository;
+use App\Service\JobLock\JobLockService;
 use App\Service\Storage\StorageAvailabilityService;
 use App\Service\Storage\StorageMarkerService;
 use Doctrine\ORM\EntityManagerInterface;
@@ -75,6 +76,7 @@ final class StorageController
         private readonly Environment $twig,
         private readonly StorageMarkerService $storageMarker,
         private readonly StorageAvailabilityService $storageAvailability,
+        private readonly JobLockService $jobLockService,
     ) {
     }
 
@@ -124,19 +126,26 @@ final class StorageController
      * rather than a settings screen (the same reasoning storage_scan_prompt already follows — see
      * base.html.twig's top-nav highlighting). Every trigger of a scan — this controller's own
      * {@see scan()}, the storage list's Scan button, and storage_scan_prompt's form — posts to
-     * `storage_scan`, which redirects here with `started=1`.
+     * `storage_scan`, which redirects here with `?started=1`.
      *
-     * `started` gates which state the template renders: a bare GET without it (a page refresh
-     * once the scan already finished, or a direct link) shows a static "scan not started" prompt
-     * instead of mounting storage-scan.js and its 15-second no-response timeout — there is no
-     * scan to wait for in that case, and nothing here claims otherwise.
+     * The template's "is a scan actually running" state (`started`, despite the name) is read from
+     * {@see JobLockService::isLocked()} on {@see ScanStorageMessage::jobKey()} — the same lock
+     * {@see \App\MessageHandler\ScanStorageMessageHandler} holds while scanning — rather than from
+     * the `?started=1` query string (issue #834 review): that parameter only reflects the moment
+     * the redirect was built, so F5, a back/forward navigation, or a bookmarked link kept it
+     * claiming a scan was running long after it had already finished, and the page sat mounting
+     * storage-scan.js's 15-second no-response timeout for a scan that would never report in. A
+     * bare GET with no lock held — whether `started` is present or not — renders the static "scan
+     * not started" prompt instead.
      */
     #[Route('/storage/{id}/scan-progress', name: 'storage_scan_progress', methods: ['GET'])]
-    public function scanProgress(Storage $storage, Request $request): Response
+    public function scanProgress(Storage $storage): Response
     {
+        $storageId = $storage->id ?? throw new \LogicException('Storage must be persisted before its scan progress can be shown.');
+
         return new Response($this->twig->render('storage/scan_progress.html.twig', [
             'storage' => $storage,
-            'started' => $request->query->getBoolean('started'),
+            'started' => $this->jobLockService->isLocked(ScanStorageMessage::jobKey($storageId)),
         ]));
     }
 
