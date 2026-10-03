@@ -31,6 +31,13 @@
     padding: 8px 16px;
     border-bottom: 1px solid var(--bs-border-color);
     background: var(--bs-body-bg);
+    // Creates its own stacking context above the page body (issue #834 review): without it, a
+    // page's own `position: sticky` content (e.g. anime-list's chips row, z-index 1020) sits above
+    // this nav's `.dropdown-menu` (Bootstrap's default z-index 1000), so the open "Add" menu's
+    // lower items render underneath that content and swallow its clicks. $zindex-fixed (1030) is
+    // Bootstrap's own value for "always above the page", one tier above sticky (1020).
+    position: relative;
+    z-index: 1030;
 }
 
 .app-nav__brand {
