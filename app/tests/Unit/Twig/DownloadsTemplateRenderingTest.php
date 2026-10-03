@@ -93,12 +93,27 @@ final class DownloadsTemplateRenderingTest extends KernelTestCase
         ], $overrides);
     }
 
-    public function testEmptyStateRendersWithoutATable(): void
+    /**
+     * The table is always rendered (just hidden) rather than omitted: downloads-list.js needs a
+     * live <tbody data-downloads-rows> to append rows into whenever a later poll response turns
+     * out non-empty, which an SSR-only "no table at all" markup could never provide without a
+     * full page reload.
+     */
+    public function testEmptyStateRendersAHiddenTableAndAVisibleEmptyMessage(): void
     {
         $html = $this->render(['rows' => [], 'orphans' => [], 'qbittorrentAvailable' => true]);
 
         $this->assertStringContainsString('Загрузок пока нет.', $html);
-        $this->assertStringNotContainsString('data-downloads-table', $html);
+        $this->assertMatchesRegularExpression('/data-downloads-table-wrapper\b[^>]*\bhidden\b/', $html);
+        $this->assertDoesNotMatchRegularExpression('/data-downloads-empty\b[^>]*\bhidden\b/', $html);
+    }
+
+    public function testNonEmptyStateRendersAVisibleTableAndAHiddenEmptyMessage(): void
+    {
+        $html = $this->render(['rows' => [$this->row()], 'orphans' => [], 'qbittorrentAvailable' => true]);
+
+        $this->assertDoesNotMatchRegularExpression('/data-downloads-table-wrapper\b[^>]*\bhidden\b/', $html);
+        $this->assertMatchesRegularExpression('/data-downloads-empty\b[^>]*\bhidden\b/', $html);
     }
 
     public function testRowRendersAsALinkToTheAnimeCardWithoutTheNoCardBadge(): void

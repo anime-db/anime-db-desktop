@@ -86,6 +86,8 @@
         const noCardLabel = root.dataset.noCardLabel;
         const banner = root.querySelector('[data-downloads-banner]');
         const tbody = root.querySelector('[data-downloads-rows]');
+        const tableWrapper = root.querySelector('[data-downloads-table-wrapper]');
+        const emptyMessage = root.querySelector('[data-downloads-empty]');
 
         // Mirrors the three states a single poll cycle moves through: nothing scheduled and
         // nothing in flight (both null), a timer waiting out the interval (timer set), or a
@@ -98,6 +100,15 @@
             if (banner) {
                 banner.hidden = data.qbittorrentAvailable;
             }
+
+            const hasAnyRow = data.rows.length > 0 || data.orphans.length > 0;
+            if (tableWrapper) {
+                tableWrapper.hidden = !hasAnyRow;
+            }
+            if (emptyMessage) {
+                emptyMessage.hidden = hasAnyRow;
+            }
+
             if (!tbody) {
                 return;
             }
