@@ -112,6 +112,19 @@ use Psr\Log\LoggerInterface;
  * that treats "pull ran" as a one-time completion signal (connect-seed's own dispatch flag,
  * {@see \App\MessageHandler\SyncSeedMessageHandler}) needs to tell "actually pulled" apart from
  * "stopped short on a dead OAuth session" to know whether to retry once credentials are fixed.
+ *
+ * Per-item isolation (issue #859): unlike the dead-OAuth-session case above, a failure while
+ * processing one specific item (fillNewFrom(), reconcilePulledItem(), or the per-item flush()
+ * that follows it) is not a reason to stop the run — the rest of the plugin's list is still
+ * reachable, so skipping just this one item and continuing is the self-healing move. The item
+ * stays in $presentExternalIds (it was genuinely in the source's list), its exception is logged
+ * as a warning with the plugin and external id, and anything it already mutated in memory is
+ * discarded via EntityManagerInterface::refresh() so a later flush() in this same run cannot
+ * durably commit a half-applied item. If the failure is a Doctrine exception that closed the
+ * EntityManager, this falls onto the same recovery EntityManager as the create-conflict path
+ * above (opening one if this run has not already); detectors are skipped for this run under the
+ * same rule a lost create race already follows. ReauthRequiredException is explicitly excluded
+ * from this isolation — it keeps stopping the whole run, as described above.
  */
 final class PullSyncService
 {
@@ -170,78 +183,111 @@ final class PullSyncService
                 $anime = $byExternalId[$item->externalId] ?? null;
                 $status = WatchStatusMapper::toWatchStatus($item->status);
 
-                if ($anime === null) {
-                    if ($recoveryEntityManager !== null) {
-                        // A further, unrelated new item after this run's EntityManager was
-                        // already closed by an earlier conflict — BulkFillerService is bound to
-                        // that closed instance, so it cannot be used again this run.
-                        $this->logger->warning('Skipping a new item this run: an earlier create conflict already closed this pull\'s EntityManager.', [
-                            'pluginId' => (string) $pluginId,
-                            'externalId' => $item->externalId,
-                        ]);
-
-                        continue;
-                    }
-
-                    // Durably commit everything accumulated so far before the one conflict-prone
-                    // operation left in this run (BulkFillerService::build()'s own isolated
-                    // flush): if that flush fails, nothing already-processed here is lost with it.
-                    $this->entityManager->flush();
-
-                    try {
-                        $anime = $this->bulkFillerService->fillNewFrom($sync, $pluginId, $item->externalId);
-                    } catch (ExternalIdAlreadyClaimedException $conflict) {
-                        $recoveryEntityManager = $this->openRecoveryEntityManager();
-                        // Issue #839: BulkFillerService no longer closes $this->entityManager to
-                        // report this conflict (it links the external id via a DBAL `INSERT ...
-                        // ON CONFLICT DO NOTHING` instead of a failing ORM flush), so it is no
-                        // longer closing's own side effect (EntityManager::close() clears the
-                        // UnitOfWork first) that wipes $this->entityManager's identity map for
-                        // us. Without an explicit clear() here, $this->entityManager would still
-                        // hold whatever stale copy of the winning Anime it last loaded (e.g. the
-                        // very row $winner above was just persisted through), which this run's
-                        // every remaining update goes through $recoveryEntityManager instead —
-                        // a caller reusing this shared, request-scoped EntityManager after this
-                        // pull() returns needs a clean slate, not a copy this run's own recovery
-                        // writes never touch.
-                        $this->entityManager->clear();
-                        $anime = $recoveryEntityManager->find(Anime::class, $conflict->animeId);
-                    }
-
+                try {
                     if ($anime === null) {
-                        continue;
+                        if ($recoveryEntityManager !== null) {
+                            // A further, unrelated new item after this run's EntityManager was
+                            // already closed by an earlier conflict — BulkFillerService is bound to
+                            // that closed instance, so it cannot be used again this run.
+                            $this->logger->warning('Skipping a new item this run: an earlier create conflict already closed this pull\'s EntityManager.', [
+                                'pluginId' => (string) $pluginId,
+                                'externalId' => $item->externalId,
+                            ]);
+
+                            continue;
+                        }
+
+                        // Durably commit everything accumulated so far before the one conflict-prone
+                        // operation left in this run (BulkFillerService::build()'s own isolated
+                        // flush): if that flush fails, nothing already-processed here is lost with it.
+                        $this->entityManager->flush();
+
+                        try {
+                            $anime = $this->bulkFillerService->fillNewFrom($sync, $pluginId, $item->externalId);
+                        } catch (ExternalIdAlreadyClaimedException $conflict) {
+                            $recoveryEntityManager = $this->openRecoveryEntityManager();
+                            // Issue #839: BulkFillerService no longer closes $this->entityManager to
+                            // report this conflict (it links the external id via a DBAL `INSERT ...
+                            // ON CONFLICT DO NOTHING` instead of a failing ORM flush), so it is no
+                            // longer closing's own side effect (EntityManager::close() clears the
+                            // UnitOfWork first) that wipes $this->entityManager's identity map for
+                            // us. Without an explicit clear() here, $this->entityManager would still
+                            // hold whatever stale copy of the winning Anime it last loaded (e.g. the
+                            // very row $winner above was just persisted through), which this run's
+                            // every remaining update goes through $recoveryEntityManager instead —
+                            // a caller reusing this shared, request-scoped EntityManager after this
+                            // pull() returns needs a clean slate, not a copy this run's own recovery
+                            // writes never touch.
+                            $this->entityManager->clear();
+                            $anime = $recoveryEntityManager->find(Anime::class, $conflict->animeId);
+                        }
+
+                        if ($anime === null) {
+                            continue;
+                        }
+
+                        $byExternalId[$item->externalId] = $anime;
+                        if ($recoveryEntityManager === null) {
+                            $newlyCreated[] = $anime;
+                        }
+                    } elseif ($recoveryEntityManager !== null) {
+                        // Re-fetch through the recovery manager: $anime above is still managed by
+                        // the now-closed original one, and a different EntityManager's UnitOfWork
+                        // has no idea that object exists.
+                        $anime = $recoveryEntityManager->find(Anime::class, $anime->id) ?? $anime;
                     }
 
-                    $byExternalId[$item->externalId] = $anime;
-                    if ($recoveryEntityManager === null) {
-                        $newlyCreated[] = $anime;
+                    // Reconciliation engine (issue #366): decides whether this item's projection
+                    // actually wins over local's current one (and over any other active plugin's
+                    // last-seen), applies the winner to $anime via Anime::applyWatchProgress() — which
+                    // itself absorbs an invariant rejection (Completed while not yet Released) by
+                    // flagging it rather than throwing, the same self-healing stance this loop takes
+                    // everywhere else — and forward-propagates to every other active, resolvable
+                    // plugin whose current reading disagrees with the winner, $pluginId included
+                    // (origin-aware convergence, breaks the pull->push echo, issue #352, without
+                    // suppressing forward propagation — even back to $pluginId itself, issue #366
+                    // review — pitfall #2).
+                    $this->convergenceService->reconcilePulledItem(
+                        $anime,
+                        (string) $pluginId,
+                        new SyncProjection($status, $item->watchedEpisodes),
+                        $item->updatedAt,
+                        $recoveryEntityManager ?? $this->entityManager,
+                    );
+
+                    $recoveryEntityManager?->flush();
+                } catch (ReauthRequiredException $exception) {
+                    // Not this item's problem to isolate — the outer catch below stops the whole
+                    // run for it, same as before this per-item isolation existed.
+                    throw $exception;
+                } catch (\Throwable $exception) {
+                    // Per-item isolation (issue #859): one item's failure (fillNewFrom(),
+                    // reconcilePulledItem(), or a per-item flush() above) must not take the rest
+                    // of this run's list down with it. $presentExternalIds was already set for
+                    // this item above, so DeletedFromSourceDetector never flags it as removed
+                    // just because it was skipped here.
+                    $this->logger->warning('Skipping a pull item that failed during processing; the plugin\'s own list is unaffected and later items are still applied.', [
+                        'pluginId' => (string) $pluginId,
+                        'externalId' => $item->externalId,
+                        'exception' => $exception,
+                    ]);
+
+                    $activeEntityManager = $recoveryEntityManager ?? $this->entityManager;
+                    if (!$activeEntityManager->isOpen()) {
+                        // Doctrine already closed it as its own reaction to the failed flush
+                        // above (same reaction ExternalIdAlreadyClaimedException's handling
+                        // above works around) — every write for the rest of this run, starting
+                        // with the very next item, must go through a fresh EntityManager sharing
+                        // the same DBAL connection instead.
+                        $recoveryEntityManager = $this->openRecoveryEntityManager();
+                    } elseif ($anime !== null && $activeEntityManager->contains($anime)) {
+                        // Discard whatever this item's reconcilePulledItem() applied in memory
+                        // (e.g. Anime::applyWatchProgress()) before failing — without this, the
+                        // next flush() in this run (another item's, or the one after this loop)
+                        // would durably commit this item's half-applied state.
+                        $activeEntityManager->refresh($anime);
                     }
-                } elseif ($recoveryEntityManager !== null) {
-                    // Re-fetch through the recovery manager: $anime above is still managed by
-                    // the now-closed original one, and a different EntityManager's UnitOfWork
-                    // has no idea that object exists.
-                    $anime = $recoveryEntityManager->find(Anime::class, $anime->id) ?? $anime;
                 }
-
-                // Reconciliation engine (issue #366): decides whether this item's projection
-                // actually wins over local's current one (and over any other active plugin's
-                // last-seen), applies the winner to $anime via Anime::applyWatchProgress() — which
-                // itself absorbs an invariant rejection (Completed while not yet Released) by
-                // flagging it rather than throwing, the same self-healing stance this loop takes
-                // everywhere else — and forward-propagates to every other active, resolvable
-                // plugin whose current reading disagrees with the winner, $pluginId included
-                // (origin-aware convergence, breaks the pull->push echo, issue #352, without
-                // suppressing forward propagation — even back to $pluginId itself, issue #366
-                // review — pitfall #2).
-                $this->convergenceService->reconcilePulledItem(
-                    $anime,
-                    (string) $pluginId,
-                    new SyncProjection($status, $item->watchedEpisodes),
-                    $item->updatedAt,
-                    $recoveryEntityManager ?? $this->entityManager,
-                );
-
-                $recoveryEntityManager?->flush();
             }
         } catch (ReauthRequiredException $exception) {
             // Not transient — see the class docblock's "dead OAuth session" section. Flush
