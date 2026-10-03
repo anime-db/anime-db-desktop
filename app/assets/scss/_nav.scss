@@ -65,3 +65,17 @@
     color: var(--bs-primary);
     font-weight: bold;
 }
+
+// Toggled with the `hidden` attribute by nav-add-menu.js when the scan section's fetch fails
+// (issue #872). Bootstrap's `.d-*` utilities carry `!important` and would override `[hidden]`'s
+// `display: none`, so the flex layout lives here instead of a utility class on the toggled
+// element (same approach as .settings-label__name-input-group / .anime-detail__source-fallback).
+.app-nav__scan-loading {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+
+    &[hidden] {
+        display: none;
+    }
+}

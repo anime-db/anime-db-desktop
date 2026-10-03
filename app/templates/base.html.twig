@@ -78,21 +78,20 @@
                             <a class="dropdown-item" href="{{ path('anime_search_plugins') }}">{{ 'nav.add_menu_search_plugins'|trans }}</a>
                         {% else %}
                             <span class="dropdown-item disabled" aria-disabled="true">{{ 'nav.add_menu_search_plugins'|trans }}</span>
-                            {% if searchPluginsState.hint is not null %}
-                                <div class="app-nav__hint px-3 pb-2 small text-body-secondary">
-                                    {{ ('nav.add_menu_search_plugins_hint_' ~ searchPluginsState.hint.kind)|trans }}
-                                    <a href="{{ searchPluginsState.hint.kind == 'not_installed' ? path('settings_market_index', {feature: 'filler'}) : searchPluginsState.hint.url }}">{{ 'nav.add_menu_search_plugins_hint_link'|trans }}</a>
-                                </div>
-                            {% endif %}
                         {% endif %}
                     </li>
+                    {% if not searchPluginsState.active and searchPluginsState.hint is not null %}
+                        <li><span class="dropdown-item-text small text-body-secondary">{{ ('nav.add_menu_search_plugins_hint_' ~ searchPluginsState.hint.kind)|trans }}</span></li>
+                        <li><a class="dropdown-item small" href="{{ searchPluginsState.hint.kind == 'not_installed' ? path('settings_market_index', {feature: 'filler'}) : searchPluginsState.hint.url }}">{{ ('nav.add_menu_search_plugins_hint_link_' ~ searchPluginsState.hint.kind)|trans }}</a></li>
+                    {% endif %}
                     <li><hr class="dropdown-divider"></li>
                     <li class="dropdown-header">{{ 'nav.add_menu_scan_heading'|trans }}</li>
                     <li class="app-nav__scan-section" data-nav-scan-section>
-                        <div class="dropdown-item-text d-flex align-items-center gap-2">
+                        <div class="dropdown-item-text app-nav__scan-loading" data-nav-scan-loading>
                             <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
                             {{ 'nav.add_menu_scan_loading'|trans }}
                         </div>
+                        <div class="dropdown-item-text" data-nav-scan-error hidden>{{ 'nav.add_menu_scan_error'|trans }}</div>
                     </li>
                     <li><hr class="dropdown-divider"></li>
                     <li><a class="dropdown-item" href="{{ path('storage_new') }}">{{ 'nav.add_menu_add_storage'|trans }}</a></li>

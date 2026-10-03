@@ -30,6 +30,8 @@
     function mountNavAddMenu(root) {
         const toggle = root.querySelector('[data-bs-toggle="dropdown"]');
         const section = root.querySelector('[data-nav-scan-section]');
+        const loading = section.querySelector('[data-nav-scan-loading]');
+        const error = section.querySelector('[data-nav-scan-error]');
         const url = root.dataset.scanSectionUrl;
 
         let loaded = false;
@@ -37,10 +39,14 @@
         function onShow() {
             // "Once per page" (issue #834): a second show.bs.dropdown on the same mount — closing
             // and reopening the menu without navigating away — must not fire a second request.
+            // A failed previous attempt (see the catch below) resets `loaded` back to false, so the
+            // next open retries instead of leaving the section stuck on its error state forever.
             if (loaded) {
                 return;
             }
             loaded = true;
+            error.hidden = true;
+            loading.hidden = false;
 
             fetch(url)
                 .then((response) => {
@@ -54,7 +60,12 @@
                     section.outerHTML = html;
                 })
                 .catch(() => {
-                    section.outerHTML = '';
+                    // issue #872: a request failure must not take the whole "Scan" section (and
+                    // its heading) out of the menu — keep the `<li>` in place, show the error
+                    // message instead of the spinner, and allow the next menu open to retry.
+                    loaded = false;
+                    loading.hidden = true;
+                    error.hidden = false;
                 })
                 .finally(() => {
                     // The menu's height just changed (the spinner row was replaced by a, usually
