@@ -610,6 +610,7 @@ nav:
     aria_label: Основная навигация
     brand: AnimeDB
     add_button: Добавить
+    downloads_link: Загрузки
     settings_link: Настройки
     add_menu_search_plugins: Найти в плагинах
     add_menu_search_plugins_hint_not_installed: Плагин-источник не установлен.
@@ -623,3 +624,32 @@ nav:
     add_menu_scan_more: 'Не подключено: %number% →'
     add_menu_add_storage: Добавить хранилище…
     add_menu_empty_entry: Пустая запись
+
+downloads:
+    title: Загрузки — AnimeDB
+    heading: Загрузки
+    empty: Загрузок пока нет.
+    qbittorrent_unavailable: Не удалось получить данные от торрент-клиента. Показан список из базы данных без живых полей.
+    no_card_badge: Без карточки
+    column_name: Название
+    column_status: Статус
+    column_size: Размер
+    column_progress: Прогресс
+    column_download_speed: Приём
+    column_upload_speed: Отдача
+    column_eta: Осталось
+    column_peers: Сиды/пиры
+    column_storage: Хранилище
+    status_pending: Ждёт
+    status_linking: Докачано, привязывается…
+    status_storage_unavailable: Хранилище недоступно
+    status_completed: Готово и привязано
+    status_seeding_stopped: Раздача остановлена
+    status_missing_from_client: Нет в торрент-клиенте
+    status_no_card: Без карточки
+    status_failed_disk_space: 'Ошибка: не хватает места на диске.'
+    status_failed_storage_conflict: 'Ошибка: конфликт хранилища.'
+    status_failed_name_conflict: 'Ошибка: конфликт имени.'
+    status_failed_move_failed: 'Ошибка: не удалось переместить файлы.'
+    status_failed_legacy_layout: 'Ошибка: старая раскладка хранилища.'
+    status_failed_generic: Ошибка

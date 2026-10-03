@@ -610,6 +610,7 @@ nav:
     aria_label: Main navigation
     brand: AnimeDB
     add_button: Add
+    downloads_link: Downloads
     settings_link: Settings
     add_menu_search_plugins: Search in plugins
     add_menu_search_plugins_hint_not_installed: No plugin source is installed.
@@ -623,3 +624,32 @@ nav:
     add_menu_scan_more: 'Not connected: %number% →'
     add_menu_add_storage: Add storage…
     add_menu_empty_entry: Empty entry
+
+downloads:
+    title: Downloads — AnimeDB
+    heading: Downloads
+    empty: No downloads yet.
+    qbittorrent_unavailable: Could not reach the torrent client. Showing the list from the database without live fields.
+    no_card_badge: No card
+    column_name: Name
+    column_status: Status
+    column_size: Size
+    column_progress: Progress
+    column_download_speed: Download
+    column_upload_speed: Upload
+    column_eta: ETA
+    column_peers: Seeds/peers
+    column_storage: Storage
+    status_pending: Waiting
+    status_linking: Finished, linking…
+    status_storage_unavailable: Storage unavailable
+    status_completed: Done and linked
+    status_seeding_stopped: Seeding stopped
+    status_missing_from_client: Not in the torrent client
+    status_no_card: No card
+    status_failed_disk_space: 'Error: not enough disk space.'
+    status_failed_storage_conflict: 'Error: storage conflict.'
+    status_failed_name_conflict: 'Error: name conflict.'
+    status_failed_move_failed: 'Error: failed to move files.'
+    status_failed_legacy_layout: 'Error: legacy storage layout.'
+    status_failed_generic: Error

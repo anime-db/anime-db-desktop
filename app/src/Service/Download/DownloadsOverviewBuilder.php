@@ -1,0 +1,249 @@
+<?php
+
+/**
+ * AnimeDb package.
+ *
+ * @author    Peter Gribanov <info@peter-gribanov.ru>
+ * @copyright Copyright (c) 2026, Peter Gribanov
+ * @license   https://www.gnu.org/licenses/gpl-3.0.html GPL-3.0-or-later
+ */
+
+/*
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+
+declare(strict_types=1);
+
+namespace App\Service\Download;
+
+use App\Entity\Download;
+use App\Entity\Enum\DownloadStatus;
+use App\Entity\Storage;
+use App\Repository\DownloadRepository;
+use App\Service\Storage\StorageMarkerService;
+use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
+use Symfony\Contracts\Translation\TranslatorInterface;
+
+/**
+ * Builds the "Downloads" page's (issue #854) row view-models — both the initial SSR render and
+ * the live-update JSON endpoint share this one method, so the two never drift apart on what
+ * "Pending with progress 1.0" or "no torrent in the client" renders as.
+ *
+ * Deliberately takes the qBittorrent torrents list as a plain array rather than calling
+ * {@see \App\Service\Qbittorrent\QbittorrentClient} itself: the caller makes exactly one
+ * `torrents/info` request (or none, once, if qBittorrent is down) and this class only ever
+ * consumes that single result, which is what keeps the live-update endpoint's "one request per
+ * call" invariant mechanical rather than something this class could accidentally break.
+ *
+ * $qbittorrentAvailable distinguishes "asked qBittorrent and this infoHash was not in the
+ * response" (a download's torrent really is gone from the client) from "qBittorrent itself is
+ * unreachable" (nothing can be said about any torrent one way or the other) — only the former
+ * ever renders "missing from client"/"seeding stopped"/an orphan row; the latter degrades to the
+ * plain DB-only status text with every live field left null.
+ */
+final class DownloadsOverviewBuilder
+{
+    public function __construct(
+        private readonly DownloadRepository $downloads,
+        private readonly StorageMarkerService $storageMarker,
+        private readonly TranslatorInterface $translator,
+        private readonly UrlGeneratorInterface $urlGenerator,
+    ) {
+    }
+
+    /**
+     * @param list<array<string, mixed>> $torrents raw `torrents/info` response; pass an empty
+     *                                             array (with $qbittorrentAvailable false) when
+     *                                             qBittorrent could not be reached at all
+     *
+     * @return array{rows: list<array<string, mixed>>, orphans: list<array<string, mixed>>}
+     */
+    public function build(array $torrents, bool $qbittorrentAvailable): array
+    {
+        $torrentsByInfoHashV1 = [];
+        foreach ($torrents as $torrent) {
+            $infoHashV1 = (string) ($torrent['infohash_v1'] ?? '');
+            if ($infoHashV1 !== '') {
+                $torrentsByInfoHashV1[$infoHashV1] = $torrent;
+            }
+        }
+
+        $rows = [];
+        $claimedInfoHashes = [];
+        foreach ($this->downloads->findAllOrderedByDateAddDesc() as $download) {
+            $infoHash = $download->getInfoHash();
+            $torrent = $torrentsByInfoHashV1[$infoHash] ?? null;
+            if ($torrent !== null) {
+                $claimedInfoHashes[$infoHash] = true;
+            }
+
+            $rows[] = $this->buildRow($download, $torrent, $qbittorrentAvailable && $torrent === null);
+        }
+
+        $orphans = [];
+        if ($qbittorrentAvailable) {
+            foreach ($torrentsByInfoHashV1 as $infoHash => $torrent) {
+                if (!isset($claimedInfoHashes[$infoHash])) {
+                    $orphans[] = $this->buildOrphanRow($infoHash, $torrent);
+                }
+            }
+        }
+
+        return ['rows' => $rows, 'orphans' => $orphans];
+    }
+
+    /**
+     * @param ?array<string, mixed> $torrent
+     *
+     * @return array<string, mixed>
+     */
+    private function buildRow(Download $download, ?array $torrent, bool $torrentKnownMissing): array
+    {
+        $anime = $download->getAnime();
+        $targetStorage = $download->getTargetStorage();
+
+        return [
+            'infoHash' => $download->getInfoHash(),
+            'hasCard' => true,
+            'animeId' => $anime->id,
+            'animeUrl' => $anime->id !== null ? $this->urlGenerator->generate('anime_show', ['id' => $anime->id]) : null,
+            'displayName' => $torrent['name'] ?? $anime->getTitle(),
+            'coreStatus' => $download->getStatus()->value,
+            'statusText' => $this->statusText($download, $torrent, $torrentKnownMissing, $targetStorage),
+            'targetStorageName' => $targetStorage?->getName(),
+        ] + $this->liveFields($torrent);
+    }
+
+    /**
+     * @param array<string, mixed> $torrent
+     *
+     * @return array<string, mixed>
+     */
+    private function buildOrphanRow(string $infoHash, array $torrent): array
+    {
+        return [
+            'infoHash' => $infoHash,
+            'hasCard' => false,
+            'animeId' => null,
+            'animeUrl' => null,
+            'displayName' => (string) ($torrent['name'] ?? $infoHash),
+            'coreStatus' => null,
+            'statusText' => $this->translator->trans('downloads.status_no_card'),
+            'targetStorageName' => null,
+        ] + $this->liveFields($torrent);
+    }
+
+    /**
+     * @param ?array<string, mixed> $torrent
+     *
+     * @return array<string, mixed>
+     */
+    private function liveFields(?array $torrent): array
+    {
+        if ($torrent === null) {
+            return [
+                'sizeText' => null,
+                'progressText' => null,
+                'downloadSpeedText' => null,
+                'uploadSpeedText' => null,
+                'etaText' => null,
+                'state' => null,
+                'peersText' => null,
+            ];
+        }
+
+        $size = (int) ($torrent['size'] ?? 0);
+        $progress = (float) ($torrent['progress'] ?? 0);
+        $eta = (int) ($torrent['eta'] ?? 0);
+        $numSeeds = (int) ($torrent['num_seeds'] ?? 0);
+        $numLeechs = (int) ($torrent['num_leechs'] ?? 0);
+
+        return [
+            'sizeText' => $this->formatBytes($size),
+            'progressText' => \sprintf('%d%%', (int) round($progress * 100)),
+            'downloadSpeedText' => $this->formatBytes((int) ($torrent['dlspeed'] ?? 0)).'/s',
+            'uploadSpeedText' => $this->formatBytes((int) ($torrent['upspeed'] ?? 0)).'/s',
+            // qBittorrent reports 8640000 (100 days) as its "unknown/never" ETA sentinel.
+            'etaText' => $eta > 0 && $eta < 8640000 ? $this->formatDuration($eta) : null,
+            'state' => (string) ($torrent['state'] ?? ''),
+            'peersText' => \sprintf('%d/%d', $numSeeds, $numLeechs),
+        ];
+    }
+
+    /**
+     * @param ?array<string, mixed> $torrent
+     */
+    private function statusText(Download $download, ?array $torrent, bool $torrentKnownMissing, ?Storage $targetStorage): string
+    {
+        $status = $download->getStatus();
+
+        if ($status === DownloadStatus::Completed) {
+            return $this->translator->trans($torrentKnownMissing ? 'downloads.status_seeding_stopped' : 'downloads.status_completed');
+        }
+
+        if ($torrentKnownMissing) {
+            return $this->translator->trans('downloads.status_missing_from_client');
+        }
+
+        if ($status === DownloadStatus::Failed) {
+            return $this->translator->trans($this->failureReasonKey($download->getFailureReason()));
+        }
+
+        // Pending from here on.
+        if ($targetStorage !== null && $this->storageMarker->readMarkerId($targetStorage->getPath()) !== $targetStorage->id) {
+            return $this->translator->trans('downloads.status_storage_unavailable');
+        }
+
+        if ($torrent !== null && (float) ($torrent['progress'] ?? 0) >= 1.0) {
+            return $this->translator->trans('downloads.status_linking');
+        }
+
+        return $this->translator->trans('downloads.status_pending');
+    }
+
+    private function failureReasonKey(?string $failureReason): string
+    {
+        return match ($failureReason) {
+            'disk_space' => 'downloads.status_failed_disk_space',
+            'storage_conflict' => 'downloads.status_failed_storage_conflict',
+            'name_conflict' => 'downloads.status_failed_name_conflict',
+            'move_failed' => 'downloads.status_failed_move_failed',
+            'legacy_layout' => 'downloads.status_failed_legacy_layout',
+            default => 'downloads.status_failed_generic',
+        };
+    }
+
+    private function formatBytes(int $bytes): string
+    {
+        $units = ['B', 'KB', 'MB', 'GB', 'TB'];
+        $value = (float) max(0, $bytes);
+
+        $unitIndex = 0;
+        while ($value >= 1024.0 && $unitIndex < \count($units) - 1) {
+            $value /= 1024.0;
+            ++$unitIndex;
+        }
+
+        return \sprintf($unitIndex === 0 ? '%d %s' : '%.1f %s', $value, $units[$unitIndex]);
+    }
+
+    private function formatDuration(int $seconds): string
+    {
+        $hours = \intdiv($seconds, 3600);
+        $minutes = \intdiv($seconds % 3600, 60);
+        $secs = $seconds % 60;
+
+        return $hours > 0 ? \sprintf('%d:%02d:%02d', $hours, $minutes, $secs) : \sprintf('%d:%02d', $minutes, $secs);
+    }
+}

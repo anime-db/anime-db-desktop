@@ -65,6 +65,16 @@ class DownloadRepository
         return $this->entityManager->getRepository(Download::class)->findBy(['infoHash' => $infoHash]);
     }
 
+    /**
+     * Every row, newest first — the "Downloads" page's own listing (issue #854).
+     *
+     * @return list<Download>
+     */
+    public function findAllOrderedByDateAddDesc(): array
+    {
+        return $this->entityManager->getRepository(Download::class)->findBy([], ['dateAdd' => 'DESC']);
+    }
+
     /** @return list<Download> */
     public function findPendingByInfoHash(string $infoHash): array
     {

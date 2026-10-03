@@ -59,6 +59,8 @@
         {% set current_nav_section = 'catalog' %}
     {% elseif current_route starts with 'settings_' or current_route starts with 'storage_' %}
         {% set current_nav_section = 'settings' %}
+    {% elseif current_route starts with 'downloads_' %}
+        {% set current_nav_section = 'downloads' %}
     {% else %}
         {% set current_nav_section = '' %}
     {% endif %}
@@ -98,6 +100,11 @@
                     <li><a class="dropdown-item" href="{{ path('anime_new') }}">{{ 'nav.add_menu_empty_entry'|trans }}</a></li>
                 </ul>
             </div>
+
+            <a class="app-nav__link{% if current_nav_section == 'downloads' %} app-nav__link--active{% endif %} btn btn-outline-secondary d-inline-flex align-items-center gap-1" href="{{ path('downloads_index') }}"{% if current_nav_section == 'downloads' %} aria-current="page"{% endif %}>
+                {{ icon('download') }}
+                {{ 'nav.downloads_link'|trans }}
+            </a>
 
             <a class="app-nav__link{% if current_nav_section == 'settings' %} app-nav__link--active{% endif %} btn btn-outline-secondary d-inline-flex align-items-center gap-1" href="{{ path('settings_index') }}"{% if current_nav_section == 'settings' %} aria-current="page"{% endif %}>
                 {{ icon('gear') }}

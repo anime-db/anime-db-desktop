@@ -1,0 +1,80 @@
+{#
+ # AnimeDb package.
+ #
+ # @author    Peter Gribanov <info@peter-gribanov.ru>
+ # @copyright Copyright (c) 2026, Peter Gribanov
+ # @license   https://www.gnu.org/licenses/gpl-3.0.html GPL-3.0-or-later
+ #
+ # This program is free software: you can redistribute it and/or modify
+ # it under the terms of the GNU General Public License as published by
+ # the Free Software Foundation, either version 3 of the License, or
+ # (at your option) any later version.
+ #
+ # This program is distributed in the hope that it will be useful,
+ # but WITHOUT ANY WARRANTY; without even the implied warranty of
+ # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ # GNU General Public License for more details.
+ #
+ # You should have received a copy of the GNU General Public License
+ # along with this program. If not, see <https://www.gnu.org/licenses/>.
+ #}
+{% extends 'base.html.twig' %}
+
+{% block title %}{{ 'downloads.title'|trans }}{% endblock %}
+
+{% block body %}
+    {# data-status-url feeds downloads-list.js's polling loop (issue #854); the rows/orphans
+     # markup below is rebuilt wholesale by that same control on every successful poll, so its
+     # row-building logic must stay in lockstep with the <tr> shape here — see downloads-list.js. #}
+    <main class="downloads-list py-4" data-control="downloads-list" data-status-url="{{ path('downloads_status') }}" data-no-card-label="{{ 'downloads.no_card_badge'|trans }}">
+        <h1>{{ 'downloads.heading'|trans }}</h1>
+
+        <div class="alert alert-warning" data-downloads-banner{% if qbittorrentAvailable %} hidden{% endif %}>
+            {{ 'downloads.qbittorrent_unavailable'|trans }}
+        </div>
+
+        {% if rows is empty and orphans is empty %}
+            <p class="text-body-secondary" data-downloads-empty>{{ 'downloads.empty'|trans }}</p>
+        {% else %}
+            <div class="table-responsive">
+                <table class="table align-middle" data-downloads-table>
+                    <thead>
+                        <tr>
+                            <th>{{ 'downloads.column_name'|trans }}</th>
+                            <th>{{ 'downloads.column_status'|trans }}</th>
+                            <th>{{ 'downloads.column_size'|trans }}</th>
+                            <th>{{ 'downloads.column_progress'|trans }}</th>
+                            <th>{{ 'downloads.column_download_speed'|trans }}</th>
+                            <th>{{ 'downloads.column_upload_speed'|trans }}</th>
+                            <th>{{ 'downloads.column_eta'|trans }}</th>
+                            <th>{{ 'downloads.column_peers'|trans }}</th>
+                            <th>{{ 'downloads.column_storage'|trans }}</th>
+                        </tr>
+                    </thead>
+                    <tbody data-downloads-rows>
+                        {% for row in rows|merge(orphans) %}
+                            <tr data-info-hash="{{ row.infoHash }}"{% if not row.hasCard %} class="table-warning"{% endif %}>
+                                <td>
+                                    {% if row.animeUrl is not null %}<a href="{{ row.animeUrl }}">{% endif %}
+                                        <bdi>{{ row.displayName }}</bdi>
+                                    {% if row.animeUrl is not null %}</a>{% endif %}
+                                    {% if not row.hasCard %}
+                                        <span class="badge text-bg-secondary ms-1">{{ 'downloads.no_card_badge'|trans }}</span>
+                                    {% endif %}
+                                </td>
+                                <td>{{ row.statusText }}</td>
+                                <td>{{ row.sizeText }}</td>
+                                <td>{{ row.progressText }}</td>
+                                <td>{{ row.downloadSpeedText }}</td>
+                                <td>{{ row.uploadSpeedText }}</td>
+                                <td>{{ row.etaText }}</td>
+                                <td>{{ row.peersText }}</td>
+                                <td>{{ row.targetStorageName }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% endif %}
+    </main>
+{% endblock %}
