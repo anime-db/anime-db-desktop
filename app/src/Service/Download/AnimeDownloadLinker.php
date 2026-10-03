@@ -28,11 +28,9 @@ declare(strict_types=1);
 namespace App\Service\Download;
 
 use App\Entity\Download;
-use App\Entity\Enum\StorageType;
-use App\Entity\Storage;
 use App\Repository\AnimeRepository;
-use App\Repository\StorageRepository;
 use App\Service\Exception\DownloadStoragePathConflictException;
+use App\Service\Exception\DownloadTargetStorageMissingException;
 use Doctrine\ORM\EntityManagerInterface;
 
 /**
@@ -46,16 +44,14 @@ use Doctrine\ORM\EntityManagerInterface;
  * itself, before any plugin ever sees the download.
  *
  * Reuses the existing Storage abstraction rather than inventing a second "this anime lives at
- * this raw path" mechanism: the downloads root becomes a single shared, find-or-created Storage
- * row (same as any user-added storage), and each linked Anime gets $storagePath relative to it —
+ * this raw path" mechanism: $download->getTargetStorage() (issue #851 — the Storage it was
+ * enqueued into, set by QbittorrentDownloadService::enqueueTo() before the row was ever written)
+ * IS the Storage the anime is linked to, and $storagePath is computed relative to it —
  * consistent with how the file scanner already links Anime to files under a Storage.
  */
 final class AnimeDownloadLinker
 {
-    private const string DOWNLOADS_STORAGE_NAME = 'Downloads';
-
     public function __construct(
-        private readonly StorageRepository $storages,
         private readonly AnimeRepository $animes,
         private readonly EntityManagerInterface $entityManager,
         private readonly DownloadFolderJail $jail,
@@ -68,22 +64,22 @@ final class AnimeDownloadLinker
      * row never exists in the database without the snapshot a later unlink needs (issue #837).
      *
      * @throws \App\Service\Exception\DownloadPathOutsideJailException if $contentPath is not
-     *                                                                 inside the configured downloads root
+     *                                                                 inside $download's target storage
      * @throws DownloadStoragePathConflictException                    if another Anime already holds the same
      *                                                                 (storage, relative path) pair
+     * @throws DownloadTargetStorageMissingException                   if $download's target storage was
+     *                                                                 deleted while it was still in flight
      */
     public function link(Download $download, string $contentPath): void
     {
         $anime = $download->getAnime();
-        $root = $this->jail->getRoot();
-        $resolvedPath = $this->jail->assertWithinRoot($contentPath);
+        $storage = $download->getTargetStorage() ?? throw new DownloadTargetStorageMissingException($download->getInfoHash());
+        $root = $storage->getPath();
+        $resolvedPath = $this->jail->assertWithinRoot($root, $contentPath);
 
-        $storage = $this->storages->findOneByPath($root) ?? $this->createDownloadsStorage($root);
-        $relativePath = ltrim(substr($resolvedPath, \strlen($root)), '\\/');
+        $relativePath = ltrim(substr($resolvedPath, \strlen(rtrim($root, '\\/'))), '\\/');
 
-        // Checked BEFORE writing: the pair is unique in the schema, and a flush() that violates it
-        // closes the EntityManager. A Storage created just above has no id yet and so no Anime.
-        $occupant = $storage->id !== null ? $this->animes->findByStorageAndPath($storage, $relativePath) : null;
+        $occupant = $this->animes->findByStorageAndPath($storage, $relativePath);
         if ($occupant !== null && $occupant->id !== $anime->id) {
             throw new DownloadStoragePathConflictException($occupant->id ?? throw new \LogicException('Anime loaded from the database must have an id.'), $relativePath);
         }
@@ -91,13 +87,5 @@ final class AnimeDownloadLinker
         $anime->setStorage($storage)->setStoragePath($relativePath);
         $download->recordLinkedStorage($storage, $relativePath);
         $this->entityManager->flush();
-    }
-
-    private function createDownloadsStorage(string $root): Storage
-    {
-        $storage = new Storage(self::DOWNLOADS_STORAGE_NAME, $root, StorageType::Folder);
-        $this->entityManager->persist($storage);
-
-        return $storage;
     }
 }

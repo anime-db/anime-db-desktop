@@ -37,9 +37,6 @@ use App\Entity\Storage;
 use App\Entity\TvAnime;
 use App\Repository\AnimeRepository;
 use App\Repository\DownloadRepository;
-use App\Repository\StorageRepository;
-use App\Service\AppConfigStore;
-use App\Service\AppSettingsProvider;
 use App\Service\Download\AnimeDownloadLinker;
 use App\Service\Download\DownloadFolderJail;
 use App\Service\Download\DownloadFolderPointer;
@@ -262,31 +259,20 @@ final class DownloadsUnlinkCommandTest extends TestCase
 
         $animeB = $this->persistAnime('Anime B');
         $newDownload = new Download(self::HASH, $animeB);
+        $newDownload->assignTargetStorage($storage);
         $this->entityManager->persist($newDownload);
         $this->entityManager->flush();
 
-        $configPath = sys_get_temp_dir().'/anime-downloads-unlink-test-'.uniqid().'.json';
-        file_put_contents($configPath, json_encode(['downloadsRoot' => self::ROOT]));
+        $jail = new DownloadFolderJail();
+        $linker = new AnimeDownloadLinker(
+            new AnimeRepository($this->entityManager),
+            $this->entityManager,
+            $jail,
+        );
 
-        try {
-            $jail = new DownloadFolderJail(new AppSettingsProvider(new AppConfigStore($configPath)));
-            $linker = new AnimeDownloadLinker(
-                new StorageRepository($this->entityManager),
-                new AnimeRepository($this->entityManager),
-                $this->entityManager,
-                $jail,
-            );
-
-            // Would throw DownloadStoragePathConflictException before the unlink above freed the
-            // (storage, path) pair — this is the whole point of issue #837.
-            $linker->link($newDownload, self::ROOT.'\\shared-pack');
-        } finally {
-            foreach ([$configPath, $configPath.'.tmp', $configPath.'.lock'] as $file) {
-                if (is_file($file)) {
-                    unlink($file);
-                }
-            }
-        }
+        // Would throw DownloadStoragePathConflictException before the unlink above freed the
+        // (storage, path) pair — this is the whole point of issue #837.
+        $linker->link($newDownload, self::ROOT.'\\shared-pack');
 
         $this->assertSame('shared-pack', $animeB->getStoragePath());
     }

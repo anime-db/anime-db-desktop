@@ -35,24 +35,44 @@ use AnimeDb\PluginContracts\Download\DownloadTaskId;
 use AnimeDb\PluginContracts\Model\AnimeId;
 use App\Entity\Anime;
 use App\Entity\Download;
+use App\Entity\Storage;
 use App\Repository\DownloadRepository;
+use App\Service\Exception\DownloadNotConfirmedException;
+use App\Service\Exception\DownloadStorageNotWritableException;
+use App\Service\Exception\DownloadStorageUnavailableException;
 use App\Service\Exception\InvalidTorrentFileException;
 use App\Service\Qbittorrent\QbittorrentClient;
+use App\Service\Storage\StorageMarkerService;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\ORM\EntityManagerInterface;
 
 /**
  * Core implementation of {@see DownloadServiceInterface} (issue #346) on top of qbittorrent-nox's
  * WebUI: qBittorrent is itself the durable store of a torrent's queue/progress/fast-resume data,
- * so enqueue() only ever (a) tells qBittorrent to start a NEW infoHash and (b) records the
+ * so enqueueTo() only ever (a) tells qBittorrent to start a NEW infoHash and (b) records the
  * (infoHash, anime) pairing this app cares about — it never builds a parallel download manager.
  *
  * DownloadTaskId is the torrent's infoHash, computed up front by TorrentInfoHashResolver rather
  * than read back from qBittorrent after adding it: that is what makes idempotency checkable
- * BEFORE any network call — see enqueue().
+ * BEFORE any network call — see enqueueTo().
+ *
+ * enqueue(), the {@see DownloadServiceInterface} contract method, keeps its original signature
+ * (issue #851: no change to the read-only anime-db/plugin-contracts package) and simply calls
+ * enqueueTo() with the lazily created preset Storage: a plugin calling through the contract has
+ * no UI to pick a storage, so the choice has to be deterministic.
  */
 final class QbittorrentDownloadService implements DownloadServiceInterface
 {
+    /**
+     * Same shape as {@see \App\Service\Plugin\PluginDirectoryRemover}: `torrents/add` answers
+     * 200 even for some malformed input (see class docblock in the issue's "Детали"), so the
+     * only proof a submitted torrent was actually accepted is finding it back in `torrents/info`
+     * — polled a bounded number of times rather than trusted on the first miss, since qBittorrent
+     * processing the add is not instantaneous.
+     */
+    private const int CONFIRMATION_MAX_ATTEMPTS = 5;
+    private const int CONFIRMATION_RETRY_DELAY_MICROSECONDS = 200_000;
+
     public function __construct(
         private readonly QbittorrentClient $client,
         private readonly DownloadRepository $downloads,
@@ -60,11 +80,30 @@ final class QbittorrentDownloadService implements DownloadServiceInterface
         private readonly DownloadFolderJail $jail,
         private readonly TorrentInfoHashResolver $infoHashResolver,
         private readonly FreeSpaceChecker $freeSpaceChecker,
+        private readonly PresetDownloadsStorageProvider $presetStorageProvider,
+        private readonly StorageMarkerService $markerService,
+        private readonly DownloadStorageFilesystem $storageFilesystem,
     ) {
     }
 
     public function enqueue(DownloadSource $source, AnimeId $anime): DownloadTaskId
     {
+        return $this->enqueueTo($source, $anime, $this->presetStorageProvider->getOrCreate());
+    }
+
+    /**
+     * @throws DownloadStorageNotWritableException if $storage's type cannot hold a download
+     * @throws DownloadStorageUnavailableException if $storage's path does not exist, or its
+     *                                             desktop.ini marker does not name $storage
+     * @throws DownloadNotConfirmedException       if qBittorrent never reports the submitted
+     *                                             torrent back within the confirmation retries
+     */
+    public function enqueueTo(DownloadSource $source, AnimeId $anime, Storage $storage): DownloadTaskId
+    {
+        if (!$storage->getType()->isWritable()) {
+            throw new DownloadStorageNotWritableException($storage->getType());
+        }
+
         // Read once up front (not re-read in resolveInfoHash()/submitToQbittorrent() below):
         // a .torrent file is only ever needed for a Magnet-less source, and reading it once
         // avoids a second disk hit for the exact same bytes.
@@ -94,15 +133,20 @@ final class QbittorrentDownloadService implements DownloadServiceInterface
             throw new DownloadAlreadyLinkedToAnotherAnimeException($infoHash, new AnimeId((int) $occupying->getAnime()->id));
         }
 
-        $this->submitToQbittorrent($source, $infoHash, $torrentFileContent);
+        $this->assertStorageAvailable($storage);
+        $this->submitToQbittorrent($source, $storage, $infoHash, $torrentFileContent);
+        $this->confirmSubmitted($infoHash);
 
         $animeReference = $this->entityManager->getReference(Anime::class, $anime->value)
             ?? throw new \LogicException(\sprintf('Anime #%d does not exist.', $anime->value));
 
+        $download = new Download($infoHash, $animeReference);
+        $download->assignTargetStorage($storage);
+
         // The UNIQUE index on info_hash is the real guard: a concurrent enqueue() for another anime
         // passes the check above too, and only one of the two saves can win.
         try {
-            $this->downloads->save(new Download($infoHash, $animeReference));
+            $this->downloads->save($download);
         } catch (UniqueConstraintViolationException $e) {
             $occupyingId = $this->downloads->findAnimeIdByInfoHash($infoHash);
             if ($occupyingId === $anime->value) {
@@ -119,6 +163,45 @@ final class QbittorrentDownloadService implements DownloadServiceInterface
         return new DownloadTaskId($infoHash);
     }
 
+    /**
+     * @throws DownloadStorageUnavailableException if $storage's path is missing or its marker
+     *                                             does not name $storage
+     */
+    private function assertStorageAvailable(Storage $storage): void
+    {
+        $path = $storage->getPath();
+        $storageId = $storage->id ?? throw new \LogicException('Storage must be persisted before a download can target it.');
+
+        if (!$this->storageFilesystem->pathExists($path) || $this->markerService->readMarkerId($path) !== $storageId) {
+            throw new DownloadStorageUnavailableException($storageId, $path);
+        }
+    }
+
+    /**
+     * Polls `torrents/info` for $infoHash, the only proof qBittorrent actually accepted the
+     * torrent just submitted (see class docblock) — matched on `infohash_v1` just like
+     * {@see DownloadCompletionPoller::fetchTorrentsByInfoHashV1()}, for the same hybrid-torrent
+     * reason documented there.
+     *
+     * @throws DownloadNotConfirmedException if $infoHash never shows up within the retries
+     */
+    private function confirmSubmitted(string $infoHash): void
+    {
+        for ($attempt = 1; $attempt <= self::CONFIRMATION_MAX_ATTEMPTS; ++$attempt) {
+            foreach ($this->client->getTorrentsInfo(QbittorrentClient::TAG) as $torrent) {
+                if (($torrent['infohash_v1'] ?? null) === $infoHash) {
+                    return;
+                }
+            }
+
+            if ($attempt < self::CONFIRMATION_MAX_ATTEMPTS) {
+                usleep(self::CONFIRMATION_RETRY_DELAY_MICROSECONDS);
+            }
+        }
+
+        throw new DownloadNotConfirmedException($infoHash);
+    }
+
     private function resolveInfoHash(DownloadSource $source, ?string $torrentFileContent): string
     {
         return match ($source->type) {
@@ -129,9 +212,10 @@ final class QbittorrentDownloadService implements DownloadServiceInterface
         };
     }
 
-    private function submitToQbittorrent(DownloadSource $source, string $infoHash, ?string $torrentFileContent): void
+    private function submitToQbittorrent(DownloadSource $source, Storage $storage, string $infoHash, ?string $torrentFileContent): void
     {
-        $savePath = $this->jail->resolveSavePathForInfoHash($infoHash);
+        $storageRoot = $storage->getPath();
+        $savePath = $this->jail->resolveIncomingSavePathForInfoHash($storageRoot, $infoHash);
 
         // A .torrent file's size is known up front — reject it here, before it is ever added to
         // qBittorrent (issue #348). A magnet's size is only known once qBittorrent has fetched
@@ -140,8 +224,14 @@ final class QbittorrentDownloadService implements DownloadServiceInterface
         if ($source->type === DownloadSourceType::TorrentFile) {
             $this->freeSpaceChecker->assertEnoughSpaceForTorrentFile(
                 $torrentFileContent ?? throw new \LogicException('Torrent file content must be read before checking its free space.'),
+                $storageRoot,
             );
         }
+
+        // Created and hidden before qBittorrent ever sees a save-path under it (issue #851): a
+        // download in progress must not surface as a top-level entry in the storage scanner
+        // while it is still incoming.
+        $this->storageFilesystem->ensureHiddenDirectoryExists($this->jail->incomingRoot($storageRoot));
 
         match ($source->type) {
             DownloadSourceType::Magnet => $this->client->addTorrentFromMagnet($source->value, $savePath),

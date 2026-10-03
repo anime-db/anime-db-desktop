@@ -27,8 +27,6 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Service\Download;
 
-use App\Service\AppConfigStore;
-use App\Service\AppSettingsProvider;
 use App\Service\Download\DownloadFolderJail;
 use App\Service\Exception\DownloadPathOutsideJailException;
 use PHPUnit\Framework\TestCase;
@@ -37,76 +35,68 @@ final class DownloadFolderJailTest extends TestCase
 {
     private const string ROOT = 'C:\\Users\\bob\\Downloads';
 
-    private string $configPath;
     private DownloadFolderJail $jail;
 
     protected function setUp(): void
     {
-        $this->configPath = sys_get_temp_dir().'/anime-downloads-jail-test-'.uniqid().'.json';
-        file_put_contents($this->configPath, json_encode(['downloadsRoot' => self::ROOT]));
-
-        $this->jail = new DownloadFolderJail(new AppSettingsProvider(new AppConfigStore($this->configPath)));
+        $this->jail = new DownloadFolderJail();
     }
 
-    protected function tearDown(): void
+    public function testIncomingRootAppendsTheHiddenDirectoryName(): void
     {
-        foreach ([$this->configPath, $this->configPath.'.tmp', $this->configPath.'.lock'] as $file) {
-            if (is_file($file)) {
-                unlink($file);
-            }
-        }
+        $this->assertSame(self::ROOT.'\\.anime-db', $this->jail->incomingRoot(self::ROOT));
     }
 
-    public function testGetRootStripsTrailingSeparator(): void
+    public function testIncomingRootStripsTrailingSeparator(): void
     {
-        $this->assertSame(self::ROOT, $this->jail->getRoot());
+        $this->assertSame(self::ROOT.'\\.anime-db', $this->jail->incomingRoot(self::ROOT.'\\'));
     }
 
-    public function testResolveSavePathForInfoHashBuildsALongPathPrefixedSubdirectory(): void
+    public function testResolveIncomingSavePathForInfoHashBuildsALongPathPrefixedSubdirectory(): void
     {
-        $path = $this->jail->resolveSavePathForInfoHash('a'.str_repeat('b', 39));
+        $path = $this->jail->resolveIncomingSavePathForInfoHash(self::ROOT, 'a'.str_repeat('b', 39));
 
-        $this->assertSame('\\\\?\\'.self::ROOT.'\\a'.str_repeat('b', 39), $path);
+        $this->assertSame('\\\\?\\'.self::ROOT.'\\.anime-db\\incoming\\a'.str_repeat('b', 39), $path);
     }
 
     public function testAssertWithinRootAcceptsTheRootItself(): void
     {
-        $this->assertSame(self::ROOT, $this->jail->assertWithinRoot(self::ROOT));
+        $this->assertSame(self::ROOT, $this->jail->assertWithinRoot(self::ROOT, self::ROOT));
     }
 
     public function testAssertWithinRootAcceptsAPathUnderTheRoot(): void
     {
         $path = self::ROOT.'\\some-release\\video.mkv';
 
-        $this->assertSame($path, $this->jail->assertWithinRoot($path));
+        $this->assertSame($path, $this->jail->assertWithinRoot(self::ROOT, $path));
     }
 
     public function testAssertWithinRootAcceptsALongPathPrefixedPathUnderTheRoot(): void
     {
         $path = '\\\\?\\'.self::ROOT.'\\some-release\\video.mkv';
 
-        $this->assertSame(self::ROOT.'\\some-release\\video.mkv', $this->jail->assertWithinRoot($path));
+        $this->assertSame(self::ROOT.'\\some-release\\video.mkv', $this->jail->assertWithinRoot(self::ROOT, $path));
     }
 
     public function testAssertWithinRootRejectsATraversalEscapingTheRoot(): void
     {
         $this->expectException(DownloadPathOutsideJailException::class);
 
-        $this->jail->assertWithinRoot(self::ROOT.'\\..\\..\\Windows\\System32');
+        $this->jail->assertWithinRoot(self::ROOT, self::ROOT.'\\..\\..\\Windows\\System32');
     }
 
     public function testAssertWithinRootRejectsASiblingDirectory(): void
     {
         $this->expectException(DownloadPathOutsideJailException::class);
 
-        $this->jail->assertWithinRoot('C:\\Users\\bob\\Documents\\secret.txt');
+        $this->jail->assertWithinRoot(self::ROOT, 'C:\\Users\\bob\\Documents\\secret.txt');
     }
 
     public function testAssertWithinRootRejectsAnUnrelatedAbsolutePath(): void
     {
         $this->expectException(DownloadPathOutsideJailException::class);
 
-        $this->jail->assertWithinRoot('D:\\other-drive\\file.mkv');
+        $this->jail->assertWithinRoot(self::ROOT, 'D:\\other-drive\\file.mkv');
     }
 
     public function testAssertWithinRootAcceptsADifferentlyCasedPathUnderTheRoot(): void
@@ -115,19 +105,19 @@ final class DownloadFolderJailTest extends TestCase
         // back with different segment casing than the configured downloads root.
         $path = 'c:\\users\\BOB\\downloads\\Some-Release\\video.mkv';
 
-        $this->assertSame($path, $this->jail->assertWithinRoot($path));
+        $this->assertSame($path, $this->jail->assertWithinRoot(self::ROOT, $path));
     }
 
     public function testAssertWithinRootAcceptsTheRootItselfInADifferentCase(): void
     {
-        $this->assertSame(strtolower(self::ROOT), $this->jail->assertWithinRoot(strtolower(self::ROOT)));
+        $this->assertSame(strtolower(self::ROOT), $this->jail->assertWithinRoot(self::ROOT, strtolower(self::ROOT)));
     }
 
     public function testAssertWithinRootStillRejectsADifferentlyCasedSiblingDirectory(): void
     {
         $this->expectException(DownloadPathOutsideJailException::class);
 
-        $this->jail->assertWithinRoot('c:\\users\\bob\\DOCUMENTS\\secret.txt');
+        $this->jail->assertWithinRoot(self::ROOT, 'c:\\users\\bob\\DOCUMENTS\\secret.txt');
     }
 
     public function testToLongPathAwareIsIdempotent(): void

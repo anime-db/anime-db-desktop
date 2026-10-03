@@ -27,9 +27,6 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Service\Download;
 
-use App\Service\AppConfigStore;
-use App\Service\AppSettingsProvider;
-use App\Service\Download\DownloadFolderJail;
 use App\Service\Download\FreeSpaceChecker;
 use App\Service\Download\FreeSpaceProvider;
 use App\Service\Exception\InsufficientDiskSpaceException;
@@ -41,31 +38,12 @@ final class FreeSpaceCheckerTest extends TestCase
     private const string ROOT = 'C:\\Users\\bob\\Downloads';
     private const int MIN_OVERHEAD_BYTES = 256 * 1024 * 1024;
 
-    private string $configPath;
-
-    protected function setUp(): void
-    {
-        $this->configPath = sys_get_temp_dir().'/anime-free-space-checker-test-'.uniqid().'.json';
-        file_put_contents($this->configPath, json_encode(['downloadsRoot' => self::ROOT]));
-    }
-
-    protected function tearDown(): void
-    {
-        foreach ([$this->configPath, $this->configPath.'.tmp', $this->configPath.'.lock'] as $file) {
-            if (is_file($file)) {
-                unlink($file);
-            }
-        }
-    }
-
     private function makeChecker(?int $freeBytes): FreeSpaceChecker
     {
-        $jail = new DownloadFolderJail(new AppSettingsProvider(new AppConfigStore($this->configPath)));
-
         $provider = $this->createStub(FreeSpaceProvider::class);
         $provider->method('getFreeBytes')->willReturn($freeBytes);
 
-        return new FreeSpaceChecker($jail, $provider);
+        return new FreeSpaceChecker($provider);
     }
 
     public function testHasEnoughFreeSpaceIsTrueWhenFreeSpaceCoversSizePlusRatioOverhead(): void
@@ -75,7 +53,7 @@ final class FreeSpaceCheckerTest extends TestCase
         $margin = 400_000_000;
         $checker = $this->makeChecker($totalSize + $margin);
 
-        $this->assertTrue($checker->hasEnoughFreeSpace($totalSize));
+        $this->assertTrue($checker->hasEnoughFreeSpace($totalSize, self::ROOT));
     }
 
     public function testHasEnoughFreeSpaceIsFalseWhenOneByteShortOfSizePlusRatioOverhead(): void
@@ -84,7 +62,7 @@ final class FreeSpaceCheckerTest extends TestCase
         $margin = 400_000_000;
         $checker = $this->makeChecker($totalSize + $margin - 1);
 
-        $this->assertFalse($checker->hasEnoughFreeSpace($totalSize));
+        $this->assertFalse($checker->hasEnoughFreeSpace($totalSize, self::ROOT));
     }
 
     public function testHasEnoughFreeSpaceUsesTheMinimumOverheadFloorForASmallTorrent(): void
@@ -93,22 +71,22 @@ final class FreeSpaceCheckerTest extends TestCase
         $totalSize = 1_000;
         $checker = $this->makeChecker($totalSize + self::MIN_OVERHEAD_BYTES);
 
-        $this->assertTrue($checker->hasEnoughFreeSpace($totalSize));
-        $this->assertFalse($this->makeChecker($totalSize + self::MIN_OVERHEAD_BYTES - 1)->hasEnoughFreeSpace($totalSize));
+        $this->assertTrue($checker->hasEnoughFreeSpace($totalSize, self::ROOT));
+        $this->assertFalse($this->makeChecker($totalSize + self::MIN_OVERHEAD_BYTES - 1)->hasEnoughFreeSpace($totalSize, self::ROOT));
     }
 
     public function testHasEnoughFreeSpaceFailsOpenWhenFreeSpaceCannotBeDetermined(): void
     {
         $checker = $this->makeChecker(null);
 
-        $this->assertTrue($checker->hasEnoughFreeSpace(1_000_000_000_000));
+        $this->assertTrue($checker->hasEnoughFreeSpace(1_000_000_000_000, self::ROOT));
     }
 
     public function testAssertEnoughSpaceForTorrentFilePassesForASingleFileTorrentThatFits(): void
     {
         $checker = $this->makeChecker(10_000_000_000);
 
-        $checker->assertEnoughSpaceForTorrentFile($this->singleFileTorrent(1_000_000_000));
+        $checker->assertEnoughSpaceForTorrentFile($this->singleFileTorrent(1_000_000_000), self::ROOT);
 
         $this->addToAssertionCount(1);
     }
@@ -119,7 +97,7 @@ final class FreeSpaceCheckerTest extends TestCase
 
         $this->expectException(InsufficientDiskSpaceException::class);
 
-        $checker->assertEnoughSpaceForTorrentFile($this->singleFileTorrent(1_000_000_000));
+        $checker->assertEnoughSpaceForTorrentFile($this->singleFileTorrent(1_000_000_000), self::ROOT);
     }
 
     public function testAssertEnoughSpaceForTorrentFileSumsAllFilesInAMultiFileTorrent(): void
@@ -130,14 +108,14 @@ final class FreeSpaceCheckerTest extends TestCase
 
         $this->expectException(InsufficientDiskSpaceException::class);
 
-        $checker->assertEnoughSpaceForTorrentFile($this->multiFileTorrent([500_000_000, 500_000_000]));
+        $checker->assertEnoughSpaceForTorrentFile($this->multiFileTorrent([500_000_000, 500_000_000]), self::ROOT);
     }
 
     public function testAssertEnoughSpaceForTorrentFilePassesForAMultiFileTorrentThatFits(): void
     {
         $checker = $this->makeChecker(2_000_000_000);
 
-        $checker->assertEnoughSpaceForTorrentFile($this->multiFileTorrent([500_000_000, 500_000_000]));
+        $checker->assertEnoughSpaceForTorrentFile($this->multiFileTorrent([500_000_000, 500_000_000]), self::ROOT);
 
         $this->addToAssertionCount(1);
     }
@@ -148,7 +126,7 @@ final class FreeSpaceCheckerTest extends TestCase
 
         $this->expectException(InvalidTorrentFileException::class);
 
-        $checker->assertEnoughSpaceForTorrentFile($this->bencodeDict(['announce' => $this->bencodeString('http://tracker.local')]));
+        $checker->assertEnoughSpaceForTorrentFile($this->bencodeDict(['announce' => $this->bencodeString('http://tracker.local')]), self::ROOT);
     }
 
     public function testAssertEnoughSpaceForTorrentFileRejectsANegativeLength(): void
@@ -157,7 +135,7 @@ final class FreeSpaceCheckerTest extends TestCase
 
         $this->expectException(InvalidTorrentFileException::class);
 
-        $checker->assertEnoughSpaceForTorrentFile($this->singleFileTorrent(-1));
+        $checker->assertEnoughSpaceForTorrentFile($this->singleFileTorrent(-1), self::ROOT);
     }
 
     public function testAssertEnoughSpaceForTorrentFileRejectsAnOverflowingTotalSize(): void
@@ -166,7 +144,7 @@ final class FreeSpaceCheckerTest extends TestCase
 
         $this->expectException(InvalidTorrentFileException::class);
 
-        $checker->assertEnoughSpaceForTorrentFile($this->multiFileTorrent([\PHP_INT_MAX, \PHP_INT_MAX]));
+        $checker->assertEnoughSpaceForTorrentFile($this->multiFileTorrent([\PHP_INT_MAX, \PHP_INT_MAX]), self::ROOT);
     }
 
     /**
@@ -193,7 +171,7 @@ final class FreeSpaceCheckerTest extends TestCase
 
         $this->expectException(InvalidTorrentFileException::class);
 
-        $checker->assertEnoughSpaceForTorrentFile($torrent);
+        $checker->assertEnoughSpaceForTorrentFile($torrent, self::ROOT);
     }
 
     private function singleFileTorrent(int $length): string

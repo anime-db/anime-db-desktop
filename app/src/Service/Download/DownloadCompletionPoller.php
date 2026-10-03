@@ -36,6 +36,7 @@ use App\Entity\Download;
 use App\Repository\DownloadRepository;
 use App\Service\Exception\DownloadPathOutsideJailException;
 use App\Service\Exception\DownloadStoragePathConflictException;
+use App\Service\Exception\DownloadTargetStorageMissingException;
 use App\Service\Qbittorrent\QbittorrentClient;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Log\LoggerInterface;
@@ -240,11 +241,17 @@ final class DownloadCompletionPoller
             return;
         }
 
+        $pending = $this->downloads->findPendingByInfoHash($infoHash);
+        $storage = ($pending[0] ?? null)?->getTargetStorage();
+        if ($storage === null) {
+            return;
+        }
+
         // Compare against what is still left to write, not the torrent's total size — free space
-        // on the downloads root shrinks as this same torrent downloads, so a full-size comparison
+        // on the target storage shrinks as this same torrent downloads, so a full-size comparison
         // would false-positive on a healthy torrent partway through (see class docblock).
         $amountLeft = (int) ($torrent['amount_left'] ?? $size);
-        if ($this->freeSpaceChecker->hasEnoughFreeSpace($amountLeft)) {
+        if ($this->freeSpaceChecker->hasEnoughFreeSpace($amountLeft, $storage->getPath())) {
             return;
         }
 
@@ -253,13 +260,10 @@ final class DownloadCompletionPoller
         // commands, and "stop" on an unknown id answers 200 while silently doing nothing.
         $this->client->stop((string) ($torrent['hash'] ?? ''));
 
-        $pending = $this->downloads->findPendingByInfoHash($infoHash);
         foreach ($pending as $download) {
             $download->markFailed();
         }
-        if ($pending !== []) {
-            $this->entityManager->flush();
-        }
+        $this->entityManager->flush();
 
         $this->logger->warning('Paused download: not enough free disk space for its remaining bytes.', [
             'infoHash' => $infoHash,
@@ -316,6 +320,21 @@ final class DownloadCompletionPoller
                 'infoHash' => $infoHash,
                 'contentPath' => $contentPath,
                 'occupyingAnimeId' => $exception->occupyingAnimeId,
+            ]);
+
+            return;
+        } catch (DownloadTargetStorageMissingException $exception) {
+            // Unlike the jail failure above, this never resolves itself either: the Storage this
+            // download targeted is gone (deleted while it was still in flight — ON DELETE SET
+            // NULL on target_storage_id), and reverting to Pending would just retry (and log) on
+            // every poll forever, wedging findDistinctPendingInfoHashes() on this hash for good.
+            $download->revertToPending();
+            $download->markFailed();
+            $this->entityManager->flush();
+            $this->logger->warning('Failing download completion: its target storage was deleted while the download was still in flight.', [
+                'infoHash' => $infoHash,
+                'contentPath' => $contentPath,
+                'exception' => $exception->getMessage(),
             ]);
 
             return;
