@@ -59,9 +59,12 @@ function showDropdown() {
     document.querySelector('[data-bs-toggle="dropdown"]').dispatchEvent(new Event('show.bs.dropdown'));
 }
 
+let dropdownUpdate;
+
 beforeEach(() => {
     jest.resetModules();
-    window.bootstrap = { Dropdown: { getOrCreateInstance: jest.fn(() => ({ update: jest.fn() })) } };
+    dropdownUpdate = jest.fn();
+    window.bootstrap = { Dropdown: { getOrCreateInstance: jest.fn(() => ({ update: dropdownUpdate })) } };
 });
 
 afterEach(() => {
@@ -104,6 +107,7 @@ test('the dropdown is repositioned once the scan section has loaded', async () =
     await flushMicrotasks();
 
     expect(window.bootstrap.Dropdown.getOrCreateInstance).toHaveBeenCalledWith(document.querySelector('[data-bs-toggle="dropdown"]'));
+    expect(dropdownUpdate).toHaveBeenCalledTimes(1);
 });
 
 test('a failed fetch clears the loading placeholder instead of leaving the spinner stuck', async () => {
@@ -115,4 +119,5 @@ test('a failed fetch clears the loading placeholder instead of leaving the spinn
     await flushMicrotasks();
 
     expect(document.querySelector('[data-nav-scan-section]')).toBeNull();
+    expect(dropdownUpdate).toHaveBeenCalledTimes(1);
 });
