@@ -42,7 +42,7 @@
                 <label for="storage-edit-type" class="form-label">{{ 'storage_edit.field_type'|trans }}</label>
                 <select id="storage-edit-type" name="type" class="form-select">
                     {% for value in types %}
-                        <option value="{{ value }}"{% if value == type %} selected{% endif %}>{{ ('storage_type.' ~ value)|trans }}</option>
+                        <option value="{{ value }}"{% if value == type %} selected{% endif %}{% if isPreset and value in nonWritableTypes %} disabled{% endif %}>{{ ('storage_type.' ~ value)|trans }}</option>
                     {% endfor %}
                 </select>
             </div>

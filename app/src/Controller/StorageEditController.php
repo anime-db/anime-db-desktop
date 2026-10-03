@@ -61,10 +61,15 @@ use Twig\Environment;
  * first.
  *
  * Issue #853: relocating, or switching to a {@see StorageType::isWritable()}-false type, is
- * refused with a form error instead while the storage still has a downloads row targeting it
- * that isn't Completed yet (same reasoning as {@see StorageController::delete()}). The preset
- * downloads storage (see AppSettingsProvider::getPresetDownloadsStorageId()) additionally never
- * accepts a relocate, regardless of downloads — its path field is rendered read-only.
+ * refused with a form error instead while the storage still has a Pending downloads row
+ * targeting it (same reasoning as {@see StorageController::delete()}). The preset downloads
+ * storage (see AppSettingsProvider::getPresetDownloadsStorageId()) additionally never accepts a
+ * relocate, or a switch to a non-writable type, regardless of downloads — {@see
+ * PresetDownloadsStorageProvider::getOrCreate()} hands this storage out by id with no type check
+ * of its own, so letting it become non-writable would silently break every future enqueue. Its
+ * path field is rendered read-only, and its type select has every non-writable option disabled,
+ * for the same reason the server-side checks exist: the server check is the actual guard, these
+ * are just there so the form does not invite a submission the server is going to refuse anyway.
  */
 final class StorageEditController
 {
@@ -104,14 +109,26 @@ final class StorageEditController
         $previousType = $storage->getType();
         $pathChanged = $path !== $previousPath;
         $typeChangingToUnwritable = $type !== $previousType && !$type->isWritable();
+        $isPreset = $storageId === $this->settings->getPresetDownloadsStorageId();
 
-        if ($pathChanged && $storageId === $this->settings->getPresetDownloadsStorageId()) {
+        if ($pathChanged && $isPreset) {
             return $this->renderForm(
                 $storage,
                 name: $name,
                 path: $path,
                 type: $type,
                 error: 'storage_edit.error_preset_path',
+                errorParams: ['%name%' => $storage->getName()],
+            );
+        }
+
+        if ($typeChangingToUnwritable && $isPreset) {
+            return $this->renderForm(
+                $storage,
+                name: $name,
+                path: $path,
+                type: $type,
+                error: 'storage_edit.error_preset_type',
                 errorParams: ['%name%' => $storage->getName()],
             );
         }
@@ -166,6 +183,10 @@ final class StorageEditController
             'error' => $error,
             'errorParams' => $errorParams,
             'types' => array_column(StorageType::cases(), 'value'),
+            'nonWritableTypes' => array_column(
+                array_filter(StorageType::cases(), static fn (StorageType $type): bool => !$type->isWritable()),
+                'value',
+            ),
             'isPreset' => $storage->id !== null && $storage->id === $this->settings->getPresetDownloadsStorageId(),
         ]));
     }

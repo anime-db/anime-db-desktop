@@ -599,6 +599,7 @@ storage_edit:
     submit_button: Save
     error_invalid: Enter a valid name, path, and storage type.
     error_preset_path: 'Cannot change the path of storage "%name%": it is used as the default downloads storage.'
+    error_preset_type: 'Cannot make storage "%name%" non-writable: it is used as the default downloads storage.'
     error_unfinished_downloads: 'Cannot change storage "%name%": it still has unfinished downloads.'
     preset_path_hint: The default downloads storage's path cannot be changed.
 

@@ -534,6 +534,50 @@ final class StorageEditControllerTest extends TestCase
         $this->assertSame($oldDir, $storage->getPath());
     }
 
+    /**
+     * Acceptance (issue #853 review): the preset downloads storage can never switch to a
+     * non-writable type either, regardless of downloads — the DownloadRepository stub here
+     * always reports no unfinished downloads, so the refusal can only be coming from the preset
+     * check. Without this guard, PresetDownloadsStorageProvider::getOrCreate() would keep handing
+     * this storage out by id with no type check of its own, silently breaking every future
+     * enqueue into it.
+     */
+    public function testUpdateRejectsTypeChangeToUnwritableForPresetStorageEvenWithoutDownloads(): void
+    {
+        $dir = $this->makeDir();
+        $storage = new Storage('AnimeDB', $dir, StorageType::Folder);
+        $this->setStorageId($storage, 26);
+
+        $settings = $this->createSettings();
+        $settings->setPresetDownloadsStorageId(26);
+
+        $downloads = $this->createStub(DownloadRepository::class);
+        $downloads->method('hasUnfinishedDownloadsForTargetStorage')->willReturn(false);
+
+        $entityManager = $this->createMock(EntityManagerInterface::class);
+        $entityManager->expects($this->never())->method('flush');
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('storage/edit.html.twig', $this->callback(
+                static fn (array $params): bool => $params['error'] === 'storage_edit.error_preset_type',
+            ))
+            ->willReturn('<html></html>');
+
+        $controller = $this->createController(entityManager: $entityManager, twig: $twig, downloads: $downloads, settings: $settings);
+        $request = Request::create('/storage/26/edit', 'POST', [
+            'name' => 'AnimeDB',
+            'path' => $dir,
+            'type' => 'video',
+            '_token' => 'token',
+        ]);
+
+        $controller->update($storage, $request);
+
+        $this->assertSame(StorageType::Folder, $storage->getType());
+    }
+
     /** Acceptance (issue #853): renaming the preset storage, without touching its path, is allowed. */
     public function testUpdateAllowsRenamingPresetStorage(): void
     {
