@@ -54,6 +54,16 @@ final class MarketSnapshot
     }
 
     /**
+     * A cached snapshot is only safe to read when it was built for the core version currently
+     * running — one left over from before an app upgrade can resolve plugin compatibility against
+     * a core version nobody is running anymore.
+     */
+    public function isBuiltFor(?string $coreVersion): bool
+    {
+        return $this->coreVersion === $coreVersion;
+    }
+
+    /**
      * @return array{core_version: string, sequence: int, asset_mirrors: list<string>, plugins: list<array<string, mixed>>}
      */
     public function toArray(): array
