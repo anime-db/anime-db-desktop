@@ -4,20 +4,20 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "2b4332fbae91ecaea428a7da5f7146fb",
+    "content-hash": "4e09209596d62f88ac2ee070704e69e7",
     "packages": [
         {
             "name": "anime-db/plugin-contracts",
-            "version": "v0.24.1",
+            "version": "v0.25.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/anime-db/anime-db-plugin-contracts.git",
-                "reference": "28d63ca047ac77ef6b09c12108c118435ba7e4db"
+                "reference": "b66655d68db4b553e55aa0773547ce62eb397108"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/anime-db/anime-db-plugin-contracts/zipball/28d63ca047ac77ef6b09c12108c118435ba7e4db",
-                "reference": "28d63ca047ac77ef6b09c12108c118435ba7e4db",
+                "url": "https://api.github.com/repos/anime-db/anime-db-plugin-contracts/zipball/b66655d68db4b553e55aa0773547ce62eb397108",
+                "reference": "b66655d68db4b553e55aa0773547ce62eb397108",
                 "shasum": ""
             },
             "require": {
@@ -63,22 +63,22 @@
             "homepage": "https://github.com/anime-db/anime-db-plugin-contracts",
             "support": {
                 "issues": "https://github.com/anime-db/anime-db-plugin-contracts/issues",
-                "source": "https://github.com/anime-db/anime-db-plugin-contracts/tree/v0.24.1"
+                "source": "https://github.com/anime-db/anime-db-plugin-contracts/tree/v0.25.0"
             },
-            "time": "2026-10-02T12:02:03+00:00"
+            "time": "2026-10-03T12:28:59+00:00"
         },
         {
             "name": "composer/semver",
-            "version": "3.4.4",
+            "version": "3.5.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/composer/semver.git",
-                "reference": "198166618906cb2de69b95d7d47e5fa8aa1b2b95"
+                "reference": "f7a296f4c4cf8cb8bb83e35d6951a406bb11afa5"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/composer/semver/zipball/198166618906cb2de69b95d7d47e5fa8aa1b2b95",
-                "reference": "198166618906cb2de69b95d7d47e5fa8aa1b2b95",
+                "url": "https://api.github.com/repos/composer/semver/zipball/f7a296f4c4cf8cb8bb83e35d6951a406bb11afa5",
+                "reference": "f7a296f4c4cf8cb8bb83e35d6951a406bb11afa5",
                 "shasum": ""
             },
             "require": {
@@ -120,7 +120,7 @@
                     "homepage": "http://robbast.nl"
                 }
             ],
-            "description": "Semver library that offers utilities, version constraint parsing and validation.",
+            "description": "Version comparison library that offers utilities, version constraint parsing and validation.",
             "keywords": [
                 "semantic",
                 "semver",
@@ -130,7 +130,7 @@
             "support": {
                 "irc": "ircs://irc.libera.chat:6697/composer",
                 "issues": "https://github.com/composer/semver/issues",
-                "source": "https://github.com/composer/semver/tree/3.4.4"
+                "source": "https://github.com/composer/semver/tree/3.5.0"
             },
             "funding": [
                 {
@@ -142,7 +142,7 @@
                     "type": "github"
                 }
             ],
-            "time": "2025-08-20T19:15:30+00:00"
+            "time": "2026-09-24T14:38:51+00:00"
         },
         {
             "name": "doctrine/collections",
