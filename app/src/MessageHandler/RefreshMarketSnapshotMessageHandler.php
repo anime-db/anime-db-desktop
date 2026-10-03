@@ -40,6 +40,12 @@ use Symfony\Component\Messenger\Attribute\AsMessageHandler;
  * handler does nothing beyond delegating to it — a failed refresh just leaves the existing
  * snapshot in place (logged by the service itself) rather than throwing, since there is nothing
  * left for the queue to usefully retry that the service hasn't already accounted for.
+ *
+ * A third trigger, the hourly Symfony Scheduler tick (issue #448), reaches
+ * {@see MarketRefreshService::refresh()} through its own handler,
+ * {@see MarketRefreshTickMessageHandler}, not this one — that handler only
+ * calls refresh() when the cached snapshot is actually stale, unlike this handler's unconditional
+ * delegation.
  */
 #[AsMessageHandler]
 final class RefreshMarketSnapshotMessageHandler

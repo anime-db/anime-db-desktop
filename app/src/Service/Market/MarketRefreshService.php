@@ -32,9 +32,10 @@ use Psr\Log\LoggerInterface;
 
 /**
  * The market snapshot's single writer (issue #438, part of epic #435), extracted out of
- * {@see \App\Command\MarketRefreshCommand} (issue #440) so both that command and an async
- * messenger handler ({@see \App\MessageHandler\RefreshMarketSnapshotMessageHandler}) can trigger
- * the same refresh without duplicating it. Everything that reads the snapshot (e.g.
+ * {@see \App\Command\MarketRefreshCommand} (issue #440) so that command, an async messenger
+ * handler ({@see \App\MessageHandler\RefreshMarketSnapshotMessageHandler}) and, since issue #448,
+ * an hourly Symfony Scheduler tick ({@see \App\MessageHandler\MarketRefreshTickMessageHandler})
+ * can all trigger the same refresh without duplicating it. Everything that reads the snapshot (e.g.
  * {@see \App\Controller\Settings\MarketController}) only ever reads it — this service is the only
  * place that builds and stores a new one, so there is exactly one code path that can make the
  * snapshot disagree with the registry it was built from.
