@@ -364,6 +364,29 @@ services:
             $httpClient: '@app.qbittorrent.http_client'
             $baseUrl: '%app.qbittorrent.url%'
 
+    # The downloads page's live-update endpoint (App\Controller\DownloadsStatusController, issue
+    # #854) polls this every 2s while the tab is visible — a stuck qBittorrent must not tie up a
+    # FrankenPHP worker thread for the 5s/15s window app.qbittorrent.http_client above tolerates,
+    # so this one gets its own, much tighter bound instead of reusing that client.
+    app.qbittorrent.status_http_client:
+        class: Symfony\Contracts\HttpClient\HttpClientInterface
+        factory: ['Symfony\Component\HttpClient\HttpClient', 'create']
+        arguments:
+            - { timeout: 2, max_duration: 2 }
+
+    # A second QbittorrentClient instance wired to the tighter-timeout client above — the shared
+    # App\Service\Qbittorrent\QbittorrentClient service (the one every other caller autowires by
+    # type-hint) keeps using app.qbittorrent.http_client.
+    app.qbittorrent.status_client:
+        class: App\Service\Qbittorrent\QbittorrentClient
+        arguments:
+            $httpClient: '@app.qbittorrent.status_http_client'
+            $baseUrl: '%app.qbittorrent.url%'
+
+    App\Controller\DownloadsStatusController:
+        arguments:
+            $client: '@app.qbittorrent.status_client'
+
     # AnimeDb\PluginContracts\Download\DownloadServiceInterface lives in the read-only
     # anime-db/plugin-contracts package, so App\Service\Download\QbittorrentDownloadService
     # cannot self-alias to it the way a local interface would (see the _instanceof comment

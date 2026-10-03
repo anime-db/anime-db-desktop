@@ -83,6 +83,19 @@ final class BaseLayoutTopNavRenderingTest extends KernelTestCase
     }
 
     /**
+     * Acceptance (issue #854): the "Downloads" nav link highlights on its own route and leaves
+     * both the word-mark and "Settings" inactive.
+     */
+    public function testDownloadsRouteHighlightsDownloadsLinkOnly(): void
+    {
+        $html = $this->renderBaseLayout('downloads_index');
+
+        self::assertStringContainsString('app-nav__link--active', self::extractLinkClass($html, 'downloads_index'));
+        self::assertStringNotContainsString('app-nav__link--active', self::extractLinkClass($html, 'home_index'));
+        self::assertStringNotContainsString('app-nav__link--active', self::extractLinkClass($html, 'settings_index'));
+    }
+
+    /**
      * Acceptance (issue #825): `storage/scan_prompt.html.twig` extends `base.html.twig` directly,
      * not `settings/_layout.html.twig` — it is a catalog onboarding step, not a settings page, so
      * it must never carry the settings sidebar. Switching its `{% extends %}` to the settings

@@ -66,6 +66,16 @@ class DownloadRepository
     }
 
     /**
+     * Every row, newest first — the "Downloads" page's own listing (issue #854).
+     *
+     * @return list<Download>
+     */
+    public function findAllOrderedByDateAddDesc(): array
+    {
+        return $this->entityManager->getRepository(Download::class)->findBy([], ['dateAdd' => 'DESC']);
+    }
+
+    /**
      * All pairing rows of a single anime entry — the "Downloads for this entry" block on its page.
      *
      * @return list<Download>
