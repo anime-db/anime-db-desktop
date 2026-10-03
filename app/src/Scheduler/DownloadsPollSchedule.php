@@ -40,16 +40,19 @@ use Symfony\Component\Scheduler\ScheduleProviderInterface;
  * "downloads_poll" rather than "default" on purpose: this is not a general-purpose app scheduler,
  * only the wiring for this one poller — see the issue's "Чего не делается".
  *
- * 5 minutes is a bound picked for this poller specifically, not a project-wide convention: a
- * finished torrent sits unlinked for at most this long while the app is open (the app-startup run
- * in native/supervisor/downloads-poll.js covers the "app was closed" case), which is short enough
- * to feel responsive without polling qBittorrent's WebUI more than necessary.
+ * 1 minute (issue #852; 5 minutes before it) is a bound picked for this poller specifically, not a
+ * project-wide convention: a finished torrent sits unlinked for at most this long while the app is
+ * open (the app-startup run in native/supervisor/downloads-poll.js covers the "app was closed"
+ * case). Shortened from 5 minutes once the poller started actively moving a download out of
+ * incoming (rather than only linking an already-placed folder): a tighter interval means fewer
+ * minutes a human sees "docked, linking…" while qBittorrent's own move completes in the
+ * background, still short enough to not poll qBittorrent's WebUI excessively.
  */
 #[AsSchedule('downloads_poll')]
 final class DownloadsPollSchedule implements ScheduleProviderInterface
 {
     public function getSchedule(): Schedule
     {
-        return (new Schedule())->add(RecurringMessage::every('5 minutes', new PollDownloadsMessage()));
+        return (new Schedule())->add(RecurringMessage::every('1 minute', new PollDownloadsMessage()));
     }
 }

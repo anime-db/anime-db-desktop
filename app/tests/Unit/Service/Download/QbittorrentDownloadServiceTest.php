@@ -839,6 +839,11 @@ final class FakeDownloadStorageFilesystem implements DownloadStorageFilesystem
         return $this->pathExists;
     }
 
+    public function isFile(string $path): bool
+    {
+        return false;
+    }
+
     public function ensureDirectoryExists(string $path): void
     {
         $this->directoryCalls[] = $path;

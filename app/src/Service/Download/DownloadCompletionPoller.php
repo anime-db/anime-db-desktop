@@ -36,7 +36,6 @@ use App\Entity\Download;
 use App\Repository\DownloadRepository;
 use App\Service\Exception\DownloadPathOutsideJailException;
 use App\Service\Exception\DownloadStoragePathConflictException;
-use App\Service\Exception\DownloadTargetStorageMissingException;
 use App\Service\Qbittorrent\QbittorrentClient;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Log\LoggerInterface;
@@ -124,6 +123,8 @@ final class DownloadCompletionPoller
         private readonly QbittorrentClient $client,
         private readonly DownloadRepository $downloads,
         private readonly AnimeDownloadLinker $linker,
+        private readonly DownloadFolderJail $jail,
+        private readonly DownloadIncomingRelocator $relocator,
         private readonly EventDispatcherInterface $eventDispatcher,
         private readonly EntityManagerInterface $entityManager,
         private readonly FreeSpaceChecker $freeSpaceChecker,
@@ -227,7 +228,7 @@ final class DownloadCompletionPoller
         }
 
         foreach ($this->downloads->findPendingByInfoHash($infoHash) as $download) {
-            $this->completeDownload($download, $contentPath, $infoHash);
+            $this->completeDownload($download, $contentPath, $infoHash, $torrent);
         }
     }
 
@@ -261,7 +262,7 @@ final class DownloadCompletionPoller
         $this->client->stop((string) ($torrent['hash'] ?? ''));
 
         foreach ($pending as $download) {
-            $download->markFailed();
+            $download->markFailed('disk_space');
         }
         $this->entityManager->flush();
 
@@ -272,7 +273,71 @@ final class DownloadCompletionPoller
         ]);
     }
 
-    private function completeDownload(Download $download, string $contentPath, string $infoHash): void
+    /**
+     * @param array<string, mixed> $torrent
+     */
+    private function completeDownload(Download $download, string $contentPath, string $infoHash, array $torrent): void
+    {
+        $storage = $download->getTargetStorage();
+        if ($storage === null) {
+            // Unlike the jail failure below, this never resolves itself: the Storage this
+            // download targeted is gone (deleted while it was still in flight — ON DELETE SET
+            // NULL on target_storage_id), and leaving it Pending would just retry (and log) on
+            // every poll forever, wedging findDistinctPendingInfoHashes() on this hash for good.
+            $download->markFailed();
+            $this->entityManager->flush();
+            $this->logger->warning('Failing download completion: its target storage was deleted while the download was still in flight.', [
+                'infoHash' => $infoHash,
+                'contentPath' => $contentPath,
+            ]);
+
+            return;
+        }
+
+        $root = $storage->getPath();
+
+        try {
+            $resolvedPath = $this->jail->assertWithinRoot($root, $contentPath);
+        } catch (DownloadPathOutsideJailException $exception) {
+            $this->logger->warning('Skipping download completion: content_path is outside the configured downloads root.', [
+                'infoHash' => $infoHash,
+                'contentPath' => $contentPath,
+                'exception' => $exception->getMessage(),
+            ]);
+
+            return;
+        }
+
+        $relativePath = $this->jail->relativePathUnderRoot($root, $resolvedPath);
+
+        if ($this->jail->isUnderIncoming($relativePath)) {
+            // A storage whose marker no longer names it (relocated, or simply unreachable right
+            // now) is left alone entirely: neither a move attempt nor a link is this poller's call
+            // to make while it cannot confirm which storage it is actually writing into (issue
+            // #852) — the row stays Pending, surfaced on the "Downloads" page as "storage
+            // unavailable" (issue #854).
+            if ($this->relocator->isStorageMarkerValid($storage)) {
+                $this->relocator->tryMove($download, $storage, $resolvedPath, $torrent, $infoHash);
+            }
+
+            return;
+        }
+
+        // A top-level entry starting with "." (other than ".anime-db", already handled above) is
+        // never something this poller put there — not this poller's place to link it.
+        $firstSegment = $this->jail->firstSegment($relativePath);
+        if (str_starts_with($firstSegment, '.')) {
+            return;
+        }
+
+        if (!$this->relocator->isStorageMarkerValid($storage)) {
+            return;
+        }
+
+        $this->linkCompletedFolder($download, rtrim($root, '\\/').'\\'.$firstSegment, $infoHash);
+    }
+
+    private function linkCompletedFolder(Download $download, string $folderPath, string $infoHash): void
     {
         if (!$download->markCompleted()) {
             return;
@@ -281,27 +346,14 @@ final class DownloadCompletionPoller
         $anime = $download->getAnime();
 
         try {
-            $this->linker->link($download, $contentPath);
-        } catch (DownloadPathOutsideJailException $exception) {
-            // markCompleted() above only touched in-memory state — link() never reached its own
-            // flush(), so nothing was persisted yet. Revert it so this Download does not sit
-            // dirty as Completed in the EntityManager's unit of work and get flushed as a side
-            // effect of some unrelated download completing later in this same poll() run.
-            $download->revertToPending();
-            $this->logger->warning('Skipping download completion: content_path is outside the configured downloads root.', [
-                'infoHash' => $infoHash,
-                'contentPath' => $contentPath,
-                'exception' => $exception->getMessage(),
-            ]);
-
-            return;
+            $this->linker->link($download, $folderPath);
         } catch (DownloadStoragePathConflictException $exception) {
-            // Unlike the jail failure, this never resolves itself: the torrent's content_path is
-            // fixed and the occupant keeps the pair, so reverting to Pending would retry (and log)
-            // on every poll forever. link() threw before touching the entity or flushing, so undo
-            // the in-memory Completed and persist a terminal Failed instead.
+            // Unlike a transient failure, this never resolves itself: the folder is fixed and the
+            // occupant keeps the pair, so reverting to Pending would retry (and log) on every poll
+            // forever. link() threw before touching the entity or flushing, so undo the in-memory
+            // Completed and persist a terminal Failed instead.
             $download->revertToPending();
-            $download->markFailed();
+            $download->markFailed('storage_conflict');
             $this->entityManager->flush();
             $this->logger->warning(\sprintf(
                 'Failing download completion: the content path is already linked to anime #%d. To free it: '
@@ -318,23 +370,8 @@ final class DownloadCompletionPoller
                 $anime->id,
             ), [
                 'infoHash' => $infoHash,
-                'contentPath' => $contentPath,
+                'contentPath' => $folderPath,
                 'occupyingAnimeId' => $exception->occupyingAnimeId,
-            ]);
-
-            return;
-        } catch (DownloadTargetStorageMissingException $exception) {
-            // Unlike the jail failure above, this never resolves itself either: the Storage this
-            // download targeted is gone (deleted while it was still in flight — ON DELETE SET
-            // NULL on target_storage_id), and reverting to Pending would just retry (and log) on
-            // every poll forever, wedging findDistinctPendingInfoHashes() on this hash for good.
-            $download->revertToPending();
-            $download->markFailed();
-            $this->entityManager->flush();
-            $this->logger->warning('Failing download completion: its target storage was deleted while the download was still in flight.', [
-                'infoHash' => $infoHash,
-                'contentPath' => $contentPath,
-                'exception' => $exception->getMessage(),
             ]);
 
             return;
