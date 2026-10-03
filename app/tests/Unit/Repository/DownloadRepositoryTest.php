@@ -173,6 +173,25 @@ final class DownloadRepositoryTest extends TestCase
         $this->assertSame([], $this->repository->findPendingByInfoHash(self::HASH_B));
     }
 
+    public function testFindByAnimeReturnsOnlyThatAnimesRows(): void
+    {
+        $anime = $this->persistAnime('Anime A');
+        $other = $this->persistAnime('Anime B');
+        $this->repository->save($kept = new Download(self::HASH_A, $anime));
+        $this->repository->save(new Download(self::HASH_B, $other));
+
+        $result = $this->repository->findByAnime((int) $anime->id);
+
+        $this->assertSame([$kept], $result);
+    }
+
+    public function testFindByAnimeReturnsEmptyArrayWhenTheAnimeHasNoDownloads(): void
+    {
+        $anime = $this->persistAnime('Anime A');
+
+        $this->assertSame([], $this->repository->findByAnime((int) $anime->id));
+    }
+
     public function testFindDistinctPendingInfoHashesReturnsEachHashOnceAndOmitsFullyCompletedOnes(): void
     {
         $animeOne = $this->persistAnime('Anime One');

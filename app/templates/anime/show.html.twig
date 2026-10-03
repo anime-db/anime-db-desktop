@@ -119,6 +119,8 @@
                 </section>
             {% endif %}
 
+            {{ include('anime/_downloads.html.twig', {anime: anime, downloads: downloads, error: downloads_unlink_error}) }}
+
             {{ include('anime/_gallery.html.twig', {anime: anime, fillable_fields: fillable_fields}) }}
 
             {{ include('plugin/_widget_slots.html.twig', {widgets: widgets, entryId: anime.id}) }}
