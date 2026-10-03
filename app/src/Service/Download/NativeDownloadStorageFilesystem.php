@@ -41,6 +41,11 @@ final class NativeDownloadStorageFilesystem implements DownloadStorageFilesystem
         return is_dir($path);
     }
 
+    public function isFile(string $path): bool
+    {
+        return is_file($path);
+    }
+
     public function ensureDirectoryExists(string $path): void
     {
         // mkdir() returning false is not itself fatal: another process may have created $path

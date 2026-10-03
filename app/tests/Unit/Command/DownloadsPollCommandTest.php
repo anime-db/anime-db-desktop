@@ -35,9 +35,12 @@ use App\Repository\DownloadRepository;
 use App\Service\Download\AnimeDownloadLinker;
 use App\Service\Download\DownloadCompletionPoller;
 use App\Service\Download\DownloadFolderJail;
+use App\Service\Download\DownloadIncomingRelocator;
 use App\Service\Download\FreeSpaceChecker;
+use App\Service\Download\NativeDownloadStorageFilesystem;
 use App\Service\Download\NativeFreeSpaceProvider;
 use App\Service\Qbittorrent\QbittorrentClient;
+use App\Service\Storage\StorageMarkerService;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\EntityManager;
@@ -72,10 +75,20 @@ final class DownloadsPollCommandTest extends TestCase
         });
 
         $jail = new DownloadFolderJail();
+        $client = new QbittorrentClient($httpClient, 'http://127.0.0.1:18080');
         $poller = new DownloadCompletionPoller(
-            new QbittorrentClient($httpClient, 'http://127.0.0.1:18080'),
+            $client,
             new DownloadRepository($entityManager),
             new AnimeDownloadLinker(new AnimeRepository($entityManager), $entityManager, $jail),
+            $jail,
+            new DownloadIncomingRelocator(
+                $client,
+                new AnimeRepository($entityManager),
+                new StorageMarkerService($entityManager),
+                new NativeDownloadStorageFilesystem(),
+                $entityManager,
+                new NullLogger(),
+            ),
             new EventDispatcher(),
             $entityManager,
             new FreeSpaceChecker(new NativeFreeSpaceProvider()),
