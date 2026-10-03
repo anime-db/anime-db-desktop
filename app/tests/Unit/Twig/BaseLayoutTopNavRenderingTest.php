@@ -131,7 +131,7 @@ final class BaseLayoutTopNavRenderingTest extends KernelTestCase
 
         $this->assertStringContainsString('dropdown-item disabled', $html);
         $this->assertStringContainsString('No plugin source is installed.', $html);
-        $this->assertStringContainsString('href="/settings/market?feature=filler"', $html);
+        $this->assertStringContainsString('<a class="dropdown-item small" href="/settings/market?feature=filler">Open the market →</a>', $html);
     }
 
     public function testAddMenuRendersDisabledHintLinkingToThePresentersOwnUrl(): void
@@ -143,8 +143,26 @@ final class BaseLayoutTopNavRenderingTest extends KernelTestCase
         $html = $this->renderBaseLayoutWithFillerPresenter('home_index', $presenter);
 
         $this->assertStringContainsString('dropdown-item disabled', $html);
-        $this->assertStringContainsString('href="/settings/plugins/animedb-shikimori"', $html);
+        $this->assertStringContainsString('<a class="dropdown-item small" href="/settings/plugins/animedb-shikimori">Configure the plugin →</a>', $html);
         $this->assertStringNotContainsString('feature=filler', $html);
+    }
+
+    /**
+     * Regression (issue #872): the hint link used to live in a plain `<div class="app-nav__hint">`
+     * outside any `.dropdown-item`, so Bootstrap's dropdown arrow-key navigation skipped over it —
+     * only Tab could reach it. It must be its own `.dropdown-item` `<li>` to be keyboard-navigable
+     * the same way as every other menu entry.
+     */
+    public function testAddMenuHintLinkIsItsOwnKeyboardNavigableMenuItem(): void
+    {
+        $presenter = $this->createStub(FillerAvailabilityPresenter::class);
+        $presenter->method('hasActiveFiller')->willReturn(false);
+        $presenter->method('describeUnavailable')->willReturn(['kind' => 'not_installed', 'url' => '/settings/market']);
+
+        $html = $this->renderBaseLayoutWithFillerPresenter('home_index', $presenter);
+
+        $this->assertStringNotContainsString('app-nav__hint', $html);
+        $this->assertMatchesRegularExpression('#<li><a class="dropdown-item small"#', $html);
     }
 
     /**

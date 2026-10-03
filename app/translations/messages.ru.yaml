@@ -614,10 +614,12 @@ nav:
     add_menu_search_plugins: Найти в плагинах
     add_menu_search_plugins_hint_not_installed: Плагин-источник не установлен.
     add_menu_search_plugins_hint_disabled: Заполнение из плагина выключено.
-    add_menu_search_plugins_hint_link: Перейти →
+    add_menu_search_plugins_hint_link_not_installed: Открыть маркет →
+    add_menu_search_plugins_hint_link_disabled: Настроить плагин →
     add_menu_scan_heading: Сканировать
     add_menu_scan_loading: Загрузка…
+    add_menu_scan_error: Не удалось загрузить хранилища.
     add_menu_scan_item: 'Сканировать «%name%»'
-    add_menu_scan_more: 'Ещё %count% не подключены →'
+    add_menu_scan_more: 'Не подключено: %number% →'
     add_menu_add_storage: Добавить хранилище…
     add_menu_empty_entry: Пустая запись
