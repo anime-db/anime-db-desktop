@@ -43,8 +43,13 @@ final class NativeDownloadStorageFilesystem implements DownloadStorageFilesystem
 
     public function ensureDirectoryExists(string $path): void
     {
-        if (!is_dir($path)) {
-            mkdir($path, recursive: true);
+        // mkdir() returning false is not itself fatal: another process may have created $path
+        // between the is_dir() check and this call, so is_dir() is checked again before giving
+        // up — only then is it a real failure the caller must not paper over (a silently missing
+        // ".anime-db" directory means qBittorrent creates it itself at torrents/add time, visible
+        // and unhidden, and the preset storage would be persisted with a path that doesn't exist).
+        if (!is_dir($path) && !mkdir($path, recursive: true) && !is_dir($path)) {
+            throw new \RuntimeException(\sprintf('Failed to create directory "%s".', $path));
         }
     }
 

@@ -30,6 +30,8 @@ namespace App\Service\Download;
 use App\Entity\Enum\StorageType;
 use App\Entity\Storage;
 use App\Service\AppSettingsProvider;
+use App\Service\Exception\DownloadStorageUnavailableException;
+use App\Service\Storage\StorageMarkerResult;
 use App\Service\Storage\StorageMarkerService;
 use Doctrine\ORM\EntityManagerInterface;
 
@@ -83,10 +85,25 @@ final class PresetDownloadsStorageProvider
         $this->entityManager->persist($storage);
         $this->entityManager->flush();
 
-        $this->markerService->reconcile($storage);
-
         $storageId = $storage->id ?? throw new \LogicException('Storage must be assigned an id right after flush().');
-        $this->settings->setPresetDownloadsStorageId($storageId);
+
+        // Any failure from here on (the path is already occupied by another storage's marker,
+        // or reconcile()/setPresetDownloadsStorageId() throws) must leave no trace: the just
+        // created row is rolled back before the exception propagates, otherwise its id was never
+        // recorded in settings and getOrCreate() would retry create() forever, piling up
+        // duplicate rows at the same path (issue #851's review).
+        try {
+            if ($this->markerService->reconcile($storage) === StorageMarkerResult::Conflict) {
+                throw new DownloadStorageUnavailableException($storageId, $path);
+            }
+
+            $this->settings->setPresetDownloadsStorageId($storageId);
+        } catch (\Throwable $e) {
+            $this->entityManager->remove($storage);
+            $this->entityManager->flush();
+
+            throw $e;
+        }
 
         return $storage;
     }

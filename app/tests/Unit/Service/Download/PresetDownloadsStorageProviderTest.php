@@ -35,6 +35,7 @@ use App\Service\AppConfigStore;
 use App\Service\AppSettingsProvider;
 use App\Service\Download\NativeDownloadStorageFilesystem;
 use App\Service\Download\PresetDownloadsStorageProvider;
+use App\Service\Exception\DownloadStorageUnavailableException;
 use App\Service\Storage\StorageMarkerService;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Types\Type;
@@ -178,5 +179,71 @@ final class PresetDownloadsStorageProviderTest extends TestCase
         $storage = $this->provider()->getOrCreate();
 
         $this->assertNotSame($unrelated->id, $storage->id);
+    }
+
+    /**
+     * A human may have set up a Storage on "Downloads/AnimeDB" before this preset ever ran there
+     * (or picked it as a relocation target) — its marker already names that *other*, still
+     * existing Storage. create() must not adopt the path anyway: it must roll back the row it
+     * just persisted and never record an id in settings, or every later enqueue() would reject
+     * downloads through assertStorageAvailable() forever with no way for getOrCreate() to retry
+     * (issue #851's review).
+     */
+    public function testGetOrCreateRollsBackAndThrowsWhenTheMarkerAtThePresetPathNamesAnotherExistingStorage(): void
+    {
+        $other = new Storage('Other', $this->homeDir.\DIRECTORY_SEPARATOR.'other', StorageType::Folder);
+        $this->entityManager->persist($other);
+        $this->entityManager->flush();
+
+        $presetPath = $this->homeDir.\DIRECTORY_SEPARATOR.'Downloads'.\DIRECTORY_SEPARATOR.'AnimeDB';
+        mkdir($presetPath, recursive: true);
+        file_put_contents($presetPath.\DIRECTORY_SEPARATOR.'desktop.ini', "[AnimeDB]\nid={$other->id}\n");
+
+        try {
+            $this->provider()->getOrCreate();
+            $this->fail('Expected a DownloadStorageUnavailableException.');
+        } catch (DownloadStorageUnavailableException $e) {
+            $this->assertSame($presetPath, $e->path);
+        }
+
+        $this->assertNull($this->settings->getPresetDownloadsStorageId());
+        $this->assertCount(1, $this->entityManager->getRepository(Storage::class)->findAll());
+    }
+
+    /**
+     * Any failure between the preset row's flush() and its id landing in settings — not only the
+     * Conflict case above — must roll back the same way: the row persisted so far is removed,
+     * nothing is written to settings, and the exception still propagates. A broken
+     * StorageMarkerService (its EntityManager pointed at a connection with no "storage" table)
+     * stands in for any real failure reconcile() could hit (lost DB connection, locked file).
+     */
+    public function testGetOrCreateRollsBackWhenReconcileThrows(): void
+    {
+        $brokenConfig = ORMSetup::createAttributeMetadataConfig([\dirname(__DIR__, 4).'/src/Entity'], true);
+        $brokenConfig->enableNativeLazyObjects(true);
+        $brokenConnection = DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true], $brokenConfig);
+        $brokenEntityManager = new EntityManager($brokenConnection, $brokenConfig);
+        $brokenMarkerService = new StorageMarkerService($brokenEntityManager);
+
+        $presetPath = $this->homeDir.\DIRECTORY_SEPARATOR.'Downloads'.\DIRECTORY_SEPARATOR.'AnimeDB';
+        mkdir($presetPath, recursive: true);
+        file_put_contents($presetPath.\DIRECTORY_SEPARATOR.'desktop.ini', "[AnimeDB]\nid=999999\n");
+
+        $provider = new PresetDownloadsStorageProvider(
+            $this->entityManager,
+            $this->settings,
+            $brokenMarkerService,
+            new NativeDownloadStorageFilesystem(),
+        );
+
+        try {
+            $provider->getOrCreate();
+            $this->fail('Expected an exception from reconcile().');
+        } catch (\Throwable) {
+            // Expected — the broken marker service's connection has no "storage" table.
+        }
+
+        $this->assertNull($this->settings->getPresetDownloadsStorageId());
+        $this->assertCount(0, $this->entityManager->getRepository(Storage::class)->findAll());
     }
 }
