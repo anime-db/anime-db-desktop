@@ -79,6 +79,12 @@ final class DownloadsOverviewBuilder
             }
         }
 
+        // Keyed by storage path, not id: most Pending rows share the same targetStorage, and
+        // reading its desktop.ini marker is a disk I/O (potentially slow on a disconnected
+        // network/removable drive) that this endpoint's 2s budget can't afford to pay once per
+        // row on every 2-second poll tick.
+        $markerIdCache = [];
+
         $rows = [];
         $claimedInfoHashes = [];
         foreach ($this->downloads->findAllOrderedByDateAddDesc() as $download) {
@@ -88,7 +94,7 @@ final class DownloadsOverviewBuilder
                 $claimedInfoHashes[$infoHash] = true;
             }
 
-            $rows[] = $this->buildRow($download, $torrent, $qbittorrentAvailable && $torrent === null);
+            $rows[] = $this->buildRow($download, $torrent, $qbittorrentAvailable && $torrent === null, $markerIdCache);
         }
 
         $orphans = [];
@@ -105,10 +111,12 @@ final class DownloadsOverviewBuilder
 
     /**
      * @param ?array<string, mixed> $torrent
+     * @param array<string, ?int>   $markerIdCache keyed by storage path, shared across the whole
+     *                                             build() call (see its own comment)
      *
      * @return array<string, mixed>
      */
-    private function buildRow(Download $download, ?array $torrent, bool $torrentKnownMissing): array
+    private function buildRow(Download $download, ?array $torrent, bool $torrentKnownMissing, array &$markerIdCache): array
     {
         $anime = $download->getAnime();
         $targetStorage = $download->getTargetStorage();
@@ -120,7 +128,7 @@ final class DownloadsOverviewBuilder
             'animeUrl' => $anime->id !== null ? $this->urlGenerator->generate('anime_show', ['id' => $anime->id]) : null,
             'displayName' => $torrent['name'] ?? $anime->getTitle(),
             'coreStatus' => $download->getStatus()->value,
-            'statusText' => $this->statusText($download, $torrent, $torrentKnownMissing, $targetStorage),
+            'statusText' => $this->statusText($download, $torrent, $torrentKnownMissing, $targetStorage, $markerIdCache),
             'targetStorageName' => $targetStorage?->getName(),
         ] + $this->liveFields($torrent);
     }
@@ -183,8 +191,9 @@ final class DownloadsOverviewBuilder
 
     /**
      * @param ?array<string, mixed> $torrent
+     * @param array<string, ?int>   $markerIdCache
      */
-    private function statusText(Download $download, ?array $torrent, bool $torrentKnownMissing, ?Storage $targetStorage): string
+    private function statusText(Download $download, ?array $torrent, bool $torrentKnownMissing, ?Storage $targetStorage, array &$markerIdCache): string
     {
         $status = $download->getStatus();
 
@@ -201,7 +210,7 @@ final class DownloadsOverviewBuilder
         }
 
         // Pending from here on.
-        if ($targetStorage !== null && $this->storageMarker->readMarkerId($targetStorage->getPath()) !== $targetStorage->id) {
+        if ($targetStorage !== null && $this->readMarkerIdCached($targetStorage, $markerIdCache) !== $targetStorage->id) {
             return $this->translator->trans('downloads.status_storage_unavailable');
         }
 
@@ -210,6 +219,17 @@ final class DownloadsOverviewBuilder
         }
 
         return $this->translator->trans('downloads.status_pending');
+    }
+
+    /** @param array<string, ?int> $markerIdCache */
+    private function readMarkerIdCached(Storage $targetStorage, array &$markerIdCache): ?int
+    {
+        $path = $targetStorage->getPath();
+        if (!\array_key_exists($path, $markerIdCache)) {
+            $markerIdCache[$path] = $this->storageMarker->readMarkerId($path);
+        }
+
+        return $markerIdCache[$path];
     }
 
     private function failureReasonKey(?string $failureReason): string

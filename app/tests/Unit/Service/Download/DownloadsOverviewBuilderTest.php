@@ -200,6 +200,41 @@ final class DownloadsOverviewBuilderTest extends TestCase
         self::assertSame('Докачано, привязывается…', $result['rows'][0]['statusText']);
     }
 
+    /**
+     * After issue #851, every real Pending row has a targetStorage, so this (marker matches, not
+     * the mismatch case below) is the actual common path in production — without it, a regression
+     * that always reports "storage unavailable" would pass every other test in this class, since
+     * only testPendingWithMismatchedStorageMarkerShowsStorageUnavailableInsteadOfFailed() below
+     * sets a targetStorage at all, and it expects exactly that text anyway.
+     */
+    public function testPendingWithMatchingStorageMarkerShowsWaitingAtLowProgress(): void
+    {
+        $dir = $this->makeDir();
+        $storage = $this->persistStorage($dir);
+        file_put_contents($dir.\DIRECTORY_SEPARATOR.'desktop.ini', "[AnimeDB]\nid=".$storage->id."\n");
+
+        $anime = $this->persistAnime();
+        $this->persistDownload(str_repeat('5', 40), $anime, $storage);
+
+        $result = $this->builder->build([$this->torrent(str_repeat('5', 40), ['progress' => 0.4])], true);
+
+        self::assertSame('Ждёт', $result['rows'][0]['statusText']);
+    }
+
+    public function testPendingWithMatchingStorageMarkerShowsLinkingAtFullProgress(): void
+    {
+        $dir = $this->makeDir();
+        $storage = $this->persistStorage($dir);
+        file_put_contents($dir.\DIRECTORY_SEPARATOR.'desktop.ini', "[AnimeDB]\nid=".$storage->id."\n");
+
+        $anime = $this->persistAnime();
+        $this->persistDownload(str_repeat('6', 40), $anime, $storage);
+
+        $result = $this->builder->build([$this->torrent(str_repeat('6', 40), ['progress' => 1.0])], true);
+
+        self::assertSame('Докачано, привязывается…', $result['rows'][0]['statusText']);
+    }
+
     public function testPendingWithMismatchedStorageMarkerShowsStorageUnavailableInsteadOfFailed(): void
     {
         $dir = $this->makeDir();
