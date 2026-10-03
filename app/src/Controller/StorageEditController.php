@@ -31,6 +31,8 @@ use App\Entity\Enum\StorageType;
 use App\Entity\Exception\InvalidNameException;
 use App\Entity\Exception\InvalidPathException;
 use App\Entity\Storage;
+use App\Repository\DownloadRepository;
+use App\Service\AppSettingsProvider;
 use App\Service\Storage\StorageMarkerService;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\HttpFoundation\RedirectResponse;
@@ -57,6 +59,17 @@ use Twig\Environment;
  * same way StorageNewController does on create, so a storage switched to a writable type — or
  * relocated to a new path — still ends up with a desktop.ini marker without requiring a rescan
  * first.
+ *
+ * Issue #853: relocating, or switching to a {@see StorageType::isWritable()}-false type, is
+ * refused with a form error instead while the storage still has a not-yet-Completed downloads
+ * row targeting it (same reasoning as {@see StorageController::delete()}). The preset downloads
+ * storage (see AppSettingsProvider::getPresetDownloadsStorageId()) additionally never accepts a
+ * relocate, or a switch to a non-writable type, regardless of downloads — {@see
+ * PresetDownloadsStorageProvider::getOrCreate()} hands this storage out by id with no type check
+ * of its own, so letting it become non-writable would silently break every future enqueue. Its
+ * path field is rendered read-only, and its type select has every non-writable option disabled,
+ * for the same reason the server-side checks exist: the server check is the actual guard, these
+ * are just there so the form does not invite a submission the server is going to refuse anyway.
  */
 final class StorageEditController
 {
@@ -66,6 +79,8 @@ final class StorageEditController
         private readonly CsrfTokenManagerInterface $csrfTokenManager,
         private readonly UrlGeneratorInterface $urlGenerator,
         private readonly Environment $twig,
+        private readonly DownloadRepository $downloads,
+        private readonly AppSettingsProvider $settings,
     ) {
     }
 
@@ -91,6 +106,43 @@ final class StorageEditController
         }
 
         $previousPath = $storage->getPath();
+        $previousType = $storage->getType();
+        $pathChanged = trim($path) !== $previousPath;
+        $typeChangingToUnwritable = $type !== $previousType && !$type->isWritable();
+        $isPreset = $storageId === $this->settings->getPresetDownloadsStorageId();
+
+        if ($pathChanged && $isPreset) {
+            return $this->renderForm(
+                $storage,
+                name: $name,
+                path: $path,
+                type: $type,
+                error: 'storage_edit.error_preset_path',
+                errorParams: ['%name%' => $storage->getName()],
+            );
+        }
+
+        if ($typeChangingToUnwritable && $isPreset) {
+            return $this->renderForm(
+                $storage,
+                name: $name,
+                path: $path,
+                type: $type,
+                error: 'storage_edit.error_preset_type',
+                errorParams: ['%name%' => $storage->getName()],
+            );
+        }
+
+        if (($pathChanged || $typeChangingToUnwritable) && $this->downloads->hasUnfinishedDownloadsForTargetStorage($storageId)) {
+            return $this->renderForm(
+                $storage,
+                name: $name,
+                path: $path,
+                type: $type,
+                error: 'storage_edit.error_unfinished_downloads',
+                errorParams: ['%name%' => $storage->getName()],
+            );
+        }
 
         try {
             $storage->rename($name);
@@ -114,12 +166,14 @@ final class StorageEditController
         return new RedirectResponse($this->urlGenerator->generate('storage_index'));
     }
 
+    /** @param array<string, string> $errorParams */
     private function renderForm(
         Storage $storage,
         ?string $name = null,
         ?string $path = null,
         ?StorageType $type = null,
         ?string $error = null,
+        array $errorParams = [],
     ): Response {
         return new Response($this->twig->render('storage/edit.html.twig', [
             'storage' => $storage,
@@ -127,7 +181,13 @@ final class StorageEditController
             'path' => $path ?? $storage->getPath(),
             'type' => ($type ?? $storage->getType())->value,
             'error' => $error,
+            'errorParams' => $errorParams,
             'types' => array_column(StorageType::cases(), 'value'),
+            'nonWritableTypes' => array_column(
+                array_filter(StorageType::cases(), static fn (StorageType $type): bool => !$type->isWritable()),
+                'value',
+            ),
+            'isPreset' => $storage->id !== null && $storage->id === $this->settings->getPresetDownloadsStorageId(),
         ]));
     }
 

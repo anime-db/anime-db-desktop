@@ -30,7 +30,9 @@ namespace App\Tests\Unit\Repository;
 use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
 use App\Entity\Download;
+use App\Entity\Enum\StorageType;
 use App\Entity\Enum\WatchStatus;
+use App\Entity\Storage;
 use App\Entity\TvAnime;
 use App\Repository\DownloadRepository;
 use Doctrine\DBAL\DriverManager;
@@ -78,6 +80,15 @@ final class DownloadRepositoryTest extends TestCase
         $this->entityManager->flush();
 
         return $anime;
+    }
+
+    private function persistStorage(string $name): Storage
+    {
+        $storage = new Storage($name, sys_get_temp_dir(), StorageType::Folder);
+        $this->entityManager->persist($storage);
+        $this->entityManager->flush();
+
+        return $storage;
     }
 
     public function testRemoveDeletesOnlyThePairingRow(): void
@@ -193,5 +204,63 @@ final class DownloadRepositoryTest extends TestCase
         $this->repository->save($fullyCompleted);
 
         $this->assertSame([self::HASH_A], $this->repository->findDistinctPendingInfoHashes());
+    }
+
+    public function testHasUnfinishedDownloadsForTargetStorageReturnsFalseWhenStorageHasNoDownloads(): void
+    {
+        $storage = $this->persistStorage('Main folder');
+
+        $this->assertFalse($this->repository->hasUnfinishedDownloadsForTargetStorage((int) $storage->id));
+    }
+
+    public function testHasUnfinishedDownloadsForTargetStorageReturnsTrueForAPendingRow(): void
+    {
+        $storage = $this->persistStorage('Main folder');
+        $anime = $this->persistAnime('Anime A');
+        $download = new Download(self::HASH_A, $anime);
+        $download->assignTargetStorage($storage);
+        $this->repository->save($download);
+
+        $this->assertTrue($this->repository->hasUnfinishedDownloadsForTargetStorage((int) $storage->id));
+    }
+
+    /**
+     * A Failed row's torrent still sits in qBittorrent with data under this storage's path, so
+     * it must keep blocking the storage just like Pending does (issue #853 discussion).
+     */
+    public function testHasUnfinishedDownloadsForTargetStorageReturnsTrueForAFailedRow(): void
+    {
+        $storage = $this->persistStorage('Main folder');
+        $anime = $this->persistAnime('Anime A');
+        $download = new Download(self::HASH_A, $anime);
+        $download->assignTargetStorage($storage);
+        $download->markFailed();
+        $this->repository->save($download);
+
+        $this->assertTrue($this->repository->hasUnfinishedDownloadsForTargetStorage((int) $storage->id));
+    }
+
+    public function testHasUnfinishedDownloadsForTargetStorageReturnsFalseWhenOnlyCompletedRowsRemain(): void
+    {
+        $storage = $this->persistStorage('Main folder');
+        $anime = $this->persistAnime('Anime A');
+        $download = new Download(self::HASH_A, $anime);
+        $download->assignTargetStorage($storage);
+        $download->markCompleted();
+        $this->repository->save($download);
+
+        $this->assertFalse($this->repository->hasUnfinishedDownloadsForTargetStorage((int) $storage->id));
+    }
+
+    public function testHasUnfinishedDownloadsForTargetStorageIgnoresRowsTargetingAnotherStorage(): void
+    {
+        $storage = $this->persistStorage('Main folder');
+        $otherStorage = $this->persistStorage('Other folder');
+        $anime = $this->persistAnime('Anime A');
+        $download = new Download(self::HASH_A, $anime);
+        $download->assignTargetStorage($otherStorage);
+        $this->repository->save($download);
+
+        $this->assertFalse($this->repository->hasUnfinishedDownloadsForTargetStorage((int) $storage->id));
     }
 }

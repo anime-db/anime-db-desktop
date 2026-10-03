@@ -465,6 +465,8 @@ storage_list:
     confirmed_without_plugin_data_text: 'Добавлено без данных плагина: %title%'
     conflict_text: 'Уже в каталоге «%title%», привязан к %path%'
     error_text: 'Ошибка: %path% — %message%'
+    delete_error_preset: 'Нельзя удалить хранилище «%name%»: оно используется для загрузок по умолчанию.'
+    delete_error_unfinished_downloads: 'Нельзя удалить хранилище «%name%»: в нём есть незавершённые закачки или закачки с ошибкой. Удалите их, чтобы освободить хранилище.'
 
 anime_detail:
     title: '%title% — AnimeDB'
@@ -604,6 +606,10 @@ storage_edit:
     field_path: Путь
     submit_button: Сохранить
     error_invalid: Укажите корректные название, путь и тип хранилища.
+    error_preset_path: 'Нельзя изменить путь хранилища «%name%»: оно используется для загрузок по умолчанию.'
+    error_preset_type: 'Нельзя сделать хранилище «%name%» недоступным для записи: оно используется для загрузок по умолчанию.'
+    error_unfinished_downloads: 'Нельзя изменить хранилище «%name%»: в нём есть незавершённые закачки или закачки с ошибкой. Удалите их, чтобы освободить хранилище.'
+    preset_path_hint: Путь хранилища для загрузок по умолчанию менять нельзя.
 
 plugin_widget:
     loading: Загрузка…
