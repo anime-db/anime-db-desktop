@@ -206,10 +206,10 @@ final class DownloadRepositoryTest extends TestCase
     }
 
     /**
-     * Failed is terminal (nothing transitions a row back out of it, see Download::markFailed()),
-     * so unlike Pending it must not keep blocking the storage forever.
+     * A Failed row's torrent still sits in qBittorrent with data under this storage's path, so
+     * it must keep blocking the storage just like Pending does (issue #853 discussion).
      */
-    public function testHasUnfinishedDownloadsForTargetStorageReturnsFalseForAFailedRow(): void
+    public function testHasUnfinishedDownloadsForTargetStorageReturnsTrueForAFailedRow(): void
     {
         $storage = $this->persistStorage('Main folder');
         $anime = $this->persistAnime('Anime A');
@@ -218,7 +218,7 @@ final class DownloadRepositoryTest extends TestCase
         $download->markFailed();
         $this->repository->save($download);
 
-        $this->assertFalse($this->repository->hasUnfinishedDownloadsForTargetStorage((int) $storage->id));
+        $this->assertTrue($this->repository->hasUnfinishedDownloadsForTargetStorage((int) $storage->id));
     }
 
     public function testHasUnfinishedDownloadsForTargetStorageReturnsFalseWhenOnlyCompletedRowsRemain(): void

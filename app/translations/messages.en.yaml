@@ -461,7 +461,7 @@ storage_list:
     conflict_text: 'Already in the catalog "%title%", linked to %path%'
     error_text: 'Error: %path% — %message%'
     delete_error_preset: 'Cannot delete storage "%name%": it is used as the default downloads storage.'
-    delete_error_unfinished_downloads: 'Cannot delete storage "%name%": it still has unfinished downloads.'
+    delete_error_unfinished_downloads: 'Cannot delete storage "%name%": it still has unfinished or failed downloads. Remove them to free the storage.'
 
 anime_detail:
     title: '%title% — AnimeDB'
@@ -600,7 +600,7 @@ storage_edit:
     error_invalid: Enter a valid name, path, and storage type.
     error_preset_path: 'Cannot change the path of storage "%name%": it is used as the default downloads storage.'
     error_preset_type: 'Cannot make storage "%name%" non-writable: it is used as the default downloads storage.'
-    error_unfinished_downloads: 'Cannot change storage "%name%": it still has unfinished downloads.'
+    error_unfinished_downloads: 'Cannot change storage "%name%": it still has unfinished or failed downloads. Remove them to free the storage.'
     preset_path_hint: The default downloads storage's path cannot be changed.
 
 plugin_widget:

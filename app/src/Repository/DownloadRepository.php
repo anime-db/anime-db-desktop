@@ -106,24 +106,26 @@ class DownloadRepository
     }
 
     /**
-     * Whether $storageId has a row still in progress (status Pending) with it as $targetStorage —
+     * Whether $storageId has a row that is not yet Completed with it as $targetStorage —
      * the guard StorageController::delete() and StorageEditController::update() (issue #853)
      * consult before letting a storage's path change or the storage itself disappear out from
-     * under a download qBittorrent is still writing.
+     * under a download qBittorrent is still writing or still holding torrent data for.
      *
-     * Failed is excluded on purpose: it is terminal ({@see Download::markFailed()} only leaves
-     * Pending, and nothing transitions a row back out of Failed), so a storage that once had a
-     * failed download would otherwise stay un-deletable/un-relocatable forever even once nothing
-     * is writing into it.
+     * Failed is included on purpose even though it is currently terminal: a Failed row's torrent
+     * still sits in qBittorrent with data under this storage's path, and issue #856's planned
+     * retry() will move some Failed rows back to Pending, which would break if the storage (or
+     * its target_storage_id, cleared via ON DELETE SET NULL) had already been removed or
+     * relocated out from under it. A storage only stops being blocked once its Failed rows are
+     * removed by the user.
      */
     public function hasUnfinishedDownloadsForTargetStorage(int $storageId): bool
     {
         $count = $this->entityManager->getRepository(Download::class)->createQueryBuilder('d')
             ->select('COUNT(d.id)')
             ->where('d.targetStorage = :storageId')
-            ->andWhere('d.status = :pending')
+            ->andWhere('d.status != :completed')
             ->setParameter('storageId', $storageId)
-            ->setParameter('pending', DownloadStatus::Pending)
+            ->setParameter('completed', DownloadStatus::Completed)
             ->getQuery()
             ->getSingleScalarResult();
 
