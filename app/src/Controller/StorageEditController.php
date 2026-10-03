@@ -61,8 +61,8 @@ use Twig\Environment;
  * first.
  *
  * Issue #853: relocating, or switching to a {@see StorageType::isWritable()}-false type, is
- * refused with a form error instead while the storage still has a Pending downloads row
- * targeting it (same reasoning as {@see StorageController::delete()}). The preset downloads
+ * refused with a form error instead while the storage still has a not-yet-Completed downloads
+ * row targeting it (same reasoning as {@see StorageController::delete()}). The preset downloads
  * storage (see AppSettingsProvider::getPresetDownloadsStorageId()) additionally never accepts a
  * relocate, or a switch to a non-writable type, regardless of downloads — {@see
  * PresetDownloadsStorageProvider::getOrCreate()} hands this storage out by id with no type check
@@ -107,7 +107,7 @@ final class StorageEditController
 
         $previousPath = $storage->getPath();
         $previousType = $storage->getType();
-        $pathChanged = $path !== $previousPath;
+        $pathChanged = trim($path) !== $previousPath;
         $typeChangingToUnwritable = $type !== $previousType && !$type->isWritable();
         $isPreset = $storageId === $this->settings->getPresetDownloadsStorageId();
 

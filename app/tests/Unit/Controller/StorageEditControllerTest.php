@@ -605,6 +605,38 @@ final class StorageEditControllerTest extends TestCase
         $this->assertSame('Renamed preset', $storage->getName());
     }
 
+    /**
+     * Acceptance (issue #853 review): a trailing space the browser/user adds to an otherwise
+     * unchanged path must not be mistaken for a real path change — Storage::relocate() trims the
+     * path anyway, so comparing the raw, untrimmed form value against the current path would
+     * make the preset storage (whose path can never change) reject its own unmodified value.
+     */
+    public function testUpdateAllowsPresetPathWithTrailingWhitespaceWhenUnchanged(): void
+    {
+        $dir = $this->makeDir();
+        $storage = new Storage('AnimeDB', $dir, StorageType::Folder);
+        $this->setStorageId($storage, 27);
+
+        $settings = $this->createSettings();
+        $settings->setPresetDownloadsStorageId(27);
+
+        $entityManager = $this->createMock(EntityManagerInterface::class);
+        $entityManager->expects($this->once())->method('flush');
+
+        $controller = $this->createController(entityManager: $entityManager, settings: $settings);
+        $request = Request::create('/storage/27/edit', 'POST', [
+            'name' => 'AnimeDB',
+            'path' => $dir.' ',
+            'type' => 'folder',
+            '_token' => 'token',
+        ]);
+
+        $response = $controller->update($storage, $request);
+
+        $this->assertInstanceOf(RedirectResponse::class, $response);
+        $this->assertSame($dir, $storage->getPath());
+    }
+
     /** Acceptance (issue #853): the preset's path field is rendered read-only, not just refused server-side. */
     public function testEditMarksPresetStorageAsPresetForTheTemplate(): void
     {
