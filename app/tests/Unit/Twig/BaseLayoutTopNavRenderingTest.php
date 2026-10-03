@@ -29,6 +29,7 @@ namespace App\Tests\Unit\Twig;
 
 use App\Entity\Enum\StorageType;
 use App\Entity\Storage;
+use App\Service\Plugin\FillerAvailabilityPresenter;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\HttpFoundation\Request;
@@ -100,6 +101,62 @@ final class BaseLayoutTopNavRenderingTest extends KernelTestCase
         $html = $twig->render('storage/scan_prompt.html.twig', ['storage' => $storage]);
 
         self::assertStringNotContainsString('settings-sidebar', $html);
+    }
+
+    /**
+     * Regression (issue #834 review): the Add menu's "Search in plugins" branch — active link vs.
+     * disabled item with a dynamic `nav.add_menu_search_plugins_hint_<kind>` trans key, and, for
+     * `not_installed`, a URL swapped in the template for `settings_market_index` with
+     * `?feature=filler` tacked on — had no render test at all, so a typo in the trans key or a lost
+     * `feature=filler` would pass CI unnoticed.
+     */
+    public function testAddMenuRendersActiveSearchPluginsLinkWhenAFillerIsActive(): void
+    {
+        $presenter = $this->createStub(FillerAvailabilityPresenter::class);
+        $presenter->method('hasActiveFiller')->willReturn(true);
+
+        $html = $this->renderBaseLayoutWithFillerPresenter('home_index', $presenter);
+
+        $this->assertStringContainsString('<a class="dropdown-item" href="/anime/search-plugins">', $html);
+        $this->assertStringNotContainsString('dropdown-item disabled', $html);
+    }
+
+    public function testAddMenuRendersNotInstalledHintLinkingToMarketWithFillerFeatureFilter(): void
+    {
+        $presenter = $this->createStub(FillerAvailabilityPresenter::class);
+        $presenter->method('hasActiveFiller')->willReturn(false);
+        $presenter->method('describeUnavailable')->willReturn(['kind' => 'not_installed', 'url' => '/settings/market']);
+
+        $html = $this->renderBaseLayoutWithFillerPresenter('home_index', $presenter);
+
+        $this->assertStringContainsString('dropdown-item disabled', $html);
+        $this->assertStringContainsString('No plugin source is installed.', $html);
+        $this->assertStringContainsString('href="/settings/market?feature=filler"', $html);
+    }
+
+    public function testAddMenuRendersDisabledHintLinkingToThePresentersOwnUrl(): void
+    {
+        $presenter = $this->createStub(FillerAvailabilityPresenter::class);
+        $presenter->method('hasActiveFiller')->willReturn(false);
+        $presenter->method('describeUnavailable')->willReturn(['kind' => 'disabled', 'url' => '/settings/plugins/animedb-shikimori']);
+
+        $html = $this->renderBaseLayoutWithFillerPresenter('home_index', $presenter);
+
+        $this->assertStringContainsString('dropdown-item disabled', $html);
+        $this->assertStringContainsString('href="/settings/plugins/animedb-shikimori"', $html);
+        $this->assertStringNotContainsString('feature=filler', $html);
+    }
+
+    private function renderBaseLayoutWithFillerPresenter(string $route, FillerAvailabilityPresenter $presenter): string
+    {
+        self::bootKernel();
+        self::getContainer()->set(FillerAvailabilityPresenter::class, $presenter);
+        $this->pushRequest($route);
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+
+        return $twig->render('base.html.twig');
     }
 
     private function renderBaseLayout(string $route): string
