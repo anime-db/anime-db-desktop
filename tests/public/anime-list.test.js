@@ -1004,6 +1004,43 @@ test('a checkbox accumulates without firing a request; the value label applies i
     expect(byKind(calls, 'list')).toHaveLength(2);
     expect(byKind(calls, 'facets')).toHaveLength(2);
     expect(queryParams(byKind(calls, 'list')[1].url)['watch_status[]']).toBe('watching');
+
+    // Instant apply folds the clicked value straight into appliedFilters, leaving nothing in the
+    // pending accumulation still to apply — "Отфильтровать" must go back to disabled (issue
+    // #879). Before the fix it stayed enabled, since the button only checked whether pending was
+    // non-empty, not whether it still differed from what's already applied.
+    expect(applyButton.disabled).toBe(true);
+});
+
+// seedFromUrl() resets pendingFilters to equal appliedFilters on every popstate (the list core's
+// handlePopState() calls it with the new URL's params), but the apply button's disabled state used
+// to be left stale from before the traversal: check a filter without applying it (button enabled),
+// navigate back to a URL matching what's already applied, and the button stayed enabled — a click
+// at that point fired an empty reload/facets/pushState cycle for no actual filter change.
+test('a popstate event that reseeds pendingFilters back to appliedFilters disables the apply button (issue #879)', async () => {
+    const calls = mockFetchQueueAll();
+    setUpTranslations();
+
+    loadAnimeListModule();
+    await flushMicrotasks();
+    byKind(calls, 'list')[0].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 0, limit: 6, offset: 0 }));
+    byKind(calls, 'facets')[0].resolve(jsonResponse({
+        watch_status: [{ value: 'watching', count: 5 }],
+        type: [], date_premiere_decade: [], user_rating: [], labels: [], genres: [], themes: [], studios: [],
+    }));
+    await flushMicrotasks();
+
+    const checkbox = document.querySelector('[data-filter-section="watch_status"] .anime-list__filter-checkbox');
+    const applyButton = document.getElementById('anime-list-filter-apply');
+    checkbox.checked = true;
+    checkbox.dispatchEvent(new Event('change'));
+    expect(applyButton.disabled).toBe(false);
+
+    window.history.pushState(null, '', '/anime');
+    window.dispatchEvent(new PopStateEvent('popstate'));
+    await flushMicrotasks();
+
+    expect(applyButton.disabled).toBe(true);
 });
 
 test('"reset all" clears applied filters and refetches without touching the chosen sort field', async () => {
@@ -2148,4 +2185,107 @@ test('a section-toggle click while a persist POST is still in flight is queued r
     // state (both sections), not the stale state POST #1 was built from.
     expect(persistCalls()).toHaveLength(2);
     expect(lastPersistBody().collapsed.slice().sort()).toEqual(['genres', 'studios']);
+});
+
+test('scrolling the page recomputes the filter panel\'s --anime-list-filters-top offset (issue #879)', async () => {
+    const calls = mockFetchQueueAll();
+    setUpTranslations();
+
+    loadAnimeListModule();
+    await flushMicrotasks();
+    byKind(calls, 'list')[0].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 0, limit: 6, offset: 0 }));
+    byKind(calls, 'facets')[0].resolve(emptyFacets());
+    await flushMicrotasks();
+
+    const panel = document.getElementById('anime-list-filters');
+    // jsdom never runs real layout, so getBoundingClientRect() always reports zeros — stand in
+    // for "the panel has not scrolled up to the sticky pin point yet, its top sits 96px into the
+    // viewport" the same way a real scroll position would move it.
+    panel.getBoundingClientRect = jest.fn(() => ({ top: 96 }));
+
+    window.dispatchEvent(new Event('scroll'));
+    // The handler is scheduled via requestAnimationFrame, not run synchronously from the scroll
+    // event — jest.useFakeTimers() (beforeEach above) fakes requestAnimationFrame too, so it
+    // needs an explicit advance rather than a real awaited frame.
+    jest.advanceTimersByTime(16);
+
+    expect(panel.style.getPropertyValue('--anime-list-filters-top')).toBe('96px');
+});
+
+test('a negative getBoundingClientRect().top (scrolled past the sticky pin point) clamps the offset to 0 (issue #879)', async () => {
+    const calls = mockFetchQueueAll();
+    setUpTranslations();
+
+    loadAnimeListModule();
+    await flushMicrotasks();
+    byKind(calls, 'list')[0].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 0, limit: 6, offset: 0 }));
+    byKind(calls, 'facets')[0].resolve(emptyFacets());
+    await flushMicrotasks();
+
+    const panel = document.getElementById('anime-list-filters');
+    panel.getBoundingClientRect = jest.fn(() => ({ top: -40 }));
+
+    window.dispatchEvent(new Event('resize'));
+    jest.advanceTimersByTime(16);
+
+    expect(panel.style.getPropertyValue('--anime-list-filters-top')).toBe('0px');
+});
+
+// While the panel is hidden, getBoundingClientRect() reports zeros in a real browser too (same as
+// jsdom's default without any stub), so --anime-list-filters-top gets pinned at 0px during that
+// time. Showing the panel again must recompute it right away rather than leaving it at 0px until
+// the next scroll/resize fires — otherwise the panel reopens with the overflow bug issue #879 was
+// filed for, for however long it takes the user to scroll.
+test('showing the filter panel again after hiding it recomputes --anime-list-filters-top immediately (issue #879)', async () => {
+    const calls = mockFetchQueueAll();
+    setUpTranslations();
+
+    loadAnimeListModule();
+    await flushMicrotasks();
+    byKind(calls, 'list')[0].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 0, limit: 6, offset: 0 }));
+    byKind(calls, 'facets')[0].resolve(emptyFacets());
+    await flushMicrotasks();
+
+    const panel = document.getElementById('anime-list-filters');
+    const toggleButton = document.getElementById('anime-list-filters-toggle');
+
+    toggleButton.dispatchEvent(new Event('click', { bubbles: true }));
+    expect(panel.hidden).toBe(true);
+    window.dispatchEvent(new Event('scroll'));
+    jest.advanceTimersByTime(16);
+    expect(panel.style.getPropertyValue('--anime-list-filters-top')).toBe('0px');
+
+    panel.getBoundingClientRect = jest.fn(() => ({ top: 150 }));
+    toggleButton.dispatchEvent(new Event('click', { bubbles: true }));
+
+    expect(panel.hidden).toBe(false);
+    expect(panel.style.getPropertyValue('--anime-list-filters-top')).toBe('150px');
+});
+
+// Mirrors the AnimeListGrid.destroy() remount tests (issue #734): a destroy() that silently stops
+// removing its window-level scroll/resize listeners (or passes the wrong function reference to
+// removeEventListener) would leave the old instance's handler attached, but nothing else in this
+// file calls destroy() directly or asserts on it, so the suite would stay green regardless.
+test('destroy() removes the scroll/resize listeners so a torn-down panel is not recomputed on scroll (issue #879)', async () => {
+    const calls = mockFetchQueueAll();
+    setUpTranslations();
+
+    loadAnimeListModule();
+    await flushMicrotasks();
+    byKind(calls, 'list')[0].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 0, limit: 6, offset: 0 }));
+    byKind(calls, 'facets')[0].resolve(emptyFacets());
+    await flushMicrotasks();
+
+    const root = document.querySelector('[data-control="anime-list"]');
+    const panel = document.getElementById('anime-list-filters');
+
+    root.dispatchEvent(new CustomEvent('htmx:beforeCleanupElement', { bubbles: true }));
+
+    // Still reports zeros from jsdom's lack of real layout until stubbed, same as the tests above —
+    // if destroy() left the scroll listener attached, this stub would make it write 96px.
+    panel.getBoundingClientRect = jest.fn(() => ({ top: 96 }));
+    window.dispatchEvent(new Event('scroll'));
+    jest.advanceTimersByTime(16);
+
+    expect(panel.style.getPropertyValue('--anime-list-filters-top')).toBe('0px');
 });

@@ -186,6 +186,10 @@
 }
 
 // Own scroll container, sticky under the header, height capped to the viewport (issue #666).
+// `--anime-list-filters-top` is kept up to date by anime-list-filters.js's scroll/resize handler
+// (issue #879) — before the page has scrolled far enough for `position: sticky` to pin the panel
+// to the top, it starts further down than that, and a fixed `100vh - 32px` let its bottom —
+// including the apply bar, which must always stay visible — run off the bottom of the window.
 .anime-list__filters {
     display: flex;
     flex: 0 0 260px;
@@ -193,7 +197,7 @@
     position: sticky;
     top: 0;
     width: 260px;
-    max-height: calc(100vh - 32px);
+    max-height: calc(100vh - var(--anime-list-filters-top, 0px) - 16px);
     border: 1px solid var(--bs-border-color);
     border-radius: 6px;
     background: var(--bs-body-bg);
