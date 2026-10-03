@@ -31,7 +31,6 @@ use App\Message\MarketRefreshTickMessage;
 use App\Service\AppConfigStore;
 use App\Service\Market\MarketRefreshService;
 use App\Service\Market\MarketSnapshotCache;
-use App\Service\Market\MarketSnapshotReadiness;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 
 /**
@@ -45,9 +44,10 @@ use Symfony\Component\Messenger\Attribute\AsMessageHandler;
  * to refresh — there is nothing new to record either way.
  *
  * The snapshot needs a refresh when any of the following holds:
- * - {@see MarketSnapshotReadiness::isReady()} says no (no cached snapshot at all, or one built
- *   for a different `%app.core_version%` — the same check {@see \App\Controller\Settings\MarketController::renderIndex()}
- *   makes, shared here rather than duplicated);
+ * - {@see \App\Service\Market\MarketSnapshot::isBuiltFor()} says no (no cached snapshot at all, or
+ *   one built for a different `%app.core_version%` — the same check
+ *   {@see \App\Controller\Settings\MarketController::renderIndex()} makes, shared here rather than
+ *   duplicated);
  * - {@see MarketRefreshService::CONFIG_KEY_LAST_REFRESH_AT} is missing, fails to parse, is older
  *   than {@see self::MAX_LAST_REFRESH_AGE_SECONDS}, or lies in the future (a clock turned back).
  *
@@ -61,14 +61,12 @@ final class MarketRefreshTickMessageHandler
 {
     /**
      * How stale {@see MarketRefreshService::CONFIG_KEY_LAST_REFRESH_AT} is allowed to get before
-     * this handler forces a refresh regardless of {@see MarketSnapshotReadiness} — see the class
-     * docblock.
+     * this handler forces a refresh regardless of snapshot readiness — see the class docblock.
      */
     private const int MAX_LAST_REFRESH_AGE_SECONDS = 24 * 60 * 60;
 
     public function __construct(
         private readonly MarketSnapshotCache $snapshotCache,
-        private readonly MarketSnapshotReadiness $snapshotReadiness,
         private readonly AppConfigStore $configStore,
         private readonly MarketRefreshService $refreshService,
         private readonly ?string $coreVersion,
@@ -84,7 +82,8 @@ final class MarketRefreshTickMessageHandler
 
     private function snapshotNeedsRefresh(): bool
     {
-        if (!$this->snapshotReadiness->isReady($this->snapshotCache->load(), $this->coreVersion)) {
+        $snapshot = $this->snapshotCache->load();
+        if ($snapshot === null || !$snapshot->isBuiltFor($this->coreVersion)) {
             return true;
         }
 

@@ -39,7 +39,6 @@ use App\Service\Market\MarketRefreshService;
 use App\Service\Market\MarketSnapshot;
 use App\Service\Market\MarketSnapshotCache;
 use App\Service\Market\MarketSnapshotPlugin;
-use App\Service\Market\MarketSnapshotReadiness;
 use App\Service\Market\MarketUpdateResolver;
 use App\Service\NearestBuiltInLocale;
 use App\Service\Plugin\Exception\IncompatiblePluginCoreVersionException;
@@ -180,9 +179,9 @@ final class MarketController
         private readonly InstalledPluginsRegistry $installedPlugins,
         /**
          * The app's own core version (issue #565), or `null` when it could not be determined. Both
-         * comparisons against {@see MarketSnapshot::$coreVersion} below (`installOrUpdate()`,
-         * `renderIndex()`) already treat a mismatch as "no usable snapshot" — a `null` value here
-         * simply never matches a real snapshot's core version, so this fails closed on rendering a
+         * calls to {@see MarketSnapshot::isBuiltFor()} below (`installOrUpdate()`, `renderIndex()`)
+         * already treat a mismatch as "no usable snapshot" — a `null` value here simply never
+         * matches a real snapshot's core version, so this fails closed on rendering a
          * stale/misleading storefront rather than throwing, without needing its own branch.
          */
         private readonly ?string $coreVersion,
@@ -195,7 +194,6 @@ final class MarketController
         private readonly TranslationCoverageService $translationCoverage,
         private readonly NearestBuiltInLocale $nearestBuiltInLocale,
         private readonly MarketUpdateResolver $updateResolver,
-        private readonly MarketSnapshotReadiness $snapshotReadiness,
     ) {
     }
 
@@ -340,7 +338,7 @@ final class MarketController
         }
 
         $snapshot = $this->snapshotCache->load();
-        if ($snapshot === null || $snapshot->coreVersion !== $this->coreVersion) {
+        if ($snapshot === null || !$snapshot->isBuiltFor($this->coreVersion)) {
             return $this->renderIndex(locale: $request->getLocale(), installError: 'settings_market.install_error_registry_unavailable');
         }
 
@@ -423,7 +421,7 @@ final class MarketController
         ?string $featureFilter = null,
     ): Response {
         $snapshot = $this->snapshotCache->load();
-        $snapshotReady = $this->snapshotReadiness->isReady($snapshot, $this->coreVersion);
+        $snapshotReady = $snapshot !== null && $snapshot->isBuiltFor($this->coreVersion);
 
         if (!$snapshotReady && $this->shouldDispatchRefresh()) {
             $this->messageBus->dispatch(new RefreshMarketSnapshotMessage());
@@ -431,7 +429,7 @@ final class MarketController
 
         $items = [];
         $hasIncompatiblePlugin = false;
-        if ($snapshotReady && $snapshot !== null) {
+        if ($snapshot !== null && $snapshot->isBuiltFor($this->coreVersion)) {
             $appTranslationKeyCount = null;
             foreach ($snapshot->plugins as $plugin) {
                 if ($featureFilter === 'filler' && ($plugin->manifest['features']['filler'] ?? false) !== true) {

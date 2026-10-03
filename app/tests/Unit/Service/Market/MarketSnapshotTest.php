@@ -25,20 +25,31 @@
 
 declare(strict_types=1);
 
-namespace App\Service\Market;
+namespace App\Tests\Unit\Service\Market;
 
-/**
- * A cached {@see MarketSnapshot} is only safe to read when it exists at all and was built for the
- * core version currently running — a snapshot left over from before an app upgrade can resolve
- * plugin compatibility against a core version nobody is running anymore. Issue #448 extracted
- * this out of {@see \App\Controller\Settings\MarketController::renderIndex()} (whose own behavior
- * does not change) so {@see \App\MessageHandler\MarketRefreshTickMessageHandler} can reuse the
- * exact same check as one of its own staleness conditions, instead of drifting from it over time.
- */
-final class MarketSnapshotReadiness
+use App\Service\Market\MarketSnapshot;
+use PHPUnit\Framework\TestCase;
+
+final class MarketSnapshotTest extends TestCase
 {
-    public function isReady(?MarketSnapshot $snapshot, ?string $coreVersion): bool
+    public function testIsNotBuiltForAnotherCoreVersion(): void
     {
-        return $snapshot !== null && $snapshot->coreVersion === $coreVersion;
+        $snapshot = new MarketSnapshot('1.0.0', 1, [], []);
+
+        $this->assertFalse($snapshot->isBuiltFor('2.5.0'));
+    }
+
+    public function testIsNotBuiltForANullCoreVersion(): void
+    {
+        $snapshot = new MarketSnapshot('1.0.0', 1, [], []);
+
+        $this->assertFalse($snapshot->isBuiltFor(null));
+    }
+
+    public function testIsBuiltForTheMatchingCoreVersion(): void
+    {
+        $snapshot = new MarketSnapshot('2.5.0', 1, [], []);
+
+        $this->assertTrue($snapshot->isBuiltFor('2.5.0'));
     }
 }
