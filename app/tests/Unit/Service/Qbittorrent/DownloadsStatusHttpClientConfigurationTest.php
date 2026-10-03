@@ -27,6 +27,8 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Service\Qbittorrent;
 
+use App\Controller\DownloadsStatusController;
+use App\Service\Qbittorrent\QbittorrentClient;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 
@@ -36,21 +38,34 @@ use Symfony\Contracts\HttpClient\HttpClientInterface;
  * uses (app/config/services.yaml) — a stuck sidecar must not hold a FrankenPHP worker thread for
  * the longer window on every 2-second poll tick from the browser.
  *
- * Reflects into the built HttpClientInterface's own default options rather than asserting on
- * elapsed wall-clock time against a black-hole address: the timeout is a config value, and a
- * timing-based assertion would be both slower and flaky under CI load.
+ * Reflects all the way from the booted {@see DownloadsStatusController} through its injected
+ * client down to the HTTP client's own default options, rather than asserting on the
+ * app.qbittorrent.status_http_client service in isolation: that service existing with the right
+ * timeout proves nothing about what the controller actually received — a typo'd or removed
+ * `$client: '@app.qbittorrent.status_client'` binding in services.yaml would make autowiring
+ * silently fall back to the shared 5s/15s App\Service\Qbittorrent\QbittorrentClient and this test
+ * would stay green, since it is checking the wrong object. Also asserts on wall-clock time against
+ * a black-hole address would be both slower and flaky under CI load, hence the reflection instead.
  */
 final class DownloadsStatusHttpClientConfigurationTest extends KernelTestCase
 {
-    public function testStatusHttpClientTimesOutAtTwoSeconds(): void
+    public function testControllerReceivesAnHttpClientThatTimesOutAtTwoSeconds(): void
     {
         self::bootKernel();
+        $container = self::getContainer();
 
-        /** @var HttpClientInterface $client */
-        $client = self::getContainer()->get('app.qbittorrent.status_http_client');
+        $controller = $container->get(DownloadsStatusController::class);
+        $client = (new \ReflectionProperty($controller, 'client'))->getValue($controller);
 
-        $property = new \ReflectionProperty($client, 'defaultOptions');
-        $defaultOptions = $property->getValue($client);
+        self::assertNotSame(
+            $container->get(QbittorrentClient::class),
+            $client,
+            'DownloadsStatusController must not end up wired to the shared 5s/15s qBittorrent client.',
+        );
+
+        /** @var HttpClientInterface $httpClient */
+        $httpClient = (new \ReflectionProperty($client, 'httpClient'))->getValue($client);
+        $defaultOptions = (new \ReflectionProperty($httpClient, 'defaultOptions'))->getValue($httpClient);
 
         self::assertSame(2.0, $defaultOptions['timeout']);
         self::assertSame(2.0, $defaultOptions['max_duration']);
