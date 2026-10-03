@@ -46,28 +46,46 @@ let getCurrentFrankenphpPort = null;
  * @param {import('http').ServerResponse} res
  */
 function handleRequest(req, res) {
-    const url = new URL(req.url, 'http://127.0.0.1');
+    try {
+        let url;
+        try {
+            url = new URL(req.url, 'http://127.0.0.1');
+        } catch {
+            // A raw request-target that Node's HTTP parser accepts but the WHATWG URL parser
+            // rejects (e.g. an unparsable authority after a "//" prefix) must not crash this
+            // listener — it is reachable by any local process on this fixed, well-known port.
+            res.writeHead(400);
+            res.end();
+            return;
+        }
 
-    if (req.method !== 'GET' || !url.pathname.startsWith('/oauth/')) {
-        res.writeHead(404);
+        if (req.method !== 'GET' || !url.pathname.startsWith('/oauth/')) {
+            res.writeHead(404);
+            res.end();
+            return;
+        }
+
+        const port = getCurrentFrankenphpPort ? getCurrentFrankenphpPort() : null;
+        if (!port) {
+            const locale = getLocale();
+            const body = i18n.t('oauth_callback.restarting', locale);
+            res.writeHead(503, { 'Content-Type': 'text/plain; charset=utf-8' });
+            res.end(body);
+            return;
+        }
+
+        // Only a redirect to the port FrankenPHP currently has — read via
+        // getCurrentFrankenphpPort() at request time, never cached — not a proxy: no
+        // body/headers from FrankenPHP ever pass through this response (issue #871).
+        res.writeHead(302, { Location: `http://127.0.0.1:${port}${url.pathname}${url.search}` });
         res.end();
-        return;
+    } catch (error) {
+        console.error('[oauth-callback] request handler error:', error.message);
+        if (!res.headersSent) {
+            res.writeHead(400);
+        }
+        res.end();
     }
-
-    const port = getCurrentFrankenphpPort ? getCurrentFrankenphpPort() : null;
-    if (!port) {
-        const locale = getLocale();
-        const body = i18n.t('oauth_callback.restarting', locale);
-        res.writeHead(503, { 'Content-Type': 'text/plain; charset=utf-8' });
-        res.end(body);
-        return;
-    }
-
-    // Only a redirect to the port FrankenPHP currently has — read via getCurrentFrankenphpPort()
-    // at request time, never cached — not a proxy: no body/headers from FrankenPHP ever pass
-    // through this response (issue #871).
-    res.writeHead(302, { Location: `http://127.0.0.1:${port}${url.pathname}${url.search}` });
-    res.end();
 }
 
 /**

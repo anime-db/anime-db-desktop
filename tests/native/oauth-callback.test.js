@@ -22,6 +22,7 @@
 'use strict';
 
 const http = require('http');
+const net = require('net');
 
 const mockGetLocale = jest.fn(() => 'en');
 jest.mock('../../native/config', () => ({
@@ -61,6 +62,29 @@ function request({ method = 'GET', path: reqPath = '/oauth/myanimelist?code=a&st
         });
         req.on('error', reject);
         req.end();
+    });
+}
+
+/**
+ * Sends a raw request line Node's own http.request() would normalize or refuse to build, bypassing
+ * its own encoding — the only way to reproduce a request-target the HTTP parser accepts but that
+ * breaks `new URL()` downstream (issue #871 follow-up: handleRequest must not crash on it).
+ *
+ * @param {string} rawRequestLine  e.g. 'GET //[ HTTP/1.1'
+ * @returns {Promise<{ statusCode: number }>}
+ */
+function sendRaw(rawRequestLine) {
+    return new Promise((resolve, reject) => {
+        const socket = net.connect({ host: '127.0.0.1', port: oauthCallback.OAUTH_FIXED_PORT }, () => {
+            socket.write(`${rawRequestLine}\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n`);
+        });
+        let data = '';
+        socket.on('data', (chunk) => { data += chunk; });
+        socket.on('end', () => {
+            const match = data.match(/^HTTP\/1\.[01] (\d{3})/);
+            resolve({ statusCode: match ? Number(match[1]) : null });
+        });
+        socket.on('error', reject);
     });
 }
 
@@ -199,6 +223,29 @@ describe('oauth-callback', () => {
         const result = await oauthCallback.start(() => 8000);
 
         expect(result).toEqual({ ok: true });
+    });
+
+    // Regression (issue #871 follow-up): a request-target like `//[` is passed through as-is by
+    // Node's own HTTP parser but is not a valid WHATWG URL (`[` starts an IPv6 host that never
+    // closes) — `new URL()` throws. This listener sits on a fixed, well-known port reachable by any
+    // local process for the whole session, so it must survive such input instead of crashing the
+    // whole Electron main process via uncaughtException.
+    test('a malformed request-target that fails URL parsing gets 400, not a crash', async () => {
+        await oauthCallback.start(() => 8000);
+
+        const res = await sendRaw('GET //[ HTTP/1.1');
+
+        expect(res.statusCode).toBe(400);
+    });
+
+    test('the listener keeps serving normal requests after a malformed request-target', async () => {
+        await oauthCallback.start(() => 8000);
+
+        await sendRaw('GET //[ HTTP/1.1');
+        const res = await request({ path: '/oauth/myanimelist?code=a&state=b' });
+
+        expect(res.statusCode).toBe(302);
+        expect(res.headers.location).toBe('http://127.0.0.1:8000/oauth/myanimelist?code=a&state=b');
     });
 
     test('a second bind attempt while already bound resolves ok:false instead of throwing', async () => {
