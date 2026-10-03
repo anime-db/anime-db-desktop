@@ -36,7 +36,11 @@ function setUpDom() {
         <div class="dropdown" data-control="nav-add-menu" data-scan-section-url="/nav/add-menu/scan-section">
             <button type="button" data-bs-toggle="dropdown">Add</button>
             <ul class="dropdown-menu">
-                <li data-nav-scan-section>loading…</li>
+                <li class="dropdown-header">Scan</li>
+                <li data-nav-scan-section>
+                    <div data-nav-scan-loading>loading…</div>
+                    <div data-nav-scan-error hidden>Failed to load storages.</div>
+                </li>
             </ul>
         </div>
     `;
@@ -110,7 +114,7 @@ test('the dropdown is repositioned once the scan section has loaded', async () =
     expect(dropdownUpdate).toHaveBeenCalledTimes(1);
 });
 
-test('a failed fetch clears the loading placeholder instead of leaving the spinner stuck', async () => {
+test('a failed fetch keeps the "Scan" heading and shows the error message instead of removing the section', async () => {
     global.fetch = jest.fn(() => Promise.resolve({ ok: false, status: 500 }));
     setUpDom();
     loadNavAddMenuModule();
@@ -118,6 +122,42 @@ test('a failed fetch clears the loading placeholder instead of leaving the spinn
     showDropdown();
     await flushMicrotasks();
 
-    expect(document.querySelector('[data-nav-scan-section]')).toBeNull();
+    expect(document.querySelector('.dropdown-header').textContent).toBe('Scan');
+    expect(document.querySelector('[data-nav-scan-error]').hidden).toBe(false);
+    expect(document.querySelector('[data-nav-scan-loading]').hidden).toBe(true);
     expect(dropdownUpdate).toHaveBeenCalledTimes(1);
+});
+
+test('reopening the menu after a failed fetch retries the request', async () => {
+    global.fetch = jest.fn(() => Promise.resolve({ ok: false, status: 500 }));
+    setUpDom();
+    loadNavAddMenuModule();
+
+    showDropdown();
+    await flushMicrotasks();
+    showDropdown();
+    await flushMicrotasks();
+
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+});
+
+test('a retry that succeeds hides the error message and does not fetch again afterwards', async () => {
+    global.fetch = jest.fn(() => Promise.resolve({ ok: false, status: 500 }));
+    setUpDom();
+    loadNavAddMenuModule();
+
+    showDropdown();
+    await flushMicrotasks();
+
+    global.fetch = jest.fn(() => Promise.resolve({ ok: true, text: () => Promise.resolve('<li>Scan "Main"</li>') }));
+    showDropdown();
+    await flushMicrotasks();
+
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(document.querySelector('.dropdown-menu').textContent).toContain('Scan "Main"');
+
+    showDropdown();
+    await flushMicrotasks();
+
+    expect(global.fetch).toHaveBeenCalledTimes(1);
 });

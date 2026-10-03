@@ -613,10 +613,12 @@ nav:
     add_menu_search_plugins: Search in plugins
     add_menu_search_plugins_hint_not_installed: No plugin source is installed.
     add_menu_search_plugins_hint_disabled: Filling from the plugin is turned off.
-    add_menu_search_plugins_hint_link: Go →
+    add_menu_search_plugins_hint_link_not_installed: Open the market →
+    add_menu_search_plugins_hint_link_disabled: Configure the plugin →
     add_menu_scan_heading: Scan
     add_menu_scan_loading: Loading…
+    add_menu_scan_error: Failed to load storages.
     add_menu_scan_item: 'Scan "%name%"'
-    add_menu_scan_more: '%count% more not connected →'
+    add_menu_scan_more: 'Not connected: %number% →'
     add_menu_add_storage: Add storage…
     add_menu_empty_entry: Empty entry

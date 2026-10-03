@@ -79,7 +79,7 @@ final class NavAddMenuScanSectionTemplateRenderingTest extends KernelTestCase
 
         $this->assertStringContainsString('action="/storage/7/scan"', $html);
         $this->assertStringContainsString('Main folder', $html);
-        $this->assertStringContainsString('2 more not connected', $html);
+        $this->assertStringContainsString('Not connected: 2', $html);
         $this->assertStringNotContainsString('href="/storage/new"', $html);
     }
 
@@ -145,6 +145,6 @@ final class NavAddMenuScanSectionTemplateRenderingTest extends KernelTestCase
 
         $this->assertStringContainsString('href="/storage/new"', $html);
         $this->assertStringNotContainsString('<form', $html);
-        $this->assertStringNotContainsString('not connected', $html);
+        $this->assertStringNotContainsString('Not connected', $html);
     }
 }

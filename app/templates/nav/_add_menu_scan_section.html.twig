@@ -34,7 +34,7 @@
 {% endfor %}
 
 {% if disconnectedCount > 0 %}
-    <li><a class="dropdown-item" href="{{ path('storage_index') }}">{{ 'nav.add_menu_scan_more'|trans({'%count%': disconnectedCount}) }}</a></li>
+    <li><a class="dropdown-item" href="{{ path('storage_index') }}">{{ 'nav.add_menu_scan_more'|trans({'%number%': disconnectedCount}) }}</a></li>
 {% endif %}
 
 {% if not hasScannableStorages %}
