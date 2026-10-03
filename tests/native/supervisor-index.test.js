@@ -33,6 +33,7 @@ jest.mock('../../native/supervisor/cache-invalidation', () => ({
 jest.mock('../../native/supervisor/frankenphp', () => ({
     start:         jest.fn(() => Promise.resolve({ httpPort: 8000, wsPort: 8001 })),
     stop:          jest.fn(() => Promise.resolve()),
+    killSync:      jest.fn(),
     killOrphan:    jest.fn(() => Promise.resolve()),
     ensurePhpIni:  jest.fn(),
     events:        { on: jest.fn() },
@@ -46,17 +47,20 @@ jest.mock('../../native/supervisor/market-refresh', () => ({
 jest.mock('../../native/supervisor/meilisearch', () => ({
     start:      jest.fn(),
     stop:       jest.fn(() => Promise.resolve()),
+    killSync:   jest.fn(),
     killOrphan: jest.fn(() => Promise.resolve()),
 }));
 jest.mock('../../native/supervisor/messenger-consumer', () => ({
     start:      jest.fn(() => Promise.resolve()),
     stop:       jest.fn(() => Promise.resolve()),
+    killSync:   jest.fn(),
     killOrphan: jest.fn(() => Promise.resolve()),
     events:     { on: jest.fn() },
 }));
 jest.mock('../../native/supervisor/qbittorrent', () => ({
     start:      jest.fn(() => Promise.resolve({ webuiPort: 9000 })),
     stop:       jest.fn(() => Promise.resolve()),
+    killSync:   jest.fn(),
     killOrphan: jest.fn(() => Promise.resolve()),
     events:     { on: jest.fn() },
 }));
@@ -70,12 +74,19 @@ jest.mock('../../native/supervisor/plugin-reconcile', () => ({
 jest.mock('../../native/supervisor/plugins-consumer', () => ({
     start:      jest.fn(() => Promise.resolve()),
     stop:       jest.fn(() => Promise.resolve()),
+    killSync:   jest.fn(),
     killOrphan: jest.fn(() => Promise.resolve()),
     events:     { on: jest.fn() },
 }));
 jest.mock('../../native/supervisor/migrations', () => ({
     run:        jest.fn(() => Promise.resolve()),
     killOrphan: jest.fn(() => Promise.resolve()),
+}));
+jest.mock('../../native/supervisor/oauth-callback', () => ({
+    OAUTH_FIXED_PORT: 41813,
+    start:    jest.fn(() => Promise.resolve({ ok: true })),
+    stop:     jest.fn(() => Promise.resolve()),
+    killSync: jest.fn(),
 }));
 jest.mock('../../native/supervisor/php-command', () => ({
     run:        jest.fn(() => Promise.resolve()),
@@ -103,9 +114,11 @@ const marketRefresh     = require('../../native/supervisor/market-refresh');
 const meilisearch       = require('../../native/supervisor/meilisearch');
 const messengerConsumer = require('../../native/supervisor/messenger-consumer');
 const migrations        = require('../../native/supervisor/migrations');
+const oauthCallback     = require('../../native/supervisor/oauth-callback');
 const phpCommand        = require('../../native/supervisor/php-command');
 const pluginReconcile   = require('../../native/supervisor/plugin-reconcile');
 const pluginsConsumer   = require('../../native/supervisor/plugins-consumer');
+const qbittorrent       = require('../../native/supervisor/qbittorrent');
 const safeModeState     = require('../../native/supervisor/safe-mode');
 const searchReindex     = require('../../native/supervisor/search-reindex');
 const stagedImport      = require('../../native/supervisor/staged-import');
@@ -133,6 +146,7 @@ describe('supervisor.start', () => {
         migrations.run.mockResolvedValue(undefined);
         stagedImport.decide.mockResolvedValue({ verdict: 'skip' });
         importApply.apply.mockResolvedValue({ applied: true, error: null });
+        oauthCallback.start.mockResolvedValue({ ok: true });
     });
 
     afterEach(() => {
@@ -159,7 +173,47 @@ describe('supervisor.start', () => {
             meiliPort:       7700,
             meiliKey:        'k',
             safeMode:        false,
+            oauthCallbackFixedPort: true,
+            oauthCallbackOrigin:    'http://127.0.0.1:41813',
         });
+    });
+
+    // Issue #871: the fixed-port OAuth listener must be bound before the first PHP process of the
+    // session — migrations.run() — not lazily inside frankenphp.start().
+    test('binds the fixed-port OAuth listener before running migrations', async () => {
+        const callOrder = [];
+        oauthCallback.start.mockImplementation(() => {
+            callOrder.push('oauthCallback.start');
+            return Promise.resolve({ ok: true });
+        });
+        migrations.run.mockImplementation(() => {
+            callOrder.push('migrations.run');
+            return Promise.resolve();
+        });
+
+        await supervisor.start(jest.fn());
+
+        expect(callOrder).toEqual(['oauthCallback.start', 'migrations.run']);
+        expect(oauthCallback.start).toHaveBeenCalledWith(expect.any(Function));
+    });
+
+    // Issue #871 fallback: port 41813 busy — the app must still start normally, without the fixed
+    // origin, and with OAUTH_CALLBACK_FIXED_PORT=0 reaching even pre-web-worker processes like
+    // migrations.
+    test('falls back to the pre-#871 behavior when the fixed-port OAuth listener cannot bind', async () => {
+        oauthCallback.start.mockResolvedValue({ ok: false, error: new Error('EADDRINUSE') });
+
+        await expect(supervisor.start(jest.fn())).resolves.toBeDefined();
+
+        expect(migrations.run).toHaveBeenCalledWith({
+            qbittorrentPort: 9000,
+            meiliPort:       7700,
+            meiliKey:        'k',
+            safeMode:        false,
+            oauthCallbackFixedPort: false,
+        });
+        expect(frankenphp.start).toHaveBeenCalledWith(expect.objectContaining({ oauthCallbackFixedPort: false }));
+        expect(frankenphp.start.mock.calls[0][0]).not.toHaveProperty('oauthCallbackOrigin');
     });
 
     /**
@@ -222,7 +276,10 @@ describe('supervisor.start', () => {
 
         expect(callOrder).toEqual(['migrations.run', 'stagedImport.decide', 'frankenphp.start']);
         expect(stagedImport.decide).toHaveBeenCalledWith(
-            { qbittorrentPort: 9000, meiliPort: 7700, meiliKey: 'k', safeMode: false },
+            {
+                qbittorrentPort: 9000, meiliPort: 7700, meiliKey: 'k', safeMode: false,
+                oauthCallbackFixedPort: true, oauthCallbackOrigin: 'http://127.0.0.1:41813',
+            },
             confirmStagedImport,
         );
     });
@@ -249,7 +306,10 @@ describe('supervisor.start', () => {
 
             expect(callOrder).toEqual(['stagedImport.decide', 'importApply.apply', 'frankenphp.start']);
             expect(importApply.apply).toHaveBeenCalledWith(
-                { qbittorrentPort: 9000, meiliPort: 7700, meiliKey: 'k', safeMode: false },
+                {
+                    qbittorrentPort: 9000, meiliPort: 7700, meiliKey: 'k', safeMode: false,
+                    oauthCallbackFixedPort: true, oauthCallbackOrigin: 'http://127.0.0.1:41813',
+                },
             );
         });
 
@@ -332,6 +392,8 @@ describe('supervisor.start', () => {
                 meiliPort:       7700,
                 meiliKey:        'k',
                 safeMode:        false,
+                oauthCallbackFixedPort: true,
+                oauthCallbackOrigin:    'http://127.0.0.1:41813',
             });
         });
 
@@ -365,6 +427,8 @@ describe('supervisor.start', () => {
             meiliPort:       7700,
             meiliKey:        'k',
             safeMode:        false,
+            oauthCallbackFixedPort: true,
+            oauthCallbackOrigin:    'http://127.0.0.1:41813',
         });
         expect(onProgress).toHaveBeenCalledWith(4, 5, 'splash.step_reindex');
         expect(onProgress).toHaveBeenCalledWith(5, 5, 'splash.step_done');
@@ -397,6 +461,8 @@ describe('supervisor.start', () => {
             meiliPort:       7700,
             meiliKey:        'k',
             safeMode:        false,
+            oauthCallbackFixedPort: true,
+            oauthCallbackOrigin:    'http://127.0.0.1:41813',
         });
         expect(onProgress).toHaveBeenCalledWith(4, 5, 'splash.step_reindex');
         expect(onProgress).toHaveBeenCalledWith(5, 5, 'splash.step_done');
@@ -420,6 +486,8 @@ describe('supervisor.start', () => {
             meiliPort:       7700,
             meiliKey:        'k',
             safeMode:        false,
+            oauthCallbackFixedPort: true,
+            oauthCallbackOrigin:    'http://127.0.0.1:41813',
         });
         expect(onProgress).toHaveBeenCalledWith(4, 5, 'splash.step_reindex');
     });
@@ -455,6 +523,8 @@ describe('supervisor.start', () => {
                 meiliPort:       7700,
                 meiliKey:        'k',
                 safeMode:        false,
+                oauthCallbackFixedPort: true,
+                oauthCallbackOrigin:    'http://127.0.0.1:41813',
             });
         });
 
@@ -501,6 +571,8 @@ describe('supervisor.start', () => {
                 meiliPort:       7700,
                 meiliKey:        'k',
                 safeMode:        false,
+                oauthCallbackFixedPort: true,
+                oauthCallbackOrigin:    'http://127.0.0.1:41813',
             });
         });
 
@@ -770,6 +842,18 @@ describe('supervisor.reloadForPlugin (issue #411)', () => {
         expect(phpCommand.run).not.toHaveBeenCalled();
     });
 
+    // Issue #871: the fixed-port OAuth listener is bound once, at supervisor.start() — a plugin
+    // activation restart must reuse the same origin via the carried-over phpContext, not rebind.
+    test('reuses the oauthCallbackOrigin computed at start() without rebinding on a plugin restart', async () => {
+        await supervisor.reloadForPlugin('animedb-shikimori');
+
+        expect(oauthCallback.start).not.toHaveBeenCalled();
+        expect(frankenphp.start).toHaveBeenCalledWith(
+            expect.objectContaining({ oauthCallbackFixedPort: true, oauthCallbackOrigin: 'http://127.0.0.1:41813' }),
+            expect.any(Object),
+        );
+    });
+
     test('emits plugin-activated once the restarted processes are healthy', async () => {
         const handler = jest.fn();
         supervisor.events.once('plugin-activated', handler);
@@ -862,6 +946,36 @@ describe('supervisor.reloadForPlugin (issue #411)', () => {
         // One run for plugin-a (the in-flight one) plus one coalesced run for plugin-c (the
         // latest queued id) — plugin-b's own request never gets its own run.
         expect(frankenphp.start).toHaveBeenCalledTimes(2);
+    });
+});
+
+// Issue #871: the fixed-port OAuth listener must be closed in both shutdown paths, same as every
+// other child process supervisor/index.js owns.
+describe('supervisor.stop / killSync close the OAuth-callback listener (issue #871)', () => {
+    beforeEach(() => {
+        oauthCallback.start.mockResolvedValue({ ok: true });
+        oauthCallback.stop.mockResolvedValue(undefined);
+        frankenphp.stop.mockResolvedValue(undefined);
+        messengerConsumer.stop.mockResolvedValue(undefined);
+        pluginsConsumer.stop.mockResolvedValue(undefined);
+        meilisearch.stop.mockResolvedValue(undefined);
+        qbittorrent.stop.mockResolvedValue(undefined);
+    });
+
+    afterEach(() => {
+        jest.clearAllMocks();
+    });
+
+    test('stop() closes the OAuth-callback listener', async () => {
+        await supervisor.stop();
+
+        expect(oauthCallback.stop).toHaveBeenCalledTimes(1);
+    });
+
+    test('killSync() closes the OAuth-callback listener', () => {
+        supervisor.killSync();
+
+        expect(oauthCallback.killSync).toHaveBeenCalledTimes(1);
     });
 });
 

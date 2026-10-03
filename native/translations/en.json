@@ -28,6 +28,8 @@
     "dialog.import_failed_title": "Import failed",
     "dialog.import_failed_message": "The catalog import could not be applied due to an error. The previous catalog and its search index have been restored, and the app has started normally.",
 
+    "oauth_callback.restarting": "The app is restarting. Please try signing in again in a moment.",
+
     "notification.plugin_activation_failed_title": "Plugin activation",
     "notification.plugin_activation_failed_message": "Could not activate the plugin \"%pluginId%\". The app has been restored to a working state without it.",
 

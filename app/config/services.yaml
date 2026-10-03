@@ -134,6 +134,15 @@ parameters:
     app.ffprobe.bin.dev_default: '%kernel.project_dir%/../bin/ffprobe/ffprobe.exe'
     app.ffprobe.bin: '%env(default:app.ffprobe.bin.dev_default:FFPROBE_BIN)%'
 
+    # OAUTH_CALLBACK_FIXED_PORT (native/supervisor/env.js, issue #871): '1' when the host's
+    # fixed-port OAuth-redirect listener bound successfully, '0' when it fell back to the
+    # web worker's own port. Defaults to '1' (no warning) outside Electron (dev run, bin/console,
+    # unit tests), where the listener this flag describes does not exist at all.
+    # App\Controller\Settings\PluginSettingsController reads this (as a boolean) to decide whether
+    # to show a warning on a plugin's settings page — see settings_plugin_page.oauth_fixed_port_warning.
+    app.oauth_callback_fixed_port.dev_default: '1'
+    app.oauth_callback_fixed_port: '%env(default:app.oauth_callback_fixed_port.dev_default:OAUTH_CALLBACK_FIXED_PORT)%'
+
     # Push-on-edit TTL (issue #366, PushSyncMessageHandler): how long, since dispatch, a queued
     # PushSyncMessage is still trusted as a same-state optimistic write before the standard
     # reconciliation run is left to reconcile the divergence instead — see .claude-docs/sync.md's
@@ -205,6 +214,7 @@ services:
             $cachePath: '%app.market_registry_cache_path%'
             $snapshotCachePath: '%app.market_snapshot_cache_path%'
             $refreshLockPath: '%app.market_refresh_lock_path%'
+            $oauthCallbackFixedPort: '%app.oauth_callback_fixed_port%'
 
     # AnimeDb\PluginContracts\Filler\FillerInterface/Search\SearchByPluginInterface/
     # Widget\EntryWidgetInterface/Widget\CatalogWidgetInterface/Sync\SyncInterface all live

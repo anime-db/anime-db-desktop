@@ -38,6 +38,10 @@
     <div class="py-4">
         <h1>{{ pluginName }}</h1>
 
+        {% if oauthCallbackWarning is defined and oauthCallbackWarning %}
+            <p class="alert alert-warning">{{ 'settings_plugin_page.oauth_fixed_port_warning'|trans }}</p>
+        {% endif %}
+
         {% if renderFailed %}
             <p class="alert alert-danger">{{ 'settings_plugin_page.render_error'|trans }}</p>
         {% else %}

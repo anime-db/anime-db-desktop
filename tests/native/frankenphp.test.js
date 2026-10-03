@@ -167,12 +167,24 @@ describe('buildEnv', () => {
         expect(env.MEILISEARCH_KEY).toBe('my-secret-key');
     });
 
-    test('includes OAUTH_CALLBACK_ORIGIN using the given appPort', () => {
+    // Issue #871: without an explicit oauthCallbackOrigin on the context, this is the fallback
+    // path (fixed port 41813 busy) — OAUTH_CALLBACK_ORIGIN still derives from appPort, same as
+    // before #871. See tests/native/env.test.js for the fixed-port path.
+    test('includes OAUTH_CALLBACK_ORIGIN using the given appPort (fallback, no fixed origin set)', () => {
         const env = buildEnv(CONTEXT, WS_PORT);
         expect(env.OAUTH_CALLBACK_ORIGIN).toBe('http://127.0.0.1:8000');
 
         const env2 = buildEnv({ ...CONTEXT, appPort: 12345 }, WS_PORT);
         expect(env2.OAUTH_CALLBACK_ORIGIN).toBe('http://127.0.0.1:12345');
+    });
+
+    // Issue #871: once the supervisor's oauth-callback listener bound the fixed port, FrankenPHP's
+    // web worker gets that fixed origin regardless of its own appPort.
+    test('uses the fixed oauthCallbackOrigin instead of deriving from appPort when it is set', () => {
+        const env = buildEnv({ ...CONTEXT, appPort: 12345, oauthCallbackOrigin: 'http://127.0.0.1:41813', oauthCallbackFixedPort: true }, WS_PORT);
+        expect(env.OAUTH_CALLBACK_ORIGIN).toBe('http://127.0.0.1:41813');
+        expect(env.OAUTH_CALLBACK_FIXED_PORT).toBe('1');
+        expect(env.APP_PORT).toBe('12345');
     });
 
     test('inherits existing process.env variables', () => {

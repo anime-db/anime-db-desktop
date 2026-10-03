@@ -30,6 +30,7 @@ const marketRefresh     = require('./market-refresh');
 const meilisearch       = require('./meilisearch');
 const messengerConsumer = require('./messenger-consumer');
 const migrations        = require('./migrations');
+const oauthCallback     = require('./oauth-callback');
 const phpCommand        = require('./php-command');
 const pluginReconcile   = require('./plugin-reconcile');
 const pluginsConsumer   = require('./plugins-consumer');
@@ -76,6 +77,16 @@ const PLUGIN_DEACTIVATE_TIMEOUT_MS = 30000;
  * @type {{ phpContext: import('./env').PhpContext, frankenphpPort: number, wsPort: number } | null}
  */
 let liveContext = null;
+
+/**
+ * The port FrankenPHP currently listens on, or null while it is down (startup, in the middle of
+ * reloadForPlugin's restart). Read by oauth-callback.js's request handler on every request (issue
+ * #871) — not cached there — so a GET /oauth/* always redirects to whatever port is live *right
+ * now*, including across a reloadForPlugin() restart that happens to land on a different port.
+ *
+ * @type {number | null}
+ */
+let currentFrankenphpPort = null;
 
 /**
  * Serializes reloadForPlugin() calls: a signal that arrives while one is already running does not
@@ -196,11 +207,31 @@ async function start(onProgress, { safeMode = false, confirmStagedImport } = {})
         qbittorrent.start(),
     ]);
 
+    // Постоянный OAuth-редирект-слушатель (issue #871) обязан быть поднят ДО первого PHP-процесса
+    // сеанса — `$_SERVER['OAUTH_CALLBACK_ORIGIN']` фиксируется при старте PHP-процесса, а первым
+    // идёт не веб-воркер, а миграции, см. phpContext ниже. Порт занят другой программой — не
+    // фатально: приложение стартует как раньше, просто без фиксированного порта для OAuth, см.
+    // buildCommonEnv()'s fallback в env.js.
+    currentFrankenphpPort = null;
+    const oauthCallbackBind = await oauthCallback.start(() => currentFrankenphpPort);
+    const oauthCallbackFixedPort = oauthCallbackBind.ok;
+    if (!oauthCallbackBind.ok) {
+        console.error(
+            `[supervisor] не удалось занять порт ${oauthCallback.OAUTH_FIXED_PORT} под фиксированный OAuth-редирект, используется порт веб-воркера как раньше:`,
+            oauthCallbackBind.error.message,
+        );
+    }
+
     // Один контекст на все PHP-процессы сеанса — см. env.js: набор путей и портов у них обязан
     // совпадать, поэтому он собирается здесь один раз, а не по месту каждым модулем. Миграции
-    // стартуют до веб-воркера, поэтому appPort на этот момент ещё не существует — в PhpContext
-    // он опционален (см. env.js), и OAUTH_CALLBACK_ORIGIN в их окружение не попадает.
-    const phpContext = { qbittorrentPort, meiliPort, meiliKey, safeMode };
+    // стартуют до веб-воркера, поэтому appPort на этот момент ещё не существует — в PhpContext он
+    // опционален (см. env.js). oauthCallbackOrigin/oauthCallbackFixedPort, в отличие от appPort,
+    // известны уже сейчас (bind выше), поэтому в их окружение попадают даже сейчас, до
+    // веб-воркера — если только bind не ушёл в фолбэк, см. env.js#buildCommonEnv.
+    const phpContext = {
+        qbittorrentPort, meiliPort, meiliKey, safeMode, oauthCallbackFixedPort,
+        ...(oauthCallbackFixedPort ? { oauthCallbackOrigin: `http://127.0.0.1:${oauthCallback.OAUTH_FIXED_PORT}` } : {}),
+    };
 
     // php.ini обязан существовать ДО первого PHP-процесса сеанса, а первым идут миграции, а не
     // веб-воркер. Расширения в Windows-сборке — подгружаемые DLL (issue #477), путь к ним даёт
@@ -263,6 +294,7 @@ async function start(onProgress, { safeMode = false, confirmStagedImport } = {})
 
     if (onProgress) onProgress(2, TOTAL_STEPS, 'splash.step_frankenphp');
     const { httpPort: frankenphpPort, wsPort } = await frankenphp.start(phpContext);
+    currentFrankenphpPort = frankenphpPort;
     if (onProgress) onProgress(3, TOTAL_STEPS, 'splash.step_messenger');
 
     // Тот же контекст, что у миграций, плюс порт поднятого веб-воркера — см. env.js.
@@ -402,8 +434,10 @@ async function performReload(pluginId) {
         cacheInvalidation.invalidateCache();
         await Promise.all([messengerConsumer.stop(), pluginsConsumer.stop()]);
         await frankenphp.stop();
+        currentFrankenphpPort = null;
 
         const started = await frankenphp.start(phpContext, { port: frankenphpPort, wsPort });
+        currentFrankenphpPort = started.httpPort;
         liveContext = { phpContext, frankenphpPort: started.httpPort, wsPort: started.wsPort };
         await messengerConsumer.start({ ...phpContext, appPort: started.httpPort });
         await pluginsConsumer.start({ ...phpContext, appPort: started.httpPort });
@@ -416,6 +450,7 @@ async function performReload(pluginId) {
 
     try {
         await frankenphp.stop();
+        currentFrankenphpPort = null;
         await Promise.all([messengerConsumer.stop(), pluginsConsumer.stop()]);
 
         try {
@@ -427,6 +462,7 @@ async function performReload(pluginId) {
         cacheInvalidation.invalidateCache();
 
         const restarted = await frankenphp.start(phpContext, { port: frankenphpPort, wsPort });
+        currentFrankenphpPort = restarted.httpPort;
         liveContext = { phpContext, frankenphpPort: restarted.httpPort, wsPort: restarted.wsPort };
         await messengerConsumer.start({ ...phpContext, appPort: restarted.httpPort });
         await pluginsConsumer.start({ ...phpContext, appPort: restarted.httpPort });
@@ -453,7 +489,9 @@ async function performReload(pluginId) {
 async function stop() {
     await Promise.all([messengerConsumer.stop(), pluginsConsumer.stop()]);
     await frankenphp.stop();
+    currentFrankenphpPort = null;
     await Promise.all([meilisearch.stop(), qbittorrent.stop()]);
+    await oauthCallback.stop();
 }
 
 /**
@@ -467,6 +505,7 @@ function killSync() {
     frankenphp.killSync();
     meilisearch.killSync();
     qbittorrent.killSync();
+    oauthCallback.killSync();
 }
 
 /**

@@ -284,6 +284,7 @@ settings_market:
 settings_plugin_page:
     title_suffix: Plugin settings — AnimeDB
     render_error: Failed to display this plugin's settings page. Please try again later.
+    oauth_fixed_port_warning: 'Signing in via OAuth is unavailable for some plugins: port 41813 is in use by another program.'
 
 settings_proxy:
     title: Proxy server — Settings — AnimeDB

@@ -133,7 +133,12 @@ describe('env', () => {
     // Полный состав переменных проверяется в tests/native/env.test.js — здесь важно только то,
     // что консольные вызовы схемы получают именно общий env (issue #391), включая PLUGINS_DIR:
     // миграции бутуют ядро первыми и запекают набор бандлов плагинов в дамп контейнера.
-    test('spawns console commands with the shared env, without OAUTH_CALLBACK_ORIGIN', async () => {
+    //
+    // Без явного oauthCallbackOrigin/oauthCallbackFixedPort на контексте (как CONTEXT здесь) —
+    // это фолбэк-путь (issue #871, порт 41813 занят): OAUTH_CALLBACK_ORIGIN по-прежнему
+    // отсутствует у миграций, поскольку appPort на этот момент ещё не существует (они стартуют до
+    // веб-воркера), точно так же, как было до issue #871.
+    test('spawns console commands with the shared env, without OAUTH_CALLBACK_ORIGIN (fallback)', async () => {
         mockConsoleResponses({ 'up-to-date': [{ code: 0 }] });
 
         await run(CONTEXT);
@@ -144,6 +149,21 @@ describe('env', () => {
         expect(env.MEILISEARCH_KEY).toBe('k');
         expect(env.QBITTORRENT_URL).toBe('http://127.0.0.1:9000');
         expect(env.OAUTH_CALLBACK_ORIGIN).toBeUndefined();
+        expect(env.OAUTH_CALLBACK_FIXED_PORT).toBeUndefined();
+    });
+
+    // Issue #871: once the fixed-port OAuth listener is bound (before migrations.run() is ever
+    // called — see supervisor/index.js#start), migrations get OAUTH_CALLBACK_ORIGIN and
+    // OAUTH_CALLBACK_FIXED_PORT=1 too, even though they start before the web worker and have no
+    // appPort — the opposite of the fallback case above.
+    test('spawns console commands with OAUTH_CALLBACK_ORIGIN/OAUTH_CALLBACK_FIXED_PORT when the fixed-port listener bound', async () => {
+        mockConsoleResponses({ 'up-to-date': [{ code: 0 }] });
+
+        await run({ ...CONTEXT, oauthCallbackOrigin: 'http://127.0.0.1:41813', oauthCallbackFixedPort: true });
+
+        const { env } = spawn.mock.calls[0][2];
+        expect(env.OAUTH_CALLBACK_ORIGIN).toBe('http://127.0.0.1:41813');
+        expect(env.OAUTH_CALLBACK_FIXED_PORT).toBe('1');
     });
 });
 

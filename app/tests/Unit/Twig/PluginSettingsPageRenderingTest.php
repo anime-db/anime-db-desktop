@@ -145,4 +145,79 @@ final class PluginSettingsPageRenderingTest extends KernelTestCase
         $this->assertStringNotContainsString('onerror', $html);
         $this->assertStringNotContainsString('javascript:', $html);
     }
+
+    /**
+     * Issue #871: the shell shows a generic OAuth-port warning when OAUTH_CALLBACK_FIXED_PORT=0
+     * (native/supervisor/env.js) is surfaced to it as `oauthCallbackWarning`, without naming any
+     * specific plugin or OAuth provider.
+     */
+    public function testShowsTheOauthFixedPortWarningWhenPassedTrue(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession();
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('settings/plugin/page.html.twig', [
+            'pluginId' => 'animedb-shikimori',
+            'pluginName' => 'Shikimori',
+            'pluginUi' => ['css' => [], 'js' => []],
+            'content' => '<form>settings</form>',
+            'renderFailed' => false,
+            'oauthCallbackWarning' => true,
+        ]);
+
+        $this->assertStringContainsString('alert-warning', $html);
+        $this->assertStringNotContainsString('Shikimori', $this->extractWarningText($html));
+        $this->assertStringNotContainsString('MyAnimeList', $html);
+    }
+
+    public function testDoesNotShowTheOauthFixedPortWarningWhenPassedFalse(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession();
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('settings/plugin/page.html.twig', [
+            'pluginId' => 'animedb-shikimori',
+            'pluginName' => 'Shikimori',
+            'pluginUi' => ['css' => [], 'js' => []],
+            'content' => '<form>settings</form>',
+            'renderFailed' => false,
+            'oauthCallbackWarning' => false,
+        ]);
+
+        $this->assertStringNotContainsString('alert-warning', $html);
+    }
+
+    /**
+     * Issue #871: a template that omits `oauthCallbackWarning` entirely (strict_variables is on,
+     * see config/packages/twig.yaml) must not throw — this is the shape every caller used before
+     * this field existed, and still the shape of this test file's two tests above this section.
+     */
+    public function testDoesNotShowTheOauthFixedPortWarningWhenTheVariableIsAbsent(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession();
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('settings/plugin/page.html.twig', [
+            'pluginId' => 'animedb-shikimori',
+            'pluginName' => 'Shikimori',
+            'pluginUi' => ['css' => [], 'js' => []],
+            'content' => '<form>settings</form>',
+            'renderFailed' => false,
+        ]);
+
+        $this->assertStringNotContainsString('alert-warning', $html);
+    }
+
+    private function extractWarningText(string $html): string
+    {
+        \preg_match('/<p class="alert alert-warning">(.*?)<\/p>/s', $html, $matches);
+
+        return $matches[1] ?? '';
+    }
 }

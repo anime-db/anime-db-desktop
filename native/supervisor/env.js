@@ -28,18 +28,33 @@ const { getOrCreateAppSecret } = require('../config');
 /**
  * Общий контекст сеанса, от которого зависит окружение любого PHP-процесса. Собирается один раз
  * в supervisor/index.js и передаётся дальше целиком — именно объектом, а не набором позиционных
- * аргументов: три из четырёх полей — числа-порты, и при позиционной передаче их перестановка
+ * аргументов: несколько полей — числа-порты, и при позиционной передаче их перестановка
  * никак не проявляется ни в линте, ни в типах, а ломает только рантайм.
  *
  * @typedef {object} PhpContext
- * @property {number} [appPort]        порт веб-воркера FrankenPHP; нужен для
- *                                      OAUTH_CALLBACK_ORIGIN даже процессам, которые сами
- *                                      HTTP не поднимают. Опционален: миграции схемы стартуют
- *                                      ДО веб-воркера (issue #392), и на тот момент порта ещё
- *                                      не существует — тогда OAUTH_CALLBACK_ORIGIN в env не
- *                                      попадает вовсе. Отсутствие ключа безопасно: значение
- *                                      резолвится Symfony лениво, при обращении, а консольные
- *                                      команды схемы к OAuth не обращаются
+ * @property {number} [appPort]        порт веб-воркера FrankenPHP. Используется напрямую только
+ *                                      для APP_PORT веб-воркера (buildWebWorkerEnv). С issue #871
+ *                                      НЕ является больше источником OAUTH_CALLBACK_ORIGIN, кроме
+ *                                      как в фолбэке — см. oauthCallbackOrigin ниже. Опционален:
+ *                                      миграции схемы стартуют ДО веб-воркера (issue #392), и на
+ *                                      тот момент порта ещё не существует
+ * @property {string} [oauthCallbackOrigin]  origin для OAuth-редиректа, вычисленный один раз при
+ *                                      bind постоянного слушателя native/supervisor/oauth-callback.js
+ *                                      (issue #871) — `http://127.0.0.1:41813` при успешном bind.
+ *                                      Присутствует во ВСЕХ процессах сеанса, включая стартующие
+ *                                      до веб-воркера (миграции и т.д.), раз оно известно ещё до
+ *                                      первого PHP-процесса. Если порт 41813 занят другой
+ *                                      программой, это поле не задаётся вовсе — buildCommonEnv()
+ *                                      тогда откатывается к старому поведению: берёт
+ *                                      OAUTH_CALLBACK_ORIGIN из context.appPort, то есть всё ещё
+ *                                      отсутствует у процессов, стартующих до веб-воркера
+ * @property {boolean} [oauthCallbackFixedPort]  true — слушатель на 41813 поднят, false — фолбэк
+ *                                      активен (порт занят). Задаётся один раз при bind и попадает
+ *                                      во ВСЕ процессы как OAUTH_CALLBACK_FIXED_PORT ('1'/'0'),
+ *                                      независимо от того, попало ли в этот же процесс
+ *                                      OAUTH_CALLBACK_ORIGIN — страница настроек плагина
+ *                                      (PluginSettingsController) показывает предупреждение именно
+ *                                      по этому флагу, не называя источник
  * @property {number} qbittorrentPort  WebUI-порт qbittorrent-nox
  * @property {number} meiliPort        порт Meilisearch
  * @property {string} meiliKey         master-key Meilisearch
@@ -60,7 +75,15 @@ const { getOrCreateAppSecret } = require('../config');
  * @param {PhpContext} context
  * @returns {NodeJS.ProcessEnv}
  */
-function buildCommonEnv({ meiliPort, meiliKey, qbittorrentPort, appPort, safeMode }) {
+function buildCommonEnv({ meiliPort, meiliKey, qbittorrentPort, appPort, oauthCallbackOrigin, oauthCallbackFixedPort, safeMode }) {
+    // oauthCallbackOrigin wins when set (fixed-port listener bound, issue #871) — it is known
+    // before any PHP process starts, so it is identical for every process of the session. The
+    // fallback (deriving from appPort) is only reached when the fixed port was unavailable, and
+    // reproduces the pre-#871 behavior exactly, including being absent for processes that start
+    // before the web worker (appPort undefined at that point).
+    const oauthCallbackOriginResolved = oauthCallbackOrigin
+        ?? (appPort === undefined ? undefined : `http://127.0.0.1:${appPort}`);
+
     return {
         ...process.env,
         APP_ROOT:                paths.getAppRootDir(),
@@ -89,8 +112,8 @@ function buildCommonEnv({ meiliPort, meiliKey, qbittorrentPort, appPort, safeMod
         MEILISEARCH_KEY:         meiliKey,
         QBITTORRENT_URL:         `http://127.0.0.1:${qbittorrentPort}`,
         FFPROBE_BIN:             paths.getFfprobeBinPath(),
-        // Только для процессов, стартующих после веб-воркера — см. PhpContext.appPort.
-        ...(appPort === undefined ? {} : { OAUTH_CALLBACK_ORIGIN: `http://127.0.0.1:${appPort}` }),
+        ...(oauthCallbackOriginResolved === undefined ? {} : { OAUTH_CALLBACK_ORIGIN: oauthCallbackOriginResolved }),
+        ...(oauthCallbackFixedPort === undefined ? {} : { OAUTH_CALLBACK_FIXED_PORT: oauthCallbackFixedPort ? '1' : '0' }),
         ...(safeMode ? { SAFE_MODE: '1' } : {}),
     };
 }
@@ -100,9 +123,11 @@ function buildCommonEnv({ meiliPort, meiliKey, qbittorrentPort, appPort, safeMod
  * Контекстно-зависимые переменные добавляются явно, а не молчаливо отсутствуют в env
  * консольных/фоновых процессов.
  *
- * `APP_PORT` берётся из того же `context.appPort`, что и `OAUTH_CALLBACK_ORIGIN` в
- * buildCommonEnv() — отдельным параметром его не принимаем, иначе два значения одного и того же
- * порта могли бы разъехаться.
+ * `APP_PORT` берётся из `context.appPort` — порта самого FrankenPHP. С issue #871
+ * `OAUTH_CALLBACK_ORIGIN` в buildCommonEnv() больше НЕ привязан к этому же `appPort`: при успешном
+ * bind постоянного слушателя (native/supervisor/oauth-callback.js) origin — порт 41813, а не порт
+ * веб-воркера, и оба значения расходятся намеренно. Только в фолбэке (порт 41813 занят)
+ * OAUTH_CALLBACK_ORIGIN снова берётся из этого же `context.appPort`, как было до issue #871.
  *
  * @param {PhpContext & { appPort: number }} context  для веб-воркера appPort обязателен
  * @param {number} wsPort  порт WebSocket-сервера; поднимает его только веб-воркер

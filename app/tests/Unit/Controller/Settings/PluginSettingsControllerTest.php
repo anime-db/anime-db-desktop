@@ -95,6 +95,7 @@ final class PluginSettingsControllerTest extends TestCase
         ?MessageBusInterface $messageBus = null,
         ?UrlGeneratorInterface $urlGenerator = null,
         ?PluginUiAssetsResolver $pluginUiAssets = null,
+        string $oauthCallbackFixedPort = '1',
     ): PluginSettingsController {
         return new PluginSettingsController(
             $this->installedPlugins,
@@ -107,6 +108,7 @@ final class PluginSettingsControllerTest extends TestCase
             $logger ?? $this->createStub(LoggerInterface::class),
             $pluginUiAssets ?? $this->createPluginUiAssetsResolver(),
             new PluginHtmlSanitizer(),
+            $oauthCallbackFixedPort,
         );
     }
 
@@ -543,6 +545,78 @@ final class PluginSettingsControllerTest extends TestCase
         $response = $controller('animedb-shikimori');
 
         $this->assertSame(200, $response->getStatusCode());
+    }
+
+    /**
+     * Issue #871: OAUTH_CALLBACK_FIXED_PORT=0 means the host's fixed-port OAuth-redirect listener
+     * could not bind (native/supervisor/oauth-callback.js) — the shell must warn on both render
+     * branches, not just the happy path.
+     */
+    public function testInvokeShowsTheOauthFixedPortWarningWhenTheFixedPortFellBack(): void
+    {
+        $this->writeManifest('animedb-shikimori', 'Shikimori');
+        $this->installedPlugins->reconcile();
+
+        $page = $this->createStub(SettingsPageInterface::class);
+        $page->method('render')->willReturn('<form>settings</form>');
+        $settingsPages = $this->settingsPages(['animedb-shikimori' => $page]);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('settings/plugin/page.html.twig', $this->callback(
+                static fn (array $params): bool => $params['oauthCallbackWarning'] === true,
+            ))
+            ->willReturn('<html></html>');
+
+        $controller = $this->createController($settingsPages, $twig, oauthCallbackFixedPort: '0');
+        $response = $controller('animedb-shikimori');
+
+        $this->assertSame(200, $response->getStatusCode());
+    }
+
+    public function testInvokeShowsTheOauthFixedPortWarningOnTheRenderFailedBranchToo(): void
+    {
+        $this->writeManifest('animedb-shikimori', 'Shikimori');
+        $this->installedPlugins->reconcile();
+
+        $page = $this->createMock(SettingsPageInterface::class);
+        $page->expects($this->once())->method('render')->willThrowException(new \RuntimeException('API unreachable'));
+        $settingsPages = $this->settingsPages(['animedb-shikimori' => $page]);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('settings/plugin/page.html.twig', $this->callback(
+                static fn (array $params): bool => $params['renderFailed'] === true && $params['oauthCallbackWarning'] === true,
+            ))
+            ->willReturn('<html></html>');
+
+        $controller = $this->createController($settingsPages, $twig, logger: $this->createStub(LoggerInterface::class), oauthCallbackFixedPort: '0');
+        $response = $controller('animedb-shikimori');
+
+        $this->assertSame(200, $response->getStatusCode());
+    }
+
+    public function testInvokeDoesNotShowTheOauthFixedPortWarningWhenTheFixedPortBound(): void
+    {
+        $this->writeManifest('animedb-shikimori', 'Shikimori');
+        $this->installedPlugins->reconcile();
+
+        $page = $this->createStub(SettingsPageInterface::class);
+        $page->method('render')->willReturn('<form>settings</form>');
+        $settingsPages = $this->settingsPages(['animedb-shikimori' => $page]);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('settings/plugin/page.html.twig', $this->callback(
+                static fn (array $params): bool => $params['oauthCallbackWarning'] === false,
+            ))
+            ->willReturn('<html></html>');
+
+        $controller = $this->createController($settingsPages, $twig, oauthCallbackFixedPort: '1');
+        $controller('animedb-shikimori');
     }
 
     public function testInvokeThrowsNotFoundForAMalformedPluginId(): void
