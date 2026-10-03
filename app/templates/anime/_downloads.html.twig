@@ -1,0 +1,50 @@
+{#
+ # AnimeDb package.
+ #
+ # @author    Peter Gribanov <info@peter-gribanov.ru>
+ # @copyright Copyright (c) 2026, Peter Gribanov
+ # @license   https://www.gnu.org/licenses/gpl-3.0.html GPL-3.0-or-later
+ #
+ # This program is free software: you can redistribute it and/or modify
+ # it under the terms of the GNU General Public License as published by
+ # the Free Software Foundation, either version 3 of the License, or
+ # (at your option) any later version.
+ #
+ # This program is distributed in the hope that it will be useful,
+ # but WITHOUT ANY WARRANTY; without even the implied warranty of
+ # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ # GNU General Public License for more details.
+ #
+ # You should have received a copy of the GNU General Public License
+ # along with this program. If not, see <https://www.gnu.org/licenses/>.
+ #}
+{#
+ # Rendered both by anime/show.html.twig (initial load, error = null) and by
+ # DownloadUnlinkController::unlink() (HTMX fragment swap, issue #857). No rows for this anime —
+ # no block at all; a successful unlink that empties the list swaps this element away entirely.
+ #}
+{% if downloads is not empty %}
+    <section class="anime-detail__downloads" id="anime-downloads-{{ anime.id }}">
+        <h2 class="anime-detail__section-heading">{{ 'anime_detail.downloads_heading'|trans }}</h2>
+
+        {% if error %}
+            <p class="anime-detail__downloads-error">{{ error|trans }}</p>
+        {% endif %}
+
+        <ul class="anime-detail__downloads-list">
+            {% for download in downloads %}
+                <li class="anime-detail__downloads-item">
+                    <span class="anime-detail__downloads-status anime-detail__downloads-status--{{ download.status }}">
+                        {{ ('download_status.' ~ download.status)|trans }}
+                    </span>
+                    <form class="anime-detail__downloads-unlink-form"
+                          hx-post="{{ path('download_unlink', {id: download.id}) }}"
+                          hx-target="#anime-downloads-{{ anime.id }}" hx-swap="outerHTML">
+                        <input type="hidden" name="_token" value="{{ csrf_token('download_unlink_' ~ download.id) }}">
+                        <button type="submit">{{ 'anime_detail.downloads_unlink_button'|trans }}</button>
+                    </form>
+                </li>
+            {% endfor %}
+        </ul>
+    </section>
+{% endif %}

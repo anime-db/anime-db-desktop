@@ -115,6 +115,11 @@ production_status:
     ongoing: Ongoing
     released: Released
 
+download_status:
+    pending: Downloading
+    completed: Completed
+    failed: Failed
+
 settings:
     title: Settings — AnimeDB
     heading: Settings
@@ -508,6 +513,9 @@ anime_detail:
     fill_source_label: Source
     error_fill_not_found: The source found no match for this anime.
     error_fill_image_rejected: The source returned an image that could not be saved.
+    downloads_heading: Downloads for this entry
+    downloads_unlink_button: Unlink
+    downloads_unlink_conflict_error: State changed, please refresh the page.
 
 anime_new:
     title: New Anime — AnimeDB
