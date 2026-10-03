@@ -147,7 +147,7 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
 
         /** @var Environment $twig */
         $twig = self::getContainer()->get('twig');
-        $html = $twig->render('anime/show.html.twig', ['anime' => $this->fullyPopulatedAnime(), 'widgets' => [], 'plugins_ui' => [], 'fillable_fields' => $this->emptyFillableFields()]);
+        $html = $twig->render('anime/show.html.twig', ['anime' => $this->fullyPopulatedAnime(), 'widgets' => [], 'plugins_ui' => [], 'fillable_fields' => $this->emptyFillableFields(), 'downloads' => [], 'downloads_unlink_error' => null]);
 
         $this->assertStringContainsString('Shingeki no Kyojin', $html);
         $this->assertStringContainsString('Humanity fights for survival against man-eating Titans.', $html);
@@ -197,7 +197,7 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
 
         /** @var Environment $twig */
         $twig = self::getContainer()->get('twig');
-        $html = $twig->render('anime/show.html.twig', ['anime' => $this->fullyPopulatedAnime(), 'widgets' => [], 'plugins_ui' => [], 'fillable_fields' => $this->emptyFillableFields()]);
+        $html = $twig->render('anime/show.html.twig', ['anime' => $this->fullyPopulatedAnime(), 'widgets' => [], 'plugins_ui' => [], 'fillable_fields' => $this->emptyFillableFields(), 'downloads' => [], 'downloads_unlink_error' => null]);
 
         $document = new \DOMDocument();
         $document->loadHTML($html);
@@ -247,6 +247,8 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
             'widgets' => [['pluginId' => 'animedb-shikimori', 'widgetName' => 'related', 'title' => 'Related titles', 'pluginName' => 'Shikimori']],
             'plugins_ui' => [],
             'fillable_fields' => $this->emptyFillableFields(),
+            'downloads' => [],
+            'downloads_unlink_error' => null,
         ]);
 
         $this->assertStringContainsString('hx-get="/plugin/animedb-shikimori/widget/related?entryId=1"', $html);
@@ -273,7 +275,7 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
 
         /** @var Environment $twig */
         $twig = self::getContainer()->get('twig');
-        $html = $twig->render('anime/show.html.twig', ['anime' => $this->fullyPopulatedAnime(), 'widgets' => [], 'plugins_ui' => [], 'fillable_fields' => $this->emptyFillableFields()]);
+        $html = $twig->render('anime/show.html.twig', ['anime' => $this->fullyPopulatedAnime(), 'widgets' => [], 'plugins_ui' => [], 'fillable_fields' => $this->emptyFillableFields(), 'downloads' => [], 'downloads_unlink_error' => null]);
 
         $this->assertStringContainsString('href="/?type[]=tv"', $html);
         $this->assertStringContainsString('href="/?genres[]=action"', $html);
@@ -298,7 +300,7 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
 
         /** @var Environment $twig */
         $twig = self::getContainer()->get('twig');
-        $html = $twig->render('anime/show.html.twig', ['anime' => $this->fullyPopulatedAnime(), 'widgets' => [], 'plugins_ui' => [], 'fillable_fields' => $this->emptyFillableFields()]);
+        $html = $twig->render('anime/show.html.twig', ['anime' => $this->fullyPopulatedAnime(), 'widgets' => [], 'plugins_ui' => [], 'fillable_fields' => $this->emptyFillableFields(), 'downloads' => [], 'downloads_unlink_error' => null]);
 
         $this->assertStringContainsString('data-control="catalog-back-link"', $html);
         $this->assertStringContainsString('href="/"', $html);
@@ -316,7 +318,7 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
 
         /** @var Environment $twig */
         $twig = self::getContainer()->get('twig');
-        $html = $twig->render('anime/show.html.twig', ['anime' => $this->minimalAnime(), 'widgets' => [], 'plugins_ui' => [], 'fillable_fields' => $this->emptyFillableFields()]);
+        $html = $twig->render('anime/show.html.twig', ['anime' => $this->minimalAnime(), 'widgets' => [], 'plugins_ui' => [], 'fillable_fields' => $this->emptyFillableFields(), 'downloads' => [], 'downloads_unlink_error' => null]);
 
         $this->assertStringContainsString('A Silent Voice', $html);
         $this->assertStringContainsString('Фильм', $html);
@@ -348,7 +350,7 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
 
         /** @var Environment $twig */
         $twig = self::getContainer()->get('twig');
-        $html = $twig->render('anime/show.html.twig', ['anime' => $anime, 'widgets' => [], 'plugins_ui' => [], 'fillable_fields' => $this->emptyFillableFields()]);
+        $html = $twig->render('anime/show.html.twig', ['anime' => $anime, 'widgets' => [], 'plugins_ui' => [], 'fillable_fields' => $this->emptyFillableFields(), 'downloads' => [], 'downloads_unlink_error' => null]);
 
         $this->assertStringContainsString('disabled', $html);
         $this->assertStringContainsString('Путь не доступен', $html);
@@ -375,7 +377,7 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
 
         /** @var Environment $twig */
         $twig = self::getContainer()->get('twig');
-        $html = $twig->render('anime/show.html.twig', ['anime' => $this->fullyPopulatedAnime(), 'widgets' => [], 'plugins_ui' => [], 'fillable_fields' => $fillableFields]);
+        $html = $twig->render('anime/show.html.twig', ['anime' => $this->fullyPopulatedAnime(), 'widgets' => [], 'plugins_ui' => [], 'fillable_fields' => $fillableFields, 'downloads' => [], 'downloads_unlink_error' => null]);
 
         $this->assertStringContainsString('id="anime-media-1"', $html);
         $this->assertStringContainsString('id="anime-gallery-1"', $html);
@@ -410,6 +412,8 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
             'widgets' => [],
             'plugins_ui' => [['css' => [], 'js' => ['/plugin/animedb-shikimori/asset/widget.js']]],
             'fillable_fields' => $this->emptyFillableFields(),
+            'downloads' => [],
+            'downloads_unlink_error' => null,
         ]);
 
         $hostBundlePosition = strpos($html, 'js/main.js');
@@ -443,6 +447,8 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
             'widgets' => [],
             'plugins_ui' => [],
             'fillable_fields' => $this->emptyFillableFields(),
+            'downloads' => [],
+            'downloads_unlink_error' => null,
         ]);
 
         $hostBundlePosition = strpos($html, 'js/main.js');

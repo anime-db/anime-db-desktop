@@ -40,6 +40,7 @@ use App\Repository\DownloadRepository;
 use App\Service\Download\AnimeDownloadLinker;
 use App\Service\Download\DownloadFolderJail;
 use App\Service\Download\DownloadFolderPointer;
+use App\Service\Download\DownloadUnlinkService;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Types\Type;
@@ -81,7 +82,7 @@ final class DownloadsUnlinkCommandTest extends TestCase
 
     private function makeCommand(DownloadRepository $repository): DownloadsUnlinkCommand
     {
-        return new DownloadsUnlinkCommand($repository, new DownloadFolderPointer(), $this->entityManager);
+        return new DownloadsUnlinkCommand($repository, new DownloadUnlinkService(new DownloadFolderPointer(), $this->entityManager));
     }
 
     private function persistAnime(string $title): TvAnime
