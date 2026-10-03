@@ -412,9 +412,10 @@
 
         // Symmetric demount (issue #734): the popstate listener lives on window, outside this
         // control's own subtree, so a beforeCleanupElement on the root would never reach it on its
-        // own — and both in-flight requests plus the grid's ResizeObserver/IntersectionObserver
-        // need to stop before a fresh mount's own loadPage()/AnimeListGrid.init() replace them,
-        // or a stale response from this instance could still land after a remount.
+        // own — and both in-flight requests plus the grid's ResizeObserver/IntersectionObserver and
+        // the filter panel's scroll/resize listeners (issue #879) need to stop before a fresh
+        // mount's own loadPage()/AnimeListGrid.init()/AnimeListFilterPanel.init() replace them, or
+        // a stale response from this instance could still land after a remount.
         return function unmountAnimeList() {
             if (window.__animeListPopStateHandler === handlePopState) {
                 window.__animeListPopStateHandler = null;
@@ -428,6 +429,7 @@
                 pendingFacetsRequest.abort();
             }
             window.AnimeListGrid.destroy();
+            window.AnimeListFilterPanel.destroy();
         };
     }
 

@@ -31,3 +31,28 @@
     // (2.97:1), для текста и заливок под белый текст есть --bs-primary — см. _palette.scss.
     --adb-accent: #{$adb-accent};
 }
+
+// WCAG AA (4.5:1) контраст в тёмной теме (issue #879). Светлая тема уже проходит норму везде,
+// кроме активного пункта шапки — тот фикс цветонейтральный (_nav.scss) и не завязан на тему.
+[data-bs-theme="dark"] {
+    // Резервное (невыбранное/disabled) состояние .btn-outline-secondary — кнопки-иконки в
+    // таблицах, «Classic» в пагинации, невыбранные варианты темы, «Rebuild search index» —
+    // замерено на 3.29:1 к фону #212529. $gray-500 (#adb5bd) даёт 7.43:1. Hover/active не
+    // трогаем: там кнопка заливается сплошным $secondary с белым текстом (4.69:1) — это уже
+    // проходит норму в обеих темах и не зависит от темы.
+    .btn-outline-secondary {
+        --bs-btn-color: #{$gray-500};
+        --bs-btn-border-color: #{$gray-500};
+        --bs-btn-disabled-color: #{$gray-500};
+        --bs-btn-disabled-border-color: #{$gray-500};
+    }
+
+    // Текстовые действия цвета --bs-primary на фоне --bs-body-bg: «Ещё (k)» в панели фильтров
+    // и счётчик «Filters · N» рядом с кнопкой-переключателем. Замерено на 3.31:1.
+    // --bs-primary-text-emphasis — светлый тон primary, который Bootstrap сам считает для
+    // тёмной схемы (tint-color($primary, 40%)) — даёт 5.89:1 на #212529.
+    .anime-list__filter-section-more,
+    .anime-list__filters-count {
+        color: var(--bs-primary-text-emphasis);
+    }
+}

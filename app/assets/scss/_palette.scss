@@ -37,3 +37,20 @@ $danger: #b00;
 
 $body-color: #333;
 $border-color: #ddd;
+
+// Bootstrap's default heading scale (h1 40px, h2 32px, ...) reads as oversized in a desktop app
+// whose window starts at 1000px — e.g. the "Plugin widgets" h1 and "Anime detail page" h2 on the
+// widgets settings page were almost the same size (issue #879). Scaled down globally here, once,
+// rather than per-page overrides. h4/h5 are scaled down too, not just h1-h3, so the scale stays
+// monotonically decreasing — PluginHtmlSanitizer allows <h4> in plugin widget HTML, and an
+// unscaled h4 (24px) would render larger than the page's own h2/h3 around it.
+//
+// $font-size-base itself is not overridden (stays Bootstrap's own 1rem default) — declared here
+// only because this file loads before bootstrap/scss/_variables.scss and the multipliers below
+// need it already defined at the point they're evaluated.
+$font-size-base: 1rem;
+$h1-font-size: $font-size-base * 1.75;    // 28px
+$h2-font-size: $font-size-base * 1.375;   // 22px
+$h3-font-size: $font-size-base * 1.125;   // 18px
+$h4-font-size: $font-size-base * 1.0625;  // 17px
+$h5-font-size: $font-size-base;           // 16px

@@ -38,6 +38,10 @@
     let filterApplyButton = null;
     let chipsResetButton = null;
 
+    // Coalesces the scroll/resize handlers below into at most one recomputation per frame
+    // (issue #879) — null when no recomputation is currently queued.
+    let filtersTopRafId = null;
+
     // The filter values a click has actually applied — drives the list/facets query, the chip
     // row and the "applied" highlight in the panel.
     let appliedFilters = createEmptyFilters();
@@ -134,6 +138,25 @@
             && filters.studios.size === 0;
     }
 
+    function setsEqual(a, b) {
+        return a.size === b.size && Array.from(a).every((value) => b.has(value));
+    }
+
+    // Whether applying `pendingFilters` right now would be a no-op (issue #879) — "Отфильтровать"
+    // must reflect this, not just whether anything is pending at all: a pending accumulation that
+    // only mirrors what is already applied (e.g. right after instantApply() folds a value into
+    // both) has nothing left to apply, even though it is not empty.
+    function filtersEqual(a, b) {
+        return a.date_premiere === b.date_premiere
+            && setsEqual(a.watch_status, b.watch_status)
+            && setsEqual(a.type, b.type)
+            && setsEqual(a.user_rating, b.user_rating)
+            && setsEqual(a.labels, b.labels)
+            && setsEqual(a.genres, b.genres)
+            && setsEqual(a.themes, b.themes)
+            && setsEqual(a.studios, b.studios);
+    }
+
     // Every entry across every section counts as one — this is what both the "Filters · N"
     // toggle badge and the chip row must agree on (issue #666 acceptance criterion).
     function appliedFilterEntries() {
@@ -211,8 +234,11 @@
         updateApplyButtonState();
     }
 
+    // Disabled once pending matches applied — not just when pending is empty (issue #879): a
+    // pending accumulation that already mirrors the applied one (right after an apply) has
+    // nothing left to apply, even though both can be non-empty.
     function updateApplyButtonState() {
-        filterApplyButton.disabled = isFiltersEmpty(pendingFilters);
+        filterApplyButton.disabled = filtersEqual(pendingFilters, appliedFilters);
     }
 
     // Applies the whole pending accumulation, not just the one value that was clicked — a label
@@ -220,6 +246,7 @@
     // checked elsewhere in the panel is applied together with it rather than discarded.
     function applyPending() {
         appliedFilters = cloneFilters(pendingFilters);
+        updateApplyButtonState();
         refreshChips();
         onFiltersChanged();
     }
@@ -314,6 +341,11 @@
         if (forceRefresh || !isFiltersEmpty(appliedFilters)) {
             refreshChips();
         }
+        // pendingFilters was just reset to equal appliedFilters, so the apply button's disabled
+        // state (issue #879) needs recomputing too — otherwise a popstate landing on a URL that
+        // matches the already-applied filters leaves a stale enabled button that fires an empty
+        // reload/facets/pushState cycle on click.
+        updateApplyButtonState();
     }
 
     function getAppliedFilters() {
@@ -415,6 +447,32 @@
         });
     }
 
+    // Keeps the sticky panel's own max-height (see .anime-list__filters in _anime-list.scss)
+    // matched to however much of the viewport is actually left below it, instead of a fixed
+    // `100vh - 32px` that assumes the panel is already pinned to the very top (issue #879): before
+    // the page scrolls far enough for `position: sticky` to pin it, the panel starts lower than
+    // that, and the fixed figure let its bottom — including the always-should-be-visible apply
+    // bar — run off the bottom of the window.
+    function updateFiltersTopOffset() {
+        if (!filtersPanel) {
+            return;
+        }
+        const top = Math.max(0, filtersPanel.getBoundingClientRect().top);
+        filtersPanel.style.setProperty('--anime-list-filters-top', `${top}px`);
+    }
+
+    // Coalesces a burst of scroll/resize events into at most one recomputation per frame, rather
+    // than one per event.
+    function scheduleFiltersTopUpdate() {
+        if (filtersTopRafId !== null) {
+            return;
+        }
+        filtersTopRafId = window.requestAnimationFrame(() => {
+            filtersTopRafId = null;
+            updateFiltersTopOffset();
+        });
+    }
+
     // `onFiltersChanged` and `refreshShownCount` are provided by the list core (anime-list.js):
     // this panel triggers a reload on every filter change but does not own the request/abort
     // machinery, and it draws the chip row but not the "Shown X of Y" text next to it, which is
@@ -479,12 +537,37 @@
                 const expanded = filtersToggleButton.getAttribute('aria-expanded') === 'true';
                 filtersToggleButton.setAttribute('aria-expanded', String(!expanded));
                 filtersPanel.hidden = expanded;
+
+                // The offset was last computed while the panel was hidden (or never at all, if it
+                // started collapsed) and getBoundingClientRect() on a hidden element always reports
+                // zeros, so --anime-list-filters-top is stale the moment the panel becomes visible
+                // again (issue #879) — recompute it now rather than waiting for the next scroll.
+                if (!filtersPanel.hidden) {
+                    updateFiltersTopOffset();
+                }
             });
+        }
+
+        window.addEventListener('scroll', scheduleFiltersTopUpdate, { passive: true });
+        window.addEventListener('resize', scheduleFiltersTopUpdate);
+        updateFiltersTopOffset();
+    }
+
+    // Symmetric with init() (issue #734, same pattern as AnimeListGrid.destroy()): the scroll/
+    // resize listeners above live on window, outside this control's own subtree, so a remount
+    // would otherwise accumulate a duplicate pair on every mount.
+    function destroy() {
+        window.removeEventListener('scroll', scheduleFiltersTopUpdate);
+        window.removeEventListener('resize', scheduleFiltersTopUpdate);
+        if (filtersTopRafId !== null) {
+            window.cancelAnimationFrame(filtersTopRafId);
+            filtersTopRafId = null;
         }
     }
 
     window.AnimeListFilterPanel = {
         init,
+        destroy,
         seedFromUrl,
         getAppliedFilters,
         setFacetsData,
