@@ -65,6 +65,16 @@ class DownloadRepository
         return $this->entityManager->getRepository(Download::class)->findBy(['infoHash' => $infoHash]);
     }
 
+    /**
+     * All pairing rows of a single anime entry — the "Downloads for this entry" block on its page.
+     *
+     * @return list<Download>
+     */
+    public function findByAnime(int $animeId): array
+    {
+        return $this->entityManager->getRepository(Download::class)->findBy(['anime' => $animeId]);
+    }
+
     /** @return list<Download> */
     public function findPendingByInfoHash(string $infoHash): array
     {

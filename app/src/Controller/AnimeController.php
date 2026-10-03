@@ -29,7 +29,9 @@ namespace App\Controller;
 
 use App\Entity\Anime;
 use App\Entity\ValueObject\PluginId;
+use App\Repository\DownloadRepository;
 use App\Service\AnimeViewFactory;
+use App\Service\Download\DownloadViewFactory;
 use App\Service\Plugin\EntryWidgetRegistry;
 use App\Service\Plugin\Filler\FillableFieldsPresenter;
 use App\Service\Plugin\PluginUiAssetsResolver;
@@ -70,12 +72,15 @@ final class AnimeController
         private readonly EntryWidgetRegistry $entryWidgets,
         private readonly FillableFieldsPresenter $fillableFieldsPresenter,
         private readonly PluginUiAssetsResolver $pluginUiAssets,
+        private readonly DownloadRepository $downloads,
+        private readonly DownloadViewFactory $downloadViewFactory,
     ) {
     }
 
     #[Route('/anime/{id}', name: 'anime_show', requirements: ['id' => '\d+'], methods: ['GET'])]
     public function show(Anime $anime): Response
     {
+        $animeId = $anime->id ?? throw new \LogicException('Anime must be persisted before it can be shown.');
         $widgets = $this->entryWidgets->findAllActive();
 
         return new Response($this->twig->render('anime/show.html.twig', [
@@ -83,6 +88,8 @@ final class AnimeController
             'widgets' => $widgets,
             'plugins_ui' => $this->pluginsUiFor(array_column($widgets, 'pluginId')),
             'fillable_fields' => $this->fillableFieldsPresenter->build(),
+            'downloads' => $this->downloadViewFactory->serializeList($this->downloads->findByAnime($animeId)),
+            'downloads_unlink_error' => null,
         ]));
     }
 

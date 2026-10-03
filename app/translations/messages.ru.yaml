@@ -115,6 +115,11 @@ production_status:
     ongoing: Онгоинг
     released: Вышло
 
+download_status:
+    pending: Загружается
+    completed: Завершено
+    failed: Ошибка
+
 settings:
     title: Настройки — AnimeDB
     heading: Настройки
@@ -508,6 +513,9 @@ anime_detail:
     fill_source_label: Источник
     error_fill_not_found: Источник не нашёл совпадение по этому аниме.
     error_fill_image_rejected: Источник вернул изображение, которое не удалось сохранить.
+    downloads_heading: Загрузки этой карточки
+    downloads_unlink_button: Отвязать
+    downloads_unlink_conflict_error: Состояние изменилось, обновите страницу.
 
 anime_new:
     title: Новая запись — AnimeDB

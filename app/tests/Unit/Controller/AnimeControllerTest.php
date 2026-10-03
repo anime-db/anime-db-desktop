@@ -28,6 +28,8 @@ declare(strict_types=1);
 namespace App\Tests\Unit\Controller;
 
 use App\Controller\AnimeController;
+use App\Entity\Anime;
+use App\Entity\Download;
 use App\Entity\Enum\AnimeNameRole;
 use App\Entity\Enum\Demographic;
 use App\Entity\Enum\GenreCode;
@@ -39,7 +41,9 @@ use App\Entity\MovieAnime;
 use App\Entity\Storage;
 use App\Entity\Studio;
 use App\Entity\TvAnime;
+use App\Repository\DownloadRepository;
 use App\Service\AnimeViewFactory;
+use App\Service\Download\DownloadViewFactory;
 use App\Service\Plugin\EntryWidgetRegistry;
 use App\Service\Plugin\Filler\FillableFieldsPresenter;
 use App\Service\Plugin\FillerRegistry;
@@ -79,7 +83,7 @@ final class AnimeControllerTest extends TestCase
         );
     }
 
-    private function createController(Environment $twig): AnimeController
+    private function createController(Environment $twig, ?DownloadRepository $downloads = null): AnimeController
     {
         return new AnimeController(
             $twig,
@@ -89,6 +93,8 @@ final class AnimeControllerTest extends TestCase
             $this->createPluginUiAssetsResolver(
                 new InstalledPluginsRegistry(sys_get_temp_dir(), new PluginsConfigStore(''), new NullLogger()),
             ),
+            $downloads ?? $this->createStub(DownloadRepository::class),
+            new DownloadViewFactory(),
         );
     }
 
@@ -133,6 +139,7 @@ final class AnimeControllerTest extends TestCase
             ->setCover('cover_1720273812345.webp')
             ->setWatchStatus(WatchStatus::Watching);
         $anime->setEpisodesCount(25);
+        $this->setAnimeId($anime, 1);
 
         $twig = $this->createMock(Environment::class);
         $twig->expects($this->once())
@@ -184,6 +191,7 @@ final class AnimeControllerTest extends TestCase
             ->setWatchStatus(WatchStatus::Plan)
             ->setStorage($storage)
             ->setStoragePath('A Silent Voice.mkv');
+        $this->setAnimeId($anime, 1);
 
         $expectedPath = rtrim($storageRoot, '\\/').\DIRECTORY_SEPARATOR.'A Silent Voice.mkv';
 
@@ -208,6 +216,7 @@ final class AnimeControllerTest extends TestCase
     {
         $anime = new MovieAnime();
         $anime->setTitle('A Silent Voice')->setWatchStatus(WatchStatus::Plan);
+        $this->setAnimeId($anime, 1);
 
         $twig = $this->createMock(Environment::class);
         $twig->expects($this->once())
@@ -237,6 +246,65 @@ final class AnimeControllerTest extends TestCase
 
         $controller = $this->createController($twig);
         $controller->show($anime);
+    }
+
+    public function testShowPassesTheAnimesDownloadsSerializedToTheTemplate(): void
+    {
+        $anime = new TvAnime();
+        $anime->setTitle('Frieren')->setWatchStatus(WatchStatus::Watching);
+        $this->setAnimeId($anime, 9);
+
+        $download = new Download('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', $anime);
+        $this->setDownloadId($download, 5);
+
+        $downloads = $this->createMock(DownloadRepository::class);
+        $downloads->expects($this->once())->method('findByAnime')->with(9)->willReturn([$download]);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('anime/show.html.twig', $this->callback(
+                static fn (array $params): bool => $params['downloads'] === [
+                    ['id' => 5, 'info_hash' => 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'status' => 'pending'],
+                ],
+            ))
+            ->willReturn('<html></html>');
+
+        $controller = $this->createController($twig, $downloads);
+        $controller->show($anime);
+    }
+
+    public function testShowPassesAnEmptyDownloadsListWhenTheAnimeHasNoDownloads(): void
+    {
+        $anime = new TvAnime();
+        $anime->setTitle('Frieren')->setWatchStatus(WatchStatus::Watching);
+        $this->setAnimeId($anime, 9);
+
+        $downloads = $this->createStub(DownloadRepository::class);
+        $downloads->method('findByAnime')->willReturn([]);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('anime/show.html.twig', $this->callback(
+                static fn (array $params): bool => $params['downloads'] === [],
+            ))
+            ->willReturn('<html></html>');
+
+        $controller = $this->createController($twig, $downloads);
+        $controller->show($anime);
+    }
+
+    private function setAnimeId(Anime $anime, int $id): void
+    {
+        $property = new \ReflectionProperty(Anime::class, 'id');
+        $property->setValue($anime, $id);
+    }
+
+    private function setDownloadId(Download $download, int $id): void
+    {
+        $property = new \ReflectionProperty(Download::class, 'id');
+        $property->setValue($download, $id);
     }
 
     public function testShowIncludesPluginUiOnlyForAPluginWithBothAnActiveWidgetAndADeclaredUi(): void
@@ -285,6 +353,7 @@ final class AnimeControllerTest extends TestCase
 
         $anime = new TvAnime();
         $anime->setTitle('Frieren')->setWatchStatus(WatchStatus::Watching);
+        $this->setAnimeId($anime, 1);
 
         $twig = $this->createMock(Environment::class);
         $twig->expects($this->once())
@@ -308,6 +377,8 @@ final class AnimeControllerTest extends TestCase
                 $entryWidgets,
                 $this->createFillableFieldsPresenter(),
                 $this->createPluginUiAssetsResolver($installedPlugins),
+                $this->createStub(DownloadRepository::class),
+                new DownloadViewFactory(),
             );
             $response = $controller->show($anime);
 
@@ -348,6 +419,7 @@ final class AnimeControllerTest extends TestCase
 
         $anime = new TvAnime();
         $anime->setTitle('Frieren')->setWatchStatus(WatchStatus::Watching);
+        $this->setAnimeId($anime, 1);
 
         $twig = $this->createMock(Environment::class);
         $twig->expects($this->once())
@@ -362,6 +434,8 @@ final class AnimeControllerTest extends TestCase
                 $entryWidgets,
                 $this->createFillableFieldsPresenter(),
                 $this->createPluginUiAssetsResolver($installedPlugins),
+                $this->createStub(DownloadRepository::class),
+                new DownloadViewFactory(),
             );
             $response = $controller->show($anime);
 
