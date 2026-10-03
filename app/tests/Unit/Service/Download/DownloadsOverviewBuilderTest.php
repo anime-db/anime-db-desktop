@@ -176,6 +176,44 @@ final class DownloadsOverviewBuilderTest extends TestCase
         ], $overrides);
     }
 
+    private function buildBuilderForLocale(string $locale): DownloadsOverviewBuilder
+    {
+        $translator = new Translator($locale);
+        $translator->addLoader('yaml', new YamlFileLoader());
+        $translator->addResource('yaml', \dirname(__DIR__, 4)."/translations/messages.{$locale}.yaml", $locale);
+
+        $urlGenerator = $this->createStub(UrlGeneratorInterface::class);
+        $urlGenerator->method('generate')->willReturnCallback(
+            static fn (string $route, array $params = []): string => \sprintf('/anime/%d', $params['id']),
+        );
+
+        return new DownloadsOverviewBuilder($this->downloads, new StorageMarkerService($this->entityManager), $translator, $urlGenerator);
+    }
+
+    public function testSizeAndSpeedTextUseTranslatedUnitsInRu(): void
+    {
+        $anime = $this->persistAnime();
+        $this->persistDownload(str_repeat('a', 40), $anime);
+
+        $result = $this->builder->build([$this->torrent(str_repeat('a', 40))], true);
+
+        self::assertSame('700,0 МБ', $result['rows'][0]['sizeText']);
+        self::assertSame('50,0 КБ/с', $result['rows'][0]['downloadSpeedText']);
+    }
+
+    public function testSizeAndSpeedTextUseTranslatedUnitsInEn(): void
+    {
+        $builder = $this->buildBuilderForLocale('en');
+
+        $anime = $this->persistAnime();
+        $this->persistDownload(str_repeat('a', 40), $anime);
+
+        $result = $builder->build([$this->torrent(str_repeat('a', 40))], true);
+
+        self::assertSame('700.0 MB', $result['rows'][0]['sizeText']);
+        self::assertSame('50.0 KB/s', $result['rows'][0]['downloadSpeedText']);
+    }
+
     public function testPendingRowWithProgressShowsWaitingAndLiveFields(): void
     {
         $anime = $this->persistAnime();

@@ -667,3 +667,9 @@ downloads:
     status_failed_move_failed: 'Error: failed to move files.'
     status_failed_legacy_layout: 'Error: legacy storage layout.'
     status_failed_generic: Error
+    unit_b: '%value% B'
+    unit_kb: '%value% KB'
+    unit_mb: '%value% MB'
+    unit_gb: '%value% GB'
+    unit_tb: '%value% TB'
+    speed: '%value%/s'

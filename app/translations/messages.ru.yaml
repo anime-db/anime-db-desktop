@@ -667,3 +667,9 @@ downloads:
     status_failed_move_failed: 'Ошибка: не удалось переместить файлы.'
     status_failed_legacy_layout: 'Ошибка: старая раскладка хранилища.'
     status_failed_generic: Ошибка
+    unit_b: '%value% Б'
+    unit_kb: '%value% КБ'
+    unit_mb: '%value% МБ'
+    unit_gb: '%value% ГБ'
+    unit_tb: '%value% ТБ'
+    speed: '%value%/с'

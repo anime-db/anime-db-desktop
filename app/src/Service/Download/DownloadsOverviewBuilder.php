@@ -180,8 +180,8 @@ final class DownloadsOverviewBuilder
         return [
             'sizeText' => $this->formatBytes($size),
             'progressText' => \sprintf('%d%%', (int) round($progress * 100)),
-            'downloadSpeedText' => $this->formatBytes((int) ($torrent['dlspeed'] ?? 0)).'/s',
-            'uploadSpeedText' => $this->formatBytes((int) ($torrent['upspeed'] ?? 0)).'/s',
+            'downloadSpeedText' => $this->formatSpeed((int) ($torrent['dlspeed'] ?? 0)),
+            'uploadSpeedText' => $this->formatSpeed((int) ($torrent['upspeed'] ?? 0)),
             // qBittorrent reports 8640000 (100 days) as its "unknown/never" ETA sentinel.
             'etaText' => $eta > 0 && $eta < 8640000 ? $this->formatDuration($eta) : null,
             'state' => (string) ($torrent['state'] ?? ''),
@@ -244,18 +244,34 @@ final class DownloadsOverviewBuilder
         };
     }
 
+    /**
+     * Unit text and the fractional part's decimal separator both come from the translation
+     * catalog/{@see \NumberFormatter} rather than being hardcoded ASCII — issue #854's acceptance
+     * criteria requires every UI string to exist in both ru and en, and "700.0 MB" with a literal
+     * dot reads as English regardless of which locale's catalog the rest of the page uses.
+     */
     private function formatBytes(int $bytes): string
     {
-        $units = ['B', 'KB', 'MB', 'GB', 'TB'];
+        $unitKeys = ['downloads.unit_b', 'downloads.unit_kb', 'downloads.unit_mb', 'downloads.unit_gb', 'downloads.unit_tb'];
         $value = (float) max(0, $bytes);
 
         $unitIndex = 0;
-        while ($value >= 1024.0 && $unitIndex < \count($units) - 1) {
+        while ($value >= 1024.0 && $unitIndex < \count($unitKeys) - 1) {
             $value /= 1024.0;
             ++$unitIndex;
         }
 
-        return \sprintf($unitIndex === 0 ? '%d %s' : '%.1f %s', $value, $units[$unitIndex]);
+        $decimals = $unitIndex === 0 ? 0 : 1;
+        $formatter = new \NumberFormatter($this->translator->getLocale(), \NumberFormatter::DECIMAL);
+        $formatter->setAttribute(\NumberFormatter::MIN_FRACTION_DIGITS, $decimals);
+        $formatter->setAttribute(\NumberFormatter::MAX_FRACTION_DIGITS, $decimals);
+
+        return $this->translator->trans($unitKeys[$unitIndex], ['%value%' => $formatter->format($value)]);
+    }
+
+    private function formatSpeed(int $bytesPerSecond): string
+    {
+        return $this->translator->trans('downloads.speed', ['%value%' => $this->formatBytes($bytesPerSecond)]);
     }
 
     private function formatDuration(int $seconds): string
