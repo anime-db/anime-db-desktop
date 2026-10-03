@@ -1004,6 +1004,12 @@ test('a checkbox accumulates without firing a request; the value label applies i
     expect(byKind(calls, 'list')).toHaveLength(2);
     expect(byKind(calls, 'facets')).toHaveLength(2);
     expect(queryParams(byKind(calls, 'list')[1].url)['watch_status[]']).toBe('watching');
+
+    // Instant apply folds the clicked value straight into appliedFilters, leaving nothing in the
+    // pending accumulation still to apply — "Отфильтровать" must go back to disabled (issue
+    // #879). Before the fix it stayed enabled, since the button only checked whether pending was
+    // non-empty, not whether it still differed from what's already applied.
+    expect(applyButton.disabled).toBe(true);
 });
 
 test('"reset all" clears applied filters and refetches without touching the chosen sort field', async () => {
@@ -2148,4 +2154,48 @@ test('a section-toggle click while a persist POST is still in flight is queued r
     // state (both sections), not the stale state POST #1 was built from.
     expect(persistCalls()).toHaveLength(2);
     expect(lastPersistBody().collapsed.slice().sort()).toEqual(['genres', 'studios']);
+});
+
+test('scrolling the page recomputes the filter panel\'s --anime-list-filters-top offset (issue #879)', async () => {
+    const calls = mockFetchQueueAll();
+    setUpTranslations();
+
+    loadAnimeListModule();
+    await flushMicrotasks();
+    byKind(calls, 'list')[0].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 0, limit: 6, offset: 0 }));
+    byKind(calls, 'facets')[0].resolve(emptyFacets());
+    await flushMicrotasks();
+
+    const panel = document.getElementById('anime-list-filters');
+    // jsdom never runs real layout, so getBoundingClientRect() always reports zeros — stand in
+    // for "the panel has not scrolled up to the sticky pin point yet, its top sits 96px into the
+    // viewport" the same way a real scroll position would move it.
+    panel.getBoundingClientRect = jest.fn(() => ({ top: 96 }));
+
+    window.dispatchEvent(new Event('scroll'));
+    // The handler is scheduled via requestAnimationFrame, not run synchronously from the scroll
+    // event — jest.useFakeTimers() (beforeEach above) fakes requestAnimationFrame too, so it
+    // needs an explicit advance rather than a real awaited frame.
+    jest.advanceTimersByTime(16);
+
+    expect(panel.style.getPropertyValue('--anime-list-filters-top')).toBe('96px');
+});
+
+test('a negative getBoundingClientRect().top (scrolled past the sticky pin point) clamps the offset to 0 (issue #879)', async () => {
+    const calls = mockFetchQueueAll();
+    setUpTranslations();
+
+    loadAnimeListModule();
+    await flushMicrotasks();
+    byKind(calls, 'list')[0].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 0, limit: 6, offset: 0 }));
+    byKind(calls, 'facets')[0].resolve(emptyFacets());
+    await flushMicrotasks();
+
+    const panel = document.getElementById('anime-list-filters');
+    panel.getBoundingClientRect = jest.fn(() => ({ top: -40 }));
+
+    window.dispatchEvent(new Event('resize'));
+    jest.advanceTimersByTime(16);
+
+    expect(panel.style.getPropertyValue('--anime-list-filters-top')).toBe('0px');
 });
