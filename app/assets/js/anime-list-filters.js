@@ -341,6 +341,11 @@
         if (forceRefresh || !isFiltersEmpty(appliedFilters)) {
             refreshChips();
         }
+        // pendingFilters was just reset to equal appliedFilters, so the apply button's disabled
+        // state (issue #879) needs recomputing too — otherwise a popstate landing on a URL that
+        // matches the already-applied filters leaves a stale enabled button that fires an empty
+        // reload/facets/pushState cycle on click.
+        updateApplyButtonState();
     }
 
     function getAppliedFilters() {
@@ -532,6 +537,14 @@
                 const expanded = filtersToggleButton.getAttribute('aria-expanded') === 'true';
                 filtersToggleButton.setAttribute('aria-expanded', String(!expanded));
                 filtersPanel.hidden = expanded;
+
+                // The offset was last computed while the panel was hidden (or never at all, if it
+                // started collapsed) and getBoundingClientRect() on a hidden element always reports
+                // zeros, so --anime-list-filters-top is stale the moment the panel becomes visible
+                // again (issue #879) — recompute it now rather than waiting for the next scroll.
+                if (!filtersPanel.hidden) {
+                    updateFiltersTopOffset();
+                }
             });
         }
 
