@@ -64,7 +64,11 @@ describe('buildCommonEnv', () => {
         expect(env.MARKET_SNAPSHOT_CACHE_PATH).toBe('/fake/userData/market-snapshot-cache.json');
         expect(env.MARKET_REFRESH_LOCK_PATH).toBe('/fake/userData/market-refresh.lock');
         expect(env.QBITTORRENT_URL).toBe('http://127.0.0.1:9999');
+        // No oauthCallbackOrigin/oauthCallbackFixedPort set on CONTEXT — this is the fallback path
+        // (fixed port 41813 busy, issue #871), which reproduces the pre-#871 behavior exactly:
+        // OAUTH_CALLBACK_ORIGIN still derives from appPort, and the fixed-port flag is absent.
         expect(env.OAUTH_CALLBACK_ORIGIN).toBe('http://127.0.0.1:8000');
+        expect(env.OAUTH_CALLBACK_FIXED_PORT).toBeUndefined();
         expect(env.MEDIA_DIR).toBe('/fake/userData/media');
         expect(env.IMPORT_STAGING_DIR).toBe('/fake/userData/import-staging');
         expect(env.IMPORT_REJECTION_PATH).toBe('/fake/userData/import-rejected.json');
@@ -106,12 +110,49 @@ describe('buildWebWorkerEnv', () => {
         expect(common.APP_PORT).toBeUndefined();
     });
 
-    // APP_PORT и OAUTH_CALLBACK_ORIGIN описывают один и тот же порт веб-воркера: оба берутся из
-    // context.appPort, поэтому разъехаться не могут — отдельного параметра для порта нет.
-    test('derives APP_PORT from the same context.appPort as OAUTH_CALLBACK_ORIGIN', () => {
+    // Pre-#871 fallback path: without an explicit oauthCallbackOrigin, OAUTH_CALLBACK_ORIGIN still
+    // derives from context.appPort — same value APP_PORT uses — since this is only reached once
+    // the fixed-port listener on 41813 could not bind (see env.js#buildCommonEnv).
+    test('derives APP_PORT from the same context.appPort as OAUTH_CALLBACK_ORIGIN when no fixed origin is set (fallback)', () => {
         const webEnv = buildWebWorkerEnv({ ...CONTEXT, appPort: 12345 }, 9000);
 
         expect(webEnv.APP_PORT).toBe('12345');
         expect(webEnv.OAUTH_CALLBACK_ORIGIN).toBe('http://127.0.0.1:12345');
+    });
+
+    // Issue #871: once the fixed-port OAuth listener is bound, OAUTH_CALLBACK_ORIGIN is the fixed
+    // port 41813 regardless of APP_PORT — the two are intentionally independent from this point on.
+    test('keeps OAUTH_CALLBACK_ORIGIN fixed and independent of APP_PORT once oauthCallbackOrigin is set', () => {
+        const webEnv = buildWebWorkerEnv({
+            ...CONTEXT,
+            appPort: 12345,
+            oauthCallbackOrigin: 'http://127.0.0.1:41813',
+            oauthCallbackFixedPort: true,
+        }, 9000);
+
+        expect(webEnv.APP_PORT).toBe('12345');
+        expect(webEnv.OAUTH_CALLBACK_ORIGIN).toBe('http://127.0.0.1:41813');
+        expect(webEnv.OAUTH_CALLBACK_FIXED_PORT).toBe('1');
+    });
+});
+
+describe('OAUTH_CALLBACK_FIXED_PORT (issue #871)', () => {
+    test('is "1" when oauthCallbackFixedPort is true, regardless of appPort', () => {
+        const env = buildCommonEnv({ ...CONTEXT, oauthCallbackFixedPort: true, oauthCallbackOrigin: 'http://127.0.0.1:41813' });
+        expect(env.OAUTH_CALLBACK_FIXED_PORT).toBe('1');
+        expect(env.OAUTH_CALLBACK_ORIGIN).toBe('http://127.0.0.1:41813');
+    });
+
+    test('is "0" when oauthCallbackFixedPort is false, and still set on a context without appPort (pre-web-worker processes)', () => {
+        const contextWithoutAppPort = { ...CONTEXT };
+        delete contextWithoutAppPort.appPort;
+        const env = buildCommonEnv({ ...contextWithoutAppPort, oauthCallbackFixedPort: false });
+        expect(env.OAUTH_CALLBACK_FIXED_PORT).toBe('0');
+        expect(env.OAUTH_CALLBACK_ORIGIN).toBeUndefined();
+    });
+
+    test('is omitted when oauthCallbackFixedPort is not provided', () => {
+        const env = buildCommonEnv(CONTEXT);
+        expect(env.OAUTH_CALLBACK_FIXED_PORT).toBeUndefined();
     });
 });

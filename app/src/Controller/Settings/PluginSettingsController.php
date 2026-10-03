@@ -125,6 +125,7 @@ final class PluginSettingsController
         private readonly LoggerInterface $logger,
         private readonly PluginUiAssetsResolver $pluginUiAssets,
         private readonly PluginHtmlSanitizer $htmlSanitizer,
+        private readonly string $oauthCallbackFixedPort,
     ) {
     }
 
@@ -194,6 +195,7 @@ final class PluginSettingsController
                 'pluginUi' => $pluginUi,
                 'content' => null,
                 'renderFailed' => true,
+                'oauthCallbackWarning' => $this->oauthCallbackWarning(),
             ]));
         }
 
@@ -203,7 +205,19 @@ final class PluginSettingsController
             'pluginUi' => $pluginUi,
             'content' => $content,
             'renderFailed' => false,
+            'oauthCallbackWarning' => $this->oauthCallbackWarning(),
         ]));
+    }
+
+    /**
+     * Issue #871: true when the host's fixed-port OAuth-redirect listener could not bind (the
+     * `OAUTH_CALLBACK_FIXED_PORT` env var, see native/supervisor/env.js, is '0') — the settings
+     * shell then shows a generic warning, naming no specific source, since the host has no
+     * knowledge of which plugins' OAuth providers actually compare the callback port.
+     */
+    private function oauthCallbackWarning(): bool
+    {
+        return $this->oauthCallbackFixedPort === '0';
     }
 
     /**

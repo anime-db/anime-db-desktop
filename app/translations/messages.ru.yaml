@@ -284,6 +284,7 @@ settings_market:
 settings_plugin_page:
     title_suffix: Настройки плагина — AnimeDB
     render_error: Не удалось отобразить страницу настроек этого плагина. Попробуйте ещё раз позже.
+    oauth_fixed_port_warning: 'Вход через OAuth для некоторых плагинов недоступен: порт 41813 занят другой программой.'
 
 settings_proxy:
     title: Прокси-сервер — Настройки — AnimeDB
