@@ -35,6 +35,9 @@ use App\Entity\Enum\WatchStatus;
 use App\Entity\Storage;
 use App\Entity\TvAnime;
 use App\Repository\DownloadRepository;
+use App\Repository\StorageRepository;
+use App\Service\Download\DownloadFolderJail;
+use App\Service\Download\DownloadIncomingChecker;
 use App\Service\Download\DownloadsOverviewBuilder;
 use App\Service\Storage\StorageMarkerService;
 use Doctrine\DBAL\DriverManager;
@@ -100,6 +103,7 @@ final class DownloadsOverviewBuilderTest extends TestCase
             new StorageMarkerService($this->entityManager),
             $translator,
             $urlGenerator,
+            new DownloadIncomingChecker(new DownloadFolderJail(), new StorageRepository($this->entityManager)),
         );
     }
 
@@ -187,7 +191,7 @@ final class DownloadsOverviewBuilderTest extends TestCase
             static fn (string $route, array $params = []): string => \sprintf('/anime/%d', $params['id']),
         );
 
-        return new DownloadsOverviewBuilder($this->downloads, new StorageMarkerService($this->entityManager), $translator, $urlGenerator);
+        return new DownloadsOverviewBuilder($this->downloads, new StorageMarkerService($this->entityManager), $translator, $urlGenerator, new DownloadIncomingChecker(new DownloadFolderJail(), new StorageRepository($this->entityManager)));
     }
 
     public function testSizeAndSpeedTextUseTranslatedUnitsInRu(): void
@@ -367,6 +371,51 @@ final class DownloadsOverviewBuilderTest extends TestCase
         self::assertFalse($orphan['hasCard']);
         self::assertSame('Mystery torrent', $orphan['displayName']);
         self::assertSame('Без карточки', $orphan['statusText']);
+    }
+
+    public function testCanDeleteFilesOnlyForDataUnderTheTargetStoragesIncoming(): void
+    {
+        $root = 'D:\\Anime';
+        $storage = $this->persistStorage($root);
+        $hashes = [];
+        foreach (['incoming', 'moved', 'root', 'none'] as $key) {
+            $hashes[$key] = str_repeat((string) \count($hashes), 40);
+            $this->persistDownload($hashes[$key], $this->persistAnime($key), $storage);
+        }
+        $noStorageHash = str_repeat('9', 40);
+        $this->persistDownload($noStorageHash, $this->persistAnime('no storage'));
+
+        $torrents = [];
+        foreach (['incoming' => '\\\\?\\d:\\ANIME\\.anime-db\\incoming\\x\\Name', 'moved' => $root.'\\Name', 'root' => $root] as $key => $path) {
+            $torrents[] = $this->torrent($hashes[$key], ['content_path' => $path]);
+        }
+        $torrents[] = $this->torrent($noStorageHash, ['content_path' => $root.'\\.anime-db\\incoming\\x\\Name']);
+
+        $byHash = [];
+        foreach ($this->builder->build($torrents, true)['rows'] as $row) {
+            $byHash[$row['infoHash']] = $row['canDeleteFiles'];
+        }
+
+        self::assertTrue($byHash[$hashes['incoming']]);
+        self::assertFalse($byHash[$hashes['moved']]);
+        self::assertFalse($byHash[$hashes['root']]);
+        self::assertFalse($byHash[$hashes['none']], 'No torrent in the client.');
+        self::assertFalse($byHash[$noStorageHash], 'target_storage is NULL.');
+    }
+
+    public function testOrphanCanDeleteFilesOnlyUnderIncomingOfAnyStorage(): void
+    {
+        $this->persistStorage('D:\\Anime');
+        $this->persistStorage('E:\\Other');
+
+        $result = $this->builder->build([
+            $this->torrent(str_repeat('1', 40), ['content_path' => 'E:\\Other\\.anime-db\\incoming\\x\\Name']),
+            $this->torrent(str_repeat('2', 40), ['content_path' => 'F:\\Else\\Name']),
+        ], true);
+
+        self::assertCount(2, $result['orphans']);
+        self::assertTrue($result['orphans'][0]['canDeleteFiles']);
+        self::assertFalse($result['orphans'][1]['canDeleteFiles']);
     }
 
     /**
