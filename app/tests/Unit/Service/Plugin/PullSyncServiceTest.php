@@ -46,6 +46,7 @@ use App\Entity\ValueObject\PluginId;
 use App\EventListener\DomainEventListener;
 use App\Repository\AnimeRepository;
 use App\Repository\AnimeSyncStateRepository;
+use App\Repository\PendingSyncPushRepository;
 use App\Repository\StudioRepository;
 use App\Repository\SyncReviewItemRepository;
 use App\Service\Plugin\Filler\BulkFillerService;
@@ -173,6 +174,7 @@ final class PullSyncServiceTest extends TestCase
         $convergenceService = new SyncConvergenceService(
             new SyncReconciler(),
             $stateRepository ?? new AnimeSyncStateRepository($entityManager),
+            new PendingSyncPushRepository($entityManager),
             $syncRegistry,
             new SyncReviewService(new SyncReviewItemRepository($entityManager)),
             new NullLogger(),
@@ -693,6 +695,7 @@ final class PullSyncServiceTest extends TestCase
         $convergenceService = new SyncConvergenceService(
             new SyncReconciler(),
             new AnimeSyncStateRepository($this->entityManager),
+            new PendingSyncPushRepository($this->entityManager),
             $syncRegistry,
             new SyncReviewService(new SyncReviewItemRepository($this->entityManager)),
             new NullLogger(),
@@ -1088,6 +1091,7 @@ final class PullSyncServiceTest extends TestCase
         $convergenceService = new SyncConvergenceService(
             new SyncReconciler(),
             new AnimeSyncStateRepository($this->entityManager),
+            new PendingSyncPushRepository($this->entityManager),
             $syncRegistry,
             new SyncReviewService(new SyncReviewItemRepository($this->entityManager)),
             new NullLogger(),

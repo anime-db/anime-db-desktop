@@ -106,6 +106,19 @@ final class QbittorrentClient
         $this->request('POST', '/api/v2/torrents/start', ['body' => ['hashes' => $hash]]);
     }
 
+    /**
+     * Removes a torrent from qBittorrent (issue #856). $deleteFiles controls whether its
+     * downloaded data is removed from disk too — this is the ONLY place in the whole app that can
+     * ever have that effect; no PHP code here or anywhere else in App\Service\Download deletes
+     * files or directories directly.
+     */
+    public function delete(string $hash, bool $deleteFiles): void
+    {
+        $this->request('POST', '/api/v2/torrents/delete', [
+            'body' => ['hashes' => $hash, 'deleteFiles' => $deleteFiles ? 'true' : 'false'],
+        ]);
+    }
+
     public function setSavePath(string $hash, string $savePath): void
     {
         $this->request('POST', '/api/v2/torrents/setLocation', ['body' => ['hashes' => $hash, 'location' => $savePath]]);

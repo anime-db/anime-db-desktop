@@ -312,6 +312,7 @@ const QBITTORRENT_ENDPOINTS = [
     { method: 'POST', path: '/api/v2/torrents/setLocation', body: `hashes=${STUB_TORRENT_HASH}&location=` },
     { method: 'POST', path: '/api/v2/torrents/stop', body: `hashes=${STUB_TORRENT_HASH}` },
     { method: 'POST', path: '/api/v2/torrents/start', body: `hashes=${STUB_TORRENT_HASH}` },
+    { method: 'POST', path: '/api/v2/torrents/delete', body: `hashes=${STUB_TORRENT_HASH}&deleteFiles=false` },
     { method: 'GET', path: '/api/v2/app/preferences' },
     { method: 'POST', path: '/api/v2/app/setPreferences', body: 'json=%7B%7D' },
 ];

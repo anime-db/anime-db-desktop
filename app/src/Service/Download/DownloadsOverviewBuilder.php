@@ -130,7 +130,14 @@ final class DownloadsOverviewBuilder
             'coreStatus' => $download->getStatus()->value,
             'statusText' => $this->statusText($download, $torrent, $torrentKnownMissing, $targetStorage, $markerIdCache),
             'targetStorageName' => $targetStorage?->getName(),
-        ] + $this->liveFields($torrent);
+            'id' => $download->id,
+            // Echoed into the retry/delete forms' hidden `version`/`status` fields (see
+            // downloads/index.html.twig) and the live-update JSON response — DownloadActionController
+            // checks a submitted action against these, not against whatever the row now holds, so a
+            // poller pass between this render and the click surfaces as "state changed" rather than
+            // silently acting on data newer than what the human looked at.
+            'version' => $download->getVersion(),
+        ] + $this->liveFields($torrent) + $this->actionFields($download, $torrent);
     }
 
     /**
@@ -149,7 +156,44 @@ final class DownloadsOverviewBuilder
             'coreStatus' => null,
             'statusText' => $this->translator->trans('downloads.status_no_card'),
             'targetStorageName' => null,
+            'id' => null,
+            'canPause' => false,
+            'canResume' => false,
+            'canRetry' => false,
+            'canStopSeeding' => false,
+            'canDelete' => false,
+            'hasTorrentInClient' => true,
+            'deleteFilesDefaultChecked' => false,
         ] + $this->liveFields($torrent);
+    }
+
+    /**
+     * Eligibility flags for the "Downloads" page's action buttons (issue #856) — computed here,
+     * once, rather than in the template or in JS, so {@see \App\Controller\DownloadActionController}
+     * (which re-checks the same conditions server-side before acting) and the rendered button
+     * visibility can never drift apart on what is allowed for a given row.
+     *
+     * @param ?array<string, mixed> $torrent
+     *
+     * @return array<string, mixed>
+     */
+    private function actionFields(Download $download, ?array $torrent): array
+    {
+        $status = $download->getStatus();
+        $torrentPresent = $torrent !== null;
+        $state = $torrentPresent ? (string) ($torrent['state'] ?? '') : '';
+        $torrentPaused = $torrentPresent && (str_starts_with($state, 'paused') || str_starts_with($state, 'stopped'));
+        $progress = $torrentPresent ? (float) ($torrent['progress'] ?? 0) : 0.0;
+
+        return [
+            'canPause' => $download->canBePausedOrResumed() && $torrentPresent && !$torrentPaused,
+            'canResume' => $download->canBePausedOrResumed() && $torrentPresent && $torrentPaused,
+            'canRetry' => $status === DownloadStatus::Failed && Download::isRetryableFailureReason($download->getFailureReason()),
+            'canStopSeeding' => $status === DownloadStatus::Completed && $torrentPresent,
+            'canDelete' => $status === DownloadStatus::Pending || $status === DownloadStatus::Failed,
+            'hasTorrentInClient' => $torrentPresent,
+            'deleteFilesDefaultChecked' => $torrentPresent && $progress < 1.0,
+        ];
     }
 
     /**
