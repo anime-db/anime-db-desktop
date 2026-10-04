@@ -95,21 +95,16 @@ final class PluginAnimeDataMerger
      *                         and, for the point fill-in scenario, to the single field the
      *                         user asked for
      *
-     * @return list<string> the subset of $fields whose source data was non-empty but could not
-     *                      be applied - today only 'cover' and 'images' can end up here (a URL
-     *                      that failed to download or normalize into WebP, see applyCover()/
-     *                      applyImages()); every other field's behavior is unchanged and never
-     *                      appears in this list — a rejected date_premiere/date_end pair is not
-     *                      reported here either, see applyDatePremiereAndEnd()
+     * @return MergeResult see that class's own docblock for why a rejected date_premiere/date_end
+     *                     pair is reported separately from the 'cover'/'images' download failures
+     *                     $unapplied carries
      */
-    public function apply(Anime $anime, PluginAnimeData $data, array $fields): array
+    public function apply(Anime $anime, PluginAnimeData $data, array $fields): MergeResult
     {
         // Handled once, together, regardless of where 'datePremiere'/'dateEnd' sit in $fields —
         // see applyDatePremiereAndEnd() for why the pair cannot be applied field-by-field below.
         $dateFields = array_values(array_intersect(['datePremiere', 'dateEnd'], $fields));
-        if ($dateFields !== []) {
-            $this->applyDatePremiereAndEnd($anime, $data, $dateFields);
-        }
+        $dateRangeRejected = $dateFields !== [] && !$this->applyDatePremiereAndEnd($anime, $data, $dateFields);
 
         $unapplied = [];
         foreach ($fields as $field) {
@@ -138,7 +133,7 @@ final class PluginAnimeDataMerger
             }
         }
 
-        return $unapplied;
+        return new MergeResult($unapplied, $dateRangeRejected);
     }
 
     /**
@@ -150,15 +145,18 @@ final class PluginAnimeDataMerger
      * $fields and non-null, otherwise $anime's already-stored value (unchanged by this call).
      *
      * A pair that violates the invariant is rejected as a whole — neither date is changed — and
-     * logged as a warning, rather than added to apply()'s $unapplied: FieldFillerService and
-     * BulkFillerService turn a non-empty $unapplied into FillResult::ImageRejected, which would
-     * surface a rejected date pair to the user as a rejected image.
+     * logged as a warning. The rejection is reported back to apply() through this method's return
+     * value rather than added to $unapplied: FieldFillerService and BulkFillerService turn a
+     * non-empty $unapplied into FillResult::ImageRejected, which would surface a rejected date
+     * pair to the user as a rejected image instead of the date conflict it actually is.
      *
      * @param list<string> $fields the subset of the caller's $fields that is 'datePremiere'
      *                             and/or 'dateEnd' — never empty, apply() only calls this when
      *                             at least one of the two is present
+     *
+     * @return bool false when the pair was rejected (neither date changed), true otherwise
      */
-    private function applyDatePremiereAndEnd(Anime $anime, PluginAnimeData $data, array $fields): void
+    private function applyDatePremiereAndEnd(Anime $anime, PluginAnimeData $data, array $fields): bool
     {
         $datePremiere = \in_array('datePremiere', $fields, true) && $data->datePremiere !== null
             ? $data->datePremiere
@@ -169,6 +167,8 @@ final class PluginAnimeDataMerger
 
         try {
             $anime->setDatePremiereAndEnd($datePremiere, $dateEnd);
+
+            return true;
         } catch (InvalidDateRangeException) {
             $this->logger->warning('Rejected a date_premiere/date_end pair that would violate date_end >= date_premiere; leaving both dates unchanged.', [
                 'animeId' => $anime->id,
@@ -177,6 +177,8 @@ final class PluginAnimeDataMerger
                 'storedDatePremiere' => $anime->getDatePremiere(),
                 'storedDateEnd' => $anime->getDateEnd(),
             ]);
+
+            return false;
         }
     }
 

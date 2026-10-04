@@ -287,11 +287,13 @@ final class FieldFillerServiceTest extends TestCase
 
     /**
      * Issue #860, scenario 8: a point fill-in of 'dateEnd' that conflicts with the anime's
-     * already-stored datePremiere must not throw and must not come back as
-     * FillResult::ImageRejected — that result is reserved for an actual image/cover download
-     * failure (see PluginAnimeDataMerger::apply()'s docblock), not a rejected date pair.
+     * already-stored datePremiere must not throw, must not change dateEnd, and must come back as
+     * FillResult::DateRangeRejected — not FillResult::Applied (the field did not change, so
+     * reporting success would be a lie to the user) and not FillResult::ImageRejected (that
+     * result is reserved for an actual image/cover download failure, see
+     * PluginAnimeDataMerger::apply()'s docblock).
      */
-    public function testFillDoesNotReportImageRejectedWhenAPointFillInOfDateEndConflictsWithTheStoredDatePremiere(): void
+    public function testFillReturnsDateRangeRejectedWhenAPointFillInOfDateEndConflictsWithTheStoredDatePremiere(): void
     {
         $pluginId = new PluginId('animedb-shikimori');
         $data = new PluginAnimeData(title: 'Bleach', dateEnd: new \DateTimeImmutable('2020-01-01'));
@@ -308,7 +310,7 @@ final class FieldFillerServiceTest extends TestCase
 
         $result = $service->fill($anime, $pluginId, 'dateEnd');
 
-        $this->assertNotSame(FillResult::ImageRejected, $result);
+        $this->assertSame(FillResult::DateRangeRejected, $result);
         $this->assertNull($anime->getDateEnd());
     }
 

@@ -64,7 +64,9 @@ final class FieldFillerService
      *                    could not resolve anything, or a plugin call threw; ImageRejected when
      *                    the plugin did return data for $field but
      *                    {@see PluginAnimeDataMerger::apply()} could not apply it (today only
-     *                    possible for 'cover'/'images', see that method's docblock)
+     *                    possible for 'cover'/'images', see that method's docblock);
+     *                    DateRangeRejected when $field is 'datePremiere'/'dateEnd' and the
+     *                    resulting pair conflicts with the one already on $anime
      */
     public function fill(Anime $anime, PluginId $pluginId, string $field): FillResult
     {
@@ -89,10 +91,14 @@ final class FieldFillerService
             return FillResult::NotFound;
         }
 
-        $unapplied = $this->merger->apply($anime, $data, [$field]);
+        $result = $this->merger->apply($anime, $data, [$field]);
         $this->entityManager->flush();
 
-        return $unapplied === [] ? FillResult::Applied : FillResult::ImageRejected;
+        return match (true) {
+            $result->dateRangeRejected => FillResult::DateRangeRejected,
+            $result->unapplied !== [] => FillResult::ImageRejected,
+            default => FillResult::Applied,
+        };
     }
 
     private function resolve(FillerInterface $filler, PluginId $pluginId, Anime $anime): ?PluginAnimeData

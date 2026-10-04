@@ -513,6 +513,7 @@ anime_detail:
     fill_source_label: Источник
     error_fill_not_found: Источник не нашёл совпадение по этому аниме.
     error_fill_image_rejected: Источник вернул изображение, которое не удалось сохранить.
+    error_fill_date_range_rejected: Источник вернул дату, конфликтующую с уже сохранённой.
     downloads_heading: Загрузки этой карточки
     downloads_unlink_button: Отвязать
     downloads_unlink_conflict_error: Состояние изменилось, обновите страницу.
