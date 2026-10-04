@@ -164,6 +164,40 @@ final class DeletedFromSourceDetectorTest extends TestCase
     }
 
     /**
+     * Scenario 7 (issue #863 review): another *active* plugin with no AnimeSyncState snapshot row
+     * yet, but with an unresolved NeedsCorrection review item naming it as `origin_participant_id`
+     * (issue #861's first-contact-divergence — {@see
+     * \App\Service\Sync\SyncConvergenceService::reconcilePulledItem()} deliberately withholds the
+     * snapshot row while that item is unresolved), still genuinely has this record in its list —
+     * a real conflict, not a plain removal, even without the row.
+     */
+    public function testAnotherActivePluginWithAPendingFirstContactDivergenceIsAConflict(): void
+    {
+        $anime = $this->persistAnime(['animedb-shikimori' => '10', 'animedb-mal' => '99']);
+        $this->entityManager->flush();
+        $this->seedFirstContactDivergence($anime, 'animedb-mal');
+
+        $registry = new SyncRegistry(
+            ['animedb-mal' => $this->createStub(SyncInterface::class)],
+            $this->store(['animedb-mal']),
+        );
+
+        $this->detector($registry)->detect($this->pluginId, ['10' => $anime]);
+
+        $items = array_values(array_filter(
+            $this->reviewItems(),
+            fn (SyncReviewItem $item): bool => $item->kind !== SyncReviewItemKind::NeedsCorrection,
+        ));
+        $this->assertCount(1, $items);
+        $this->assertSame(SyncReviewItemKind::DeletionConflict, $items[0]->kind);
+        $this->assertSame([
+            'anime_id' => $anime->id,
+            'deleted_from' => 'animedb-shikimori',
+            'still_present_on' => ['animedb-mal'],
+        ], $items[0]->payload);
+    }
+
+    /**
      * Scenario 6 (issue #863): a plugin that carries an AnimeSyncState snapshot row but is not
      * *active* is still not a conflict — "still in the list on an abandoned, now-inactive
      * tracker" is not a reason to withhold the plain removal flag (behaviour unchanged by #863).
@@ -213,6 +247,22 @@ final class DeletedFromSourceDetectorTest extends TestCase
     private function seedSyncState(Anime $anime, string $participantId): void
     {
         $this->entityManager->persist(new AnimeSyncState($anime, $participantId, WatchStatus::Plan, null, new \DateTimeImmutable()));
+    }
+
+    /**
+     * Seeds an unresolved NeedsCorrection review item the way {@see
+     * \App\Service\Sync\SyncConvergenceService::flagFirstContactDivergence()} would for
+     * $participantId's first contact against an already-established local history (issue #861) —
+     * no AnimeSyncState row is written for $participantId while this item stays unresolved.
+     */
+    private function seedFirstContactDivergence(Anime $anime, string $participantId): void
+    {
+        (new SyncReviewService(new SyncReviewItemRepository($this->entityManager)))->create(SyncReviewItemKind::NeedsCorrection, [
+            'anime_id' => $anime->id,
+            'origin_participant_id' => $participantId,
+            'participants' => ['local', $participantId],
+            'candidates' => [],
+        ]);
     }
 
     /**

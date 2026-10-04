@@ -205,7 +205,6 @@ final class SyncSeedMessageHandlerTest extends TestCase
         return new PullSyncService(
             $this->entityManager,
             new AnimeRepository($this->entityManager),
-            $animeSyncStateRepository,
             $bulkFillerService,
             $duplicateDetector,
             $deletionDetector,
