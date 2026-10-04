@@ -35,6 +35,13 @@ use Doctrine\ORM\EntityManagerInterface;
  * Thin persistence wrapper for {@see PendingSyncPush} (issue #862), mirroring
  * {@see AnimeSyncStateRepository}: every method takes an optional $entityManager override,
  * defaulting to the one injected by DI, for the same recovery-EM reason documented there.
+ *
+ * {@see markPending()} and {@see clearPending()} deliberately do not flush (issue #859
+ * regression, PR #891 review): their only caller, {@see
+ * \App\Service\Sync\SyncConvergenceService}, must be able to batch a marker change together with
+ * the rest of an item's confirmed state inside one transaction so a later failure in that same
+ * transaction rolls both back together — an immediate flush here would commit the marker on its
+ * own, ahead of and independent from that transaction.
  */
 class PendingSyncPushRepository
 {
@@ -56,7 +63,6 @@ class PendingSyncPushRepository
         }
 
         $entityManager->persist(new PendingSyncPush($anime, $participantId));
-        $entityManager->flush();
     }
 
     public function clearPending(Anime $anime, string $participantId, ?EntityManagerInterface $entityManager = null): void
@@ -69,7 +75,6 @@ class PendingSyncPushRepository
         }
 
         $entityManager->remove($existing);
-        $entityManager->flush();
     }
 
     private function find(Anime $anime, string $participantId, EntityManagerInterface $entityManager): ?PendingSyncPush

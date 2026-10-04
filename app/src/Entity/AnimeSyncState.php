@@ -47,8 +47,8 @@ use Doctrine\ORM\Mapping as ORM;
  * {@see \App\Service\Sync\SyncReconciler::participantsToConverge()} only ever targets a
  * participant whose current projection differs from the winner, so without this flag a push
  * failure would silently stop being retried the moment every participant agrees again. Set by
- * {@see \App\Service\Sync\SyncConvergenceService::pushTo()} on a failed push (reauthorization
- * failures excepted) and cleared on the next successful one.
+ * {@see \App\Service\Sync\SyncConvergenceService::pushTo()} on a failed push, reauthorization
+ * failures included, and cleared on the next successful one.
  */
 #[ORM\Entity]
 #[ORM\Table(name: 'anime_sync_state')]

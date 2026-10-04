@@ -348,18 +348,29 @@ final class SyncConvergenceService
     }
 
     /**
-     * A forward-propagation push failing (network error, ...) must not fail the whole pull run
-     * over one other, unrelated plugin — logged and skipped, same self-healing stance
-     * PullSyncService already takes elsewhere. The target's own last-seen values are left
-     * untouched, but it is marked push_pending (issue #862; {@see AnimeSyncState::$pushPending} or,
-     * if $existingRow is null, a {@see \App\Entity\PendingSyncPush} row) so it still gets retried
-     * the next time this anime is reconciled, even a run where nothing else changed — see
-     * {@see retryPendingPushes()}, the other half of that retry.
+     * A forward-propagation push failing (network error, reauthorization required, ...) must not
+     * fail the whole pull run over one other, unrelated plugin — logged and skipped, same
+     * self-healing stance PullSyncService already takes elsewhere. The target's own last-seen
+     * values are left untouched, but it is marked push_pending (issue #862; {@see
+     * AnimeSyncState::$pushPending} or, if $existingRow is null, a {@see
+     * \App\Entity\PendingSyncPush} row) so it still gets retried the next time this anime is
+     * reconciled, even a run where nothing else changed — see {@see retryPendingPushes()}, the
+     * other half of that retry.
      *
-     * {@see ReauthRequiredException} is deliberately excluded from marking push_pending: it means
-     * the plugin itself needs the user to re-authorize before any push to it can ever succeed, not
-     * that this particular value failed to land, and PushSyncMessageHandler already has its own,
-     * separate handling for that condition (issue #353).
+     * {@see ReauthRequiredException} marks push_pending too (PR #891 review): PushSyncMessageHandler's
+     * own handling for that condition (issue #353) only covers push-on-edit messages, which never
+     * forward-propagates a winner from reconciliation — without a marker here, a value this
+     * participant should have received would be silently lost the moment the user re-authorizes but
+     * no other participant changes afterward. Retrying a push that again fails with the same
+     * exception is harmless: the plugin rejects it before touching the network.
+     *
+     * {@see markPushPending()} and {@see clearPushPending()} only mutate the entity in memory
+     * (issue #859 regression, PR #891 review) — they must not flush on their own, or the marker (and
+     * whatever else is pending in the same unit of work, including $anime's own just-applied
+     * in-memory change) would commit immediately, ahead of and independent from the transaction
+     * {@see persistConfirmedState()} wraps the rest of this item's confirmed state in. Both callers
+     * of {@see pushTo()} always follow up with a {@see persistConfirmedState()} call in the same
+     * run, which is what actually flushes these changes, atomically with everything else.
      */
     private function pushTo(
         Anime $anime,
@@ -386,10 +397,12 @@ final class SyncConvergenceService
         try {
             $confirmed = $sync->push($item);
         } catch (ReauthRequiredException $exception) {
-            $this->logger->warning('Forward-propagation push to sync plugin "{plugin}" failed: reauthorization required.', [
+            $this->logger->warning('Forward-propagation push to sync plugin "{plugin}" failed: reauthorization required; marking it push_pending for the next reconciliation.', [
                 'plugin' => $participantId,
                 'exception' => $exception,
             ]);
+
+            $this->markPushPending($anime, $participantId, $existingRow, $entityManager);
 
             return null;
         } catch (\Throwable $exception) {
@@ -415,8 +428,10 @@ final class SyncConvergenceService
     private function markPushPending(Anime $anime, string $participantId, ?AnimeSyncState $existingRow, EntityManagerInterface $entityManager): void
     {
         if ($existingRow !== null) {
+            // $existingRow is already managed by $entityManager (fetched through it earlier this
+            // run) — mutating it is enough for a later flush to pick up; no flush here, see the
+            // docblock on pushTo().
             $existingRow->markPushPending();
-            $this->stateRepository->save($existingRow, $entityManager);
 
             return;
         }
@@ -427,10 +442,7 @@ final class SyncConvergenceService
     private function clearPushPending(Anime $anime, string $participantId, ?AnimeSyncState $existingRow, EntityManagerInterface $entityManager): void
     {
         if ($existingRow !== null) {
-            if ($existingRow->pushPending) {
-                $existingRow->clearPushPending();
-                $this->stateRepository->save($existingRow, $entityManager);
-            }
+            $existingRow->clearPushPending();
 
             return;
         }
