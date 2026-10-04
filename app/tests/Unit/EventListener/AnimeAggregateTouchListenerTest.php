@@ -33,7 +33,9 @@ use App\Entity\Enum\AnimeNameRole;
 use App\Entity\Enum\GenreCode;
 use App\Entity\Enum\ThemeCode;
 use App\Entity\Enum\WatchStatus;
+use App\Entity\Label;
 use App\Entity\MovieAnime;
+use App\Entity\Studio;
 use App\EventListener\AnimeAggregateTouchListener;
 use App\EventListener\AnimeSearchIndexListener;
 use App\Message\IndexAnimeMessage;
@@ -157,6 +159,57 @@ final class AnimeAggregateTouchListenerTest extends TestCase
 
         usleep(1_000);
         $anime->addTheme(ThemeCode::AdultCast);
+        $this->entityManager->flush();
+
+        $this->assertGreaterThan($before, $anime->getDateUpdate());
+    }
+
+    /**
+     * Unlike the OneToMany children above, studios/labels are owning-side ManyToMany
+     * collections: Doctrine's own UnitOfWork::computeChangeSet() already schedules the owning
+     * Anime for an UPDATE whenever such a collection is dirty, so AnimeAggregateTouchListener
+     * does nothing extra here. This guards that native behavior against regressions.
+     */
+    public function testAddingAStudioBumpsDateUpdateAndDispatchesIndexExactlyOnce(): void
+    {
+        $anime = $this->persistAnime();
+        $before = $anime->getDateUpdate();
+        $animeId = $this->requireId($anime);
+
+        $studio = new Studio();
+        $studio->rename('Sunrise');
+        $this->entityManager->persist($studio);
+        $this->entityManager->flush();
+
+        $this->messageBus->expects($this->once())
+            ->method('dispatch')
+            ->with($this->equalTo(new IndexAnimeMessage($animeId)))
+            ->willReturn(new Envelope(new IndexAnimeMessage($animeId)));
+
+        usleep(1_000);
+        $anime->addStudio($studio);
+        $this->entityManager->flush();
+
+        $this->assertGreaterThan($before, $anime->getDateUpdate());
+    }
+
+    public function testAddingALabelBumpsDateUpdateAndDispatchesIndexExactlyOnce(): void
+    {
+        $anime = $this->persistAnime();
+        $before = $anime->getDateUpdate();
+        $animeId = $this->requireId($anime);
+
+        $label = new Label('Favorite');
+        $this->entityManager->persist($label);
+        $this->entityManager->flush();
+
+        $this->messageBus->expects($this->once())
+            ->method('dispatch')
+            ->with($this->equalTo(new IndexAnimeMessage($animeId)))
+            ->willReturn(new Envelope(new IndexAnimeMessage($animeId)));
+
+        usleep(1_000);
+        $anime->addLabel($label);
         $this->entityManager->flush();
 
         $this->assertGreaterThan($before, $anime->getDateUpdate());
