@@ -29,6 +29,7 @@ namespace App\Tests\Unit\EventListener;
 
 use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
+use App\Entity\AnimeName;
 use App\Entity\Enum\AnimeNameRole;
 use App\Entity\Enum\GenreCode;
 use App\Entity\Enum\ThemeCode;
@@ -213,6 +214,131 @@ final class AnimeAggregateTouchListenerTest extends TestCase
         $this->entityManager->flush();
 
         $this->assertGreaterThan($before, $anime->getDateUpdate());
+    }
+
+    /**
+     * Regression for a gap the architect review found: with AnimeDescription removed from
+     * AnimeAggregateTouchListener::resolveParent(), or either getScheduledEntityDeletions()/
+     * getScheduledEntityUpdates() dropped from its onFlush() loop, the whole suite stayed green —
+     * nothing exercised a child-row DELETE (orphanRemoval) or a child-row UPDATE (an existing
+     * AnimeDescription row edited in place, see Anime::setDescription()). The column stores
+     * seconds, so usleep()+in-memory comparison (as the sibling tests above do) cannot model this:
+     * the baseline is pushed into the past directly in the database and re-read from there too,
+     * never from the in-memory entity, which would still show the stale value from before clear().
+     */
+    public function testRemovingANameBumpsDateUpdateAndDispatchesIndexExactlyOnce(): void
+    {
+        // The name is added before the first flush, together with the Anime insert itself, so
+        // that setup does not also trigger a dispatch the mock below isn't yet configured for
+        // (see AnimeAggregateTouchListener::onFlush()'s own isScheduledForInsert() guard: an Anime
+        // scheduled for insert is skipped, so inserting both it and its first child in one flush
+        // never fires postUpdate/dispatch at all).
+        $anime = new MovieAnime();
+        $anime->setTitle('Cowboy Bebop')->setWatchStatus(WatchStatus::Plan);
+        $anime->addName('Cowboy Bebop (alt)', 'en', AnimeNameRole::Synonym);
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+        $animeId = $this->requireId($anime);
+
+        $before = $this->pushDateUpdateIntoThePast($animeId);
+        $this->entityManager->clear();
+
+        $anime = $this->findAnime($animeId);
+        $name = $anime->getNames()->first();
+        if (!$name instanceof AnimeName) {
+            throw new \LogicException('AnimeName must still exist after clear().');
+        }
+
+        $this->messageBus->expects($this->once())
+            ->method('dispatch')
+            ->with($this->equalTo(new IndexAnimeMessage($animeId)))
+            ->willReturn(new Envelope(new IndexAnimeMessage($animeId)));
+
+        $anime->removeName($name);
+        $this->entityManager->flush();
+
+        $this->assertGreaterThan($before, $this->readDateUpdateFromDb($animeId));
+    }
+
+    public function testUpdatingAnExistingDescriptionBumpsDateUpdateAndDispatchesIndexExactlyOnce(): void
+    {
+        // Same reasoning as the removeName test above: the description is added together with
+        // the Anime's own insert so setup triggers no dispatch.
+        $anime = new MovieAnime();
+        $anime->setTitle('Cowboy Bebop')->setWatchStatus(WatchStatus::Plan);
+        $anime->setDescription('en', 'A bounty hunting crew.');
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+        $animeId = $this->requireId($anime);
+
+        $before = $this->pushDateUpdateIntoThePast($animeId);
+        $this->entityManager->clear();
+
+        $anime = $this->findAnime($animeId);
+
+        $this->messageBus->expects($this->once())
+            ->method('dispatch')
+            ->with($this->equalTo(new IndexAnimeMessage($animeId)))
+            ->willReturn(new Envelope(new IndexAnimeMessage($animeId)));
+
+        $anime->setDescription('en', 'A bounty hunting crew chasing criminals across the solar system.');
+        $this->entityManager->flush();
+
+        $this->assertGreaterThan($before, $this->readDateUpdateFromDb($animeId));
+    }
+
+    public function testAddingANewDescriptionLocaleBumpsDateUpdateAndDispatchesIndexExactlyOnce(): void
+    {
+        $anime = $this->persistAnime();
+        $animeId = $this->requireId($anime);
+
+        $before = $this->pushDateUpdateIntoThePast($animeId);
+        $this->entityManager->clear();
+
+        $anime = $this->findAnime($animeId);
+
+        $this->messageBus->expects($this->once())
+            ->method('dispatch')
+            ->with($this->equalTo(new IndexAnimeMessage($animeId)))
+            ->willReturn(new Envelope(new IndexAnimeMessage($animeId)));
+
+        $anime->setDescription('en', 'A bounty hunting crew.');
+        $this->entityManager->flush();
+
+        $this->assertGreaterThan($before, $this->readDateUpdateFromDb($animeId));
+    }
+
+    /**
+     * Sets anime.dateUpdate directly in the database (not via the entity) and returns the value.
+     * Column name matches this test's own schema, built from attribute metadata with no naming
+     * strategy (see setUp()) — not the snake_case `date_update` the production config's
+     * underscore_number_aware naming strategy produces.
+     */
+    private function pushDateUpdateIntoThePast(int $animeId): int
+    {
+        $past = time() - 3_600;
+        $this->entityManager->getConnection()->executeStatement(
+            'UPDATE anime SET dateUpdate = ? WHERE id = ?',
+            [$past, $animeId],
+        );
+
+        return $past;
+    }
+
+    /** Reads anime.dateUpdate directly from the database, bypassing any in-memory entity state. */
+    private function readDateUpdateFromDb(int $animeId): int
+    {
+        return (int) $this->entityManager->getConnection()->fetchOne(
+            'SELECT dateUpdate FROM anime WHERE id = ?',
+            [$animeId],
+        );
+    }
+
+    private function findAnime(int $animeId): MovieAnime
+    {
+        $anime = $this->entityManager->find(MovieAnime::class, $animeId);
+
+        return $anime ?? throw new \LogicException('Anime must still exist after clear().');
     }
 
     private function persistAnime(): MovieAnime
