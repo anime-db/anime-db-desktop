@@ -39,6 +39,8 @@ const REQUIRED_INI_DIRECTIVES = [
     { pattern: /^\s*extension\s*=\s*openssl\s*$/m, render: () => 'extension=openssl' },
     { pattern: /^\s*extension\s*=\s*mbstring\s*$/m, render: () => 'extension=mbstring' },
     { pattern: /^\s*extension\s*=\s*gd\s*$/m, render: () => 'extension=gd' },
+    { pattern: /^\s*upload_max_filesize\s*=\s*\S+\s*$/m, render: () => 'upload_max_filesize = 16M' },
+    { pattern: /^\s*post_max_size\s*=\s*\S+\s*$/m, render: () => 'post_max_size = 16M' },
 ];
 
 // extension_dir is an install path, so unlike REQUIRED_INI_DIRECTIVES its value — not just its

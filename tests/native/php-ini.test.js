@@ -57,6 +57,13 @@ describe('renderPhpIni', () => {
         expect(ini).toContain('extension=gd');
         expect(ini).toContain('opcache.enable=1');
     });
+
+    test('sets upload_max_filesize and post_max_size to 16M', () => {
+        const ini = renderPhpIni({ extensionDir: EXTENSION_DIR, timezone: 'UTC' });
+
+        expect(ini).toContain('upload_max_filesize = 16M');
+        expect(ini).toContain('post_max_size = 16M');
+    });
 });
 
 describe('ensurePhpIni', () => {
@@ -117,6 +124,40 @@ describe('ensurePhpIni', () => {
         expect(updated).toContain('extension=mbstring');
         expect(updated).toContain('extension=gd');
         expect(updated).toContain('memory_limit = 256M');
+        expect(updated).toContain('upload_max_filesize = 16M');
+        expect(updated).toContain('post_max_size = 16M');
+    });
+
+    test('appends upload_max_filesize and post_max_size to a pre-existing file that predates both directives', () => {
+        const partial = ['extension_dir = "/fake/ext"', 'extension=intl', ''].join('\n');
+        fs.writeFileSync(iniPath, partial, 'utf8');
+
+        ensurePhpIni({ iniPath, iniDir: tmpDir, extensionDir: '/fake/ext' });
+
+        const updated = fs.readFileSync(iniPath, 'utf8');
+        expect((updated.match(/upload_max_filesize/g) || []).length).toBe(1);
+        expect((updated.match(/post_max_size/g) || []).length).toBe(1);
+    });
+
+    test('leaves a user-edited upload_max_filesize/post_max_size value untouched', () => {
+        const partial = [
+            'extension_dir = "/fake/ext"',
+            'upload_max_filesize = 64M',
+            'post_max_size = 64M',
+            'extension=intl',
+            '',
+        ].join('\n');
+        fs.writeFileSync(iniPath, partial, 'utf8');
+
+        ensurePhpIni({ iniPath, iniDir: tmpDir, extensionDir: '/fake/ext' });
+
+        const updated = fs.readFileSync(iniPath, 'utf8');
+        expect((updated.match(/upload_max_filesize/g) || []).length).toBe(1);
+        expect((updated.match(/post_max_size/g) || []).length).toBe(1);
+        expect(updated).toContain('upload_max_filesize = 64M');
+        expect(updated).toContain('post_max_size = 64M');
+        expect(updated).not.toContain('upload_max_filesize = 16M');
+        expect(updated).not.toContain('post_max_size = 16M');
     });
 
     test('appends memory_limit to a pre-existing file that predates the directive', () => {
@@ -153,6 +194,21 @@ describe('ensurePhpIni', () => {
         const memoryLimitDirective = REQUIRED_INI_DIRECTIVES.find(({ render }) => render().startsWith('memory_limit'));
         expect(memoryLimitDirective).toBeDefined();
         const renderedMatch = memoryLimitDirective.render().match(/^\s*memory_limit\s*=\s*(\S+)\s*$/);
+
+        expect(renderedMatch[1]).toBe(templateMatch[1]);
+    });
+
+    // Same regression as above, for the two directives issue #855 added: a clean install reads
+    // them from the template, an upgrade of an existing install gets them from
+    // REQUIRED_INI_DIRECTIVES, so the two values must always match.
+    test.each(['upload_max_filesize', 'post_max_size'])('%s in the template matches the value REQUIRED_INI_DIRECTIVES appends on upgrade', (directive) => {
+        const template = fs.readFileSync(PHP_INI_TEMPLATE, 'utf8');
+        const templateMatch = template.match(new RegExp(`^\\s*${directive}\\s*=\\s*(\\S+)\\s*$`, 'm'));
+        expect(templateMatch).not.toBeNull();
+
+        const upgradeDirective = REQUIRED_INI_DIRECTIVES.find(({ render }) => render().startsWith(directive));
+        expect(upgradeDirective).toBeDefined();
+        const renderedMatch = upgradeDirective.render().match(new RegExp(`^\\s*${directive}\\s*=\\s*(\\S+)\\s*$`));
 
         expect(renderedMatch[1]).toBe(templateMatch[1]);
     });
