@@ -37,6 +37,7 @@ use App\Entity\SyncReviewItem;
 use App\Entity\TvAnime;
 use App\Repository\AnimeRepository;
 use App\Repository\AnimeSyncStateRepository;
+use App\Repository\PendingSyncPushRepository;
 use App\Repository\SyncReviewItemRepository;
 use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Plugin\SyncRegistry;
@@ -99,6 +100,7 @@ final class SyncReviewControllerTest extends TestCase
         return new SyncConvergenceService(
             new SyncReconciler(),
             new AnimeSyncStateRepository($entityManager),
+            new PendingSyncPushRepository($entityManager),
             new SyncRegistry([], new PluginsConfigStore('')),
             new SyncReviewService($this->createStub(SyncReviewItemRepository::class)),
             new NullLogger(),
