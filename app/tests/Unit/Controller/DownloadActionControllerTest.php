@@ -132,20 +132,31 @@ final class DownloadActionControllerTest extends TestCase
     }
 
     /**
-     * @param list<array<string, mixed>> $torrents
+     * Records every request the MockHttpClient saw as ['method', 'url', 'body'] — used to pin down
+     * exactly which qBittorrent endpoint a controller action called, with what hashes, rather than
+     * just asserting the controller's own HTTP status (see the three tests below this helper was
+     * added for).
+     *
+     * @param list<array<string, mixed>>                              $torrents
+     * @param list<array{method: string, url: string, body: ?string}> $requests
      */
-    private function createController(array $torrents, ?CsrfTokenManagerInterface $csrfTokenManager = null): DownloadActionController
+    private function createRecordingController(array $torrents, array &$requests): DownloadActionController
     {
-        $httpClient = new MockHttpClient(fn (): MockResponse => new MockResponse(
-            json_encode($torrents, \JSON_THROW_ON_ERROR),
-            ['response_headers' => ['content-type' => 'application/json']],
-        ));
+        $httpClient = new MockHttpClient(function (string $method, string $url, array $options) use (&$requests, $torrents): MockResponse {
+            $requests[] = ['method' => $method, 'url' => $url, 'body' => $options['body'] ?? null];
+
+            return new MockResponse(
+                $method === 'GET' ? json_encode($torrents, \JSON_THROW_ON_ERROR) : 'Ok.',
+                ['response_headers' => ['content-type' => 'application/json']],
+            );
+        });
 
         return new DownloadActionController(
             new DownloadActionService($this->entityManager),
+            $this->repository,
             new QbittorrentClient($httpClient, self::BASE_URL),
             $this->overviewBuilder(),
-            $csrfTokenManager ?? $this->alwaysValidCsrfTokenManager(),
+            $this->alwaysValidCsrfTokenManager(),
             $this->urlGenerator(),
             $this->createStub(Environment::class),
         );
@@ -163,10 +174,35 @@ final class DownloadActionControllerTest extends TestCase
         $download = new Download(self::HASH, $anime);
         $this->repository->save($download);
 
-        $controller = $this->createController([['infohash_v1' => self::HASH, 'hash' => 'v2-hash', 'state' => 'downloading']]);
+        $requests = [];
+        $controller = $this->createRecordingController(
+            [['infohash_v1' => self::HASH, 'hash' => 'v2-hash', 'state' => 'downloading']],
+            $requests,
+        );
         $response = $controller->pause($download, $this->postRequest());
 
         $this->assertSame(302, $response->getStatusCode());
+        $stopRequests = array_values(array_filter($requests, static fn (array $r): bool => str_ends_with($r['url'], '/torrents/stop')));
+        $this->assertCount(1, $stopRequests, 'Exactly one POST to torrents/stop is expected.');
+        $this->assertSame('hashes=v2-hash', $stopRequests[0]['body']);
+    }
+
+    public function testPauseIsRefusedForANonPendingRow(): void
+    {
+        $anime = $this->persistAnime();
+        $download = new Download(self::HASH, $anime);
+        $download->markFailed();
+        $this->repository->save($download);
+
+        $requests = [];
+        $controller = $this->createRecordingController(
+            [['infohash_v1' => self::HASH, 'hash' => 'v2-hash', 'state' => 'pausedDL']],
+            $requests,
+        );
+        $response = $controller->pause($download, $this->postRequest());
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertSame([], array_filter($requests, static fn (array $r): bool => $r['method'] === 'POST'), 'A Failed row must never reach a POST call.');
     }
 
     public function testResumeCallsClientStartWithTheTorrentsOwnHash(): void
@@ -175,10 +211,35 @@ final class DownloadActionControllerTest extends TestCase
         $download = new Download(self::HASH, $anime);
         $this->repository->save($download);
 
-        $controller = $this->createController([['infohash_v1' => self::HASH, 'hash' => 'v2-hash', 'state' => 'pausedDL']]);
+        $requests = [];
+        $controller = $this->createRecordingController(
+            [['infohash_v1' => self::HASH, 'hash' => 'v2-hash', 'state' => 'pausedDL']],
+            $requests,
+        );
         $response = $controller->resume($download, $this->postRequest());
 
         $this->assertSame(302, $response->getStatusCode());
+        $startRequests = array_values(array_filter($requests, static fn (array $r): bool => str_ends_with($r['url'], '/torrents/start')));
+        $this->assertCount(1, $startRequests, 'Exactly one POST to torrents/start is expected.');
+        $this->assertSame('hashes=v2-hash', $startRequests[0]['body']);
+    }
+
+    public function testResumeIsRefusedForANonPendingRow(): void
+    {
+        $anime = $this->persistAnime();
+        $download = new Download(self::HASH, $anime);
+        $download->markCompleted();
+        $this->repository->save($download);
+
+        $requests = [];
+        $controller = $this->createRecordingController(
+            [['infohash_v1' => self::HASH, 'hash' => 'v2-hash', 'state' => 'pausedUP']],
+            $requests,
+        );
+        $response = $controller->resume($download, $this->postRequest());
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertSame([], array_filter($requests, static fn (array $r): bool => $r['method'] === 'POST'), 'A Completed row must never reach a POST call.');
     }
 
     public function testRetrySucceedsMovesFailedToPendingAndStartsTheTorrent(): void
@@ -188,10 +249,17 @@ final class DownloadActionControllerTest extends TestCase
         $download->markFailed('disk_space');
         $this->repository->save($download);
 
-        $controller = $this->createController([['infohash_v1' => self::HASH, 'hash' => 'v2-hash', 'state' => 'pausedDL']]);
+        $requests = [];
+        $controller = $this->createRecordingController(
+            [['infohash_v1' => self::HASH, 'hash' => 'v2-hash', 'state' => 'pausedDL']],
+            $requests,
+        );
         $response = $controller->retry($download, $this->postRequest());
 
         $this->assertSame(302, $response->getStatusCode());
+        $startRequests = array_values(array_filter($requests, static fn (array $r): bool => str_ends_with($r['url'], '/torrents/start')));
+        $this->assertCount(1, $startRequests, 'retry() must call torrents/start after the UPDATE succeeds.');
+        $this->assertSame('hashes=v2-hash', $startRequests[0]['body']);
         $this->entityManager->clear();
         $reloaded = $this->repository->findByInfoHashAndAnime(self::HASH, (int) $anime->id);
         $this->assertSame(DownloadStatus::Pending, $reloaded?->getStatus());
@@ -223,6 +291,7 @@ final class DownloadActionControllerTest extends TestCase
 
         $controller = new DownloadActionController(
             new DownloadActionService($this->entityManager),
+            $this->repository,
             $client,
             $this->overviewBuilder(),
             $this->alwaysValidCsrfTokenManager(),
@@ -262,6 +331,7 @@ final class DownloadActionControllerTest extends TestCase
 
         $controller = new DownloadActionController(
             new DownloadActionService($this->entityManager),
+            $this->repository,
             $client,
             $this->overviewBuilder(),
             $this->alwaysValidCsrfTokenManager(),
@@ -291,6 +361,7 @@ final class DownloadActionControllerTest extends TestCase
         });
         $controller = new DownloadActionController(
             new DownloadActionService($this->entityManager),
+            $this->repository,
             new QbittorrentClient($httpClient, self::BASE_URL),
             $this->overviewBuilder(),
             $this->alwaysValidCsrfTokenManager(),
@@ -332,6 +403,7 @@ final class DownloadActionControllerTest extends TestCase
 
         $controller = new DownloadActionController(
             new DownloadActionService($this->entityManager),
+            $this->repository,
             $client,
             $this->overviewBuilder(),
             $this->alwaysValidCsrfTokenManager(),
@@ -371,6 +443,7 @@ final class DownloadActionControllerTest extends TestCase
         });
         $controller = new DownloadActionController(
             new DownloadActionService($this->entityManager),
+            $this->repository,
             new QbittorrentClient($httpClient, self::BASE_URL),
             $this->overviewBuilder(),
             $this->alwaysValidCsrfTokenManager(),
@@ -398,6 +471,7 @@ final class DownloadActionControllerTest extends TestCase
         $httpClient = new MockHttpClient(fn (): MockResponse => new MockResponse('[]', ['response_headers' => ['content-type' => 'application/json']]));
         $controller = new DownloadActionController(
             new DownloadActionService($this->entityManager),
+            $this->repository,
             new QbittorrentClient($httpClient, self::BASE_URL),
             $this->overviewBuilder(),
             $this->alwaysValidCsrfTokenManager(),
@@ -428,6 +502,7 @@ final class DownloadActionControllerTest extends TestCase
 
         $controller = new DownloadActionController(
             new DownloadActionService($this->entityManager),
+            $this->repository,
             $client,
             $this->overviewBuilder(),
             $this->alwaysValidCsrfTokenManager(),
@@ -438,6 +513,41 @@ final class DownloadActionControllerTest extends TestCase
         $response = $controller->deleteOrphan(self::HASH, $this->postRequest());
 
         $this->assertSame(302, $response->getStatusCode());
+    }
+
+    /**
+     * Pins issue #856's "actually an orphan" re-check: a card for this infoHash existing by the
+     * time the click lands (a race with adding the torrent, or a stale tab) must refuse rather than
+     * remove the torrent out from under a row DownloadCompletionPoller still has to progress.
+     */
+    public function testDeleteOrphanIsRefusedWhenARowAlreadyClaimsTheInfoHash(): void
+    {
+        $anime = $this->persistAnime();
+        $download = new Download(self::HASH, $anime);
+        $this->repository->save($download);
+
+        $methodsUsed = [];
+        $httpClient = new MockHttpClient(function (string $method) use (&$methodsUsed): MockResponse {
+            $methodsUsed[] = $method;
+
+            return new MockResponse('[]', ['response_headers' => ['content-type' => 'application/json']]);
+        });
+        $controller = new DownloadActionController(
+            new DownloadActionService($this->entityManager),
+            $this->repository,
+            new QbittorrentClient($httpClient, self::BASE_URL),
+            $this->overviewBuilder(),
+            $this->alwaysValidCsrfTokenManager(),
+            $this->urlGenerator(),
+            $this->createStub(Environment::class),
+        );
+
+        $response = $controller->deleteOrphan(self::HASH, $this->postRequest());
+
+        $this->assertSame(200, $response->getStatusCode());
+        // The refusal page re-render does its own GET /torrents/info, but a torrents/delete POST
+        // must never be reached.
+        $this->assertNotContains('POST', $methodsUsed);
     }
 
     public function testDeleteRejectsInvalidCsrfTokenAndNeverTouchesTheRowOrClient(): void
@@ -452,6 +562,7 @@ final class DownloadActionControllerTest extends TestCase
         $httpClient = new MockHttpClient(fn (): MockResponse => new MockResponse('[]', ['response_headers' => ['content-type' => 'application/json']]));
         $controller = new DownloadActionController(
             new DownloadActionService($this->entityManager),
+            $this->repository,
             new QbittorrentClient($httpClient, self::BASE_URL),
             $this->overviewBuilder(),
             $csrf,
