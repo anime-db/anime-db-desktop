@@ -150,6 +150,20 @@ abstract class Anime implements AggregateRootInterface
     private \DateTimeImmutable $dateUpdate;
 
     /**
+     * Mtime-comparison baseline for ScanStorageService::scan()'s "has this anime's on-disk files
+     * changed since we last looked" check. Deliberately separate from $dateUpdate (issue #888):
+     * once $dateUpdate started bumping on every child-collection edit (a name/genre/theme/
+     * description touch, not just a scalar field), it could no longer double as "when did we last
+     * compare this anime against disk" — an unrelated catalog edit made after new files were
+     * copied in would push $dateUpdate past the files' mtime and hide them from the next scan.
+     * Stamped to now() whenever $storagePath is (re)bound (setStoragePath()) and whenever a scan
+     * reports ScanItemType::Updated for this anime. Null means "never checked" (not yet linked to
+     * a storage path), which a scan always treats as stale.
+     */
+    #[ORM\Column(type: 'unix_timestamp', nullable: true)]
+    private ?\DateTimeImmutable $filesCheckedAt = null;
+
+    /**
      * Time of the last change to the (watchStatus, watchedEpisodes) projection, the unit the
      * sync reconciliation snapshot (anime_sync_state, issue #365) diffs against — separate from
      * $dateUpdate, which bumps on every field touch (title edit, rating, ...), not just watch
@@ -608,6 +622,9 @@ abstract class Anime implements AggregateRootInterface
     public function setStoragePath(?string $storagePath): self
     {
         $this->storagePath = $storagePath;
+        if ($storagePath !== null) {
+            $this->markFilesChecked();
+        }
 
         return $this;
     }
@@ -784,6 +801,17 @@ abstract class Anime implements AggregateRootInterface
     public function touchDateUpdate(): void
     {
         $this->dateUpdate = new \DateTimeImmutable();
+    }
+
+    public function getFilesCheckedAt(): ?\DateTimeImmutable
+    {
+        return $this->filesCheckedAt;
+    }
+
+    /** Called by setStoragePath() on link/relink, and by ScanStorageService::scan() when it reports ScanItemType::Updated. */
+    public function markFilesChecked(): void
+    {
+        $this->filesCheckedAt = new \DateTimeImmutable();
     }
 
     /** @return Collection<int, AnimeGenre> */

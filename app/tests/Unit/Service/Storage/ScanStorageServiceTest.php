@@ -297,6 +297,87 @@ final class ScanStorageServiceTest extends TestCase
         $this->assertSame('Trigun.mkv', $result->items[0]->storagePath);
     }
 
+    /**
+     * Regression for issue #888's follow-up: before Anime::$filesCheckedAt existed, this check
+     * compared a file's mtime against Anime::$dateUpdate — which AnimeAggregateTouchListener (the
+     * rest of issue #888) now also bumps on unrelated catalog edits (title, rating, a new genre,
+     * ...). An edit made after new files were dropped into the storage path used to push
+     * dateUpdate past the files' mtime and hide them from the scan entirely. $filesCheckedAt is
+     * only ever advanced by linking or by this very check, so a later catalog edit must not mask
+     * an mtime change that happened in between.
+     */
+    public function testFileModifiedAfterLinkingThenAnimeEditedStillProducesUpdatedItem(): void
+    {
+        $dir = $this->makeStorageDir();
+        $filePath = $dir.'/Trigun.mkv';
+        $base = time() - 10_000;
+        $this->touchFile($filePath, $base);
+
+        $storage = new Storage('Main folder', $dir, StorageType::Folder);
+        $this->entityManager->persist($storage);
+
+        $anime = new TvAnime();
+        $anime->setTitle('Trigun')->setWatchStatus(WatchStatus::Plan);
+        $anime->setStorage($storage)->setStoragePath('Trigun.mkv');
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+
+        // Force a strict, clock-independent ordering, all safely in the past: linked (files last
+        // checked) at $base, the file changed 100s later, then an unrelated catalog edit landed
+        // another 100s after that — reproducing dateUpdate > mtime while filesCheckedAt < mtime,
+        // which is exactly the ordering that used to hide the file from the old
+        // dateUpdate-based check.
+        $this->entityManager->getConnection()->executeStatement(
+            'UPDATE anime SET filesCheckedAt = ?, dateUpdate = ? WHERE id = ?',
+            [$base, $base + 200, $anime->id],
+        );
+        touch($filePath, $base + 100);
+        $this->entityManager->refresh($anime);
+
+        $result = $this->newService()->scan($storage);
+
+        $this->assertCount(1, $result->items);
+        $this->assertSame(ScanItemType::Updated, $result->items[0]->type);
+        $this->assertSame($anime, $result->items[0]->anime);
+    }
+
+    /**
+     * scan() advances Anime::$filesCheckedAt (and flushes it) the moment it reports Updated, so a
+     * file that hasn't changed since is not reported again on the very next scan.
+     */
+    public function testUpdatedItemIsNotRepeatedOnTheNextScanOfTheSameUnchangedFile(): void
+    {
+        $dir = $this->makeStorageDir();
+        $filePath = $dir.'/Trigun.mkv';
+        $this->touchFile($filePath, time() - 500);
+
+        $storage = new Storage('Main folder', $dir, StorageType::Folder);
+        $this->entityManager->persist($storage);
+
+        $anime = new TvAnime();
+        $anime->setTitle('Trigun')->setWatchStatus(WatchStatus::Plan);
+        $anime->setStorage($storage)->setStoragePath('Trigun.mkv');
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+
+        // setStoragePath() above already stamped filesCheckedAt to "now"; force it back behind
+        // the file's mtime (fixed in the past, unlike markFilesChecked()'s real wall-clock stamp,
+        // so the assertions below can't race against the clock) to simulate a check made before
+        // the file was last touched.
+        $this->entityManager->getConnection()->executeStatement(
+            'UPDATE anime SET filesCheckedAt = ? WHERE id = ?',
+            [time() - 1_000, $anime->id],
+        );
+        $this->entityManager->refresh($anime);
+
+        $firstResult = $this->newService()->scan($storage);
+        $this->assertCount(1, $firstResult->items);
+        $this->assertSame(ScanItemType::Updated, $firstResult->items[0]->type);
+
+        $secondResult = $this->newService()->scan($storage);
+        $this->assertSame([], $secondResult->items);
+    }
+
     public function testLinkedAnimeWithoutMatchingFileOnDiskProducesFilesMissingItem(): void
     {
         $dir = $this->makeStorageDir();

@@ -119,7 +119,9 @@ final class ScanStorageService
                 $anime = $remainingLinked[$name];
                 unset($remainingLinked[$name]);
 
-                if ($anime->getDateUpdate()->getTimestamp() < $file->getMTime()) {
+                $checkedAt = $anime->getFilesCheckedAt();
+                if ($checkedAt === null || $checkedAt->getTimestamp() < $file->getMTime()) {
+                    $anime->markFilesChecked();
                     $items[] = ScanResultItem::updated($anime, $name);
                 }
             } else {
