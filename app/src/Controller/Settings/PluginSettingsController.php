@@ -69,7 +69,7 @@ use Twig\Environment;
  * seeded, this route falls through to rendering the plugin's own settings markup as normal — the
  * page stays reachable for re-authorizing an expired OAuth token or changing the plugin's own
  * settings. That first visit dispatches a one-time {@see SyncSeedMessage} (full pull, on the
- * `async` transport so it never blocks this request) and renders the plugin's own settings markup
+ * `sync` transport so it never blocks this request) and renders the plugin's own settings markup
  * as normal, same as every later visit, rather than redirecting away to the sync review page
  * (issue #865): `features.sync` can be on before the plugin's own OAuth flow has completed, and a
  * redirect there would strand the user away from the plugin's settings markup — where its own

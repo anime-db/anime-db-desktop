@@ -41,7 +41,7 @@ use Symfony\Component\Messenger\Attribute\AsMessageHandler;
  * after a sync plugin is enabled, mirroring how {@see PushSyncMessageHandler} consumes
  * {@see SyncRegistry} for the push direction (issue #214). The actual reconciliation — applying
  * agreements straight to local and raising persistent review items for genuine conflicts — is
- * entirely {@see PullSyncService::pull()}'s job; this handler is only the async trigger that
+ * entirely {@see PullSyncService::pull()}'s job; this handler is only the trigger (consumed from the dedicated `sync` transport) that
  * keeps that potentially ~1000-item pull off the HTTP request which enabled the plugin.
  *
  * {@see SyncRegistry::findByPluginId()} is re-resolved here rather than trusting the dispatch-time

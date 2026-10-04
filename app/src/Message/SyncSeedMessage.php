@@ -28,7 +28,7 @@ declare(strict_types=1);
 namespace App\Message;
 
 /**
- * Dispatched on the `async` transport when a sync plugin becomes active (issue #381) — the
+ * Dispatched on the dedicated `sync` transport when a sync plugin becomes active (issue #381) — the
  * connect-seed step of opt-in sync: a full {@see \App\Service\Plugin\PullSyncService::pull()} run
  * for that one plugin, so the newly connected source's whole list is reconciled into the catalog
  * without blocking the HTTP request that just enabled it. Carries only the plugin id, the handler
