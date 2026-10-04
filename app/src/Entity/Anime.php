@@ -63,6 +63,7 @@ use Doctrine\ORM\Mapping as ORM;
     'special' => SpecialAnime::class,
     'music' => MusicAnime::class,
 ])]
+#[ORM\HasLifecycleCallbacks]
 abstract class Anime implements AggregateRootInterface
 {
     use AggregateRootTrait;
@@ -768,6 +769,19 @@ abstract class Anime implements AggregateRootInterface
 
     #[ORM\PreUpdate]
     public function onPreUpdate(): void
+    {
+        $this->dateUpdate = new \DateTimeImmutable();
+    }
+
+    /**
+     * Bumps dateUpdate directly, bypassing onPreUpdate(). Doctrine's PreUpdate callback only
+     * fires when the `anime` row itself is scheduled for an UPDATE; a change to a OneToMany
+     * child row (AnimeName, AnimeGenre, AnimeTheme, AnimeDescription) never touches that row on
+     * its own, so AnimeAggregateTouchListener calls this explicitly for the owning Anime and
+     * then forces Doctrine to recompute its change set, which is what actually schedules the
+     * UPDATE and makes onPreUpdate() redundant for this path.
+     */
+    public function touchDateUpdate(): void
     {
         $this->dateUpdate = new \DateTimeImmutable();
     }
