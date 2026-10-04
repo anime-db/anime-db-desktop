@@ -78,7 +78,13 @@ final class DownloadsUnlinkCommand extends Command
             return Command::FAILURE;
         }
 
-        $result = $this->unlinker->unlink($download);
+        $result = $this->unlinker->unlink($download, $download->getVersion(), $download->getStatus());
+
+        if ($result->refused) {
+            $output->writeln(\sprintf('<error>Download %s / anime #%s is not completed: only a completed download can be unlinked; delete an unfinished one on the Downloads page.</error>', $infoHash, $animeId));
+
+            return Command::FAILURE;
+        }
 
         if (!$result->succeeded) {
             $output->writeln(\sprintf('<error>Download %s / anime #%s changed while unlinking (likely completed by the poller just now); please retry.</error>', $infoHash, $animeId));

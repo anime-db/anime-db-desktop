@@ -44,6 +44,7 @@ use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\EntityManager;
 use Doctrine\ORM\ORMSetup;
 use Doctrine\ORM\Tools\SchemaTool;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 final class DownloadUnlinkServiceTest extends TestCase
@@ -96,9 +97,10 @@ final class DownloadUnlinkServiceTest extends TestCase
     {
         $anime = $this->persistAnime();
         $download = new Download(self::HASH, $anime);
+        $download->markCompleted();
         $this->repository->save($download);
 
-        $result = $this->service->unlink($download);
+        $result = $this->service->unlink($download, $download->getVersion(), DownloadStatus::Completed);
 
         $this->assertTrue($result->succeeded);
         $this->assertFalse($result->pointerReleased);
@@ -117,7 +119,7 @@ final class DownloadUnlinkServiceTest extends TestCase
         $download->recordLinkedStorage($storage, 'some-release');
         $this->repository->save($download);
 
-        $result = $this->service->unlink($download);
+        $result = $this->service->unlink($download, $download->getVersion(), DownloadStatus::Completed);
 
         $this->assertTrue($result->succeeded);
         $this->assertTrue($result->pointerReleased);
@@ -149,7 +151,7 @@ final class DownloadUnlinkServiceTest extends TestCase
             [$download->id],
         );
 
-        $result = $this->service->unlink($download);
+        $result = $this->service->unlink($download, $download->getVersion(), DownloadStatus::Completed);
 
         $this->assertFalse($result->succeeded);
         $this->assertFalse($result->pointerReleased);
@@ -187,9 +189,10 @@ final class DownloadUnlinkServiceTest extends TestCase
             [DownloadStatus::Completed->value, $download->id],
         );
 
-        $result = $this->service->unlink($download);
+        $result = $this->service->unlink($download, $download->getVersion(), DownloadStatus::Completed);
 
         $this->assertFalse($result->succeeded);
+        $this->assertFalse($result->refused);
         $this->assertSame(DownloadStatus::Completed, $download->getStatus());
         $this->assertSame($storage->id, $anime->getStorage()?->id);
         $this->assertSame('some-release', $anime->getStoragePath());
@@ -222,14 +225,94 @@ final class DownloadUnlinkServiceTest extends TestCase
         $entityManager->flush();
 
         $download = new Download(self::HASH, $anime);
+        $download->markCompleted();
         $repository->save($download);
 
         $this->expectException(\RuntimeException::class);
 
         try {
-            $service->unlink($download);
+            $service->unlink($download, $download->getVersion(), DownloadStatus::Completed);
         } finally {
             $this->assertFalse($connection->isTransactionActive());
         }
+    }
+
+    #[DataProvider('unfinishedStatuses')]
+    public function testUnlinkRefusesANonCompletedExpectedStatusWithoutTouchingAnything(DownloadStatus $status): void
+    {
+        $anime = $this->persistAnime();
+        $storage = $this->persistStorage();
+        $anime->setStorage($storage)->setStoragePath('some-release');
+        $this->entityManager->flush();
+
+        $download = new Download(self::HASH, $anime);
+        $download->markCompleted();
+        $download->recordLinkedStorage($storage, 'some-release');
+        $this->repository->save($download);
+
+        $result = $this->service->unlink($download, $download->getVersion(), $status);
+
+        $this->assertFalse($result->succeeded);
+        $this->assertTrue($result->refused);
+        $this->entityManager->clear();
+        $this->assertNotNull($this->repository->findByInfoHashAndAnime(self::HASH, (int) $anime->id));
+        $reloaded = $this->entityManager->find(TvAnime::class, $anime->id);
+        $this->assertSame($storage->id, $reloaded?->getStorage()?->id);
+        $this->assertSame('some-release', $reloaded?->getStoragePath());
+    }
+
+    /** @return iterable<string, array{DownloadStatus}> */
+    public static function unfinishedStatuses(): iterable
+    {
+        yield 'pending' => [DownloadStatus::Pending];
+        yield 'failed' => [DownloadStatus::Failed];
+    }
+
+    /**
+     * The page was rendered while the row was Pending (version N); the poller then completed it and
+     * set the pointer (version N+1). The stale POST (N, pending) must be refused and leave both alone.
+     */
+    public function testStalePendingFormAgainstACompletedRowIsRefused(): void
+    {
+        $anime = $this->persistAnime();
+        $storage = $this->persistStorage();
+        $download = new Download(self::HASH, $anime);
+        $this->repository->save($download);
+        $seenVersion = $download->getVersion();
+
+        $download->markCompleted();
+        $download->recordLinkedStorage($storage, 'some-release');
+        $anime->setStorage($storage)->setStoragePath('some-release');
+        $this->entityManager->flush();
+        $this->assertGreaterThan($seenVersion, $download->getVersion());
+
+        $result = $this->service->unlink($download, $seenVersion, DownloadStatus::Pending);
+
+        $this->assertTrue($result->refused);
+        $this->entityManager->clear();
+        $this->assertNotNull($this->repository->findByInfoHashAndAnime(self::HASH, (int) $anime->id));
+        $this->assertSame('some-release', $this->entityManager->find(TvAnime::class, $anime->id)?->getStoragePath());
+    }
+
+    public function testStaleVersionWithCompletedStatusIsAConflictAndKeepsRowAndPointer(): void
+    {
+        $anime = $this->persistAnime();
+        $storage = $this->persistStorage();
+        $anime->setStorage($storage)->setStoragePath('some-release');
+        $download = new Download(self::HASH, $anime);
+        $download->markCompleted();
+        $download->recordLinkedStorage($storage, 'some-release');
+        $this->repository->save($download);
+        $seenVersion = $download->getVersion();
+
+        $this->entityManager->getConnection()->executeStatement('UPDATE downloads SET version = version + 1 WHERE id = ?', [$download->id]);
+
+        $result = $this->service->unlink($download, $seenVersion, DownloadStatus::Completed);
+
+        $this->assertFalse($result->succeeded);
+        $this->assertFalse($result->refused);
+        $this->entityManager->clear();
+        $this->assertNotNull($this->repository->findByInfoHashAndAnime(self::HASH, (int) $anime->id));
+        $this->assertSame('some-release', $this->entityManager->find(TvAnime::class, $anime->id)?->getStoragePath());
     }
 }
