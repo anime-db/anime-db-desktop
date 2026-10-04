@@ -28,6 +28,7 @@ declare(strict_types=1);
 namespace App\Controller;
 
 use App\Entity\Download;
+use App\Repository\DownloadRepository;
 use App\Service\Download\DownloadActionOutcome;
 use App\Service\Download\DownloadActionService;
 use App\Service\Download\DownloadsOverviewBuilder;
@@ -66,6 +67,7 @@ final class DownloadActionController
 {
     public function __construct(
         private readonly DownloadActionService $actions,
+        private readonly DownloadRepository $downloads,
         private readonly QbittorrentClient $client,
         private readonly DownloadsOverviewBuilder $overviewBuilder,
         private readonly CsrfTokenManagerInterface $csrfTokenManager,
@@ -79,6 +81,10 @@ final class DownloadActionController
     {
         $this->assertValidCsrfToken('download_pause_'.$this->requireId($download), $request);
 
+        if (!$download->canBePausedOrResumed()) {
+            return $this->renderIndexWithError('downloads.action_error_refused');
+        }
+
         $torrent = $this->findTorrent($download->getInfoHash());
         if ($torrent !== null) {
             $this->tryClientCall(fn () => $this->client->stop((string) $torrent['hash']));
@@ -91,6 +97,10 @@ final class DownloadActionController
     public function resume(Download $download, Request $request): Response
     {
         $this->assertValidCsrfToken('download_resume_'.$this->requireId($download), $request);
+
+        if (!$download->canBePausedOrResumed()) {
+            return $this->renderIndexWithError('downloads.action_error_refused');
+        }
 
         $torrent = $this->findTorrent($download->getInfoHash());
         if ($torrent !== null) {
@@ -174,11 +184,23 @@ final class DownloadActionController
         return $this->redirectToIndex();
     }
 
-    /** A "no card" torrent (no `downloads` row at all) — removed from the client only, deleteFiles=false, no database access. */
+    /**
+     * A "no card" torrent (no `downloads` row at all) — removed from the client only,
+     * deleteFiles=false, no database access beyond the re-check below.
+     *
+     * Re-checks that no row claims this infoHash now, not just whatever the page was rendered
+     * with: between that render and this click a card may have been added for it (or the page's
+     * tab is simply stale), and a row's torrent has to stay in the client for
+     * DownloadCompletionPoller to ever move that row forward.
+     */
     #[Route('/downloads/orphan/{infoHash}/delete', name: 'download_delete_orphan', requirements: ['infoHash' => '[0-9a-f]{40}'], methods: ['POST'])]
     public function deleteOrphan(string $infoHash, Request $request): Response
     {
         $this->assertValidCsrfToken('download_delete_orphan_'.$infoHash, $request);
+
+        if ($this->downloads->findByInfoHash($infoHash) !== []) {
+            return $this->renderIndexWithError('downloads.action_error_refused');
+        }
 
         $torrent = $this->findTorrent($infoHash);
         if ($torrent !== null) {

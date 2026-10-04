@@ -180,8 +180,8 @@ final class DownloadsOverviewBuilder
         $progress = $torrentPresent ? (float) ($torrent['progress'] ?? 0) : 0.0;
 
         return [
-            'canPause' => $status === DownloadStatus::Pending && $torrentPresent && !$torrentPaused,
-            'canResume' => $status === DownloadStatus::Pending && $torrentPresent && $torrentPaused,
+            'canPause' => $download->canBePausedOrResumed() && $torrentPresent && !$torrentPaused,
+            'canResume' => $download->canBePausedOrResumed() && $torrentPresent && $torrentPaused,
             'canRetry' => $status === DownloadStatus::Failed && Download::isRetryableFailureReason($download->getFailureReason()),
             'canStopSeeding' => $status === DownloadStatus::Completed && $torrentPresent,
             'canDelete' => $status === DownloadStatus::Pending || $status === DownloadStatus::Failed,

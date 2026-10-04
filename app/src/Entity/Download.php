@@ -236,6 +236,19 @@ class Download
     }
 
     /**
+     * Whether pause/resume are meaningful for this row at all (issue #856's
+     * {@see \App\Controller\DownloadActionController::pause()}/resume()): only a Pending row has a
+     * torrent DownloadCompletionPoller is still tracking. A Failed row's torrent may have been
+     * paused on purpose (DownloadCompletionPoller::failIfOutOfSpace()) — resuming it would restart
+     * a download the poller has given up on without going through retry()'s whitelist and
+     * $moveAttempts reset. A Completed row's torrent is just seeding, outside this pair's concern.
+     */
+    public function canBePausedOrResumed(): bool
+    {
+        return $this->status === DownloadStatus::Pending;
+    }
+
+    /**
      * Transitions Pending => Completed and reports whether it actually did so. The caller
      * (DownloadCompletionPoller) relies on the `false` result to skip re-linking/re-dispatching
      * DownloadCompletedEvent for a pair it already completed on a previous poll — this is the
