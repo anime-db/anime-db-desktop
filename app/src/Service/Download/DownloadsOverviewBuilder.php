@@ -240,6 +240,7 @@ final class DownloadsOverviewBuilder
             'name_conflict' => 'downloads.status_failed_name_conflict',
             'move_failed' => 'downloads.status_failed_move_failed',
             'legacy_layout' => 'downloads.status_failed_legacy_layout',
+            'unexpected_layout' => 'downloads.status_failed_unexpected_layout',
             default => 'downloads.status_failed_generic',
         };
     }

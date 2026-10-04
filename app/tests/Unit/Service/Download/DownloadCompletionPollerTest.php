@@ -1566,6 +1566,201 @@ final class DownloadCompletionPollerTest extends TestCase
     }
 
     /**
+     * qBittorrent's global "don't create a subfolder" option leaves a multi-file torrent's files
+     * sitting directly inside its own hidden incoming directory — content_path (== save_path) IS
+     * that directory, with no name-carrying subfolder underneath for the relocator to derive a
+     * move target from (basename() of it is $infoHash, not a real name). Must fail explicitly
+     * rather than call `setLocation` with the storage root as the target, which would merge every
+     * loose file straight into it.
+     */
+    public function testPollFailsWhenContentPathIsTheBareIncomingDirectoryForTheTorrent(): void
+    {
+        $anime = $this->persistAnime();
+        $this->saveDownload(self::HASH, $anime);
+        $contentPath = $this->root.'\\.anime-db\\incoming\\'.self::HASH;
+
+        $setLocationCalls = [];
+        $httpClient = new MockHttpClient(function (string $method, string $url, array $options) use (&$setLocationCalls, $contentPath): MockResponse {
+            if ($method === 'POST' && str_contains($url, '/api/v2/torrents/setLocation')) {
+                $setLocationCalls[] = $options['body'];
+            }
+
+            return new MockResponse(json_encode([[
+                'hash' => self::HASH,
+                'infohash_v1' => self::HASH,
+                'progress' => 1,
+                'state' => 'uploading',
+                'content_path' => $contentPath,
+            ]], \JSON_THROW_ON_ERROR), ['response_headers' => ['content-type' => 'application/json']]);
+        });
+
+        $jail = new DownloadFolderJail();
+        $linker = new AnimeDownloadLinker(new AnimeRepository($this->entityManager), $this->entityManager, $jail);
+        $client = new QbittorrentClient($httpClient, self::BASE_URL);
+        $eventDispatcher = $this->createMock(EventDispatcherInterface::class);
+        $eventDispatcher->expects($this->never())->method('dispatch');
+        $poller = new DownloadCompletionPoller(
+            $client,
+            $this->downloads,
+            $linker,
+            $jail,
+            $this->makeRelocator($client),
+            $eventDispatcher,
+            $this->entityManager,
+            new FreeSpaceChecker(new NativeFreeSpaceProvider()),
+            new NullLogger(),
+        );
+
+        $poller->poll();
+
+        $this->assertCount(0, $setLocationCalls);
+        $stored = $this->downloads->findByInfoHashAndAnime(self::HASH, (int) $anime->id);
+        $this->assertNotNull($stored);
+        $this->assertSame(DownloadStatus::Failed, $stored->getStatus());
+        $this->assertSame('unexpected_layout', $stored->getFailureReason());
+        $this->assertSame(0, $stored->getMoveAttempts());
+    }
+
+    /**
+     * qBittorrent reports "moving" for as long as its own move-storage queue is actively
+     * relocating this torrent's data — isComplete() already treats that the same as "not done
+     * yet" ({@see DownloadCompletionPoller::NOT_DONE_STATES}), so this must never resend
+     * `setLocation` or spend a move attempt no matter how many polls it spans.
+     */
+    public function testPollDoesNotFailOrResendSetLocationWhileTheTorrentIsMoving(): void
+    {
+        $anime = $this->persistAnime();
+        $this->saveDownload(self::HASH, $anime);
+        $contentPath = $this->incomingContentPath(self::HASH, 'Release.Name');
+
+        $setLocationCalls = 0;
+        $httpClient = new MockHttpClient(function (string $method, string $url, array $options) use (&$setLocationCalls, $contentPath): MockResponse {
+            if ($method === 'POST' && str_contains($url, '/api/v2/torrents/setLocation')) {
+                ++$setLocationCalls;
+
+                return new MockResponse('');
+            }
+
+            return new MockResponse(json_encode([[
+                'hash' => self::HASH,
+                'infohash_v1' => self::HASH,
+                'progress' => 1,
+                'state' => 'moving',
+                'content_path' => $contentPath,
+            ]], \JSON_THROW_ON_ERROR), ['response_headers' => ['content-type' => 'application/json']]);
+        });
+
+        $jail = new DownloadFolderJail();
+        $linker = new AnimeDownloadLinker(new AnimeRepository($this->entityManager), $this->entityManager, $jail);
+        $client = new QbittorrentClient($httpClient, self::BASE_URL);
+        $eventDispatcher = $this->createMock(EventDispatcherInterface::class);
+        $eventDispatcher->expects($this->never())->method('dispatch');
+        $poller = new DownloadCompletionPoller(
+            $client,
+            $this->downloads,
+            $linker,
+            $jail,
+            $this->makeRelocator($client),
+            $eventDispatcher,
+            $this->entityManager,
+            new FreeSpaceChecker(new NativeFreeSpaceProvider()),
+            new NullLogger(),
+        );
+
+        $poller->poll();
+        $poller->poll();
+        $poller->poll();
+        $poller->poll();
+
+        $this->assertSame(0, $setLocationCalls);
+        $stored = $this->downloads->findByInfoHashAndAnime(self::HASH, (int) $anime->id);
+        $this->assertNotNull($stored);
+        $this->assertSame(DownloadStatus::Pending, $stored->getStatus());
+        $this->assertSame(0, $stored->getMoveAttempts());
+    }
+
+    /**
+     * `torrents/setLocation` answers before qBittorrent's internal bookkeeping (and therefore the
+     * content_path the NEXT `torrents/info` reports) catches up — so a poll can observe the
+     * on-disk rename this row's OWN earlier move already performed before content_path reflects
+     * it. Failing the row as a name conflict in that window would orphan files that already moved
+     * correctly; it must instead wait for a later poll without resending `setLocation`.
+     */
+    public function testPollDoesNotFalselyConflictWhenItsOwnEarlierMoveLandedOnDiskBeforeContentPathCaughtUp(): void
+    {
+        $anime = $this->persistAnime();
+        $this->saveDownload(self::HASH, $anime);
+        $qbHash = 'dddddddddddddddddddddddddddddddddddddddd';
+        // Deliberately unchanged across both polls below: this test is about content_path lagging
+        // behind a move that already happened on disk, not about a second, different attempt.
+        $contentPath = $this->incomingContentPath(self::HASH, 'Release.Name');
+        $targetPath = $this->root.'\\Release.Name';
+
+        $setLocationCalls = 0;
+        $httpClient = new MockHttpClient(function (string $method, string $url, array $options) use (&$setLocationCalls, $qbHash, $contentPath): MockResponse {
+            if ($method === 'POST' && str_contains($url, '/api/v2/torrents/setLocation')) {
+                ++$setLocationCalls;
+
+                return new MockResponse('');
+            }
+
+            return new MockResponse(json_encode([[
+                'hash' => $qbHash,
+                'infohash_v1' => self::HASH,
+                'progress' => 1,
+                'state' => 'uploading',
+                'content_path' => $contentPath,
+            ]], \JSON_THROW_ON_ERROR), ['response_headers' => ['content-type' => 'application/json']]);
+        });
+
+        $jail = new DownloadFolderJail();
+        $linker = new AnimeDownloadLinker(new AnimeRepository($this->entityManager), $this->entityManager, $jail);
+        $client = new QbittorrentClient($httpClient, self::BASE_URL);
+
+        $firstPoller = new DownloadCompletionPoller(
+            $client,
+            $this->downloads,
+            $linker,
+            $jail,
+            $this->makeRelocator($client),
+            $this->createMock(EventDispatcherInterface::class),
+            $this->entityManager,
+            new FreeSpaceChecker(new NativeFreeSpaceProvider()),
+            new NullLogger(),
+        );
+        $firstPoller->poll();
+
+        $this->assertSame(1, $setLocationCalls);
+        $afterFirstMove = $this->downloads->findByInfoHashAndAnime(self::HASH, (int) $anime->id);
+        $this->assertNotNull($afterFirstMove);
+        $this->assertSame(1, $afterFirstMove->getMoveAttempts());
+
+        // The target now exists on disk, as if the setLocation call above already finished, while
+        // content_path (above) still reports the old, pre-move path.
+        $filesystem = new StubDownloadStorageFilesystem(existingPaths: [$targetPath]);
+        $eventDispatcher = $this->createMock(EventDispatcherInterface::class);
+        $eventDispatcher->expects($this->never())->method('dispatch');
+        $secondPoller = new DownloadCompletionPoller(
+            $client,
+            $this->downloads,
+            $linker,
+            $jail,
+            $this->makeRelocator($client, $filesystem),
+            $eventDispatcher,
+            $this->entityManager,
+            new FreeSpaceChecker(new NativeFreeSpaceProvider()),
+            new NullLogger(),
+        );
+        $secondPoller->poll();
+
+        $this->assertSame(1, $setLocationCalls, 'Must not resend setLocation while the target might just be its own earlier move.');
+        $stored = $this->downloads->findByInfoHashAndAnime(self::HASH, (int) $anime->id);
+        $this->assertNotNull($stored);
+        $this->assertSame(DownloadStatus::Pending, $stored->getStatus());
+        $this->assertSame(1, $stored->getMoveAttempts());
+    }
+
+    /**
      * A storage's desktop.ini marker no longer naming it (relocated, or the path simply reused)
      * must block a move out of incoming entirely — neither a `torrents/setLocation` call nor a
      * spent move attempt, since this poller cannot confirm which storage it would be writing into.
@@ -1701,6 +1896,35 @@ final class DownloadCompletionPollerTest extends TestCase
             'progress' => 1,
             'state' => 'uploading',
             'content_path' => $contentPath,
+        ]], $eventDispatcher);
+
+        $poller->poll();
+
+        $stored = $this->downloads->findByInfoHashAndAnime(self::HASH, (int) $anime->id);
+        $this->assertNotNull($stored);
+        $this->assertFalse($stored->isCompleted());
+        $this->assertSame(DownloadStatus::Pending, $stored->getStatus());
+    }
+
+    /**
+     * content_path resolving to exactly the storage root (e.g. a human ran "Set Location" onto
+     * the root via qBittorrent's own WebUI) leaves no top-level entry to link — linking it would
+     * point the anime at the entire storage instead of one download's folder.
+     */
+    public function testPollDoesNotLinkWhenContentPathIsTheStorageRootItself(): void
+    {
+        $anime = $this->persistAnime();
+        $this->saveDownload(self::HASH, $anime);
+
+        $eventDispatcher = $this->createMock(EventDispatcherInterface::class);
+        $eventDispatcher->expects($this->never())->method('dispatch');
+
+        $poller = $this->makePoller([[
+            'hash' => self::HASH,
+            'infohash_v1' => self::HASH,
+            'progress' => 1,
+            'state' => 'uploading',
+            'content_path' => $this->root,
         ]], $eventDispatcher);
 
         $poller->poll();

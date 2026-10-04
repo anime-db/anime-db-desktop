@@ -311,6 +311,23 @@ final class DownloadCompletionPoller
         $relativePath = $this->jail->relativePathUnderRoot($root, $resolvedPath);
 
         if ($this->jail->isUnderIncoming($relativePath)) {
+            // qBittorrent's global "don't create a subfolder" option leaves a multi-file torrent's
+            // files sitting directly inside its own incoming directory, with no name-carrying
+            // subfolder for tryMove() to derive a move target from (its basename() would be
+            // $infoHash, not a real name) — failing explicitly here is the only safe option, since
+            // calling setLocation() with no target name would otherwise merge every file straight
+            // into the storage root (see DownloadIncomingRelocator's class docblock).
+            if ($this->jail->isBareIncomingRootForHash($relativePath, $infoHash)) {
+                $download->markFailed('unexpected_layout');
+                $this->entityManager->flush();
+                $this->logger->warning('Failing download completion: content_path is the bare incoming directory for this torrent, with no name-carrying subfolder to derive a move target from (likely qBittorrent\'s "don\'t create a subfolder" option).', [
+                    'infoHash' => $infoHash,
+                    'contentPath' => $contentPath,
+                ]);
+
+                return;
+            }
+
             // A storage whose marker no longer names it (relocated, or simply unreachable right
             // now) is left alone entirely: neither a move attempt nor a link is this poller's call
             // to make while it cannot confirm which storage it is actually writing into (issue
@@ -323,10 +340,28 @@ final class DownloadCompletionPoller
             return;
         }
 
+        $firstSegment = $this->jail->firstSegment($relativePath);
+        if ($firstSegment === '') {
+            // Reachable if content_path resolves to the storage root itself (e.g. a human ran "Set
+            // Location" onto the root via qBittorrent's own WebUI) — there is no top-level entry
+            // to link here, and linking the root itself would point the anime at the entire
+            // storage.
+            $this->logger->warning('Skipping download completion: content_path resolves to the storage root itself, with no top-level entry to link.', [
+                'infoHash' => $infoHash,
+                'contentPath' => $contentPath,
+            ]);
+
+            return;
+        }
+
         // A top-level entry starting with "." (other than ".anime-db", already handled above) is
         // never something this poller put there — not this poller's place to link it.
-        $firstSegment = $this->jail->firstSegment($relativePath);
         if (str_starts_with($firstSegment, '.')) {
+            $this->logger->warning('Skipping download completion: content_path is under a hidden top-level entry this poller did not create.', [
+                'infoHash' => $infoHash,
+                'contentPath' => $contentPath,
+            ]);
+
             return;
         }
 

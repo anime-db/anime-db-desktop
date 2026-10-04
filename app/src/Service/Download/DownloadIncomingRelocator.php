@@ -116,10 +116,37 @@ final class DownloadIncomingRelocator
         $folderName = $isSingleFile ? self::withoutExtension($targetName) : $targetName;
         $targetPath = $storageRoot.'\\'.$folderName;
 
-        if ($this->storageFilesystem->pathExists($targetPath) || $this->animes->findByStorageAndPath($storage, $folderName) !== null) {
+        // A catalog entry already pointing at $folderName is always a genuine conflict: only this
+        // row's own completion (not yet reached, since content_path still reports it under
+        // incoming) ever makes THIS row claim that path, so another anime holding it cannot be a
+        // side effect of our own in-flight move.
+        if ($this->animes->findByStorageAndPath($storage, $folderName) !== null) {
             $download->markFailed('name_conflict');
             $this->entityManager->flush();
-            $this->logger->warning('Failing download completion: the move target is already occupied (on disk or by another catalog entry).', [
+            $this->logger->warning('Failing download completion: the move target is already linked to another catalog entry.', [
+                'infoHash' => $infoHash,
+                'targetPath' => $targetPath,
+            ]);
+
+            return;
+        }
+
+        if ($this->storageFilesystem->pathExists($targetPath)) {
+            // Once we have already sent at least one setLocation request for this row, the target
+            // existing on disk is more likely our own earlier move having already landed there
+            // than a fresh conflict: `torrents/setLocation` answers before qBittorrent's internal
+            // bookkeeping (and therefore the content_path the NEXT torrents/info reports) catches
+            // up, so this poll can observe the on-disk rename before content_path reflects it.
+            // Failing the row here would orphan files that already moved correctly — wait for a
+            // later poll (once content_path flips, completeDownload() routes into linking instead
+            // of here) rather than resending setLocation or giving up.
+            if ($download->getMoveAttempts() > 0) {
+                return;
+            }
+
+            $download->markFailed('name_conflict');
+            $this->entityManager->flush();
+            $this->logger->warning('Failing download completion: the move target already exists on disk.', [
                 'infoHash' => $infoHash,
                 'targetPath' => $targetPath,
             ]);

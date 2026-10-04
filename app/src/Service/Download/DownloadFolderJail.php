@@ -109,6 +109,20 @@ final class DownloadFolderJail
     }
 
     /**
+     * Whether $relativePath IS a torrent's own hidden incoming directory
+     * (`.anime-db\incoming\<infoHash>`) with nothing beneath it, rather than a named entry under
+     * it. Reachable when qBittorrent's global "don't create a subfolder" option is on for a
+     * multi-file torrent: its files then land directly inside that directory instead of under a
+     * name-carrying subfolder, so there is nothing for {@see
+     * \App\Service\Download\DownloadIncomingRelocator::tryMove()} to safely derive a move target's
+     * name from (basename() of this path is $infoHash, not a real name).
+     */
+    public function isBareIncomingRootForHash(string $relativePath, string $infoHash): bool
+    {
+        return $relativePath === self::INCOMING_DIR_NAME.'\\'.self::INCOMING_SUBDIR_NAME.'\\'.$infoHash;
+    }
+
+    /**
      * The first path component of $relativePath — the name a completed download must be linked
      * under (or, if it starts with ".", the hidden top-level entry a download must never be
      * linked from) once $relativePath is no longer under incoming.
