@@ -55,9 +55,10 @@ use Doctrine\ORM\Mapping as ORM;
  * assigns it before the row is ever written), while $storage is the completion snapshot the
  * linker writes later. {@see \App\Service\Download\AnimeDownloadLinker::link()} reads
  * $targetStorage to know which Storage a completed torrent's content_path is relative to.
- * $failureReason is only ever written by the migration that introduced it (issue #851,
- * "legacy_layout" for a pre-#851 Pending row with no target storage); later failure codes are a
- * follow-up (issue #852).
+ * $failureReason was first written only by the migration that introduced it (issue #851,
+ * "legacy_layout" for a pre-#851 Pending row with no target storage); markFailed() (issue #852)
+ * is now the only other writer, one code per place the poller fails a row (see
+ * DownloadsOverviewBuilder::failureReasonKey() for the full set).
  */
 #[ORM\Entity]
 #[ORM\Table(name: 'downloads')]
@@ -103,6 +104,16 @@ class Download
 
     #[ORM\Column(name: 'failure_reason', length: 32, nullable: true)]
     private ?string $failureReason = null;
+
+    /**
+     * How many times {@see \App\Service\Download\DownloadIncomingRelocator::tryMove()} has called
+     * `torrents/setLocation` to move this row's torrent out of the storage's hidden incoming
+     * directory (issue #852). Never reset: once it reaches the relocator's attempt limit with the
+     * torrent still reporting a content_path under incoming, the row is failed for good — there is
+     * no automatic retry (see app:downloads:retry, a follow-up issue).
+     */
+    #[ORM\Column(name: 'move_attempts', type: 'integer', options: ['default' => 0])]
+    private int $moveAttempts = 0;
 
     /**
      * Doctrine's optimistic lock: every UPDATE checks this column and bumps it, failing with
@@ -169,6 +180,20 @@ class Download
         return $this->failureReason;
     }
 
+    public function getMoveAttempts(): int
+    {
+        return $this->moveAttempts;
+    }
+
+    /**
+     * Called once per `torrents/setLocation` request {@see
+     * \App\Service\Download\DownloadIncomingRelocator::tryMove()} sends for this row's torrent.
+     */
+    public function incrementMoveAttempts(): void
+    {
+        ++$this->moveAttempts;
+    }
+
     /**
      * Records which Storage {@see \App\Service\Download\QbittorrentDownloadService::enqueueTo()}
      * put this row's torrent into — called once, before the row is first persisted, never changed
@@ -233,15 +258,18 @@ class Download
      * Transitions Pending => Failed (issue #348: DownloadCompletionPoller found that a magnet's
      * size, once known, does not fit the downloads root's free space) and reports whether it
      * actually did so — same idempotency shape as markCompleted(), so a pair already marked
-     * Failed on a previous poll is not re-paused/re-logged.
+     * Failed on a previous poll is not re-paused/re-logged. $reason is stored as-is onto
+     * $failureReason (issue #852): null leaves it unset, rendered as a generic failure by
+     * DownloadsOverviewBuilder.
      */
-    public function markFailed(): bool
+    public function markFailed(?string $reason = null): bool
     {
         if ($this->status !== DownloadStatus::Pending) {
             return false;
         }
 
         $this->status = DownloadStatus::Failed;
+        $this->failureReason = $reason;
 
         return true;
     }

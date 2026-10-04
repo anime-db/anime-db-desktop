@@ -35,7 +35,7 @@ use Symfony\Component\Scheduler\Trigger\PeriodicalTrigger;
 
 final class DownloadsPollScheduleTest extends TestCase
 {
-    public function testTheScheduleRecursPollDownloadsMessageEveryFiveMinutes(): void
+    public function testTheScheduleRecursPollDownloadsMessageEveryMinute(): void
     {
         $recurringMessages = (new DownloadsPollSchedule())->getSchedule()->getRecurringMessages();
 
@@ -43,7 +43,7 @@ final class DownloadsPollScheduleTest extends TestCase
         $recurringMessage = $recurringMessages[0];
 
         $this->assertInstanceOf(PeriodicalTrigger::class, $recurringMessage->getTrigger());
-        $this->assertSame('every 5 minutes', (string) $recurringMessage->getTrigger());
+        $this->assertSame('every 1 minute', (string) $recurringMessage->getTrigger());
 
         $context = new MessageContext('downloads_poll', $recurringMessage->getId(), $recurringMessage->getTrigger(), new \DateTimeImmutable());
         $messages = [];

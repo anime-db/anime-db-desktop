@@ -667,6 +667,7 @@ downloads:
     status_failed_name_conflict: 'Error: name conflict.'
     status_failed_move_failed: 'Error: failed to move files.'
     status_failed_legacy_layout: 'Error: legacy storage layout.'
+    status_failed_unexpected_layout: 'Error: unrecognized download layout.'
     status_failed_generic: Error
     unit_b: '%value% B'
     unit_kb: '%value% KB'

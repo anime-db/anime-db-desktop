@@ -77,7 +77,7 @@ final class AnimeDownloadLinker
         $root = $storage->getPath();
         $resolvedPath = $this->jail->assertWithinRoot($root, $contentPath);
 
-        $relativePath = ltrim(substr($resolvedPath, \strlen(rtrim($root, '\\/'))), '\\/');
+        $relativePath = $this->jail->relativePathUnderRoot($root, $resolvedPath);
 
         $occupant = $this->animes->findByStorageAndPath($storage, $relativePath);
         if ($occupant !== null && $occupant->id !== $anime->id) {

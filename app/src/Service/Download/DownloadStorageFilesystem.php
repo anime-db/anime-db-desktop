@@ -39,6 +39,14 @@ interface DownloadStorageFilesystem
     public function pathExists(string $path): bool;
 
     /**
+     * Whether $path exists on disk right now AS A REGULAR FILE — the signal
+     * {@see DownloadIncomingRelocator} uses to tell a single-file torrent's content_path (a file)
+     * apart from a multi-file torrent's (a directory), since qBittorrent's `torrents/info` response
+     * carries no such flag directly.
+     */
+    public function isFile(string $path): bool;
+
+    /**
      * Creates $path if it does not already exist, left visible — used by
      * {@see PresetDownloadsStorageProvider} to bring the lazily-created
      * preset storage's own root into existence before anything (its desktop.ini marker, a

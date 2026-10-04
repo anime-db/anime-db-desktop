@@ -667,6 +667,7 @@ downloads:
     status_failed_name_conflict: 'Ошибка: конфликт имени.'
     status_failed_move_failed: 'Ошибка: не удалось переместить файлы.'
     status_failed_legacy_layout: 'Ошибка: старая раскладка хранилища.'
+    status_failed_unexpected_layout: 'Ошибка: нераспознанная раскладка загрузки.'
     status_failed_generic: Ошибка
     unit_b: '%value% Б'
     unit_kb: '%value% КБ'

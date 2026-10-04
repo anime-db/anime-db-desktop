@@ -54,7 +54,7 @@ final class QbittorrentClientTest extends TestCase
         [$method, $url, $options] = $captured;
         self::assertSame('POST', $method);
         self::assertSame(self::BASE_URL.'/api/v2/torrents/add', $url);
-        self::assertSame('urls=magnet%3A%3Fxt%3Durn%3Abtih%3Aabc&tags=animedb&savepath=%2Fdownloads%2Fanime', $options['body']);
+        self::assertSame('urls=magnet%3A%3Fxt%3Durn%3Abtih%3Aabc&tags=animedb&contentLayout=Original&savepath=%2Fdownloads%2Fanime', $options['body']);
     }
 
     public function testAddTorrentFromFileSendsMultipartBodyWithTorrentContent(): void
@@ -73,6 +73,8 @@ final class QbittorrentClientTest extends TestCase
         self::assertStringContainsString('multipart/form-data; boundary=', $captured['normalized_headers']['content-type'][0]);
         self::assertStringContainsString('name="tags"', $captured['body']);
         self::assertStringContainsString('animedb', $captured['body']);
+        self::assertStringContainsString('name="contentLayout"', $captured['body']);
+        self::assertStringContainsString('Original', $captured['body']);
         self::assertStringContainsString('name="savepath"', $captured['body']);
         self::assertStringContainsString('/downloads/anime', $captured['body']);
         self::assertStringContainsString('filename="example.torrent"', $captured['body']);

@@ -42,9 +42,12 @@ use App\Repository\DownloadRepository;
 use App\Service\Download\AnimeDownloadLinker;
 use App\Service\Download\DownloadCompletionPoller;
 use App\Service\Download\DownloadFolderJail;
+use App\Service\Download\DownloadIncomingRelocator;
 use App\Service\Download\FreeSpaceChecker;
+use App\Service\Download\NativeDownloadStorageFilesystem;
 use App\Service\Download\NativeFreeSpaceProvider;
 use App\Service\Qbittorrent\QbittorrentClient;
+use App\Service\Storage\StorageMarkerService;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\EntityManager;
@@ -74,12 +77,13 @@ use Symfony\Component\Messenger\Middleware\HandleMessageMiddleware;
 final class PollDownloadsMessageHandlerTest extends TestCase
 {
     private const string BASE_URL = 'http://127.0.0.1:18080';
-    private const string ROOT = 'C:\\Users\\bob\\Downloads';
     private const string HASH = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 
     private EntityManager $entityManager;
     private DownloadRepository $downloads;
+    private StorageMarkerService $markerService;
     private Storage $storage;
+    private string $root;
 
     protected function setUp(): void
     {
@@ -100,10 +104,17 @@ final class PollDownloadsMessageHandlerTest extends TestCase
         $schemaTool->createSchema($this->entityManager->getMetadataFactory()->getAllMetadata());
 
         $this->downloads = new DownloadRepository($this->entityManager);
+        $this->markerService = new StorageMarkerService($this->entityManager);
 
-        $this->storage = new Storage('AnimeDB', self::ROOT, StorageType::Folder);
+        // A real temp directory, not a bare Windows-style literal: DownloadCompletionPoller now
+        // checks the storage's real desktop.ini marker before linking (issue #852).
+        $this->root = sys_get_temp_dir().'/animedb-poll-handler-test-'.bin2hex(random_bytes(8));
+        mkdir($this->root, 0o777, true);
+
+        $this->storage = new Storage('AnimeDB', $this->root, StorageType::Folder);
         $this->entityManager->persist($this->storage);
         $this->entityManager->flush();
+        $this->markerService->reconcile($this->storage);
     }
 
     private function persistAnime(): TvAnime
@@ -127,24 +138,34 @@ final class PollDownloadsMessageHandlerTest extends TestCase
 
     private function makeBus(EventDispatcher $eventDispatcher): MessageBusInterface
     {
-        $httpClient = new MockHttpClient(static fn (): MockResponse => new MockResponse(
+        $httpClient = new MockHttpClient(fn (): MockResponse => new MockResponse(
             json_encode([[
                 'hash' => self::HASH,
                 'infohash_v1' => self::HASH,
                 'progress' => 1,
                 'state' => 'uploading',
-                'content_path' => self::ROOT.'\\finished-release',
+                'content_path' => $this->root.'\\finished-release',
             ]], \JSON_THROW_ON_ERROR),
             ['response_headers' => ['content-type' => 'application/json']],
         ));
 
         $jail = new DownloadFolderJail();
         $linker = new AnimeDownloadLinker(new AnimeRepository($this->entityManager), $this->entityManager, $jail);
+        $client = new QbittorrentClient($httpClient, self::BASE_URL);
 
         $poller = new DownloadCompletionPoller(
-            new QbittorrentClient($httpClient, self::BASE_URL),
+            $client,
             $this->downloads,
             $linker,
+            $jail,
+            new DownloadIncomingRelocator(
+                $client,
+                new AnimeRepository($this->entityManager),
+                $this->markerService,
+                new NativeDownloadStorageFilesystem(),
+                $this->entityManager,
+                new NullLogger(),
+            ),
             $eventDispatcher,
             $this->entityManager,
             new FreeSpaceChecker(new NativeFreeSpaceProvider()),
@@ -181,7 +202,7 @@ final class PollDownloadsMessageHandlerTest extends TestCase
         $stored = $this->downloads->findByInfoHashAndAnime(self::HASH, (int) $anime->id);
         $this->assertNotNull($stored);
         $this->assertTrue($stored->isCompleted());
-        $this->assertSame(self::ROOT, $anime->getStorage()?->getPath());
+        $this->assertSame($this->root, $anime->getStorage()?->getPath());
     }
 
     /**
