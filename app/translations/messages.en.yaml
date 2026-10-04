@@ -676,6 +676,9 @@ downloads:
     status_pending: Waiting
     status_linking: Finished, linking…
     status_storage_unavailable: Storage unavailable
+    status_client_error: Torrent client error
+    status_missing_files: Files not found
+    status_outside_storage: 'Files are outside the storage — delete the download and add it again'
     status_completed: Done and linked
     status_seeding_stopped: Seeding stopped
     status_missing_from_client: Not in the torrent client

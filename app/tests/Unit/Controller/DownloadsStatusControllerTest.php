@@ -34,6 +34,7 @@ use App\Entity\Download;
 use App\Entity\Enum\WatchStatus;
 use App\Entity\TvAnime;
 use App\Repository\DownloadRepository;
+use App\Service\Download\DownloadFolderJail;
 use App\Service\Download\DownloadsOverviewBuilder;
 use App\Service\Qbittorrent\QbittorrentClient;
 use App\Service\Storage\StorageMarkerService;
@@ -101,7 +102,7 @@ final class DownloadsStatusControllerTest extends TestCase
             static fn (string $route, array $params = []): string => \sprintf('/anime/%d', $params['id']),
         );
 
-        return new DownloadsOverviewBuilder($this->downloads, new StorageMarkerService($this->entityManager), $translator, $urlGenerator);
+        return new DownloadsOverviewBuilder($this->downloads, new StorageMarkerService($this->entityManager), new DownloadFolderJail(), $translator, $urlGenerator);
     }
 
     public function testStatusReturns200WithQbittorrentDataWhenReachable(): void
