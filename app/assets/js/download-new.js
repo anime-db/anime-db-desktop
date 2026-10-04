@@ -35,6 +35,10 @@
         const results = root.querySelector('#download-new-anime-results');
 
         let debounceTimer = null;
+        // Bumped on every search() call, including the query === '' short-circuit, so a response
+        // to an older query can never overwrite the list a newer one already rendered — fetch()
+        // calls settle in whatever order the network returns them, not the order they were sent.
+        let latestRequestId = 0;
 
         function hideResults() {
             results.hidden = true;
@@ -53,13 +57,22 @@
                 const entry = document.createElement('li');
                 entry.className = 'list-group-item list-group-item-action';
                 entry.textContent = item.title;
-                entry.addEventListener('click', () => selectAnime(item.id, item.title));
+                // mousedown (not click) with preventDefault: a click fires only after mouseup, and
+                // the field's blur handler already hides this list by then on a slow press. Firing
+                // on mousedown and blocking its default focus-shifting behavior selects the entry
+                // before blur ever runs, regardless of how long the button is held.
+                entry.addEventListener('mousedown', (event) => {
+                    event.preventDefault();
+                    selectAnime(item.id, item.title);
+                });
                 results.appendChild(entry);
             });
             results.hidden = items.length === 0;
         }
 
         async function search(query) {
+            const requestId = ++latestRequestId;
+
             if (query === '') {
                 hideResults();
 
@@ -68,11 +81,14 @@
 
             const url = `${SEARCH_URL}?name=${encodeURIComponent(query)}&limit=${SEARCH_RESULT_LIMIT}`;
             const response = await fetch(url, { headers: { Accept: 'application/json' } });
-            if (!response.ok) {
+            if (requestId !== latestRequestId || !response.ok) {
                 return;
             }
 
             const data = await response.json();
+            if (requestId !== latestRequestId) {
+                return;
+            }
             renderResults(data.items ?? []);
         }
 
