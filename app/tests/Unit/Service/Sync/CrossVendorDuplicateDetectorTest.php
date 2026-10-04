@@ -45,6 +45,8 @@ use Doctrine\ORM\EntityManager;
 use Doctrine\ORM\ORMSetup;
 use Doctrine\ORM\Tools\SchemaTool;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 
 /**
  * Exercises the three cases issue #268 calls out explicitly: a match above the conservative
@@ -122,11 +124,29 @@ final class CrossVendorDuplicateDetectorTest extends TestCase
         $this->assertSame([], $this->allReviewItems());
     }
 
-    private function detector(AnimeSearchResolver $resolver): CrossVendorDuplicateDetector
+    public function testMeilisearchBeingUnreachableLogsAWarningWithTheAnimeId(): void
+    {
+        $anime = $this->persistAnime('Trigun');
+
+        $resolver = $this->createStub(AnimeSearchResolver::class);
+        $resolver->method('tryResolveMatches')->willReturn(null);
+
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->once())
+            ->method('warning')
+            ->with($this->isString(), $this->callback(fn (array $context): bool => ($context['animeId'] ?? null) === $anime->id));
+
+        $this->detector($resolver, $logger)->detect($anime);
+
+        $this->assertSame([], $this->allReviewItems());
+    }
+
+    private function detector(AnimeSearchResolver $resolver, ?LoggerInterface $logger = null): CrossVendorDuplicateDetector
     {
         return new CrossVendorDuplicateDetector(
             $resolver,
             new SyncReviewService(new SyncReviewItemRepository($this->entityManager)),
+            $logger ?? new NullLogger(),
         );
     }
 

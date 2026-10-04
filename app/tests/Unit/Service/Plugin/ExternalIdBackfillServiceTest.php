@@ -25,7 +25,7 @@
 
 declare(strict_types=1);
 
-namespace App\Tests\Unit\MessageHandler;
+namespace App\Tests\Unit\Service\Plugin;
 
 use AnimeDb\PluginContracts\Sync\SyncInterface;
 use App\Doctrine\Type\RatingType;
@@ -34,13 +34,10 @@ use App\Entity\Anime;
 use App\Entity\Enum\WatchStatus;
 use App\Entity\MovieAnime;
 use App\Entity\ValueObject\PluginId;
-use App\Message\BackfillExternalIdMessage;
-use App\MessageHandler\BackfillExternalIdMessageHandler;
 use App\Repository\AnimeRepository;
 use App\Service\JobLock\JobLockService;
 use App\Service\JobLock\ProcessLivenessChecker;
-use App\Service\Plugin\PluginsConfigStore;
-use App\Service\Plugin\SyncRegistry;
+use App\Service\Plugin\ExternalIdBackfillService;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Types\Type;
@@ -48,22 +45,22 @@ use Doctrine\ORM\EntityManager;
 use Doctrine\ORM\ORMSetup;
 use Doctrine\ORM\Tools\SchemaTool;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Symfony\Component\Clock\MockClock;
 
 /**
- * Exercises BackfillExternalIdMessageHandler end to end: a real EntityManager/SQLite
+ * Exercises ExternalIdBackfillService end to end: a real EntityManager/SQLite
  * connection for the catalog plus a real JobLockService backed by an in-memory "queue"
  * connection (same setup as ScanStorageMessageHandlerTest) — the job_locks re-entrancy
  * guard and the actual metadata write only mean something against real storage, not mocks.
  */
-final class BackfillExternalIdMessageHandlerTest extends TestCase
+final class ExternalIdBackfillServiceTest extends TestCase
 {
     private const string PLUGIN_ID = 'animedb-shikimori';
 
     private EntityManager $entityManager;
     private Connection $queueConnection;
-    private string $pluginsConfigPath;
 
     protected function setUp(): void
     {
@@ -74,7 +71,7 @@ final class BackfillExternalIdMessageHandlerTest extends TestCase
             Type::addType(RatingType::NAME, RatingType::class);
         }
 
-        $config = ORMSetup::createAttributeMetadataConfig([\dirname(__DIR__, 3).'/src/Entity'], true);
+        $config = ORMSetup::createAttributeMetadataConfig([\dirname(__DIR__, 4).'/src/Entity'], true);
         $config->enableNativeLazyObjects(true);
 
         $connection = DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true], $config);
@@ -84,20 +81,6 @@ final class BackfillExternalIdMessageHandlerTest extends TestCase
         $schemaTool->createSchema($this->entityManager->getMetadataFactory()->getAllMetadata());
 
         $this->queueConnection = DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]);
-        $this->pluginsConfigPath = sys_get_temp_dir().'/anime-plugins-test-'.uniqid().'.json';
-
-        file_put_contents($this->pluginsConfigPath, json_encode([
-            self::PLUGIN_ID => ['features' => ['sync' => true]],
-        ]));
-    }
-
-    protected function tearDown(): void
-    {
-        foreach ([$this->pluginsConfigPath, $this->pluginsConfigPath.'.tmp', $this->pluginsConfigPath.'.lock'] as $file) {
-            if (is_file($file)) {
-                unlink($file);
-            }
-        }
     }
 
     public function testResolvesAndCachesExternalIdForAnimeWithAMatchingSource(): void
@@ -111,7 +94,7 @@ final class BackfillExternalIdMessageHandlerTest extends TestCase
         $sync = $this->createMock(SyncInterface::class);
         $sync->expects($this->once())->method('resolveExternalId')->willReturn('1');
 
-        $this->newHandler($sync)(new BackfillExternalIdMessage(self::PLUGIN_ID));
+        $this->newService()->backfill(new PluginId(self::PLUGIN_ID), $sync);
 
         $reloaded = $this->requireAnime($animeId);
         $this->assertSame('1', $reloaded->getCachedExternalId(new PluginId(self::PLUGIN_ID)));
@@ -128,29 +111,7 @@ final class BackfillExternalIdMessageHandlerTest extends TestCase
         $sync = $this->createMock(SyncInterface::class);
         $sync->expects($this->never())->method('resolveExternalId');
 
-        $this->newHandler($sync)(new BackfillExternalIdMessage(self::PLUGIN_ID));
-    }
-
-    public function testDoesNothingWhenPluginIsNotInstalledOrSyncIsNotActive(): void
-    {
-        $anime = new MovieAnime();
-        $anime->setTitle('Cowboy Bebop')->setWatchStatus(WatchStatus::Watching)->addSource('https://shikimori.one/animes/1');
-        $this->entityManager->persist($anime);
-        $this->entityManager->flush();
-
-        // No plugin registered under this id at all.
-        $handler = new BackfillExternalIdMessageHandler(
-            $this->entityManager,
-            new AnimeRepository($this->entityManager),
-            $this->newJobLockService(),
-            new SyncRegistry([], new PluginsConfigStore($this->pluginsConfigPath)),
-            new NullLogger(),
-        );
-
-        $handler(new BackfillExternalIdMessage(self::PLUGIN_ID));
-
-        $reloaded = $this->requireAnime($this->requireId($anime));
-        $this->assertNull($reloaded->getCachedExternalId(new PluginId(self::PLUGIN_ID)));
+        $this->newService()->backfill(new PluginId(self::PLUGIN_ID), $sync);
     }
 
     public function testSkipsWhileAnotherBackfillForTheSamePluginIsAlreadyRunning(): void
@@ -179,7 +140,7 @@ final class BackfillExternalIdMessageHandlerTest extends TestCase
         $sync = $this->createMock(SyncInterface::class);
         $sync->expects($this->never())->method('resolveExternalId');
 
-        $this->newHandler($sync, $livenessChecker)(new BackfillExternalIdMessage(self::PLUGIN_ID));
+        $this->newService($livenessChecker)->backfill(new PluginId(self::PLUGIN_ID), $sync);
     }
 
     public function testContinuesPastAnAnimeWhoseResolveExternalIdThrows(): void
@@ -204,7 +165,7 @@ final class BackfillExternalIdMessageHandlerTest extends TestCase
             },
         );
 
-        $this->newHandler($sync)(new BackfillExternalIdMessage(self::PLUGIN_ID));
+        $this->newService()->backfill(new PluginId(self::PLUGIN_ID), $sync);
 
         $this->entityManager->clear();
         $reloadedFailing = $this->requireAnime($failingId);
@@ -212,6 +173,62 @@ final class BackfillExternalIdMessageHandlerTest extends TestCase
 
         $this->assertNull($reloadedFailing->getCachedExternalId(new PluginId(self::PLUGIN_ID)));
         $this->assertSame('2', $reloadedHealthy->getCachedExternalId(new PluginId(self::PLUGIN_ID)));
+    }
+
+    public function testSkipsAnimeWhoseResolvedIdIsAlreadyHeldByAnotherRecord(): void
+    {
+        $holder = new MovieAnime();
+        $holder->setTitle('Cowboy Bebop')->setWatchStatus(WatchStatus::Watching)->addSource('https://shikimori.one/animes/1');
+        $holder->rememberExternalId(new PluginId(self::PLUGIN_ID), '1');
+        $this->entityManager->persist($holder);
+
+        $duplicate = new MovieAnime();
+        $duplicate->setTitle('Cowboy Bebop (copy)')->setWatchStatus(WatchStatus::Watching)->addSource('https://shikimori.one/animes/1');
+        $this->entityManager->persist($duplicate);
+
+        $this->entityManager->flush();
+        $duplicateId = $this->requireId($duplicate);
+
+        $sync = $this->createStub(SyncInterface::class);
+        $sync->method('resolveExternalId')->willReturn('1');
+
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->once())->method('warning')->with(
+            $this->anything(),
+            $this->callback(static fn (array $context): bool => $context['external_id'] === '1' && $context['anime_id'] === $duplicateId && $context['plugin_id'] === self::PLUGIN_ID),
+        );
+
+        $this->newService(null, $logger)->backfill(new PluginId(self::PLUGIN_ID), $sync);
+
+        $this->assertTrue($this->entityManager->isOpen());
+        $this->entityManager->clear();
+        $this->assertNull($this->requireAnime($duplicateId)->getCachedExternalId(new PluginId(self::PLUGIN_ID)));
+    }
+
+    public function testCachesOnlyOneOfTwoNewRecordsResolvingToTheSameId(): void
+    {
+        $first = new MovieAnime();
+        $first->setTitle('Cowboy Bebop')->setWatchStatus(WatchStatus::Watching)->addSource('https://shikimori.one/animes/1');
+        $this->entityManager->persist($first);
+
+        $second = new MovieAnime();
+        $second->setTitle('Cowboy Bebop (copy)')->setWatchStatus(WatchStatus::Watching)->addSource('https://shikimori.one/animes/1');
+        $this->entityManager->persist($second);
+
+        $this->entityManager->flush();
+        $firstId = $this->requireId($first);
+        $secondId = $this->requireId($second);
+
+        $sync = $this->createStub(SyncInterface::class);
+        $sync->method('resolveExternalId')->willReturn('1');
+
+        $this->newService()->backfill(new PluginId(self::PLUGIN_ID), $sync);
+
+        $this->assertTrue($this->entityManager->isOpen());
+        $this->entityManager->clear();
+        $pluginId = new PluginId(self::PLUGIN_ID);
+        $this->assertSame('1', $this->requireAnime($firstId)->getCachedExternalId($pluginId));
+        $this->assertNull($this->requireAnime($secondId)->getCachedExternalId($pluginId));
     }
 
     private function requireId(Anime $anime): int
@@ -224,19 +241,13 @@ final class BackfillExternalIdMessageHandlerTest extends TestCase
         return $this->entityManager->find(Anime::class, $id) ?? throw new \LogicException(\sprintf('Anime #%d must exist.', $id));
     }
 
-    private function newHandler(SyncInterface $sync, ?ProcessLivenessChecker $livenessChecker = null): BackfillExternalIdMessageHandler
+    private function newService(?ProcessLivenessChecker $livenessChecker = null, ?LoggerInterface $logger = null): ExternalIdBackfillService
     {
-        $registry = new SyncRegistry(
-            [self::PLUGIN_ID => $sync],
-            new PluginsConfigStore($this->pluginsConfigPath),
-        );
-
-        return new BackfillExternalIdMessageHandler(
+        return new ExternalIdBackfillService(
             $this->entityManager,
             new AnimeRepository($this->entityManager),
             $this->newJobLockService($livenessChecker),
-            $registry,
-            new NullLogger(),
+            $logger ?? new NullLogger(),
         );
     }
 

@@ -671,7 +671,7 @@ abstract class Anime implements AggregateRootInterface
     /**
      * Peeks the AnimeExternalId row already cached for $pluginId, if any, without ever
      * calling out to a plugin to resolve one — the read-only half of getExternalId(), used
-     * where a caller only wants to check what's already known (e.g. BackfillExternalIdMessageHandler
+     * where a caller only wants to check what's already known (e.g. ExternalIdBackfillService
      * skipping a row that's already resolved).
      */
     public function getCachedExternalId(PluginId $pluginId): ?string

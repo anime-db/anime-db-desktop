@@ -501,8 +501,8 @@ service... argument "$catalogReader"... but no such service exists»), брош�
   `ExternalIdResolutionInterface`), резолвит напрямую через `$resolver->resolveExternalId($sources)`
   — тот же разбор URL, что делает `Anime::getExternalId()` внутри, но без записи и без `flush()`.
   Обоснование резолва (а не только кеша): у Shikimori (мотивирующий плагин issue) есть и филлер, и
-  синкер — виджет получает `externalId` немедленно на первом же рендере, не дожидаясь фонового
-  `BackfillExternalIdMessageHandler`, который остаётся единственным путём НАПОЛНИТЬ кеш (запись —
+  синкер — виджет получает `externalId` немедленно на первом же рендере, не дожидаясь
+  `ExternalIdBackfillService` (его синхронно вызывает `SyncSeedMessageHandler` перед pull, #867), который остаётся единственным путём НАПОЛНИТЬ кеш (запись —
   его задача, не `CatalogReader`). `resolveExternalId()` — дешёвый локальный разбор URL (не
   сетевой вызов), поэтому лишний вызов на кеш-промах не в счёт. Резолвер, бросающий исключение,
   перехватывается и логируется как error, `read()` не падает.
