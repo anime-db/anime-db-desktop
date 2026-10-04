@@ -44,12 +44,14 @@ use Psr\Log\LoggerInterface;
  * This is deliberately NOT done with qBittorrent's built-in `useDownloadPath` move-on-complete:
  * `torrents/setLocation` onto an already-occupied name does not fail, it silently MERGES the two
  * folders (libtorrent's `dont_replace`, see the issue's "Проблема") and answers 200 either way.
- * {@see self::tryMove()} therefore always checks for a conflict — both on disk (via
- * {@see DownloadStorageFilesystem}, since a real path like "E:\..." does not exist on the Linux CI
- * runner this test suite runs on) and in the database (via
+ * {@see self::tryMove()} therefore always checks for a conflict — in the database (via
  * {@see AnimeRepository::findByStorageAndPath()}, since another Anime's storage_path can occupy a
- * name even when nothing currently sits there on disk) — strictly BEFORE ever calling
- * `torrents/setLocation`, never after.
+ * name even when nothing currently sits there on disk) on every attempt, and on disk (via
+ * {@see DownloadStorageFilesystem}, since a real path like "E:\..." does not exist on the Linux CI
+ * runner this test suite runs on) only on the FIRST attempt — once a setLocation request has
+ * already gone out for this row, the target existing on disk is treated as that earlier move
+ * having landed, not a fresh conflict — strictly BEFORE ever calling `torrents/setLocation`, never
+ * after.
  *
  * There is no "move requested" flag: `torrents/setLocation` answers immediately while qBittorrent
  * moves the files asynchronously, so content_path reported by the next `torrents/info` IS the only
@@ -131,19 +133,16 @@ final class DownloadIncomingRelocator
             return;
         }
 
-        if ($this->storageFilesystem->pathExists($targetPath)) {
-            // Once we have already sent at least one setLocation request for this row, the target
-            // existing on disk is more likely our own earlier move having already landed there
-            // than a fresh conflict: `torrents/setLocation` answers before qBittorrent's internal
-            // bookkeeping (and therefore the content_path the NEXT torrents/info reports) catches
-            // up, so this poll can observe the on-disk rename before content_path reflects it.
-            // Failing the row here would orphan files that already moved correctly — wait for a
-            // later poll (once content_path flips, completeDownload() routes into linking instead
-            // of here) rather than resending setLocation or giving up.
-            if ($download->getMoveAttempts() > 0) {
-                return;
-            }
-
+        // Once we have already sent at least one setLocation request for this row, the target
+        // existing on disk is more likely our own earlier move having already landed there than a
+        // fresh conflict: `torrents/setLocation` answers before qBittorrent's internal bookkeeping
+        // (and therefore the content_path the NEXT torrents/info reports) catches up, so this poll
+        // can observe the on-disk rename before content_path reflects it. The on-disk check is
+        // therefore skipped in that case — not treated as a permanent "wait for content_path to
+        // catch up", since that would never resend setLocation nor spend a move attempt, leaving a
+        // move that stalled partway (e.g. a locked file, with only some of its files landed) stuck
+        // Pending forever instead of ever hitting MAX_MOVE_ATTEMPTS below.
+        if ($download->getMoveAttempts() === 0 && $this->storageFilesystem->pathExists($targetPath)) {
             $download->markFailed('name_conflict');
             $this->entityManager->flush();
             $this->logger->warning('Failing download completion: the move target already exists on disk.', [
