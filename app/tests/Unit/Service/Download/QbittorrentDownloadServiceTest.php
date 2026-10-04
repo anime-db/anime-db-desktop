@@ -51,11 +51,13 @@ use App\Service\Download\NativeFreeSpaceProvider;
 use App\Service\Download\PresetDownloadsStorageProvider;
 use App\Service\Download\QbittorrentDownloadService;
 use App\Service\Download\TorrentInfoHashResolver;
+use App\Service\Exception\DownloadAlreadyInClientException;
 use App\Service\Exception\DownloadNotConfirmedException;
 use App\Service\Exception\DownloadStorageNotWritableException;
 use App\Service\Exception\DownloadStorageUnavailableException;
 use App\Service\Exception\InsufficientDiskSpaceException;
 use App\Service\Exception\InvalidTorrentFileException;
+use App\Service\Exception\QbittorrentClientException;
 use App\Service\Qbittorrent\QbittorrentClient;
 use App\Service\Storage\StorageMarkerService;
 use Doctrine\DBAL\DriverManager;
@@ -63,6 +65,7 @@ use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\EntityManager;
 use Doctrine\ORM\ORMSetup;
 use Doctrine\ORM\Tools\SchemaTool;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Console\Tester\CommandTester;
 use Symfony\Component\HttpClient\MockHttpClient;
@@ -147,9 +150,24 @@ final class QbittorrentDownloadServiceTest extends TestCase
         ?callable $onRequest = null,
         ?FreeSpaceProvider $freeSpaceProvider = null,
         ?DownloadStorageFilesystem $storageFilesystem = null,
+        bool $clientIsEmptyBeforeAdd = true,
     ): QbittorrentDownloadService {
-        $httpClient = new MockHttpClient($onRequest ?? static function (): never {
+        $onRequest ??= static function (): never {
             throw new \LogicException('No HTTP request was expected in this test.');
+        };
+
+        // enqueueTo() looks the torrent up in the client before torrents/add; by default that
+        // lookup (and any other torrents/info before the first add) reports an empty client, so
+        // the responders below only describe what the client shows once the torrent is added.
+        $added = false;
+        $httpClient = new MockHttpClient(static function (string $method, string $url, array $options) use ($onRequest, $clientIsEmptyBeforeAdd, &$added): MockResponse {
+            if (str_contains($url, '/api/v2/torrents/add')) {
+                $added = true;
+            } elseif ($clientIsEmptyBeforeAdd && !$added && str_contains($url, '/api/v2/torrents/info')) {
+                return new MockResponse('[]', ['response_headers' => ['content-type' => 'application/json']]);
+            }
+
+            return $onRequest($method, $url, $options);
         });
 
         $configPath = sys_get_temp_dir().'/anime-download-service-test-'.uniqid().'.json';
@@ -317,13 +335,18 @@ final class QbittorrentDownloadServiceTest extends TestCase
      */
     private function happyPathResponder(string $infoHash): callable
     {
-        return static function (string $method, string $url) use ($infoHash): MockResponse {
+        $added = false;
+
+        return static function (string $method, string $url) use ($infoHash, &$added): MockResponse {
             if (str_contains($url, '/api/v2/torrents/info')) {
+                // The client only knows the torrent once it was added (the pre-add lookup sees nothing).
                 return new MockResponse(
-                    json_encode([['hash' => $infoHash, 'infohash_v1' => $infoHash]], \JSON_THROW_ON_ERROR),
+                    json_encode($added ? [['hash' => $infoHash, 'infohash_v1' => $infoHash]] : [], \JSON_THROW_ON_ERROR),
                     ['response_headers' => ['content-type' => 'application/json']],
                 );
             }
+
+            $added = true;
 
             return new MockResponse('Ok.');
         };
@@ -527,6 +550,87 @@ final class QbittorrentDownloadServiceTest extends TestCase
         $this->assertSame([], $this->downloads->findByInfoHash(self::MAGNET_HASH));
     }
 
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function provideTagsOfAnExistingTorrent(): iterable
+    {
+        yield 'no tag' => [''];
+        yield 'unrelated tag' => ['other-tag'];
+        yield 'app tag' => [QbittorrentClient::TAG];
+    }
+
+    #[DataProvider('provideTagsOfAnExistingTorrent')]
+    public function testEnqueueToRejectsATorrentAlreadyInTheClientWithoutARow(string $tags): void
+    {
+        $anime = $this->persistAnime();
+        $storage = $this->makeStorage();
+        $storageFilesystem = new FakeDownloadStorageFilesystem();
+
+        $infoQuery = null;
+        $addCalls = 0;
+        $service = $this->makeService(function (string $method, string $url) use (&$addCalls, &$infoQuery, $tags): MockResponse {
+            if (str_contains($url, '/api/v2/torrents/add')) {
+                ++$addCalls;
+
+                return new MockResponse('Ok.');
+            }
+            $infoQuery = $url;
+
+            return new MockResponse(
+                json_encode([
+                    ['hash' => 'ffffffffffffffffffffffffffffffffffffffff', 'infohash_v1' => 'ffffffffffffffffffffffffffffffffffffffff', 'tags' => ''],
+                    ['hash' => self::MAGNET_HASH, 'infohash_v1' => self::MAGNET_HASH, 'tags' => $tags],
+                ], \JSON_THROW_ON_ERROR),
+                ['response_headers' => ['content-type' => 'application/json']],
+            );
+        }, storageFilesystem: $storageFilesystem, clientIsEmptyBeforeAdd: false);
+
+        try {
+            $service->enqueueTo(
+                DownloadSource::magnet('magnet:?xt=urn:btih:'.self::MAGNET_HASH),
+                new AnimeId((int) $anime->id),
+                $storage,
+            );
+            $this->fail('Expected DownloadAlreadyInClientException to be thrown.');
+        } catch (DownloadAlreadyInClientException $e) {
+            $this->assertSame(self::MAGNET_HASH, $e->infoHash);
+        }
+
+        $this->assertSame(0, $addCalls);
+        $this->assertStringNotContainsString('tag=', (string) $infoQuery, 'The lookup must not filter by tag.');
+        $this->assertSame([], $storageFilesystem->hiddenDirectoryCalls);
+        $this->assertSame([], $this->downloads->findByInfoHash(self::MAGNET_HASH));
+    }
+
+    public function testEnqueueToPropagatesAClientErrorFromThePreAddLookup(): void
+    {
+        $anime = $this->persistAnime();
+        $storage = $this->makeStorage();
+
+        $addCalls = 0;
+        $service = $this->makeService(function (string $method, string $url) use (&$addCalls): MockResponse {
+            if (str_contains($url, '/api/v2/torrents/add')) {
+                ++$addCalls;
+
+                return new MockResponse('Ok.');
+            }
+
+            return new MockResponse('boom', ['http_code' => 500]);
+        }, clientIsEmptyBeforeAdd: false);
+
+        try {
+            $service->enqueueTo(
+                DownloadSource::magnet('magnet:?xt=urn:btih:'.self::MAGNET_HASH),
+                new AnimeId((int) $anime->id),
+                $storage,
+            );
+            $this->fail('Expected QbittorrentClientException to be thrown.');
+        } catch (QbittorrentClientException) {
+            $this->assertSame(0, $addCalls);
+        }
+    }
+
     public function testEnqueueUsesThePresetStorageCreatedLazily(): void
     {
         $anime = $this->persistAnime();
@@ -605,24 +709,28 @@ final class QbittorrentDownloadServiceTest extends TestCase
         $anime = $this->persistAnime();
         $storage = $this->makeStorage();
         $requestCount = 0;
+        $infoCalls = 0;
 
-        $service = $this->makeService(function (string $method, string $url) use (&$requestCount): MockResponse {
+        $service = $this->makeService(function (string $method, string $url) use (&$requestCount, &$infoCalls): MockResponse {
             if (str_contains($url, '/api/v2/torrents/add')) {
                 ++$requestCount;
 
                 return new MockResponse('Ok.');
             }
+            ++$infoCalls;
 
             return new MockResponse(
-                json_encode([['hash' => self::MAGNET_HASH, 'infohash_v1' => self::MAGNET_HASH]], \JSON_THROW_ON_ERROR),
+                json_encode($requestCount > 0 ? [['hash' => self::MAGNET_HASH, 'infohash_v1' => self::MAGNET_HASH]] : [], \JSON_THROW_ON_ERROR),
                 ['response_headers' => ['content-type' => 'application/json']],
             );
         });
 
         $source = DownloadSource::magnet('magnet:?xt=urn:btih:'.self::MAGNET_HASH);
         $first = $service->enqueueTo($source, new AnimeId((int) $anime->id), $storage);
+        $infoCallsBeforeRepeat = $infoCalls;
         $second = $service->enqueueTo($source, new AnimeId((int) $anime->id), $storage);
 
+        $this->assertSame($infoCallsBeforeRepeat, $infoCalls, 'A repeat enqueue must not even look at the client.');
         $this->assertSame($first->value, $second->value);
         $this->assertSame(1, $requestCount);
         $this->assertCount(1, $this->downloads->findByInfoHash(self::MAGNET_HASH));
@@ -671,7 +779,20 @@ final class QbittorrentDownloadServiceTest extends TestCase
         $animeTwo = $this->persistAnime();
         $storage = $this->makeStorage();
 
-        $service = $this->makeService($this->happyPathResponder(self::MAGNET_HASH));
+        // Unlinking leaves the torrent in the client, so the test removes it by hand before the retry.
+        $inClient = false;
+        $service = $this->makeService(function (string $method, string $url) use (&$inClient): MockResponse {
+            if (str_contains($url, '/api/v2/torrents/add')) {
+                $inClient = true;
+
+                return new MockResponse('Ok.');
+            }
+
+            return new MockResponse(
+                json_encode($inClient ? [['hash' => self::MAGNET_HASH, 'infohash_v1' => self::MAGNET_HASH]] : [], \JSON_THROW_ON_ERROR),
+                ['response_headers' => ['content-type' => 'application/json']],
+            );
+        }, clientIsEmptyBeforeAdd: false);
 
         $source = DownloadSource::magnet('magnet:?xt=urn:btih:'.self::MAGNET_HASH);
         $service->enqueueTo($source, new AnimeId((int) $animeOne->id), $storage);
@@ -686,6 +807,15 @@ final class QbittorrentDownloadServiceTest extends TestCase
         $unlink->execute(['info-hash' => self::MAGNET_HASH, 'anime-id' => (string) $animeOne->id]);
         $this->assertSame(0, $unlink->getStatusCode());
 
+        // The torrent is still in the client without a row, so the retry is refused...
+        try {
+            $service->enqueueTo($source, new AnimeId((int) $animeTwo->id), $storage);
+            $this->fail('Expected DownloadAlreadyInClientException to be thrown.');
+        } catch (DownloadAlreadyInClientException) {
+        }
+
+        // ...and goes through once the torrent has been removed from the client.
+        $inClient = false;
         $service->enqueueTo($source, new AnimeId((int) $animeTwo->id), $storage);
 
         $this->assertNull($this->downloads->findByInfoHashAndAnime(self::MAGNET_HASH, (int) $animeOne->id));

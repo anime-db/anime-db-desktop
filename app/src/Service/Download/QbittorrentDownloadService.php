@@ -37,6 +37,7 @@ use App\Entity\Anime;
 use App\Entity\Download;
 use App\Entity\Storage;
 use App\Repository\DownloadRepository;
+use App\Service\Exception\DownloadAlreadyInClientException;
 use App\Service\Exception\DownloadNotConfirmedException;
 use App\Service\Exception\DownloadStorageNotWritableException;
 use App\Service\Exception\DownloadStorageUnavailableException;
@@ -134,6 +135,16 @@ class QbittorrentDownloadService implements DownloadServiceInterface
         }
 
         $this->assertStorageAvailable($storage);
+
+        // No row exists for this hash, so a torrent found in the client (any tag) is one without a
+        // card: qBittorrent would answer torrents/add for it with a 409. Matched on infohash_v1 for
+        // the same hybrid-torrent reason as in confirmSubmitted().
+        foreach ($this->client->getTorrentsInfo() as $torrent) {
+            if (($torrent['infohash_v1'] ?? null) === $infoHash) {
+                throw new DownloadAlreadyInClientException($infoHash);
+            }
+        }
+
         $this->submitToQbittorrent($source, $storage, $infoHash, $torrentFileContent);
         $this->confirmSubmitted($infoHash);
 
