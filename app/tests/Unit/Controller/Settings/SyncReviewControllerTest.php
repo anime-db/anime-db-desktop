@@ -31,16 +31,19 @@ use App\Controller\Settings\SyncReviewController;
 use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
 use App\Entity\Anime;
+use App\Entity\AnimeSyncState;
 use App\Entity\Enum\SyncReviewItemKind;
 use App\Entity\Enum\WatchStatus;
 use App\Entity\SyncReviewItem;
 use App\Entity\TvAnime;
+use App\Entity\ValueObject\PluginId;
 use App\Repository\AnimeRepository;
 use App\Repository\AnimeSyncStateRepository;
 use App\Repository\PendingSyncPushRepository;
 use App\Repository\SyncReviewItemRepository;
 use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Plugin\SyncRegistry;
+use App\Service\Sync\DeletedFromSourceDetector;
 use App\Service\Sync\SyncConvergenceService;
 use App\Service\Sync\SyncReconciler;
 use App\Service\Sync\SyncReviewService;
@@ -65,6 +68,7 @@ final class SyncReviewControllerTest extends TestCase
         ?SyncReviewItemRepository $syncReviewItemRepository = null,
         ?AnimeRepository $animeRepository = null,
         ?SyncConvergenceService $syncConvergenceService = null,
+        ?DeletedFromSourceDetector $deletedFromSourceDetector = null,
         ?EntityManagerInterface $entityManager = null,
         ?CsrfTokenManagerInterface $csrfTokenManager = null,
         ?UrlGeneratorInterface $urlGenerator = null,
@@ -88,6 +92,9 @@ final class SyncReviewControllerTest extends TestCase
             // SyncConvergenceService is final and can't be doubled — a real instance is built
             // here for every test, unused unless a NeedsCorrection resolve() actually reaches it.
             $syncConvergenceService ?? $this->createRealSyncConvergenceService($entityManager),
+            // DeletedFromSourceDetector is final too — same reasoning, unused unless a
+            // DeletedFromSource/DeletionConflict resolve() actually reaches it.
+            $deletedFromSourceDetector ?? $this->createRealDeletedFromSourceDetector($entityManager),
             $entityManager,
             $csrfTokenManager,
             $urlGenerator,
@@ -104,6 +111,15 @@ final class SyncReviewControllerTest extends TestCase
             new SyncRegistry([], new PluginsConfigStore('')),
             new SyncReviewService($this->createStub(SyncReviewItemRepository::class)),
             new NullLogger(),
+        );
+    }
+
+    private function createRealDeletedFromSourceDetector(EntityManagerInterface $entityManager): DeletedFromSourceDetector
+    {
+        return new DeletedFromSourceDetector(
+            new SyncRegistry([], new PluginsConfigStore('')),
+            new SyncReviewService($this->createStub(SyncReviewItemRepository::class)),
+            new AnimeSyncStateRepository($entityManager),
         );
     }
 
@@ -406,5 +422,180 @@ final class SyncReviewControllerTest extends TestCase
 
         $this->expectException(BadRequestHttpException::class);
         $controller->resolve($item, $request);
+    }
+
+    /**
+     * Acceptance criterion 1 (issue #864): resolving a DeletedFromSource item as "keep" removes
+     * the AnimeSyncState snapshot row for (anime, deleted_from) — the source no longer lists the
+     * title, so the row's own claim of confirmed list membership for it is now stale. Rows for
+     * other participants, and the cached external id, are untouched.
+     */
+    public function testResolveDeletedFromSourceRemovesTheSnapshotRowForTheSourcePluginOnly(): void
+    {
+        $entityManager = $this->createInMemoryEntityManager();
+
+        $anime = new TvAnime();
+        $anime->setTitle('Trigun')->setWatchStatus(WatchStatus::Plan);
+        $anime->rememberExternalId(new PluginId('animedb-shikimori'), '10');
+        $entityManager->persist($anime);
+        $entityManager->flush();
+
+        $this->seedSyncState($entityManager, $anime, 'animedb-shikimori');
+        $this->seedSyncState($entityManager, $anime, 'animedb-mal');
+        $this->seedSyncState($entityManager, $anime, 'local');
+
+        $item = new SyncReviewItem(SyncReviewItemKind::DeletedFromSource, [
+            'anime_id' => $anime->id,
+            'deleted_from' => 'animedb-shikimori',
+        ]);
+        (new \ReflectionProperty(SyncReviewItem::class, 'id'))->setValue($item, 5);
+
+        $syncReviewItemRepository = $this->createMock(SyncReviewItemRepository::class);
+        $syncReviewItemRepository->expects($this->once())->method('save')->with($item);
+
+        $controller = $this->createController(
+            syncReviewItemRepository: $syncReviewItemRepository,
+            animeRepository: new AnimeRepository($entityManager),
+            entityManager: $entityManager,
+        );
+        $request = Request::create('/settings/sync-review/5/resolve', 'POST', ['_token' => 'token']);
+
+        $controller->resolve($item, $request);
+
+        $this->assertTrue($item->isResolved());
+        $this->assertNull($this->findSyncState($entityManager, $anime, 'animedb-shikimori'));
+        $this->assertNotNull($this->findSyncState($entityManager, $anime, 'animedb-mal'));
+        $this->assertNotNull($this->findSyncState($entityManager, $anime, 'local'));
+        $this->assertSame('10', $anime->getCachedExternalId(new PluginId('animedb-shikimori')));
+    }
+
+    /** Acceptance criterion 2 (issue #864): same removal for DeletionConflict. */
+    public function testResolveDeletionConflictRemovesTheSnapshotRowForTheSourcePluginOnly(): void
+    {
+        $entityManager = $this->createInMemoryEntityManager();
+
+        $anime = new TvAnime();
+        $anime->setTitle('Trigun')->setWatchStatus(WatchStatus::Plan);
+        $entityManager->persist($anime);
+        $entityManager->flush();
+
+        $this->seedSyncState($entityManager, $anime, 'animedb-shikimori');
+        $this->seedSyncState($entityManager, $anime, 'animedb-mal');
+
+        $item = new SyncReviewItem(SyncReviewItemKind::DeletionConflict, [
+            'anime_id' => $anime->id,
+            'deleted_from' => 'animedb-shikimori',
+            'still_present_on' => ['animedb-mal'],
+        ]);
+        (new \ReflectionProperty(SyncReviewItem::class, 'id'))->setValue($item, 6);
+
+        $syncReviewItemRepository = $this->createMock(SyncReviewItemRepository::class);
+        $syncReviewItemRepository->expects($this->once())->method('save')->with($item);
+
+        $controller = $this->createController(
+            syncReviewItemRepository: $syncReviewItemRepository,
+            animeRepository: new AnimeRepository($entityManager),
+            entityManager: $entityManager,
+        );
+        $request = Request::create('/settings/sync-review/6/resolve', 'POST', ['_token' => 'token']);
+
+        $controller->resolve($item, $request);
+
+        $this->assertTrue($item->isResolved());
+        $this->assertNull($this->findSyncState($entityManager, $anime, 'animedb-shikimori'));
+        $this->assertNotNull($this->findSyncState($entityManager, $anime, 'animedb-mal'));
+    }
+
+    /** Acceptance criterion 3 (issue #864): no snapshot row to begin with — resolve() still succeeds. */
+    public function testResolveDeletedFromSourceWithoutASnapshotRowDoesNotThrow(): void
+    {
+        $entityManager = $this->createInMemoryEntityManager();
+
+        $anime = new TvAnime();
+        $anime->setTitle('Trigun')->setWatchStatus(WatchStatus::Plan);
+        $entityManager->persist($anime);
+        $entityManager->flush();
+
+        $item = new SyncReviewItem(SyncReviewItemKind::DeletedFromSource, [
+            'anime_id' => $anime->id,
+            'deleted_from' => 'animedb-shikimori',
+        ]);
+        (new \ReflectionProperty(SyncReviewItem::class, 'id'))->setValue($item, 7);
+
+        $controller = $this->createController(
+            animeRepository: new AnimeRepository($entityManager),
+            entityManager: $entityManager,
+        );
+        $request = Request::create('/settings/sync-review/7/resolve', 'POST', ['_token' => 'token']);
+
+        $controller->resolve($item, $request);
+
+        $this->assertTrue($item->isResolved());
+    }
+
+    /**
+     * Acceptance criterion 4 (issue #864): the catalog record named by the item's payload has
+     * already been removed by the time it is resolved — resolve() still succeeds without error.
+     */
+    public function testResolveDeletedFromSourceWhenAnimeWasRemovedFromCatalogDoesNotThrow(): void
+    {
+        $entityManager = $this->createInMemoryEntityManager();
+
+        $item = new SyncReviewItem(SyncReviewItemKind::DeletedFromSource, [
+            'anime_id' => 9999,
+            'deleted_from' => 'animedb-shikimori',
+        ]);
+        (new \ReflectionProperty(SyncReviewItem::class, 'id'))->setValue($item, 8);
+
+        $controller = $this->createController(
+            animeRepository: new AnimeRepository($entityManager),
+            entityManager: $entityManager,
+        );
+        $request = Request::create('/settings/sync-review/8/resolve', 'POST', ['_token' => 'token']);
+
+        $controller->resolve($item, $request);
+
+        $this->assertTrue($item->isResolved());
+    }
+
+    /**
+     * Acceptance criterion 5 (issue #864): resolving a PotentialDuplicate item must not touch any
+     * AnimeSyncState snapshot row — the new removal is scoped to DeletedFromSource/DeletionConflict
+     * only.
+     */
+    public function testResolvePotentialDuplicateDoesNotRemoveAnySnapshotRow(): void
+    {
+        $entityManager = $this->createInMemoryEntityManager();
+
+        $anime = new TvAnime();
+        $anime->setTitle('Trigun')->setWatchStatus(WatchStatus::Plan);
+        $entityManager->persist($anime);
+        $entityManager->flush();
+        $this->seedSyncState($entityManager, $anime, 'animedb-shikimori');
+
+        $item = new SyncReviewItem(SyncReviewItemKind::PotentialDuplicate, ['anime_ids' => [$anime->id]]);
+        (new \ReflectionProperty(SyncReviewItem::class, 'id'))->setValue($item, 9);
+
+        $controller = $this->createController(
+            animeRepository: new AnimeRepository($entityManager),
+            entityManager: $entityManager,
+        );
+        $request = Request::create('/settings/sync-review/9/resolve', 'POST', ['_token' => 'token']);
+
+        $controller->resolve($item, $request);
+
+        $this->assertTrue($item->isResolved());
+        $this->assertNotNull($this->findSyncState($entityManager, $anime, 'animedb-shikimori'));
+    }
+
+    private function seedSyncState(EntityManagerInterface $entityManager, Anime $anime, string $participantId): void
+    {
+        $entityManager->persist(new AnimeSyncState($anime, $participantId, WatchStatus::Plan, null, new \DateTimeImmutable()));
+        $entityManager->flush();
+    }
+
+    private function findSyncState(EntityManagerInterface $entityManager, Anime $anime, string $participantId): ?AnimeSyncState
+    {
+        return $entityManager->find(AnimeSyncState::class, ['anime' => $anime, 'participantId' => $participantId]);
     }
 }

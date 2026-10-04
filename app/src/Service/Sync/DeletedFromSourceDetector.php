@@ -30,6 +30,7 @@ namespace App\Service\Sync;
 use App\Entity\Anime;
 use App\Entity\Enum\SyncReviewItemKind;
 use App\Entity\ValueObject\PluginId;
+use App\Repository\AnimeSyncStateRepository;
 use App\Service\Plugin\SyncRegistry;
 
 /**
@@ -43,21 +44,28 @@ use App\Service\Plugin\SyncRegistry;
  *   left completely alone — it never even becomes a review item. "Gone from the tracker list" is
  *   not "delete the downloaded copy".
  * - Otherwise it is flagged as {@see SyncReviewItemKind::DeletedFromSource} when nothing else
- *   holds it, or {@see SyncReviewItemKind::DeletionConflict} when the record is still linked to
- *   another *active* sync plugin (`still_present_on`) — deleted on A but maybe still on B.
+ *   holds it, or {@see SyncReviewItemKind::DeletionConflict} when the record also carries another
+ *   *active* sync plugin's confirmed list membership (`still_present_on`, issue #863) — deleted on
+ *   A but still a genuine list item on B, not just cached there. {@see hasConfirmedListMembership()}
+ *   is what "confirmed" means here.
  */
 final class DeletedFromSourceDetector
 {
     public function __construct(
         private readonly SyncRegistry $syncRegistry,
         private readonly SyncReviewService $reviewService,
+        private readonly AnimeSyncStateRepository $animeSyncStateRepository,
     ) {
     }
 
     /**
      * $disappeared holds the local records this plugin synced before but that are absent from its
      * current pull() list. It is keyed by external_id — numeric ids become int keys, so the key
-     * type is left open; only the values are used.
+     * type is left open; only the values are used. Narrowing this to records that actually have
+     * {@see hasConfirmedListMembership()} for $pluginId (issue #863 — a cached external_id alone
+     * can come from a filler, bulk-fill, or scan that never synced the record as a list item) is
+     * the caller's responsibility ({@see \App\Service\Plugin\PullSyncService}); detect() itself
+     * does not re-check it.
      *
      * @param array<array-key, Anime> $disappeared
      */
@@ -98,6 +106,37 @@ final class DeletedFromSourceDetector
     }
 
     /**
+     * Called when a DeletedFromSource/DeletionConflict review item is resolved as "keep" (issue
+     * #864, {@see \App\Controller\Settings\SyncReviewController::resolve()}): clears both sources
+     * {@see hasConfirmedListMembership()} accepts as proof $pluginId still lists $anime, since the
+     * source no longer does and leaving either in place would make the next pull see the same
+     * disappearance and flag it again:
+     * - the now-stale AnimeSyncState snapshot row for $pluginId;
+     * - an unresolved NeedsCorrection item whose `origin_participant_id` is $pluginId (issue #861's
+     *   first-contact-divergence case, which never gets a snapshot row while unresolved — see
+     *   {@see hasConfirmedListMembership()}'s own docblock). There is no candidate left to pick
+     *   between once the source itself no longer lists the title, so it is resolved outright
+     *   rather than routed through {@see SyncConvergenceService::applyManualResolution()}.
+     * The cached external id ({@see Anime::getExternalIdPluginIds()}) is left untouched on purpose:
+     * a later re-add on the source re-syncs through it via the normal reconciliation path.
+     */
+    public function forgetListMembership(Anime $anime, string $pluginId): void
+    {
+        $this->animeSyncStateRepository->remove($anime, $pluginId);
+
+        $animeId = $anime->id ?? throw new \LogicException('Anime must have an id at this point in its lifecycle.');
+
+        foreach ($this->reviewService->findUnresolved() as $item) {
+            if ($item->kind === SyncReviewItemKind::NeedsCorrection
+                && ($item->payload['anime_id'] ?? null) === $animeId
+                && ($item->payload['origin_participant_id'] ?? null) === $pluginId
+            ) {
+                $this->reviewService->resolve($item);
+            }
+        }
+    }
+
+    /**
      * Anime ids that already have an unresolved removal/conflict item raised for this plugin.
      *
      * @return array<int, true>
@@ -120,24 +159,67 @@ final class DeletedFromSourceDetector
     }
 
     /**
-     * Other **active** sync plugins this record is still linked to (has a cached external_id for).
-     * The record's own last-update time on the source is deliberately not consulted — an
-     * abandoned tracker is not evidence the user changed their mind, so only the presence of a
-     * live cross-source link makes it a conflict rather than a plain removal.
+     * Other **active** sync plugins this record genuinely has confirmed list membership for
+     * (issue #863): requires both features.sync active AND {@see hasConfirmedListMembership()}
+     * for that plugin's participant id — a cached external_id ({@see
+     * Anime::getExternalIdPluginIds()}) alone is not enough, since a filler, bulk-fill, or scan
+     * can cache one without the source ever having listed the title as a sync item. The record's
+     * own last-update time on the source is deliberately not consulted — an abandoned tracker is
+     * not evidence the user changed their mind, so only confirmed list membership makes it a
+     * conflict rather than a plain removal.
      *
      * @return list<string>
      */
     private function stillPresentOn(Anime $anime, PluginId $deletedFrom): array
     {
-        $linkedPluginIds = array_map(strval(...), $anime->getExternalIdPluginIds());
-
         $result = [];
         foreach ($this->syncRegistry->allActive() as $otherPluginId => $sync) {
-            if ($otherPluginId !== (string) $deletedFrom && \in_array($otherPluginId, $linkedPluginIds, true)) {
+            if ($otherPluginId !== (string) $deletedFrom && $this->hasConfirmedListMembership($anime, $otherPluginId)) {
                 $result[] = $otherPluginId;
             }
         }
 
         return $result;
+    }
+
+    /**
+     * Whether $anime is genuinely a confirmed list item for $pluginId (issue #863), as opposed to
+     * merely carrying a cached external_id for it. Two independent sources of confirmation:
+     *
+     * - An {@see \App\Entity\AnimeSyncState} snapshot row for $pluginId — written only by a prior
+     *   pull/push reconciliation that actually ran {@see
+     *   \App\Service\Sync\SyncConvergenceService::reconcilePulledItem()} to completion for it.
+     * - An unresolved {@see SyncReviewItemKind::NeedsCorrection} item whose
+     *   `origin_participant_id` is $pluginId — the first-contact-divergence case (issue #861):
+     *   {@see SyncConvergenceService::reconcilePulledItem()} deliberately leaves
+     *   no snapshot row for the origin while that item is unresolved (see its own docblock), even
+     *   though the pull that raised it did genuinely see $anime in $pluginId's list. Without this
+     *   second check, a title stuck in that pending state would read as absent everywhere else:
+     *   {@see \App\Service\Plugin\PullSyncService::doPull()} would never flag its own later
+     *   removal from $pluginId's list, and this method would never count $pluginId as
+     *   "still present" when the title is instead removed from a different plugin's list.
+     *
+     * This is intentionally used both by {@see stillPresentOn()} here and by
+     * {@see \App\Service\Plugin\PullSyncService::doPull()}'s own `$disappeared` narrowing, so the
+     * two can never drift apart on what "confirmed" means.
+     */
+    public function hasConfirmedListMembership(Anime $anime, string $pluginId): bool
+    {
+        if ($this->animeSyncStateRepository->find($anime, $pluginId) !== null) {
+            return true;
+        }
+
+        $animeId = $anime->id ?? throw new \LogicException('Anime must have an id at this point in its lifecycle.');
+
+        foreach ($this->reviewService->findUnresolved() as $item) {
+            if ($item->kind === SyncReviewItemKind::NeedsCorrection
+                && ($item->payload['anime_id'] ?? null) === $animeId
+                && ($item->payload['origin_participant_id'] ?? null) === $pluginId
+            ) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

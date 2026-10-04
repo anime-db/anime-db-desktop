@@ -32,6 +32,7 @@ use App\Entity\Enum\SyncReviewItemKind;
 use App\Entity\Enum\WatchStatus;
 use App\Entity\SyncReviewItem;
 use App\Repository\AnimeRepository;
+use App\Service\Sync\DeletedFromSourceDetector;
 use App\Service\Sync\SyncConvergenceService;
 use App\Service\Sync\SyncProjection;
 use App\Service\Sync\SyncReviewService;
@@ -57,6 +58,12 @@ use Twig\Environment;
  * before flipping resolved_at, same as the engine's own reconcile() winner does for the other
  * kinds. Its resolve form posts via HTMX (unlike the plain-POST forms the other kinds still use),
  * so a successful pick removes just that item from the list without a full page reload.
+ *
+ * DeletedFromSource / DeletionConflict (issue #864): resolving one of these means "keep the
+ * catalog record even though the source no longer lists it". {@see resolve()} forwards that to
+ * {@see DeletedFromSourceDetector::forgetListMembership()}, which removes the now-stale
+ * AnimeSyncState snapshot row for the source plugin before flipping resolved_at — without it, the
+ * next pull would see the same disappearance again and raise a duplicate review item.
  */
 final class SyncReviewController
 {
@@ -64,6 +71,7 @@ final class SyncReviewController
         private readonly SyncReviewService $syncReview,
         private readonly AnimeRepository $animeRepository,
         private readonly SyncConvergenceService $syncConvergenceService,
+        private readonly DeletedFromSourceDetector $deletedFromSourceDetector,
         private readonly EntityManagerInterface $entityManager,
         private readonly CsrfTokenManagerInterface $csrfTokenManager,
         private readonly UrlGeneratorInterface $urlGenerator,
@@ -91,6 +99,8 @@ final class SyncReviewController
 
         if ($item->kind === SyncReviewItemKind::NeedsCorrection) {
             $this->applyChosenCandidate($item, $request);
+        } elseif (\in_array($item->kind, [SyncReviewItemKind::DeletedFromSource, SyncReviewItemKind::DeletionConflict], true)) {
+            $this->forgetSyncListMembership($item);
         }
 
         $this->syncReview->resolve($item);
@@ -243,6 +253,33 @@ final class SyncReviewController
         }
 
         throw new BadRequestHttpException('Unknown participant chosen.');
+    }
+
+    /**
+     * Resolving "keep" for a DeletedFromSource/DeletionConflict item (issue #864) means the source
+     * no longer lists this title but the user wants to keep the catalog record: the stale
+     * AnimeSyncState snapshot row for the source plugin is removed via {@see
+     * DeletedFromSourceDetector::forgetListMembership()} so a later pull does not see confirmed
+     * list membership that no longer exists and flag the same disappearance again.
+     *
+     * A malformed payload, an already-missing snapshot row, or the catalog record itself having
+     * been removed in the meantime are all silently accepted — {@see resolve()} still goes on to
+     * flip resolved_at in every case.
+     */
+    private function forgetSyncListMembership(SyncReviewItem $item): void
+    {
+        $animeId = $item->payload['anime_id'] ?? null;
+        $pluginId = $item->payload['deleted_from'] ?? null;
+        if (!\is_int($animeId) || !\is_string($pluginId) || $pluginId === '') {
+            return;
+        }
+
+        $anime = $this->animeRepository->findByIds([$animeId])[$animeId] ?? null;
+        if ($anime === null) {
+            return;
+        }
+
+        $this->deletedFromSourceDetector->forgetListMembership($anime, $pluginId);
     }
 
     private function assertValidCsrfToken(string $tokenId, Request $request): void

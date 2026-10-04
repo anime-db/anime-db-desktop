@@ -31,6 +31,7 @@ use AnimeDb\PluginContracts\Sync\SyncInterface;
 use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
 use App\Entity\Anime;
+use App\Entity\AnimeSyncState;
 use App\Entity\Enum\StorageType;
 use App\Entity\Enum\SyncReviewItemKind;
 use App\Entity\Enum\WatchStatus;
@@ -38,6 +39,7 @@ use App\Entity\Storage;
 use App\Entity\SyncReviewItem;
 use App\Entity\TvAnime;
 use App\Entity\ValueObject\PluginId;
+use App\Repository\AnimeSyncStateRepository;
 use App\Repository\SyncReviewItemRepository;
 use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Plugin\SyncRegistry;
@@ -52,8 +54,9 @@ use PHPUnit\Framework\TestCase;
 
 /**
  * Source-side removal detection (issue #217): a record gone from a plugin's list is flagged for
- * review, never deleted; storage-backed records are protected; a record still linked to another
- * active sync plugin is a conflict rather than a plain removal.
+ * review, never deleted; storage-backed records are protected; a record that also carries another
+ * active sync plugin's AnimeSyncState snapshot row is a conflict rather than a plain removal — a
+ * cached external_id for that other plugin alone is not enough (issue #863).
  */
 final class DeletedFromSourceDetectorTest extends TestCase
 {
@@ -108,9 +111,39 @@ final class DeletedFromSourceDetectorTest extends TestCase
         $this->assertSame(['anime_id' => $anime->id, 'deleted_from' => 'animedb-shikimori'], $items[0]->payload);
     }
 
+    /**
+     * Scenario 4 (issue #863): a cached external_id for another *active* plugin, without an
+     * AnimeSyncState snapshot row for it, is not enough to make this a conflict — the plugin
+     * never actually synced this record as a list item, so its absence from the record's current
+     * state tells us nothing about whether the title is still present there.
+     */
+    public function testAnotherActivePluginWithOnlyACachedExternalIdAndNoSnapshotIsNotAConflict(): void
+    {
+        $anime = $this->persistAnime(['animedb-shikimori' => '10', 'animedb-mal' => '99']);
+        $this->entityManager->flush();
+
+        $registry = new SyncRegistry(
+            ['animedb-mal' => $this->createStub(SyncInterface::class)],
+            $this->store(['animedb-mal']),
+        );
+
+        $this->detector($registry)->detect($this->pluginId, ['10' => $anime]);
+
+        $items = $this->reviewItems();
+        $this->assertCount(1, $items);
+        $this->assertSame(SyncReviewItemKind::DeletedFromSource, $items[0]->kind);
+        $this->assertSame(['anime_id' => $anime->id, 'deleted_from' => 'animedb-shikimori'], $items[0]->payload);
+    }
+
+    /**
+     * Scenario 5 (issue #863): another *active* plugin that also carries an AnimeSyncState
+     * snapshot row for this record genuinely still has it as a list item — a real conflict, not a
+     * plain removal.
+     */
     public function testRemovedRecordStillLinkedToAnotherActivePluginIsAConflict(): void
     {
         $anime = $this->persistAnime(['animedb-shikimori' => '10', 'animedb-mal' => '99']);
+        $this->seedSyncState($anime, 'animedb-mal');
         $this->entityManager->flush();
 
         $registry = new SyncRegistry(
@@ -130,13 +163,53 @@ final class DeletedFromSourceDetectorTest extends TestCase
         ], $items[0]->payload);
     }
 
-    public function testLinkToAnInactivePluginIsNotAConflict(): void
+    /**
+     * Scenario 7 (issue #863 review): another *active* plugin with no AnimeSyncState snapshot row
+     * yet, but with an unresolved NeedsCorrection review item naming it as `origin_participant_id`
+     * (issue #861's first-contact-divergence — {@see
+     * \App\Service\Sync\SyncConvergenceService::reconcilePulledItem()} deliberately withholds the
+     * snapshot row while that item is unresolved), still genuinely has this record in its list —
+     * a real conflict, not a plain removal, even without the row.
+     */
+    public function testAnotherActivePluginWithAPendingFirstContactDivergenceIsAConflict(): void
     {
         $anime = $this->persistAnime(['animedb-shikimori' => '10', 'animedb-mal' => '99']);
         $this->entityManager->flush();
+        $this->seedFirstContactDivergence($anime, 'animedb-mal');
 
-        // 'animedb-mal' is linked but not active for sync → SyncRegistry does not list it, so this
-        // is a plain removal, not a conflict.
+        $registry = new SyncRegistry(
+            ['animedb-mal' => $this->createStub(SyncInterface::class)],
+            $this->store(['animedb-mal']),
+        );
+
+        $this->detector($registry)->detect($this->pluginId, ['10' => $anime]);
+
+        $items = array_values(array_filter(
+            $this->reviewItems(),
+            fn (SyncReviewItem $item): bool => $item->kind !== SyncReviewItemKind::NeedsCorrection,
+        ));
+        $this->assertCount(1, $items);
+        $this->assertSame(SyncReviewItemKind::DeletionConflict, $items[0]->kind);
+        $this->assertSame([
+            'anime_id' => $anime->id,
+            'deleted_from' => 'animedb-shikimori',
+            'still_present_on' => ['animedb-mal'],
+        ], $items[0]->payload);
+    }
+
+    /**
+     * Scenario 6 (issue #863): a plugin that carries an AnimeSyncState snapshot row but is not
+     * *active* is still not a conflict — "still in the list on an abandoned, now-inactive
+     * tracker" is not a reason to withhold the plain removal flag (behaviour unchanged by #863).
+     */
+    public function testLinkToAnInactivePluginIsNotAConflict(): void
+    {
+        $anime = $this->persistAnime(['animedb-shikimori' => '10', 'animedb-mal' => '99']);
+        $this->seedSyncState($anime, 'animedb-mal');
+        $this->entityManager->flush();
+
+        // 'animedb-mal' has a snapshot row but is not active for sync → SyncRegistry does not
+        // list it, so this is a plain removal, not a conflict.
         $this->detector(new SyncRegistry([], $this->store([])))->detect($this->pluginId, ['10' => $anime]);
 
         $items = $this->reviewItems();
@@ -157,12 +230,123 @@ final class DeletedFromSourceDetectorTest extends TestCase
         $this->assertCount(1, $this->reviewItems());
     }
 
+    /**
+     * Issue #864, acceptance criterion 1/2: forgetListMembership() removes the snapshot row for
+     * the given plugin only, leaving rows for other participants (including 'local') untouched.
+     */
+    public function testForgetListMembershipRemovesTheSnapshotRowForTheGivenPluginOnly(): void
+    {
+        $anime = $this->persistAnime(['animedb-shikimori' => '10', 'animedb-mal' => '99']);
+        $this->seedSyncState($anime, 'animedb-shikimori');
+        $this->seedSyncState($anime, 'animedb-mal');
+        $this->seedSyncState($anime, 'local');
+        $this->entityManager->flush();
+
+        $this->detector(new SyncRegistry([], $this->store([])))->forgetListMembership($anime, 'animedb-shikimori');
+
+        $this->assertNull($this->findSyncState($anime, 'animedb-shikimori'));
+        $this->assertNotNull($this->findSyncState($anime, 'animedb-mal'));
+        $this->assertNotNull($this->findSyncState($anime, 'local'));
+        // The cached external id is untouched — only the confirmed-list-membership row is removed.
+        $this->assertSame('10', $anime->getCachedExternalId($this->pluginId));
+    }
+
+    /** Issue #864, acceptance criterion 3: no snapshot row to begin with — a silent no-op. */
+    public function testForgetListMembershipIsANoOpWhenThereIsNoSnapshotRow(): void
+    {
+        $anime = $this->persistAnime(['animedb-shikimori' => '10']);
+        $this->entityManager->flush();
+
+        $this->detector(new SyncRegistry([], $this->store([])))->forgetListMembership($anime, 'animedb-shikimori');
+
+        $this->assertNull($this->findSyncState($anime, 'animedb-shikimori'));
+    }
+
+    /**
+     * Issue #864 review (PR #894): a title stuck in the first-contact-divergence state (issue
+     * #861) has no AnimeSyncState row for $pluginId to remove — {@see hasConfirmedListMembership()}
+     * reads the unresolved NeedsCorrection item itself as proof of membership instead. "Keep" must
+     * resolve that item too, or the next pull would see confirmed membership again and re-raise the
+     * same DeletedFromSource item it just resolved.
+     */
+    public function testForgetListMembershipResolvesAPendingFirstContactDivergenceForTheGivenPlugin(): void
+    {
+        $anime = $this->persistAnime(['animedb-shikimori' => '10']);
+        $this->entityManager->flush();
+        $this->seedFirstContactDivergence($anime, 'animedb-shikimori');
+
+        $detector = $this->detector(new SyncRegistry([], $this->store([])));
+        $this->assertTrue($detector->hasConfirmedListMembership($anime, 'animedb-shikimori'));
+
+        $detector->forgetListMembership($anime, 'animedb-shikimori');
+
+        $this->assertFalse($detector->hasConfirmedListMembership($anime, 'animedb-shikimori'));
+        $needsCorrection = array_values(array_filter(
+            $this->reviewItems(),
+            fn (SyncReviewItem $item): bool => $item->kind === SyncReviewItemKind::NeedsCorrection,
+        ));
+        $this->assertCount(1, $needsCorrection);
+        $this->assertTrue($needsCorrection[0]->isResolved());
+    }
+
+    /**
+     * A pending first-contact divergence belonging to a *different* plugin must survive "keep" for
+     * this one — only the given plugin's membership proof is being withdrawn.
+     */
+    public function testForgetListMembershipLeavesAPendingFirstContactDivergenceForAnotherPluginUnresolved(): void
+    {
+        $anime = $this->persistAnime(['animedb-shikimori' => '10', 'animedb-mal' => '99']);
+        $this->entityManager->flush();
+        $this->seedFirstContactDivergence($anime, 'animedb-mal');
+
+        $this->detector(new SyncRegistry([], $this->store([])))->forgetListMembership($anime, 'animedb-shikimori');
+
+        $needsCorrection = array_values(array_filter(
+            $this->reviewItems(),
+            fn (SyncReviewItem $item): bool => $item->kind === SyncReviewItemKind::NeedsCorrection,
+        ));
+        $this->assertCount(1, $needsCorrection);
+        $this->assertFalse($needsCorrection[0]->isResolved());
+    }
+
+    private function findSyncState(Anime $anime, string $participantId): ?AnimeSyncState
+    {
+        return $this->entityManager->find(AnimeSyncState::class, ['anime' => $anime, 'participantId' => $participantId]);
+    }
+
     private function detector(SyncRegistry $registry): DeletedFromSourceDetector
     {
         return new DeletedFromSourceDetector(
             $registry,
             new SyncReviewService(new SyncReviewItemRepository($this->entityManager)),
+            new AnimeSyncStateRepository($this->entityManager),
         );
+    }
+
+    /**
+     * Seeds an AnimeSyncState snapshot row as if a prior pull/push reconciliation had already
+     * confirmed $anime as a list item for $participantId — the only thing that distinguishes a
+     * genuine cross-source link from a merely cached external_id (issue #863).
+     */
+    private function seedSyncState(Anime $anime, string $participantId): void
+    {
+        $this->entityManager->persist(new AnimeSyncState($anime, $participantId, WatchStatus::Plan, null, new \DateTimeImmutable()));
+    }
+
+    /**
+     * Seeds an unresolved NeedsCorrection review item the way {@see
+     * \App\Service\Sync\SyncConvergenceService::flagFirstContactDivergence()} would for
+     * $participantId's first contact against an already-established local history (issue #861) —
+     * no AnimeSyncState row is written for $participantId while this item stays unresolved.
+     */
+    private function seedFirstContactDivergence(Anime $anime, string $participantId): void
+    {
+        (new SyncReviewService(new SyncReviewItemRepository($this->entityManager)))->create(SyncReviewItemKind::NeedsCorrection, [
+            'anime_id' => $anime->id,
+            'origin_participant_id' => $participantId,
+            'participants' => ['local', $participantId],
+            'candidates' => [],
+        ]);
     }
 
     /**
