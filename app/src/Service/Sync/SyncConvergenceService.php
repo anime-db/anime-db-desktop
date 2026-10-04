@@ -70,6 +70,25 @@ use Psr\Log\LoggerInterface;
  * engine surfaces as a genuine ">=2 changed, different" conflict (persistent review-item) instead
  * of silently overwriting local's history with the source's value (issue #366 review, "первый
  * контакт затирает локаль").
+ *
+ * $originParticipantId's first contact against a local that already has its *own* snapshot row
+ * (issue #861) — local previously converged with some other participant and has not drifted since
+ * — gets the same treatment, checked ahead of the engine entirely rather than left to the changed-
+ * set/single-vs-multiple-changed machinery above: a brand-new source whose projection disagrees
+ * with local's current one is a conflict to raise, not a value to adopt. Routing it through
+ * {@see SyncReconciler::reconcile()} would count local as unchanged (it agrees with its own last-
+ * seen row) and the origin as the sole changed participant, so the engine would declare the
+ * origin's reading the winner outright and both apply it to local and forward it to every other
+ * active participant — exactly the "first live pull of a second source quietly overwrites
+ * established history" failure this issue fixes. So this case short-circuits before reconcile()
+ * ever runs: no apply to local, no push to anyone (including the origin itself), and no snapshot
+ * row written for the origin — only a persistent review-item naming local and the origin as
+ * candidates, deduplicated per (anime, participant) so a repeated pull of the same disagreement
+ * does not raise a second item. The origin's snapshot row is intentionally left unwritten so the
+ * next pull sees the same "first contact" state and the dedup check, not a stale row, is what
+ * stops the duplicate — the row itself is only ever written by resolving the review-item
+ * ({@see applyManualResolution()}). A matching projection skips this rule entirely and falls
+ * through to the ordinary path below, which records the origin's snapshot as usual.
  */
 final class SyncConvergenceService
 {
@@ -106,6 +125,16 @@ final class SyncConvergenceService
 
         $localState = new ParticipantState('local', $this->localProjection($anime), $anime->getWatchProgressUpdatedAt());
         $originState = new ParticipantState($originParticipantId, $originProjection, $originUpdatedAt);
+
+        // First contact for the origin against a local that already has its own snapshot row
+        // (issue #861) — see the class docblock. Checked ahead of the engine, and against
+        // $lastSeen (the real rows only, before the virgin-local synthesis below adds a
+        // synthetic 'local' entry) so a provably-virgin local never takes this branch.
+        if (!isset($lastSeen[$originParticipantId]) && isset($lastSeen['local']) && !$originProjection->equals($localState->projection)) {
+            $this->flagFirstContactDivergence($anime, $originState, $localState);
+
+            return;
+        }
 
         // Synthesize a same-as-current last-seen for local only when it is provably virgin (no
         // real watch progress ever recorded) and only has no row yet — see the class docblock.
@@ -383,12 +412,7 @@ final class SyncConvergenceService
                 continue;
             }
 
-            $candidates[] = [
-                'participant_id' => $state->participantId,
-                'status' => $state->projection->status->value,
-                'watched_episodes' => $state->projection->watchedEpisodes,
-                'updated_at' => $state->updatedAt?->getTimestamp(),
-            ];
+            $candidates[] = $this->candidatePayload($state);
         }
 
         $this->reviewService->create(SyncReviewItemKind::NeedsCorrection, [
@@ -404,6 +428,68 @@ final class SyncConvergenceService
     {
         foreach ($this->reviewService->findUnresolved() as $item) {
             if ($item->kind === SyncReviewItemKind::NeedsCorrection && ($item->payload['anime_id'] ?? null) === $animeId) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Raises a NeedsCorrection review-item for $originState's first contact diverging from
+     * local's established history (issue #861) — see the class docblock. Deliberately carries no
+     * 'winner_status'/'winner_watched_episodes' payload keys: unlike {@see flagConflict()}'s true
+     * conflict, the engine has not picked a best-effort winner here (nothing was applied to local,
+     * nothing was pushed to anyone), so neither candidate the sync review page renders from this
+     * payload is "applied automatically" — {@see \App\Controller\Settings\SyncReviewController::needsCorrectionDetails()}
+     * reads a missing key as null, which the template's winner-match comparison never satisfies
+     * against a real candidate's non-null status.
+     */
+    private function flagFirstContactDivergence(Anime $anime, ParticipantState $originState, ParticipantState $localState): void
+    {
+        $animeId = $anime->id ?? throw new \LogicException('Anime must have an id at this point in its lifecycle.');
+
+        if ($this->alreadyFlaggedForParticipant($animeId, $originState->participantId)) {
+            return;
+        }
+
+        $this->reviewService->create(SyncReviewItemKind::NeedsCorrection, [
+            'anime_id' => $animeId,
+            'origin_participant_id' => $originState->participantId,
+            'participants' => ['local', $originState->participantId],
+            'candidates' => [
+                $this->candidatePayload($localState),
+                $this->candidatePayload($originState),
+            ],
+        ]);
+    }
+
+    /** @return array{participant_id: string, status: string, watched_episodes: ?int, updated_at: ?int} */
+    private function candidatePayload(ParticipantState $state): array
+    {
+        return [
+            'participant_id' => $state->participantId,
+            'status' => $state->projection->status->value,
+            'watched_episodes' => $state->projection->watchedEpisodes,
+            'updated_at' => $state->updatedAt?->getTimestamp(),
+        ];
+    }
+
+    /**
+     * Dedup for {@see flagFirstContactDivergence()} is keyed on (anime, origin participant), not
+     * just anime like {@see alreadyFlagged()} — a repeated pull of the same still-unresolved
+     * disagreement from the same source must not raise a second item, but a *different* source's
+     * own first-contact divergence against the same anime is a distinct event and must still get
+     * its own review-item.
+     */
+    private function alreadyFlaggedForParticipant(int $animeId, string $participantId): bool
+    {
+        foreach ($this->reviewService->findUnresolved() as $item) {
+            if (
+                $item->kind === SyncReviewItemKind::NeedsCorrection
+                && ($item->payload['anime_id'] ?? null) === $animeId
+                && ($item->payload['origin_participant_id'] ?? null) === $participantId
+            ) {
                 return true;
             }
         }
