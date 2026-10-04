@@ -42,6 +42,13 @@
             <p class="alert alert-warning">{{ 'settings_plugin_page.oauth_fixed_port_warning'|trans }}</p>
         {% endif %}
 
+        {% if syncReviewUrl is defined and syncReviewUrl is not null %}
+            <p class="alert alert-info">
+                {{ 'settings_plugin_page.sync_seed_started'|trans }}
+                <a href="{{ syncReviewUrl }}">{{ 'settings_plugin_page.sync_seed_started_link'|trans }}</a>
+            </p>
+        {% endif %}
+
         {% if renderFailed %}
             <p class="alert alert-danger">{{ 'settings_plugin_page.render_error'|trans }}</p>
         {% else %}

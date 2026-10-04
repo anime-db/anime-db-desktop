@@ -30,6 +30,7 @@ namespace App\Tests\Unit\Controller\Settings;
 use AnimeDb\PluginContracts\Settings\SettingsPageInterface;
 use AnimeDb\PluginContracts\Sync\SyncInterface;
 use App\Controller\Settings\PluginSettingsController;
+use App\Entity\ValueObject\PluginId;
 use App\Message\BackfillExternalIdMessage;
 use App\Message\SyncSeedMessage;
 use App\Service\Plugin\InstalledPluginsRegistry;
@@ -296,7 +297,13 @@ final class PluginSettingsControllerTest extends TestCase
         $this->assertSame(200, $response->getStatusCode());
     }
 
-    public function testInvokeDispatchesSyncSeedAndBackfillExternalIdAndRedirectsWhenThePluginIsAnActiveSyncPlugin(): void
+    /**
+     * Issue #865: the first visit to an active sync plugin's settings page must render that page
+     * (not redirect) so the plugin's own OAuth button stays reachable even when `features.sync`
+     * was switched on before OAuth completed — the seed is still queued, just with a notice above
+     * the plugin's markup instead of a redirect away from it.
+     */
+    public function testInvokeDispatchesSyncSeedOnceAndRendersThePluginsPageWithANoticeOnFirstVisit(): void
     {
         $this->writeManifest('animedb-shikimori', 'Shikimori');
         file_put_contents($this->pluginsDir.'/plugins.json', (string) json_encode([
@@ -311,7 +318,7 @@ final class PluginSettingsControllerTest extends TestCase
         );
 
         $page = $this->createMock(SettingsPageInterface::class);
-        $page->expects($this->never())->method('render');
+        $page->expects($this->once())->method('render')->willReturn('<form>settings</form>');
         $settingsPages = $this->settingsPages(['animedb-shikimori' => $page]);
 
         $dispatched = [];
@@ -331,7 +338,16 @@ final class PluginSettingsControllerTest extends TestCase
             ->willReturn('/settings/sync-review');
 
         $twig = $this->createMock(Environment::class);
-        $twig->expects($this->never())->method('render');
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('settings/plugin/page.html.twig', $this->callback(static function (array $params): bool {
+                self::assertSame('<form>settings</form>', $params['content']);
+                self::assertFalse($params['renderFailed']);
+                self::assertSame('/settings/sync-review', $params['syncReviewUrl']);
+
+                return true;
+            }))
+            ->willReturn('<html></html>');
 
         $controller = $this->createController(
             $settingsPages,
@@ -342,8 +358,8 @@ final class PluginSettingsControllerTest extends TestCase
         );
         $response = $controller('animedb-shikimori');
 
-        $this->assertInstanceOf(RedirectResponse::class, $response);
-        $this->assertSame('/settings/sync-review', $response->getTargetUrl());
+        $this->assertNotInstanceOf(RedirectResponse::class, $response);
+        $this->assertSame(200, $response->getStatusCode());
 
         $this->assertCount(2, $dispatched);
         $this->assertInstanceOf(SyncSeedMessage::class, $dispatched[0]);
@@ -365,7 +381,7 @@ final class PluginSettingsControllerTest extends TestCase
         $syncRegistry = new SyncRegistry(['animedb-shikimori' => $sync], $pluginsConfigStore);
 
         $page = $this->createMock(SettingsPageInterface::class);
-        $page->expects($this->once())->method('render')->willReturn('<form>settings</form>');
+        $page->expects($this->exactly(2))->method('render')->willReturn('<form>settings</form>');
         $settingsPages = $this->settingsPages(['animedb-shikimori' => $page]);
 
         $messageBus = $this->createMock(MessageBusInterface::class);
@@ -377,7 +393,7 @@ final class PluginSettingsControllerTest extends TestCase
         $urlGenerator->method('generate')->willReturn('/settings/sync-review');
 
         $twig = $this->createMock(Environment::class);
-        $twig->expects($this->once())->method('render')->willReturn('<html></html>');
+        $twig->expects($this->exactly(2))->method('render')->willReturn('<html></html>');
 
         $controller = $this->createController(
             $settingsPages,
@@ -391,10 +407,15 @@ final class PluginSettingsControllerTest extends TestCase
         $first = $controller('animedb-shikimori');
         $second = $controller('animedb-shikimori');
 
-        $this->assertInstanceOf(RedirectResponse::class, $first);
+        $this->assertSame(200, $first->getStatusCode());
         $this->assertSame(200, $second->getStatusCode());
     }
 
+    /**
+     * Issue #865 acceptance (2): a repeated visit after `syncSeeded` is already `true` renders the
+     * plugin's page with no further dispatch and no notice — the notice is only for the visit that
+     * actually queued the seed.
+     */
     public function testInvokeRendersThePluginsPageInsteadOfReSeedingWhenAlreadySeeded(): void
     {
         $this->writeManifest('animedb-shikimori', 'Shikimori');
@@ -416,20 +437,102 @@ final class PluginSettingsControllerTest extends TestCase
         $messageBus = $this->createMock(MessageBusInterface::class);
         $messageBus->expects($this->never())->method('dispatch');
 
+        $urlGenerator = $this->createMock(UrlGeneratorInterface::class);
+        $urlGenerator->expects($this->never())->method('generate');
+
         $twig = $this->createMock(Environment::class);
-        $twig->expects($this->once())->method('render')->willReturn('<html></html>');
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('settings/plugin/page.html.twig', $this->callback(
+                static fn (array $params): bool => $params['syncReviewUrl'] === null,
+            ))
+            ->willReturn('<html></html>');
 
         $controller = $this->createController(
             $settingsPages,
             twig: $twig,
             syncRegistry: $syncRegistry,
             messageBus: $messageBus,
+            urlGenerator: $urlGenerator,
         );
         $response = $controller('animedb-shikimori');
 
         $this->assertSame(200, $response->getStatusCode());
     }
 
+    /**
+     * Issue #865 acceptance (3): the loop scenario. The first visit queues the seed as usual; then
+     * {@see \App\MessageHandler\SyncSeedMessageHandler} resets `syncSeeded` back to `false` because
+     * `pull()` stopped short on missing OAuth (exactly what it does on a `false` return). The next
+     * visit must still render 200 with the plugin's own markup — where the authorize button lives —
+     * re-queue the seed, and show the notice again, instead of looping on a redirect forever.
+     */
+    public function testInvokeReQueuesTheSeedAndShowsTheNoticeAgainAfterTheHandlerResetSyncSeeded(): void
+    {
+        $this->writeManifest('animedb-shikimori', 'Shikimori');
+        file_put_contents($this->pluginsDir.'/plugins.json', (string) json_encode([
+            'animedb-shikimori' => ['features' => ['sync' => true]],
+        ]));
+        $this->installedPlugins->reconcile();
+
+        $sync = $this->createStub(SyncInterface::class);
+        $pluginsConfigStore = new PluginsConfigStore($this->pluginsDir.'/plugins.json');
+        $syncRegistry = new SyncRegistry(['animedb-shikimori' => $sync], $pluginsConfigStore);
+
+        $page = $this->createMock(SettingsPageInterface::class);
+        $page->expects($this->exactly(2))->method('render')->willReturn('<form>settings</form>');
+        $settingsPages = $this->settingsPages(['animedb-shikimori' => $page]);
+
+        $messageBus = $this->createMock(MessageBusInterface::class);
+        $messageBus->expects($this->exactly(4))
+            ->method('dispatch')
+            ->willReturnCallback(static fn (object $message): Envelope => new Envelope($message));
+
+        $urlGenerator = $this->createStub(UrlGeneratorInterface::class);
+        $urlGenerator->method('generate')->willReturn('/settings/sync-review');
+
+        $twig = $this->createMock(Environment::class);
+        $renderedParams = [];
+        $twig->expects($this->exactly(2))
+            ->method('render')
+            ->willReturnCallback(static function (string $template, array $params) use (&$renderedParams): string {
+                $renderedParams[] = $params;
+
+                return '<html></html>';
+            });
+
+        $controller = $this->createController(
+            $settingsPages,
+            twig: $twig,
+            syncRegistry: $syncRegistry,
+            pluginsConfigStore: $pluginsConfigStore,
+            messageBus: $messageBus,
+            urlGenerator: $urlGenerator,
+        );
+
+        $first = $controller('animedb-shikimori');
+
+        // Simulate SyncSeedMessageHandler resetting the flag after pull() reports it stopped
+        // short on missing OAuth — the same write SyncSeedMessageHandler::__invoke() performs.
+        $pluginsConfigStore->updatePluginSettings(new PluginId('animedb-shikimori'), static function (array $settings): array {
+            $settings['syncSeeded'] = false;
+
+            return $settings;
+        });
+
+        $second = $controller('animedb-shikimori');
+
+        $this->assertSame(200, $first->getStatusCode());
+        $this->assertSame(200, $second->getStatusCode());
+        $this->assertNotNull($renderedParams[0]['syncReviewUrl']);
+        $this->assertNotNull($renderedParams[1]['syncReviewUrl']);
+    }
+
+    /**
+     * Issue #865 acceptance (4): lock exhaustion still degrades to a normal render with the seed
+     * skipped for this visit — unchanged from before this issue, just no longer reachable via a
+     * redirect branch.
+     */
     public function testInvokeRendersThePluginsPageInsteadOf500WhenTheConfigStoreLockIsExhausted(): void
     {
         $this->writeManifest('animedb-shikimori', 'Shikimori');
@@ -452,7 +555,12 @@ final class PluginSettingsControllerTest extends TestCase
         $messageBus->expects($this->never())->method('dispatch');
 
         $twig = $this->createMock(Environment::class);
-        $twig->expects($this->once())->method('render')->willReturn('<html></html>');
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('settings/plugin/page.html.twig', $this->callback(
+                static fn (array $params): bool => $params['syncReviewUrl'] === null,
+            ))
+            ->willReturn('<html></html>');
 
         $logger = $this->createMock(LoggerInterface::class);
         $logger->expects($this->once())->method('info');
@@ -479,6 +587,36 @@ final class PluginSettingsControllerTest extends TestCase
             flock($lockHandle, \LOCK_UN);
             fclose($lockHandle);
         }
+
+        $this->assertSame(200, $response->getStatusCode());
+    }
+
+    /**
+     * Issue #865 acceptance (5): a plugin with no {@see SyncInterface} entry in {@see SyncRegistry}
+     * never enters the connect-seed branch at all — no dispatch, no notice.
+     */
+    public function testInvokeRendersThePluginsPageWithNoSeedAndNoNoticeWhenThePluginIsNotASyncPlugin(): void
+    {
+        $this->writeManifest('animedb-shikimori', 'Shikimori');
+        $this->installedPlugins->reconcile();
+
+        $page = $this->createMock(SettingsPageInterface::class);
+        $page->expects($this->once())->method('render')->willReturn('<form>settings</form>');
+        $settingsPages = $this->settingsPages(['animedb-shikimori' => $page]);
+
+        $messageBus = $this->createMock(MessageBusInterface::class);
+        $messageBus->expects($this->never())->method('dispatch');
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('settings/plugin/page.html.twig', $this->callback(
+                static fn (array $params): bool => $params['syncReviewUrl'] === null,
+            ))
+            ->willReturn('<html></html>');
+
+        $controller = $this->createController($settingsPages, twig: $twig, messageBus: $messageBus);
+        $response = $controller('animedb-shikimori');
 
         $this->assertSame(200, $response->getStatusCode());
     }
