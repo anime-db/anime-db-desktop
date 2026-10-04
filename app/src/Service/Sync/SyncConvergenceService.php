@@ -27,6 +27,7 @@ declare(strict_types=1);
 
 namespace App\Service\Sync;
 
+use AnimeDb\PluginContracts\OAuth\ReauthRequiredException;
 use AnimeDb\PluginContracts\Sync\SyncInterface;
 use AnimeDb\PluginContracts\Sync\SyncItem;
 use App\Entity\Anime;
@@ -35,6 +36,7 @@ use App\Entity\Enum\SyncReviewItemKind;
 use App\Entity\SeriesAnime;
 use App\Entity\ValueObject\PluginId;
 use App\Repository\AnimeSyncStateRepository;
+use App\Repository\PendingSyncPushRepository;
 use App\Service\Plugin\SyncRegistry;
 use App\Service\Plugin\WatchStatusMapper;
 use Doctrine\ORM\EntityManagerInterface;
@@ -95,6 +97,7 @@ final class SyncConvergenceService
     public function __construct(
         private readonly SyncReconciler $reconciler,
         private readonly AnimeSyncStateRepository $stateRepository,
+        private readonly PendingSyncPushRepository $pendingPushRepository,
         private readonly SyncRegistry $syncRegistry,
         private readonly SyncReviewService $reviewService,
         private readonly LoggerInterface $logger,
@@ -155,6 +158,8 @@ final class SyncConvergenceService
         $result = $this->reconciler->reconcile($available, $lastSeen);
 
         if (!$result->hasChanges) {
+            $this->retryPendingPushes($anime, $originParticipantId, $otherSyncs, $lastSeenRowById, $localState, $entityManager);
+
             return;
         }
 
@@ -185,13 +190,67 @@ final class SyncConvergenceService
                 continue;
             }
 
-            $pushed = $this->pushTo($anime, $participantId, $sync, $result->winner, $result->winnerUpdatedAt);
+            $pushed = $this->pushTo($anime, $participantId, $sync, $result->winner, $result->winnerUpdatedAt, $lastSeenRowById[$participantId] ?? null, $entityManager);
             if ($pushed !== null) {
                 $confirmed[$participantId] = $pushed;
             }
         }
 
         $this->persistConfirmedState($anime, $confirmed, $lastSeenRowById, $entityManager);
+    }
+
+    /**
+     * The hasChanges===false half of issue #862: {@see SyncReconciler::participantsToConverge()}
+     * only ever runs when the engine actually picked a winner, so a participant whose last push
+     * failed and whose current reading still agrees with everyone else's would otherwise never be
+     * retried — nothing in the ordinary path has a reason to call push() again. This re-derives
+     * "who might be holding a stale push" from the push_pending marker itself (an
+     * {@see AnimeSyncState} row's flag, or a {@see \App\Entity\PendingSyncPush} row for a
+     * participant with no snapshot row at all — see that class) rather than from any
+     * snapshot-vs-winner comparison, precisely so a source local itself rejected (invariant
+     * violation, no push ever attempted, no marker) is never touched here.
+     *
+     * Every pending participant is sent local's *current* projection, not $result->winner — there
+     * is no winner when nothing changed, and local's current reading is by construction what every
+     * agreeing participant already converged on.
+     *
+     * @param array<string, SyncInterface>  $otherSyncs
+     * @param array<string, AnimeSyncState> $lastSeenRowById
+     */
+    private function retryPendingPushes(
+        Anime $anime,
+        string $originParticipantId,
+        array $otherSyncs,
+        array $lastSeenRowById,
+        ParticipantState $localState,
+        EntityManagerInterface $entityManager,
+    ): void {
+        $syncs = $otherSyncs;
+        $originSync = $this->syncRegistry->findByPluginId(new PluginId($originParticipantId));
+        if ($originSync !== null) {
+            $syncs[$originParticipantId] = $originSync;
+        }
+
+        $confirmed = [];
+        foreach ($syncs as $participantId => $sync) {
+            $existingRow = $lastSeenRowById[$participantId] ?? null;
+            $isPending = $existingRow !== null
+                ? $existingRow->pushPending
+                : $this->pendingPushRepository->isPending($anime, $participantId, $entityManager);
+
+            if (!$isPending) {
+                continue;
+            }
+
+            $pushed = $this->pushTo($anime, $participantId, $sync, $localState->projection, $localState->updatedAt, $existingRow, $entityManager);
+            if ($pushed !== null) {
+                $confirmed[$participantId] = $pushed;
+            }
+        }
+
+        if ($confirmed !== []) {
+            $this->persistConfirmedState($anime, $confirmed, $lastSeenRowById, $entityManager);
+        }
     }
 
     /**
@@ -256,7 +315,7 @@ final class SyncConvergenceService
                 continue;
             }
 
-            $pushed = $this->pushTo($anime, $participantId, $sync, $appliedProjection, $appliedUpdatedAt);
+            $pushed = $this->pushTo($anime, $participantId, $sync, $appliedProjection, $appliedUpdatedAt, $lastSeenRow, $entityManager);
             if ($pushed !== null) {
                 $confirmed[$participantId] = $pushed;
             }
@@ -289,14 +348,28 @@ final class SyncConvergenceService
     }
 
     /**
-     * A forward-propagation push failing (network error, reauth needed, ...) must not fail the
-     * whole pull run over one other, unrelated plugin — logged and skipped, same self-healing
-     * stance PullSyncService already takes elsewhere: the target's snapshot is left untouched, so
-     * it stays dirty and gets retried the next time this anime is reconciled (issue #366 pitfall
-     * #1, "не отравляем снимок").
+     * A forward-propagation push failing (network error, ...) must not fail the whole pull run
+     * over one other, unrelated plugin — logged and skipped, same self-healing stance
+     * PullSyncService already takes elsewhere. The target's own last-seen values are left
+     * untouched, but it is marked push_pending (issue #862; {@see AnimeSyncState::$pushPending} or,
+     * if $existingRow is null, a {@see \App\Entity\PendingSyncPush} row) so it still gets retried
+     * the next time this anime is reconciled, even a run where nothing else changed — see
+     * {@see retryPendingPushes()}, the other half of that retry.
+     *
+     * {@see ReauthRequiredException} is deliberately excluded from marking push_pending: it means
+     * the plugin itself needs the user to re-authorize before any push to it can ever succeed, not
+     * that this particular value failed to land, and PushSyncMessageHandler already has its own,
+     * separate handling for that condition (issue #353).
      */
-    private function pushTo(Anime $anime, string $participantId, SyncInterface $sync, SyncProjection $projection, ?\DateTimeImmutable $updatedAt): ?ParticipantState
-    {
+    private function pushTo(
+        Anime $anime,
+        string $participantId,
+        SyncInterface $sync,
+        SyncProjection $projection,
+        ?\DateTimeImmutable $updatedAt,
+        ?AnimeSyncState $existingRow,
+        EntityManagerInterface $entityManager,
+    ): ?ParticipantState {
         $externalId = $anime->getCachedExternalId(new PluginId($participantId));
         if ($externalId === null) {
             return null;
@@ -312,20 +385,60 @@ final class SyncConvergenceService
 
         try {
             $confirmed = $sync->push($item);
-        } catch (\Throwable $exception) {
-            $this->logger->warning('Forward-propagation push to sync plugin "{plugin}" failed; leaving its snapshot dirty for the next reconciliation.', [
+        } catch (ReauthRequiredException $exception) {
+            $this->logger->warning('Forward-propagation push to sync plugin "{plugin}" failed: reauthorization required.', [
                 'plugin' => $participantId,
                 'exception' => $exception,
             ]);
 
             return null;
+        } catch (\Throwable $exception) {
+            $this->logger->warning('Forward-propagation push to sync plugin "{plugin}" failed; marking it push_pending for the next reconciliation.', [
+                'plugin' => $participantId,
+                'exception' => $exception,
+            ]);
+
+            $this->markPushPending($anime, $participantId, $existingRow, $entityManager);
+
+            return null;
         }
+
+        $this->clearPushPending($anime, $participantId, $existingRow, $entityManager);
 
         return new ParticipantState(
             $participantId,
             new SyncProjection(WatchStatusMapper::toWatchStatus($confirmed->status), $confirmed->watchedEpisodes),
             $confirmed->updatedAt ?? $updatedAt,
         );
+    }
+
+    private function markPushPending(Anime $anime, string $participantId, ?AnimeSyncState $existingRow, EntityManagerInterface $entityManager): void
+    {
+        if ($existingRow !== null) {
+            $existingRow->markPushPending();
+            $this->stateRepository->save($existingRow, $entityManager);
+
+            return;
+        }
+
+        $this->pendingPushRepository->markPending($anime, $participantId, $entityManager);
+    }
+
+    private function clearPushPending(Anime $anime, string $participantId, ?AnimeSyncState $existingRow, EntityManagerInterface $entityManager): void
+    {
+        if ($existingRow !== null) {
+            if ($existingRow->pushPending) {
+                $existingRow->clearPushPending();
+                $this->stateRepository->save($existingRow, $entityManager);
+            }
+
+            return;
+        }
+
+        // A separate PendingSyncPush marker (see markPushPending()) can only exist when
+        // $existingRow was null at the time the push failed — mirrored here so a row's own flag
+        // and the standalone marker are never both consulted for the same participant.
+        $this->pendingPushRepository->clearPending($anime, $participantId, $entityManager);
     }
 
     /**
