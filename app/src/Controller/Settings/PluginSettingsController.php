@@ -39,7 +39,6 @@ use App\Service\Plugin\PluginUiAssetsResolver;
 use App\Service\Plugin\SettingsPageRegistry;
 use App\Service\Plugin\SyncRegistry;
 use Psr\Log\LoggerInterface;
-use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\Messenger\MessageBusInterface;
@@ -71,10 +70,17 @@ use Twig\Environment;
  * seeded, this route falls through to rendering the plugin's own settings markup as normal — the
  * page stays reachable for re-authorizing an expired OAuth token or changing the plugin's own
  * settings. That first visit dispatches a one-time {@see SyncSeedMessage} (full pull, on the
- * `async` transport so it never blocks this request) and redirects to the sync review page
- * instead of rendering the plugin's own settings markup — {@see \App\Service\Plugin\PullSyncService::pull()}
- * is what actually applies agreements to local and raises review items for genuine conflicts. The
- * same first visit also dispatches {@see BackfillExternalIdMessage} (issue #258), which resolves
+ * `async` transport so it never blocks this request) and renders the plugin's own settings markup
+ * as normal, same as every later visit, rather than redirecting away to the sync review page
+ * (issue #865): `features.sync` can be on before the plugin's own OAuth flow has completed, and a
+ * redirect there would strand the user away from the plugin's settings markup — where its own
+ * authorize button lives — on every visit, since a pull that stops short on missing OAuth resets
+ * `syncSeeded` below and this branch runs again next time. Instead, a host notice rendered above
+ * the plugin's markup (`settings/plugin/page.html.twig`'s `syncReviewUrl`) says the seed has
+ * started and links to the sync review page, shown only for the one visit that just queued the
+ * seed — {@see \App\Service\Plugin\PullSyncService::pull()} is what actually applies agreements to
+ * local and raises review items for genuine conflicts. The same first visit also dispatches
+ * {@see BackfillExternalIdMessage} (issue #258), which resolves
  * and caches this plugin's external id for every already-matching local record; it shares the
  * `syncSeeded` gate above rather than a flag of its own, and its own job-lock
  * ({@see \App\MessageHandler\BackfillExternalIdMessageHandler}) makes a re-dispatch on the
@@ -155,6 +161,7 @@ final class PluginSettingsController
             throw new NotFoundHttpException(\sprintf('Unknown plugin "%s".', $pluginId));
         }
 
+        $syncReviewUrl = null;
         if ($this->syncRegistry->findByPluginId($id) !== null) {
             try {
                 $alreadySeeded = $this->markSeededIfFirstVisit($id);
@@ -175,7 +182,10 @@ final class PluginSettingsController
                 $this->messageBus->dispatch(new SyncSeedMessage((string) $id));
                 $this->messageBus->dispatch(new BackfillExternalIdMessage((string) $id));
 
-                return new RedirectResponse($this->urlGenerator->generate('settings_sync_review_index'));
+                // Only the visit that actually queued the seed shows the notice — a later visit
+                // (syncSeeded already true) renders the plugin's own settings markup with nothing
+                // above it, same as before connect-seed existed.
+                $syncReviewUrl = $this->urlGenerator->generate('settings_sync_review_index');
             }
         }
 
@@ -196,6 +206,7 @@ final class PluginSettingsController
                 'content' => null,
                 'renderFailed' => true,
                 'oauthCallbackWarning' => $this->oauthCallbackWarning(),
+                'syncReviewUrl' => $syncReviewUrl,
             ]));
         }
 
@@ -206,6 +217,7 @@ final class PluginSettingsController
             'content' => $content,
             'renderFailed' => false,
             'oauthCallbackWarning' => $this->oauthCallbackWarning(),
+            'syncReviewUrl' => $syncReviewUrl,
         ]));
     }
 

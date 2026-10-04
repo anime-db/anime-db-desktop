@@ -290,6 +290,8 @@ settings_plugin_page:
     title_suffix: Plugin settings — AnimeDB
     render_error: Failed to display this plugin's settings page. Please try again later.
     oauth_fixed_port_warning: 'Signing in via OAuth is unavailable for some plugins: port 41813 is in use by another program.'
+    sync_seed_started: Initial sync with this plugin has started. Results will appear on the sync review page.
+    sync_seed_started_link: Go to sync review
 
 settings_proxy:
     title: Proxy server — Settings — AnimeDB

@@ -214,6 +214,77 @@ final class PluginSettingsPageRenderingTest extends KernelTestCase
         $this->assertStringNotContainsString('alert-warning', $html);
     }
 
+    /**
+     * Issue #865: the connect-seed notice replaces the old redirect to the sync review page — it
+     * must render above the plugin's own markup and link to that same route.
+     */
+    public function testShowsTheSyncSeedNoticeWithALinkToTheSyncReviewPageWhenSyncReviewUrlIsSet(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession();
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('settings/plugin/page.html.twig', [
+            'pluginId' => 'animedb-shikimori',
+            'pluginName' => 'Shikimori',
+            'pluginUi' => ['css' => [], 'js' => []],
+            'content' => '<form>settings</form>',
+            'renderFailed' => false,
+            'syncReviewUrl' => '/settings/sync-review',
+        ]);
+
+        $this->assertStringContainsString('alert-info', $html);
+        $this->assertStringContainsString('<a href="/settings/sync-review">', $html);
+        $this->assertStringContainsString('Go to sync review', $html);
+        $this->assertStringContainsString('<form>settings</form>', $html);
+    }
+
+    public function testDoesNotShowTheSyncSeedNoticeWhenSyncReviewUrlIsNull(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession();
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('settings/plugin/page.html.twig', [
+            'pluginId' => 'animedb-shikimori',
+            'pluginName' => 'Shikimori',
+            'pluginUi' => ['css' => [], 'js' => []],
+            'content' => '<form>settings</form>',
+            'renderFailed' => false,
+            'syncReviewUrl' => null,
+        ]);
+
+        // The settings sidebar always links to /settings/sync-review (it's one of the sidebar's
+        // permanent nav items, see SettingsNavigationService), so the notice itself — not that
+        // substring — is what must be absent here.
+        $this->assertStringNotContainsString('alert-info', $html);
+        $this->assertStringNotContainsString('Go to sync review', $html);
+    }
+
+    /**
+     * Issue #871's precedent again (`strict_variables` is on, see config/packages/twig.yaml): a
+     * caller that predates `syncReviewUrl` and omits it entirely must not throw.
+     */
+    public function testDoesNotShowTheSyncSeedNoticeWhenTheVariableIsAbsent(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession();
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('settings/plugin/page.html.twig', [
+            'pluginId' => 'animedb-shikimori',
+            'pluginName' => 'Shikimori',
+            'pluginUi' => ['css' => [], 'js' => []],
+            'content' => '<form>settings</form>',
+            'renderFailed' => false,
+        ]);
+
+        $this->assertStringNotContainsString('alert-info', $html);
+    }
+
     private function extractWarningText(string $html): string
     {
         \preg_match('/<p class="alert alert-warning">(.*?)<\/p>/s', $html, $matches);
