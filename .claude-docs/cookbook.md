@@ -34,12 +34,12 @@
 
 ## Фоновая задача (Messenger, async)
 
-**Образец:** `BackfillExternalIdMessage` + `BackfillExternalIdMessageHandler`; для простых — `IndexAnimeMessage`.
+**Образец:** `SyncSeedMessage` + `SyncSeedMessageHandler`; для простых — `IndexAnimeMessage`.
 
 1. Сообщение `app/src/Message/<Name>Message.php` — иммутабельный DTO с полями (id как строка/скаляр).
 2. Обработчик `app/src/MessageHandler/<Name>MessageHandler.php` с атрибутом `#[AsMessageHandler]`.
    - **Ошибки не глотать** try/catch — ретрай отдан транспорту `async` (`retry_strategy`), финальный провал логируется Messenger'ом. Образец — `IndexAnimeMessageHandler`.
-   - Долгая задача по всей БД — постранично (`Paginator`, `flush()`+`clear()` между страницами) + `App\Service\JobLock\JobLockService` (`acquire`/`heartbeat`, ключ `<job>:<id>`) чтобы не параллелить. Образец — `ScanStorageMessageHandler` / `BackfillExternalIdMessageHandler`.
+   - Долгая задача по всей БД — постранично (`Paginator`, `flush()`+`clear()` между страницами) + `App\Service\JobLock\JobLockService` (`acquire`/`heartbeat`, ключ `<job>:<id>`) чтобы не параллелить. Образец — `ScanStorageMessageHandler` / `ExternalIdBackfillService`.
 3. **Зароутить** сообщение на `async` в `app/config/packages/messenger.yaml`, блок `routing:` (рядом с `App\Message\*: async`).
 4. Тест обработчика — `tests/Unit/MessageHandler/`.
 

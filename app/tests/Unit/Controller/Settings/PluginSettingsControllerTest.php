@@ -31,7 +31,6 @@ use AnimeDb\PluginContracts\Settings\SettingsPageInterface;
 use AnimeDb\PluginContracts\Sync\SyncInterface;
 use App\Controller\Settings\PluginSettingsController;
 use App\Entity\ValueObject\PluginId;
-use App\Message\BackfillExternalIdMessage;
 use App\Message\SyncSeedMessage;
 use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\PluginAssetResolver;
@@ -323,7 +322,7 @@ final class PluginSettingsControllerTest extends TestCase
 
         $dispatched = [];
         $messageBus = $this->createMock(MessageBusInterface::class);
-        $messageBus->expects($this->exactly(2))
+        $messageBus->expects($this->once())
             ->method('dispatch')
             ->willReturnCallback(static function (object $message) use (&$dispatched): Envelope {
                 $dispatched[] = $message;
@@ -361,14 +360,14 @@ final class PluginSettingsControllerTest extends TestCase
         $this->assertNotInstanceOf(RedirectResponse::class, $response);
         $this->assertSame(200, $response->getStatusCode());
 
-        $this->assertCount(2, $dispatched);
+        // Issue #867: the external-id backfill runs inside SyncSeedMessageHandler, so the first
+        // visit queues exactly one message and it is the seed.
+        $this->assertCount(1, $dispatched);
         $this->assertInstanceOf(SyncSeedMessage::class, $dispatched[0]);
         $this->assertSame('animedb-shikimori', $dispatched[0]->pluginId);
-        $this->assertInstanceOf(BackfillExternalIdMessage::class, $dispatched[1]);
-        $this->assertSame('animedb-shikimori', $dispatched[1]->pluginId);
     }
 
-    public function testInvokeOnlyDispatchesSyncSeedAndBackfillExternalIdOnceAcrossRepeatedVisits(): void
+    public function testInvokeOnlyDispatchesSyncSeedOnceAcrossRepeatedVisits(): void
     {
         $this->writeManifest('animedb-shikimori', 'Shikimori');
         file_put_contents($this->pluginsDir.'/plugins.json', (string) json_encode([
@@ -385,7 +384,7 @@ final class PluginSettingsControllerTest extends TestCase
         $settingsPages = $this->settingsPages(['animedb-shikimori' => $page]);
 
         $messageBus = $this->createMock(MessageBusInterface::class);
-        $messageBus->expects($this->exactly(2))
+        $messageBus->expects($this->once())
             ->method('dispatch')
             ->willReturnCallback(static fn (object $message): Envelope => new Envelope($message));
 
@@ -484,7 +483,7 @@ final class PluginSettingsControllerTest extends TestCase
         $settingsPages = $this->settingsPages(['animedb-shikimori' => $page]);
 
         $messageBus = $this->createMock(MessageBusInterface::class);
-        $messageBus->expects($this->exactly(4))
+        $messageBus->expects($this->exactly(2))
             ->method('dispatch')
             ->willReturnCallback(static fn (object $message): Envelope => new Envelope($message));
 
