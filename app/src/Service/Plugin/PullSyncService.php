@@ -351,7 +351,18 @@ final class PullSyncService
         // Records this plugin synced before but that are no longer in its list — never deleted
         // automatically, flagged for review (issue #217). Newly created items are keyed in
         // $byExternalId and are present in $presentExternalIds, so they never count as removed.
-        $disappeared = array_diff_key($byExternalId, $presentExternalIds);
+        // Narrowed to records that actually have DeletedFromSourceDetector::hasConfirmedListMembership()
+        // for $pluginId (issue #863): $byExternalId is built from every cached external_id, and a
+        // filler, bulk-fill, or scan can cache one without the source ever having listed the title
+        // as a sync item, so a cached id alone proves nothing about absence from the source's
+        // list — only a prior pull/push reconciliation's snapshot row, or an unresolved
+        // first-contact-divergence review item naming $pluginId as origin (issue #861's pending
+        // state, where that reconciliation deliberately withholds the snapshot row — see
+        // hasConfirmedListMembership()'s own docblock), does.
+        $disappeared = array_filter(
+            array_diff_key($byExternalId, $presentExternalIds),
+            fn (Anime $anime): bool => $this->deletionDetector->hasConfirmedListMembership($anime, (string) $pluginId),
+        );
         $this->deletionDetector->detect($pluginId, $disappeared);
 
         return true;

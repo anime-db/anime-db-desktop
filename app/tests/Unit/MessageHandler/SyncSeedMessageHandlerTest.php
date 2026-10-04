@@ -185,14 +185,17 @@ final class SyncSeedMessageHandlerTest extends TestCase
             new SyncReviewService(new SyncReviewItemRepository($this->entityManager)),
         );
 
+        $animeSyncStateRepository = new AnimeSyncStateRepository($this->entityManager);
+
         $deletionDetector = new DeletedFromSourceDetector(
             $syncRegistry,
             new SyncReviewService(new SyncReviewItemRepository($this->entityManager)),
+            $animeSyncStateRepository,
         );
 
         $convergenceService = new SyncConvergenceService(
             new SyncReconciler(),
-            new AnimeSyncStateRepository($this->entityManager),
+            $animeSyncStateRepository,
             new PendingSyncPushRepository($this->entityManager),
             $syncRegistry,
             new SyncReviewService(new SyncReviewItemRepository($this->entityManager)),
