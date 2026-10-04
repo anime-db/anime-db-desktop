@@ -28,6 +28,7 @@ declare(strict_types=1);
 namespace App\Service\Plugin;
 
 use AnimeDb\PluginContracts\Sync\SyncInterface;
+use App\Entity\AnimeSource;
 use App\Entity\ValueObject\PluginId;
 use App\Repository\AnimeRepository;
 use App\Service\JobLock\JobLockService;
@@ -91,6 +92,11 @@ final class ExternalIdBackfillService
             }
             $lockAcquired = true;
 
+            // (plugin_id, external_id) is UNIQUE: a record whose resolved id is already held by
+            // another one must be skipped, not flushed — a constraint violation would close the
+            // EntityManager and take the whole seed down with it.
+            $taken = $this->animeRepository->findCachedExternalIds($pluginId);
+
             $processed = 0;
             $set = 0;
             $skipped = 0;
@@ -107,7 +113,9 @@ final class ExternalIdBackfillService
                     ++$processed;
 
                     try {
-                        $externalId = $anime->getExternalId($pluginId, $sync);
+                        $externalId = $sync->resolveExternalId(
+                            array_map(static fn (AnimeSource $source): string => $source->url, $anime->getSources()->toArray()),
+                        );
                     } catch (\Throwable $exception) {
                         $this->logger->error('Skipping anime during external id backfill: resolveExternalId() failed.', [
                             'plugin_id' => (string) $pluginId,
@@ -118,7 +126,26 @@ final class ExternalIdBackfillService
                         continue;
                     }
 
-                    $externalId !== null ? ++$set : ++$skipped;
+                    if ($externalId === null) {
+                        ++$skipped;
+
+                        continue;
+                    }
+
+                    if (isset($taken[$externalId])) {
+                        $this->logger->warning('Skipping anime during external id backfill: external id is already held by another record.', [
+                            'plugin_id' => (string) $pluginId,
+                            'anime_id' => $anime->id,
+                            'external_id' => $externalId,
+                        ]);
+                        ++$skipped;
+
+                        continue;
+                    }
+
+                    $anime->rememberExternalId($pluginId, $externalId);
+                    $taken[$externalId] = true;
+                    ++$set;
                 }
 
                 $this->entityManager->flush();

@@ -45,6 +45,7 @@ use Doctrine\ORM\EntityManager;
 use Doctrine\ORM\ORMSetup;
 use Doctrine\ORM\Tools\SchemaTool;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Symfony\Component\Clock\MockClock;
 
@@ -174,6 +175,62 @@ final class ExternalIdBackfillServiceTest extends TestCase
         $this->assertSame('2', $reloadedHealthy->getCachedExternalId(new PluginId(self::PLUGIN_ID)));
     }
 
+    public function testSkipsAnimeWhoseResolvedIdIsAlreadyHeldByAnotherRecord(): void
+    {
+        $holder = new MovieAnime();
+        $holder->setTitle('Cowboy Bebop')->setWatchStatus(WatchStatus::Watching)->addSource('https://shikimori.one/animes/1');
+        $holder->rememberExternalId(new PluginId(self::PLUGIN_ID), '1');
+        $this->entityManager->persist($holder);
+
+        $duplicate = new MovieAnime();
+        $duplicate->setTitle('Cowboy Bebop (copy)')->setWatchStatus(WatchStatus::Watching)->addSource('https://shikimori.one/animes/1');
+        $this->entityManager->persist($duplicate);
+
+        $this->entityManager->flush();
+        $duplicateId = $this->requireId($duplicate);
+
+        $sync = $this->createStub(SyncInterface::class);
+        $sync->method('resolveExternalId')->willReturn('1');
+
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->once())->method('warning')->with(
+            $this->anything(),
+            $this->callback(static fn (array $context): bool => $context['external_id'] === '1' && $context['anime_id'] === $duplicateId && $context['plugin_id'] === self::PLUGIN_ID),
+        );
+
+        $this->newService(null, $logger)->backfill(new PluginId(self::PLUGIN_ID), $sync);
+
+        $this->assertTrue($this->entityManager->isOpen());
+        $this->entityManager->clear();
+        $this->assertNull($this->requireAnime($duplicateId)->getCachedExternalId(new PluginId(self::PLUGIN_ID)));
+    }
+
+    public function testCachesOnlyOneOfTwoNewRecordsResolvingToTheSameId(): void
+    {
+        $first = new MovieAnime();
+        $first->setTitle('Cowboy Bebop')->setWatchStatus(WatchStatus::Watching)->addSource('https://shikimori.one/animes/1');
+        $this->entityManager->persist($first);
+
+        $second = new MovieAnime();
+        $second->setTitle('Cowboy Bebop (copy)')->setWatchStatus(WatchStatus::Watching)->addSource('https://shikimori.one/animes/1');
+        $this->entityManager->persist($second);
+
+        $this->entityManager->flush();
+        $firstId = $this->requireId($first);
+        $secondId = $this->requireId($second);
+
+        $sync = $this->createStub(SyncInterface::class);
+        $sync->method('resolveExternalId')->willReturn('1');
+
+        $this->newService()->backfill(new PluginId(self::PLUGIN_ID), $sync);
+
+        $this->assertTrue($this->entityManager->isOpen());
+        $this->entityManager->clear();
+        $pluginId = new PluginId(self::PLUGIN_ID);
+        $this->assertSame('1', $this->requireAnime($firstId)->getCachedExternalId($pluginId));
+        $this->assertNull($this->requireAnime($secondId)->getCachedExternalId($pluginId));
+    }
+
     private function requireId(Anime $anime): int
     {
         return $anime->id ?? throw new \LogicException('Anime must have an id after persisting.');
@@ -184,13 +241,13 @@ final class ExternalIdBackfillServiceTest extends TestCase
         return $this->entityManager->find(Anime::class, $id) ?? throw new \LogicException(\sprintf('Anime #%d must exist.', $id));
     }
 
-    private function newService(?ProcessLivenessChecker $livenessChecker = null): ExternalIdBackfillService
+    private function newService(?ProcessLivenessChecker $livenessChecker = null, ?LoggerInterface $logger = null): ExternalIdBackfillService
     {
         return new ExternalIdBackfillService(
             $this->entityManager,
             new AnimeRepository($this->entityManager),
             $this->newJobLockService($livenessChecker),
-            new NullLogger(),
+            $logger ?? new NullLogger(),
         );
     }
 

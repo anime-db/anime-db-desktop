@@ -579,6 +579,32 @@ class AnimeRepository
     }
 
     /**
+     * Only the external ids already cached for $pluginId, without loading any Anime — the
+     * lightweight "which (plugin, external id) pairs are taken" lookup for
+     * ExternalIdBackfillService, so it can avoid violating the UNIQUE(plugin_id, external_id)
+     * constraint on anime_external_id.
+     *
+     * @return array<string, true> external id => true
+     */
+    public function findCachedExternalIds(PluginId $pluginId): array
+    {
+        /** @var list<array{externalId: string}> $rows */
+        $rows = $this->entityManager->getRepository(AnimeExternalId::class)->createQueryBuilder('e')
+            ->select('e.externalId')
+            ->andWhere('e.pluginId = :pluginId')
+            ->setParameter('pluginId', (string) $pluginId)
+            ->getQuery()
+            ->getArrayResult();
+
+        $ids = [];
+        foreach ($rows as $row) {
+            $ids[(string) $row['externalId']] = true;
+        }
+
+        return $ids;
+    }
+
+    /**
      * A single page of the whole catalog, ordered by id, with $sources eagerly joined — what
      * ExternalIdBackfillService (issue #258) walks page by page rather than loading the
      * whole catalog into memory at once, same LIMIT/OFFSET + Paginator pattern as
