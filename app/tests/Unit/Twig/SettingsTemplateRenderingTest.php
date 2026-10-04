@@ -627,6 +627,53 @@ final class SettingsTemplateRenderingTest extends KernelTestCase
         $this->assertStringContainsString('разрешено автоматически', $html);
     }
 
+    /**
+     * Acceptance (issue #861): a first-contact divergence review-item carries no
+     * 'winnerStatus'/'winnerWatchedEpisodes' (the engine picked no best-effort winner — nothing
+     * was applied to local, nothing was pushed to the origin), so neither candidate must render
+     * with the "applied automatically" label the ordinary NeedsCorrection conflict gets.
+     */
+    public function testSyncReviewIndexRendersFirstContactDivergenceWithoutAutoAppliedWinnerMarked(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession();
+        /** @var LocaleSwitcher $localeSwitcher */
+        $localeSwitcher = self::getContainer()->get(LocaleSwitcher::class);
+        $localeSwitcher->setLocale('ru');
+
+        $item = new SyncReviewItem(SyncReviewItemKind::NeedsCorrection, [
+            'anime_id' => 1,
+            'origin_participant_id' => 'animedb-mal',
+            'participants' => ['local', 'animedb-mal'],
+            'candidates' => [
+                ['participant_id' => 'local', 'status' => 'completed', 'watched_episodes' => 12, 'updated_at' => 1735689600],
+                ['participant_id' => 'animedb-mal', 'status' => 'watching', 'watched_episodes' => 5, 'updated_at' => 1735776000],
+            ],
+        ]);
+        (new \ReflectionProperty(SyncReviewItem::class, 'id'))->setValue($item, 4);
+
+        $anime = new TvAnime();
+        $anime->setTitle('Trigun');
+        (new \ReflectionProperty(Anime::class, 'id'))->setValue($anime, 1);
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('settings/sync_review/index.html.twig', [
+            'items' => [$item],
+            'duplicateClusters' => [4 => []],
+            'needsCorrectionDetails' => [4 => [
+                'anime' => $anime,
+                'candidates' => $item->payload['candidates'],
+                'winnerStatus' => null,
+                'winnerWatchedEpisodes' => null,
+            ]],
+        ]);
+
+        $this->assertStringContainsString('value="local"', $html);
+        $this->assertStringContainsString('value="animedb-mal"', $html);
+        $this->assertStringNotContainsString('разрешено автоматически', $html);
+    }
+
     public function testProxyIndexRendersWithoutErrors(): void
     {
         self::bootKernel();
