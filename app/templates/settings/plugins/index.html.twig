@@ -26,6 +26,10 @@
     <div class="py-4">
         <h1>{{ 'settings_plugins.installed_heading'|trans }}</h1>
 
+        {% if error == 'busy_retry' %}
+            <p class="alert alert-danger">{{ 'settings_plugins.busy_retry_error'|trans }}</p>
+        {% endif %}
+
         {% if installedPluginId is not null %}
             <p class="alert alert-success">{{ 'settings_plugins.install_success'|trans({'%pluginId%': installedPluginId}) }}</p>
         {% endif %}
@@ -108,6 +112,16 @@
                                             <a href="{{ path('settings_plugin_page', {pluginId: plugin.id}) }}" class="btn btn-outline-secondary btn-sm btn-icon" title="{{ 'settings_plugins.settings_link'|trans }}" aria-label="{{ 'settings_plugins.settings_link'|trans }}">
                                                 {{ icon('gear') }}
                                             </a>
+                                        {% endif %}
+                                        {% if (plugin.id ~ '') in syncPluginIds %}
+                                            {% set syncActive = (plugin.id ~ '') in syncActiveIds %}
+                                            <form method="post" action="{{ path('settings_plugins_sync_toggle', {pluginId: plugin.id}) }}">
+                                                <input type="hidden" name="_token" value="{{ csrf_token('settings_plugin_sync_toggle_' ~ plugin.id) }}">
+                                                <input type="hidden" name="active" value="{{ syncActive ? '0' : '1' }}">
+                                                <button type="submit" class="btn btn-sm {{ syncActive ? 'btn-success' : 'btn-outline-secondary' }}" role="switch" aria-checked="{{ syncActive ? 'true' : 'false' }}" data-sync-toggle>
+                                                    {{ 'settings_plugins.sync_toggle'|trans }}: {{ (syncActive ? 'settings_plugins.sync_on' : 'settings_plugins.sync_off')|trans }}
+                                                </button>
+                                            </form>
                                         {% endif %}
                                         <form method="post" action="{{ path('settings_plugins_remove', {pluginId: plugin.id}) }}">
                                             <input type="hidden" name="_token" value="{{ csrf_token('settings_plugins_remove_' ~ plugin.id) }}">

@@ -37,12 +37,14 @@ use App\Service\Plugin\Exception\IncompatiblePluginCoreVersionException;
 use App\Service\Plugin\Exception\InvalidInstalledPluginException;
 use App\Service\Plugin\Exception\PluginAlreadyInstalledException;
 use App\Service\Plugin\Exception\PluginInstallException;
+use App\Service\Plugin\Exception\PluginsConfigStoreLockedException;
 use App\Service\Plugin\Exception\PluginSyntaxErrorException;
 use App\Service\Plugin\InstalledPlugin;
 use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\PluginRemover;
 use App\Service\Plugin\PluginSyntaxError;
 use App\Service\Plugin\SettingsPageRegistry;
+use App\Service\Plugin\SyncRegistry;
 use App\Service\Plugin\ZipPluginInstaller;
 use App\Service\Translation\TranslationCoverageService;
 use App\Service\WsPublisher;
@@ -107,6 +109,7 @@ final class PluginController
         private readonly UrlGeneratorInterface $urlGenerator,
         private readonly Environment $twig,
         private readonly MarketUpdateResolver $updateResolver,
+        private readonly SyncRegistry $syncRegistry,
         private readonly LoggerInterface $logger = new NullLogger(),
     ) {
     }
@@ -117,13 +120,51 @@ final class PluginController
         $installedPluginId = (string) $request->query->get('installed', '');
         $updatedPluginId = (string) $request->query->get('updated', '');
         $removedPluginId = (string) $request->query->get('removed', '');
+        $error = (string) $request->query->get('error', '');
 
         return $this->renderIndex(
+            error: $error !== '' ? $error : null,
             currentLocale: $request->getLocale(),
             installedPluginId: $installedPluginId !== '' ? $installedPluginId : null,
             updatedPluginId: $updatedPluginId !== '' ? $updatedPluginId : null,
             removedPluginId: $removedPluginId !== '' ? $removedPluginId : null,
         );
+    }
+
+    /**
+     * Switches `features.sync` of a single plugin (the only writer of that flag). Offered only for
+     * an enabled plugin implementing {@see \AnimeDb\PluginContracts\Sync\SyncInterface}: the
+     * plugin's settings page ({@see SettingsPageRegistry}) exists only while it is enabled, and
+     * turning sync on lands there for the connect-seed and authorization. Turning it off touches
+     * nothing but the flag, so `syncSeeded` and all synced data stay.
+     */
+    #[Route('/settings/plugins/{pluginId}/sync', name: 'settings_plugins_sync_toggle', methods: ['POST'])]
+    public function toggleSync(string $pluginId, Request $request): RedirectResponse
+    {
+        $this->assertValidCsrfToken('settings_plugin_sync_toggle_'.$pluginId, $request);
+
+        try {
+            $id = new PluginId($pluginId);
+        } catch (InvalidPluginIdException) {
+            throw new NotFoundHttpException(\sprintf('Unknown plugin "%s".', $pluginId));
+        }
+
+        $plugin = $this->installedPlugins->get($id);
+        if ($plugin === null || !$plugin->enabled || !$this->syncRegistry->supports($id)) {
+            throw new NotFoundHttpException(\sprintf('Plugin "%s" has no sync switch.', $pluginId));
+        }
+
+        $active = (string) $request->request->get('active', '0') === '1';
+
+        try {
+            $this->syncRegistry->setEnabled($id, $active);
+        } catch (PluginsConfigStoreLockedException) {
+            return new RedirectResponse($this->urlGenerator->generate('settings_plugins_index', ['error' => 'busy_retry']));
+        }
+
+        return new RedirectResponse($active
+            ? $this->urlGenerator->generate('settings_plugin_page', ['pluginId' => (string) $id])
+            : $this->urlGenerator->generate('settings_plugins_index'));
     }
 
     /**
@@ -233,6 +274,7 @@ final class PluginController
     }
 
     private function renderIndex(
+        ?string $error = null,
         ?string $currentLocale = null,
         ?string $installedPluginId = null,
         ?string $updatedPluginId = null,
@@ -242,7 +284,23 @@ final class PluginController
 
         [$translationCoverage, $pluginLocales] = $this->translationDataByPlugin($installedPlugins, $currentLocale);
 
+        $syncPluginIds = [];
+        $syncActiveIds = [];
+        foreach ($installedPlugins as $plugin) {
+            if (!$plugin->enabled || !$this->syncRegistry->supports($plugin->id)) {
+                continue;
+            }
+
+            $syncPluginIds[] = (string) $plugin->id;
+            if ($this->syncRegistry->isEnabled($plugin->id)) {
+                $syncActiveIds[] = (string) $plugin->id;
+            }
+        }
+
         return new Response($this->twig->render('settings/plugins/index.html.twig', [
+            'syncPluginIds' => $syncPluginIds,
+            'syncActiveIds' => $syncActiveIds,
+            'error' => $error,
             'installedPlugins' => $installedPlugins,
             'settingsPluginIds' => $this->settingsPages->enabledPluginIdsWithSettingsPage(),
             'translationCoverage' => $translationCoverage,

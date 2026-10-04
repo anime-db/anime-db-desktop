@@ -28,6 +28,7 @@ declare(strict_types=1);
 namespace App\Tests\Unit\Controller\Settings;
 
 use AnimeDb\PluginContracts\Settings\SettingsPageInterface;
+use AnimeDb\PluginContracts\Sync\SyncInterface;
 use App\Controller\Settings\PluginController;
 use App\Entity\ValueObject\PluginId;
 use App\Service\Market\MarketSnapshot;
@@ -39,6 +40,7 @@ use App\Service\Plugin\PluginCacheWarmer;
 use App\Service\Plugin\PluginRemover;
 use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Plugin\SettingsPageRegistry;
+use App\Service\Plugin\SyncRegistry;
 use App\Service\Plugin\ZipPluginInstaller;
 use App\Service\Translation\TranslationCoverageService;
 use App\Service\WsPublisher;
@@ -134,6 +136,7 @@ final class PluginControllerTest extends TestCase
         ?UrlGeneratorInterface $urlGenerator = null,
         ?Environment $twig = null,
         ?MarketSnapshotCache $snapshotCache = null,
+        ?SyncRegistry $syncRegistry = null,
     ): PluginController {
         return new PluginController(
             $this->registry,
@@ -146,7 +149,38 @@ final class PluginControllerTest extends TestCase
             $urlGenerator ?? $this->stubUrlGenerator(),
             $twig ?? $this->createStub(Environment::class),
             new MarketUpdateResolver($snapshotCache ?? new MarketSnapshotCache($this->rootDir.'/market-snapshot-cache.json'), self::CORE_VERSION),
+            $syncRegistry ?? new SyncRegistry([], new PluginsConfigStore($this->pluginsDir.'/plugins.json')),
         );
+    }
+
+    /** @param list<string> $syncPluginIds */
+    private function syncRegistry(array $syncPluginIds): SyncRegistry
+    {
+        $syncs = [];
+        foreach ($syncPluginIds as $id) {
+            $syncs[$id] = $this->createStub(SyncInterface::class);
+        }
+
+        return new SyncRegistry($syncs, new PluginsConfigStore($this->pluginsDir.'/plugins.json'));
+    }
+
+    /** @return array<string, mixed> */
+    private function readPluginsJson(): array
+    {
+        $path = $this->pluginsDir.'/plugins.json';
+
+        return is_file($path) ? (array) json_decode((string) file_get_contents($path), true) : [];
+    }
+
+    /** @param array<string, mixed> $config */
+    private function writePluginsJson(array $config): void
+    {
+        file_put_contents($this->pluginsDir.'/plugins.json', (string) json_encode($config));
+    }
+
+    private function syncToggleRequest(string $pluginId, string $active): Request
+    {
+        return Request::create('/settings/plugins/'.$pluginId.'/sync', 'POST', ['_token' => 'token', 'active' => $active]);
     }
 
     private function writeManifest(string $pluginId, string $name): void
@@ -811,6 +845,184 @@ final class PluginControllerTest extends TestCase
             'not a valid id',
             Request::create('/settings/plugins/not%20a%20valid%20id/remove', 'POST', ['_token' => 'token']),
         );
+    }
+
+    /**
+     * @param list<string> $syncPluginIds
+     *
+     * @return array{0: list<string>, 1: list<string>} syncPluginIds / syncActiveIds given to the template
+     */
+    private function renderIndexSyncIds(array $syncPluginIds): array
+    {
+        $captured = ['ids' => [], 'active' => []];
+        $twig = $this->createStub(Environment::class);
+        $twig->method('render')->willReturnCallback(static function (string $template, array $params) use (&$captured): string {
+            $captured = ['ids' => $params['syncPluginIds'], 'active' => $params['syncActiveIds']];
+
+            return '';
+        });
+
+        $this->controller(twig: $twig, syncRegistry: $this->syncRegistry($syncPluginIds))->index(Request::create('/settings/plugins'));
+
+        return [$captured['ids'], $captured['active']];
+    }
+
+    public function testIndexOffersTheSyncSwitchOnlyForAnEnabledPluginImplementingSyncInterface(): void
+    {
+        $this->writeManifest('animedb-shikimori', 'Shikimori');
+        $this->writeManifest('animedb-anilist', 'AniList');
+        $this->writeManifest('animedb-mal', 'MyAnimeList');
+        $this->writePluginsJson(['animedb-mal' => ['enabled' => false]]);
+        $this->registry->reconcile();
+
+        [$syncPluginIds] = $this->renderIndexSyncIds(['animedb-shikimori', 'animedb-mal']);
+
+        $this->assertSame(['animedb-shikimori'], $syncPluginIds);
+    }
+
+    public function testIndexShowsTheSyncSwitchOffForAPluginWithoutAPluginsJsonEntry(): void
+    {
+        $this->writeManifest('animedb-shikimori', 'Shikimori');
+        $this->registry->reconcile();
+        $registry = $this->syncRegistry(['animedb-shikimori']);
+
+        [$syncPluginIds, $syncActiveIds] = $this->renderIndexSyncIds(['animedb-shikimori']);
+
+        $this->assertSame(['animedb-shikimori'], $syncPluginIds);
+        $this->assertSame([], $syncActiveIds);
+        $this->assertNull($registry->findByPluginId(new PluginId('animedb-shikimori')));
+    }
+
+    public function testIndexShowsTheSyncSwitchOnWhenFeaturesSyncIsTrue(): void
+    {
+        $this->writeManifest('animedb-shikimori', 'Shikimori');
+        $this->writePluginsJson(['animedb-shikimori' => ['features' => ['sync' => true]]]);
+        $this->registry->reconcile();
+
+        [, $syncActiveIds] = $this->renderIndexSyncIds(['animedb-shikimori']);
+
+        $this->assertSame(['animedb-shikimori'], $syncActiveIds);
+    }
+
+    public function testToggleSyncOnWritesFeaturesSyncAndRedirectsToThePluginSettingsPage(): void
+    {
+        $this->writeManifest('animedb-shikimori', 'Shikimori');
+        $this->registry->reconcile();
+
+        $urlGenerator = $this->createMock(UrlGeneratorInterface::class);
+        $urlGenerator->expects($this->once())
+            ->method('generate')
+            ->with('settings_plugin_page', ['pluginId' => 'animedb-shikimori'])
+            ->willReturn('/settings/plugins/animedb-shikimori');
+
+        $response = $this->controller(urlGenerator: $urlGenerator, syncRegistry: $this->syncRegistry(['animedb-shikimori']))
+            ->toggleSync('animedb-shikimori', $this->syncToggleRequest('animedb-shikimori', '1'));
+
+        $this->assertSame('/settings/plugins/animedb-shikimori', $response->getTargetUrl());
+        $this->assertTrue($this->readPluginsJson()['animedb-shikimori']['features']['sync']);
+    }
+
+    public function testToggleSyncOffKeepsSyncSeededAndOtherSettingsAndRedirectsToThePluginsPage(): void
+    {
+        $this->writeManifest('animedb-shikimori', 'Shikimori');
+        $this->writePluginsJson(['animedb-shikimori' => [
+            'enabled' => true,
+            'syncSeeded' => true,
+            'token' => 'abc',
+            'features' => ['sync' => true, 'filler' => false],
+        ]]);
+        $this->registry->reconcile();
+
+        $urlGenerator = $this->createMock(UrlGeneratorInterface::class);
+        $urlGenerator->expects($this->once())
+            ->method('generate')
+            ->with('settings_plugins_index')
+            ->willReturn('/settings/plugins');
+
+        $response = $this->controller(urlGenerator: $urlGenerator, syncRegistry: $this->syncRegistry(['animedb-shikimori']))
+            ->toggleSync('animedb-shikimori', $this->syncToggleRequest('animedb-shikimori', '0'));
+
+        $this->assertSame('/settings/plugins', $response->getTargetUrl());
+        $this->assertSame([
+            'enabled' => true,
+            'syncSeeded' => true,
+            'token' => 'abc',
+            'features' => ['sync' => false, 'filler' => false],
+        ], $this->readPluginsJson()['animedb-shikimori']);
+    }
+
+    public function testToggleSyncRejectsInvalidCsrfTokenAndLeavesPluginsJsonUntouched(): void
+    {
+        $this->writeManifest('animedb-shikimori', 'Shikimori');
+        $this->registry->reconcile();
+        $before = $this->readPluginsJson();
+
+        $csrf = $this->createStub(CsrfTokenManagerInterface::class);
+        $csrf->method('isTokenValid')->willReturn(false);
+
+        try {
+            $this->controller(csrfTokenManager: $csrf, syncRegistry: $this->syncRegistry(['animedb-shikimori']))
+                ->toggleSync('animedb-shikimori', $this->syncToggleRequest('animedb-shikimori', '1'));
+            $this->fail('Expected BadRequestHttpException.');
+        } catch (BadRequestHttpException) {
+            $this->assertSame($before, $this->readPluginsJson());
+        }
+    }
+
+    public function testToggleSyncRejectsAPluginWithoutSyncInterface(): void
+    {
+        $this->writeManifest('animedb-shikimori', 'Shikimori');
+        $this->registry->reconcile();
+        $before = $this->readPluginsJson();
+
+        try {
+            $this->controller()->toggleSync('animedb-shikimori', $this->syncToggleRequest('animedb-shikimori', '1'));
+            $this->fail('Expected NotFoundHttpException.');
+        } catch (NotFoundHttpException) {
+            $this->assertSame($before, $this->readPluginsJson());
+        }
+    }
+
+    public function testToggleSyncRejectsADisabledPlugin(): void
+    {
+        $this->writeManifest('animedb-shikimori', 'Shikimori');
+        $this->writePluginsJson(['animedb-shikimori' => ['enabled' => false]]);
+        $this->registry->reconcile();
+        $before = $this->readPluginsJson();
+
+        try {
+            $this->controller(syncRegistry: $this->syncRegistry(['animedb-shikimori']))
+                ->toggleSync('animedb-shikimori', $this->syncToggleRequest('animedb-shikimori', '1'));
+            $this->fail('Expected NotFoundHttpException.');
+        } catch (NotFoundHttpException) {
+            $this->assertSame($before, $this->readPluginsJson());
+        }
+    }
+
+    public function testToggleSyncRedirectsWithBusyRetryErrorWhenTheLockIsHeld(): void
+    {
+        $this->writeManifest('animedb-shikimori', 'Shikimori');
+        $this->registry->reconcile();
+
+        $urlGenerator = $this->createMock(UrlGeneratorInterface::class);
+        $urlGenerator->expects($this->once())
+            ->method('generate')
+            ->with('settings_plugins_index', ['error' => 'busy_retry'])
+            ->willReturn('/settings/plugins?error=busy_retry');
+
+        $lockHandle = fopen($this->pluginsDir.'/plugins.json.lock', 'c');
+        $this->assertNotFalse($lockHandle);
+        $this->assertTrue(flock($lockHandle, \LOCK_EX));
+
+        try {
+            $response = $this->controller(urlGenerator: $urlGenerator, syncRegistry: $this->syncRegistry(['animedb-shikimori']))
+                ->toggleSync('animedb-shikimori', $this->syncToggleRequest('animedb-shikimori', '1'));
+        } finally {
+            flock($lockHandle, \LOCK_UN);
+            fclose($lockHandle);
+        }
+
+        $this->assertSame('/settings/plugins?error=busy_retry', $response->getTargetUrl());
     }
 
     private function removeDirectory(string $dir): void

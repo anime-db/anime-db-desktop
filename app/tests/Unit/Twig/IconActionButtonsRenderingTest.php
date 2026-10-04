@@ -146,6 +146,9 @@ final class IconActionButtonsRenderingTest extends KernelTestCase
         $html = $twig->render('settings/plugins/index.html.twig', [
             'installedPlugins' => [$plugin],
             'settingsPluginIds' => ['animedb-shikimori'],
+            'syncPluginIds' => [],
+            'syncActiveIds' => [],
+            'error' => null,
             'translationCoverage' => [],
             'pluginLocales' => [],
             'marketUpdates' => [],
