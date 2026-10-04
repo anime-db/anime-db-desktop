@@ -66,10 +66,12 @@ use App\Service\Sync\SyncReviewService;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\EntityManager;
+use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Events;
 use Doctrine\ORM\ORMSetup;
 use Doctrine\ORM\Tools\SchemaTool;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Symfony\Component\Cache\Adapter\ArrayAdapter;
 use Symfony\Component\Messenger\MessageBusInterface;
@@ -109,9 +111,21 @@ final class PullSyncServiceTest extends TestCase
         $this->pluginId = new PluginId('animedb-shikimori');
     }
 
-    /** @param array<string, SyncInterface> $otherSyncs active plugins other than $this->pluginId, for forward-propagation coverage */
-    private function newService(EntityManager $entityManager, AnimeRepository $animeRepository, array $otherSyncs = []): PullSyncService
-    {
+    /**
+     * @param array<string, SyncInterface> $otherSyncs      active plugins other than $this->pluginId, for forward-propagation coverage
+     * @param ?AnimeSyncStateRepository    $stateRepository override for the convergence engine's snapshot storage —
+     *                                                      {@see throwingStateRepository()} for simulating a per-item failure
+     * @param ?LoggerInterface             $logger          override for PullSyncService's own logger (not the convergence
+     *                                                      engine's, which always gets a NullLogger) — used to assert on the
+     *                                                      per-item-failure warning (issue #859)
+     */
+    private function newService(
+        EntityManager $entityManager,
+        AnimeRepository $animeRepository,
+        array $otherSyncs = [],
+        ?AnimeSyncStateRepository $stateRepository = null,
+        ?LoggerInterface $logger = null,
+    ): PullSyncService {
         $bulkFillerService = new BulkFillerService(
             // Never consulted by fillNewFrom() — it works off the sync plugin instance directly.
             new FillerRegistry([], new PluginsConfigStore(sys_get_temp_dir().'/anime-pull-sync-test-'.uniqid().'.json')),
@@ -157,13 +171,128 @@ final class PullSyncServiceTest extends TestCase
 
         $convergenceService = new SyncConvergenceService(
             new SyncReconciler(),
-            new AnimeSyncStateRepository($entityManager),
+            $stateRepository ?? new AnimeSyncStateRepository($entityManager),
             $syncRegistry,
             new SyncReviewService(new SyncReviewItemRepository($entityManager)),
             new NullLogger(),
         );
 
-        return new PullSyncService($entityManager, $animeRepository, $bulkFillerService, $duplicateDetector, $deletionDetector, $convergenceService, new NullLogger());
+        return new PullSyncService($entityManager, $animeRepository, $bulkFillerService, $duplicateDetector, $deletionDetector, $convergenceService, $logger ?? new NullLogger());
+    }
+
+    /**
+     * A test double for the per-item isolation coverage (issue #859): throws $exception from
+     * either {@see AnimeSyncStateRepository::findByAnime()} (simulating a failure early in
+     * {@see SyncConvergenceService::reconcilePulledItem()}, before it has
+     * mutated anything) or from {@see AnimeSyncStateRepository::save()} (simulating a failure
+     * writing the snapshot row, after {@see Anime::applyWatchProgress()} has already
+     * been applied in memory) — whichever method the pulled item's own processing reaches first
+     * for $poisonedAnimeId specifically; every other anime is passed straight through to the
+     * real repository. $closeEntityManager mirrors Doctrine's own reaction to a genuinely failed
+     * flush() (see PullSyncService's class docblock, "Create-conflict recovery"), since save()'s
+     * real implementation calls flush() itself.
+     */
+    private function throwingStateRepository(EntityManager $entityManager, int $poisonedAnimeId, \Throwable $exception, bool $onSave = false, bool $closeEntityManager = false): AnimeSyncStateRepository
+    {
+        return new class($entityManager, $poisonedAnimeId, $exception, $onSave, $closeEntityManager) extends AnimeSyncStateRepository {
+            public function __construct(
+                EntityManagerInterface $entityManager,
+                private readonly int $poisonedAnimeId,
+                private readonly \Throwable $exception,
+                private readonly bool $onSave,
+                private readonly bool $closeEntityManager,
+            ) {
+                parent::__construct($entityManager);
+            }
+
+            public function findByAnime(Anime $anime, ?EntityManagerInterface $entityManager = null): array
+            {
+                if (!$this->onSave && $anime->id === $this->poisonedAnimeId) {
+                    $this->fail($entityManager);
+                }
+
+                return parent::findByAnime($anime, $entityManager);
+            }
+
+            public function save(AnimeSyncState $state, ?EntityManagerInterface $entityManager = null): void
+            {
+                if ($this->onSave && $state->anime->id === $this->poisonedAnimeId) {
+                    $this->fail($entityManager);
+                }
+
+                parent::save($state, $entityManager);
+            }
+
+            private function fail(?EntityManagerInterface $entityManager): never
+            {
+                if ($this->closeEntityManager && $entityManager !== null) {
+                    $entityManager->close();
+                }
+
+                throw $this->exception;
+            }
+        };
+    }
+
+    /**
+     * Like {@see syncFillerStub()}, but with per-externalId findById() results/failures — the
+     * per-item isolation coverage (issue #859) needs one item's create to fail while another's
+     * succeeds in the same run, which a single shared $data return can't express.
+     *
+     * @param iterable<SyncItem>                            $pull
+     * @param array<int|string, PluginAnimeData|\Throwable> $dataByExternalId
+     * @param list<string>                                  $fillableFields
+     */
+    private function syncFillerStubPerItem(iterable $pull, array $dataByExternalId, array $fillableFields = []): SyncInterface&FillerInterface
+    {
+        return new class($pull, $dataByExternalId, $fillableFields) implements SyncInterface, FillerInterface {
+            /**
+             * @param iterable<SyncItem>                            $pull
+             * @param array<int|string, PluginAnimeData|\Throwable> $dataByExternalId
+             * @param list<string>                                  $fillableFields
+             */
+            public function __construct(
+                private readonly iterable $pull,
+                private readonly array $dataByExternalId,
+                private readonly array $fillableFields,
+            ) {
+            }
+
+            public function resolveExternalId(array $urls): ?string
+            {
+                return null;
+            }
+
+            public function push(SyncItem $item): SyncItem
+            {
+                return $item;
+            }
+
+            public function pull(): iterable
+            {
+                return $this->pull;
+            }
+
+            public function find(string $name, ?callable $onHeartbeat = null): array
+            {
+                return [];
+            }
+
+            public function findById(string $externalId): ?PluginAnimeData
+            {
+                $entry = $this->dataByExternalId[$externalId] ?? null;
+                if ($entry instanceof \Throwable) {
+                    throw $entry;
+                }
+
+                return $entry;
+            }
+
+            public function getFillableFields(): array
+            {
+                return $this->fillableFields;
+            }
+        };
     }
 
     /**
@@ -693,17 +822,468 @@ final class PullSyncServiceTest extends TestCase
 
     /**
      * Unlike ReauthRequiredException, a transient failure (network error, external source
-     * down, ...) must still propagate uncaught, so a caller's own retry logic sees it.
+     * down, ...) must still propagate uncaught, so a caller's own retry logic sees it — this is
+     * deliberately not covered by the per-item isolation added for issue #859: the iterator
+     * itself failing (as opposed to a single yielded item's own processing) means the rest of
+     * the source's list is genuinely unreachable, not just one bad item to skip over.
      */
     public function testLetsATransientPullFailurePropagate(): void
     {
+        $anime = new TvAnime();
+        $anime->setTitle('Trigun')->setWatchStatus(WatchStatus::Plan);
+        $anime->rememberExternalId($this->pluginId, '77');
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+
         $sync = $this->createMock(SyncInterface::class);
         $sync->expects($this->once())->method('pull')->willThrowException(new \RuntimeException('Source is down.'));
 
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('Source is down.');
+        try {
+            $this->service->pull($this->pluginId, $sync);
+            $this->fail('Expected the iterator\'s own RuntimeException to propagate.');
+        } catch (\RuntimeException $exception) {
+            $this->assertSame('Source is down.', $exception->getMessage());
+        }
 
-        $this->service->pull($this->pluginId, $sync);
+        // The iterator failed before this run ever saw a single item, so the pre-existing
+        // 'Trigun' must not be flagged "disappeared from source" — DeletedFromSourceDetector
+        // (and CrossVendorDuplicateDetector) must not run at all for this run.
+        $this->assertCount(0, $this->entityManager->getRepository(SyncReviewItem::class)->findAll());
+    }
+
+    /**
+     * Criterion 1 (issue #859): an exception from {@see SyncConvergenceService::reconcilePulledItem()}
+     * (here, its very first call, {@see AnimeSyncStateRepository::findByAnime()}) must not abort
+     * the run — the item is skipped, but items before and after it in the source's list are
+     * still applied, and pull() still reports a completed run.
+     */
+    public function testSkipsAnItemThatFailsDuringReconciliationButStillAppliesTheOthers(): void
+    {
+        $before = new TvAnime();
+        $before->setTitle('Cowboy Bebop')->setWatchStatus(WatchStatus::Plan);
+        $before->rememberExternalId($this->pluginId, '1');
+        $this->entityManager->persist($before);
+
+        $failing = new TvAnime();
+        $failing->setTitle('Bleach')->setWatchStatus(WatchStatus::Plan);
+        $failing->rememberExternalId($this->pluginId, '2');
+        $this->entityManager->persist($failing);
+
+        $after = new TvAnime();
+        $after->setTitle('Trigun')->setWatchStatus(WatchStatus::Plan);
+        $after->rememberExternalId($this->pluginId, '3');
+        $this->entityManager->persist($after);
+
+        $this->entityManager->flush();
+        $failingId = $failing->id ?? throw new \LogicException('id must be set after flush');
+
+        $stateRepository = $this->throwingStateRepository($this->entityManager, $failingId, new \RuntimeException('Simulated reconciliation failure.'));
+        $service = $this->newService($this->entityManager, new AnimeRepository($this->entityManager), stateRepository: $stateRepository);
+
+        $sync = $this->createMock(SyncInterface::class);
+        $sync->expects($this->once())->method('pull')->willReturn([
+            new SyncItem('1', SyncStatus::Watching, 'Cowboy Bebop'),
+            new SyncItem('2', SyncStatus::Watching, 'Bleach'),
+            new SyncItem('3', SyncStatus::Watching, 'Trigun'),
+        ]);
+
+        $completed = $service->pull($this->pluginId, $sync);
+
+        $this->assertTrue($completed);
+        $this->assertSame(WatchStatus::Watching, $before->getWatchStatus());
+        $this->assertSame(WatchStatus::Plan, $failing->getWatchStatus());
+        $this->assertSame(WatchStatus::Watching, $after->getWatchStatus());
+    }
+
+    /**
+     * Criterion 2 (issue #859): an exception while creating a brand-new item (here, the sync
+     * plugin's own findById(), called from {@see BulkFillerService::fillNewFrom()}) must not
+     * abort the run — other new items in the same list are still created.
+     */
+    public function testSkipsAnItemThatFailsWhileCreatingANewAnimeButStillAppliesTheOthers(): void
+    {
+        $sync = $this->syncFillerStubPerItem(
+            [
+                new SyncItem('1', SyncStatus::Watching, 'Trigun'),
+                new SyncItem('2', SyncStatus::Plan, 'Bleach'),
+            ],
+            dataByExternalId: [
+                '1' => new \RuntimeException('Simulated plugin findById() failure.'),
+                '2' => new PluginAnimeData(title: 'Bleach', type: ContractsAnimeType::Tv),
+            ],
+            fillableFields: ['title', 'type'],
+        );
+
+        $completed = $this->service->pull($this->pluginId, $sync);
+
+        $this->assertTrue($completed);
+        $created = $this->allAnime();
+        $this->assertCount(1, $created);
+        $this->assertSame('Bleach', $created[0]->getTitle());
+    }
+
+    /**
+     * Criterion 3 (issue #859): PullSyncService's own warning for a skipped item must identify
+     * which plugin and which external id failed, and carry the exception — the log line a
+     * server operator (or a future periodic-pull job, issue #870) would need to find the one bad
+     * title in a list of hundreds.
+     */
+    public function testLogsAWarningIdentifyingThePluginAndExternalIdOfASkippedItem(): void
+    {
+        $anime = new TvAnime();
+        $anime->setTitle('Trigun')->setWatchStatus(WatchStatus::Plan);
+        $anime->rememberExternalId($this->pluginId, '42');
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+        $animeId = $anime->id ?? throw new \LogicException('id must be set after flush');
+
+        $exception = new \RuntimeException('Simulated reconciliation failure.');
+        $expectedPluginId = (string) $this->pluginId;
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->once())
+            ->method('warning')
+            ->with(
+                $this->isType('string'),
+                $this->callback(static function (array $context) use ($expectedPluginId, $exception): bool {
+                    return ($context['pluginId'] ?? null) === $expectedPluginId
+                        && ($context['externalId'] ?? null) === '42'
+                        && ($context['exception'] ?? null) === $exception;
+                }),
+            );
+
+        $stateRepository = $this->throwingStateRepository($this->entityManager, $animeId, $exception);
+        $service = $this->newService($this->entityManager, new AnimeRepository($this->entityManager), stateRepository: $stateRepository, logger: $logger);
+
+        $sync = $this->createMock(SyncInterface::class);
+        $sync->expects($this->once())->method('pull')->willReturn([new SyncItem('42', SyncStatus::Watching, 'Trigun')]);
+
+        $service->pull($this->pluginId, $sync);
+    }
+
+    /**
+     * Criterion 4 (issue #859): a skipped item must stay in $presentExternalIds — it was
+     * genuinely in the source's list — so DeletedFromSourceDetector (which still must run after
+     * a non-EntityManager-closing failure) never flags it as removed. A second, genuinely
+     * removed record (absent from the pull list entirely) is still flagged, proving the detector
+     * actually ran rather than being skipped wholesale.
+     */
+    public function testDeletedFromSourceDetectorRunsAfterASkipAndExcludesTheSkippedItem(): void
+    {
+        $failing = new TvAnime();
+        $failing->setTitle('Bleach')->setWatchStatus(WatchStatus::Plan);
+        $failing->rememberExternalId($this->pluginId, '2');
+        $this->entityManager->persist($failing);
+
+        $gone = new TvAnime();
+        $gone->setTitle('Trigun')->setWatchStatus(WatchStatus::Plan);
+        $gone->rememberExternalId($this->pluginId, '3');
+        $this->entityManager->persist($gone);
+
+        $this->entityManager->flush();
+        $failingId = $failing->id ?? throw new \LogicException('id must be set after flush');
+        $goneId = $gone->id;
+
+        $stateRepository = $this->throwingStateRepository($this->entityManager, $failingId, new \RuntimeException('Simulated reconciliation failure.'));
+        $service = $this->newService($this->entityManager, new AnimeRepository($this->entityManager), stateRepository: $stateRepository);
+
+        $sync = $this->createMock(SyncInterface::class);
+        // 'Bleach' (external id '2') is present but fails; 'Trigun' (external id '3') is
+        // genuinely absent from this run's list.
+        $sync->expects($this->once())->method('pull')->willReturn([new SyncItem('2', SyncStatus::Watching, 'Bleach')]);
+
+        $service->pull($this->pluginId, $sync);
+
+        $items = $this->entityManager->getRepository(SyncReviewItem::class)->findAll();
+        $this->assertCount(1, $items);
+        $this->assertSame(SyncReviewItemKind::DeletedFromSource, $items[0]->kind);
+        $this->assertSame($goneId, $items[0]->payload['anime_id']);
+    }
+
+    /**
+     * Criterion 5 (issue #859): CrossVendorDuplicateDetector must still run against records
+     * genuinely created during a run that also skipped a failing item — the skip must not
+     * suppress dedup detection for the rest of the list.
+     */
+    public function testCrossVendorDuplicateDetectorRunsForItemsCreatedInARunWithASkippedItem(): void
+    {
+        $existing = new TvAnime();
+        $existing->setTitle('Trigun')->setWatchStatus(WatchStatus::Plan);
+        $this->entityManager->persist($existing);
+        $this->entityManager->flush();
+        $existingId = $existing->id ?? throw new \LogicException('id must be set after flush');
+
+        $resolver = $this->createMock(AnimeSearchResolver::class);
+        $resolver->expects($this->once())
+            ->method('tryResolveMatches')
+            ->with('Trigun')
+            ->willReturn([new AnimeSearchMatch($existingId, 0.95)]);
+
+        $bulkFillerService = new BulkFillerService(
+            new FillerRegistry([], new PluginsConfigStore(sys_get_temp_dir().'/anime-pull-sync-test-'.uniqid().'.json')),
+            new PluginAnimeDataMerger(
+                new StudioRepository($this->entityManager),
+                $this->entityManager,
+                $this->createStub(PluginMediaDownloaderInterface::class),
+            ),
+            $this->entityManager,
+            new NullLogger(),
+            $this->createMock(MessageBusInterface::class),
+            new AnimeRepository($this->entityManager),
+            new CachedFillerLookup(new ArrayAdapter()),
+        );
+        $duplicateDetector = new CrossVendorDuplicateDetector(
+            $resolver,
+            new SyncReviewService(new SyncReviewItemRepository($this->entityManager)),
+        );
+        $syncRegistry = new SyncRegistry([], new PluginsConfigStore(sys_get_temp_dir().'/anime-pull-sync-reg-'.uniqid().'.json'));
+        $deletionDetector = new DeletedFromSourceDetector(
+            $syncRegistry,
+            new SyncReviewService(new SyncReviewItemRepository($this->entityManager)),
+        );
+        $convergenceService = new SyncConvergenceService(
+            new SyncReconciler(),
+            new AnimeSyncStateRepository($this->entityManager),
+            $syncRegistry,
+            new SyncReviewService(new SyncReviewItemRepository($this->entityManager)),
+            new NullLogger(),
+        );
+        $service = new PullSyncService($this->entityManager, new AnimeRepository($this->entityManager), $bulkFillerService, $duplicateDetector, $deletionDetector, $convergenceService, new NullLogger());
+
+        $sync = $this->syncFillerStubPerItem(
+            [
+                new SyncItem('1', SyncStatus::Watching, 'Bleach'),
+                new SyncItem('42', SyncStatus::Plan, 'Trigun'),
+            ],
+            dataByExternalId: [
+                '1' => new \RuntimeException('Simulated plugin findById() failure.'),
+                '42' => new PluginAnimeData(title: 'Trigun', type: ContractsAnimeType::Tv),
+            ],
+            fillableFields: ['title', 'type'],
+        );
+
+        $service->pull($this->pluginId, $sync);
+
+        $created = array_values(array_filter($this->allAnime(), static fn (Anime $a): bool => $a->id !== $existing->id));
+        $this->assertCount(1, $created);
+
+        $items = $this->entityManager->getRepository(SyncReviewItem::class)->findAll();
+        $this->assertCount(1, $items);
+        $this->assertSame(['anime_ids' => [$existing->id, $created[0]->id]], $items[0]->payload);
+    }
+
+    /**
+     * Criterion 6 (issue #859): reconcilePulledItem() applies the winning projection to Anime in
+     * memory (Anime::applyWatchProgress()) before it ever writes the snapshot row — if the
+     * snapshot write then fails, that in-memory change must be rolled back, or a later flush()
+     * in the same run (here, the one belonging to a different, successfully-processed item)
+     * would durably commit it anyway. The rollback itself is {@see
+     * SyncConvergenceService}'s wrapInTransaction() around the whole item's snapshot writes
+     * (issue #859 review, "частичный коммит в рамках одного элемента") — a real Doctrine flush
+     * failure there always closes $this->entityManager, which is why this run's own return value
+     * must honestly report that (see PullSyncService's class docblock), and why the assertions
+     * below read back through a fresh EntityManager rather than the now-closed original.
+     */
+    public function testRollsBackAnimeChangesInMemoryWhenTheSnapshotWriteFailsBeforeALaterFlush(): void
+    {
+        $failing = new TvAnime();
+        $failing->setTitle('Cowboy Bebop')->setWatchStatus(WatchStatus::Plan);
+        $failing->rememberExternalId($this->pluginId, '1');
+        $this->entityManager->persist($failing);
+
+        $other = new TvAnime();
+        $other->setTitle('Trigun')->setWatchStatus(WatchStatus::Plan);
+        $other->rememberExternalId($this->pluginId, '2');
+        $this->entityManager->persist($other);
+
+        $this->entityManager->flush();
+        $failingId = $failing->id ?? throw new \LogicException('id must be set after flush');
+        $otherId = $other->id ?? throw new \LogicException('id must be set after flush');
+
+        // onSave: the failure happens writing the snapshot row, after applyToLocal() has already
+        // mutated $failing's watchStatus in memory for this item.
+        $stateRepository = $this->throwingStateRepository($this->entityManager, $failingId, new \RuntimeException('Simulated snapshot write failure.'), onSave: true);
+        $service = $this->newService($this->entityManager, new AnimeRepository($this->entityManager), stateRepository: $stateRepository);
+
+        $sync = $this->createMock(SyncInterface::class);
+        $sync->expects($this->once())->method('pull')->willReturn([
+            new SyncItem('1', SyncStatus::Watching, 'Cowboy Bebop'),
+            new SyncItem('2', SyncStatus::Watching, 'Trigun'),
+        ]);
+
+        $completed = $service->pull($this->pluginId, $sync);
+
+        // The snapshot write's failure closes $this->entityManager for real (see the class
+        // docblock) — this run did not finish in a state a caller can keep building on.
+        $this->assertFalse($completed);
+
+        // Re-read through a fresh EntityManager sharing the same DBAL connection, rather than the
+        // now-closed $this->entityManager, so this proves the rollback (not just that the test
+        // never re-applied the change) is what kept the bad write out, despite 'Trigun'
+        // successfully flushing its own change later in the same run.
+        $freshEntityManager = new EntityManager($this->entityManager->getConnection(), $this->entityManager->getConfiguration());
+        $reloadedFailing = $freshEntityManager->getRepository(Anime::class)->find($failingId);
+        $this->assertInstanceOf(TvAnime::class, $reloadedFailing);
+        $this->assertSame(WatchStatus::Plan, $reloadedFailing->getWatchStatus());
+
+        $reloadedOther = $freshEntityManager->getRepository(Anime::class)->find($otherId);
+        $this->assertInstanceOf(TvAnime::class, $reloadedOther);
+        $this->assertSame(WatchStatus::Watching, $reloadedOther->getWatchStatus());
+    }
+
+    /**
+     * Criterion 7 (issue #859): a Doctrine exception that closes the EntityManager on one item
+     * (simulated here exactly as Doctrine itself would react to a genuinely failed flush() — see
+     * {@see throwingStateRepository()}) must not abort the run either — the rest of the list is
+     * applied through the same create-conflict recovery EntityManager {@see
+     * PullSyncService::openRecoveryEntityManager()} already provides, detectors are skipped for
+     * this run (the existing recovery-path rule), and the skip is logged.
+     */
+    public function testContinuesThroughARecoveryEntityManagerWhenAFailureClosesTheOriginalOne(): void
+    {
+        $failing = new TvAnime();
+        $failing->setTitle('Cowboy Bebop')->setWatchStatus(WatchStatus::Plan);
+        $failing->rememberExternalId($this->pluginId, '1');
+        $this->entityManager->persist($failing);
+
+        $other = new TvAnime();
+        $other->setTitle('Trigun')->setWatchStatus(WatchStatus::Plan);
+        $other->rememberExternalId($this->pluginId, '2');
+        $this->entityManager->persist($other);
+
+        // Absent from this run's pull list — would be flagged by DeletedFromSourceDetector if
+        // detectors ran for this run, which they must not once recovery kicks in.
+        $missing = new TvAnime();
+        $missing->setTitle('Bleach')->setWatchStatus(WatchStatus::Plan);
+        $missing->rememberExternalId($this->pluginId, '3');
+        $this->entityManager->persist($missing);
+
+        $this->entityManager->flush();
+        $failingId = $failing->id ?? throw new \LogicException('id must be set after flush');
+        $otherId = $other->id ?? throw new \LogicException('id must be set after flush');
+
+        $exception = new \RuntimeException('Simulated Doctrine failure.');
+        $stateRepository = $this->throwingStateRepository(
+            $this->entityManager,
+            $failingId,
+            $exception,
+            onSave: true,
+            closeEntityManager: true,
+        );
+        // Two warnings are expected: PullSyncService's own per-item skip, and the existing
+        // recovery-path rule that also logs skipping post-pull duplicate/deletion review — both
+        // satisfy criterion 7's "log entry about the skip". Captured via a callback rather than
+        // asserted by count alone, so this actually proves the *first* warning is about the
+        // failing item specifically (its externalId and exception), not some unrelated warning
+        // from a different branch (issue #859 review).
+        $warnings = [];
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->exactly(2))->method('warning')
+            ->willReturnCallback(function (string $message, array $context) use (&$warnings): void {
+                $warnings[] = [$message, $context];
+            });
+        $service = $this->newService($this->entityManager, new AnimeRepository($this->entityManager), stateRepository: $stateRepository, logger: $logger);
+
+        $sync = $this->createMock(SyncInterface::class);
+        $sync->expects($this->once())->method('pull')->willReturn([
+            new SyncItem('1', SyncStatus::Watching, 'Cowboy Bebop'),
+            new SyncItem('2', SyncStatus::Watching, 'Trigun'),
+        ]);
+
+        $completed = $service->pull($this->pluginId, $sync);
+
+        // The failure genuinely closed $this->entityManager (see PullSyncService's class
+        // docblock) — a caller must be told this run did not finish in a reusable state.
+        $this->assertFalse($completed);
+
+        $this->assertCount(2, $warnings);
+        [$itemWarningMessage, $itemWarningContext] = $warnings[0];
+        $this->assertStringContainsString('Skipping a pull item', $itemWarningMessage);
+        $this->assertSame((string) $this->pluginId, $itemWarningContext['pluginId'] ?? null);
+        $this->assertSame('1', $itemWarningContext['externalId'] ?? null);
+        $this->assertSame($exception, $itemWarningContext['exception'] ?? null);
+
+        [$skipWarningMessage] = $warnings[1];
+        $this->assertStringContainsString('Skipping post-pull duplicate/deletion review', $skipWarningMessage);
+
+        // $this->entityManager is closed by now (the simulated Doctrine reaction) — read back
+        // through a fresh EntityManager sharing the same DBAL connection, exactly the recovery
+        // pattern PullSyncService itself falls back on.
+        $freshEntityManager = new EntityManager($this->entityManager->getConnection(), $this->entityManager->getConfiguration());
+
+        // The main promise of this isolation (issue #859 review): the failing item's own change
+        // never got committed, despite the next item's own write succeeding right after it.
+        $reloadedFailing = $freshEntityManager->getRepository(Anime::class)->find($failingId);
+        $this->assertInstanceOf(TvAnime::class, $reloadedFailing);
+        $this->assertSame(WatchStatus::Plan, $reloadedFailing->getWatchStatus());
+
+        $reloadedOther = $freshEntityManager->getRepository(Anime::class)->find($otherId);
+        $this->assertInstanceOf(TvAnime::class, $reloadedOther);
+        $this->assertSame(WatchStatus::Watching, $reloadedOther->getWatchStatus());
+
+        $this->assertCount(0, $freshEntityManager->getRepository(SyncReviewItem::class)->findAll());
+    }
+
+    /**
+     * Comment-requested regression (issue #859 review, PR #884): the atomicity the two tests
+     * above exercise for a brand-new snapshot row must hold for an *existing* one too — a prior
+     * run's {@see AnimeSyncState} row, mutated in place by update() before this item's write
+     * fails, must not end up durably holding that in-memory mutation while Anime itself stays on
+     * the old value (the exact split the review flagged: "запишет снимок origin с новым
+     * значением, а Anime останется со старым").
+     */
+    public function testRollsBackAnExistingSnapshotRowWhenTheItemsWriteFails(): void
+    {
+        $failing = new TvAnime();
+        $failing->setTitle('Cowboy Bebop')->setWatchStatus(WatchStatus::Plan);
+        $failing->rememberExternalId($this->pluginId, '1');
+        $this->entityManager->persist($failing);
+
+        $other = new TvAnime();
+        $other->setTitle('Trigun')->setWatchStatus(WatchStatus::Plan);
+        $other->rememberExternalId($this->pluginId, '2');
+        $this->entityManager->persist($other);
+
+        $this->entityManager->flush();
+        $failingId = $failing->id ?? throw new \LogicException('id must be set after flush');
+        $otherId = $other->id ?? throw new \LogicException('id must be set after flush');
+
+        // A snapshot row left over from a previous run — update()d in place (not re-created) as
+        // soon as this run's reconciliation picks a winner, before the write that fails.
+        $this->entityManager->persist(new AnimeSyncState($failing, (string) $this->pluginId, WatchStatus::Plan, null, new \DateTimeImmutable('-2 days')));
+        $this->entityManager->flush();
+
+        // onSave: $failing's own snapshot row is the first one persistConfirmedState() writes
+        // for this item (the origin's row, ahead of local's), so this fails before anything else
+        // in the item gets a chance to commit.
+        $stateRepository = $this->throwingStateRepository($this->entityManager, $failingId, new \RuntimeException('Simulated snapshot write failure.'), onSave: true);
+        $service = $this->newService($this->entityManager, new AnimeRepository($this->entityManager), stateRepository: $stateRepository);
+
+        $sync = $this->createMock(SyncInterface::class);
+        $sync->expects($this->once())->method('pull')->willReturn([
+            new SyncItem('1', SyncStatus::Watching, 'Cowboy Bebop'),
+            new SyncItem('2', SyncStatus::Watching, 'Trigun'),
+        ]);
+
+        $completed = $service->pull($this->pluginId, $sync);
+
+        $this->assertFalse($completed);
+
+        $freshEntityManager = new EntityManager($this->entityManager->getConnection(), $this->entityManager->getConfiguration());
+
+        $reloadedFailing = $freshEntityManager->getRepository(Anime::class)->find($failingId);
+        $this->assertInstanceOf(TvAnime::class, $reloadedFailing);
+        $this->assertSame(WatchStatus::Plan, $reloadedFailing->getWatchStatus());
+
+        $reloadedState = $freshEntityManager->getRepository(AnimeSyncState::class)->find([
+            'anime' => $reloadedFailing,
+            'participantId' => (string) $this->pluginId,
+        ]);
+        $this->assertInstanceOf(AnimeSyncState::class, $reloadedState);
+        $this->assertSame(WatchStatus::Plan, $reloadedState->lastStatus);
+
+        $reloadedOther = $freshEntityManager->getRepository(Anime::class)->find($otherId);
+        $this->assertInstanceOf(TvAnime::class, $reloadedOther);
+        $this->assertSame(WatchStatus::Watching, $reloadedOther->getWatchStatus());
     }
 
     /** @return list<Anime> */

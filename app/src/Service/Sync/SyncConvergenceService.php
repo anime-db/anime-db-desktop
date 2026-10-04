@@ -162,9 +162,7 @@ final class SyncConvergenceService
             }
         }
 
-        foreach ($confirmed as $participantId => $state) {
-            $this->persistLastSeen($anime, $participantId, $state, $lastSeenRowById[$participantId] ?? null, $entityManager);
-        }
+        $this->persistConfirmedState($anime, $confirmed, $lastSeenRowById, $entityManager);
     }
 
     /**
@@ -235,9 +233,7 @@ final class SyncConvergenceService
             }
         }
 
-        foreach ($confirmed as $participantId => $state) {
-            $this->persistLastSeen($anime, $participantId, $state, $lastSeenRowById[$participantId] ?? null, $entityManager);
-        }
+        $this->persistConfirmedState($anime, $confirmed, $lastSeenRowById, $entityManager);
 
         return true;
     }
@@ -321,6 +317,32 @@ final class SyncConvergenceService
         }
 
         return $syncs;
+    }
+
+    /**
+     * Closes out every confirmed participant's snapshot for this item as a single atomic unit
+     * (issue #859 review): {@see reconcilePulledItem()}/{@see applyManualResolution()} may
+     * confirm several participants (origin, local, every forward-propagation target), each
+     * persisted through its own {@see AnimeSyncStateRepository::save()} call, which flushes on
+     * its own. Without an enclosing transaction, a later participant's failed flush leaves an
+     * earlier one already durably committed — including $anime's own in-memory change, applied
+     * before this method ever runs — so the item ends up half-applied instead of rolled back.
+     * {@see EntityManagerInterface::wrapInTransaction()} turns every nested flush() here into a
+     * savepoint inside one outer transaction instead: any exception rolls all of them back
+     * together and leaves $entityManager closed (Doctrine's own reaction to a failed commit),
+     * which is exactly the signal the per-item recovery in {@see
+     * \App\Service\Plugin\PullSyncService} already watches for.
+     *
+     * @param array<string, ParticipantState> $confirmed
+     * @param array<string, AnimeSyncState>   $lastSeenRowById
+     */
+    private function persistConfirmedState(Anime $anime, array $confirmed, array $lastSeenRowById, EntityManagerInterface $entityManager): void
+    {
+        $entityManager->wrapInTransaction(function () use ($anime, $confirmed, $lastSeenRowById, $entityManager): void {
+            foreach ($confirmed as $participantId => $state) {
+                $this->persistLastSeen($anime, $participantId, $state, $lastSeenRowById[$participantId] ?? null, $entityManager);
+            }
+        });
     }
 
     private function persistLastSeen(Anime $anime, string $participantId, ParticipantState $state, ?AnimeSyncState $existing, EntityManagerInterface $entityManager): void
