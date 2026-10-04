@@ -517,6 +517,7 @@ anime_detail:
     downloads_heading: Загрузки этой карточки
     downloads_unlink_button: Отвязать
     downloads_unlink_conflict_error: Состояние изменилось, обновите страницу.
+    download_new_link: Добавить загрузку
 
 anime_new:
     title: Новая запись — AnimeDB
@@ -675,3 +676,25 @@ downloads:
     unit_gb: '%value% ГБ'
     unit_tb: '%value% ТБ'
     speed: '%value%/с'
+
+download_new:
+    title: Добавить загрузку — AnimeDB
+    heading: Добавить загрузку
+    field_anime_label: Запись каталога
+    field_anime_placeholder: Начните вводить название…
+    field_magnet_label: Magnet-ссылка
+    field_torrent_file_label: Торрент-файл
+    drop_zone_hint: Можно перетащить файл сюда
+    field_storage_label: Хранилище
+    submit_button: Добавить загрузку
+    unlink_hint: Отвязать можно на её странице.
+    info_already_in_downloads: Эта раздача уже в загрузках для этой записи.
+    error_anime_required: Выберите запись каталога.
+    error_storage_required: Выберите хранилище.
+    error_source_required: Укажите magnet-ссылку или выберите торрент-файл.
+    error_unreadable_source: Не удалось прочитать раздачу.
+    error_insufficient_space: 'Нужно %needed%, свободно %free% в «%path%».'
+    error_already_linked: Эта раздача уже привязана к записи #%id%.
+    error_storage_unavailable: Хранилище недоступно.
+    error_client_unavailable: Торрент-клиент недоступен, повторите позже.
+    error_file_too_large: Файл больше 16 МБ.
