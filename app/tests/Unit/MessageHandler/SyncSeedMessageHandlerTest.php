@@ -27,6 +27,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\MessageHandler;
 
+use AnimeDb\PluginContracts\Filler\PluginAnimeData;
 use AnimeDb\PluginContracts\OAuth\ReauthRequiredException;
 use AnimeDb\PluginContracts\Sync\SyncInterface;
 use AnimeDb\PluginContracts\Sync\SyncItem;
@@ -152,10 +153,12 @@ final class SyncSeedMessageHandlerTest extends TestCase
     /** Issue #867 (1): a local record with a source URL and no cached id is matched, not duplicated. */
     public function testInvokeBackfillsExternalIdsSoThePullMatchesAnExistingRecordInsteadOfDuplicatingIt(): void
     {
-        $anime = $this->persistAnimeWithSource('https://shikimori.one/animes/1');
+        $anime = $this->persistAnimeWithSource('https://shikimori.one/animes/1', WatchStatus::Plan);
 
         $sync = $this->createMock(SyncInterface::class);
         $sync->method('resolveExternalId')->willReturn('1');
+        // A pull that misses the record by external id would create a second row from this data.
+        $sync->method('findById')->willReturn(new PluginAnimeData(title: 'Cowboy Bebop'));
         $sync->expects($this->once())->method('pull')->willReturn([new SyncItem('1', SyncStatus::Watching, 'Cowboy Bebop')]);
 
         [$syncRegistry, $pluginsConfigStore] = $this->newSyncRegistry(['animedb-shikimori' => $sync]);
@@ -166,6 +169,7 @@ final class SyncSeedMessageHandlerTest extends TestCase
         $this->assertCount(1, $all);
         $this->assertSame('1', $all[0]->getCachedExternalId(new PluginId('animedb-shikimori')));
         $this->assertSame($anime->id, $all[0]->id);
+        $this->assertSame(WatchStatus::Watching, $all[0]->getWatchStatus());
     }
 
     /** Issue #867 (2): the ordering is enforced inside the handler, not by dispatch order. */
@@ -226,10 +230,10 @@ final class SyncSeedMessageHandlerTest extends TestCase
         $this->newHandler($syncRegistry, $pluginsConfigStore, $logger)(new SyncSeedMessage('animedb-shikimori'));
     }
 
-    private function persistAnimeWithSource(string $url): Anime
+    private function persistAnimeWithSource(string $url, WatchStatus $status = WatchStatus::Watching): Anime
     {
         $anime = new MovieAnime();
-        $anime->setTitle('Cowboy Bebop')->setWatchStatus(WatchStatus::Watching)->addSource($url);
+        $anime->setTitle('Cowboy Bebop')->setWatchStatus($status)->addSource($url);
         $this->entityManager->persist($anime);
         $this->entityManager->flush();
 
