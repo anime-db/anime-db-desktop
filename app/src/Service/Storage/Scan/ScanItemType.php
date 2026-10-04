@@ -29,7 +29,7 @@ namespace App\Service\Storage\Scan;
 
 enum ScanItemType
 {
-    /** A known file's mtime moved past its Anime::$dateUpdate; the caller should refresh it. */
+    /** A known file's mtime moved past its Anime::$filesCheckedAt; the caller should refresh it. */
     case Updated;
 
     /** A known Anime has no matching file left on disk (v1's DELETE_ITEM_FILES equivalent). */
