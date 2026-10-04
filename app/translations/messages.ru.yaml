@@ -665,6 +665,7 @@ downloads:
     action_delete_files_label: Удалить скачанные данные
     action_error_conflict: Состояние загрузки изменилось, обновите страницу.
     action_error_refused: Это действие больше не доступно для этой загрузки.
+    action_stale_hint: Состояние изменилось — обновите страницу.
     status_pending: Ждёт
     status_linking: Докачано, привязывается…
     status_storage_unavailable: Хранилище недоступно

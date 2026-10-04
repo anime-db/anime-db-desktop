@@ -665,6 +665,7 @@ downloads:
     action_delete_files_label: Delete downloaded data
     action_error_conflict: This download's state changed; please refresh the page.
     action_error_refused: This action is no longer available for this download.
+    action_stale_hint: The state changed — please refresh the page.
     status_pending: Waiting
     status_linking: Finished, linking…
     status_storage_unavailable: Storage unavailable

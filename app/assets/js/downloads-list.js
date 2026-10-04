@@ -90,9 +90,35 @@
         return tr;
     }
 
+    // Issue #856 follow-up: a server-rendered actions cell's retry/delete forms carry the
+    // `version`/`status` the page showed at render time as hidden fields (see
+    // DownloadsOverviewBuilder::buildRow() and downloads/index.html.twig's data-version/data-status
+    // on this same cell) — DownloadActionController checks a submission against exactly those, not
+    // against whatever the row now holds. Once a poll response reports a different version/status
+    // for this row, that cell's hidden fields are stale and would only ever come back as "state
+    // changed" from the server; disabling its buttons here saves the user a round trip and explains
+    // why. A row with no preserved cell at all (appeared after the page loaded) never had those
+    // hidden fields to begin with, so it gets the same treatment.
+    function markActionsCellStale(cell, hintLabel) {
+        cell.querySelectorAll('button').forEach((button) => {
+            button.disabled = true;
+        });
+        cell.classList.add('text-muted');
+        cell.title = hintLabel;
+    }
+
+    function actionsCellIsStale(cell, row) {
+        if (cell.dataset.version === undefined) {
+            return false;
+        }
+
+        return cell.dataset.version !== String(row.version) || cell.dataset.status !== String(row.coreStatus);
+    }
+
     function mountDownloadsList(root) {
         const statusUrl = root.dataset.statusUrl;
         const noCardLabel = root.dataset.noCardLabel;
+        const staleHintLabel = root.dataset.staleHintLabel;
         const banner = root.querySelector('[data-downloads-banner]');
         const tbody = root.querySelector('[data-downloads-rows]');
         const tableWrapper = root.querySelector('[data-downloads-table-wrapper]');
@@ -137,9 +163,15 @@
             tbody.replaceChildren();
             data.rows.concat(data.orphans).forEach((row) => {
                 const tr = buildRow(row, noCardLabel);
+                const actionsCell = tr.querySelector('[data-field="actions"]');
                 const preservedActions = preservedActionsByHash.get(row.infoHash);
                 if (preservedActions) {
-                    tr.querySelector('[data-field="actions"]').replaceWith(preservedActions);
+                    if (actionsCellIsStale(preservedActions, row)) {
+                        markActionsCellStale(preservedActions, staleHintLabel);
+                    }
+                    actionsCell.replaceWith(preservedActions);
+                } else if (row.hasCard) {
+                    markActionsCellStale(actionsCell, staleHintLabel);
                 }
                 tbody.appendChild(tr);
             });
