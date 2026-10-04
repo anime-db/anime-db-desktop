@@ -78,12 +78,47 @@
         tr.appendChild(buildCell(row.peersText));
         tr.appendChild(buildCell(row.targetStorageName));
 
+        // Action buttons/forms (issue #856) need a CSRF token this poll response never carries —
+        // they are only ever rendered server-side (downloads/index.html.twig). A brand new row
+        // (a download started elsewhere while this page is open) gets an empty cell here until
+        // the next full page load; an already-rendered row keeps its real one, see render()
+        // below, which transplants it onto this placeholder before the row is inserted.
+        const actionsCell = document.createElement('td');
+        actionsCell.dataset.field = 'actions';
+        tr.appendChild(actionsCell);
+
         return tr;
+    }
+
+    // Issue #856 follow-up: a server-rendered actions cell's retry/delete forms carry the
+    // `version`/`status` the page showed at render time as hidden fields (see
+    // DownloadsOverviewBuilder::buildRow() and downloads/index.html.twig's data-version/data-status
+    // on this same cell) — DownloadActionController checks a submission against exactly those, not
+    // against whatever the row now holds. Once a poll response reports a different version/status
+    // for this row, that cell's hidden fields are stale and would only ever come back as "state
+    // changed" from the server; disabling its buttons here saves the user a round trip and explains
+    // why. A row with no preserved cell at all (appeared after the page loaded) never had those
+    // hidden fields to begin with, so it gets the same treatment.
+    function markActionsCellStale(cell, hintLabel) {
+        cell.querySelectorAll('button').forEach((button) => {
+            button.disabled = true;
+        });
+        cell.classList.add('text-muted');
+        cell.title = hintLabel;
+    }
+
+    function actionsCellIsStale(cell, row) {
+        if (cell.dataset.version === undefined) {
+            return false;
+        }
+
+        return cell.dataset.version !== String(row.version) || cell.dataset.status !== String(row.coreStatus);
     }
 
     function mountDownloadsList(root) {
         const statusUrl = root.dataset.statusUrl;
         const noCardLabel = root.dataset.noCardLabel;
+        const staleHintLabel = root.dataset.staleHintLabel;
         const banner = root.querySelector('[data-downloads-banner]');
         const tbody = root.querySelector('[data-downloads-rows]');
         const tableWrapper = root.querySelector('[data-downloads-table-wrapper]');
@@ -113,9 +148,33 @@
                 return;
             }
 
+            // Preserve each existing row's server-rendered actions cell (issue #856) across the
+            // wholesale tbody rebuild below — it carries CSRF tokens this JSON response never
+            // includes, and swapping it onto the freshly built row (matched by infoHash) is what
+            // keeps the action buttons from disappearing on every 2-second poll tick.
+            const preservedActionsByHash = new Map();
+            tbody.querySelectorAll('tr[data-info-hash]').forEach((tr) => {
+                const actionsCell = tr.querySelector('[data-field="actions"]');
+                if (actionsCell) {
+                    preservedActionsByHash.set(tr.dataset.infoHash, actionsCell);
+                }
+            });
+
             tbody.replaceChildren();
-            data.rows.forEach((row) => tbody.appendChild(buildRow(row, noCardLabel)));
-            data.orphans.forEach((row) => tbody.appendChild(buildRow(row, noCardLabel)));
+            data.rows.concat(data.orphans).forEach((row) => {
+                const tr = buildRow(row, noCardLabel);
+                const actionsCell = tr.querySelector('[data-field="actions"]');
+                const preservedActions = preservedActionsByHash.get(row.infoHash);
+                if (preservedActions) {
+                    if (actionsCellIsStale(preservedActions, row)) {
+                        markActionsCellStale(preservedActions, staleHintLabel);
+                    }
+                    actionsCell.replaceWith(preservedActions);
+                } else if (row.hasCard) {
+                    markActionsCellStale(actionsCell, staleHintLabel);
+                }
+                tbody.appendChild(tr);
+            });
         }
 
         function scheduleNext() {

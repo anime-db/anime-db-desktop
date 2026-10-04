@@ -33,7 +33,7 @@ const POLL_INTERVAL_MS = 2000;
 // present in the markup, only `hidden` toggles between them (see downloads-list.js render()).
 function setUpDom({ empty = false } = {}) {
     document.body.innerHTML = `
-        <main data-control="downloads-list" data-status-url="/downloads/status" data-no-card-label="Badge label">
+        <main data-control="downloads-list" data-status-url="/downloads/status" data-no-card-label="Badge label" data-stale-hint-label="State changed, refresh">
             <div data-downloads-banner hidden></div>
             <p data-downloads-empty${empty ? '' : ' hidden'}></p>
             <div data-downloads-table-wrapper${empty ? ' hidden' : ''}>
@@ -269,6 +269,124 @@ test('rows appear without a reload once a page that rendered empty gets a non-em
     expect(emptyMessage.hidden).toBe(true);
     expect(tableWrapper.hidden).toBe(false);
     expect(document.querySelectorAll('[data-downloads-rows] tr')).toHaveLength(1);
+});
+
+// Issue #856: action forms carry a CSRF token this poll response never includes, so they are only
+// ever rendered server-side. If render() rebuilt every cell including the actions one, the button
+// would vanish 2 seconds after the page loaded, even though nothing the user could see changed.
+test('an existing row keeps its server-rendered actions cell across a poll update', async () => {
+    const calls = mockFetchQueue();
+    loadDownloadsListModule();
+
+    const tbody = document.querySelector('[data-downloads-rows]');
+    const tr = document.createElement('tr');
+    tr.dataset.infoHash = 'e'.repeat(40);
+    tr.innerHTML = '<td>Name</td><td>Waiting</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>'
+        + '<td data-field="actions"><button data-marker="server-rendered">Pause</button></td>';
+    tbody.appendChild(tr);
+
+    calls[0].resolve(jsonResponse({
+        qbittorrentAvailable: true,
+        rows: [{
+            infoHash:          'e'.repeat(40),
+            hasCard:           true,
+            animeUrl:          null,
+            displayName:       'Some download',
+            statusText:        'Downloading',
+            sizeText:          '1.0 MB',
+            progressText:      '50%',
+            downloadSpeedText: '0 B/s',
+            uploadSpeedText:   '0 B/s',
+            etaText:           null,
+            peersText:         '1/0',
+            targetStorageName: null,
+        }],
+        orphans: [],
+    }));
+    await flushMicrotasks();
+
+    const actionsCell = document.querySelector('[data-downloads-rows] tr [data-field="actions"]');
+    expect(actionsCell.querySelector('[data-marker="server-rendered"]')).not.toBeNull();
+    // The live field next to it was still updated — this is not "nothing got rebuilt".
+    expect(document.querySelector('[data-downloads-rows] tr').textContent).toContain('Downloading');
+});
+
+// Issue #856 follow-up: the preserved actions cell's retry/delete forms carry the version/status
+// the page rendered as hidden fields (mirrored here via data-version/data-status on the cell
+// itself, see downloads/index.html.twig). Once a poll response reports a different version or
+// status for this row, those hidden fields are stale — any submission would only ever come back
+// from the server as "state changed" — so the buttons are disabled and a hint is shown instead of
+// silently keeping them clickable.
+test('a preserved actions cell is disabled once the poll response reports a different version or status', async () => {
+    const calls = mockFetchQueue();
+    loadDownloadsListModule();
+
+    const tbody = document.querySelector('[data-downloads-rows]');
+    const tr = document.createElement('tr');
+    tr.dataset.infoHash = 'f'.repeat(40);
+    tr.innerHTML = '<td>Name</td><td>Waiting</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>'
+        + '<td data-field="actions" data-version="2" data-status="pending"><button data-marker="server-rendered">Delete</button></td>';
+    tbody.appendChild(tr);
+
+    calls[0].resolve(jsonResponse({
+        qbittorrentAvailable: true,
+        rows: [{
+            infoHash:          'f'.repeat(40),
+            hasCard:           true,
+            animeUrl:          null,
+            displayName:       'Some download',
+            statusText:        'Error',
+            sizeText:          null,
+            progressText:      null,
+            downloadSpeedText: null,
+            uploadSpeedText:   null,
+            etaText:           null,
+            peersText:         null,
+            targetStorageName: null,
+            version:           3,
+            coreStatus:        'failed',
+        }],
+        orphans: [],
+    }));
+    await flushMicrotasks();
+
+    const actionsCell = document.querySelector('[data-downloads-rows] tr [data-field="actions"]');
+    const button = actionsCell.querySelector('[data-marker="server-rendered"]');
+    expect(button.disabled).toBe(true);
+    expect(actionsCell.title).toBe('State changed, refresh');
+});
+
+// A row with no preserved actions cell at all (a download that started elsewhere while this page
+// was open) never had the hidden version/status fields a submission could be checked against —
+// same treatment as a mismatch above, rather than leaving a silently empty, unexplained cell.
+test('a brand new row with no preserved actions cell shows the same stale hint', async () => {
+    const calls = mockFetchQueue();
+    loadDownloadsListModule();
+
+    calls[0].resolve(jsonResponse({
+        qbittorrentAvailable: true,
+        rows: [{
+            infoHash:          'g'.repeat(40),
+            hasCard:           true,
+            animeUrl:          null,
+            displayName:       'New download',
+            statusText:        'Waiting',
+            sizeText:          null,
+            progressText:      null,
+            downloadSpeedText: null,
+            uploadSpeedText:   null,
+            etaText:           null,
+            peersText:         null,
+            targetStorageName: null,
+            version:           1,
+            coreStatus:        'pending',
+        }],
+        orphans: [],
+    }));
+    await flushMicrotasks();
+
+    const actionsCell = document.querySelector('[data-downloads-rows] tr [data-field="actions"]');
+    expect(actionsCell.title).toBe('State changed, refresh');
 });
 
 test('the empty state reappears once the last row disappears from a poll response', async () => {

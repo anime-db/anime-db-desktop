@@ -104,4 +104,80 @@ final class DownloadTest extends TestCase
         $this->assertTrue($download->isCompleted());
         $this->assertFalse($download->isFailed());
     }
+
+    /**
+     * @return iterable<string, array{0: ?string}>
+     */
+    public static function retryableFailureReasonProvider(): iterable
+    {
+        yield 'disk_space' => ['disk_space'];
+        yield 'name_conflict' => ['name_conflict'];
+        yield 'move_failed' => ['move_failed'];
+        yield 'null (pre-#852 row)' => [null];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('retryableFailureReasonProvider')]
+    public function testRetryTransitionsFailedToPendingAndResetsReasonAndMoveAttemptsForRetryableReasons(?string $reason): void
+    {
+        $download = new Download(self::INFO_HASH, $this->makeAnime());
+        $download->markFailed($reason);
+        $download->incrementMoveAttempts();
+        $download->incrementMoveAttempts();
+
+        $this->assertTrue($download->retry());
+
+        $this->assertSame(DownloadStatus::Pending, $download->getStatus());
+        $this->assertNull($download->getFailureReason());
+        $this->assertSame(0, $download->getMoveAttempts());
+    }
+
+    /**
+     * @return iterable<string, array{0: string}>
+     */
+    public static function nonRetryableFailureReasonProvider(): iterable
+    {
+        // storage_conflict: the torrent is already fully downloaded; retrying cannot free the
+        // folder another anime's pointer already occupies.
+        yield 'storage_conflict' => ['storage_conflict'];
+        // legacy_layout: the row has no target storage to retry into at all.
+        yield 'legacy_layout' => ['legacy_layout'];
+        yield 'an unrecognized reason' => ['unexpected_layout'];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('nonRetryableFailureReasonProvider')]
+    public function testRetryRefusesForNonRetryableFailureReasonsAndChangesNothing(string $reason): void
+    {
+        $download = new Download(self::INFO_HASH, $this->makeAnime());
+        $download->markFailed($reason);
+
+        $this->assertFalse($download->retry());
+
+        $this->assertSame(DownloadStatus::Failed, $download->getStatus());
+        $this->assertSame($reason, $download->getFailureReason());
+    }
+
+    public function testRetryRefusesForPendingStatus(): void
+    {
+        $download = new Download(self::INFO_HASH, $this->makeAnime());
+
+        $this->assertFalse($download->retry());
+        $this->assertSame(DownloadStatus::Pending, $download->getStatus());
+    }
+
+    public function testRetryRefusesForCompletedStatus(): void
+    {
+        $download = new Download(self::INFO_HASH, $this->makeAnime());
+        $download->markCompleted();
+
+        $this->assertFalse($download->retry());
+        $this->assertTrue($download->isCompleted());
+    }
+
+    public function testIsRetryableFailureReasonMatchesRetryItself(): void
+    {
+        $this->assertTrue(Download::isRetryableFailureReason(null));
+        $this->assertTrue(Download::isRetryableFailureReason('disk_space'));
+        $this->assertFalse(Download::isRetryableFailureReason('storage_conflict'));
+        $this->assertFalse(Download::isRetryableFailureReason('legacy_layout'));
+    }
 }
