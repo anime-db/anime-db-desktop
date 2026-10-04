@@ -434,6 +434,252 @@ final class SyncConvergenceServiceTest extends TestCase
      * would push a value local itself never actually holds, so no push must happen here: the
      * origin's last-seen row already agrees with local's *actual*, unchanged projection.
      */
+    /**
+     * Acceptance (issue #861, scenario 1): local already has its own snapshot row (it previously
+     * converged with some other participant) and the origin's first-ever pull disagrees with
+     * local's current projection — this must raise a NeedsCorrection review-item naming both
+     * candidates rather than silently adopting the origin's value the way a single-changed-
+     * participant reconcile() would otherwise do.
+     */
+    public function testFirstContactAgainstAnAlreadySyncedLocalRaisesAReviewItemInsteadOfApplyingTheOrigin(): void
+    {
+        $anime = new TvAnime();
+        $anime->setTitle('Cowboy Bebop')->setWatchStatus(WatchStatus::Watching);
+        $anime->setEpisodesCount(26);
+        $anime->rememberExternalId($this->originPluginId, '1');
+        $anime->changeWatchedEpisodesManually(10);
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+
+        // Local already converged with some other, now-inactive participant in the past — this is
+        // the "history" the issue is about, distinct from a provably virgin local.
+        $this->seedLastSeen($anime, 'some-other-source', WatchStatus::Watching, '2026-01-01');
+        $this->entityManager->persist(new AnimeSyncState($anime, 'local', WatchStatus::Watching, 10, new \DateTimeImmutable('2026-01-01')));
+        $this->entityManager->flush();
+
+        $origin = $this->createMock(SyncInterface::class);
+        $origin->expects($this->never())->method('push');
+
+        $service = $this->newService([(string) $this->originPluginId => $origin]);
+
+        // The origin's very first pull for this title, reporting a different progress than local.
+        $service->reconcilePulledItem(
+            $anime,
+            (string) $this->originPluginId,
+            new SyncProjection(WatchStatus::Watching, 3),
+            new \DateTimeImmutable('2026-01-02'),
+            $this->entityManager,
+        );
+
+        $this->assertSame(WatchStatus::Watching, $anime->getWatchStatus());
+        $this->assertSame(10, $anime->getWatchedEpisodes());
+
+        $items = $this->entityManager->getRepository(SyncReviewItem::class)->findAll();
+        $this->assertCount(1, $items);
+        $this->assertSame(SyncReviewItemKind::NeedsCorrection, $items[0]->kind);
+        $this->assertSame(['local', (string) $this->originPluginId], $items[0]->payload['participants']);
+
+        $originState = $this->entityManager->getRepository(AnimeSyncState::class)->find(['anime' => $anime, 'participantId' => (string) $this->originPluginId]);
+        $this->assertNull($originState);
+    }
+
+    /**
+     * Acceptance (issue #861, scenario 2): a third active, resolvable participant with its own
+     * cached external id and snapshot row must not be touched at all by a first-contact
+     * divergence between local and a different origin — no push, no snapshot change.
+     */
+    public function testFirstContactDivergenceDoesNotPushOrTouchAThirdActiveParticipant(): void
+    {
+        $malPluginId = new PluginId('animedb-mal');
+
+        $anime = new TvAnime();
+        $anime->setTitle('Cowboy Bebop')->setWatchStatus(WatchStatus::Watching);
+        $anime->setEpisodesCount(26);
+        $anime->rememberExternalId($this->originPluginId, '1');
+        $anime->rememberExternalId($malPluginId, '99');
+        $anime->changeWatchedEpisodesManually(10);
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+
+        $this->entityManager->persist(new AnimeSyncState($anime, 'local', WatchStatus::Watching, 10, new \DateTimeImmutable('2026-01-01')));
+        $this->entityManager->persist(new AnimeSyncState($anime, (string) $malPluginId, WatchStatus::Watching, 10, new \DateTimeImmutable('2026-01-01')));
+        $this->entityManager->flush();
+
+        $mal = $this->createMock(SyncInterface::class);
+        $mal->expects($this->never())->method('push');
+
+        $origin = $this->createMock(SyncInterface::class);
+        $origin->expects($this->never())->method('push');
+
+        $service = $this->newService([(string) $this->originPluginId => $origin, (string) $malPluginId => $mal]);
+
+        $service->reconcilePulledItem(
+            $anime,
+            (string) $this->originPluginId,
+            new SyncProjection(WatchStatus::Watching, 3),
+            new \DateTimeImmutable('2026-01-02'),
+            $this->entityManager,
+        );
+
+        $malState = $this->entityManager->getRepository(AnimeSyncState::class)->find(['anime' => $anime, 'participantId' => (string) $malPluginId]);
+        $this->assertInstanceOf(AnimeSyncState::class, $malState);
+        $this->assertSame(WatchStatus::Watching, $malState->lastStatus);
+        $this->assertSame(10, $malState->lastWatchedEpisodes);
+    }
+
+    /**
+     * Acceptance (issue #861, scenario 3): a repeated pull of the same still-unresolved
+     * disagreement from the same source must not raise a second review-item — the dedup check is
+     * keyed on (anime, participant), not just anime.
+     */
+    public function testRepeatedFirstContactDivergenceFromTheSameOriginDoesNotDuplicateTheReviewItem(): void
+    {
+        $anime = new TvAnime();
+        $anime->setTitle('Cowboy Bebop')->setWatchStatus(WatchStatus::Watching);
+        $anime->setEpisodesCount(26);
+        $anime->rememberExternalId($this->originPluginId, '1');
+        $anime->changeWatchedEpisodesManually(10);
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+
+        $this->entityManager->persist(new AnimeSyncState($anime, 'local', WatchStatus::Watching, 10, new \DateTimeImmutable('2026-01-01')));
+        $this->entityManager->flush();
+
+        $origin = $this->createStub(SyncInterface::class);
+
+        $service = $this->newService([(string) $this->originPluginId => $origin]);
+
+        $service->reconcilePulledItem(
+            $anime,
+            (string) $this->originPluginId,
+            new SyncProjection(WatchStatus::Watching, 3),
+            new \DateTimeImmutable('2026-01-02'),
+            $this->entityManager,
+        );
+        $service->reconcilePulledItem(
+            $anime,
+            (string) $this->originPluginId,
+            new SyncProjection(WatchStatus::Watching, 3),
+            new \DateTimeImmutable('2026-01-02'),
+            $this->entityManager,
+        );
+
+        $this->assertSame(10, $anime->getWatchedEpisodes());
+
+        $items = $this->entityManager->getRepository(SyncReviewItem::class)->findAll();
+        $this->assertCount(1, $items);
+
+        $originState = $this->entityManager->getRepository(AnimeSyncState::class)->find(['anime' => $anime, 'participantId' => (string) $this->originPluginId]);
+        $this->assertNull($originState);
+    }
+
+    /**
+     * Acceptance (issue #861, scenario 4): a provably virgin local (no snapshot row, no watch
+     * progress ever recorded) must keep the pre-existing behavior — the origin's value is applied
+     * straight to local via the synthesized-agreement path, no review-item.
+     */
+    public function testVirginLocalStillSynthesizesAgreementAndAppliesTheOriginDirectly(): void
+    {
+        $anime = new TvAnime();
+        $anime->setTitle('Cowboy Bebop')->setWatchStatus(WatchStatus::Plan);
+        $anime->rememberExternalId($this->originPluginId, '1');
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+
+        $origin = $this->createStub(SyncInterface::class);
+
+        $service = $this->newService([(string) $this->originPluginId => $origin]);
+
+        $service->reconcilePulledItem(
+            $anime,
+            (string) $this->originPluginId,
+            new SyncProjection(WatchStatus::Watching, 3),
+            new \DateTimeImmutable('2026-01-01'),
+            $this->entityManager,
+        );
+
+        $this->assertSame(WatchStatus::Watching, $anime->getWatchStatus());
+        $this->assertSame(3, $anime->getWatchedEpisodes());
+
+        $items = $this->entityManager->getRepository(SyncReviewItem::class)->findAll();
+        $this->assertCount(0, $items);
+    }
+
+    /**
+     * Acceptance (issue #861, scenario 5): when the origin's first-contact projection actually
+     * agrees with local's current one, no review-item is raised and the origin's own snapshot row
+     * is created as usual — the new rule must only intercept a genuine divergence.
+     */
+    public function testFirstContactWithAMatchingProjectionTakesTheOrdinaryPathAndWritesTheOriginSnapshot(): void
+    {
+        $anime = new TvAnime();
+        $anime->setTitle('Cowboy Bebop')->setWatchStatus(WatchStatus::Watching);
+        $anime->setEpisodesCount(26);
+        $anime->rememberExternalId($this->originPluginId, '1');
+        $anime->changeWatchedEpisodesManually(10);
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+
+        $this->entityManager->persist(new AnimeSyncState($anime, 'local', WatchStatus::Watching, 10, new \DateTimeImmutable('2026-01-01')));
+        $this->entityManager->flush();
+
+        $origin = $this->createStub(SyncInterface::class);
+
+        $service = $this->newService([(string) $this->originPluginId => $origin]);
+
+        $service->reconcilePulledItem(
+            $anime,
+            (string) $this->originPluginId,
+            new SyncProjection(WatchStatus::Watching, 10),
+            new \DateTimeImmutable('2026-01-02'),
+            $this->entityManager,
+        );
+
+        $this->assertSame(10, $anime->getWatchedEpisodes());
+
+        $items = $this->entityManager->getRepository(SyncReviewItem::class)->findAll();
+        $this->assertCount(0, $items);
+
+        $originState = $this->entityManager->getRepository(AnimeSyncState::class)->find(['anime' => $anime, 'participantId' => (string) $this->originPluginId]);
+        $this->assertInstanceOf(AnimeSyncState::class, $originState);
+        $this->assertSame(WatchStatus::Watching, $originState->lastStatus);
+    }
+
+    /**
+     * Acceptance (issue #861, scenario 6): the origin reports the same status as local but does
+     * not report episode progress at all — SyncProjection::equals() treats a null episode count
+     * as "not reported", not a value that conflicts with local's 10 — so this must not be read as
+     * a divergence either.
+     */
+    public function testFirstContactWithMatchingStatusAndUnreportedEpisodesTakesTheOrdinaryPath(): void
+    {
+        $anime = new TvAnime();
+        $anime->setTitle('Cowboy Bebop')->setWatchStatus(WatchStatus::Watching);
+        $anime->setEpisodesCount(26);
+        $anime->rememberExternalId($this->originPluginId, '1');
+        $anime->changeWatchedEpisodesManually(10);
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+
+        $this->entityManager->persist(new AnimeSyncState($anime, 'local', WatchStatus::Watching, 10, new \DateTimeImmutable('2026-01-01')));
+        $this->entityManager->flush();
+
+        $origin = $this->createStub(SyncInterface::class);
+
+        $service = $this->newService([(string) $this->originPluginId => $origin]);
+
+        $service->reconcilePulledItem(
+            $anime,
+            (string) $this->originPluginId,
+            new SyncProjection(WatchStatus::Watching, null),
+            new \DateTimeImmutable('2026-01-02'),
+            $this->entityManager,
+        );
+
+        $items = $this->entityManager->getRepository(SyncReviewItem::class)->findAll();
+        $this->assertCount(0, $items);
+    }
+
     public function testApplyManualResolutionDoesNotForwardARejectedChoiceToParticipants(): void
     {
         $anime = new TvAnime();
