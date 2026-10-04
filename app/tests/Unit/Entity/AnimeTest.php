@@ -295,6 +295,37 @@ final class AnimeTest extends TestCase
         $this->assertEquals(new \DateTimeImmutable('2026-06-01'), $anime->getDateEnd());
     }
 
+    /**
+     * Issue #860, scenario 1: setDatePremiereAndEnd() with a valid pair sets both dates.
+     */
+    public function testSetDatePremiereAndEndAppliesBothDatesForAValidPair(): void
+    {
+        $anime = new MovieAnime();
+
+        $anime->setDatePremiereAndEnd(new \DateTimeImmutable('2026-01-01'), new \DateTimeImmutable('2026-06-01'));
+
+        $this->assertEquals(new \DateTimeImmutable('2026-01-01'), $anime->getDatePremiere());
+        $this->assertEquals(new \DateTimeImmutable('2026-06-01'), $anime->getDateEnd());
+    }
+
+    /**
+     * Issue #860, scenario 2: setDatePremiereAndEnd() with an invalid pair changes neither date —
+     * not even the one that, on its own, would not have violated the invariant.
+     */
+    public function testSetDatePremiereAndEndChangesNeitherDateForAnInvalidPair(): void
+    {
+        $anime = new MovieAnime();
+        $anime->setDatePremiereAndEnd(new \DateTimeImmutable('2025-01-01'), new \DateTimeImmutable('2025-06-01'));
+
+        $this->expectException(InvalidDateRangeException::class);
+        try {
+            $anime->setDatePremiereAndEnd(new \DateTimeImmutable('2026-06-01'), new \DateTimeImmutable('2026-01-01'));
+        } finally {
+            $this->assertEquals(new \DateTimeImmutable('2025-01-01'), $anime->getDatePremiere());
+            $this->assertEquals(new \DateTimeImmutable('2025-06-01'), $anime->getDateEnd());
+        }
+    }
+
     public function testProductionStatusIsAnnouncedWithoutDates(): void
     {
         $anime = new MovieAnime();

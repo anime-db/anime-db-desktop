@@ -100,6 +100,7 @@ final class FieldFillerServiceTest extends TestCase
                 new StudioRepository($this->entityManager),
                 $this->entityManager,
                 $mediaDownloader ?? $this->createStub(PluginMediaDownloaderInterface::class),
+                new NullLogger(),
             ),
             $this->entityManager,
             new CachedFillerLookup($cache ?? new ArrayAdapter()),
@@ -282,6 +283,33 @@ final class FieldFillerServiceTest extends TestCase
         $this->assertSame(FillResult::Applied, $service->fill($anime, $pluginId, 'durationMinutes'));
         $this->assertSame(24, $anime->getDurationMinutes());
         $this->assertNull($anime->getEpisodesCount());
+    }
+
+    /**
+     * Issue #860, scenario 8: a point fill-in of 'dateEnd' that conflicts with the anime's
+     * already-stored datePremiere must not throw and must not come back as
+     * FillResult::ImageRejected — that result is reserved for an actual image/cover download
+     * failure (see PluginAnimeDataMerger::apply()'s docblock), not a rejected date pair.
+     */
+    public function testFillDoesNotReportImageRejectedWhenAPointFillInOfDateEndConflictsWithTheStoredDatePremiere(): void
+    {
+        $pluginId = new PluginId('animedb-shikimori');
+        $data = new PluginAnimeData(title: 'Bleach', dateEnd: new \DateTimeImmutable('2020-01-01'));
+
+        $filler = $this->createStub(FillerInterface::class);
+        $filler->method('getFillableFields')->willReturn(['dateEnd']);
+        $filler->method('resolveExternalId')->willReturn('104');
+        $filler->method('findById')->willReturn($data);
+
+        $anime = $this->persistedAnime();
+        $anime->setDatePremiere(new \DateTimeImmutable('2020-06-01'));
+
+        $service = $this->newService([(string) $pluginId => $filler]);
+
+        $result = $service->fill($anime, $pluginId, 'dateEnd');
+
+        $this->assertNotSame(FillResult::ImageRejected, $result);
+        $this->assertNull($anime->getDateEnd());
     }
 
     public function testFillReturnsImageRejectedWhenThePluginReturnsACoverUrlThatFailsToDownload(): void

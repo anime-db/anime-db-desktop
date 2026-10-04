@@ -39,12 +39,14 @@ use App\Entity\Enum\AnimeNameRole;
 use App\Entity\Enum\Demographic;
 use App\Entity\Enum\GenreCode;
 use App\Entity\Enum\ThemeCode;
+use App\Entity\Exception\InvalidDateRangeException;
 use App\Entity\LocaleNormalizer;
 use App\Entity\NameNormalizer;
 use App\Entity\SeriesAnime;
 use App\Entity\Studio;
 use App\Repository\StudioRepository;
 use Doctrine\ORM\EntityManagerInterface;
+use Psr\Log\LoggerInterface;
 
 /**
  * Applies a plugin-supplied {@see PluginAnimeData} onto an {@see Anime}, one field at a time,
@@ -53,7 +55,11 @@ use Doctrine\ORM\EntityManagerInterface;
  * themes, studios, countries, images) are unioned via Anime's own add*()/set-with-existing
  * methods, which already de-duplicate or merge by key — nothing that already exists is lost.
  * Scalar fields (title, date_premiere, date_end, duration_minutes, demographic,
- * episodes_count, cover) are overwritten outright.
+ * episodes_count, cover) are overwritten outright — except date_premiere/date_end, which are
+ * applied together through {@see Anime::setDatePremiereAndEnd()} rather than one field at a
+ * time (issue #860): a pair that would violate end >= premiere is rejected as a whole (a
+ * warning is logged, neither date changes) instead of letting the entity's own invariant
+ * exception escape apply() with one date already written and the other not.
  *
  * `type` is deliberately not handled here: Doctrine's single-table discriminator is fixed per
  * row, so it can only be chosen at entity-construction time (BulkFillerService::instantiate())
@@ -78,6 +84,7 @@ final class PluginAnimeDataMerger
         private readonly StudioRepository $studioRepository,
         private readonly EntityManagerInterface $entityManager,
         private readonly PluginMediaDownloaderInterface $mediaDownloader,
+        private readonly LoggerInterface $logger,
     ) {
     }
 
@@ -92,10 +99,18 @@ final class PluginAnimeDataMerger
      *                      be applied - today only 'cover' and 'images' can end up here (a URL
      *                      that failed to download or normalize into WebP, see applyCover()/
      *                      applyImages()); every other field's behavior is unchanged and never
-     *                      appears in this list
+     *                      appears in this list — a rejected date_premiere/date_end pair is not
+     *                      reported here either, see applyDatePremiereAndEnd()
      */
     public function apply(Anime $anime, PluginAnimeData $data, array $fields): array
     {
+        // Handled once, together, regardless of where 'datePremiere'/'dateEnd' sit in $fields —
+        // see applyDatePremiereAndEnd() for why the pair cannot be applied field-by-field below.
+        $dateFields = array_values(array_intersect(['datePremiere', 'dateEnd'], $fields));
+        if ($dateFields !== []) {
+            $this->applyDatePremiereAndEnd($anime, $data, $dateFields);
+        }
+
         $unapplied = [];
         foreach ($fields as $field) {
             // Every arm here is void except applyCover()/applyImages(), which are the only ones
@@ -109,8 +124,7 @@ final class PluginAnimeDataMerger
                 'themes' => $this->applyThemes($anime, $data->themes ?? []),
                 'demographic' => $this->applyDemographic($anime, $data->demographic),
                 'studios' => $this->applyStudios($anime, $data->studios ?? []),
-                'datePremiere' => $data->datePremiere !== null ? $anime->setDatePremiere($data->datePremiere) : null,
-                'dateEnd' => $data->dateEnd !== null ? $anime->setDateEnd($data->dateEnd) : null,
+                'datePremiere', 'dateEnd' => null, // applied as a pair above
                 'durationMinutes' => $data->durationMinutes !== null ? $anime->setDurationMinutes($data->durationMinutes) : null,
                 'episodesCount' => $this->applyEpisodesCount($anime, $data->episodesCount),
                 'countries' => $this->applyCountries($anime, $data->countries ?? []),
@@ -125,6 +139,45 @@ final class PluginAnimeDataMerger
         }
 
         return $unapplied;
+    }
+
+    /**
+     * Builds the (datePremiere, dateEnd) pair apply() would end up with and applies it through
+     * {@see Anime::setDatePremiereAndEnd()} in one call, so the entity checks end >= premiere
+     * once for the pair that would actually result — not once per field, which could succeed on
+     * the first date and throw on the second, in whichever order $fields happens to list them
+     * (issue #860). For each of the two dates: $data's value when that field is present in
+     * $fields and non-null, otherwise $anime's already-stored value (unchanged by this call).
+     *
+     * A pair that violates the invariant is rejected as a whole — neither date is changed — and
+     * logged as a warning, rather than added to apply()'s $unapplied: FieldFillerService and
+     * BulkFillerService turn a non-empty $unapplied into FillResult::ImageRejected, which would
+     * surface a rejected date pair to the user as a rejected image.
+     *
+     * @param list<string> $fields the subset of the caller's $fields that is 'datePremiere'
+     *                             and/or 'dateEnd' — never empty, apply() only calls this when
+     *                             at least one of the two is present
+     */
+    private function applyDatePremiereAndEnd(Anime $anime, PluginAnimeData $data, array $fields): void
+    {
+        $datePremiere = \in_array('datePremiere', $fields, true) && $data->datePremiere !== null
+            ? $data->datePremiere
+            : $anime->getDatePremiere();
+        $dateEnd = \in_array('dateEnd', $fields, true) && $data->dateEnd !== null
+            ? $data->dateEnd
+            : $anime->getDateEnd();
+
+        try {
+            $anime->setDatePremiereAndEnd($datePremiere, $dateEnd);
+        } catch (InvalidDateRangeException) {
+            $this->logger->warning('Rejected a date_premiere/date_end pair that would violate date_end >= date_premiere; leaving both dates unchanged.', [
+                'animeId' => $anime->id,
+                'sourceDatePremiere' => $data->datePremiere,
+                'sourceDateEnd' => $data->dateEnd,
+                'storedDatePremiere' => $anime->getDatePremiere(),
+                'storedDateEnd' => $anime->getDateEnd(),
+            ]);
+        }
     }
 
     /**

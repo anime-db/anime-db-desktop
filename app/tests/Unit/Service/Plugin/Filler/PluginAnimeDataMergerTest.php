@@ -52,6 +52,8 @@ use Doctrine\ORM\ORMSetup;
 use Doctrine\ORM\Tools\SchemaTool;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 
 /**
  * Real EntityManager/SQLite connection (same setup as ScanStorageServiceTest): applyStudios()
@@ -82,14 +84,19 @@ final class PluginAnimeDataMergerTest extends TestCase
     }
 
     /** @param array<string, string|null> $downloads url => returned filename (or null for a failed download) */
-    private function newMerger(array $downloads = []): PluginAnimeDataMerger
+    private function newMerger(array $downloads = [], ?LoggerInterface $logger = null): PluginAnimeDataMerger
     {
         $downloader = $this->createStub(PluginMediaDownloaderInterface::class);
         $downloader->method('download')->willReturnCallback(
             static fn (int $animeId, string $url): ?string => $downloads[$url] ?? null,
         );
 
-        return new PluginAnimeDataMerger(new StudioRepository($this->entityManager), $this->entityManager, $downloader);
+        return new PluginAnimeDataMerger(
+            new StudioRepository($this->entityManager),
+            $this->entityManager,
+            $downloader,
+            $logger ?? new NullLogger(),
+        );
     }
 
     private function newAnime(): TvAnime
@@ -400,6 +407,100 @@ final class PluginAnimeDataMergerTest extends TestCase
         $this->newMerger()->apply($anime, $data, ['durationMinutes']);
 
         $this->assertSame(24, $anime->getDurationMinutes());
+    }
+
+    /**
+     * Issue #860, scenario 3: a stored datePremiere that conflicts with the incoming dateEnd
+     * alone must not throw out of apply(), must leave dateEnd unchanged, must log a warning, and
+     * must not appear in the returned unapplied list — a non-empty unapplied turns into
+     * FillResult::ImageRejected downstream, which would misreport a date conflict as a rejected
+     * image.
+     */
+    public function testApplyRejectsDateEndConflictingWithStoredDatePremiereWithoutThrowingAndLogsAWarning(): void
+    {
+        $anime = $this->newAnime();
+        $anime->setDatePremiere(new \DateTimeImmutable('2020-06-01'));
+
+        $data = new PluginAnimeData(title: 'Bleach', dateEnd: new \DateTimeImmutable('2020-01-01'));
+
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->once())->method('warning')->with(
+            $this->isType('string'),
+            $this->callback(static fn (array $context): bool => $context['sourceDateEnd']->format('Y-m-d') === '2020-01-01'
+                && $context['storedDatePremiere']->format('Y-m-d') === '2020-06-01'),
+        );
+
+        $unapplied = $this->newMerger(logger: $logger)->apply($anime, $data, ['dateEnd']);
+
+        $this->assertNull($anime->getDateEnd());
+        $this->assertEquals(new \DateTimeImmutable('2020-06-01'), $anime->getDatePremiere());
+        $this->assertSame([], $unapplied);
+    }
+
+    /**
+     * Issue #860, scenario 4: the mirror case, a new datePremiere from the source that conflicts
+     * with the already-stored dateEnd — datePremiere must stay untouched, no exception.
+     */
+    public function testApplyRejectsDatePremiereConflictingWithStoredDateEndWithoutThrowing(): void
+    {
+        $anime = $this->newAnime();
+        $anime->setDateEnd(new \DateTimeImmutable('2020-01-01'));
+
+        $data = new PluginAnimeData(title: 'Bleach', datePremiere: new \DateTimeImmutable('2020-06-01'));
+
+        $unapplied = $this->newMerger()->apply($anime, $data, ['datePremiere']);
+
+        $this->assertNull($anime->getDatePremiere());
+        $this->assertEquals(new \DateTimeImmutable('2020-01-01'), $anime->getDateEnd());
+        $this->assertSame([], $unapplied);
+    }
+
+    /**
+     * Issue #860, scenario 5: the source's own pair is internally invalid (both dates present in
+     * $fields, nothing stored yet) — neither date is applied, but every other field in $fields is
+     * applied as usual; the date rejection does not take the rest of the call down with it.
+     */
+    public function testApplyRejectsAnInvalidPairFromDataAloneButStillAppliesOtherFields(): void
+    {
+        $anime = $this->newAnime();
+
+        $data = new PluginAnimeData(
+            title: 'Bleach',
+            datePremiere: new \DateTimeImmutable('2020-06-01'),
+            dateEnd: new \DateTimeImmutable('2020-01-01'),
+            durationMinutes: 24,
+        );
+
+        $unapplied = $this->newMerger()->apply($anime, $data, ['datePremiere', 'dateEnd', 'durationMinutes']);
+
+        $this->assertNull($anime->getDatePremiere());
+        $this->assertNull($anime->getDateEnd());
+        $this->assertSame(24, $anime->getDurationMinutes());
+        $this->assertSame([], $unapplied);
+    }
+
+    /**
+     * Issue #860, scenario 7: the pair's outcome must not depend on whether 'datePremiere' or
+     * 'dateEnd' comes first in $fields — both orderings reach the same (rejected) result here.
+     */
+    public function testApplyDatePairRejectionResultIsIndependentOfFieldOrder(): void
+    {
+        $data = new PluginAnimeData(
+            title: 'Bleach',
+            datePremiere: new \DateTimeImmutable('2020-06-01'),
+            dateEnd: new \DateTimeImmutable('2020-01-01'),
+        );
+
+        $forward = $this->newAnime();
+        $this->newMerger()->apply($forward, $data, ['datePremiere', 'dateEnd']);
+
+        $backward = $this->newAnime();
+        $this->newMerger()->apply($backward, $data, ['dateEnd', 'datePremiere']);
+
+        $this->assertNull($forward->getDatePremiere());
+        $this->assertNull($forward->getDateEnd());
+        $this->assertNull($backward->getDatePremiere());
+        $this->assertNull($backward->getDateEnd());
     }
 
     public function testApplyOverwritesEpisodesCountOnSeriesAnime(): void

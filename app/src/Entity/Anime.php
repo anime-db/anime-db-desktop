@@ -283,6 +283,24 @@ abstract class Anime implements AggregateRootInterface
         return $this;
     }
 
+    /**
+     * Applies datePremiere/dateEnd as a single reconciled pair rather than two independent
+     * writes (issue #860): the domain already requires end >= premiere, but setDatePremiere()/
+     * setDateEnd() each check that invariant against whatever the *other* property currently
+     * holds, so a caller applying both from a source that disagrees with the already-stored
+     * value one field at a time can have the first call succeed and the second throw, leaving
+     * the entity with one date from the new source and one left over from before. Checking the
+     * final pair once here means either both dates move together or neither does.
+     */
+    public function setDatePremiereAndEnd(?\DateTimeImmutable $datePremiere, ?\DateTimeImmutable $dateEnd): self
+    {
+        $this->assertDateRange($datePremiere, $dateEnd);
+        $this->datePremiere = $datePremiere;
+        $this->dateEnd = $dateEnd;
+
+        return $this;
+    }
+
     private function assertDateRange(?\DateTimeImmutable $datePremiere, ?\DateTimeImmutable $dateEnd): void
     {
         if ($datePremiere !== null && $dateEnd !== null && $dateEnd < $datePremiere) {

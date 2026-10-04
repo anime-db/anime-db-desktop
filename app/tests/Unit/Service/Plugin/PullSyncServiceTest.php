@@ -133,6 +133,7 @@ final class PullSyncServiceTest extends TestCase
                 new StudioRepository($entityManager),
                 $entityManager,
                 $this->createStub(PluginMediaDownloaderInterface::class),
+                new NullLogger(),
             ),
             $entityManager,
             new NullLogger(),
@@ -520,6 +521,48 @@ final class PullSyncServiceTest extends TestCase
     }
 
     /**
+     * Issue #860, scenario 9: a pulled item whose source data carries a conflicting
+     * datePremiere/dateEnd pair is still created — without those two dates, rather than letting
+     * PluginAnimeDataMerger's own InvalidDateRangeException escape and have the per-item
+     * isolation (issue #859) skip the whole item. The rest of this run's items are unaffected
+     * and pull() reports a clean completion.
+     */
+    public function testCreatesANewAnimeWithoutConflictingDatesWhenTheSourceDataViolatesTheInvariant(): void
+    {
+        $sync = $this->syncFillerStubPerItem(
+            [
+                new SyncItem('1', SyncStatus::Plan, 'Trigun'),
+                new SyncItem('2', SyncStatus::Plan, 'Bleach'),
+            ],
+            dataByExternalId: [
+                '1' => new PluginAnimeData(
+                    title: 'Trigun',
+                    type: ContractsAnimeType::Tv,
+                    datePremiere: new \DateTimeImmutable('2020-06-01'),
+                    dateEnd: new \DateTimeImmutable('2020-01-01'),
+                ),
+                '2' => new PluginAnimeData(title: 'Bleach', type: ContractsAnimeType::Tv),
+            ],
+            fillableFields: ['title', 'type', 'datePremiere', 'dateEnd'],
+        );
+
+        $completed = $this->service->pull($this->pluginId, $sync);
+
+        $this->assertTrue($completed);
+        $created = $this->allAnime();
+        $this->assertCount(2, $created);
+
+        $byTitle = [];
+        foreach ($created as $anime) {
+            $byTitle[$anime->getTitle()] = $anime;
+        }
+
+        $this->assertNull($byTitle['Trigun']->getDatePremiere());
+        $this->assertNull($byTitle['Trigun']->getDateEnd());
+        $this->assertArrayHasKey('Bleach', $byTitle);
+    }
+
+    /**
      * The up-front indexByExternalId() snapshot cannot see a concurrent create that lands
      * after it — the real guard is the anime_external_id UNIQUE(plugin_id, external_id)
      * constraint inside BulkFillerService::build() (issue #297). Simulated here by seeding
@@ -630,6 +673,7 @@ final class PullSyncServiceTest extends TestCase
                 new StudioRepository($this->entityManager),
                 $this->entityManager,
                 $this->createStub(PluginMediaDownloaderInterface::class),
+                new NullLogger(),
             ),
             $this->entityManager,
             new NullLogger(),
@@ -1024,6 +1068,7 @@ final class PullSyncServiceTest extends TestCase
                 new StudioRepository($this->entityManager),
                 $this->entityManager,
                 $this->createStub(PluginMediaDownloaderInterface::class),
+                new NullLogger(),
             ),
             $this->entityManager,
             new NullLogger(),
