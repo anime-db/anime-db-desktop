@@ -254,12 +254,13 @@ final class DownloadNewController
         ?string $info = null,
         ?int $occupyingAnimeId = null,
     ): Response {
-        [$storages, $defaultStorageId] = $this->buildStorageOptions();
+        [$storages, $defaultStorageId, $presetFailed] = $this->buildStorageOptions();
 
         return new Response($this->twig->render('downloads/new.html.twig', [
             'selectedAnime' => $selectedAnime,
             'magnet' => $magnet,
             'storages' => $storages,
+            'presetFailed' => $presetFailed,
             'selectedStorageId' => $selectedStorageId ?? $defaultStorageId,
             'error' => $error,
             'errorParams' => $errorParams,
@@ -269,27 +270,38 @@ final class DownloadNewController
     }
 
     /**
-     * @return array{0: list<Storage>, 1: int} the writable storages plus the preset one
-     *                                         (de-duplicated by id), and the id to preselect
+     * @return array{0: list<Storage>, 1: ?int, 2: bool} the writable storages plus the preset one
+     *                                                   (de-duplicated by id, absent when it could not be prepared),
+     *                                                   the id to preselect and whether the preset failed
      */
     private function buildStorageOptions(): array
     {
-        $preset = $this->presetStorageProvider->getOrCreate();
-        $presetId = $preset->id ?? throw new \LogicException('Preset storage must be persisted.');
+        $preset = null;
+        $presetFailed = false;
+        try {
+            $preset = $this->presetStorageProvider->getOrCreate();
+        } catch (DownloadStorageUnavailableException|\RuntimeException) {
+            $presetFailed = true;
+        }
 
         $byId = [];
         foreach ($this->storageRepository->findAllScannable() as $storage) {
             $storageId = $storage->id ?? throw new \LogicException('Storage must be persisted.');
             $byId[$storageId] = $storage;
         }
-        $byId[$presetId] = $preset;
+
+        $presetId = null;
+        if ($preset !== null) {
+            $presetId = $preset->id ?? throw new \LogicException('Preset storage must be persisted.');
+            $byId[$presetId] = $preset;
+        }
 
         $defaultId = $this->settings->getLastDownloadStorageId();
         if ($defaultId === null || !isset($byId[$defaultId])) {
             $defaultId = $presetId;
         }
 
-        return [array_values($byId), $defaultId];
+        return [array_values($byId), $defaultId, $presetFailed];
     }
 
     /**

@@ -35,6 +35,10 @@
             </p>
         {% endif %}
 
+        {% if presetFailed %}
+            <p class="alert alert-warning">{{ 'download_new.warning_preset_unavailable'|trans }}</p>
+        {% endif %}
+
         {% if info %}
             <p class="alert alert-info">{{ info|trans }}</p>
         {% endif %}

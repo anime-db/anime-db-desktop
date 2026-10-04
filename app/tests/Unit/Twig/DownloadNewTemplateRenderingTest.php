@@ -83,6 +83,7 @@ final class DownloadNewTemplateRenderingTest extends KernelTestCase
             'selectedAnime' => null,
             'magnet' => '',
             'storages' => [$this->makeStorage(1)],
+            'presetFailed' => false,
             'selectedStorageId' => 1,
             'error' => null,
             'errorParams' => [],
@@ -108,6 +109,7 @@ final class DownloadNewTemplateRenderingTest extends KernelTestCase
             'selectedAnime' => $anime,
             'magnet' => 'magnet:?xt=urn:btih:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
             'storages' => [$this->makeStorage(1)],
+            'presetFailed' => false,
             'selectedStorageId' => 1,
             'error' => 'download_new.error_already_linked',
             'errorParams' => ['%id%' => 42],
@@ -117,5 +119,30 @@ final class DownloadNewTemplateRenderingTest extends KernelTestCase
 
         $this->assertStringContainsString('Shingeki no Kyojin', $html);
         $this->assertStringContainsString('/anime/42', $html);
+    }
+
+    public function testRendersWarningOnlyWhenPresetFailed(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession();
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $params = [
+            'selectedAnime' => null,
+            'magnet' => '',
+            'storages' => [$this->makeStorage(1)],
+            'presetFailed' => true,
+            'selectedStorageId' => null,
+            'error' => null,
+            'errorParams' => [],
+            'info' => null,
+            'occupyingAnimeId' => null,
+        ];
+
+        $this->assertStringContainsString('alert-warning', $twig->render('downloads/new.html.twig', $params));
+
+        $params['presetFailed'] = false;
+        $this->assertStringNotContainsString('alert-warning', $twig->render('downloads/new.html.twig', $params));
     }
 }

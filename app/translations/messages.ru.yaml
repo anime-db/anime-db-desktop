@@ -708,6 +708,7 @@ download_new:
     info_already_in_downloads: Эта раздача уже в загрузках для этой записи.
     error_anime_required: Выберите запись каталога.
     error_storage_required: Выберите хранилище.
+    warning_preset_unavailable: Не удалось подготовить хранилище по умолчанию. Выберите другое.
     error_source_required: Укажите magnet-ссылку или выберите торрент-файл.
     error_unreadable_source: Не удалось прочитать раздачу.
     error_insufficient_space: 'Нужно %needed%, свободно %free% в «%path%».'
