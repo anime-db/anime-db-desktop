@@ -580,7 +580,7 @@ class AnimeRepository
 
     /**
      * A single page of the whole catalog, ordered by id, with $sources eagerly joined — what
-     * BackfillExternalIdMessageHandler (issue #258) walks page by page rather than loading the
+     * ExternalIdBackfillService (issue #258) walks page by page rather than loading the
      * whole catalog into memory at once, same LIMIT/OFFSET + Paginator pattern as
      * AnimeReindexService::reindexAll(). $sources is joined because Anime::getExternalId()
      * resolves against it.

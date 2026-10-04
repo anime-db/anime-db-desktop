@@ -25,20 +25,17 @@
 
 declare(strict_types=1);
 
-namespace App\MessageHandler;
+namespace App\Service\Plugin;
 
+use AnimeDb\PluginContracts\Sync\SyncInterface;
 use App\Entity\ValueObject\PluginId;
-use App\Message\BackfillExternalIdMessage;
 use App\Repository\AnimeRepository;
 use App\Service\JobLock\JobLockService;
-use App\Service\Plugin\SyncRegistry;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Log\LoggerInterface;
-use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 
 /**
- * One-off catalog sweep (issue #258) that resolves and caches a newly installed sync
- * plugin's external id for every Anime that already carries a matching source URL, via
+ * Catalog sweep (issue #258) that resolves and caches a sync plugin's external id for every Anime that already carries a matching source URL, via
  * {@see Anime::getExternalId()} (issue #211) — instead of leaving it to be resolved lazily,
  * one record at a time, the first time pull-dedup (issue #215a) or cross-vendor dedup
  * (issue #216) needs it.
@@ -46,10 +43,12 @@ use Symfony\Component\Messenger\Attribute\AsMessageHandler;
  * Guarded by {@see JobLockService} under `sync_backfill:<pluginId>`, same convention as
  * ScanStorageMessageHandler's per-storage lock: two overlapping backfills of the same
  * plugin (e.g. the message got redelivered) would otherwise race on the same rows for no
- * benefit. If the plugin is no longer installed or sync is no longer enabled for it by the
- * time this runs (the user disabled it right after installing), {@see SyncRegistry} simply
- * won't return it and this is a silent no-op — same "nothing left to do" stance as
- * PushSyncMessageHandler's missing-anime case, not a failure worth retrying.
+ * benefit. A skipped run is not an error: the sweep that already holds the lock does the same work.
+ *
+ * Called synchronously at the start of {@see \App\MessageHandler\SyncSeedMessageHandler}, before
+ * the pull (issue #867): the pull's indexByExternalId() only sees ids that are already cached, so
+ * running the sweep after (or concurrently with) it would create second rows for titles that
+ * are in the catalog with a source URL.
  *
  * The catalog is walked page by page via {@see AnimeRepository::findPage()} (same
  * LIMIT/OFFSET + EntityManager::clear() pattern as AnimeReindexService::reindexAll(), for the
@@ -64,8 +63,7 @@ use Symfony\Component\Messenger\Attribute\AsMessageHandler;
  * closed) never loses more than one page of progress and a re-dispatch of the same message
  * simply resumes — already-resolved rows are skipped again, nothing is double-processed.
  */
-#[AsMessageHandler]
-final class BackfillExternalIdMessageHandler
+final class ExternalIdBackfillService
 {
     private const int PAGE_SIZE = 200;
 
@@ -73,14 +71,12 @@ final class BackfillExternalIdMessageHandler
         private readonly EntityManagerInterface $entityManager,
         private readonly AnimeRepository $animeRepository,
         private readonly JobLockService $jobLockService,
-        private readonly SyncRegistry $syncRegistry,
         private readonly LoggerInterface $logger,
     ) {
     }
 
-    public function __invoke(BackfillExternalIdMessage $message): void
+    public function backfill(PluginId $pluginId, SyncInterface $sync): void
     {
-        $pluginId = new PluginId($message->pluginId);
         $jobKey = \sprintf('sync_backfill:%s', $pluginId);
         $lockAcquired = false;
 
@@ -94,15 +90,6 @@ final class BackfillExternalIdMessageHandler
                 return;
             }
             $lockAcquired = true;
-
-            $sync = $this->syncRegistry->findByPluginId($pluginId);
-            if ($sync === null) {
-                $this->logger->info('Skipping external id backfill: plugin is not installed or sync is not active.', [
-                    'plugin_id' => (string) $pluginId,
-                ]);
-
-                return;
-            }
 
             $processed = 0;
             $set = 0;

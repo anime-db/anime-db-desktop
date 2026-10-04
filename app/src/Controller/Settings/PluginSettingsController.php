@@ -29,7 +29,6 @@ namespace App\Controller\Settings;
 
 use App\Entity\ValueObject\Exception\InvalidPluginIdException;
 use App\Entity\ValueObject\PluginId;
-use App\Message\BackfillExternalIdMessage;
 use App\Message\SyncSeedMessage;
 use App\Service\Plugin\Exception\PluginsConfigStoreLockedException;
 use App\Service\Plugin\InstalledPluginsRegistry;
@@ -79,12 +78,9 @@ use Twig\Environment;
  * the plugin's markup (`settings/plugin/page.html.twig`'s `syncReviewUrl`) says the seed has
  * started and links to the sync review page, shown only for the one visit that just queued the
  * seed — {@see \App\Service\Plugin\PullSyncService::pull()} is what actually applies agreements to
- * local and raises review items for genuine conflicts. The same first visit also dispatches
- * {@see BackfillExternalIdMessage} (issue #258), which resolves
- * and caches this plugin's external id for every already-matching local record; it shares the
- * `syncSeeded` gate above rather than a flag of its own, and its own job-lock
- * ({@see \App\MessageHandler\BackfillExternalIdMessageHandler}) makes a re-dispatch on the
- * OAuth-retry path harmless.
+ * local and raises review items for genuine conflicts. The external-id backfill (issue #258) is not
+ * dispatched from here: {@see \App\MessageHandler\SyncSeedMessageHandler} runs it itself before the
+ * pull (issue #867), so the order does not depend on message delivery.
  *
  * `SyncRegistry::isActive()` gates on `features.sync` alone, which the switch on the plugins
  * page ({@see PluginController::toggleSync()}) sets before the plugin's OAuth flow actually
@@ -180,7 +176,6 @@ final class PluginSettingsController
 
             if (!$alreadySeeded) {
                 $this->messageBus->dispatch(new SyncSeedMessage((string) $id));
-                $this->messageBus->dispatch(new BackfillExternalIdMessage((string) $id));
 
                 // Only the visit that actually queued the seed shows the notice — a later visit
                 // (syncSeeded already true) renders the plugin's own settings markup with nothing

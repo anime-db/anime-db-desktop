@@ -149,6 +149,7 @@ final class PullSyncServiceTest extends TestCase
         $duplicateDetector = new CrossVendorDuplicateDetector(
             $this->createStub(AnimeSearchResolver::class),
             new SyncReviewService(new SyncReviewItemRepository($entityManager)),
+            new NullLogger(),
         );
 
         // A single shared SyncRegistry, one active entry per $otherSyncs plus $this->pluginId
@@ -688,6 +689,7 @@ final class PullSyncServiceTest extends TestCase
         $duplicateDetector = new CrossVendorDuplicateDetector(
             $resolver,
             new SyncReviewService(new SyncReviewItemRepository($this->entityManager)),
+            new NullLogger(),
         );
         $syncRegistry = new SyncRegistry([], new PluginsConfigStore(sys_get_temp_dir().'/anime-pull-sync-reg-'.uniqid().'.json'));
         $animeSyncStateRepository = new AnimeSyncStateRepository($this->entityManager);
@@ -1241,6 +1243,7 @@ final class PullSyncServiceTest extends TestCase
         $duplicateDetector = new CrossVendorDuplicateDetector(
             $resolver,
             new SyncReviewService(new SyncReviewItemRepository($this->entityManager)),
+            new NullLogger(),
         );
         $syncRegistry = new SyncRegistry([], new PluginsConfigStore(sys_get_temp_dir().'/anime-pull-sync-reg-'.uniqid().'.json'));
         $animeSyncStateRepository = new AnimeSyncStateRepository($this->entityManager);

@@ -54,7 +54,7 @@ use Psr\Log\NullLogger;
 
 /**
  * Exercises CatalogReader against a real EntityManager/SQLite connection (same setup as
- * BackfillExternalIdMessageHandlerTest) rather than mocking Anime — the merge into AnimeView and
+ * ExternalIdBackfillServiceTest) rather than mocking Anime — the merge into AnimeView and
  * the cached-vs-lazily-resolved externalId distinction both depend on real entity state.
  */
 final class CatalogReaderTest extends TestCase
