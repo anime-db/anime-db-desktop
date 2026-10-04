@@ -320,6 +320,44 @@ final class AppSettingsProviderTest extends TestCase
         $this->assertSame(7, $data['presetDownloadsStorageId']);
     }
 
+    public function testGetLastDownloadStorageIdReturnsNullWhenFileIsMissing(): void
+    {
+        $provider = new AppSettingsProvider(new AppConfigStore($this->configPath));
+
+        $this->assertNull($provider->getLastDownloadStorageId());
+    }
+
+    public function testGetLastDownloadStorageIdReturnsNullWhenValueIsNotAnInt(): void
+    {
+        file_put_contents($this->configPath, json_encode(['lastDownloadStorageId' => 'not-an-id']));
+
+        $provider = new AppSettingsProvider(new AppConfigStore($this->configPath));
+
+        $this->assertNull($provider->getLastDownloadStorageId());
+    }
+
+    public function testGetLastDownloadStorageIdReadsConfiguredValue(): void
+    {
+        file_put_contents($this->configPath, json_encode(['lastDownloadStorageId' => 9]));
+
+        $provider = new AppSettingsProvider(new AppConfigStore($this->configPath));
+
+        $this->assertSame(9, $provider->getLastDownloadStorageId());
+    }
+
+    public function testSetLastDownloadStorageIdOverwritesOnlyThatKey(): void
+    {
+        file_put_contents($this->configPath, json_encode(['appSecret' => 'abc']));
+
+        $provider = new AppSettingsProvider(new AppConfigStore($this->configPath));
+        $provider->setLastDownloadStorageId(9);
+
+        $data = json_decode((string) file_get_contents($this->configPath), true);
+
+        $this->assertSame('abc', $data['appSecret']);
+        $this->assertSame(9, $data['lastDownloadStorageId']);
+    }
+
     public function testWriteConfigThrowsAndLeavesValidFileIntactWhenTemporaryWriteFails(): void
     {
         // A directory this process owns (unlike sys_get_temp_dir() itself, which is typically

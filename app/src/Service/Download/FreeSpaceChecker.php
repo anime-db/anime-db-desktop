@@ -76,9 +76,13 @@ final class FreeSpaceChecker
     public function assertEnoughSpaceForTorrentFile(string $torrentFileContent, string $storageRoot): void
     {
         $totalSize = $this->parseTotalSize($torrentFileContent);
+        $free = $this->freeSpaceProvider->getFreeBytes($storageRoot);
+        $needed = $totalSize + $this->overheadFor($totalSize);
 
-        if (!$this->hasEnoughFreeSpace($totalSize, $storageRoot)) {
-            throw new InsufficientDiskSpaceException(\sprintf('Torrent needs %d bytes (+ overhead) but "%s" does not have enough free space.', $totalSize, $storageRoot));
+        // Unknown free space (e.g. the storage root does not exist yet) must not block a
+        // legitimate download — see hasEnoughFreeSpace()'s own docblock for the same rule.
+        if ($free !== null && $free < $needed) {
+            throw new InsufficientDiskSpaceException($needed, $free, $storageRoot);
         }
     }
 

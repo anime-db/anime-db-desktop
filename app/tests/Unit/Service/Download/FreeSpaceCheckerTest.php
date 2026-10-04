@@ -93,11 +93,21 @@ final class FreeSpaceCheckerTest extends TestCase
 
     public function testAssertEnoughSpaceForTorrentFileThrowsForASingleFileTorrentThatDoesNotFit(): void
     {
-        $checker = $this->makeChecker(100_000_000);
+        $totalSize = 1_000_000_000;
+        $free = 100_000_000;
+        $checker = $this->makeChecker($free);
 
-        $this->expectException(InsufficientDiskSpaceException::class);
-
-        $checker->assertEnoughSpaceForTorrentFile($this->singleFileTorrent(1_000_000_000), self::ROOT);
+        try {
+            $checker->assertEnoughSpaceForTorrentFile($this->singleFileTorrent($totalSize), self::ROOT);
+            $this->fail(InsufficientDiskSpaceException::class.' was not thrown.');
+        } catch (InsufficientDiskSpaceException $e) {
+            // Pins down the checker -> exception field mapping: a swapped totalSize/needed
+            // argument, a mixed-up needed/free pair, or the wrong path would all still throw
+            // the right exception type while carrying wrong data.
+            $this->assertSame($totalSize + self::MIN_OVERHEAD_BYTES, $e->neededBytes);
+            $this->assertSame($free, $e->freeBytes);
+            $this->assertSame(self::ROOT, $e->storagePath);
+        }
     }
 
     public function testAssertEnoughSpaceForTorrentFileSumsAllFilesInAMultiFileTorrent(): void

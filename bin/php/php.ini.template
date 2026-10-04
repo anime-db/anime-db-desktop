@@ -1,5 +1,7 @@
 [PHP]
 memory_limit = 256M
+upload_max_filesize = 16M
+post_max_size = 16M
 extension_dir = "{{EXTENSION_DIR}}"
 extension=intl
 extension=zip

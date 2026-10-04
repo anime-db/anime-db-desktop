@@ -42,7 +42,7 @@ use App\Entity\ValueObject\PluginId;
  * read-modify-write cycle so a concurrent write to a different key (e.g. ProxyConfigProvider's,
  * or this class's own defaultSearchPluginId next to locale) cannot be lost (issue #342).
  */
-final class AppSettingsProvider
+class AppSettingsProvider
 {
     /**
      * The eight filter-panel sections (issue #666/#820) — the only keys
@@ -179,6 +179,29 @@ final class AppSettingsProvider
     {
         $this->configStore->update(static function (array $config) use ($id): array {
             $config['presetDownloadsStorageId'] = $id;
+
+            return $config;
+        });
+    }
+
+    /**
+     * The Storage id last chosen on the "Add download" page (issue #855), written only on a
+     * successful enqueue — a failed submission must leave it untouched. Null means the form has
+     * never been submitted successfully yet, or the recorded storage has since been deleted; the
+     * caller falls back to the preset Storage ({@see Download\PresetDownloadsStorageProvider})
+     * in both cases.
+     */
+    public function getLastDownloadStorageId(): ?int
+    {
+        $id = $this->configStore->read()['lastDownloadStorageId'] ?? null;
+
+        return \is_int($id) ? $id : null;
+    }
+
+    public function setLastDownloadStorageId(int $id): void
+    {
+        $this->configStore->update(static function (array $config) use ($id): array {
+            $config['lastDownloadStorageId'] = $id;
 
             return $config;
         });

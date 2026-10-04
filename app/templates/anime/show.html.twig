@@ -119,6 +119,10 @@
                 </section>
             {% endif %}
 
+            <p class="anime-detail__download-new-link">
+                <a href="{{ path('download_new', {anime: anime.id}) }}">{{ 'anime_detail.download_new_link'|trans }}</a>
+            </p>
+
             {{ include('anime/_downloads.html.twig', {anime: anime, downloads: downloads, error: downloads_unlink_error}) }}
 
             {{ include('anime/_gallery.html.twig', {anime: anime, fillable_fields: fillable_fields}) }}
