@@ -131,6 +131,12 @@ final class DownloadsOverviewBuilder
             'statusText' => $this->statusText($download, $torrent, $torrentKnownMissing, $targetStorage, $markerIdCache),
             'targetStorageName' => $targetStorage?->getName(),
             'id' => $download->id,
+            // Echoed into the retry/delete forms' hidden `version`/`status` fields (see
+            // downloads/index.html.twig) and the live-update JSON response — DownloadActionController
+            // checks a submitted action against these, not against whatever the row now holds, so a
+            // poller pass between this render and the click surfaces as "state changed" rather than
+            // silently acting on data newer than what the human looked at.
+            'version' => $download->getVersion(),
         ] + $this->liveFields($torrent) + $this->actionFields($download, $torrent);
     }
 

@@ -26,7 +26,7 @@
     {# data-status-url feeds downloads-list.js's polling loop (issue #854); the rows/orphans
      # markup below is rebuilt wholesale by that same control on every successful poll, so its
      # row-building logic must stay in lockstep with the <tr> shape here — see downloads-list.js. #}
-    <main class="downloads-list py-4" data-control="downloads-list" data-status-url="{{ path('downloads_status') }}" data-no-card-label="{{ 'downloads.no_card_badge'|trans }}">
+    <main class="downloads-list py-4" data-control="downloads-list" data-status-url="{{ path('downloads_status') }}" data-no-card-label="{{ 'downloads.no_card_badge'|trans }}" data-stale-hint-label="{{ 'downloads.action_stale_hint'|trans }}">
         <h1>{{ 'downloads.heading'|trans }}</h1>
 
         <div class="alert alert-warning" data-downloads-banner{% if qbittorrentAvailable %} hidden{% endif %}>
@@ -78,7 +78,7 @@
                             <td>{{ row.etaText }}</td>
                             <td>{{ row.peersText }}</td>
                             <td>{{ row.targetStorageName }}</td>
-                            <td data-field="actions">
+                            <td data-field="actions"{% if row.hasCard %} data-version="{{ row.version }}" data-status="{{ row.coreStatus }}"{% endif %}>
                                 {% if row.hasCard %}
                                     {% if row.canPause %}
                                         <form method="post" action="{{ path('download_pause', {id: row.id}) }}" class="d-inline">
@@ -95,6 +95,8 @@
                                     {% if row.canRetry %}
                                         <form method="post" action="{{ path('download_retry', {id: row.id}) }}" class="d-inline">
                                             <input type="hidden" name="_token" value="{{ csrf_token('download_retry_' ~ row.id) }}">
+                                            <input type="hidden" name="version" value="{{ row.version }}">
+                                            <input type="hidden" name="status" value="{{ row.coreStatus }}">
                                             <button type="submit" class="btn btn-sm btn-outline-secondary">{{ 'downloads.action_retry'|trans }}</button>
                                         </form>
                                     {% endif %}
@@ -107,6 +109,8 @@
                                     {% if row.canDelete %}
                                         <form method="post" action="{{ path('download_delete', {id: row.id}) }}" class="d-inline">
                                             <input type="hidden" name="_token" value="{{ csrf_token('download_delete_' ~ row.id) }}">
+                                            <input type="hidden" name="version" value="{{ row.version }}">
+                                            <input type="hidden" name="status" value="{{ row.coreStatus }}">
                                             {% if row.hasTorrentInClient %}
                                                 <label class="me-1">
                                                     <input type="checkbox" name="delete_files" value="1"{% if row.deleteFilesDefaultChecked %} checked{% endif %}>

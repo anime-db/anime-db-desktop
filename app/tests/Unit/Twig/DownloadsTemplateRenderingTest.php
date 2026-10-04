@@ -91,6 +91,8 @@ final class DownloadsTemplateRenderingTest extends KernelTestCase
             'peersText' => '3/1',
             'targetStorageName' => 'Main folder',
             'id' => 1,
+            'coreStatus' => 'pending',
+            'version' => 1,
             'canPause' => false,
             'canResume' => false,
             'canRetry' => false,

@@ -38,13 +38,18 @@ use Doctrine\ORM\EntityManagerInterface;
  * reports {@see DownloadActionOutcome::Success} — never before, and never at all on Refused or
  * Conflict.
  *
- * Both methods persist via a plain conditional SQL statement keyed on the row's optimistic-lock
- * `version` (delete() also pins `status`), the same "DB commit first, irreversible step second"
- * shape {@see DownloadUnlinkService} already uses for unlinking (issue #837):
- * DownloadCompletionPoller runs in a separate process with no locking of its own, so a caller here
- * and a poll() pass can race on the same row. A statement that matches zero rows means the row
- * changed since the caller read it — reported back as Conflict rather than silently doing nothing
- * or acting on stale data.
+ * Both methods persist via a plain conditional SQL statement keyed on `(id, version, status)`, the
+ * same "DB commit first, irreversible step second" shape {@see DownloadUnlinkService} already uses
+ * for unlinking (issue #837) — but the $expectedVersion/$expectedStatus the WHERE clause checks are
+ * NOT read off $download: by the time {@see \App\Controller\DownloadActionController} loads that
+ * entity for this request, DownloadCompletionPoller (a separate process, no locking of its own) may
+ * already have advanced the row past whatever the "Downloads" page rendered when the human looked
+ * at it and clicked. Comparing the entity's own (already-current) values to themselves would always
+ * match and defeat the whole check. $expectedVersion/$expectedStatus instead come from the hidden
+ * `version`/`status` fields the page rendered into the form (see DownloadsOverviewBuilder::buildRow()
+ * and downloads/index.html.twig) — i.e. what the human actually saw. A statement that matches zero
+ * rows means the row changed since then — reported back as Conflict rather than silently doing
+ * nothing or acting on stale data.
  *
  * Uses the Connection directly rather than EntityManager::flush(): Doctrine closes the whole
  * EntityManager after any failed flush() (an optimistic-lock conflict included, see
@@ -58,9 +63,8 @@ final class DownloadActionService
     }
 
     /** Failed => Pending, resetting failure_reason and move_attempts — see Download::retry(). */
-    public function retry(Download $download): DownloadActionOutcome
+    public function retry(Download $download, int $expectedVersion, DownloadStatus $expectedStatus): DownloadActionOutcome
     {
-        $originalVersion = $download->getVersion();
         if (!$download->retry()) {
             return DownloadActionOutcome::Refused;
         }
@@ -68,7 +72,7 @@ final class DownloadActionService
         $downloadId = $download->id ?? throw new \LogicException('Download must be persisted before it can be retried.');
         $affected = $this->entityManager->getConnection()->executeStatement(
             'UPDATE downloads SET status = ?, failure_reason = NULL, move_attempts = 0, version = version + 1 WHERE id = ? AND version = ? AND status = ?',
-            [DownloadStatus::Pending->value, $downloadId, $originalVersion, DownloadStatus::Failed->value],
+            [DownloadStatus::Pending->value, $downloadId, $expectedVersion, $expectedStatus->value],
         );
 
         if ($affected === 0) {
@@ -86,17 +90,16 @@ final class DownloadActionService
      * call QbittorrentClient::delete() for this row's torrent (issue #856's "Pending"/"Failed"
      * delete action) and with what `deleteFiles` value.
      */
-    public function delete(Download $download): DownloadActionOutcome
+    public function delete(Download $download, int $expectedVersion, DownloadStatus $expectedStatus): DownloadActionOutcome
     {
-        $status = $download->getStatus();
-        if ($status !== DownloadStatus::Pending && $status !== DownloadStatus::Failed) {
+        if ($expectedStatus !== DownloadStatus::Pending && $expectedStatus !== DownloadStatus::Failed) {
             return DownloadActionOutcome::Refused;
         }
 
         $downloadId = $download->id ?? throw new \LogicException('Download must be persisted before it can be deleted.');
         $affected = $this->entityManager->getConnection()->executeStatement(
             'DELETE FROM downloads WHERE id = ? AND version = ? AND status = ?',
-            [$downloadId, $download->getVersion(), $status->value],
+            [$downloadId, $expectedVersion, $expectedStatus->value],
         );
 
         if ($affected === 0) {

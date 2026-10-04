@@ -168,6 +168,18 @@ final class DownloadActionControllerTest extends TestCase
         return Request::create('/', 'POST', ['_token' => 'token'] + $fields);
     }
 
+    /**
+     * The `version`/`status` fields a retry/delete form carries as hidden inputs (see
+     * DownloadsOverviewBuilder::buildRow() and downloads/index.html.twig) — what the page rendered,
+     * which these tests otherwise have no form to read them from.
+     *
+     * @param array<string, string> $fields
+     */
+    private function postActionRequest(Download $download, array $fields = []): Request
+    {
+        return $this->postRequest(['version' => (string) $download->getVersion(), 'status' => $download->getStatus()->value] + $fields);
+    }
+
     public function testPauseCallsClientStopWithTheTorrentsOwnHash(): void
     {
         $anime = $this->persistAnime();
@@ -254,7 +266,7 @@ final class DownloadActionControllerTest extends TestCase
             [['infohash_v1' => self::HASH, 'hash' => 'v2-hash', 'state' => 'pausedDL']],
             $requests,
         );
-        $response = $controller->retry($download, $this->postRequest());
+        $response = $controller->retry($download, $this->postActionRequest($download));
 
         $this->assertSame(302, $response->getStatusCode());
         $startRequests = array_values(array_filter($requests, static fn (array $r): bool => str_ends_with($r['url'], '/torrents/start')));
@@ -275,6 +287,7 @@ final class DownloadActionControllerTest extends TestCase
         $download = new Download(self::HASH, $anime);
         $download->markFailed('disk_space');
         $this->repository->save($download);
+        $staleRequest = $this->postActionRequest($download);
 
         $this->entityManager->getConnection()->executeStatement(
             'UPDATE downloads SET version = version + 1 WHERE id = ?',
@@ -299,7 +312,7 @@ final class DownloadActionControllerTest extends TestCase
             $this->createStub(Environment::class),
         );
 
-        $controller->retry($download, $this->postRequest());
+        $controller->retry($download, $staleRequest);
 
         // The conflict page re-render does its own GET /torrents/info, but start() — a POST —
         // must never be reached: asserting no POST happened pins that specifically.
@@ -317,9 +330,10 @@ final class DownloadActionControllerTest extends TestCase
         $download->markCompleted();
         $this->repository->save($download);
 
-        $httpClient = new MockHttpClient(function (string $method, string $url, array $options): MockResponse {
+        $deleteRequestBodies = [];
+        $httpClient = new MockHttpClient(function (string $method, string $url, array $options) use (&$deleteRequestBodies): MockResponse {
             if (str_ends_with($url, '/torrents/delete')) {
-                $this->assertSame('hashes=v2-hash&deleteFiles=false', $options['body']);
+                $deleteRequestBodies[] = $options['body'] ?? null;
             }
 
             return new MockResponse(
@@ -342,6 +356,7 @@ final class DownloadActionControllerTest extends TestCase
         $response = $controller->stopSeeding($download, $this->postRequest());
 
         $this->assertSame(302, $response->getStatusCode());
+        $this->assertSame(['hashes=v2-hash&deleteFiles=false'], $deleteRequestBodies, 'Exactly one torrents/delete call, with deleteFiles=false.');
         $this->entityManager->clear();
         $reloaded = $this->repository->findByInfoHashAndAnime(self::HASH, (int) $anime->id);
         $this->assertSame(DownloadStatus::Completed, $reloaded?->getStatus());
@@ -378,20 +393,24 @@ final class DownloadActionControllerTest extends TestCase
     }
 
     /**
-     * Pins issue #856's "DB first" ordering for the delete action: the row is gone before this
-     * test's MockHttpClient callback is ever invoked, and deleteFiles carries the checkbox value.
+     * Pins issue #856's "DB first" ordering for the delete action: by asserting a fresh `SELECT
+     * COUNT(*)` from inside the MockHttpClient callback itself (not just an array the test fills in
+     * call order, which could pass even if the DELETE happened concurrently with or after the
+     * client call), the row must already be gone from the database at the exact moment
+     * torrents/delete is invoked. deleteFiles carries the checkbox value.
      */
     public function testDeletePendingRemovesTheRowBeforeCallingTheClientAndForwardsDeleteFiles(): void
     {
         $anime = $this->persistAnime();
         $download = new Download(self::HASH, $anime);
         $this->repository->save($download);
+        $downloadId = $download->id;
 
-        $callOrder = [];
-        $httpClient = new MockHttpClient(function (string $method, string $url, array $options) use (&$callOrder): MockResponse {
+        $httpClient = new MockHttpClient(function (string $method, string $url, array $options) use ($downloadId): MockResponse {
             if (str_ends_with($url, '/torrents/delete')) {
-                $callOrder[] = 'client-delete';
                 $this->assertSame('hashes=v2-hash&deleteFiles=true', $options['body']);
+                $rowCount = $this->entityManager->getConnection()->fetchOne('SELECT COUNT(*) FROM downloads WHERE id = ?', [$downloadId]);
+                $this->assertSame(0, (int) $rowCount, 'The row must already be gone by the time torrents/delete is called.');
             }
 
             return new MockResponse(
@@ -411,10 +430,9 @@ final class DownloadActionControllerTest extends TestCase
             $this->createStub(Environment::class),
         );
 
-        $response = $controller->delete($download, $this->postRequest(['delete_files' => '1']));
+        $response = $controller->delete($download, $this->postActionRequest($download, ['delete_files' => '1']));
 
         $this->assertSame(302, $response->getStatusCode());
-        $this->assertSame(['client-delete'], $callOrder);
         $this->entityManager->clear();
         $this->assertNull($this->repository->findByInfoHashAndAnime(self::HASH, (int) $anime->id));
     }
@@ -429,6 +447,7 @@ final class DownloadActionControllerTest extends TestCase
         $anime = $this->persistAnime();
         $download = new Download(self::HASH, $anime);
         $this->repository->save($download);
+        $staleRequest = $this->postActionRequest($download);
 
         $this->entityManager->getConnection()->executeStatement(
             'UPDATE downloads SET status = ?, version = version + 1 WHERE id = ?',
@@ -451,7 +470,7 @@ final class DownloadActionControllerTest extends TestCase
             $this->createStub(Environment::class),
         );
 
-        $controller->delete($download, $this->postRequest());
+        $controller->delete($download, $staleRequest);
 
         // findTorrent()'s pre-check and the conflict page's own re-render each do a GET
         // /torrents/info, but a torrents/delete POST must never be reached.
@@ -459,6 +478,55 @@ final class DownloadActionControllerTest extends TestCase
         $this->entityManager->clear();
         $reloaded = $this->repository->findByInfoHashAndAnime(self::HASH, (int) $anime->id);
         $this->assertSame(DownloadStatus::Completed, $reloaded?->getStatus());
+    }
+
+    /**
+     * Pins the exact scenario from PR #889's review: the row's current state in the database is
+     * Failed at version 3 (the poller moved it there after this page was rendered), but the
+     * request still carries the `pending`/2 the human's now-stale page showed. A check comparing
+     * the request's fields against $download's own (freshly reloaded, already-Failed) version and
+     * status would wrongly let this through; comparing against the request's fields instead must
+     * refuse it as a conflict, leave the row exactly as the poller left it, and never call
+     * torrents/delete at all.
+     */
+    public function testDeleteWithARequestCarryingTheVersionAndStatusFromBeforeAConcurrentChangeReportsConflict(): void
+    {
+        $anime = $this->persistAnime();
+        $download = new Download(self::HASH, $anime);
+        $this->repository->save($download);
+
+        $this->entityManager->getConnection()->executeStatement(
+            'UPDATE downloads SET status = ?, version = ? WHERE id = ?',
+            [DownloadStatus::Failed->value, 3, $download->id],
+        );
+        $this->entityManager->clear();
+        $reloadedBeforeRequest = $this->repository->findByInfoHashAndAnime(self::HASH, (int) $anime->id);
+        $this->assertNotNull($reloadedBeforeRequest);
+
+        $methodsUsed = [];
+        $httpClient = new MockHttpClient(function (string $method) use (&$methodsUsed): MockResponse {
+            $methodsUsed[] = $method;
+
+            return new MockResponse('[]', ['response_headers' => ['content-type' => 'application/json']]);
+        });
+        $controller = new DownloadActionController(
+            new DownloadActionService($this->entityManager),
+            $this->repository,
+            new QbittorrentClient($httpClient, self::BASE_URL),
+            $this->overviewBuilder(),
+            $this->alwaysValidCsrfTokenManager(),
+            $this->urlGenerator(),
+            $this->createStub(Environment::class),
+        );
+
+        $response = $controller->delete($reloadedBeforeRequest, $this->postRequest(['status' => DownloadStatus::Pending->value, 'version' => '2']));
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertNotContains('POST', $methodsUsed, 'A conflicting version/status must never reach torrents/delete.');
+        $this->entityManager->clear();
+        $reloaded = $this->repository->findByInfoHashAndAnime(self::HASH, (int) $anime->id);
+        $this->assertSame(DownloadStatus::Failed, $reloaded?->getStatus());
+        $this->assertSame(3, $reloaded->getVersion());
     }
 
     public function testDeleteForARowMissingFromTheClientOnlyDeletesTheRow(): void
@@ -479,7 +547,7 @@ final class DownloadActionControllerTest extends TestCase
             $this->createStub(Environment::class),
         );
 
-        $controller->delete($download, $this->postRequest());
+        $controller->delete($download, $this->postActionRequest($download));
 
         $this->assertSame(1, $httpClient->getRequestsCount(), 'Only findTorrent()\'s GET; no delete call since there is no torrent.');
         $this->entityManager->clear();
@@ -488,9 +556,10 @@ final class DownloadActionControllerTest extends TestCase
 
     public function testDeleteOrphanCallsClientDeleteWithoutTouchingTheDatabase(): void
     {
-        $httpClient = new MockHttpClient(function (string $method, string $url, array $options): MockResponse {
+        $deleteRequestBodies = [];
+        $httpClient = new MockHttpClient(function (string $method, string $url, array $options) use (&$deleteRequestBodies): MockResponse {
             if (str_ends_with($url, '/torrents/delete')) {
-                $this->assertSame('hashes=v2-hash&deleteFiles=false', $options['body']);
+                $deleteRequestBodies[] = $options['body'] ?? null;
             }
 
             return new MockResponse(
@@ -513,6 +582,7 @@ final class DownloadActionControllerTest extends TestCase
         $response = $controller->deleteOrphan(self::HASH, $this->postRequest());
 
         $this->assertSame(302, $response->getStatusCode());
+        $this->assertSame(['hashes=v2-hash&deleteFiles=false'], $deleteRequestBodies, 'Exactly one torrents/delete call, with deleteFiles=false.');
     }
 
     /**

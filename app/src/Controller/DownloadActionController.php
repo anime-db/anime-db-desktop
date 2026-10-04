@@ -28,6 +28,7 @@ declare(strict_types=1);
 namespace App\Controller;
 
 use App\Entity\Download;
+use App\Entity\Enum\DownloadStatus;
 use App\Repository\DownloadRepository;
 use App\Service\Download\DownloadActionOutcome;
 use App\Service\Download\DownloadActionService;
@@ -55,10 +56,14 @@ use Twig\Environment;
  * Every action that mutates a `downloads` row (retry, delete) commits to the database through
  * {@see DownloadActionService} BEFORE this controller calls qBittorrent at all — a concurrent
  * DownloadCompletionPoller pass changing the row between page load and this request surfaces as
- * "state changed", never a silent overwrite. A qBittorrent call that fails afterwards (the torrent
- * stays in the client, or a pause/resume/retry's resume does nothing) is swallowed the same way
- * {@see DownloadsController} already degrades a qBittorrent outage — there is no calling UI
- * context left by the time one of these requests reaches the client call.
+ * "state changed", never a silent overwrite. That check compares against the `version`/`status`
+ * the retry/delete forms carry as hidden fields (what the page actually rendered), via
+ * {@see parseExpectedState()} — never against $download itself, which Symfony already re-loaded
+ * fresh for this request and may therefore already reflect a poller pass the human never saw. A
+ * qBittorrent call that fails afterwards (the torrent stays in the client, or a pause/resume/retry's
+ * resume does nothing) is swallowed the same way {@see DownloadsController} already degrades a
+ * qBittorrent outage — there is no calling UI context left by the time one of these requests
+ * reaches the client call.
  *
  * Never deletes a file or directory itself: `deleteFiles` is only ever forwarded to
  * {@see QbittorrentClient::delete()}, the only thing in this app that can remove torrent data.
@@ -122,7 +127,12 @@ final class DownloadActionController
     {
         $this->assertValidCsrfToken('download_retry_'.$this->requireId($download), $request);
 
-        $outcome = $this->actions->retry($download);
+        $expected = $this->parseExpectedState($request);
+        if ($expected === null) {
+            return $this->renderIndexWithError('downloads.action_error_conflict');
+        }
+
+        $outcome = $this->actions->retry($download, $expected[0], $expected[1]);
         if ($outcome !== DownloadActionOutcome::Success) {
             return $this->renderIndexWithError($this->outcomeErrorKey($outcome));
         }
@@ -169,10 +179,15 @@ final class DownloadActionController
     {
         $this->assertValidCsrfToken('download_delete_'.$this->requireId($download), $request);
 
+        $expected = $this->parseExpectedState($request);
+        if ($expected === null) {
+            return $this->renderIndexWithError('downloads.action_error_conflict');
+        }
+
         $deleteFiles = $request->request->getBoolean('delete_files');
         $torrent = $this->findTorrent($download->getInfoHash());
 
-        $outcome = $this->actions->delete($download);
+        $outcome = $this->actions->delete($download, $expected[0], $expected[1]);
         if ($outcome !== DownloadActionOutcome::Success) {
             return $this->renderIndexWithError($this->outcomeErrorKey($outcome));
         }
@@ -213,6 +228,32 @@ final class DownloadActionController
     private function requireId(Download $download): int
     {
         return $download->id ?? throw new \LogicException('Download must be persisted before it can be acted on.');
+    }
+
+    /**
+     * Reads the `version`/`status` hidden fields retry/delete's forms carry (see
+     * DownloadsOverviewBuilder::buildRow() and downloads/index.html.twig) — the row state the human
+     * actually saw when the page was rendered, not whatever $download now holds. Missing or
+     * unparseable fields (a tampered request, or a form rendered before this pair of fields
+     * existed) are treated the same as a mismatch: refuse to guess, and let the caller report
+     * "state changed" without touching the database or qBittorrent at all.
+     *
+     * @return ?array{0: int, 1: DownloadStatus}
+     */
+    private function parseExpectedState(Request $request): ?array
+    {
+        $version = $request->request->get('version');
+        if (!\is_string($version) || !ctype_digit($version)) {
+            return null;
+        }
+
+        $status = $request->request->get('status');
+        $status = \is_string($status) ? DownloadStatus::tryFrom($status) : null;
+        if ($status === null) {
+            return null;
+        }
+
+        return [(int) $version, $status];
     }
 
     private function assertValidCsrfToken(string $tokenId, Request $request): void

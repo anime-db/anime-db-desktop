@@ -88,7 +88,7 @@ final class DownloadActionServiceTest extends TestCase
         $download->incrementMoveAttempts();
         $this->repository->save($download);
 
-        $outcome = $this->service->retry($download);
+        $outcome = $this->service->retry($download, $download->getVersion(), $download->getStatus());
 
         $this->assertSame(DownloadActionOutcome::Success, $outcome);
 
@@ -107,7 +107,7 @@ final class DownloadActionServiceTest extends TestCase
         $download->markFailed('storage_conflict');
         $this->repository->save($download);
 
-        $outcome = $this->service->retry($download);
+        $outcome = $this->service->retry($download, $download->getVersion(), $download->getStatus());
 
         $this->assertSame(DownloadActionOutcome::Refused, $outcome);
 
@@ -120,7 +120,9 @@ final class DownloadActionServiceTest extends TestCase
     /**
      * Guards the optimistic-lock race with DownloadCompletionPoller (issue #856): a version that
      * no longer matches must leave the row exactly as the concurrent writer left it, reported back
-     * as a conflict rather than silently retried on top of stale data.
+     * as a conflict rather than silently retried on top of stale data. $expectedVersion/$expectedStatus
+     * stand in for a retry form's hidden fields, captured here before the concurrent write — exactly
+     * what DownloadActionController would have read off a request that raced the poller.
      */
     public function testRetryReportsConflictWhenTheRowVersionChangedConcurrentlyAndLeavesItUntouched(): void
     {
@@ -128,6 +130,8 @@ final class DownloadActionServiceTest extends TestCase
         $download = new Download(self::HASH, $anime);
         $download->markFailed('disk_space');
         $this->repository->save($download);
+        $expectedVersion = $download->getVersion();
+        $expectedStatus = $download->getStatus();
 
         // Simulates a concurrent writer (the poller) touching the row after it was read here.
         $this->entityManager->getConnection()->executeStatement(
@@ -135,7 +139,7 @@ final class DownloadActionServiceTest extends TestCase
             [$download->id],
         );
 
-        $outcome = $this->service->retry($download);
+        $outcome = $this->service->retry($download, $expectedVersion, $expectedStatus);
 
         $this->assertSame(DownloadActionOutcome::Conflict, $outcome);
 
@@ -164,7 +168,7 @@ final class DownloadActionServiceTest extends TestCase
         }
         $this->repository->save($download);
 
-        $outcome = $this->service->delete($download);
+        $outcome = $this->service->delete($download, $download->getVersion(), $download->getStatus());
 
         $this->assertSame(DownloadActionOutcome::Success, $outcome);
         $this->entityManager->clear();
@@ -178,7 +182,7 @@ final class DownloadActionServiceTest extends TestCase
         $download->markCompleted();
         $this->repository->save($download);
 
-        $outcome = $this->service->delete($download);
+        $outcome = $this->service->delete($download, $download->getVersion(), $download->getStatus());
 
         $this->assertSame(DownloadActionOutcome::Refused, $outcome);
         $this->entityManager->clear();
@@ -188,13 +192,17 @@ final class DownloadActionServiceTest extends TestCase
     /**
      * Pins issue #856's acceptance criterion: a row the poller just completed concurrently must
      * survive the delete untouched, reported back as a conflict rather than removed using stale
-     * (id, version, status) data.
+     * (id, version, status) data. $expectedVersion/$expectedStatus are captured before the
+     * concurrent write, standing in for a delete form's hidden fields — what the human actually
+     * saw, not whatever the row holds by the time the request is handled.
      */
     public function testDeleteReportsConflictWhenTheRowChangedStatusConcurrentlyAndLeavesItInPlace(): void
     {
         $anime = $this->persistAnime();
         $download = new Download(self::HASH, $anime);
         $this->repository->save($download);
+        $expectedVersion = $download->getVersion();
+        $expectedStatus = $download->getStatus();
 
         // Simulates DownloadCompletionPoller completing the row from a separate process after this
         // request already loaded $download as still Pending.
@@ -203,11 +211,33 @@ final class DownloadActionServiceTest extends TestCase
             [DownloadStatus::Completed->value, $download->id],
         );
 
-        $outcome = $this->service->delete($download);
+        $outcome = $this->service->delete($download, $expectedVersion, $expectedStatus);
 
         $this->assertSame(DownloadActionOutcome::Conflict, $outcome);
         $this->entityManager->clear();
         $reloaded = $this->repository->findByInfoHashAndAnime(self::HASH, (int) $anime->id);
         $this->assertSame(DownloadStatus::Completed, $reloaded?->getStatus());
+    }
+
+    /**
+     * $expectedStatus alone must gate the conditional DELETE, not just $expectedVersion: a row the
+     * poller failed and then (e.g. via a retry started from a different tab) moved on from since
+     * the page was rendered could, in principle, land back on the same version number a buggy
+     * check might only compare loosely — pinning that the WHERE clause's `status = ?` is what
+     * actually catches a mismatched $expectedStatus.
+     */
+    public function testDeleteReportsConflictWhenExpectedStatusDoesNotMatchTheRowEvenWithItsCurrentVersion(): void
+    {
+        $anime = $this->persistAnime();
+        $download = new Download(self::HASH, $anime);
+        $download->markFailed();
+        $this->repository->save($download);
+
+        $outcome = $this->service->delete($download, $download->getVersion(), DownloadStatus::Pending);
+
+        $this->assertSame(DownloadActionOutcome::Conflict, $outcome);
+        $this->entityManager->clear();
+        $reloaded = $this->repository->findByInfoHashAndAnime(self::HASH, (int) $anime->id);
+        $this->assertSame(DownloadStatus::Failed, $reloaded?->getStatus());
     }
 }
