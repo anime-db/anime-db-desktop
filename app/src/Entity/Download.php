@@ -117,9 +117,9 @@ class Download
     /**
      * How many times {@see \App\Service\Download\DownloadIncomingRelocator::tryMove()} has called
      * `torrents/setLocation` to move this row's torrent out of the storage's hidden incoming
-     * directory (issue #852). Never reset: once it reaches the relocator's attempt limit with the
-     * torrent still reporting a content_path under incoming, the row is failed for good — there is
-     * no automatic retry (see app:downloads:retry, a follow-up issue).
+     * directory (issue #852). Only {@see self::retry()} resets it (to 1 after move_failed, else 0):
+     * once it reaches the relocator's attempt limit with the torrent still reporting a content_path
+     * under incoming, the row is failed and there is no automatic retry.
      */
     #[ORM\Column(name: 'move_attempts', type: 'integer', options: ['default' => 0])]
     private int $moveAttempts = 0;
@@ -298,8 +298,10 @@ class Download
 
     /**
      * Transitions Failed => Pending (issue #856) and reports whether it actually did so, resetting
-     * $failureReason to null and $moveAttempts to 0 so the row looks exactly like a freshly
-     * enqueued one to DownloadCompletionPoller and DownloadIncomingRelocator. Refuses (returns
+     * $failureReason to null and $moveAttempts to 1 for "move_failed" (a move was already
+     * started, so the leftover target folder is not mistaken for a foreign one) or to 0 for any
+     * other reason, so the row looks like a freshly enqueued one to DownloadCompletionPoller and
+     * DownloadIncomingRelocator. Refuses (returns
      * false, changes nothing) for any status other than Failed, and for $failureReason not in
      * {@see RETRYABLE_FAILURE_REASONS} or null:
      * - "storage_conflict" means the torrent itself is already fully downloaded and some OTHER
@@ -324,9 +326,12 @@ class Download
             return false;
         }
 
+        // After move_failed the target folder on disk is the leftover of our own earlier
+        // setLocation, so 1 ("a move was already started") keeps DownloadIncomingRelocator from
+        // reading it as a foreign folder; every other reason restarts from a clean 0.
+        $this->moveAttempts = $this->failureReason === 'move_failed' ? 1 : 0;
         $this->status = DownloadStatus::Pending;
         $this->failureReason = null;
-        $this->moveAttempts = 0;
 
         return true;
     }
