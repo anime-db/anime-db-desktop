@@ -230,6 +230,90 @@ final class DeletedFromSourceDetectorTest extends TestCase
         $this->assertCount(1, $this->reviewItems());
     }
 
+    /**
+     * Issue #864, acceptance criterion 1/2: forgetListMembership() removes the snapshot row for
+     * the given plugin only, leaving rows for other participants (including 'local') untouched.
+     */
+    public function testForgetListMembershipRemovesTheSnapshotRowForTheGivenPluginOnly(): void
+    {
+        $anime = $this->persistAnime(['animedb-shikimori' => '10', 'animedb-mal' => '99']);
+        $this->seedSyncState($anime, 'animedb-shikimori');
+        $this->seedSyncState($anime, 'animedb-mal');
+        $this->seedSyncState($anime, 'local');
+        $this->entityManager->flush();
+
+        $this->detector(new SyncRegistry([], $this->store([])))->forgetListMembership($anime, 'animedb-shikimori');
+
+        $this->assertNull($this->findSyncState($anime, 'animedb-shikimori'));
+        $this->assertNotNull($this->findSyncState($anime, 'animedb-mal'));
+        $this->assertNotNull($this->findSyncState($anime, 'local'));
+        // The cached external id is untouched — only the confirmed-list-membership row is removed.
+        $this->assertSame('10', $anime->getCachedExternalId($this->pluginId));
+    }
+
+    /** Issue #864, acceptance criterion 3: no snapshot row to begin with — a silent no-op. */
+    public function testForgetListMembershipIsANoOpWhenThereIsNoSnapshotRow(): void
+    {
+        $anime = $this->persistAnime(['animedb-shikimori' => '10']);
+        $this->entityManager->flush();
+
+        $this->detector(new SyncRegistry([], $this->store([])))->forgetListMembership($anime, 'animedb-shikimori');
+
+        $this->assertNull($this->findSyncState($anime, 'animedb-shikimori'));
+    }
+
+    /**
+     * Issue #864 review (PR #894): a title stuck in the first-contact-divergence state (issue
+     * #861) has no AnimeSyncState row for $pluginId to remove — {@see hasConfirmedListMembership()}
+     * reads the unresolved NeedsCorrection item itself as proof of membership instead. "Keep" must
+     * resolve that item too, or the next pull would see confirmed membership again and re-raise the
+     * same DeletedFromSource item it just resolved.
+     */
+    public function testForgetListMembershipResolvesAPendingFirstContactDivergenceForTheGivenPlugin(): void
+    {
+        $anime = $this->persistAnime(['animedb-shikimori' => '10']);
+        $this->entityManager->flush();
+        $this->seedFirstContactDivergence($anime, 'animedb-shikimori');
+
+        $detector = $this->detector(new SyncRegistry([], $this->store([])));
+        $this->assertTrue($detector->hasConfirmedListMembership($anime, 'animedb-shikimori'));
+
+        $detector->forgetListMembership($anime, 'animedb-shikimori');
+
+        $this->assertFalse($detector->hasConfirmedListMembership($anime, 'animedb-shikimori'));
+        $needsCorrection = array_values(array_filter(
+            $this->reviewItems(),
+            fn (SyncReviewItem $item): bool => $item->kind === SyncReviewItemKind::NeedsCorrection,
+        ));
+        $this->assertCount(1, $needsCorrection);
+        $this->assertTrue($needsCorrection[0]->isResolved());
+    }
+
+    /**
+     * A pending first-contact divergence belonging to a *different* plugin must survive "keep" for
+     * this one — only the given plugin's membership proof is being withdrawn.
+     */
+    public function testForgetListMembershipLeavesAPendingFirstContactDivergenceForAnotherPluginUnresolved(): void
+    {
+        $anime = $this->persistAnime(['animedb-shikimori' => '10', 'animedb-mal' => '99']);
+        $this->entityManager->flush();
+        $this->seedFirstContactDivergence($anime, 'animedb-mal');
+
+        $this->detector(new SyncRegistry([], $this->store([])))->forgetListMembership($anime, 'animedb-shikimori');
+
+        $needsCorrection = array_values(array_filter(
+            $this->reviewItems(),
+            fn (SyncReviewItem $item): bool => $item->kind === SyncReviewItemKind::NeedsCorrection,
+        ));
+        $this->assertCount(1, $needsCorrection);
+        $this->assertFalse($needsCorrection[0]->isResolved());
+    }
+
+    private function findSyncState(Anime $anime, string $participantId): ?AnimeSyncState
+    {
+        return $this->entityManager->find(AnimeSyncState::class, ['anime' => $anime, 'participantId' => $participantId]);
+    }
+
     private function detector(SyncRegistry $registry): DeletedFromSourceDetector
     {
         return new DeletedFromSourceDetector(

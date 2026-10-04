@@ -106,6 +106,37 @@ final class DeletedFromSourceDetector
     }
 
     /**
+     * Called when a DeletedFromSource/DeletionConflict review item is resolved as "keep" (issue
+     * #864, {@see \App\Controller\Settings\SyncReviewController::resolve()}): clears both sources
+     * {@see hasConfirmedListMembership()} accepts as proof $pluginId still lists $anime, since the
+     * source no longer does and leaving either in place would make the next pull see the same
+     * disappearance and flag it again:
+     * - the now-stale AnimeSyncState snapshot row for $pluginId;
+     * - an unresolved NeedsCorrection item whose `origin_participant_id` is $pluginId (issue #861's
+     *   first-contact-divergence case, which never gets a snapshot row while unresolved — see
+     *   {@see hasConfirmedListMembership()}'s own docblock). There is no candidate left to pick
+     *   between once the source itself no longer lists the title, so it is resolved outright
+     *   rather than routed through {@see SyncConvergenceService::applyManualResolution()}.
+     * The cached external id ({@see Anime::getExternalIdPluginIds()}) is left untouched on purpose:
+     * a later re-add on the source re-syncs through it via the normal reconciliation path.
+     */
+    public function forgetListMembership(Anime $anime, string $pluginId): void
+    {
+        $this->animeSyncStateRepository->remove($anime, $pluginId);
+
+        $animeId = $anime->id ?? throw new \LogicException('Anime must have an id at this point in its lifecycle.');
+
+        foreach ($this->reviewService->findUnresolved() as $item) {
+            if ($item->kind === SyncReviewItemKind::NeedsCorrection
+                && ($item->payload['anime_id'] ?? null) === $animeId
+                && ($item->payload['origin_participant_id'] ?? null) === $pluginId
+            ) {
+                $this->reviewService->resolve($item);
+            }
+        }
+    }
+
+    /**
      * Anime ids that already have an unresolved removal/conflict item raised for this plugin.
      *
      * @return array<int, true>
