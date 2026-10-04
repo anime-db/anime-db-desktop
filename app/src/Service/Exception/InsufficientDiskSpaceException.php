@@ -35,7 +35,22 @@ namespace App\Service\Exception;
  * fetched its metadata, so that case is handled asynchronously by
  * {@see \App\Service\Download\DownloadCompletionPoller} instead (pause + failed status, not this
  * exception — there is no calling UI context left by then).
+ *
+ * Carries the needed/free byte counts and the storage path (issue #855) so the "Add download"
+ * form can render a human message ("needs N, has M free in <path>") instead of a generic failure.
  */
 final class InsufficientDiskSpaceException extends \RuntimeException
 {
+    public function __construct(
+        public readonly int $neededBytes,
+        public readonly int $freeBytes,
+        public readonly string $storagePath,
+    ) {
+        parent::__construct(\sprintf(
+            'Torrent needs %d bytes (+ overhead) but "%s" only has %d free bytes.',
+            $neededBytes,
+            $storagePath,
+            $freeBytes,
+        ));
+    }
 }

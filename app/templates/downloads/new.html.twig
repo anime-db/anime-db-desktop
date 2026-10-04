@@ -1,0 +1,77 @@
+{#
+ # AnimeDb package.
+ #
+ # @author    Peter Gribanov <info@peter-gribanov.ru>
+ # @copyright Copyright (c) 2026, Peter Gribanov
+ # @license   https://www.gnu.org/licenses/gpl-3.0.html GPL-3.0-or-later
+ #
+ # This program is free software: you can redistribute it and/or modify
+ # it under the terms of the GNU General Public License as published by
+ # the Free Software Foundation, either version 3 of the License, or
+ # (at your option) any later version.
+ #
+ # This program is distributed in the hope that it will be useful,
+ # but WITHOUT ANY WARRANTY; without even the implied warranty of
+ # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ # GNU General Public License for more details.
+ #
+ # You should have received a copy of the GNU General Public License
+ # along with this program. If not, see <https://www.gnu.org/licenses/>.
+ #}
+{% extends 'base.html.twig' %}
+
+{% block title %}{{ 'download_new.title'|trans }}{% endblock %}
+
+{% block body %}
+    <main class="download-new py-4" data-control="download-new">
+        <h1>{{ 'download_new.heading'|trans }}</h1>
+
+        {% if error %}
+            <p class="alert alert-danger">
+                {{ error|trans(errorParams) }}
+                {% if occupyingAnimeId %}
+                    <a href="{{ path('anime_show', {id: occupyingAnimeId}) }}">{{ 'download_new.unlink_hint'|trans }}</a>
+                {% endif %}
+            </p>
+        {% endif %}
+
+        {% if info %}
+            <p class="alert alert-info">{{ info|trans }}</p>
+        {% endif %}
+
+        <form method="post" action="{{ path('download_create') }}" enctype="multipart/form-data" id="download-new-form">
+            <input type="hidden" name="_token" value="{{ csrf_token('download_new') }}">
+            <input type="hidden" name="anime" id="download-new-anime-id" value="{{ selectedAnime ? selectedAnime.id : '' }}">
+
+            <div class="mb-3">
+                <label for="download-new-anime-search" class="form-label">{{ 'download_new.field_anime_label'|trans }}</label>
+                <input type="text" id="download-new-anime-search" class="form-control" autocomplete="off"
+                       value="{{ selectedAnime ? selectedAnime.title : '' }}"
+                       placeholder="{{ 'download_new.field_anime_placeholder'|trans }}" required>
+                <ul class="list-group" id="download-new-anime-results" hidden></ul>
+            </div>
+
+            <div class="mb-3">
+                <label for="download-new-magnet" class="form-label">{{ 'download_new.field_magnet_label'|trans }}</label>
+                <input type="text" id="download-new-magnet" name="magnet" class="form-control" value="{{ magnet }}" placeholder="magnet:?xt=urn:btih:...">
+            </div>
+
+            <div class="mb-3" id="download-new-drop-zone">
+                <label for="download-new-file" class="form-label">{{ 'download_new.field_torrent_file_label'|trans }}</label>
+                <input type="file" id="download-new-file" name="torrent_file" accept=".torrent" class="form-control">
+                <p class="form-text">{{ 'download_new.drop_zone_hint'|trans }}</p>
+            </div>
+
+            <div class="mb-3">
+                <label for="download-new-storage" class="form-label">{{ 'download_new.field_storage_label'|trans }}</label>
+                <select id="download-new-storage" name="storage" class="form-select">
+                    {% for storage in storages %}
+                        <option value="{{ storage.id }}"{% if storage.id == selectedStorageId %} selected{% endif %}>{{ storage.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <button type="submit" class="btn btn-primary">{{ 'download_new.submit_button'|trans }}</button>
+        </form>
+    </main>
+{% endblock %}

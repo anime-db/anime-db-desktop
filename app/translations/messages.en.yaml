@@ -517,6 +517,7 @@ anime_detail:
     downloads_heading: Downloads for this entry
     downloads_unlink_button: Unlink
     downloads_unlink_conflict_error: State changed, please refresh the page.
+    download_new_link: Add download
 
 anime_new:
     title: New Anime — AnimeDB
@@ -686,3 +687,25 @@ downloads:
     unit_gb: '%value% GB'
     unit_tb: '%value% TB'
     speed: '%value%/s'
+
+download_new:
+    title: Add download — AnimeDB
+    heading: Add download
+    field_anime_label: Catalog entry
+    field_anime_placeholder: Start typing a title…
+    field_magnet_label: Magnet link
+    field_torrent_file_label: Torrent file
+    drop_zone_hint: You can drag a file here
+    field_storage_label: Storage
+    submit_button: Add download
+    unlink_hint: You can unlink it on its page.
+    info_already_in_downloads: This release is already in the downloads for this entry.
+    error_anime_required: Choose a catalog entry.
+    error_storage_required: Choose a storage.
+    error_source_required: Provide a magnet link or choose a torrent file.
+    error_unreadable_source: Could not read the release.
+    error_insufficient_space: 'Needs %needed%, "%path%" has %free% free.'
+    error_already_linked: This release is already linked to entry #%id%.
+    error_storage_unavailable: Storage is unavailable.
+    error_client_unavailable: The torrent client is unavailable, try again later.
+    error_file_too_large: The file is larger than 16 MB.

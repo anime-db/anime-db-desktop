@@ -47,7 +47,7 @@ use Doctrine\ORM\EntityManagerInterface;
  * the legacy {@see AnimeDownloadLinker} (pre-#851) is a plain Storage like any other — it is never
  * adopted as this preset just because its name matches.
  */
-final class PresetDownloadsStorageProvider
+class PresetDownloadsStorageProvider
 {
     private const string PRESET_NAME = 'AnimeDB';
 

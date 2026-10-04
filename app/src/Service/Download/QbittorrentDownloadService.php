@@ -61,7 +61,7 @@ use Doctrine\ORM\EntityManagerInterface;
  * enqueueTo() with the lazily created preset Storage: a plugin calling through the contract has
  * no UI to pick a storage, so the choice has to be deterministic.
  */
-final class QbittorrentDownloadService implements DownloadServiceInterface
+class QbittorrentDownloadService implements DownloadServiceInterface
 {
     /**
      * Same shape as {@see \App\Service\Plugin\PluginDirectoryRemover}: `torrents/add` answers

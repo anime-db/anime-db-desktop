@@ -169,6 +169,9 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
         $this->assertStringContainsString('favorite', $html);
         $this->assertStringContainsString('/?labels=3', $html);
         $this->assertStringContainsString('data-open-folder-path="/anime/aot"', $html);
+        // issue #855: the only entry point into the "Add download" page is this link, carrying
+        // the current anime's id so the form preselects it.
+        $this->assertStringContainsString('/downloads/new?anime=1', $html);
         // Scoped to the <main> detail content itself, not the whole page: base.html.twig's
         // top-nav "Add" menu (issue #834) can render a disabled "Search in plugins" item whenever
         // this test's container has no active filler plugin wired up — unrelated to whether this
