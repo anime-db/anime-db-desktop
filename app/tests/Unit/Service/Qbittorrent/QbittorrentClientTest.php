@@ -118,6 +118,23 @@ final class QbittorrentClientTest extends TestCase
         self::assertSame(['POST', self::BASE_URL.'/api/v2/torrents/start', 'hashes=abc'], $calls[1]);
     }
 
+    public function testDeletePostsHashesAndDeleteFilesFlag(): void
+    {
+        $calls = [];
+        $httpClient = new MockHttpClient(function (string $method, string $url, array $options) use (&$calls): MockResponse {
+            $calls[] = [$method, $url, $options['body']];
+
+            return new MockResponse('Ok.');
+        });
+
+        $client = new QbittorrentClient($httpClient, self::BASE_URL);
+        $client->delete('abc', true);
+        $client->delete('def', false);
+
+        self::assertSame(['POST', self::BASE_URL.'/api/v2/torrents/delete', 'hashes=abc&deleteFiles=true'], $calls[0]);
+        self::assertSame(['POST', self::BASE_URL.'/api/v2/torrents/delete', 'hashes=def&deleteFiles=false'], $calls[1]);
+    }
+
     public function testSetSavePathPostsHashAndLocation(): void
     {
         $captured = null;

@@ -78,6 +78,15 @@
         tr.appendChild(buildCell(row.peersText));
         tr.appendChild(buildCell(row.targetStorageName));
 
+        // Action buttons/forms (issue #856) need a CSRF token this poll response never carries —
+        // they are only ever rendered server-side (downloads/index.html.twig). A brand new row
+        // (a download started elsewhere while this page is open) gets an empty cell here until
+        // the next full page load; an already-rendered row keeps its real one, see render()
+        // below, which transplants it onto this placeholder before the row is inserted.
+        const actionsCell = document.createElement('td');
+        actionsCell.dataset.field = 'actions';
+        tr.appendChild(actionsCell);
+
         return tr;
     }
 
@@ -113,9 +122,27 @@
                 return;
             }
 
+            // Preserve each existing row's server-rendered actions cell (issue #856) across the
+            // wholesale tbody rebuild below — it carries CSRF tokens this JSON response never
+            // includes, and swapping it onto the freshly built row (matched by infoHash) is what
+            // keeps the action buttons from disappearing on every 2-second poll tick.
+            const preservedActionsByHash = new Map();
+            tbody.querySelectorAll('tr[data-info-hash]').forEach((tr) => {
+                const actionsCell = tr.querySelector('[data-field="actions"]');
+                if (actionsCell) {
+                    preservedActionsByHash.set(tr.dataset.infoHash, actionsCell);
+                }
+            });
+
             tbody.replaceChildren();
-            data.rows.forEach((row) => tbody.appendChild(buildRow(row, noCardLabel)));
-            data.orphans.forEach((row) => tbody.appendChild(buildRow(row, noCardLabel)));
+            data.rows.concat(data.orphans).forEach((row) => {
+                const tr = buildRow(row, noCardLabel);
+                const preservedActions = preservedActionsByHash.get(row.infoHash);
+                if (preservedActions) {
+                    tr.querySelector('[data-field="actions"]').replaceWith(preservedActions);
+                }
+                tbody.appendChild(tr);
+            });
         }
 
         function scheduleNext() {

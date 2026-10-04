@@ -90,6 +90,14 @@ final class DownloadsTemplateRenderingTest extends KernelTestCase
             'etaText' => '2:00',
             'peersText' => '3/1',
             'targetStorageName' => 'Main folder',
+            'id' => 1,
+            'canPause' => false,
+            'canResume' => false,
+            'canRetry' => false,
+            'canStopSeeding' => false,
+            'canDelete' => false,
+            'hasTorrentInClient' => false,
+            'deleteFilesDefaultChecked' => false,
         ], $overrides);
     }
 
@@ -151,5 +159,51 @@ final class DownloadsTemplateRenderingTest extends KernelTestCase
 
         $this->assertDoesNotMatchRegularExpression('/data-downloads-banner\b[^>]*\bhidden\b/', $html);
         $this->assertStringContainsString('Не удалось получить данные от торрент-клиента.', $html);
+    }
+
+    /**
+     * Issue #856: a row's action buttons are gated on the server-computed can* flags, not shown
+     * unconditionally — storage_conflict/legacy_layout rows (canRetry false) must never render a
+     * "Retry" button the backend would refuse anyway.
+     */
+    public function testRowRendersOnlyTheActionsItIsEligibleFor(): void
+    {
+        $row = $this->row(['canPause' => true, 'canRetry' => false, 'canDelete' => true, 'hasTorrentInClient' => true]);
+        $html = $this->render(['rows' => [$row], 'orphans' => [], 'qbittorrentAvailable' => true]);
+
+        $this->assertStringContainsString('Пауза', $html);
+        $this->assertStringNotContainsString('>Повторить<', $html);
+        $this->assertStringContainsString('>Удалить<', $html);
+        $this->assertStringContainsString('name="delete_files"', $html);
+    }
+
+    public function testDeleteFormOmitsTheFilesCheckboxWhenThereIsNoTorrentInTheClient(): void
+    {
+        $row = $this->row(['canDelete' => true, 'hasTorrentInClient' => false]);
+        $html = $this->render(['rows' => [$row], 'orphans' => [], 'qbittorrentAvailable' => true]);
+
+        $this->assertStringContainsString('>Удалить<', $html);
+        $this->assertStringNotContainsString('name="delete_files"', $html);
+    }
+
+    public function testOrphanRowRendersADeleteFromClientButton(): void
+    {
+        $orphan = $this->row(['hasCard' => false, 'animeUrl' => null, 'displayName' => 'Mystery torrent']);
+        $html = $this->render(['rows' => [], 'orphans' => [$orphan], 'qbittorrentAvailable' => true]);
+
+        $this->assertStringContainsString('Удалить из клиента', $html);
+    }
+
+    public function testActionErrorRendersAsADangerAlert(): void
+    {
+        $html = $this->render([
+            'rows' => [],
+            'orphans' => [],
+            'qbittorrentAvailable' => true,
+            'actionError' => 'downloads.action_error_conflict',
+        ]);
+
+        $this->assertStringContainsString('alert-danger', $html);
+        $this->assertStringContainsString('Состояние загрузки изменилось', $html);
     }
 }

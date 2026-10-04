@@ -271,6 +271,46 @@ test('rows appear without a reload once a page that rendered empty gets a non-em
     expect(document.querySelectorAll('[data-downloads-rows] tr')).toHaveLength(1);
 });
 
+// Issue #856: action forms carry a CSRF token this poll response never includes, so they are only
+// ever rendered server-side. If render() rebuilt every cell including the actions one, the button
+// would vanish 2 seconds after the page loaded, even though nothing the user could see changed.
+test('an existing row keeps its server-rendered actions cell across a poll update', async () => {
+    const calls = mockFetchQueue();
+    loadDownloadsListModule();
+
+    const tbody = document.querySelector('[data-downloads-rows]');
+    const tr = document.createElement('tr');
+    tr.dataset.infoHash = 'e'.repeat(40);
+    tr.innerHTML = '<td>Name</td><td>Waiting</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>'
+        + '<td data-field="actions"><button data-marker="server-rendered">Pause</button></td>';
+    tbody.appendChild(tr);
+
+    calls[0].resolve(jsonResponse({
+        qbittorrentAvailable: true,
+        rows: [{
+            infoHash:          'e'.repeat(40),
+            hasCard:           true,
+            animeUrl:          null,
+            displayName:       'Some download',
+            statusText:        'Downloading',
+            sizeText:          '1.0 MB',
+            progressText:      '50%',
+            downloadSpeedText: '0 B/s',
+            uploadSpeedText:   '0 B/s',
+            etaText:           null,
+            peersText:         '1/0',
+            targetStorageName: null,
+        }],
+        orphans: [],
+    }));
+    await flushMicrotasks();
+
+    const actionsCell = document.querySelector('[data-downloads-rows] tr [data-field="actions"]');
+    expect(actionsCell.querySelector('[data-marker="server-rendered"]')).not.toBeNull();
+    // The live field next to it was still updated — this is not "nothing got rebuilt".
+    expect(document.querySelector('[data-downloads-rows] tr').textContent).toContain('Downloading');
+});
+
 test('the empty state reappears once the last row disappears from a poll response', async () => {
     const calls = mockFetchQueue();
     loadDownloadsListModule();

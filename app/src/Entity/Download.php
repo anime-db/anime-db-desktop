@@ -70,6 +70,15 @@ class Download
 {
     private const INFO_HASH_PATTERN = '/^[0-9a-f]{40}\z/';
 
+    /**
+     * $failureReason values {@see retry()} accepts (plus NULL, handled separately): each one is a
+     * transient condition a human can fix from outside this app (free up disk space, resolve a
+     * name/storage-path conflict, retry a move) and have the SAME torrent succeed if tried again.
+     * "storage_conflict" and "legacy_layout" are deliberately absent — see retry()'s docblock for
+     * why retrying either of those can never succeed.
+     */
+    private const array RETRYABLE_FAILURE_REASONS = ['disk_space', 'name_conflict', 'move_failed'];
+
     #[ORM\Id, ORM\GeneratedValue, ORM\Column]
     public private(set) ?int $id = null;
 
@@ -272,5 +281,50 @@ class Download
         $this->failureReason = $reason;
 
         return true;
+    }
+
+    /**
+     * Transitions Failed => Pending (issue #856) and reports whether it actually did so, resetting
+     * $failureReason to null and $moveAttempts to 0 so the row looks exactly like a freshly
+     * enqueued one to DownloadCompletionPoller and DownloadIncomingRelocator. Refuses (returns
+     * false, changes nothing) for any status other than Failed, and for $failureReason not in
+     * {@see RETRYABLE_FAILURE_REASONS} or null:
+     * - "storage_conflict" means the torrent itself is already fully downloaded and some OTHER
+     *   anime's pointer already occupies its target folder — retrying would just fail the same
+     *   way again; freeing the folder from its current owner is the only way out.
+     * - "legacy_layout" means this row has no $targetStorage at all (a pre-issue#851 row) — there
+     *   is no destination to retry into; the row has to be deleted and the download started over.
+     * A null reason means the row reached Failed before issue #852 introduced $failureReason at
+     * all, so its real cause is unknown — treated as retryable rather than permanently stuck.
+     *
+     * Persisting this change is the caller's job (issue #856's DownloadActionService), under the
+     * same conditional-SQL pattern {@see \App\Service\Download\DownloadUnlinkService} already uses
+     * for the same poller race, keyed on $version.
+     */
+    public function retry(): bool
+    {
+        if ($this->status !== DownloadStatus::Failed) {
+            return false;
+        }
+
+        if (!self::isRetryableFailureReason($this->failureReason)) {
+            return false;
+        }
+
+        $this->status = DownloadStatus::Pending;
+        $this->failureReason = null;
+        $this->moveAttempts = 0;
+
+        return true;
+    }
+
+    /**
+     * Whether retry() would accept this $failureReason — exposed so the "Downloads" page (issue
+     * #856) can decide whether to show the "Retry" button at all without duplicating the
+     * whitelist in {@see \App\Service\Download\DownloadsOverviewBuilder}.
+     */
+    public static function isRetryableFailureReason(?string $failureReason): bool
+    {
+        return $failureReason === null || \in_array($failureReason, self::RETRYABLE_FAILURE_REASONS, true);
     }
 }

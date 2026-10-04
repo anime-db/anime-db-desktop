@@ -655,6 +655,16 @@ downloads:
     column_eta: ETA
     column_peers: Seeds/peers
     column_storage: Storage
+    column_actions: Actions
+    action_pause: Pause
+    action_resume: Resume
+    action_retry: Retry
+    action_stop_seeding: Stop seeding
+    action_delete: Delete
+    action_delete_from_client: Remove from client
+    action_delete_files_label: Delete downloaded data
+    action_error_conflict: This download's state changed; please refresh the page.
+    action_error_refused: This action is no longer available for this download.
     status_pending: Waiting
     status_linking: Finished, linking…
     status_storage_unavailable: Storage unavailable

@@ -33,6 +33,10 @@
             {{ 'downloads.qbittorrent_unavailable'|trans }}
         </div>
 
+        {% if actionError is defined and actionError %}
+            <div class="alert alert-danger">{{ actionError|trans }}</div>
+        {% endif %}
+
         {% set hasAnyRow = rows is not empty or orphans is not empty %}
 
         {# Both the table and the empty-state message are always rendered — downloads-list.js
@@ -52,6 +56,7 @@
                         <th>{{ 'downloads.column_eta'|trans }}</th>
                         <th>{{ 'downloads.column_peers'|trans }}</th>
                         <th>{{ 'downloads.column_storage'|trans }}</th>
+                        <th>{{ 'downloads.column_actions'|trans }}</th>
                     </tr>
                 </thead>
                 <tbody data-downloads-rows>
@@ -73,6 +78,51 @@
                             <td>{{ row.etaText }}</td>
                             <td>{{ row.peersText }}</td>
                             <td>{{ row.targetStorageName }}</td>
+                            <td data-field="actions">
+                                {% if row.hasCard %}
+                                    {% if row.canPause %}
+                                        <form method="post" action="{{ path('download_pause', {id: row.id}) }}" class="d-inline">
+                                            <input type="hidden" name="_token" value="{{ csrf_token('download_pause_' ~ row.id) }}">
+                                            <button type="submit" class="btn btn-sm btn-outline-secondary">{{ 'downloads.action_pause'|trans }}</button>
+                                        </form>
+                                    {% endif %}
+                                    {% if row.canResume %}
+                                        <form method="post" action="{{ path('download_resume', {id: row.id}) }}" class="d-inline">
+                                            <input type="hidden" name="_token" value="{{ csrf_token('download_resume_' ~ row.id) }}">
+                                            <button type="submit" class="btn btn-sm btn-outline-secondary">{{ 'downloads.action_resume'|trans }}</button>
+                                        </form>
+                                    {% endif %}
+                                    {% if row.canRetry %}
+                                        <form method="post" action="{{ path('download_retry', {id: row.id}) }}" class="d-inline">
+                                            <input type="hidden" name="_token" value="{{ csrf_token('download_retry_' ~ row.id) }}">
+                                            <button type="submit" class="btn btn-sm btn-outline-secondary">{{ 'downloads.action_retry'|trans }}</button>
+                                        </form>
+                                    {% endif %}
+                                    {% if row.canStopSeeding %}
+                                        <form method="post" action="{{ path('download_stop_seeding', {id: row.id}) }}" class="d-inline">
+                                            <input type="hidden" name="_token" value="{{ csrf_token('download_stop_seeding_' ~ row.id) }}">
+                                            <button type="submit" class="btn btn-sm btn-outline-secondary">{{ 'downloads.action_stop_seeding'|trans }}</button>
+                                        </form>
+                                    {% endif %}
+                                    {% if row.canDelete %}
+                                        <form method="post" action="{{ path('download_delete', {id: row.id}) }}" class="d-inline">
+                                            <input type="hidden" name="_token" value="{{ csrf_token('download_delete_' ~ row.id) }}">
+                                            {% if row.hasTorrentInClient %}
+                                                <label class="me-1">
+                                                    <input type="checkbox" name="delete_files" value="1"{% if row.deleteFilesDefaultChecked %} checked{% endif %}>
+                                                    {{ 'downloads.action_delete_files_label'|trans }}
+                                                </label>
+                                            {% endif %}
+                                            <button type="submit" class="btn btn-sm btn-outline-danger">{{ 'downloads.action_delete'|trans }}</button>
+                                        </form>
+                                    {% endif %}
+                                {% else %}
+                                    <form method="post" action="{{ path('download_delete_orphan', {infoHash: row.infoHash}) }}" class="d-inline">
+                                        <input type="hidden" name="_token" value="{{ csrf_token('download_delete_orphan_' ~ row.infoHash) }}">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger">{{ 'downloads.action_delete_from_client'|trans }}</button>
+                                    </form>
+                                {% endif %}
+                            </td>
                         </tr>
                     {% endfor %}
                 </tbody>

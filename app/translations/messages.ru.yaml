@@ -655,6 +655,16 @@ downloads:
     column_eta: Осталось
     column_peers: Сиды/пиры
     column_storage: Хранилище
+    column_actions: Действия
+    action_pause: Пауза
+    action_resume: Продолжить
+    action_retry: Повторить
+    action_stop_seeding: Остановить раздачу
+    action_delete: Удалить
+    action_delete_from_client: Удалить из клиента
+    action_delete_files_label: Удалить скачанные данные
+    action_error_conflict: Состояние загрузки изменилось, обновите страницу.
+    action_error_refused: Это действие больше не доступно для этой загрузки.
     status_pending: Ждёт
     status_linking: Докачано, привязывается…
     status_storage_unavailable: Хранилище недоступно

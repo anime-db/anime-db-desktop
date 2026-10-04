@@ -369,6 +369,93 @@ final class DownloadsOverviewBuilderTest extends TestCase
         self::assertSame('Без карточки', $orphan['statusText']);
     }
 
+    /**
+     * Issue #856: the "Retry" button must never be eligible for the two failure reasons whose
+     * retry() refuses, but must be for the others (including a legacy NULL reason).
+     */
+    public function testCanRetryReflectsDownloadsIsRetryableFailureReason(): void
+    {
+        $anime = $this->persistAnime();
+        $retryable = $this->persistDownload(str_repeat('7', 40), $anime);
+        $retryable->markFailed('disk_space');
+        $notRetryable = $this->persistDownload(str_repeat('8', 40), $anime);
+        $notRetryable->markFailed('storage_conflict');
+        $this->entityManager->flush();
+
+        $result = $this->builder->build([], true);
+
+        $byHash = [];
+        foreach ($result['rows'] as $row) {
+            $byHash[$row['infoHash']] = $row;
+        }
+
+        $this->assertTrue($byHash[str_repeat('7', 40)]['canRetry']);
+        $this->assertFalse($byHash[str_repeat('8', 40)]['canRetry']);
+    }
+
+    public function testCanDeleteIsTrueForPendingAndFailedButNotCompleted(): void
+    {
+        $anime = $this->persistAnime();
+        $pending = $this->persistDownload(str_repeat('9', 40), $anime);
+        $completed = $this->persistDownload(str_repeat('0', 40), $anime);
+        $completed->markCompleted();
+        $this->entityManager->flush();
+
+        $result = $this->builder->build([], true);
+
+        $byHash = [];
+        foreach ($result['rows'] as $row) {
+            $byHash[$row['infoHash']] = $row;
+        }
+
+        $this->assertTrue($byHash[str_repeat('9', 40)]['canDelete']);
+        $this->assertFalse($byHash[str_repeat('0', 40)]['canDelete']);
+    }
+
+    public function testCanStopSeedingRequiresCompletedAndATorrentStillInTheClient(): void
+    {
+        $anime = $this->persistAnime();
+        $download = $this->persistDownload(str_repeat('a', 40), $anime);
+        $download->markCompleted();
+        $this->entityManager->flush();
+
+        $withTorrent = $this->builder->build([$this->torrent(str_repeat('a', 40))], true);
+        $this->assertTrue($withTorrent['rows'][0]['canStopSeeding']);
+
+        $withoutTorrent = $this->builder->build([], true);
+        $this->assertFalse($withoutTorrent['rows'][0]['canStopSeeding']);
+    }
+
+    /**
+     * Issue #856 acceptance criterion: the "delete downloaded data" checkbox defaults to checked
+     * except when the torrent already finished (progress 1.0).
+     */
+    public function testDeleteFilesDefaultCheckedIsFalseOnlyAtFullProgress(): void
+    {
+        $anime = $this->persistAnime();
+        $this->persistDownload(str_repeat('b', 40), $anime);
+
+        $partial = $this->builder->build([$this->torrent(str_repeat('b', 40), ['progress' => 0.4])], true);
+        $this->assertTrue($partial['rows'][0]['deleteFilesDefaultChecked']);
+
+        $full = $this->builder->build([$this->torrent(str_repeat('b', 40), ['progress' => 1.0])], true);
+        $this->assertFalse($full['rows'][0]['deleteFilesDefaultChecked']);
+    }
+
+    public function testCanPauseAndCanResumeReflectTheTorrentsPausedState(): void
+    {
+        $anime = $this->persistAnime();
+        $this->persistDownload(str_repeat('c', 40), $anime);
+
+        $running = $this->builder->build([$this->torrent(str_repeat('c', 40), ['state' => 'downloading'])], true);
+        $this->assertTrue($running['rows'][0]['canPause']);
+        $this->assertFalse($running['rows'][0]['canResume']);
+
+        $paused = $this->builder->build([$this->torrent(str_repeat('c', 40), ['state' => 'pausedDL'])], true);
+        $this->assertFalse($paused['rows'][0]['canPause']);
+        $this->assertTrue($paused['rows'][0]['canResume']);
+    }
+
     public function testQbittorrentUnavailableDegradesToDbOnlyFieldsAndNoOrphans(): void
     {
         $anime = $this->persistAnime();
