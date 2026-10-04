@@ -1074,9 +1074,14 @@ final class PullSyncServiceTest extends TestCase
     /**
      * Criterion 6 (issue #859): reconcilePulledItem() applies the winning projection to Anime in
      * memory (Anime::applyWatchProgress()) before it ever writes the snapshot row — if the
-     * snapshot write then fails, that in-memory change must be rolled back (here, via
-     * EntityManagerInterface::refresh()), or a later flush() in the same run (here, the one
-     * belonging to a different, successfully-processed item) would durably commit it anyway.
+     * snapshot write then fails, that in-memory change must be rolled back, or a later flush()
+     * in the same run (here, the one belonging to a different, successfully-processed item)
+     * would durably commit it anyway. The rollback itself is {@see
+     * SyncConvergenceService}'s wrapInTransaction() around the whole item's snapshot writes
+     * (issue #859 review, "частичный коммит в рамках одного элемента") — a real Doctrine flush
+     * failure there always closes $this->entityManager, which is why this run's own return value
+     * must honestly report that (see PullSyncService's class docblock), and why the assertions
+     * below read back through a fresh EntityManager rather than the now-closed original.
      */
     public function testRollsBackAnimeChangesInMemoryWhenTheSnapshotWriteFailsBeforeALaterFlush(): void
     {
@@ -1107,18 +1112,20 @@ final class PullSyncServiceTest extends TestCase
 
         $completed = $service->pull($this->pluginId, $sync);
 
-        $this->assertTrue($completed);
+        // The snapshot write's failure closes $this->entityManager for real (see the class
+        // docblock) — this run did not finish in a state a caller can keep building on.
+        $this->assertFalse($completed);
 
-        // Re-read from the database rather than trusting the in-memory $failing instance, so
-        // this proves the rollback (not just that the test never re-applied the change) is what
-        // kept the bad write out, despite 'Trigun' successfully flushing its own change later in
-        // the same run.
-        $this->entityManager->clear();
-        $reloadedFailing = $this->entityManager->getRepository(Anime::class)->find($failingId);
+        // Re-read through a fresh EntityManager sharing the same DBAL connection, rather than the
+        // now-closed $this->entityManager, so this proves the rollback (not just that the test
+        // never re-applied the change) is what kept the bad write out, despite 'Trigun'
+        // successfully flushing its own change later in the same run.
+        $freshEntityManager = new EntityManager($this->entityManager->getConnection(), $this->entityManager->getConfiguration());
+        $reloadedFailing = $freshEntityManager->getRepository(Anime::class)->find($failingId);
         $this->assertInstanceOf(TvAnime::class, $reloadedFailing);
         $this->assertSame(WatchStatus::Plan, $reloadedFailing->getWatchStatus());
 
-        $reloadedOther = $this->entityManager->getRepository(Anime::class)->find($otherId);
+        $reloadedOther = $freshEntityManager->getRepository(Anime::class)->find($otherId);
         $this->assertInstanceOf(TvAnime::class, $reloadedOther);
         $this->assertSame(WatchStatus::Watching, $reloadedOther->getWatchStatus());
     }
@@ -1154,18 +1161,26 @@ final class PullSyncServiceTest extends TestCase
         $failingId = $failing->id ?? throw new \LogicException('id must be set after flush');
         $otherId = $other->id ?? throw new \LogicException('id must be set after flush');
 
+        $exception = new \RuntimeException('Simulated Doctrine failure.');
         $stateRepository = $this->throwingStateRepository(
             $this->entityManager,
             $failingId,
-            new \RuntimeException('Simulated Doctrine failure.'),
+            $exception,
             onSave: true,
             closeEntityManager: true,
         );
         // Two warnings are expected: PullSyncService's own per-item skip, and the existing
         // recovery-path rule that also logs skipping post-pull duplicate/deletion review — both
-        // satisfy criterion 7's "log entry about the skip".
+        // satisfy criterion 7's "log entry about the skip". Captured via a callback rather than
+        // asserted by count alone, so this actually proves the *first* warning is about the
+        // failing item specifically (its externalId and exception), not some unrelated warning
+        // from a different branch (issue #859 review).
+        $warnings = [];
         $logger = $this->createMock(LoggerInterface::class);
-        $logger->expects($this->exactly(2))->method('warning');
+        $logger->expects($this->exactly(2))->method('warning')
+            ->willReturnCallback(function (string $message, array $context) use (&$warnings): void {
+                $warnings[] = [$message, $context];
+            });
         $service = $this->newService($this->entityManager, new AnimeRepository($this->entityManager), stateRepository: $stateRepository, logger: $logger);
 
         $sync = $this->createMock(SyncInterface::class);
@@ -1176,18 +1191,99 @@ final class PullSyncServiceTest extends TestCase
 
         $completed = $service->pull($this->pluginId, $sync);
 
-        $this->assertTrue($completed);
+        // The failure genuinely closed $this->entityManager (see PullSyncService's class
+        // docblock) — a caller must be told this run did not finish in a reusable state.
+        $this->assertFalse($completed);
+
+        $this->assertCount(2, $warnings);
+        [$itemWarningMessage, $itemWarningContext] = $warnings[0];
+        $this->assertStringContainsString('Skipping a pull item', $itemWarningMessage);
+        $this->assertSame((string) $this->pluginId, $itemWarningContext['pluginId'] ?? null);
+        $this->assertSame('1', $itemWarningContext['externalId'] ?? null);
+        $this->assertSame($exception, $itemWarningContext['exception'] ?? null);
+
+        [$skipWarningMessage] = $warnings[1];
+        $this->assertStringContainsString('Skipping post-pull duplicate/deletion review', $skipWarningMessage);
 
         // $this->entityManager is closed by now (the simulated Doctrine reaction) — read back
         // through a fresh EntityManager sharing the same DBAL connection, exactly the recovery
         // pattern PullSyncService itself falls back on.
         $freshEntityManager = new EntityManager($this->entityManager->getConnection(), $this->entityManager->getConfiguration());
 
+        // The main promise of this isolation (issue #859 review): the failing item's own change
+        // never got committed, despite the next item's own write succeeding right after it.
+        $reloadedFailing = $freshEntityManager->getRepository(Anime::class)->find($failingId);
+        $this->assertInstanceOf(TvAnime::class, $reloadedFailing);
+        $this->assertSame(WatchStatus::Plan, $reloadedFailing->getWatchStatus());
+
         $reloadedOther = $freshEntityManager->getRepository(Anime::class)->find($otherId);
         $this->assertInstanceOf(TvAnime::class, $reloadedOther);
         $this->assertSame(WatchStatus::Watching, $reloadedOther->getWatchStatus());
 
         $this->assertCount(0, $freshEntityManager->getRepository(SyncReviewItem::class)->findAll());
+    }
+
+    /**
+     * Comment-requested regression (issue #859 review, PR #884): the atomicity the two tests
+     * above exercise for a brand-new snapshot row must hold for an *existing* one too — a prior
+     * run's {@see AnimeSyncState} row, mutated in place by update() before this item's write
+     * fails, must not end up durably holding that in-memory mutation while Anime itself stays on
+     * the old value (the exact split the review flagged: "запишет снимок origin с новым
+     * значением, а Anime останется со старым").
+     */
+    public function testRollsBackAnExistingSnapshotRowWhenTheItemsWriteFails(): void
+    {
+        $failing = new TvAnime();
+        $failing->setTitle('Cowboy Bebop')->setWatchStatus(WatchStatus::Plan);
+        $failing->rememberExternalId($this->pluginId, '1');
+        $this->entityManager->persist($failing);
+
+        $other = new TvAnime();
+        $other->setTitle('Trigun')->setWatchStatus(WatchStatus::Plan);
+        $other->rememberExternalId($this->pluginId, '2');
+        $this->entityManager->persist($other);
+
+        $this->entityManager->flush();
+        $failingId = $failing->id ?? throw new \LogicException('id must be set after flush');
+        $otherId = $other->id ?? throw new \LogicException('id must be set after flush');
+
+        // A snapshot row left over from a previous run — update()d in place (not re-created) as
+        // soon as this run's reconciliation picks a winner, before the write that fails.
+        $this->entityManager->persist(new AnimeSyncState($failing, (string) $this->pluginId, WatchStatus::Plan, null, new \DateTimeImmutable('-2 days')));
+        $this->entityManager->flush();
+
+        // onSave: $failing's own snapshot row is the first one persistConfirmedState() writes
+        // for this item (the origin's row, ahead of local's), so this fails before anything else
+        // in the item gets a chance to commit.
+        $stateRepository = $this->throwingStateRepository($this->entityManager, $failingId, new \RuntimeException('Simulated snapshot write failure.'), onSave: true);
+        $service = $this->newService($this->entityManager, new AnimeRepository($this->entityManager), stateRepository: $stateRepository);
+
+        $sync = $this->createMock(SyncInterface::class);
+        $sync->expects($this->once())->method('pull')->willReturn([
+            new SyncItem('1', SyncStatus::Watching, 'Cowboy Bebop'),
+            new SyncItem('2', SyncStatus::Watching, 'Trigun'),
+        ]);
+
+        $completed = $service->pull($this->pluginId, $sync);
+
+        $this->assertFalse($completed);
+
+        $freshEntityManager = new EntityManager($this->entityManager->getConnection(), $this->entityManager->getConfiguration());
+
+        $reloadedFailing = $freshEntityManager->getRepository(Anime::class)->find($failingId);
+        $this->assertInstanceOf(TvAnime::class, $reloadedFailing);
+        $this->assertSame(WatchStatus::Plan, $reloadedFailing->getWatchStatus());
+
+        $reloadedState = $freshEntityManager->getRepository(AnimeSyncState::class)->find([
+            'anime' => $reloadedFailing,
+            'participantId' => (string) $this->pluginId,
+        ]);
+        $this->assertInstanceOf(AnimeSyncState::class, $reloadedState);
+        $this->assertSame(WatchStatus::Plan, $reloadedState->lastStatus);
+
+        $reloadedOther = $freshEntityManager->getRepository(Anime::class)->find($otherId);
+        $this->assertInstanceOf(TvAnime::class, $reloadedOther);
+        $this->assertSame(WatchStatus::Watching, $reloadedOther->getWatchStatus());
     }
 
     /** @return list<Anime> */
