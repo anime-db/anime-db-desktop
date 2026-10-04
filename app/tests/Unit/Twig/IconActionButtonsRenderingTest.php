@@ -37,6 +37,7 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\HttpFoundation\Session\Session;
 use Symfony\Component\HttpFoundation\Session\Storage\MockArraySessionStorage;
+use Symfony\Component\Security\Csrf\CsrfToken;
 use Twig\Environment;
 
 /**
@@ -146,6 +147,9 @@ final class IconActionButtonsRenderingTest extends KernelTestCase
         $html = $twig->render('settings/plugins/index.html.twig', [
             'installedPlugins' => [$plugin],
             'settingsPluginIds' => ['animedb-shikimori'],
+            'syncPluginIds' => [],
+            'syncActiveIds' => [],
+            'error' => null,
             'translationCoverage' => [],
             'pluginLocales' => [],
             'marketUpdates' => [],
@@ -160,6 +164,105 @@ final class IconActionButtonsRenderingTest extends KernelTestCase
 
         $this->assertIconButton($html, 'Settings', 'gear');
         $this->assertIconButton($html, 'Remove', 'trash');
+    }
+
+    /**
+     * @param list<string> $syncPluginIds
+     * @param list<string> $syncActiveIds
+     */
+    private function renderPluginsIndex(array $syncPluginIds, array $syncActiveIds, ?string $error): string
+    {
+        $this->pushRequestWithSession('/settings/plugins');
+
+        $plugins = [];
+        foreach (['animedb-alpha', 'animedb-beta', 'animedb-gamma'] as $id) {
+            $manifest = (new ManifestParser())->parse((string) json_encode([
+                'id' => $id,
+                'name' => $id,
+                'version' => '1.0.0',
+                'type' => 'integration',
+                'features' => ['filler' => true],
+                'require' => ['core' => '>=2.0.0', 'php' => '>=8.2'],
+            ]));
+            $plugins[] = new InstalledPlugin($manifest, '/tmp/plugin', true, true);
+        }
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+
+        return $twig->render('settings/plugins/index.html.twig', [
+            'installedPlugins' => $plugins,
+            'settingsPluginIds' => [],
+            'syncPluginIds' => $syncPluginIds,
+            'syncActiveIds' => $syncActiveIds,
+            'error' => $error,
+            'translationCoverage' => [],
+            'pluginLocales' => [],
+            'marketUpdates' => [],
+            'installedPluginId' => null,
+            'updatedPluginId' => null,
+            'removedPluginId' => null,
+            'installError' => null,
+            'installErrorParams' => [],
+            'syntaxErrors' => [],
+            'manifestErrors' => [],
+        ]);
+    }
+
+    /**
+     * @return array{token: string, active: string, checked: string}|null
+     */
+    private function syncForm(string $html, string $pluginId): ?array
+    {
+        $pattern = '#<form[^>]*action="/settings/plugins/'.preg_quote($pluginId, '#').'/sync"[^>]*>(.*?)</form>#s';
+        if (preg_match($pattern, $html, $m) !== 1) {
+            return null;
+        }
+        preg_match('/name="_token" value="([^"]*)"/', $m[1], $token);
+        preg_match('/name="active" value="([^"]*)"/', $m[1], $active);
+        preg_match('/aria-checked="([^"]*)"/', $m[1], $checked);
+
+        return ['token' => $token[1] ?? '', 'active' => $active[1] ?? '', 'checked' => $checked[1] ?? ''];
+    }
+
+    public function testPluginsIndexRendersSyncToggleForBothStates(): void
+    {
+        self::bootKernel();
+        $html = $this->renderPluginsIndex(['animedb-alpha', 'animedb-beta'], ['animedb-beta'], null);
+
+        /** @var \Symfony\Component\Security\Csrf\CsrfTokenManagerInterface $csrf */
+        $csrf = self::getContainer()->get('security.csrf.token_manager');
+
+        $off = $this->syncForm($html, 'animedb-alpha');
+        self::assertNotNull($off);
+        self::assertTrue($csrf->isTokenValid(new CsrfToken('settings_plugin_sync_toggle_animedb-alpha', $off['token'])));
+        self::assertSame('1', $off['active']);
+        self::assertSame('false', $off['checked']);
+
+        $on = $this->syncForm($html, 'animedb-beta');
+        self::assertNotNull($on);
+        self::assertTrue($csrf->isTokenValid(new CsrfToken('settings_plugin_sync_toggle_animedb-beta', $on['token'])));
+        self::assertSame('0', $on['active']);
+        self::assertSame('true', $on['checked']);
+    }
+
+    public function testPluginsIndexHidesSyncToggleForNonSyncPlugin(): void
+    {
+        self::bootKernel();
+        $html = $this->renderPluginsIndex(['animedb-alpha'], [], null);
+
+        self::assertNull($this->syncForm($html, 'animedb-gamma'));
+        self::assertSame(1, substr_count($html, 'data-sync-toggle'));
+    }
+
+    public function testPluginsIndexShowsBusyRetryAlert(): void
+    {
+        self::bootKernel();
+        $busy = $this->renderPluginsIndex([], [], 'busy_retry');
+        $plain = $this->renderPluginsIndex([], [], null);
+
+        self::assertStringContainsString('alert alert-danger', $busy);
+        self::assertStringNotContainsString('alert alert-danger', $plain);
     }
 
     public function testLabelsIndexDeleteButtonCarriesTitleAndAriaLabel(): void

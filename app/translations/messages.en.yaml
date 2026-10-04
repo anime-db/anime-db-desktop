@@ -207,6 +207,10 @@ settings_sync_review:
     resolve_button: Resolve
 
 settings_plugins:
+    sync_on: on
+    sync_off: off
+    sync_toggle: Synchronization
+    busy_retry_error: Plugin settings are busy with another update right now. Please try again in a moment.
     title: Plugins — Settings — AnimeDB
     installed_heading: Installed plugins
     installed_empty: No plugins installed yet.

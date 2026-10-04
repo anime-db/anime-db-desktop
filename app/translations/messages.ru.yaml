@@ -207,6 +207,10 @@ settings_sync_review:
     resolve_button: Разобрано
 
 settings_plugins:
+    sync_on: вкл.
+    sync_off: выкл.
+    sync_toggle: Синхронизация
+    busy_retry_error: Настройки плагинов сейчас заняты другим обновлением. Повторите попытку через мгновение.
     title: Плагины — Настройки — AnimeDB
     installed_heading: Установленные плагины
     installed_empty: Плагинов пока не установлено.

@@ -111,6 +111,9 @@ final class PluginsIncompatibleRowRenderingTest extends KernelTestCase
         return $twig->render('settings/plugins/index.html.twig', [
             'installedPlugins' => [$plugin],
             'settingsPluginIds' => [],
+            'syncPluginIds' => [],
+            'syncActiveIds' => [],
+            'error' => null,
             'translationCoverage' => [],
             'pluginLocales' => [],
             'marketUpdates' => $marketUpdates,

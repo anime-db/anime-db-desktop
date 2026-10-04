@@ -29,6 +29,7 @@ namespace App\Service\Plugin;
 
 use AnimeDb\PluginContracts\Sync\SyncInterface;
 use App\Entity\ValueObject\PluginId;
+use App\Service\Plugin\Exception\PluginsConfigStoreLockedException;
 use Symfony\Component\DependencyInjection\Attribute\AutowireIterator;
 
 /**
@@ -78,6 +79,36 @@ final class SyncRegistry
                 yield $id => $sync;
             }
         }
+    }
+
+    /**
+     * Whether the plugin implements {@see SyncInterface}, regardless of `features.sync` — the
+     * plugins page needs it to decide where to offer the sync switch.
+     */
+    public function supports(PluginId $pluginId): bool
+    {
+        return isset($this->all()[(string) $pluginId]);
+    }
+
+    /** Current `features.sync` of the plugin; false when it has no recorded settings yet. */
+    public function isEnabled(PluginId $pluginId): bool
+    {
+        return $this->isActive((string) $pluginId);
+    }
+
+    /**
+     * Persists `features.sync` only — every other settings key (including `syncSeeded`) is left
+     * as is, so switching sync off keeps the seed flag, external ids and review data.
+     *
+     * @throws PluginsConfigStoreLockedException
+     */
+    public function setEnabled(PluginId $pluginId, bool $enabled): void
+    {
+        $this->pluginsConfigStore->updatePluginSettings($pluginId, static function (array $settings) use ($enabled): array {
+            $settings['features']['sync'] = $enabled;
+
+            return $settings;
+        });
     }
 
     /** @return array<string, SyncInterface> */

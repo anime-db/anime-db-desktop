@@ -86,9 +86,9 @@ use Twig\Environment;
  * ({@see \App\MessageHandler\BackfillExternalIdMessageHandler}) makes a re-dispatch on the
  * OAuth-retry path harmless.
  *
- * `SyncRegistry::isActive()` gates on `features.sync` alone, which the plugin's own settings
- * page can set before its OAuth flow actually completes — so setting `syncSeeded` here only makes
- * the *dispatch* idempotent, it is not proof the pull that follows will actually run. If it stops
+ * `SyncRegistry::isActive()` gates on `features.sync` alone, which the switch on the plugins
+ * page ({@see PluginController::toggleSync()}) sets before the plugin's OAuth flow actually
+ * completes — so setting `syncSeeded` here only makes the *dispatch* idempotent, it is not proof the pull that follows will actually run. If it stops
  * short on a dead/missing OAuth session, {@see \App\MessageHandler\SyncSeedMessageHandler} resets
  * `syncSeeded` back to `false` itself, so the next visit (presumably after OAuth is finished)
  * retries connect-seed instead of it staying silently un-seeded forever.
