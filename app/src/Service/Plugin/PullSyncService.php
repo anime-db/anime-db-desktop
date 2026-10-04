@@ -119,12 +119,23 @@ use Psr\Log\LoggerInterface;
  * reachable, so skipping just this one item and continuing is the self-healing move. The item
  * stays in $presentExternalIds (it was genuinely in the source's list), its exception is logged
  * as a warning with the plugin and external id, and anything it already mutated in memory is
- * discarded via EntityManagerInterface::refresh() so a later flush() in this same run cannot
- * durably commit a half-applied item. If the failure is a Doctrine exception that closed the
- * EntityManager, this falls onto the same recovery EntityManager as the create-conflict path
- * above (opening one if this run has not already); detectors are skipped for this run under the
- * same rule a lost create race already follows. ReauthRequiredException is explicitly excluded
- * from this isolation — it keeps stopping the whole run, as described above.
+ * discarded so a later flush() in this same run cannot durably commit a half-applied item: a
+ * lone leftover Anime change is handled here via EntityManagerInterface::refresh(), while
+ * everything reconcilePulledItem() itself persists (the Anime change together with every
+ * confirmed participant's {@see \App\Entity\AnimeSyncState} snapshot row) is closed out as one
+ * {@see EntityManagerInterface::wrapInTransaction()} unit inside {@see
+ * \App\Service\Sync\SyncConvergenceService} — so a later participant's failed write there rolls
+ * every earlier one in the same item back too, rather than leaving some of them durably
+ * committed while others are not (issue #859 review, "частичный коммит в рамках одного
+ * элемента"). That transaction failing closes the EntityManager every time (Doctrine's own
+ * reaction to a failed commit), so this falls onto the same recovery EntityManager as the
+ * create-conflict path above (opening one if this run has not already); detectors are skipped
+ * for this run under the same rule a lost create race already follows. Unlike that race, though,
+ * this really does close the *original*, request-scoped EntityManager this run was given — pull()
+ * reports that back to its caller as a `false` return (same mechanism already used for a dead
+ * OAuth session) rather than claiming success over an EntityManager the caller can no longer use.
+ * ReauthRequiredException is explicitly excluded from this isolation — it keeps stopping the
+ * whole run, as described above.
  */
 final class PullSyncService
 {
@@ -155,10 +166,12 @@ final class PullSyncService
      * left to suppress.
      */
     /**
-     * @return bool whether this run actually reconciled the source's list — `false` means it
-     *              stopped early on {@see ReauthRequiredException} (see the class docblock's
-     *              "dead OAuth session" section) and applied nothing beyond what it saw before
-     *              that point
+     * @return bool whether this run finished in a state a caller can keep building on — `false`
+     *              means either it stopped early on {@see ReauthRequiredException} (see the class
+     *              docblock's "dead OAuth session" section) and applied nothing beyond what it saw
+     *              before that point, or a per-item failure genuinely closed the shared
+     *              EntityManager this run was given (see "Per-item isolation" below); in both
+     *              cases the caller must not treat this as a clean, retry-free success
      */
     public function pull(PluginId $pluginId, SyncInterface $sync): bool
     {
@@ -309,19 +322,26 @@ final class PullSyncService
             $this->entityManager->flush();
         } else {
             // Both detectors below are wired to this run's *original* EntityManager (through
-            // SyncReviewItemRepository), which a lost create race has already closed — running
-            // them here would raise EntityManagerClosedException instead of the self-healing
-            // this class promises. Skip them for this run and log it: any duplicate/disappeared
-            // item they would have flagged is still present next pull (a newly created row keeps
-            // its external_id, so it is not "new" again — but the race itself is rare enough,
-            // and Doctrine serializes SQLite writes, that a second one landing in the very next
-            // run to re-surface it is rarer still) — same self-healing stance already taken for
-            // a second conflict earlier in this method.
-            $this->logger->warning('Skipping post-pull duplicate/deletion review for this run: an earlier create conflict already closed this pull\'s EntityManager.', [
+            // SyncReviewItemRepository). Running them here would either see a stale identity map
+            // (the create-conflict race, which only clear()s the original) or raise
+            // EntityManagerClosedException outright (the per-item isolation path, which genuinely
+            // closes it — see the class docblock's "Per-item isolation" section). Skip them for
+            // this run and log it either way: any duplicate/disappeared item they would have
+            // flagged is still present next pull (a newly created row keeps its external_id, so
+            // it is not "new" again) — same self-healing stance already taken for a second
+            // conflict earlier in this method.
+            $this->logger->warning('Skipping post-pull duplicate/deletion review for this run: an earlier failure already switched this pull to a recovery EntityManager.', [
                 'pluginId' => (string) $pluginId,
             ]);
 
-            return true;
+            // The create-conflict race (issue #297) leaves $this->entityManager merely cleared,
+            // not closed — a caller reusing it after this pull() returns gets a clean slate, so
+            // `true` is accurate. Per-item isolation (issue #859) can genuinely close it (a real
+            // Doctrine flush failure always does), and a caller must be told this run did not
+            // fully succeed rather than being handed a shared EntityManager it cannot use —
+            // reusing the same `false` this method already returns for a dead OAuth session,
+            // rather than silently claiming success over a now-unusable EntityManager.
+            return $this->entityManager->isOpen();
         }
 
         foreach ($newlyCreated as $anime) {
