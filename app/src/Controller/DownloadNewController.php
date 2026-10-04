@@ -46,6 +46,7 @@ use App\Service\Exception\InsufficientDiskSpaceException;
 use App\Service\Exception\InvalidTorrentFileException;
 use App\Service\Exception\QbittorrentClientException;
 use Doctrine\ORM\EntityManagerInterface;
+use Symfony\Component\HttpFoundation\File\Exception\FileException;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -133,6 +134,14 @@ final class DownloadNewController
 
         $uploadedFile = $request->files->get('torrent_file');
 
+        if ($uploadedFile instanceof UploadedFile && !$uploadedFile->isValid()) {
+            $error = \in_array($uploadedFile->getError(), [\UPLOAD_ERR_INI_SIZE, \UPLOAD_ERR_FORM_SIZE], true)
+                ? 'download_new.error_file_too_large'
+                : 'download_new.error_unreadable_source';
+
+            return $this->renderForm(error: $error, selectedAnime: $anime, selectedStorageId: $storageId, magnet: $magnet);
+        }
+
         try {
             $built = $this->buildSource($magnet, $uploadedFile);
         } catch (\InvalidArgumentException) {
@@ -151,7 +160,8 @@ final class DownloadNewController
      *                                                   the temp path to delete afterwards; null
      *                                                   when neither a magnet nor a file was given
      *
-     * @throws \InvalidArgumentException if $magnet is not a well-formed magnet URI
+     * @throws \InvalidArgumentException if $magnet is not a well-formed magnet URI, or the
+     *                                   uploaded file could not be moved into a temp path
      */
     private function buildSource(string $magnet, mixed $uploadedFile): ?array
     {
@@ -159,9 +169,14 @@ final class DownloadNewController
             return [DownloadSource::magnet($magnet), null];
         }
 
-        if ($uploadedFile instanceof UploadedFile && $uploadedFile->isValid()) {
+        if ($uploadedFile instanceof UploadedFile) {
             $tempPath = sys_get_temp_dir().\DIRECTORY_SEPARATOR.bin2hex(random_bytes(16)).'.torrent';
-            $uploadedFile->move(\dirname($tempPath), basename($tempPath));
+
+            try {
+                $uploadedFile->move(\dirname($tempPath), basename($tempPath));
+            } catch (FileException $e) {
+                throw new \InvalidArgumentException('Uploaded file could not be moved.', previous: $e);
+            }
 
             return [DownloadSource::torrentFile($tempPath), $tempPath];
         }

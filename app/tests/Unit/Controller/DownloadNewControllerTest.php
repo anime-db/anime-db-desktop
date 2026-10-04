@@ -50,6 +50,8 @@ use App\Service\Exception\InvalidTorrentFileException;
 use App\Service\Exception\QbittorrentClientException;
 use Doctrine\ORM\EntityManagerInterface;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\HttpFoundation\File\Exception\FileException;
+use Symfony\Component\HttpFoundation\File\File;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -99,6 +101,26 @@ final class DownloadNewControllerTest extends TestCase
         $this->filesToClean[] = $path;
 
         return new UploadedFile($path, 'release.torrent', 'application/x-bittorrent', null, true);
+    }
+
+    /**
+     * A validly-received upload whose move() still fails (e.g. the temp directory is
+     * unwritable) — a real-world FileException that {@see UploadedFile::move()} itself can
+     * throw. There is no public way to make Symfony's own move() fail on demand, so this
+     * overrides it directly.
+     */
+    private function makeUploadedFileThatFailsToMove(string $content): UploadedFile
+    {
+        $path = sys_get_temp_dir().'/download-new-test-upload-'.uniqid();
+        file_put_contents($path, $content);
+        $this->filesToClean[] = $path;
+
+        return new class($path, 'release.torrent', 'application/x-bittorrent', null, true) extends UploadedFile {
+            public function move(string $directory, ?string $name = null): File
+            {
+                throw new FileException('Could not move the uploaded file.');
+            }
+        };
     }
 
     private function createController(
@@ -261,13 +283,16 @@ final class DownloadNewControllerTest extends TestCase
     public function testCreateWithMagnetEnqueuesAndRedirectsAndUpdatesLastDownloadStorageId(): void
     {
         $anime = $this->makeAnime(5);
-        $storage = $this->makeStorage(1);
+        // Deliberately distinct from the preset storage's id (1, see createController()'s default
+        // stub) so a wrong implementation that saves the preset/default id instead of the
+        // actually-selected one would be caught.
+        $storage = $this->makeStorage(7);
 
         $animeRepository = $this->createStub(AnimeRepository::class);
         $animeRepository->method('findByIds')->willReturn([5 => $anime]);
 
-        $entityManager = $this->createStub(EntityManagerInterface::class);
-        $entityManager->method('find')->willReturn($storage);
+        $entityManager = $this->createMock(EntityManagerInterface::class);
+        $entityManager->expects($this->once())->method('find')->with(Storage::class, 7)->willReturn($storage);
 
         $downloadService = $this->createMock(QbittorrentDownloadService::class);
         $downloadService->expects($this->once())
@@ -281,7 +306,7 @@ final class DownloadNewControllerTest extends TestCase
 
         $settings = $this->createMock(AppSettingsProvider::class);
         $settings->method('getLastDownloadStorageId')->willReturn(null);
-        $settings->expects($this->once())->method('setLastDownloadStorageId')->with(1);
+        $settings->expects($this->once())->method('setLastDownloadStorageId')->with(7);
 
         $urlGenerator = $this->createMock(UrlGeneratorInterface::class);
         $urlGenerator->expects($this->once())->method('generate')->with('downloads_index')->willReturn('/downloads');
@@ -294,7 +319,7 @@ final class DownloadNewControllerTest extends TestCase
             urlGenerator: $urlGenerator,
         );
 
-        $response = $controller->create($this->magnetRequest());
+        $response = $controller->create($this->magnetRequest(['storage' => '7']));
 
         $this->assertInstanceOf(RedirectResponse::class, $response);
         $this->assertSame('/downloads', $response->getTargetUrl());
@@ -326,6 +351,98 @@ final class DownloadNewControllerTest extends TestCase
 
         $this->assertNotNull($capturedPath);
         $this->assertFileDoesNotExist($capturedPath);
+    }
+
+    public function testCreateRejectsAnUploadThatExceedsTheIniUploadLimitAsFileTooLarge(): void
+    {
+        $anime = $this->makeAnime(5);
+        $animeRepository = $this->createStub(AnimeRepository::class);
+        $animeRepository->method('findByIds')->willReturn([5 => $anime]);
+
+        $downloadService = $this->createMock(QbittorrentDownloadService::class);
+        $downloadService->expects($this->never())->method('enqueueTo');
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('downloads/new.html.twig', $this->callback(
+                static fn (array $params): bool => $params['error'] === 'download_new.error_file_too_large',
+            ))
+            ->willReturn('<html></html>');
+
+        $controller = $this->createController(animeRepository: $animeRepository, downloadService: $downloadService, twig: $twig);
+
+        $request = $this->magnetRequest(['magnet' => '']);
+        // test=true + a non-OK error lets File skip its "path must exist" check (see
+        // UploadedFile::__construct()), so this models what PHP itself hands over once
+        // upload_max_filesize is exceeded without needing an actual oversized upload.
+        $request->files->set('torrent_file', new UploadedFile(
+            '/nonexistent/release.torrent',
+            'release.torrent',
+            'application/x-bittorrent',
+            \UPLOAD_ERR_INI_SIZE,
+            true,
+        ));
+
+        $controller->create($request);
+    }
+
+    public function testCreateRejectsAnOtherwiseInvalidUploadAsUnreadableSource(): void
+    {
+        $anime = $this->makeAnime(5);
+        $animeRepository = $this->createStub(AnimeRepository::class);
+        $animeRepository->method('findByIds')->willReturn([5 => $anime]);
+
+        $downloadService = $this->createMock(QbittorrentDownloadService::class);
+        $downloadService->expects($this->never())->method('enqueueTo');
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('downloads/new.html.twig', $this->callback(
+                static fn (array $params): bool => $params['error'] === 'download_new.error_unreadable_source',
+            ))
+            ->willReturn('<html></html>');
+
+        $controller = $this->createController(animeRepository: $animeRepository, downloadService: $downloadService, twig: $twig);
+
+        $request = $this->magnetRequest(['magnet' => '']);
+        $request->files->set('torrent_file', new UploadedFile(
+            '/nonexistent/release.torrent',
+            'release.torrent',
+            'application/x-bittorrent',
+            \UPLOAD_ERR_PARTIAL,
+            true,
+        ));
+
+        $controller->create($request);
+    }
+
+    public function testCreateTreatsAFailedMoveOfAValidUploadAsUnreadableSource(): void
+    {
+        $anime = $this->makeAnime(5);
+        $animeRepository = $this->createStub(AnimeRepository::class);
+        $animeRepository->method('findByIds')->willReturn([5 => $anime]);
+
+        $downloadService = $this->createMock(QbittorrentDownloadService::class);
+        $downloadService->expects($this->never())->method('enqueueTo');
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('downloads/new.html.twig', $this->callback(
+                static fn (array $params): bool => $params['error'] === 'download_new.error_unreadable_source',
+            ))
+            ->willReturn('<html></html>');
+
+        $controller = $this->createController(animeRepository: $animeRepository, downloadService: $downloadService, twig: $twig);
+
+        $request = $this->magnetRequest(['magnet' => '']);
+        $request->files->set('torrent_file', $this->makeUploadedFileThatFailsToMove('d8:announce0:4:infod0:ee'));
+
+        $response = $controller->create($request);
+
+        $this->assertSame(200, $response->getStatusCode());
     }
 
     public function testCreateDeletesTempTorrentFileWhenEnqueueThrows(): void
@@ -467,16 +584,42 @@ final class DownloadNewControllerTest extends TestCase
             new InsufficientDiskSpaceException(2_000_000_000, 500_000_000, '/mnt/storage'),
         );
 
+        // The default controller-test translator stub (willReturnArgument(0)) just echoes the
+        // unit key back, so it can't tell "%needed%" and "%free%" apart — both would stringify
+        // to the same key regardless of value. Simulate real translation so the two formatted
+        // byte counts are distinguishable and this test actually exercises formatBytes().
+        $translator = $this->createStub(TranslatorInterface::class);
+        $translator->method('trans')->willReturnCallback(static function (string $id, array $params = []): string {
+            $unit = match ($id) {
+                'downloads.unit_b' => 'B',
+                'downloads.unit_kb' => 'KB',
+                'downloads.unit_mb' => 'MB',
+                'downloads.unit_gb' => 'GB',
+                'downloads.unit_tb' => 'TB',
+                default => $id,
+            };
+
+            return isset($params['%value%']) ? $params['%value%'].' '.$unit : $id;
+        });
+        $translator->method('getLocale')->willReturn('en');
+
         $twig = $this->createMock(Environment::class);
         $twig->expects($this->once())
             ->method('render')
             ->with('downloads/new.html.twig', $this->callback(
                 static fn (array $params): bool => $params['error'] === 'download_new.error_insufficient_space'
+                    && $params['errorParams']['%needed%'] === '1.9 GB'
+                    && $params['errorParams']['%free%'] === '476.8 MB'
                     && $params['errorParams']['%path%'] === '/mnt/storage',
             ))
             ->willReturn('<html></html>');
 
-        $controller = $this->createController(animeRepository: $animeRepository, downloadService: $downloadService, twig: $twig);
+        $controller = $this->createController(
+            animeRepository: $animeRepository,
+            downloadService: $downloadService,
+            translator: $translator,
+            twig: $twig,
+        );
 
         $controller->create($this->magnetRequest());
     }
@@ -553,19 +696,44 @@ final class DownloadNewControllerTest extends TestCase
     public function testCreateShowsAlreadyInDownloadsMessageForAnIdempotentRepeatButStillUpdatesSetting(): void
     {
         $anime = $this->makeAnime(5);
+        $storage = $this->makeStorage(7);
         $animeRepository = $this->createStub(AnimeRepository::class);
         $animeRepository->method('findByIds')->willReturn([5 => $anime]);
 
-        $existing = new Download(self::SOME_HASH, $anime);
-        $downloadRepository = $this->createStub(DownloadRepository::class);
-        $downloadRepository->method('findByAnime')->willReturn([$existing]);
+        $entityManager = $this->createMock(EntityManagerInterface::class);
+        $entityManager->expects($this->once())->method('find')->with(Storage::class, 7)->willReturn($storage);
 
-        $downloadService = $this->createStub(QbittorrentDownloadService::class);
-        $downloadService->method('enqueueTo')->willReturn(new DownloadTaskId(self::SOME_HASH));
+        $existing = new Download(self::SOME_HASH, $anime);
+
+        // The pre-enqueue snapshot of existing downloads must be taken BEFORE enqueueTo() runs:
+        // enqueueTo() itself persists a Download for a brand-new task, so a snapshot taken
+        // afterwards would always already contain the just-enqueued hash and every new download
+        // would be misreported as "already in downloads". $callOrder pins down that ordering
+        // instead of relying on a stub that returns the same answer regardless of call order.
+        $callOrder = [];
+
+        $downloadRepository = $this->createMock(DownloadRepository::class);
+        $downloadRepository->expects($this->once())
+            ->method('findByAnime')
+            ->with(5)
+            ->willReturnCallback(function () use (&$callOrder, $existing): array {
+                $callOrder[] = 'findByAnime';
+
+                return [$existing];
+            });
+
+        $downloadService = $this->createMock(QbittorrentDownloadService::class);
+        $downloadService->expects($this->once())
+            ->method('enqueueTo')
+            ->willReturnCallback(function () use (&$callOrder): DownloadTaskId {
+                $callOrder[] = 'enqueueTo';
+
+                return new DownloadTaskId(self::SOME_HASH);
+            });
 
         $settings = $this->createMock(AppSettingsProvider::class);
         $settings->method('getLastDownloadStorageId')->willReturn(null);
-        $settings->expects($this->once())->method('setLastDownloadStorageId')->with(1);
+        $settings->expects($this->once())->method('setLastDownloadStorageId')->with(7);
 
         $twig = $this->createMock(Environment::class);
         $twig->expects($this->once())
@@ -577,15 +745,47 @@ final class DownloadNewControllerTest extends TestCase
 
         $controller = $this->createController(
             animeRepository: $animeRepository,
+            entityManager: $entityManager,
             downloadRepository: $downloadRepository,
             downloadService: $downloadService,
             settings: $settings,
             twig: $twig,
         );
 
-        $response = $controller->create($this->magnetRequest());
+        $response = $controller->create($this->magnetRequest(['storage' => '7']));
 
         $this->assertSame(200, $response->getStatusCode());
+        $this->assertSame(['findByAnime', 'enqueueTo'], $callOrder);
+    }
+
+    public function testCreateRedirectsWhenAnimeHasAnUnrelatedDownloadThatDoesNotMatchTheNewTaskId(): void
+    {
+        $anime = $this->makeAnime(5);
+        $animeRepository = $this->createStub(AnimeRepository::class);
+        $animeRepository->method('findByIds')->willReturn([5 => $anime]);
+
+        $unrelatedHash = str_repeat('b', 40);
+        $unrelated = new Download($unrelatedHash, $anime);
+        $downloadRepository = $this->createStub(DownloadRepository::class);
+        $downloadRepository->method('findByAnime')->willReturn([$unrelated]);
+
+        $downloadService = $this->createStub(QbittorrentDownloadService::class);
+        $downloadService->method('enqueueTo')->willReturn(new DownloadTaskId(self::SOME_HASH));
+
+        $urlGenerator = $this->createMock(UrlGeneratorInterface::class);
+        $urlGenerator->expects($this->once())->method('generate')->with('downloads_index')->willReturn('/downloads');
+
+        $controller = $this->createController(
+            animeRepository: $animeRepository,
+            downloadRepository: $downloadRepository,
+            downloadService: $downloadService,
+            urlGenerator: $urlGenerator,
+        );
+
+        $response = $controller->create($this->magnetRequest());
+
+        $this->assertInstanceOf(RedirectResponse::class, $response);
+        $this->assertSame('/downloads', $response->getTargetUrl());
     }
 
     public function testStorageOptionsDefaultToLastDownloadStorageIdWhenValid(): void
