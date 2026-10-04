@@ -230,6 +230,43 @@ final class DeletedFromSourceDetectorTest extends TestCase
         $this->assertCount(1, $this->reviewItems());
     }
 
+    /**
+     * Issue #864, acceptance criterion 1/2: forgetListMembership() removes the snapshot row for
+     * the given plugin only, leaving rows for other participants (including 'local') untouched.
+     */
+    public function testForgetListMembershipRemovesTheSnapshotRowForTheGivenPluginOnly(): void
+    {
+        $anime = $this->persistAnime(['animedb-shikimori' => '10', 'animedb-mal' => '99']);
+        $this->seedSyncState($anime, 'animedb-shikimori');
+        $this->seedSyncState($anime, 'animedb-mal');
+        $this->seedSyncState($anime, 'local');
+        $this->entityManager->flush();
+
+        $this->detector(new SyncRegistry([], $this->store([])))->forgetListMembership($anime, 'animedb-shikimori');
+
+        $this->assertNull($this->findSyncState($anime, 'animedb-shikimori'));
+        $this->assertNotNull($this->findSyncState($anime, 'animedb-mal'));
+        $this->assertNotNull($this->findSyncState($anime, 'local'));
+        // The cached external id is untouched — only the confirmed-list-membership row is removed.
+        $this->assertSame('10', $anime->getCachedExternalId($this->pluginId));
+    }
+
+    /** Issue #864, acceptance criterion 3: no snapshot row to begin with — a silent no-op. */
+    public function testForgetListMembershipIsANoOpWhenThereIsNoSnapshotRow(): void
+    {
+        $anime = $this->persistAnime(['animedb-shikimori' => '10']);
+        $this->entityManager->flush();
+
+        $this->detector(new SyncRegistry([], $this->store([])))->forgetListMembership($anime, 'animedb-shikimori');
+
+        $this->assertNull($this->findSyncState($anime, 'animedb-shikimori'));
+    }
+
+    private function findSyncState(Anime $anime, string $participantId): ?AnimeSyncState
+    {
+        return $this->entityManager->find(AnimeSyncState::class, ['anime' => $anime, 'participantId' => $participantId]);
+    }
+
     private function detector(SyncRegistry $registry): DeletedFromSourceDetector
     {
         return new DeletedFromSourceDetector(

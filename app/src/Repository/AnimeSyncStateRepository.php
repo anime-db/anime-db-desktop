@@ -69,4 +69,23 @@ class AnimeSyncStateRepository
         $entityManager->persist($state);
         $entityManager->flush();
     }
+
+    /**
+     * Removes the snapshot row for (anime, participantId), if any — a no-op when none exists.
+     * Used when a sync review resolution "keeps" a record whose source no longer lists it (issue
+     * #864): the row's claim of confirmed list membership for that participant is now stale, so a
+     * later pull must stop seeing it and must not flag the same disappearance again.
+     */
+    public function remove(Anime $anime, string $participantId, ?EntityManagerInterface $entityManager = null): void
+    {
+        $entityManager ??= $this->entityManager;
+
+        $state = $this->find($anime, $participantId, $entityManager);
+        if ($state === null) {
+            return;
+        }
+
+        $entityManager->remove($state);
+        $entityManager->flush();
+    }
 }

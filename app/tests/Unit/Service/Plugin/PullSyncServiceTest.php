@@ -823,6 +823,51 @@ final class PullSyncServiceTest extends TestCase
     }
 
     /**
+     * Acceptance scenario 6 (issue #864): resolving a DeletedFromSource item as "keep" removes the
+     * stale AnimeSyncState snapshot row (the controller does this through {@see
+     * DeletedFromSourceDetector::forgetListMembership()}, simulated here directly). Once removed,
+     * {@see hasConfirmedListMembership()} is false again, so PullSyncService's own $disappeared
+     * narrowing (issue #863) never calls the detector for this record on a later pull, and no
+     * second review item is raised even though the source still does not list the title.
+     */
+    public function testResolvingKeepRemovesConfirmedListMembershipSoALaterPullDoesNotReFlagTheSameDisappearance(): void
+    {
+        $anime = new TvAnime();
+        $anime->setTitle('Trigun')->setWatchStatus(WatchStatus::Plan);
+        $anime->rememberExternalId($this->pluginId, '77');
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+        $this->seedLastSeen($anime, (string) $this->pluginId, WatchStatus::Plan, null, '2026-01-01');
+
+        // First pull: the source no longer lists the title — flagged for review (issue #217).
+        $this->service->pull($this->pluginId, $this->syncFillerStub([], data: null));
+        $firstRunItems = $this->entityManager->getRepository(SyncReviewItem::class)->findAll();
+        $this->assertCount(1, $firstRunItems);
+
+        // The user resolves it as "keep" — same action SyncReviewController::resolve() takes for
+        // DeletedFromSource/DeletionConflict (issue #864): remove the stale snapshot row, then
+        // mark the item resolved.
+        $deletionDetector = new DeletedFromSourceDetector(
+            new SyncRegistry([], new PluginsConfigStore(sys_get_temp_dir().'/anime-pull-sync-reg-'.uniqid().'.json')),
+            new SyncReviewService(new SyncReviewItemRepository($this->entityManager)),
+            new AnimeSyncStateRepository($this->entityManager),
+        );
+        $deletionDetector->forgetListMembership($anime, (string) $this->pluginId);
+        $firstRunItems[0]->resolve();
+        $this->entityManager->flush();
+
+        // Second pull: the source still does not list the title, but no confirmed list membership
+        // remains for it — no new review item.
+        $this->service->pull($this->pluginId, $this->syncFillerStub([], data: null));
+
+        $unresolved = array_values(array_filter(
+            $this->entityManager->getRepository(SyncReviewItem::class)->findAll(),
+            static fn (SyncReviewItem $item): bool => !$item->isResolved(),
+        ));
+        $this->assertCount(0, $unresolved);
+    }
+
+    /**
      * Scenario 3 (issue #863): a record with only a cached external_id for this plugin — no
      * AnimeSyncState snapshot row — that is present in the pull list is still matched through
      * $byExternalId and updated in place, not duplicated; only $disappeared's computation is

@@ -106,6 +106,20 @@ final class DeletedFromSourceDetector
     }
 
     /**
+     * Called when a DeletedFromSource/DeletionConflict review item is resolved as "keep" (issue
+     * #864, {@see \App\Controller\Settings\SyncReviewController::resolve()}): removes the now-stale
+     * AnimeSyncState snapshot row for $pluginId. The source no longer lists $anime, so that row's
+     * claim of confirmed list membership ({@see hasConfirmedListMembership()}) no longer holds —
+     * leaving it in place would make the next pull see the same disappearance and flag it again.
+     * The cached external id ({@see Anime::getExternalIdPluginIds()}) is left untouched on purpose:
+     * a later re-add on the source re-syncs through it via the normal reconciliation path.
+     */
+    public function forgetListMembership(Anime $anime, string $pluginId): void
+    {
+        $this->animeSyncStateRepository->remove($anime, $pluginId);
+    }
+
+    /**
      * Anime ids that already have an unresolved removal/conflict item raised for this plugin.
      *
      * @return array<int, true>
