@@ -99,6 +99,7 @@ final class BulkFillerServiceTest extends TestCase
                 new StudioRepository($this->entityManager),
                 $this->entityManager,
                 $this->createStub(PluginMediaDownloaderInterface::class),
+                new NullLogger(),
             ),
             $this->entityManager,
             $logger ?? new NullLogger(),
@@ -466,6 +467,7 @@ final class BulkFillerServiceTest extends TestCase
                 new StudioRepository($this->entityManager),
                 $this->entityManager,
                 $this->createStub(PluginMediaDownloaderInterface::class),
+                new NullLogger(),
             ),
             $this->entityManager,
             new NullLogger(),
@@ -651,7 +653,7 @@ final class BulkFillerServiceTest extends TestCase
 
         $service = new BulkFillerService(
             new FillerRegistry([(string) $pluginId => $filler], new PluginsConfigStore('')),
-            new PluginAnimeDataMerger(new StudioRepository($this->entityManager), $this->entityManager, $mediaDownloader),
+            new PluginAnimeDataMerger(new StudioRepository($this->entityManager), $this->entityManager, $mediaDownloader, new NullLogger()),
             $this->entityManager,
             new NullLogger(),
             $messageBus,

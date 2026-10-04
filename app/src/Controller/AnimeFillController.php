@@ -87,6 +87,7 @@ final class AnimeFillController
             FillResult::Applied => null,
             FillResult::NotFound => 'anime_detail.error_fill_not_found',
             FillResult::ImageRejected => 'anime_detail.error_fill_image_rejected',
+            FillResult::DateRangeRejected => 'anime_detail.error_fill_date_range_rejected',
         };
 
         return $this->renderFillFields($anime, $field, $error);

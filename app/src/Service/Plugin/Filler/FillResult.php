@@ -46,4 +46,11 @@ enum FillResult
      * survived download/normalization - see {@see PluginAnimeDataMerger::apply()}.
      */
     case ImageRejected;
+
+    /**
+     * The plugin returned a date_premiere/date_end pair that conflicts with the one already on
+     * the record (it would violate date_end >= date_premiere) - the pair was rejected as a
+     * whole, neither date changed. See {@see PluginAnimeDataMerger::applyDatePremiereAndEnd()}.
+     */
+    case DateRangeRejected;
 }

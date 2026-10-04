@@ -114,6 +114,7 @@ final class AnimeFillControllerTest extends TestCase
                 new StudioRepository($this->entityManager),
                 $this->entityManager,
                 $mediaDownloader ?? $this->createStub(PluginMediaDownloaderInterface::class),
+                new NullLogger(),
             ),
             $this->entityManager,
             new CachedFillerLookup(new ArrayAdapter()),

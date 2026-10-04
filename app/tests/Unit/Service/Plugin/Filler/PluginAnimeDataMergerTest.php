@@ -52,6 +52,8 @@ use Doctrine\ORM\ORMSetup;
 use Doctrine\ORM\Tools\SchemaTool;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 
 /**
  * Real EntityManager/SQLite connection (same setup as ScanStorageServiceTest): applyStudios()
@@ -82,14 +84,19 @@ final class PluginAnimeDataMergerTest extends TestCase
     }
 
     /** @param array<string, string|null> $downloads url => returned filename (or null for a failed download) */
-    private function newMerger(array $downloads = []): PluginAnimeDataMerger
+    private function newMerger(array $downloads = [], ?LoggerInterface $logger = null): PluginAnimeDataMerger
     {
         $downloader = $this->createStub(PluginMediaDownloaderInterface::class);
         $downloader->method('download')->willReturnCallback(
             static fn (int $animeId, string $url): ?string => $downloads[$url] ?? null,
         );
 
-        return new PluginAnimeDataMerger(new StudioRepository($this->entityManager), $this->entityManager, $downloader);
+        return new PluginAnimeDataMerger(
+            new StudioRepository($this->entityManager),
+            $this->entityManager,
+            $downloader,
+            $logger ?? new NullLogger(),
+        );
     }
 
     private function newAnime(): TvAnime
@@ -112,10 +119,10 @@ final class PluginAnimeDataMergerTest extends TestCase
 
         $data = new PluginAnimeData(title: 'Bleach: Memories of Nobody');
 
-        $unapplied = $this->newMerger()->apply($anime, $data, ['title']);
+        $result = $this->newMerger()->apply($anime, $data, ['title']);
 
         $this->assertSame('Bleach: Memories of Nobody', $anime->getTitle());
-        $this->assertSame([], $unapplied);
+        $this->assertSame([], $result->unapplied);
     }
 
     public function testApplyUnionsAlternativeNamesWithoutDuplicatingExisting(): void
@@ -402,6 +409,145 @@ final class PluginAnimeDataMergerTest extends TestCase
         $this->assertSame(24, $anime->getDurationMinutes());
     }
 
+    /**
+     * Issue #860, scenario 3: a stored datePremiere that conflicts with the incoming dateEnd
+     * alone must not throw out of apply(), must leave dateEnd unchanged, must log a warning, and
+     * must be reported through $result->dateRangeRejected rather than $result->unapplied — a
+     * non-empty $unapplied turns into FillResult::ImageRejected downstream, which would misreport
+     * a date conflict as a rejected image.
+     */
+    public function testApplyRejectsDateEndConflictingWithStoredDatePremiereWithoutThrowingAndLogsAWarning(): void
+    {
+        $anime = $this->newAnime();
+        $anime->setDatePremiere(new \DateTimeImmutable('2020-06-01'));
+
+        $data = new PluginAnimeData(title: 'Bleach', dateEnd: new \DateTimeImmutable('2020-01-01'));
+
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->once())->method('warning')->with(
+            $this->isType('string'),
+            $this->callback(static fn (array $context): bool => $context['sourceDateEnd']->format('Y-m-d') === '2020-01-01'
+                && $context['storedDatePremiere']->format('Y-m-d') === '2020-06-01'),
+        );
+
+        $result = $this->newMerger(logger: $logger)->apply($anime, $data, ['dateEnd']);
+
+        $this->assertNull($anime->getDateEnd());
+        $this->assertEquals(new \DateTimeImmutable('2020-06-01'), $anime->getDatePremiere());
+        $this->assertTrue($result->dateRangeRejected);
+        $this->assertSame([], $result->unapplied);
+    }
+
+    /**
+     * Issue #860, scenario 4: the mirror case, a new datePremiere from the source that conflicts
+     * with the already-stored dateEnd — datePremiere must stay untouched, no exception.
+     */
+    public function testApplyRejectsDatePremiereConflictingWithStoredDateEndWithoutThrowing(): void
+    {
+        $anime = $this->newAnime();
+        $anime->setDateEnd(new \DateTimeImmutable('2020-01-01'));
+
+        $data = new PluginAnimeData(title: 'Bleach', datePremiere: new \DateTimeImmutable('2020-06-01'));
+
+        $result = $this->newMerger()->apply($anime, $data, ['datePremiere']);
+
+        $this->assertNull($anime->getDatePremiere());
+        $this->assertEquals(new \DateTimeImmutable('2020-01-01'), $anime->getDateEnd());
+        $this->assertTrue($result->dateRangeRejected);
+        $this->assertSame([], $result->unapplied);
+    }
+
+    /**
+     * Issue #860, scenario 5: the source's own pair is internally invalid (both dates present in
+     * $fields, nothing stored yet) — neither date is applied, but every other field in $fields is
+     * applied as usual; the date rejection does not take the rest of the call down with it.
+     */
+    public function testApplyRejectsAnInvalidPairFromDataAloneButStillAppliesOtherFields(): void
+    {
+        $anime = $this->newAnime();
+
+        $data = new PluginAnimeData(
+            title: 'Bleach',
+            datePremiere: new \DateTimeImmutable('2020-06-01'),
+            dateEnd: new \DateTimeImmutable('2020-01-01'),
+            durationMinutes: 24,
+        );
+
+        $result = $this->newMerger()->apply($anime, $data, ['datePremiere', 'dateEnd', 'durationMinutes']);
+
+        $this->assertNull($anime->getDatePremiere());
+        $this->assertNull($anime->getDateEnd());
+        $this->assertSame(24, $anime->getDurationMinutes());
+        $this->assertTrue($result->dateRangeRejected);
+        $this->assertSame([], $result->unapplied);
+    }
+
+    /**
+     * Issue #860, scenario 6: a new (datePremiere, dateEnd) pair that is valid on its own but
+     * overlaps the pair already stored must still be applied in full — the pair's own invariant
+     * is checked only against the *resulting* pair, never against the stored datePremiere/dateEnd
+     * in isolation (checking against the stored value in isolation is exactly what the old
+     * setDatePremiere()/setDateEnd() pair did, and is why this issue exists at all). An
+     * implementation that rejected any conflict with the stored pair would still pass every
+     * other new test in this file, so this one checks both $fields orderings and that no warning
+     * is ever logged for this case.
+     */
+    public function testApplyAppliesANewOverlappingButInternallyValidPairRegardlessOfFieldOrder(): void
+    {
+        $data = new PluginAnimeData(
+            title: 'Bleach',
+            datePremiere: new \DateTimeImmutable('2021-01-01'),
+            dateEnd: new \DateTimeImmutable('2021-06-01'),
+        );
+
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->never())->method('warning');
+        $merger = $this->newMerger(logger: $logger);
+
+        $forward = $this->newAnime();
+        $forward->setDatePremiereAndEnd(new \DateTimeImmutable('2020-01-01'), new \DateTimeImmutable('2020-06-01'));
+        $forwardResult = $merger->apply($forward, $data, ['datePremiere', 'dateEnd']);
+
+        $backward = $this->newAnime();
+        $backward->setDatePremiereAndEnd(new \DateTimeImmutable('2020-01-01'), new \DateTimeImmutable('2020-06-01'));
+        $backwardResult = $merger->apply($backward, $data, ['dateEnd', 'datePremiere']);
+
+        $this->assertEquals(new \DateTimeImmutable('2021-01-01'), $forward->getDatePremiere());
+        $this->assertEquals(new \DateTimeImmutable('2021-06-01'), $forward->getDateEnd());
+        $this->assertEquals(new \DateTimeImmutable('2021-01-01'), $backward->getDatePremiere());
+        $this->assertEquals(new \DateTimeImmutable('2021-06-01'), $backward->getDateEnd());
+        $this->assertFalse($forwardResult->dateRangeRejected);
+        $this->assertFalse($backwardResult->dateRangeRejected);
+        $this->assertSame([], $forwardResult->unapplied);
+        $this->assertSame([], $backwardResult->unapplied);
+    }
+
+    /**
+     * Issue #860, scenario 7: the pair's outcome must not depend on whether 'datePremiere' or
+     * 'dateEnd' comes first in $fields — both orderings reach the same (rejected) result here.
+     */
+    public function testApplyDatePairRejectionResultIsIndependentOfFieldOrder(): void
+    {
+        $data = new PluginAnimeData(
+            title: 'Bleach',
+            datePremiere: new \DateTimeImmutable('2020-06-01'),
+            dateEnd: new \DateTimeImmutable('2020-01-01'),
+        );
+
+        $forward = $this->newAnime();
+        $forwardResult = $this->newMerger()->apply($forward, $data, ['datePremiere', 'dateEnd']);
+
+        $backward = $this->newAnime();
+        $backwardResult = $this->newMerger()->apply($backward, $data, ['dateEnd', 'datePremiere']);
+
+        $this->assertNull($forward->getDatePremiere());
+        $this->assertNull($forward->getDateEnd());
+        $this->assertNull($backward->getDatePremiere());
+        $this->assertNull($backward->getDateEnd());
+        $this->assertTrue($forwardResult->dateRangeRejected);
+        $this->assertTrue($backwardResult->dateRangeRejected);
+    }
+
     public function testApplyOverwritesEpisodesCountOnSeriesAnime(): void
     {
         $anime = $this->newAnime();
@@ -434,11 +580,11 @@ final class PluginAnimeDataMergerTest extends TestCase
 
         $data = new PluginAnimeData(title: 'Bleach', cover: 'https://example.test/cover.jpg');
 
-        $unapplied = $this->newMerger(['https://example.test/cover.jpg' => 'abc123.jpg'])
+        $result = $this->newMerger(['https://example.test/cover.jpg' => 'abc123.jpg'])
             ->apply($anime, $data, ['cover']);
 
         $this->assertSame('abc123.jpg', $anime->getCover());
-        $this->assertSame([], $unapplied);
+        $this->assertSame([], $result->unapplied);
     }
 
     /**
@@ -454,10 +600,10 @@ final class PluginAnimeDataMergerTest extends TestCase
 
         $data = new PluginAnimeData(title: 'Bleach', cover: 'https://example.test/broken.jpg');
 
-        $unapplied = $this->newMerger()->apply($anime, $data, ['cover']);
+        $result = $this->newMerger()->apply($anime, $data, ['cover']);
 
         $this->assertSame('existing.jpg', $anime->getCover());
-        $this->assertSame(['cover'], $unapplied);
+        $this->assertSame(['cover'], $result->unapplied);
     }
 
     public function testApplySkipsCoverWhenAnimeIsNotYetPersisted(): void
@@ -466,12 +612,12 @@ final class PluginAnimeDataMergerTest extends TestCase
 
         $data = new PluginAnimeData(title: 'Bleach', cover: 'https://example.test/cover.jpg');
 
-        $unapplied = $this->newMerger(['https://example.test/cover.jpg' => 'abc123.jpg'])
+        $result = $this->newMerger(['https://example.test/cover.jpg' => 'abc123.jpg'])
             ->apply($anime, $data, ['cover']);
 
         $this->assertNull($anime->getCover());
         // Not-yet-persisted is a "nothing was attempted" skip, not a rejection - see applyCover()'s docblock.
-        $this->assertSame([], $unapplied);
+        $this->assertSame([], $result->unapplied);
     }
 
     public function testApplyUnionsImagesThroughMediaDownloaderWithoutDuplicating(): void
@@ -485,14 +631,14 @@ final class PluginAnimeDataMergerTest extends TestCase
             'https://example.test/2.jpg',
         ]);
 
-        $unapplied = $this->newMerger([
+        $result = $this->newMerger([
             'https://example.test/1.jpg' => 'existing.jpg',
             'https://example.test/2.jpg' => 'new.jpg',
         ])->apply($anime, $data, ['images']);
 
         $sources = array_map(static fn ($image): string => $image->source, $anime->getImages()->toArray());
         $this->assertSame(['existing.jpg', 'new.jpg'], $sources);
-        $this->assertSame([], $unapplied);
+        $this->assertSame([], $result->unapplied);
     }
 
     /**
@@ -509,13 +655,13 @@ final class PluginAnimeDataMergerTest extends TestCase
             'https://example.test/broken.jpg',
         ]);
 
-        $unapplied = $this->newMerger([
+        $result = $this->newMerger([
             'https://example.test/1.jpg' => 'new.jpg',
         ])->apply($anime, $data, ['images']);
 
         $sources = array_map(static fn ($image): string => $image->source, $anime->getImages()->toArray());
         $this->assertSame(['new.jpg'], $sources);
-        $this->assertSame([], $unapplied);
+        $this->assertSame([], $result->unapplied);
     }
 
     public function testApplyReportsImagesUnappliedWhenEveryUrlFailsToDownload(): void
@@ -525,10 +671,10 @@ final class PluginAnimeDataMergerTest extends TestCase
 
         $data = new PluginAnimeData(title: 'Bleach', images: ['https://example.test/broken.jpg']);
 
-        $unapplied = $this->newMerger()->apply($anime, $data, ['images']);
+        $result = $this->newMerger()->apply($anime, $data, ['images']);
 
         $this->assertCount(0, $anime->getImages());
-        $this->assertSame(['images'], $unapplied);
+        $this->assertSame(['images'], $result->unapplied);
     }
 
     public function testApplyDoesNotReportImagesUnappliedWhenTheUrlListIsEmpty(): void
@@ -538,9 +684,9 @@ final class PluginAnimeDataMergerTest extends TestCase
 
         $data = new PluginAnimeData(title: 'Bleach', images: []);
 
-        $unapplied = $this->newMerger()->apply($anime, $data, ['images']);
+        $result = $this->newMerger()->apply($anime, $data, ['images']);
 
-        $this->assertSame([], $unapplied);
+        $this->assertSame([], $result->unapplied);
     }
 
     public function testApplyIgnoresUnknownFieldNames(): void
@@ -549,9 +695,9 @@ final class PluginAnimeDataMergerTest extends TestCase
 
         $data = new PluginAnimeData(title: 'Bleach');
 
-        $unapplied = $this->newMerger()->apply($anime, $data, ['type']);
+        $result = $this->newMerger()->apply($anime, $data, ['type']);
 
         $this->assertSame('Placeholder', $anime->getTitle());
-        $this->assertSame([], $unapplied);
+        $this->assertSame([], $result->unapplied);
     }
 }

@@ -496,6 +496,7 @@ final class ScanStorageMessageHandlerTest extends TestCase
                     new StudioRepository($this->entityManager),
                     $this->entityManager,
                     $this->createStub(PluginMediaDownloaderInterface::class),
+                    new NullLogger(),
                 ),
                 $this->entityManager,
                 new NullLogger(),

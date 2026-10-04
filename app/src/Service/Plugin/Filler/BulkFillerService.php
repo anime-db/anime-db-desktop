@@ -268,11 +268,15 @@ final class BulkFillerService
         $fields = $this->emptyFillableFields($anime, $filler);
         $this->applyMissingLocaleDescriptions($anime, $data, $fields);
 
-        $unapplied = $this->merger->apply($anime, $data, array_diff($fields, ['descriptions', 'images']));
+        $result = $this->merger->apply($anime, $data, array_diff($fields, ['descriptions', 'images']));
         $this->dispatchMediaDownloads($anime, $data, $fields, includeCover: false);
         $this->entityManager->flush();
 
-        return $unapplied === [] ? FillResult::Applied : FillResult::ImageRejected;
+        return match (true) {
+            $result->dateRangeRejected => FillResult::DateRangeRejected,
+            $result->unapplied !== [] => FillResult::ImageRejected,
+            default => FillResult::Applied,
+        };
     }
 
     /**
@@ -326,9 +330,9 @@ final class BulkFillerService
         // right away — see findOrCreateFromPlugin()'s docblock for when that happens.
         $fields = array_diff($filler->getFillableFields(), ['title', 'type']);
         $excludedFromMerge = $downloadCoverSynchronously ? ['images'] : ['cover', 'images'];
-        $unapplied = $this->merger->apply($anime, $data, array_diff($fields, $excludedFromMerge));
+        $result = $this->merger->apply($anime, $data, array_diff($fields, $excludedFromMerge));
 
-        $coverStillNeedsQueueing = !$downloadCoverSynchronously || \in_array('cover', $unapplied, true);
+        $coverStillNeedsQueueing = !$downloadCoverSynchronously || \in_array('cover', $result->unapplied, true);
         $this->dispatchMediaDownloads($anime, $data, $fields, $coverStillNeedsQueueing);
 
         return $anime;
