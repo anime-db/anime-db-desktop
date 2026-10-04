@@ -27,6 +27,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Service\Sync;
 
+use AnimeDb\PluginContracts\OAuth\ReauthRequiredException;
 use AnimeDb\PluginContracts\Sync\SyncInterface;
 use AnimeDb\PluginContracts\Sync\SyncItem;
 use AnimeDb\PluginContracts\Sync\SyncStatus;
@@ -35,10 +36,12 @@ use App\Doctrine\Type\UnixTimestampType;
 use App\Entity\AnimeSyncState;
 use App\Entity\Enum\SyncReviewItemKind;
 use App\Entity\Enum\WatchStatus;
+use App\Entity\PendingSyncPush;
 use App\Entity\SyncReviewItem;
 use App\Entity\TvAnime;
 use App\Entity\ValueObject\PluginId;
 use App\Repository\AnimeSyncStateRepository;
+use App\Repository\PendingSyncPushRepository;
 use App\Repository\SyncReviewItemRepository;
 use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Plugin\SyncRegistry;
@@ -49,6 +52,7 @@ use App\Service\Sync\SyncReviewService;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\EntityManager;
+use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\ORMSetup;
 use Doctrine\ORM\Tools\SchemaTool;
 use PHPUnit\Framework\TestCase;
@@ -101,6 +105,7 @@ final class SyncConvergenceServiceTest extends TestCase
         return new SyncConvergenceService(
             new SyncReconciler(),
             new AnimeSyncStateRepository($this->entityManager),
+            new PendingSyncPushRepository($this->entityManager),
             $syncRegistry,
             new SyncReviewService(new SyncReviewItemRepository($this->entityManager)),
             new NullLogger(),
@@ -777,5 +782,505 @@ final class SyncConvergenceServiceTest extends TestCase
         $originState = $stateRepository->find(['anime' => $anime, 'participantId' => (string) $this->originPluginId]);
         $this->assertInstanceOf(AnimeSyncState::class, $originState);
         $this->assertSame(WatchStatus::Plan, $originState->lastStatus);
+    }
+
+    /**
+     * Acceptance (issue #862, scenario 1): a forward-propagation push failing for a third active
+     * participant (not the origin itself) marks its snapshot row push_pending — the docblock on
+     * {@see SyncConvergenceService::pushTo()} promises a retry "the next time this anime is
+     * reconciled", which {@see SyncReconciler::participantsToConverge()} alone cannot deliver for a
+     * run where nothing actually changed. The second, no-change run must find the marker, push
+     * local's current value, and clear it.
+     */
+    public function testAFailedForwardPropagationPushIsRetriedAndClearedOnTheNextNoChangeRun(): void
+    {
+        $malPluginId = new PluginId('animedb-mal');
+
+        $anime = new TvAnime();
+        $anime->setTitle('Cowboy Bebop')->setWatchStatus(WatchStatus::Plan);
+        $anime->rememberExternalId($this->originPluginId, '1');
+        $anime->rememberExternalId($malPluginId, '99');
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+
+        $this->seedLastSeen($anime, 'local', WatchStatus::Plan, '2026-01-01');
+        $this->seedLastSeen($anime, (string) $this->originPluginId, WatchStatus::Plan, '2026-01-01');
+        $this->seedLastSeen($anime, (string) $malPluginId, WatchStatus::Plan, '2026-01-01');
+
+        $mal = $this->createMock(SyncInterface::class);
+        $mal->expects($this->once())
+            ->method('push')
+            ->with($this->callback(static fn (SyncItem $item): bool => $item->externalId === '99' && $item->status === SyncStatus::Watching))
+            ->willThrowException(new \RuntimeException('network error'));
+
+        $origin = $this->createStub(SyncInterface::class);
+        $origin->method('push')->willReturnCallback(static fn (SyncItem $item): SyncItem => $item);
+
+        $service = $this->newService([(string) $this->originPluginId => $origin, (string) $malPluginId => $mal]);
+
+        // Run 1: the origin's own pull reports Watching — a genuine change local and MAL both need
+        // converged to (the winner pushed to MAL is Watching, not its own stale Plan). MAL's push
+        // fails.
+        $service->reconcilePulledItem(
+            $anime,
+            (string) $this->originPluginId,
+            new SyncProjection(WatchStatus::Watching, null),
+            new \DateTimeImmutable('2026-01-02'),
+            $this->entityManager,
+        );
+
+        $stateRepository = $this->entityManager->getRepository(AnimeSyncState::class);
+        $malState = $stateRepository->find(['anime' => $anime, 'participantId' => (string) $malPluginId]);
+        $this->assertInstanceOf(AnimeSyncState::class, $malState);
+        $this->assertTrue($malState->pushPending);
+        $this->assertSame(WatchStatus::Plan, $malState->lastStatus);
+
+        $mal = $this->createMock(SyncInterface::class);
+        $mal->expects($this->once())
+            ->method('push')
+            ->with($this->callback(static fn (SyncItem $item): bool => $item->externalId === '99' && $item->status === SyncStatus::Watching))
+            ->willReturn(new SyncItem('99', SyncStatus::Watching, 'Cowboy Bebop', updatedAt: new \DateTimeImmutable('2026-01-03')));
+
+        $service2 = $this->newService([(string) $this->originPluginId => $origin, (string) $malPluginId => $mal]);
+
+        // Run 2: the origin's own pull reports the same Watching value again — nothing changed for
+        // anyone this time, yet MAL's marker must still trigger a retry.
+        $service2->reconcilePulledItem(
+            $anime,
+            (string) $this->originPluginId,
+            new SyncProjection(WatchStatus::Watching, null),
+            new \DateTimeImmutable('2026-01-02'),
+            $this->entityManager,
+        );
+
+        $malState = $stateRepository->find(['anime' => $anime, 'participantId' => (string) $malPluginId]);
+        $this->assertInstanceOf(AnimeSyncState::class, $malState);
+        $this->assertFalse($malState->pushPending);
+        $this->assertSame(WatchStatus::Watching, $malState->lastStatus);
+    }
+
+    /**
+     * Acceptance (issue #862, scenario 2): a no-change run with no push_pending marker anywhere
+     * must not call push() on any plugin — the fix is purely marker-driven, not a "snapshot !=
+     * winner" comparison that would otherwise resurrect issue #366 pitfall "снимок ≠ W".
+     */
+    public function testANoChangeRunWithNoMarkersNeverCallsPush(): void
+    {
+        $malPluginId = new PluginId('animedb-mal');
+
+        $anime = new TvAnime();
+        $anime->setTitle('Cowboy Bebop')->setWatchStatus(WatchStatus::Plan);
+        $anime->rememberExternalId($this->originPluginId, '1');
+        $anime->rememberExternalId($malPluginId, '99');
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+
+        $this->seedLastSeen($anime, 'local', WatchStatus::Plan, '2026-01-01');
+        $this->seedLastSeen($anime, (string) $this->originPluginId, WatchStatus::Plan, '2026-01-01');
+        $this->seedLastSeen($anime, (string) $malPluginId, WatchStatus::Plan, '2026-01-01');
+
+        $origin = $this->createMock(SyncInterface::class);
+        $origin->expects($this->never())->method('push');
+        $mal = $this->createMock(SyncInterface::class);
+        $mal->expects($this->never())->method('push');
+
+        $service = $this->newService([(string) $this->originPluginId => $origin, (string) $malPluginId => $mal]);
+
+        $service->reconcilePulledItem(
+            $anime,
+            (string) $this->originPluginId,
+            new SyncProjection(WatchStatus::Plan, null),
+            new \DateTimeImmutable('2026-01-01'),
+            $this->entityManager,
+        );
+    }
+
+    /**
+     * Acceptance (issue #862, scenario 3): issue #366 pitfall #17 already established the origin is
+     * not exempt from convergence; this extends that to the retry path — a push back to the origin
+     * itself failing also marks its own snapshot row, and the origin gets retried on a later
+     * no-change run exactly like any other participant.
+     */
+    public function testAFailedPushBackToTheOriginIsRetriedOnTheNextNoChangeRun(): void
+    {
+        $anime = new TvAnime();
+        $anime->setTitle('Cowboy Bebop')->setWatchStatus(WatchStatus::Watching);
+        $anime->rememberExternalId($this->originPluginId, '1');
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+
+        $this->seedLastSeen($anime, 'local', WatchStatus::Plan, '2026-01-01');
+        $this->seedLastSeen($anime, (string) $this->originPluginId, WatchStatus::Plan, '2026-01-01');
+
+        // Local's own manual edit already advanced past the seeded snapshot (a dropped
+        // push-on-edit), so the origin's own stale pull is the lone target needing the winner
+        // pushed back to it.
+        $anime->changeWatchStatusManually(WatchStatus::Watching);
+        $this->entityManager->flush();
+
+        $origin = $this->createMock(SyncInterface::class);
+        $origin->expects($this->once())
+            ->method('push')
+            ->with($this->callback(static fn (SyncItem $item): bool => $item->status === SyncStatus::Watching))
+            ->willThrowException(new \RuntimeException('network error'));
+
+        $service = $this->newService([(string) $this->originPluginId => $origin]);
+
+        $service->reconcilePulledItem(
+            $anime,
+            (string) $this->originPluginId,
+            new SyncProjection(WatchStatus::Plan, null),
+            new \DateTimeImmutable('2026-01-01'),
+            $this->entityManager,
+        );
+
+        $stateRepository = $this->entityManager->getRepository(AnimeSyncState::class);
+        $originState = $stateRepository->find(['anime' => $anime, 'participantId' => (string) $this->originPluginId]);
+        $this->assertInstanceOf(AnimeSyncState::class, $originState);
+        $this->assertTrue($originState->pushPending);
+
+        $origin2 = $this->createMock(SyncInterface::class);
+        $origin2->expects($this->once())
+            ->method('push')
+            ->with($this->callback(static fn (SyncItem $item): bool => $item->status === SyncStatus::Watching))
+            ->willReturn(new SyncItem('1', SyncStatus::Watching, 'Cowboy Bebop', updatedAt: new \DateTimeImmutable('2026-01-03')));
+
+        $service2 = $this->newService([(string) $this->originPluginId => $origin2]);
+
+        // Run 2: the origin's own pull still reports its old, unchanged Plan value — no one else
+        // changed either, so this is a hasChanges===false run.
+        $service2->reconcilePulledItem(
+            $anime,
+            (string) $this->originPluginId,
+            new SyncProjection(WatchStatus::Plan, null),
+            new \DateTimeImmutable('2026-01-01'),
+            $this->entityManager,
+        );
+
+        $originState = $stateRepository->find(['anime' => $anime, 'participantId' => (string) $this->originPluginId]);
+        $this->assertInstanceOf(AnimeSyncState::class, $originState);
+        $this->assertFalse($originState->pushPending);
+        $this->assertSame(WatchStatus::Watching, $originState->lastStatus);
+    }
+
+    /**
+     * Acceptance (issue #862, scenario 4): a push failing twice in a row must not let the second
+     * failure escape {@see SyncConvergenceService::reconcilePulledItem()} as an uncaught exception
+     * — the marker stays set, exactly as if only the first attempt had ever happened.
+     */
+    public function testARepeatedPushFailureOnTheRetryLeavesTheMarkerSetWithoutThrowing(): void
+    {
+        $malPluginId = new PluginId('animedb-mal');
+
+        $anime = new TvAnime();
+        $anime->setTitle('Cowboy Bebop')->setWatchStatus(WatchStatus::Plan);
+        $anime->rememberExternalId($this->originPluginId, '1');
+        $anime->rememberExternalId($malPluginId, '99');
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+
+        $this->seedLastSeen($anime, 'local', WatchStatus::Plan, '2026-01-01');
+        $this->seedLastSeen($anime, (string) $this->originPluginId, WatchStatus::Plan, '2026-01-01');
+        $this->seedLastSeen($anime, (string) $malPluginId, WatchStatus::Plan, '2026-01-01');
+
+        $mal = $this->createStub(SyncInterface::class);
+        $mal->method('push')->willThrowException(new \RuntimeException('network error'));
+        $origin = $this->createStub(SyncInterface::class);
+        $origin->method('push')->willReturnCallback(static fn (SyncItem $item): SyncItem => $item);
+
+        $service = $this->newService([(string) $this->originPluginId => $origin, (string) $malPluginId => $mal]);
+
+        $service->reconcilePulledItem(
+            $anime,
+            (string) $this->originPluginId,
+            new SyncProjection(WatchStatus::Watching, null),
+            new \DateTimeImmutable('2026-01-02'),
+            $this->entityManager,
+        );
+
+        // Run 2: still a hasChanges===false run (same Watching value again), and MAL's push fails
+        // again — must not throw out of reconcilePulledItem().
+        $service->reconcilePulledItem(
+            $anime,
+            (string) $this->originPluginId,
+            new SyncProjection(WatchStatus::Watching, null),
+            new \DateTimeImmutable('2026-01-02'),
+            $this->entityManager,
+        );
+
+        $malState = $this->entityManager->getRepository(AnimeSyncState::class)->find(['anime' => $anime, 'participantId' => (string) $malPluginId]);
+        $this->assertInstanceOf(AnimeSyncState::class, $malState);
+        $this->assertTrue($malState->pushPending);
+    }
+
+    /**
+     * Acceptance (issue #862, scenario 5): {@see SyncConvergenceService::applyManualResolution()}
+     * can push to an active participant that has no {@see AnimeSyncState} row at all yet — the
+     * marker for that failure cannot live on a row that doesn't exist, so it is a standalone
+     * {@see PendingSyncPush} row instead. A later no-change pull from a different, already-agreeing
+     * origin must still find it and retry the push, creating the row this time.
+     */
+    public function testAFailedPushFromManualResolutionWithNoSnapshotRowIsRetriedOnTheNextNoChangeRun(): void
+    {
+        $malPluginId = new PluginId('animedb-mal');
+
+        $anime = new TvAnime();
+        $anime->setTitle('Cowboy Bebop')->setWatchStatus(WatchStatus::Plan);
+        $anime->rememberExternalId($this->originPluginId, '1');
+        $anime->rememberExternalId($malPluginId, '99');
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+
+        $this->seedLastSeen($anime, 'local', WatchStatus::Plan, '2026-01-01');
+        $this->seedLastSeen($anime, (string) $this->originPluginId, WatchStatus::Plan, '2026-01-01');
+        // Deliberately no snapshot row for MAL: this is its first-ever interaction with this title.
+
+        $mal = $this->createStub(SyncInterface::class);
+        $mal->method('push')->willThrowException(new \RuntimeException('network error'));
+        $origin = $this->createStub(SyncInterface::class);
+        $origin->method('push')->willReturnCallback(static fn (SyncItem $item): SyncItem => $item);
+
+        $service = $this->newService([(string) $this->originPluginId => $origin, (string) $malPluginId => $mal]);
+
+        $applied = $service->applyManualResolution($anime, new SyncProjection(WatchStatus::Watching, null), $this->entityManager);
+        $this->assertTrue($applied);
+
+        $stateRepository = $this->entityManager->getRepository(AnimeSyncState::class);
+        $this->assertNull($stateRepository->find(['anime' => $anime, 'participantId' => (string) $malPluginId]));
+        $this->assertNotNull($this->entityManager->find(PendingSyncPush::class, ['anime' => $anime, 'participantId' => (string) $malPluginId]));
+
+        $mal2 = $this->createMock(SyncInterface::class);
+        $mal2->expects($this->once())
+            ->method('push')
+            ->with($this->callback(static fn (SyncItem $item): bool => $item->externalId === '99' && $item->status === SyncStatus::Watching))
+            ->willReturn(new SyncItem('99', SyncStatus::Watching, 'Cowboy Bebop', updatedAt: new \DateTimeImmutable('2026-01-03')));
+
+        $service2 = $this->newService([(string) $this->originPluginId => $origin, (string) $malPluginId => $mal2]);
+
+        // The origin's own pull reports exactly the value it (and local) already agree on — a
+        // hasChanges===false run.
+        $service2->reconcilePulledItem(
+            $anime,
+            (string) $this->originPluginId,
+            new SyncProjection(WatchStatus::Watching, null),
+            new \DateTimeImmutable('2026-01-02'),
+            $this->entityManager,
+        );
+
+        $malState = $stateRepository->find(['anime' => $anime, 'participantId' => (string) $malPluginId]);
+        $this->assertInstanceOf(AnimeSyncState::class, $malState);
+        $this->assertSame(WatchStatus::Watching, $malState->lastStatus);
+        $this->assertFalse($malState->pushPending);
+        $this->assertNull($this->entityManager->find(PendingSyncPush::class, ['anime' => $anime, 'participantId' => (string) $malPluginId]));
+    }
+
+    /**
+     * Acceptance (issue #862, scenario 6): when local itself rejects the chosen value (a Completed/
+     * not-yet-released invariant violation, see {@see Anime::applyWatchProgress()}), nothing is
+     * ever pushed to anyone — not a failed push, just none attempted — so no marker exists. A later
+     * no-change run must not invent one: the rule is "retry a failed push", never "snapshot !=
+     * local's current value", or it would resurrect issue #366 pitfall "снимок ≠ W" and overwrite
+     * the origin with a value local itself never actually holds.
+     */
+    public function testLocalRejectingAManualResolutionLeavesNoMarkerSoANoChangeRunNeverPushesTheSource(): void
+    {
+        $anime = new TvAnime();
+        $anime->setTitle('Cowboy Bebop')->setWatchStatus(WatchStatus::Plan);
+        $anime->rememberExternalId($this->originPluginId, '1');
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+
+        $this->seedLastSeen($anime, 'local', WatchStatus::Plan, '2026-01-01');
+        $this->seedLastSeen($anime, (string) $this->originPluginId, WatchStatus::Plan, '2026-01-01');
+
+        $origin = $this->createMock(SyncInterface::class);
+        $origin->expects($this->never())->method('push');
+
+        $service = $this->newService([(string) $this->originPluginId => $origin]);
+
+        // Completed is rejected here: a freshly-created TvAnime has no dates, so its production
+        // status is Announced, never Released.
+        $applied = $service->applyManualResolution($anime, new SyncProjection(WatchStatus::Completed, 12), $this->entityManager);
+        $this->assertFalse($applied);
+
+        // A later pull from the same origin, still reporting its own unchanged Plan value: no
+        // marker exists (nothing was ever pushed), so this run must leave the origin alone.
+        $service->reconcilePulledItem(
+            $anime,
+            (string) $this->originPluginId,
+            new SyncProjection(WatchStatus::Plan, null),
+            new \DateTimeImmutable('2026-01-01'),
+            $this->entityManager,
+        );
+
+        $originState = $this->entityManager->getRepository(AnimeSyncState::class)->find(['anime' => $anime, 'participantId' => (string) $this->originPluginId]);
+        $this->assertInstanceOf(AnimeSyncState::class, $originState);
+        $this->assertSame(WatchStatus::Plan, $originState->lastStatus);
+        $this->assertFalse($originState->pushPending);
+    }
+
+    /**
+     * Acceptance (issue #862, PR #891 review): {@see ReauthRequiredException} means the plugin
+     * itself needs the user to re-authorize, but PushSyncMessageHandler's own handling for that
+     * condition (issue #353) only ever covers push-on-edit messages, never a winner forward-
+     * propagated from reconciliation. Without a marker here, a later no-change run would never
+     * retry it even after the user re-authorizes — the exact silent loss this issue fixes, just
+     * reached through a different exception type. Retrying a push that again fails with
+     * reauthorization required is harmless: the plugin rejects it before it ever reaches the
+     * network.
+     */
+    public function testAReauthRequiredExceptionAlsoMarksPushPendingAndGetsRetried(): void
+    {
+        $malPluginId = new PluginId('animedb-mal');
+
+        $anime = new TvAnime();
+        $anime->setTitle('Cowboy Bebop')->setWatchStatus(WatchStatus::Plan);
+        $anime->rememberExternalId($this->originPluginId, '1');
+        $anime->rememberExternalId($malPluginId, '99');
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+
+        $this->seedLastSeen($anime, 'local', WatchStatus::Plan, '2026-01-01');
+        $this->seedLastSeen($anime, (string) $this->originPluginId, WatchStatus::Plan, '2026-01-01');
+        $this->seedLastSeen($anime, (string) $malPluginId, WatchStatus::Plan, '2026-01-01');
+
+        $mal = $this->createStub(SyncInterface::class);
+        $mal->method('push')->willThrowException(new ReauthRequiredException('Refresh token is dead.'));
+        $origin = $this->createStub(SyncInterface::class);
+        $origin->method('push')->willReturnCallback(static fn (SyncItem $item): SyncItem => $item);
+
+        $service = $this->newService([(string) $this->originPluginId => $origin, (string) $malPluginId => $mal]);
+
+        $service->reconcilePulledItem(
+            $anime,
+            (string) $this->originPluginId,
+            new SyncProjection(WatchStatus::Watching, null),
+            new \DateTimeImmutable('2026-01-02'),
+            $this->entityManager,
+        );
+
+        $stateRepository = $this->entityManager->getRepository(AnimeSyncState::class);
+        $malState = $stateRepository->find(['anime' => $anime, 'participantId' => (string) $malPluginId]);
+        $this->assertInstanceOf(AnimeSyncState::class, $malState);
+        $this->assertTrue($malState->pushPending);
+        $this->assertSame(WatchStatus::Plan, $malState->lastStatus);
+
+        // The user re-authorizes; a later run where nothing else changed must still find the
+        // marker and retry the push, even though nothing routed through PushSyncMessageHandler.
+        $mal2 = $this->createMock(SyncInterface::class);
+        $mal2->expects($this->once())
+            ->method('push')
+            ->with($this->callback(static fn (SyncItem $item): bool => $item->externalId === '99' && $item->status === SyncStatus::Watching))
+            ->willReturn(new SyncItem('99', SyncStatus::Watching, 'Cowboy Bebop', updatedAt: new \DateTimeImmutable('2026-01-03')));
+
+        $service2 = $this->newService([(string) $this->originPluginId => $origin, (string) $malPluginId => $mal2]);
+
+        $service2->reconcilePulledItem(
+            $anime,
+            (string) $this->originPluginId,
+            new SyncProjection(WatchStatus::Watching, null),
+            new \DateTimeImmutable('2026-01-02'),
+            $this->entityManager,
+        );
+
+        $malState = $stateRepository->find(['anime' => $anime, 'participantId' => (string) $malPluginId]);
+        $this->assertInstanceOf(AnimeSyncState::class, $malState);
+        $this->assertFalse($malState->pushPending);
+        $this->assertSame(WatchStatus::Watching, $malState->lastStatus);
+    }
+
+    /**
+     * Atomicity regression (issue #859, PR #891 review): a forward-propagation push failing marks
+     * push_pending, and {@see SyncConvergenceService::applyToLocal()} has already mutated $anime in
+     * memory by the time {@see SyncConvergenceService::persistConfirmedState()} runs. If that
+     * method's own transaction then fails (a later participant's flush throws), neither $anime's
+     * applied projection nor the push_pending marker may end up committed on their own — both must
+     * roll back together with everything else {@see SyncConvergenceService::reconcilePulledItem()}
+     * confirmed this run. Before the fix, {@see SyncConvergenceService::markPushPending()} flushed
+     * immediately and independently the moment the push failed, so it survived a later rollback
+     * intact while $anime's change (and the snapshot that should have matched it) did not — the
+     * exact half-applied state issue #859 closed.
+     */
+    public function testAPersistConfirmedStateFailureRollsBackBothTheLocalApplyAndThePushPendingMarker(): void
+    {
+        $malPluginId = new PluginId('animedb-mal');
+
+        $anime = new TvAnime();
+        $anime->setTitle('Cowboy Bebop')->setWatchStatus(WatchStatus::Plan);
+        $anime->rememberExternalId($this->originPluginId, '1');
+        $anime->rememberExternalId($malPluginId, '99');
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+        $animeId = $anime->id;
+
+        $this->seedLastSeen($anime, 'local', WatchStatus::Plan, '2026-01-01');
+        $this->seedLastSeen($anime, (string) $this->originPluginId, WatchStatus::Plan, '2026-01-01');
+        $this->seedLastSeen($anime, (string) $malPluginId, WatchStatus::Plan, '2026-01-01');
+
+        $mal = $this->createStub(SyncInterface::class);
+        $mal->method('push')->willThrowException(new \RuntimeException('network error'));
+        $origin = $this->createStub(SyncInterface::class);
+        $origin->method('push')->willReturnCallback(static fn (SyncItem $item): SyncItem => $item);
+
+        $settings = [(string) $this->originPluginId => ['features' => ['sync' => true]], (string) $malPluginId => ['features' => ['sync' => true]]];
+        $path = sys_get_temp_dir().'/anime-convergence-test-'.uniqid().'.json';
+        file_put_contents($path, json_encode($settings));
+        $syncRegistry = new SyncRegistry([(string) $this->originPluginId => $origin, (string) $malPluginId => $mal], new PluginsConfigStore($path));
+
+        // Only the 'local' participant's own save() fails — mal's and the origin's go through
+        // normally, so under the pre-fix code markPushPending()'s own immediate, untransacted
+        // flush (which flushes the *entire* unit of work, not just mal's row) still gets a chance
+        // to silently commit $anime's already-applied local projection before persistConfirmedState
+        // ever starts its transaction; only the fix keeps that mutation pending until the single
+        // transaction below, where this failure then rolls it back together with everything else.
+        $failingStateRepository = new class($this->entityManager) extends AnimeSyncStateRepository {
+            public function save(AnimeSyncState $state, ?EntityManagerInterface $entityManager = null): void
+            {
+                if ($state->participantId === 'local') {
+                    throw new \RuntimeException('simulated persistConfirmedState flush failure');
+                }
+
+                parent::save($state, $entityManager);
+            }
+        };
+
+        $connection = $this->entityManager->getConnection();
+
+        $service = new SyncConvergenceService(
+            new SyncReconciler(),
+            $failingStateRepository,
+            new PendingSyncPushRepository($this->entityManager),
+            $syncRegistry,
+            new SyncReviewService(new SyncReviewItemRepository($this->entityManager)),
+            new NullLogger(),
+        );
+
+        try {
+            $service->reconcilePulledItem(
+                $anime,
+                (string) $this->originPluginId,
+                new SyncProjection(WatchStatus::Watching, null),
+                new \DateTimeImmutable('2026-01-02'),
+                $this->entityManager,
+            );
+            $this->fail('Expected the simulated persistConfirmedState failure to propagate.');
+        } catch (\RuntimeException $exception) {
+            $this->assertSame('simulated persistConfirmedState flush failure', $exception->getMessage());
+        }
+
+        // Read the raw rows directly over the still-open DBAL connection rather than through
+        // $this->entityManager — wrapInTransaction() closes it on failure (Doctrine's own reaction
+        // to a failed commit), same as the recovery path PullSyncService watches for.
+        $animeRow = $connection->fetchAssociative('SELECT watchStatus FROM anime WHERE id = ?', [$animeId]);
+        $this->assertIsArray($animeRow);
+        $this->assertSame('plan', $animeRow['watchStatus'], 'The local apply must not survive a failed persistConfirmedState on its own.');
+
+        $malRow = $connection->fetchAssociative(
+            'SELECT push_pending, last_status FROM anime_sync_state WHERE anime_id = ? AND participant_id = ?',
+            [$animeId, (string) $malPluginId],
+        );
+        $this->assertIsArray($malRow);
+        $this->assertSame(0, (int) $malRow['push_pending'], 'The push_pending marker must not survive a failed persistConfirmedState on its own.');
+        $this->assertSame('plan', $malRow['last_status']);
     }
 }

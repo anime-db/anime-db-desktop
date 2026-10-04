@@ -36,6 +36,7 @@ use App\Message\SyncSeedMessage;
 use App\MessageHandler\SyncSeedMessageHandler;
 use App\Repository\AnimeRepository;
 use App\Repository\AnimeSyncStateRepository;
+use App\Repository\PendingSyncPushRepository;
 use App\Repository\StudioRepository;
 use App\Repository\SyncReviewItemRepository;
 use App\Service\Plugin\Filler\BulkFillerService;
@@ -192,6 +193,7 @@ final class SyncSeedMessageHandlerTest extends TestCase
         $convergenceService = new SyncConvergenceService(
             new SyncReconciler(),
             new AnimeSyncStateRepository($this->entityManager),
+            new PendingSyncPushRepository($this->entityManager),
             $syncRegistry,
             new SyncReviewService(new SyncReviewItemRepository($this->entityManager)),
             new NullLogger(),

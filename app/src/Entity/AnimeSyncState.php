@@ -41,6 +41,14 @@ use Doctrine\ORM\Mapping as ORM;
  * PK is (anime_id, participant_id) — at most one snapshot row per participant per anime. Values
  * are mutated in place via update() rather than remove+re-add, so a participant's row keeps a
  * stable identity across reconciliation runs.
+ *
+ * $pushPending (issue #862) records that a forward-propagation push to this participant failed
+ * and must be retried on this anime's next reconciliation, even one with no other changes —
+ * {@see \App\Service\Sync\SyncReconciler::participantsToConverge()} only ever targets a
+ * participant whose current projection differs from the winner, so without this flag a push
+ * failure would silently stop being retried the moment every participant agrees again. Set by
+ * {@see \App\Service\Sync\SyncConvergenceService::pushTo()} on a failed push, reauthorization
+ * failures included, and cleared on the next successful one.
  */
 #[ORM\Entity]
 #[ORM\Table(name: 'anime_sync_state')]
@@ -64,6 +72,9 @@ class AnimeSyncState
     #[ORM\Column(name: 'last_updated_at', type: 'unix_timestamp')]
     public private(set) \DateTimeImmutable $lastUpdatedAt;
 
+    #[ORM\Column(name: 'push_pending', options: ['default' => false])]
+    public private(set) bool $pushPending = false;
+
     public function __construct(
         Anime $anime,
         string $participantId,
@@ -83,5 +94,15 @@ class AnimeSyncState
         $this->lastStatus = $lastStatus;
         $this->lastWatchedEpisodes = $lastWatchedEpisodes;
         $this->lastUpdatedAt = $lastUpdatedAt;
+    }
+
+    public function markPushPending(): void
+    {
+        $this->pushPending = true;
+    }
+
+    public function clearPushPending(): void
+    {
+        $this->pushPending = false;
     }
 }
