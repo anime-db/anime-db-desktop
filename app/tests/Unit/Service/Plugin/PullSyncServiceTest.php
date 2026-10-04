@@ -166,21 +166,23 @@ final class PullSyncServiceTest extends TestCase
         // Empty of *other* plugins by default, so a removed record without storage is flagged as
         // deleted_from_source (never a conflict) here; the conflict branch and storage protection
         // are covered in DeletedFromSourceDetectorTest.
+        $animeSyncStateRepository = new AnimeSyncStateRepository($entityManager);
         $deletionDetector = new DeletedFromSourceDetector(
             $syncRegistry,
             new SyncReviewService(new SyncReviewItemRepository($entityManager)),
+            $animeSyncStateRepository,
         );
 
         $convergenceService = new SyncConvergenceService(
             new SyncReconciler(),
-            $stateRepository ?? new AnimeSyncStateRepository($entityManager),
+            $stateRepository ?? $animeSyncStateRepository,
             new PendingSyncPushRepository($entityManager),
             $syncRegistry,
             new SyncReviewService(new SyncReviewItemRepository($entityManager)),
             new NullLogger(),
         );
 
-        return new PullSyncService($entityManager, $animeRepository, $bulkFillerService, $duplicateDetector, $deletionDetector, $convergenceService, $logger ?? new NullLogger());
+        return new PullSyncService($entityManager, $animeRepository, $animeSyncStateRepository, $bulkFillerService, $duplicateDetector, $deletionDetector, $convergenceService, $logger ?? new NullLogger());
     }
 
     /**
@@ -688,19 +690,21 @@ final class PullSyncServiceTest extends TestCase
             new SyncReviewService(new SyncReviewItemRepository($this->entityManager)),
         );
         $syncRegistry = new SyncRegistry([], new PluginsConfigStore(sys_get_temp_dir().'/anime-pull-sync-reg-'.uniqid().'.json'));
+        $animeSyncStateRepository = new AnimeSyncStateRepository($this->entityManager);
         $deletionDetector = new DeletedFromSourceDetector(
             $syncRegistry,
             new SyncReviewService(new SyncReviewItemRepository($this->entityManager)),
+            $animeSyncStateRepository,
         );
         $convergenceService = new SyncConvergenceService(
             new SyncReconciler(),
-            new AnimeSyncStateRepository($this->entityManager),
+            $animeSyncStateRepository,
             new PendingSyncPushRepository($this->entityManager),
             $syncRegistry,
             new SyncReviewService(new SyncReviewItemRepository($this->entityManager)),
             new NullLogger(),
         );
-        $service = new PullSyncService($this->entityManager, new AnimeRepository($this->entityManager), $bulkFillerService, $duplicateDetector, $deletionDetector, $convergenceService, new NullLogger());
+        $service = new PullSyncService($this->entityManager, new AnimeRepository($this->entityManager), $animeSyncStateRepository, $bulkFillerService, $duplicateDetector, $deletionDetector, $convergenceService, new NullLogger());
 
         $sync = $this->syncFillerStub(
             [new SyncItem('42', SyncStatus::Plan, 'Trigun')],
@@ -718,6 +722,12 @@ final class PullSyncServiceTest extends TestCase
         $this->assertSame(['anime_ids' => [$existing->id, $created[0]->id]], $items[0]->payload);
     }
 
+    /**
+     * Scenario 2 (issue #863): a record that carries an AnimeSyncState snapshot row for this
+     * plugin — written by a prior pull/push reconciliation, seeded here via seedLastSeen() to
+     * stand in for that — is genuinely a list item the source once confirmed, so its absence from
+     * the current pull is flagged for review exactly as before this issue.
+     */
     public function testARecordGoneFromTheSourceListIsFlaggedForReview(): void
     {
         $anime = new TvAnime();
@@ -725,6 +735,7 @@ final class PullSyncServiceTest extends TestCase
         $anime->rememberExternalId($this->pluginId, '77');
         $this->entityManager->persist($anime);
         $this->entityManager->flush();
+        $this->seedLastSeen($anime, (string) $this->pluginId, WatchStatus::Plan, null, '2026-01-01');
 
         // The source no longer lists this title (empty pull) — it is flagged, never deleted.
         $this->service->pull($this->pluginId, $this->syncFillerStub([], data: null));
@@ -733,6 +744,49 @@ final class PullSyncServiceTest extends TestCase
         $this->assertCount(1, $items);
         $this->assertSame(SyncReviewItemKind::DeletedFromSource, $items[0]->kind);
         $this->assertSame(['anime_id' => $anime->id, 'deleted_from' => 'animedb-shikimori'], $items[0]->payload);
+    }
+
+    /**
+     * Scenario 1 (issue #863): a record with only a cached external_id for this plugin — no
+     * AnimeSyncState snapshot row, exactly what a filler, bulk-fill, or scan leaves behind without
+     * the source ever having listed the title — must not be flagged just because this run's pull
+     * list happens not to mention it; the source never confirmed it as a list item in the first
+     * place.
+     */
+    public function testARecordWithOnlyACachedExternalIdAndNoSyncSnapshotIsNotFlaggedWhenAbsentFromTheList(): void
+    {
+        $anime = new TvAnime();
+        $anime->setTitle('Trigun')->setWatchStatus(WatchStatus::Plan);
+        $anime->rememberExternalId($this->pluginId, '77');
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+
+        $this->service->pull($this->pluginId, $this->syncFillerStub([], data: null));
+
+        $this->assertCount(0, $this->entityManager->getRepository(SyncReviewItem::class)->findAll());
+    }
+
+    /**
+     * Scenario 3 (issue #863): a record with only a cached external_id for this plugin — no
+     * AnimeSyncState snapshot row — that is present in the pull list is still matched through
+     * $byExternalId and updated in place, not duplicated; only $disappeared's computation is
+     * narrowed by this issue, never the $byExternalId lookup pulled items resolve against.
+     */
+    public function testARecordWithOnlyACachedExternalIdAndNoSyncSnapshotIsMatchedWhenPresentInTheList(): void
+    {
+        $anime = new TvAnime();
+        $anime->setTitle('Trigun')->setWatchStatus(WatchStatus::Plan);
+        $anime->rememberExternalId($this->pluginId, '77');
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+
+        $sync = $this->createMock(SyncInterface::class);
+        $sync->expects($this->once())->method('pull')->willReturn([new SyncItem('77', SyncStatus::Watching, 'Trigun')]);
+
+        $this->service->pull($this->pluginId, $sync);
+
+        $this->assertCount(1, $this->allAnime());
+        $this->assertSame(WatchStatus::Watching, $anime->getWatchStatus());
     }
 
     public function testRepeatedPullOfTheSameListNeverDuplicatesARow(): void
@@ -1029,6 +1083,10 @@ final class PullSyncServiceTest extends TestCase
         $this->entityManager->flush();
         $failingId = $failing->id ?? throw new \LogicException('id must be set after flush');
         $goneId = $gone->id;
+        // A prior pull/push already confirmed 'Trigun' as a list item for this plugin (issue
+        // #863) — without this snapshot row, a merely cached external_id would not be enough to
+        // flag it as disappeared.
+        $this->seedLastSeen($gone, (string) $this->pluginId, WatchStatus::Plan, null, '2026-01-01');
 
         $stateRepository = $this->throwingStateRepository($this->entityManager, $failingId, new \RuntimeException('Simulated reconciliation failure.'));
         $service = $this->newService($this->entityManager, new AnimeRepository($this->entityManager), stateRepository: $stateRepository);
@@ -1084,19 +1142,21 @@ final class PullSyncServiceTest extends TestCase
             new SyncReviewService(new SyncReviewItemRepository($this->entityManager)),
         );
         $syncRegistry = new SyncRegistry([], new PluginsConfigStore(sys_get_temp_dir().'/anime-pull-sync-reg-'.uniqid().'.json'));
+        $animeSyncStateRepository = new AnimeSyncStateRepository($this->entityManager);
         $deletionDetector = new DeletedFromSourceDetector(
             $syncRegistry,
             new SyncReviewService(new SyncReviewItemRepository($this->entityManager)),
+            $animeSyncStateRepository,
         );
         $convergenceService = new SyncConvergenceService(
             new SyncReconciler(),
-            new AnimeSyncStateRepository($this->entityManager),
+            $animeSyncStateRepository,
             new PendingSyncPushRepository($this->entityManager),
             $syncRegistry,
             new SyncReviewService(new SyncReviewItemRepository($this->entityManager)),
             new NullLogger(),
         );
-        $service = new PullSyncService($this->entityManager, new AnimeRepository($this->entityManager), $bulkFillerService, $duplicateDetector, $deletionDetector, $convergenceService, new NullLogger());
+        $service = new PullSyncService($this->entityManager, new AnimeRepository($this->entityManager), $animeSyncStateRepository, $bulkFillerService, $duplicateDetector, $deletionDetector, $convergenceService, new NullLogger());
 
         $sync = $this->syncFillerStubPerItem(
             [

@@ -32,6 +32,7 @@ use AnimeDb\PluginContracts\Sync\SyncInterface;
 use App\Entity\Anime;
 use App\Entity\ValueObject\PluginId;
 use App\Repository\AnimeRepository;
+use App\Repository\AnimeSyncStateRepository;
 use App\Service\Plugin\Exception\ExternalIdAlreadyClaimedException;
 use App\Service\Plugin\Filler\BulkFillerService;
 use App\Service\Sync\CrossVendorDuplicateDetector;
@@ -142,6 +143,7 @@ final class PullSyncService
     public function __construct(
         private readonly EntityManagerInterface $entityManager,
         private readonly AnimeRepository $animeRepository,
+        private readonly AnimeSyncStateRepository $animeSyncStateRepository,
         private readonly BulkFillerService $bulkFillerService,
         private readonly CrossVendorDuplicateDetector $duplicateDetector,
         private readonly DeletedFromSourceDetector $deletionDetector,
@@ -351,7 +353,15 @@ final class PullSyncService
         // Records this plugin synced before but that are no longer in its list — never deleted
         // automatically, flagged for review (issue #217). Newly created items are keyed in
         // $byExternalId and are present in $presentExternalIds, so they never count as removed.
-        $disappeared = array_diff_key($byExternalId, $presentExternalIds);
+        // Narrowed to records that actually carry an AnimeSyncState snapshot row for $pluginId
+        // (issue #863): $byExternalId is built from every cached external_id, and a filler,
+        // bulk-fill, or scan can cache one without the source ever having listed the title as a
+        // sync item, so a cached id alone proves nothing about absence from the source's list —
+        // only a prior pull/push reconciliation (the only writers of that snapshot row) does.
+        $disappeared = array_filter(
+            array_diff_key($byExternalId, $presentExternalIds),
+            fn (Anime $anime): bool => $this->animeSyncStateRepository->find($anime, (string) $pluginId) !== null,
+        );
         $this->deletionDetector->detect($pluginId, $disappeared);
 
         return true;

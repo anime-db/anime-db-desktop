@@ -30,6 +30,7 @@ namespace App\Service\Sync;
 use App\Entity\Anime;
 use App\Entity\Enum\SyncReviewItemKind;
 use App\Entity\ValueObject\PluginId;
+use App\Repository\AnimeSyncStateRepository;
 use App\Service\Plugin\SyncRegistry;
 
 /**
@@ -43,21 +44,27 @@ use App\Service\Plugin\SyncRegistry;
  *   left completely alone — it never even becomes a review item. "Gone from the tracker list" is
  *   not "delete the downloaded copy".
  * - Otherwise it is flagged as {@see SyncReviewItemKind::DeletedFromSource} when nothing else
- *   holds it, or {@see SyncReviewItemKind::DeletionConflict} when the record is still linked to
- *   another *active* sync plugin (`still_present_on`) — deleted on A but maybe still on B.
+ *   holds it, or {@see SyncReviewItemKind::DeletionConflict} when the record also carries another
+ *   *active* sync plugin's {@see \App\Entity\AnimeSyncState} snapshot row (`still_present_on`,
+ *   issue #863) — deleted on A but still a genuine list item on B, not just cached there.
  */
 final class DeletedFromSourceDetector
 {
     public function __construct(
         private readonly SyncRegistry $syncRegistry,
         private readonly SyncReviewService $reviewService,
+        private readonly AnimeSyncStateRepository $animeSyncStateRepository,
     ) {
     }
 
     /**
      * $disappeared holds the local records this plugin synced before but that are absent from its
      * current pull() list. It is keyed by external_id — numeric ids become int keys, so the key
-     * type is left open; only the values are used.
+     * type is left open; only the values are used. Narrowing this to records that actually carry
+     * an AnimeSyncState snapshot row for $pluginId (issue #863 — a cached external_id alone can
+     * come from a filler, bulk-fill, or scan that never synced the record as a list item) is the
+     * caller's responsibility ({@see \App\Service\Plugin\PullSyncService}); detect() itself does
+     * not re-check it.
      *
      * @param array<array-key, Anime> $disappeared
      */
@@ -120,20 +127,22 @@ final class DeletedFromSourceDetector
     }
 
     /**
-     * Other **active** sync plugins this record is still linked to (has a cached external_id for).
-     * The record's own last-update time on the source is deliberately not consulted — an
-     * abandoned tracker is not evidence the user changed their mind, so only the presence of a
-     * live cross-source link makes it a conflict rather than a plain removal.
+     * Other **active** sync plugins this record genuinely has a sync snapshot for (issue #863):
+     * requires both features.sync active AND an {@see \App\Entity\AnimeSyncState} row for that
+     * plugin's participant id — a cached external_id ({@see Anime::getExternalIdPluginIds()})
+     * alone is not enough, since a filler, bulk-fill, or scan can cache one without the source
+     * ever having listed the title as a sync item. The record's own last-update time on the
+     * source is deliberately not consulted — an abandoned tracker is not evidence the user
+     * changed their mind, so only the presence of a live cross-source snapshot makes it a
+     * conflict rather than a plain removal.
      *
      * @return list<string>
      */
     private function stillPresentOn(Anime $anime, PluginId $deletedFrom): array
     {
-        $linkedPluginIds = array_map(strval(...), $anime->getExternalIdPluginIds());
-
         $result = [];
         foreach ($this->syncRegistry->allActive() as $otherPluginId => $sync) {
-            if ($otherPluginId !== (string) $deletedFrom && \in_array($otherPluginId, $linkedPluginIds, true)) {
+            if ($otherPluginId !== (string) $deletedFrom && $this->animeSyncStateRepository->find($anime, $otherPluginId) !== null) {
                 $result[] = $otherPluginId;
             }
         }
