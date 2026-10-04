@@ -574,6 +574,60 @@ final class SyncConvergenceServiceTest extends TestCase
     }
 
     /**
+     * Correctness regression for the dedup key itself: {@see testRepeatedFirstContactDivergenceFromTheSameOriginDoesNotDuplicateTheReviewItem()}
+     * would still pass if `flagFirstContactDivergence()` deduped on anime alone (the old
+     * `alreadyFlagged()` behavior), because it only ever replays the *same* origin. This proves
+     * the (anime, participant) key is load-bearing: a second, different origin's own first-contact
+     * divergence against the same anime must raise its own review-item rather than being swallowed
+     * by the first one's.
+     */
+    public function testFirstContactDivergenceFromTwoDifferentOriginsRaisesTwoDistinctReviewItems(): void
+    {
+        $malPluginId = new PluginId('animedb-mal');
+
+        $anime = new TvAnime();
+        $anime->setTitle('Cowboy Bebop')->setWatchStatus(WatchStatus::Watching);
+        $anime->setEpisodesCount(26);
+        $anime->rememberExternalId($this->originPluginId, '1');
+        $anime->rememberExternalId($malPluginId, '99');
+        $anime->changeWatchedEpisodesManually(10);
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+
+        $this->entityManager->persist(new AnimeSyncState($anime, 'local', WatchStatus::Watching, 10, new \DateTimeImmutable('2026-01-01')));
+        $this->entityManager->flush();
+
+        $origin = $this->createStub(SyncInterface::class);
+        $mal = $this->createStub(SyncInterface::class);
+
+        $service = $this->newService([(string) $this->originPluginId => $origin, (string) $malPluginId => $mal]);
+
+        $service->reconcilePulledItem(
+            $anime,
+            (string) $this->originPluginId,
+            new SyncProjection(WatchStatus::Watching, 3),
+            new \DateTimeImmutable('2026-01-02'),
+            $this->entityManager,
+        );
+        $service->reconcilePulledItem(
+            $anime,
+            (string) $malPluginId,
+            new SyncProjection(WatchStatus::Watching, 7),
+            new \DateTimeImmutable('2026-01-02'),
+            $this->entityManager,
+        );
+
+        $items = $this->entityManager->getRepository(SyncReviewItem::class)->findAll();
+        $this->assertCount(2, $items);
+        $this->assertSame(
+            [(string) $this->originPluginId, (string) $malPluginId],
+            array_map(static fn (SyncReviewItem $item): mixed => $item->payload['origin_participant_id'] ?? null, $items),
+        );
+
+        $this->assertSame(10, $anime->getWatchedEpisodes());
+    }
+
+    /**
      * Acceptance (issue #861, scenario 4): a provably virgin local (no snapshot row, no watch
      * progress ever recorded) must keep the pre-existing behavior — the origin's value is applied
      * straight to local via the synthesized-agreement path, no review-item.
@@ -678,6 +732,15 @@ final class SyncConvergenceServiceTest extends TestCase
 
         $items = $this->entityManager->getRepository(SyncReviewItem::class)->findAll();
         $this->assertCount(0, $items);
+
+        // Distinguishes the ordinary path from a silent no-op early exit: the origin's own
+        // snapshot row must actually get created here, or a regression that stops writing it
+        // would pass this test too, yet turn every subsequent pull back into a "first contact".
+        $originState = $this->entityManager->getRepository(AnimeSyncState::class)->find(['anime' => $anime, 'participantId' => (string) $this->originPluginId]);
+        $this->assertInstanceOf(AnimeSyncState::class, $originState);
+        $this->assertSame(WatchStatus::Watching, $originState->lastStatus);
+
+        $this->assertSame(10, $anime->getWatchedEpisodes());
     }
 
     public function testApplyManualResolutionDoesNotForwardARejectedChoiceToParticipants(): void
