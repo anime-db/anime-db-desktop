@@ -275,4 +275,26 @@ final class DownloadUnlinkControllerTest extends TestCase
         $this->entityManager->clear();
         $this->assertNotNull($this->repository->findByInfoHashAndAnime(self::HASH, (int) $anime->id));
     }
+
+    public function testUnlinkWithACurrentVersionButAPendingStatusIsRefusedAndKeepsTheRow(): void
+    {
+        $anime = $this->persistAnime();
+        $download = new Download(self::HASH, $anime);
+        $this->repository->save($download);
+        $download->markCompleted();
+        $this->repository->save($download);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->method('render')->with('anime/_downloads.html.twig', $this->callback(
+            static fn (array $params): bool => $params['error'] === 'anime_detail.downloads_unlink_conflict_error',
+        ))->willReturn('<section></section>');
+
+        $controller = $this->createController($this->csrfTokenManagerValidFor((int) $download->id), $twig);
+        $request = Request::create('/downloads/'.$download->id.'/unlink', 'POST', ['_token' => 'token', 'version' => (string) $download->getVersion(), 'status' => 'pending']);
+
+        $controller->unlink($download, $request);
+
+        $this->entityManager->clear();
+        $this->assertNotNull($this->repository->findByInfoHashAndAnime(self::HASH, (int) $anime->id));
+    }
 }
