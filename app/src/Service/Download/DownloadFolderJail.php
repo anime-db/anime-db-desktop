@@ -60,6 +60,7 @@ final class DownloadFolderJail
     private const string WINDOWS_ABSOLUTE_PATH_PATTERN = '/^[A-Za-z]:\\\\/';
     private const string LONG_PATH_PREFIX = '\\\\?\\';
     private const string INCOMING_DIR_NAME = '.anime-db';
+    private const string INCOMING_SUBDIR_NAME = 'incoming';
 
     /**
      * The hidden directory a storage's incoming (not-yet-linked) downloads live under:
@@ -79,7 +80,58 @@ final class DownloadFolderJail
      */
     public function resolveIncomingSavePathForInfoHash(string $storageRoot, string $infoHash): string
     {
-        return $this->toLongPathAware($this->incomingRoot($storageRoot).'\\incoming\\'.$infoHash);
+        return $this->toLongPathAware($this->incomingRoot($storageRoot).'\\'.self::INCOMING_SUBDIR_NAME.'\\'.$infoHash);
+    }
+
+    /**
+     * Computes $resolvedPath's location relative to $root by normalizing $root through the same
+     * lexical resolution {@see self::assertWithinRoot()} already applied to $resolvedPath (issue
+     * #852) — cutting by the raw, unnormalized $root's length instead (the pre-#852 bug) misaligns
+     * the cut whenever normalize() changes $root's length, e.g. collapsing a UNC root's leading
+     * "\\\\" during resolution, which silently truncated the first characters of the resulting
+     * relative path.
+     */
+    public function relativePathUnderRoot(string $root, string $resolvedPath): string
+    {
+        $normalizedRoot = rtrim($this->normalize(rtrim($root, '\\/')), '\\/');
+
+        return ltrim(substr($resolvedPath, \strlen($normalizedRoot)), '\\/');
+    }
+
+    /**
+     * Whether $relativePath (as returned by {@see self::relativePathUnderRoot()}) falls under a
+     * storage's hidden incoming directory — a completed torrent still sitting there has not been
+     * moved into the storage root yet (issue #852).
+     */
+    public function isUnderIncoming(string $relativePath): bool
+    {
+        return str_starts_with($relativePath, self::INCOMING_DIR_NAME.'\\'.self::INCOMING_SUBDIR_NAME.'\\');
+    }
+
+    /**
+     * Whether $relativePath IS a torrent's own hidden incoming directory
+     * (`.anime-db\incoming\<infoHash>`) with nothing beneath it, rather than a named entry under
+     * it. Reachable when qBittorrent's global "don't create a subfolder" option is on for a
+     * multi-file torrent: its files then land directly inside that directory instead of under a
+     * name-carrying subfolder, so there is nothing for {@see
+     * \App\Service\Download\DownloadIncomingRelocator::tryMove()} to safely derive a move target's
+     * name from (basename() of this path is $infoHash, not a real name).
+     */
+    public function isBareIncomingRootForHash(string $relativePath, string $infoHash): bool
+    {
+        return $relativePath === self::INCOMING_DIR_NAME.'\\'.self::INCOMING_SUBDIR_NAME.'\\'.$infoHash;
+    }
+
+    /**
+     * The first path component of $relativePath — the name a completed download must be linked
+     * under (or, if it starts with ".", the hidden top-level entry a download must never be
+     * linked from) once $relativePath is no longer under incoming.
+     */
+    public function firstSegment(string $relativePath): string
+    {
+        $separatorPosition = strpos($relativePath, '\\');
+
+        return $separatorPosition === false ? $relativePath : substr($relativePath, 0, $separatorPosition);
     }
 
     /**

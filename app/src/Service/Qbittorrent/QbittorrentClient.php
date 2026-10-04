@@ -59,7 +59,11 @@ final class QbittorrentClient
 
     public function addTorrentFromMagnet(string $magnetUri, ?string $savePath = null): void
     {
-        $fields = ['urls' => $magnetUri, 'tags' => self::TAG];
+        // contentLayout=Original (issue #852) pins qBittorrent to the torrent's own layout —
+        // without it, qBittorrent's "Torrent content layout" preference can flatten/wrap a
+        // torrent's files, moving the content_path DownloadCompletionPoller later relies on to
+        // derive the incoming-relocation and linking target out from under what this app expects.
+        $fields = ['urls' => $magnetUri, 'tags' => self::TAG, 'contentLayout' => 'Original'];
         if ($savePath !== null) {
             $fields['savepath'] = $savePath;
         }
@@ -70,7 +74,8 @@ final class QbittorrentClient
     public function addTorrentFromFile(string $filename, string $content, ?string $savePath = null): void
     {
         $boundary = bin2hex(random_bytes(16));
-        $fields = ['tags' => self::TAG];
+        // contentLayout=Original — see addTorrentFromMagnet() for why.
+        $fields = ['tags' => self::TAG, 'contentLayout' => 'Original'];
         if ($savePath !== null) {
             $fields['savepath'] = $savePath;
         }

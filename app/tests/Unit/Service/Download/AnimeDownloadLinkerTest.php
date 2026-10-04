@@ -183,6 +183,53 @@ final class AnimeDownloadLinkerTest extends TestCase
     }
 
     /**
+     * Issue #852: the relative path used to be cut using the RAW, unnormalized root's length —
+     * for a UNC root like "\\nas\anime", {@see DownloadFolderJail}'s own
+     * lexical normalize() collapses the leading "\\\\" while resolving $contentPath, which shifts
+     * every character after it and silently truncates the start of the resulting relative path
+     * (observed in production as "how S1" instead of "How S1"). Cutting by the SAME normalized
+     * root's length instead keeps both sides aligned regardless of what normalize() dropped.
+     */
+    public function testLinkComputesTheRelativePathCorrectlyForAUncRoot(): void
+    {
+        $storage = new Storage('NAS', '\\\\nas\\anime', StorageType::Folder);
+        $this->entityManager->persist($storage);
+        $this->entityManager->flush();
+
+        $anime = $this->persistAnime();
+        $download = new Download('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', $anime);
+        $download->assignTargetStorage($storage);
+        $this->entityManager->persist($download);
+        $this->entityManager->flush();
+
+        $this->linker->link($download, '\\\\nas\\anime\\How S1');
+
+        $this->assertSame('How S1', $anime->getStoragePath());
+    }
+
+    /**
+     * Same fix as above, for a root entered with a trailing separator and in different case than
+     * qBittorrent later echoes back in content_path — neither changes how many characters
+     * normalize() produces for the root, so the cut stays correct either way.
+     */
+    public function testLinkComputesTheRelativePathCorrectlyForARootWithATrailingSeparatorAndDifferentCase(): void
+    {
+        $storage = new Storage('Mixed', 'd:\\anime\\', StorageType::Folder);
+        $this->entityManager->persist($storage);
+        $this->entityManager->flush();
+
+        $anime = $this->persistAnime();
+        $download = new Download('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', $anime);
+        $download->assignTargetStorage($storage);
+        $this->entityManager->persist($download);
+        $this->entityManager->flush();
+
+        $this->linker->link($download, 'D:\\Anime\\Release');
+
+        $this->assertSame('Release', $anime->getStoragePath());
+    }
+
+    /**
      * Reachable without any malformed row: target_storage_id is ON DELETE SET NULL (see Download
      * entity), so a Pending download whose Storage was deleted while still in flight loses its
      * target storage this way, not by ever having been invalid.
