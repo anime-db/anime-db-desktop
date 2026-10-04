@@ -27,6 +27,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\EventSubscriber;
 
+use AnimeDb\PluginContracts\Sync\SyncInterface;
 use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
 use App\Entity\Enum\WatchStatus;
@@ -34,6 +35,8 @@ use App\Entity\MovieAnime;
 use App\Event\WatchProgressChangedManuallyEvent;
 use App\EventSubscriber\WatchProgressPushSubscriber;
 use App\Message\PushSyncMessage;
+use App\Service\Plugin\PluginsConfigStore;
+use App\Service\Plugin\SyncRegistry;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\EntityManager;
@@ -50,10 +53,15 @@ use Symfony\Component\Messenger\MessageBusInterface;
  * SeriesAnimeTest, and released/dispatched by DomainEventListenerTest) by dispatching
  * PushSyncMessage — the same message the old Doctrine preUpdate listener (AnimeSyncPushListener)
  * used to dispatch directly off a changed-field check.
+ *
+ * Issue #868: one message per active plugin, not one message fanning out to all of them, so the
+ * tests below pin down that the subscriber enumerates {@see SyncRegistry::allActive()} itself and
+ * stamps each dispatched message with that plugin's id.
  */
 final class WatchProgressPushSubscriberTest extends TestCase
 {
     private EntityManager $entityManager;
+    private string $pluginsConfigPath;
 
     protected function setUp(): void
     {
@@ -72,6 +80,17 @@ final class WatchProgressPushSubscriberTest extends TestCase
 
         $schemaTool = new SchemaTool($this->entityManager);
         $schemaTool->createSchema($this->entityManager->getMetadataFactory()->getAllMetadata());
+
+        $this->pluginsConfigPath = sys_get_temp_dir().'/anime-plugins-test-'.uniqid().'.json';
+    }
+
+    protected function tearDown(): void
+    {
+        foreach ([$this->pluginsConfigPath, $this->pluginsConfigPath.'.tmp', $this->pluginsConfigPath.'.lock'] as $file) {
+            if (is_file($file)) {
+                unlink($file);
+            }
+        }
     }
 
     public function testSubscribesToWatchProgressChangedManuallyEvent(): void
@@ -82,26 +101,93 @@ final class WatchProgressPushSubscriberTest extends TestCase
         );
     }
 
-    public function testDispatchesPushSyncMessageForTheEventsId(): void
+    public function testDispatchesOnePushSyncMessagePerActivePlugin(): void
     {
         $anime = $this->persistAnime();
         $animeId = $this->requireId($anime);
 
+        file_put_contents($this->pluginsConfigPath, json_encode([
+            'animedb-shikimori' => ['features' => ['sync' => true]],
+            'animedb-myanimelist' => ['features' => ['sync' => true]],
+        ]));
+
+        $registry = new SyncRegistry(
+            [
+                'animedb-shikimori' => $this->createStub(SyncInterface::class),
+                'animedb-myanimelist' => $this->createStub(SyncInterface::class),
+            ],
+            new PluginsConfigStore($this->pluginsConfigPath),
+        );
+
+        /** @var list<string> $dispatchedPluginIds */
+        $dispatchedPluginIds = [];
+        $capturedDispatchedAt = null;
+
         $messageBus = $this->createMock(MessageBusInterface::class);
-        $messageBus->expects($this->once())
+        $messageBus->expects($this->exactly(2))
             ->method('dispatch')
-            ->with($this->callback(function (PushSyncMessage $message) use ($animeId): bool {
-                // $dispatchedAt (issue #366's push-on-edit TTL anchor) is stamped from
-                // now() at dispatch time, so it cannot be compared for exact equality —
-                // "recent" is enough to prove it was actually set to the current time.
+            ->with($this->callback(function (PushSyncMessage $message) use ($animeId, &$dispatchedPluginIds, &$capturedDispatchedAt): bool {
                 $this->assertSame($animeId, $message->animeId);
+                $this->assertNotNull($message->pluginId);
                 $this->assertLessThan(5, abs((new \DateTimeImmutable())->getTimestamp() - $message->dispatchedAt->getTimestamp()));
+
+                if ($capturedDispatchedAt === null) {
+                    $capturedDispatchedAt = $message->dispatchedAt;
+                } else {
+                    $this->assertEquals($capturedDispatchedAt, $message->dispatchedAt);
+                }
+
+                $dispatchedPluginIds[] = $message->pluginId;
 
                 return true;
             }))
-            ->willReturn(new Envelope(new PushSyncMessage($animeId, new \DateTimeImmutable())));
+            ->willReturn(new Envelope(new PushSyncMessage($animeId, new \DateTimeImmutable(), 'animedb-shikimori')));
 
-        $subscriber = new WatchProgressPushSubscriber($messageBus);
+        $subscriber = new WatchProgressPushSubscriber($messageBus, $registry);
+        $subscriber->onWatchProgressChangedManually(
+            new WatchProgressChangedManuallyEvent($animeId, WatchStatus::Watching, WatchStatus::Plan),
+        );
+
+        $this->assertSame(['animedb-shikimori', 'animedb-myanimelist'], $dispatchedPluginIds);
+    }
+
+    public function testDoesNotDispatchForAnInactivePlugin(): void
+    {
+        $anime = $this->persistAnime();
+        $animeId = $this->requireId($anime);
+
+        file_put_contents($this->pluginsConfigPath, json_encode([
+            'animedb-shikimori' => ['features' => ['sync' => false]],
+        ]));
+
+        $registry = new SyncRegistry(
+            ['animedb-shikimori' => $this->createStub(SyncInterface::class)],
+            new PluginsConfigStore($this->pluginsConfigPath),
+        );
+
+        $messageBus = $this->createMock(MessageBusInterface::class);
+        $messageBus->expects($this->never())->method('dispatch');
+
+        $subscriber = new WatchProgressPushSubscriber($messageBus, $registry);
+        $subscriber->onWatchProgressChangedManually(
+            new WatchProgressChangedManuallyEvent($animeId, WatchStatus::Watching, WatchStatus::Plan),
+        );
+    }
+
+    public function testDispatchesNothingWhenNoActivePlugins(): void
+    {
+        $anime = $this->persistAnime();
+        $animeId = $this->requireId($anime);
+
+        $registry = new SyncRegistry(
+            [],
+            new PluginsConfigStore($this->pluginsConfigPath),
+        );
+
+        $messageBus = $this->createMock(MessageBusInterface::class);
+        $messageBus->expects($this->never())->method('dispatch');
+
+        $subscriber = new WatchProgressPushSubscriber($messageBus, $registry);
         $subscriber->onWatchProgressChangedManually(
             new WatchProgressChangedManuallyEvent($animeId, WatchStatus::Watching, WatchStatus::Plan),
         );
@@ -109,7 +195,8 @@ final class WatchProgressPushSubscriberTest extends TestCase
 
     public function testThrowsWhenTheEventHasNoId(): void
     {
-        $subscriber = new WatchProgressPushSubscriber($this->createMock(MessageBusInterface::class));
+        $registry = new SyncRegistry([], new PluginsConfigStore($this->pluginsConfigPath));
+        $subscriber = new WatchProgressPushSubscriber($this->createStub(MessageBusInterface::class), $registry);
 
         $this->expectException(\LogicException::class);
         $subscriber->onWatchProgressChangedManually(
@@ -119,7 +206,8 @@ final class WatchProgressPushSubscriberTest extends TestCase
 
     public function testIsARegularSymfonyEventSubscriber(): void
     {
-        $subscriber = new WatchProgressPushSubscriber($this->createStub(MessageBusInterface::class));
+        $registry = new SyncRegistry([], new PluginsConfigStore($this->pluginsConfigPath));
+        $subscriber = new WatchProgressPushSubscriber($this->createStub(MessageBusInterface::class), $registry);
 
         $this->assertInstanceOf(EventSubscriberInterface::class, $subscriber);
     }

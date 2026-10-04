@@ -29,15 +29,22 @@ namespace App\EventSubscriber;
 
 use App\Event\WatchProgressChangedManuallyEvent;
 use App\Message\PushSyncMessage;
+use App\Service\Plugin\SyncRegistry;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
 
 /**
  * Application-level reaction to the domain event WatchProgressChangedManuallyEvent (issue #371):
- * dispatches PushSyncMessage onto the `async` transport, same as the old Doctrine preUpdate
- * listener (AnimeSyncPushListener) did, but now driven by a user-driven domain method instead of
- * an inspected Doctrine change set — see PushSyncMessageHandler for why dispatching onto a queue
- * rather than pushing inline is the shape here (transport retry_strategy, issue #97).
+ * dispatches one PushSyncMessage per active sync plugin ({@see SyncRegistry::allActive()}) onto
+ * the `async` transport, same as the old Doctrine preUpdate listener (AnimeSyncPushListener) did,
+ * but now driven by a user-driven domain method instead of an inspected Doctrine change set — see
+ * PushSyncMessageHandler for why dispatching onto a queue rather than pushing inline is the shape
+ * here (transport retry_strategy, issue #97).
+ *
+ * One message per plugin, not one message fanning out to every plugin (issue #868): each message
+ * carries the target plugin's id and gets its own independent retries, so a push failure in one
+ * plugin's message can no longer cause the plugins listed after it in a single shared message to
+ * lose the edit once that message's retries are exhausted.
  *
  * Anime::applyWatchProgress() (the sync-apply path) never records WatchProgressChangedManuallyEvent,
  * so a pull-applied change never reaches this subscriber at all — no suppressor needed to break
@@ -48,6 +55,7 @@ final class WatchProgressPushSubscriber implements EventSubscriberInterface
 {
     public function __construct(
         private readonly MessageBusInterface $messageBus,
+        private readonly SyncRegistry $syncRegistry,
     ) {
     }
 
@@ -60,7 +68,12 @@ final class WatchProgressPushSubscriber implements EventSubscriberInterface
 
     public function onWatchProgressChangedManually(WatchProgressChangedManuallyEvent $event): void
     {
-        $this->messageBus->dispatch(new PushSyncMessage($this->requireId($event), new \DateTimeImmutable()));
+        $animeId = $this->requireId($event);
+        $dispatchedAt = new \DateTimeImmutable();
+
+        foreach ($this->syncRegistry->allActive() as $pluginId => $sync) {
+            $this->messageBus->dispatch(new PushSyncMessage($animeId, $dispatchedAt, $pluginId));
+        }
     }
 
     private function requireId(WatchProgressChangedManuallyEvent $event): int
