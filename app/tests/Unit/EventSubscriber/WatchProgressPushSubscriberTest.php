@@ -121,13 +121,21 @@ final class WatchProgressPushSubscriberTest extends TestCase
 
         /** @var list<string> $dispatchedPluginIds */
         $dispatchedPluginIds = [];
+        $capturedDispatchedAt = null;
 
         $messageBus = $this->createMock(MessageBusInterface::class);
         $messageBus->expects($this->exactly(2))
             ->method('dispatch')
-            ->with($this->callback(function (PushSyncMessage $message) use ($animeId, &$dispatchedPluginIds): bool {
+            ->with($this->callback(function (PushSyncMessage $message) use ($animeId, &$dispatchedPluginIds, &$capturedDispatchedAt): bool {
                 $this->assertSame($animeId, $message->animeId);
                 $this->assertNotNull($message->pluginId);
+                $this->assertLessThan(5, abs((new \DateTimeImmutable())->getTimestamp() - $message->dispatchedAt->getTimestamp()));
+
+                if ($capturedDispatchedAt === null) {
+                    $capturedDispatchedAt = $message->dispatchedAt;
+                } else {
+                    $this->assertEquals($capturedDispatchedAt, $message->dispatchedAt);
+                }
 
                 $dispatchedPluginIds[] = $message->pluginId;
 

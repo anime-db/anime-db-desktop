@@ -320,13 +320,19 @@ final class PushSyncMessageHandlerTest extends TestCase
 
         file_put_contents($this->pluginsConfigPath, json_encode([
             'animedb-shikimori' => ['features' => ['sync' => false]],
+            'animedb-myanimelist' => ['features' => ['sync' => true]],
         ]));
 
         $sync = $this->createMock(SyncInterface::class);
         $sync->expects($this->never())->method('push');
 
+        // Still active, but not named in the message — must stay untouched. Catches a handler
+        // that ignores $pluginId and falls back to pushing to every active plugin.
+        $otherSync = $this->createMock(SyncInterface::class);
+        $otherSync->expects($this->never())->method('push');
+
         $registry = new SyncRegistry(
-            ['animedb-shikimori' => $sync],
+            ['animedb-shikimori' => $sync, 'animedb-myanimelist' => $otherSync],
             new PluginsConfigStore($this->pluginsConfigPath),
         );
 
@@ -407,14 +413,20 @@ final class PushSyncMessageHandlerTest extends TestCase
 
         file_put_contents($this->pluginsConfigPath, json_encode([
             'animedb-shikimori' => ['features' => ['sync' => true]],
+            'animedb-myanimelist' => ['features' => ['sync' => true]],
         ]));
 
         $sync = $this->createMock(SyncInterface::class);
         $sync->method('resolveExternalId')->willReturn('1');
         $sync->expects($this->once())->method('push')->willThrowException(new ReauthRequiredException('Refresh token is dead.'));
 
+        // Still active, but not named in the message — must stay untouched. Catches a handler
+        // that ignores $pluginId and falls back to pushing to every active plugin.
+        $otherSync = $this->createMock(SyncInterface::class);
+        $otherSync->expects($this->never())->method('push');
+
         $registry = new SyncRegistry(
-            ['animedb-shikimori' => $sync],
+            ['animedb-shikimori' => $sync, 'animedb-myanimelist' => $otherSync],
             new PluginsConfigStore($this->pluginsConfigPath),
         );
 
