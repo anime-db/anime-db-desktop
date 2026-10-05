@@ -2089,7 +2089,7 @@ final class DownloadCompletionPollerTest extends TestCase
         $this->assertNotNull($stored);
         $this->assertFalse($stored->isCompleted());
         $this->assertSame(DownloadStatus::Failed, $stored->getStatus());
-        $this->assertSame('move_failed', $stored->getFailureReason());
+        $this->assertSame('unexpected_layout', $stored->getFailureReason());
     }
 }
 

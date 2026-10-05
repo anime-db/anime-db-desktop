@@ -301,7 +301,9 @@ class Download
      * $failureReason to null and $moveAttempts to 1 for "move_failed" (a move was already
      * started, so the leftover target folder is not mistaken for a foreign one) or to 0 for any
      * other reason, so the row looks like a freshly enqueued one to DownloadCompletionPoller and
-     * DownloadIncomingRelocator. Refuses (returns
+     * DownloadIncomingRelocator. "move_failed" is now set only by DownloadIncomingRelocator after
+     * its move attempts are exhausted (the poller's storage-root case uses "unexpected_layout"),
+     * so after a retry 2 move attempts remain (counter 1 -> 2 -> 3). Refuses (returns
      * false, changes nothing) for any status other than Failed, and for $failureReason not in
      * {@see RETRYABLE_FAILURE_REASONS} or null:
      * - "storage_conflict" means the torrent itself is already fully downloaded and some OTHER
