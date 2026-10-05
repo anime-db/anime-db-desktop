@@ -99,7 +99,7 @@
             <p class="alert alert-danger" data-form-error>{{ 'anime_edit.error_summary'|trans }}</p>
         {% endif %}
 
-        <form method="post" action="{{ path('anime_update', {id: anime.id}) }}">
+        <form method="post" action="{{ path('anime_update', {id: anime.id}) }}" enctype="multipart/form-data">
             <input type="hidden" name="_token" value="{{ csrf_token(csrf_token_id) }}">
 
             <div class="mb-3">
@@ -207,6 +207,22 @@
                 </div>
                 <template data-rows-template>{{ m.text_row('sources', '__INDEX__', '', {}, 'anime_edit.field_sources') }}</template>
                 <button type="button" class="btn btn-outline-secondary btn-sm" data-rows-add>{{ 'anime_edit.add_button'|trans }}</button>
+            </div>
+
+            <div class="mb-3">
+                <label for="anime-edit-cover" class="form-label">{{ 'anime_edit.field_cover'|trans }}</label>
+                {% if cover %}
+                    <div class="mb-2"><img src="app-media://anime/{{ anime.id }}/{{ cover }}" alt="{{ anime.title }}" class="anime-edit__cover"></div>
+                {% endif %}
+                <input type="file" id="anime-edit-cover" name="cover" accept="image/png,image/jpeg,image/webp" class="form-control{% if errors.cover is defined %} is-invalid{% endif %}">
+                <div class="form-text">{{ 'anime_edit.cover_hint'|trans({'%size%': (cover_max_bytes / 1048576)|round}) }}</div>
+                {% if errors.cover is defined %}<div class="invalid-feedback d-block">{{ errors.cover|trans }}</div>{% endif %}
+                {% if cover %}
+                    <div class="form-check mt-2">
+                        <input type="checkbox" class="form-check-input" id="anime-edit-cover-remove" name="cover_remove" value="1"{% if form.cover_remove %} checked{% endif %}>
+                        <label class="form-check-label" for="anime-edit-cover-remove">{{ 'anime_edit.cover_remove'|trans }}</label>
+                    </div>
+                {% endif %}
             </div>
 
             <div class="mb-3">

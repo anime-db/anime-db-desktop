@@ -39,7 +39,10 @@ use App\Entity\LocaleNormalizer;
 use App\Entity\SeriesAnime;
 use App\Entity\Studio;
 use App\Repository\StudioRepository;
+use App\Service\Media\AnimeCoverStorage;
+use App\Service\Media\CoverUploadException;
 use Doctrine\ORM\EntityManagerInterface;
+use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -75,6 +78,7 @@ final class AnimeEditController
         private readonly UrlGeneratorInterface $urlGenerator,
         private readonly Environment $twig,
         private readonly StudioRepository $studios,
+        private readonly AnimeCoverStorage $covers,
     ) {
     }
 
@@ -94,12 +98,40 @@ final class AnimeEditController
 
         $form = $this->formFromRequest($request, $anime);
         $errors = $this->validate($form, $anime);
+
+        // The upload is checked and re-encoded with the rest of the validation, so a bad file is
+        // an error next to the field and nothing is written to disk or changed on the entry.
+        $webp = null;
+        $upload = $request->files->get('cover');
+        if ($upload instanceof UploadedFile && $upload->getError() !== \UPLOAD_ERR_NO_FILE) {
+            try {
+                $webp = $this->covers->prepare($upload);
+            } catch (CoverUploadException $e) {
+                $errors['cover'] = $e->errorKey;
+            }
+        }
         if ($errors !== []) {
             return $this->renderForm($anime, $form, $errors);
         }
 
+        $previousCover = $anime->getCover();
+        if ($webp !== null) {
+            try {
+                $anime->setCover($this->covers->store($anime, $webp));
+            } catch (CoverUploadException $e) {
+                return $this->renderForm($anime, $form, ['cover' => $e->errorKey]);
+            }
+        } elseif ($form['cover_remove']) {
+            $anime->setCover(null);
+        }
+
         $this->apply($anime, $form);
         $this->entityManager->flush();
+
+        // After the flush: only now the entry no longer points at the old file.
+        if ($previousCover !== null && $previousCover !== $anime->getCover()) {
+            $this->covers->releaseIfUnused($anime, $previousCover);
+        }
 
         return new RedirectResponse($this->urlGenerator->generate('anime_show', ['id' => $anime->id]));
     }
@@ -120,6 +152,8 @@ final class AnimeEditController
             'demographic_choices' => array_column(Demographic::cases(), 'value'),
             'role_choices' => array_column(AnimeNameRole::cases(), 'value'),
             'studio_choices' => $this->studioChoices($anime),
+            'cover' => $anime->getCover(),
+            'cover_max_bytes' => AnimeCoverStorage::MAX_BYTES,
             'csrf_token_id' => 'anime_edit_'.$anime->id,
         ]));
     }
@@ -168,6 +202,7 @@ final class AnimeEditController
             'countries' => implode(', ', $anime->getCountries() ?? []),
             'sources' => array_map(static fn (AnimeSource $source): string => $source->url, $anime->getSources()->toArray()),
             'notes' => $anime->getNotes() ?? '',
+            'cover_remove' => false,
         ];
     }
 
@@ -207,6 +242,7 @@ final class AnimeEditController
             'countries' => $this->text($request->request->get('countries')),
             'sources' => $this->strings($request, 'sources'),
             'notes' => trim((string) $request->request->get('notes', '')),
+            'cover_remove' => $request->request->getBoolean('cover_remove'),
         ];
     }
 

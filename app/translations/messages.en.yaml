@@ -582,6 +582,13 @@ anime_edit:
     error_episodes_below_watched: The episode count must not be less than the number of watched episodes.
     error_country_invalid: Use two-letter country codes separated by commas.
     error_url_invalid: Enter a valid http or https URL (512 characters at most).
+    field_cover: Cover image
+    cover_hint: 'PNG, JPEG or WebP, up to %size% MB. Leave empty to keep the current cover.'
+    cover_remove: Remove the cover
+    error_cover_too_large: The file is too large.
+    error_cover_upload: The file could not be uploaded.
+    error_cover_invalid: The file is not a PNG, JPEG or WebP image.
+    error_cover_save: The cover could not be saved.
 
 anime_new:
     title: New Anime — AnimeDB

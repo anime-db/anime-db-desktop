@@ -582,6 +582,13 @@ anime_edit:
     error_episodes_below_watched: Число эпизодов не может быть меньше числа просмотренных.
     error_country_invalid: Укажите двухбуквенные коды стран через запятую.
     error_url_invalid: Укажите корректный http- или https-адрес (не длиннее 512 символов).
+    field_cover: Изображение обложки
+    cover_hint: 'PNG, JPEG или WebP, до %size% МБ. Оставьте пустым, чтобы сохранить текущую обложку.'
+    cover_remove: Убрать обложку
+    error_cover_too_large: Файл слишком большой.
+    error_cover_upload: Не удалось загрузить файл.
+    error_cover_invalid: Файл не является изображением PNG, JPEG или WebP.
+    error_cover_save: Не удалось сохранить обложку.
 
 anime_new:
     title: Новая запись — AnimeDB
