@@ -65,7 +65,7 @@ final class EntryWidgetRegistry
 
     /**
      * Where on the anime detail page a widget is shown (issue #917): full width after the gallery
-     * or in the right column after the "Files" block. Not to be confused with the page-level
+     * or in the right column at the end of it, after the "Files" and "Sources" blocks. Not to be confused with the page-level
      * placement (entry/catalog). Stored as `widget_slot.{widgetName}` in plugins.json and kept
      * when the widget is turned off.
      */

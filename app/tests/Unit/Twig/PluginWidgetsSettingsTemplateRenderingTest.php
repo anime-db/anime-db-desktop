@@ -35,6 +35,8 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\HttpFoundation\Session\Session;
 use Symfony\Component\HttpFoundation\Session\Storage\MockArraySessionStorage;
+use Symfony\Component\Security\Csrf\CsrfToken;
+use Symfony\Component\Security\Csrf\CsrfTokenManagerInterface;
 use Twig\Environment;
 
 /**
@@ -140,5 +142,79 @@ final class PluginWidgetsSettingsTemplateRenderingTest extends KernelTestCase
         $html = $this->render(entryActiveCount: EntryWidgetRegistry::RECOMMENDED_LIMIT, catalogActiveCount: 0);
 
         $this->assertStringNotContainsString('active widgets is not recommended', $html);
+    }
+
+    public function testEntrySectionRendersSlotSelectForActiveWidgetWithCurrentSlotSelected(): void
+    {
+        self::bootKernel();
+        $rows = $this->oneWidgetRow();
+        $rows[0]['slot'] = 'side';
+
+        $html = $this->renderWith($rows, []);
+
+        $this->assertStringContainsString('/settings/plugins/widgets/animedb-shikimori/related/slot', $html);
+        $this->assertMatchesRegularExpression('/<option value="side"\s+selected>/', $html);
+        $this->assertDoesNotMatchRegularExpression('/<option value="bottom"\s+selected>/', $html);
+    }
+
+    public function testSlotSelectCsrfTokenMatchesTheIdCheckedByTheController(): void
+    {
+        self::bootKernel();
+
+        $html = $this->renderWith($this->oneWidgetRow(), []);
+
+        /** @var CsrfTokenManagerInterface $csrf */
+        $csrf = self::getContainer()->get('security.csrf.token_manager');
+        $slotForm = substr($html, (int) strpos($html, '/slot'));
+        if (preg_match('/name="_token" value="([^"]+)"/', $slotForm, $m) !== 1) {
+            $this->fail('Slot form has no CSRF token.');
+        }
+        $this->assertTrue($csrf->isTokenValid(new CsrfToken('settings_plugin_widgets_slot_animedb-shikimori_related', $m[1])));
+    }
+
+    public function testSlotSelectIsNotRenderedForInactiveWidget(): void
+    {
+        self::bootKernel();
+        $rows = $this->oneWidgetRow();
+        $rows[0]['active'] = false;
+
+        $html = $this->renderWith($rows, []);
+
+        $this->assertStringNotContainsString('name="slot"', $html);
+        $this->assertStringContainsString('<th>Position on the card</th>', $html);
+    }
+
+    public function testCatalogSectionHasNoSlotColumnNorSelect(): void
+    {
+        self::bootKernel();
+
+        $html = $this->renderWith([], $this->oneWidgetRow());
+
+        $this->assertStringNotContainsString('name="slot"', $html);
+        $this->assertStringNotContainsString('<th>Position on the card</th>', $html);
+    }
+
+    /**
+     * @param list<array<string, mixed>> $entry
+     * @param list<array<string, mixed>> $catalog
+     */
+    private function renderWith(array $entry, array $catalog): string
+    {
+        $this->pushRequestWithSession();
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+
+        return $twig->render('settings/plugin/widgets.html.twig', [
+            'entryWidgets' => $entry,
+            'catalogWidgets' => $catalog,
+            'entryActiveCount' => 1,
+            'catalogActiveCount' => 1,
+            'entryHardLimit' => EntryWidgetRegistry::HARD_LIMIT,
+            'catalogHardLimit' => CatalogWidgetRegistry::HARD_LIMIT,
+            'recommendedLimit' => EntryWidgetRegistry::RECOMMENDED_LIMIT,
+            'error' => null,
+            'limitReached' => 0,
+        ]);
     }
 }
