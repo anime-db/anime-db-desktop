@@ -36,8 +36,11 @@ use App\Doctrine\Type\UnixTimestampType;
 use App\Entity\Enum\WatchStatus;
 use App\Entity\MovieAnime;
 use App\Message\PushSyncMessage;
+use App\Message\SyncSeedMessage;
 use App\MessageHandler\PushSyncMessageHandler;
 use App\Repository\AnimeSyncStateRepository;
+use App\Service\JobLock\JobLockService;
+use App\Service\JobLock\ProcessLivenessChecker;
 use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Plugin\SyncRegistry;
 use Doctrine\DBAL\DriverManager;
@@ -47,6 +50,7 @@ use Doctrine\ORM\ORMSetup;
 use Doctrine\ORM\Tools\SchemaTool;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
+use Symfony\Component\Clock\MockClock;
 use Symfony\Component\Messenger\Exception\UnrecoverableMessageHandlingException;
 
 /**
@@ -58,6 +62,7 @@ final class PushSyncMessageHandlerTest extends TestCase
 {
     private EntityManager $entityManager;
     private string $pluginsConfigPath;
+    private JobLockService $jobLockService;
 
     protected function setUp(): void
     {
@@ -78,6 +83,13 @@ final class PushSyncMessageHandlerTest extends TestCase
         $schemaTool->createSchema($this->entityManager->getMetadataFactory()->getAllMetadata());
 
         $this->pluginsConfigPath = sys_get_temp_dir().'/anime-plugins-test-'.uniqid().'.json';
+        $this->jobLockService = new JobLockService(
+            DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]),
+            $this->createStub(ProcessLivenessChecker::class),
+            new MockClock(new \DateTimeImmutable('@1000')),
+            30,
+            3,
+        );
     }
 
     protected function tearDown(): void
@@ -113,8 +125,37 @@ final class PushSyncMessageHandlerTest extends TestCase
             new PluginsConfigStore($this->pluginsConfigPath),
         );
 
-        $handler = new PushSyncMessageHandler($this->entityManager, $registry, new AnimeSyncStateRepository($this->entityManager), new NullLogger(), 300);
+        $handler = new PushSyncMessageHandler($this->entityManager, $registry, new AnimeSyncStateRepository($this->entityManager), new NullLogger(), 300, $this->jobLockService);
         $handler(new PushSyncMessage($animeId, new \DateTimeImmutable()));
+    }
+
+    public function testSkipsPushWhileThePluginIsBeingSeeded(): void
+    {
+        $anime = new MovieAnime();
+        $anime->setTitle('Cowboy Bebop')->setWatchStatus(WatchStatus::Watching)->addSource('https://shikimori.one/animes/1');
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+        $animeId = $anime->id ?? throw new \LogicException('Anime must have an id after persisting.');
+
+        file_put_contents($this->pluginsConfigPath, json_encode([
+            'animedb-shikimori' => ['features' => ['sync' => true]],
+        ]));
+
+        $sync = $this->createMock(SyncInterface::class);
+        $sync->method('resolveExternalId')->willReturn('1');
+        $sync->expects($this->never())->method('push');
+
+        $registry = new SyncRegistry(
+            ['animedb-shikimori' => $sync],
+            new PluginsConfigStore($this->pluginsConfigPath),
+        );
+
+        $this->assertTrue($this->jobLockService->acquire(SyncSeedMessage::jobKey('animedb-shikimori')));
+
+        $handler = new PushSyncMessageHandler($this->entityManager, $registry, new AnimeSyncStateRepository($this->entityManager), new NullLogger(), 300, $this->jobLockService);
+        $handler(new PushSyncMessage($animeId, new \DateTimeImmutable(), 'animedb-shikimori'));
+
+        $this->assertSame([], $this->entityManager->getRepository(\App\Entity\AnimeSyncState::class)->findAll());
     }
 
     public function testSkipsAPluginThatDoesNotRecognizeAnySource(): void
@@ -138,7 +179,7 @@ final class PushSyncMessageHandlerTest extends TestCase
             new PluginsConfigStore($this->pluginsConfigPath),
         );
 
-        $handler = new PushSyncMessageHandler($this->entityManager, $registry, new AnimeSyncStateRepository($this->entityManager), new NullLogger(), 300);
+        $handler = new PushSyncMessageHandler($this->entityManager, $registry, new AnimeSyncStateRepository($this->entityManager), new NullLogger(), 300, $this->jobLockService);
         $handler(new PushSyncMessage($animeId, new \DateTimeImmutable()));
     }
 
@@ -152,7 +193,7 @@ final class PushSyncMessageHandlerTest extends TestCase
             new PluginsConfigStore($this->pluginsConfigPath),
         );
 
-        $handler = new PushSyncMessageHandler($this->entityManager, $registry, new AnimeSyncStateRepository($this->entityManager), new NullLogger(), 300);
+        $handler = new PushSyncMessageHandler($this->entityManager, $registry, new AnimeSyncStateRepository($this->entityManager), new NullLogger(), 300, $this->jobLockService);
         $handler(new PushSyncMessage(999, new \DateTimeImmutable()));
     }
 
@@ -182,7 +223,7 @@ final class PushSyncMessageHandlerTest extends TestCase
             new PluginsConfigStore($this->pluginsConfigPath),
         );
 
-        $handler = new PushSyncMessageHandler($this->entityManager, $registry, new AnimeSyncStateRepository($this->entityManager), new NullLogger(), 300);
+        $handler = new PushSyncMessageHandler($this->entityManager, $registry, new AnimeSyncStateRepository($this->entityManager), new NullLogger(), 300, $this->jobLockService);
 
         $this->expectException(UnrecoverableMessageHandlingException::class);
         $handler(new PushSyncMessage($animeId, new \DateTimeImmutable()));
@@ -214,7 +255,7 @@ final class PushSyncMessageHandlerTest extends TestCase
             new PluginsConfigStore($this->pluginsConfigPath),
         );
 
-        $handler = new PushSyncMessageHandler($this->entityManager, $registry, new AnimeSyncStateRepository($this->entityManager), new NullLogger(), 300);
+        $handler = new PushSyncMessageHandler($this->entityManager, $registry, new AnimeSyncStateRepository($this->entityManager), new NullLogger(), 300, $this->jobLockService);
 
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('Source is down.');
@@ -253,7 +294,7 @@ final class PushSyncMessageHandlerTest extends TestCase
             new PluginsConfigStore($this->pluginsConfigPath),
         );
 
-        $handler = new PushSyncMessageHandler($this->entityManager, $registry, new AnimeSyncStateRepository($this->entityManager), new NullLogger(), 300);
+        $handler = new PushSyncMessageHandler($this->entityManager, $registry, new AnimeSyncStateRepository($this->entityManager), new NullLogger(), 300, $this->jobLockService);
         $handler(new PushSyncMessage($animeId, new \DateTimeImmutable(), 'animedb-shikimori'));
     }
 
@@ -291,7 +332,7 @@ final class PushSyncMessageHandlerTest extends TestCase
         );
 
         $stateRepository = new AnimeSyncStateRepository($this->entityManager);
-        $handler = new PushSyncMessageHandler($this->entityManager, $registry, $stateRepository, new NullLogger(), 300);
+        $handler = new PushSyncMessageHandler($this->entityManager, $registry, $stateRepository, new NullLogger(), 300, $this->jobLockService);
 
         try {
             $handler(new PushSyncMessage($animeId, new \DateTimeImmutable(), 'animedb-shikimori'));
@@ -336,7 +377,7 @@ final class PushSyncMessageHandlerTest extends TestCase
             new PluginsConfigStore($this->pluginsConfigPath),
         );
 
-        $handler = new PushSyncMessageHandler($this->entityManager, $registry, new AnimeSyncStateRepository($this->entityManager), new NullLogger(), 300);
+        $handler = new PushSyncMessageHandler($this->entityManager, $registry, new AnimeSyncStateRepository($this->entityManager), new NullLogger(), 300, $this->jobLockService);
         $handler(new PushSyncMessage($animeId, new \DateTimeImmutable(), 'animedb-shikimori'));
     }
 
@@ -380,7 +421,7 @@ final class PushSyncMessageHandlerTest extends TestCase
         );
 
         $stateRepository = new AnimeSyncStateRepository($this->entityManager);
-        $handler = new PushSyncMessageHandler($this->entityManager, $registry, $stateRepository, new NullLogger(), 300);
+        $handler = new PushSyncMessageHandler($this->entityManager, $registry, $stateRepository, new NullLogger(), 300, $this->jobLockService);
 
         $serialized = \sprintf(
             'O:27:"App\Message\PushSyncMessage":2:{s:7:"animeId";i:%d;s:12:"dispatchedAt";O:17:"DateTimeImmutable":3:{s:4:"date";s:26:"%s";s:13:"timezone_type";i:1;s:8:"timezone";s:6:"+00:00";}}',
@@ -430,7 +471,7 @@ final class PushSyncMessageHandlerTest extends TestCase
             new PluginsConfigStore($this->pluginsConfigPath),
         );
 
-        $handler = new PushSyncMessageHandler($this->entityManager, $registry, new AnimeSyncStateRepository($this->entityManager), new NullLogger(), 300);
+        $handler = new PushSyncMessageHandler($this->entityManager, $registry, new AnimeSyncStateRepository($this->entityManager), new NullLogger(), 300, $this->jobLockService);
 
         $this->expectException(UnrecoverableMessageHandlingException::class);
         $handler(new PushSyncMessage($animeId, new \DateTimeImmutable(), 'animedb-shikimori'));
