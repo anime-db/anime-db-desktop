@@ -542,14 +542,50 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
 
         /** @var Environment $twig */
         $twig = self::getContainer()->get('twig');
-        $params = ['anime' => $this->fullyPopulatedAnime(), 'fillable_fields' => $this->emptyFillableFields(), 'fill_error' => 'anime_detail.error_fill_not_found'];
+        $params = ['anime' => $this->fullyPopulatedAnime(), 'fillable_fields' => $this->emptyFillableFields()];
 
-        $names = $twig->render('anime/_names.html.twig', $params);
-        $info = $twig->render('anime/_info.html.twig', $params);
+        $infoWithoutError = $twig->render('anime/_info.html.twig', $params);
+        $namesWithError = $twig->render('anime/_names.html.twig', $params + ['fill_error' => 'anime_detail.error_fill_not_found']);
 
-        $this->assertStringContainsString('anime-detail__fill-error', $names);
-        $this->assertStringNotContainsString('anime-detail__names', $info);
-        $this->assertStringNotContainsString('hx-swap-oob', $names);
+        $this->assertStringNotContainsString('anime-detail__fill-error', $infoWithoutError);
+        $this->assertMatchesRegularExpression('/<section[^>]*id="anime-names-1".*anime-detail__fill-error.*<\/section>/s', $namesWithError);
+    }
+
+    /**
+     * Every fill form must target the root of the very fragment AnimeFillController renders for its
+     * field (outerHTML swap), otherwise the response replaces an unrelated block.
+     */
+    #[DataProvider('fillTargetProvider')]
+    public function testEachFillFormTargetsTheRootOfTheFragmentTheControllerRendersForItsField(string $field, string $template): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession('/anime/1');
+
+        $fillableFields = $this->emptyFillableFields();
+        $fillableFields[$field] = [['id' => 'animedb-shikimori', 'name' => 'Shikimori']];
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $show = $twig->render('anime/show.html.twig', ['anime' => $this->fullyPopulatedAnime(), 'widgets' => [], 'plugins_ui' => [], 'fillable_fields' => $fillableFields, 'downloads' => [], 'downloads_unlink_error' => null]);
+
+        $this->assertSame(1, preg_match('/hx-post="\/anime\/1\/fill\/'.$field.'"\s+hx-target="#([^"]+)"/', $show, $matches), 'No fill form for '.$field);
+
+        $fragment = $twig->render($template, ['anime' => $this->fullyPopulatedAnime(), 'fillable_fields' => $fillableFields]);
+        $this->assertStringContainsString('id="'.$matches[1].'"', $fragment);
+    }
+
+    /**
+     * @return iterable<string, array{string, string}>
+     */
+    public static function fillTargetProvider(): iterable
+    {
+        yield 'alternativeNames' => ['alternativeNames', 'anime/_names.html.twig'];
+        yield 'cover' => ['cover', 'anime/_media.html.twig'];
+        yield 'images' => ['images', 'anime/_gallery.html.twig'];
+
+        foreach (['genres', 'themes', 'demographic', 'studios', 'durationMinutes', 'episodesCount', 'countries'] as $field) {
+            yield $field => [$field, 'anime/_info.html.twig'];
+        }
     }
 
     /**
