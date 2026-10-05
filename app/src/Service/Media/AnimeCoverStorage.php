@@ -103,11 +103,11 @@ final class AnimeCoverStorage
             return $filename;
         }
 
-        if (!is_dir($targetDir) && !mkdir($targetDir, 0o755, true) && !is_dir($targetDir)) {
+        if (!is_dir($targetDir) && !@mkdir($targetDir, 0o755, true) && !is_dir($targetDir)) {
             throw new CoverUploadException('anime_edit.error_cover_save');
         }
 
-        $tmpPath = tempnam($targetDir, 'tmp-');
+        $tmpPath = @tempnam($targetDir, 'tmp-');
         if ($tmpPath === false) {
             throw new CoverUploadException('anime_edit.error_cover_save');
         }
