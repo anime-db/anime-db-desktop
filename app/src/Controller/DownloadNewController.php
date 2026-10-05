@@ -39,6 +39,7 @@ use App\Repository\StorageRepository;
 use App\Service\AppSettingsProvider;
 use App\Service\Download\PresetDownloadsStorageProvider;
 use App\Service\Download\QbittorrentDownloadService;
+use App\Service\Exception\DownloadAlreadyInClientException;
 use App\Service\Exception\DownloadNotConfirmedException;
 use App\Service\Exception\DownloadStorageNotWritableException;
 use App\Service\Exception\DownloadStorageUnavailableException;
@@ -223,6 +224,14 @@ final class DownloadNewController
                 selectedStorageId: $storageId,
                 magnet: $magnet,
             );
+        } catch (DownloadAlreadyInClientException) {
+            return $this->renderForm(
+                error: 'download_new.error_already_in_client',
+                downloadsLink: true,
+                selectedAnime: $anime,
+                selectedStorageId: $storageId,
+                magnet: $magnet,
+            );
         } catch (DownloadStorageUnavailableException|DownloadStorageNotWritableException) {
             return $this->renderForm(error: 'download_new.error_storage_unavailable', selectedAnime: $anime, selectedStorageId: $storageId, magnet: $magnet);
         } catch (QbittorrentClientException|DownloadNotConfirmedException) {
@@ -253,6 +262,7 @@ final class DownloadNewController
         array $errorParams = [],
         ?string $info = null,
         ?int $occupyingAnimeId = null,
+        bool $downloadsLink = false,
     ): Response {
         [$storages, $defaultStorageId] = $this->buildStorageOptions();
 
@@ -265,6 +275,7 @@ final class DownloadNewController
             'errorParams' => $errorParams,
             'info' => $info,
             'occupyingAnimeId' => $occupyingAnimeId,
+            'downloadsLink' => $downloadsLink,
         ]));
     }
 

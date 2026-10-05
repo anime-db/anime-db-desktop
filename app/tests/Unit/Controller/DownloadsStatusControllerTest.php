@@ -34,6 +34,9 @@ use App\Entity\Download;
 use App\Entity\Enum\WatchStatus;
 use App\Entity\TvAnime;
 use App\Repository\DownloadRepository;
+use App\Repository\StorageRepository;
+use App\Service\Download\DownloadFolderJail;
+use App\Service\Download\DownloadIncomingChecker;
 use App\Service\Download\DownloadsOverviewBuilder;
 use App\Service\Qbittorrent\QbittorrentClient;
 use App\Service\Storage\StorageMarkerService;
@@ -101,7 +104,7 @@ final class DownloadsStatusControllerTest extends TestCase
             static fn (string $route, array $params = []): string => \sprintf('/anime/%d', $params['id']),
         );
 
-        return new DownloadsOverviewBuilder($this->downloads, new StorageMarkerService($this->entityManager), $translator, $urlGenerator);
+        return new DownloadsOverviewBuilder($this->downloads, new StorageMarkerService($this->entityManager), new DownloadFolderJail(), $translator, $urlGenerator, new DownloadIncomingChecker(new DownloadFolderJail(), new StorageRepository($this->entityManager)));
     }
 
     public function testStatusReturns200WithQbittorrentDataWhenReachable(): void
@@ -110,6 +113,7 @@ final class DownloadsStatusControllerTest extends TestCase
 
         $httpClient = new MockHttpClient(fn (): MockResponse => new MockResponse(json_encode([
             ['infohash_v1' => str_repeat('a', 40), 'progress' => 0.2, 'state' => 'downloading'],
+            ['infohash_v1' => str_repeat('f', 40), 'progress' => 0.2, 'state' => 'downloading'],
         ], \JSON_THROW_ON_ERROR), ['response_headers' => ['content-type' => 'application/json']]));
 
         $controller = new DownloadsStatusController(new QbittorrentClient($httpClient, self::BASE_URL), $this->createOverviewBuilder());
@@ -119,6 +123,8 @@ final class DownloadsStatusControllerTest extends TestCase
         $data = json_decode((string) $response->getContent(), true);
         self::assertTrue($data['qbittorrentAvailable']);
         self::assertSame('Ждёт', $data['rows'][0]['statusText']);
+        self::assertFalse($data['rows'][0]['canDeleteFiles']);
+        self::assertFalse($data['orphans'][0]['canDeleteFiles']);
     }
 
     public function testStatusReturns200WithUnavailableFlagWhenQbittorrentThrows(): void

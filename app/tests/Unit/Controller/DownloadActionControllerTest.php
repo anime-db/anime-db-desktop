@@ -32,10 +32,15 @@ use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
 use App\Entity\Download;
 use App\Entity\Enum\DownloadStatus;
+use App\Entity\Enum\StorageType;
 use App\Entity\Enum\WatchStatus;
+use App\Entity\Storage;
 use App\Entity\TvAnime;
 use App\Repository\DownloadRepository;
+use App\Repository\StorageRepository;
 use App\Service\Download\DownloadActionService;
+use App\Service\Download\DownloadFolderJail;
+use App\Service\Download\DownloadIncomingChecker;
 use App\Service\Download\DownloadsOverviewBuilder;
 use App\Service\Qbittorrent\QbittorrentClient;
 use App\Service\Storage\StorageMarkerService;
@@ -44,6 +49,7 @@ use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\EntityManager;
 use Doctrine\ORM\ORMSetup;
 use Doctrine\ORM\Tools\SchemaTool;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
@@ -66,6 +72,7 @@ use Twig\Environment;
 final class DownloadActionControllerTest extends TestCase
 {
     private const string HASH = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+    private const string ROOT = 'D:\\Anime';
     private const string BASE_URL = 'http://127.0.0.1:18080';
 
     private EntityManager $entityManager;
@@ -99,6 +106,122 @@ final class DownloadActionControllerTest extends TestCase
         return $anime;
     }
 
+    private function persistStorage(string $path = self::ROOT): Storage
+    {
+        $storage = new Storage('Storage '.$path, $path, StorageType::Folder);
+        $this->entityManager->persist($storage);
+        $this->entityManager->flush();
+
+        return $storage;
+    }
+
+    /**
+     * Runs download_delete against a Pending row whose torrent reports $contentPath and returns the
+     * `torrents/delete` request body — the exact deleteFiles value the client was told.
+     */
+    private function deleteBody(?string $contentPath, ?string $targetStoragePath, bool $flag): string
+    {
+        $download = new Download(self::HASH, $this->persistAnime());
+        if ($targetStoragePath !== null) {
+            $download->assignTargetStorage($this->persistStorage($targetStoragePath));
+        }
+        $this->repository->save($download);
+
+        $torrent = ['infohash_v1' => self::HASH, 'hash' => 'v2-hash'];
+        if ($contentPath !== null) {
+            $torrent['content_path'] = $contentPath;
+        }
+        $requests = [];
+        $controller = $this->createRecordingController([$torrent], $requests);
+        $controller->delete($download, $this->postActionRequest($download, $flag ? ['delete_files' => '1'] : []));
+
+        $bodies = array_values(array_map(
+            static fn (array $r): ?string => $r['body'],
+            array_filter($requests, static fn (array $r): bool => str_ends_with($r['url'], '/torrents/delete')),
+        ));
+        $this->assertCount(1, $bodies);
+
+        return (string) $bodies[0];
+    }
+
+    /** @return iterable<string, array{?string, ?string, bool, string}> */
+    public static function deleteFilesProvider(): iterable
+    {
+        $incoming = self::ROOT.'\\.anime-db\\incoming\\'.self::HASH.'\\Anime';
+
+        yield 'pending under incoming with the flag' => [$incoming, self::ROOT, true, 'true'];
+        yield 'pending under incoming without the flag' => [$incoming, self::ROOT, false, 'false'];
+        yield 'storage_conflict: moved into the storage root' => [self::ROOT.'\\Anime', self::ROOT, true, 'false'];
+        yield 'content_path is the storage root itself' => [self::ROOT, self::ROOT, true, 'false'];
+        yield 'target storage is NULL' => [$incoming, null, true, 'false'];
+        yield 'no content_path' => [null, self::ROOT, true, 'false'];
+        yield 'long-path prefix and other casing' => ['\\\\?\\d:\\ANIME\\.anime-db\\incoming\\'.self::HASH.'\\Anime', self::ROOT, true, 'true'];
+        yield 'incoming of a different storage' => ['E:\\Other\\.anime-db\\incoming\\'.self::HASH.'\\Anime', self::ROOT, true, 'false'];
+    }
+
+    #[DataProvider('deleteFilesProvider')]
+    public function testDeleteForwardsDeleteFilesOnlyWhenDataIsStillInIncoming(?string $contentPath, ?string $root, bool $flag, string $expected): void
+    {
+        $this->assertSame('hashes=v2-hash&deleteFiles='.$expected, $this->deleteBody($contentPath, $root, $flag));
+    }
+
+    public function testDeleteNeverForwardsDeleteFilesWhileTorrentIsMovingOrRelocationWasRequested(): void
+    {
+        $incoming = self::ROOT.'\\.anime-db\\incoming\\'.self::HASH.'\\Anime';
+        foreach (['moving state' => ['moving', false], 'move attempted' => ['uploading', true]] as [$state, $attempted]) {
+            $download = new Download(self::HASH, $this->persistAnime());
+            $download->assignTargetStorage($this->persistStorage(self::ROOT));
+            if ($attempted) {
+                $download->incrementMoveAttempts();
+            }
+            $this->repository->save($download);
+
+            $requests = [];
+            $controller = $this->createRecordingController(
+                [['infohash_v1' => self::HASH, 'hash' => 'v2-hash', 'content_path' => $incoming, 'state' => $state]],
+                $requests,
+            );
+            $controller->delete($download, $this->postActionRequest($download, ['delete_files' => '1']));
+
+            $bodies = array_values(array_map(
+                static fn (array $r): ?string => $r['body'],
+                array_filter($requests, static fn (array $r): bool => str_ends_with($r['url'], '/torrents/delete')),
+            ));
+            $this->assertSame(['hashes=v2-hash&deleteFiles=false'], $bodies);
+        }
+    }
+
+    /** @return iterable<string, array{?string, bool, string}> */
+    public static function deleteOrphanFilesProvider(): iterable
+    {
+        yield 'under incoming of one of the storages' => ['E:\\Other\\.anime-db\\incoming\\'.self::HASH.'\\Anime', true, 'true'];
+        yield 'under incoming without the flag' => ['E:\\Other\\.anime-db\\incoming\\'.self::HASH.'\\Anime', false, 'false'];
+        yield 'outside incoming of every storage' => ['F:\\Elsewhere\\Anime', true, 'false'];
+        yield 'storage root, not incoming' => [self::ROOT.'\\Anime', true, 'false'];
+        yield 'no content_path' => [null, true, 'false'];
+    }
+
+    #[DataProvider('deleteOrphanFilesProvider')]
+    public function testDeleteOrphanForwardsDeleteFilesOnlyWhenDataIsInIncomingOfAStorage(?string $contentPath, bool $flag, string $expected): void
+    {
+        $this->persistStorage(self::ROOT);
+        $this->persistStorage('E:\\Other');
+
+        $torrent = ['infohash_v1' => self::HASH, 'hash' => 'v2-hash'];
+        if ($contentPath !== null) {
+            $torrent['content_path'] = $contentPath;
+        }
+        $requests = [];
+        $controller = $this->createRecordingController([$torrent], $requests);
+        $controller->deleteOrphan(self::HASH, $this->postRequest($flag ? ['delete_files' => '1'] : []));
+
+        $bodies = array_values(array_map(
+            static fn (array $r): ?string => $r['body'],
+            array_filter($requests, static fn (array $r): bool => str_ends_with($r['url'], '/torrents/delete')),
+        ));
+        $this->assertSame(['hashes=v2-hash&deleteFiles='.$expected], $bodies);
+    }
+
     private function alwaysValidCsrfTokenManager(): CsrfTokenManagerInterface
     {
         $manager = $this->createStub(CsrfTokenManagerInterface::class);
@@ -128,7 +251,7 @@ final class DownloadActionControllerTest extends TestCase
             static fn (string $route, array $params = []): string => \sprintf('/anime/%d', $params['id'] ?? 0),
         );
 
-        return new DownloadsOverviewBuilder($this->repository, new StorageMarkerService($this->entityManager), $translator, $urlGenerator);
+        return new DownloadsOverviewBuilder($this->repository, new StorageMarkerService($this->entityManager), new DownloadFolderJail(), $translator, $urlGenerator, new DownloadIncomingChecker(new DownloadFolderJail(), new StorageRepository($this->entityManager)));
     }
 
     /**
@@ -156,6 +279,7 @@ final class DownloadActionControllerTest extends TestCase
             $this->repository,
             new QbittorrentClient($httpClient, self::BASE_URL),
             $this->overviewBuilder(),
+            new DownloadIncomingChecker(new DownloadFolderJail(), new StorageRepository($this->entityManager)),
             $this->alwaysValidCsrfTokenManager(),
             $this->urlGenerator(),
             $this->createStub(Environment::class),
@@ -307,6 +431,7 @@ final class DownloadActionControllerTest extends TestCase
             $this->repository,
             $client,
             $this->overviewBuilder(),
+            new DownloadIncomingChecker(new DownloadFolderJail(), new StorageRepository($this->entityManager)),
             $this->alwaysValidCsrfTokenManager(),
             $this->urlGenerator(),
             $this->createStub(Environment::class),
@@ -348,6 +473,7 @@ final class DownloadActionControllerTest extends TestCase
             $this->repository,
             $client,
             $this->overviewBuilder(),
+            new DownloadIncomingChecker(new DownloadFolderJail(), new StorageRepository($this->entityManager)),
             $this->alwaysValidCsrfTokenManager(),
             $this->urlGenerator(),
             $this->createStub(Environment::class),
@@ -379,6 +505,7 @@ final class DownloadActionControllerTest extends TestCase
             $this->repository,
             new QbittorrentClient($httpClient, self::BASE_URL),
             $this->overviewBuilder(),
+            new DownloadIncomingChecker(new DownloadFolderJail(), new StorageRepository($this->entityManager)),
             $this->alwaysValidCsrfTokenManager(),
             $this->urlGenerator(),
             $this->createStub(Environment::class),
@@ -403,6 +530,7 @@ final class DownloadActionControllerTest extends TestCase
     {
         $anime = $this->persistAnime();
         $download = new Download(self::HASH, $anime);
+        $download->assignTargetStorage($this->persistStorage());
         $this->repository->save($download);
         $downloadId = $download->id;
 
@@ -414,7 +542,7 @@ final class DownloadActionControllerTest extends TestCase
             }
 
             return new MockResponse(
-                $method === 'GET' ? json_encode([['infohash_v1' => self::HASH, 'hash' => 'v2-hash']], \JSON_THROW_ON_ERROR) : 'Ok.',
+                $method === 'GET' ? json_encode([['infohash_v1' => self::HASH, 'hash' => 'v2-hash', 'content_path' => self::ROOT.'\\.anime-db\\incoming\\'.self::HASH.'\\Anime']], \JSON_THROW_ON_ERROR) : 'Ok.',
                 ['response_headers' => ['content-type' => 'application/json']],
             );
         });
@@ -425,6 +553,7 @@ final class DownloadActionControllerTest extends TestCase
             $this->repository,
             $client,
             $this->overviewBuilder(),
+            new DownloadIncomingChecker(new DownloadFolderJail(), new StorageRepository($this->entityManager)),
             $this->alwaysValidCsrfTokenManager(),
             $this->urlGenerator(),
             $this->createStub(Environment::class),
@@ -465,6 +594,7 @@ final class DownloadActionControllerTest extends TestCase
             $this->repository,
             new QbittorrentClient($httpClient, self::BASE_URL),
             $this->overviewBuilder(),
+            new DownloadIncomingChecker(new DownloadFolderJail(), new StorageRepository($this->entityManager)),
             $this->alwaysValidCsrfTokenManager(),
             $this->urlGenerator(),
             $this->createStub(Environment::class),
@@ -514,6 +644,7 @@ final class DownloadActionControllerTest extends TestCase
             $this->repository,
             new QbittorrentClient($httpClient, self::BASE_URL),
             $this->overviewBuilder(),
+            new DownloadIncomingChecker(new DownloadFolderJail(), new StorageRepository($this->entityManager)),
             $this->alwaysValidCsrfTokenManager(),
             $this->urlGenerator(),
             $this->createStub(Environment::class),
@@ -542,6 +673,7 @@ final class DownloadActionControllerTest extends TestCase
             $this->repository,
             new QbittorrentClient($httpClient, self::BASE_URL),
             $this->overviewBuilder(),
+            new DownloadIncomingChecker(new DownloadFolderJail(), new StorageRepository($this->entityManager)),
             $this->alwaysValidCsrfTokenManager(),
             $this->urlGenerator(),
             $this->createStub(Environment::class),
@@ -574,6 +706,7 @@ final class DownloadActionControllerTest extends TestCase
             $this->repository,
             $client,
             $this->overviewBuilder(),
+            new DownloadIncomingChecker(new DownloadFolderJail(), new StorageRepository($this->entityManager)),
             $this->alwaysValidCsrfTokenManager(),
             $this->urlGenerator(),
             $this->createStub(Environment::class),
@@ -607,6 +740,7 @@ final class DownloadActionControllerTest extends TestCase
             $this->repository,
             new QbittorrentClient($httpClient, self::BASE_URL),
             $this->overviewBuilder(),
+            new DownloadIncomingChecker(new DownloadFolderJail(), new StorageRepository($this->entityManager)),
             $this->alwaysValidCsrfTokenManager(),
             $this->urlGenerator(),
             $this->createStub(Environment::class),
@@ -635,6 +769,7 @@ final class DownloadActionControllerTest extends TestCase
             $this->repository,
             new QbittorrentClient($httpClient, self::BASE_URL),
             $this->overviewBuilder(),
+            new DownloadIncomingChecker(new DownloadFolderJail(), new StorageRepository($this->entityManager)),
             $csrf,
             $this->urlGenerator(),
             $this->createStub(Environment::class),

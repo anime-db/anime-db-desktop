@@ -31,6 +31,7 @@ use App\Entity\Download;
 use App\Entity\Enum\DownloadStatus;
 use App\Entity\Storage;
 use App\Repository\DownloadRepository;
+use App\Service\Exception\DownloadPathOutsideJailException;
 use App\Service\Storage\StorageMarkerService;
 use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 use Symfony\Contracts\Translation\TranslatorInterface;
@@ -57,8 +58,10 @@ final class DownloadsOverviewBuilder
     public function __construct(
         private readonly DownloadRepository $downloads,
         private readonly StorageMarkerService $storageMarker,
+        private readonly DownloadFolderJail $folderJail,
         private readonly TranslatorInterface $translator,
         private readonly UrlGeneratorInterface $urlGenerator,
+        private readonly DownloadIncomingChecker $incomingChecker,
     ) {
     }
 
@@ -99,9 +102,11 @@ final class DownloadsOverviewBuilder
 
         $orphans = [];
         if ($qbittorrentAvailable) {
+            $storageRoots = null;
             foreach ($torrentsByInfoHashV1 as $infoHash => $torrent) {
                 if (!isset($claimedInfoHashes[$infoHash])) {
-                    $orphans[] = $this->buildOrphanRow($infoHash, $torrent);
+                    $storageRoots ??= $this->incomingChecker->storageRoots();
+                    $orphans[] = $this->buildOrphanRow($infoHash, $torrent, $storageRoots);
                 }
             }
         }
@@ -142,10 +147,11 @@ final class DownloadsOverviewBuilder
 
     /**
      * @param array<string, mixed> $torrent
+     * @param list<string>         $storageRoots
      *
      * @return array<string, mixed>
      */
-    private function buildOrphanRow(string $infoHash, array $torrent): array
+    private function buildOrphanRow(string $infoHash, array $torrent, array $storageRoots): array
     {
         return [
             'infoHash' => $infoHash,
@@ -164,6 +170,7 @@ final class DownloadsOverviewBuilder
             'canDelete' => false,
             'hasTorrentInClient' => true,
             'deleteFilesDefaultChecked' => false,
+            'canDeleteFiles' => $this->incomingChecker->isInIncomingOfAnyStorage($torrent, $storageRoots),
         ] + $this->liveFields($torrent);
     }
 
@@ -193,6 +200,9 @@ final class DownloadsOverviewBuilder
             'canDelete' => $status === DownloadStatus::Pending || $status === DownloadStatus::Failed,
             'hasTorrentInClient' => $torrentPresent,
             'deleteFilesDefaultChecked' => $torrentPresent && $progress < 1.0,
+            // Data may be deleted through the client only while it still sits in the storage's
+            // incoming directory (issue #899); DownloadActionController re-checks this fresh.
+            'canDeleteFiles' => $this->incomingChecker->canDeleteDataOf($download, $torrent),
         ];
     }
 
@@ -258,11 +268,51 @@ final class DownloadsOverviewBuilder
             return $this->translator->trans('downloads.status_storage_unavailable');
         }
 
+        // Client-side problems the poller never resolves on its own (it only skips these torrents),
+        // so "waiting"/"linking" would be misleading for them.
+        $clientState = $torrent !== null ? (string) ($torrent['state'] ?? '') : '';
+        if ($clientState === 'error') {
+            return $this->translator->trans('downloads.status_client_error');
+        }
+        if ($clientState === 'missingFiles') {
+            return $this->translator->trans('downloads.status_missing_files');
+        }
+        if ($torrent !== null && $targetStorage !== null && $this->isOutsideStorage($torrent, $targetStorage)) {
+            return $this->translator->trans('downloads.status_outside_storage');
+        }
+
         if ($torrent !== null && (float) ($torrent['progress'] ?? 0) >= 1.0) {
             return $this->translator->trans('downloads.status_linking');
         }
 
         return $this->translator->trans('downloads.status_pending');
+    }
+
+    /**
+     * Same condition, lexical check and path choice as the completion poller (only finished torrents,
+     * content_path else save_path); never touches the disk. An unfinished torrent may legitimately
+     * sit in the client's temporary folder until the client moves it.
+     *
+     * @param array<string, mixed> $torrent
+     */
+    private function isOutsideStorage(array $torrent, Storage $targetStorage): bool
+    {
+        if (!DownloadCompletionPoller::isTorrentComplete($torrent)) {
+            return false;
+        }
+
+        $path = $torrent['content_path'] ?? $torrent['save_path'] ?? null;
+        if (!\is_string($path) || $path === '') {
+            return false;
+        }
+
+        try {
+            $this->folderJail->assertWithinRoot($targetStorage->getPath(), $path);
+        } catch (DownloadPathOutsideJailException) {
+            return true;
+        }
+
+        return false;
     }
 
     /** @param array<string, ?int> $markerIdCache */

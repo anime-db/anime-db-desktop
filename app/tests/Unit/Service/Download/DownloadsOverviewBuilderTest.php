@@ -35,6 +35,9 @@ use App\Entity\Enum\WatchStatus;
 use App\Entity\Storage;
 use App\Entity\TvAnime;
 use App\Repository\DownloadRepository;
+use App\Repository\StorageRepository;
+use App\Service\Download\DownloadFolderJail;
+use App\Service\Download\DownloadIncomingChecker;
 use App\Service\Download\DownloadsOverviewBuilder;
 use App\Service\Storage\StorageMarkerService;
 use Doctrine\DBAL\DriverManager;
@@ -65,6 +68,7 @@ final class DownloadsOverviewBuilderTest extends TestCase
     private DownloadsOverviewBuilder $builder;
     /** @var list<string> */
     private array $dirsToClean = [];
+    private int $hashCounter = 2;
 
     protected function setUp(): void
     {
@@ -98,8 +102,10 @@ final class DownloadsOverviewBuilderTest extends TestCase
         $this->builder = new DownloadsOverviewBuilder(
             $this->downloads,
             new StorageMarkerService($this->entityManager),
+            new DownloadFolderJail(),
             $translator,
             $urlGenerator,
+            new DownloadIncomingChecker(new DownloadFolderJail(), new StorageRepository($this->entityManager)),
         );
     }
 
@@ -187,7 +193,7 @@ final class DownloadsOverviewBuilderTest extends TestCase
             static fn (string $route, array $params = []): string => \sprintf('/anime/%d', $params['id']),
         );
 
-        return new DownloadsOverviewBuilder($this->downloads, new StorageMarkerService($this->entityManager), $translator, $urlGenerator);
+        return new DownloadsOverviewBuilder($this->downloads, new StorageMarkerService($this->entityManager), new DownloadFolderJail(), $translator, $urlGenerator, new DownloadIncomingChecker(new DownloadFolderJail(), new StorageRepository($this->entityManager)));
     }
 
     public function testSizeAndSpeedTextUseTranslatedUnitsInRu(): void
@@ -291,6 +297,129 @@ final class DownloadsOverviewBuilderTest extends TestCase
         self::assertSame('Хранилище недоступно', $result['rows'][0]['statusText']);
     }
 
+    /**
+     * @param array<string, mixed> $overrides
+     */
+    private function pendingStatusText(array $overrides, bool $withStorage = true, bool $markerMatches = true): string
+    {
+        $storage = null;
+        if ($withStorage) {
+            $dir = $this->makeDir();
+            $storage = $this->persistStorage($dir);
+            $markerId = $markerMatches ? $storage->id : $storage->id + 1;
+            file_put_contents($dir.\DIRECTORY_SEPARATOR.'desktop.ini', "[AnimeDB]\nid=".$markerId."\n");
+            $overrides = array_map(
+                static fn (mixed $v): mixed => \is_string($v) ? str_replace('{root}', $dir, $v) : $v,
+                $overrides,
+            );
+        }
+
+        $hash = str_repeat((string) ++$this->hashCounter, 40);
+        $this->persistDownload($hash, $this->persistAnime(), $storage);
+
+        $rows = $this->builder->build([$this->torrent($hash, $overrides)], true)['rows'];
+
+        return array_column($rows, 'statusText', 'infoHash')[$hash];
+    }
+
+    public function testClientErrorStateShowsClientErrorAtAnyProgress(): void
+    {
+        self::assertSame('Ошибка торрент-клиента', $this->pendingStatusText(['state' => 'error', 'progress' => 0.5]));
+        self::assertSame('Ошибка торрент-клиента', $this->pendingStatusText(['state' => 'error', 'progress' => 1.0]));
+    }
+
+    public function testMissingFilesStateShowsFilesNotFoundAtAnyProgress(): void
+    {
+        self::assertSame('Файлы не найдены', $this->pendingStatusText(['state' => 'missingFiles', 'progress' => 0.5]));
+        self::assertSame('Файлы не найдены', $this->pendingStatusText(['state' => 'missingFiles', 'progress' => 1.0]));
+    }
+
+    public function testContentPathOutsideStorageShowsOutsideStorage(): void
+    {
+        $text = $this->pendingStatusText(['state' => 'stalledUP', 'progress' => 1.0, 'content_path' => 'D:\\other\\Folder']);
+
+        self::assertSame('Файлы вне хранилища — удалите закачку и поставьте заново', $text);
+    }
+
+    public function testSavePathOutsideStorageIsUsedWhenContentPathIsAbsentForFinishedTorrent(): void
+    {
+        $text = $this->pendingStatusText(['state' => 'stalledUP', 'progress' => 1.0, 'save_path' => 'D:\\other']);
+
+        self::assertSame('Файлы вне хранилища — удалите закачку и поставьте заново', $text);
+    }
+
+    public function testUnfinishedTorrentOutsideStorageKeepsWaiting(): void
+    {
+        // The client may keep unfinished torrents in a temporary folder and move them on completion.
+        self::assertSame('Ждёт', $this->pendingStatusText(['state' => 'downloading', 'progress' => 0.3, 'content_path' => 'D:\\qbt-temp\\Release']));
+        self::assertSame('Ждёт', $this->pendingStatusText(['state' => 'downloading', 'progress' => 0.3, 'save_path' => 'D:\\other']));
+    }
+
+    public function testMovingTorrentOutsideStorageIsNotReportedAsOutsideStorage(): void
+    {
+        $text = $this->pendingStatusText(['state' => 'moving', 'progress' => 1.0, 'content_path' => 'D:\\qbt-temp\\Release']);
+
+        self::assertSame('Докачано, привязывается…', $text);
+    }
+
+    public function testContentPathUnderIncomingKeepsWaitingAndLinking(): void
+    {
+        $path = '{root}\\.anime-db\\incoming\\'.str_repeat('9', 40).'\\Folder';
+
+        self::assertSame('Ждёт', $this->pendingStatusText(['state' => 'downloading', 'progress' => 0.4, 'content_path' => $path]));
+        self::assertSame('Докачано, привязывается…', $this->pendingStatusText(['state' => 'stalledUP', 'progress' => 1.0, 'content_path' => $path]));
+    }
+
+    public function testMismatchedMarkerWinsOverClientStateAndOutsideStorage(): void
+    {
+        self::assertSame('Хранилище недоступно', $this->pendingStatusText(['state' => 'error'], true, false));
+        self::assertSame('Хранилище недоступно', $this->pendingStatusText(['state' => 'missingFiles'], true, false));
+        self::assertSame('Хранилище недоступно', $this->pendingStatusText(['content_path' => 'D:\\other'], true, false));
+    }
+
+    public function testOutsideStorageCheckIsSkippedWithoutStorageOrPath(): void
+    {
+        self::assertSame('Ждёт', $this->pendingStatusText(['content_path' => 'D:\\other'], false));
+        self::assertSame('Ждёт', $this->pendingStatusText(['content_path' => '']));
+    }
+
+    public function testCompletedAndFailedRowsIgnoreClientErrorState(): void
+    {
+        $completed = $this->persistDownload(str_repeat('1', 40), $this->persistAnime());
+        $completed->markCompleted();
+        $failed = $this->persistDownload(str_repeat('2', 40), $this->persistAnime());
+        $failed->markFailed();
+        $this->entityManager->flush();
+
+        $rows = $this->builder->build([
+            $this->torrent(str_repeat('1', 40), ['state' => 'error']),
+            $this->torrent(str_repeat('2', 40), ['state' => 'missingFiles', 'content_path' => 'D:\\other']),
+        ], true)['rows'];
+
+        $texts = array_column($rows, 'statusText', 'infoHash');
+        self::assertSame('Готово и привязано', $texts[str_repeat('1', 40)]);
+        self::assertSame('Ошибка', $texts[str_repeat('2', 40)]);
+    }
+
+    public function testNewStatusTextsExistInEnCatalogWithoutPlaceholders(): void
+    {
+        $builder = $this->buildBuilderForLocale('en');
+        $dir = $this->makeDir();
+        $storage = $this->persistStorage($dir);
+        file_put_contents($dir.\DIRECTORY_SEPARATOR.'desktop.ini', "[AnimeDB]\nid=".$storage->id."\n");
+        $hash = str_repeat('8', 40);
+        $this->persistDownload($hash, $this->persistAnime(), $storage);
+
+        $textFor = fn (array $overrides): string => $builder->build([$this->torrent($hash, $overrides)], true)['rows'][0]['statusText'];
+
+        self::assertSame('Torrent client error', $textFor(['state' => 'error']));
+        self::assertSame('Files not found', $textFor(['state' => 'missingFiles']));
+        self::assertSame(
+            'Files are outside the storage — delete the download and add it again',
+            $textFor(['state' => 'stalledUP', 'progress' => 1.0, 'content_path' => 'D:\\other\\Folder']),
+        );
+    }
+
     public function testCompletedRowWithoutTorrentInClientShowsSeedingStoppedNotAnError(): void
     {
         $anime = $this->persistAnime();
@@ -367,6 +496,51 @@ final class DownloadsOverviewBuilderTest extends TestCase
         self::assertFalse($orphan['hasCard']);
         self::assertSame('Mystery torrent', $orphan['displayName']);
         self::assertSame('Без карточки', $orphan['statusText']);
+    }
+
+    public function testCanDeleteFilesOnlyForDataUnderTheTargetStoragesIncoming(): void
+    {
+        $root = 'D:\\Anime';
+        $storage = $this->persistStorage($root);
+        $hashes = [];
+        foreach (['incoming', 'moved', 'root', 'none'] as $key) {
+            $hashes[$key] = str_repeat((string) \count($hashes), 40);
+            $this->persistDownload($hashes[$key], $this->persistAnime($key), $storage);
+        }
+        $noStorageHash = str_repeat('9', 40);
+        $this->persistDownload($noStorageHash, $this->persistAnime('no storage'));
+
+        $torrents = [];
+        foreach (['incoming' => '\\\\?\\d:\\ANIME\\.anime-db\\incoming\\x\\Name', 'moved' => $root.'\\Name', 'root' => $root] as $key => $path) {
+            $torrents[] = $this->torrent($hashes[$key], ['content_path' => $path]);
+        }
+        $torrents[] = $this->torrent($noStorageHash, ['content_path' => $root.'\\.anime-db\\incoming\\x\\Name']);
+
+        $byHash = [];
+        foreach ($this->builder->build($torrents, true)['rows'] as $row) {
+            $byHash[$row['infoHash']] = $row['canDeleteFiles'];
+        }
+
+        self::assertTrue($byHash[$hashes['incoming']]);
+        self::assertFalse($byHash[$hashes['moved']]);
+        self::assertFalse($byHash[$hashes['root']]);
+        self::assertFalse($byHash[$hashes['none']], 'No torrent in the client.');
+        self::assertFalse($byHash[$noStorageHash], 'target_storage is NULL.');
+    }
+
+    public function testOrphanCanDeleteFilesOnlyUnderIncomingOfAnyStorage(): void
+    {
+        $this->persistStorage('D:\\Anime');
+        $this->persistStorage('E:\\Other');
+
+        $result = $this->builder->build([
+            $this->torrent(str_repeat('1', 40), ['content_path' => 'E:\\Other\\.anime-db\\incoming\\x\\Name']),
+            $this->torrent(str_repeat('2', 40), ['content_path' => 'F:\\Else\\Name']),
+        ], true);
+
+        self::assertCount(2, $result['orphans']);
+        self::assertTrue($result['orphans'][0]['canDeleteFiles']);
+        self::assertFalse($result['orphans'][1]['canDeleteFiles']);
     }
 
     /**

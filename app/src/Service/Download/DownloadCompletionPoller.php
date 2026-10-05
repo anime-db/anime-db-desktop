@@ -216,7 +216,7 @@ final class DownloadCompletionPoller
         // this is where that free-space check catches up, once size becomes known, for as long
         // as the torrent is still short of Completed. A torrent that already reached Completed
         // necessarily wrote all of its bytes, so it is not re-checked here.
-        if (!$this->isComplete($torrent)) {
+        if (!self::isTorrentComplete($torrent)) {
             $this->failIfOutOfSpace($torrent, $infoHash);
 
             return;
@@ -399,14 +399,13 @@ final class DownloadCompletionPoller
                 .'if anime #%d got this folder from another download of its own, run app:downloads:unlink '
                 .'<that download\'s hash> %d (it clears the pointer only if it still matches that download\'s '
                 .'snapshot); otherwise there is no command for this yet and anime #%d\'s folder pointer has to '
-                .'be cleared by hand. Then run app:downloads:unlink %s %d to remove this failed pairing and '
-                .'enqueue the download again.',
+                .'be cleared by hand. Then delete this download on the Downloads page, '
+                .'without ticking "Delete downloaded data" (the data sits in the occupying anime\'s folder), '
+                .'and enqueue it again.',
                 $exception->occupyingAnimeId,
                 $exception->occupyingAnimeId,
                 $exception->occupyingAnimeId,
                 $exception->occupyingAnimeId,
-                $infoHash,
-                $anime->id,
             ), [
                 'infoHash' => $infoHash,
                 'contentPath' => $folderPath,
@@ -431,7 +430,7 @@ final class DownloadCompletionPoller
     /**
      * @param array<string, mixed> $torrent
      */
-    private function isComplete(array $torrent): bool
+    public static function isTorrentComplete(array $torrent): bool
     {
         $progress = (float) ($torrent['progress'] ?? 0);
         $state = (string) ($torrent['state'] ?? '');
