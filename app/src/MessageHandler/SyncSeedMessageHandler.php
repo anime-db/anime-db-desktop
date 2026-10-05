@@ -29,6 +29,7 @@ namespace App\MessageHandler;
 
 use App\Entity\ValueObject\PluginId;
 use App\Message\SyncSeedMessage;
+use App\Service\Plugin\ExternalIdBackfillService;
 use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Plugin\PullSyncService;
 use App\Service\Plugin\SyncRegistry;
@@ -48,6 +49,10 @@ use Symfony\Component\Messenger\Attribute\AsMessageHandler;
  * a plugin the user disabled again before this message was processed simply has nothing left to
  * seed, not an error.
  *
+ * Before pulling, the handler runs {@see ExternalIdBackfillService::backfill()} for the same plugin
+ * (issue #867), so ids derivable from existing source URLs are cached by the time the pull
+ * builds its `indexByExternalId()` lookup.
+ *
  * `features.sync` alone (what {@see SyncRegistry::findByPluginId()} gates on) does not guarantee
  * the plugin's OAuth is actually complete — {@see \App\Controller\Settings\PluginSettingsController}
  * sets the `syncSeeded` one-time flag before this handler ever runs, purely to make the dispatch
@@ -61,6 +66,7 @@ final class SyncSeedMessageHandler
 {
     public function __construct(
         private readonly SyncRegistry $syncRegistry,
+        private readonly ExternalIdBackfillService $backfillService,
         private readonly PullSyncService $pullSyncService,
         private readonly PluginsConfigStore $pluginsConfigStore,
         private readonly LoggerInterface $logger,
@@ -79,6 +85,14 @@ final class SyncSeedMessageHandler
 
             return;
         }
+
+        // Issue #867: the external-id backfill runs here, synchronously and before the pull, rather
+        // than as a separately dispatched message — the pull matches pulled items against
+        // AnimeRepository::indexByExternalId(), which only sees ids that are already cached, so a
+        // backfill racing or trailing the pull would let it create second rows for titles that
+        // already sit in the catalog with a source URL. The ordering has to live in this handler:
+        // FIFO order between two messages is not guaranteed once they travel on different transports.
+        $this->backfillService->backfill($pluginId, $sync);
 
         $seeded = $this->pullSyncService->pull($pluginId, $sync);
         if (!$seeded) {

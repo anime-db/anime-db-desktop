@@ -31,6 +31,7 @@ use App\Entity\Anime;
 use App\Entity\AnimeName;
 use App\Entity\Enum\SyncReviewItemKind;
 use App\Service\Search\AnimeSearchResolver;
+use Psr\Log\LoggerInterface;
 
 /**
  * Cross-vendor duplicate heuristic (issue #268), run by PullSyncService for a pulled item that
@@ -56,6 +57,7 @@ final class CrossVendorDuplicateDetector
     public function __construct(
         private readonly AnimeSearchResolver $searchResolver,
         private readonly SyncReviewService $reviewService,
+        private readonly LoggerInterface $logger,
     ) {
     }
 
@@ -68,7 +70,12 @@ final class CrossVendorDuplicateDetector
             $matches = $this->searchResolver->tryResolveMatches($query);
             if ($matches === null) {
                 // Meilisearch is unreachable — skip the heuristic entirely for this item rather
-                // than raise a cluster built from only some of its names.
+                // than raise a cluster built from only some of its names. Logged so the skipped
+                // check is visible: the item is simply not flagged, nothing else records it.
+                $this->logger->warning('Cross-vendor duplicate check skipped for anime #{animeId}: the search index is unavailable.', [
+                    'animeId' => $id,
+                ]);
+
                 return;
             }
 
