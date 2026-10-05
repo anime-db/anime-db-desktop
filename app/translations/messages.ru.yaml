@@ -716,6 +716,8 @@ download_new:
     error_unreadable_source: Не удалось прочитать раздачу.
     error_insufficient_space: 'Нужно %needed%, свободно %free% в «%path%».'
     error_already_linked: Эта раздача уже привязана к записи #%id%.
+    error_already_in_client: 'Этот торрент уже есть в торрент-клиенте без карточки. Удалите его на странице «Загрузки» и поставьте заново.'
+    error_already_in_client_link: 'Открыть «Загрузки»'
     error_storage_unavailable: Хранилище недоступно.
     error_client_unavailable: Торрент-клиент недоступен, повторите позже.
     error_file_too_large: Файл больше 16 МБ.

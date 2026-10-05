@@ -32,6 +32,9 @@
                 {% if occupyingAnimeId %}
                     <a href="{{ path('anime_show', {id: occupyingAnimeId}) }}">{{ 'download_new.unlink_hint'|trans }}</a>
                 {% endif %}
+                {% if downloadsLink|default(false) %}
+                    <a href="{{ path('downloads_index') }}">{{ 'download_new.error_already_in_client_link'|trans }}</a>
+                {% endif %}
             </p>
         {% endif %}
 
