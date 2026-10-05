@@ -295,9 +295,8 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
         $this->assertGreaterThan(strpos($html, 'anime-detail__wide'), $bottom);
         $this->assertGreaterThan(strpos($html, 'anime-detail__files'), $side);
         $sources = strpos($html, 'anime-detail__sources');
-        if ($sources !== false) {
-            $this->assertGreaterThan($sources, $side);
-        }
+        $this->assertNotFalse($sources);
+        $this->assertLessThan($sources, $side);
     }
 
     /**

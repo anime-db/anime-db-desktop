@@ -41,6 +41,7 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
+use Symfony\Component\Security\Csrf\CsrfToken;
 use Symfony\Component\Security\Csrf\CsrfTokenManagerInterface;
 use Symfony\Contracts\Translation\TranslatorInterface;
 use Twig\Environment;
@@ -360,9 +361,14 @@ final class PluginWidgetControllerTest extends TestCase
         );
         $urlGenerator = $this->createStub(UrlGeneratorInterface::class);
         $urlGenerator->method('generate')->willReturn('/settings/plugins/widgets');
-        $controller = $this->slotController($entryWidgets, $this->alwaysValidCsrf(), $urlGenerator);
+        $csrf = $this->createStub(CsrfTokenManagerInterface::class);
+        $csrf->method('isTokenValid')->willReturnCallback(
+            static fn (CsrfToken $token): bool => $token->getId() === 'settings_plugin_widgets_slot_animedb-shikimori_related'
+                && $token->getValue() === 'valid-token',
+        );
+        $controller = $this->slotController($entryWidgets, $csrf, $urlGenerator);
 
-        $response = $controller->slot('animedb-shikimori', 'related', Request::create('/x', 'POST', ['slot' => 'side']));
+        $response = $controller->slot('animedb-shikimori', 'related', Request::create('/x', 'POST', ['slot' => 'side', '_token' => 'valid-token']));
 
         $this->assertSame('/settings/plugins/widgets', $response->getTargetUrl());
         $stored = json_decode((string) file_get_contents($this->configPath), true);
