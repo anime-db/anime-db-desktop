@@ -122,11 +122,20 @@ final class AnimeFillController
             default => 'anime/_info.html.twig',
         };
 
-        return new Response($this->twig->render($template, [
-            'anime' => $this->viewFactory->serialize($anime),
+        $view = $this->viewFactory->serialize($anime);
+
+        $html = $this->twig->render($template, [
+            'anime' => $view,
             'fillable_fields' => $this->fillableFieldsPresenter->build(),
             'fill_error' => $error,
-        ]));
+        ]);
+
+        if ($field === 'alternativeNames') {
+            // The subtitle shows the official Japanese title, which this fill may have just added.
+            $html .= $this->twig->render('anime/_header.html.twig', ['anime' => $view, 'oob' => true]);
+        }
+
+        return new Response($html);
     }
 
     private function assertValidCsrfToken(string $tokenId, Request $request): void

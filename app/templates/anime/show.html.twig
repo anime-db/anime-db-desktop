@@ -43,22 +43,8 @@
         <a href="{{ path('home_index') }}" class="anime-detail__back-link" data-control="catalog-back-link">{{ 'anime_detail.back_link'|trans }}</a>
     </div>
 
-    {% set japanese_name = (anime.names|filter(name => name.role == 'official' and name.locale == 'ja')|first)|default(null) %}
-    {% set date_premiere = anime.date_premiere|default(null) %}
-    {% set date_end = anime.date_end|default(null) %}
-    {% set year_start = date_premiere is not null ? date_premiere|slice(0, 4) : null %}
-    {% set year_end = date_end is not null ? date_end|slice(0, 4) : null %}
-    {% set years = year_start is not null and year_end is not null and year_end != year_start ? year_start ~ '–' ~ year_end : (year_start ?? year_end) %}
-    {% set subtitle_parts = [] %}
-    {% if japanese_name %}{% set subtitle_parts = subtitle_parts|merge([japanese_name.name]) %}{% endif %}
-    {% set subtitle_parts = subtitle_parts|merge([('anime_type.' ~ anime.type)|trans]) %}
-    {% if years is not null %}{% set subtitle_parts = subtitle_parts|merge([years]) %}{% endif %}
-
     <main class="anime-detail">
-        <header class="anime-detail__header">
-            <h1 class="anime-detail__title"><bdi>{{ anime.title }}</bdi></h1>
-            <p class="anime-detail__subtitle">{{ subtitle_parts|join(' · ') }}</p>
-        </header>
+        {{ include('anime/_header.html.twig', {anime: anime}) }}
 
         {# DOM order is the reading order of the single-column layout: left, centre, right. #}
         <div class="anime-detail__columns">

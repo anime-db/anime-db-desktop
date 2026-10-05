@@ -234,19 +234,26 @@ final class AnimeFillControllerTest extends TestCase
 
         $anime = $this->persistedAnime();
 
+        $rendered = [];
         $twig = $this->createMock(Environment::class);
-        $twig->expects($this->once())
+        $twig->expects($this->exactly(2))
             ->method('render')
-            ->with('anime/_names.html.twig', $this->callback(
-                static fn (array $params): bool => $params['fill_error'] === 'anime_detail.error_fill_not_found',
-            ))
-            ->willReturn('<section></section>');
+            ->willReturnCallback(function (string $template, array $params) use (&$rendered): string {
+                $rendered[] = [$template, $params];
+
+                return '<div data-template="'.$template.'"></div>';
+            });
 
         $controller = $this->createController(['animedb-shikimori' => $filler], $twig);
 
         $request = Request::create('/anime/1/fill/alternativeNames', 'POST', ['plugin_id' => 'animedb-shikimori', '_token' => 'token']);
 
         $this->assertSame(200, $controller->fill($anime, 'alternativeNames', $request)->getStatusCode());
+        $this->assertSame('anime/_names.html.twig', $rendered[0][0]);
+        $this->assertSame('anime_detail.error_fill_not_found', $rendered[0][1]['fill_error']);
+        // The header subtitle (official Japanese title) is refreshed out-of-band alongside.
+        $this->assertSame('anime/_header.html.twig', $rendered[1][0]);
+        $this->assertTrue($rendered[1][1]['oob']);
     }
 
     public function testFillingCoverSuccessfullyRendersOnlyTheMediaPartial(): void

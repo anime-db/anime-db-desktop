@@ -423,7 +423,7 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
 
         $html = $this->renderShow($anime, 'en');
 
-        $this->assertMatchesRegularExpression('/<header class="anime-detail__header">\s*<h1 class="anime-detail__title"><bdi>Shingeki no Kyojin<\/bdi><\/h1>/', $html);
+        $this->assertMatchesRegularExpression('/<header class="anime-detail__header"[^>]*>\s*<h1 class="anime-detail__title"><bdi>Shingeki no Kyojin<\/bdi><\/h1>/', $html);
         $this->assertStringContainsString('<p class="anime-detail__subtitle">進撃の巨人 · TV Series · 2009–2010</p>', $html);
         // The title heading is no longer part of the cover fragment re-rendered by the cover fill.
         /** @var Environment $twig */
@@ -490,6 +490,50 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
         $this->assertDoesNotMatchRegularExpression('/<section[^>]*id="anime-notes-1"[^>]* hidden>/', $html);
         $this->assertStringContainsString('<p class="anime-detail__notes-text">Rewatch before the finale.</p>', $html);
         $this->assertStringNotContainsString('Add a note', $html);
+    }
+
+    public function testNotesEditFormIsRenderedInsideTheNotesBlockNotTheEditableOne(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession('/anime/1/editable/notes/edit');
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+
+        $html = $twig->render('anime/_notes.html.twig', ['anime' => $this->fullyPopulatedAnime(), 'editing' => true]);
+
+        $this->assertMatchesRegularExpression('/<section[^>]*id="anime-notes-1"[^>]*>.*<textarea name="notes" rows="8"/s', $html);
+        $this->assertStringContainsString('hx-post="/anime/1/editable/notes"', $html);
+        $this->assertStringContainsString('hx-target="#anime-notes-1"', $html);
+        $this->assertStringNotContainsString('anime-editable-1', $html);
+
+        // Editing the first note: the (still empty) block must be visible.
+        $html = $twig->render('anime/_notes.html.twig', ['anime' => $this->minimalAnime(), 'editing' => true]);
+
+        $this->assertDoesNotMatchRegularExpression('/<section[^>]*id="anime-notes-2"[^>]* hidden>/', $html);
+        $this->assertStringContainsString('<textarea', $html);
+    }
+
+    public function testAddNoteEntryPointTargetsTheNotesBlock(): void
+    {
+        $html = $this->renderShow($this->minimalAnime(), 'en');
+
+        $this->assertMatchesRegularExpression('/anime-detail__notes-add[^>]*hx-get="[^"]*notes\/edit"[^>]*hx-target="#anime-notes-2"/s', $html);
+        $this->assertStringNotContainsString('<textarea', $html);
+    }
+
+    public function testHeaderFragmentIsAnOobSwapWithTheJapaneseNameWhenRequested(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession('/anime/1/fill/alternativeNames');
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+
+        $html = $twig->render('anime/_header.html.twig', ['anime' => $this->fullyPopulatedAnime(), 'oob' => true]);
+
+        $this->assertStringContainsString('id="anime-header-1"', $html);
+        $this->assertStringContainsString('hx-swap-oob="outerHTML"', $html);
     }
 
     public function testEmptyAlternativeNamesAndGalleryAreHiddenAsWholeBlocks(): void

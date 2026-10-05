@@ -25,7 +25,7 @@
  # null on the initial full-page load, so watch_statuses/csrf_token() for the "*_edit"
  # forms below are never evaluated there.
  #}
-<section class="anime-detail__editable" id="anime-editable-{{ anime.id }}">
+<section class="anime-detail__editable" id="anime-editable-{{ anime.id }}"{% if oob|default(false) %} hx-swap-oob="outerHTML"{% endif %}>
     <h2 class="anime-detail__section-heading">{{ 'anime_detail.my_heading'|trans }}</h2>
 
     {% if error %}
@@ -140,34 +140,14 @@
                 {% endfor %}
             </div>
         </dd>
-
-        {% if editing == 'notes' %}
-            <dt>{{ 'anime_detail.field_notes'|trans }}</dt>
-            <dd>
-                <form class="anime-detail__inline-form anime-detail__inline-form--notes"
-                      hx-post="{{ path('anime_editable_update_notes', {id: anime.id}) }}"
-                      hx-target="#anime-editable-{{ anime.id }}" hx-swap="outerHTML">
-                    <input type="hidden" name="_token" value="{{ csrf_token('anime_editable_notes_' ~ anime.id) }}">
-                    <textarea name="notes" rows="3">{{ anime.notes }}</textarea>
-                    <div>
-                        <button type="submit">{{ 'anime_detail.save_button'|trans }}</button>
-                        <button
-                            type="button"
-                            hx-get="{{ path('anime_editable_view', {id: anime.id}) }}"
-                            hx-target="#anime-editable-{{ anime.id }}" hx-swap="outerHTML"
-                        >{{ 'anime_detail.cancel_button'|trans }}</button>
-                    </div>
-                </form>
-            </dd>
-        {% endif %}
     </dl>
 
-    {% if anime.notes is empty and editing != 'notes' %}
+    {% if anime.notes is empty %}
         <button
             type="button"
             class="anime-detail__notes-add"
             hx-get="{{ path('anime_editable_edit', {id: anime.id, field: 'notes'}) }}"
-            hx-target="#anime-editable-{{ anime.id }}" hx-swap="outerHTML"
+            hx-target="#anime-notes-{{ anime.id }}" hx-swap="outerHTML"
         >{{ 'anime_detail.notes_add_button'|trans }}</button>
     {% endif %}
 </section>

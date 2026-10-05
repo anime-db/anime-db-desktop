@@ -77,6 +77,12 @@ final class AnimeEditableController
         return $this->renderEditable($anime);
     }
 
+    #[Route('/anime/{id}/editable/notes', name: 'anime_editable_notes_view', requirements: ['id' => '\d+'], methods: ['GET'])]
+    public function notesView(Anime $anime): Response
+    {
+        return $this->renderNotes($anime, false);
+    }
+
     #[Route(
         '/anime/{id}/editable/{field}/edit',
         name: 'anime_editable_edit',
@@ -85,6 +91,10 @@ final class AnimeEditableController
     )]
     public function edit(Anime $anime, string $field): Response
     {
+        if ($field === 'notes') {
+            return $this->renderNotes($anime, true);
+        }
+
         return $this->renderEditable($anime, $field);
     }
 
@@ -146,7 +156,7 @@ final class AnimeEditableController
         $anime->setNotes($notes === '' ? null : $notes);
         $this->entityManager->flush();
 
-        return $this->renderEditable($anime, null, null, true);
+        return $this->renderNotes($anime, false, true);
     }
 
     #[Route(
@@ -205,25 +215,38 @@ final class AnimeEditableController
     }
 
     /**
-     * The notes block lives in the centre column, outside #anime-editable-{id} (issue #913), so a
-     * notes update appends it as an out-of-band swap ($withNotes) to keep it in step with the form.
+     * The notes block lives in the centre column and is edited in place (issue #913), so its
+     * actions swap #anime-notes-{id}. After a save the "Mine" block is appended out-of-band
+     * ($withEditable): its "add notes" entry point depends on whether any notes remain.
      */
-    private function renderEditable(Anime $anime, ?string $editing = null, ?string $error = null, bool $withNotes = false): Response
+    private function renderNotes(Anime $anime, bool $editing, bool $withEditable = false): Response
     {
         $view = $this->viewFactory->serialize($anime);
 
-        $html = $this->twig->render('anime/_editable.html.twig', [
+        $html = $this->twig->render('anime/_notes.html.twig', ['anime' => $view, 'editing' => $editing]);
+
+        if ($withEditable) {
+            $html .= $this->twig->render('anime/_editable.html.twig', [
+                'anime' => $view,
+                'editing' => null,
+                'error' => null,
+                'oob' => true,
+            ]);
+        }
+
+        return new Response($html);
+    }
+
+    private function renderEditable(Anime $anime, ?string $editing = null, ?string $error = null): Response
+    {
+        $view = $this->viewFactory->serialize($anime);
+
+        return new Response($this->twig->render('anime/_editable.html.twig', [
             'anime' => $view,
             'editing' => $editing,
             'error' => $error,
             'watch_statuses' => array_column(WatchStatus::cases(), 'value'),
-        ]);
-
-        if ($withNotes) {
-            $html .= $this->twig->render('anime/_notes.html.twig', ['anime' => $view, 'oob' => true]);
-        }
-
-        return new Response($html);
+        ]));
     }
 
     private function assertValidCsrfToken(string $tokenId, Request $request): void

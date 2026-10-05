@@ -254,6 +254,12 @@
 .anime-detail__inline-form--notes {
     flex-direction: column;
     align-items: stretch;
+
+    textarea {
+        width: 100%;
+        min-height: 8lh;
+        resize: vertical;
+    }
 }
 
 .anime-detail__progress {
@@ -326,14 +332,17 @@
     overflow-wrap: anywhere;
 }
 
-// The "mine" block is a 260px column: a label above its value, the value as wide as the column,
-// so a long status label ("Plan to Watch") stays on one line.
-.anime-detail__editable .anime-detail__fields {
+// The "mine" and "information" blocks live in narrow side columns: a label above its value, the
+// value as wide as the column, so a long status label ("Plan to Watch") stays on one line and a
+// long label ("Количество серий") does not squeeze the value into a few characters.
+.anime-detail__editable .anime-detail__fields,
+.anime-detail__info .anime-detail__fields {
     grid-template-columns: minmax(0, 1fr);
     gap: 2px;
 }
 
-.anime-detail__editable .anime-detail__fields dd {
+.anime-detail__editable .anime-detail__fields dd,
+.anime-detail__info .anime-detail__fields dd {
     margin-bottom: 10px;
 }
 
