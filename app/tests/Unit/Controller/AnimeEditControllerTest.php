@@ -56,6 +56,7 @@ use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
+use Symfony\Component\Security\Csrf\CsrfToken;
 use Symfony\Component\Security\Csrf\CsrfTokenManagerInterface;
 use Twig\Environment;
 
@@ -73,6 +74,8 @@ final class AnimeEditControllerTest extends TestCase
     private ?array $rendered = null;
 
     private bool $csrfValid = true;
+
+    private ?int $editedId = null;
 
     /** @var list<object> */
     private array $dispatched = [];
@@ -121,6 +124,7 @@ final class AnimeEditControllerTest extends TestCase
         $this->assertSame(['action'], $this->renderedParams()['form']['genres']);
         $this->assertSame('28', $this->renderedParams()['form']['episodes_count']);
         $this->assertSame([], $this->renderedParams()['errors']);
+        $this->assertSame('anime_edit_'.$anime->id, $this->renderedParams()['csrf_token_id']);
     }
 
     public function testPostWithAnInvalidCsrfTokenIsRejected(): void
@@ -305,10 +309,18 @@ final class AnimeEditControllerTest extends TestCase
         $anime->setTitle('Movie')->setWatchStatus(WatchStatus::Plan);
         $this->entityManager->persist($anime);
         $this->entityManager->flush();
+        $this->editedId = $anime->id;
 
-        $response = $this->controller()->update($anime, $this->post(['episodes_count' => '12']));
+        $response = $this->controller()->update($anime, $this->post(['episodes_count' => '12', 'title' => '', 'notes' => 'kept']));
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertSame('', $this->renderedParams()['form']['episodes_count']);
+        $this->assertSame('kept', $this->renderedParams()['form']['notes']);
+
+        $response = $this->controller()->update($anime, $this->post(['episodes_count' => '12', 'notes' => 'kept']));
 
         $this->assertInstanceOf(RedirectResponse::class, $response);
+        $this->assertSame('kept', $this->reload($anime)->getNotes());
     }
 
     public function testSourcesAreAddedAndRemovedPointWise(): void
@@ -398,6 +410,61 @@ final class AnimeEditControllerTest extends TestCase
         $this->assertSame([], $stored->getSources()->toArray());
     }
 
+    /** @return iterable<string, array{string}> */
+    public static function datesBreakingCompletedProvider(): iterable
+    {
+        yield 'cleared end date' => [''];
+        yield 'future end date' => ['2999-01-01'];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('datesBreakingCompletedProvider')]
+    public function testDatesThatUnreleaseACompletedEntryAreRejected(string $dateEnd): void
+    {
+        $anime = $this->persistTv(static function (TvAnime $anime): void {
+            $anime->setDatePremiereAndEnd(new \DateTimeImmutable('2024-01-01'), new \DateTimeImmutable('2024-03-22'));
+            $anime->setWatchStatus(WatchStatus::Completed);
+        });
+
+        $this->controller()->update($anime, $this->post(['date_premiere' => '2024-01-01', 'date_end' => $dateEnd]));
+
+        $this->assertArrayHasKey('date_end', $this->renderedParams()['errors']);
+        $this->entityManager->clear();
+        $stored = $this->reload($anime);
+        $this->assertSame('2024-03-22', $stored->getDateEnd()?->format('Y-m-d'));
+        $this->assertSame(WatchStatus::Completed, $stored->getWatchStatus());
+    }
+
+    public function testStudiosOfTheEntryBeyondTheChoicesLimitStayInTheFormAndSurviveASave(): void
+    {
+        $connection = $this->entityManager->getConnection();
+        for ($i = 0; $i < 1001; ++$i) {
+            $connection->insert('studio', ['name' => \sprintf('A%04d', $i)]);
+        }
+        $last = new Studio();
+        $last->rename('Zexcs');
+        $this->entityManager->persist($last);
+        $anime = $this->persistTv(static fn (TvAnime $anime) => $anime->addStudio($last));
+
+        $this->controller()->edit($anime);
+        $choices = $this->renderedParams()['studio_choices'];
+        $this->assertContains('Zexcs', array_column($choices, 'name'));
+        $this->assertCount(1001, $choices);
+
+        $this->controller()->update($anime, $this->post(['studios' => [(string) $last->id]]));
+
+        $this->assertSame(['Zexcs'], array_map(static fn (Studio $s): string => $s->name, $this->reload($anime)->getStudios()->toArray()));
+    }
+
+    public function testANewStudioNameRepeatedInOneRequestCreatesOneStudio(): void
+    {
+        $anime = $this->persistTv();
+
+        $this->controller()->update($anime, $this->post(['new_studios' => ['Brand New', 'Brand New', '  Brand New ']]));
+
+        $this->assertCount(1, $this->entityManager->getRepository(Studio::class)->findBy(['name' => 'Brand New']));
+        $this->assertCount(1, $this->reload($anime)->getStudios());
+    }
+
     public function testInvalidInputKeepsTheTypedValuesInTheForm(): void
     {
         $anime = $this->persistTv();
@@ -422,6 +489,7 @@ final class AnimeEditControllerTest extends TestCase
         }
         $this->entityManager->persist($anime);
         $this->entityManager->flush();
+        $this->editedId = $anime->id;
 
         return $anime;
     }
@@ -481,7 +549,9 @@ final class AnimeEditControllerTest extends TestCase
     private function controller(): AnimeEditController
     {
         $csrf = $this->createStub(CsrfTokenManagerInterface::class);
-        $csrf->method('isTokenValid')->willReturnCallback(fn (): bool => $this->csrfValid);
+        $csrf->method('isTokenValid')->willReturnCallback(
+            fn (CsrfToken $token): bool => $this->csrfValid && $token->getId() === 'anime_edit_'.$this->editedId && $token->getValue() === 'token',
+        );
 
         $urls = $this->createStub(UrlGeneratorInterface::class);
         $urls->method('generate')->willReturnCallback(static fn (string $name, array $params): string => '/anime/'.$params['id']);

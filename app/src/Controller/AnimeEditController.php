@@ -34,6 +34,7 @@ use App\Entity\Enum\AnimeNameRole;
 use App\Entity\Enum\Demographic;
 use App\Entity\Enum\GenreCode;
 use App\Entity\Enum\ThemeCode;
+use App\Entity\Enum\WatchStatus;
 use App\Entity\LocaleNormalizer;
 use App\Entity\SeriesAnime;
 use App\Entity\Studio;
@@ -118,12 +119,26 @@ final class AnimeEditController
             'theme_choices' => array_column(ThemeCode::cases(), 'value'),
             'demographic_choices' => array_column(Demographic::cases(), 'value'),
             'role_choices' => array_column(AnimeNameRole::cases(), 'value'),
-            'studio_choices' => array_map(
-                static fn (Studio $studio): array => ['id' => (string) $studio->id, 'name' => $studio->name],
-                $this->studios->findAllOrderedByName(self::STUDIO_CHOICES_LIMIT),
-            ),
+            'studio_choices' => $this->studioChoices($anime),
             'csrf_token_id' => 'anime_edit_'.$anime->id,
         ]));
+    }
+
+    /**
+     * The first STUDIO_CHOICES_LIMIT studios plus the entry's own ones: a studio that is linked
+     * but falls outside the limit must still be in the form, or saving would silently unlink it.
+     *
+     * @return list<array{id: string, name: string}>
+     */
+    private function studioChoices(Anime $anime): array
+    {
+        $choices = [];
+        foreach ([...$this->studios->findAllOrderedByName(self::STUDIO_CHOICES_LIMIT), ...$anime->getStudios()->toArray()] as $studio) {
+            $choices[(string) $studio->id] = ['id' => (string) $studio->id, 'name' => $studio->name];
+        }
+        uasort($choices, static fn (array $a, array $b): int => strcmp($a['name'], $b['name']));
+
+        return array_values($choices);
     }
 
     /** @return array<string, mixed> */
@@ -273,6 +288,11 @@ final class AnimeEditController
         if ($premiere instanceof \DateTimeImmutable && $end instanceof \DateTimeImmutable && $end < $premiere) {
             $errors['date_end'] = 'anime_edit.error_date_range';
         }
+        // Completed requires a released entry (see Anime::setWatchStatus()); released means a past date_end.
+        if ($anime->getWatchStatus() === WatchStatus::Completed && !isset($errors['date_end']) && $end !== false
+            && !($end instanceof \DateTimeImmutable && $end <= new \DateTimeImmutable())) {
+            $errors['date_end'] = 'anime_edit.error_date_end_completed';
+        }
 
         foreach (['duration_minutes', 'episodes_count'] as $field) {
             if ($form[$field] !== '' && preg_match('/^\d{1,9}\z/', $form[$field]) !== 1) {
@@ -413,12 +433,15 @@ final class AnimeEditController
             $studio = $this->findStudio($id) ?? throw new \LogicException('Studio must be validated before apply.');
             $wanted[spl_object_id($studio)] = $studio;
         }
+        $created = [];
         foreach ($newNames as $name) {
-            $studio = $this->studios->findOneByName($name);
+            // findOneByName() queries the DB, so a name repeated in one request is tracked locally.
+            $studio = $created[$name] ?? $this->studios->findOneByName($name);
             if ($studio === null) {
                 $studio = new Studio();
                 $studio->rename($name);
                 $this->entityManager->persist($studio);
+                $created[$name] = $studio;
             }
             $wanted[spl_object_id($studio)] = $studio;
         }
