@@ -133,6 +133,7 @@ final class PluginWidgetControllerTest extends TestCase
                             'pluginId' => 'animedb-shikimori',
                             'widgetName' => 'related',
                             'active' => false,
+                            'slot' => 'bottom',
                             'title' => 'related',
                             'description' => 'related',
                             'pluginName' => 'Shikimori',
@@ -141,6 +142,7 @@ final class PluginWidgetControllerTest extends TestCase
                             'pluginId' => 'zzz-plugin',
                             'widgetName' => 'teaser',
                             'active' => false,
+                            'slot' => 'bottom',
                             'title' => 'teaser',
                             'description' => 'teaser',
                             'pluginName' => 'Zzz Plugin',
@@ -346,6 +348,66 @@ final class PluginWidgetControllerTest extends TestCase
             'animedb-shikimori',
             'related',
             Request::create('/settings/plugins/widgets/animedb-shikimori/related', 'POST', ['placement' => 'entry', 'active' => '1']),
+        );
+    }
+
+    public function testSlotStoresTheChosenSlotAndRedirectsToIndex(): void
+    {
+        $entryWidgets = new EntryWidgetRegistry(
+            ['animedb-shikimori:related' => $this->createStub(EntryWidgetInterface::class)],
+            new PluginsConfigStore($this->configPath),
+            $this->noopTranslator(),
+        );
+        $urlGenerator = $this->createStub(UrlGeneratorInterface::class);
+        $urlGenerator->method('generate')->willReturn('/settings/plugins/widgets');
+        $controller = $this->slotController($entryWidgets, $this->alwaysValidCsrf(), $urlGenerator);
+
+        $response = $controller->slot('animedb-shikimori', 'related', Request::create('/x', 'POST', ['slot' => 'side']));
+
+        $this->assertSame('/settings/plugins/widgets', $response->getTargetUrl());
+        $stored = json_decode((string) file_get_contents($this->configPath), true);
+        $this->assertSame('side', $stored['animedb-shikimori']['widget_slot']['related']);
+    }
+
+    public function testSlotThrowsBadRequestForAnUnknownSlotWithoutWriting(): void
+    {
+        $controller = $this->slotController(
+            new EntryWidgetRegistry([], new PluginsConfigStore($this->configPath), $this->noopTranslator()),
+            $this->alwaysValidCsrf(),
+            $this->createStub(UrlGeneratorInterface::class),
+        );
+
+        try {
+            $controller->slot('animedb-shikimori', 'related', Request::create('/x', 'POST', ['slot' => 'top']));
+            $this->fail('Expected BadRequestHttpException.');
+        } catch (BadRequestHttpException) {
+            $this->assertFileDoesNotExist($this->configPath);
+        }
+    }
+
+    public function testSlotThrowsBadRequestForAnInvalidCsrfToken(): void
+    {
+        $csrf = $this->createStub(CsrfTokenManagerInterface::class);
+        $csrf->method('isTokenValid')->willReturn(false);
+        $controller = $this->slotController(
+            new EntryWidgetRegistry([], new PluginsConfigStore($this->configPath), $this->noopTranslator()),
+            $csrf,
+            $this->createStub(UrlGeneratorInterface::class),
+        );
+
+        $this->expectException(BadRequestHttpException::class);
+        $controller->slot('animedb-shikimori', 'related', Request::create('/x', 'POST', ['slot' => 'side']));
+    }
+
+    private function slotController(EntryWidgetRegistry $entryWidgets, CsrfTokenManagerInterface $csrf, UrlGeneratorInterface $urlGenerator): PluginWidgetController
+    {
+        return new PluginWidgetController(
+            $this->installedPlugins(),
+            $entryWidgets,
+            new CatalogWidgetRegistry([], new PluginsConfigStore($this->configPath), $this->noopTranslator()),
+            $csrf,
+            $urlGenerator,
+            $this->createStub(Environment::class),
         );
     }
 

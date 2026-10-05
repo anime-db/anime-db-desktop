@@ -47,13 +47,14 @@ use Twig\Environment;
  */
 final class PluginWidgetsSettingsTemplateRenderingTest extends KernelTestCase
 {
-    /** @return list<array{pluginId: string, widgetName: string, active: bool, title: string, description: string, pluginName: string}> */
+    /** @return list<array{pluginId: string, widgetName: string, active: bool, slot: string, title: string, description: string, pluginName: string}> */
     private function oneWidgetRow(): array
     {
         return [[
             'pluginId' => 'animedb-shikimori',
             'widgetName' => 'related',
             'active' => true,
+            'slot' => 'bottom',
             'title' => 'Related anime',
             'description' => '',
             'pluginName' => 'Shikimori',

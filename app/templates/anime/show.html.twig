@@ -154,6 +154,8 @@
                         </ul>
                     </section>
                 {% endif %}
+
+                {{ include('plugin/_widget_slots.html.twig', {widgets: widgets|filter(w => w.slot == 'side'), entryId: anime.id}) }}
             </div>
         </div>
 
@@ -166,7 +168,7 @@
 
             {{ include('anime/_gallery.html.twig', {anime: anime, fillable_fields: fillable_fields}) }}
 
-            {{ include('plugin/_widget_slots.html.twig', {widgets: widgets, entryId: anime.id}) }}
+            {{ include('plugin/_widget_slots.html.twig', {widgets: widgets|filter(w => w.slot == 'bottom'), entryId: anime.id}) }}
         </div>
     </main>
 {% endblock %}

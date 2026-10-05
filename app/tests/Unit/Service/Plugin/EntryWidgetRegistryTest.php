@@ -183,12 +183,14 @@ final class EntryWidgetRegistryTest extends TestCase
                     'widgetName' => 'recommended',
                     'title' => 'recommended',
                     'pluginName' => 'animedb-shikimori',
+                    'slot' => 'bottom',
                 ],
                 [
                     'pluginId' => 'animedb-anilist',
                     'widgetName' => 'related',
                     'title' => 'related',
                     'pluginName' => 'animedb-anilist',
+                    'slot' => 'bottom',
                 ],
             ],
             $registry->findAllActive(),
@@ -225,6 +227,7 @@ final class EntryWidgetRegistryTest extends TestCase
                 'widgetName' => 'related',
                 'title' => 'Related titles',
                 'pluginName' => 'Shikimori',
+                'slot' => 'bottom',
             ]],
             $registry->findAllActive(),
         );
@@ -270,6 +273,7 @@ final class EntryWidgetRegistryTest extends TestCase
                     'pluginId' => 'animedb-shikimori',
                     'widgetName' => 'related',
                     'active' => false,
+                    'slot' => 'bottom',
                     'title' => 'related',
                     'description' => 'related',
                 ],
@@ -277,6 +281,7 @@ final class EntryWidgetRegistryTest extends TestCase
                     'pluginId' => 'animedb-shikimori',
                     'widgetName' => 'recommended',
                     'active' => true,
+                    'slot' => 'bottom',
                     'title' => 'recommended',
                     'description' => 'recommended',
                 ],
@@ -304,6 +309,7 @@ final class EntryWidgetRegistryTest extends TestCase
                 'pluginId' => 'animedb-shikimori',
                 'widgetName' => 'related',
                 'active' => false,
+                'slot' => 'bottom',
                 'title' => 'Related titles',
                 'description' => 'Shows related anime titles.',
             ]],
@@ -391,5 +397,67 @@ final class EntryWidgetRegistryTest extends TestCase
         $registry->setActive(new PluginId('animedb-shikimori'), 'w1', true);
 
         $this->assertSame(5, \count($registry->findAllActive()));
+    }
+
+    public function testSlotDefaultsToBottomAndUnknownStoredValueFallsBackToIt(): void
+    {
+        file_put_contents($this->path, json_encode([
+            'animedb-shikimori' => ['features' => ['w1' => true, 'w2' => true], 'widget_slot' => ['w2' => 'nonsense']],
+        ]));
+
+        $registry = new EntryWidgetRegistry(
+            ['animedb-shikimori:w1' => new FakeEntryWidget(), 'animedb-shikimori:w2' => new FakeEntryWidget()],
+            new PluginsConfigStore($this->path),
+            $this->noopTranslator(),
+        );
+
+        $this->assertSame(['bottom', 'bottom'], array_column($registry->findAllActive(), 'slot'));
+    }
+
+    public function testSetSlotPersistsAndSurvivesDisableAndEnable(): void
+    {
+        $id = new PluginId('animedb-shikimori');
+        $registry = new EntryWidgetRegistry(
+            ['animedb-shikimori:w1' => new FakeEntryWidget(), 'animedb-shikimori:w2' => new FakeEntryWidget()],
+            new PluginsConfigStore($this->path),
+            $this->noopTranslator(),
+        );
+        $registry->setActive($id, 'w1', true);
+        $registry->setActive($id, 'w2', true);
+        $registry->setSlot($id, 'w2', EntryWidgetRegistry::SLOT_SIDE);
+
+        $registry->setActive($id, 'w2', false);
+        $registry->setActive($id, 'w2', true);
+
+        $slots = array_column($registry->findAllActive(), 'slot', 'widgetName');
+        $this->assertSame(['w1' => 'bottom', 'w2' => 'side'], $slots);
+        $this->assertSame('side', json_decode((string) file_get_contents($this->path), true)['animedb-shikimori']['widget_slot']['w2']);
+    }
+
+    public function testSetSlotRejectsAnUnknownSlot(): void
+    {
+        $registry = new EntryWidgetRegistry([], new PluginsConfigStore($this->path), $this->noopTranslator());
+
+        $this->expectException(\InvalidArgumentException::class);
+        $registry->setSlot(new PluginId('animedb-shikimori'), 'w1', 'top');
+    }
+
+    public function testHardLimitIsSharedAcrossSlots(): void
+    {
+        file_put_contents($this->path, json_encode([
+            'animedb-shikimori' => [
+                'features' => ['w1' => true, 'w2' => true, 'w3' => true, 'w4' => true, 'w5' => true],
+                'widget_slot' => ['w1' => 'side', 'w2' => 'side', 'w3' => 'side', 'w4' => 'side', 'w5' => 'side'],
+            ],
+        ]));
+
+        $widgets = [];
+        foreach (['w1', 'w2', 'w3', 'w4', 'w5', 'w6'] as $name) {
+            $widgets["animedb-shikimori:{$name}"] = new FakeEntryWidget();
+        }
+        $registry = new EntryWidgetRegistry($widgets, new PluginsConfigStore($this->path), $this->noopTranslator());
+
+        $this->expectException(WidgetHardLimitExceededException::class);
+        $registry->setActive(new PluginId('animedb-shikimori'), 'w6', true);
     }
 }

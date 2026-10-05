@@ -63,6 +63,16 @@ final class EntryWidgetRegistry
      */
     public const int RECOMMENDED_LIMIT = 2;
 
+    /**
+     * Where on the anime detail page a widget is shown (issue #917): full width after the gallery
+     * or in the right column after the "Files" block. Not to be confused with the page-level
+     * placement (entry/catalog). Stored as `widget_slot.{widgetName}` in plugins.json and kept
+     * when the widget is turned off.
+     */
+    public const string SLOT_BOTTOM = 'bottom';
+    public const string SLOT_SIDE = 'side';
+    public const array SLOTS = [self::SLOT_BOTTOM, self::SLOT_SIDE];
+
     /** @param iterable<string, EntryWidgetInterface> $widgets keyed by "{pluginId}:{widgetName}" */
     public function __construct(
         #[AutowireIterator('app.entry_widget', indexAttribute: 'id')]
@@ -94,8 +104,8 @@ final class EntryWidgetRegistry
      * host's slot header (issue #728) needs both to tell the widget's data apart from the user's
      * own catalog.
      *
-     * @return list<array{pluginId: string, widgetName: string, title: string, pluginName: string}> active
-     *                                                                                              widget slots to render, one HTMX placeholder per entry
+     * @return list<array{pluginId: string, widgetName: string, title: string, pluginName: string, slot: string}> active
+     *                                                                                                            widget slots to render, one HTMX placeholder per entry
      */
     public function findAllActive(): array
     {
@@ -111,6 +121,7 @@ final class EntryWidgetRegistry
                 'widgetName' => $widgetName,
                 'title' => $this->translate($widget::metadata()->titleKey, $pluginId, $widgetName),
                 'pluginName' => $this->pluginName($pluginId),
+                'slot' => $this->slot(new PluginId($pluginId), $widgetName),
             ];
         }
 
@@ -129,8 +140,8 @@ final class EntryWidgetRegistry
      * display. This also protects against the plugin shipping its key before the host does
      * (issue #377's rollout note: host ships first, plugins follow).
      *
-     * @return list<array{pluginId: string, widgetName: string, active: bool, title: string, description: string}> every
-     *                                                                                                             registered widget, active or not, for the settings UI (issue #213/#364)
+     * @return list<array{pluginId: string, widgetName: string, active: bool, slot: string, title: string, description: string}> every
+     *                                                                                                                           registered widget, active or not, for the settings UI (issue #213/#364)
      */
     public function listAll(): array
     {
@@ -142,6 +153,7 @@ final class EntryWidgetRegistry
                 'pluginId' => $pluginId,
                 'widgetName' => $widgetName,
                 'active' => $this->isActive(new PluginId($pluginId), $widgetName),
+                'slot' => $this->slot(new PluginId($pluginId), $widgetName),
                 'title' => $this->translate($metadata->titleKey, $pluginId, $widgetName),
                 'description' => $this->translate($metadata->descriptionKey, $pluginId, $widgetName),
             ];
@@ -160,6 +172,35 @@ final class EntryWidgetRegistry
     public function setActive(PluginId $pluginId, string $widgetName, bool $active): void
     {
         $this->changeActive($pluginId, $widgetName, $active, \count($this->findAllActive()));
+    }
+
+    /**
+     * Persists the slot of a widget regardless of its active state, so the choice survives
+     * turning the widget off and on again.
+     *
+     * @throws \InvalidArgumentException                   for an unknown slot
+     * @throws Exception\PluginsConfigStoreLockedException
+     */
+    public function setSlot(PluginId $pluginId, string $widgetName, string $slot): void
+    {
+        if (!\in_array($slot, self::SLOTS, true)) {
+            throw new \InvalidArgumentException(\sprintf('Unknown widget slot "%s".', $slot));
+        }
+
+        $this->pluginsConfigStore->updatePluginSettings($pluginId, static function (array $settings) use ($widgetName, $slot): array {
+            $settings['widget_slot'][$widgetName] = $slot;
+
+            return $settings;
+        });
+    }
+
+    /** A missing or unknown stored value means {@see self::SLOT_BOTTOM}. */
+    private function slot(PluginId $pluginId, string $widgetName): string
+    {
+        $slots = $this->pluginsConfigStore->getPluginSettings($pluginId)['widget_slot'] ?? [];
+        $slot = \is_array($slots) ? ($slots[$widgetName] ?? null) : null;
+
+        return \in_array($slot, self::SLOTS, true) ? $slot : self::SLOT_BOTTOM;
     }
 
     /** @return array<string, EntryWidgetInterface> */

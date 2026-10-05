@@ -182,6 +182,9 @@ settings_plugin_widgets:
     plugin_column: Плагин
     widget_column: Виджет
     active_column: Включён
+    slot_column: Место на карточке
+    slot_bottom: Внизу
+    slot_side: Справа
     active_count: 'Активно виджетов: %count% из %limit%.'
     recommendation_warning: Рекомендуется не более %limit% активных виджетов — большее количество может перегрузить интерфейс и снизить производительность.
     hard_limit_reached: Достигнут жёсткий лимит в %limit% активных виджетов для этого размещения.

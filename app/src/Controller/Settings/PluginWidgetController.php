@@ -110,6 +110,31 @@ final class PluginWidgetController
         return new RedirectResponse($this->urlGenerator->generate('settings_plugin_widgets_index'));
     }
 
+    #[Route('/settings/plugins/widgets/{pluginId}/{widgetName}/slot', name: 'settings_plugin_widgets_slot', methods: ['POST'])]
+    public function slot(string $pluginId, string $widgetName, Request $request): RedirectResponse
+    {
+        $this->assertValidCsrfToken('settings_plugin_widgets_slot_'.$pluginId.'_'.$widgetName, $request);
+
+        try {
+            $id = new PluginId($pluginId);
+        } catch (InvalidPluginIdException) {
+            throw new NotFoundHttpException(\sprintf('Unknown plugin "%s".', $pluginId));
+        }
+
+        $slot = (string) $request->request->get('slot', '');
+        if (!\in_array($slot, EntryWidgetRegistry::SLOTS, true)) {
+            throw new BadRequestHttpException('Parameter "slot" must be "bottom" or "side".');
+        }
+
+        try {
+            $this->entryWidgets->setSlot($id, $widgetName, $slot);
+        } catch (PluginsConfigStoreLockedException) {
+            return new RedirectResponse($this->urlGenerator->generate('settings_plugin_widgets_index', ['error' => 'busy_retry']));
+        }
+
+        return new RedirectResponse($this->urlGenerator->generate('settings_plugin_widgets_index'));
+    }
+
     private function renderIndex(string $error, int $limitReached = 0): Response
     {
         $installedPlugins = $this->installedPlugins->all();
@@ -136,11 +161,11 @@ final class PluginWidgetController
     }
 
     /**
-     * @param list<array{pluginId: string, widgetName: string, active: bool, title: string, description: string}> $widgets
-     * @param array<string, string>                                                                               $pluginNames
-     * @param array<string, int>                                                                                  $installOrder
+     * @param list<array<string, mixed>> $widgets
+     * @param array<string, string>      $pluginNames
+     * @param array<string, int>         $installOrder
      *
-     * @return list<array{pluginId: string, pluginName: string, widgetName: string, active: bool, title: string, description: string}>
+     * @return list<array<string, mixed>>
      */
     private function decorate(array $widgets, array $pluginNames, array $installOrder): array
     {

@@ -39,6 +39,7 @@
                         <th>{{ 'settings_plugin_widgets.plugin_column'|trans }}</th>
                         <th>{{ 'settings_plugin_widgets.widget_column'|trans }}</th>
                         <th>{{ 'settings_plugin_widgets.active_column'|trans }}</th>
+                        {% if placement == 'entry' %}<th>{{ 'settings_plugin_widgets.slot_column'|trans }}</th>{% endif %}
                     </tr>
                 </thead>
                 <tbody>
@@ -68,6 +69,19 @@
                                     >
                                 </form>
                             </td>
+                            {% if placement == 'entry' %}
+                                <td>
+                                    {% if widget.active %}
+                                        <form method="post" action="{{ path('settings_plugin_widgets_slot', {pluginId: widget.pluginId, widgetName: widget.widgetName}) }}">
+                                            <input type="hidden" name="_token" value="{{ csrf_token('settings_plugin_widgets_slot_'~widget.pluginId~'_'~widget.widgetName) }}">
+                                            <select class="form-select form-select-sm" name="slot" data-submit-on-change>
+                                                <option value="bottom" {% if widget.slot == 'bottom' %}selected{% endif %}>{{ 'settings_plugin_widgets.slot_bottom'|trans }}</option>
+                                                <option value="side" {% if widget.slot == 'side' %}selected{% endif %}>{{ 'settings_plugin_widgets.slot_side'|trans }}</option>
+                                            </select>
+                                        </form>
+                                    {% endif %}
+                                </td>
+                            {% endif %}
                         </tr>
                     {% endfor %}
                 </tbody>
