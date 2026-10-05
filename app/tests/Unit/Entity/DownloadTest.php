@@ -112,7 +112,6 @@ final class DownloadTest extends TestCase
     {
         yield 'disk_space' => ['disk_space'];
         yield 'name_conflict' => ['name_conflict'];
-        yield 'move_failed' => ['move_failed'];
         yield 'null (pre-#852 row)' => [null];
     }
 
@@ -129,6 +128,21 @@ final class DownloadTest extends TestCase
         $this->assertSame(DownloadStatus::Pending, $download->getStatus());
         $this->assertNull($download->getFailureReason());
         $this->assertSame(0, $download->getMoveAttempts());
+    }
+
+    public function testRetryAfterMoveFailedKeepsMoveAttemptsAtOne(): void
+    {
+        $download = new Download(self::INFO_HASH, $this->makeAnime());
+        $download->markFailed('move_failed');
+        $download->incrementMoveAttempts();
+        $download->incrementMoveAttempts();
+        $download->incrementMoveAttempts();
+
+        $this->assertTrue($download->retry());
+
+        $this->assertSame(DownloadStatus::Pending, $download->getStatus());
+        $this->assertNull($download->getFailureReason());
+        $this->assertSame(1, $download->getMoveAttempts());
     }
 
     /**
