@@ -43,6 +43,8 @@ use App\EventListener\AnimeAggregateTouchListener;
 use App\EventListener\AnimeSearchIndexListener;
 use App\Message\IndexAnimeMessage;
 use App\Repository\StudioRepository;
+use App\Service\Media\AnimeCoverStorage;
+use App\Service\Media\ImageNormalizer;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\EntityManager;
@@ -50,6 +52,7 @@ use Doctrine\ORM\Events;
 use Doctrine\ORM\ORMSetup;
 use Doctrine\ORM\Tools\SchemaTool;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
@@ -77,11 +80,20 @@ final class AnimeEditControllerTest extends TestCase
 
     private ?int $editedId = null;
 
+    private string $mediaDir;
+
+    private string $uploadDir;
+
     /** @var list<object> */
     private array $dispatched = [];
 
     protected function setUp(): void
     {
+        $base = sys_get_temp_dir().'/anime-edit-cover-'.bin2hex(random_bytes(4));
+        $this->mediaDir = $base.'/media';
+        $this->uploadDir = $base.'/upload';
+        mkdir($this->mediaDir, 0o755, true);
+        mkdir($this->uploadDir, 0o755, true);
         if (!Type::hasType(UnixTimestampType::NAME)) {
             Type::addType(UnixTimestampType::NAME, UnixTimestampType::class);
         }
@@ -104,6 +116,18 @@ final class AnimeEditControllerTest extends TestCase
         $eventManager = $this->entityManager->getEventManager();
         $eventManager->addEventListener(Events::onFlush, new AnimeAggregateTouchListener());
         $eventManager->addEventListener(Events::postUpdate, new AnimeSearchIndexListener($bus));
+    }
+
+    protected function tearDown(): void
+    {
+        $base = \dirname($this->mediaDir);
+        foreach (glob($base.'/*/*/*') ?: [] as $file) {
+            @unlink($file);
+        }
+        foreach (array_merge(glob($base.'/*/*') ?: [], glob($base.'/*') ?: []) as $path) {
+            is_dir($path) ? @rmdir($path) : @unlink($path);
+        }
+        @rmdir($base);
     }
 
     public function testGetRendersTheFormPrefilledFromTheEntry(): void
@@ -480,6 +504,186 @@ final class AnimeEditControllerTest extends TestCase
         $this->assertSame('-3', $this->renderedParams()['form']['duration_minutes']);
     }
 
+    /** @return iterable<string, array{string}> */
+    public static function imageFormats(): iterable
+    {
+        yield 'png' => ['png'];
+        yield 'jpg' => ['jpg'];
+        yield 'webp' => ['webp'];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('imageFormats')]
+    public function testUploadedImageBecomesTheCoverAsAWebpFileInTheMediaDirectory(string $format): void
+    {
+        $anime = $this->persistTv();
+
+        $response = $this->controller()->update($anime, $this->post([], $this->upload($this->imageBytes($format), 'cover.'.$format)));
+
+        $this->assertInstanceOf(RedirectResponse::class, $response);
+        $cover = $this->reload($anime)->getCover();
+        $this->assertNotNull($cover);
+        $this->assertMatchesRegularExpression('/^[0-9a-f]{40}\.webp$/', $cover);
+        $path = $this->mediaDir.'/'.$anime->id.'/'.$cover;
+        $this->assertFileExists($path);
+        $this->assertSame('RIFF', substr((string) file_get_contents($path), 0, 4));
+    }
+
+    public function testNotAnImageIsRejectedAndTheCoverStaysTheSame(): void
+    {
+        $anime = $this->persistTv(static fn (TvAnime $a) => $a->setCover('old.webp'));
+
+        $this->controller()->update($anime, $this->post(['title' => 'Changed'], $this->upload('<?php echo 1;', 'cover.png')));
+
+        $this->assertSame('anime_edit.error_cover_invalid', $this->renderedParams()['errors']['cover']);
+        $this->assertSame('old.webp', $this->reload($anime)->getCover());
+        $this->assertSame('Sousou no Frieren', $this->reload($anime)->getTitle());
+        $this->assertSame([], glob($this->mediaDir.'/*/*') ?: []);
+    }
+
+    public function testAnImageOfAnotherFormatIsRejected(): void
+    {
+        $anime = $this->persistTv();
+
+        $this->controller()->update($anime, $this->post([], $this->upload($this->imageBytes('gif'), 'cover.png')));
+
+        $this->assertSame('anime_edit.error_cover_invalid', $this->renderedParams()['errors']['cover']);
+        $this->assertNull($this->reload($anime)->getCover());
+    }
+
+    public function testATooLargeFileIsRejectedAndTheCoverStaysTheSame(): void
+    {
+        $anime = $this->persistTv(static fn (TvAnime $a) => $a->setCover('old.webp'));
+        $big = $this->imageBytes('png').str_repeat("\0", AnimeCoverStorage::MAX_BYTES);
+
+        $this->controller()->update($anime, $this->post([], $this->upload($big, 'cover.png')));
+
+        $this->assertSame('anime_edit.error_cover_too_large', $this->renderedParams()['errors']['cover']);
+        $this->assertSame('old.webp', $this->reload($anime)->getCover());
+    }
+
+    public function testACoverErrorKeepsTheOtherTypedValues(): void
+    {
+        $anime = $this->persistTv();
+
+        $this->controller()->update($anime, $this->post(['notes' => 'Typed note'], $this->upload('nope', 'cover.png')));
+
+        $this->assertSame('Typed note', $this->renderedParams()['form']['notes']);
+    }
+
+    public function testReplacingTheCoverDeletesTheOldFile(): void
+    {
+        $anime = $this->persistTv();
+        $old = $this->placeFile($anime, 'old-cover');
+        $anime->setCover($old);
+        $this->entityManager->flush();
+
+        $this->controller()->update($anime, $this->post([], $this->upload($this->imageBytes('png'), 'cover.png')));
+
+        $reloaded = $this->reload($anime);
+        $this->assertNotSame($old, $reloaded->getCover());
+        $this->assertFileDoesNotExist($this->mediaDir.'/'.$anime->id.'/'.$old);
+        $this->assertFileExists($this->mediaDir.'/'.$anime->id.'/'.$reloaded->getCover());
+    }
+
+    public function testReplacingACoverSharedWithTheGalleryKeepsTheGalleryFile(): void
+    {
+        $anime = $this->persistTv();
+        $shared = $this->placeFile($anime, 'shared');
+        $anime->setCover($shared);
+        $anime->addImage($shared);
+        $this->entityManager->flush();
+
+        $this->controller()->update($anime, $this->post([], $this->upload($this->imageBytes('png'), 'cover.png')));
+
+        $reloaded = $this->reload($anime);
+        $this->assertNotSame($shared, $reloaded->getCover());
+        $this->assertFileExists($this->mediaDir.'/'.$anime->id.'/'.$shared);
+        $this->assertSame([$shared], array_map(static fn ($image): string => $image->source, $reloaded->getImages()->toArray()));
+    }
+
+    public function testUploadingTheSamePictureAgainKeepsTheFile(): void
+    {
+        $anime = $this->persistTv();
+        $this->controller()->update($anime, $this->post([], $this->upload($this->imageBytes('png'), 'cover.png')));
+        $cover = $this->reload($anime)->getCover();
+
+        $this->controller()->update($this->reload($anime), $this->post([], $this->upload($this->imageBytes('png'), 'cover.png')));
+
+        $this->assertSame($cover, $this->reload($anime)->getCover());
+        $this->assertFileExists($this->mediaDir.'/'.$anime->id.'/'.$cover);
+    }
+
+    public function testRemovingTheCoverClearsItAndDeletesTheFile(): void
+    {
+        $anime = $this->persistTv();
+        $old = $this->placeFile($anime, 'old-cover');
+        $anime->setCover($old);
+        $this->entityManager->flush();
+
+        $this->controller()->update($anime, $this->post(['cover_remove' => '1']));
+
+        $this->assertNull($this->reload($anime)->getCover());
+        $this->assertFileDoesNotExist($this->mediaDir.'/'.$anime->id.'/'.$old);
+    }
+
+    public function testRemovingACoverSharedWithTheGalleryKeepsTheGalleryFile(): void
+    {
+        $anime = $this->persistTv();
+        $shared = $this->placeFile($anime, 'shared');
+        $anime->setCover($shared);
+        $anime->addImage($shared);
+        $this->entityManager->flush();
+
+        $this->controller()->update($anime, $this->post(['cover_remove' => '1']));
+
+        $this->assertNull($this->reload($anime)->getCover());
+        $this->assertFileExists($this->mediaDir.'/'.$anime->id.'/'.$shared);
+    }
+
+    public function testSavingWithoutTouchingTheCoverKeepsItAndItsFile(): void
+    {
+        $anime = $this->persistTv();
+        $old = $this->placeFile($anime, 'old-cover');
+        $anime->setCover($old);
+        $this->entityManager->flush();
+
+        $this->controller()->update($anime, $this->post([]));
+
+        $this->assertSame($old, $this->reload($anime)->getCover());
+        $this->assertFileExists($this->mediaDir.'/'.$anime->id.'/'.$old);
+    }
+
+    private function placeFile(Anime $anime, string $content): string
+    {
+        $name = sha1($content).'.webp';
+        mkdir($this->mediaDir.'/'.$anime->id, 0o755, true);
+        file_put_contents($this->mediaDir.'/'.$anime->id.'/'.$name, $content);
+
+        return $name;
+    }
+
+    private function imageBytes(string $format): string
+    {
+        $image = imagecreatetruecolor(8, 8);
+        ob_start();
+        match ($format) {
+            'png' => imagepng($image),
+            'jpg' => imagejpeg($image),
+            'webp' => imagewebp($image),
+            default => imagegif($image),
+        };
+
+        return (string) ob_get_clean();
+    }
+
+    private function upload(string $bytes, string $name): UploadedFile
+    {
+        $path = $this->uploadDir.'/'.bin2hex(random_bytes(4));
+        file_put_contents($path, $bytes);
+
+        return new UploadedFile($path, $name, null, null, true);
+    }
+
     /** @param (callable(TvAnime): mixed)|null $configure */
     private function persistTv(?callable $configure = null): TvAnime
     {
@@ -536,9 +740,9 @@ final class AnimeEditControllerTest extends TestCase
     }
 
     /** @param array<string, mixed> $fields */
-    private function post(array $fields): Request
+    private function post(array $fields, ?UploadedFile $cover = null): Request
     {
-        return new Request(request: ['_token' => 'token'] + $fields + ['title' => 'Sousou no Frieren']);
+        return new Request(request: ['_token' => 'token'] + $fields + ['title' => 'Sousou no Frieren'], files: $cover === null ? [] : ['cover' => $cover]);
     }
 
     /** @return array<string, mixed> */
@@ -564,6 +768,6 @@ final class AnimeEditControllerTest extends TestCase
             return '';
         });
 
-        return new AnimeEditController($this->entityManager, $csrf, $urls, $twig, new StudioRepository($this->entityManager));
+        return new AnimeEditController($this->entityManager, $csrf, $urls, $twig, new StudioRepository($this->entityManager), new AnimeCoverStorage(new ImageNormalizer(), $this->mediaDir));
     }
 }

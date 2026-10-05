@@ -636,8 +636,11 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
                 'countries' => 'JP',
                 'sources' => ['https://ok.example/', 'bad url'],
                 'notes' => 'Typed notes',
+                'cover_remove' => true,
             ],
-            'errors' => ['title' => 'anime_edit.error_title_required', 'date_end' => 'anime_edit.error_date_range', 'sources.1' => 'anime_edit.error_url_invalid'],
+            'cover' => 'abc.webp',
+            'cover_max_bytes' => 5 * 1024 * 1024,
+            'errors' => ['title' => 'anime_edit.error_title_required', 'date_end' => 'anime_edit.error_date_range', 'sources.1' => 'anime_edit.error_url_invalid', 'cover' => 'anime_edit.error_cover_invalid'],
             'genre_choices' => ['action', 'drama'],
             'theme_choices' => ['military'],
             'demographic_choices' => ['shounen'],
@@ -658,6 +661,11 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
         $this->assertStringContainsString('name="names[0][name]" value="AoT"', $html);
         $this->assertStringContainsString('name="sources[__INDEX__]"', $html, 'the add-row template must carry the index placeholder');
         $this->assertStringContainsString('name="episodes_count"', $html);
+        $this->assertStringContainsString('enctype="multipart/form-data"', $html);
+        $this->assertStringContainsString('<input type="file" id="anime-edit-cover" name="cover"', $html);
+        $this->assertStringContainsString('src="app-media://anime/1/abc.webp"', $html);
+        $this->assertMatchesRegularExpression('#name="cover_remove" value="1" checked#', $html);
+        $this->assertStringContainsString('The file is not a PNG, JPEG or WebP image.', $html);
     }
 
     public function testEditFormListsStudiosAsCheckboxesWithTheEntryOnesCheckedAndFirst(): void
@@ -674,8 +682,10 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
                 'title' => 'T', 'names' => [], 'descriptions' => [], 'genres' => [], 'themes' => [],
                 'studios' => ['9'], 'new_studios' => [], 'demographic' => '', 'date_premiere' => '',
                 'date_end' => '', 'duration_minutes' => '', 'episodes_count' => '', 'countries' => '',
-                'sources' => [], 'notes' => '',
+                'sources' => [], 'notes' => '', 'cover_remove' => false,
             ],
+            'cover' => null,
+            'cover_max_bytes' => 5 * 1024 * 1024,
             'errors' => [],
             'genre_choices' => [],
             'theme_choices' => [],
