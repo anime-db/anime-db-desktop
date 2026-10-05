@@ -50,7 +50,9 @@ use App\Service\Exception\InsufficientDiskSpaceException;
 use App\Service\Exception\InvalidTorrentFileException;
 use App\Service\Exception\QbittorrentClientException;
 use Doctrine\ORM\EntityManagerInterface;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpFoundation\File\Exception\FileException;
 use Symfony\Component\HttpFoundation\File\File;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
@@ -136,6 +138,7 @@ final class DownloadNewControllerTest extends TestCase
         ?UrlGeneratorInterface $urlGenerator = null,
         ?TranslatorInterface $translator = null,
         ?Environment $twig = null,
+        ?LoggerInterface $logger = null,
     ): DownloadNewController {
         if ($animeRepository === null) {
             $animeRepository = $this->createStub(AnimeRepository::class);
@@ -205,6 +208,7 @@ final class DownloadNewControllerTest extends TestCase
             $urlGenerator,
             $translator,
             $twig,
+            $logger ?? $this->createStub(LoggerInterface::class),
         );
     }
 
@@ -869,5 +873,117 @@ final class DownloadNewControllerTest extends TestCase
         $controller = $this->createController(storageRepository: $storageRepository, presetStorageProvider: $presetProvider, settings: $settings, twig: $twig);
 
         $controller->new(Request::create('/downloads/new'));
+    }
+
+    /**
+     * @return iterable<string, array{\Throwable}>
+     */
+    public static function presetFailureProvider(): iterable
+    {
+        yield 'runtime' => [new \RuntimeException('mkdir failed')];
+        yield 'unavailable' => [new DownloadStorageUnavailableException(5, '/downloads/AnimeDB')];
+    }
+
+    #[DataProvider('presetFailureProvider')]
+    public function testPresetFailureHidesPresetAndWarns(\Throwable $failure): void
+    {
+        $writable = $this->makeStorage(2);
+        $storageRepository = $this->createStub(StorageRepository::class);
+        $storageRepository->method('findAllScannable')->willReturn([$writable]);
+
+        $presetProvider = $this->createStub(PresetDownloadsStorageProvider::class);
+        $presetProvider->method('getOrCreate')->willThrowException($failure);
+
+        $settings = $this->createStub(AppSettingsProvider::class);
+        $settings->method('getLastDownloadStorageId')->willReturn(2);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('downloads/new.html.twig', $this->callback(
+                static fn (array $params): bool => $params['presetFailed'] === true
+                    && $params['storages'] === [$writable]
+                    && $params['selectedStorageId'] === 2,
+            ))
+            ->willReturn('<html></html>');
+
+        $controller = $this->createController(storageRepository: $storageRepository, presetStorageProvider: $presetProvider, settings: $settings, twig: $twig);
+
+        $this->assertSame(200, $controller->new(Request::create('/downloads/new'))->getStatusCode());
+    }
+
+    #[DataProvider('presetFailureProvider')]
+    public function testPresetFailurePreselectsNothingWithoutValidLastStorage(\Throwable $failure): void
+    {
+        $storageRepository = $this->createStub(StorageRepository::class);
+        $storageRepository->method('findAllScannable')->willReturn([$this->makeStorage(2)]);
+
+        $presetProvider = $this->createStub(PresetDownloadsStorageProvider::class);
+        $presetProvider->method('getOrCreate')->willThrowException($failure);
+
+        $settings = $this->createStub(AppSettingsProvider::class);
+        $settings->method('getLastDownloadStorageId')->willReturn(99);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('downloads/new.html.twig', $this->callback(
+                static fn (array $params): bool => $params['selectedStorageId'] === null
+                    && $params['presetFailed'] === true,
+            ))
+            ->willReturn('<html></html>');
+
+        $controller = $this->createController(storageRepository: $storageRepository, presetStorageProvider: $presetProvider, settings: $settings, twig: $twig);
+
+        $controller->new(Request::create('/downloads/new'));
+    }
+
+    public function testPresetFailureOnFormErrorAfterPostStillRenders(): void
+    {
+        $presetProvider = $this->createStub(PresetDownloadsStorageProvider::class);
+        $presetProvider->method('getOrCreate')->willThrowException(new \RuntimeException('mkdir failed'));
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('downloads/new.html.twig', $this->callback(
+                static fn (array $params): bool => $params['presetFailed'] === true
+                    && $params['error'] === 'download_new.error_anime_required',
+            ))
+            ->willReturn('<html></html>');
+
+        $controller = $this->createController(presetStorageProvider: $presetProvider, twig: $twig);
+
+        $response = $controller->create($this->magnetRequest(['anime' => '0']));
+
+        $this->assertSame(200, $response->getStatusCode());
+    }
+
+    public function testPresetSuccessShowsNoWarning(): void
+    {
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('downloads/new.html.twig', $this->callback(
+                static fn (array $params): bool => $params['presetFailed'] === false
+                    && $params['selectedStorageId'] === 1,
+            ))
+            ->willReturn('<html></html>');
+
+        $this->createController(twig: $twig)->new(Request::create('/downloads/new'));
+    }
+
+    #[DataProvider('presetFailureProvider')]
+    public function testPresetFailureIsLoggedAsWarningWithException(\Throwable $failure): void
+    {
+        $presetProvider = $this->createStub(PresetDownloadsStorageProvider::class);
+        $presetProvider->method('getOrCreate')->willThrowException($failure);
+
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->once())
+            ->method('warning')
+            ->with($this->isString(), ['exception' => $failure]);
+
+        $this->createController(presetStorageProvider: $presetProvider, logger: $logger)->new(Request::create('/downloads/new'));
     }
 }
