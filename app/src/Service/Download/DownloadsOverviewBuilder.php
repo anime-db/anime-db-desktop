@@ -200,7 +200,7 @@ final class DownloadsOverviewBuilder
             'deleteFilesDefaultChecked' => $torrentPresent && $progress < 1.0,
             // Data may be deleted through the client only while it still sits in the storage's
             // incoming directory (issue #899); DownloadActionController re-checks this fresh.
-            'canDeleteFiles' => $this->incomingChecker->isInIncoming($torrent, $download->getTargetStorage()?->getPath()),
+            'canDeleteFiles' => $this->incomingChecker->canDeleteDataOf($download, $torrent),
         ];
     }
 

@@ -193,7 +193,7 @@ final class DownloadActionController
 
         $torrent = $this->findTorrent($download->getInfoHash());
         $deleteFiles = $request->request->getBoolean('delete_files')
-            && $this->incomingChecker->isInIncoming($torrent, $download->getTargetStorage()?->getPath());
+            && $this->incomingChecker->canDeleteDataOf($download, $torrent);
 
         $outcome = $this->actions->delete($download, $expected[0], $expected[1]);
         if ($outcome !== DownloadActionOutcome::Success) {

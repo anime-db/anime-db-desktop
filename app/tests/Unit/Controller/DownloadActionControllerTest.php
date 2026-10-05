@@ -165,6 +165,32 @@ final class DownloadActionControllerTest extends TestCase
         $this->assertSame('hashes=v2-hash&deleteFiles='.$expected, $this->deleteBody($contentPath, $root, $flag));
     }
 
+    public function testDeleteNeverForwardsDeleteFilesWhileTorrentIsMovingOrRelocationWasRequested(): void
+    {
+        $incoming = self::ROOT.'\\.anime-db\\incoming\\'.self::HASH.'\\Anime';
+        foreach (['moving state' => ['moving', false], 'move attempted' => ['uploading', true]] as [$state, $attempted]) {
+            $download = new Download(self::HASH, $this->persistAnime());
+            $download->assignTargetStorage($this->persistStorage(self::ROOT));
+            if ($attempted) {
+                $download->incrementMoveAttempts();
+            }
+            $this->repository->save($download);
+
+            $requests = [];
+            $controller = $this->createRecordingController(
+                [['infohash_v1' => self::HASH, 'hash' => 'v2-hash', 'content_path' => $incoming, 'state' => $state]],
+                $requests,
+            );
+            $controller->delete($download, $this->postActionRequest($download, ['delete_files' => '1']));
+
+            $bodies = array_values(array_map(
+                static fn (array $r): ?string => $r['body'],
+                array_filter($requests, static fn (array $r): bool => str_ends_with($r['url'], '/torrents/delete')),
+            ));
+            $this->assertSame(['hashes=v2-hash&deleteFiles=false'], $bodies);
+        }
+    }
+
     /** @return iterable<string, array{?string, bool, string}> */
     public static function deleteOrphanFilesProvider(): iterable
     {

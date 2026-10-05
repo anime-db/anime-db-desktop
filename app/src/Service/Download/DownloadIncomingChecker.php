@@ -27,6 +27,7 @@ declare(strict_types=1);
 
 namespace App\Service\Download;
 
+use App\Entity\Download;
 use App\Repository\StorageRepository;
 use App\Service\Exception\DownloadPathOutsideJailException;
 
@@ -50,13 +51,26 @@ final class DownloadIncomingChecker
     }
 
     /**
+     * For a row with a `downloads` card: in incoming AND no relocation underway — once
+     * {@see DownloadIncomingRelocator} has sent `setLocation` (moveAttempts > 0) qBittorrent moves
+     * the files asynchronously and `content_path` may still show the old incoming path.
+     *
+     * @param ?array<string, mixed> $torrent
+     */
+    public function canDeleteDataOf(Download $download, ?array $torrent): bool
+    {
+        return $download->getMoveAttempts() === 0
+            && $this->isInIncoming($torrent, $download->getTargetStorage()?->getPath());
+    }
+
+    /**
      * @param ?array<string, mixed> $torrent raw `torrents/info` entry, null when not in the client
      * @param ?string               $root    the row's `target_storage` path; null never matches
      */
     public function isInIncoming(?array $torrent, ?string $root): bool
     {
         $path = $this->pathOf($torrent);
-        if ($path === null || $root === null || $root === '') {
+        if ($path === null || $this->isMoving($torrent) || $root === null || $root === '') {
             return false;
         }
 
@@ -72,7 +86,7 @@ final class DownloadIncomingChecker
     public function isInIncomingOfAnyStorage(?array $torrent, ?array $roots = null): bool
     {
         $path = $this->pathOf($torrent);
-        if ($path === null) {
+        if ($path === null || $this->isMoving($torrent)) {
             return false;
         }
 
@@ -92,6 +106,12 @@ final class DownloadIncomingChecker
             static fn ($storage): string => $storage->getPath(),
             $this->storages->findAllOrderedByName(),
         ));
+    }
+
+    /** @param ?array<string, mixed> $torrent */
+    private function isMoving(?array $torrent): bool
+    {
+        return ($torrent['state'] ?? null) === 'moving';
     }
 
     /** @param ?array<string, mixed> $torrent */
