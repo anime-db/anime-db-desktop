@@ -238,14 +238,15 @@ describe('start', () => {
     // the worker only ever drains it once `async` is empty — see spawnProcess()'s docblock.
     // `scheduler_downloads_poll` (issue #685) and `scheduler_market_refresh` (issue #448) come
     // last for the same reason: a schedule tick must not jump ahead of either user-facing queue.
-    test('consumes async, then media, then scheduler_downloads_poll, then scheduler_market_refresh, in that order', async () => {
+    // `scheduler_sync_pull` (issue #870) is appended after them, the earlier order is unchanged.
+    test('consumes async, media, scheduler_downloads_poll, scheduler_market_refresh, then scheduler_sync_pull last, in that order', async () => {
         mockPhpCommandRun.mockResolvedValueOnce(undefined);
         spawn.mockReturnValueOnce(createFakeChild());
 
         await start(7700, 'test-key');
 
         const args = spawn.mock.calls[0][1];
-        expect(args.slice(-5)).toEqual(['messenger:consume', 'async', 'media', 'scheduler_downloads_poll', 'scheduler_market_refresh']);
+        expect(args.slice(-6)).toEqual(['messenger:consume', 'async', 'media', 'scheduler_downloads_poll', 'scheduler_market_refresh', 'scheduler_sync_pull']);
     });
 
     test('does not spawn messenger:consume when messenger:setup-transports rejects', async () => {

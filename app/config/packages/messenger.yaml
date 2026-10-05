@@ -45,6 +45,13 @@ framework:
             # #[AsSchedule('market_refresh')], not a queue.
             scheduler_market_refresh: 'schedule://market_refresh'
 
+            # Symfony Scheduler transport (issue #870), same pattern as scheduler_market_refresh:
+            # consuming it turns App\Scheduler\SyncPullSchedule's hourly recurring trigger into a
+            # dispatched App\Message\SyncPullTickMessage on every tick, resolved against the
+            # ScheduleProviderInterface service tagged #[AsSchedule('sync_pull')], not a queue.
+            # The tick only queues App\Message\SyncPullMessage onto `sync`; the pull runs there.
+            scheduler_sync_pull: 'schedule://sync_pull'
+
             # Background tasks scheduled by plugins via
             # AnimeDb\PluginContracts\Background\BackgroundTaskQueueInterface (issue #701, part 1
             # of 3 for #684). Same connection/table as `async`/`media` (queue_name is the only
@@ -87,6 +94,7 @@ framework:
             'App\Message\DeleteFromIndexMessage': async
             'App\Message\PushSyncMessage': async
             'App\Message\SyncSeedMessage': sync
+            'App\Message\SyncPullMessage': sync
             'App\Message\RefreshMarketSnapshotMessage': async
             'App\Message\DownloadAnimeMediaMessage': media
             'App\Message\RunPluginBackgroundTaskMessage': plugins

@@ -35,6 +35,7 @@ use App\Service\Plugin\ExternalIdBackfillService;
 use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Plugin\PullSyncService;
 use App\Service\Plugin\SyncRegistry;
+use App\Service\Sync\SyncPullGate;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 
@@ -72,6 +73,7 @@ final class SyncSeedMessageHandler
         private readonly PullSyncService $pullSyncService,
         private readonly PluginsConfigStore $pluginsConfigStore,
         private readonly JobLockService $jobLockService,
+        private readonly SyncPullGate $pullGate,
         private readonly LoggerInterface $logger,
     ) {
     }
@@ -122,7 +124,10 @@ final class SyncSeedMessageHandler
         $this->backfillService->backfill($pluginId, $sync);
 
         $seeded = $this->pullSyncService->pull($pluginId, $sync, fn () => $this->jobLockService->heartbeat($jobKey));
-        if (!$seeded) {
+        if ($seeded) {
+            // Issue #870: the seed is a successful pull too, so the periodic one waits its full age.
+            $this->pullGate->markPulled($pluginId);
+        } else {
             $this->logger->info('Connect-seed for plugin "{pluginId}" did not complete (needs reauthorization); resetting the seeded flag so the next settings-page visit retries it.', [
                 'pluginId' => $message->pluginId,
             ]);

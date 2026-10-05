@@ -41,27 +41,14 @@ use App\Entity\ValueObject\PluginId;
 use App\Message\SyncSeedMessage;
 use App\MessageHandler\SyncSeedMessageHandler;
 use App\Repository\AnimeRepository;
-use App\Repository\AnimeSyncStateRepository;
-use App\Repository\PendingSyncPushRepository;
-use App\Repository\StudioRepository;
-use App\Repository\SyncReviewItemRepository;
 use App\Service\JobLock\JobLockService;
 use App\Service\JobLock\ProcessLivenessChecker;
 use App\Service\Plugin\ExternalIdBackfillService;
-use App\Service\Plugin\Filler\BulkFillerService;
-use App\Service\Plugin\Filler\CachedFillerLookup;
-use App\Service\Plugin\Filler\PluginAnimeDataMerger;
-use App\Service\Plugin\Filler\PluginMediaDownloaderInterface;
-use App\Service\Plugin\FillerRegistry;
 use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Plugin\PullSyncService;
 use App\Service\Plugin\SyncRegistry;
-use App\Service\Search\AnimeSearchResolver;
-use App\Service\Sync\CrossVendorDuplicateDetector;
-use App\Service\Sync\DeletedFromSourceDetector;
-use App\Service\Sync\SyncConvergenceService;
-use App\Service\Sync\SyncReconciler;
-use App\Service\Sync\SyncReviewService;
+use App\Service\Sync\SyncPullGate;
+use App\Tests\Support\BuildsPullSyncService;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\EntityManager;
@@ -70,9 +57,7 @@ use Doctrine\ORM\Tools\SchemaTool;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
-use Symfony\Component\Cache\Adapter\ArrayAdapter;
 use Symfony\Component\Clock\MockClock;
-use Symfony\Component\Messenger\MessageBusInterface;
 
 /**
  * The handler itself is a thin dispatch onto {@see PullSyncService::pull()} (issue #381) — these
@@ -86,6 +71,8 @@ use Symfony\Component\Messenger\MessageBusInterface;
  */
 final class SyncSeedMessageHandlerTest extends TestCase
 {
+    use BuildsPullSyncService;
+
     private EntityManager $entityManager;
 
     protected function setUp(): void
@@ -113,7 +100,7 @@ final class SyncSeedMessageHandlerTest extends TestCase
         $sync->expects($this->once())->method('pull')->willReturn([]);
 
         [$syncRegistry, $pluginsConfigStore] = $this->newSyncRegistry(['animedb-shikimori' => $sync]);
-        $handler = new SyncSeedMessageHandler($syncRegistry, $this->newBackfillService(), $this->newPullSyncService($syncRegistry), $pluginsConfigStore, $this->jobLockService(), new NullLogger());
+        $handler = new SyncSeedMessageHandler($syncRegistry, $this->newBackfillService(), $this->newPullSyncService($syncRegistry), $pluginsConfigStore, $this->jobLockService(), $this->pullGate($pluginsConfigStore), new NullLogger());
 
         $handler(new SyncSeedMessage('animedb-shikimori'));
     }
@@ -131,12 +118,25 @@ final class SyncSeedMessageHandlerTest extends TestCase
         });
 
         [$syncRegistry, $pluginsConfigStore] = $this->newSyncRegistry(['animedb-shikimori' => $sync]);
-        $handler = new SyncSeedMessageHandler($syncRegistry, $this->newBackfillService(), $this->newPullSyncService($syncRegistry), $pluginsConfigStore, $jobLockService, new NullLogger());
+        $handler = new SyncSeedMessageHandler($syncRegistry, $this->newBackfillService(), $this->newPullSyncService($syncRegistry), $pluginsConfigStore, $jobLockService, $this->pullGate($pluginsConfigStore), new NullLogger());
 
         $handler(new SyncSeedMessage('animedb-shikimori'));
 
         $this->assertTrue($heldDuringPull);
         $this->assertFalse($jobLockService->isLocked(SyncSeedMessage::jobKey('animedb-shikimori')));
+    }
+
+    /** Issue #870: a successful seed counts as a pull, so the periodic one is not due right after it. */
+    public function testInvokeRecordsTheLastPullTimeAfterASuccessfulSeed(): void
+    {
+        $sync = $this->createMock(SyncInterface::class);
+        $sync->method('pull')->willReturn([]);
+
+        [$syncRegistry, $pluginsConfigStore] = $this->newSyncRegistry(['animedb-shikimori' => $sync]);
+        $this->newHandler($syncRegistry, $pluginsConfigStore)(new SyncSeedMessage('animedb-shikimori'));
+
+        $settings = $pluginsConfigStore->getPluginSettings(new PluginId('animedb-shikimori'));
+        $this->assertSame('2026-01-01T12:00:00+00:00', $settings['syncLastPullAt'] ?? null);
     }
 
     public function testInvokeSkipsWhenAnotherSeedForThePluginHoldsTheLock(): void
@@ -148,7 +148,7 @@ final class SyncSeedMessageHandlerTest extends TestCase
         $sync->expects($this->never())->method('pull');
 
         [$syncRegistry, $pluginsConfigStore] = $this->newSyncRegistry(['animedb-shikimori' => $sync]);
-        $handler = new SyncSeedMessageHandler($syncRegistry, $this->newBackfillService(), $this->newPullSyncService($syncRegistry), $pluginsConfigStore, $jobLockService, new NullLogger());
+        $handler = new SyncSeedMessageHandler($syncRegistry, $this->newBackfillService(), $this->newPullSyncService($syncRegistry), $pluginsConfigStore, $jobLockService, $this->pullGate($pluginsConfigStore), new NullLogger());
 
         $handler(new SyncSeedMessage('animedb-shikimori'));
     }
@@ -160,7 +160,7 @@ final class SyncSeedMessageHandlerTest extends TestCase
         $logger = $this->createMock(LoggerInterface::class);
         $logger->expects($this->once())->method('info');
 
-        $handler = new SyncSeedMessageHandler($syncRegistry, $this->newBackfillService(), $this->newPullSyncService($syncRegistry), $pluginsConfigStore, $this->jobLockService(), $logger);
+        $handler = new SyncSeedMessageHandler($syncRegistry, $this->newBackfillService(), $this->newPullSyncService($syncRegistry), $pluginsConfigStore, $this->jobLockService(), $this->pullGate($pluginsConfigStore), $logger);
 
         $handler(new SyncSeedMessage('animedb-shikimori'));
     }
@@ -177,7 +177,7 @@ final class SyncSeedMessageHandlerTest extends TestCase
         $sync->expects($this->once())->method('pull')->willThrowException(new ReauthRequiredException('Refresh token is dead.'));
 
         [$syncRegistry, $pluginsConfigStore] = $this->newSyncRegistry(['animedb-shikimori' => $sync], ['syncSeeded' => true]);
-        $handler = new SyncSeedMessageHandler($syncRegistry, $this->newBackfillService(), $this->newPullSyncService($syncRegistry), $pluginsConfigStore, $this->jobLockService(), new NullLogger());
+        $handler = new SyncSeedMessageHandler($syncRegistry, $this->newBackfillService(), $this->newPullSyncService($syncRegistry), $pluginsConfigStore, $this->jobLockService(), $this->pullGate($pluginsConfigStore), new NullLogger());
 
         $handler(new SyncSeedMessage('animedb-shikimori'));
 
@@ -283,8 +283,14 @@ final class SyncSeedMessageHandlerTest extends TestCase
             $this->newPullSyncService($syncRegistry),
             $pluginsConfigStore,
             $this->jobLockService(),
+            $this->pullGate($pluginsConfigStore),
             new NullLogger(),
         );
+    }
+
+    private function pullGate(PluginsConfigStore $pluginsConfigStore): SyncPullGate
+    {
+        return new SyncPullGate($pluginsConfigStore, new MockClock(new \DateTimeImmutable('2026-01-01T12:00:00+00:00')));
     }
 
     private function jobLockService(): JobLockService
@@ -338,57 +344,5 @@ final class SyncSeedMessageHandlerTest extends TestCase
         $pluginsConfigStore = new PluginsConfigStore($path);
 
         return [new SyncRegistry($syncs, $pluginsConfigStore), $pluginsConfigStore];
-    }
-
-    private function newPullSyncService(SyncRegistry $syncRegistry): PullSyncService
-    {
-        $bulkFillerService = new BulkFillerService(
-            // Never consulted here — the test's SyncInterface stub yields no new items.
-            new FillerRegistry([], new PluginsConfigStore(sys_get_temp_dir().'/anime-sync-seed-filler-'.uniqid().'.json')),
-            new PluginAnimeDataMerger(
-                new StudioRepository($this->entityManager),
-                $this->entityManager,
-                $this->createStub(PluginMediaDownloaderInterface::class),
-                new NullLogger(),
-            ),
-            $this->entityManager,
-            new NullLogger(),
-            $this->createMock(MessageBusInterface::class),
-            new AnimeRepository($this->entityManager),
-            new CachedFillerLookup(new ArrayAdapter()),
-        );
-
-        $duplicateDetector = new CrossVendorDuplicateDetector(
-            $this->createStub(AnimeSearchResolver::class),
-            new SyncReviewService(new SyncReviewItemRepository($this->entityManager)),
-            new NullLogger(),
-        );
-
-        $animeSyncStateRepository = new AnimeSyncStateRepository($this->entityManager);
-
-        $deletionDetector = new DeletedFromSourceDetector(
-            $syncRegistry,
-            new SyncReviewService(new SyncReviewItemRepository($this->entityManager)),
-            $animeSyncStateRepository,
-        );
-
-        $convergenceService = new SyncConvergenceService(
-            new SyncReconciler(),
-            $animeSyncStateRepository,
-            new PendingSyncPushRepository($this->entityManager),
-            $syncRegistry,
-            new SyncReviewService(new SyncReviewItemRepository($this->entityManager)),
-            new NullLogger(),
-        );
-
-        return new PullSyncService(
-            $this->entityManager,
-            new AnimeRepository($this->entityManager),
-            $bulkFillerService,
-            $duplicateDetector,
-            $deletionDetector,
-            $convergenceService,
-            new NullLogger(),
-        );
     }
 }
