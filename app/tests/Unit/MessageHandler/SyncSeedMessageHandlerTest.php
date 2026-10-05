@@ -113,7 +113,42 @@ final class SyncSeedMessageHandlerTest extends TestCase
         $sync->expects($this->once())->method('pull')->willReturn([]);
 
         [$syncRegistry, $pluginsConfigStore] = $this->newSyncRegistry(['animedb-shikimori' => $sync]);
-        $handler = new SyncSeedMessageHandler($syncRegistry, $this->newBackfillService(), $this->newPullSyncService($syncRegistry), $pluginsConfigStore, new NullLogger());
+        $handler = new SyncSeedMessageHandler($syncRegistry, $this->newBackfillService(), $this->newPullSyncService($syncRegistry), $pluginsConfigStore, $this->jobLockService(), new NullLogger());
+
+        $handler(new SyncSeedMessage('animedb-shikimori'));
+    }
+
+    public function testInvokeHoldsTheSeedLockDuringThePullAndReleasesItAfterwards(): void
+    {
+        $jobLockService = $this->jobLockService();
+        $heldDuringPull = null;
+
+        $sync = $this->createMock(SyncInterface::class);
+        $sync->expects($this->once())->method('pull')->willReturnCallback(static function () use ($jobLockService, &$heldDuringPull): array {
+            $heldDuringPull = $jobLockService->isLocked(SyncSeedMessage::jobKey('animedb-shikimori'));
+
+            return [];
+        });
+
+        [$syncRegistry, $pluginsConfigStore] = $this->newSyncRegistry(['animedb-shikimori' => $sync]);
+        $handler = new SyncSeedMessageHandler($syncRegistry, $this->newBackfillService(), $this->newPullSyncService($syncRegistry), $pluginsConfigStore, $jobLockService, new NullLogger());
+
+        $handler(new SyncSeedMessage('animedb-shikimori'));
+
+        $this->assertTrue($heldDuringPull);
+        $this->assertFalse($jobLockService->isLocked(SyncSeedMessage::jobKey('animedb-shikimori')));
+    }
+
+    public function testInvokeSkipsWhenAnotherSeedForThePluginHoldsTheLock(): void
+    {
+        $jobLockService = $this->jobLockService();
+        $jobLockService->acquire(SyncSeedMessage::jobKey('animedb-shikimori'));
+
+        $sync = $this->createMock(SyncInterface::class);
+        $sync->expects($this->never())->method('pull');
+
+        [$syncRegistry, $pluginsConfigStore] = $this->newSyncRegistry(['animedb-shikimori' => $sync]);
+        $handler = new SyncSeedMessageHandler($syncRegistry, $this->newBackfillService(), $this->newPullSyncService($syncRegistry), $pluginsConfigStore, $jobLockService, new NullLogger());
 
         $handler(new SyncSeedMessage('animedb-shikimori'));
     }
@@ -125,7 +160,7 @@ final class SyncSeedMessageHandlerTest extends TestCase
         $logger = $this->createMock(LoggerInterface::class);
         $logger->expects($this->once())->method('info');
 
-        $handler = new SyncSeedMessageHandler($syncRegistry, $this->newBackfillService(), $this->newPullSyncService($syncRegistry), $pluginsConfigStore, $logger);
+        $handler = new SyncSeedMessageHandler($syncRegistry, $this->newBackfillService(), $this->newPullSyncService($syncRegistry), $pluginsConfigStore, $this->jobLockService(), $logger);
 
         $handler(new SyncSeedMessage('animedb-shikimori'));
     }
@@ -142,7 +177,7 @@ final class SyncSeedMessageHandlerTest extends TestCase
         $sync->expects($this->once())->method('pull')->willThrowException(new ReauthRequiredException('Refresh token is dead.'));
 
         [$syncRegistry, $pluginsConfigStore] = $this->newSyncRegistry(['animedb-shikimori' => $sync], ['syncSeeded' => true]);
-        $handler = new SyncSeedMessageHandler($syncRegistry, $this->newBackfillService(), $this->newPullSyncService($syncRegistry), $pluginsConfigStore, new NullLogger());
+        $handler = new SyncSeedMessageHandler($syncRegistry, $this->newBackfillService(), $this->newPullSyncService($syncRegistry), $pluginsConfigStore, $this->jobLockService(), new NullLogger());
 
         $handler(new SyncSeedMessage('animedb-shikimori'));
 
@@ -247,7 +282,23 @@ final class SyncSeedMessageHandlerTest extends TestCase
             $this->newBackfillService($backfillLogger),
             $this->newPullSyncService($syncRegistry),
             $pluginsConfigStore,
+            $this->jobLockService(),
             new NullLogger(),
+        );
+    }
+
+    private function jobLockService(): JobLockService
+    {
+        // The owner counts as alive, so a lock another seed holds is not taken over.
+        $livenessChecker = $this->createStub(ProcessLivenessChecker::class);
+        $livenessChecker->method('getStartedAt')->willReturn(new \DateTimeImmutable('@0'));
+
+        return new JobLockService(
+            DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]),
+            $livenessChecker,
+            new MockClock(new \DateTimeImmutable('@1000')),
+            30,
+            3,
         );
     }
 

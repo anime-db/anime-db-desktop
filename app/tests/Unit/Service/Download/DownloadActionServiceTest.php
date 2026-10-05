@@ -100,6 +100,32 @@ final class DownloadActionServiceTest extends TestCase
         $this->assertSame(0, $reloaded->getMoveAttempts());
     }
 
+    /**
+     * @return iterable<string, array{0: string, 1: int}>
+     */
+    public static function moveAttemptsAfterRetryProvider(): iterable
+    {
+        yield 'move_failed' => ['move_failed', 1];
+        yield 'name_conflict' => ['name_conflict', 0];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('moveAttemptsAfterRetryProvider')]
+    public function testRetryPersistsMoveAttemptsDependingOnTheFailureReason(string $reason, int $expected): void
+    {
+        $anime = $this->persistAnime();
+        $download = new Download(self::HASH, $anime);
+        $download->markFailed($reason);
+        $download->incrementMoveAttempts();
+        $download->incrementMoveAttempts();
+        $this->repository->save($download);
+
+        $outcome = $this->service->retry($download, $download->getVersion(), $download->getStatus());
+
+        $this->assertSame(DownloadActionOutcome::Success, $outcome);
+        $stored = $this->entityManager->getConnection()->fetchOne('SELECT move_attempts FROM downloads WHERE id = ?', [$download->id]);
+        $this->assertSame($expected, (int) $stored);
+    }
+
     public function testRetryIsRefusedForANonRetryableReasonAndNeverTouchesTheDatabase(): void
     {
         $anime = $this->persistAnime();
