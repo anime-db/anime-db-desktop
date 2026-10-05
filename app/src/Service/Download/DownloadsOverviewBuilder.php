@@ -59,6 +59,7 @@ final class DownloadsOverviewBuilder
         private readonly StorageMarkerService $storageMarker,
         private readonly TranslatorInterface $translator,
         private readonly UrlGeneratorInterface $urlGenerator,
+        private readonly DownloadIncomingChecker $incomingChecker,
     ) {
     }
 
@@ -99,9 +100,11 @@ final class DownloadsOverviewBuilder
 
         $orphans = [];
         if ($qbittorrentAvailable) {
+            $storageRoots = null;
             foreach ($torrentsByInfoHashV1 as $infoHash => $torrent) {
                 if (!isset($claimedInfoHashes[$infoHash])) {
-                    $orphans[] = $this->buildOrphanRow($infoHash, $torrent);
+                    $storageRoots ??= $this->incomingChecker->storageRoots();
+                    $orphans[] = $this->buildOrphanRow($infoHash, $torrent, $storageRoots);
                 }
             }
         }
@@ -142,10 +145,11 @@ final class DownloadsOverviewBuilder
 
     /**
      * @param array<string, mixed> $torrent
+     * @param list<string>         $storageRoots
      *
      * @return array<string, mixed>
      */
-    private function buildOrphanRow(string $infoHash, array $torrent): array
+    private function buildOrphanRow(string $infoHash, array $torrent, array $storageRoots): array
     {
         return [
             'infoHash' => $infoHash,
@@ -164,6 +168,7 @@ final class DownloadsOverviewBuilder
             'canDelete' => false,
             'hasTorrentInClient' => true,
             'deleteFilesDefaultChecked' => false,
+            'canDeleteFiles' => $this->incomingChecker->isInIncomingOfAnyStorage($torrent, $storageRoots),
         ] + $this->liveFields($torrent);
     }
 
@@ -193,6 +198,9 @@ final class DownloadsOverviewBuilder
             'canDelete' => $status === DownloadStatus::Pending || $status === DownloadStatus::Failed,
             'hasTorrentInClient' => $torrentPresent,
             'deleteFilesDefaultChecked' => $torrentPresent && $progress < 1.0,
+            // Data may be deleted through the client only while it still sits in the storage's
+            // incoming directory (issue #899); DownloadActionController re-checks this fresh.
+            'canDeleteFiles' => $this->incomingChecker->canDeleteDataOf($download, $torrent),
         ];
     }
 

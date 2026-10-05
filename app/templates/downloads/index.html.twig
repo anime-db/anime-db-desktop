@@ -111,7 +111,7 @@
                                             <input type="hidden" name="_token" value="{{ csrf_token('download_delete_' ~ row.id) }}">
                                             <input type="hidden" name="version" value="{{ row.version }}">
                                             <input type="hidden" name="status" value="{{ row.coreStatus }}">
-                                            {% if row.hasTorrentInClient %}
+                                            {% if row.hasTorrentInClient and row.canDeleteFiles %}
                                                 <label class="me-1">
                                                     <input type="checkbox" name="delete_files" value="1"{% if row.deleteFilesDefaultChecked %} checked{% endif %}>
                                                     {{ 'downloads.action_delete_files_label'|trans }}
@@ -123,6 +123,12 @@
                                 {% else %}
                                     <form method="post" action="{{ path('download_delete_orphan', {infoHash: row.infoHash}) }}" class="d-inline">
                                         <input type="hidden" name="_token" value="{{ csrf_token('download_delete_orphan_' ~ row.infoHash) }}">
+                                        {% if row.canDeleteFiles %}
+                                            <label class="me-1">
+                                                <input type="checkbox" name="delete_files" value="1">
+                                                {{ 'downloads.action_delete_files_label'|trans }}
+                                            </label>
+                                        {% endif %}
                                         <button type="submit" class="btn btn-sm btn-outline-danger">{{ 'downloads.action_delete_from_client'|trans }}</button>
                                     </form>
                                 {% endif %}
