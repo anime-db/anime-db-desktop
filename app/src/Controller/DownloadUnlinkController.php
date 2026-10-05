@@ -28,6 +28,7 @@ declare(strict_types=1);
 namespace App\Controller;
 
 use App\Entity\Download;
+use App\Entity\Enum\DownloadStatus;
 use App\Repository\DownloadRepository;
 use App\Service\Download\DownloadUnlinkService;
 use App\Service\Download\DownloadViewFactory;
@@ -68,12 +69,35 @@ final class DownloadUnlinkController
         }
 
         $animeId = $download->getAnime()->id ?? throw new \LogicException('Anime must be persisted before its downloads can be rendered.');
-        $result = $this->unlinker->unlink($download);
+        $expected = $this->parseExpectedState($request);
+        $succeeded = $expected !== null && $this->unlinker->unlink($download, $expected[0], $expected[1])->succeeded;
 
         return new Response($this->twig->render('anime/_downloads.html.twig', [
             'anime' => ['id' => $animeId],
             'downloads' => $this->downloadViewFactory->serializeList($this->downloads->findByAnime($animeId)),
-            'error' => $result->succeeded ? null : 'anime_detail.downloads_unlink_conflict_error',
+            'error' => $succeeded ? null : 'anime_detail.downloads_unlink_conflict_error',
         ]));
+    }
+
+    /**
+     * Reads the `version`/`status` hidden fields the row was rendered with. Missing or unparseable
+     * fields are treated as a state mismatch: the service is not called at all.
+     *
+     * @return ?array{0: int, 1: DownloadStatus}
+     */
+    private function parseExpectedState(Request $request): ?array
+    {
+        $version = $request->request->get('version');
+        if (!\is_string($version) || !ctype_digit($version)) {
+            return null;
+        }
+
+        $status = $request->request->get('status');
+        $status = \is_string($status) ? DownloadStatus::tryFrom($status) : null;
+        if ($status === null) {
+            return null;
+        }
+
+        return [(int) $version, $status];
     }
 }
