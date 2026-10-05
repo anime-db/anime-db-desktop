@@ -101,7 +101,7 @@ final class SyncPullMessageHandler
             return;
         }
 
-        $this->logger->info('Periodic pull for plugin "{pluginId}" did not complete (needs reauthorization); it will be retried on a later tick.', [
+        $this->logger->info('Periodic pull for plugin "{pluginId}" did not complete (reauthorization required, or a failed item closed the EntityManager — see earlier log entries); it will be retried on a later tick.', [
             'pluginId' => $message->pluginId,
         ]);
     }
