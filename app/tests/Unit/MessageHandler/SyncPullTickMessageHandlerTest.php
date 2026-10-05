@@ -28,6 +28,7 @@ declare(strict_types=1);
 namespace App\Tests\Unit\MessageHandler;
 
 use AnimeDb\PluginContracts\Sync\SyncInterface;
+use App\Entity\ValueObject\PluginId;
 use App\Message\SyncPullMessage;
 use App\Message\SyncPullTickMessage;
 use App\MessageHandler\SyncPullTickMessageHandler;
@@ -72,6 +73,27 @@ final class SyncPullTickMessageHandlerTest extends TestCase
         ]);
 
         $this->assertSame([], $dispatched);
+    }
+
+    public function testSkipsAPluginPulledExactlySixHoursAgo(): void
+    {
+        $dispatched = $this->tick([
+            'acme-edge' => ['features' => ['sync' => true], 'syncSeeded' => true, 'syncLastPullAt' => '2026-01-01T06:00:00+00:00'],
+        ]);
+
+        $this->assertSame([], $dispatched);
+    }
+
+    public function testMarkPulledStoresUtcEvenWhenTheClockIsNotUtc(): void
+    {
+        $path = sys_get_temp_dir().'/anime-sync-pull-gate-test-'.uniqid().'.json';
+        file_put_contents($path, (string) json_encode(['acme-a' => ['features' => ['sync' => true], 'syncSeeded' => true]]));
+        $store = new PluginsConfigStore($path);
+
+        (new SyncPullGate($store, new MockClock(new \DateTimeImmutable('2026-01-01T15:00:00+03:00'))))->markPulled(new PluginId('acme-a'));
+
+        $this->assertSame('2026-01-01T12:00:00+00:00', $store->getPluginSettings(new PluginId('acme-a'))['syncLastPullAt']);
+        @unlink($path);
     }
 
     #[DataProvider('dueMarks')]

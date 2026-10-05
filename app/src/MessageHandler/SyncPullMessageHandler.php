@@ -31,6 +31,7 @@ use App\Entity\ValueObject\PluginId;
 use App\Message\SyncPullMessage;
 use App\Message\SyncSeedMessage;
 use App\Service\JobLock\JobLockService;
+use App\Service\Plugin\ExternalIdBackfillService;
 use App\Service\Plugin\PullSyncService;
 use App\Service\Plugin\SyncRegistry;
 use App\Service\Sync\SyncPullGate;
@@ -45,6 +46,10 @@ use Symfony\Component\Messenger\Attribute\AsMessageHandler;
  * {@see SyncSeedMessage::jobKey()} lock as {@see SyncSeedMessageHandler}, so it never overlaps a
  * seed, another pull, or a push ({@see PushSyncMessageHandler} skips while it is held).
  *
+ * Like the seed, the pull runs {@see ExternalIdBackfillService::backfill()} first (issue #867): `syncSeeded`
+ * is set when the seed is dispatched, not when it finishes, so a seed that was lost or has not run yet
+ * must not let the pull miss records that only have a source URL and create duplicates of them.
+ *
  * A successful pull records `syncLastPullAt`. A `false` result (reauthorization needed) is only
  * logged: `syncSeeded` stays as is, and the next hourly tick retries.
  */
@@ -54,6 +59,7 @@ final class SyncPullMessageHandler
     public function __construct(
         private readonly SyncRegistry $syncRegistry,
         private readonly SyncPullGate $gate,
+        private readonly ExternalIdBackfillService $backfillService,
         private readonly PullSyncService $pullSyncService,
         private readonly JobLockService $jobLockService,
         private readonly LoggerInterface $logger,
@@ -83,6 +89,7 @@ final class SyncPullMessageHandler
         }
 
         try {
+            $this->backfillService->backfill($pluginId, $sync);
             $pulled = $this->pullSyncService->pull($pluginId, $sync, fn () => $this->jobLockService->heartbeat($jobKey));
         } finally {
             $this->jobLockService->release($jobKey);

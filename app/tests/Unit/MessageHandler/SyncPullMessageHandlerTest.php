@@ -27,16 +27,24 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\MessageHandler;
 
+use AnimeDb\PluginContracts\Filler\PluginAnimeData;
 use AnimeDb\PluginContracts\OAuth\ReauthRequiredException;
 use AnimeDb\PluginContracts\Sync\SyncInterface;
+use AnimeDb\PluginContracts\Sync\SyncItem;
+use AnimeDb\PluginContracts\Sync\SyncStatus;
 use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
+use App\Entity\Anime;
+use App\Entity\Enum\WatchStatus;
+use App\Entity\MovieAnime;
 use App\Entity\ValueObject\PluginId;
 use App\Message\SyncPullMessage;
 use App\Message\SyncSeedMessage;
 use App\MessageHandler\SyncPullMessageHandler;
+use App\Repository\AnimeRepository;
 use App\Service\JobLock\JobLockService;
 use App\Service\JobLock\ProcessLivenessChecker;
+use App\Service\Plugin\ExternalIdBackfillService;
 use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Plugin\SyncRegistry;
 use App\Service\Sync\SyncPullGate;
@@ -195,6 +203,29 @@ final class SyncPullMessageHandlerTest extends TestCase
         $this->assertArrayNotHasKey('syncLastPullAt', $store->getPluginSettings(new PluginId(self::ID)));
     }
 
+    /** Issue #867: `syncSeeded` is set at dispatch, so the pull must not duplicate a record the seed never backfilled. */
+    public function testBackfillsExternalIdsSoTheStaleSeedDoesNotLetThePullDuplicateARecord(): void
+    {
+        $anime = new MovieAnime();
+        $anime->setTitle('Cowboy Bebop')->setWatchStatus(WatchStatus::Plan)->addSource('https://shikimori.one/animes/1');
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+
+        $sync = $this->createMock(SyncInterface::class);
+        $sync->method('resolveExternalId')->willReturn('1');
+        $sync->method('findById')->willReturn(new PluginAnimeData(title: 'Cowboy Bebop'));
+        $sync->expects($this->once())->method('pull')->willReturn([new SyncItem('1', SyncStatus::Watching, 'Cowboy Bebop')]);
+
+        $store = $this->store(['features' => ['sync' => true], 'syncSeeded' => true]);
+        $this->handler($sync, $store)(new SyncPullMessage(self::ID));
+
+        $this->entityManager->clear();
+        $all = $this->entityManager->getRepository(Anime::class)->findAll();
+        $this->assertCount(1, $all);
+        $this->assertSame('1', $all[0]->getCachedExternalId(new PluginId(self::ID)));
+        $this->assertSame($anime->id, $all[0]->id);
+    }
+
     /** @param array<string, mixed> $settings */
     private function store(array $settings): PluginsConfigStore
     {
@@ -210,6 +241,7 @@ final class SyncPullMessageHandlerTest extends TestCase
         return new SyncPullMessageHandler(
             $registry,
             new SyncPullGate($store, new MockClock(new \DateTimeImmutable(self::NOW))),
+            new ExternalIdBackfillService($this->entityManager, new AnimeRepository($this->entityManager), $this->jobLockService(), new NullLogger()),
             $this->newPullSyncService($registry),
             $locks ?? $this->jobLockService(),
             $logger ?? new NullLogger(),
