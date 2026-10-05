@@ -265,7 +265,7 @@ final class AnimeControllerTest extends TestCase
             ->method('render')
             ->with('anime/show.html.twig', $this->callback(
                 static fn (array $params): bool => $params['downloads'] === [
-                    ['id' => 5, 'info_hash' => 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'status' => 'pending'],
+                    ['id' => 5, 'info_hash' => 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'status' => 'pending', 'version' => 1],
                 ],
             ))
             ->willReturn('<html></html>');

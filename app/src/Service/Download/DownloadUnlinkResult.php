@@ -33,6 +33,7 @@ final class DownloadUnlinkResult
     private function __construct(
         public readonly bool $succeeded,
         public readonly bool $pointerReleased,
+        public readonly bool $refused = false,
     ) {
     }
 
@@ -44,5 +45,11 @@ final class DownloadUnlinkResult
     public static function versionConflict(): self
     {
         return new self(false, false);
+    }
+
+    /** The expected status was not Completed: nothing was touched. */
+    public static function refused(): self
+    {
+        return new self(false, false, true);
     }
 }

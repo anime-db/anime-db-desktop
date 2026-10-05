@@ -100,6 +100,7 @@ final class DownloadsTemplateRenderingTest extends KernelTestCase
             'canDelete' => false,
             'hasTorrentInClient' => false,
             'deleteFilesDefaultChecked' => false,
+            'canDeleteFiles' => false,
         ], $overrides);
     }
 
@@ -170,13 +171,31 @@ final class DownloadsTemplateRenderingTest extends KernelTestCase
      */
     public function testRowRendersOnlyTheActionsItIsEligibleFor(): void
     {
-        $row = $this->row(['canPause' => true, 'canRetry' => false, 'canDelete' => true, 'hasTorrentInClient' => true]);
+        $row = $this->row(['canPause' => true, 'canRetry' => false, 'canDelete' => true, 'hasTorrentInClient' => true, 'canDeleteFiles' => true]);
         $html = $this->render(['rows' => [$row], 'orphans' => [], 'qbittorrentAvailable' => true]);
 
         $this->assertStringContainsString('Пауза', $html);
         $this->assertStringNotContainsString('>Повторить<', $html);
         $this->assertStringContainsString('>Удалить<', $html);
         $this->assertStringContainsString('name="delete_files"', $html);
+    }
+
+    public function testDeleteFormOmitsTheFilesCheckboxWhenDataIsNotInIncoming(): void
+    {
+        $row = $this->row(['canDelete' => true, 'hasTorrentInClient' => true, 'canDeleteFiles' => false]);
+        $html = $this->render(['rows' => [$row], 'orphans' => [], 'qbittorrentAvailable' => true]);
+
+        $this->assertStringContainsString('>Удалить<', $html);
+        $this->assertStringNotContainsString('name="delete_files"', $html);
+    }
+
+    public function testOrphanDeleteFormHasTheFilesCheckboxOnlyWhenDataIsInIncoming(): void
+    {
+        $withFiles = $this->row(['hasCard' => false, 'animeUrl' => null, 'canDeleteFiles' => true]);
+        $without = $this->row(['hasCard' => false, 'animeUrl' => null, 'canDeleteFiles' => false]);
+
+        $this->assertStringContainsString('name="delete_files"', $this->render(['rows' => [], 'orphans' => [$withFiles], 'qbittorrentAvailable' => true]));
+        $this->assertStringNotContainsString('name="delete_files"', $this->render(['rows' => [], 'orphans' => [$without], 'qbittorrentAvailable' => true]));
     }
 
     public function testDeleteFormOmitsTheFilesCheckboxWhenThereIsNoTorrentInTheClient(): void

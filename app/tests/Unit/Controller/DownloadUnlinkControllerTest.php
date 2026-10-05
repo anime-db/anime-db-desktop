@@ -42,6 +42,7 @@ use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\EntityManager;
 use Doctrine\ORM\ORMSetup;
 use Doctrine\ORM\Tools\SchemaTool;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
@@ -120,6 +121,7 @@ final class DownloadUnlinkControllerTest extends TestCase
     {
         $anime = $this->persistAnime();
         $download = new Download(self::HASH, $anime);
+        $download->markCompleted();
         $this->repository->save($download);
 
         $twig = $this->createMock(Environment::class);
@@ -133,7 +135,7 @@ final class DownloadUnlinkControllerTest extends TestCase
             ->willReturn('<section></section>');
 
         $controller = $this->createController($this->csrfTokenManagerValidFor((int) $download->id), $twig);
-        $request = Request::create('/downloads/'.$download->id.'/unlink', 'POST', ['_token' => 'token']);
+        $request = Request::create('/downloads/'.$download->id.'/unlink', 'POST', ['_token' => 'token', 'version' => (string) $download->getVersion(), 'status' => 'completed']);
 
         $response = $controller->unlink($download, $request);
 
@@ -145,7 +147,9 @@ final class DownloadUnlinkControllerTest extends TestCase
     {
         $anime = $this->persistAnime();
         $download = new Download(self::HASH, $anime);
+        $download->markCompleted();
         $this->repository->save($download);
+        $seenVersion = $download->getVersion();
 
         // Simulates a concurrent writer (the poller) touching the row after it was read for this request.
         $this->entityManager->getConnection()->executeStatement(
@@ -163,7 +167,7 @@ final class DownloadUnlinkControllerTest extends TestCase
             ->willReturn('<section></section>');
 
         $controller = $this->createController($this->csrfTokenManagerValidFor((int) $download->id), $twig);
-        $request = Request::create('/downloads/'.$download->id.'/unlink', 'POST', ['_token' => 'token']);
+        $request = Request::create('/downloads/'.$download->id.'/unlink', 'POST', ['_token' => 'token', 'version' => (string) $seenVersion, 'status' => 'completed']);
 
         $controller->unlink($download, $request);
 
@@ -210,5 +214,87 @@ final class DownloadUnlinkControllerTest extends TestCase
 
         $this->expectException(BadRequestHttpException::class);
         $controller->unlink($download, $request);
+    }
+
+    /** @return iterable<string, array{array<string, string>}> */
+    public static function unparseableForms(): iterable
+    {
+        yield 'no fields' => [[]];
+        yield 'no status' => [['version' => '1']];
+        yield 'no version' => [['status' => 'completed']];
+        yield 'non-numeric version' => [['version' => 'abc', 'status' => 'completed']];
+        yield 'unknown status' => [['version' => '1', 'status' => 'bogus']];
+    }
+
+    /** @param array<string, string> $fields */
+    #[DataProvider('unparseableForms')]
+    public function testUnlinkWithoutAParseableExpectedStateRendersTheConflictAndKeepsTheRow(array $fields): void
+    {
+        $anime = $this->persistAnime();
+        $download = new Download(self::HASH, $anime);
+        $download->markCompleted();
+        $this->repository->save($download);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('anime/_downloads.html.twig', $this->callback(
+                static fn (array $params): bool => $params['error'] === 'anime_detail.downloads_unlink_conflict_error'
+                    && \count($params['downloads']) === 1,
+            ))
+            ->willReturn('<section></section>');
+
+        $controller = $this->createController($this->csrfTokenManagerValidFor((int) $download->id), $twig);
+        $request = Request::create('/downloads/'.$download->id.'/unlink', 'POST', ['_token' => 'token'] + $fields);
+
+        $controller->unlink($download, $request);
+
+        $this->entityManager->clear();
+        $this->assertNotNull($this->repository->findByInfoHashAndAnime(self::HASH, (int) $anime->id));
+    }
+
+    public function testUnlinkWithAStalePendingFormIsRefusedAndKeepsTheRow(): void
+    {
+        $anime = $this->persistAnime();
+        $download = new Download(self::HASH, $anime);
+        $this->repository->save($download);
+        $seenVersion = $download->getVersion();
+        $download->markCompleted();
+        $this->entityManager->flush();
+
+        $twig = $this->createMock(Environment::class);
+        $twig->method('render')->with('anime/_downloads.html.twig', $this->callback(
+            static fn (array $params): bool => $params['error'] === 'anime_detail.downloads_unlink_conflict_error',
+        ))->willReturn('<section></section>');
+
+        $controller = $this->createController($this->csrfTokenManagerValidFor((int) $download->id), $twig);
+        $request = Request::create('/downloads/'.$download->id.'/unlink', 'POST', ['_token' => 'token', 'version' => (string) $seenVersion, 'status' => 'pending']);
+
+        $controller->unlink($download, $request);
+
+        $this->entityManager->clear();
+        $this->assertNotNull($this->repository->findByInfoHashAndAnime(self::HASH, (int) $anime->id));
+    }
+
+    public function testUnlinkWithACurrentVersionButAPendingStatusIsRefusedAndKeepsTheRow(): void
+    {
+        $anime = $this->persistAnime();
+        $download = new Download(self::HASH, $anime);
+        $this->repository->save($download);
+        $download->markCompleted();
+        $this->repository->save($download);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->method('render')->with('anime/_downloads.html.twig', $this->callback(
+            static fn (array $params): bool => $params['error'] === 'anime_detail.downloads_unlink_conflict_error',
+        ))->willReturn('<section></section>');
+
+        $controller = $this->createController($this->csrfTokenManagerValidFor((int) $download->id), $twig);
+        $request = Request::create('/downloads/'.$download->id.'/unlink', 'POST', ['_token' => 'token', 'version' => (string) $download->getVersion(), 'status' => 'pending']);
+
+        $controller->unlink($download, $request);
+
+        $this->entityManager->clear();
+        $this->assertNotNull($this->repository->findByInfoHashAndAnime(self::HASH, (int) $anime->id));
     }
 }

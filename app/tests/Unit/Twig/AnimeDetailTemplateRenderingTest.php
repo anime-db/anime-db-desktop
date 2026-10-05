@@ -27,6 +27,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Twig;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RequestStack;
@@ -495,14 +496,16 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
             'widgets' => [],
             'plugins_ui' => [],
             'fillable_fields' => $this->emptyFillableFields(),
-            'downloads' => [['id' => 42, 'info_hash' => str_repeat('a', 40), 'status' => 'pending']],
+            'downloads' => [['id' => 42, 'info_hash' => str_repeat('a', 40), 'status' => 'completed', 'version' => 7]],
             'downloads_unlink_error' => 'anime_detail.downloads_unlink_conflict_error',
         ]);
 
         $this->assertStringContainsString('id="anime-downloads-1"', $html);
         $this->assertStringContainsString('hx-post="/downloads/42/unlink"', $html);
         $this->assertStringContainsString('hx-target="#anime-downloads-1"', $html);
-        $this->assertStringContainsString('Загружается', $html);
+        $this->assertStringContainsString('Завершено', $html);
+        $this->assertStringContainsString('name="version" value="7"', $html);
+        $this->assertStringContainsString('name="status" value="completed"', $html);
         $this->assertStringContainsString('Отвязать', $html);
         $this->assertStringContainsString('Состояние изменилось, обновите страницу.', $html);
 
@@ -519,5 +522,40 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
         // `download_unlink` id (a single id shared across all rows) must accept it.
         $this->assertFalse($csrfTokenManager->isTokenValid(new CsrfToken('download_unlink_43', $token)));
         $this->assertFalse($csrfTokenManager->isTokenValid(new CsrfToken('download_unlink', $token)));
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function unfinishedStatuses(): iterable
+    {
+        yield 'pending' => ['pending'];
+        yield 'failed' => ['failed'];
+    }
+
+    #[DataProvider('unfinishedStatuses')]
+    public function testShowRendersALinkToTheDownloadsPageInsteadOfAnUnlinkButtonForUnfinishedRows(string $status): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession('/anime/1');
+
+        /** @var LocaleSwitcher $localeSwitcher */
+        $localeSwitcher = self::getContainer()->get(LocaleSwitcher::class);
+        $localeSwitcher->setLocale('ru');
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('anime/show.html.twig', [
+            'anime' => $this->fullyPopulatedAnime(),
+            'widgets' => [],
+            'plugins_ui' => [],
+            'fillable_fields' => $this->emptyFillableFields(),
+            'downloads' => [['id' => 42, 'info_hash' => str_repeat('a', 40), 'status' => $status, 'version' => 3]],
+            'downloads_unlink_error' => null,
+        ]);
+
+        $this->assertStringContainsString('id="anime-downloads-1"', $html);
+        $this->assertStringNotContainsString('hx-post="/downloads/42/unlink"', $html);
+        $this->assertStringNotContainsString('Отвязать', $html);
+        $this->assertStringContainsString('href="/downloads"', $html);
+        $this->assertStringContainsString('Управлять на странице «Загрузки»', $html);
     }
 }

@@ -521,6 +521,7 @@ anime_detail:
     error_fill_image_rejected: The source returned an image that could not be saved.
     error_fill_date_range_rejected: The source returned a date that conflicts with the one already saved.
     downloads_heading: Downloads for this entry
+    downloads_manage_link: Manage on the Downloads page
     downloads_unlink_button: Unlink
     downloads_unlink_conflict_error: State changed, please refresh the page.
     download_new_link: Add download

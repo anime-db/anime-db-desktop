@@ -521,6 +521,7 @@ anime_detail:
     error_fill_image_rejected: Источник вернул изображение, которое не удалось сохранить.
     error_fill_date_range_rejected: Источник вернул дату, конфликтующую с уже сохранённой.
     downloads_heading: Загрузки этой карточки
+    downloads_manage_link: Управлять на странице «Загрузки»
     downloads_unlink_button: Отвязать
     downloads_unlink_conflict_error: Состояние изменилось, обновите страницу.
     download_new_link: Добавить загрузку

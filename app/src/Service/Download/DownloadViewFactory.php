@@ -39,7 +39,7 @@ final class DownloadViewFactory
     /**
      * @param list<Download> $downloads
      *
-     * @return list<array{id: int, info_hash: string, status: string}>
+     * @return list<array{id: int, info_hash: string, status: string, version: int}>
      */
     public function serializeList(array $downloads): array
     {
@@ -48,6 +48,7 @@ final class DownloadViewFactory
                 'id' => $download->id ?? throw new \LogicException('Download must be persisted before it can be rendered.'),
                 'info_hash' => $download->getInfoHash(),
                 'status' => $download->getStatus()->value,
+                'version' => $download->getVersion(),
             ],
             $downloads,
         );
