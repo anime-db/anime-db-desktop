@@ -34,11 +34,21 @@ namespace App\Message;
  * without blocking the HTTP request that just enabled it. Carries only the plugin id, the handler
  * re-resolves the {@see \AnimeDb\PluginContracts\Sync\SyncInterface} instance itself before
  * pulling.
+ *
+ * {@see self::jobKey()} is the per-plugin {@see \App\Service\JobLock\JobLockService} key held for
+ * the whole seed: the seed runs in `plugins-consumer` while {@see PushSyncMessage} runs in
+ * `messenger-consumer`, two processes with separate EntityManagers, so the lock is what keeps a
+ * push from writing the same `AnimeSyncState` rows the pull is inserting.
  */
 final readonly class SyncSeedMessage
 {
     public function __construct(
         public string $pluginId,
     ) {
+    }
+
+    public static function jobKey(string $pluginId): string
+    {
+        return \sprintf('sync:%s', $pluginId);
     }
 }

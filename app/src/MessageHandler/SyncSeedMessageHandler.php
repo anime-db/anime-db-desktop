@@ -27,8 +27,10 @@ declare(strict_types=1);
 
 namespace App\MessageHandler;
 
+use AnimeDb\PluginContracts\Sync\SyncInterface;
 use App\Entity\ValueObject\PluginId;
 use App\Message\SyncSeedMessage;
+use App\Service\JobLock\JobLockService;
 use App\Service\Plugin\ExternalIdBackfillService;
 use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Plugin\PullSyncService;
@@ -69,6 +71,7 @@ final class SyncSeedMessageHandler
         private readonly ExternalIdBackfillService $backfillService,
         private readonly PullSyncService $pullSyncService,
         private readonly PluginsConfigStore $pluginsConfigStore,
+        private readonly JobLockService $jobLockService,
         private readonly LoggerInterface $logger,
     ) {
     }
@@ -86,6 +89,30 @@ final class SyncSeedMessageHandler
             return;
         }
 
+        // The seed runs in plugins-consumer, PushSyncMessage in messenger-consumer: separate
+        // processes and EntityManagers, so without a lock a push made while the seed is running
+        // could insert the same (anime, plugin) AnimeSyncState row the pull is inserting — a PK
+        // violation that makes the pull skip the rest of its new items. PushSyncMessageHandler skips
+        // while this lock is held; the divergence it leaves is picked up by the pull's own
+        // reconciliation, same as for a push dropped by the push-on-edit TTL.
+        $jobKey = SyncSeedMessage::jobKey($message->pluginId);
+        if (!$this->jobLockService->acquire($jobKey)) {
+            $this->logger->info('Connect-seed for plugin "{pluginId}" skipped: another seed for it is already running.', [
+                'pluginId' => $message->pluginId,
+            ]);
+
+            return;
+        }
+
+        try {
+            $this->seed($message, $pluginId, $sync, $jobKey);
+        } finally {
+            $this->jobLockService->release($jobKey);
+        }
+    }
+
+    private function seed(SyncSeedMessage $message, PluginId $pluginId, SyncInterface $sync, string $jobKey): void
+    {
         // Issue #867: the external-id backfill runs here, synchronously and before the pull, rather
         // than as a separately dispatched message — the pull matches pulled items against
         // AnimeRepository::indexByExternalId(), which only sees ids that are already cached, so a
@@ -94,7 +121,7 @@ final class SyncSeedMessageHandler
         // FIFO order between two messages is not guaranteed once they travel on different transports.
         $this->backfillService->backfill($pluginId, $sync);
 
-        $seeded = $this->pullSyncService->pull($pluginId, $sync);
+        $seeded = $this->pullSyncService->pull($pluginId, $sync, fn () => $this->jobLockService->heartbeat($jobKey));
         if (!$seeded) {
             $this->logger->info('Connect-seed for plugin "{pluginId}" did not complete (needs reauthorization); resetting the seeded flag so the next settings-page visit retries it.', [
                 'pluginId' => $message->pluginId,

@@ -35,7 +35,9 @@ use App\Entity\AnimeSyncState;
 use App\Entity\SeriesAnime;
 use App\Entity\ValueObject\PluginId;
 use App\Message\PushSyncMessage;
+use App\Message\SyncSeedMessage;
 use App\Repository\AnimeSyncStateRepository;
+use App\Service\JobLock\JobLockService;
 use App\Service\Plugin\SyncRegistry;
 use App\Service\Plugin\WatchStatusMapper;
 use Doctrine\ORM\EntityManagerInterface;
@@ -88,6 +90,15 @@ use Symfony\Component\Messenger\Exception\UnrecoverableMessageHandlingException;
  * updated from the plugin's own confirmed {@see SyncItem} return value, not from what was sent —
  * a source may normalize the write (e.g. a lossy status mapping) or report its own updatedAt, and
  * seeding the snapshot with anything else would make the next pull see a phantom "changed".
+ *
+ * Seed lock: while the connect-seed pull of a plugin runs ({@see SyncSeedMessage::jobKey()}, held by
+ * SyncSeedMessageHandler in another process), a push for that plugin is skipped rather than
+ * written — the pull inserts and overwrites the same `AnimeSyncState` rows through its own
+ * EntityManager, so a concurrent push could collide on the (anime, plugin) primary key, which
+ * costs the pull the rest of its new items. Skipping is the same non-loss as the TTL drop above:
+ * the edit is already in local, and the pull's reconciliation sees it as a dirty participant.
+ * The check is not atomic with the push that follows it, which is accepted: the window is the
+ * length of one push() call against a lock held for the length of a whole seed.
  */
 #[AsMessageHandler]
 final class PushSyncMessageHandler
@@ -98,6 +109,7 @@ final class PushSyncMessageHandler
         private readonly AnimeSyncStateRepository $stateRepository,
         private readonly LoggerInterface $logger,
         private readonly int $pushOnEditTtlSeconds,
+        private readonly JobLockService $jobLockService,
     ) {
     }
 
@@ -149,6 +161,10 @@ final class PushSyncMessageHandler
             return;
         }
 
+        if ($this->isSeeding($pluginId)) {
+            return;
+        }
+
         $externalId = $anime->getExternalId(new PluginId($pluginId), $sync);
         if ($externalId === null) {
             // This plugin doesn't recognize any of the anime's source URLs — nothing to push it
@@ -184,6 +200,10 @@ final class PushSyncMessageHandler
         $pluginsNeedingReauth = [];
 
         foreach ($this->syncRegistry->allActive() as $id => $sync) {
+            if ($this->isSeeding($id)) {
+                continue;
+            }
+
             $externalId = $anime->getExternalId(new PluginId($id), $sync);
             if ($externalId === null) {
                 // This plugin doesn't recognize any of the anime's source URLs — nothing to
@@ -210,6 +230,19 @@ final class PushSyncMessageHandler
         if ($pluginsNeedingReauth !== []) {
             throw new UnrecoverableMessageHandlingException(sprintf('Sync plugin(s) need reauthorization, not retrying this message: %s.', implode(', ', $pluginsNeedingReauth)));
         }
+    }
+
+    private function isSeeding(string $pluginId): bool
+    {
+        if (!$this->jobLockService->isLocked(SyncSeedMessage::jobKey($pluginId))) {
+            return false;
+        }
+
+        $this->logger->info('Sync plugin "{plugin}" is being seeded; skipping its push, the seed\'s reconciliation picks up the edit.', [
+            'plugin' => $pluginId,
+        ]);
+
+        return true;
     }
 
     private function updateSnapshot(Anime $anime, string $participantId, SyncItem $confirmed): void
