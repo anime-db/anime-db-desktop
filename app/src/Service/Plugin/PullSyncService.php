@@ -67,9 +67,10 @@ use Psr\Log\LoggerInterface;
  * $sync's findById() can't resolve the id, the item is skipped entirely for this run — it
  * will be created once the source data is actually available on a later pull.
  *
- * Where/when this runs (periodic job, manual trigger, ...) is out of scope here — a future
- * caller is expected to invoke pull() once per SyncRegistry::allActive() entry, mirroring how
- * PushSyncMessageHandler consumes that same registry for the push direction (issue #214).
+ * pull() runs from the connect-seed (SyncSeedMessageHandler, issue #381) and periodically
+ * (SyncPullSchedule → SyncPullTickMessageHandler → SyncPullMessageHandler, issue #870: an hourly
+ * tick, at most once per SyncPullGate::MAX_AGE_SECONDS per seeded active plugin), mirroring how
+ * PushSyncMessageHandler consumes SyncRegistry for the push direction (issue #214).
  * Source-side removal (issue #217) is a separate concern layered on top of this.
  *
  * Cross-vendor dedup (issue #216/#268): a pulled item that indexByExternalId() could not match
