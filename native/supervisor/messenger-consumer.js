@@ -92,6 +92,8 @@ function runSetupTransports(context) {
  * `async`/`media`. `scheduler_market_refresh` стоит последним, после `scheduler_downloads_poll`,
  * просто по порядку появления (issue #448 добавлен позже #685) — порядок между двумя
  * schedule-транспортами друг относительно друга не несёт собственного смысла приоритета.
+ * `scheduler_sync_pull` (issue #870) добавлен последним: тик App\Scheduler\SyncPullSchedule лишь
+ * кладёт App\Message\SyncPullMessage в транспорт `sync`, сам pull выполняет plugins-consumer.
  *
  * @param {import('./env').PhpContext} context
  * @param {number} backoffIdx
@@ -99,7 +101,7 @@ function runSetupTransports(context) {
 function spawnProcess(context, backoffIdx = 0) {
     if (stopping) return;
 
-    child = spawn(BINARY, ['php-cli', CONSOLE, 'messenger:consume', 'async', 'media', 'scheduler_downloads_poll', 'scheduler_market_refresh'], {
+    child = spawn(BINARY, ['php-cli', CONSOLE, 'messenger:consume', 'async', 'media', 'scheduler_downloads_poll', 'scheduler_market_refresh', 'scheduler_sync_pull'], {
         cwd: paths.getAppRootDir(),
         env: buildEnv(context),
         stdio: ['ignore', 'pipe', 'pipe'],

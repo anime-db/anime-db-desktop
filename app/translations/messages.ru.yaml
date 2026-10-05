@@ -677,6 +677,9 @@ downloads:
     status_pending: Ждёт
     status_linking: Докачано, привязывается…
     status_storage_unavailable: Хранилище недоступно
+    status_client_error: Ошибка торрент-клиента
+    status_missing_files: Файлы не найдены
+    status_outside_storage: 'Файлы вне хранилища — удалите закачку и поставьте заново'
     status_completed: Готово и привязано
     status_seeding_stopped: Раздача остановлена
     status_missing_from_client: Нет в торрент-клиенте
