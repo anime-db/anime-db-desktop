@@ -484,6 +484,7 @@ anime_detail:
     field_episodes_count: Episode count
     field_duration_minutes: Duration
     field_studios: Studio
+    filter_studios: Filter studios by name
     field_countries: Country
     field_storage: Storage
     field_storage_path: File path
@@ -531,6 +532,53 @@ anime_detail:
     notes_add_button: Add a note
     notes_edit_button: Edit
     rating_star_label: 'Rating: %rating%'
+    menu_button: Entry actions
+    menu_edit: Edit
+
+anime_edit:
+    title: 'Edit %title% — AnimeDB'
+    heading: 'Edit: %title%'
+    back_link: Back to the entry
+    field_title: Title
+    field_names: Alternative titles
+    field_name: Title
+    field_locale: Locale
+    field_role: Role
+    field_descriptions: Descriptions
+    field_description_text: Description text
+    field_genres: Genres
+    field_themes: Themes
+    field_studios: Studios
+    field_new_studios: New studio
+    field_demographic: Demographic
+    demographic_none: None
+    field_date_premiere: Premiere date
+    field_date_end: End date
+    field_duration_minutes: Duration, min
+    field_episodes_count: Episodes
+    field_countries: Countries (ISO codes)
+    field_sources: Source links
+    field_notes: Notes
+    add_button: Add
+    add_locale_button: Add locale
+    remove_button: Remove
+    save_button: Save
+    cancel_button: Cancel
+    error_summary: Some fields are not valid. Nothing was saved.
+    error_title_required: Enter a title.
+    error_name_required: Enter a title.
+    error_too_long: Too long (256 characters at most).
+    error_role_invalid: Choose a role.
+    error_locale_invalid: Enter a language code, for example en or ru.
+    error_locale_duplicate: This locale is already used.
+    error_choice_invalid: Choose a value from the list.
+    error_date_invalid: Enter a valid date.
+    error_date_range: The end date must not be earlier than the premiere date.
+    error_date_end_completed: A completed entry needs an end date that is not in the future.
+    error_number_invalid: Enter a whole number, zero or more.
+    error_episodes_below_watched: The episode count must not be less than the number of watched episodes.
+    error_country_invalid: Use two-letter country codes separated by commas.
+    error_url_invalid: Enter a valid http or https URL (512 characters at most).
 
 anime_new:
     title: New Anime — AnimeDB

@@ -439,3 +439,11 @@ IIFE, как было до #734), в бандле исполняется вез�
 - Корень `#anime-notes-{id}`, `#anime-names-{id}` и `#anime-gallery-{id}` выводится **всегда** (пустой — с атрибутом `hidden`): htmx молча теряет OOB-фрагмент, у которого на странице нет якоря. Не заворачивать корень в `{% if %}`.
 - Ответ `updateNotes` отдаёт `_editable` плюс `_notes` с `oob = true`; остальные ответы `AnimeEditableController` заметки не трогают.
 - Звёзды оценки — кнопки `aria-pressed` с id `anime-rating-star-{id}-{n}`: htmx возвращает фокус элементу с тем же id после свопа, отдельный JS не нужен. Текущая звезда шлёт пустое `user_rating` (сброс).
+
+## Страница «Изменить запись» (#914)
+
+- `AnimeEditController`: GET/POST `/anime/{id}/edit` (`anime_edit` / `anime_update`), без Symfony Form, CSRF-токен `anime_edit_{id}`. Сначала валидируется всё, и только потом меняется агрегат: при ошибке сущность не трогается, форма рисуется из введённых значений.
+- Коллекции правятся точечно (`applyNames/applyDescriptions/applySources/applyStudios`), не «очистить и заполнить»: `AnimeDescription` уникален по локали, а UnitOfWork вставляет раньше, чем удаляет. Описание существующей локали идёт через `Anime::setDescription()`, удаление локали — `Anime::removeDescription()`.
+- Длительность `0` сохраняется как «не задано» (домен не принимает 0). Эпизоды правятся только у `SeriesAnime`.
+- Правка ссылок не трогает `anime_external_id`; `AnimeSource` поднимает дату обновления через `AnimeAggregateTouchListener::resolveParent()`.
+- Меню «⋯» — Bootstrap-dropdown в `anime/_header.html.twig`; новые пункты (удаление, смена типа) добавляются `<li>` в тот же `<ul>`. Строки списков формы добавляет/удаляет контрол `repeatable-rows` (`<template>` с плейсхолдером `__INDEX__`).

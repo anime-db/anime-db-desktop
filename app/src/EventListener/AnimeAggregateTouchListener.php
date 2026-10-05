@@ -31,6 +31,7 @@ use App\Entity\Anime;
 use App\Entity\AnimeDescription;
 use App\Entity\AnimeGenre;
 use App\Entity\AnimeName;
+use App\Entity\AnimeSource;
 use App\Entity\AnimeTheme;
 use Doctrine\Bundle\DoctrineBundle\Attribute\AsDoctrineListener;
 use Doctrine\ORM\Event\OnFlushEventArgs;
@@ -38,7 +39,7 @@ use Doctrine\ORM\Events;
 
 /**
  * Keeps an Anime aggregate's dateUpdate current when only a child collection row changes
- * (issue #888): a OneToMany child (AnimeName, AnimeGenre, AnimeTheme, AnimeDescription) is the
+ * (issue #888): a OneToMany child (AnimeName, AnimeGenre, AnimeTheme, AnimeDescription, AnimeSource) is the
  * owning side of nothing on the `anime` row itself, so inserting/updating/removing one never
  * schedules the parent Anime for an UPDATE and Anime::onPreUpdate() never fires for it — the
  * catalog's "sorted by dateUpdate" default would otherwise silently reflect only dateAdd for
@@ -92,7 +93,8 @@ final class AnimeAggregateTouchListener
             $entity instanceof AnimeName,
             $entity instanceof AnimeGenre,
             $entity instanceof AnimeTheme,
-            $entity instanceof AnimeDescription => $entity->anime,
+            $entity instanceof AnimeDescription,
+            $entity instanceof AnimeSource => $entity->anime,
             default => null,
         };
     }
