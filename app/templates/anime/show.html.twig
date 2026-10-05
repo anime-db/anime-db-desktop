@@ -137,6 +137,8 @@
                     {% endif %}
                 </section>
 
+                {{ include('plugin/_widget_slots.html.twig', {widgets: widgets|filter(w => w.slot == 'side'), entryId: anime.id}) }}
+
                 {% if anime.sources is not empty %}
                     <section class="anime-detail__sources">
                         <h2 class="anime-detail__section-heading">{{ 'anime_detail.sources_heading'|trans }}</h2>
@@ -166,7 +168,7 @@
 
             {{ include('anime/_gallery.html.twig', {anime: anime, fillable_fields: fillable_fields}) }}
 
-            {{ include('plugin/_widget_slots.html.twig', {widgets: widgets, entryId: anime.id}) }}
+            {{ include('plugin/_widget_slots.html.twig', {widgets: widgets|filter(w => w.slot == 'bottom'), entryId: anime.id}) }}
         </div>
     </main>
 {% endblock %}

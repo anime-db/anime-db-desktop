@@ -182,6 +182,9 @@ settings_plugin_widgets:
     plugin_column: Plugin
     widget_column: Widget
     active_column: Active
+    slot_column: Position on the card
+    slot_bottom: At the bottom
+    slot_side: On the right
     active_count: 'Active widgets: %count% of %limit%.'
     recommendation_warning: More than %limit% active widgets is not recommended — it may clutter the UI and hurt performance.
     hard_limit_reached: The hard limit of %limit% active widgets for this placement has been reached.

@@ -250,7 +250,7 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
         $twig = self::getContainer()->get('twig');
         $html = $twig->render('anime/show.html.twig', [
             'anime' => $this->fullyPopulatedAnime(),
-            'widgets' => [['pluginId' => 'animedb-shikimori', 'widgetName' => 'related', 'title' => 'Related titles', 'pluginName' => 'Shikimori']],
+            'widgets' => [['pluginId' => 'animedb-shikimori', 'widgetName' => 'related', 'title' => 'Related titles', 'pluginName' => 'Shikimori', 'slot' => 'bottom']],
             'plugins_ui' => [],
             'fillable_fields' => $this->emptyFillableFields(),
             'downloads' => [],
@@ -263,6 +263,40 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
         $this->assertStringContainsString('class="plugin-widget-slot__heading"', $html);
         $this->assertStringContainsString('Related titles', $html);
         $this->assertStringContainsString('Shikimori', $html);
+    }
+
+    public function testShowRendersSideWidgetsInTheRightColumnAndBottomWidgetsAfterTheGallery(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession('/anime/1');
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('anime/show.html.twig', [
+            'anime' => $this->fullyPopulatedAnime(),
+            'widgets' => [
+                ['pluginId' => 'animedb-shikimori', 'widgetName' => 'side-one', 'title' => 'T1', 'pluginName' => 'P', 'slot' => 'side'],
+                ['pluginId' => 'animedb-shikimori', 'widgetName' => 'bottom-one', 'title' => 'T2', 'pluginName' => 'P', 'slot' => 'bottom'],
+            ],
+            'plugins_ui' => [],
+            'fillable_fields' => $this->emptyFillableFields(),
+            'downloads' => [],
+            'downloads_unlink_error' => null,
+        ]);
+
+        $side = strpos($html, '/widget/side-one');
+        $bottom = strpos($html, '/widget/bottom-one');
+        $this->assertNotFalse($side);
+        $this->assertNotFalse($bottom);
+        $this->assertSame(1, substr_count($html, '/widget/side-one'));
+        $this->assertSame(1, substr_count($html, '/widget/bottom-one'));
+        $this->assertGreaterThan(strpos($html, 'anime-detail__column--right'), $side);
+        $this->assertLessThan(strpos($html, 'anime-detail__wide'), $side);
+        $this->assertGreaterThan(strpos($html, 'anime-detail__wide'), $bottom);
+        $this->assertGreaterThan(strpos($html, 'anime-detail__files'), $side);
+        $sources = strpos($html, 'anime-detail__sources');
+        $this->assertNotFalse($sources);
+        $this->assertLessThan($sources, $side);
     }
 
     /**

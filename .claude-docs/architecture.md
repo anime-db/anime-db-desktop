@@ -203,6 +203,12 @@ read-only, `#[AutoconfigureTag]` там не повесить), а `EntryWidgetR
 проде. Каждый виджет переключается независимо через `features.{widgetName}` в `plugins.json`
 (не общий флаг `features.widget`).
 
+Место виджета на карточке записи (`slot`, не путать с `placement` entry/catalog) выбирает
+пользователь на странице «Виджеты»: `bottom` (по умолчанию, во всю ширину после галереи) или
+`side` (правая колонка после блока «Файлы»). Хранится в `widget_slot.{widgetName}` в `plugins.json`
+(`EntryWidgetRegistry::setSlot()`), не сбрасывается при отключении виджета; контракт плагинов не
+затрагивается. `HARD_LIMIT` общий на оба места.
+
 Для entry-виджета контроллер сначала резолвит внешний id через `Anime::getExternalId($pluginId, $widget)`
 (issue #211) — это одновременно и прогрев кэша, и получение параметра для `render()`. Контракт
 `render(?string $externalId): string` (`anime-db/plugin-contracts` v0.3, issue #21 в этом пакете)
