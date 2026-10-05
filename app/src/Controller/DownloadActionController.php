@@ -32,6 +32,7 @@ use App\Entity\Enum\DownloadStatus;
 use App\Repository\DownloadRepository;
 use App\Service\Download\DownloadActionOutcome;
 use App\Service\Download\DownloadActionService;
+use App\Service\Download\DownloadIncomingChecker;
 use App\Service\Download\DownloadsOverviewBuilder;
 use App\Service\Exception\QbittorrentClientException;
 use App\Service\Qbittorrent\QbittorrentClient;
@@ -66,7 +67,10 @@ use Twig\Environment;
  * reaches the client call.
  *
  * Never deletes a file or directory itself: `deleteFiles` is only ever forwarded to
- * {@see QbittorrentClient::delete()}, the only thing in this app that can remove torrent data.
+ * {@see QbittorrentClient::delete()}, the only thing in this app that can remove torrent data —
+ * and only when the fresh `torrents/info` shows the data still under the storage's hidden incoming
+ * directory (issue #899, {@see DownloadIncomingChecker}); a checkbox without that is silently
+ * downgraded to deleteFiles=false, since data moved out of incoming is library content.
  */
 final class DownloadActionController
 {
@@ -75,6 +79,7 @@ final class DownloadActionController
         private readonly DownloadRepository $downloads,
         private readonly QbittorrentClient $client,
         private readonly DownloadsOverviewBuilder $overviewBuilder,
+        private readonly DownloadIncomingChecker $incomingChecker,
         private readonly CsrfTokenManagerInterface $csrfTokenManager,
         private readonly UrlGeneratorInterface $urlGenerator,
         private readonly Environment $twig,
@@ -171,8 +176,10 @@ final class DownloadActionController
     /**
      * Pending or Failed: the `downloads` row is deleted first (see DownloadActionService::delete()'s
      * version+status-conditional DELETE), and only once that succeeds is the torrent itself removed
-     * from qBittorrent — with $deleteFiles taken from the page's checkbox, or simply never sent to
-     * the client at all when this row had no torrent to begin with ("missing from client").
+     * from qBittorrent — with $deleteFiles taken from the page's checkbox AND'ed with "the torrent's
+     * live content_path is under the row's target storage's incoming directory" (re-checked on the
+     * torrent fetched in this request, never on what the page showed), or simply never sent to the
+     * client at all when this row had no torrent to begin with ("missing from client").
      */
     #[Route('/downloads/{id}/delete', name: 'download_delete', requirements: ['id' => '\d+'], methods: ['POST'])]
     public function delete(Download $download, Request $request): Response
@@ -184,8 +191,9 @@ final class DownloadActionController
             return $this->renderIndexWithError('downloads.action_error_conflict');
         }
 
-        $deleteFiles = $request->request->getBoolean('delete_files');
         $torrent = $this->findTorrent($download->getInfoHash());
+        $deleteFiles = $request->request->getBoolean('delete_files')
+            && $this->incomingChecker->canDeleteDataOf($download, $torrent);
 
         $outcome = $this->actions->delete($download, $expected[0], $expected[1]);
         if ($outcome !== DownloadActionOutcome::Success) {
@@ -200,8 +208,9 @@ final class DownloadActionController
     }
 
     /**
-     * A "no card" torrent (no `downloads` row at all) — removed from the client only,
-     * deleteFiles=false, no database access beyond the re-check below.
+     * A "no card" torrent (no `downloads` row at all) — removed from the client; its data is
+     * deleted too only if the form asked for it AND the fresh `torrents/info` shows it under the
+     * incoming directory of some storage (issue #899), otherwise deleteFiles=false.
      *
      * Re-checks that no row claims this infoHash now, not just whatever the page was rendered
      * with: between that render and this click a card may have been added for it (or the page's
@@ -219,7 +228,9 @@ final class DownloadActionController
 
         $torrent = $this->findTorrent($infoHash);
         if ($torrent !== null) {
-            $this->tryClientCall(fn () => $this->client->delete((string) $torrent['hash'], false));
+            $deleteFiles = $request->request->getBoolean('delete_files')
+                && $this->incomingChecker->isInIncomingOfAnyStorage($torrent);
+            $this->tryClientCall(fn () => $this->client->delete((string) $torrent['hash'], $deleteFiles));
         }
 
         return $this->redirectToIndex();

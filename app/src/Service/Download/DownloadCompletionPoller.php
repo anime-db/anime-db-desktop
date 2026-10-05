@@ -348,7 +348,7 @@ final class DownloadCompletionPoller
             // storage. Unlike the jail/hidden-entry skips above, this never resolves itself on its
             // own (content_path keeps reporting the same root on every poll), so leaving the row
             // Pending would warn and retry forever instead of surfacing as a failure.
-            $download->markFailed('move_failed');
+            $download->markFailed('unexpected_layout');
             $this->entityManager->flush();
             $this->logger->warning('Failing download completion: content_path resolves to the storage root itself, with no top-level entry to link.', [
                 'infoHash' => $infoHash,

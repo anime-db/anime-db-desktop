@@ -28,6 +28,7 @@ declare(strict_types=1);
 namespace App\Service\Download;
 
 use App\Entity\Download;
+use App\Entity\Enum\DownloadStatus;
 use Doctrine\ORM\EntityManagerInterface;
 
 /**
@@ -57,10 +58,20 @@ final class DownloadUnlinkService
     ) {
     }
 
-    public function unlink(Download $download): DownloadUnlinkResult
+    /**
+     * Only a Completed download can be unlinked: an unfinished torrent still writes into incoming/
+     * and, without its row, nobody would track it. $expectedVersion/$expectedStatus are the row state
+     * the caller saw (the page form, or the console's freshly loaded row), not whatever $download
+     * holds now; a non-Completed expected status is refused before any mutation, and the DELETE is
+     * conditional on both values so the check is atomic with the delete.
+     */
+    public function unlink(Download $download, int $expectedVersion, DownloadStatus $expectedStatus): DownloadUnlinkResult
     {
+        if ($expectedStatus !== DownloadStatus::Completed) {
+            return DownloadUnlinkResult::refused();
+        }
+
         $downloadId = $download->id ?? throw new \LogicException('Download must be persisted before it can be unlinked.');
-        $version = $download->getVersion();
         $anime = $download->getAnime();
         $released = $this->folderPointer->releaseIfOwnedBy($download);
 
@@ -68,7 +79,7 @@ final class DownloadUnlinkService
         $connection->beginTransaction();
         try {
             $this->entityManager->flush();
-            $affected = $connection->executeStatement('DELETE FROM downloads WHERE id = ? AND version = ?', [$downloadId, $version]);
+            $affected = $connection->executeStatement('DELETE FROM downloads WHERE id = ? AND version = ? AND status = ?', [$downloadId, $expectedVersion, $expectedStatus->value]);
         } catch (\Throwable $exception) {
             $connection->rollBack();
 

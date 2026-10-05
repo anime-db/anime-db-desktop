@@ -68,8 +68,13 @@ function buildEnv(context) {
  * компромисса ценой того, что задачи плагинов не участвуют в приоритете `async`/`media`/
  * `scheduler_downloads_poll` — они всегда параллельны им, а не после.
  *
- * `messenger:setup-transports` для транспорта `plugins` не запускается здесь отдельно — он общий
- * с транспортами `async`/`media` (одна и та же таблица `messenger_messages`) и уже выполняется
+ * Транспорт `sync` (посев SyncSeedMessage) потребляется тем же процессом, после `plugins`: порядок
+ * в `messenger:consume` — приоритет, сообщение из `sync` берётся, только когда `plugins` пуст.
+ * Принятый компромисс: воркер один, порядок влияет лишь на выбор следующего сообщения, пока он
+ * свободен; уже идущий pull задерживает фоновые задачи плагинов на всё своё время.
+ *
+ * `messenger:setup-transports` для транспортов `plugins`/`sync` не запускается здесь отдельно —
+ * он общий с транспортами `async`/`media` (одна и та же таблица `messenger_messages`) и уже выполняется
  * перед стартом этого процесса как часть messenger-consumer.js#start (см. supervisor/index.js).
  *
  * @param {import('./env').PhpContext} context
@@ -78,7 +83,7 @@ function buildEnv(context) {
 function spawnProcess(context, backoffIdx = 0) {
     if (stopping) return;
 
-    child = spawn(BINARY, ['php-cli', CONSOLE, 'messenger:consume', 'plugins'], {
+    child = spawn(BINARY, ['php-cli', CONSOLE, 'messenger:consume', 'plugins', 'sync'], {
         cwd: paths.getAppRootDir(),
         env: buildEnv(context),
         stdio: ['ignore', 'pipe', 'pipe'],

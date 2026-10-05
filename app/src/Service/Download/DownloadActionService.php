@@ -62,7 +62,7 @@ final class DownloadActionService
     {
     }
 
-    /** Failed => Pending, resetting failure_reason and move_attempts — see Download::retry(). */
+    /** Failed => Pending, resetting failure_reason and setting move_attempts (1 for move_failed, else 0) — see Download::retry(). */
     public function retry(Download $download, int $expectedVersion, DownloadStatus $expectedStatus): DownloadActionOutcome
     {
         if (!$download->retry()) {
@@ -71,8 +71,8 @@ final class DownloadActionService
 
         $downloadId = $download->id ?? throw new \LogicException('Download must be persisted before it can be retried.');
         $affected = $this->entityManager->getConnection()->executeStatement(
-            'UPDATE downloads SET status = ?, failure_reason = NULL, move_attempts = 0, version = version + 1 WHERE id = ? AND version = ? AND status = ?',
-            [DownloadStatus::Pending->value, $downloadId, $expectedVersion, $expectedStatus->value],
+            'UPDATE downloads SET status = ?, failure_reason = NULL, move_attempts = ?, version = version + 1 WHERE id = ? AND version = ? AND status = ?',
+            [DownloadStatus::Pending->value, $download->getMoveAttempts(), $downloadId, $expectedVersion, $expectedStatus->value],
         );
 
         if ($affected === 0) {

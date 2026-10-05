@@ -1457,6 +1457,95 @@ final class DownloadCompletionPollerTest extends TestCase
     }
 
     /**
+     * "Повторить" after move_failed leaves our own half-moved folder on disk: with move_attempts
+     * reset to 1 the relocator must skip the disk check and send setLocation again.
+     */
+    public function testPollRetriesTheMoveAfterRetryFromMoveFailedDespiteTheLeftoverTargetOnDisk(): void
+    {
+        $anime = $this->persistAnime();
+        $download = $this->newDownload(self::HASH, $anime);
+        $download->markFailed('move_failed');
+        $this->assertTrue($download->retry());
+        $this->downloads->save($download);
+        $contentPath = $this->incomingContentPath(self::HASH, 'Release.Name');
+        $targetPath = $this->root.'\\Release.Name';
+
+        $setLocationCalls = [];
+        $poller = $this->makeRetryPoller($contentPath, new StubDownloadStorageFilesystem(existingPaths: [$targetPath]), $setLocationCalls);
+
+        $poller->poll();
+
+        $this->assertCount(1, $setLocationCalls);
+        $stored = $this->downloads->findByInfoHashAndAnime(self::HASH, (int) $anime->id);
+        $this->assertNotNull($stored);
+        $this->assertSame(DownloadStatus::Pending, $stored->getStatus());
+        $this->assertNull($stored->getFailureReason());
+    }
+
+    /** The DB check still runs on every attempt, so a card occupying the name blocks the retried move. */
+    public function testPollFailsTheRetriedMoveWhenTheTargetIsLinkedToAnotherCard(): void
+    {
+        $anime = $this->persistAnime();
+        $download = $this->newDownload(self::HASH, $anime);
+        $download->markFailed('move_failed');
+        $this->assertTrue($download->retry());
+        $this->downloads->save($download);
+        $contentPath = $this->incomingContentPath(self::HASH, 'Release.Name');
+        $targetPath = $this->root.'\\Release.Name';
+
+        $occupant = $this->persistAnime();
+        $occupant->setStorage($this->storage)->setStoragePath('Release.Name');
+        $this->entityManager->flush();
+
+        $setLocationCalls = [];
+        $poller = $this->makeRetryPoller($contentPath, new StubDownloadStorageFilesystem(existingPaths: [$targetPath]), $setLocationCalls);
+
+        $poller->poll();
+
+        $this->assertCount(0, $setLocationCalls);
+        $stored = $this->downloads->findByInfoHashAndAnime(self::HASH, (int) $anime->id);
+        $this->assertNotNull($stored);
+        $this->assertSame(DownloadStatus::Failed, $stored->getStatus());
+        $this->assertSame('name_conflict', $stored->getFailureReason());
+    }
+
+    /**
+     * @param list<string> $setLocationCalls
+     */
+    private function makeRetryPoller(string $contentPath, DownloadStorageFilesystem $filesystem, array &$setLocationCalls): DownloadCompletionPoller
+    {
+        $httpClient = new MockHttpClient(function (string $method, string $url, array $options) use (&$setLocationCalls, $contentPath): MockResponse {
+            if ($method === 'POST' && str_contains($url, '/api/v2/torrents/setLocation')) {
+                $setLocationCalls[] = $options['body'];
+            }
+
+            return new MockResponse(json_encode([[
+                'hash' => self::HASH,
+                'infohash_v1' => self::HASH,
+                'progress' => 1,
+                'state' => 'uploading',
+                'content_path' => $contentPath,
+            ]], \JSON_THROW_ON_ERROR), ['response_headers' => ['content-type' => 'application/json']]);
+        });
+
+        $jail = new DownloadFolderJail();
+        $linker = new AnimeDownloadLinker(new AnimeRepository($this->entityManager), $this->entityManager, $jail);
+        $client = new QbittorrentClient($httpClient, self::BASE_URL);
+
+        return new DownloadCompletionPoller(
+            $client,
+            $this->downloads,
+            $linker,
+            $jail,
+            $this->makeRelocator($client, $filesystem),
+            $this->createMock(EventDispatcherInterface::class),
+            $this->entityManager,
+            new FreeSpaceChecker(new NativeFreeSpaceProvider()),
+            new NullLogger(),
+        );
+    }
+
+    /**
      * Proves the move target's name comes from basename(content_path) — libtorrent-sanitized —
      * and never from the torrent's own "name" field: a card already occupies the content_path
      * name, not the (deliberately different) torrent name, so a conflict here is only possible if
@@ -2003,7 +2092,7 @@ final class DownloadCompletionPollerTest extends TestCase
         $this->assertNotNull($stored);
         $this->assertFalse($stored->isCompleted());
         $this->assertSame(DownloadStatus::Failed, $stored->getStatus());
-        $this->assertSame('move_failed', $stored->getFailureReason());
+        $this->assertSame('unexpected_layout', $stored->getFailureReason());
     }
 }
 
