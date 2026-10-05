@@ -23,6 +23,7 @@
  # anime/show.html.twig and, as an out-of-band swap (oob = true), by AnimeFillController after an
  # alternativeNames fill: the official Japanese title shown here comes from the same names.
  #}
+{% from 'anime/_delete_confirm.html.twig' import delete_confirm %}
 {% set japanese_name = (anime.names|filter(name => name.role == 'official' and name.locale == 'ja')|first)|default(null) %}
 {% set date_premiere = anime.date_premiere|default(null) %}
 {% set date_end = anime.date_end|default(null) %}
@@ -40,12 +41,19 @@
         <p class="anime-detail__subtitle">{{ subtitle_parts|join(' · ') }}</p>
     </div>
 
-    {# Entry actions menu: each later action (delete, change type) adds its own <li> here. #}
+    {# Entry actions menu: each later action (change type, ...) adds its own <li> here. #}
     <div class="dropdown anime-detail__menu">
         <button type="button" class="btn btn-outline-secondary anime-detail__menu-toggle" data-bs-toggle="dropdown" aria-expanded="false"
                 title="{{ 'anime_detail.menu_button'|trans }}" aria-label="{{ 'anime_detail.menu_button'|trans }}">&#8943;</button>
         <ul class="dropdown-menu dropdown-menu-end">
             <li><a class="dropdown-item" href="{{ path('anime_edit', {id: anime.id}) }}">{{ 'anime_detail.menu_edit'|trans }}</a></li>
+            <li>
+                <form method="post" action="{{ path('anime_delete', {id: anime.id}) }}"
+                      data-confirm="{{ delete_confirm(anime.title, anime.storage is not null, delete_has_finished_downloads|default(false)) }}">
+                    <input type="hidden" name="_token" value="{{ csrf_token('anime_delete_' ~ anime.id) }}">
+                    <button type="submit" class="dropdown-item text-danger">{{ 'anime_detail.menu_delete'|trans }}</button>
+                </form>
+            </li>
         </ul>
     </div>
 </header>

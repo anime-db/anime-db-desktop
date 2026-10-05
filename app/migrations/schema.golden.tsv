@@ -42,6 +42,7 @@ table	pending_sync_push	CREATE TABLE pending_sync_push ( anime_id INTEGER NOT NU
 table	storage	CREATE TABLE storage ( id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, name VARCHAR(256) NOT NULL, type VARCHAR(16) NOT NULL CHECK (type IN ('folder', 'external', 'external-r', 'video')), path VARCHAR(1024) NOT NULL, date_update INTEGER DEFAULT NULL, file_modified INTEGER DEFAULT NULL )
 table	studio	CREATE TABLE studio ( id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, name VARCHAR(256) NOT NULL )
 table	sync_review_item	CREATE TABLE sync_review_item ( id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, kind VARCHAR(32) NOT NULL, payload CLOB NOT NULL, created_at INTEGER NOT NULL, resolved_at INTEGER DEFAULT NULL )
+table	sync_tombstone	CREATE TABLE sync_tombstone ( plugin_id VARCHAR(64) NOT NULL, external_id VARCHAR(255) NOT NULL, deleted_at INTEGER NOT NULL, PRIMARY KEY (plugin_id, external_id) )
 trigger	anime_fts_ad_anime	CREATE TRIGGER anime_fts_ad_anime AFTER DELETE ON anime BEGIN DELETE FROM anime_fts WHERE rowid = old.id; END
 trigger	anime_fts_ad_anime_name	CREATE TRIGGER anime_fts_ad_anime_name AFTER DELETE ON anime_name BEGIN DELETE FROM anime_fts WHERE rowid = -old.id; END
 trigger	anime_fts_ai_anime	CREATE TRIGGER anime_fts_ai_anime AFTER INSERT ON anime BEGIN INSERT INTO anime_fts(rowid, anime_id, name) VALUES (new.id, new.id, new.title); END

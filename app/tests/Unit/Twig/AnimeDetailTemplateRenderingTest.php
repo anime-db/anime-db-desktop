@@ -610,6 +610,46 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
         $this->assertMatchesRegularExpression('#<ul class="dropdown-menu[^"]*">\s*<li><a class="dropdown-item" href="/anime/1/edit">Edit</a></li>#', $html);
     }
 
+    private function deleteConfirmMessage(string $html): string
+    {
+        if (preg_match('#data-confirm="([^"]*)"#', $html, $matches) !== 1) {
+            $this->fail('The delete form has no confirmation text.');
+        }
+
+        return html_entity_decode($matches[1]);
+    }
+
+    public function testHeaderMenuHasADeleteFormWithCsrfAndAConfirmationThatNamesTheEntry(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession('/anime/1');
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('anime/_header.html.twig', ['anime' => $this->minimalAnime()]);
+
+        $this->assertMatchesRegularExpression('#<form method="post" action="/anime/2/delete"\s+data-confirm="([^"]*)">\s*<input type="hidden" name="_token" value="[^"]+">#', $html);
+        $message = $this->deleteConfirmMessage($html);
+        $this->assertStringContainsString('Only the catalog entry is deleted.', $message);
+        $this->assertStringContainsString($this->minimalAnime()['title'], $message);
+        $this->assertStringNotContainsString('video files', $message);
+        $this->assertStringNotContainsString('torrents', $message);
+    }
+
+    public function testDeleteConfirmationMentionsStorageFilesAndTorrentsWhenTheyApply(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession('/anime/1');
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('anime/_header.html.twig', ['anime' => $this->fullyPopulatedAnime(), 'delete_has_finished_downloads' => true]);
+
+        $message = $this->deleteConfirmMessage($html);
+        $this->assertStringContainsString('The video files in the storage are not touched.', $message);
+        $this->assertStringContainsString('removed from the download client and stop seeding; the downloaded files stay.', $message);
+    }
+
     public function testEditFormShowsErrorsNextToTheFieldsAndKeepsTheTypedValues(): void
     {
         self::bootKernel();

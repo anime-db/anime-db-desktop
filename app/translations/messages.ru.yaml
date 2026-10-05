@@ -208,6 +208,7 @@ settings_sync_review:
     auto_applied_winner: разрешено автоматически
     correct_button: Поправить
     resolve_button: Разобрано
+    delete_button: Удалить запись
 
 settings_plugins:
     sync_on: вкл.
@@ -537,6 +538,16 @@ anime_detail:
     rating_star_label: 'Оценка: %rating%'
     menu_button: Действия с записью
     menu_edit: Изменить
+    menu_delete: Удалить
+
+anime_delete:
+    confirm: 'Удалить «%title%»? Удаляется только запись каталога.'
+    confirm_storage: 'Видеофайлы в хранилище не затрагиваются.'
+    confirm_downloads: 'Завершённые и упавшие торренты будут убраны из клиента загрузок, раздача остановится; скачанные файлы останутся.'
+    flash_deleted: 'Запись «%title%» удалена из каталога.'
+    flash_pending_downloads: 'Запись «%title%» не удалена: сначала отмените её загрузки.'
+    downloads_link: Перейти к загрузкам
+    flash_sync_running: 'Идёт синхронизация, попробуйте позже.'
 
 anime_edit:
     title: 'Изменить %title% — AnimeDB'

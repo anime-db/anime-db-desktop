@@ -65,6 +65,33 @@ final class HttpPluginMediaDownloaderTest extends TestCase
         self::assertSame('WEBP', substr($bytes, 8, 4));
     }
 
+    /**
+     * Issue #916: the entry can be deleted while the image is being fetched. The check right
+     * before the write is what keeps the media directory of a deleted entry from reappearing.
+     */
+    public function testDownloadWritesNothingWhenTheEntryIsGoneBeforeTheFileIsWritten(): void
+    {
+        $httpClient = new MockHttpClient([new MockResponse($this->createPngBytes())]);
+        $downloader = $this->createDownloader($httpClient);
+
+        $filename = $downloader->download(1, 'https://8.8.8.8/cover.png', static fn (): bool => false);
+
+        self::assertNull($filename);
+        self::assertSame(1, $httpClient->getRequestsCount());
+        self::assertFalse(is_dir($this->mediaDir.'/1'));
+    }
+
+    public function testDownloadWritesTheFileWhenTheEntryIsStillThere(): void
+    {
+        $httpClient = new MockHttpClient([new MockResponse($this->createPngBytes())]);
+        $downloader = $this->createDownloader($httpClient);
+
+        $filename = $downloader->download(1, 'https://8.8.8.8/cover.png', static fn (): bool => true);
+
+        self::assertSame(sha1('https://8.8.8.8/cover.png').'.webp', $filename);
+        self::assertFileExists($this->mediaDir.'/1/'.$filename);
+    }
+
     public function testDownloadReturnsNullAndSavesNothingWhenNormalizerRejectsTheBody(): void
     {
         $httpClient = new MockHttpClient([new MockResponse('not-an-image')]);

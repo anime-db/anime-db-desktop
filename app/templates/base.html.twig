@@ -112,6 +112,14 @@
             </a>
         </div>
     </nav>
+    {% for type, messages in app.flashes %}
+        {% for message in messages %}
+            <div class="alert alert-{{ type }} mx-3 mt-3 mb-0" role="alert">
+                {{ message.text }}
+                {%- if message.link_url is not null %} <a href="{{ message.link_url }}" class="alert-link">{{ message.link_label }}</a>{% endif %}
+            </div>
+        {% endfor %}
+    {% endfor %}
     {% block body %}{% endblock %}
     <div id="app-notifications" class="app-notifications" data-control="app-notifications" aria-live="polite"></div>
     <template id="app-notification-template">

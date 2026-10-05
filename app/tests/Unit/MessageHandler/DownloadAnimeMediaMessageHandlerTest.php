@@ -29,6 +29,8 @@ namespace App\Tests\Unit\MessageHandler;
 
 use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
+use App\Entity\Anime;
+use App\Entity\AnimeImage;
 use App\Entity\Enum\WatchStatus;
 use App\Entity\MovieAnime;
 use App\Message\DownloadAnimeMediaMessage;
@@ -96,6 +98,42 @@ final class DownloadAnimeMediaMessageHandlerTest extends TestCase
         $this->entityManager->clear();
         $reloaded = $this->entityManager->find(MovieAnime::class, $animeId);
         $this->assertSame('abc123.webp', $reloaded?->getCover());
+    }
+
+    /**
+     * Issue #916: the entry is deleted while its image is being downloaded. The handler must not
+     * attach anything to it (a gallery row for a deleted entry would fail on the foreign key), and
+     * the downloader is handed a check that answers false by then, so it writes no file.
+     */
+    public function testNothingIsAttachedWhenTheEntryIsDeletedWhileTheImageIsDownloading(): void
+    {
+        $anime = $this->persistAnime();
+        $animeId = $anime->id ?? throw new \LogicException('Anime must have an id after persisting.');
+
+        $stillWantedAnswers = [];
+        $downloader = $this->createMock(PluginMediaDownloaderInterface::class);
+        $downloader->expects($this->once())
+            ->method('download')
+            ->willReturnCallback(function (int $id, string $url, ?\Closure $stillWanted) use (&$stillWantedAnswers): string {
+                $this->assertNotNull($stillWanted);
+                $stillWantedAnswers[] = $stillWanted();
+                // Deleted by another process (the handler runs in the messenger consumer), so the
+                // handler's own EntityManager still holds the entry as managed.
+                $this->entityManager->getConnection()->executeStatement('DELETE FROM '.$this->entityManager->getClassMetadata(Anime::class)->getTableName().' WHERE id = ?', [$id]);
+                $stillWantedAnswers[] = $stillWanted();
+
+                return 'abc123.webp';
+            });
+
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->never())->method('warning');
+
+        $handler = new DownloadAnimeMediaMessageHandler($this->entityManager, $downloader, $logger);
+        $handler(new DownloadAnimeMediaMessage($animeId, 'https://example.test/1.jpg', false));
+
+        $this->assertSame([true, false], $stillWantedAnswers);
+        $this->assertSame(0, (int) $this->entityManager->getConnection()->fetchOne('SELECT COUNT(*) FROM '.$this->entityManager->getClassMetadata(Anime::class)->getTableName()));
+        $this->assertSame(0, (int) $this->entityManager->getConnection()->fetchOne('SELECT COUNT(*) FROM '.$this->entityManager->getClassMetadata(AnimeImage::class)->getTableName()));
     }
 
     public function testAddsAGalleryImageWhenIsCoverIsFalse(): void

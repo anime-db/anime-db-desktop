@@ -34,6 +34,7 @@ use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
 use App\Entity\Enum\WatchStatus;
 use App\Entity\TvAnime;
+use App\Repository\DownloadRepository;
 use App\Repository\StudioRepository;
 use App\Service\AnimeViewFactory;
 use App\Service\Plugin\Filler\CachedFillerLookup;
@@ -139,6 +140,7 @@ final class AnimeFillControllerTest extends TestCase
             $fillableFieldsPresenter,
             $csrfTokenManager,
             new AnimeViewFactory($requestStack),
+            $this->createStub(DownloadRepository::class),
             $twig ?? $this->createStub(Environment::class),
         );
     }
