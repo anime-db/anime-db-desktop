@@ -713,6 +713,8 @@ download_new:
     error_unreadable_source: Could not read the release.
     error_insufficient_space: 'Needs %needed%, "%path%" has %free% free.'
     error_already_linked: This release is already linked to entry #%id%.
+    error_already_in_client: 'This torrent is already in the torrent client without a card. Delete it on the "Downloads" page and add it again.'
+    error_already_in_client_link: 'Open "Downloads"'
     error_storage_unavailable: Storage is unavailable.
     error_client_unavailable: The torrent client is unavailable, try again later.
     error_file_too_large: The file is larger than 16 MB.

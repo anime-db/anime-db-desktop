@@ -44,6 +44,7 @@ use App\Repository\StorageRepository;
 use App\Service\AppSettingsProvider;
 use App\Service\Download\PresetDownloadsStorageProvider;
 use App\Service\Download\QbittorrentDownloadService;
+use App\Service\Exception\DownloadAlreadyInClientException;
 use App\Service\Exception\DownloadStorageUnavailableException;
 use App\Service\Exception\InsufficientDiskSpaceException;
 use App\Service\Exception\InvalidTorrentFileException;
@@ -647,6 +648,34 @@ final class DownloadNewControllerTest extends TestCase
         $controller = $this->createController(animeRepository: $animeRepository, downloadService: $downloadService, twig: $twig);
 
         $controller->create($this->magnetRequest());
+    }
+
+    public function testCreateMapsAlreadyInClientExceptionToADownloadsPageHintKeepingTheForm(): void
+    {
+        $anime = $this->makeAnime(5);
+        $animeRepository = $this->createStub(AnimeRepository::class);
+        $animeRepository->method('findByIds')->willReturn([5 => $anime]);
+
+        $downloadService = $this->createStub(QbittorrentDownloadService::class);
+        $downloadService->method('enqueueTo')->willThrowException(new DownloadAlreadyInClientException(self::SOME_HASH));
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('downloads/new.html.twig', $this->callback(
+                static fn (array $params): bool => $params['error'] === 'download_new.error_already_in_client'
+                    && $params['downloadsLink'] === true
+                    && $params['selectedAnime'] === $anime
+                    && $params['selectedStorageId'] === 1
+                    && $params['magnet'] !== '',
+            ))
+            ->willReturn('<html></html>');
+
+        $controller = $this->createController(animeRepository: $animeRepository, downloadService: $downloadService, twig: $twig);
+
+        $response = $controller->create($this->magnetRequest());
+
+        $this->assertSame(200, $response->getStatusCode());
     }
 
     public function testCreateMapsStorageUnavailableException(): void
