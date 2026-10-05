@@ -514,6 +514,39 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
         $this->assertStringContainsString('<textarea', $html);
     }
 
+    public function testNotesEditCancelReloadsTheNotesViewNotTheEditableBlock(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession('/anime/1/editable/notes/edit');
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+
+        $html = $twig->render('anime/_notes.html.twig', ['anime' => $this->fullyPopulatedAnime(), 'editing' => true]);
+
+        $this->assertMatchesRegularExpression(
+            '#hx-get="/anime/1/editable/notes"\s+hx-target="\#anime-notes-1"#',
+            $html,
+        );
+    }
+
+    public function testEditableFragmentCarriesTheOobSwapAttributeOnlyWhenRequested(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession('/anime/1/editable');
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $params = ['anime' => $this->fullyPopulatedAnime(), 'editing' => null, 'error' => null];
+
+        $oob = $twig->render('anime/_editable.html.twig', $params + ['oob' => true]);
+        $this->assertMatchesRegularExpression('/id="anime-editable-1"[^>]* hx-swap-oob="outerHTML"/', $oob);
+
+        $plain = $twig->render('anime/_editable.html.twig', $params);
+        $this->assertStringContainsString('id="anime-editable-1"', $plain);
+        $this->assertStringNotContainsString('hx-swap-oob', $plain);
+    }
+
     public function testAddNoteEntryPointTargetsTheNotesBlock(): void
     {
         $html = $this->renderShow($this->minimalAnime(), 'en');
