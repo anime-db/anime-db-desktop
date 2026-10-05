@@ -251,7 +251,7 @@ final class DownloadActionControllerTest extends TestCase
             static fn (string $route, array $params = []): string => \sprintf('/anime/%d', $params['id'] ?? 0),
         );
 
-        return new DownloadsOverviewBuilder($this->repository, new StorageMarkerService($this->entityManager), $translator, $urlGenerator, new DownloadIncomingChecker(new DownloadFolderJail(), new StorageRepository($this->entityManager)));
+        return new DownloadsOverviewBuilder($this->repository, new StorageMarkerService($this->entityManager), new DownloadFolderJail(), $translator, $urlGenerator, new DownloadIncomingChecker(new DownloadFolderJail(), new StorageRepository($this->entityManager)));
     }
 
     /**
