@@ -709,6 +709,8 @@ download_new:
     error_anime_required: Choose a catalog entry.
     error_storage_required: Choose a storage.
     warning_preset_unavailable: Could not prepare the default storage. Choose another one.
+    no_storages_available: No storages are available for downloads. Add a storage on the storages page.
+    no_storages_link: Storages
     error_source_required: Provide a magnet link or choose a torrent file.
     error_unreadable_source: Could not read the release.
     error_insufficient_space: 'Needs %needed%, "%path%" has %free% free.'

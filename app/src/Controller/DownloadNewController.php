@@ -46,6 +46,7 @@ use App\Service\Exception\InsufficientDiskSpaceException;
 use App\Service\Exception\InvalidTorrentFileException;
 use App\Service\Exception\QbittorrentClientException;
 use Doctrine\ORM\EntityManagerInterface;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpFoundation\File\Exception\FileException;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\RedirectResponse;
@@ -94,6 +95,7 @@ final class DownloadNewController
         private readonly UrlGeneratorInterface $urlGenerator,
         private readonly TranslatorInterface $translator,
         private readonly Environment $twig,
+        private readonly LoggerInterface $logger,
     ) {
     }
 
@@ -280,8 +282,9 @@ final class DownloadNewController
         $presetFailed = false;
         try {
             $preset = $this->presetStorageProvider->getOrCreate();
-        } catch (DownloadStorageUnavailableException|\RuntimeException) {
+        } catch (\RuntimeException $e) {
             $presetFailed = true;
+            $this->logger->warning('Could not prepare the preset downloads storage.', ['exception' => $e]);
         }
 
         $byId = [];

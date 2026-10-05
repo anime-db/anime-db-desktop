@@ -145,4 +145,37 @@ final class DownloadNewTemplateRenderingTest extends KernelTestCase
         $params['presetFailed'] = false;
         $this->assertStringNotContainsString('alert-warning', $twig->render('downloads/new.html.twig', $params));
     }
+
+    public function testRendersNoStoragesStateWhenPresetFailedAndListIsEmpty(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession();
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $params = [
+            'selectedAnime' => null,
+            'magnet' => '',
+            'storages' => [],
+            'presetFailed' => true,
+            'selectedStorageId' => null,
+            'error' => null,
+            'errorParams' => [],
+            'info' => null,
+            'occupyingAnimeId' => null,
+        ];
+
+        $html = $twig->render('downloads/new.html.twig', $params);
+        $this->assertStringContainsString('No storages are available for downloads.', $html);
+        $this->assertStringContainsString('href="/storage"', $html);
+        $this->assertStringNotContainsString('download-new-storage', $html);
+        $this->assertMatchesRegularExpression('/<button type="submit"[^>]*\bdisabled\b/', $html);
+
+        $params['storages'] = [$this->makeStorage(1)];
+        $html = $twig->render('downloads/new.html.twig', $params);
+        $this->assertStringContainsString('alert-warning', $html);
+        $this->assertStringNotContainsString('No storages are available for downloads.', $html);
+        $this->assertStringContainsString('download-new-storage', $html);
+        $this->assertDoesNotMatchRegularExpression('/<button type="submit"[^>]*\bdisabled\b/', $html);
+    }
 }

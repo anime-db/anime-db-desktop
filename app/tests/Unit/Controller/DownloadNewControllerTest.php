@@ -51,6 +51,7 @@ use App\Service\Exception\QbittorrentClientException;
 use Doctrine\ORM\EntityManagerInterface;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpFoundation\File\Exception\FileException;
 use Symfony\Component\HttpFoundation\File\File;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
@@ -136,6 +137,7 @@ final class DownloadNewControllerTest extends TestCase
         ?UrlGeneratorInterface $urlGenerator = null,
         ?TranslatorInterface $translator = null,
         ?Environment $twig = null,
+        ?LoggerInterface $logger = null,
     ): DownloadNewController {
         if ($animeRepository === null) {
             $animeRepository = $this->createStub(AnimeRepository::class);
@@ -205,6 +207,7 @@ final class DownloadNewControllerTest extends TestCase
             $urlGenerator,
             $translator,
             $twig,
+            $logger ?? $this->createStub(LoggerInterface::class),
         );
     }
 
@@ -939,5 +942,19 @@ final class DownloadNewControllerTest extends TestCase
             ->willReturn('<html></html>');
 
         $this->createController(twig: $twig)->new(Request::create('/downloads/new'));
+    }
+
+    #[DataProvider('presetFailureProvider')]
+    public function testPresetFailureIsLoggedAsWarningWithException(\Throwable $failure): void
+    {
+        $presetProvider = $this->createStub(PresetDownloadsStorageProvider::class);
+        $presetProvider->method('getOrCreate')->willThrowException($failure);
+
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->once())
+            ->method('warning')
+            ->with($this->isString(), ['exception' => $failure]);
+
+        $this->createController(presetStorageProvider: $presetProvider, logger: $logger)->new(Request::create('/downloads/new'));
     }
 }
