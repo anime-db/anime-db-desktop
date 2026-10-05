@@ -348,7 +348,7 @@ final class DownloadCompletionPoller
             // storage. Unlike the jail/hidden-entry skips above, this never resolves itself on its
             // own (content_path keeps reporting the same root on every poll), so leaving the row
             // Pending would warn and retry forever instead of surfacing as a failure.
-            $download->markFailed('move_failed');
+            $download->markFailed('unexpected_layout');
             $this->entityManager->flush();
             $this->logger->warning('Failing download completion: content_path resolves to the storage root itself, with no top-level entry to link.', [
                 'infoHash' => $infoHash,
@@ -399,14 +399,13 @@ final class DownloadCompletionPoller
                 .'if anime #%d got this folder from another download of its own, run app:downloads:unlink '
                 .'<that download\'s hash> %d (it clears the pointer only if it still matches that download\'s '
                 .'snapshot); otherwise there is no command for this yet and anime #%d\'s folder pointer has to '
-                .'be cleared by hand. Then run app:downloads:unlink %s %d to remove this failed pairing and '
-                .'enqueue the download again.',
+                .'be cleared by hand. Then delete this download on the Downloads page, '
+                .'without ticking "Delete downloaded data" (the data sits in the occupying anime\'s folder), '
+                .'and enqueue it again.',
                 $exception->occupyingAnimeId,
                 $exception->occupyingAnimeId,
                 $exception->occupyingAnimeId,
                 $exception->occupyingAnimeId,
-                $infoHash,
-                $anime->id,
             ), [
                 'infoHash' => $infoHash,
                 'contentPath' => $folderPath,

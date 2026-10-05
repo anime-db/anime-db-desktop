@@ -127,13 +127,13 @@ describe('buildEnv', () => {
 });
 
 describe('start', () => {
-    test('spawns messenger:consume for the plugins transport only', async () => {
+    test('spawns messenger:consume for the plugins and sync transports', async () => {
         spawn.mockReturnValueOnce(createFakeChild());
 
         await start(CONTEXT);
 
         expect(spawn).toHaveBeenCalledTimes(1);
-        expect(spawn.mock.calls[0][1].slice(-2)).toEqual(['messenger:consume', 'plugins']);
+        expect(spawn.mock.calls[0][1].slice(-3)).toEqual(['messenger:consume', 'plugins', 'sync']);
     });
 
     // issue #701: the acceptance criteria require the existing messenger-consumer's transport

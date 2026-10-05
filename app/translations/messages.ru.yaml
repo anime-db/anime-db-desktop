@@ -521,6 +521,7 @@ anime_detail:
     error_fill_image_rejected: Источник вернул изображение, которое не удалось сохранить.
     error_fill_date_range_rejected: Источник вернул дату, конфликтующую с уже сохранённой.
     downloads_heading: Загрузки этой карточки
+    downloads_manage_link: Управлять на странице «Загрузки»
     downloads_unlink_button: Отвязать
     downloads_unlink_conflict_error: Состояние изменилось, обновите страницу.
     download_new_link: Добавить загрузку
@@ -715,6 +716,8 @@ download_new:
     error_unreadable_source: Не удалось прочитать раздачу.
     error_insufficient_space: 'Нужно %needed%, свободно %free% в «%path%».'
     error_already_linked: Эта раздача уже привязана к записи #%id%.
+    error_already_in_client: 'Этот торрент уже есть в торрент-клиенте без карточки. Удалите его на странице «Загрузки» и поставьте заново.'
+    error_already_in_client_link: 'Открыть «Загрузки»'
     error_storage_unavailable: Хранилище недоступно.
     error_client_unavailable: Торрент-клиент недоступен, повторите позже.
     error_file_too_large: Файл больше 16 МБ.

@@ -25,31 +25,19 @@
 
 declare(strict_types=1);
 
-namespace App\Service\Download;
+namespace App\Service\Exception;
 
-/** Outcome of {@see DownloadUnlinkService::unlink()} — see that method's docblock for what each case means. */
-final class DownloadUnlinkResult
+/**
+ * Thrown by {@see \App\Service\Download\QbittorrentDownloadService::enqueueTo()} when
+ * qBittorrent already holds a torrent with the same v1 infoHash (under any tag) but no `downloads`
+ * row exists for it — e.g. after "Unlink", a deleted anime card, or a failed `torrents/delete`.
+ * qBittorrent would answer `torrents/add` for such a duplicate with a 409, so nothing is submitted
+ * and no row is written.
+ */
+final class DownloadAlreadyInClientException extends \RuntimeException
 {
-    private function __construct(
-        public readonly bool $succeeded,
-        public readonly bool $pointerReleased,
-        public readonly bool $refused = false,
-    ) {
-    }
-
-    public static function unlinked(bool $pointerReleased): self
+    public function __construct(public readonly string $infoHash)
     {
-        return new self(true, $pointerReleased);
-    }
-
-    public static function versionConflict(): self
-    {
-        return new self(false, false);
-    }
-
-    /** The expected status was not Completed: nothing was touched. */
-    public static function refused(): self
-    {
-        return new self(false, false, true);
+        parent::__construct(\sprintf('Torrent "%s" is already present in qBittorrent without a download row.', $infoHash));
     }
 }

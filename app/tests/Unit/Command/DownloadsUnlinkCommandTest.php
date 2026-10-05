@@ -31,6 +31,7 @@ use App\Command\DownloadsUnlinkCommand;
 use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
 use App\Entity\Download;
+use App\Entity\Enum\DownloadStatus;
 use App\Entity\Enum\StorageType;
 use App\Entity\Enum\WatchStatus;
 use App\Entity\Storage;
@@ -48,6 +49,7 @@ use Doctrine\ORM\EntityManager;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\ORMSetup;
 use Doctrine\ORM\Tools\SchemaTool;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Tester\CommandTester;
@@ -125,7 +127,7 @@ final class DownloadsUnlinkCommandTest extends TestCase
     public function testUnlinkRemovesThePairingAndKeepsTheAnime(): void
     {
         $anime = $this->persistAnime('Anime A');
-        $this->repository->save(new Download(self::HASH, $anime));
+        $this->persistCompletedDownload(self::HASH, $anime, null, null);
 
         $exit = $this->tester->execute(['info-hash' => self::HASH, 'anime-id' => (string) $anime->id]);
 
@@ -137,13 +139,13 @@ final class DownloadsUnlinkCommandTest extends TestCase
     public function testUnlinkedPairingCanBeCreatedAgain(): void
     {
         $anime = $this->persistAnime('Anime A');
-        $this->repository->save(new Download(self::HASH, $anime));
+        $this->persistCompletedDownload(self::HASH, $anime, null, null);
 
         $exit = $this->tester->execute(['info-hash' => self::HASH, 'anime-id' => (string) $anime->id]);
         $this->assertSame(Command::SUCCESS, $exit);
 
         // Without the unlink this would violate uniq_download_infohash_anime.
-        $this->repository->save(new Download(self::HASH, $anime));
+        $this->persistCompletedDownload(self::HASH, $anime, null, null);
 
         $this->assertNotNull($this->repository->findByInfoHashAndAnime(self::HASH, (int) $anime->id));
     }
@@ -151,12 +153,43 @@ final class DownloadsUnlinkCommandTest extends TestCase
     public function testInfoHashIsMatchedCaseInsensitively(): void
     {
         $anime = $this->persistAnime('Anime A');
-        $this->repository->save(new Download(self::HASH, $anime));
+        $this->persistCompletedDownload(self::HASH, $anime, null, null);
 
         $exit = $this->tester->execute(['info-hash' => strtoupper(self::HASH), 'anime-id' => (string) $anime->id]);
 
         $this->assertSame(Command::SUCCESS, $exit);
         $this->assertNull($this->repository->findByInfoHashAndAnime(self::HASH, (int) $anime->id));
+    }
+
+    #[DataProvider('unfinishedStatuses')]
+    public function testUnlinkRefusesAnUnfinishedDownloadWithADistinctMessage(DownloadStatus $status): void
+    {
+        $anime = $this->persistAnime('Anime A');
+        $storage = $this->persistStorage();
+        $anime->setStorage($storage)->setStoragePath('some-release');
+        $download = new Download(self::HASH, $anime);
+        $download->recordLinkedStorage($storage, 'some-release');
+        if ($status === DownloadStatus::Failed) {
+            $download->markFailed();
+        }
+        $this->repository->save($download);
+
+        $exit = $this->tester->execute(['info-hash' => self::HASH, 'anime-id' => (string) $anime->id]);
+
+        $this->assertSame(Command::FAILURE, $exit);
+        $this->assertStringContainsString('only a completed download can be unlinked', $this->tester->getDisplay());
+        $this->assertStringNotContainsString('please retry', $this->tester->getDisplay());
+        $this->entityManager->clear();
+        $this->assertNotNull($this->repository->findByInfoHashAndAnime(self::HASH, (int) $anime->id));
+        $reloaded = $this->entityManager->find(TvAnime::class, $anime->id);
+        $this->assertSame($storage->id, $reloaded?->getStorage()?->id);
+    }
+
+    /** @return iterable<string, array{DownloadStatus}> */
+    public static function unfinishedStatuses(): iterable
+    {
+        yield 'pending' => [DownloadStatus::Pending];
+        yield 'failed' => [DownloadStatus::Failed];
     }
 
     public function testMissingPairingFailsWithMessage(): void

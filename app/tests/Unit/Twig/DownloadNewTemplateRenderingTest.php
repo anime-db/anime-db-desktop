@@ -178,4 +178,29 @@ final class DownloadNewTemplateRenderingTest extends KernelTestCase
         $this->assertStringContainsString('download-new-storage', $html);
         $this->assertDoesNotMatchRegularExpression('/<button type="submit"[^>]*\bdisabled\b/', $html);
     }
+
+    public function testRendersAlreadyInClientErrorWithLinkToDownloadsPage(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession();
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('downloads/new.html.twig', [
+            'selectedAnime' => $this->makeAnime(5),
+            'magnet' => 'magnet:?xt=urn:btih:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+            'storages' => [$this->makeStorage(1)],
+            'presetFailed' => false,
+            'selectedStorageId' => 1,
+            'error' => 'download_new.error_already_in_client',
+            'errorParams' => [],
+            'info' => null,
+            'occupyingAnimeId' => null,
+            'downloadsLink' => true,
+        ]);
+
+        $this->assertStringContainsString('already in the torrent client without a card', $html);
+        $this->assertStringContainsString('href="/downloads"', $html);
+        $this->assertStringContainsString('magnet:?xt=urn:btih:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', $html);
+    }
 }
