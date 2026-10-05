@@ -78,7 +78,7 @@ async function waitForRender(win) {
 }
 
 /**
- * Pages captured for every theme. `anime-card` is included only when the orchestrator found an
+ * Pages captured for every theme. `anime-card` and `anime-edit` are included only when the orchestrator found an
  * existing anime row (ANIME_ID), since the catalog is empty on a fresh clone until demo data is
  * seeded manually (see README).
  *
@@ -100,7 +100,10 @@ function buildPages() {
     ];
 
     if (ANIME_ID !== null) {
-        pages.unshift({ name: 'anime-card', path: `/anime/${ANIME_ID}` });
+        pages.unshift(
+            { name: 'anime-card', path: `/anime/${ANIME_ID}` },
+            { name: 'anime-edit', path: `/anime/${ANIME_ID}/edit` },
+        );
     } else {
         console.warn('[shots] no anime found in the catalog — skipping anime-card (see README on seeding demo data)');
     }

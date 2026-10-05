@@ -41,8 +41,50 @@
 
 .anime-detail__header {
     display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.anime-detail__heading {
+    display: flex;
     flex-direction: column;
     gap: 4px;
+    min-width: 0;
+}
+
+.anime-detail__menu-toggle {
+    line-height: 1;
+}
+
+.anime-edit__row {
+    margin-bottom: 8px;
+}
+
+.anime-edit__row-fields {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+}
+
+.anime-edit__locale {
+    flex: 0 0 90px;
+}
+
+.anime-edit__role {
+    flex: 0 0 140px;
+}
+
+.anime-edit__choices {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 16px;
+    max-height: 180px;
+    overflow-y: auto;
+}
+
+.anime-edit__choice {
+    white-space: nowrap;
 }
 
 .anime-detail__subtitle {

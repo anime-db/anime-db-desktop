@@ -531,6 +531,52 @@ anime_detail:
     notes_add_button: Добавить заметку
     notes_edit_button: Изменить
     rating_star_label: 'Оценка: %rating%'
+    menu_button: Действия с записью
+    menu_edit: Изменить
+
+anime_edit:
+    title: 'Изменить %title% — AnimeDB'
+    heading: 'Изменить: %title%'
+    back_link: Назад к записи
+    field_title: Название
+    field_names: Альтернативные названия
+    field_name: Название
+    field_locale: Локаль
+    field_role: Роль
+    field_descriptions: Описания
+    field_description_text: Текст описания
+    field_genres: Жанры
+    field_themes: Темы
+    field_studios: Студии
+    field_new_studios: Новая студия
+    field_demographic: Демография
+    demographic_none: Нет
+    field_date_premiere: Дата премьеры
+    field_date_end: Дата окончания
+    field_duration_minutes: Длительность, мин
+    field_episodes_count: Эпизоды
+    field_countries: Страны (ISO-коды)
+    field_sources: Ссылки на источники
+    field_notes: Заметки
+    add_button: Добавить
+    add_locale_button: Добавить локаль
+    remove_button: Удалить
+    save_button: Сохранить
+    cancel_button: Отмена
+    error_summary: Часть полей заполнена неверно. Ничего не сохранено.
+    error_title_required: Укажите название.
+    error_name_required: Укажите название.
+    error_too_long: Слишком длинное значение (не более 256 символов).
+    error_role_invalid: Выберите роль.
+    error_locale_invalid: Укажите код языка, например en или ru.
+    error_locale_duplicate: Эта локаль уже используется.
+    error_choice_invalid: Выберите значение из списка.
+    error_date_invalid: Укажите корректную дату.
+    error_date_range: Дата окончания не может быть раньше даты премьеры.
+    error_number_invalid: Укажите целое число, ноль или больше.
+    error_episodes_below_watched: Число эпизодов не может быть меньше числа просмотренных.
+    error_country_invalid: Укажите двухбуквенные коды стран через запятую.
+    error_url_invalid: Укажите корректный http- или https-адрес (не длиннее 512 символов).
 
 anime_new:
     title: Новая запись — AnimeDB

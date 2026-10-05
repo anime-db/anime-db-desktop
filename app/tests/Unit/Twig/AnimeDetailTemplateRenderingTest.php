@@ -423,7 +423,7 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
 
         $html = $this->renderShow($anime, 'en');
 
-        $this->assertMatchesRegularExpression('/<header class="anime-detail__header"[^>]*>\s*<h1 class="anime-detail__title"><bdi>Shingeki no Kyojin<\/bdi><\/h1>/', $html);
+        $this->assertMatchesRegularExpression('/<header class="anime-detail__header"[^>]*>\s*<div class="anime-detail__heading">\s*<h1 class="anime-detail__title"><bdi>Shingeki no Kyojin<\/bdi><\/h1>/', $html);
         $this->assertStringContainsString('<p class="anime-detail__subtitle">進撃の巨人 · TV Series · 2009–2010</p>', $html);
         // The title heading is no longer part of the cover fragment re-rendered by the cover fill.
         /** @var Environment $twig */
@@ -567,6 +567,63 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
 
         $this->assertStringContainsString('id="anime-header-1"', $html);
         $this->assertStringContainsString('hx-swap-oob="outerHTML"', $html);
+    }
+
+    public function testHeaderMenuLinksToTheEditPage(): void
+    {
+        $html = $this->renderShow($this->fullyPopulatedAnime(), 'en');
+
+        $this->assertMatchesRegularExpression('#<ul class="dropdown-menu[^"]*">\s*<li><a class="dropdown-item" href="/anime/1/edit">Edit</a></li>#', $html);
+    }
+
+    public function testEditFormShowsErrorsNextToTheFieldsAndKeepsTheTypedValues(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession('/anime/1/edit');
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('anime/edit.html.twig', [
+            'anime' => ['id' => 1, 'title' => 'Shingeki no Kyojin', 'type' => 'tv'],
+            'is_series' => true,
+            'form' => [
+                'title' => '',
+                'names' => [['name' => 'AoT', 'locale' => 'en', 'role' => 'short']],
+                'descriptions' => [['locale' => 'en', 'text' => 'Typed text']],
+                'genres' => ['action'],
+                'themes' => [],
+                'studios' => [],
+                'new_studios' => ['Wit'],
+                'demographic' => '',
+                'date_premiere' => '2024-05-01',
+                'date_end' => '2024-04-01',
+                'duration_minutes' => '-5',
+                'episodes_count' => '',
+                'countries' => 'JP',
+                'sources' => ['https://ok.example/', 'bad url'],
+                'notes' => 'Typed notes',
+            ],
+            'errors' => ['title' => 'anime_edit.error_title_required', 'date_end' => 'anime_edit.error_date_range', 'sources.1' => 'anime_edit.error_url_invalid'],
+            'genre_choices' => ['action', 'drama'],
+            'theme_choices' => ['military'],
+            'demographic_choices' => ['shounen'],
+            'role_choices' => ['official', 'synonym', 'short'],
+            'studio_choices' => [['id' => '7', 'name' => 'MAPPA']],
+            'csrf_token_id' => 'anime_edit_1',
+        ]);
+
+        $this->assertStringContainsString('action="/anime/1/edit"', $html);
+        $this->assertMatchesRegularExpression('#data-field-error="title">[^<]+#', $html);
+        $this->assertStringContainsString('data-field-error="date_end"', $html);
+        $this->assertStringContainsString('data-field-error="sources.1"', $html);
+        $this->assertStringNotContainsString('data-field-error="sources.0"', $html);
+        $this->assertStringContainsString('value="bad url"', $html);
+        $this->assertStringContainsString('value="-5"', $html);
+        $this->assertStringContainsString('Typed notes', $html);
+        $this->assertStringContainsString('Typed text', $html);
+        $this->assertStringContainsString('name="names[0][name]" value="AoT"', $html);
+        $this->assertStringContainsString('name="sources[__INDEX__]"', $html, 'the add-row template must carry the index placeholder');
+        $this->assertStringContainsString('name="episodes_count"', $html);
     }
 
     public function testEmptyAlternativeNamesAndGalleryAreHiddenAsWholeBlocks(): void
