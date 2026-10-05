@@ -248,12 +248,17 @@ final class AnimeDeleteControllerTest extends TestCase
     {
         $anime = $this->persistAnime();
         $anime->rememberExternalId(new PluginId('animedb-shikimori'), '7');
+        $download = new Download(str_repeat('c', 40), $anime);
+        $download->markCompleted();
+        $this->entityManager->persist($download);
         $item = $this->persistReviewItem(SyncReviewItemKind::DeletionConflict, $anime);
+        $itemId = $item->id;
 
         $response = $this->reviewController()->deleteAnime($item, $this->request());
 
         $this->assertSame('/settings_sync_review_index', $response->headers->get('Location'));
-        $this->assertTrue($item->isResolved());
+        $this->entityManager->clear();
+        $this->assertTrue($this->entityManager->find(SyncReviewItem::class, $itemId)?->isResolved());
         $this->assertSame(0, (int) $this->entityManager->getConnection()->fetchOne('SELECT COUNT(*) FROM anime'));
         $this->assertSame(1, (int) $this->entityManager->getConnection()->fetchOne("SELECT COUNT(*) FROM sync_tombstone WHERE plugin_id = 'animedb-shikimori' AND external_id = '7'"));
         $this->assertArrayHasKey('success', $this->flashes());

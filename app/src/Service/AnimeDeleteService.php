@@ -79,7 +79,8 @@ final class AnimeDeleteService
         $animeId = $anime->id ?? throw new \LogicException('Anime must be persisted before it can be deleted.');
 
         $torrentHashes = [];
-        foreach ($this->downloads->findByAnime($animeId) as $download) {
+        $animeDownloads = $this->downloads->findByAnime($animeId);
+        foreach ($animeDownloads as $download) {
             if ($download->getStatus() === DownloadStatus::Pending) {
                 return AnimeDeleteOutcome::PendingDownloads;
             }
@@ -99,12 +100,17 @@ final class AnimeDeleteService
             }
         }
 
-        $this->entityManager->wrapInTransaction(function () use ($anime, $externalIds): void {
+        $this->entityManager->wrapInTransaction(function () use ($anime, $externalIds, $animeDownloads): void {
             $deletedAt = new \DateTimeImmutable();
             foreach ($externalIds as $pluginId => $externalId) {
                 $this->tombstones->record($pluginId, $externalId, $deletedAt);
             }
 
+            // The rows go by ON DELETE CASCADE, but the managed objects must not outlive the entry:
+            // a later flush would find a removed Anime through Download#anime and throw.
+            foreach ($animeDownloads as $download) {
+                $this->entityManager->remove($download);
+            }
             $this->entityManager->remove($anime);
             $this->entityManager->flush();
         });

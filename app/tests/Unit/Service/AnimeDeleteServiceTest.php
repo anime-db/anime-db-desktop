@@ -256,6 +256,7 @@ final class AnimeDeleteServiceTest extends TestCase
     {
         $anime = $this->persistAnime();
         $animeId = $anime->id;
+        $this->addDownload($anime, self::HASH_A, 'completed');
         $single = new SyncReviewItem(SyncReviewItemKind::DeletedFromSource, ['anime_id' => $animeId, 'deleted_from' => 'animedb-shikimori']);
         $duplicate = new SyncReviewItem(SyncReviewItemKind::PotentialDuplicate, ['anime_ids' => [$animeId, 901, 902]]);
         $otherEntry = new SyncReviewItem(SyncReviewItemKind::DeletedFromSource, ['anime_id' => 901, 'deleted_from' => 'animedb-shikimori']);
@@ -263,9 +264,15 @@ final class AnimeDeleteServiceTest extends TestCase
             $this->entityManager->persist($item);
         }
         $this->entityManager->flush();
+        $ids = [$single->id ?? 0, $duplicate->id ?? 0, $otherEntry->id ?? 0];
 
         $this->newAnimeDeleteService($this->mediaDir)->delete($anime);
 
+        $this->entityManager->clear();
+        [$single, $duplicate, $otherEntry] = array_map(
+            fn (int $id): SyncReviewItem => $this->entityManager->find(SyncReviewItem::class, $id) ?? throw new \LogicException('Item vanished.'),
+            $ids,
+        );
         $this->assertTrue($single->isResolved());
         $this->assertFalse($duplicate->isResolved());
         $this->assertSame([901, 902], $duplicate->payload['anime_ids']);
@@ -278,9 +285,11 @@ final class AnimeDeleteServiceTest extends TestCase
         $duplicate = new SyncReviewItem(SyncReviewItemKind::PotentialDuplicate, ['anime_ids' => [$anime->id, 901]]);
         $this->entityManager->persist($duplicate);
         $this->entityManager->flush();
+        $id = $duplicate->id;
 
         $this->newAnimeDeleteService($this->mediaDir)->delete($anime);
 
-        $this->assertTrue($duplicate->isResolved());
+        $this->entityManager->clear();
+        $this->assertTrue($this->entityManager->find(SyncReviewItem::class, $id)?->isResolved());
     }
 }
