@@ -76,7 +76,7 @@ use Twig\Environment;
  * authorize button lives — on every visit, since a pull that stops short on missing OAuth resets
  * `syncSeeded` below and this branch runs again next time. Instead, a host notice rendered above
  * the plugin's markup (`settings/plugin/page.html.twig`'s `syncReviewUrl`) says the seed has
- * started and links to the sync review page, shown only for the one visit that just queued the
+ * been queued and links to the sync review page, shown only for the one visit that just queued the
  * seed — {@see \App\Service\Plugin\PullSyncService::pull()} is what actually applies agreements to
  * local and raises review items for genuine conflicts. The external-id backfill (issue #258) is not
  * dispatched from here: {@see \App\MessageHandler\SyncSeedMessageHandler} runs it itself before the
