@@ -27,9 +27,10 @@
  # when oob = true: the attribute only makes sense on a fragment delivered as an out-of-band
  # swap, not on the copy included directly by show.html.twig's own document. cover always
  # overwrites (see PluginAnimeDataMerger::applyCover()), so the fill button here has no "add"
- # semantics to worry about, unlike the gallery's.
+ # semantics to worry about, unlike the gallery's. The title heading lives in the card header
+ # (show.html.twig), not here (issue #913), so this fragment is just the cover and its fill button.
  #}
-{% import 'anime/_fill_fields.html.twig' as fill %}
+{% import 'anime/_fill_button.html.twig' as fill %}
 
 <div class="anime-detail__media" id="anime-media-{{ anime.id }}"{% if oob|default(false) %} hx-swap-oob="outerHTML"{% endif %}>
     {% if fill_error|default(null) %}
@@ -41,7 +42,6 @@
     {% else %}
         <div class="anime-detail__cover anime-detail__cover--placeholder"></div>
     {% endif %}
-    <h1 class="anime-detail__title"><bdi>{{ anime.title }}</bdi></h1>
 
     {{ fill.fill_button(anime, 'cover', fillable_fields.cover) }}
 </div>

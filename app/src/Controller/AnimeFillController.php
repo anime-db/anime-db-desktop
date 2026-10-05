@@ -45,13 +45,11 @@ use Twig\Environment;
 /**
  * Point fill-in of a single card field from an explicitly chosen plugin (issue #234, extended to
  * cover/images by issue #507): the "fill from source" button/dropdown rendered by
- * anime/_fill_fields.html.twig for every field at least one active filler plugin supports, plus
- * the same button in anime/_media.html.twig (cover) and anime/_gallery.html.twig (images). Same
- * HTMX partial-swap shape as AnimeEditableController (issue #103) - every action here re-renders
- * and swaps the fields fragment, and for cover/images additionally sends the corresponding
- * partial back as an out-of-band swap (see renderFillFields()), success or failure alike, so the
- * notice always lands next to the button that triggered it instead of in the unrelated fields
- * fragment further down the page.
+ * anime/_info.html.twig and anime/_names.html.twig for every field at least one active filler plugin
+ * supports, plus the same button in anime/_media.html.twig (cover) and anime/_gallery.html.twig
+ * (images). Same HTMX partial-swap shape as AnimeEditableController (issue #103) - every action
+ * here re-renders and swaps the one fragment the field lives in (see renderFillFields()), success or
+ * failure alike, so the notice always lands next to the button that triggered it.
  *
  * The resolve/merge itself lives in FieldFillerService; this controller only wires the HTTP
  * request to it and turns a non-Applied {@see FillResult} into the same fragment with an inline
@@ -109,31 +107,32 @@ final class AnimeFillController
     }
 
     /**
-     * The fields fragment is always re-rendered and is always the response's primary content
-     * (its id matches the form's hx-target). For 'cover'/'images', the notice belongs next to
-     * the button that triggered it, not in this unrelated fragment - so $error is passed here
-     * only for the other eight fields, and the matching anime/_media.html.twig or
-     * anime/_gallery.html.twig partial is appended after it instead, carrying the error itself
-     * (issue #507). Both partials are rendered with oob = true, which is what makes them emit
-     * hx-swap-oob="outerHTML" on their root element, so HTMX swaps them into place by id
-     * anywhere on the page regardless of the response's declared target, without touching
-     * anything else on the card.
+     * Re-renders the one fragment the field lives in, which is also the target of the field's own
+     * form (see the fill_button macro in anime/_fill_button.html.twig): the alternative titles block,
+     * the cover, the gallery, or the "Information" block for every other field. The notice is
+     * rendered inside that same fragment, so it lands next to the button that triggered it
+     * (issues #507, #913).
      */
     private function renderFillFields(Anime $anime, string $field, ?string $error): Response
     {
-        $context = [
-            'anime' => $this->viewFactory->serialize($anime),
+        $template = match ($field) {
+            'alternativeNames' => 'anime/_names.html.twig',
+            'cover' => 'anime/_media.html.twig',
+            'images' => 'anime/_gallery.html.twig',
+            default => 'anime/_info.html.twig',
+        };
+
+        $view = $this->viewFactory->serialize($anime);
+
+        $html = $this->twig->render($template, [
+            'anime' => $view,
             'fillable_fields' => $this->fillableFieldsPresenter->build(),
-        ];
+            'fill_error' => $error,
+        ]);
 
-        $isMediaField = \in_array($field, ['cover', 'images'], true);
-
-        $html = $this->twig->render('anime/_fill_fields.html.twig', [...$context, 'fill_error' => $isMediaField ? null : $error]);
-
-        if ($field === 'cover') {
-            $html .= $this->twig->render('anime/_media.html.twig', [...$context, 'fill_error' => $error, 'oob' => true]);
-        } elseif ($field === 'images') {
-            $html .= $this->twig->render('anime/_gallery.html.twig', [...$context, 'fill_error' => $error, 'oob' => true]);
+        if ($field === 'alternativeNames') {
+            // The subtitle shows the official Japanese title, which this fill may have just added.
+            $html .= $this->twig->render('anime/_header.html.twig', ['anime' => $view, 'oob' => true]);
         }
 
         return new Response($html);

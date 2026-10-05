@@ -44,81 +44,120 @@
     </div>
 
     <main class="anime-detail">
-        {{ include('anime/_media.html.twig', {anime: anime, fillable_fields: fillable_fields}) }}
+        {{ include('anime/_header.html.twig', {anime: anime}) }}
 
-        <div class="anime-detail__content">
-            {{ include('anime/_editable.html.twig', {anime: anime, editing: null, error: null}) }}
+        {# DOM order is the reading order of the single-column layout: left, centre, right. #}
+        <div class="anime-detail__columns">
+            <div class="anime-detail__column anime-detail__column--left">
+                {{ include('anime/_media.html.twig', {anime: anime, fillable_fields: fillable_fields}) }}
 
-            <section class="anime-detail__labels"
-                     data-control="labels-widget"
-                     data-labels="{{ anime.labels|json_encode }}"
-                     data-update-url="{{ path('anime_labels_update', {id: anime.id}) }}"
-                     data-search-url="{{ path('labels_index') }}"
-                     data-csrf-token="{{ csrf_token('anime_labels_update_' ~ anime.id) }}">
-                <div class="anime-detail__labels-header">
-                    <h2 class="anime-detail__labels-heading">{{ 'anime_detail.labels_heading'|trans }}</h2>
-                    <button type="button" class="anime-detail__labels-edit-button" data-labels-edit
-                            title="{{ 'anime_detail.labels_edit_button'|trans }}"
-                            aria-label="{{ 'anime_detail.labels_edit_button'|trans }}">&#9998;</button>
-                </div>
+                {{ include('anime/_editable.html.twig', {anime: anime, editing: null, error: null}) }}
+            </div>
 
-                <ul class="anime-detail__labels-list" data-labels-view>
-                    {% for label in anime.labels %}
-                        <li><a class="anime-detail__label-link" href="{{ path('home_index', {labels: label.id}) }}"><bdi>{{ label.name }}</bdi></a></li>
-                    {% else %}
-                        <li class="anime-detail__labels-empty" data-labels-empty>{{ 'anime_detail.empty_value'|trans }}</li>
-                    {% endfor %}
-                </ul>
+            <div class="anime-detail__column anime-detail__column--center">
+                <section class="anime-detail__summary">
+                    <h2 class="anime-detail__section-heading">{{ 'anime_detail.field_summary'|trans }}</h2>
+                    <p class="anime-detail__summary-text">
+                        {{- anime.summary is not empty ? anime.summary : ('anime_detail.empty_value'|trans) -}}
+                    </p>
+                </section>
 
-                <div class="anime-detail__labels-editor" data-labels-editor hidden>
-                    <ul class="anime-detail__labels-chips" data-labels-chips></ul>
-                    <input type="text" class="anime-detail__labels-input" data-labels-input
-                           placeholder="{{ 'anime_detail.labels_input_placeholder'|trans }}"
-                           aria-label="{{ 'anime_detail.labels_input_placeholder'|trans }}"
-                           autocomplete="off">
-                    <ul class="anime-detail__labels-suggestions" data-labels-suggestions hidden></ul>
-                    <p class="anime-detail__labels-error" data-labels-error hidden>{{ 'anime_detail.labels_save_error'|trans }}</p>
-                    <div class="anime-detail__labels-actions">
-                        <button type="button" data-labels-save>{{ 'anime_detail.labels_save_button'|trans }}</button>
-                        <button type="button" data-labels-cancel>{{ 'anime_detail.labels_cancel_button'|trans }}</button>
+                {{ include('anime/_notes.html.twig', {anime: anime}) }}
+
+                <section class="anime-detail__labels"
+                         data-control="labels-widget"
+                         data-labels="{{ anime.labels|json_encode }}"
+                         data-update-url="{{ path('anime_labels_update', {id: anime.id}) }}"
+                         data-search-url="{{ path('labels_index') }}"
+                         data-csrf-token="{{ csrf_token('anime_labels_update_' ~ anime.id) }}">
+                    <div class="anime-detail__labels-header">
+                        <h2 class="anime-detail__labels-heading">{{ 'anime_detail.labels_heading'|trans }}</h2>
+                        <button type="button" class="anime-detail__labels-edit-button" data-labels-edit
+                                title="{{ 'anime_detail.labels_edit_button'|trans }}"
+                                aria-label="{{ 'anime_detail.labels_edit_button'|trans }}">&#9998;</button>
                     </div>
-                </div>
-            </section>
 
-            <section class="anime-detail__summary">
-                <h2 class="anime-detail__section-heading">{{ 'anime_detail.field_summary'|trans }}</h2>
-                <p class="anime-detail__summary-text">
-                    {{- anime.summary is not empty ? anime.summary : ('anime_detail.empty_value'|trans) -}}
-                </p>
-            </section>
-
-            <section class="anime-detail__reference">
-                <h2 class="anime-detail__section-heading">{{ 'anime_detail.reference_heading'|trans }}</h2>
-
-                <span class="anime-detail__status-badge anime-detail__status-badge--{{ anime.production_status }}">
-                    {{ ('production_status.' ~ anime.production_status)|trans }}
-                </span>
-
-                {{ include('anime/_fill_fields.html.twig', {anime: anime, fillable_fields: fillable_fields, fill_error: null}) }}
-            </section>
-
-            {% if anime.sources is not empty %}
-                <section class="anime-detail__sources">
-                    <h2 class="anime-detail__section-heading">{{ 'anime_detail.sources_heading'|trans }}</h2>
-
-                    <ul class="anime-detail__source-list">
-                        {% for source in anime.sources %}
-                            <li>
-                                <a href="{{ source.url }}" target="_blank" rel="noopener noreferrer" title="{{ source.domain }}">
-                                    <img src="https://{{ source.domain }}/favicon.ico" alt="{{ source.domain }}" class="anime-detail__source-icon" loading="lazy">
-                                    <span class="anime-detail__source-fallback" hidden>{{ icon('globe') }}</span>
-                                </a>
-                            </li>
+                    <ul class="anime-detail__labels-list" data-labels-view>
+                        {% for label in anime.labels %}
+                            <li><a class="anime-detail__label-link" href="{{ path('home_index', {labels: label.id}) }}"><bdi>{{ label.name }}</bdi></a></li>
+                        {% else %}
+                            <li class="anime-detail__labels-empty" data-labels-empty>{{ 'anime_detail.empty_value'|trans }}</li>
                         {% endfor %}
                     </ul>
-                </section>
-            {% endif %}
 
+                    <div class="anime-detail__labels-editor" data-labels-editor hidden>
+                        <ul class="anime-detail__labels-chips" data-labels-chips></ul>
+                        <input type="text" class="anime-detail__labels-input" data-labels-input
+                               placeholder="{{ 'anime_detail.labels_input_placeholder'|trans }}"
+                               aria-label="{{ 'anime_detail.labels_input_placeholder'|trans }}"
+                               autocomplete="off">
+                        <ul class="anime-detail__labels-suggestions" data-labels-suggestions hidden></ul>
+                        <p class="anime-detail__labels-error" data-labels-error hidden>{{ 'anime_detail.labels_save_error'|trans }}</p>
+                        <div class="anime-detail__labels-actions">
+                            <button type="button" data-labels-save>{{ 'anime_detail.labels_save_button'|trans }}</button>
+                            <button type="button" data-labels-cancel>{{ 'anime_detail.labels_cancel_button'|trans }}</button>
+                        </div>
+                    </div>
+                </section>
+
+                {{ include('anime/_names.html.twig', {anime: anime, fillable_fields: fillable_fields, fill_error: null}) }}
+            </div>
+
+            <div class="anime-detail__column anime-detail__column--right">
+                {{ include('anime/_info.html.twig', {anime: anime, fillable_fields: fillable_fields, fill_error: null}) }}
+
+                <section class="anime-detail__files">
+                    <h2 class="anime-detail__section-heading">{{ 'anime_detail.files_heading'|trans }}</h2>
+
+                    {% if anime.storage %}
+                        <dl class="anime-detail__fields">
+                            <dt>{{ 'anime_detail.field_storage'|trans }}</dt>
+                            <dd>{{ anime.storage.name }} ({{ ('storage_type.' ~ anime.storage.type)|trans }})</dd>
+
+                            <dt>{{ 'anime_detail.field_storage_path'|trans }}</dt>
+                            <dd>
+                                <span class="anime-detail__path">{{ anime.storage.path }}</span>
+                                <button
+                                    type="button"
+                                    class="anime-detail__open-folder-button"
+                                    data-control="open-folder-button"
+                                    data-open-folder-path="{{ anime.storage.path }}"
+                                    {%- if not anime.storage.path_available %}
+                                        disabled
+                                        title="{{ 'anime_detail.path_unavailable_tooltip'|trans }}"
+                                    {%- endif %}
+                                >{{ 'anime_detail.open_folder_button'|trans }}</button>
+                            </dd>
+                        </dl>
+                    {% else %}
+                        <p class="anime-detail__files-empty">
+                            {{ 'anime_detail.files_not_linked'|trans }}
+                            <a href="{{ path('storage_index') }}">{{ 'anime_detail.files_link'|trans }}</a>
+                        </p>
+                    {% endif %}
+                </section>
+
+                {% if anime.sources is not empty %}
+                    <section class="anime-detail__sources">
+                        <h2 class="anime-detail__section-heading">{{ 'anime_detail.sources_heading'|trans }}</h2>
+
+                        <ul class="anime-detail__source-list">
+                            {% for source in anime.sources %}
+                                <li>
+                                    <a class="anime-detail__source-link" href="{{ source.url }}" target="_blank" rel="noopener noreferrer" title="{{ source.domain }}">
+                                        <img src="https://{{ source.domain }}/favicon.ico" alt="" class="anime-detail__source-icon" loading="lazy">
+                                        <span class="anime-detail__source-fallback" hidden>{{ icon('globe') }}</span>
+                                        <span class="anime-detail__source-label">{{ source.domain starts with 'www.' ? source.domain|slice(4) : source.domain }}</span>
+                                    </a>
+                                </li>
+                            {% endfor %}
+                        </ul>
+                    </section>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="anime-detail__wide">
             <p class="anime-detail__download-new-link">
                 <a href="{{ path('download_new', {anime: anime.id}) }}">{{ 'anime_detail.download_new_link'|trans }}</a>
             </p>

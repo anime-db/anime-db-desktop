@@ -99,11 +99,43 @@ final class AnimeEditableControllerTest extends TestCase
         $twig->expects($this->once())
             ->method('render')
             ->with('anime/_editable.html.twig', $this->callback(
-                static fn (array $params): bool => $params['editing'] === 'notes',
+                static fn (array $params): bool => $params['editing'] === 'watch_status',
+            ))
+            ->willReturn('<section></section>');
+
+        $this->createController(twig: $twig)->edit($anime, 'watch_status');
+    }
+
+    public function testEditNotesRendersTheNotesFragmentInEditMode(): void
+    {
+        $anime = new TvAnime();
+        $anime->setTitle('Frieren')->setWatchStatus(WatchStatus::Watching);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('anime/_notes.html.twig', $this->callback(
+                static fn (array $params): bool => $params['editing'] === true && !isset($params['oob']),
             ))
             ->willReturn('<section></section>');
 
         $this->createController(twig: $twig)->edit($anime, 'notes');
+    }
+
+    public function testNotesViewRendersTheNotesFragmentReadOnly(): void
+    {
+        $anime = new TvAnime();
+        $anime->setTitle('Frieren')->setWatchStatus(WatchStatus::Watching);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('anime/_notes.html.twig', $this->callback(
+                static fn (array $params): bool => $params['editing'] === false,
+            ))
+            ->willReturn('<section></section>');
+
+        $this->createController(twig: $twig)->notesView($anime);
     }
 
     public function testUpdateWatchStatusPersistsValidStatus(): void
@@ -240,6 +272,50 @@ final class AnimeEditableControllerTest extends TestCase
         $this->createController(entityManager: $entityManager)->updateNotes($anime, $request);
 
         $this->assertSame('Rewatch later.', $anime->getNotes());
+    }
+
+    public function testUpdateNotesRendersTheNotesFragmentAndTheEditableBlockAsAnOobSwap(): void
+    {
+        $anime = new TvAnime();
+        $anime->setTitle('Frieren')->setWatchStatus(WatchStatus::Watching);
+
+        $rendered = [];
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->exactly(2))
+            ->method('render')
+            ->willReturnCallback(function (string $template, array $params) use (&$rendered): string {
+                $rendered[] = [$template, $params];
+
+                return '<div data-template="'.$template.'"></div>';
+            });
+
+        $request = Request::create('/anime/1/editable/notes', 'POST', ['notes' => 'First note', '_token' => 'token']);
+
+        $response = $this->createController(twig: $twig)->updateNotes($anime, $request);
+
+        $this->assertSame('anime/_notes.html.twig', $rendered[0][0]);
+        $this->assertSame('First note', $rendered[0][1]['anime']['notes']);
+        $this->assertFalse($rendered[0][1]['editing']);
+        $this->assertArrayNotHasKey('oob', $rendered[0][1]);
+        $this->assertSame('anime/_editable.html.twig', $rendered[1][0]);
+        $this->assertTrue($rendered[1][1]['oob']);
+        $this->assertStringContainsString('anime/_editable.html.twig', (string) $response->getContent());
+    }
+
+    public function testActionsOtherThanNotesUpdateRenderOnlyTheEditableFragment(): void
+    {
+        $anime = new TvAnime();
+        $anime->setTitle('Frieren')->setWatchStatus(WatchStatus::Watching);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('anime/_editable.html.twig')
+            ->willReturn('<section></section>');
+
+        $request = Request::create('/anime/1/editable/user_rating', 'POST', ['user_rating' => '4', '_token' => 'token']);
+
+        $this->createController(twig: $twig)->updateUserRating($anime, $request);
     }
 
     public function testUpdateNotesClearsToNullWhenBlank(): void

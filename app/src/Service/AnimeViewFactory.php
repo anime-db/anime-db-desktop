@@ -67,6 +67,8 @@ final class AnimeViewFactory
             'episodes_count' => $anime instanceof SeriesAnime ? $anime->getEpisodesCount() : null,
             'watched_episodes' => $anime instanceof SeriesAnime ? $anime->getWatchedEpisodes() : null,
             'duration_minutes' => $anime->getDurationMinutes(),
+            'date_premiere' => $anime->getDatePremiere()?->format('Y-m-d'),
+            'date_end' => $anime->getDateEnd()?->format('Y-m-d'),
             'studios' => array_map(static fn (Studio $studio): array => ['id' => $studio->id, 'name' => $studio->name], $anime->getStudios()->toArray()),
             'countries' => $anime->getCountries() ?? [],
             'storage' => $this->serializeStorage($anime->getStorage(), $anime->getStoragePath()),

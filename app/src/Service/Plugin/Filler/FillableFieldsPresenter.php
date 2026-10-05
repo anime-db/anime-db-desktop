@@ -32,13 +32,13 @@ use App\Service\Plugin\FillerRegistry;
 use App\Service\Plugin\InstalledPluginsRegistry;
 
 /**
- * Builds the view data anime/_fill_fields.html.twig needs to decide, per field, whether to show
+ * Builds the view data anime/_info.html.twig needs to decide, per field, whether to show
  * a "fill from source" button at all and, when several active fillers support the same field,
  * which plugins to list in the source dropdown (issue #234).
  *
  * Only the card fields that already have a display slot somewhere on the card are covered here -
- * title and descriptions have no slot at all, and datePremiere/dateEnd are not shown anywhere on
- * the card yet. cover and images render outside anime/_fill_fields.html.twig, in the media and
+ * title and descriptions have no slot at all, and datePremiere/dateEnd are shown on the card
+ * without a fill button. cover and images render outside anime/_info.html.twig, in the media and
  * gallery sections of anime/show.html.twig (issue #507), but are listed through this same method
  * so those sections never need a second source for "which plugins support this field".
  */

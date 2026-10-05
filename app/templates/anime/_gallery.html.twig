@@ -32,9 +32,11 @@
  # dedup) - there is no per-image delete in this UI, so a replace semantic here would be an
  # unrecoverable data loss.
  #}
-{% import 'anime/_fill_fields.html.twig' as fill %}
+{% import 'anime/_fill_button.html.twig' as fill %}
 
-<section class="anime-detail__gallery" id="anime-gallery-{{ anime.id }}"{% if oob|default(false) %} hx-swap-oob="outerHTML"{% endif %}>
+{% set can_fill = fillable_fields.images is not empty %}
+
+<section class="anime-detail__gallery" id="anime-gallery-{{ anime.id }}"{% if oob|default(false) %} hx-swap-oob="outerHTML"{% endif %}{% if anime.images is empty and not can_fill %} hidden{% endif %}>
     <h2 class="anime-detail__section-heading">{{ 'anime_detail.gallery_heading'|trans }}</h2>
 
     {% if fill_error|default(null) %}
@@ -49,8 +51,6 @@
                 </li>
             {% endfor %}
         </ul>
-    {% else %}
-        <p class="anime-detail__gallery-empty">{{ 'anime_detail.empty_value'|trans }}</p>
     {% endif %}
 
     {{ fill.fill_button(anime, 'images', fillable_fields.images) }}

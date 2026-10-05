@@ -1,0 +1,56 @@
+{#
+ # AnimeDb package.
+ #
+ # @author    Peter Gribanov <info@peter-gribanov.ru>
+ # @copyright Copyright (c) 2026, Peter Gribanov
+ # @license   https://www.gnu.org/licenses/gpl-3.0.html GPL-3.0-or-later
+ #
+ # This program is free software: you can redistribute it and/or modify
+ # it under the terms of the GNU General Public License as published by
+ # the Free Software Foundation, either version 3 of the License, or
+ # (at your option) any later version.
+ #
+ # This program is distributed in the hope that it will be useful,
+ # but WITHOUT ANY WARRANTY; without even the implied warranty of
+ # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ # GNU General Public License for more details.
+ #
+ # You should have received a copy of the GNU General Public License
+ # along with this program. If not, see <https://www.gnu.org/licenses/>.
+ #}
+{#
+ # The user's notes (centre column), viewed and edited in place (issue #913): rendered by
+ # anime/show.html.twig (initial load) and by AnimeEditableController (editing = true shows the
+ # form). The root is always emitted (hidden while there are no notes and no edit is open) so the
+ # "add notes" entry point of the "Mine" block always has an anchor to swap into.
+ #}
+<section class="anime-detail__notes" id="anime-notes-{{ anime.id }}"{% if oob|default(false) %} hx-swap-oob="outerHTML"{% endif %}{% if anime.notes is empty and not editing|default(false) %} hidden{% endif %}>
+    {% if editing|default(false) %}
+        <h2 class="anime-detail__section-heading">{{ 'anime_detail.field_notes'|trans }}</h2>
+        <form class="anime-detail__inline-form anime-detail__inline-form--notes"
+              hx-post="{{ path('anime_editable_update_notes', {id: anime.id}) }}"
+              hx-target="#anime-notes-{{ anime.id }}" hx-swap="outerHTML">
+            <input type="hidden" name="_token" value="{{ csrf_token('anime_editable_notes_' ~ anime.id) }}">
+            <textarea name="notes" rows="8" aria-label="{{ 'anime_detail.field_notes'|trans }}">{{ anime.notes }}</textarea>
+            <div>
+                <button type="submit">{{ 'anime_detail.save_button'|trans }}</button>
+                <button
+                    type="button"
+                    hx-get="{{ path('anime_editable_notes_view', {id: anime.id}) }}"
+                    hx-target="#anime-notes-{{ anime.id }}" hx-swap="outerHTML"
+                >{{ 'anime_detail.cancel_button'|trans }}</button>
+            </div>
+        </form>
+    {% elseif anime.notes is not empty %}
+        <div class="anime-detail__notes-header">
+            <h2 class="anime-detail__section-heading">{{ 'anime_detail.field_notes'|trans }}</h2>
+            <button
+                type="button"
+                class="anime-detail__editable-value"
+                hx-get="{{ path('anime_editable_edit', {id: anime.id, field: 'notes'}) }}"
+                hx-target="#anime-notes-{{ anime.id }}" hx-swap="outerHTML"
+            >{{ 'anime_detail.notes_edit_button'|trans }}</button>
+        </div>
+        <p class="anime-detail__notes-text">{{ anime.notes }}</p>
+    {% endif %}
+</section>

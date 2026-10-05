@@ -477,9 +477,9 @@ storage_list:
 anime_detail:
     title: '%title% — AnimeDB'
     back_link: ← Каталог
-    editable_heading: Управление
+    my_heading: Моё
     field_summary: Описание
-    reference_heading: Справочная информация
+    info_heading: Информация
     field_type: Тип
     field_episodes_count: Количество серий
     field_duration_minutes: Длительность
@@ -491,7 +491,7 @@ anime_detail:
     field_genres: Жанры
     field_themes: Темы
     field_demographic: Демография
-    field_notes: Заметка
+    field_notes: Заметки
     field_progress: Прогресс просмотра
     field_watch_status: Статус просмотра
     field_user_rating: Оценка
@@ -509,7 +509,6 @@ anime_detail:
     gallery_heading: Галерея
     save_button: Сохранить
     cancel_button: Отмена
-    rating_not_rated: Без оценки
     increment_episode_button: Отметить следующую серию просмотренной
     error_watch_status_invalid: Недопустимый статус просмотра.
     error_watch_status_not_released: Нельзя отметить как «Просмотрено», пока аниме не вышло.
@@ -525,6 +524,13 @@ anime_detail:
     downloads_unlink_button: Отвязать
     downloads_unlink_conflict_error: Состояние изменилось, обновите страницу.
     download_new_link: Добавить загрузку
+    field_dates: Даты выхода
+    files_heading: Файлы
+    files_not_linked: Не привязано
+    files_link: Привязать
+    notes_add_button: Добавить заметку
+    notes_edit_button: Изменить
+    rating_star_label: 'Оценка: %rating%'
 
 anime_new:
     title: Новая запись — AnimeDB

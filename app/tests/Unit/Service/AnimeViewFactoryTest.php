@@ -78,4 +78,27 @@ final class AnimeViewFactoryTest extends TestCase
 
         $this->assertSame('', $view['summary']);
     }
+
+    public function testSerializeFormatsPremiereAndEndDatesAsIsoDates(): void
+    {
+        $anime = new MovieAnime();
+        $anime->setTitle('A Silent Voice')->setWatchStatus(WatchStatus::Plan);
+        $anime->setDatePremiere(new \DateTimeImmutable('2009-04-05'))->setDateEnd(new \DateTimeImmutable('2010-07-04'));
+
+        $view = $this->createViewFactory('en')->serialize($anime);
+
+        $this->assertSame('2009-04-05', $view['date_premiere']);
+        $this->assertSame('2010-07-04', $view['date_end']);
+    }
+
+    public function testSerializeReturnsNullDatesWhenNoneAreSet(): void
+    {
+        $anime = new MovieAnime();
+        $anime->setTitle('A Silent Voice')->setWatchStatus(WatchStatus::Plan);
+
+        $view = $this->createViewFactory('en')->serialize($anime);
+
+        $this->assertNull($view['date_premiere']);
+        $this->assertNull($view['date_end']);
+    }
 }

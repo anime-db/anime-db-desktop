@@ -1,0 +1,50 @@
+{#
+ # AnimeDb package.
+ #
+ # @author    Peter Gribanov <info@peter-gribanov.ru>
+ # @copyright Copyright (c) 2026, Peter Gribanov
+ # @license   https://www.gnu.org/licenses/gpl-3.0.html GPL-3.0-or-later
+ #
+ # This program is free software: you can redistribute it and/or modify
+ # it under the terms of the GNU General Public License as published by
+ # the Free Software Foundation, either version 3 of the License, or
+ # (at your option) any later version.
+ #
+ # This program is distributed in the hope that it will be useful,
+ # but WITHOUT ANY WARRANTY; without even the implied warranty of
+ # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ # GNU General Public License for more details.
+ #
+ # You should have received a copy of the GNU General Public License
+ # along with this program. If not, see <https://www.gnu.org/licenses/>.
+ #}
+{#
+ # The "fill from source" button/dropdown shared by every card fragment that has a fillable field
+ # (_info, _names, _media, _gallery). The form targets the fragment the field lives in (issue #913),
+ # so the response replaces just that fragment and a fill error lands next to the button that
+ # caused it.
+ #}
+{% macro fill_button(anime, field, plugins) %}
+    {% if plugins is not empty %}
+        {% set targets = {alternativeNames: 'anime-names-', cover: 'anime-media-', images: 'anime-gallery-'} %}
+        <form class="anime-detail__fill-form"
+              hx-post="{{ path('anime_fill_field', {id: anime.id, field: field}) }}"
+              hx-target="#{{ targets[field]|default('anime-info-') ~ anime.id }}" hx-swap="outerHTML">
+            <input type="hidden" name="_token" value="{{ csrf_token('anime_fill_' ~ field ~ '_' ~ anime.id) }}">
+            {% if plugins|length > 1 %}
+                <select name="plugin_id" class="anime-detail__fill-select" aria-label="{{ 'anime_detail.fill_source_label'|trans }}">
+                    {% for plugin in plugins %}
+                        <option value="{{ plugin.id }}">{{ plugin.name }}</option>
+                    {% endfor %}
+                </select>
+            {% else %}
+                <input type="hidden" name="plugin_id" value="{{ plugins[0].id }}">
+            {% endif %}
+            <button
+                type="submit"
+                class="anime-detail__fill-button"
+                title="{{ 'anime_detail.fill_from_source_button'|trans }}"
+            >{{ 'anime_detail.fill_from_source_button'|trans }}</button>
+        </form>
+    {% endif %}
+{% endmacro %}
