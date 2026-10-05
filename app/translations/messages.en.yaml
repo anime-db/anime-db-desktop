@@ -484,6 +484,7 @@ anime_detail:
     field_episodes_count: Episode count
     field_duration_minutes: Duration
     field_studios: Studio
+    filter_studios: Filter studios by name
     field_countries: Country
     field_storage: Storage
     field_storage_path: File path

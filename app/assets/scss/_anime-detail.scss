@@ -72,7 +72,9 @@
 }
 
 .anime-edit__role {
-    flex: 0 0 140px;
+    flex: 0 0 auto;
+    min-width: 11em;
+    width: auto;
 }
 
 .anime-edit__choices {
@@ -81,6 +83,11 @@
     gap: 4px 16px;
     max-height: 180px;
     overflow-y: auto;
+}
+
+.anime-edit__choices--list {
+    flex-direction: column;
+    flex-wrap: nowrap;
 }
 
 .anime-edit__choice {

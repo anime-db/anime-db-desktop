@@ -378,6 +378,7 @@ final class AnimeEditControllerTest extends TestCase
         yield 'episodes below watched' => [['episodes_count' => '2'], 'episodes_count'];
         yield 'bad url' => [['sources' => ['https://ok.example/', 'not a url']], 'sources.1'];
         yield 'non-http url' => [['sources' => ['ftp://example.com/x']], 'sources.0'];
+        yield 'bad name locale' => [['names' => [['name' => 'X', 'locale' => 'english', 'role' => 'synonym']]], 'names.0'];
         yield 'bad country' => [['countries' => 'JPN'], 'countries'];
         yield 'bad genre' => [['genres' => ['nope']], 'genres'];
         yield 'bad demographic' => [['demographic' => 'nope'], 'demographic'];

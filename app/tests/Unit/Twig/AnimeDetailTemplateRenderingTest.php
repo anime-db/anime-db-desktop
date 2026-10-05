@@ -626,6 +626,39 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
         $this->assertStringContainsString('name="episodes_count"', $html);
     }
 
+    public function testEditFormListsStudiosAsCheckboxesWithTheEntryOnesCheckedAndFirst(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession('/anime/1/edit');
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('anime/edit.html.twig', [
+            'anime' => ['id' => 1, 'title' => 'T', 'type' => 'tv'],
+            'is_series' => true,
+            'form' => [
+                'title' => 'T', 'names' => [], 'descriptions' => [], 'genres' => [], 'themes' => [],
+                'studios' => ['9'], 'new_studios' => [], 'demographic' => '', 'date_premiere' => '',
+                'date_end' => '', 'duration_minutes' => '', 'episodes_count' => '', 'countries' => '',
+                'sources' => [], 'notes' => '',
+            ],
+            'errors' => [],
+            'genre_choices' => [],
+            'theme_choices' => [],
+            'demographic_choices' => [],
+            'role_choices' => ['synonym'],
+            'studio_choices' => [['id' => '3', 'name' => 'Bones'], ['id' => '7', 'name' => 'MAPPA'], ['id' => '9', 'name' => 'Toei']],
+            'csrf_token_id' => 'anime_edit_1',
+        ]);
+
+        $this->assertStringNotContainsString('<select id="anime-edit-studios"', $html);
+        $this->assertSame(3, preg_match_all('#<input type="checkbox" name="studios\[\]" value="(\d+)"( checked)?>#', $html, $m));
+        $this->assertSame(['9', '3', '7'], $m[1], 'the entry studios go first');
+        $this->assertSame([' checked', '', ''], $m[2]);
+        $this->assertStringContainsString('data-control="choice-filter"', $html);
+        $this->assertStringContainsString('data-filter-input', $html);
+    }
+
     public function testEmptyAlternativeNamesAndGalleryAreHiddenAsWholeBlocks(): void
     {
         $html = $this->renderShow($this->minimalAnime(), 'en');

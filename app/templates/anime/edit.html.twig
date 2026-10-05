@@ -77,6 +77,13 @@
     </div>
 {% endmacro %}
 
+{% macro studio_choice(studio, checked) %}
+    <label class="anime-edit__choice" data-filter-item data-filter-text="{{ studio.name }}">
+        <input type="checkbox" name="studios[]" value="{{ studio.id }}"{% if checked %} checked{% endif %}>
+        {{ studio.name }}
+    </label>
+{% endmacro %}
+
 {% block title %}{{ 'anime_edit.title'|trans({'%title%': anime.title}) }}{% endblock %}
 
 {% block body %}
@@ -132,12 +139,14 @@
             </div>
 
             <div class="mb-3" data-control="repeatable-rows">
-                <label class="form-label" for="anime-edit-studios">{{ 'anime_edit.field_studios'|trans }}</label>
-                <select id="anime-edit-studios" name="studios[]" multiple class="form-select">
-                    {% for studio in studio_choices %}
-                        <option value="{{ studio.id }}"{% if studio.id in form.studios %} selected{% endif %}>{{ studio.name }}</option>
-                    {% endfor %}
-                </select>
+                <label class="form-label" for="anime-edit-studios-filter">{{ 'anime_edit.field_studios'|trans }}</label>
+                <div data-control="choice-filter">
+                    <input type="search" id="anime-edit-studios-filter" class="form-control form-control-sm mb-1" data-filter-input placeholder="{{ 'anime_edit.filter_studios'|trans }}" autocomplete="off">
+                    <div class="anime-edit__choices anime-edit__choices--list" data-studio-choices>
+                        {% for studio in studio_choices|filter(s => s.id in form.studios) %}{{ m.studio_choice(studio, true) }}{% endfor %}
+                        {% for studio in studio_choices|filter(s => s.id not in form.studios) %}{{ m.studio_choice(studio, false) }}{% endfor %}
+                    </div>
+                </div>
                 {{ m.field_error(errors, 'studios') }}
                 <label class="form-label mt-2">{{ 'anime_edit.field_new_studios'|trans }}</label>
                 <div data-rows-list>
