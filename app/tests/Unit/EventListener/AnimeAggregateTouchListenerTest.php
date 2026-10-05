@@ -30,6 +30,7 @@ namespace App\Tests\Unit\EventListener;
 use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
 use App\Entity\AnimeName;
+use App\Entity\AnimeSource;
 use App\Entity\Enum\AnimeNameRole;
 use App\Entity\Enum\GenreCode;
 use App\Entity\Enum\ThemeCode;
@@ -303,6 +304,56 @@ final class AnimeAggregateTouchListenerTest extends TestCase
             ->willReturn(new Envelope(new IndexAnimeMessage($animeId)));
 
         $anime->setDescription('en', 'A bounty hunting crew.');
+        $this->entityManager->flush();
+
+        $this->assertGreaterThan($before, $this->readDateUpdateFromDb($animeId));
+    }
+
+    public function testAddingASourceBumpsDateUpdateAndDispatchesIndexExactlyOnce(): void
+    {
+        $anime = $this->persistAnime();
+        $animeId = $this->requireId($anime);
+
+        $before = $this->pushDateUpdateIntoThePast($animeId);
+        $this->entityManager->clear();
+
+        $anime = $this->findAnime($animeId);
+
+        $this->messageBus->expects($this->once())
+            ->method('dispatch')
+            ->with($this->equalTo(new IndexAnimeMessage($animeId)))
+            ->willReturn(new Envelope(new IndexAnimeMessage($animeId)));
+
+        $anime->addSource('https://example.com/anime/1');
+        $this->entityManager->flush();
+
+        $this->assertGreaterThan($before, $this->readDateUpdateFromDb($animeId));
+    }
+
+    public function testRemovingASourceBumpsDateUpdateAndDispatchesIndexExactlyOnce(): void
+    {
+        $anime = new MovieAnime();
+        $anime->setTitle('Cowboy Bebop')->setWatchStatus(WatchStatus::Plan);
+        $anime->addSource('https://example.com/anime/1');
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+        $animeId = $this->requireId($anime);
+
+        $before = $this->pushDateUpdateIntoThePast($animeId);
+        $this->entityManager->clear();
+
+        $anime = $this->findAnime($animeId);
+        $source = $anime->getSources()->first();
+        if (!$source instanceof AnimeSource) {
+            throw new \LogicException('AnimeSource must still exist after clear().');
+        }
+
+        $this->messageBus->expects($this->once())
+            ->method('dispatch')
+            ->with($this->equalTo(new IndexAnimeMessage($animeId)))
+            ->willReturn(new Envelope(new IndexAnimeMessage($animeId)));
+
+        $anime->removeSource($source);
         $this->entityManager->flush();
 
         $this->assertGreaterThan($before, $this->readDateUpdateFromDb($animeId));

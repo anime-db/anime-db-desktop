@@ -768,6 +768,23 @@ abstract class Anime implements AggregateRootInterface
         return $this;
     }
 
+    /**
+     * Drops the AnimeDescription row for $locale, if any (orphanRemoval deletes it on flush).
+     * Safe next to setDescription() for a different locale in the same flush; for the same
+     * locale use setDescription() instead — see its note on the UNIQUE(anime_id, locale) index.
+     */
+    public function removeDescription(string $locale): self
+    {
+        foreach ($this->descriptions as $description) {
+            if ($description->locale === $locale) {
+                $this->descriptions->removeElement($description);
+                break;
+            }
+        }
+
+        return $this;
+    }
+
     /** @return Collection<int, AnimeDescription> */
     public function getDescriptions(): Collection
     {

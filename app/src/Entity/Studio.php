@@ -33,7 +33,8 @@ use Doctrine\Common\Collections\Collection;
 use Doctrine\ORM\Mapping as ORM;
 
 /**
- * Filled only by application code (plugins/sync), not editable by the user directly.
+ * Filled by application code (plugins/sync); users can also pick existing studios or create one
+ * by name on the anime edit page, but cannot rename or delete a studio itself.
  */
 #[ORM\Entity]
 class Studio

@@ -35,6 +35,17 @@
 {% if years is not null %}{% set subtitle_parts = subtitle_parts|merge([years]) %}{% endif %}
 
 <header class="anime-detail__header" id="anime-header-{{ anime.id }}"{% if oob|default(false) %} hx-swap-oob="outerHTML"{% endif %}>
-    <h1 class="anime-detail__title"><bdi>{{ anime.title }}</bdi></h1>
-    <p class="anime-detail__subtitle">{{ subtitle_parts|join(' · ') }}</p>
+    <div class="anime-detail__heading">
+        <h1 class="anime-detail__title"><bdi>{{ anime.title }}</bdi></h1>
+        <p class="anime-detail__subtitle">{{ subtitle_parts|join(' · ') }}</p>
+    </div>
+
+    {# Entry actions menu: each later action (delete, change type) adds its own <li> here. #}
+    <div class="dropdown anime-detail__menu">
+        <button type="button" class="btn btn-outline-secondary anime-detail__menu-toggle" data-bs-toggle="dropdown" aria-expanded="false"
+                title="{{ 'anime_detail.menu_button'|trans }}" aria-label="{{ 'anime_detail.menu_button'|trans }}">&#8943;</button>
+        <ul class="dropdown-menu dropdown-menu-end">
+            <li><a class="dropdown-item" href="{{ path('anime_edit', {id: anime.id}) }}">{{ 'anime_detail.menu_edit'|trans }}</a></li>
+        </ul>
+    </div>
 </header>
