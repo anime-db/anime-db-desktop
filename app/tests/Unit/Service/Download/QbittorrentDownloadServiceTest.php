@@ -682,6 +682,12 @@ final class QbittorrentDownloadServiceTest extends TestCase
         } catch (DownloadAlreadyLinkedToAnotherAnimeException) {
         }
 
+        // Only a completed download can be unlinked.
+        $occupying = $this->downloads->findByInfoHashAndAnime(self::MAGNET_HASH, (int) $animeOne->id);
+        $this->assertNotNull($occupying);
+        $occupying->markCompleted();
+        $this->entityManager->flush();
+
         $unlink = new CommandTester(new DownloadsUnlinkCommand($this->downloads, new DownloadUnlinkService(new DownloadFolderPointer(), $this->entityManager)));
         $unlink->execute(['info-hash' => self::MAGNET_HASH, 'anime-id' => (string) $animeOne->id]);
         $this->assertSame(0, $unlink->getStatusCode());
