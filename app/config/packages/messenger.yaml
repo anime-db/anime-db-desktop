@@ -68,12 +68,25 @@ framework:
                     # a task the first one is still running.
                     redeliver_timeout: 900
 
+            # Connect-seed pull (App\Message\SyncSeedMessage). Its own queue, consumed by
+            # plugins-consumer.js after `plugins`, so a long pull never occupies the `async`
+            # worker that `PushSyncMessage` and `IndexAnimeMessage` depend on.
+            sync:
+                dsn: '%env(MESSENGER_TRANSPORT_DSN)%'
+                options:
+                    queue_name: sync
+                    # Must stay well above the longest pull (a large list can take tens of
+                    # minutes), otherwise a seed still running would become available again and
+                    # be picked up twice. The consequence: a seed interrupted by closing the app
+                    # comes back no sooner than an hour later.
+                    redeliver_timeout: 3600
+
         routing:
             'App\Message\ScanStorageMessage': async
             'App\Message\IndexAnimeMessage': async
             'App\Message\DeleteFromIndexMessage': async
             'App\Message\PushSyncMessage': async
-            'App\Message\SyncSeedMessage': async
+            'App\Message\SyncSeedMessage': sync
             'App\Message\RefreshMarketSnapshotMessage': async
             'App\Message\DownloadAnimeMediaMessage': media
             'App\Message\RunPluginBackgroundTaskMessage': plugins

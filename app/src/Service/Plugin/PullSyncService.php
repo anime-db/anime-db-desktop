@@ -166,6 +166,9 @@ final class PullSyncService
      * left to suppress.
      */
     /**
+     * @param \Closure():void|null $onItem called before each pulled item is processed, so a caller
+     *                                     holding a lock around a long run can keep its heartbeat fresh
+     *
      * @return bool whether this run finished in a state a caller can keep building on — `false`
      *              means either it stopped early on {@see ReauthRequiredException} (see the class
      *              docblock's "dead OAuth session" section) and applied nothing beyond what it saw
@@ -173,12 +176,12 @@ final class PullSyncService
      *              EntityManager this run was given (see "Per-item isolation" below); in both
      *              cases the caller must not treat this as a clean, retry-free success
      */
-    public function pull(PluginId $pluginId, SyncInterface $sync): bool
+    public function pull(PluginId $pluginId, SyncInterface $sync, ?\Closure $onItem = null): bool
     {
-        return $this->doPull($pluginId, $sync);
+        return $this->doPull($pluginId, $sync, $onItem);
     }
 
-    private function doPull(PluginId $pluginId, SyncInterface $sync): bool
+    private function doPull(PluginId $pluginId, SyncInterface $sync, ?\Closure $onItem): bool
     {
         $byExternalId = $this->animeRepository->indexByExternalId($pluginId);
         /** @var list<Anime> $newlyCreated */
@@ -192,6 +195,7 @@ final class PullSyncService
 
         try {
             foreach ($sync->pull() as $item) {
+                $onItem?->__invoke();
                 $presentExternalIds[$item->externalId] = true;
                 $anime = $byExternalId[$item->externalId] ?? null;
                 $status = WatchStatusMapper::toWatchStatus($item->status);
