@@ -1,0 +1,41 @@
+{#
+ # AnimeDb package.
+ #
+ # @author    Peter Gribanov <info@peter-gribanov.ru>
+ # @copyright Copyright (c) 2026, Peter Gribanov
+ # @license   https://www.gnu.org/licenses/gpl-3.0.html GPL-3.0-or-later
+ #
+ # This program is free software: you can redistribute it and/or modify
+ # it under the terms of the GNU General Public License as published by
+ # the Free Software Foundation, either version 3 of the License, or
+ # (at your option) any later version.
+ #
+ # This program is distributed in the hope that it will be useful,
+ # but WITHOUT ANY WARRANTY; without even the implied warranty of
+ # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ # GNU General Public License for more details.
+ #
+ # You should have received a copy of the GNU General Public License
+ # along with this program. If not, see <https://www.gnu.org/licenses/>.
+ #}
+{#
+ # The user's notes (centre column). Rendered by anime/show.html.twig (initial load, oob = false)
+ # and, as an out-of-band swap, by AnimeEditableController after a notes update (issue #913), since
+ # every editable response otherwise replaces only #anime-editable-{id}. The root is always
+ # emitted (hidden while there are no notes) so the first note has an anchor to be swapped into;
+ # HTMX silently drops an out-of-band fragment whose id is not on the page.
+ #}
+<section class="anime-detail__notes" id="anime-notes-{{ anime.id }}"{% if oob|default(false) %} hx-swap-oob="outerHTML"{% endif %}{% if anime.notes is empty %} hidden{% endif %}>
+    {% if anime.notes is not empty %}
+        <div class="anime-detail__notes-header">
+            <h2 class="anime-detail__section-heading">{{ 'anime_detail.field_notes'|trans }}</h2>
+            <button
+                type="button"
+                class="anime-detail__editable-value"
+                hx-get="{{ path('anime_editable_edit', {id: anime.id, field: 'notes'}) }}"
+                hx-target="#anime-editable-{{ anime.id }}" hx-swap="outerHTML"
+            >{{ 'anime_detail.notes_edit_button'|trans }}</button>
+        </div>
+        <p class="anime-detail__notes-text">{{ anime.notes }}</p>
+    {% endif %}
+</section>

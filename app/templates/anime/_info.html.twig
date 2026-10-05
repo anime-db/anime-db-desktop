@@ -1,0 +1,120 @@
+{#
+ # AnimeDb package.
+ #
+ # @author    Peter Gribanov <info@peter-gribanov.ru>
+ # @copyright Copyright (c) 2026, Peter Gribanov
+ # @license   https://www.gnu.org/licenses/gpl-3.0.html GPL-3.0-or-later
+ #
+ # This program is free software: you can redistribute it and/or modify
+ # it under the terms of the GNU General Public License as published by
+ # the Free Software Foundation, either version 3 of the License, or
+ # (at your option) any later version.
+ #
+ # This program is distributed in the hope that it will be useful,
+ # but WITHOUT ANY WARRANTY; without even the implied warranty of
+ # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ # GNU General Public License for more details.
+ #
+ # You should have received a copy of the GNU General Public License
+ # along with this program. If not, see <https://www.gnu.org/licenses/>.
+ #}
+{#
+ # "Information" block of the right column: the reference fields, each with its own "fill from
+ # source" button when at least one active filler plugin supports it (fillable_fields, built by
+ # FillableFieldsPresenter). Rendered by anime/show.html.twig (initial load, fill_error = null) and
+ # by AnimeFillController (HTMX fragment swap, issues #234 / #913).
+ #}
+{% import 'anime/_fill_button.html.twig' as fill %}
+
+{% set date_premiere = anime.date_premiere|default(null) %}
+{% set date_end = anime.date_end|default(null) %}
+
+<section class="anime-detail__info" id="anime-info-{{ anime.id }}">
+    <h2 class="anime-detail__section-heading">{{ 'anime_detail.info_heading'|trans }}</h2>
+
+    {% if fill_error|default(null) %}
+        <p class="anime-detail__fill-error">{{ fill_error|trans }}</p>
+    {% endif %}
+
+    <span class="anime-detail__status-badge anime-detail__status-badge--{{ anime.production_status }}">
+        {{ ('production_status.' ~ anime.production_status)|trans }}
+    </span>
+
+    <dl class="anime-detail__fields">
+        <dt>{{ 'anime_detail.field_type'|trans }}</dt>
+        <dd><a href="{{ path('home_index') }}?type[]={{ anime.type }}">{{ ('anime_type.' ~ anime.type)|trans }}</a></dd>
+
+        {% if date_premiere is not null or date_end is not null %}
+            <dt>{{ 'anime_detail.field_dates'|trans }}</dt>
+            <dd class="anime-detail__dates">
+                {%- if date_premiere is not null %}<span class="anime-detail__date">{{ date_premiere }}</span>{% endif -%}
+                {%- if date_premiere is not null and date_end is not null and date_end != date_premiere %}–<wbr>{% endif -%}
+                {%- if date_end is not null and (date_premiere is null or date_end != date_premiere) %}<span class="anime-detail__date">{{ date_end }}</span>{% endif -%}
+            </dd>
+        {% endif %}
+
+        {% if anime.episodes_count is not null %}
+            <dt>{{ 'anime_detail.field_episodes_count'|trans }}</dt>
+            <dd>
+                {{ anime.episodes_count }}
+                {{ fill.fill_button(anime, 'episodesCount', fillable_fields.episodesCount) }}
+            </dd>
+        {% endif %}
+
+        <dt>{{ 'anime_detail.field_duration_minutes'|trans }}</dt>
+        <dd>
+            {%- if anime.duration_minutes is not null %}
+                {{- anime.duration_minutes }} {{ 'anime_detail.duration_minutes_suffix'|trans }}
+            {%- else %}
+                {{- 'anime_detail.empty_value'|trans }}
+            {%- endif %}
+            {{ fill.fill_button(anime, 'durationMinutes', fillable_fields.durationMinutes) }}
+        </dd>
+
+        <dt>{{ 'anime_detail.field_studios'|trans }}</dt>
+        <dd>
+            {%- if anime.studios is not empty %}
+                {%- for studio in anime.studios %}<a href="{{ path('home_index') }}?studios[]={{ studio.id }}">{{ studio.name }}</a>{% if not loop.last %}, {% endif %}{% endfor %}
+            {%- else %}
+                {{- 'anime_detail.empty_value'|trans }}
+            {%- endif %}
+            {{ fill.fill_button(anime, 'studios', fillable_fields.studios) }}
+        </dd>
+
+        <dt>{{ 'anime_detail.field_countries'|trans }}</dt>
+        <dd>
+            {{ anime.countries is not empty ? anime.countries|join(', ') : ('anime_detail.empty_value'|trans) }}
+            {{ fill.fill_button(anime, 'countries', fillable_fields.countries) }}
+        </dd>
+
+        <dt>{{ 'anime_detail.field_genres'|trans }}</dt>
+        <dd>
+            {%- if anime.genres is not empty %}
+                {%- for code in anime.genres %}<a href="{{ path('home_index') }}?genres[]={{ code }}">{{ ('genre.' ~ code)|trans }}</a>{% if not loop.last %}, {% endif %}{% endfor %}
+            {%- else %}
+                {{- 'anime_detail.empty_value'|trans }}
+            {%- endif %}
+            {{ fill.fill_button(anime, 'genres', fillable_fields.genres) }}
+        </dd>
+
+        <dt>{{ 'anime_detail.field_themes'|trans }}</dt>
+        <dd>
+            {%- if anime.themes is not empty %}
+                {%- for code in anime.themes %}<a href="{{ path('home_index') }}?themes[]={{ code }}">{{ ('theme.' ~ code)|trans }}</a>{% if not loop.last %}, {% endif %}{% endfor %}
+            {%- else %}
+                {{- 'anime_detail.empty_value'|trans }}
+            {%- endif %}
+            {{ fill.fill_button(anime, 'themes', fillable_fields.themes) }}
+        </dd>
+
+        <dt>{{ 'anime_detail.field_demographic'|trans }}</dt>
+        <dd>
+            {%- if anime.demographic is not null %}
+                {{- ('demographic.' ~ anime.demographic)|trans }}
+            {%- else %}
+                {{- 'anime_detail.empty_value'|trans }}
+            {%- endif %}
+            {{ fill.fill_button(anime, 'demographic', fillable_fields.demographic) }}
+        </dd>
+    </dl>
+</section>

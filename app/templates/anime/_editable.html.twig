@@ -26,7 +26,7 @@
  # forms below are never evaluated there.
  #}
 <section class="anime-detail__editable" id="anime-editable-{{ anime.id }}">
-    <h2 class="anime-detail__section-heading">{{ 'anime_detail.editable_heading'|trans }}</h2>
+    <h2 class="anime-detail__section-heading">{{ 'anime_detail.my_heading'|trans }}</h2>
 
     {% if error %}
         <p class="anime-detail__editable-error">{{ error|trans }}</p>
@@ -113,39 +113,37 @@
             {% endif %}
         </dd>
 
-        <dt>{{ 'anime_detail.field_user_rating'|trans }}</dt>
+        <dt id="anime-rating-label-{{ anime.id }}">{{ 'anime_detail.field_user_rating'|trans }}</dt>
+        {#
+         # Five toggle buttons, not a radio group: a radio cannot be unset by clicking it again, and
+         # clicking the current star clears the rating (it posts an empty value). Each star is its
+         # own tiny form so a click, Enter or Space commits - arrow keys do nothing, since every
+         # commit re-renders the whole fragment. The stars carry stable ids: HTMX puts focus back on
+         # the element with the same id after the swap.
+         #}
         <dd>
-            {% if editing == 'user_rating' %}
-                <form class="anime-detail__inline-form"
-                      hx-post="{{ path('anime_editable_update_user_rating', {id: anime.id}) }}"
-                      hx-target="#anime-editable-{{ anime.id }}" hx-swap="outerHTML">
-                    <input type="hidden" name="_token" value="{{ csrf_token('anime_editable_user_rating_' ~ anime.id) }}">
-                    <select name="user_rating">
-                        <option value=""{% if anime.user_rating is null %} selected{% endif %}>{{ 'anime_detail.rating_not_rated'|trans }}</option>
-                        {% for value in 1..5 %}
-                            <option value="{{ value }}"{% if value == anime.user_rating %} selected{% endif %}>{{ value }}</option>
-                        {% endfor %}
-                    </select>
-                    <button type="submit">{{ 'anime_detail.save_button'|trans }}</button>
-                    <button
-                        type="button"
-                        hx-get="{{ path('anime_editable_view', {id: anime.id}) }}"
-                        hx-target="#anime-editable-{{ anime.id }}" hx-swap="outerHTML"
-                    >{{ 'anime_detail.cancel_button'|trans }}</button>
-                </form>
-            {% else %}
-                <button
-                    type="button"
-                    class="anime-detail__editable-value"
-                    hx-get="{{ path('anime_editable_edit', {id: anime.id, field: 'user_rating'}) }}"
-                    hx-target="#anime-editable-{{ anime.id }}" hx-swap="outerHTML"
-                >{{ anime.user_rating is not null ? anime.user_rating : ('anime_detail.rating_not_rated'|trans) }}</button>
-            {% endif %}
+            <div class="anime-detail__rating" role="group" aria-labelledby="anime-rating-label-{{ anime.id }}">
+                {% for value in 1..5 %}
+                    <form class="anime-detail__rating-form"
+                          hx-post="{{ path('anime_editable_update_user_rating', {id: anime.id}) }}"
+                          hx-target="#anime-editable-{{ anime.id }}" hx-swap="outerHTML">
+                        <input type="hidden" name="_token" value="{{ csrf_token('anime_editable_user_rating_' ~ anime.id) }}">
+                        <input type="hidden" name="user_rating" value="{{ value == anime.user_rating ? '' : value }}">
+                        <button
+                            type="submit"
+                            id="anime-rating-star-{{ anime.id }}-{{ value }}"
+                            class="anime-detail__star{% if anime.user_rating is not null and value <= anime.user_rating %} anime-detail__star--on{% endif %}"
+                            aria-pressed="{{ value == anime.user_rating ? 'true' : 'false' }}"
+                            aria-label="{{ 'anime_detail.rating_star_label'|trans({'%rating%': value}) }}"
+                        >&#9733;</button>
+                    </form>
+                {% endfor %}
+            </div>
         </dd>
 
-        <dt>{{ 'anime_detail.field_notes'|trans }}</dt>
-        <dd>
-            {% if editing == 'notes' %}
+        {% if editing == 'notes' %}
+            <dt>{{ 'anime_detail.field_notes'|trans }}</dt>
+            <dd>
                 <form class="anime-detail__inline-form anime-detail__inline-form--notes"
                       hx-post="{{ path('anime_editable_update_notes', {id: anime.id}) }}"
                       hx-target="#anime-editable-{{ anime.id }}" hx-swap="outerHTML">
@@ -160,14 +158,16 @@
                         >{{ 'anime_detail.cancel_button'|trans }}</button>
                     </div>
                 </form>
-            {% else %}
-                <button
-                    type="button"
-                    class="anime-detail__editable-value"
-                    hx-get="{{ path('anime_editable_edit', {id: anime.id, field: 'notes'}) }}"
-                    hx-target="#anime-editable-{{ anime.id }}" hx-swap="outerHTML"
-                >{{ anime.notes ?: ('anime_detail.empty_value'|trans) }}</button>
-            {% endif %}
-        </dd>
+            </dd>
+        {% endif %}
     </dl>
+
+    {% if anime.notes is empty and editing != 'notes' %}
+        <button
+            type="button"
+            class="anime-detail__notes-add"
+            hx-get="{{ path('anime_editable_edit', {id: anime.id, field: 'notes'}) }}"
+            hx-target="#anime-editable-{{ anime.id }}" hx-swap="outerHTML"
+        >{{ 'anime_detail.notes_add_button'|trans }}</button>
+    {% endif %}
 </section>

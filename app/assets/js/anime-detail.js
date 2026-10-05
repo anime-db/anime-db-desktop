@@ -240,10 +240,8 @@
     window.Controller.registerControl('labels-widget', mountLabelsWidget);
 })();
 
-// _fill_fields.html.twig's "open storage folder" button (issue #734): the whole
-// #anime-fill-fields-{id} fragment it lives in is replaced via hx-swap="outerHTML" whenever any
-// sibling field's own fill form submits, so the button — and its listener — needs remounting on
-// every one of those swaps, not just on the initial page load.
+// The "Files" block's "open storage folder" button (issue #734). Mounted through the control
+// registry, so it also works for any fragment that is swapped in later.
 (function () {
     function mountOpenFolderButton(button) {
         button.addEventListener('click', () => {

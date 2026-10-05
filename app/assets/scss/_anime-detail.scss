@@ -33,10 +33,75 @@
 }
 
 .anime-detail {
-    display: grid;
-    grid-template-columns: 280px 1fr;
+    display: flex;
+    flex-direction: column;
     gap: 24px;
     padding: 16px;
+}
+
+.anime-detail__header {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.anime-detail__subtitle {
+    margin: 0;
+    color: var(--bs-secondary-color);
+}
+
+// Three columns from Bootstrap's `xl` (1200px), two from `lg` (992px), one below. The DOM order is
+// left, centre, right (the single-column reading order). In two columns the left area spans both
+// rows and the right blocks sit under the centre ones; `auto 1fr` rows keep the free space under
+// the right blocks instead of a gap between them and the centre.
+.anime-detail__columns {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+        "left"
+        "center"
+        "right";
+    gap: 24px;
+
+    @media (min-width: 992px) {
+        grid-template-columns: 260px minmax(0, 1fr);
+        grid-template-rows: auto 1fr;
+        grid-template-areas:
+            "left center"
+            "left right";
+    }
+
+    @media (min-width: 1200px) {
+        grid-template-columns: 260px minmax(0, 1fr) 300px;
+        grid-template-rows: auto;
+        grid-template-areas: "left center right";
+    }
+}
+
+.anime-detail__column {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    min-width: 0;
+}
+
+.anime-detail__column--left {
+    grid-area: left;
+    gap: 16px;
+}
+
+.anime-detail__column--center {
+    grid-area: center;
+}
+
+.anime-detail__column--right {
+    grid-area: right;
+}
+
+.anime-detail__wide {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
 }
 
 .anime-detail__media {
@@ -61,17 +126,15 @@
 
 .anime-detail__title {
     margin: 0;
-    font-size: 1.4em;
-}
-
-.anime-detail__content {
-    display: flex;
-    flex-direction: column;
-    gap: 24px;
+    font-size: 1.8em;
 }
 
 .anime-detail__editable,
-.anime-detail__reference,
+.anime-detail__info,
+.anime-detail__files,
+.anime-detail__sources,
+.anime-detail__notes,
+.anime-detail__names-block,
 .anime-detail__labels,
 .anime-detail__summary {
     padding: 16px;
@@ -85,8 +148,45 @@
 }
 
 .anime-detail__summary-text {
+    max-width: 70ch;
     margin: 0;
     white-space: pre-line;
+}
+
+.anime-detail__notes {
+    &[hidden] {
+        display: none;
+    }
+}
+
+.anime-detail__notes-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 12px;
+
+    .anime-detail__section-heading {
+        margin: 0;
+    }
+}
+
+.anime-detail__notes-text {
+    max-width: 70ch;
+    margin: 0;
+    white-space: pre-line;
+    overflow-wrap: anywhere;
+}
+
+.anime-detail__notes-add {
+    margin-top: 12px;
+}
+
+.anime-detail__names-block,
+.anime-detail__gallery {
+    &[hidden] {
+        display: none;
+    }
 }
 
 .anime-detail__placeholder {
@@ -164,6 +264,8 @@
 
 .anime-detail__progress-count {
     font-weight: bold;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
 }
 
 .anime-detail__progress-increment-form {
@@ -220,6 +322,72 @@
 
 .anime-detail__fields dd {
     margin: 0;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+// The "mine" block is a 260px column: a label above its value, the value as wide as the column,
+// so a long status label ("Plan to Watch") stays on one line.
+.anime-detail__editable .anime-detail__fields {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+}
+
+.anime-detail__editable .anime-detail__fields dd {
+    margin-bottom: 10px;
+}
+
+.anime-detail__editable .anime-detail__editable-value,
+.anime-detail__editable .anime-detail__watch-status-badge {
+    white-space: nowrap;
+}
+
+.anime-detail__editable-value.anime-detail__watch-status-badge--plan,
+.anime-detail__editable-value[class*="anime-detail__watch-status-badge--"] {
+    display: block;
+    width: 100%;
+}
+
+.anime-detail__rating {
+    display: flex;
+    gap: 2px;
+}
+
+.anime-detail__rating-form {
+    display: inline-flex;
+}
+
+.anime-detail__star {
+    padding: 0 2px;
+    border: none;
+    border-radius: 4px;
+    background: none;
+    color: var(--bs-secondary-color);
+    font-size: 1.6em;
+    line-height: 1.2;
+    cursor: pointer;
+
+    &--on {
+        color: var(--bs-warning);
+    }
+
+    &:hover {
+        color: var(--bs-warning);
+    }
+
+    &:focus-visible {
+        outline: 2px solid var(--bs-primary);
+        outline-offset: 2px;
+    }
+}
+
+// A date never breaks inside; the range may only wrap after the dash.
+.anime-detail__date {
+    white-space: nowrap;
+}
+
+.anime-detail__path {
+    overflow-wrap: anywhere;
 }
 
 .anime-detail__fill-error {
@@ -311,11 +479,29 @@
 
 .anime-detail__source-list {
     display: flex;
-    flex-wrap: wrap;
-    gap: 12px;
+    flex-direction: column;
+    gap: 4px;
     margin: 0;
     padding: 0;
     list-style: none;
+}
+
+.anime-detail__source-link {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 0;
+    color: inherit;
+    text-decoration: none;
+
+    &:hover .anime-detail__source-label {
+        text-decoration: underline;
+    }
+}
+
+.anime-detail__source-label {
+    min-width: 0;
+    overflow-wrap: anywhere;
 }
 
 .anime-detail__label-link {
@@ -420,6 +606,7 @@
 
 .anime-detail__source-icon {
     display: block;
+    flex: none;
     width: 24px;
     height: 24px;
 }
@@ -432,6 +619,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    flex: none;
     width: 24px;
     height: 24px;
     font-size: 24px;
@@ -458,8 +646,3 @@
     object-fit: cover;
 }
 
-.anime-detail__gallery-empty {
-    margin: 0;
-    color: var(--bs-secondary-color);
-    font-size: 0.85em;
-}

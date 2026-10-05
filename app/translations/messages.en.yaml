@@ -477,9 +477,9 @@ storage_list:
 anime_detail:
     title: '%title% — AnimeDB'
     back_link: ← Catalog
-    editable_heading: Management
+    my_heading: My list
     field_summary: Description
-    reference_heading: Reference information
+    info_heading: Information
     field_type: Type
     field_episodes_count: Episode count
     field_duration_minutes: Duration
@@ -509,7 +509,6 @@ anime_detail:
     gallery_heading: Gallery
     save_button: Save
     cancel_button: Cancel
-    rating_not_rated: Not rated
     increment_episode_button: Mark next episode as watched
     error_watch_status_invalid: Invalid watch status.
     error_watch_status_not_released: Cannot mark as Completed while the anime has not been released yet.
@@ -525,6 +524,13 @@ anime_detail:
     downloads_unlink_button: Unlink
     downloads_unlink_conflict_error: State changed, please refresh the page.
     download_new_link: Add download
+    field_dates: Air dates
+    files_heading: Files
+    files_not_linked: Not linked
+    files_link: Link
+    notes_add_button: Add a note
+    notes_edit_button: Edit
+    rating_star_label: 'Rating: %rating%'
 
 anime_new:
     title: New Anime — AnimeDB

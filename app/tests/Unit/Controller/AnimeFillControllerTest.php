@@ -156,7 +156,7 @@ final class AnimeFillControllerTest extends TestCase
         $twig = $this->createMock(Environment::class);
         $twig->expects($this->once())
             ->method('render')
-            ->with('anime/_fill_fields.html.twig', $this->callback(
+            ->with('anime/_info.html.twig', $this->callback(
                 static fn (array $params): bool => $params['fill_error'] === null && $params['anime']['duration_minutes'] === 24,
             ))
             ->willReturn('<div></div>');
@@ -209,7 +209,7 @@ final class AnimeFillControllerTest extends TestCase
         $twig = $this->createMock(Environment::class);
         $twig->expects($this->once())
             ->method('render')
-            ->with('anime/_fill_fields.html.twig', $this->callback(
+            ->with('anime/_info.html.twig', $this->callback(
                 static fn (array $params): bool => $params['fill_error'] === 'anime_detail.error_fill_not_found'
                     && $params['anime']['duration_minutes'] === null,
             ))
@@ -225,7 +225,31 @@ final class AnimeFillControllerTest extends TestCase
         $this->assertNull($anime->getDurationMinutes());
     }
 
-    public function testFillingCoverSuccessfullyAlsoRendersTheMediaPartialAsAnOobSwap(): void
+    public function testFillingAlternativeNamesRendersTheNamesFragmentWithTheNoticeWhenNothingMatches(): void
+    {
+        $filler = $this->createStub(FillerInterface::class);
+        $filler->method('getFillableFields')->willReturn(['alternativeNames']);
+        $filler->method('resolveExternalId')->willReturn(null);
+        $filler->method('find')->willReturn([]);
+
+        $anime = $this->persistedAnime();
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('anime/_names.html.twig', $this->callback(
+                static fn (array $params): bool => $params['fill_error'] === 'anime_detail.error_fill_not_found',
+            ))
+            ->willReturn('<section></section>');
+
+        $controller = $this->createController(['animedb-shikimori' => $filler], $twig);
+
+        $request = Request::create('/anime/1/fill/alternativeNames', 'POST', ['plugin_id' => 'animedb-shikimori', '_token' => 'token']);
+
+        $this->assertSame(200, $controller->fill($anime, 'alternativeNames', $request)->getStatusCode());
+    }
+
+    public function testFillingCoverSuccessfullyRendersOnlyTheMediaPartial(): void
     {
         $data = new PluginAnimeData(title: 'Bleach', cover: 'https://example.test/cover.jpg');
         $filler = $this->createStub(FillerInterface::class);
@@ -240,7 +264,7 @@ final class AnimeFillControllerTest extends TestCase
 
         $rendered = [];
         $twig = $this->createMock(Environment::class);
-        $twig->expects($this->exactly(2))
+        $twig->expects($this->once())
             ->method('render')
             ->willReturnCallback(function (string $template, array $params) use (&$rendered): string {
                 $rendered[] = [$template, $params];
@@ -255,16 +279,14 @@ final class AnimeFillControllerTest extends TestCase
         $response = $controller->fill($anime, 'cover', $request);
 
         $this->assertSame('abc123.jpg', $anime->getCover());
-        $this->assertSame('anime/_fill_fields.html.twig', $rendered[0][0]);
+        $this->assertCount(1, $rendered);
+        $this->assertSame('anime/_media.html.twig', $rendered[0][0]);
         $this->assertNull($rendered[0][1]['fill_error']);
-        $this->assertSame('anime/_media.html.twig', $rendered[1][0]);
-        $this->assertSame('abc123.jpg', $rendered[1][1]['anime']['cover']);
-        $content = (string) $response->getContent();
-        $this->assertStringContainsString('anime/_fill_fields.html.twig', $content);
-        $this->assertStringContainsString('anime/_media.html.twig', $content);
+        $this->assertSame('abc123.jpg', $rendered[0][1]['anime']['cover']);
+        $this->assertStringContainsString('anime/_media.html.twig', (string) $response->getContent());
     }
 
-    public function testFillingImagesSuccessfullyAlsoRendersTheGalleryPartialAsAnOobSwap(): void
+    public function testFillingImagesSuccessfullyRendersOnlyTheGalleryPartial(): void
     {
         $data = new PluginAnimeData(title: 'Bleach', images: ['https://example.test/1.jpg']);
         $filler = $this->createStub(FillerInterface::class);
@@ -279,7 +301,7 @@ final class AnimeFillControllerTest extends TestCase
 
         $rendered = [];
         $twig = $this->createMock(Environment::class);
-        $twig->expects($this->exactly(2))
+        $twig->expects($this->once())
             ->method('render')
             ->willReturnCallback(function (string $template, array $params) use (&$rendered): string {
                 $rendered[] = [$template, $params];
@@ -293,9 +315,9 @@ final class AnimeFillControllerTest extends TestCase
 
         $controller->fill($anime, 'images', $request);
 
-        $this->assertSame('anime/_fill_fields.html.twig', $rendered[0][0]);
-        $this->assertSame('anime/_gallery.html.twig', $rendered[1][0]);
-        $this->assertSame(['new.jpg'], $rendered[1][1]['anime']['images']);
+        $this->assertCount(1, $rendered);
+        $this->assertSame('anime/_gallery.html.twig', $rendered[0][0]);
+        $this->assertSame(['new.jpg'], $rendered[0][1]['anime']['images']);
     }
 
     public function testFillingCoverWithAnUndownloadableUrlRendersTheImageRejectedErrorOnTheMediaPartial(): void
@@ -313,7 +335,7 @@ final class AnimeFillControllerTest extends TestCase
 
         $rendered = [];
         $twig = $this->createMock(Environment::class);
-        $twig->expects($this->exactly(2))
+        $twig->expects($this->once())
             ->method('render')
             ->willReturnCallback(function (string $template, array $params) use (&$rendered): string {
                 $rendered[] = [$template, $params];
@@ -328,12 +350,10 @@ final class AnimeFillControllerTest extends TestCase
         $controller->fill($anime, 'cover', $request);
 
         // The notice lands on the media partial, next to the button that triggered it - not on
-        // the unrelated fields fragment further down the page (issue #507 review feedback).
-        $this->assertSame('anime/_fill_fields.html.twig', $rendered[0][0]);
-        $this->assertNull($rendered[0][1]['fill_error']);
-        $this->assertSame('anime/_media.html.twig', $rendered[1][0]);
-        $this->assertSame('anime_detail.error_fill_image_rejected', $rendered[1][1]['fill_error']);
-        $this->assertTrue($rendered[1][1]['oob']);
+        // an unrelated fragment elsewhere on the card (issues #507, #913).
+        $this->assertCount(1, $rendered);
+        $this->assertSame('anime/_media.html.twig', $rendered[0][0]);
+        $this->assertSame('anime_detail.error_fill_image_rejected', $rendered[0][1]['fill_error']);
 
         $this->assertNull($anime->getCover());
     }

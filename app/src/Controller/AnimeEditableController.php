@@ -47,7 +47,7 @@ use Twig\Environment;
 /**
  * Inline editing of the anime detail card (issue #103): watch status, user rating, notes
  * and episode watch progress. Every action here (and the toggle in/out of edit mode) is
- * an HTMX partial that re-renders and swaps anime/_editable.html.twig, so there is no
+ * an HTMX partial that re-renders and swaps anime/_editable.html.twig (plus the notes fragment out-of-band on a notes update), so there is no
  * separate "edit" screen or modal, per the issue's decomposition (#101 built the static
  * placeholder this replaces).
  *
@@ -146,7 +146,7 @@ final class AnimeEditableController
         $anime->setNotes($notes === '' ? null : $notes);
         $this->entityManager->flush();
 
-        return $this->renderEditable($anime);
+        return $this->renderEditable($anime, null, null, true);
     }
 
     #[Route(
@@ -204,14 +204,26 @@ final class AnimeEditableController
         return $this->renderEditable($anime);
     }
 
-    private function renderEditable(Anime $anime, ?string $editing = null, ?string $error = null): Response
+    /**
+     * The notes block lives in the centre column, outside #anime-editable-{id} (issue #913), so a
+     * notes update appends it as an out-of-band swap ($withNotes) to keep it in step with the form.
+     */
+    private function renderEditable(Anime $anime, ?string $editing = null, ?string $error = null, bool $withNotes = false): Response
     {
-        return new Response($this->twig->render('anime/_editable.html.twig', [
-            'anime' => $this->viewFactory->serialize($anime),
+        $view = $this->viewFactory->serialize($anime);
+
+        $html = $this->twig->render('anime/_editable.html.twig', [
+            'anime' => $view,
             'editing' => $editing,
             'error' => $error,
             'watch_statuses' => array_column(WatchStatus::cases(), 'value'),
-        ]));
+        ]);
+
+        if ($withNotes) {
+            $html .= $this->twig->render('anime/_notes.html.twig', ['anime' => $view, 'oob' => true]);
+        }
+
+        return new Response($html);
     }
 
     private function assertValidCsrfToken(string $tokenId, Request $request): void

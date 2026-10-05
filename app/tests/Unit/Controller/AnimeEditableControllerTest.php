@@ -242,6 +242,48 @@ final class AnimeEditableControllerTest extends TestCase
         $this->assertSame('Rewatch later.', $anime->getNotes());
     }
 
+    public function testUpdateNotesAlsoRendersTheNotesFragmentAsAnOobSwap(): void
+    {
+        $anime = new TvAnime();
+        $anime->setTitle('Frieren')->setWatchStatus(WatchStatus::Watching);
+
+        $rendered = [];
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->exactly(2))
+            ->method('render')
+            ->willReturnCallback(function (string $template, array $params) use (&$rendered): string {
+                $rendered[] = [$template, $params];
+
+                return '<div data-template="'.$template.'"></div>';
+            });
+
+        $request = Request::create('/anime/1/editable/notes', 'POST', ['notes' => 'First note', '_token' => 'token']);
+
+        $response = $this->createController(twig: $twig)->updateNotes($anime, $request);
+
+        $this->assertSame('anime/_editable.html.twig', $rendered[0][0]);
+        $this->assertSame('anime/_notes.html.twig', $rendered[1][0]);
+        $this->assertSame('First note', $rendered[1][1]['anime']['notes']);
+        $this->assertTrue($rendered[1][1]['oob']);
+        $this->assertStringContainsString('anime/_notes.html.twig', (string) $response->getContent());
+    }
+
+    public function testActionsOtherThanNotesUpdateDoNotRenderTheNotesFragment(): void
+    {
+        $anime = new TvAnime();
+        $anime->setTitle('Frieren')->setWatchStatus(WatchStatus::Watching);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('anime/_editable.html.twig')
+            ->willReturn('<section></section>');
+
+        $request = Request::create('/anime/1/editable/user_rating', 'POST', ['user_rating' => '4', '_token' => 'token']);
+
+        $this->createController(twig: $twig)->updateUserRating($anime, $request);
+    }
+
     public function testUpdateNotesClearsToNullWhenBlank(): void
     {
         $anime = new TvAnime();

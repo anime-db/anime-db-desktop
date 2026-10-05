@@ -338,7 +338,7 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
         // no images at all - an out-of-band swap after the first successful fill has nowhere to
         // land otherwise (issue #507).
         $this->assertStringContainsString('id="anime-gallery-2"', $html);
-        $this->assertStringContainsString('anime-detail__gallery-empty', $html);
+        $this->assertStringNotContainsString('anime-detail__gallery-empty', $html);
         $this->assertStringNotContainsString('anime-detail__gallery-list', $html);
     }
 
@@ -365,7 +365,7 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
     /**
      * Both the cover and the gallery sections get their own "fill from source" button once a
      * plugin actively supports the field (issue #507) - same button/dropdown macro
-     * anime/_fill_fields.html.twig already uses for the other reference fields, and the same
+     * anime/_fill_button.html.twig shares between the card fragments, and the same
      * fillable_fields source (FillableFieldsPresenter::build()), not a second one.
      */
     public function testShowRendersFillButtonsForCoverAndImagesWhenAPluginSupportsThem(): void
@@ -394,6 +394,204 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
         $this->assertStringContainsString('hx-post="/anime/1/fill/cover"', $html);
         $this->assertStringContainsString('hx-post="/anime/1/fill/images"', $html);
         $this->assertStringContainsString('name="plugin_id" value="animedb-shikimori"', $html);
+    }
+
+    /**
+     * @param array<string, mixed>                       $anime
+     * @param array<string, list<array<string, string>>> $fillableFields
+     */
+    private function renderShow(array $anime, string $locale = 'ru', ?array $fillableFields = null): string
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession('/anime/'.$anime['id']);
+
+        /** @var LocaleSwitcher $localeSwitcher */
+        $localeSwitcher = self::getContainer()->get(LocaleSwitcher::class);
+        $localeSwitcher->setLocale($locale);
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+
+        return $twig->render('anime/show.html.twig', ['anime' => $anime, 'widgets' => [], 'plugins_ui' => [], 'fillable_fields' => $fillableFields ?? $this->emptyFillableFields(), 'downloads' => [], 'downloads_unlink_error' => null]);
+    }
+
+    public function testHeaderCarriesTheTitleAndASubtitleWithJapaneseNameTypeAndYears(): void
+    {
+        $anime = $this->fullyPopulatedAnime();
+        $anime['date_premiere'] = '2009-04-05';
+        $anime['date_end'] = '2010-07-04';
+
+        $html = $this->renderShow($anime, 'en');
+
+        $this->assertMatchesRegularExpression('/<header class="anime-detail__header">\s*<h1 class="anime-detail__title"><bdi>Shingeki no Kyojin<\/bdi><\/h1>/', $html);
+        $this->assertStringContainsString('<p class="anime-detail__subtitle">進撃の巨人 · TV Series · 2009–2010</p>', $html);
+        // The title heading is no longer part of the cover fragment re-rendered by the cover fill.
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $mediaFragment = $twig->render('anime/_media.html.twig', ['anime' => $anime, 'fillable_fields' => $this->emptyFillableFields()]);
+        $this->assertStringNotContainsString('<h1', $mediaFragment);
+    }
+
+    public function testSubtitleSkipsMissingPartsWithoutDanglingSeparators(): void
+    {
+        $anime = $this->minimalAnime();
+        $anime['date_premiere'] = '2016-09-17';
+        $anime['date_end'] = '2016-09-17';
+
+        $html = $this->renderShow($anime, 'en');
+
+        $this->assertStringContainsString('<p class="anime-detail__subtitle">Movie · 2016</p>', $html);
+
+        $html = $this->renderShow($this->minimalAnime(), 'en');
+
+        $this->assertStringContainsString('<p class="anime-detail__subtitle">Movie</p>', $html);
+    }
+
+    public function testDatesAreRenderedAsARangeOfUnbreakableDates(): void
+    {
+        $anime = $this->fullyPopulatedAnime();
+        $anime['date_premiere'] = '2009-04-05';
+        $anime['date_end'] = '2010-07-04';
+
+        $html = $this->renderShow($anime, 'en');
+
+        $this->assertStringContainsString('<span class="anime-detail__date">2009-04-05</span>–<wbr><span class="anime-detail__date">2010-07-04</span>', $html);
+    }
+
+    public function testStarsMarkTheCurrentRatingAndResetItOnASecondClick(): void
+    {
+        $anime = $this->fullyPopulatedAnime();
+        $anime['user_rating'] = 3;
+
+        $html = $this->renderShow($anime, 'en');
+
+        $this->assertStringNotContainsString('<select name="user_rating"', $html);
+        $this->assertSame(5, substr_count($html, 'class="anime-detail__star'));
+        $this->assertSame(1, substr_count($html, 'aria-pressed="true"'));
+        $this->assertStringContainsString('aria-label="Rating: 3"', $html);
+        $this->assertSame(3, substr_count($html, 'anime-detail__star--on'));
+        // Another star commits its own value...
+        $this->assertMatchesRegularExpression('/name="user_rating" value="5">\s*<button[^>]*id="anime-rating-star-1-5"/', $html);
+        // ...and the current one posts an empty value, which the controller turns into "not rated".
+        $this->assertMatchesRegularExpression('/name="user_rating" value="">\s*<button[^>]*id="anime-rating-star-1-3"[^>]*aria-pressed="true"/', $html);
+        $this->assertStringContainsString('hx-post="/anime/1/editable/user_rating"', $html);
+    }
+
+    public function testNotesBlockIsAlwaysAnchoredButOnlyFilledWhenThereAreNotes(): void
+    {
+        $html = $this->renderShow($this->minimalAnime(), 'en');
+
+        $this->assertMatchesRegularExpression('/<section[^>]*id="anime-notes-2"[^>]* hidden>/', $html);
+        $this->assertStringNotContainsString('anime-detail__notes-text', $html);
+        $this->assertStringContainsString('Add a note', $html);
+
+        $html = $this->renderShow($this->fullyPopulatedAnime(), 'en');
+
+        $this->assertDoesNotMatchRegularExpression('/<section[^>]*id="anime-notes-1"[^>]* hidden>/', $html);
+        $this->assertStringContainsString('<p class="anime-detail__notes-text">Rewatch before the finale.</p>', $html);
+        $this->assertStringNotContainsString('Add a note', $html);
+    }
+
+    public function testEmptyAlternativeNamesAndGalleryAreHiddenAsWholeBlocks(): void
+    {
+        $html = $this->renderShow($this->minimalAnime(), 'en');
+
+        $this->assertMatchesRegularExpression('/<section[^>]*id="anime-names-2"[^>]* hidden>/', $html);
+        $this->assertMatchesRegularExpression('/<section[^>]*id="anime-gallery-2"[^>]* hidden>/', $html);
+
+        $html = $this->renderShow($this->fullyPopulatedAnime(), 'en');
+
+        $this->assertDoesNotMatchRegularExpression('/<section[^>]*id="anime-names-1"[^>]* hidden>/', $html);
+        $this->assertDoesNotMatchRegularExpression('/<section[^>]*id="anime-gallery-1"[^>]* hidden>/', $html);
+    }
+
+    public function testEmptyAlternativeNamesStayVisibleWhenAPluginCanFillThem(): void
+    {
+        $fillableFields = $this->emptyFillableFields();
+        $fillableFields['alternativeNames'] = [['id' => 'animedb-shikimori', 'name' => 'Shikimori']];
+
+        $html = $this->renderShow($this->minimalAnime(), 'en', $fillableFields);
+
+        $this->assertDoesNotMatchRegularExpression('/<section[^>]*id="anime-names-2"[^>]* hidden>/', $html);
+        $this->assertStringContainsString('hx-target="#anime-names-2"', $html);
+    }
+
+    public function testFilesBlockStaysVisibleWithoutStorageAndLinksToTheStoragePage(): void
+    {
+        $html = $this->renderShow($this->minimalAnime(), 'en');
+
+        $this->assertStringContainsString('Not linked', $html);
+        $this->assertStringContainsString('<a href="/storage">Link</a>', $html);
+    }
+
+    public function testSourcesAreAVerticalListLabelledWithTheDomainWithoutWww(): void
+    {
+        $anime = $this->fullyPopulatedAnime();
+        $anime['sources'] = [['url' => 'https://www.example.org/a/1', 'domain' => 'www.example.org']];
+
+        $html = $this->renderShow($anime, 'en');
+
+        $this->assertStringContainsString('<span class="anime-detail__source-label">example.org</span>', $html);
+        $this->assertStringContainsString('https://www.example.org/favicon.ico', $html);
+    }
+
+    public function testFillErrorIsRenderedInsideTheFragmentOfTheFieldThatCausedIt(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession('/anime/1');
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $params = ['anime' => $this->fullyPopulatedAnime(), 'fillable_fields' => $this->emptyFillableFields(), 'fill_error' => 'anime_detail.error_fill_not_found'];
+
+        $names = $twig->render('anime/_names.html.twig', $params);
+        $info = $twig->render('anime/_info.html.twig', $params);
+
+        $this->assertStringContainsString('anime-detail__fill-error', $names);
+        $this->assertStringNotContainsString('anime-detail__names', $info);
+        $this->assertStringNotContainsString('hx-swap-oob', $names);
+    }
+
+    /**
+     * @return iterable<string, array{string, list<string>}>
+     */
+    public static function localeProvider(): iterable
+    {
+        yield 'en has no Cyrillic' => ['en', []];
+        yield 'ru has Russian labels' => ['ru', ['Информация', 'Файлы', 'Моё']];
+    }
+
+    /**
+     * @param list<string> $expected
+     */
+    #[DataProvider('localeProvider')]
+    public function testCardShowsOnlyStringsOfTheActiveLocale(string $locale, array $expected): void
+    {
+        $anime = $this->fullyPopulatedAnime();
+        $anime['date_premiere'] = '2009-04-05';
+        $anime['date_end'] = '2010-07-04';
+        $anime['summary'] = 'Plain ASCII summary.';
+        $anime['names'] = [];
+        $anime['storage'] = null;
+
+        $fillableFields = array_map(static fn (): array => [['id' => 'animedb-shikimori', 'name' => 'Shikimori']], $this->emptyFillableFields());
+
+        $html = $this->renderShow($anime, $locale, $fillableFields);
+
+        foreach ($expected as $text) {
+            $this->assertStringContainsString($text, $html);
+        }
+
+        // main only: the page chrome is not part of the card.
+        $main = $this->mainContent($html);
+        if ($locale === 'en') {
+            $this->assertDoesNotMatchRegularExpression('/\p{Cyrillic}/u', $main);
+            $this->assertStringNotContainsString('anime_detail.', $main);
+        } else {
+            $this->assertStringNotContainsString('Information', $main);
+            $this->assertStringNotContainsString('Fill from source', $main);
+            $this->assertStringNotContainsString('anime_detail.', $main);
+        }
     }
 
     /**

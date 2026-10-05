@@ -1,0 +1,48 @@
+{#
+ # AnimeDb package.
+ #
+ # @author    Peter Gribanov <info@peter-gribanov.ru>
+ # @copyright Copyright (c) 2026, Peter Gribanov
+ # @license   https://www.gnu.org/licenses/gpl-3.0.html GPL-3.0-or-later
+ #
+ # This program is free software: you can redistribute it and/or modify
+ # it under the terms of the GNU General Public License as published by
+ # the Free Software Foundation, either version 3 of the License, or
+ # (at your option) any later version.
+ #
+ # This program is distributed in the hope that it will be useful,
+ # but WITHOUT ANY WARRANTY; without even the implied warranty of
+ # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ # GNU General Public License for more details.
+ #
+ # You should have received a copy of the GNU General Public License
+ # along with this program. If not, see <https://www.gnu.org/licenses/>.
+ #}
+{#
+ # Alternative titles block of the centre column. Rendered by anime/show.html.twig (initial load)
+ # and by AnimeFillController after an alternativeNames fill attempt (issue #913), so the root with
+ # its id is always emitted: an empty block with no filler plugin is only `hidden`, which keeps the
+ # id a stable swap target. With a filler plugin the block stays visible even without names - the
+ # button is the only way to fill them.
+ #}
+{% import 'anime/_fill_button.html.twig' as fill %}
+
+{% set can_fill = fillable_fields.alternativeNames is not empty %}
+
+<section class="anime-detail__names-block" id="anime-names-{{ anime.id }}"{% if anime.names is empty and not can_fill %} hidden{% endif %}>
+    <h2 class="anime-detail__section-heading">{{ 'anime_detail.field_names'|trans }}</h2>
+
+    {% if fill_error|default(null) %}
+        <p class="anime-detail__fill-error">{{ fill_error|trans }}</p>
+    {% endif %}
+
+    {% if anime.names is not empty %}
+        <ul class="anime-detail__names">
+            {% for name in anime.names %}
+                <li><bdi>{{ name.name }}</bdi> <span class="anime-detail__name-type">({{ ('anime_name_role.' ~ name.role)|trans }}{% if name.locale %}, {{ name.locale }}{% endif %})</span></li>
+            {% endfor %}
+        </ul>
+    {% endif %}
+
+    {{ fill.fill_button(anime, 'alternativeNames', fillable_fields.alternativeNames) }}
+</section>
