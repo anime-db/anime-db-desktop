@@ -216,7 +216,7 @@ final class DownloadCompletionPoller
         // this is where that free-space check catches up, once size becomes known, for as long
         // as the torrent is still short of Completed. A torrent that already reached Completed
         // necessarily wrote all of its bytes, so it is not re-checked here.
-        if (!$this->isComplete($torrent)) {
+        if (!self::isTorrentComplete($torrent)) {
             $this->failIfOutOfSpace($torrent, $infoHash);
 
             return;
@@ -431,7 +431,7 @@ final class DownloadCompletionPoller
     /**
      * @param array<string, mixed> $torrent
      */
-    private function isComplete(array $torrent): bool
+    public static function isTorrentComplete(array $torrent): bool
     {
         $progress = (float) ($torrent['progress'] ?? 0);
         $state = (string) ($torrent['state'] ?? '');

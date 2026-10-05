@@ -338,11 +338,25 @@ final class DownloadsOverviewBuilderTest extends TestCase
         self::assertSame('Файлы вне хранилища — удалите закачку и поставьте заново', $text);
     }
 
-    public function testSavePathOutsideStorageIsUsedWhenContentPathIsAbsent(): void
+    public function testSavePathOutsideStorageIsUsedWhenContentPathIsAbsentForFinishedTorrent(): void
     {
-        $text = $this->pendingStatusText(['state' => 'downloading', 'progress' => 0.3, 'save_path' => 'D:\\other']);
+        $text = $this->pendingStatusText(['state' => 'stalledUP', 'progress' => 1.0, 'save_path' => 'D:\\other']);
 
         self::assertSame('Файлы вне хранилища — удалите закачку и поставьте заново', $text);
+    }
+
+    public function testUnfinishedTorrentOutsideStorageKeepsWaiting(): void
+    {
+        // The client may keep unfinished torrents in a temporary folder and move them on completion.
+        self::assertSame('Ждёт', $this->pendingStatusText(['state' => 'downloading', 'progress' => 0.3, 'content_path' => 'D:\\qbt-temp\\Release']));
+        self::assertSame('Ждёт', $this->pendingStatusText(['state' => 'downloading', 'progress' => 0.3, 'save_path' => 'D:\\other']));
+    }
+
+    public function testMovingTorrentOutsideStorageIsNotReportedAsOutsideStorage(): void
+    {
+        $text = $this->pendingStatusText(['state' => 'moving', 'progress' => 1.0, 'content_path' => 'D:\\qbt-temp\\Release']);
+
+        self::assertSame('Докачано, привязывается…', $text);
     }
 
     public function testContentPathUnderIncomingKeepsWaitingAndLinking(): void
@@ -387,12 +401,20 @@ final class DownloadsOverviewBuilderTest extends TestCase
     public function testNewStatusTextsExistInEnCatalogWithoutPlaceholders(): void
     {
         $builder = $this->buildBuilderForLocale('en');
+        $dir = $this->makeDir();
+        $storage = $this->persistStorage($dir);
+        file_put_contents($dir.\DIRECTORY_SEPARATOR.'desktop.ini', "[AnimeDB]\nid=".$storage->id."\n");
         $hash = str_repeat('8', 40);
-        $this->persistDownload($hash, $this->persistAnime());
+        $this->persistDownload($hash, $this->persistAnime(), $storage);
 
-        $row = $builder->build([$this->torrent($hash, ['state' => 'error'])], true)['rows'][0];
+        $textFor = fn (array $overrides): string => $builder->build([$this->torrent($hash, $overrides)], true)['rows'][0]['statusText'];
 
-        self::assertSame('Torrent client error', $row['statusText']);
+        self::assertSame('Torrent client error', $textFor(['state' => 'error']));
+        self::assertSame('Files not found', $textFor(['state' => 'missingFiles']));
+        self::assertSame(
+            'Files are outside the storage — delete the download and add it again',
+            $textFor(['state' => 'stalledUP', 'progress' => 1.0, 'content_path' => 'D:\\other\\Folder']),
+        );
     }
 
     public function testCompletedRowWithoutTorrentInClientShowsSeedingStoppedNotAnError(): void

@@ -281,13 +281,18 @@ final class DownloadsOverviewBuilder
     }
 
     /**
-     * Same lexical check and path choice as the completion poller (content_path, else save_path);
-     * never touches the disk.
+     * Same condition, lexical check and path choice as the completion poller (only finished torrents,
+     * content_path else save_path); never touches the disk. An unfinished torrent may legitimately
+     * sit in the client's temporary folder until the client moves it.
      *
      * @param array<string, mixed> $torrent
      */
     private function isOutsideStorage(array $torrent, Storage $targetStorage): bool
     {
+        if (!DownloadCompletionPoller::isTorrentComplete($torrent)) {
+            return false;
+        }
+
         $path = $torrent['content_path'] ?? $torrent['save_path'] ?? null;
         if (!\is_string($path) || $path === '') {
             return false;
