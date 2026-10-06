@@ -28,9 +28,12 @@ declare(strict_types=1);
 namespace App\Tests\Support;
 
 use App\Repository\DownloadRepository;
+use App\Repository\StorageRepository;
 use App\Repository\SyncReviewItemRepository;
 use App\Repository\SyncTombstoneRepository;
 use App\Service\AnimeDeleteService;
+use App\Service\Download\DownloadFolderJail;
+use App\Service\Download\DownloadIncomingChecker;
 use App\Service\JobLock\JobLockService;
 use App\Service\JobLock\ProcessLivenessChecker;
 use App\Service\Plugin\PluginsConfigStore;
@@ -107,12 +110,22 @@ trait BuildsAnimeDeleteService
         return new SyncRegistry($syncs, new PluginsConfigStore($path));
     }
 
-    private function newQbittorrentClient(bool $failing = false): QbittorrentClient
+    /**
+     * @param list<array<string, mixed>> $torrents     what `torrents/info` returns
+     * @param list<string>               $failingPaths URL fragments answered with 500 (besides everything when $failing)
+     */
+    private function newQbittorrentClient(bool $failing = false, array $torrents = [], array $failingPaths = []): QbittorrentClient
     {
-        $httpClient = new MockHttpClient(function (string $method, string $url, array $options) use ($failing): MockResponse {
+        $httpClient = new MockHttpClient(function (string $method, string $url, array $options) use ($failing, $torrents, $failingPaths): MockResponse {
             $this->qbittorrentRequests[] = $method.' '.$url.' '.(string) ($options['body'] ?? '');
+            $body = str_contains($url, '/torrents/info') ? (string) json_encode($torrents) : '';
 
-            return new MockResponse('', ['http_code' => $failing ? 500 : 200]);
+            $fails = $failing;
+            foreach ($failingPaths as $path) {
+                $fails = $fails || str_contains($url, $path);
+            }
+
+            return new MockResponse($body, ['http_code' => $fails ? 500 : 200]);
         });
 
         return new QbittorrentClient($httpClient, 'http://qb.test');
@@ -138,6 +151,7 @@ trait BuildsAnimeDeleteService
             $bus ?? $this->createStub(MessageBusInterface::class),
             new SyncReviewService(new SyncReviewItemRepository($this->entityManager)),
             $qbittorrent ?? $this->newQbittorrentClient(),
+            new DownloadIncomingChecker(new DownloadFolderJail(), new StorageRepository($this->entityManager)),
             $logger ?? new NullLogger(),
             $mediaDir,
         );
