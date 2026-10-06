@@ -1143,7 +1143,7 @@ final class DownloadCompletionPollerTest extends TestCase
         $poller->poll();
     }
 
-    public function testPollMakesExactlyOneTorrentsInfoRequestTaggedAnimedbPerPassWhenThereArePendingDownloads(): void
+    public function testPollMakesExactlyOneUnfilteredTorrentsInfoRequestPerPassWhenThereArePendingDownloads(): void
     {
         $otherHash = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
         $this->saveDownload(self::HASH, $this->persistAnime());
@@ -1181,7 +1181,111 @@ final class DownloadCompletionPollerTest extends TestCase
         $this->assertSame('GET', $method);
         $this->assertStringContainsString('/api/v2/torrents/info', $url);
         parse_str((string) parse_url($url, \PHP_URL_QUERY), $query);
-        $this->assertSame(['tag' => QbittorrentClient::TAG], $query);
+        $this->assertArrayNotHasKey('tag', $query, 'The poller must not filter torrents/info by tag (issue #926).');
+    }
+
+    /**
+     * Emulates qBittorrent's tag filter: a request carrying `tag=` gets only the torrents whose
+     * `tags` contain it, a request without it gets every torrent. Issue #926.
+     *
+     * @param list<array<string, mixed>>                   $torrents
+     * @param list<array{0: string, 1: string, 2: string}> $postCalls method, path, body of non-info requests
+     */
+    private function makeTagAwarePoller(array $torrents, EventDispatcherInterface $eventDispatcher, array &$postCalls): DownloadCompletionPoller
+    {
+        $httpClient = new MockHttpClient(function (string $method, string $url, array $options) use ($torrents, &$postCalls): MockResponse {
+            if ($method === 'POST') {
+                $postCalls[] = [$method, (string) parse_url($url, \PHP_URL_PATH), (string) ($options['body'] ?? '')];
+
+                return new MockResponse('');
+            }
+
+            parse_str((string) parse_url($url, \PHP_URL_QUERY), $query);
+            $tag = $query['tag'] ?? null;
+            $visible = array_values(array_filter(
+                $torrents,
+                static fn (array $torrent): bool => $tag === null || \in_array($tag, explode(',', (string) $torrent['tags']), true),
+            ));
+
+            return new MockResponse(json_encode($visible, \JSON_THROW_ON_ERROR), ['response_headers' => ['content-type' => 'application/json']]);
+        });
+
+        $jail = new DownloadFolderJail();
+        $linker = new AnimeDownloadLinker(new AnimeRepository($this->entityManager), $this->entityManager, $jail);
+        $client = new QbittorrentClient($httpClient, self::BASE_URL);
+
+        return new DownloadCompletionPoller(
+            $client,
+            $this->downloads,
+            $linker,
+            $jail,
+            $this->makeRelocator($client),
+            $eventDispatcher,
+            $this->entityManager,
+            new FreeSpaceChecker(new NativeFreeSpaceProvider()),
+            new NullLogger(),
+        );
+    }
+
+    /** Issue #926: a finished torrent without the `animedb` tag is still moved out of incoming. */
+    public function testPollMovesAFinishedUntaggedTorrentOutOfIncoming(): void
+    {
+        $anime = $this->persistAnime();
+        $this->saveDownload(self::HASH, $anime);
+        $qbHash = 'dddddddddddddddddddddddddddddddddddddddd';
+
+        $postCalls = [];
+        $poller = $this->makeTagAwarePoller([[
+            'hash' => $qbHash,
+            'infohash_v1' => self::HASH,
+            'tags' => '',
+            'progress' => 1,
+            'state' => 'uploading',
+            'content_path' => $this->incomingContentPath(self::HASH, 'Release.Name'),
+        ]], $this->createMock(EventDispatcherInterface::class), $postCalls);
+
+        $poller->poll();
+
+        $this->assertCount(1, $postCalls);
+        $this->assertSame('/api/v2/torrents/setLocation', $postCalls[0][1]);
+        parse_str($postCalls[0][2], $parsed);
+        $this->assertSame($qbHash, $parsed['hashes']);
+        $this->assertSame($this->root, $parsed['location']);
+
+        $stored = $this->downloads->findByInfoHashAndAnime(self::HASH, (int) $anime->id);
+        $this->assertNotNull($stored);
+        $this->assertSame(DownloadStatus::Pending, $stored->getStatus());
+        $this->assertSame(1, $stored->getMoveAttempts());
+    }
+
+    /** Issue #926: a finished untagged torrent already at the storage root is linked and completed. */
+    public function testPollCompletesAFinishedUntaggedTorrentAlreadyInTheStorageRoot(): void
+    {
+        $anime = $this->persistAnime();
+        $this->saveDownload(self::HASH, $anime);
+
+        /** @var list<AnimeFilesChangedEvent|DownloadCompletedEvent> $dispatched */
+        $dispatched = [];
+        $postCalls = [];
+        $poller = $this->makeTagAwarePoller([[
+            'hash' => self::HASH,
+            'infohash_v1' => self::HASH,
+            'tags' => '',
+            'progress' => 1,
+            'state' => 'uploading',
+            'content_path' => $this->root.'\\manual-release',
+        ]], $this->dispatcherCapturingEvents(2, $dispatched), $postCalls);
+
+        $poller->poll();
+
+        $stored = $this->downloads->findByInfoHashAndAnime(self::HASH, (int) $anime->id);
+        $this->assertNotNull($stored);
+        $this->assertTrue($stored->isCompleted());
+        $this->assertSame('manual-release', $anime->getStoragePath());
+        $this->assertCount(2, $dispatched);
+        $this->assertInstanceOf(AnimeFilesChangedEvent::class, $dispatched[0]);
+        $this->assertInstanceOf(DownloadCompletedEvent::class, $dispatched[1]);
+        $this->assertSame([], $postCalls);
     }
 
     /**

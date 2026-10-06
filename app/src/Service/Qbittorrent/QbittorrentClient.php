@@ -44,10 +44,9 @@ use Symfony\Contracts\HttpClient\ResponseInterface;
 final class QbittorrentClient
 {
     /**
-     * Tag applied to every torrent this app adds (issue #843) — lets
-     * {@see \App\Service\Download\DownloadCompletionPoller} fetch only its own torrents with a
-     * single `torrents/info?tag=` request per poll pass, instead of one `hashes=` request per
-     * pending download.
+     * Tag applied to every torrent this app adds (issue #843). Marks the torrent as
+     * added by this app; {@see \App\Service\Download\DownloadCompletionPoller} does not filter
+     * by it, since a torrent may be added by hand or have its tag removed.
      */
     public const string TAG = 'animedb';
 
