@@ -144,10 +144,18 @@ final class DownloadOrphanAdopterTest extends TestCase
         return $anime;
     }
 
-    private function client(string $contentPath, bool $present = true, float|int $progress = 1): QbittorrentClient
+    /**
+     * @param list<string>|null $files torrents/files names; null means a multi-file torrent under `Release/`
+     */
+    private function client(string $contentPath, bool $present = true, float|int $progress = 1, ?array $files = null): QbittorrentClient
     {
-        $httpClient = new MockHttpClient(function (string $method, string $url, array $options) use ($contentPath, $present, $progress): MockResponse {
+        $httpClient = new MockHttpClient(function (string $method, string $url, array $options) use ($contentPath, $present, $progress, $files): MockResponse {
             $this->requests[] = [$method, $url, $options];
+            if (str_contains($url, '/torrents/files')) {
+                $names = $files ?? ['Release/a.mkv', 'Release/b.mkv'];
+
+                return new MockResponse(json_encode(array_map(static fn (string $name): array => ['name' => $name], $names), \JSON_THROW_ON_ERROR), ['response_headers' => ['content-type' => 'application/json']]);
+            }
             $torrents = $present ? [[
                 'hash' => self::HASH,
                 'infohash_v1' => self::HASH,
@@ -165,9 +173,8 @@ final class DownloadOrphanAdopterTest extends TestCase
 
     /**
      * @param list<string> $existingPaths
-     * @param list<string> $filePaths
      */
-    private function adopter(QbittorrentClient $client, array $existingPaths = [], array $filePaths = [], ?DownloadRepository $downloads = null): DownloadOrphanAdopter
+    private function adopter(QbittorrentClient $client, array $existingPaths = [], ?DownloadRepository $downloads = null): DownloadOrphanAdopter
     {
         return new DownloadOrphanAdopter(
             $client,
@@ -175,7 +182,7 @@ final class DownloadOrphanAdopterTest extends TestCase
             $downloads ?? $this->downloads,
             new AnimeRepository($this->entityManager),
             $this->markerService,
-            new AdoptTestFilesystem($existingPaths, $filePaths),
+            new AdoptTestFilesystem($existingPaths),
             new DownloadAdoptionPathClassifier(new DownloadFolderJail()),
         );
     }
@@ -211,7 +218,8 @@ final class DownloadOrphanAdopterTest extends TestCase
         $this->assertSame(DownloadStatus::Pending, $rows[0]->getStatus());
         $this->assertSame(0, $rows[0]->getMoveAttempts());
 
-        $this->assertCount(1, $this->requests);
+        // Read-only: torrents/info, then torrents/files to tell a single file from a folder.
+        $this->assertCount(2, $this->requests);
         [$method, $url, $options] = $this->requests[0];
         $this->assertSame('GET', $method);
         $this->assertStringContainsString('/api/v2/torrents/info', $url);
@@ -311,7 +319,7 @@ final class DownloadOrphanAdopterTest extends TestCase
         $content = $this->root.'\\.anime-db\\incoming\\'.self::HASH.'\\Movie.mkv';
 
         // Only the extension-less folder (where tryMove() would put it) counts as a conflict.
-        $this->adopter($this->client($content), [$this->root.'\\Movie.mkv'], [$content])->adopt(self::HASH, (int) $anime->id);
+        $this->adopter($this->client($content, files: ['Movie.mkv']), [$this->root.'\\Movie.mkv'])->adopt(self::HASH, (int) $anime->id);
         $this->assertCount(1, $this->downloads->findByInfoHash(self::HASH));
     }
 
@@ -322,9 +330,31 @@ final class DownloadOrphanAdopterTest extends TestCase
 
         $this->assertRefused(
             'download_adopt.error_incoming_target_exists',
-            fn () => $this->adopter($this->client($content), [$this->root.'\\Movie'], [$content])->adopt(self::HASH, (int) $anime->id),
+            fn () => $this->adopter($this->client($content, files: ['Movie.mkv']), [$this->root.'\\Movie'])->adopt(self::HASH, (int) $anime->id),
             ['%path%' => $this->root.'\\Movie'],
         );
+    }
+
+    public function testUnfinishedSingleFileInIncomingIsCheckedByTheExtensionlessName(): void
+    {
+        $anime = $this->persistAnime();
+        $content = $this->root.'\\.anime-db\\incoming\\'.self::HASH.'\\Movie.mkv';
+
+        // The file is not on disk yet (progress < 1): the single-file flag must come from the client.
+        $this->assertRefused(
+            'download_adopt.error_incoming_target_exists',
+            fn () => $this->adopter($this->client($content, progress: 0.3, files: ['Movie.mkv']), [$this->root.'\\Movie'])->adopt(self::HASH, (int) $anime->id),
+            ['%path%' => $this->root.'\\Movie'],
+        );
+    }
+
+    public function testUnfinishedSingleFileInRootIsAcceptedAtDepthTwo(): void
+    {
+        $anime = $this->persistAnime();
+
+        $this->adopter($this->client($this->root.'\\Release\\Movie.mkv', progress: 0.3, files: ['Movie.mkv']))->adopt(self::HASH, (int) $anime->id);
+
+        $this->assertCount(1, $this->downloads->findByInfoHash(self::HASH));
     }
 
     public function testRootBranchDoesNotCheckTheDisk(): void
@@ -345,7 +375,7 @@ final class DownloadOrphanAdopterTest extends TestCase
 
         $this->assertRefused(
             'download_new.error_storage_unavailable',
-            fn () => $this->adopter($this->client($content), [], [$content])->adopt(self::HASH, (int) $anime->id),
+            fn () => $this->adopter($this->client($content, files: ['Movie.mkv']))->adopt(self::HASH, (int) $anime->id),
         );
     }
 
@@ -414,7 +444,7 @@ final class DownloadOrphanAdopterTest extends TestCase
             $this->downloads,
             new AnimeDownloadLinker(new AnimeRepository($this->entityManager), $this->entityManager, $jail),
             $jail,
-            new DownloadIncomingRelocator($client, new AnimeRepository($this->entityManager), $this->markerService, new AdoptTestFilesystem([], []), $this->entityManager, new NullLogger()),
+            new DownloadIncomingRelocator($client, new AnimeRepository($this->entityManager), $this->markerService, new AdoptTestFilesystem([]), $this->entityManager, new NullLogger()),
             $eventDispatcher,
             $this->entityManager,
             new FreeSpaceChecker(new NativeFreeSpaceProvider()),
@@ -441,9 +471,8 @@ final class AdoptTestFilesystem implements DownloadStorageFilesystem
 {
     /**
      * @param list<string> $existingPaths
-     * @param list<string> $filePaths
      */
-    public function __construct(private readonly array $existingPaths, private readonly array $filePaths)
+    public function __construct(private readonly array $existingPaths)
     {
     }
 
@@ -454,7 +483,7 @@ final class AdoptTestFilesystem implements DownloadStorageFilesystem
 
     public function isFile(string $path): bool
     {
-        return \in_array($path, $this->filePaths, true);
+        return false;
     }
 
     public function ensureDirectoryExists(string $path): void

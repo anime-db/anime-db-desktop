@@ -91,7 +91,13 @@ class DownloadOrphanAdopter
         }
 
         $contentPath = (string) ($torrent['content_path'] ?? '');
-        $isSingleFile = $this->storageFilesystem->isFile($contentPath);
+        // Taken from the client, not the disk: an unfinished torrent may have no file at `content_path` yet.
+        try {
+            $fileNames = $this->client->getTorrentFileNames($infoHash);
+        } catch (QbittorrentClientException) {
+            throw new DownloadAdoptionRefusedException('download_new.error_client_unavailable');
+        }
+        $isSingleFile = \count($fileNames) === 1 && !str_contains($fileNames[0], '/') && !str_contains($fileNames[0], '\\');
 
         $storagesById = [];
         $candidates = [];
