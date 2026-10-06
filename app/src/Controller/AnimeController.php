@@ -35,6 +35,7 @@ use App\Service\Download\DownloadViewFactory;
 use App\Service\Plugin\EntryWidgetRegistry;
 use App\Service\Plugin\Filler\FillableFieldsPresenter;
 use App\Service\Plugin\PluginUiAssetsResolver;
+use App\Service\Sync\SourceRemovalPlanner;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
 use Twig\Environment;
@@ -74,6 +75,7 @@ final class AnimeController
         private readonly PluginUiAssetsResolver $pluginUiAssets,
         private readonly DownloadRepository $downloads,
         private readonly DownloadViewFactory $downloadViewFactory,
+        private readonly SourceRemovalPlanner $sourceRemovalPlanner,
     ) {
     }
 
@@ -91,6 +93,7 @@ final class AnimeController
             'downloads' => $this->downloadViewFactory->serializeList($this->downloads->findByAnime($animeId)),
             'downloads_unlink_error' => null,
             'delete_has_finished_downloads' => $this->downloads->hasFinishedForAnime($animeId),
+            'delete_source_removal' => $this->sourceRemovalPlanner->plan($anime),
         ]));
     }
 

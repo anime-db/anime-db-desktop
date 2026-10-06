@@ -45,11 +45,49 @@ class SyncTombstoneRepository
      * again and deleted once more must not fail on the primary key). Joins the connection's
      * current transaction, so a caller can commit it together with the deletion.
      */
-    public function record(string $pluginId, string $externalId, \DateTimeImmutable $deletedAt): void
+    public function record(string $pluginId, string $externalId, \DateTimeImmutable $deletedAt, bool $removalPending = false): void
     {
         $this->entityManager->getConnection()->executeStatement(
-            'INSERT INTO sync_tombstone (plugin_id, external_id, deleted_at) VALUES (?, ?, ?) ON CONFLICT (plugin_id, external_id) DO UPDATE SET deleted_at = excluded.deleted_at',
-            [$pluginId, $externalId, $deletedAt->getTimestamp()],
+            'INSERT INTO sync_tombstone (plugin_id, external_id, deleted_at, removal_pending) VALUES (?, ?, ?, ?) ON CONFLICT (plugin_id, external_id) DO UPDATE SET deleted_at = excluded.deleted_at, removal_pending = excluded.removal_pending',
+            [$pluginId, $externalId, $deletedAt->getTimestamp(), (int) $removalPending],
+        );
+    }
+
+    /** Whether the tombstone is there and still waits for the deletion on the source (issue #918). */
+    public function isRemovalPending(string $pluginId, string $externalId): bool
+    {
+        return $this->entityManager->getConnection()->fetchOne(
+            'SELECT 1 FROM sync_tombstone WHERE plugin_id = ? AND external_id = ? AND removal_pending = 1',
+            [$pluginId, $externalId],
+        ) !== false;
+    }
+
+    /** @return list<string> external ids of the plugin's tombstones that wait for the deletion on the source */
+    public function findRemovalPending(PluginId $pluginId): array
+    {
+        /** @var list<string> $ids */
+        $ids = $this->entityManager->getConnection()->fetchFirstColumn(
+            'SELECT external_id FROM sync_tombstone WHERE plugin_id = ? AND removal_pending = 1 ORDER BY deleted_at, external_id',
+            [(string) $pluginId],
+        );
+
+        return array_map('strval', $ids);
+    }
+
+    public function clearRemovalPending(string $pluginId, string $externalId): void
+    {
+        $this->entityManager->getConnection()->executeStatement(
+            'UPDATE sync_tombstone SET removal_pending = 0 WHERE plugin_id = ? AND external_id = ?',
+            [$pluginId, $externalId],
+        );
+    }
+
+    /** Called only once the title is gone from the source's list, see {@see \App\Service\Sync\SourceRemovalService}. */
+    public function remove(string $pluginId, string $externalId): void
+    {
+        $this->entityManager->getConnection()->executeStatement(
+            'DELETE FROM sync_tombstone WHERE plugin_id = ? AND external_id = ?',
+            [$pluginId, $externalId],
         );
     }
 

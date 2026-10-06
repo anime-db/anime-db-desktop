@@ -34,6 +34,7 @@ use App\Service\JobLock\JobLockService;
 use App\Service\Plugin\ExternalIdBackfillService;
 use App\Service\Plugin\PullSyncService;
 use App\Service\Plugin\SyncRegistry;
+use App\Service\Sync\SourceRemovalService;
 use App\Service\Sync\SyncPullGate;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
@@ -60,6 +61,7 @@ final class SyncPullMessageHandler
         private readonly SyncRegistry $syncRegistry,
         private readonly SyncPullGate $gate,
         private readonly ExternalIdBackfillService $backfillService,
+        private readonly SourceRemovalService $sourceRemoval,
         private readonly PullSyncService $pullSyncService,
         private readonly JobLockService $jobLockService,
         private readonly LoggerInterface $logger,
@@ -89,7 +91,9 @@ final class SyncPullMessageHandler
         }
 
         try {
+            // Backfill, then the catch-up of pending removals, then the pull (issue #918), see SyncSeedMessageHandler.
             $this->backfillService->backfill($pluginId, $sync);
+            $this->sourceRemoval->retryPending($pluginId, $sync);
             $pulled = $this->pullSyncService->pull($pluginId, $sync, fn () => $this->jobLockService->heartbeat($jobKey));
         } finally {
             $this->jobLockService->release($jobKey);

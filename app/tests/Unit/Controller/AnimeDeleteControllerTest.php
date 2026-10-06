@@ -27,6 +27,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Controller;
 
+use AnimeDb\PluginContracts\Sync\SyncRemovalInterface;
 use App\Controller\AnimeDeleteController;
 use App\Controller\Settings\SyncReviewController;
 use App\Doctrine\Type\RatingType;
@@ -38,6 +39,7 @@ use App\Entity\Enum\WatchStatus;
 use App\Entity\SyncReviewItem;
 use App\Entity\TvAnime;
 use App\Entity\ValueObject\PluginId;
+use App\Message\RemoveFromSourceMessage;
 use App\Message\SyncSeedMessage;
 use App\Repository\AnimeRepository;
 use App\Repository\AnimeSyncStateRepository;
@@ -48,6 +50,7 @@ use App\Service\AnimeDeleteFlash;
 use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Plugin\SyncRegistry;
 use App\Service\Sync\DeletedFromSourceDetector;
+use App\Service\Sync\SourceRemovalPlanner;
 use App\Service\Sync\SyncConvergenceService;
 use App\Service\Sync\SyncReconciler;
 use App\Service\Sync\SyncReviewService;
@@ -64,6 +67,8 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Session\Session;
 use Symfony\Component\HttpFoundation\Session\Storage\MockArraySessionStorage;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
+use Symfony\Component\Messenger\Envelope;
+use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 use Symfony\Component\Security\Csrf\CsrfTokenManagerInterface;
 use Symfony\Component\Translation\Translator;
@@ -81,6 +86,9 @@ final class AnimeDeleteControllerTest extends TestCase
     private EntityManager $entityManager;
     private string $mediaDir;
     private Session $session;
+
+    /** @var list<object> */
+    private array $dispatched = [];
 
     protected function setUp(): void
     {
@@ -108,9 +116,9 @@ final class AnimeDeleteControllerTest extends TestCase
         $this->removeTemporaryDirectories();
     }
 
-    private function request(bool $validToken = true): Request
+    private function request(bool $validToken = true, bool $removeFromSources = false): Request
     {
-        $request = new Request([], ['_token' => $validToken ? 'ok' : 'bad']);
+        $request = new Request([], ['_token' => $validToken ? 'ok' : 'bad'] + ($removeFromSources ? ['remove_from_sources' => '1'] : []));
         $request->setSession($this->session);
 
         return $request;
@@ -213,7 +221,7 @@ final class AnimeDeleteControllerTest extends TestCase
         $this->assertSame(1, (int) $this->entityManager->getConnection()->fetchOne('SELECT COUNT(*) FROM anime'));
     }
 
-    private function reviewController(?SyncRegistry $syncRegistry = null, ?\App\Service\JobLock\JobLockService $jobLock = null): SyncReviewController
+    private function reviewController(?SyncRegistry $syncRegistry = null, ?\App\Service\JobLock\JobLockService $jobLock = null, ?MessageBusInterface $bus = null): SyncReviewController
     {
         $syncReviewItems = new SyncReviewItemRepository($this->entityManager);
         $syncReview = new SyncReviewService($syncReviewItems);
@@ -225,8 +233,9 @@ final class AnimeDeleteControllerTest extends TestCase
             new AnimeRepository($this->entityManager),
             new SyncConvergenceService(new SyncReconciler(), $states, new PendingSyncPushRepository($this->entityManager), $registry, $syncReview, new NullLogger()),
             new DeletedFromSourceDetector($registry, $syncReview, $states),
-            $this->newAnimeDeleteService($this->mediaDir, $syncRegistry, $jobLock),
+            $this->newAnimeDeleteService($this->mediaDir, $syncRegistry, $jobLock, bus: $bus),
             $this->flash(),
+            new SourceRemovalPlanner($syncRegistry ?? $registry),
             new DownloadRepository($this->entityManager),
             $this->entityManager,
             $this->csrf(),
@@ -242,6 +251,64 @@ final class AnimeDeleteControllerTest extends TestCase
         $this->entityManager->flush();
 
         return $item;
+    }
+
+    private function recordingBus(): MessageBusInterface
+    {
+        $bus = $this->createStub(MessageBusInterface::class);
+        $bus->method('dispatch')->willReturnCallback(function (object $message): Envelope {
+            $this->dispatched[] = $message;
+
+            return new Envelope($message);
+        });
+
+        return $bus;
+    }
+
+    public function testDeletingFromRequiresAttentionOmitsTheSourceItWasDeletedFromAndAPluginSwitchedOffSinceTheDetection(): void
+    {
+        $registry = $this->newSyncRegistryOf([
+            'animedb-shikimori' => $this->createStub(SyncRemovalInterface::class),
+            'animedb-mal' => $this->createStub(SyncRemovalInterface::class),
+            'acme-off' => $this->createStub(SyncRemovalInterface::class),
+        ], ['animedb-shikimori', 'animedb-mal']);
+        $anime = $this->persistAnime();
+        $anime->rememberExternalId(new PluginId('animedb-shikimori'), '7');
+        $anime->rememberExternalId(new PluginId('animedb-mal'), '8');
+        $anime->rememberExternalId(new PluginId('acme-off'), '9');
+        $item = $this->persistReviewItem(SyncReviewItemKind::DeletionConflict, $anime);
+        $controller = $this->reviewController($registry, bus: $this->recordingBus());
+
+        $controller->deleteAnime($item, $this->request(removeFromSources: true));
+
+        $this->assertEquals([new RemoveFromSourceMessage('animedb-mal', '8')], $this->dispatched);
+        $flags = $this->entityManager->getConnection()->fetchAllKeyValue('SELECT plugin_id, removal_pending FROM sync_tombstone');
+        $this->assertEquals(['acme-off' => 0, 'animedb-mal' => 1, 'animedb-shikimori' => 0], $flags);
+    }
+
+    public function testDeletingFromRequiresAttentionWithoutTheCheckboxQueuesNothing(): void
+    {
+        $registry = $this->newSyncRegistryOf(['animedb-mal' => $this->createStub(SyncRemovalInterface::class)], ['animedb-mal']);
+        $anime = $this->persistAnime();
+        $anime->rememberExternalId(new PluginId('animedb-mal'), '8');
+        $item = $this->persistReviewItem(SyncReviewItemKind::DeletionConflict, $anime);
+
+        $this->reviewController($registry, bus: $this->recordingBus())->deleteAnime($item, $this->request());
+
+        $this->assertSame([], $this->dispatched);
+        $this->assertSame(0, (int) $this->entityManager->getConnection()->fetchOne('SELECT COUNT(*) FROM sync_tombstone WHERE removal_pending = 1'));
+    }
+
+    public function testTheCardPassesTheCheckboxToTheService(): void
+    {
+        $registry = $this->newSyncRegistryOf(['animedb-mal' => $this->createStub(SyncRemovalInterface::class)], ['animedb-mal']);
+        $anime = $this->persistAnime();
+        $anime->rememberExternalId(new PluginId('animedb-mal'), '8');
+        $controller = new AnimeDeleteController($this->newAnimeDeleteService($this->mediaDir, $registry, bus: $this->recordingBus()), $this->flash(), $this->csrf(), $this->urlGenerator());
+
+        $controller->delete($anime, $this->request(removeFromSources: true));
+
+        $this->assertEquals([new RemoveFromSourceMessage('animedb-mal', '8')], $this->dispatched);
     }
 
     public function testDeletingFromRequiresAttentionDeletesTheEntryAndClosesTheItem(): void
