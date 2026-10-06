@@ -79,6 +79,11 @@ class DownloadStorageConflictAdopter
      */
     public function adopt(Download $download, Anime $anime, int $expectedVersion, DownloadStatus $expectedStatus): DownloadActionOutcome
     {
+        // A repeated submit (double click): the first one already relinked the row to this entry.
+        if ($download->getStatus() === DownloadStatus::Pending && $download->getAnime()->id === $anime->id) {
+            return DownloadActionOutcome::Success;
+        }
+
         $targetStorage = $download->getTargetStorage();
         if (!$download->hasStorageConflict() || $targetStorage === null) {
             return DownloadActionOutcome::Refused;

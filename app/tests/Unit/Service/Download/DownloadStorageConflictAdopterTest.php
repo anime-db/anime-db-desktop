@@ -253,6 +253,22 @@ final class DownloadStorageConflictAdopterTest extends TestCase
         $this->assertStringContainsString('/api/v2/torrents/info', $this->requests[0][1]);
     }
 
+    public function testARepeatedSubmitForTheSameEntryIsASuccessWithoutAnotherRelink(): void
+    {
+        $owner = $this->persistAnime('Release');
+        $loser = $this->persistAnime();
+        $download = $this->persistConflictRow($loser);
+        $version = $download->getVersion();
+        $adopter = $this->adopter($this->client($this->root.'\\Release'));
+
+        $this->assertSame(DownloadActionOutcome::Success, $adopter->adopt($download, $owner, $version, DownloadStatus::Failed));
+        $this->assertSame(DownloadActionOutcome::Success, $adopter->adopt($download, $owner, $version, DownloadStatus::Failed));
+
+        $row = $this->row((int) $download->id);
+        $this->assertSame('pending', $row['status']);
+        $this->assertSame($version + 1, (int) $row['version']);
+    }
+
     public function testAStaleVersionIsAConflictAndTheRowStaysAsItWas(): void
     {
         $owner = $this->persistAnime('Release');

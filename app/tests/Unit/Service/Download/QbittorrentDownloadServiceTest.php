@@ -550,6 +550,28 @@ final class QbittorrentDownloadServiceTest extends TestCase
         $this->assertSame([], $this->downloads->findByInfoHash(self::MAGNET_HASH));
     }
 
+    public function testEnqueueToReportsATorrentAlreadyInTheClientBeforeAnUnavailableStorage(): void
+    {
+        $anime = $this->persistAnime();
+        // A storage whose marker was never written: assertStorageAvailable() would refuse it.
+        $storage = new Storage('AnimeDB', $this->storageDir, StorageType::Folder);
+        $this->entityManager->persist($storage);
+        $this->entityManager->flush();
+
+        $service = $this->makeService(static fn (): MockResponse => new MockResponse(
+            json_encode([['hash' => self::MAGNET_HASH, 'infohash_v1' => self::MAGNET_HASH, 'tags' => '']], \JSON_THROW_ON_ERROR),
+            ['response_headers' => ['content-type' => 'application/json']],
+        ), clientIsEmptyBeforeAdd: false);
+
+        $this->expectException(DownloadAlreadyInClientException::class);
+
+        $service->enqueueTo(
+            DownloadSource::magnet('magnet:?xt=urn:btih:'.self::MAGNET_HASH),
+            new AnimeId((int) $anime->id),
+            $storage,
+        );
+    }
+
     /**
      * @return iterable<string, array{string}>
      */

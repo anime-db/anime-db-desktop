@@ -61,7 +61,7 @@ final class DownloadAdoptionPathClassifierTest extends TestCase
         yield 'incoming directory' => ['E:\Anime\.anime-db\incoming\\'.self::HASH.'\Release', false, 1, DownloadAdoptionBranch::Incoming, 'Release'];
         yield 'incoming single file' => ['E:\Anime\.anime-db\incoming\\'.self::HASH.'\Movie.mkv', true, 1, DownloadAdoptionBranch::Incoming, 'Movie'];
         yield 'root directory' => ['E:\Anime\Release', false, 1, DownloadAdoptionBranch::Root, 'Release'];
-        yield 'root single file' => ['E:\Anime\Release\Movie.mkv', true, 1, DownloadAdoptionBranch::Root, 'Release'];
+        yield 'root single file' => ['E:\Anime\Movie\Movie.mkv', true, 1, DownloadAdoptionBranch::Root, 'Movie'];
         yield 'nested storage wins' => ['E:\Anime\Sub\Release', false, 2, DownloadAdoptionBranch::Root, 'Release'];
         yield 'nested storage incoming' => ['E:\Anime\Sub\.anime-db\incoming\\'.self::HASH.'\Release', false, 2, DownloadAdoptionBranch::Incoming, 'Release'];
         yield 'other drive, forward slashes' => ['D:/Other/Release', false, 3, DownloadAdoptionBranch::Root, 'Release'];
@@ -93,6 +93,7 @@ final class DownloadAdoptionPathClassifierTest extends TestCase
         yield 'hash folder' => ['E:\Anime\\'.self::OTHER_HASH, false, 'download_adopt.error_hash_folder'];
         yield 'multi-file too deep' => ['E:\Anime\Release\Extra', false, 'download_adopt.error_unexpected_depth'];
         yield 'single file too deep' => ['E:\Anime\Release\Extra\Movie.mkv', true, 'download_adopt.error_unexpected_depth'];
+        yield 'single file in a shared folder' => ['E:\Anime\Movies\film.mkv', true, 'download_adopt.error_shared_folder'];
         yield 'single file bare in root' => ['E:\Anime\Movie.mkv', true, 'download_adopt.error_unexpected_depth'];
         yield 'incoming too deep' => ['E:\Anime\.anime-db\incoming\\'.self::HASH.'\Release\Extra', false, 'download_adopt.error_unexpected_depth'];
         yield 'outside every storage' => ['F:\Elsewhere\Release', false, 'download_adopt.error_no_storage'];
