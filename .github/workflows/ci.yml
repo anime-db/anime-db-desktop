@@ -155,6 +155,13 @@ jobs:
         run: composer cs-check
         working-directory: app
 
+      # Синтаксис всех шаблонов, включая те, что не рендерит ни один тест: шаблон с
+      # незакрытым `{#` в шапке уже попадал в master и ронял страницу 500 (issue #935).
+      - name: Lint Twig templates
+        if: ${{ !cancelled() }}
+        run: php bin/console lint:twig templates
+        working-directory: app
+
       # Гейты схемы — шагами в этой же джобе, а не отдельной: прогон всей цепочки миграций
       # занимает около 100 мс, тогда как поднятие раннера с setup-php и composer install —
       # минуты. Предельная цена обоих шагов здесь примерно ноль.
