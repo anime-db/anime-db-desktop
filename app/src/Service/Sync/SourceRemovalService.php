@@ -103,9 +103,9 @@ final class SourceRemovalService
 
     /**
      * The catch-up before a pull: tries every pending deletion of the plugin, so one that did not
-     * get through (offline, authorization) is repeated at the next sync. Must run before the
-     * external-id backfill: a backfill could link the id to another entry and the catch-up would
-     * then remove the list item of that one. Never throws; a failure is logged and the flag stays.
+     * get through (offline, authorization) is repeated at the next sync. Must run after the
+     * external-id backfill: the cache of ids has to be complete first, or a live entry that only
+     * has a source URL would not be seen as holding the id and its list item would be removed. Never throws; a failure is logged and the flag stays.
      * A dead authorization stops the catch-up, the pull after it will report that itself.
      */
     public function retryPending(PluginId $pluginId, SyncInterface $sync): void

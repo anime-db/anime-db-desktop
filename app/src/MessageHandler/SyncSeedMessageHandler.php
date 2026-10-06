@@ -123,10 +123,11 @@ final class SyncSeedMessageHandler
         // backfill racing or trailing the pull would let it create second rows for titles that
         // already sit in the catalog with a source URL. The ordering has to live in this handler:
         // FIFO order between two messages is not guaranteed once they travel on different transports.
-        // Pending removals on the source go first (issue #918): the backfill below could link an id to
-        // another entry, and the catch-up would then delete that one's list item.
-        $this->sourceRemoval->retryPending($pluginId, $sync);
+        // The catch-up of pending removals on the source (issue #918) goes after the backfill: the
+        // cache of external ids has to be complete before deciding to delete, otherwise a live entry
+        // that only has a source URL would not be seen as holding the id and its list item would go.
         $this->backfillService->backfill($pluginId, $sync);
+        $this->sourceRemoval->retryPending($pluginId, $sync);
 
         $seeded = $this->pullSyncService->pull($pluginId, $sync, fn () => $this->jobLockService->heartbeat($jobKey));
         if ($seeded) {

@@ -32,6 +32,7 @@ use App\Entity\ValueObject\PluginId;
 use App\Message\RemoveFromSourceMessage;
 use App\Message\SyncSeedMessage;
 use App\Service\JobLock\JobLockService;
+use App\Service\Plugin\ExternalIdBackfillService;
 use App\Service\Plugin\SyncRegistry;
 use App\Service\Sync\SourceRemovalService;
 use Psr\Log\LoggerInterface;
@@ -48,6 +49,10 @@ use Symfony\Component\Messenger\Exception\UnrecoverableMessageHandlingException;
  * parallel; if it is already held the removal is skipped too, like in
  * {@see PushSyncMessageHandler}: the catch-up of that very seed or pull handles it.
  *
+ * The external-id backfill of the plugin runs before the removal, under the same lock: a live entry
+ * with a source URL but no cached id must be linked first, so the pair is seen as held and the list
+ * item stays. A backfill failure is logged and does not stop the removal.
+ *
  * A transient failure is left to propagate to the `async` transport's retry strategy. A dead
  * authorization is not transient: it is logged and thrown as unrecoverable, the flag stays.
  */
@@ -56,6 +61,7 @@ final class RemoveFromSourceMessageHandler
 {
     public function __construct(
         private readonly SyncRegistry $syncRegistry,
+        private readonly ExternalIdBackfillService $backfillService,
         private readonly SourceRemovalService $removalService,
         private readonly JobLockService $jobLockService,
         private readonly LoggerInterface $logger,
@@ -86,6 +92,16 @@ final class RemoveFromSourceMessageHandler
         }
 
         try {
+            try {
+                $this->backfillService->backfill($pluginId, $sync);
+            } catch (\Throwable $exception) {
+                $this->logger->warning('External id backfill of "{plugin}" failed before a pending removal of "{externalId}"; continuing.', [
+                    'plugin' => $message->pluginId,
+                    'externalId' => $message->externalId,
+                    'exception' => $exception,
+                ]);
+            }
+
             $this->removalService->remove($pluginId, $sync, $message->externalId);
         } catch (ReauthRequiredException $exception) {
             $this->logger->warning('Sync plugin "{plugin}" needs reauthorization; its pending removal of "{externalId}" stays, not retrying.', [

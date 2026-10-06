@@ -144,8 +144,8 @@ final class SyncPullMessageHandlerTest extends TestCase
         $this->assertFalse($tombstones->exists(self::ID, '99'));
     }
 
-    /** Issue #918: the pending removals go first, or the backfill could link an id to another entry whose list item they would then delete. */
-    public function testPendingRemovalsRunBeforeTheBackfillAndThePull(): void
+    /** Issue #918: the backfill goes first, so the cache of external ids is complete before a removal is decided. */
+    public function testBackfillRunsBeforeThePendingRemovalsAndThePull(): void
     {
         $anime = new MovieAnime();
         $anime->setTitle('Cowboy Bebop')->setWatchStatus(WatchStatus::Plan)->addSource('https://shikimori.one/animes/1');
@@ -172,7 +172,7 @@ final class SyncPullMessageHandlerTest extends TestCase
         $store = $this->store(['features' => ['sync' => true], 'syncSeeded' => true]);
         $this->handler($sync, $store)(new SyncPullMessage(self::ID));
 
-        $this->assertSame(['remove:99', 'resolve', 'pull'], $events);
+        $this->assertSame(['resolve', 'remove:99', 'pull'], $events);
     }
 
     public function testReauthDuringTheCatchUpStopsItButThePullStillReportsItself(): void

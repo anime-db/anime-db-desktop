@@ -91,9 +91,9 @@ final class SyncPullMessageHandler
         }
 
         try {
-            // Pending removals first, then the backfill, then the pull (issue #918), see SyncSeedMessageHandler.
-            $this->sourceRemoval->retryPending($pluginId, $sync);
+            // Backfill, then the catch-up of pending removals, then the pull (issue #918), see SyncSeedMessageHandler.
             $this->backfillService->backfill($pluginId, $sync);
+            $this->sourceRemoval->retryPending($pluginId, $sync);
             $pulled = $this->pullSyncService->pull($pluginId, $sync, fn () => $this->jobLockService->heartbeat($jobKey));
         } finally {
             $this->jobLockService->release($jobKey);

@@ -278,8 +278,8 @@ final class SyncSeedMessageHandlerTest extends TestCase
         return $anime;
     }
 
-    /** Issue #918: the pending removals go first, or the backfill could link an id to another entry whose list item they would then delete. */
-    public function testPendingRemovalsRunBeforeTheBackfillAndThePull(): void
+    /** Issue #918: the backfill goes first, so the cache of external ids is complete before a removal is decided. */
+    public function testBackfillRunsBeforeThePendingRemovalsAndThePull(): void
     {
         $this->persistAnimeWithSource('https://shikimori.one/animes/1');
         (new SyncTombstoneRepository($this->entityManager))->record('animedb-shikimori', '99', new \DateTimeImmutable(), true);
@@ -303,7 +303,7 @@ final class SyncSeedMessageHandlerTest extends TestCase
         [$syncRegistry, $pluginsConfigStore] = $this->newSyncRegistry(['animedb-shikimori' => $sync]);
         $this->newHandler($syncRegistry, $pluginsConfigStore)(new SyncSeedMessage('animedb-shikimori'));
 
-        $this->assertSame(['remove:99', 'resolve', 'pull'], $events);
+        $this->assertSame(['resolve', 'remove:99', 'pull'], $events);
         $this->assertFalse((new SyncTombstoneRepository($this->entityManager))->exists('animedb-shikimori', '99'));
     }
 

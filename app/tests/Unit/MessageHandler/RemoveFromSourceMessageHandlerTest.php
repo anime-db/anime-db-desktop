@@ -40,6 +40,7 @@ use App\Message\SyncSeedMessage;
 use App\MessageHandler\RemoveFromSourceMessageHandler;
 use App\Repository\AnimeRepository;
 use App\Repository\SyncTombstoneRepository;
+use App\Service\Plugin\ExternalIdBackfillService;
 use App\Service\Sync\SourceRemovalService;
 use App\Tests\Support\BuildsAnimeDeleteService;
 use Doctrine\DBAL\DriverManager;
@@ -84,6 +85,7 @@ final class RemoveFromSourceMessageHandlerTest extends TestCase
 
         return new RemoveFromSourceMessageHandler(
             $registry,
+            new ExternalIdBackfillService($this->entityManager, new AnimeRepository($this->entityManager), $this->newJobLockService(), new NullLogger()),
             new SourceRemovalService($this->tombstones, new AnimeRepository($this->entityManager), new NullLogger()),
             $locks ?? $this->newJobLockService(),
             new NullLogger(),
@@ -104,6 +106,67 @@ final class RemoveFromSourceMessageHandlerTest extends TestCase
     {
         $this->pendingTombstone();
         $sync = $this->createMock(SyncRemovalInterface::class);
+        $sync->expects($this->once())->method('remove')->with('42');
+
+        $this->handler($sync)(new RemoveFromSourceMessage(self::PLUGIN, '42'));
+
+        $this->assertFalse($this->hasTombstone());
+    }
+
+    /** Issue #918: the cache of external ids is completed first, so a live entry with only a source URL is seen as holding the pair. */
+    public function testBackfillRunsBeforeTheRemoval(): void
+    {
+        $this->pendingTombstone();
+        $events = [];
+        $sync = $this->createMock(SyncRemovalInterface::class);
+        $sync->method('resolveExternalId')->willReturnCallback(static function () use (&$events): string {
+            $events[] = 'resolve';
+
+            return '7';
+        });
+        $sync->method('remove')->willReturnCallback(static function (string $externalId) use (&$events): void {
+            $events[] = 'remove:'.$externalId;
+        });
+        $anime = new TvAnime();
+        $anime->setTitle('Other')->setWatchStatus(WatchStatus::Plan)->addSource('https://example.org/anime/7');
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+
+        $this->handler($sync)(new RemoveFromSourceMessage(self::PLUGIN, '42'));
+
+        $this->assertSame(['resolve', 'remove:42'], $events);
+    }
+
+    /** Issue #918: a duplicate with a source URL but no cached id holds the pair once the backfill has linked it. */
+    public function testALiveEntryWithoutACachedIdIsLinkedByTheBackfillAndHoldsThePair(): void
+    {
+        $this->pendingTombstone();
+        $anime = new TvAnime();
+        $anime->setTitle('Duplicate')->setWatchStatus(WatchStatus::Plan)->addSource('https://example.org/anime/42');
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+        $animeId = $anime->id;
+        $sync = $this->createMock(SyncRemovalInterface::class);
+        $sync->method('resolveExternalId')->willReturn('42');
+        $sync->expects($this->never())->method('remove');
+
+        $this->handler($sync)(new RemoveFromSourceMessage(self::PLUGIN, '42'));
+
+        $this->entityManager->clear();
+        $reloaded = $this->entityManager->find(TvAnime::class, $animeId);
+        $this->assertSame('42', $reloaded?->getCachedExternalId(new PluginId(self::PLUGIN)));
+        $this->assertFalse($this->tombstones->isRemovalPending(self::PLUGIN, '42'));
+    }
+
+    public function testABackfillFailureDoesNotStopTheRemoval(): void
+    {
+        $this->pendingTombstone();
+        $anime = new TvAnime();
+        $anime->setTitle('Other')->setWatchStatus(WatchStatus::Plan)->addSource('https://example.org/anime/7');
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+        $sync = $this->createMock(SyncRemovalInterface::class);
+        $sync->method('resolveExternalId')->willThrowException(new \RuntimeException('boom'));
         $sync->expects($this->once())->method('remove')->with('42');
 
         $this->handler($sync)(new RemoveFromSourceMessage(self::PLUGIN, '42'));
