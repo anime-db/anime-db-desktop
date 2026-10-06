@@ -200,6 +200,26 @@ push и pull могли одновременно вставить `AnimeSyncStat
 и обрезает остаток посева) либо push перезаписал бы снапшот, с которым pull уже работает. Проверка лока в push
 не атомарна с самим push — окно длиной в один вызов `push()` против лока на весь посев, принято.
 
+## Локальное удаление записи и «надгробия» (issue #916)
+
+Удаляет запись только `App\Service\AnimeDeleteService` (его зовут карточка — `POST anime_delete` — и «Требует внимания» —
+`settings_sync_review_delete_anime`). Видеофайлы и папки хранилища не трогаются.
+
+- **Отказы без изменений:** загрузка `Pending` (`PendingDownloads`) или лок `SyncSeedMessage::jobKey()` у любого плагина из
+  `SyncRegistry::allActive()` (`SyncRunning`). Причина второго: `doPull()` держит индекс с начала прогона и иначе пишет
+  `AnimeSyncState` на удалённый `anime_id` либо заводит пункт `DeletedFromSource` на несуществующую запись.
+- **Одна транзакция:** upsert `sync_tombstone (plugin_id, external_id, deleted_at)` по каждому кэшированному `AnimeExternalId` +
+  `remove()`. Надгробия пишет сервис, **не** Doctrine-слушатель: `AnimeTypeMigrator` тоже вызывает `remove()`, надгробий при
+  смене типа быть не должно. FK на `anime` нет; надгробия не снимаются (путей связывания external id больше пяти, часть — в обход ORM).
+- **Чтение:** `PullSyncService::doPull()` грузит набор один раз рядом с `indexByExternalId()` и проверяет его только в ветке
+  `$anime === null` перед `fillNewFrom()` (id всё равно попадает в `$presentExternalIds`); живая запись из индекса главнее.
+  `ScanStorageService::matchNewEntry()`: единственный plugin-кандидат с надгробием → `NeedsConfirmation`, не автосвязывание.
+- **После коммита (ошибки только в лог, откат не делается):** `QbittorrentClient::delete($hash, false)` для `Completed`/`Failed`
+  (файлы остаются), удаление `media/{id}/`, `SyncReviewItem::forgetAnime()` (пункт с `anime_id` закрывается; у
+  `PotentialDuplicate` запись убирается из `anime_ids`, закрывается при <2 оставшихся).
+- **Гонка с медиа-загрузкой:** `PluginMediaDownloaderInterface::download()` принимает `$stillWanted` и спрашивает его перед
+  записью файла; `DownloadAnimeMediaMessageHandler` проверяет существование записи ещё и перед привязкой имени файла.
+
 ## Реестр подводных камней
 
 | #  | Подводный камень                                                          | Митигация                                                                                                           |

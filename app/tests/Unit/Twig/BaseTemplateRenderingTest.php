@@ -30,6 +30,8 @@ namespace App\Tests\Unit\Twig;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RequestStack;
+use Symfony\Component\HttpFoundation\Session\Session;
+use Symfony\Component\HttpFoundation\Session\Storage\MockArraySessionStorage;
 use Twig\Environment;
 
 final class BaseTemplateRenderingTest extends KernelTestCase
@@ -72,5 +74,27 @@ final class BaseTemplateRenderingTest extends KernelTestCase
         $html = $twig->render('base.html.twig');
 
         $this->assertStringContainsString('<html lang="ar" dir="rtl" data-theme-preference="system">', $html);
+    }
+
+    public function testFlashMessagesAreRenderedWithTheirLink(): void
+    {
+        self::bootKernel();
+
+        $request = Request::create('/');
+        $session = new Session(new MockArraySessionStorage());
+        $session->getFlashBag()->add('danger', ['text' => 'Not deleted.', 'link_url' => '/downloads', 'link_label' => 'Go to downloads']);
+        $session->getFlashBag()->add('success', ['text' => 'Deleted.', 'link_url' => null, 'link_label' => null]);
+        $request->setSession($session);
+
+        /** @var RequestStack $requestStack */
+        $requestStack = self::getContainer()->get('request_stack');
+        $requestStack->push($request);
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('base.html.twig');
+
+        $this->assertMatchesRegularExpression('#alert-danger[^>]*>\s*Not deleted\.\s*<a href="/downloads" class="alert-link">Go to downloads</a>#', $html);
+        $this->assertMatchesRegularExpression('#alert-success[^>]*>\s*Deleted\.\s*</div>#', $html);
     }
 }

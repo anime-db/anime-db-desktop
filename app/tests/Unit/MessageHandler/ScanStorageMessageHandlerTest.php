@@ -39,6 +39,7 @@ use App\Message\ScanStorageMessage;
 use App\MessageHandler\ScanStorageMessageHandler;
 use App\Repository\AnimeRepository;
 use App\Repository\StudioRepository;
+use App\Repository\SyncTombstoneRepository;
 use App\Service\JobLock\JobLockService;
 use App\Service\JobLock\ProcessLivenessChecker;
 use App\Service\Plugin\Filler\BulkFillerService;
@@ -504,6 +505,7 @@ final class ScanStorageMessageHandlerTest extends TestCase
                 $animeRepository,
                 new CachedFillerLookup(new ArrayAdapter()),
             ),
+            new SyncTombstoneRepository($this->entityManager),
             new NullLogger(),
         );
 

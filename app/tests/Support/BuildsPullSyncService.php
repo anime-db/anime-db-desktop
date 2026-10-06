@@ -32,6 +32,7 @@ use App\Repository\AnimeSyncStateRepository;
 use App\Repository\PendingSyncPushRepository;
 use App\Repository\StudioRepository;
 use App\Repository\SyncReviewItemRepository;
+use App\Repository\SyncTombstoneRepository;
 use App\Service\Plugin\Filler\BulkFillerService;
 use App\Service\Plugin\Filler\CachedFillerLookup;
 use App\Service\Plugin\Filler\PluginAnimeDataMerger;
@@ -107,6 +108,7 @@ trait BuildsPullSyncService
             $duplicateDetector,
             $deletionDetector,
             $convergenceService,
+            new SyncTombstoneRepository($this->entityManager),
             new NullLogger(),
         );
     }

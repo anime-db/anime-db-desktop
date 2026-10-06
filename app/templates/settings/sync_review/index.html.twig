@@ -23,6 +23,7 @@
 {% block title %}{{ 'settings_sync_review.title'|trans }}{% endblock %}
 
 {% block settings_content %}
+    {% from 'anime/_delete_confirm.html.twig' import delete_confirm %}
     <div class="py-4">
         <h1>{{ 'settings_sync_review.heading'|trans }}</h1>
 
@@ -85,10 +86,20 @@
                                 <button type="submit" class="btn btn-primary btn-sm">{{ 'settings_sync_review.correct_button'|trans }}</button>
                             </form>
                         {% else %}
-                            <form method="post" action="{{ path('settings_sync_review_resolve', {id: item.id}) }}" class="mt-2">
-                                <input type="hidden" name="_token" value="{{ csrf_token('settings_sync_review_resolve_' ~ item.id) }}">
-                                <button type="submit" class="btn btn-outline-secondary btn-sm">{{ 'settings_sync_review.resolve_button'|trans }}</button>
-                            </form>
+                            <div class="d-flex gap-2 mt-2">
+                                <form method="post" action="{{ path('settings_sync_review_resolve', {id: item.id}) }}">
+                                    <input type="hidden" name="_token" value="{{ csrf_token('settings_sync_review_resolve_' ~ item.id) }}">
+                                    <button type="submit" class="btn btn-outline-secondary btn-sm">{{ 'settings_sync_review.resolve_button'|trans }}</button>
+                                </form>
+                                {% if deletionDetails[item.id] is defined and deletionDetails[item.id].anime is not null %}
+                                    {% set detail = deletionDetails[item.id] %}
+                                    <form method="post" action="{{ path('settings_sync_review_delete_anime', {id: item.id}) }}"
+                                          data-confirm="{{ delete_confirm(detail.anime.title, detail.hasStorage, detail.hasFinishedDownloads) }}">
+                                        <input type="hidden" name="_token" value="{{ csrf_token('settings_sync_review_delete_anime_' ~ item.id) }}">
+                                        <button type="submit" class="btn btn-outline-danger btn-sm">{{ 'settings_sync_review.delete_button'|trans }}</button>
+                                    </form>
+                                {% endif %}
+                            </div>
                         {% endif %}
                     </li>
                 {% endfor %}

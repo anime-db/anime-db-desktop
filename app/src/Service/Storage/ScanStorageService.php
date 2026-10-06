@@ -35,6 +35,7 @@ use App\Entity\Storage;
 use App\Entity\TvAnime;
 use App\Entity\ValueObject\PluginId;
 use App\Repository\AnimeRepository;
+use App\Repository\SyncTombstoneRepository;
 use App\Service\Media\MediaExtensions;
 use App\Service\Plugin\Filler\BulkFillerService;
 use App\Service\Storage\Exception\StoragePathConflictException;
@@ -67,6 +68,7 @@ final class ScanStorageService
         private readonly AnimeRepository $animeRepository,
         private readonly EntityManagerInterface $entityManager,
         private readonly BulkFillerService $bulkFillerService,
+        private readonly SyncTombstoneRepository $tombstoneRepository,
         private readonly LoggerInterface $logger,
     ) {
     }
@@ -200,7 +202,9 @@ final class ScanStorageService
 
             return match (\count($candidates)) {
                 0 => ScanResultItem::needsManualEntry($name, $cleanedName),
-                1 => $this->autoLinkOrConflict($storage, $name, $candidates[0]),
+                1 => $this->isTombstoned($candidates[0])
+                    ? ScanResultItem::needsConfirmation($name, $cleanedName, $candidates)
+                    : $this->autoLinkOrConflict($storage, $name, $candidates[0]),
                 default => ScanResultItem::needsConfirmation($name, $cleanedName, $candidates),
             };
         } catch (\Throwable $e) {
@@ -212,6 +216,20 @@ final class ScanStorageService
 
             return ScanResultItem::error($name, $cleanedName, $e->getMessage());
         }
+    }
+
+    /**
+     * Whether the candidate is a plugin match for a title the user deleted from the catalog (issue
+     * #916). Such a folder is not linked on its own: linking would create the entry again, so the
+     * user is asked instead. An orphan is a live record and is never tombstoned.
+     */
+    private function isTombstoned(ScanCandidate $candidate): bool
+    {
+        $plugin = $candidate->plugin;
+
+        return $plugin !== null
+            && $plugin->getExternalId() !== ''
+            && $this->tombstoneRepository->exists($plugin->getPluginId(), $plugin->getExternalId());
     }
 
     /**

@@ -36,10 +36,15 @@ namespace App\Service\Plugin\Filler;
 interface PluginMediaDownloaderInterface
 {
     /**
+     * @param (\Closure():bool)|null $stillWanted asked right before the file would be written, after the slow
+     *                                            part of the download; `false` means the entry was deleted in
+     *                                            the meantime, so nothing is written (and no directory
+     *                                            created) and null is returned
+     *
      * @return string|null the downloaded file's name relative to %AppData%/media/{$animeId}/, or
      *                     null when the download failed (network error, non-2xx response, empty
      *                     body, oversized body) — failure is not fatal to the caller, which
      *                     leaves the field it was about to overwrite untouched
      */
-    public function download(int $animeId, string $url): ?string;
+    public function download(int $animeId, string $url, ?\Closure $stillWanted = null): ?string;
 }

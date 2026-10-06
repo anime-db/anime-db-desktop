@@ -39,10 +39,17 @@ use App\Entity\TvAnime;
 use App\Entity\ValueObject\PluginId;
 use App\Repository\AnimeRepository;
 use App\Repository\AnimeSyncStateRepository;
+use App\Repository\DownloadRepository;
 use App\Repository\PendingSyncPushRepository;
 use App\Repository\SyncReviewItemRepository;
+use App\Repository\SyncTombstoneRepository;
+use App\Service\AnimeDeleteFlash;
+use App\Service\AnimeDeleteService;
+use App\Service\JobLock\JobLockService;
+use App\Service\JobLock\ProcessLivenessChecker;
 use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Plugin\SyncRegistry;
+use App\Service\Qbittorrent\QbittorrentClient;
 use App\Service\Sync\DeletedFromSourceDetector;
 use App\Service\Sync\SyncConvergenceService;
 use App\Service\Sync\SyncReconciler;
@@ -55,11 +62,14 @@ use Doctrine\ORM\ORMSetup;
 use Doctrine\ORM\Tools\SchemaTool;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
+use Symfony\Component\Clock\MockClock;
+use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 use Symfony\Component\Security\Csrf\CsrfTokenManagerInterface;
+use Symfony\Contracts\Translation\TranslatorInterface;
 use Twig\Environment;
 
 final class SyncReviewControllerTest extends TestCase
@@ -70,6 +80,8 @@ final class SyncReviewControllerTest extends TestCase
         ?SyncConvergenceService $syncConvergenceService = null,
         ?DeletedFromSourceDetector $deletedFromSourceDetector = null,
         ?EntityManagerInterface $entityManager = null,
+        ?AnimeDeleteService $animeDeleteService = null,
+        ?DownloadRepository $downloadRepository = null,
         ?CsrfTokenManagerInterface $csrfTokenManager = null,
         ?UrlGeneratorInterface $urlGenerator = null,
         ?Environment $twig = null,
@@ -95,10 +107,28 @@ final class SyncReviewControllerTest extends TestCase
             // DeletedFromSourceDetector is final too — same reasoning, unused unless a
             // DeletedFromSource/DeletionConflict resolve() actually reaches it.
             $deletedFromSourceDetector ?? $this->createRealDeletedFromSourceDetector($entityManager),
+            $animeDeleteService ?? $this->createRealAnimeDeleteService($entityManager),
+            new AnimeDeleteFlash($this->createStub(TranslatorInterface::class), $this->createStub(UrlGeneratorInterface::class)),
+            $downloadRepository ?? $this->createStub(DownloadRepository::class),
             $entityManager,
             $csrfTokenManager,
             $urlGenerator,
             $twig ?? $this->createStub(Environment::class),
+        );
+    }
+
+    private function createRealAnimeDeleteService(EntityManagerInterface $entityManager): AnimeDeleteService
+    {
+        return new AnimeDeleteService(
+            $entityManager,
+            $this->createStub(DownloadRepository::class),
+            new SyncRegistry([], new PluginsConfigStore('')),
+            new JobLockService(DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]), $this->createStub(ProcessLivenessChecker::class), new MockClock(), 30, 3),
+            $this->createStub(SyncTombstoneRepository::class),
+            new SyncReviewService($this->createStub(SyncReviewItemRepository::class)),
+            new QbittorrentClient(new MockHttpClient(), 'http://qb.test'),
+            new NullLogger(),
+            sys_get_temp_dir(),
         );
     }
 
@@ -205,7 +235,7 @@ final class SyncReviewControllerTest extends TestCase
             ->with('settings/sync_review/index.html.twig', $this->callback(
                 static fn (array $params): bool => [$item] === $params['items']
                     && [20 => []] === $params['duplicateClusters']
-                    && [20 => ['anime' => $anime, 'deletedFrom' => 'animedb-shikimori', 'stillPresentOn' => ['animedb-mal']]] === $params['deletionDetails']
+                    && [20 => ['anime' => $anime, 'deletedFrom' => 'animedb-shikimori', 'stillPresentOn' => ['animedb-mal'], 'hasStorage' => false, 'hasFinishedDownloads' => false]] === $params['deletionDetails']
                     && $params['needsCorrectionDetails'] === [],
             ))
             ->willReturn('<html></html>');

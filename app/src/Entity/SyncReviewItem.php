@@ -49,7 +49,7 @@ class SyncReviewItem
 
     /** @var array<string, mixed> */
     #[ORM\Column(type: 'json')]
-    public readonly array $payload;
+    public private(set) array $payload;
 
     #[ORM\Column(type: 'unix_timestamp')]
     public readonly \DateTimeImmutable $createdAt;
@@ -73,5 +73,44 @@ class SyncReviewItem
     public function resolve(): void
     {
         $this->resolvedAt = new \DateTimeImmutable();
+    }
+
+    /**
+     * Reacts to the catalog entry $animeId having been deleted (issue #916). The references live
+     * in a JSON payload without a foreign key, so nothing else would tidy them up. An item about
+     * one entry (`anime_id`) is closed; a PotentialDuplicate (`anime_ids`) just loses the entry
+     * and is closed only when fewer than two entries are left to compare.
+     *
+     * @return bool whether the item referenced the entry and was changed
+     */
+    public function forgetAnime(int $animeId): bool
+    {
+        if ($this->isResolved()) {
+            return false;
+        }
+
+        if ($this->kind === SyncReviewItemKind::PotentialDuplicate) {
+            /** @var list<int> $animeIds */
+            $animeIds = $this->payload['anime_ids'] ?? [];
+            if (!\in_array($animeId, $animeIds, true)) {
+                return false;
+            }
+
+            $remaining = array_values(array_filter($animeIds, static fn (int $id): bool => $id !== $animeId));
+            $this->payload = ['anime_ids' => $remaining] + $this->payload;
+            if (\count($remaining) < 2) {
+                $this->resolve();
+            }
+
+            return true;
+        }
+
+        if (($this->payload['anime_id'] ?? null) !== $animeId) {
+            return false;
+        }
+
+        $this->resolve();
+
+        return true;
     }
 }

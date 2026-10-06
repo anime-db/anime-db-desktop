@@ -208,6 +208,7 @@ settings_sync_review:
     auto_applied_winner: auto-resolved
     correct_button: Correct
     resolve_button: Resolve
+    delete_button: Delete entry
 
 settings_plugins:
     sync_on: on
@@ -537,6 +538,16 @@ anime_detail:
     rating_star_label: 'Rating: %rating%'
     menu_button: Entry actions
     menu_edit: Edit
+    menu_delete: Delete
+
+anime_delete:
+    confirm: 'Delete "%title%"? Only the catalog entry is deleted.'
+    confirm_storage: 'The video files in the storage are not touched.'
+    confirm_downloads: 'The finished and failed torrents are removed from the download client and stop seeding; the downloaded files stay.'
+    flash_deleted: 'Entry "%title%" was deleted from the catalog.'
+    flash_pending_downloads: 'Entry "%title%" was not deleted: cancel its downloads first.'
+    downloads_link: Go to downloads
+    flash_sync_running: 'A sync is running, try again later.'
 
 anime_edit:
     title: 'Edit %title% — AnimeDB'
