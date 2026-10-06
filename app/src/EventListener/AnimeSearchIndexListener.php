@@ -34,6 +34,7 @@ use Doctrine\Bundle\DoctrineBundle\Attribute\AsDoctrineListener;
 use Doctrine\ORM\Event\PostPersistEventArgs;
 use Doctrine\ORM\Event\PostRemoveEventArgs;
 use Doctrine\ORM\Event\PostUpdateEventArgs;
+use Doctrine\ORM\Event\PreRemoveEventArgs;
 use Doctrine\ORM\Events;
 use Symfony\Component\Messenger\MessageBusInterface;
 
@@ -51,9 +52,18 @@ use Symfony\Component\Messenger\MessageBusInterface;
  */
 #[AsDoctrineListener(event: Events::postPersist)]
 #[AsDoctrineListener(event: Events::postUpdate)]
+#[AsDoctrineListener(event: Events::preRemove)]
 #[AsDoctrineListener(event: Events::postRemove)]
 final class AnimeSearchIndexListener
 {
+    /**
+     * Ids of the Anime being removed, keyed by spl_object_id: the ORM nulls the entity id
+     * before postRemove fires, so it has to be remembered in preRemove.
+     *
+     * @var array<int, int>
+     */
+    private array $removingIds = [];
+
     public function __construct(
         private readonly MessageBusInterface $messageBus,
     ) {
@@ -69,6 +79,16 @@ final class AnimeSearchIndexListener
         $this->dispatchIndex($args->getObject());
     }
 
+    public function preRemove(PreRemoveEventArgs $args): void
+    {
+        $entity = $args->getObject();
+        if (!$entity instanceof Anime) {
+            return;
+        }
+
+        $this->removingIds[spl_object_id($entity)] = $this->requireId($entity);
+    }
+
     public function postRemove(PostRemoveEventArgs $args): void
     {
         $entity = $args->getObject();
@@ -76,7 +96,14 @@ final class AnimeSearchIndexListener
             return;
         }
 
-        $this->messageBus->dispatch(new DeleteFromIndexMessage($this->requireId($entity)));
+        $key = spl_object_id($entity);
+        $id = $this->removingIds[$key] ?? null;
+        unset($this->removingIds[$key]);
+        if ($id === null) {
+            return;
+        }
+
+        $this->messageBus->dispatch(new DeleteFromIndexMessage($id));
     }
 
     private function dispatchIndex(object $entity): void

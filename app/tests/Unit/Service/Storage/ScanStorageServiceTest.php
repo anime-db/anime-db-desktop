@@ -44,6 +44,7 @@ use App\Entity\TvAnime;
 use App\Entity\ValueObject\PluginId;
 use App\Repository\AnimeRepository;
 use App\Repository\StudioRepository;
+use App\Repository\SyncTombstoneRepository;
 use App\Service\Plugin\Filler\BulkFillerService;
 use App\Service\Plugin\Filler\CachedFillerLookup;
 use App\Service\Plugin\Filler\PluginAnimeDataMerger;
@@ -59,6 +60,7 @@ use App\Service\Storage\Scan\ScanResultItem;
 use App\Service\Storage\ScanStorageService;
 use App\Service\Storage\Search\SearchByPluginChain;
 use App\Service\Storage\StorageMarkerService;
+use App\Tests\Support\BuildsAnimeDeleteService;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\EntityManager;
@@ -78,6 +80,8 @@ use Symfony\Component\Messenger\MessageBusInterface;
  */
 final class ScanStorageServiceTest extends TestCase
 {
+    use BuildsAnimeDeleteService;
+
     private EntityManager $entityManager;
     private AnimeRepository $animeRepository;
 
@@ -155,6 +159,7 @@ final class ScanStorageServiceTest extends TestCase
             $this->animeRepository,
             $this->entityManager,
             $bulkFillerService ?? $this->newBulkFillerService([]),
+            new SyncTombstoneRepository($this->entityManager),
             $logger ?? new NullLogger(),
         );
     }
@@ -474,6 +479,55 @@ final class ScanStorageServiceTest extends TestCase
         $reloaded = $this->entityManager->find(Anime::class, $orphanId);
         $this->assertSame($storage->id, $reloaded->getStorage()?->id);
         $this->assertSame('Trigun.mkv', $reloaded->getStoragePath());
+    }
+
+    /**
+     * Issue #916: a folder whose entry the user deleted is not linked on its own again, which
+     * would create the entry anew. Without the tombstone check the item is AutoLinked.
+     */
+    public function testAFolderOfADeletedEntryWithTheSameSinglePluginCandidateNeedsConfirmation(): void
+    {
+        $dir = $this->makeStorageDir();
+        $this->touchFile($dir.'/Trigun.mkv');
+        $storage = new Storage('Main folder', $dir, StorageType::Folder);
+        $this->entityManager->persist($storage);
+
+        $deleted = new TvAnime();
+        $deleted->setTitle('Trigun')->setWatchStatus(WatchStatus::Plan);
+        $deleted->rememberExternalId(new PluginId('animedb-test'), '104');
+        $deleted->setStorage($storage)->setStoragePath('Trigun.mkv');
+        $this->entityManager->persist($deleted);
+        $this->entityManager->flush();
+        $this->newAnimeDeleteService($dir.'/media')->delete($deleted);
+
+        $service = $this->newService($this->pluginChainReturning(new SearchByPluginCandidate('animedb-test', 'Trigun', '104')));
+        $result = $service->scan($storage);
+
+        $this->assertCount(1, $result->items);
+        $this->assertSame(ScanItemType::NeedsConfirmation, $result->items[0]->type);
+        $this->assertCount(1, $result->items[0]->candidates);
+        $this->assertSame(0, (int) $this->entityManager->getConnection()->fetchOne('SELECT COUNT(*) FROM anime'));
+        $this->assertFileExists($dir.'/Trigun.mkv');
+    }
+
+    public function testAnotherSinglePluginCandidateAfterADeletionIsStillAutoLinked(): void
+    {
+        $dir = $this->makeStorageDir();
+        $this->touchFile($dir.'/Trigun.mkv');
+        $storage = new Storage('Main folder', $dir, StorageType::Folder);
+        $this->entityManager->persist($storage);
+
+        $deleted = new TvAnime();
+        $deleted->setTitle('Trigun')->setWatchStatus(WatchStatus::Plan);
+        $deleted->rememberExternalId(new PluginId('animedb-test'), '104');
+        $this->entityManager->persist($deleted);
+        $this->entityManager->flush();
+        $this->newAnimeDeleteService($dir.'/media')->delete($deleted);
+
+        $service = $this->newService($this->pluginChainReturning(new SearchByPluginCandidate('animedb-test', 'Trigun', '105')));
+        $result = $service->scan($storage);
+
+        $this->assertSame(ScanItemType::AutoLinked, $result->items[0]->type);
     }
 
     public function testNewFileWithExactlyOnePluginCandidateCreatesANewAnime(): void
@@ -1089,6 +1143,7 @@ final class ScanStorageServiceTest extends TestCase
             $racyAnimeRepository,
             $this->entityManager,
             $bulkFillerService,
+            new SyncTombstoneRepository($this->entityManager),
             new NullLogger(),
         );
 

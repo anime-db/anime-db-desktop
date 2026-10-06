@@ -42,6 +42,7 @@ use Doctrine\ORM\EntityManager;
 use Doctrine\ORM\Event\PostPersistEventArgs;
 use Doctrine\ORM\Event\PostRemoveEventArgs;
 use Doctrine\ORM\Event\PostUpdateEventArgs;
+use Doctrine\ORM\Events;
 use Doctrine\ORM\ORMSetup;
 use Doctrine\ORM\Tools\SchemaTool;
 use PHPUnit\Framework\TestCase;
@@ -116,8 +117,12 @@ final class AnimeSearchIndexListenerTest extends TestCase
             ->with($this->equalTo(new DeleteFromIndexMessage($animeId)))
             ->willReturn(new Envelope(new DeleteFromIndexMessage($animeId)));
 
-        $listener = new AnimeSearchIndexListener($messageBus);
-        $listener->postRemove(new PostRemoveEventArgs($anime, $this->entityManager));
+        $this->entityManager->getEventManager()->addEventListener(
+            [Events::preRemove, Events::postRemove],
+            new AnimeSearchIndexListener($messageBus),
+        );
+        $this->entityManager->remove($anime);
+        $this->entityManager->flush();
     }
 
     public function testLifecycleEventsOfOtherEntitiesAreIgnored(): void

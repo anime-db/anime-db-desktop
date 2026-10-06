@@ -71,4 +71,17 @@ final class SyncReviewService
         $item->resolve();
         $this->repository->save($item);
     }
+
+    /**
+     * Tidies the unresolved items that point at a deleted catalog entry (issue #916), see
+     * {@see SyncReviewItem::forgetAnime()}.
+     */
+    public function forgetAnime(int $animeId): void
+    {
+        foreach ($this->repository->findAllUnresolvedOrderedByCreatedAt() as $item) {
+            $item->forgetAnime($animeId);
+        }
+
+        $this->repository->flush();
+    }
 }

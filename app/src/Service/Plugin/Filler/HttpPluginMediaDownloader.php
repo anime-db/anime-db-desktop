@@ -69,7 +69,7 @@ final class HttpPluginMediaDownloader implements PluginMediaDownloaderInterface
     ) {
     }
 
-    public function download(int $animeId, string $url): ?string
+    public function download(int $animeId, string $url, ?\Closure $stillWanted = null): ?string
     {
         $targetDir = rtrim($this->mediaDir, '/\\').'/'.$animeId;
         $filename = sha1($url).'.webp';
@@ -90,6 +90,10 @@ final class HttpPluginMediaDownloader implements PluginMediaDownloaderInterface
                 'url' => $url,
             ]);
 
+            return null;
+        }
+
+        if ($stillWanted !== null && !$stillWanted()) {
             return null;
         }
 

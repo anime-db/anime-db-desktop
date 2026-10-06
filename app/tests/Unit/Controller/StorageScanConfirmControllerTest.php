@@ -42,6 +42,7 @@ use App\Entity\TvAnime;
 use App\Entity\ValueObject\PluginId;
 use App\Repository\AnimeRepository;
 use App\Repository\StudioRepository;
+use App\Repository\SyncTombstoneRepository;
 use App\Service\Plugin\Filler\BulkFillerService;
 use App\Service\Plugin\Filler\CachedFillerLookup;
 use App\Service\Plugin\Filler\PluginAnimeDataMerger;
@@ -131,6 +132,7 @@ final class StorageScanConfirmControllerTest extends TestCase
                 $animeRepository,
                 new CachedFillerLookup(new ArrayAdapter()),
             ),
+            new SyncTombstoneRepository($this->entityManager),
             new NullLogger(),
         );
 

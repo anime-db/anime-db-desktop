@@ -90,6 +90,7 @@ final class AnimeController
             'fillable_fields' => $this->fillableFieldsPresenter->build(),
             'downloads' => $this->downloadViewFactory->serializeList($this->downloads->findByAnime($animeId)),
             'downloads_unlink_error' => null,
+            'delete_has_finished_downloads' => $this->downloads->hasFinishedForAnime($animeId),
         ]));
     }
 

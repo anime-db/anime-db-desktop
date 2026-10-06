@@ -66,7 +66,16 @@ final class DownloadAnimeMediaMessageHandler
             return;
         }
 
-        $filename = $this->mediaDownloader->download($message->animeId, $message->url);
+        // The entry can be deleted (AnimeDeleteService removes its media directory right after) while the
+        // image is being fetched: ask again right before the file is written, and once more before it is
+        // attached, so neither a media directory nor a gallery row is created for a deleted entry.
+        $stillExists = fn (): bool => $this->animeExists($message->animeId);
+
+        $filename = $this->mediaDownloader->download($message->animeId, $message->url, $stillExists);
+        if (!$stillExists()) {
+            return;
+        }
+
         if ($filename === null) {
             $this->logger->warning('Discarding a queued anime media download: the URL could not be downloaded or normalized into a WebP image.', [
                 'animeId' => $message->animeId,
@@ -83,6 +92,11 @@ final class DownloadAnimeMediaMessageHandler
         }
 
         $this->entityManager->flush();
+    }
+
+    private function animeExists(int $animeId): bool
+    {
+        return $this->entityManager->getConnection()->fetchOne('SELECT 1 FROM anime WHERE id = ?', [$animeId]) !== false;
     }
 
     /**

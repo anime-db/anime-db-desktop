@@ -32,6 +32,10 @@ use App\Entity\Enum\SyncReviewItemKind;
 use App\Entity\Enum\WatchStatus;
 use App\Entity\SyncReviewItem;
 use App\Repository\AnimeRepository;
+use App\Repository\DownloadRepository;
+use App\Service\AnimeDeleteFlash;
+use App\Service\AnimeDeleteOutcome;
+use App\Service\AnimeDeleteService;
 use App\Service\Sync\DeletedFromSourceDetector;
 use App\Service\Sync\SyncConvergenceService;
 use App\Service\Sync\SyncProjection;
@@ -72,6 +76,9 @@ final class SyncReviewController
         private readonly AnimeRepository $animeRepository,
         private readonly SyncConvergenceService $syncConvergenceService,
         private readonly DeletedFromSourceDetector $deletedFromSourceDetector,
+        private readonly AnimeDeleteService $animeDeleteService,
+        private readonly AnimeDeleteFlash $animeDeleteFlash,
+        private readonly DownloadRepository $downloads,
         private readonly EntityManagerInterface $entityManager,
         private readonly CsrfTokenManagerInterface $csrfTokenManager,
         private readonly UrlGeneratorInterface $urlGenerator,
@@ -113,6 +120,37 @@ final class SyncReviewController
     }
 
     /**
+     * The second action of a DeletedFromSource / DeletionConflict item (issue #916): delete the
+     * catalog record through the same {@see AnimeDeleteService} the entry page uses, with the same
+     * refusals and tombstones. The service closes every item that pointed at the record, this one
+     * included. A refusal leaves the item open. A record that is already gone just closes the item.
+     */
+    #[Route('/settings/sync-review/{id}/delete-anime', name: 'settings_sync_review_delete_anime', methods: ['POST'])]
+    public function deleteAnime(SyncReviewItem $item, Request $request): Response
+    {
+        $this->assertValidCsrfToken('settings_sync_review_delete_anime_'.$item->id, $request);
+
+        if (!\in_array($item->kind, [SyncReviewItemKind::DeletedFromSource, SyncReviewItemKind::DeletionConflict], true)) {
+            throw new BadRequestHttpException('Only a source-side removal item can delete its record.');
+        }
+
+        $animeId = $item->payload['anime_id'] ?? null;
+        $anime = \is_int($animeId) ? ($this->animeRepository->findByIds([$animeId])[$animeId] ?? null) : null;
+
+        if ($anime === null) {
+            $this->syncReview->resolve($item);
+        } else {
+            $outcome = $this->animeDeleteService->delete($anime);
+            $this->animeDeleteFlash->add($request, $outcome, $anime->getTitle());
+            if ($outcome === AnimeDeleteOutcome::Deleted && !$item->isResolved()) {
+                $this->syncReview->resolve($item);
+            }
+        }
+
+        return new RedirectResponse($this->urlGenerator->generate('settings_sync_review_index'));
+    }
+
+    /**
      * Resolves each item's payload anime_ids to Anime entities for display. Only
      * SyncReviewItemKind::PotentialDuplicate carries anime_ids; deletion kinds (issue #217) carry
      * a single anime_id instead and are resolved by {@see self::deletionDetails()}, so they
@@ -147,7 +185,7 @@ final class SyncReviewController
      *
      * @param SyncReviewItem[] $items
      *
-     * @return array<int, array{anime: ?Anime, deletedFrom: string, stillPresentOn: list<string>}>
+     * @return array<int, array{anime: ?Anime, deletedFrom: string, stillPresentOn: list<string>, hasStorage: bool, hasFinishedDownloads: bool}>
      */
     private function deletionDetails(array $items): array
     {
@@ -163,10 +201,15 @@ final class SyncReviewController
             /** @var list<string> $stillPresentOn */
             $stillPresentOn = $item->payload['still_present_on'] ?? [];
 
+            $anime = \is_int($animeId) ? ($this->animeRepository->findByIds([$animeId])[$animeId] ?? null) : null;
+
             $details[$id] = [
-                'anime' => \is_int($animeId) ? ($this->animeRepository->findByIds([$animeId])[$animeId] ?? null) : null,
+                'anime' => $anime,
                 'deletedFrom' => (string) ($item->payload['deleted_from'] ?? ''),
                 'stillPresentOn' => $stillPresentOn,
+                // What the delete confirmation warns about, see anime/_delete_confirm.html.twig.
+                'hasStorage' => $anime?->getStorage() !== null,
+                'hasFinishedDownloads' => $anime !== null && $this->downloads->hasFinishedForAnime($anime->id ?? 0),
             ];
         }
 

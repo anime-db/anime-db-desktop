@@ -49,6 +49,8 @@ use App\Repository\AnimeSyncStateRepository;
 use App\Repository\PendingSyncPushRepository;
 use App\Repository\StudioRepository;
 use App\Repository\SyncReviewItemRepository;
+use App\Repository\SyncTombstoneRepository;
+use App\Service\AnimeDeleteOutcome;
 use App\Service\Plugin\Filler\BulkFillerService;
 use App\Service\Plugin\Filler\CachedFillerLookup;
 use App\Service\Plugin\Filler\PluginAnimeDataMerger;
@@ -64,6 +66,7 @@ use App\Service\Sync\DeletedFromSourceDetector;
 use App\Service\Sync\SyncConvergenceService;
 use App\Service\Sync\SyncReconciler;
 use App\Service\Sync\SyncReviewService;
+use App\Tests\Support\BuildsAnimeDeleteService;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\EntityManager;
@@ -86,6 +89,8 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
  */
 final class PullSyncServiceTest extends TestCase
 {
+    use BuildsAnimeDeleteService;
+
     private EntityManager $entityManager;
     private PullSyncService $service;
     private PluginId $pluginId;
@@ -183,7 +188,7 @@ final class PullSyncServiceTest extends TestCase
             new NullLogger(),
         );
 
-        return new PullSyncService($entityManager, $animeRepository, $bulkFillerService, $duplicateDetector, $deletionDetector, $convergenceService, $logger ?? new NullLogger());
+        return new PullSyncService($entityManager, $animeRepository, $bulkFillerService, $duplicateDetector, $deletionDetector, $convergenceService, new SyncTombstoneRepository($entityManager), $logger ?? new NullLogger());
     }
 
     /**
@@ -501,6 +506,82 @@ final class PullSyncServiceTest extends TestCase
         $this->assertCount(0, $this->allAnime());
     }
 
+    /**
+     * Issue #916: a record the user deleted must not come back with the next pull. Removing the
+     * tombstone check from doPull() makes the first assertion fail: the item is created again.
+     */
+    public function testAnEntryDeletedLocallyIsNotCreatedAgainByAPull(): void
+    {
+        $anime = new TvAnime();
+        $anime->setTitle('Trigun')->setWatchStatus(WatchStatus::Plan);
+        $anime->rememberExternalId($this->pluginId, '42');
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+        $this->newAnimeDeleteService(sys_get_temp_dir().'/anime-pull-delete-'.uniqid())->delete($anime);
+
+        $sync = $this->syncFillerStub(
+            [new SyncItem('42', SyncStatus::Completed, 'Trigun')],
+            data: new PluginAnimeData(title: 'Trigun', type: ContractsAnimeType::Tv),
+            fillableFields: ['title', 'type'],
+        );
+
+        $this->assertTrue($this->service->pull($this->pluginId, $sync));
+
+        $this->assertSame([], $this->allAnime());
+    }
+
+    public function testATombstoneOfAnotherExternalIdDoesNotBlockANewItem(): void
+    {
+        $anime = new TvAnime();
+        $anime->setTitle('Trigun')->setWatchStatus(WatchStatus::Plan);
+        $anime->rememberExternalId($this->pluginId, '42');
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+        $this->newAnimeDeleteService(sys_get_temp_dir().'/anime-pull-delete-'.uniqid())->delete($anime);
+
+        $sync = $this->syncFillerStub(
+            [new SyncItem('43', SyncStatus::Completed, 'Trigun Stampede')],
+            data: new PluginAnimeData(title: 'Trigun Stampede', type: ContractsAnimeType::Tv),
+            fillableFields: ['title', 'type'],
+        );
+
+        $this->service->pull($this->pluginId, $sync);
+
+        $this->assertCount(1, $this->allAnime());
+    }
+
+    /**
+     * Issue #916: delete, add the same title again, pull (the live record wins over the old
+     * tombstone and is updated as usual), delete once more.
+     */
+    public function testATitleDeletedReAddedUpdatedByAPullAndDeletedAgainIsDeletedTwice(): void
+    {
+        $deleteService = $this->newAnimeDeleteService(sys_get_temp_dir().'/anime-pull-delete-'.uniqid());
+
+        $first = new TvAnime();
+        $first->setTitle('Trigun')->setWatchStatus(WatchStatus::Plan);
+        $first->rememberExternalId($this->pluginId, '42');
+        $this->entityManager->persist($first);
+        $this->entityManager->flush();
+        $this->assertSame(AnimeDeleteOutcome::Deleted, $deleteService->delete($first));
+
+        $second = new TvAnime();
+        $second->setTitle('Trigun')->setWatchStatus(WatchStatus::Plan);
+        $second->rememberExternalId($this->pluginId, '42');
+        $this->entityManager->persist($second);
+        $this->entityManager->flush();
+
+        $sync = $this->createMock(SyncInterface::class);
+        $sync->method('pull')->willReturn([new SyncItem('42', SyncStatus::Watching, 'Trigun')]);
+        $this->assertTrue($this->service->pull($this->pluginId, $sync));
+
+        $this->assertSame([$second], $this->allAnime());
+        $this->assertSame(WatchStatus::Watching, $second->getWatchStatus());
+
+        $this->assertSame(AnimeDeleteOutcome::Deleted, $deleteService->delete($second));
+        $this->assertSame([], $this->allAnime());
+    }
+
     public function testCreatesAndFillsInANewAnimeThroughTheSyncPluginsOwnFillerCapability(): void
     {
         $data = new PluginAnimeData(
@@ -706,7 +787,7 @@ final class PullSyncServiceTest extends TestCase
             new SyncReviewService(new SyncReviewItemRepository($this->entityManager)),
             new NullLogger(),
         );
-        $service = new PullSyncService($this->entityManager, new AnimeRepository($this->entityManager), $bulkFillerService, $duplicateDetector, $deletionDetector, $convergenceService, new NullLogger());
+        $service = new PullSyncService($this->entityManager, new AnimeRepository($this->entityManager), $bulkFillerService, $duplicateDetector, $deletionDetector, $convergenceService, new SyncTombstoneRepository($this->entityManager), new NullLogger());
 
         $sync = $this->syncFillerStub(
             [new SyncItem('42', SyncStatus::Plan, 'Trigun')],
@@ -1260,7 +1341,7 @@ final class PullSyncServiceTest extends TestCase
             new SyncReviewService(new SyncReviewItemRepository($this->entityManager)),
             new NullLogger(),
         );
-        $service = new PullSyncService($this->entityManager, new AnimeRepository($this->entityManager), $bulkFillerService, $duplicateDetector, $deletionDetector, $convergenceService, new NullLogger());
+        $service = new PullSyncService($this->entityManager, new AnimeRepository($this->entityManager), $bulkFillerService, $duplicateDetector, $deletionDetector, $convergenceService, new SyncTombstoneRepository($this->entityManager), new NullLogger());
 
         $sync = $this->syncFillerStubPerItem(
             [

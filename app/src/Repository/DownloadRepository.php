@@ -85,6 +85,22 @@ class DownloadRepository
         return $this->entityManager->getRepository(Download::class)->findBy(['anime' => $animeId]);
     }
 
+    /**
+     * Whether the entry has a Completed or Failed download, i.e. a torrent that deleting the entry
+     * removes from the download client (issue #916).
+     */
+    public function hasFinishedForAnime(int $animeId): bool
+    {
+        return (int) $this->entityManager->getRepository(Download::class)->createQueryBuilder('d')
+            ->select('COUNT(d.id)')
+            ->where('d.anime = :anime')
+            ->andWhere('d.status IN (:statuses)')
+            ->setParameter('anime', $animeId)
+            ->setParameter('statuses', [DownloadStatus::Completed, DownloadStatus::Failed])
+            ->getQuery()
+            ->getSingleScalarResult() > 0;
+    }
+
     /** @return list<Download> */
     public function findPendingByInfoHash(string $infoHash): array
     {

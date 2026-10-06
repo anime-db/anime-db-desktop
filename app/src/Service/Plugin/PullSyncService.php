@@ -32,6 +32,7 @@ use AnimeDb\PluginContracts\Sync\SyncInterface;
 use App\Entity\Anime;
 use App\Entity\ValueObject\PluginId;
 use App\Repository\AnimeRepository;
+use App\Repository\SyncTombstoneRepository;
 use App\Service\Plugin\Exception\ExternalIdAlreadyClaimedException;
 use App\Service\Plugin\Filler\BulkFillerService;
 use App\Service\Sync\CrossVendorDuplicateDetector;
@@ -135,6 +136,10 @@ use Psr\Log\LoggerInterface;
  * this really does close the *original*, request-scoped EntityManager this run was given — pull()
  * reports that back to its caller as a `false` return (same mechanism already used for a dead
  * OAuth session) rather than claiming success over an EntityManager the caller can no longer use.
+ * Deleted-locally tombstones (issue #916): a new item whose external id has a
+ * {@see \App\Entity\SyncTombstone} is not created, so a record the user deleted does not come back
+ * with the next pull. See {@see doPull()}.
+ *
  * ReauthRequiredException is explicitly excluded from this isolation — it keeps stopping the
  * whole run, as described above.
  */
@@ -147,6 +152,7 @@ final class PullSyncService
         private readonly CrossVendorDuplicateDetector $duplicateDetector,
         private readonly DeletedFromSourceDetector $deletionDetector,
         private readonly SyncConvergenceService $convergenceService,
+        private readonly SyncTombstoneRepository $tombstoneRepository,
         private readonly LoggerInterface $logger,
     ) {
     }
@@ -185,6 +191,8 @@ final class PullSyncService
     private function doPull(PluginId $pluginId, SyncInterface $sync, ?\Closure $onItem): bool
     {
         $byExternalId = $this->animeRepository->indexByExternalId($pluginId);
+        // Titles the user deleted locally (issue #916), loaded once per run like the index above.
+        $tombstones = $this->tombstoneRepository->indexByPlugin($pluginId);
         /** @var list<Anime> $newlyCreated */
         $newlyCreated = [];
         /** @var array<string, true> $presentExternalIds external ids still in the source's list */
@@ -203,6 +211,13 @@ final class PullSyncService
 
                 try {
                     if ($anime === null) {
+                        // Only checked for an item with no live record: a live record with the same
+                        // external id (re-added by the user after the deletion) always wins above, and
+                        // the tombstone is never removed. The item stays in $presentExternalIds.
+                        if (isset($tombstones[$item->externalId])) {
+                            continue;
+                        }
+
                         if ($recoveryEntityManager !== null) {
                             // A further, unrelated new item after this run's EntityManager was
                             // already closed by an earlier conflict — BulkFillerService is bound to

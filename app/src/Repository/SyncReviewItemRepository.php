@@ -43,6 +43,11 @@ class SyncReviewItemRepository
         $this->entityManager->flush();
     }
 
+    public function flush(): void
+    {
+        $this->entityManager->flush();
+    }
+
     /** @return SyncReviewItem[] */
     public function findAllUnresolvedOrderedByCreatedAt(): array
     {

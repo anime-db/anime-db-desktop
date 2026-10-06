@@ -30,6 +30,7 @@ namespace App\Controller;
 use App\Entity\Anime;
 use App\Entity\ValueObject\Exception\InvalidPluginIdException;
 use App\Entity\ValueObject\PluginId;
+use App\Repository\DownloadRepository;
 use App\Service\AnimeViewFactory;
 use App\Service\Plugin\Filler\FieldFillerService;
 use App\Service\Plugin\Filler\FillableFieldsPresenter;
@@ -62,6 +63,7 @@ final class AnimeFillController
         private readonly FillableFieldsPresenter $fillableFieldsPresenter,
         private readonly CsrfTokenManagerInterface $csrfTokenManager,
         private readonly AnimeViewFactory $viewFactory,
+        private readonly DownloadRepository $downloads,
         private readonly Environment $twig,
     ) {
     }
@@ -132,7 +134,11 @@ final class AnimeFillController
 
         if ($field === 'alternativeNames') {
             // The subtitle shows the official Japanese title, which this fill may have just added.
-            $html .= $this->twig->render('anime/_header.html.twig', ['anime' => $view, 'oob' => true]);
+            $html .= $this->twig->render('anime/_header.html.twig', [
+                'anime' => $view,
+                'oob' => true,
+                'delete_has_finished_downloads' => $this->downloads->hasFinishedForAnime($anime->id ?? 0),
+            ]);
         }
 
         return new Response($html);
