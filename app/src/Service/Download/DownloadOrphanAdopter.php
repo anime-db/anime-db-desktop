@@ -92,8 +92,9 @@ class DownloadOrphanAdopter
 
         $contentPath = (string) ($torrent['content_path'] ?? '');
         // Taken from the client, not the disk: an unfinished torrent may have no file at `content_path` yet.
+        // Addressed by the client's own `hash` (a hybrid torrent is keyed by its truncated v2 hash), not by the stored v1.
         try {
-            $fileNames = $this->client->getTorrentFileNames($infoHash);
+            $fileNames = $this->client->getTorrentFileNames((string) ($torrent['hash'] ?? $infoHash));
         } catch (QbittorrentClientException) {
             throw new DownloadAdoptionRefusedException('download_new.error_client_unavailable');
         }

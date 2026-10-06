@@ -147,9 +147,9 @@ final class DownloadOrphanAdopterTest extends TestCase
     /**
      * @param list<string>|null $files torrents/files names; null means a multi-file torrent under `Release/`
      */
-    private function client(string $contentPath, bool $present = true, float|int $progress = 1, ?array $files = null): QbittorrentClient
+    private function client(string $contentPath, bool $present = true, float|int $progress = 1, ?array $files = null, string $clientHash = self::HASH): QbittorrentClient
     {
-        $httpClient = new MockHttpClient(function (string $method, string $url, array $options) use ($contentPath, $present, $progress, $files): MockResponse {
+        $httpClient = new MockHttpClient(function (string $method, string $url, array $options) use ($contentPath, $present, $progress, $files, $clientHash): MockResponse {
             $this->requests[] = [$method, $url, $options];
             if (str_contains($url, '/torrents/files')) {
                 $names = $files ?? ['Release/a.mkv', 'Release/b.mkv'];
@@ -157,7 +157,7 @@ final class DownloadOrphanAdopterTest extends TestCase
                 return new MockResponse(json_encode(array_map(static fn (string $name): array => ['name' => $name], $names), \JSON_THROW_ON_ERROR), ['response_headers' => ['content-type' => 'application/json']]);
             }
             $torrents = $present ? [[
-                'hash' => self::HASH,
+                'hash' => $clientHash,
                 'infohash_v1' => self::HASH,
                 'name' => 'Release',
                 'progress' => $progress,
@@ -225,6 +225,20 @@ final class DownloadOrphanAdopterTest extends TestCase
         $this->assertStringContainsString('/api/v2/torrents/info', $url);
         $this->assertSame([], $options['query'] ?? []);
         $this->assertStringNotContainsString('tag=', $url);
+    }
+
+    public function testHybridTorrentFilesAreRequestedByTheClientHash(): void
+    {
+        $anime = $this->persistAnime();
+        $v2 = str_repeat('b', 40);
+        $client = $this->client($this->root.'\\Release', clientHash: $v2);
+
+        $this->adopter($client)->adopt(self::HASH, (int) $anime->id);
+
+        $this->assertCount(1, $this->downloads->findByInfoHash(self::HASH));
+        $filesRequests = array_values(array_filter($this->requests, static fn (array $r): bool => str_contains($r[1], '/torrents/files')));
+        $this->assertCount(1, $filesRequests);
+        $this->assertSame($v2, $filesRequests[0][2]['query']['hash'] ?? null);
     }
 
     public function testTorrentMissingFromTheClientIsRefused(): void
