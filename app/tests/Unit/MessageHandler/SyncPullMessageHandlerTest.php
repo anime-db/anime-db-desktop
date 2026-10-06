@@ -31,6 +31,7 @@ use AnimeDb\PluginContracts\Filler\PluginAnimeData;
 use AnimeDb\PluginContracts\OAuth\ReauthRequiredException;
 use AnimeDb\PluginContracts\Sync\SyncInterface;
 use AnimeDb\PluginContracts\Sync\SyncItem;
+use AnimeDb\PluginContracts\Sync\SyncRemovalInterface;
 use AnimeDb\PluginContracts\Sync\SyncStatus;
 use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
@@ -42,11 +43,13 @@ use App\Message\SyncPullMessage;
 use App\Message\SyncSeedMessage;
 use App\MessageHandler\SyncPullMessageHandler;
 use App\Repository\AnimeRepository;
+use App\Repository\SyncTombstoneRepository;
 use App\Service\JobLock\JobLockService;
 use App\Service\JobLock\ProcessLivenessChecker;
 use App\Service\Plugin\ExternalIdBackfillService;
 use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Plugin\SyncRegistry;
+use App\Service\Sync\SourceRemovalService;
 use App\Service\Sync\SyncPullGate;
 use App\Tests\Support\BuildsPullSyncService;
 use Doctrine\DBAL\DriverManager;
@@ -102,6 +105,90 @@ final class SyncPullMessageHandlerTest extends TestCase
         $settings = $store->getPluginSettings(new PluginId(self::ID));
         $this->assertSame(self::NOW, $settings['syncLastPullAt'] ?? null);
         $this->assertTrue($settings['syncSeeded']);
+    }
+
+    public function testAFailedPendingRemovalKeepsItsFlagAndDoesNotStopThePullThenTheNextPullRetriesIt(): void
+    {
+        $tombstones = new SyncTombstoneRepository($this->entityManager);
+        $tombstones->record(self::ID, '99', new \DateTimeImmutable(), true);
+
+        $attempts = 0;
+        $pulls = 0;
+        $sync = $this->createMock(SyncRemovalInterface::class);
+        $sync->method('remove')->willReturnCallback(static function (string $externalId) use (&$attempts): void {
+            if (++$attempts === 1) {
+                throw new \RuntimeException('offline');
+            }
+        });
+        $sync->method('pull')->willReturnCallback(static function () use (&$pulls): array {
+            ++$pulls;
+
+            return [];
+        });
+
+        $store = $this->store(['features' => ['sync' => true], 'syncSeeded' => true]);
+        $this->handler($sync, $store)(new SyncPullMessage(self::ID));
+
+        $this->assertSame(1, $pulls, 'The pull still runs after a failed catch-up.');
+        $this->assertTrue($tombstones->isRemovalPending(self::ID, '99'));
+
+        // The mark is fresh now; make the plugin due again for the next tick.
+        $store->updatePluginSettings(new PluginId(self::ID), static function (array $settings): array {
+            unset($settings['syncLastPullAt']);
+
+            return $settings;
+        });
+        $this->handler($sync, $store)(new SyncPullMessage(self::ID));
+
+        $this->assertSame(2, $attempts);
+        $this->assertFalse($tombstones->exists(self::ID, '99'));
+    }
+
+    /** Issue #918: the backfill goes first, so the cache of external ids is complete before a removal is decided. */
+    public function testBackfillRunsBeforeThePendingRemovalsAndThePull(): void
+    {
+        $anime = new MovieAnime();
+        $anime->setTitle('Cowboy Bebop')->setWatchStatus(WatchStatus::Plan)->addSource('https://shikimori.one/animes/1');
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+        (new SyncTombstoneRepository($this->entityManager))->record(self::ID, '99', new \DateTimeImmutable(), true);
+
+        $events = [];
+        $sync = $this->createMock(SyncRemovalInterface::class);
+        $sync->method('remove')->willReturnCallback(static function (string $externalId) use (&$events): void {
+            $events[] = 'remove:'.$externalId;
+        });
+        $sync->method('resolveExternalId')->willReturnCallback(static function () use (&$events): string {
+            $events[] = 'resolve';
+
+            return '1';
+        });
+        $sync->method('pull')->willReturnCallback(static function () use (&$events): array {
+            $events[] = 'pull';
+
+            return [];
+        });
+
+        $store = $this->store(['features' => ['sync' => true], 'syncSeeded' => true]);
+        $this->handler($sync, $store)(new SyncPullMessage(self::ID));
+
+        $this->assertSame(['resolve', 'remove:99', 'pull'], $events);
+    }
+
+    public function testReauthDuringTheCatchUpStopsItButThePullStillReportsItself(): void
+    {
+        $tombstones = new SyncTombstoneRepository($this->entityManager);
+        $tombstones->record(self::ID, '1', new \DateTimeImmutable(), true);
+        $tombstones->record(self::ID, '2', new \DateTimeImmutable(), true);
+
+        $sync = $this->createMock(SyncRemovalInterface::class);
+        $sync->expects($this->once())->method('remove')->willThrowException(new ReauthRequiredException('dead'));
+        $sync->expects($this->once())->method('pull')->willThrowException(new ReauthRequiredException('dead'));
+
+        $store = $this->store(['features' => ['sync' => true], 'syncSeeded' => true]);
+        $this->handler($sync, $store)(new SyncPullMessage(self::ID));
+
+        $this->assertSame(['1', '2'], $tombstones->findRemovalPending(new PluginId(self::ID)));
     }
 
     public function testDoesNotPullWhenTheMarkIsAlreadyFresh(): void
@@ -242,6 +329,7 @@ final class SyncPullMessageHandlerTest extends TestCase
             $registry,
             new SyncPullGate($store, new MockClock(new \DateTimeImmutable(self::NOW))),
             new ExternalIdBackfillService($this->entityManager, new AnimeRepository($this->entityManager), $this->jobLockService(), new NullLogger()),
+            new SourceRemovalService(new SyncTombstoneRepository($this->entityManager), new AnimeRepository($this->entityManager), new NullLogger()),
             $this->newPullSyncService($registry),
             $locks ?? $this->jobLockService(),
             $logger ?? new NullLogger(),

@@ -29,16 +29,19 @@ namespace App\Service;
 
 use App\Entity\Anime;
 use App\Entity\Enum\DownloadStatus;
+use App\Message\RemoveFromSourceMessage;
 use App\Message\SyncSeedMessage;
 use App\Repository\DownloadRepository;
 use App\Repository\SyncTombstoneRepository;
 use App\Service\JobLock\JobLockService;
 use App\Service\Plugin\SyncRegistry;
 use App\Service\Qbittorrent\QbittorrentClient;
+use App\Service\Sync\SourceRemovalPlanner;
 use App\Service\Sync\SyncReviewService;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Filesystem\Filesystem;
+use Symfony\Component\Messenger\MessageBusInterface;
 
 /**
  * Local deletion of a catalog entry (issue #916), the one place both the entry page and the "requires
@@ -55,6 +58,13 @@ use Symfony\Component\Filesystem\Filesystem;
  * does not create the title again. The tombstone is written here and not by a Doctrine listener:
  * {@see AnimeTypeMigrator} removes entries too, and a type change must leave no tombstone.
  *
+ * With $removeFromSources the entry is also deleted from the user's list on the sources
+ * ({@see SourceRemovalPlanner}, issue #918): the tombstone of each target source is written with the
+ * pending flag, and after the commit a {@see RemoveFromSourceMessage} per target is queued. The
+ * targets are counted at this moment, not taken from the caller. Without it the tombstones carry no
+ * flag and stay for good. A message that is lost does not lose the removal: the flag is in the
+ * database and the catch-up before the plugin's next pull ({@see Sync\SourceRemovalService}) finds it.
+ *
  * After the commit, best-effort (a failure is logged and never undoes the deletion): the torrents of
  * Completed/Failed downloads are removed from qBittorrent *without* their files, the media directory
  * is deleted and the unresolved review items pointing at the entry are tidied.
@@ -67,6 +77,8 @@ final class AnimeDeleteService
         private readonly SyncRegistry $syncRegistry,
         private readonly JobLockService $jobLockService,
         private readonly SyncTombstoneRepository $tombstones,
+        private readonly SourceRemovalPlanner $removalPlanner,
+        private readonly MessageBusInterface $bus,
         private readonly SyncReviewService $syncReview,
         private readonly QbittorrentClient $qbittorrent,
         private readonly LoggerInterface $logger,
@@ -74,7 +86,10 @@ final class AnimeDeleteService
     ) {
     }
 
-    public function delete(Anime $anime): AnimeDeleteOutcome
+    /**
+     * @param list<string> $excludeSourcePluginIds sources the entry is already gone from, never targeted
+     */
+    public function delete(Anime $anime, bool $removeFromSources = false, array $excludeSourcePluginIds = []): AnimeDeleteOutcome
     {
         $animeId = $anime->id ?? throw new \LogicException('Anime must be persisted before it can be deleted.');
 
@@ -100,10 +115,12 @@ final class AnimeDeleteService
             }
         }
 
-        $this->entityManager->wrapInTransaction(function () use ($anime, $externalIds, $animeDownloads): void {
+        $targets = $removeFromSources ? $this->removalPlanner->plan($anime, $excludeSourcePluginIds)->targets : [];
+
+        $this->entityManager->wrapInTransaction(function () use ($anime, $externalIds, $animeDownloads, $targets): void {
             $deletedAt = new \DateTimeImmutable();
             foreach ($externalIds as $pluginId => $externalId) {
-                $this->tombstones->record($pluginId, $externalId, $deletedAt);
+                $this->tombstones->record($pluginId, $externalId, $deletedAt, isset($targets[$pluginId]));
             }
 
             // The rows go by ON DELETE CASCADE, but the managed objects must not outlive the entry:
@@ -115,6 +132,7 @@ final class AnimeDeleteService
             $this->entityManager->flush();
         });
 
+        $this->queueSourceRemovals($targets);
         $this->removeTorrents($torrentHashes);
         $this->removeMediaDirectory($animeId);
         $this->tidyReviewItems($animeId);
@@ -131,6 +149,22 @@ final class AnimeDeleteService
         }
 
         return false;
+    }
+
+    /** @param array<string, string> $targets plugin id => external id */
+    private function queueSourceRemovals(array $targets): void
+    {
+        foreach ($targets as $pluginId => $externalId) {
+            try {
+                $this->bus->dispatch(new RemoveFromSourceMessage((string) $pluginId, $externalId));
+            } catch (\Throwable $exception) {
+                $this->logger->warning('The entry was deleted, but the removal from the source could not be queued; it is retried before the next sync of the plugin.', [
+                    'pluginId' => (string) $pluginId,
+                    'externalId' => $externalId,
+                    'exception' => $exception,
+                ]);
+            }
+        }
     }
 
     /** @param list<string> $hashes */

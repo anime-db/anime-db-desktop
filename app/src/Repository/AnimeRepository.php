@@ -550,6 +550,15 @@ class AnimeRepository
         return $qb->getQuery()->getOneOrNullResult();
     }
 
+    /** Whether a live entry holds the (plugin, external id) pair in the anime_external_id index (issue #918). */
+    public function holdsExternalId(PluginId $pluginId, string $externalId): bool
+    {
+        return $this->entityManager->getConnection()->fetchOne(
+            'SELECT 1 FROM anime_external_id WHERE plugin_id = ? AND external_id = ?',
+            [(string) $pluginId, $externalId],
+        ) !== false;
+    }
+
     /**
      * One-shot index of every Anime already linked to $pluginId, keyed by its external id.
      * A caller resolving a whole pull() list — PullSyncService — no longer hydrates every

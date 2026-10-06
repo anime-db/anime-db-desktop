@@ -67,7 +67,7 @@ final class AnimeDeleteController
         }
 
         $title = $anime->getTitle();
-        $outcome = $this->deleteService->delete($anime);
+        $outcome = $this->deleteService->delete($anime, $request->request->getBoolean('remove_from_sources'));
         $this->flash->add($request, $outcome, $title);
 
         return new RedirectResponse($outcome === AnimeDeleteOutcome::Deleted

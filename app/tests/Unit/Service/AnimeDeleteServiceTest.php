@@ -27,6 +27,8 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Service;
 
+use AnimeDb\PluginContracts\Sync\SyncInterface;
+use AnimeDb\PluginContracts\Sync\SyncRemovalInterface;
 use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
 use App\Entity\Anime;
@@ -38,6 +40,7 @@ use App\Entity\Storage;
 use App\Entity\SyncReviewItem;
 use App\Entity\TvAnime;
 use App\Entity\ValueObject\PluginId;
+use App\Message\RemoveFromSourceMessage;
 use App\Message\SyncSeedMessage;
 use App\Repository\SyncTombstoneRepository;
 use App\Service\AnimeDeleteOutcome;
@@ -50,6 +53,8 @@ use Doctrine\ORM\ORMSetup;
 use Doctrine\ORM\Tools\SchemaTool;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
+use Symfony\Component\Messenger\Envelope;
+use Symfony\Component\Messenger\MessageBusInterface;
 
 final class AnimeDeleteServiceTest extends TestCase
 {
@@ -149,6 +154,100 @@ final class AnimeDeleteServiceTest extends TestCase
             [['plugin_id' => 'animedb-mal', 'external_id' => '2'], ['plugin_id' => 'animedb-shikimori', 'external_id' => '1']],
             $this->tombstones(),
         );
+    }
+
+    /** @return array<string, bool> "plugin:external" => pending flag */
+    private function pendingFlags(): array
+    {
+        $flags = [];
+        foreach ($this->entityManager->getConnection()->fetchAllAssociative('SELECT plugin_id, external_id, removal_pending FROM sync_tombstone') as $row) {
+            $flags[$row['plugin_id'].':'.$row['external_id']] = (bool) $row['removal_pending'];
+        }
+        ksort($flags);
+
+        return $flags;
+    }
+
+    /**
+     * @param list<string> $exclude
+     *
+     * @return list<object>
+     */
+    private function deleteWithRecordingBus(Anime $anime, bool $removeFromSources, array $exclude = []): array
+    {
+        $messages = [];
+        $bus = $this->createStub(MessageBusInterface::class);
+        $bus->method('dispatch')->willReturnCallback(static function (object $message) use (&$messages): Envelope {
+            $messages[] = $message;
+
+            return new Envelope($message);
+        });
+        $registry = $this->newSyncRegistryOf([
+            'acme-remove' => $this->createStub(SyncRemovalInterface::class),
+            'acme-also' => $this->createStub(SyncRemovalInterface::class),
+            'acme-plain' => $this->createStub(SyncInterface::class),
+            'acme-off' => $this->createStub(SyncRemovalInterface::class),
+        ], ['acme-remove', 'acme-also', 'acme-plain']);
+
+        $this->newAnimeDeleteService($this->mediaDir, $registry, bus: $bus)->delete($anime, $removeFromSources, $exclude);
+
+        return $messages;
+    }
+
+    public function testWithTheOptionTheTargetTombstonesGetTheFlagAndOneMessagePerTargetIsQueued(): void
+    {
+        $anime = $this->persistAnime(externalIds: ['acme-remove' => '1', 'acme-also' => '2', 'acme-plain' => '3', 'acme-off' => '4']);
+
+        $messages = $this->deleteWithRecordingBus($anime, true);
+
+        $this->assertSame(['acme-also:2' => true, 'acme-off:4' => false, 'acme-plain:3' => false, 'acme-remove:1' => true], $this->pendingFlags());
+        $this->assertEquals([new RemoveFromSourceMessage('acme-remove', '1'), new RemoveFromSourceMessage('acme-also', '2')], $messages);
+    }
+
+    public function testWithoutTheOptionNoFlagIsSetAndNothingIsQueued(): void
+    {
+        $anime = $this->persistAnime(externalIds: ['acme-remove' => '1']);
+
+        $messages = $this->deleteWithRecordingBus($anime, false);
+
+        $this->assertSame(['acme-remove:1' => false], $this->pendingFlags());
+        $this->assertSame([], $messages);
+    }
+
+    public function testAnExcludedSourceIsNotATargetEvenWithTheOption(): void
+    {
+        $anime = $this->persistAnime(externalIds: ['acme-remove' => '1', 'acme-also' => '2']);
+
+        $messages = $this->deleteWithRecordingBus($anime, true, ['acme-remove']);
+
+        $this->assertSame(['acme-also:2' => true, 'acme-remove:1' => false], $this->pendingFlags());
+        $this->assertEquals([new RemoveFromSourceMessage('acme-also', '2')], $messages);
+    }
+
+    public function testNothingIsFlaggedOrQueuedWhenTheDeletionIsRefused(): void
+    {
+        $anime = $this->persistAnime(externalIds: ['acme-remove' => '1']);
+        $this->addDownload($anime, self::HASH_A, 'pending');
+
+        $messages = $this->deleteWithRecordingBus($anime, true);
+
+        $this->assertSame([], $this->pendingFlags());
+        $this->assertSame([], $messages);
+    }
+
+    public function testAQueueFailureIsLoggedAndTheDeletionStandsWithItsFlag(): void
+    {
+        $anime = $this->persistAnime(externalIds: ['acme-remove' => '1']);
+        $bus = $this->createStub(MessageBusInterface::class);
+        $bus->method('dispatch')->willThrowException(new \RuntimeException('queue down'));
+        $registry = $this->newSyncRegistryOf(['acme-remove' => $this->createStub(SyncRemovalInterface::class)], ['acme-remove']);
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->once())->method('warning');
+
+        $outcome = $this->newAnimeDeleteService($this->mediaDir, $registry, logger: $logger, bus: $bus)->delete($anime, true);
+
+        $this->assertSame(AnimeDeleteOutcome::Deleted, $outcome);
+        $this->assertSame(['acme-remove:1' => true], $this->pendingFlags());
     }
 
     public function testVideoFilesInTheStorageAreNotTouched(): void

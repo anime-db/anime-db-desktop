@@ -23,9 +23,39 @@
  # "requires attention" page so both warn about the same consequences: only the catalog entry goes; the
  # sentence about files appears for an entry linked to a storage, the one about torrents for an entry with
  # a Completed or Failed download.
+ #
+ # An entry with sources whose list entry can be deleted too (issue #918) gets a real dialog instead:
+ # window.confirm() cannot hold the "also delete from the lists on the sources" checkbox. `plan` is a
+ # App\Service\Sync\SourceRemovalPlan; the trigger button is the caller's, with
+ # data-bs-toggle="modal" data-bs-target="#{id}".
  #}
 {% macro delete_confirm(title, has_storage, has_finished_downloads) -%}
     {{ 'anime_delete.confirm'|trans({'%title%': bidi_isolate(title)}) }}
     {%- if has_storage %} {{ 'anime_delete.confirm_storage'|trans }}{% endif %}
     {%- if has_finished_downloads %} {{ 'anime_delete.confirm_downloads'|trans }}{% endif %}
 {%- endmacro %}
+
+{% macro delete_modal(id, action, token, title, has_storage, has_finished_downloads, plan) %}
+    <div class="modal fade" id="{{ id }}" tabindex="-1" aria-labelledby="{{ id }}-text" aria-hidden="true">
+        <div class="modal-dialog">
+            <form class="modal-content" method="post" action="{{ action }}">
+                <input type="hidden" name="_token" value="{{ token }}">
+                <div class="modal-body">
+                    <p id="{{ id }}-text">{{ _self.delete_confirm(title, has_storage, has_finished_downloads) }}</p>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="remove_from_sources" value="1" id="{{ id }}-sources" checked>
+                        <label class="form-check-label" for="{{ id }}-sources">{{ 'anime_delete.remove_from_sources'|trans }}</label>
+                    </div>
+                    <p class="small text-body-secondary mb-0 mt-1">{{ 'anime_delete.sources_removed'|trans({'%sources%': bidi_isolate(plan.targetNames|join(', '))}) }}</p>
+                    {% for kept in plan.kept %}
+                        <p class="small text-body-secondary mb-0">{{ 'anime_delete.sources_kept'|trans({'%source%': bidi_isolate(kept.name), '%reason%': ('anime_delete.kept_' ~ kept.reason)|trans}) }}</p>
+                    {% endfor %}
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">{{ 'anime_delete.dialog_cancel'|trans }}</button>
+                    <button type="submit" class="btn btn-danger">{{ 'anime_delete.dialog_submit'|trans }}</button>
+                </div>
+            </form>
+        </div>
+    </div>
+{% endmacro %}

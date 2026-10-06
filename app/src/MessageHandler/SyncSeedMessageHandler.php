@@ -35,6 +35,7 @@ use App\Service\Plugin\ExternalIdBackfillService;
 use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Plugin\PullSyncService;
 use App\Service\Plugin\SyncRegistry;
+use App\Service\Sync\SourceRemovalService;
 use App\Service\Sync\SyncPullGate;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
@@ -70,6 +71,7 @@ final class SyncSeedMessageHandler
     public function __construct(
         private readonly SyncRegistry $syncRegistry,
         private readonly ExternalIdBackfillService $backfillService,
+        private readonly SourceRemovalService $sourceRemoval,
         private readonly PullSyncService $pullSyncService,
         private readonly PluginsConfigStore $pluginsConfigStore,
         private readonly JobLockService $jobLockService,
@@ -121,7 +123,11 @@ final class SyncSeedMessageHandler
         // backfill racing or trailing the pull would let it create second rows for titles that
         // already sit in the catalog with a source URL. The ordering has to live in this handler:
         // FIFO order between two messages is not guaranteed once they travel on different transports.
+        // The catch-up of pending removals on the source (issue #918) goes after the backfill: the
+        // cache of external ids has to be complete before deciding to delete, otherwise a live entry
+        // that only has a source URL would not be seen as holding the id and its list item would go.
         $this->backfillService->backfill($pluginId, $sync);
+        $this->sourceRemoval->retryPending($pluginId, $sync);
 
         $seeded = $this->pullSyncService->pull($pluginId, $sync, fn () => $this->jobLockService->heartbeat($jobKey));
         if ($seeded) {

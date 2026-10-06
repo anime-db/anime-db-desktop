@@ -93,6 +93,7 @@ framework:
             'App\Message\IndexAnimeMessage': async
             'App\Message\DeleteFromIndexMessage': async
             'App\Message\PushSyncMessage': async
+            'App\Message\RemoveFromSourceMessage': async
             'App\Message\SyncSeedMessage': sync
             'App\Message\SyncPullMessage': sync
             'App\Message\RefreshMarketSnapshotMessage': async

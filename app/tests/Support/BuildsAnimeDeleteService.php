@@ -36,6 +36,7 @@ use App\Service\JobLock\ProcessLivenessChecker;
 use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Plugin\SyncRegistry;
 use App\Service\Qbittorrent\QbittorrentClient;
+use App\Service\Sync\SourceRemovalPlanner;
 use App\Service\Sync\SyncReviewService;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\ORM\EntityManager;
@@ -44,6 +45,7 @@ use Psr\Log\NullLogger;
 use Symfony\Component\Clock\MockClock;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
+use Symfony\Component\Messenger\MessageBusInterface;
 
 /**
  * Builds a real {@see AnimeDeleteService} (a final class) over the test case's in-memory
@@ -88,6 +90,23 @@ trait BuildsAnimeDeleteService
         return new SyncRegistry($syncs, new PluginsConfigStore($path));
     }
 
+    /**
+     * @param array<string, \AnimeDb\PluginContracts\Sync\SyncInterface> $syncs         plugin id => plugin
+     * @param list<string>                                               $activeSyncIds ids with sync switched on
+     */
+    private function newSyncRegistryOf(array $syncs, array $activeSyncIds): SyncRegistry
+    {
+        $settings = [];
+        foreach ($activeSyncIds as $id) {
+            $settings[$id] = ['features' => ['sync' => true]];
+        }
+
+        $path = sys_get_temp_dir().'/anime-delete-test-'.uniqid().'.json';
+        file_put_contents($path, (string) json_encode($settings));
+
+        return new SyncRegistry($syncs, new PluginsConfigStore($path));
+    }
+
     private function newQbittorrentClient(bool $failing = false): QbittorrentClient
     {
         $httpClient = new MockHttpClient(function (string $method, string $url, array $options) use ($failing): MockResponse {
@@ -105,13 +124,18 @@ trait BuildsAnimeDeleteService
         ?JobLockService $jobLockService = null,
         ?QbittorrentClient $qbittorrent = null,
         ?LoggerInterface $logger = null,
+        ?MessageBusInterface $bus = null,
     ): AnimeDeleteService {
+        $syncRegistry ??= $this->newSyncRegistryWithActive([]);
+
         return new AnimeDeleteService(
             $this->entityManager,
             new DownloadRepository($this->entityManager),
-            $syncRegistry ?? $this->newSyncRegistryWithActive([]),
+            $syncRegistry,
             $jobLockService ?? $this->newJobLockService(),
             new SyncTombstoneRepository($this->entityManager),
+            new SourceRemovalPlanner($syncRegistry),
+            $bus ?? $this->createStub(MessageBusInterface::class),
             new SyncReviewService(new SyncReviewItemRepository($this->entityManager)),
             $qbittorrent ?? $this->newQbittorrentClient(),
             $logger ?? new NullLogger(),
