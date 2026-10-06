@@ -96,6 +96,7 @@ final class DownloadsTemplateRenderingTest extends KernelTestCase
             'canPause' => false,
             'canResume' => false,
             'canRetry' => false,
+            'canAdopt' => false,
             'canStopSeeding' => false,
             'canDelete' => false,
             'hasTorrentInClient' => false,
@@ -236,5 +237,14 @@ final class DownloadsTemplateRenderingTest extends KernelTestCase
 
         $this->assertStringContainsString('alert-danger', $html);
         $this->assertStringContainsString('Состояние загрузки изменилось', $html);
+    }
+
+    public function testAdoptButtonIsRenderedOnlyForRowsThatCanBeAdopted(): void
+    {
+        $with = $this->render(['rows' => [$this->row(['canAdopt' => true, 'coreStatus' => 'failed', 'version' => 4])], 'orphans' => [], 'qbittorrentAvailable' => true]);
+        $without = $this->render(['rows' => [$this->row(['canAdopt' => false])], 'orphans' => [], 'qbittorrentAvailable' => true]);
+
+        $this->assertStringContainsString('Привязать к записи', $with);
+        $this->assertStringNotContainsString('Привязать к записи', $without);
     }
 }

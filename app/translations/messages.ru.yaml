@@ -827,3 +827,4 @@ download_adopt:
     error_folder_occupied: 'Папка «%path%» уже привязана к записи #%id%.'
     error_anime_has_folder: 'У записи уже есть папка «%path%».'
     error_incoming_target_exists: 'В хранилище уже есть «%path%» — перенос из временного каталога закончится конфликтом имени.'
+    error_storage_mismatch: 'Файлы закачки лежат не в её хранилище «%storage%» — привязать нельзя.'

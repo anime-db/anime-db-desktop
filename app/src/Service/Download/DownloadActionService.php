@@ -27,6 +27,7 @@ declare(strict_types=1);
 
 namespace App\Service\Download;
 
+use App\Entity\Anime;
 use App\Entity\Download;
 use App\Entity\Enum\DownloadStatus;
 use Doctrine\ORM\EntityManagerInterface;
@@ -73,6 +74,32 @@ final class DownloadActionService
         $affected = $this->entityManager->getConnection()->executeStatement(
             'UPDATE downloads SET status = ?, failure_reason = NULL, move_attempts = ?, version = version + 1 WHERE id = ? AND version = ? AND status = ?',
             [DownloadStatus::Pending->value, $download->getMoveAttempts(), $downloadId, $expectedVersion, $expectedStatus->value],
+        );
+
+        if ($affected === 0) {
+            $this->entityManager->refresh($download);
+
+            return DownloadActionOutcome::Conflict;
+        }
+
+        return DownloadActionOutcome::Success;
+    }
+
+    /**
+     * Failed("storage_conflict") => Pending on $anime — see Download::relinkAfterStorageConflict().
+     * Only anime_id, status, failure_reason and version change in the database.
+     */
+    public function relink(Download $download, Anime $anime, int $expectedVersion, DownloadStatus $expectedStatus): DownloadActionOutcome
+    {
+        if (!$download->relinkAfterStorageConflict($anime)) {
+            return DownloadActionOutcome::Refused;
+        }
+
+        $downloadId = $download->id ?? throw new \LogicException('Download must be persisted before it can be relinked.');
+        $animeId = $anime->id ?? throw new \LogicException('Anime must be persisted before a download can be linked to it.');
+        $affected = $this->entityManager->getConnection()->executeStatement(
+            'UPDATE downloads SET anime_id = ?, status = ?, failure_reason = NULL, version = version + 1 WHERE id = ? AND version = ? AND status = ?',
+            [$animeId, DownloadStatus::Pending->value, $downloadId, $expectedVersion, $expectedStatus->value],
         );
 
         if ($affected === 0) {

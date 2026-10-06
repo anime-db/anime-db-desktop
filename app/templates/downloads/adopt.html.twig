@@ -35,8 +35,11 @@
 
         <p class="form-text">{{ 'download_adopt.storage_hint'|trans }}</p>
 
-        <form method="post" action="{{ path('download_adopt_orphan', {infoHash: infoHash}) }}">
-            <input type="hidden" name="_token" value="{{ csrf_token('download_adopt_orphan_' ~ infoHash) }}">
+        <form method="post" action="{{ form.action }}">
+            <input type="hidden" name="_token" value="{{ csrf_token(form.tokenId) }}">
+            {% for name, value in form.hidden %}
+                <input type="hidden" name="{{ name }}" value="{{ value }}">
+            {% endfor %}
             <input type="hidden" name="anime" id="download-new-anime-id" value="{{ selectedAnime ? selectedAnime.id : '' }}">
 
             <div class="mb-3">

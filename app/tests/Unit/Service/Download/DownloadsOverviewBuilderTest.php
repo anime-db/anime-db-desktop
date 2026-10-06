@@ -652,4 +652,26 @@ final class DownloadsOverviewBuilderTest extends TestCase
         self::assertNull($byHash[$pending->getInfoHash()]['sizeText']);
         self::assertSame('Готово и привязано', $byHash[$completedDownload->getInfoHash()]['statusText']);
     }
+
+    public function testCanAdoptIsTrueOnlyForAFailedStorageConflictRow(): void
+    {
+        $anime = $this->persistAnime();
+        $conflict = $this->persistDownload(str_repeat('7', 40), $anime);
+        $conflict->markFailed('storage_conflict');
+        $diskSpace = $this->persistDownload(str_repeat('8', 40), $anime);
+        $diskSpace->markFailed('disk_space');
+        $this->persistDownload(str_repeat('9', 40), $anime);
+        $this->entityManager->flush();
+
+        $result = $this->builder->build([], true);
+
+        $byHash = [];
+        foreach ($result['rows'] as $row) {
+            $byHash[$row['infoHash']] = $row;
+        }
+
+        $this->assertTrue($byHash[str_repeat('7', 40)]['canAdopt']);
+        $this->assertFalse($byHash[str_repeat('8', 40)]['canAdopt']);
+        $this->assertFalse($byHash[str_repeat('9', 40)]['canAdopt']);
+    }
 }

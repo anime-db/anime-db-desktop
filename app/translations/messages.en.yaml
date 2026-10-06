@@ -827,3 +827,4 @@ download_adopt:
     error_folder_occupied: 'The folder "%path%" is already linked to entry #%id%.'
     error_anime_has_folder: 'The entry already has the folder "%path%".'
     error_incoming_target_exists: '"%path%" already exists in the storage — moving out of the temporary folder would end in a name conflict.'
+    error_storage_mismatch: 'The download''s files are not in its storage "%storage%" — they cannot be linked.'
