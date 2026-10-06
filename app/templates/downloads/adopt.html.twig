@@ -1,0 +1,53 @@
+{#
+ # AnimeDb package.
+ #
+ # @author    Peter Gribanov <info@peter-gribanov.ru>
+ # @copyright Copyright (c) 2026, Peter Gribanov
+ # @license   https://www.gnu.org/licenses/gpl-3.0.html GPL-3.0-or-later
+ #
+ # This program is free software: you can redistribute it and/or modify
+ # it under the terms of the GNU General Public License as published by
+ # the Free Software Foundation, either version 3 of the License, or
+ # (at your option) any later version.
+ #
+ # This program is distributed in the hope that it will be useful,
+ # but WITHOUT ANY WARRANTY; without even the implied warranty of
+ # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ # GNU General Public License for more details.
+ #
+ # You should have received a copy of the GNU General Public License
+ # along with this program. If not, see <https://www.gnu.org/licenses/>.
+{% extends 'base.html.twig' %}
+
+{% block title %}{{ 'download_adopt.title'|trans }}{% endblock %}
+
+{% block body %}
+    <main class="download-new py-4" data-control="download-new">
+        <h1>{{ 'download_adopt.heading'|trans }}</h1>
+
+        {% if torrentName is not null %}
+            <p><bdi>{{ torrentName }}</bdi></p>
+        {% endif %}
+
+        {% if error %}
+            <p class="alert alert-danger">{{ error|trans(errorParams) }}</p>
+        {% endif %}
+
+        <p class="form-text">{{ 'download_adopt.storage_hint'|trans }}</p>
+
+        <form method="post" action="{{ path('download_adopt_orphan', {infoHash: infoHash}) }}">
+            <input type="hidden" name="_token" value="{{ csrf_token('download_adopt_orphan_' ~ infoHash) }}">
+            <input type="hidden" name="anime" id="download-new-anime-id" value="{{ selectedAnime ? selectedAnime.id : '' }}">
+
+            <div class="mb-3">
+                <label for="download-new-anime-search" class="form-label">{{ 'download_new.field_anime_label'|trans }}</label>
+                <input type="text" id="download-new-anime-search" class="form-control" autocomplete="off"
+                       value="{{ selectedAnime ? selectedAnime.title : '' }}"
+                       placeholder="{{ 'download_new.field_anime_placeholder'|trans }}" required>
+                <ul class="list-group" id="download-new-anime-results" hidden></ul>
+            </div>
+
+            <button type="submit" class="btn btn-primary"{% if torrentName is null %} disabled{% endif %}>{{ 'download_adopt.submit_button'|trans }}</button>
+        </form>
+    </main>
+{% endblock %}

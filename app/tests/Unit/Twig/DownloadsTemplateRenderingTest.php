@@ -215,6 +215,16 @@ final class DownloadsTemplateRenderingTest extends KernelTestCase
         $this->assertStringContainsString('Удалить из клиента', $html);
     }
 
+    public function testOnlyOrphanRowsGetTheLinkToEntryAction(): void
+    {
+        $orphan = $this->row(['hasCard' => false, 'animeUrl' => null, 'infoHash' => str_repeat('b', 40)]);
+        $html = $this->render(['rows' => [$this->row()], 'orphans' => [$orphan], 'qbittorrentAvailable' => true]);
+
+        $this->assertSame(1, substr_count($html, 'Привязать к записи'));
+        $this->assertStringContainsString('href="/downloads/orphan/'.str_repeat('b', 40).'/adopt"', $html);
+        $this->assertStringNotContainsString('/orphan/'.str_repeat('a', 40).'/adopt', $html);
+    }
+
     public function testActionErrorRendersAsADangerAlert(): void
     {
         $html = $this->render([

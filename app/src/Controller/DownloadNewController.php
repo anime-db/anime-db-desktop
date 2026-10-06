@@ -226,10 +226,11 @@ final class DownloadNewController
                 selectedStorageId: $storageId,
                 magnet: $magnet,
             );
-        } catch (DownloadAlreadyInClientException) {
+        } catch (DownloadAlreadyInClientException $e) {
             return $this->renderForm(
                 error: 'download_new.error_already_in_client',
                 downloadsLink: true,
+                adoptInfoHash: $e->infoHash,
                 selectedAnime: $anime,
                 selectedStorageId: $storageId,
                 magnet: $magnet,
@@ -265,6 +266,7 @@ final class DownloadNewController
         ?string $info = null,
         ?int $occupyingAnimeId = null,
         bool $downloadsLink = false,
+        ?string $adoptInfoHash = null,
     ): Response {
         [$storages, $defaultStorageId, $presetFailed] = $this->buildStorageOptions();
 
@@ -279,6 +281,7 @@ final class DownloadNewController
             'info' => $info,
             'occupyingAnimeId' => $occupyingAnimeId,
             'downloadsLink' => $downloadsLink,
+            'adoptInfoHash' => $adoptInfoHash,
         ]));
     }
 
