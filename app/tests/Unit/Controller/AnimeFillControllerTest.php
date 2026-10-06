@@ -29,11 +29,13 @@ namespace App\Tests\Unit\Controller;
 
 use AnimeDb\PluginContracts\Filler\FillerInterface;
 use AnimeDb\PluginContracts\Filler\PluginAnimeData;
+use AnimeDb\PluginContracts\Sync\SyncRemovalInterface;
 use App\Controller\AnimeFillController;
 use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
 use App\Entity\Enum\WatchStatus;
 use App\Entity\TvAnime;
+use App\Entity\ValueObject\PluginId;
 use App\Repository\DownloadRepository;
 use App\Repository\StudioRepository;
 use App\Service\AnimeViewFactory;
@@ -107,6 +109,7 @@ final class AnimeFillControllerTest extends TestCase
         ?Environment $twig = null,
         ?CsrfTokenManagerInterface $csrfTokenManager = null,
         ?PluginMediaDownloaderInterface $mediaDownloader = null,
+        ?SourceRemovalPlanner $planner = null,
     ): AnimeFillController {
         $pluginsConfigPath = sys_get_temp_dir().'/anime-fill-controller-test-'.uniqid().'.json';
         $registry = new FillerRegistry($fillers, new PluginsConfigStore($pluginsConfigPath));
@@ -143,7 +146,7 @@ final class AnimeFillControllerTest extends TestCase
             $csrfTokenManager,
             new AnimeViewFactory($requestStack),
             $this->createStub(DownloadRepository::class),
-            new SourceRemovalPlanner(new SyncRegistry([], new PluginsConfigStore(''))),
+            $planner ?? new SourceRemovalPlanner(new SyncRegistry([], new PluginsConfigStore(''))),
             $twig ?? $this->createStub(Environment::class),
         );
     }
@@ -259,6 +262,40 @@ final class AnimeFillControllerTest extends TestCase
         // The header subtitle (official Japanese title) is refreshed out-of-band alongside.
         $this->assertSame('anime/_header.html.twig', $rendered[1][0]);
         $this->assertTrue($rendered[1][1]['oob']);
+    }
+
+    /** Issue #918: the out-of-band header swap carries the plan, or it would swap the modal trigger for the plain confirm form. */
+    public function testTheOobHeaderIsRenderedWithTheSourceRemovalPlan(): void
+    {
+        $path = sys_get_temp_dir().'/anime-fill-removal-'.uniqid().'.json';
+        file_put_contents($path, (string) json_encode(['acme-list' => ['features' => ['sync' => true]]]));
+        $planner = new SourceRemovalPlanner(new SyncRegistry(['acme-list' => $this->createStub(SyncRemovalInterface::class)], new PluginsConfigStore($path)));
+
+        $filler = $this->createStub(FillerInterface::class);
+        $filler->method('getFillableFields')->willReturn(['alternativeNames']);
+        $filler->method('resolveExternalId')->willReturn(null);
+        $filler->method('find')->willReturn([]);
+
+        $anime = $this->persistedAnime();
+        $anime->rememberExternalId(new PluginId('acme-list'), '42');
+
+        $rendered = [];
+        $twig = $this->createMock(Environment::class);
+        $twig->method('render')->willReturnCallback(function (string $template, array $params) use (&$rendered): string {
+            $rendered[$template] = $params;
+
+            return '<div></div>';
+        });
+
+        try {
+            $controller = $this->createController(['animedb-shikimori' => $filler], $twig, null, null, $planner);
+            $request = Request::create('/anime/1/fill/alternativeNames', 'POST', ['plugin_id' => 'animedb-shikimori', '_token' => 'token']);
+            $controller->fill($anime, 'alternativeNames', $request);
+        } finally {
+            @unlink($path);
+        }
+
+        $this->assertSame(['acme-list' => '42'], $rendered['anime/_header.html.twig']['delete_source_removal']->targets);
     }
 
     public function testFillingCoverSuccessfullyRendersOnlyTheMediaPartial(): void

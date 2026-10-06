@@ -144,6 +144,37 @@ final class SyncPullMessageHandlerTest extends TestCase
         $this->assertFalse($tombstones->exists(self::ID, '99'));
     }
 
+    /** Issue #918: the pending removals go first, or the backfill could link an id to another entry whose list item they would then delete. */
+    public function testPendingRemovalsRunBeforeTheBackfillAndThePull(): void
+    {
+        $anime = new MovieAnime();
+        $anime->setTitle('Cowboy Bebop')->setWatchStatus(WatchStatus::Plan)->addSource('https://shikimori.one/animes/1');
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+        (new SyncTombstoneRepository($this->entityManager))->record(self::ID, '99', new \DateTimeImmutable(), true);
+
+        $events = [];
+        $sync = $this->createMock(SyncRemovalInterface::class);
+        $sync->method('remove')->willReturnCallback(static function (string $externalId) use (&$events): void {
+            $events[] = 'remove:'.$externalId;
+        });
+        $sync->method('resolveExternalId')->willReturnCallback(static function () use (&$events): string {
+            $events[] = 'resolve';
+
+            return '1';
+        });
+        $sync->method('pull')->willReturnCallback(static function () use (&$events): array {
+            $events[] = 'pull';
+
+            return [];
+        });
+
+        $store = $this->store(['features' => ['sync' => true], 'syncSeeded' => true]);
+        $this->handler($sync, $store)(new SyncPullMessage(self::ID));
+
+        $this->assertSame(['remove:99', 'resolve', 'pull'], $events);
+    }
+
     public function testReauthDuringTheCatchUpStopsItButThePullStillReportsItself(): void
     {
         $tombstones = new SyncTombstoneRepository($this->entityManager);

@@ -209,4 +209,37 @@ final class RemoveFromSourceMessageHandlerTest extends TestCase
 
         $this->assertTrue($this->tombstones->isRemovalPending(self::PLUGIN, '42'));
     }
+
+    /** Issue #918: a seed/pull must not start between the check and the call, so the handler holds the lock itself. */
+    public function testHoldsTheSeedLockDuringTheRemovalAndReleasesItAfterwards(): void
+    {
+        $this->pendingTombstone();
+        $locks = $this->newJobLockService();
+        $held = null;
+        $sync = $this->createMock(SyncRemovalInterface::class);
+        $sync->method('remove')->willReturnCallback(static function () use ($locks, &$held): void {
+            $held = $locks->isLocked(SyncSeedMessage::jobKey(self::PLUGIN));
+        });
+
+        $this->handler($sync, $locks)(new RemoveFromSourceMessage(self::PLUGIN, '42'));
+
+        $this->assertTrue($held);
+        $this->assertFalse($locks->isLocked(SyncSeedMessage::jobKey(self::PLUGIN)));
+    }
+
+    public function testReleasesTheSeedLockWhenTheRemovalFails(): void
+    {
+        $this->pendingTombstone();
+        $locks = $this->newJobLockService();
+        $sync = $this->createMock(SyncRemovalInterface::class);
+        $sync->method('remove')->willThrowException(new \RuntimeException('offline'));
+
+        try {
+            $this->handler($sync, $locks)(new RemoveFromSourceMessage(self::PLUGIN, '42'));
+            $this->fail('The exception must propagate.');
+        } catch (\RuntimeException) {
+        }
+
+        $this->assertFalse($locks->isLocked(SyncSeedMessage::jobKey(self::PLUGIN)));
+    }
 }

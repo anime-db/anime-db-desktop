@@ -27,6 +27,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Twig;
 
+use App\Service\Sync\SourceRemovalPlan;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\HttpFoundation\Request;
@@ -634,6 +635,43 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
         $this->assertStringContainsString($this->minimalAnime()['title'], $message);
         $this->assertStringNotContainsString('video files', $message);
         $this->assertStringNotContainsString('torrents', $message);
+    }
+
+    /** Issue #918: with sources whose list entry can be deleted, the menu opens the modal instead of the data-confirm form. */
+    public function testHeaderMenuOpensTheDeleteModalWithTheSourcesCheckboxWhenThereAreTargets(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession('/anime/2');
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('anime/_header.html.twig', [
+            'anime' => $this->minimalAnime(),
+            'delete_source_removal' => new SourceRemovalPlan(['acme-list' => '1'], ['Acme List'], []),
+        ]);
+
+        $this->assertStringContainsString('data-bs-target="#anime-delete-modal-2"', $html);
+        $this->assertStringContainsString('id="anime-delete-modal-2"', $html);
+        $this->assertMatchesRegularExpression('#<form[^>]*action="/anime/2/delete"#', $html);
+        $this->assertMatchesRegularExpression('#<input[^>]*type="checkbox"[^>]*name="remove_from_sources"[^>]*checked#', $html);
+        $this->assertStringNotContainsString('data-confirm', $html);
+    }
+
+    public function testHeaderMenuKeepsTheConfirmFormWhenThePlanHasNoTargets(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession('/anime/2');
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('anime/_header.html.twig', [
+            'anime' => $this->minimalAnime(),
+            'delete_source_removal' => new SourceRemovalPlan(),
+        ]);
+
+        $this->assertStringContainsString('data-confirm=', $html);
+        $this->assertStringNotContainsString('anime-delete-modal-2', $html);
+        $this->assertStringNotContainsString('remove_from_sources', $html);
     }
 
     public function testDeleteConfirmationMentionsStorageFilesAndTorrentsWhenTheyApply(): void

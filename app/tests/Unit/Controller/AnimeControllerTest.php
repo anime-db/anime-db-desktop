@@ -27,6 +27,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Controller;
 
+use AnimeDb\PluginContracts\Sync\SyncRemovalInterface;
 use App\Controller\AnimeController;
 use App\Entity\Anime;
 use App\Entity\Download;
@@ -41,6 +42,7 @@ use App\Entity\MovieAnime;
 use App\Entity\Storage;
 use App\Entity\Studio;
 use App\Entity\TvAnime;
+use App\Entity\ValueObject\PluginId;
 use App\Repository\DownloadRepository;
 use App\Service\AnimeViewFactory;
 use App\Service\Download\DownloadViewFactory;
@@ -85,7 +87,7 @@ final class AnimeControllerTest extends TestCase
         );
     }
 
-    private function createController(Environment $twig, ?DownloadRepository $downloads = null): AnimeController
+    private function createController(Environment $twig, ?DownloadRepository $downloads = null, ?SourceRemovalPlanner $planner = null): AnimeController
     {
         return new AnimeController(
             $twig,
@@ -97,7 +99,7 @@ final class AnimeControllerTest extends TestCase
             ),
             $downloads ?? $this->createStub(DownloadRepository::class),
             new DownloadViewFactory(),
-            new SourceRemovalPlanner(new SyncRegistry([], new PluginsConfigStore(''))),
+            $planner ?? new SourceRemovalPlanner(new SyncRegistry([], new PluginsConfigStore(''))),
         );
     }
 
@@ -249,6 +251,31 @@ final class AnimeControllerTest extends TestCase
 
         $controller = $this->createController($twig);
         $controller->show($anime);
+    }
+
+    /** Issue #918: the card hands the template the plan of the sources the delete can also reach. */
+    public function testShowPassesTheSourceRemovalPlanOfTheAnimeToTheTemplate(): void
+    {
+        $path = sys_get_temp_dir().'/anime-controller-removal-'.uniqid().'.json';
+        file_put_contents($path, (string) json_encode(['acme-list' => ['features' => ['sync' => true]]]));
+        $planner = new SourceRemovalPlanner(new SyncRegistry(['acme-list' => $this->createStub(SyncRemovalInterface::class)], new PluginsConfigStore($path)));
+
+        $anime = new MovieAnime();
+        $anime->setTitle('A Silent Voice')->setWatchStatus(WatchStatus::Plan);
+        $anime->rememberExternalId(new PluginId('acme-list'), '42');
+        $this->setAnimeId($anime, 1);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('anime/show.html.twig', $this->callback(static fn (array $params): bool => $params['delete_source_removal']->targets === ['acme-list' => '42']))
+            ->willReturn('<html></html>');
+
+        try {
+            $this->createController($twig, null, $planner)->show($anime);
+        } finally {
+            @unlink($path);
+        }
     }
 
     public function testShowPassesTheAnimesDownloadsSerializedToTheTemplate(): void

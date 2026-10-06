@@ -43,8 +43,9 @@ use Symfony\Component\Messenger\Exception\UnrecoverableMessageHandlingException;
  * is decided by {@see SourceRemovalService}, the message only wakes this up.
  *
  * The plugin is re-resolved through {@see SyncRegistry::findByPluginId()}: one switched off since is
- * skipped and the pending flag stays for the catch-up before its next pull. While the plugin's seed
- * lock ({@see SyncSeedMessage::jobKey()}) is held the removal is skipped too, like in
+ * skipped and the pending flag stays for the catch-up before its next pull. The plugin's seed
+ * lock ({@see SyncSeedMessage::jobKey()}) is taken for the call, so no seed/pull backfill runs in
+ * parallel; if it is already held the removal is skipped too, like in
  * {@see PushSyncMessageHandler}: the catch-up of that very seed or pull handles it.
  *
  * A transient failure is left to propagate to the `async` transport's retry strategy. A dead
@@ -74,7 +75,8 @@ final class RemoveFromSourceMessageHandler
             return;
         }
 
-        if ($this->jobLockService->isLocked(SyncSeedMessage::jobKey($message->pluginId))) {
+        $jobKey = SyncSeedMessage::jobKey($message->pluginId);
+        if (!$this->jobLockService->acquire($jobKey)) {
             $this->logger->info('A sync of "{plugin}" is running; its pending removal of "{externalId}" is left to that run.', [
                 'plugin' => $message->pluginId,
                 'externalId' => $message->externalId,
@@ -93,6 +95,8 @@ final class RemoveFromSourceMessageHandler
             ]);
 
             throw new UnrecoverableMessageHandlingException(\sprintf('Sync plugin "%s" needs reauthorization, not retrying this message.', $message->pluginId));
+        } finally {
+            $this->jobLockService->release($jobKey);
         }
     }
 }

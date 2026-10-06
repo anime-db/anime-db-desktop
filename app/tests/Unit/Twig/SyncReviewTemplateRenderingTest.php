@@ -95,6 +95,9 @@ final class SyncReviewTemplateRenderingTest extends KernelTestCase
         $this->assertStringContainsString('It stays on: ', $html);
         $this->assertStringContainsString('Other List', $html);
         $this->assertStringContainsString('Off List', $html);
+        $this->assertStringContainsString('the plugin cannot delete list entries', $html);
+        $this->assertStringContainsString('sync is off for it', $html);
+        $this->assertStringNotContainsString('anime_delete.kept_', $html);
         $this->assertStringNotContainsString('data-confirm', $html);
     }
 
