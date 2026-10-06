@@ -118,11 +118,13 @@ final class DownloadIncomingRelocator
         $folderName = $isSingleFile ? self::withoutExtension($targetName) : $targetName;
         $targetPath = $storageRoot.'\\'.$folderName;
 
-        // A catalog entry already pointing at $folderName is always a genuine conflict: only this
-        // row's own completion (not yet reached, since content_path still reports it under
-        // incoming) ever makes THIS row claim that path, so another anime holding it cannot be a
-        // side effect of our own in-flight move.
-        if ($this->animes->findByStorageAndPath($storage, $folderName) !== null) {
+        // A catalog entry other than this download's own already pointing at $folderName is always
+        // a genuine conflict: only this row's own completion (not yet reached, since content_path
+        // still reports it under incoming) ever makes THIS row claim that path, so another anime
+        // holding it cannot be a side effect of our own in-flight move. The download's own anime
+        // pointing there is not one — AnimeDownloadLinker::link() compares the same way.
+        $occupant = $this->animes->findByStorageAndPath($storage, $folderName);
+        if ($occupant !== null && $occupant->id !== $download->getAnime()->id) {
             $download->markFailed('name_conflict');
             $this->entityManager->flush();
             $this->logger->warning('Failing download completion: the move target is already linked to another catalog entry.', [

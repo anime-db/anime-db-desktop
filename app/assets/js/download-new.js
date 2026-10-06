@@ -110,6 +110,11 @@
         const dropZone = root.querySelector('#download-new-drop-zone');
         const fileInput = root.querySelector('#download-new-file');
 
+        // The "link to entry" page reuses this control for the catalog search only.
+        if (dropZone === null || fileInput === null) {
+            return;
+        }
+
         ['dragenter', 'dragover'].forEach((eventName) => {
             dropZone.addEventListener(eventName, (event) => {
                 event.preventDefault();

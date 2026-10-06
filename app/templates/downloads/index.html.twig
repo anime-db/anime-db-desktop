@@ -121,6 +121,7 @@
                                         </form>
                                     {% endif %}
                                 {% else %}
+                                    <a href="{{ path('download_adopt_orphan', {infoHash: row.infoHash}) }}" class="btn btn-sm btn-outline-primary">{{ 'downloads.action_adopt'|trans }}</a>
                                     <form method="post" action="{{ path('download_delete_orphan', {infoHash: row.infoHash}) }}" class="d-inline">
                                         <input type="hidden" name="_token" value="{{ csrf_token('download_delete_orphan_' ~ row.infoHash) }}">
                                         {% if row.canDeleteFiles %}

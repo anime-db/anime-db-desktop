@@ -669,6 +669,7 @@ final class DownloadNewControllerTest extends TestCase
             ->with('downloads/new.html.twig', $this->callback(
                 static fn (array $params): bool => $params['error'] === 'download_new.error_already_in_client'
                     && $params['downloadsLink'] === true
+                    && $params['adoptInfoHash'] === self::SOME_HASH
                     && $params['selectedAnime'] === $anime
                     && $params['selectedStorageId'] === 1
                     && $params['magnet'] !== '',

@@ -1561,6 +1561,58 @@ final class DownloadCompletionPollerTest extends TestCase
     }
 
     /**
+     * The anime pointing at the future folder is this download's own (e.g. linked by hand to
+     * "Link to entry"): not a conflict, so the move goes ahead.
+     */
+    public function testPollMovesWhenTheTargetIsPointedAtByTheDownloadsOwnAnime(): void
+    {
+        $anime = $this->persistAnime();
+        $anime->setStorage($this->storage)->setStoragePath('Release.Name');
+        $this->entityManager->flush();
+        $this->saveDownload(self::HASH, $anime);
+        $contentPath = $this->incomingContentPath(self::HASH, 'Release.Name');
+
+        $setLocationCalls = [];
+        $httpClient = new MockHttpClient(function (string $method, string $url, array $options) use (&$setLocationCalls, $contentPath): MockResponse {
+            if ($method === 'POST' && str_contains($url, '/api/v2/torrents/setLocation')) {
+                $setLocationCalls[] = $options['body'];
+            }
+
+            return new MockResponse(json_encode([[
+                'hash' => self::HASH,
+                'infohash_v1' => self::HASH,
+                'progress' => 1,
+                'state' => 'uploading',
+                'content_path' => $contentPath,
+            ]], \JSON_THROW_ON_ERROR), ['response_headers' => ['content-type' => 'application/json']]);
+        });
+
+        $jail = new DownloadFolderJail();
+        $linker = new AnimeDownloadLinker(new AnimeRepository($this->entityManager), $this->entityManager, $jail);
+        $client = new QbittorrentClient($httpClient, self::BASE_URL);
+        $poller = new DownloadCompletionPoller(
+            $client,
+            $this->downloads,
+            $linker,
+            $jail,
+            $this->makeRelocator($client),
+            $this->createMock(EventDispatcherInterface::class),
+            $this->entityManager,
+            new FreeSpaceChecker(new NativeFreeSpaceProvider()),
+            new NullLogger(),
+        );
+
+        $poller->poll();
+
+        $this->assertCount(1, $setLocationCalls);
+        $stored = $this->downloads->findByInfoHashAndAnime(self::HASH, (int) $anime->id);
+        $this->assertNotNull($stored);
+        $this->assertSame(DownloadStatus::Pending, $stored->getStatus());
+        $this->assertNull($stored->getFailureReason());
+        $this->assertSame(1, $stored->getMoveAttempts());
+    }
+
+    /**
      * "Повторить" after move_failed leaves our own half-moved folder on disk: with move_attempts
      * reset to 1 the relocator must skip the disk check and send setLocation again.
      */

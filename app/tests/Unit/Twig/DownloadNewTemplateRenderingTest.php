@@ -37,6 +37,7 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\HttpFoundation\Session\Session;
 use Symfony\Component\HttpFoundation\Session\Storage\MockArraySessionStorage;
+use Symfony\Component\Translation\LocaleSwitcher;
 use Twig\Environment;
 
 /**
@@ -119,6 +120,42 @@ final class DownloadNewTemplateRenderingTest extends KernelTestCase
 
         $this->assertStringContainsString('Shingeki no Kyojin', $html);
         $this->assertStringContainsString('/anime/42', $html);
+    }
+
+    public function testAlreadyInClientErrorOffersTheAdoptFormWithTheSelectedAnime(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession();
+
+        $hash = str_repeat('c', 40);
+        /** @var LocaleSwitcher $localeSwitcher */
+        $localeSwitcher = self::getContainer()->get(LocaleSwitcher::class);
+        $localeSwitcher->setLocale('ru');
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $params = [
+            'selectedAnime' => $this->makeAnime(5),
+            'magnet' => '',
+            'storages' => [$this->makeStorage(1)],
+            'presetFailed' => false,
+            'selectedStorageId' => 1,
+            'error' => 'download_new.error_already_in_client',
+            'errorParams' => [],
+            'info' => null,
+            'occupyingAnimeId' => null,
+            'downloadsLink' => true,
+            'adoptInfoHash' => $hash,
+        ];
+        $html = $twig->render('downloads/new.html.twig', $params);
+
+        $this->assertStringContainsString('action="/downloads/orphan/'.$hash.'/adopt"', $html);
+        $this->assertStringContainsString('<input type="hidden" name="anime" value="5">', $html);
+        $this->assertStringContainsString('name="_token"', $html);
+        $this->assertStringContainsString('Привязать к выбранной записи', $html);
+        $this->assertStringContainsString('href="/downloads"', $html);
+
+        $params['adoptInfoHash'] = null;
+        $this->assertStringNotContainsString('/adopt', $twig->render('downloads/new.html.twig', $params));
     }
 
     public function testRendersWarningOnlyWhenPresetFailed(): void

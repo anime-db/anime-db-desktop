@@ -36,6 +36,13 @@
                     <a href="{{ path('downloads_index') }}">{{ 'download_new.error_already_in_client_link'|trans }}</a>
                 {% endif %}
             </p>
+            {% if adoptInfoHash|default(null) and selectedAnime %}
+                <form method="post" action="{{ path('download_adopt_orphan', {infoHash: adoptInfoHash}) }}" class="mb-3">
+                    <input type="hidden" name="_token" value="{{ csrf_token('download_adopt_orphan_' ~ adoptInfoHash) }}">
+                    <input type="hidden" name="anime" value="{{ selectedAnime.id }}">
+                    <button type="submit" class="btn btn-outline-primary">{{ 'download_new.action_adopt_selected'|trans }}</button>
+                </form>
+            {% endif %}
         {% endif %}
 
         {% set noStorages = presetFailed and storages is empty %}

@@ -95,6 +95,21 @@ final class QbittorrentClient
         return $this->requestJsonList('GET', '/api/v2/torrents/info', ['query' => $query]);
     }
 
+    /**
+     * @return list<string> file names relative to the save path, as the client reports them
+     */
+    public function getTorrentFileNames(string $hash): array
+    {
+        $names = [];
+        foreach ($this->requestJsonList('GET', '/api/v2/torrents/files', ['query' => ['hash' => $hash]]) as $file) {
+            if (\is_string($file['name'] ?? null)) {
+                $names[] = $file['name'];
+            }
+        }
+
+        return $names;
+    }
+
     public function stop(string $hash): void
     {
         $this->request('POST', '/api/v2/torrents/stop', ['body' => ['hashes' => $hash]]);
