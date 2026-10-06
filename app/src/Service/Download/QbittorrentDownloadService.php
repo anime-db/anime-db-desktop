@@ -134,8 +134,6 @@ class QbittorrentDownloadService implements DownloadServiceInterface
             throw new DownloadAlreadyLinkedToAnotherAnimeException($infoHash, new AnimeId((int) $occupying->getAnime()->id));
         }
 
-        $this->assertStorageAvailable($storage);
-
         // No row exists for this hash, so a torrent found in the client (any tag) is one without a
         // card: qBittorrent would answer torrents/add for it with a 409. Matched on infohash_v1 for
         // the same hybrid-torrent reason as in confirmSubmitted().
@@ -144,6 +142,9 @@ class QbittorrentDownloadService implements DownloadServiceInterface
                 throw new DownloadAlreadyInClientException($infoHash);
             }
         }
+
+        // After the in-client check: linking an existing torrent does not use the chosen storage.
+        $this->assertStorageAvailable($storage);
 
         $this->submitToQbittorrent($source, $storage, $infoHash, $torrentFileContent);
         $this->confirmSubmitted($infoHash);

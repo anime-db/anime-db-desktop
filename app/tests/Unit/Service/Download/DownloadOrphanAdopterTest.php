@@ -277,6 +277,28 @@ final class DownloadOrphanAdopterTest extends TestCase
         $this->assertCount(1, $this->downloads->findByInfoHash(self::HASH));
     }
 
+    public function testRepeatedAdoptOfTheSameEntryIsANoOp(): void
+    {
+        $anime = $this->persistAnime();
+        $adopter = $this->adopter($this->client($this->root.'\\Release'));
+
+        $adopter->adopt(self::HASH, (int) $anime->id);
+        $adopter->adopt(self::HASH, (int) $anime->id);
+
+        $this->assertCount(1, $this->downloads->findByInfoHash(self::HASH));
+    }
+
+    public function testSingleFileInASharedFolderIsRefused(): void
+    {
+        $anime = $this->persistAnime();
+
+        $this->assertRefused(
+            'download_adopt.error_shared_folder',
+            fn () => $this->adopter($this->client($this->root.'\\Movies\\film.mkv', files: ['film.mkv']))->adopt(self::HASH, (int) $anime->id),
+            ['%path%' => 'Movies'],
+        );
+    }
+
     public function testFolderOccupiedByAnotherCardIsRefusedWithItsNumber(): void
     {
         $occupant = $this->persistAnime();
@@ -366,7 +388,7 @@ final class DownloadOrphanAdopterTest extends TestCase
     {
         $anime = $this->persistAnime();
 
-        $this->adopter($this->client($this->root.'\\Release\\Movie.mkv', progress: 0.3, files: ['Movie.mkv']))->adopt(self::HASH, (int) $anime->id);
+        $this->adopter($this->client($this->root.'\\Movie\\Movie.mkv', progress: 0.3, files: ['Movie.mkv']))->adopt(self::HASH, (int) $anime->id);
 
         $this->assertCount(1, $this->downloads->findByInfoHash(self::HASH));
     }

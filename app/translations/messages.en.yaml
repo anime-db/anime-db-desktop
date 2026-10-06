@@ -822,6 +822,7 @@ download_adopt:
     error_hidden_segment: 'The torrent''s files are in a hidden folder — they cannot be linked.'
     error_hash_folder: 'The torrent''s files are in an old-layout folder named after the torrent hash — they cannot be linked.'
     error_unexpected_depth: 'The torrent''s files are not at the top level of the storage — they cannot be linked.'
+    error_shared_folder: 'The file sits in the shared folder "%path%". Only a folder created for this torrent can be linked.'
     error_no_storage: 'The torrent''s files are outside every storage. Moving between drives is not supported.'
     error_anime_not_found: 'Catalog entry not found.'
     error_already_linked: 'This torrent is already linked to entry #%id%.'

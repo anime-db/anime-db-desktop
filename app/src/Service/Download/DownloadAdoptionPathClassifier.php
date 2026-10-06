@@ -126,6 +126,12 @@ final class DownloadAdoptionPathClassifier
             throw new DownloadAdoptionRefusedException('download_adopt.error_unexpected_depth');
         }
 
+        // `<name>\<file>` is the shape DownloadIncomingRelocator::tryMove() produces, so <name> is the file's
+        // name without extension; any other folder is shared with files that are not this torrent's.
+        if ($isSingleFile && mb_strtolower($segments[0]) !== mb_strtolower(self::withoutExtension($segments[1]))) {
+            throw new DownloadAdoptionRefusedException('download_adopt.error_shared_folder', ['%path%' => $segments[0]]);
+        }
+
         return new DownloadAdoptionPlan($storage['id'], DownloadAdoptionBranch::Root, $segments[0]);
     }
 

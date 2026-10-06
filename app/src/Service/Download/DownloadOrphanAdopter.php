@@ -29,6 +29,7 @@ namespace App\Service\Download;
 
 use App\Entity\Anime;
 use App\Entity\Download;
+use App\Entity\Enum\DownloadStatus;
 use App\Entity\Storage;
 use App\Repository\AnimeRepository;
 use App\Repository\DownloadRepository;
@@ -86,6 +87,10 @@ class DownloadOrphanAdopter
         $anime = $this->animes->findByIds([$animeId])[$animeId] ?? null;
         if ($anime === null) {
             throw new DownloadAdoptionRefusedException('download_adopt.error_anime_not_found');
+        }
+
+        if ($this->isAlreadyLinkedTo($infoHash, $anime)) {
+            return;
         }
 
         $this->assertNotLinked($infoHash);
@@ -167,6 +172,18 @@ class DownloadOrphanAdopter
         if ($plan->branch === DownloadAdoptionBranch::Incoming && $this->storageFilesystem->pathExists($folderPath)) {
             throw new DownloadAdoptionRefusedException('download_adopt.error_incoming_target_exists', ['%path%' => $folderPath]);
         }
+    }
+
+    /**
+     * A repeated submit (double click): the first one already linked this torrent to this very entry.
+     */
+    private function isAlreadyLinkedTo(string $infoHash, Anime $anime): bool
+    {
+        $occupying = $this->downloads->findByInfoHash($infoHash)[0] ?? null;
+
+        return $occupying !== null
+            && $occupying->getStatus() === DownloadStatus::Pending
+            && $occupying->getAnime()->id === $anime->id;
     }
 
     private function assertNotLinked(string $infoHash): void
