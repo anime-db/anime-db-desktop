@@ -100,6 +100,9 @@
                                             <button type="submit" class="btn btn-sm btn-outline-secondary">{{ 'downloads.action_retry'|trans }}</button>
                                         </form>
                                     {% endif %}
+                                    {% if row.canAdopt %}
+                                        <a href="{{ path('download_adopt', {id: row.id, version: row.version, status: row.coreStatus}) }}" class="btn btn-sm btn-outline-primary">{{ 'downloads.action_adopt'|trans }}</a>
+                                    {% endif %}
                                     {% if row.canStopSeeding %}
                                         <form method="post" action="{{ path('download_stop_seeding', {id: row.id}) }}" class="d-inline">
                                             <input type="hidden" name="_token" value="{{ csrf_token('download_stop_seeding_' ~ row.id) }}">

@@ -266,4 +266,58 @@ final class DownloadActionServiceTest extends TestCase
         $reloaded = $this->repository->findByInfoHashAndAnime(self::HASH, (int) $anime->id);
         $this->assertSame(DownloadStatus::Failed, $reloaded?->getStatus());
     }
+
+    public function testRelinkMovesTheRowToTheNewAnimeAndLeavesTheRestAlone(): void
+    {
+        $anime = $this->persistAnime();
+        $target = $this->persistAnime();
+        $download = new Download(self::HASH, $anime);
+        $download->markFailed('storage_conflict');
+        $download->incrementMoveAttempts();
+        $this->repository->save($download);
+        $version = $download->getVersion();
+
+        $outcome = $this->service->relink($download, $target, $version, DownloadStatus::Failed);
+
+        $this->assertSame(DownloadActionOutcome::Success, $outcome);
+        $row = $this->entityManager->getConnection()->fetchAssociative('SELECT anime_id, status, failure_reason, move_attempts, version FROM downloads WHERE id = ?', [$download->id]);
+        $this->assertIsArray($row);
+        $this->assertSame($target->id, (int) $row['anime_id']);
+        $this->assertSame('pending', $row['status']);
+        $this->assertNull($row['failure_reason']);
+        $this->assertSame(1, (int) $row['move_attempts']);
+        $this->assertSame($version + 1, (int) $row['version']);
+    }
+
+    public function testRelinkWithAStaleVersionIsAConflictAndLeavesTheRowUnchanged(): void
+    {
+        $anime = $this->persistAnime();
+        $target = $this->persistAnime();
+        $download = new Download(self::HASH, $anime);
+        $download->markFailed('storage_conflict');
+        $this->repository->save($download);
+
+        $outcome = $this->service->relink($download, $target, $download->getVersion() - 1, DownloadStatus::Failed);
+
+        $this->assertSame(DownloadActionOutcome::Conflict, $outcome);
+        $this->entityManager->clear();
+        $reloaded = $this->repository->findByInfoHashAndAnime(self::HASH, (int) $anime->id);
+        $this->assertSame(DownloadStatus::Failed, $reloaded?->getStatus());
+        $this->assertSame('storage_conflict', $reloaded->getFailureReason());
+    }
+
+    public function testRelinkIsRefusedForAnotherFailureReasonWithoutTouchingTheDatabase(): void
+    {
+        $anime = $this->persistAnime();
+        $target = $this->persistAnime();
+        $download = new Download(self::HASH, $anime);
+        $download->markFailed('disk_space');
+        $this->repository->save($download);
+
+        $this->assertSame(DownloadActionOutcome::Refused, $this->service->relink($download, $target, $download->getVersion(), DownloadStatus::Failed));
+
+        $this->entityManager->clear();
+        $reloaded = $this->repository->findByInfoHashAndAnime(self::HASH, (int) $anime->id);
+        $this->assertSame('disk_space', $reloaded?->getFailureReason());
+    }
 }

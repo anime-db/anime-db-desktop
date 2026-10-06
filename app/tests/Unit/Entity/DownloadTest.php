@@ -194,4 +194,59 @@ final class DownloadTest extends TestCase
         $this->assertFalse(Download::isRetryableFailureReason('storage_conflict'));
         $this->assertFalse(Download::isRetryableFailureReason('legacy_layout'));
     }
+
+    public function testRelinkAfterStorageConflictMovesTheRowToTheNewAnimeAndBackToPending(): void
+    {
+        $download = new Download(self::INFO_HASH, $this->makeAnime());
+        $download->markFailed('storage_conflict');
+        $other = $this->makeAnime();
+
+        $this->assertTrue($download->hasStorageConflict());
+        $this->assertTrue($download->relinkAfterStorageConflict($other));
+
+        $this->assertSame($other, $download->getAnime());
+        $this->assertSame(DownloadStatus::Pending, $download->getStatus());
+        $this->assertNull($download->getFailureReason());
+        $this->assertFalse($download->hasStorageConflict());
+    }
+
+    /**
+     * @return iterable<string, array{0: ?string}>
+     */
+    public static function otherFailureReasonProvider(): iterable
+    {
+        foreach (['disk_space', 'name_conflict', 'move_failed', 'legacy_layout', 'unexpected_layout', null] as $reason) {
+            yield (string) ($reason ?? 'null') => [$reason];
+        }
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('otherFailureReasonProvider')]
+    public function testRelinkAfterStorageConflictRefusesOtherFailureReasonsAndChangesNothing(?string $reason): void
+    {
+        $anime = $this->makeAnime();
+        $download = new Download(self::INFO_HASH, $anime);
+        $download->markFailed($reason);
+
+        $this->assertFalse($download->relinkAfterStorageConflict($this->makeAnime()));
+
+        $this->assertSame($anime, $download->getAnime());
+        $this->assertSame(DownloadStatus::Failed, $download->getStatus());
+        $this->assertSame($reason, $download->getFailureReason());
+    }
+
+    public function testRelinkAfterStorageConflictRefusesNonFailedStatuses(): void
+    {
+        $anime = $this->makeAnime();
+        $pending = new Download(self::INFO_HASH, $anime);
+        $completed = new Download(self::INFO_HASH, $anime);
+        $completed->markCompleted();
+
+        $this->assertFalse($pending->relinkAfterStorageConflict($this->makeAnime()));
+        $this->assertFalse($completed->relinkAfterStorageConflict($this->makeAnime()));
+
+        $this->assertSame(DownloadStatus::Pending, $pending->getStatus());
+        $this->assertSame($anime, $pending->getAnime());
+        $this->assertTrue($completed->isCompleted());
+        $this->assertSame($anime, $completed->getAnime());
+    }
 }

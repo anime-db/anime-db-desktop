@@ -29,10 +29,14 @@ namespace App\Tests\Unit\Controller;
 
 use App\Controller\DownloadAdoptController;
 use App\Entity\Anime;
+use App\Entity\Download;
+use App\Entity\Enum\DownloadStatus;
 use App\Entity\TvAnime;
 use App\Repository\AnimeRepository;
+use App\Service\Download\DownloadActionOutcome;
 use App\Service\Download\DownloadAdoptionRefusedException;
 use App\Service\Download\DownloadOrphanAdopter;
+use App\Service\Download\DownloadStorageConflictAdopter;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -53,16 +57,16 @@ final class DownloadAdoptControllerTest extends TestCase
         return $anime;
     }
 
-    private function controller(DownloadOrphanAdopter $adopter, bool $csrfValid, Environment $twig): DownloadAdoptController
+    private function controller(DownloadOrphanAdopter $adopter, bool $csrfValid, Environment $twig, ?DownloadStorageConflictAdopter $conflictAdopter = null): DownloadAdoptController
     {
         $animeRepository = $this->createStub(AnimeRepository::class);
         $animeRepository->method('findByIds')->willReturn([5 => $this->makeAnime(5)]);
         $csrf = $this->createStub(CsrfTokenManagerInterface::class);
         $csrf->method('isTokenValid')->willReturn($csrfValid);
         $urlGenerator = $this->createStub(UrlGeneratorInterface::class);
-        $urlGenerator->method('generate')->willReturnCallback(static fn (string $name): string => '/'.$name);
+        $urlGenerator->method('generate')->willReturnCallback(static fn (string $name, array $params = []): string => '/'.$name.($params === [] ? '' : '?'.http_build_query($params)));
 
-        return new DownloadAdoptController($adopter, $animeRepository, $csrf, $urlGenerator, $twig);
+        return new DownloadAdoptController($adopter, $animeRepository, $csrf, $urlGenerator, $twig, $conflictAdopter ?? $this->createStub(DownloadStorageConflictAdopter::class));
     }
 
     /**
@@ -141,5 +145,144 @@ final class DownloadAdoptControllerTest extends TestCase
         ))->willReturn('<html></html>');
 
         $this->controller($adopter, true, $twig)->adopt(self::HASH, $this->post(['_token' => 'x']));
+    }
+
+    private function conflictRow(string $reason = 'storage_conflict'): Download
+    {
+        $download = new Download(self::HASH, $this->makeAnime(1));
+        $download->markFailed($reason);
+        (new \ReflectionProperty(Download::class, 'id'))->setValue($download, 9);
+
+        return $download;
+    }
+
+    public function testRowPickerPrefillsTheFolderOwnerAndCarriesVersionAndStatus(): void
+    {
+        $owner = $this->makeAnime(5);
+        $conflictAdopter = $this->createStub(DownloadStorageConflictAdopter::class);
+        $conflictAdopter->method('findFolderOwner')->willReturn($owner);
+        $adopter = $this->createStub(DownloadOrphanAdopter::class);
+        $adopter->method('findTorrent')->willReturn(['name' => 'Some torrent']);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())->method('render')->with('downloads/adopt.html.twig', $this->callback(
+            static fn (array $params): bool => $params['selectedAnime'] === $owner
+                && $params['error'] === null
+                && $params['form']['action'] === '/download_adopt?id=9'
+                && $params['form']['tokenId'] === 'download_adopt_9'
+                && $params['form']['hidden'] === ['version' => '3', 'status' => 'failed'],
+        ))->willReturn('<html></html>');
+
+        $this->controller($adopter, true, $twig, $conflictAdopter)->adoptRow($this->conflictRow(), Request::create('/downloads/9/adopt', 'GET', ['version' => '3', 'status' => 'failed']));
+    }
+
+    public function testRowPickerHasAnEmptyFieldWhenThereIsNoOwner(): void
+    {
+        $conflictAdopter = $this->createStub(DownloadStorageConflictAdopter::class);
+        $conflictAdopter->method('findFolderOwner')->willReturn(null);
+        $adopter = $this->createStub(DownloadOrphanAdopter::class);
+        $adopter->method('findTorrent')->willReturn(['name' => 'Some torrent']);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())->method('render')->with('downloads/adopt.html.twig', $this->callback(
+            static fn (array $params): bool => $params['selectedAnime'] === null,
+        ))->willReturn('<html></html>');
+
+        $this->controller($adopter, true, $twig, $conflictAdopter)->adoptRow($this->conflictRow(), Request::create('/downloads/9/adopt'));
+    }
+
+    public function testRowPickerIsRefusedForARowThatIsNotAStorageConflict(): void
+    {
+        $conflictAdopter = $this->createMock(DownloadStorageConflictAdopter::class);
+        $conflictAdopter->expects($this->never())->method('findFolderOwner');
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())->method('render')->with('downloads/adopt.html.twig', $this->callback(
+            static fn (array $params): bool => $params['error'] === 'downloads.action_error_refused',
+        ))->willReturn('<html></html>');
+
+        $this->controller($this->createStub(DownloadOrphanAdopter::class), true, $twig, $conflictAdopter)->adoptRow($this->conflictRow('disk_space'), Request::create('/downloads/9/adopt'));
+    }
+
+    public function testRowPostWithAnInvalidCsrfTokenIsABadRequest(): void
+    {
+        $conflictAdopter = $this->createMock(DownloadStorageConflictAdopter::class);
+        $conflictAdopter->expects($this->never())->method('adopt');
+
+        $this->expectException(BadRequestHttpException::class);
+
+        $this->controller($this->createStub(DownloadOrphanAdopter::class), false, $this->createStub(Environment::class), $conflictAdopter)
+            ->adoptRow($this->conflictRow(), Request::create('/downloads/9/adopt', 'POST', ['_token' => 'x', 'anime' => '5', 'version' => '3', 'status' => 'failed']));
+    }
+
+    public function testRowPostWithoutVersionAndStatusReportsAConflictAndChangesNothing(): void
+    {
+        $conflictAdopter = $this->createMock(DownloadStorageConflictAdopter::class);
+        $conflictAdopter->expects($this->never())->method('adopt');
+        $adopter = $this->createStub(DownloadOrphanAdopter::class);
+        $adopter->method('findTorrent')->willReturn(['name' => 'Some torrent']);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())->method('render')->with('downloads/adopt.html.twig', $this->callback(
+            static fn (array $params): bool => $params['error'] === 'downloads.action_error_conflict' && $params['blocked'] === true,
+        ))->willReturn('<html></html>');
+
+        $this->controller($adopter, true, $twig, $conflictAdopter)->adoptRow($this->conflictRow(), Request::create('/downloads/9/adopt', 'POST', ['_token' => 'x', 'anime' => '5']));
+    }
+
+    public function testRowPickerWithoutVersionAndStatusIsBlockedInsteadOfShowingADoomedForm(): void
+    {
+        $conflictAdopter = $this->createMock(DownloadStorageConflictAdopter::class);
+        $conflictAdopter->expects($this->never())->method('findFolderOwner');
+        $adopter = $this->createStub(DownloadOrphanAdopter::class);
+        $adopter->method('findTorrent')->willReturn(['name' => 'Some torrent']);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())->method('render')->with('downloads/adopt.html.twig', $this->callback(
+            static fn (array $params): bool => $params['error'] === 'downloads.action_error_conflict' && $params['blocked'] === true,
+        ))->willReturn('<html></html>');
+
+        $this->controller($adopter, true, $twig, $conflictAdopter)->adoptRow($this->conflictRow(), Request::create('/downloads/9/adopt'));
+    }
+
+    public function testRowPostSuccessRedirectsToDownloadsWithTheFormsExpectedState(): void
+    {
+        $row = $this->conflictRow();
+        $conflictAdopter = $this->createMock(DownloadStorageConflictAdopter::class);
+        $conflictAdopter->expects($this->once())->method('adopt')
+            ->with($row, $this->callback(static fn (Anime $a): bool => $a->id === 5), 3, DownloadStatus::Failed)
+            ->willReturn(DownloadActionOutcome::Success);
+
+        $response = $this->controller($this->createStub(DownloadOrphanAdopter::class), true, $this->createStub(Environment::class), $conflictAdopter)
+            ->adoptRow($row, Request::create('/downloads/9/adopt', 'POST', ['_token' => 'x', 'anime' => '5', 'version' => '3', 'status' => 'failed']));
+
+        $this->assertInstanceOf(RedirectResponse::class, $response);
+        $this->assertSame('/downloads_index', $response->getTargetUrl());
+    }
+
+    public function testRowPostConflictAndRefusalReRenderTheirErrors(): void
+    {
+        $adopter = $this->createStub(DownloadOrphanAdopter::class);
+        $adopter->method('findTorrent')->willReturn(['name' => 'Some torrent']);
+        $errors = [];
+        $blocked = [];
+        $twig = $this->createStub(Environment::class);
+        $twig->method('render')->willReturnCallback(static function (string $template, array $params) use (&$errors, &$blocked): string {
+            $errors[] = $params['error'];
+            $blocked[] = $params['blocked'];
+
+            return '';
+        });
+
+        $conflictAdopter = $this->createStub(DownloadStorageConflictAdopter::class);
+        $conflictAdopter->method('adopt')->willReturnOnConsecutiveCalls(DownloadActionOutcome::Conflict, $this->throwException(new DownloadAdoptionRefusedException('download_adopt.error_storage_mismatch', ['%storage%' => 'Main'])));
+        $controller = $this->controller($adopter, true, $twig, $conflictAdopter);
+        $post = ['_token' => 'x', 'anime' => '5', 'version' => '3', 'status' => 'failed'];
+
+        $controller->adoptRow($this->conflictRow(), Request::create('/downloads/9/adopt', 'POST', $post));
+        $controller->adoptRow($this->conflictRow(), Request::create('/downloads/9/adopt', 'POST', $post));
+
+        $this->assertSame(['downloads.action_error_conflict', 'download_adopt.error_storage_mismatch'], $errors);
+        $this->assertSame([true, false], $blocked);
     }
 }

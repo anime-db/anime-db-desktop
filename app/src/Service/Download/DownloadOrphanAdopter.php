@@ -81,6 +81,29 @@ class DownloadOrphanAdopter
      */
     public function adopt(string $infoHash, int $animeId): void
     {
+        [$plan, $storage] = $this->resolvePlan($infoHash);
+
+        $anime = $this->animes->findByIds([$animeId])[$animeId] ?? null;
+        if ($anime === null) {
+            throw new DownloadAdoptionRefusedException('download_adopt.error_anime_not_found');
+        }
+
+        $this->assertNotLinked($infoHash);
+        $this->assertFolderAvailable($anime, $storage, $plan);
+
+        $this->save($infoHash, $anime, $storage);
+    }
+
+    /**
+     * Where the torrent's files live right now, from a fresh `torrents/info`: the classifier's
+     * plan and the storage it chose (its marker already verified).
+     *
+     * @return array{DownloadAdoptionPlan, Storage}
+     *
+     * @throws DownloadAdoptionRefusedException
+     */
+    public function resolvePlan(string $infoHash): array
+    {
         try {
             $torrent = $this->findTorrent($infoHash);
         } catch (QbittorrentClientException) {
@@ -116,15 +139,18 @@ class DownloadOrphanAdopter
             throw new DownloadAdoptionRefusedException('download_new.error_storage_unavailable');
         }
         $plan = $this->classifier->parse($contentPath, $infoHash, $candidate, $isSingleFile);
-        $storage = $storagesById[$plan->storageId];
 
-        $anime = $this->animes->findByIds([$animeId])[$animeId] ?? null;
-        if ($anime === null) {
-            throw new DownloadAdoptionRefusedException('download_adopt.error_anime_not_found');
-        }
+        return [$plan, $storagesById[$plan->storageId]];
+    }
 
-        $this->assertNotLinked($infoHash);
-
+    /**
+     * The folder `<root>\<name>` may go to $anime: it is free or already $anime's, $anime has no
+     * other folder, and an incoming-branch move would not land on an existing path.
+     *
+     * @throws DownloadAdoptionRefusedException
+     */
+    public function assertFolderAvailable(Anime $anime, Storage $storage, DownloadAdoptionPlan $plan): void
+    {
         $folderPath = rtrim($storage->getPath(), '\\/').'\\'.$plan->name;
 
         $owner = $this->animes->findByStorageAndPath($storage, $plan->name);
@@ -141,8 +167,6 @@ class DownloadOrphanAdopter
         if ($plan->branch === DownloadAdoptionBranch::Incoming && $this->storageFilesystem->pathExists($folderPath)) {
             throw new DownloadAdoptionRefusedException('download_adopt.error_incoming_target_exists', ['%path%' => $folderPath]);
         }
-
-        $this->save($infoHash, $anime, $storage);
     }
 
     private function assertNotLinked(string $infoHash): void

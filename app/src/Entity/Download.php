@@ -339,6 +339,32 @@ class Download
     }
 
     /**
+     * Transitions Failed("storage_conflict") => Pending onto $anime ("Link to entry" for a row
+     * the poller failed because the folder belongs to another entry). Refuses (returns false,
+     * changes nothing) for any other status and any other failure reason. Only $anime, $status
+     * and $failureReason change: $targetStorage, $moveAttempts and the storage snapshot stay.
+     * Persisting is the caller's job, under the same conditional SQL as {@see retry()}.
+     */
+    public function relinkAfterStorageConflict(Anime $anime): bool
+    {
+        if (!$this->hasStorageConflict()) {
+            return false;
+        }
+
+        $this->anime = $anime;
+        $this->status = DownloadStatus::Pending;
+        $this->failureReason = null;
+
+        return true;
+    }
+
+    /** Whether this row is Failed with the "storage_conflict" reason — the only state {@see relinkAfterStorageConflict()} accepts. */
+    public function hasStorageConflict(): bool
+    {
+        return $this->status === DownloadStatus::Failed && $this->failureReason === 'storage_conflict';
+    }
+
+    /**
      * Whether retry() would accept this $failureReason — exposed so the "Downloads" page (issue
      * #856) can decide whether to show the "Retry" button at all without duplicating the
      * whitelist in {@see \App\Service\Download\DownloadsOverviewBuilder}.

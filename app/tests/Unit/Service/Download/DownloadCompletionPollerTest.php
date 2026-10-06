@@ -490,8 +490,8 @@ final class DownloadCompletionPollerTest extends TestCase
         $this->assertCount(1, $logged);
         $this->assertStringContainsString(\sprintf('anime #%d', $first->id), $logged[0]['message']);
         $this->assertStringContainsString('app:downloads:unlink', $logged[0]['message']);
-        $this->assertStringContainsString('delete this download on the Downloads page', $logged[0]['message']);
-        $this->assertStringContainsString('without ticking "Delete downloaded data"', $logged[0]['message']);
+        $this->assertStringContainsString('link this download to the right entry on the Downloads page', $logged[0]['message']);
+        $this->assertStringNotContainsString('enqueue it again', $logged[0]['message']);
         $this->assertStringNotContainsString(\sprintf('app:downloads:unlink %s', $secondHash), $logged[0]['message']);
         $this->assertSame($secondHash, $logged[0]['context']['infoHash']);
         $this->assertSame($this->root.'\\season-pack', $logged[0]['context']['contentPath']);

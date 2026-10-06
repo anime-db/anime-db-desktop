@@ -814,6 +814,7 @@ download_adopt:
     heading: 'Link the torrent to an entry'
     storage_hint: 'The storage is determined by where the files are. The torrent stays where it is.'
     submit_button: 'Link'
+    back_button: 'Back to downloads'
     error_not_in_client: 'This torrent is not in the torrent client.'
     error_path_is_root: 'The torrent''s files sit directly in the storage root — there is nothing to link.'
     error_bare_incoming: 'The torrent''s files sit in the temporary folder without a folder of their own — they cannot be linked.'
@@ -827,3 +828,4 @@ download_adopt:
     error_folder_occupied: 'The folder "%path%" is already linked to entry #%id%.'
     error_anime_has_folder: 'The entry already has the folder "%path%".'
     error_incoming_target_exists: '"%path%" already exists in the storage — moving out of the temporary folder would end in a name conflict.'
+    error_storage_mismatch: 'The download''s files are not in its storage "%storage%" — they cannot be linked.'

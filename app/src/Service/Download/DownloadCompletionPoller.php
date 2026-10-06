@@ -401,9 +401,7 @@ final class DownloadCompletionPoller
                 .'if anime #%d got this folder from another download of its own, run app:downloads:unlink '
                 .'<that download\'s hash> %d (it clears the pointer only if it still matches that download\'s '
                 .'snapshot); otherwise there is no command for this yet and anime #%d\'s folder pointer has to '
-                .'be cleared by hand. Then delete this download on the Downloads page, '
-                .'without ticking "Delete downloaded data" (the data sits in the occupying anime\'s folder), '
-                .'and enqueue it again.',
+                .'be cleared by hand. Then link this download to the right entry on the Downloads page ("Link to entry").',
                 $exception->occupyingAnimeId,
                 $exception->occupyingAnimeId,
                 $exception->occupyingAnimeId,
