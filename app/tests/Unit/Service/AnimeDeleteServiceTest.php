@@ -361,12 +361,48 @@ final class AnimeDeleteServiceTest extends TestCase
         $anime = $this->persistAnime();
         $this->addDownload($anime, self::HASH_A, 'completed');
         $logger = $this->createMock(LoggerInterface::class);
-        $logger->expects($this->once())->method('warning');
+        $logger->expects($this->once())->method('warning')->with($this->stringContains('could not be looked up'));
 
         $outcome = $this->newAnimeDeleteService($this->mediaDir, qbittorrent: $this->newQbittorrentClient(failing: true), logger: $logger)->delete($anime);
 
         $this->assertSame(AnimeDeleteOutcome::Deleted, $outcome);
         $this->assertSame(0, $this->animeCount());
+    }
+
+    public function testAFailedTorrentRemovalIsLoggedAndDoesNotUndoTheDeletion(): void
+    {
+        $anime = $this->persistAnime();
+        $this->addDownload($anime, self::HASH_A, 'completed');
+        $client = $this->newQbittorrentClient(
+            torrents: [['hash' => self::HASH_A, 'infohash_v1' => self::HASH_A, 'content_path' => '/library/Bebop']],
+            failingPaths: ['/torrents/delete'],
+        );
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->once())->method('warning')->with($this->stringContains('could not be removed'));
+
+        $outcome = $this->newAnimeDeleteService($this->mediaDir, qbittorrent: $client, logger: $logger)->delete($anime);
+
+        $this->assertSame(AnimeDeleteOutcome::Deleted, $outcome);
+        $this->assertSame(0, $this->animeCount());
+    }
+
+    public function testACompletedDownloadWithDataInHiddenIncomingIsStillRemovedFromTheClient(): void
+    {
+        $storageDir = $this->createTemporaryDirectory('anime-delete-storage-');
+        $this->entityManager->persist(new Storage('Main', $storageDir, StorageType::Folder));
+        $this->entityManager->flush();
+        $anime = $this->persistAnime();
+        $this->addDownload($anime, self::HASH_A, 'completed');
+        $client = $this->newQbittorrentClient(torrents: [
+            ['hash' => self::HASH_A, 'infohash_v1' => self::HASH_A, 'content_path' => $storageDir.'/.anime-db/incoming/'.self::HASH_A.'/Bebop'],
+        ]);
+
+        $this->newAnimeDeleteService($this->mediaDir, qbittorrent: $client)->delete($anime);
+
+        $this->assertSame([
+            'GET http://qb.test/api/v2/torrents/info ',
+            'POST http://qb.test/api/v2/torrents/delete hashes='.self::HASH_A.'&deleteFiles=false',
+        ], $this->qbittorrentRequests);
     }
 
     public function testARunningSyncOfAnActivePluginRefusesTheDeletion(): void

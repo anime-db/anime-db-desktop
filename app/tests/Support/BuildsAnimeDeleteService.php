@@ -110,14 +110,22 @@ trait BuildsAnimeDeleteService
         return new SyncRegistry($syncs, new PluginsConfigStore($path));
     }
 
-    /** @param list<array<string, mixed>> $torrents what `torrents/info` returns */
-    private function newQbittorrentClient(bool $failing = false, array $torrents = []): QbittorrentClient
+    /**
+     * @param list<array<string, mixed>> $torrents     what `torrents/info` returns
+     * @param list<string>               $failingPaths URL fragments answered with 500 (besides everything when $failing)
+     */
+    private function newQbittorrentClient(bool $failing = false, array $torrents = [], array $failingPaths = []): QbittorrentClient
     {
-        $httpClient = new MockHttpClient(function (string $method, string $url, array $options) use ($failing, $torrents): MockResponse {
+        $httpClient = new MockHttpClient(function (string $method, string $url, array $options) use ($failing, $torrents, $failingPaths): MockResponse {
             $this->qbittorrentRequests[] = $method.' '.$url.' '.(string) ($options['body'] ?? '');
             $body = str_contains($url, '/torrents/info') ? (string) json_encode($torrents) : '';
 
-            return new MockResponse($body, ['http_code' => $failing ? 500 : 200]);
+            $fails = $failing;
+            foreach ($failingPaths as $path) {
+                $fails = $fails || str_contains($url, $path);
+            }
+
+            return new MockResponse($body, ['http_code' => $fails ? 500 : 200]);
         });
 
         return new QbittorrentClient($httpClient, 'http://qb.test');
