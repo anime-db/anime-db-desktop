@@ -62,6 +62,7 @@ final class DownloadAdoptionPathClassifierTest extends TestCase
         yield 'incoming single file' => ['E:\Anime\.anime-db\incoming\\'.self::HASH.'\Movie.mkv', true, 1, DownloadAdoptionBranch::Incoming, 'Movie'];
         yield 'root directory' => ['E:\Anime\Release', false, 1, DownloadAdoptionBranch::Root, 'Release'];
         yield 'root single file' => ['E:\Anime\Movie\Movie.mkv', true, 1, DownloadAdoptionBranch::Root, 'Movie'];
+        yield 'root single file, folder case differs' => ['E:\Anime\movie\Movie.mkv', true, 1, DownloadAdoptionBranch::Root, 'movie'];
         yield 'nested storage wins' => ['E:\Anime\Sub\Release', false, 2, DownloadAdoptionBranch::Root, 'Release'];
         yield 'nested storage incoming' => ['E:\Anime\Sub\.anime-db\incoming\\'.self::HASH.'\Release', false, 2, DownloadAdoptionBranch::Incoming, 'Release'];
         yield 'other drive, forward slashes' => ['D:/Other/Release', false, 3, DownloadAdoptionBranch::Root, 'Release'];

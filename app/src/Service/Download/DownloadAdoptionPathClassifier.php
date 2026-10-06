@@ -128,7 +128,7 @@ final class DownloadAdoptionPathClassifier
 
         // `<name>\<file>` is the shape DownloadIncomingRelocator::tryMove() produces, so <name> is the file's
         // name without extension; any other folder is shared with files that are not this torrent's.
-        if ($isSingleFile && $segments[0] !== self::withoutExtension($segments[1])) {
+        if ($isSingleFile && mb_strtolower($segments[0]) !== mb_strtolower(self::withoutExtension($segments[1]))) {
             throw new DownloadAdoptionRefusedException('download_adopt.error_shared_folder', ['%path%' => $segments[0]]);
         }
 
