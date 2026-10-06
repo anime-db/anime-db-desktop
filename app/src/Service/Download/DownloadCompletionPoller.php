@@ -64,12 +64,14 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
  * flush — and "at most once" is the wrong trade-off here, since the acceptance criterion is
  * "exactly once", not "at least once".
  *
- * fetchTorrentsByInfoHashV1() (issue #843) makes at most one `torrents/info?tag=` request per
+ * fetchTorrentsByInfoHashV1() (issue #843) makes at most one unfiltered `torrents/info` request per
  * poll() pass — none at all when there are no still-Pending rows — rather than one `hashes=<v1>`
  * request per pending infoHash: qBittorrent 5.x (libtorrent 2) identifies a hybrid v1+v2 torrent
  * by its truncated v2 hash, which a `hashes=<v1>` filter never matches, so that torrent would
  * never be found this way. Matching instead happens in-process against each torrent's
  * `infohash_v1` field, which is populated for every torrent regardless of libtorrent's chosen id.
+ * The request carries no tag filter, so a torrent added by hand in qBittorrent's WebUI, or one
+ * whose tag was removed, is matched like any other.
  * Commands aimed at a specific torrent (failIfOutOfSpace()'s stop()) likewise use that torrent's
  * own `hash` from the response, not this app's v1 infoHash, for the same reason.
  *
@@ -168,11 +170,11 @@ final class DownloadCompletionPoller
     }
 
     /**
-     * One `torrents/info?tag=` request per poll pass for every torrent this app has added,
+     * One unfiltered `torrents/info` request per poll pass for every torrent in qBittorrent,
      * keyed by `infohash_v1` (issue #843) — not `hashes=<v1>` per pending download, since
      * qBittorrent 5.x (libtorrent 2) identifies a hybrid v1+v2 torrent by its truncated v2 hash
      * (see class docblock's "Why" in the issue), which never matches the v1 hash this app tracks.
-     * A torrent with an empty `infohash_v1` (not one of ours, or a stray entry without it) is
+     * A torrent with an empty `infohash_v1` (a stray entry without it) is
      * skipped: it cannot match any pending row.
      *
      * @return array<string, array<string, mixed>>
@@ -180,7 +182,7 @@ final class DownloadCompletionPoller
     private function fetchTorrentsByInfoHashV1(): array
     {
         $byInfoHashV1 = [];
-        foreach ($this->client->getTorrentsInfo(QbittorrentClient::TAG) as $torrent) {
+        foreach ($this->client->getTorrentsInfo() as $torrent) {
             $infoHashV1 = (string) ($torrent['infohash_v1'] ?? '');
             if ($infoHashV1 === '') {
                 continue;
@@ -198,13 +200,13 @@ final class DownloadCompletionPoller
     private function pollInfoHash(string $infoHash, ?array $torrent): void
     {
         if ($torrent === null) {
-            // Reachable without anything being wrong: a human removed the torrent (or just its
-            // tag) in qBittorrent's own WebUI (see class docblock). The row's status is left
+            // Reachable without anything being wrong: a human removed the torrent in
+            // qBittorrent's own WebUI (see class docblock). A removed tag does not hide it. The row's status is left
             // alone rather than failed — it is not this poller's place to decide that a torrent
             // someone removed by hand is never coming back.
             if (!isset($this->warnedAboutMissingInfoHashes[$infoHash])) {
                 $this->warnedAboutMissingInfoHashes[$infoHash] = true;
-                $this->logger->warning('Pending download has no matching torrent in qBittorrent (removed, or its tag was removed); status left unchanged.', [
+                $this->logger->warning('Pending download has no matching torrent in qBittorrent (removed); status left unchanged.', [
                     'infoHash' => $infoHash,
                 ]);
             }
