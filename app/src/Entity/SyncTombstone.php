@@ -33,8 +33,13 @@ use Doctrine\ORM\Mapping as ORM;
  * Remembers that a catalog entry linked to (plugin_id, external_id) was deleted locally (issue
  * #916), so a later pull or storage scan does not create it again. Rows are written by
  * {@see \App\Service\AnimeDeleteService} only (never by a Doctrine listener: an entry type change
- * removes the old row too and must not leave a tombstone) and are never removed: a live entry with
- * the same external id always wins, see {@see \App\Service\Plugin\PullSyncService}.
+ * removes the old row too and must not leave a tombstone). A row is removed only by
+ * {@see \App\Service\Sync\SourceRemovalService}, once the title is gone from the user's list on the
+ * source (issue #918); until then, and for a deletion made without that, a live entry with the same
+ * external id always wins, see {@see \App\Service\Plugin\PullSyncService}.
+ *
+ * $removalPending says the deletion on the source is still to be done. Rows are written through
+ * {@see \App\Repository\SyncTombstoneRepository} in plain SQL.
  *
  * Not a foreign key to anime, and plugin_id is not one to anything either, same as
  * {@see AnimeExternalId}.
@@ -54,10 +59,14 @@ class SyncTombstone
     #[ORM\Column(name: 'deleted_at', type: 'unix_timestamp')]
     public readonly \DateTimeImmutable $deletedAt;
 
-    public function __construct(string $pluginId, string $externalId, \DateTimeImmutable $deletedAt)
+    #[ORM\Column(name: 'removal_pending', options: ['default' => false])]
+    public readonly bool $removalPending;
+
+    public function __construct(string $pluginId, string $externalId, \DateTimeImmutable $deletedAt, bool $removalPending = false)
     {
         $this->pluginId = $pluginId;
         $this->externalId = $externalId;
         $this->deletedAt = $deletedAt;
+        $this->removalPending = $removalPending;
     }
 }

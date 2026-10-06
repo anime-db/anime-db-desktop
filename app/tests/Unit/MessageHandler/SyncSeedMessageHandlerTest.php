@@ -31,6 +31,7 @@ use AnimeDb\PluginContracts\Filler\PluginAnimeData;
 use AnimeDb\PluginContracts\OAuth\ReauthRequiredException;
 use AnimeDb\PluginContracts\Sync\SyncInterface;
 use AnimeDb\PluginContracts\Sync\SyncItem;
+use AnimeDb\PluginContracts\Sync\SyncRemovalInterface;
 use AnimeDb\PluginContracts\Sync\SyncStatus;
 use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
@@ -41,12 +42,14 @@ use App\Entity\ValueObject\PluginId;
 use App\Message\SyncSeedMessage;
 use App\MessageHandler\SyncSeedMessageHandler;
 use App\Repository\AnimeRepository;
+use App\Repository\SyncTombstoneRepository;
 use App\Service\JobLock\JobLockService;
 use App\Service\JobLock\ProcessLivenessChecker;
 use App\Service\Plugin\ExternalIdBackfillService;
 use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Plugin\PullSyncService;
 use App\Service\Plugin\SyncRegistry;
+use App\Service\Sync\SourceRemovalService;
 use App\Service\Sync\SyncPullGate;
 use App\Tests\Support\BuildsPullSyncService;
 use Doctrine\DBAL\DriverManager;
@@ -100,7 +103,7 @@ final class SyncSeedMessageHandlerTest extends TestCase
         $sync->expects($this->once())->method('pull')->willReturn([]);
 
         [$syncRegistry, $pluginsConfigStore] = $this->newSyncRegistry(['animedb-shikimori' => $sync]);
-        $handler = new SyncSeedMessageHandler($syncRegistry, $this->newBackfillService(), $this->newPullSyncService($syncRegistry), $pluginsConfigStore, $this->jobLockService(), $this->pullGate($pluginsConfigStore), new NullLogger());
+        $handler = new SyncSeedMessageHandler($syncRegistry, $this->newBackfillService(), $this->newSourceRemoval(), $this->newPullSyncService($syncRegistry), $pluginsConfigStore, $this->jobLockService(), $this->pullGate($pluginsConfigStore), new NullLogger());
 
         $handler(new SyncSeedMessage('animedb-shikimori'));
     }
@@ -118,7 +121,7 @@ final class SyncSeedMessageHandlerTest extends TestCase
         });
 
         [$syncRegistry, $pluginsConfigStore] = $this->newSyncRegistry(['animedb-shikimori' => $sync]);
-        $handler = new SyncSeedMessageHandler($syncRegistry, $this->newBackfillService(), $this->newPullSyncService($syncRegistry), $pluginsConfigStore, $jobLockService, $this->pullGate($pluginsConfigStore), new NullLogger());
+        $handler = new SyncSeedMessageHandler($syncRegistry, $this->newBackfillService(), $this->newSourceRemoval(), $this->newPullSyncService($syncRegistry), $pluginsConfigStore, $jobLockService, $this->pullGate($pluginsConfigStore), new NullLogger());
 
         $handler(new SyncSeedMessage('animedb-shikimori'));
 
@@ -148,7 +151,7 @@ final class SyncSeedMessageHandlerTest extends TestCase
         $sync->expects($this->never())->method('pull');
 
         [$syncRegistry, $pluginsConfigStore] = $this->newSyncRegistry(['animedb-shikimori' => $sync]);
-        $handler = new SyncSeedMessageHandler($syncRegistry, $this->newBackfillService(), $this->newPullSyncService($syncRegistry), $pluginsConfigStore, $jobLockService, $this->pullGate($pluginsConfigStore), new NullLogger());
+        $handler = new SyncSeedMessageHandler($syncRegistry, $this->newBackfillService(), $this->newSourceRemoval(), $this->newPullSyncService($syncRegistry), $pluginsConfigStore, $jobLockService, $this->pullGate($pluginsConfigStore), new NullLogger());
 
         $handler(new SyncSeedMessage('animedb-shikimori'));
     }
@@ -160,7 +163,7 @@ final class SyncSeedMessageHandlerTest extends TestCase
         $logger = $this->createMock(LoggerInterface::class);
         $logger->expects($this->once())->method('info');
 
-        $handler = new SyncSeedMessageHandler($syncRegistry, $this->newBackfillService(), $this->newPullSyncService($syncRegistry), $pluginsConfigStore, $this->jobLockService(), $this->pullGate($pluginsConfigStore), $logger);
+        $handler = new SyncSeedMessageHandler($syncRegistry, $this->newBackfillService(), $this->newSourceRemoval(), $this->newPullSyncService($syncRegistry), $pluginsConfigStore, $this->jobLockService(), $this->pullGate($pluginsConfigStore), $logger);
 
         $handler(new SyncSeedMessage('animedb-shikimori'));
     }
@@ -177,7 +180,7 @@ final class SyncSeedMessageHandlerTest extends TestCase
         $sync->expects($this->once())->method('pull')->willThrowException(new ReauthRequiredException('Refresh token is dead.'));
 
         [$syncRegistry, $pluginsConfigStore] = $this->newSyncRegistry(['animedb-shikimori' => $sync], ['syncSeeded' => true]);
-        $handler = new SyncSeedMessageHandler($syncRegistry, $this->newBackfillService(), $this->newPullSyncService($syncRegistry), $pluginsConfigStore, $this->jobLockService(), $this->pullGate($pluginsConfigStore), new NullLogger());
+        $handler = new SyncSeedMessageHandler($syncRegistry, $this->newBackfillService(), $this->newSourceRemoval(), $this->newPullSyncService($syncRegistry), $pluginsConfigStore, $this->jobLockService(), $this->pullGate($pluginsConfigStore), new NullLogger());
 
         $handler(new SyncSeedMessage('animedb-shikimori'));
 
@@ -275,17 +278,52 @@ final class SyncSeedMessageHandlerTest extends TestCase
         return $anime;
     }
 
+    /** Issue #918: the pending removals go first, or the backfill could link an id to another entry whose list item they would then delete. */
+    public function testPendingRemovalsRunBeforeTheBackfillAndThePull(): void
+    {
+        $this->persistAnimeWithSource('https://shikimori.one/animes/1');
+        (new SyncTombstoneRepository($this->entityManager))->record('animedb-shikimori', '99', new \DateTimeImmutable(), true);
+
+        $events = [];
+        $sync = $this->createMock(SyncRemovalInterface::class);
+        $sync->method('remove')->willReturnCallback(static function (string $externalId) use (&$events): void {
+            $events[] = 'remove:'.$externalId;
+        });
+        $sync->method('resolveExternalId')->willReturnCallback(static function () use (&$events): string {
+            $events[] = 'resolve';
+
+            return '1';
+        });
+        $sync->method('pull')->willReturnCallback(static function () use (&$events): array {
+            $events[] = 'pull';
+
+            return [];
+        });
+
+        [$syncRegistry, $pluginsConfigStore] = $this->newSyncRegistry(['animedb-shikimori' => $sync]);
+        $this->newHandler($syncRegistry, $pluginsConfigStore)(new SyncSeedMessage('animedb-shikimori'));
+
+        $this->assertSame(['remove:99', 'resolve', 'pull'], $events);
+        $this->assertFalse((new SyncTombstoneRepository($this->entityManager))->exists('animedb-shikimori', '99'));
+    }
+
     private function newHandler(SyncRegistry $syncRegistry, PluginsConfigStore $pluginsConfigStore, ?LoggerInterface $backfillLogger = null): SyncSeedMessageHandler
     {
         return new SyncSeedMessageHandler(
             $syncRegistry,
             $this->newBackfillService($backfillLogger),
+            $this->newSourceRemoval(),
             $this->newPullSyncService($syncRegistry),
             $pluginsConfigStore,
             $this->jobLockService(),
             $this->pullGate($pluginsConfigStore),
             new NullLogger(),
         );
+    }
+
+    private function newSourceRemoval(): SourceRemovalService
+    {
+        return new SourceRemovalService(new SyncTombstoneRepository($this->entityManager), new AnimeRepository($this->entityManager), new NullLogger());
     }
 
     private function pullGate(PluginsConfigStore $pluginsConfigStore): SyncPullGate

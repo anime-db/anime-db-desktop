@@ -37,6 +37,8 @@ use App\Service\AnimeDeleteFlash;
 use App\Service\AnimeDeleteOutcome;
 use App\Service\AnimeDeleteService;
 use App\Service\Sync\DeletedFromSourceDetector;
+use App\Service\Sync\SourceRemovalPlan;
+use App\Service\Sync\SourceRemovalPlanner;
 use App\Service\Sync\SyncConvergenceService;
 use App\Service\Sync\SyncProjection;
 use App\Service\Sync\SyncReviewService;
@@ -78,6 +80,7 @@ final class SyncReviewController
         private readonly DeletedFromSourceDetector $deletedFromSourceDetector,
         private readonly AnimeDeleteService $animeDeleteService,
         private readonly AnimeDeleteFlash $animeDeleteFlash,
+        private readonly SourceRemovalPlanner $sourceRemovalPlanner,
         private readonly DownloadRepository $downloads,
         private readonly EntityManagerInterface $entityManager,
         private readonly CsrfTokenManagerInterface $csrfTokenManager,
@@ -140,7 +143,13 @@ final class SyncReviewController
         if ($anime === null) {
             $this->syncReview->resolve($item);
         } else {
-            $outcome = $this->animeDeleteService->delete($anime);
+            // The same targets the dialog showed, counted again now by the service; the source the entry
+            // is already gone from is never one of them.
+            $outcome = $this->animeDeleteService->delete(
+                $anime,
+                $request->request->getBoolean('remove_from_sources'),
+                $this->deletedFromPluginIds($item),
+            );
             $this->animeDeleteFlash->add($request, $outcome, $anime->getTitle());
             if ($outcome === AnimeDeleteOutcome::Deleted && !$item->isResolved()) {
                 $this->syncReview->resolve($item);
@@ -185,7 +194,7 @@ final class SyncReviewController
      *
      * @param SyncReviewItem[] $items
      *
-     * @return array<int, array{anime: ?Anime, deletedFrom: string, stillPresentOn: list<string>, hasStorage: bool, hasFinishedDownloads: bool}>
+     * @return array<int, array{anime: ?Anime, deletedFrom: string, stillPresentOn: list<string>, hasStorage: bool, hasFinishedDownloads: bool, sourceRemoval: SourceRemovalPlan}>
      */
     private function deletionDetails(array $items): array
     {
@@ -210,10 +219,21 @@ final class SyncReviewController
                 // What the delete confirmation warns about, see anime/_delete_confirm.html.twig.
                 'hasStorage' => $anime?->getStorage() !== null,
                 'hasFinishedDownloads' => $anime !== null && $this->downloads->hasFinishedForAnime($anime->id ?? 0),
+                // Counted now, not taken from still_present_on: a plugin may have been switched off
+                // since the detection, and the source the entry is deleted from is no target.
+                'sourceRemoval' => $anime !== null ? $this->sourceRemovalPlanner->plan($anime, $this->deletedFromPluginIds($item)) : new SourceRemovalPlan(),
             ];
         }
 
         return $details;
+    }
+
+    /** @return list<string> */
+    private function deletedFromPluginIds(SyncReviewItem $item): array
+    {
+        $deletedFrom = $item->payload['deleted_from'] ?? null;
+
+        return \is_string($deletedFrom) && $deletedFrom !== '' ? [$deletedFrom] : [];
     }
 
     /**

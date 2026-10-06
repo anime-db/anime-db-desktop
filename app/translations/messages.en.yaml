@@ -548,6 +548,13 @@ anime_delete:
     flash_pending_downloads: 'Entry "%title%" was not deleted: cancel its downloads first.'
     downloads_link: Go to downloads
     flash_sync_running: 'A sync is running, try again later.'
+    remove_from_sources: 'Also delete from the lists on the sources'
+    sources_removed: 'It will be deleted from the list on: %sources%.'
+    sources_kept: 'It stays on: %source% (%reason%).'
+    kept_no_removal: 'the plugin cannot delete list entries'
+    kept_inactive: 'sync is off for it'
+    dialog_cancel: Cancel
+    dialog_submit: Delete
 
 anime_edit:
     title: 'Edit %title% — AnimeDB'

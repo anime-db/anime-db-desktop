@@ -30,6 +30,7 @@ namespace App\Tests\Unit\Twig;
 use App\Entity\Enum\SyncReviewItemKind;
 use App\Entity\SyncReviewItem;
 use App\Entity\TvAnime;
+use App\Service\Sync\SourceRemovalPlan;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RequestStack;
@@ -39,7 +40,7 @@ use Twig\Environment;
 
 final class SyncReviewTemplateRenderingTest extends KernelTestCase
 {
-    private function render(SyncReviewItemKind $kind, bool $withAnime = true): string
+    private function render(SyncReviewItemKind $kind, bool $withAnime = true, ?SourceRemovalPlan $plan = null): string
     {
         self::bootKernel();
 
@@ -61,7 +62,7 @@ final class SyncReviewTemplateRenderingTest extends KernelTestCase
         return $twig->render('settings/sync_review/index.html.twig', [
             'items' => [$item],
             'duplicateClusters' => [20 => []],
-            'deletionDetails' => [20 => ['anime' => $withAnime ? $anime : null, 'deletedFrom' => 'animedb-shikimori', 'stillPresentOn' => ['animedb-mal'], 'hasStorage' => true, 'hasFinishedDownloads' => true]],
+            'deletionDetails' => [20 => ['anime' => $withAnime ? $anime : null, 'deletedFrom' => 'animedb-shikimori', 'stillPresentOn' => ['animedb-mal'], 'hasStorage' => true, 'hasFinishedDownloads' => true, 'sourceRemoval' => $plan ?? new SourceRemovalPlan()]],
             'needsCorrectionDetails' => [],
         ]);
     }
@@ -75,6 +76,31 @@ final class SyncReviewTemplateRenderingTest extends KernelTestCase
             $this->assertMatchesRegularExpression('#action="/settings/sync-review/20/delete-anime"\s+data-confirm="[^"]*Trigun[^"]*video files[^"]*torrents[^"]*"#', $html);
             $this->assertStringContainsString('Delete entry', $html);
         }
+    }
+
+    public function testTheDialogOffersRemovalOnTheSourcesCheckedByDefaultAndNamesThem(): void
+    {
+        $plan = new SourceRemovalPlan(
+            ['acme-list' => '1'],
+            ['Acme List'],
+            [['name' => 'Other List', 'reason' => SourceRemovalPlan::REASON_NO_REMOVAL], ['name' => 'Off List', 'reason' => SourceRemovalPlan::REASON_INACTIVE]],
+        );
+
+        $html = $this->render(SyncReviewItemKind::DeletionConflict, plan: $plan);
+
+        $this->assertMatchesRegularExpression('#<input[^>]*type="checkbox"[^>]*name="remove_from_sources"[^>]*checked#', $html);
+        $this->assertStringContainsString('Also delete from the lists on the sources', $html);
+        $this->assertStringContainsString('It will be deleted from the list on: ', $html);
+        $this->assertStringContainsString('Acme List', $html);
+        $this->assertStringContainsString('It stays on: ', $html);
+        $this->assertStringContainsString('Other List', $html);
+        $this->assertStringContainsString('Off List', $html);
+        $this->assertStringNotContainsString('data-confirm', $html);
+    }
+
+    public function testNoCheckboxWithoutTargets(): void
+    {
+        $this->assertStringNotContainsString('remove_from_sources', $this->render(SyncReviewItemKind::DeletionConflict));
     }
 
     public function testNoDeleteActionWhenTheEntryIsAlreadyGone(): void

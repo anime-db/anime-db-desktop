@@ -51,6 +51,8 @@ use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\PluginAssetResolver;
 use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Plugin\PluginUiAssetsResolver;
+use App\Service\Plugin\SyncRegistry;
+use App\Service\Sync\SourceRemovalPlanner;
 use App\Tests\Fixtures\Plugin\Widget\FakeEntryWidget;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
@@ -95,6 +97,7 @@ final class AnimeControllerTest extends TestCase
             ),
             $downloads ?? $this->createStub(DownloadRepository::class),
             new DownloadViewFactory(),
+            new SourceRemovalPlanner(new SyncRegistry([], new PluginsConfigStore(''))),
         );
     }
 
@@ -379,6 +382,7 @@ final class AnimeControllerTest extends TestCase
                 $this->createPluginUiAssetsResolver($installedPlugins),
                 $this->createStub(DownloadRepository::class),
                 new DownloadViewFactory(),
+                new SourceRemovalPlanner(new SyncRegistry([], new PluginsConfigStore(''))),
             );
             $response = $controller->show($anime);
 
@@ -436,6 +440,7 @@ final class AnimeControllerTest extends TestCase
                 $this->createPluginUiAssetsResolver($installedPlugins),
                 $this->createStub(DownloadRepository::class),
                 new DownloadViewFactory(),
+                new SourceRemovalPlanner(new SyncRegistry([], new PluginsConfigStore(''))),
             );
             $response = $controller->show($anime);
 

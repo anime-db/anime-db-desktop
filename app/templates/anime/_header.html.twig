@@ -23,7 +23,8 @@
  # anime/show.html.twig and, as an out-of-band swap (oob = true), by AnimeFillController after an
  # alternativeNames fill: the official Japanese title shown here comes from the same names.
  #}
-{% from 'anime/_delete_confirm.html.twig' import delete_confirm %}
+{% from 'anime/_delete_confirm.html.twig' import delete_confirm, delete_modal %}
+{% set delete_plan = delete_source_removal|default(null) %}
 {% set japanese_name = (anime.names|filter(name => name.role == 'official' and name.locale == 'ja')|first)|default(null) %}
 {% set date_premiere = anime.date_premiere|default(null) %}
 {% set date_end = anime.date_end|default(null) %}
@@ -48,12 +49,19 @@
         <ul class="dropdown-menu dropdown-menu-end">
             <li><a class="dropdown-item" href="{{ path('anime_edit', {id: anime.id}) }}">{{ 'anime_detail.menu_edit'|trans }}</a></li>
             <li>
-                <form method="post" action="{{ path('anime_delete', {id: anime.id}) }}"
-                      data-confirm="{{ delete_confirm(anime.title, anime.storage is not null, delete_has_finished_downloads|default(false)) }}">
-                    <input type="hidden" name="_token" value="{{ csrf_token('anime_delete_' ~ anime.id) }}">
-                    <button type="submit" class="dropdown-item text-danger">{{ 'anime_detail.menu_delete'|trans }}</button>
-                </form>
+                {% if delete_plan is not null and delete_plan.hasTargets %}
+                    <button type="button" class="dropdown-item text-danger" data-bs-toggle="modal" data-bs-target="#anime-delete-modal-{{ anime.id }}">{{ 'anime_detail.menu_delete'|trans }}</button>
+                {% else %}
+                    <form method="post" action="{{ path('anime_delete', {id: anime.id}) }}"
+                          data-confirm="{{ delete_confirm(anime.title, anime.storage is not null, delete_has_finished_downloads|default(false)) }}">
+                        <input type="hidden" name="_token" value="{{ csrf_token('anime_delete_' ~ anime.id) }}">
+                        <button type="submit" class="dropdown-item text-danger">{{ 'anime_detail.menu_delete'|trans }}</button>
+                    </form>
+                {% endif %}
             </li>
         </ul>
     </div>
+    {% if delete_plan is not null and delete_plan.hasTargets %}
+        {{ delete_modal('anime-delete-modal-' ~ anime.id, path('anime_delete', {id: anime.id}), csrf_token('anime_delete_' ~ anime.id), anime.title, anime.storage is not null, delete_has_finished_downloads|default(false), delete_plan) }}
+    {% endif %}
 </header>

@@ -548,6 +548,13 @@ anime_delete:
     flash_pending_downloads: 'Запись «%title%» не удалена: сначала отмените её загрузки.'
     downloads_link: Перейти к загрузкам
     flash_sync_running: 'Идёт синхронизация, попробуйте позже.'
+    remove_from_sources: 'Удалить и в списках на источниках'
+    sources_removed: 'Удалится из списка на: %sources%.'
+    sources_kept: 'Останется на: %source% (%reason%).'
+    kept_no_removal: 'плагин не умеет удалять записи списка'
+    kept_inactive: 'синхронизация с ним отключена'
+    dialog_cancel: Отмена
+    dialog_submit: Удалить
 
 anime_edit:
     title: 'Изменить %title% — AnimeDB'

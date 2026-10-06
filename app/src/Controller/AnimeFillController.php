@@ -35,6 +35,7 @@ use App\Service\AnimeViewFactory;
 use App\Service\Plugin\Filler\FieldFillerService;
 use App\Service\Plugin\Filler\FillableFieldsPresenter;
 use App\Service\Plugin\Filler\FillResult;
+use App\Service\Sync\SourceRemovalPlanner;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
@@ -64,6 +65,7 @@ final class AnimeFillController
         private readonly CsrfTokenManagerInterface $csrfTokenManager,
         private readonly AnimeViewFactory $viewFactory,
         private readonly DownloadRepository $downloads,
+        private readonly SourceRemovalPlanner $sourceRemovalPlanner,
         private readonly Environment $twig,
     ) {
     }
@@ -138,6 +140,7 @@ final class AnimeFillController
                 'anime' => $view,
                 'oob' => true,
                 'delete_has_finished_downloads' => $this->downloads->hasFinishedForAnime($anime->id ?? 0),
+                'delete_source_removal' => $this->sourceRemovalPlanner->plan($anime),
             ]);
         }
 

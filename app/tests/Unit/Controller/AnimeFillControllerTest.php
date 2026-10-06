@@ -45,6 +45,8 @@ use App\Service\Plugin\Filler\PluginMediaDownloaderInterface;
 use App\Service\Plugin\FillerRegistry;
 use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\PluginsConfigStore;
+use App\Service\Plugin\SyncRegistry;
+use App\Service\Sync\SourceRemovalPlanner;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\EntityManager;
@@ -141,6 +143,7 @@ final class AnimeFillControllerTest extends TestCase
             $csrfTokenManager,
             new AnimeViewFactory($requestStack),
             $this->createStub(DownloadRepository::class),
+            new SourceRemovalPlanner(new SyncRegistry([], new PluginsConfigStore(''))),
             $twig ?? $this->createStub(Environment::class),
         );
     }

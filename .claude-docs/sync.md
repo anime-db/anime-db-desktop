@@ -210,7 +210,8 @@ push и pull могли одновременно вставить `AnimeSyncStat
   `AnimeSyncState` на удалённый `anime_id` либо заводит пункт `DeletedFromSource` на несуществующую запись.
 - **Одна транзакция:** upsert `sync_tombstone (plugin_id, external_id, deleted_at)` по каждому кэшированному `AnimeExternalId` +
   `remove()`. Надгробия пишет сервис, **не** Doctrine-слушатель: `AnimeTypeMigrator` тоже вызывает `remove()`, надгробий при
-  смене типа быть не должно. FK на `anime` нет; надгробия не снимаются (путей связывания external id больше пяти, часть — в обход ORM).
+  смене типа быть не должно. FK на `anime` нет; надгробие снимается только после успешного удаления на источнике (см. ниже, issue #918); без галочки остаётся навсегда
+  (путей связывания external id больше пяти, часть — в обход ORM).
 - **Чтение:** `PullSyncService::doPull()` грузит набор один раз рядом с `indexByExternalId()` и проверяет его только в ветке
   `$anime === null` перед `fillNewFrom()` (id всё равно попадает в `$presentExternalIds`); живая запись из индекса главнее.
   `ScanStorageService::matchNewEntry()`: единственный plugin-кандидат с надгробием → `NeedsConfirmation`, не автосвязывание.
@@ -219,6 +220,32 @@ push и pull могли одновременно вставить `AnimeSyncStat
   `PotentialDuplicate` запись убирается из `anime_ids`, закрывается при <2 оставшихся).
 - **Гонка с медиа-загрузкой:** `PluginMediaDownloaderInterface::download()` принимает `$stillWanted` и спрашивает его перед
   записью файла; `DownloadAnimeMediaMessageHandler` проверяет существование записи ещё и перед привязкой имени файла.
+
+### Удаление и на источниках (issue #918)
+
+Нужен необязательный `SyncRemovalInterface::remove(string $externalId)` (`plugin-contracts` ≥ 0.25.1); удаляется элемент
+**списка пользователя**, тайтл на источнике остаётся.
+
+- **Цели считает один метод:** `SourceRemovalPlanner::plan(Anime, $excludePluginIds)` — активные плагины
+  (`SyncRegistry::findByPluginId()`), реализующие интерфейс, с закэшированным external id. В `kept` — источники, где запись
+  остаётся, с причиной (`no_removal` / `inactive`). Им пользуются и диалог, и `AnimeDeleteService::delete()` (цели
+  пересчитываются на момент действия, а не берутся из формы). Из «Требует внимания» `deleted_from` пункта исключается, а
+  `still_present_on` не используется: плагин могли отключить после детекции.
+- **Диалог:** при целях > 0 вместо `data-confirm` рисуется Bootstrap-модалка (`delete_modal` в `anime/_delete_confirm.html.twig`)
+  с галочкой `remove_from_sources` (по умолчанию включена). `window.confirm()` галочку не вмещает.
+- **Признак на надгробии:** `sync_tombstone.removal_pending`. Галочка включена — его получает надгробие каждой цели; нет —
+  надгробие без признака, как раньше. После коммита на каждую цель уходит `RemoveFromSourceMessage(pluginId, externalId)`
+  (транспорт `async`; `PushSyncMessage` не годится — записи уже нет).
+- **Сообщение только будит обработчик**, решает состояние `SourceRemovalService::remove()`: признак стоит; пару не держит
+  живая запись (`AnimeRepository::holdsExternalId()`, иначе признак снимается и `remove()` не зовётся — пользователь добавил
+  тайтл заново); плагин поддерживает удаление. Успех — надгробие удаляется (**единственное место**). Временная ошибка —
+  ретраи Messenger; `ReauthRequiredException` → `UnrecoverableMessageHandlingException`, признак остаётся. Пока держится лок
+  `SyncSeedMessage::jobKey()`, обработчик пропускает сообщение.
+- **Добор зависших:** `SourceRemovalService::retryPending()` в `SyncSeedMessageHandler` и `SyncPullMessageHandler`. Порядок
+  **добор → бэкфилл external id → pull**: иначе бэкфилл свяжет id с другой записью, а добор удалит у неё элемент списка. Добор
+  не бросает: сбой логируется, признак остаётся; `ReauthRequiredException` прерывает добор.
+- **Не делается:** источники, не подключённые в момент удаления, не трогаются; экрана отложенных удалений нет (состояние — в
+  логе).
 
 ## Реестр подводных камней
 

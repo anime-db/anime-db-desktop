@@ -51,6 +51,8 @@ use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Plugin\SyncRegistry;
 use App\Service\Qbittorrent\QbittorrentClient;
 use App\Service\Sync\DeletedFromSourceDetector;
+use App\Service\Sync\SourceRemovalPlan;
+use App\Service\Sync\SourceRemovalPlanner;
 use App\Service\Sync\SyncConvergenceService;
 use App\Service\Sync\SyncReconciler;
 use App\Service\Sync\SyncReviewService;
@@ -67,6 +69,7 @@ use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
+use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 use Symfony\Component\Security\Csrf\CsrfTokenManagerInterface;
 use Symfony\Contracts\Translation\TranslatorInterface;
@@ -109,6 +112,7 @@ final class SyncReviewControllerTest extends TestCase
             $deletedFromSourceDetector ?? $this->createRealDeletedFromSourceDetector($entityManager),
             $animeDeleteService ?? $this->createRealAnimeDeleteService($entityManager),
             new AnimeDeleteFlash($this->createStub(TranslatorInterface::class), $this->createStub(UrlGeneratorInterface::class)),
+            new SourceRemovalPlanner(new SyncRegistry([], new PluginsConfigStore(''))),
             $downloadRepository ?? $this->createStub(DownloadRepository::class),
             $entityManager,
             $csrfTokenManager,
@@ -125,6 +129,8 @@ final class SyncReviewControllerTest extends TestCase
             new SyncRegistry([], new PluginsConfigStore('')),
             new JobLockService(DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]), $this->createStub(ProcessLivenessChecker::class), new MockClock(), 30, 3),
             $this->createStub(SyncTombstoneRepository::class),
+            new SourceRemovalPlanner(new SyncRegistry([], new PluginsConfigStore(''))),
+            $this->createStub(MessageBusInterface::class),
             new SyncReviewService($this->createStub(SyncReviewItemRepository::class)),
             new QbittorrentClient(new MockHttpClient(), 'http://qb.test'),
             new NullLogger(),
@@ -235,7 +241,7 @@ final class SyncReviewControllerTest extends TestCase
             ->with('settings/sync_review/index.html.twig', $this->callback(
                 static fn (array $params): bool => [$item] === $params['items']
                     && [20 => []] === $params['duplicateClusters']
-                    && [20 => ['anime' => $anime, 'deletedFrom' => 'animedb-shikimori', 'stillPresentOn' => ['animedb-mal'], 'hasStorage' => false, 'hasFinishedDownloads' => false]] === $params['deletionDetails']
+                    && [20 => ['anime' => $anime, 'deletedFrom' => 'animedb-shikimori', 'stillPresentOn' => ['animedb-mal'], 'hasStorage' => false, 'hasFinishedDownloads' => false, 'sourceRemoval' => new SourceRemovalPlan()]] == $params['deletionDetails']
                     && $params['needsCorrectionDetails'] === [],
             ))
             ->willReturn('<html></html>');
