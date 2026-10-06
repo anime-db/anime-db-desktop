@@ -41,10 +41,13 @@ use App\Repository\AnimeRepository;
 use App\Repository\AnimeSyncStateRepository;
 use App\Repository\DownloadRepository;
 use App\Repository\PendingSyncPushRepository;
+use App\Repository\StorageRepository;
 use App\Repository\SyncReviewItemRepository;
 use App\Repository\SyncTombstoneRepository;
 use App\Service\AnimeDeleteFlash;
 use App\Service\AnimeDeleteService;
+use App\Service\Download\DownloadFolderJail;
+use App\Service\Download\DownloadIncomingChecker;
 use App\Service\JobLock\JobLockService;
 use App\Service\JobLock\ProcessLivenessChecker;
 use App\Service\Plugin\PluginsConfigStore;
@@ -133,6 +136,7 @@ final class SyncReviewControllerTest extends TestCase
             $this->createStub(MessageBusInterface::class),
             new SyncReviewService($this->createStub(SyncReviewItemRepository::class)),
             new QbittorrentClient(new MockHttpClient(), 'http://qb.test'),
+            new DownloadIncomingChecker(new DownloadFolderJail(), new StorageRepository($entityManager)),
             new NullLogger(),
             sys_get_temp_dir(),
         );

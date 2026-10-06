@@ -33,6 +33,7 @@ use App\Message\RemoveFromSourceMessage;
 use App\Message\SyncSeedMessage;
 use App\Repository\DownloadRepository;
 use App\Repository\SyncTombstoneRepository;
+use App\Service\Download\DownloadIncomingChecker;
 use App\Service\JobLock\JobLockService;
 use App\Service\Plugin\SyncRegistry;
 use App\Service\Qbittorrent\QbittorrentClient;
@@ -66,7 +67,8 @@ use Symfony\Component\Messenger\MessageBusInterface;
  * database and the catch-up before the plugin's next pull ({@see Sync\SourceRemovalService}) finds it.
  *
  * After the commit, best-effort (a failure is logged and never undoes the deletion): the torrents of
- * Completed/Failed downloads are removed from qBittorrent *without* their files, the media directory
+ * Completed/Failed downloads are removed from qBittorrent *without* their files (except a Failed one
+ * whose data is still in a hidden incoming directory), the media directory
  * is deleted and the unresolved review items pointing at the entry are tidied.
  */
 final class AnimeDeleteService
@@ -81,6 +83,7 @@ final class AnimeDeleteService
         private readonly MessageBusInterface $bus,
         private readonly SyncReviewService $syncReview,
         private readonly QbittorrentClient $qbittorrent,
+        private readonly DownloadIncomingChecker $incomingChecker,
         private readonly LoggerInterface $logger,
         private readonly string $mediaDir,
     ) {
@@ -94,6 +97,7 @@ final class AnimeDeleteService
         $animeId = $anime->id ?? throw new \LogicException('Anime must be persisted before it can be deleted.');
 
         $torrentHashes = [];
+        $failedHashes = [];
         $animeDownloads = $this->downloads->findByAnime($animeId);
         foreach ($animeDownloads as $download) {
             if ($download->getStatus() === DownloadStatus::Pending) {
@@ -101,6 +105,9 @@ final class AnimeDeleteService
             }
 
             $torrentHashes[] = $download->getInfoHash();
+            if ($download->getStatus() === DownloadStatus::Failed) {
+                $failedHashes[$download->getInfoHash()] = true;
+            }
         }
 
         if ($this->isSyncRunning()) {
@@ -133,7 +140,7 @@ final class AnimeDeleteService
         });
 
         $this->queueSourceRemovals($targets);
-        $this->removeTorrents($torrentHashes);
+        $this->removeTorrents($torrentHashes, $failedHashes);
         $this->removeMediaDirectory($animeId);
         $this->tidyReviewItems($animeId);
 
@@ -167,12 +174,49 @@ final class AnimeDeleteService
         }
     }
 
-    /** @param list<string> $hashes */
-    private function removeTorrents(array $hashes): void
+    /**
+     * A torrent is addressed by the client's own `hash` (a hybrid torrent is not found by its v1 hash),
+     * taken from one fresh `torrents/info`. The torrent of a Failed row whose data still sits in a
+     * hidden incoming directory is left in the client: with the row gone it shows up on the "Downloads"
+     * page as a torrent without a card, where its data can be deleted or it can be linked to another entry.
+     *
+     * @param list<string>        $hashes       v1 info hashes of the entry's downloads
+     * @param array<string, true> $failedHashes v1 info hashes of the Failed ones
+     */
+    private function removeTorrents(array $hashes, array $failedHashes): void
     {
+        if ($hashes === []) {
+            return;
+        }
+
+        try {
+            $byV1 = [];
+            foreach ($this->qbittorrent->getTorrentsInfo() as $torrent) {
+                $v1 = $torrent['infohash_v1'] ?? null;
+                if (\is_string($v1) && $v1 !== '') {
+                    $byV1[strtolower($v1)] = $torrent;
+                }
+            }
+            $roots = $this->incomingChecker->storageRoots();
+        } catch (\Throwable $exception) {
+            $this->logger->warning('The entry was deleted, but its torrents could not be looked up in the download client.', [
+                'exception' => $exception,
+            ]);
+
+            return;
+        }
+
         foreach ($hashes as $hash) {
+            $torrent = $byV1[strtolower($hash)] ?? null;
+            if ($torrent === null) {
+                continue;
+            }
+            if (isset($failedHashes[$hash]) && $this->incomingChecker->isInIncomingOfAnyStorage($torrent, $roots)) {
+                continue;
+            }
+
             try {
-                $this->qbittorrent->delete($hash, false);
+                $this->qbittorrent->delete((string) ($torrent['hash'] ?? ''), false);
             } catch (\Throwable $exception) {
                 $this->logger->warning('The entry was deleted, but its torrent could not be removed from the download client.', [
                     'infoHash' => $hash,
