@@ -245,6 +245,56 @@ final class DownloadsTemplateRenderingTest extends KernelTestCase
         $without = $this->render(['rows' => [$this->row(['canAdopt' => false])], 'orphans' => [], 'qbittorrentAvailable' => true]);
 
         $this->assertStringContainsString('Привязать к записи', $with);
+        $this->assertStringContainsString('href="/downloads/1/adopt?version=4&amp;status=failed"', $with);
         $this->assertStringNotContainsString('Привязать к записи', $without);
+    }
+
+    /**
+     * @param array<string, mixed> $params
+     */
+    private function renderAdopt(array $params): string
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession();
+        /** @var LocaleSwitcher $localeSwitcher */
+        $localeSwitcher = self::getContainer()->get(LocaleSwitcher::class);
+        $localeSwitcher->setLocale('ru');
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+
+        return $twig->render('downloads/adopt.html.twig', array_merge([
+            'infoHash' => str_repeat('a', 40),
+            'form' => [
+                'action' => '/downloads/9/adopt',
+                'tokenId' => 'download_adopt_9',
+                'hidden' => ['version' => '4', 'status' => 'failed'],
+            ],
+            'torrentName' => 'Some torrent',
+            'selectedAnime' => null,
+            'error' => null,
+            'errorParams' => [],
+            'blocked' => false,
+            'backUrl' => '/downloads',
+        ], $params));
+    }
+
+    public function testAdoptTemplateRendersTheFormActionTokenAndHiddenFields(): void
+    {
+        $html = $this->renderAdopt([]);
+
+        $this->assertStringContainsString('action="/downloads/9/adopt"', $html);
+        $this->assertMatchesRegularExpression('/<input type="hidden" name="_token" value="[^"]+"/', $html);
+        $this->assertStringContainsString('<input type="hidden" name="version" value="4">', $html);
+        $this->assertStringContainsString('<input type="hidden" name="status" value="failed">', $html);
+    }
+
+    public function testBlockedAdoptTemplateOffersWayBackInsteadOfAForm(): void
+    {
+        $html = $this->renderAdopt(['blocked' => true, 'error' => 'downloads.action_error_conflict']);
+
+        $this->assertStringNotContainsString('<form', $html);
+        $this->assertStringContainsString('Состояние загрузки изменилось', $html);
+        $this->assertStringContainsString('href="/downloads"', $html);
     }
 }

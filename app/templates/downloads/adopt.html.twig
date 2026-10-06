@@ -17,6 +17,7 @@
  #
  # You should have received a copy of the GNU General Public License
  # along with this program. If not, see <https://www.gnu.org/licenses/>.
+ #}
 {% extends 'base.html.twig' %}
 
 {% block title %}{{ 'download_adopt.title'|trans }}{% endblock %}
@@ -35,6 +36,9 @@
 
         <p class="form-text">{{ 'download_adopt.storage_hint'|trans }}</p>
 
+        {% if blocked %}
+            <p><a class="btn btn-secondary" href="{{ backUrl }}">{{ 'download_adopt.back_button'|trans }}</a></p>
+        {% else %}
         <form method="post" action="{{ form.action }}">
             <input type="hidden" name="_token" value="{{ csrf_token(form.tokenId) }}">
             {% for name, value in form.hidden %}
@@ -52,5 +56,6 @@
 
             <button type="submit" class="btn btn-primary"{% if torrentName is null %} disabled{% endif %}>{{ 'download_adopt.submit_button'|trans }}</button>
         </form>
+        {% endif %}
     </main>
 {% endblock %}

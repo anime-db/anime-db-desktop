@@ -224,10 +224,25 @@ final class DownloadAdoptControllerTest extends TestCase
 
         $twig = $this->createMock(Environment::class);
         $twig->expects($this->once())->method('render')->with('downloads/adopt.html.twig', $this->callback(
-            static fn (array $params): bool => $params['error'] === 'downloads.action_error_conflict',
+            static fn (array $params): bool => $params['error'] === 'downloads.action_error_conflict' && $params['blocked'] === true,
         ))->willReturn('<html></html>');
 
         $this->controller($adopter, true, $twig, $conflictAdopter)->adoptRow($this->conflictRow(), Request::create('/downloads/9/adopt', 'POST', ['_token' => 'x', 'anime' => '5']));
+    }
+
+    public function testRowPickerWithoutVersionAndStatusIsBlockedInsteadOfShowingADoomedForm(): void
+    {
+        $conflictAdopter = $this->createMock(DownloadStorageConflictAdopter::class);
+        $conflictAdopter->expects($this->never())->method('findFolderOwner');
+        $adopter = $this->createStub(DownloadOrphanAdopter::class);
+        $adopter->method('findTorrent')->willReturn(['name' => 'Some torrent']);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())->method('render')->with('downloads/adopt.html.twig', $this->callback(
+            static fn (array $params): bool => $params['error'] === 'downloads.action_error_conflict' && $params['blocked'] === true,
+        ))->willReturn('<html></html>');
+
+        $this->controller($adopter, true, $twig, $conflictAdopter)->adoptRow($this->conflictRow(), Request::create('/downloads/9/adopt'));
     }
 
     public function testRowPostSuccessRedirectsToDownloadsWithTheFormsExpectedState(): void
@@ -250,9 +265,11 @@ final class DownloadAdoptControllerTest extends TestCase
         $adopter = $this->createStub(DownloadOrphanAdopter::class);
         $adopter->method('findTorrent')->willReturn(['name' => 'Some torrent']);
         $errors = [];
+        $blocked = [];
         $twig = $this->createStub(Environment::class);
-        $twig->method('render')->willReturnCallback(static function (string $template, array $params) use (&$errors): string {
+        $twig->method('render')->willReturnCallback(static function (string $template, array $params) use (&$errors, &$blocked): string {
             $errors[] = $params['error'];
+            $blocked[] = $params['blocked'];
 
             return '';
         });
@@ -266,5 +283,6 @@ final class DownloadAdoptControllerTest extends TestCase
         $controller->adoptRow($this->conflictRow(), Request::create('/downloads/9/adopt', 'POST', $post));
 
         $this->assertSame(['downloads.action_error_conflict', 'download_adopt.error_storage_mismatch'], $errors);
+        $this->assertSame([true, false], $blocked);
     }
 }

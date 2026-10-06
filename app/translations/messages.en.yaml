@@ -814,6 +814,7 @@ download_adopt:
     heading: 'Link the torrent to an entry'
     storage_hint: 'The storage is determined by where the files are. The torrent stays where it is.'
     submit_button: 'Link'
+    back_button: 'Back to downloads'
     error_not_in_client: 'This torrent is not in the torrent client.'
     error_path_is_root: 'The torrent''s files sit directly in the storage root — there is nothing to link.'
     error_bare_incoming: 'The torrent''s files sit in the temporary folder without a folder of their own — they cannot be linked.'

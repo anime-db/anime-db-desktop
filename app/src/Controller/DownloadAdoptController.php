@@ -113,6 +113,10 @@ final class DownloadAdoptController
                 return $this->render($infoHash, $form, error: 'downloads.action_error_refused');
             }
 
+            if ($this->parseExpectedState($form['hidden']) === null) {
+                return $this->render($infoHash, $form, error: 'downloads.action_error_conflict', blocked: true);
+            }
+
             return $this->render($infoHash, $form, $this->conflictAdopter->findFolderOwner($download));
         }
 
@@ -126,7 +130,7 @@ final class DownloadAdoptController
 
         $expected = $this->parseExpectedState($form['hidden']);
         if ($expected === null) {
-            return $this->render($infoHash, $form, $anime, 'downloads.action_error_conflict');
+            return $this->render($infoHash, $form, $anime, 'downloads.action_error_conflict', blocked: true);
         }
         if ($anime === null) {
             return $this->render($infoHash, $form, error: 'download_new.error_anime_required');
@@ -140,7 +144,7 @@ final class DownloadAdoptController
 
         return match ($outcome) {
             DownloadActionOutcome::Success => new RedirectResponse($this->urlGenerator->generate('downloads_index')),
-            DownloadActionOutcome::Conflict => $this->render($infoHash, $form, $anime, 'downloads.action_error_conflict'),
+            DownloadActionOutcome::Conflict => $this->render($infoHash, $form, $anime, 'downloads.action_error_conflict', blocked: true),
             DownloadActionOutcome::Refused => $this->render($infoHash, $form, $anime, 'downloads.action_error_refused'),
         };
     }
@@ -175,8 +179,9 @@ final class DownloadAdoptController
     /**
      * @param array{action: string, tokenId: string, hidden: array<string, string>} $form
      * @param array<string, string>                                                 $errorParams
+     * @param bool                                                                  $blocked     the form's version/status are stale or missing, so it cannot succeed: show a way back to "Downloads" instead
      */
-    private function render(string $infoHash, array $form, ?Anime $selectedAnime = null, ?string $error = null, array $errorParams = []): Response
+    private function render(string $infoHash, array $form, ?Anime $selectedAnime = null, ?string $error = null, array $errorParams = [], bool $blocked = false): Response
     {
         $torrentName = null;
         try {
@@ -197,6 +202,8 @@ final class DownloadAdoptController
             'selectedAnime' => $selectedAnime,
             'error' => $error,
             'errorParams' => $errorParams,
+            'blocked' => $blocked,
+            'backUrl' => $this->urlGenerator->generate('downloads_index'),
         ]));
     }
 }
