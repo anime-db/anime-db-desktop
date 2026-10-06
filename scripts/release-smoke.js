@@ -309,6 +309,9 @@ const STUB_TORRENT_HASH = '0'.repeat(40);
 const QBITTORRENT_ENDPOINTS = [
     { method: 'POST', path: '/api/v2/torrents/add', body: '' },
     { method: 'GET', path: '/api/v2/torrents/info' },
+    // No `hash` on purpose: a known route answers 400 (missing parameter), while an unknown hash
+    // would answer 404 and be indistinguishable from a missing route.
+    { method: 'GET', path: '/api/v2/torrents/files' },
     { method: 'POST', path: '/api/v2/torrents/setLocation', body: `hashes=${STUB_TORRENT_HASH}&location=` },
     { method: 'POST', path: '/api/v2/torrents/stop', body: `hashes=${STUB_TORRENT_HASH}` },
     { method: 'POST', path: '/api/v2/torrents/start', body: `hashes=${STUB_TORRENT_HASH}` },
