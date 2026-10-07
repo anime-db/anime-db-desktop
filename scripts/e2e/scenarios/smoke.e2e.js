@@ -55,7 +55,11 @@ test('a click on an element covered by another element fails instead of passing'
     });
 
     // The overlay intercepts pointer events: Playwright must refuse, not click through it.
-    await expect(page.locator('#e2e-covered').click({ timeout: 1500 })).rejects.toThrow(/intercepts pointer events|Timeout/);
+    await expect(page.locator('#e2e-covered').click({ timeout: 1500 })).rejects.toThrow(/e2e-overlay.*intercepts pointer events/s);
+
+    // Positive control: without the overlay the same click goes through, so the overlay was the cause.
+    await page.evaluate(() => document.getElementById('e2e-overlay').remove());
+    await page.locator('#e2e-covered').click({ timeout: 1500 });
 });
 
 test('the pick-folder button gets the stubbed native dialog answer without a real dialog', async ({ app, page, session }) => {

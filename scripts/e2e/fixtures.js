@@ -31,8 +31,17 @@
 const base = require('@playwright/test');
 
 const { launchApp } = require('./launch');
+const { disposeFixture } = require('../fixture');
 
 const test = base.test.extend({
+    // The fixture template is built lazily inside the worker process (launchApp), so only the
+    // worker can remove it; a restarted worker (after a failed scenario) cleans up its own copy.
+    // eslint-disable-next-line no-empty-pattern
+    _fixtureCleanup: [async ({}, use) => {
+        await use();
+        disposeFixture();
+    }, { scope: 'worker', auto: true }],
+
     // eslint-disable-next-line no-empty-pattern
     session: async ({}, use, testInfo) => {
         const session = await launchApp();

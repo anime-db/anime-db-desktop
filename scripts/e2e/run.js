@@ -32,7 +32,6 @@ const fs   = require('fs');
 const path = require('path');
 
 const { checkPrerequisites, relaunchUnderXvfb, rootDir } = require('./prereq');
-const { disposeFixture } = require('../fixture');
 
 checkPrerequisites();
 
@@ -45,6 +44,5 @@ if (!relaunchUnderXvfb()) {
         { cwd: rootDir, stdio: 'inherit' },
     );
 
-    disposeFixture();
     process.exit(result.status === null ? 1 : result.status);
 }

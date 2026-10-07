@@ -47,11 +47,15 @@ module.exports = [
         rules: {
             'no-restricted-syntax': ['error',
                 {
-                    selector: 'CallExpression[callee.property.name=/^(evaluate|evaluateAll|evaluateHandle|executeJavaScript|addInitScript)$/] CallExpression[callee.property.name=/^(click|dblclick|dispatchEvent|focus|submit|requestSubmit)$/]',
+                    selector: 'CallExpression[callee.property.name=dispatchEvent]',
+                    message:  'No scripted interaction in E2E: dispatchEvent() is untrusted input; use Playwright locator actions.',
+                },
+                {
+                    selector: 'CallExpression[callee.property.name=/^(evaluate|evaluateAll|evaluateHandle|executeJavaScript|addInitScript|\\$eval|\\$\\$eval|evalOnSelector|evalOnSelectorAll)$/] CallExpression[callee.property.name=/^(click|dblclick|dispatchEvent|focus|submit|requestSubmit)$/]',
                     message:  'No scripted interaction in E2E: use Playwright locator actions (locator.click() etc.).',
                 },
                 {
-                    selector: 'CallExpression[callee.property.name=/^(evaluate|evaluateAll|evaluateHandle|executeJavaScript|addInitScript)$/] :matches(Literal[value=/\\.(click|dispatchEvent)\\(/], TemplateElement[value.raw=/\\.(click|dispatchEvent)\\(/])',
+                    selector: 'CallExpression[callee.property.name=/^(evaluate|evaluateAll|evaluateHandle|executeJavaScript|addInitScript|\\$eval|\\$\\$eval|evalOnSelector|evalOnSelectorAll)$/] :matches(Literal[value=/\\.(click|dispatchEvent)\\(/], TemplateElement[value.raw=/\\.(click|dispatchEvent)\\(/])',
                     message:  'No scripted interaction in E2E: use Playwright locator actions (locator.click() etc.).',
                 },
             ],

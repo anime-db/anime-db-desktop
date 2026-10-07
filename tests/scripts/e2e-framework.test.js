@@ -47,6 +47,12 @@ describe('E2E lint guard: scripted interaction is forbidden', () => {
         "app.evaluate(() => { window.x.click(); });",
         "page.evaluate(\"document.querySelector('button').click()\");",
         "win.webContents.executeJavaScript(`document.getElementById('a').click()`);",
+        "page.$eval('#btn', (el) => el.click());",
+        "page.$$eval('#btn', (els) => els[0].click());",
+        "page.evalOnSelector('#btn', (el) => el.click());",
+        "page.evalOnSelectorAll('#btn', (els) => els[0].click());",
+        "page.locator('#btn').dispatchEvent('click');",
+        "page.dispatchEvent('#btn', 'click');",
     ])('%s is rejected', (code) => {
         const messages = lintE2e(`'use strict';\n${code}\n`);
 
