@@ -39,6 +39,9 @@ const path = require('path');
 
 const { findFreePort } = require('../../native/supervisor/port');
 const { waitForHealth } = require('../../native/supervisor/healthcheck');
+const {
+    KILL_GRACE_MS, LastPageTracker, resolveTimeoutMs, formatTimeoutMessage,
+} = require('./lifecycle');
 
 const rootDir   = path.resolve(__dirname, '..', '..');
 const appDir    = path.join(rootDir, 'app');
@@ -212,22 +215,59 @@ function startPhpServer(port) {
  */
 function runCapture(port, animeId) {
     return new Promise((resolve) => {
+        const timeoutMs = resolveTimeoutMs(process.env);
+        const lastPage  = new LastPageTracker();
+
+        // Own process group, so a timeout reaches Electron behind the xvfb-run shell wrapper.
         const child = spawn('xvfb-run', [
             '-a', 'node_modules/.bin/electron',
             '--no-sandbox', '--disable-gpu', '--disable-lcd-text',
             captureJs,
         ], {
             cwd: rootDir,
+            detached: true,
             env: {
                 ...process.env,
                 SHOTS_PORT:     String(port),
                 SHOTS_OUT_DIR:  outDir,
                 SHOTS_ANIME_ID: animeId || '',
             },
-            stdio: 'inherit',
+            stdio: ['inherit', 'pipe', 'inherit'],
         });
 
-        child.on('exit', (code) => resolve(code === null ? 1 : code));
+        child.stdout.on('data', (chunk) => {
+            lastPage.push(chunk);
+            process.stdout.write(chunk);
+        });
+
+        const killGroup = (signal) => {
+            try {
+                process.kill(-child.pid, signal);
+            } catch {
+                // already gone
+            }
+        };
+
+        let timedOut = false;
+        let killTimer = null;
+        const timer = setTimeout(() => {
+            timedOut = true;
+            console.error(`\n[shots] ${formatTimeoutMessage(timeoutMs, lastPage.describe())}`);
+            // SIGTERM first: capture.js uses it to save the snapshot of the hung page.
+            killGroup('SIGTERM');
+            killTimer = setTimeout(() => killGroup('SIGKILL'), KILL_GRACE_MS);
+        }, timeoutMs);
+
+        child.on('exit', (code) => {
+            clearTimeout(timer);
+            if (killTimer !== null) clearTimeout(killTimer);
+            // Whatever is left in the group (e.g. Xvfb) must not outlive the run.
+            if (timedOut) killGroup('SIGKILL');
+            if (code !== 0) {
+                console.error(`[shots] последняя страница: ${lastPage.describe()}`);
+            }
+            resolve(timedOut ? 1 : (code === null ? 1 : code));
+        });
     });
 }
 
@@ -241,15 +281,16 @@ async function main() {
     bootstrapDatabase();
     const animeId = findFirstAnimeId();
 
-    fs.rmSync(outDir, { recursive: true, force: true });
-    fs.mkdirSync(outDir, { recursive: true });
-
     const port = await findFreePort(STARTUP_PORT);
     const server = startPhpServer(port);
 
     let exitCode = 1;
     try {
         await waitForHealth(port);
+        // Cleared only now that capturing really starts, so a run that dies earlier keeps the
+        // previous screenshots; *.FAILED.* of this run are written after this point.
+        fs.rmSync(outDir, { recursive: true, force: true });
+        fs.mkdirSync(outDir, { recursive: true });
         exitCode = await runCapture(port, animeId);
     } catch (err) {
         console.error(`[shots] ${err.message}`);

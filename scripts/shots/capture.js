@@ -33,6 +33,7 @@ const fs   = require('fs');
 const path = require('path');
 
 const { PageErrorTracker } = require('./page-errors');
+const { formatLastPageLine, saveFailureArtifacts } = require('./lifecycle');
 
 const PORT    = process.env.SHOTS_PORT;
 const OUT_DIR = process.env.SHOTS_OUT_DIR;
@@ -129,6 +130,24 @@ function loadPage(win, url) {
     });
 }
 
+// The page being processed, so a failure or a SIGTERM from run.js can snapshot it.
+let current = null;
+let failureSaved = false;
+
+/**
+ * @returns {Promise<void>}
+ */
+async function saveCurrentFailure() {
+    if (current === null || failureSaved) return;
+    failureSaved = true;
+    await saveFailureArtifacts(current.win.webContents, current.dir, current.name);
+}
+
+// run.js sends SIGTERM on its own timeout and SIGKILLs after a grace period.
+process.on('SIGTERM', () => {
+    saveCurrentFailure().finally(() => app.exit(1));
+});
+
 async function main() {
     await app.whenReady();
 
@@ -184,6 +203,8 @@ async function main() {
         for (const targetPage of pages) {
             const url = `http://127.0.0.1:${PORT}${targetPage.path}`;
             currentPageUrl = url;
+            current = { win, dir: themeDir, name: targetPage.name };
+            console.log(formatLastPageLine(`${theme}/${targetPage.name} (${url})`));
             await loadPage(win, url);
 
             if (!(await waitForRender(win))) {
@@ -205,7 +226,8 @@ async function main() {
     app.exit(0);
 }
 
-main().catch((err) => {
+main().catch(async (err) => {
     console.error(`[shots] ${err.stack || err.message}`);
+    await saveCurrentFailure();
     app.exit(1);
 });
