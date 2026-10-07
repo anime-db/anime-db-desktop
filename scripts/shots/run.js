@@ -39,6 +39,9 @@ const path = require('path');
 
 const { findFreePort } = require('../../native/supervisor/port');
 const { waitForHealth } = require('../../native/supervisor/healthcheck');
+const {
+    RunWatchdog, LastPageTracker, formatExitLine, resolveTimeoutMs, formatTimeoutMessage,
+} = require('./lifecycle');
 
 const rootDir   = path.resolve(__dirname, '..', '..');
 const appDir    = path.join(rootDir, 'app');
@@ -208,26 +211,86 @@ function startPhpServer(port) {
 /**
  * @param {number} port
  * @param {string|null} animeId
+ * @param {import('child_process').ChildProcess} server
  * @returns {Promise<number>}
  */
-function runCapture(port, animeId) {
+function runCapture(port, animeId, server) {
     return new Promise((resolve) => {
+        const timeoutMs = resolveTimeoutMs(process.env);
+        const lastPage  = new LastPageTracker();
+
+        // Own process group, so a timeout reaches Electron behind the xvfb-run shell wrapper.
         const child = spawn('xvfb-run', [
             '-a', 'node_modules/.bin/electron',
             '--no-sandbox', '--disable-gpu', '--disable-lcd-text',
             captureJs,
         ], {
             cwd: rootDir,
+            detached: true,
             env: {
                 ...process.env,
                 SHOTS_PORT:     String(port),
                 SHOTS_OUT_DIR:  outDir,
                 SHOTS_ANIME_ID: animeId || '',
             },
-            stdio: 'inherit',
+            stdio: ['inherit', 'pipe', 'inherit'],
         });
 
-        child.on('exit', (code) => resolve(code === null ? 1 : code));
+        child.stdout.on('data', (chunk) => {
+            lastPage.push(chunk);
+            process.stdout.write(chunk);
+        });
+
+        const killGroup = (signal) => {
+            try {
+                process.kill(-child.pid, signal);
+            } catch {
+                // already gone
+            }
+        };
+
+        const watchdog = new RunWatchdog({
+            timeoutMs,
+            requestSnapshot: () => {
+                // Only the Electron main process: it saves the failed page, then exits.
+                if (lastPage.pid === null) {
+                    killGroup('SIGKILL');
+                    return;
+                }
+                try {
+                    process.kill(lastPage.pid, 'SIGUSR2');
+                } catch {
+                    // already gone
+                }
+            },
+            killGroup,
+            // The message is printed on exit, once capture.js has said which page it saved.
+            onTimeout: () => lastPage.markTimeout(),
+        });
+        watchdog.start();
+
+        // The child has its own process group, so Ctrl+C no longer reaches it by itself.
+        const onSignal = (signal) => {
+            killGroup('SIGKILL');
+            server.kill('SIGTERM');
+            process.exit(128 + (signal === 'SIGINT' ? 2 : 15));
+        };
+        process.once('SIGINT', onSignal);
+        process.once('SIGTERM', onSignal);
+
+        // 'close', not 'exit': stdout must be drained so the [shots:failed] line is not lost.
+        child.on('close', (code) => {
+            process.removeListener('SIGINT', onSignal);
+            process.removeListener('SIGTERM', onSignal);
+            if (watchdog.timedOut) {
+                console.error(`\n[shots] ${formatTimeoutMessage(timeoutMs, lastPage.describeFailed())}`);
+            }
+            const exitLine = formatExitLine(watchdog, code, lastPage);
+            if (exitLine !== null) {
+                console.error(`[shots] ${exitLine}`);
+            }
+            resolve(watchdog.finish(code));
+        });
     });
 }
 
@@ -241,16 +304,17 @@ async function main() {
     bootstrapDatabase();
     const animeId = findFirstAnimeId();
 
-    fs.rmSync(outDir, { recursive: true, force: true });
-    fs.mkdirSync(outDir, { recursive: true });
-
     const port = await findFreePort(STARTUP_PORT);
     const server = startPhpServer(port);
 
     let exitCode = 1;
     try {
         await waitForHealth(port);
-        exitCode = await runCapture(port, animeId);
+        // Cleared only now that capturing really starts, so a run that dies earlier keeps the
+        // previous screenshots; *.FAILED.* of this run are written after this point.
+        fs.rmSync(outDir, { recursive: true, force: true });
+        fs.mkdirSync(outDir, { recursive: true });
+        exitCode = await runCapture(port, animeId, server);
     } catch (err) {
         console.error(`[shots] ${err.message}`);
         console.error(server.tail());
