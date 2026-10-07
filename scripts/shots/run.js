@@ -39,6 +39,7 @@ const path = require('path');
 
 const { findFreePort } = require('../../native/supervisor/port');
 const { waitForHealth } = require('../../native/supervisor/healthcheck');
+const { createIsolatedEnv, disposeFixture } = require('../fixture');
 const {
     RunWatchdog, LastPageTracker, formatExitLine, resolveTimeoutMs, formatTimeoutMessage,
 } = require('./lifecycle');
@@ -144,59 +145,48 @@ function checkElectronRuntimeLibs() {
 }
 
 /**
- * Brings the SQLite schema up to date the same way the packaged app does on every start (see
- * native/supervisor/migrations.js) — a freshly cloned repo has no `data/` directory at all.
- * Both commands are idempotent, so running them unconditionally is cheap once the schema is
- * already current.
- */
-function bootstrapDatabase() {
-    fs.mkdirSync(path.join(rootDir, 'data'), { recursive: true });
-
-    const console_ = path.join(appDir, 'bin', 'console');
-    try {
-        execFileSync('php', [console_, 'doctrine:migrations:migrate', '--no-interaction'], { cwd: appDir, stdio: 'pipe' });
-        execFileSync('php', [console_, 'messenger:setup-transports', '--no-interaction'], { cwd: appDir, stdio: 'pipe' });
-    } catch (err) {
-        fail(`database bootstrap failed:\n${(err.stderr || err.stdout || err.message).toString()}`);
-    }
-}
-
-/**
- * The catalog page needing a real anime id (for the anime-card screenshot) is the one page whose
- * data is a manual step (see README) rather than something this script can set up itself. `null`
- * means the catalog is empty — capture.js skips that one screenshot in that case.
+ * Id of the first catalog entry of the fixture, for the anime-card and anime-edit pages. The
+ * fixture always has entries, so a missing one means a broken fixture and fails the run.
  *
- * @returns {string|null}
+ * @param {string} dbPath
+ * @returns {string}
  */
-function findFirstAnimeId() {
-    const dbPath = path.join(rootDir, 'data', 'data.db');
-    if (!fs.existsSync(dbPath)) return null;
-
+function findFirstAnimeId(dbPath) {
+    let output = '';
     try {
-        const output = execFileSync('php', [
+        output = execFileSync('php', [
             '-r',
             '$db = new PDO("sqlite:".$argv[1]); '
             + '$id = $db->query("SELECT id FROM anime ORDER BY id LIMIT 1")->fetchColumn(); '
             + 'echo $id === false ? "" : $id;',
             dbPath,
         ], { encoding: 'utf8' }).trim();
-
-        return output === '' ? null : output;
-    } catch {
-        return null;
+    } catch (err) {
+        fail(`cannot read the fixture database: ${err.message}`);
     }
+
+    if (output === '') {
+        fail('the fixture database has no anime — the fixture is broken.');
+    }
+
+    return output;
 }
 
 /**
  * @param {number} port
+ * @param {Record<string, string>} env user-data environment of the run
  * @returns {import('child_process').ChildProcess & { tail: () => string }}
  */
-function startPhpServer(port) {
-    const child = spawn('php', ['-S', `127.0.0.1:${port}`, '-t', path.join(appDir, 'public'), routerPhp], {
+function startPhpServer(port, env) {
+    const child = spawn('php', [
+        // The built-in server's default variables_order (GPCS) leaves the real environment out of
+        // $_SERVER/$_ENV, so Symfony would read app/.env instead of the run's DATABASE_URL & co.
+        '-d', 'variables_order=EGPCS',
+        '-S', `127.0.0.1:${port}`, '-t', path.join(appDir, 'public'), routerPhp], {
         cwd: rootDir,
         // A single-threaded built-in server cannot serve the browser's parallel CSS/JS requests
         // for one page load — see router.php's docblock and the issue this implements.
-        env: { ...process.env, PHP_CLI_SERVER_WORKERS: '4' },
+        env: { ...process.env, ...env, PHP_CLI_SERVER_WORKERS: '4' },
         stdio: ['ignore', 'pipe', 'pipe'],
     });
 
@@ -209,12 +199,39 @@ function startPhpServer(port) {
 }
 
 /**
+ * Developer paths the run must never create or touch: they exist only if the isolation leaked.
+ */
+const LEAK_GUARDED_PATHS = [
+    path.join(rootDir, 'data'),
+    path.join(appDir, 'var', 'config.json'),
+];
+
+/**
+ * @returns {Map<string, number|null>} mtime of every guarded path, null when it does not exist
+ */
+function snapshotGuardedPaths() {
+    return new Map(LEAK_GUARDED_PATHS.map((p) => [p, fs.existsSync(p) ? fs.statSync(p).mtimeMs : null]));
+}
+
+/**
+ * @param {Map<string, number|null>} before
+ * @returns {string[]} guarded paths that appeared (or changed) during the run
+ */
+function findLeakedPaths(before) {
+    return LEAK_GUARDED_PATHS.filter((p) => {
+        const now = fs.existsSync(p) ? fs.statSync(p).mtimeMs : null;
+        return now !== before.get(p);
+    });
+}
+
+/**
  * @param {number} port
- * @param {string|null} animeId
+ * @param {string} animeId
  * @param {import('child_process').ChildProcess} server
+ * @param {Record<string, string>} env
  * @returns {Promise<number>}
  */
-function runCapture(port, animeId, server) {
+function runCapture(port, animeId, server, env) {
     return new Promise((resolve) => {
         const timeoutMs = resolveTimeoutMs(process.env);
         const lastPage  = new LastPageTracker();
@@ -229,9 +246,10 @@ function runCapture(port, animeId, server) {
             detached: true,
             env: {
                 ...process.env,
+                ...env,
                 SHOTS_PORT:     String(port),
                 SHOTS_OUT_DIR:  outDir,
-                SHOTS_ANIME_ID: animeId || '',
+                SHOTS_ANIME_ID: animeId,
             },
             stdio: ['inherit', 'pipe', 'inherit'],
         });
@@ -301,11 +319,13 @@ async function main() {
     checkBinaryOnPath('xvfb-run');
     checkElectronRuntimeLibs();
 
-    bootstrapDatabase();
-    const animeId = findFirstAnimeId();
+    // The run works on a copy of the fixture, never on the developer's data/ and app/var/.
+    const guardedBefore = snapshotGuardedPaths();
+    const isolated = createIsolatedEnv();
+    const animeId = findFirstAnimeId(path.join(isolated.dir, 'data.db'));
 
     const port = await findFreePort(STARTUP_PORT);
-    const server = startPhpServer(port);
+    const server = startPhpServer(port, isolated.env);
 
     let exitCode = 1;
     try {
@@ -314,12 +334,23 @@ async function main() {
         // previous screenshots; *.FAILED.* of this run are written after this point.
         fs.rmSync(outDir, { recursive: true, force: true });
         fs.mkdirSync(outDir, { recursive: true });
-        exitCode = await runCapture(port, animeId, server);
+        exitCode = await runCapture(port, animeId, server, isolated.env);
     } catch (err) {
         console.error(`[shots] ${err.message}`);
         console.error(server.tail());
     } finally {
         server.kill('SIGTERM');
+        isolated.cleanup();
+        disposeFixture();
+    }
+
+    const leaked = findLeakedPaths(guardedBefore);
+    if (leaked.length > 0) {
+        console.error(
+            `[shots] isolation leaked: the run created or changed ${leaked.join(', ')} — `
+            + 'the environment did not reach the server or capture.js.',
+        );
+        exitCode = 1;
     }
 
     if (exitCode === 0) {
