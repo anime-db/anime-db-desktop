@@ -167,9 +167,11 @@ FrankenPHP** версии из `scripts/versions.json` в `bin/frankenphp/franke
 - сервер — боевой FrankenPHP с `app/Caddyfile` (воркер, `try_files` в Caddy), `APP_ENV=prod`,
   перед стартом выполняется `cache:warmup`; `php -S` и `scripts/shots/router.php` не используются;
 - данные — копия фикстуры (`scripts/fixture`) на каждый сценарий, включая runtime-каталог
-  Symfony. Точка подключения: `E2E_DATA_DIR` — каталог окружения, который используется как есть;
-- main-процесс — `scripts/e2e/main.js`: настоящие `preload.js` и IPC-обработчики `native/dialog`,
-  без супервизора (он стартует Windows-бинарники);
+  Symfony; каталог окружения одновременно `userData` Electron (как `AppData/AnimeDB` в бою), поэтому
+  `config.json` общий у PHP и native. Точка подключения: `E2E_DATA_DIR` — каталог окружения, который
+  используется как есть;
+- main-процесс — `scripts/e2e/main.js`: настоящие `preload.js`, IPC-обработчики `native/dialog` и
+  подмена `Accept-Language` (`native/accept-language`), без супервизора (он стартует Windows-бинарники);
 - взаимодействие — **только** через локаторы Playwright. `locator.click()` ждёт реальной
   кликабельности и отказывает на перекрытом элементе; `el.click()` внутри `evaluate()` /
   `executeJavaScript()` кликает сквозь оверлей с `isTrusted=false`, поэтому ESLint запрещает его в
@@ -178,6 +180,23 @@ FrankenPHP** версии из `scripts/versions.json` в `bin/frankenphp/franke
   (`scripts/e2e/dialogs.js`: `stubOpenDialog`, `stubOpenDialogCancelled`, `stubMessageBox`);
 - живучесть — таймаут на сценарий 90 с (`E2E_TIMEOUT_MS`), при падении в `e2e-results/` остаются
   trace и скриншот последнего состояния (видео нет: `recordVideo` в Electron требует ffmpeg — второй загрузки — и без него виснет), итоговый вердикт называет упавшие сценарии, код выхода ненулевой.
+
+Сценарии первой партии (`scripts/e2e/scenarios/*.e2e.js`): инлайн-редактор карточки, метки,
+галерея кадров, место показа ошибки заливки, список каталога (фильтр, пагинация, пустое
+состояние), подтверждение удаления, `/settings/backup`, `/storage/new`, переключение языка.
+
+**Метка для матрицы покрытия.** Каждый сценарий объявляется через `covers()` из
+`scripts/e2e/coverage.js`; это обычные теги Playwright, их отдаёт
+`npx playwright test -c scripts/e2e/playwright.config.js --list --reporter=json` в поле `tags`:
+
+```js
+test('название', covers({ routes: ['/anime/{id}'], features: ['inline-editor'] }), async ({ page, session }) => { ... });
+// теги: @route:/anime/{id}  @feature:inline-editor
+```
+
+Маршрут — путь Symfony с `{плейсхолдерами}`, фича — имя в kebab-case; нужен хотя бы один из двух.
+Сценарий, которому нужна кнопка «Заполнить из источника», включает офлайн-плагин:
+`test.use({ sourcePlugin: true })` (`scripts/e2e/plugins.js`, сеть не нужна).
 
 `e2e:session` печатает URL приложения и CDP-endpoint (`chromium.connectOverCDP(endpoint)`).
 Диалоги в такой сессии не подменены.
