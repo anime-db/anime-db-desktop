@@ -33,7 +33,7 @@ const fs   = require('fs');
 const path = require('path');
 
 const { PageErrorTracker } = require('./page-errors');
-const { formatLastPageLine, saveFailureArtifacts } = require('./lifecycle');
+const { PID_MARKER, formatLastPageLine, saveFailureArtifacts } = require('./lifecycle');
 
 const PORT    = process.env.SHOTS_PORT;
 const OUT_DIR = process.env.SHOTS_OUT_DIR;
@@ -143,12 +143,15 @@ async function saveCurrentFailure() {
     await saveFailureArtifacts(current.win.webContents, current.dir, current.name);
 }
 
-// run.js sends SIGTERM on its own timeout and SIGKILLs after a grace period.
-process.on('SIGTERM', () => {
+// run.js sends SIGUSR2 to this process only on its own timeout and SIGKILLs the group after a
+// grace period. SIGTERM to the whole group would kill Xvfb and the renderer first, and Chromium
+// installs its own SIGTERM handler; SIGUSR2 is left alone by both.
+process.on('SIGUSR2', () => {
     saveCurrentFailure().finally(() => app.exit(1));
 });
 
 async function main() {
+    console.log(`${PID_MARKER}${process.pid}`);
     await app.whenReady();
 
     const pages   = buildPages();

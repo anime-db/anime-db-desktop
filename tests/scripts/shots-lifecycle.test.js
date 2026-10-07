@@ -28,7 +28,7 @@ const path = require('path');
 
 const {
     DEFAULT_TIMEOUT_MS, UNKNOWN_PAGE, LastPageTracker, resolveTimeoutMs,
-    formatLastPageLine, formatTimeoutMessage, saveFailureArtifacts,
+    formatLastPageLine, formatTimeoutMessage, saveFailureArtifacts, RunWatchdog, KILL_GRACE_MS, PID_MARKER,
 } = require('../../scripts/shots/lifecycle');
 
 describe('resolveTimeoutMs', () => {
@@ -99,5 +99,64 @@ describe('saveFailureArtifacts', () => {
         expect(fs.existsSync(path.join(dir, 'p.FAILED.png'))).toBe(false);
         expect(fs.existsSync(path.join(dir, 'p.FAILED.html'))).toBe(true);
         errorSpy.mockRestore();
+    });
+});
+
+test('LastPageTracker remembers the Electron pid', () => {
+    const tracker = new LastPageTracker();
+    tracker.push(`${PID_MARKER}4242\n`);
+    expect(tracker.pid).toBe(4242);
+});
+
+describe('RunWatchdog', () => {
+    let requestSnapshot;
+    let killGroup;
+    const make = (timeoutMs = 1000) => new RunWatchdog({ timeoutMs, requestSnapshot, killGroup });
+
+    beforeEach(() => {
+        jest.useFakeTimers();
+        requestSnapshot = jest.fn();
+        killGroup = jest.fn();
+    });
+    afterEach(() => { jest.useRealTimers(); });
+
+    test('timeout: snapshot request, SIGKILL of the group after the grace period, result 1', () => {
+        const watchdog = make();
+        watchdog.start();
+        jest.advanceTimersByTime(999);
+        expect(requestSnapshot).not.toHaveBeenCalled();
+
+        jest.advanceTimersByTime(1);
+        expect(requestSnapshot).toHaveBeenCalledTimes(1);
+        expect(killGroup).not.toHaveBeenCalled();
+
+        jest.advanceTimersByTime(KILL_GRACE_MS);
+        expect(killGroup).toHaveBeenCalledWith('SIGKILL');
+        expect(watchdog.finish(null)).toBe(1);
+    });
+
+    test('a child that exits 0 after the timeout still fails the run and the group is killed', () => {
+        const watchdog = make();
+        watchdog.start();
+        jest.advanceTimersByTime(1000);
+        expect(watchdog.finish(0)).toBe(1);
+        expect(killGroup).toHaveBeenCalledWith('SIGKILL');
+        jest.advanceTimersByTime(KILL_GRACE_MS * 2);
+        expect(killGroup).toHaveBeenCalledTimes(1);
+    });
+
+    test('normal exit before the timeout: no signals ever, code passed through', () => {
+        const watchdog = make();
+        watchdog.start();
+        expect(watchdog.finish(3)).toBe(3);
+        jest.advanceTimersByTime(1000 + KILL_GRACE_MS * 2);
+        expect(requestSnapshot).not.toHaveBeenCalled();
+        expect(killGroup).not.toHaveBeenCalled();
+    });
+
+    test('a signal-terminated child (null code) is a failure', () => {
+        const watchdog = make();
+        watchdog.start();
+        expect(watchdog.finish(null)).toBe(1);
     });
 });

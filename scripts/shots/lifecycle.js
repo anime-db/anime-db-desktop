@@ -32,6 +32,9 @@ const fs   = require('fs');
 const path = require('path');
 
 const LAST_PAGE_MARKER = '[shots:page] ';
+// Printed once by capture.js: the pid of the Electron main process, the only one that may
+// be asked to save the failed page (see RunWatchdog).
+const PID_MARKER = '[shots:pid] ';
 
 // Well below the 20 minutes `timeout-minutes` of the CI job, so the run reports itself first.
 const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
@@ -65,6 +68,7 @@ function formatLastPageLine(page) {
 class LastPageTracker {
     constructor() {
         this.page = null;
+        this.pid = null;
         this.buffer = '';
     }
 
@@ -92,7 +96,60 @@ class LastPageTracker {
         const trimmed = line.trim();
         if (trimmed.startsWith(LAST_PAGE_MARKER)) {
             this.page = trimmed.slice(LAST_PAGE_MARKER.length);
+        } else if (trimmed.startsWith(PID_MARKER)) {
+            const pid = Number(trimmed.slice(PID_MARKER.length));
+            this.pid = Number.isInteger(pid) && pid > 0 ? pid : null;
         }
+    }
+}
+
+/**
+ * Run timeout state machine: on timeout asks the Electron main process (and only it) to save
+ * the failed page, after the grace period SIGKILLs the whole process group. Signals and timers
+ * are injected, so the escalation is testable without real processes.
+ */
+class RunWatchdog {
+    /**
+     * @param {object} options
+     * @param {number} options.timeoutMs
+     * @param {number} [options.graceMs]
+     * @param {() => void} options.requestSnapshot  signals the Electron main process only
+     * @param {(signal: string) => void} options.killGroup  signals the whole process group
+     * @param {() => void} [options.onTimeout]
+     */
+    constructor({ timeoutMs, graceMs = KILL_GRACE_MS, requestSnapshot, killGroup, onTimeout = () => {} }) {
+        this.timeoutMs = timeoutMs;
+        this.graceMs = graceMs;
+        this.requestSnapshot = requestSnapshot;
+        this.killGroup = killGroup;
+        this.onTimeout = onTimeout;
+        this.timedOut = false;
+        this.timer = null;
+        this.killTimer = null;
+    }
+
+    start() {
+        this.timer = setTimeout(() => {
+            this.timedOut = true;
+            this.onTimeout();
+            this.requestSnapshot();
+            this.killTimer = setTimeout(() => this.killGroup('SIGKILL'), this.graceMs);
+        }, this.timeoutMs);
+    }
+
+    /**
+     * @param {number|null} code  exit code of the child
+     * @returns {number} exit code of the run; a timed-out run is never green
+     */
+    finish(code) {
+        clearTimeout(this.timer);
+        clearTimeout(this.killTimer);
+        if (this.timedOut) {
+            // Whatever is left in the group (e.g. Xvfb) must not outlive the run.
+            this.killGroup('SIGKILL');
+            return 1;
+        }
+        return code === null ? 1 : code;
     }
 }
 
@@ -145,6 +202,8 @@ async function saveFailureArtifacts(webContents, dir, name, timeoutMs = SNAPSHOT
 
 module.exports = {
     LAST_PAGE_MARKER,
+    PID_MARKER,
+    RunWatchdog,
     DEFAULT_TIMEOUT_MS,
     KILL_GRACE_MS,
     UNKNOWN_PAGE,
