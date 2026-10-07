@@ -607,6 +607,8 @@ anime_edit:
     error_cover_upload: Не удалось загрузить файл.
     error_cover_invalid: Файл не является изображением PNG, JPEG или WebP.
     error_cover_save: Не удалось сохранить обложку.
+    cover_reselect: 'Обложка не сохранена: после исправления ошибок выберите файл снова.'
+    flash_request_too_large: 'Файл слишком большой, ничего не сохранено.'
 
 anime_new:
     title: Новая запись — AnimeDB
