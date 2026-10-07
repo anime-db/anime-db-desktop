@@ -264,9 +264,8 @@ function runCapture(port, animeId, server) {
                 }
             },
             killGroup,
-            onTimeout: () => {
-                console.error(`\n[shots] ${formatTimeoutMessage(timeoutMs, lastPage.describe())}`);
-            },
+            // The message is printed on exit, once capture.js has said which page it saved.
+            onTimeout: () => lastPage.markTimeout(),
         });
         watchdog.start();
 
@@ -279,9 +278,13 @@ function runCapture(port, animeId, server) {
         process.once('SIGINT', onSignal);
         process.once('SIGTERM', onSignal);
 
-        child.on('exit', (code) => {
+        // 'close', not 'exit': stdout must be drained so the [shots:failed] line is not lost.
+        child.on('close', (code) => {
             process.removeListener('SIGINT', onSignal);
             process.removeListener('SIGTERM', onSignal);
+            if (watchdog.timedOut) {
+                console.error(`\n[shots] ${formatTimeoutMessage(timeoutMs, lastPage.describeFailed())}`);
+            }
             const exitLine = formatExitLine(watchdog, code, lastPage);
             if (exitLine !== null) {
                 console.error(`[shots] ${exitLine}`);

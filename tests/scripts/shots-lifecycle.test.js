@@ -28,7 +28,7 @@ const path = require('path');
 
 const {
     DEFAULT_TIMEOUT_MS, UNKNOWN_PAGE, LastPageTracker, resolveTimeoutMs,
-    formatLastPageLine, formatExitLine, formatTimeoutMessage, saveFailureArtifacts, RunWatchdog, KILL_GRACE_MS, PID_MARKER,
+    formatLastPageLine, formatExitLine, formatTimeoutMessage, saveFailureArtifacts, RunWatchdog, KILL_GRACE_MS, PID_MARKER, FAILED_MARKER,
 } = require('../../scripts/shots/lifecycle');
 
 describe('resolveTimeoutMs', () => {
@@ -164,31 +164,42 @@ describe('RunWatchdog', () => {
 describe('formatExitLine', () => {
     const watchdog = () => new RunWatchdog({ timeoutMs: 10, requestSnapshot: jest.fn(), killGroup: jest.fn() });
 
-    test('after a timeout the page that moved on is not reported again', () => {
+    test('after a timeout the reported page is the one the artifacts were saved for', () => {
         jest.useFakeTimers();
-        const lines = [];
         const tracker = new LastPageTracker();
-        tracker.push(formatLastPageLine('light/settings-sync-review (http://x/a)') + '\n');
+        tracker.push(formatLastPageLine('light/settings-labels (http://x/a)') + '\n');
         const dog = new RunWatchdog({
             timeoutMs: 10,
             requestSnapshot: jest.fn(),
             killGroup: jest.fn(),
-            onTimeout: () => lines.push(formatTimeoutMessage(10000, tracker.describe())),
+            onTimeout: () => tracker.markTimeout(),
         });
         dog.start();
         jest.advanceTimersByTime(10);
-        tracker.push(formatLastPageLine('light/market (http://x/b)') + '\n');
+        // The walk moves on before the snapshot is taken; capture.js reports what it saved.
+        tracker.push(formatLastPageLine('light/settings-proxy (http://x/b)') + '\n');
+        tracker.push(`${FAILED_MARKER}light/settings-proxy\n`);
 
-        const exitLine = formatExitLine(dog, 1, tracker);
-        if (exitLine !== null) {
-            lines.push(exitLine);
-        }
+        expect(formatExitLine(dog, 1, tracker)).toBeNull();
+        expect(formatTimeoutMessage(10000, tracker.describeFailed())).toContain('light/settings-proxy');
+        expect(formatTimeoutMessage(10000, tracker.describeFailed())).not.toContain('settings-labels');
         dog.finish(1);
         jest.useRealTimers();
+    });
 
-        expect(lines).toHaveLength(1);
-        expect(lines[0]).toContain('light/settings-sync-review');
-        expect(lines.join('\n')).not.toContain('market');
+    test('without a failed marker the page seen at timeout is reported', () => {
+        jest.useFakeTimers();
+        const tracker = new LastPageTracker();
+        tracker.push(formatLastPageLine('light/market (http://x/a)') + '\n');
+        const dog = new RunWatchdog({
+            timeoutMs: 10, requestSnapshot: jest.fn(), killGroup: jest.fn(), onTimeout: () => tracker.markTimeout(),
+        });
+        dog.start();
+        jest.advanceTimersByTime(10);
+        tracker.push(formatLastPageLine('dark/market (http://x/b)') + '\n');
+        expect(tracker.describeFailed()).toBe('light/market (http://x/a)');
+        dog.finish(1);
+        jest.useRealTimers();
     });
 
     test('a plain failure reports the last page, success reports nothing', () => {

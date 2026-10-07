@@ -35,6 +35,8 @@ const LAST_PAGE_MARKER = '[shots:page] ';
 // Printed once by capture.js: the pid of the Electron main process, the only one that may
 // be asked to save the failed page (see RunWatchdog).
 const PID_MARKER = '[shots:pid] ';
+// Printed by capture.js after the failure artifacts are written: the page they belong to.
+const FAILED_MARKER = '[shots:failed] ';
 
 // Well below the 20 minutes `timeout-minutes` of the CI job, so the run reports itself first.
 const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
@@ -69,7 +71,29 @@ class LastPageTracker {
     constructor() {
         this.page = null;
         this.pid = null;
+        this.failed = null;
+        this.pageAtTimeout = null;
         this.buffer = '';
+    }
+
+    /**
+     * Remembers the page current at the moment the timeout fired; used only when the child
+     * never reports which page it saved.
+     */
+    markTimeout() {
+        this.pageAtTimeout = this.describeLatest();
+    }
+
+    /**
+     * The page the failure artifacts were written for, falling back to the page seen at
+     * timeout when the child died before reporting it.
+     *
+     * @returns {string}
+     */
+    describeFailed() {
+        this.#scan(this.buffer);
+        if (this.failed !== null) return this.failed;
+        return this.pageAtTimeout === null ? this.describeLatest() : this.pageAtTimeout;
     }
 
     /**
@@ -88,6 +112,13 @@ class LastPageTracker {
      * @returns {string}
      */
     describe() {
+        return this.describeLatest();
+    }
+
+    /**
+     * @returns {string}
+     */
+    describeLatest() {
         this.#scan(this.buffer);
         return this.page === null ? UNKNOWN_PAGE : this.page;
     }
@@ -96,6 +127,8 @@ class LastPageTracker {
         const trimmed = line.trim();
         if (trimmed.startsWith(LAST_PAGE_MARKER)) {
             this.page = trimmed.slice(LAST_PAGE_MARKER.length);
+        } else if (trimmed.startsWith(FAILED_MARKER)) {
+            this.failed = trimmed.slice(FAILED_MARKER.length);
         } else if (trimmed.startsWith(PID_MARKER)) {
             const pid = Number(trimmed.slice(PID_MARKER.length));
             this.pid = Number.isInteger(pid) && pid > 0 ? pid : null;
@@ -219,6 +252,7 @@ async function saveFailureArtifacts(webContents, dir, name, timeoutMs = SNAPSHOT
 module.exports = {
     LAST_PAGE_MARKER,
     PID_MARKER,
+    FAILED_MARKER,
     RunWatchdog,
     DEFAULT_TIMEOUT_MS,
     KILL_GRACE_MS,

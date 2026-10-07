@@ -33,7 +33,7 @@ const fs   = require('fs');
 const path = require('path');
 
 const { PageErrorTracker } = require('./page-errors');
-const { PID_MARKER, formatLastPageLine, saveFailureArtifacts } = require('./lifecycle');
+const { PID_MARKER, FAILED_MARKER, formatLastPageLine, saveFailureArtifacts } = require('./lifecycle');
 
 const PORT    = process.env.SHOTS_PORT;
 const OUT_DIR = process.env.SHOTS_OUT_DIR;
@@ -140,7 +140,10 @@ let failureSaved = false;
 async function saveCurrentFailure() {
     if (current === null || failureSaved) return;
     failureSaved = true;
-    await saveFailureArtifacts(current.win.webContents, current.dir, current.name);
+    // Fixed up front: the walk may move on while the snapshot is being taken.
+    const { win, dir, name, label } = current;
+    await saveFailureArtifacts(win.webContents, dir, name);
+    console.log(`${FAILED_MARKER}${label}`);
 }
 
 // run.js sends SIGUSR2 to this process only on its own timeout and SIGKILLs the group after a
@@ -206,7 +209,7 @@ async function main() {
         for (const targetPage of pages) {
             const url = `http://127.0.0.1:${PORT}${targetPage.path}`;
             currentPageUrl = url;
-            current = { win, dir: themeDir, name: targetPage.name };
+            current = { win, dir: themeDir, name: targetPage.name, label: `${theme}/${targetPage.name}` };
             console.log(formatLastPageLine(`${theme}/${targetPage.name} (${url})`));
             await loadPage(win, url);
 
