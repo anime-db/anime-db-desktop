@@ -172,18 +172,30 @@ final class StorageTest extends TestCase
         $this->assertNull((new Storage('Disc', '', $type))->getPath());
     }
 
-    #[DataProvider('pathOptionalTypes')]
-    public function testPathOptionalTypeKeepsNonEmptyPath(StorageType $type): void
+    public function testReadablePathOptionalTypeKeepsNonEmptyPath(): void
     {
-        $this->assertSame('E:\\', (new Storage('Disc', 'E:\\', $type))->getPath());
+        $this->assertSame('E:\\', (new Storage('Disc', 'E:\\', StorageType::ExternalR))->getPath());
     }
 
-    #[DataProvider('pathOptionalTypes')]
-    public function testPathOptionalTypeStillRejectsRelativePath(StorageType $type): void
+    public function testReadablePathOptionalTypeStillRejectsRelativePath(): void
     {
         $this->expectException(InvalidPathException::class);
 
-        new Storage('Disc', 'relative', $type);
+        new Storage('Disc', 'relative', StorageType::ExternalR);
+    }
+
+    public function testUnreadableTypeDropsPath(): void
+    {
+        $this->assertNull((new Storage('DVD', 'E:\\', StorageType::Video))->getPath());
+    }
+
+    public function testChangingToUnreadableTypeDropsPathOnRelocate(): void
+    {
+        $storage = new Storage('Main', 'E:\\', StorageType::Folder);
+        $storage->setType(StorageType::Video);
+        $storage->relocate('E:\\');
+
+        $this->assertNull($storage->getPath());
     }
 
     #[DataProvider('missingPaths')]

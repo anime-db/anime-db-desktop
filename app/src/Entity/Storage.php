@@ -99,7 +99,7 @@ class Storage
         return $this;
     }
 
-    /** Null only for a type whose {@see StorageType::isPathRequired()} is false. */
+    /** Null only for a type whose {@see StorageType::isPathRequired()} is false; always null for a type that is not {@see StorageType::isReadable()}. */
     public function getPath(): ?string
     {
         return $this->path;
@@ -121,6 +121,12 @@ class Storage
      */
     public function relocate(?string $path): self
     {
+        if (!$this->type->isReadable()) {
+            $this->path = null;
+
+            return $this;
+        }
+
         $path = $path === null ? '' : trim($path);
         if ($path === '' && !$this->type->isPathRequired()) {
             $this->path = null;
