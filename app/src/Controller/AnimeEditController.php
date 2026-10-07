@@ -46,11 +46,13 @@ use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpFoundation\Session\FlashBagAwareSessionInterface;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 use Symfony\Component\Security\Csrf\CsrfToken;
 use Symfony\Component\Security\Csrf\CsrfTokenManagerInterface;
+use Symfony\Contracts\Translation\TranslatorInterface;
 use Twig\Environment;
 
 /**
@@ -79,6 +81,9 @@ final class AnimeEditController
         private readonly Environment $twig,
         private readonly StudioRepository $studios,
         private readonly AnimeCoverStorage $covers,
+        private readonly TranslatorInterface $translator,
+        /** post_max_size in bytes; null reads it from php.ini (0 means unlimited) */
+        private readonly ?int $postMaxBytes = null,
     ) {
     }
 
@@ -91,6 +96,20 @@ final class AnimeEditController
     #[Route('/anime/{id}/edit', name: 'anime_update', requirements: ['id' => '\d+'], methods: ['POST'])]
     public function update(Anime $anime, Request $request): Response
     {
+        // PHP drops the whole body of a request over post_max_size, the CSRF token with it: report
+        // the real reason instead of a bare 400.
+        if ($this->isBodyDropped($request)) {
+            $session = $request->getSession();
+            \assert($session instanceof FlashBagAwareSessionInterface);
+            $session->getFlashBag()->add('danger', [
+                'text' => $this->translator->trans('anime_edit.flash_request_too_large'),
+                'link_url' => null,
+                'link_label' => null,
+            ]);
+
+            return new RedirectResponse($this->urlGenerator->generate('anime_edit', ['id' => $anime->id]));
+        }
+
         $token = new CsrfToken('anime_edit_'.$anime->id, (string) $request->request->get('_token'));
         if (!$this->csrfTokenManager->isTokenValid($token)) {
             throw new BadRequestHttpException('Invalid CSRF token.');
@@ -111,6 +130,11 @@ final class AnimeEditController
             }
         }
         if ($errors !== []) {
+            // The accepted file is not kept between requests, the browser does not refill the input.
+            if ($webp !== null) {
+                $errors['cover'] = 'anime_edit.cover_reselect';
+            }
+
             return $this->renderForm($anime, $form, $errors);
         }
 
@@ -134,6 +158,16 @@ final class AnimeEditController
         }
 
         return new RedirectResponse($this->urlGenerator->generate('anime_show', ['id' => $anime->id]));
+    }
+
+    private function isBodyDropped(Request $request): bool
+    {
+        if ($request->request->count() > 0 || $request->files->count() > 0) {
+            return false;
+        }
+        $limit = $this->postMaxBytes ?? (int) ini_parse_quantity((string) \ini_get('post_max_size'));
+
+        return $limit > 0 && (int) $request->server->get('CONTENT_LENGTH', 0) > $limit;
     }
 
     /**
