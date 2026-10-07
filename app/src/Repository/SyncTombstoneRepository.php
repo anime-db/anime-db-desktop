@@ -111,6 +111,18 @@ class SyncTombstoneRepository
         return $index;
     }
 
+    /**
+     * Drops every tombstone, whatever the plugin (issue #951): they outlive an emptied catalog,
+     * and the v1 import replaces it wholesale. All or nothing — a half-cleared table is worse
+     * than either. Joins the connection's current transaction.
+     *
+     * @return int number of tombstones removed
+     */
+    public function removeAll(): int
+    {
+        return (int) $this->entityManager->getConnection()->executeStatement('DELETE FROM sync_tombstone');
+    }
+
     public function exists(string $pluginId, string $externalId): bool
     {
         return $this->entityManager->getConnection()->fetchOne(

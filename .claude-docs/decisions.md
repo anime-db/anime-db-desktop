@@ -773,3 +773,34 @@ service... argument "$catalogReader"... but no such service exists»), брош�
 вёрстки проходит зелёным; всё, что не доходит до консоли и не меняет статус ответа; ошибки на
 страницах, которых нет в списке снимаемых.
 
+
+## Импорт из AnimeDB v1 — трансформация записей, а не подмена БД (issue #951)
+
+Команда `app:catalog:import-v1 <каталог установки v1>` читает базу v1 (`app/Resources/anime.db`)
+и строит сущности v2 через ORM. Схемы v1 и v2 не совпадают ни в одной таблице, поэтому подмена
+файла БД, как при импорте собственного дампа, невозможна. Код — `app/src/Service/Import/V1/`.
+
+- **Чтение** — отдельный `PDO` с DSN `sqlite:file:<path>?mode=ro` и голый SQL (`V1CatalogReader`).
+  Обычный `sqlite:<path>` открыл бы файл на запись. Сущностей Doctrine и второго соединения в
+  `doctrine.yaml` нет: чужая схема не должна попасть в `schema:validate` и golden-схему.
+- **Шов в сущности** — `Anime::fromV1(V1AnimeRecord, V1AnimeResolverInterface)`, единственная
+  авторизованная точка нарушения инварианта `dateAdd`. DTO — голые данные; словари, эвристики и
+  дедуп справочников (`Label`/`Studio`/`Storage` по имени/пути) — в `V1AnimeResolver`; у фабрики
+  репозиториев нет. `@internal` на DTO и фабрике, тест `AnimeFromV1CallersTest` фиксирует, что её
+  зовёт только импортёр.
+- **Порядок в фабрике: даты → `episodesCount` → статус.** `Completed` требует `Released`
+  (непустой `dateEnd`), а `SeriesAnime::setWatchStatus()` копирует число серий.
+  `type != tv` без `date_end` получает `dateEnd = datePremiere`; ТВ без `date_end` — `Watching`
+  и запись `SyncReviewItem` (`NeedsCorrection`).
+- **Одна транзакция**: гард `countAll() > 0` (до любой записи) → безусловная чистка
+  `sync_tombstone`/`sync_review_item` → persist → flush → commit. Индексы не форсируются: FTS держат
+  триггеры, Meilisearch наполняет `AnimeSearchIndexListener`.
+- **Название и статус**: эвристика письменности определяет только локаль (`ja` → `ru` → `null`),
+  роль всегда `synonym`; метки-статусы («Просмотрено» и др.) расщепляются до дедупа справочников,
+  статус по умолчанию — `Completed`.
+- **Жанры**: нормализованное имя сверяется с `GenreCode`/`ThemeCode`/`Demographic`, плюс список
+  исключений; 18+ ось (`Ecchi`, `Erotica`, `Hentai`, `Yuri`, `Yaoi`) дропается намеренно и считается
+  отдельно от «без аналога».
+- **Допущение о схеме v1**: имена колонок (`item.storage`, `item.studio`, `name.item_id`,
+  `items_genres.genre_id` и т. д.) восстановлены по описанию задачи и проверены только на
+  синтетической базе `tests/Support/V1DatabaseBuilder.php`; на живой базе v1 не прогонялись.
