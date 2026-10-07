@@ -145,6 +145,43 @@ libxrandr2 libxcomposite1 libxfixes3 libxshmfence1
 эту схему не регистрирует. На снимках каталога и карточки аниме вместо обложек будет плейсхолдер
 битого изображения — это ограничение метода, а не баг вёрстки.
 
+## E2E на Playwright
+
+Каркас сквозных проверок: приложение поднимается как в бою, а сценарии ходят по нему как
+пользователь. Не заменяет `npm run shots` (у снимков своя задача и своё состояние) и не входит в CI.
+
+```bash
+npm run e2e                       # все сценарии из scripts/e2e/scenarios/*.e2e.js
+npm run e2e -- -g "pick-folder"   # аргументы после `--` уходят в `playwright test`
+npm run e2e:session               # поднять приложение на фикстуре и оставить работать (Ctrl+C — стоп)
+```
+
+Что требуется (только Linux): `composer install` в `app/`, `npm run assets`, `npm ci`, `php` и
+`xvfb-run` в `PATH` (без `DISPLAY` команда сама перезапускается под Xvfb) и **Linux-сборка
+FrankenPHP** версии из `scripts/versions.json` в `bin/frankenphp/frankenphp` (или путь в
+`E2E_FRANKENPHP_BIN`). Второй браузер не скачивается: Playwright запускает наш Electron
+(`node_modules/electron`) через `_electron.launch({ executablePath })`.
+
+Как это устроено:
+
+- сервер — боевой FrankenPHP с `app/Caddyfile` (воркер, `try_files` в Caddy), `APP_ENV=prod`,
+  перед стартом выполняется `cache:warmup`; `php -S` и `scripts/shots/router.php` не используются;
+- данные — копия фикстуры (`scripts/fixture`) на каждый сценарий, включая runtime-каталог
+  Symfony. Точка подключения: `E2E_DATA_DIR` — каталог окружения, который используется как есть;
+- main-процесс — `scripts/e2e/main.js`: настоящие `preload.js` и IPC-обработчики `native/dialog`,
+  без супервизора (он стартует Windows-бинарники);
+- взаимодействие — **только** через локаторы Playwright. `locator.click()` ждёт реальной
+  кликабельности и отказывает на перекрытом элементе; `el.click()` внутри `evaluate()` /
+  `executeJavaScript()` кликает сквозь оверлей с `isTrusted=false`, поэтому ESLint запрещает его в
+  `scripts/e2e/` (правило проверено тестом `tests/scripts/e2e-framework.test.js`);
+- нативные диалоги — подмена в настоящем main-процессе через `electronApp.evaluate()`
+  (`scripts/e2e/dialogs.js`: `stubOpenDialog`, `stubOpenDialogCancelled`, `stubMessageBox`);
+- живучесть — таймаут на сценарий 90 с (`E2E_TIMEOUT_MS`), при падении в `e2e-results/` остаются
+  trace и скриншот последнего состояния (видео нет: `recordVideo` в Electron требует ffmpeg — второй загрузки — и без него виснет), итоговый вердикт называет упавшие сценарии, код выхода ненулевой.
+
+`e2e:session` печатает URL приложения и CDP-endpoint (`chromium.connectOverCDP(endpoint)`).
+Диалоги в такой сессии не подменены.
+
 ## Платформы
 
 Только **Windows x64** (минимум Windows 10). macOS и Linux не поддерживаются:

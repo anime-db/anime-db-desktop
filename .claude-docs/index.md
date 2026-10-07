@@ -18,6 +18,7 @@ tags: [memory/repo, index]
 | Писать или править клиентский JS (контролы, бандл)  | [gotchas.md](gotchas.md) §Реестр контролов             |
 | Понять сборку фронтенда и почему бандл в `<head>`   | [decisions.md](decisions.md) §Клиентский JS            |
 | Понять живой прогон приложения и гейт в CI          | [decisions.md](decisions.md) §Живой прогон             |
+| Понять E2E-каркас на Playwright (`scripts/e2e/`)    | [decisions.md](decisions.md) §E2E на Playwright        |
 | Работать с supervisor (FrankenPHP/Meilisearch)      | [architecture.md](architecture.md) §native/supervisor  |
 | Добавить плагин или работать с Plugin/              | [architecture.md](architecture.md) §app/               |
 | Понять обновление приложения и Meilisearch-миграцию | [decisions.md](decisions.md) §Обновление               |

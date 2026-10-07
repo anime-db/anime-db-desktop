@@ -36,6 +36,9 @@ out/
 # UI screenshots — output of `npm run shots` (scripts/shots/run.js), not checked in
 /shots/
 
+# E2E run artifacts (traces, videos) — output of `npm run e2e` (scripts/e2e/run.js), not checked in
+/e2e-results/
+
 # OS
 .DS_Store
 Thumbs.db

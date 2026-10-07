@@ -40,6 +40,29 @@ module.exports = [
         },
     },
     {
+        // E2E interaction goes through Playwright locators (trusted input, real hit-testing). A
+        // scripted click inside evaluate()/executeJavaScript() reaches covered elements with
+        // isTrusted=false and keeps a broken scenario green — see scripts/e2e/launch.js.
+        files: ['scripts/e2e/**/*.js'],
+        rules: {
+            'no-restricted-syntax': ['error',
+                {
+                    selector: 'CallExpression[callee.property.name=/^(evaluate|evaluateAll|evaluateHandle|executeJavaScript|addInitScript)$/] CallExpression[callee.property.name=/^(click|dblclick|dispatchEvent|focus|submit|requestSubmit)$/]',
+                    message:  'No scripted interaction in E2E: use Playwright locator actions (locator.click() etc.).',
+                },
+                {
+                    selector: 'CallExpression[callee.property.name=/^(evaluate|evaluateAll|evaluateHandle|executeJavaScript|addInitScript)$/] :matches(Literal[value=/\\.(click|dispatchEvent)\\(/], TemplateElement[value.raw=/\\.(click|dispatchEvent)\\(/])',
+                    message:  'No scripted interaction in E2E: use Playwright locator actions (locator.click() etc.).',
+                },
+            ],
+        },
+    },
+    {
+        // page.evaluate() callbacks of scenarios run in the page, not in Node.
+        files:           ['scripts/e2e/scenarios/**/*.js'],
+        languageOptions: { globals: { ...globals.node, ...globals.browser } },
+    },
+    {
         files:           ['tests/**/*.js'],
         languageOptions: {
             globals: globals.jest,
