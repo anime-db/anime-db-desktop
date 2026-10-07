@@ -42,7 +42,7 @@
         function onChange() {
             const file = input.files && input.files[0];
             blocked = Boolean(file) && file.size > max;
-            input.classList.toggle('is-invalid', blocked);
+            input.classList.toggle('is-invalid', blocked || serverMessage !== '');
             if (blocked) {
                 error.textContent = input.dataset.tooLargeMessage || '';
                 error.hidden = false;

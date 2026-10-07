@@ -216,7 +216,7 @@
                 {% endif %}
                 <input type="file" id="anime-edit-cover" name="cover" data-max-bytes="{{ cover_max_bytes }}" data-too-large-message="{{ 'anime_edit.error_cover_too_large'|trans }}" accept="image/png,image/jpeg,image/webp" class="form-control{% if errors.cover is defined %} is-invalid{% endif %}">
                 <div class="form-text">{{ 'anime_edit.cover_hint'|trans({'%size%': (cover_max_bytes / 1048576)|round}) }}</div>
-                <div class="invalid-feedback d-block" data-cover-error{% if errors.cover is not defined %} hidden{% endif %}>{% if errors.cover is defined %}{{ errors.cover|trans }}{% endif %}</div>
+                <div class="invalid-feedback" data-cover-error{% if errors.cover is not defined %} hidden{% endif %}>{% if errors.cover is defined %}{{ errors.cover|trans }}{% endif %}</div>
                 {% if cover %}
                     <div class="form-check mt-2">
                         <input type="checkbox" class="form-check-input" id="anime-edit-cover-remove" name="cover_remove" value="1"{% if form.cover_remove %} checked{% endif %}>

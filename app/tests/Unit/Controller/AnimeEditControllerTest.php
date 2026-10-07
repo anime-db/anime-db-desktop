@@ -171,7 +171,7 @@ final class AnimeEditControllerTest extends TestCase
         $response = $this->controller()->update($anime, $this->post([]));
 
         $this->assertInstanceOf(RedirectResponse::class, $response);
-        $this->assertSame('/anime/'.$anime->id, $response->getTargetUrl());
+        $this->assertSame('/anime_show/'.$anime->id, $response->getTargetUrl());
     }
 
     public function testTitleIsSaved(): void
@@ -595,7 +595,7 @@ final class AnimeEditControllerTest extends TestCase
         $response = $this->controller()->update($anime, $request);
 
         $this->assertInstanceOf(RedirectResponse::class, $response);
-        $this->assertSame('/anime/'.$anime->id, $response->getTargetUrl());
+        $this->assertSame('/anime_edit/'.$anime->id, $response->getTargetUrl());
         $this->assertSame('anime_edit.flash_request_too_large', $session->getFlashBag()->get('danger')[0]['text']);
     }
 
@@ -805,7 +805,7 @@ final class AnimeEditControllerTest extends TestCase
         );
 
         $urls = $this->createStub(UrlGeneratorInterface::class);
-        $urls->method('generate')->willReturnCallback(static fn (string $name, array $params): string => '/anime/'.$params['id']);
+        $urls->method('generate')->willReturnCallback(static fn (string $name, array $params): string => '/'.$name.'/'.$params['id']);
 
         $twig = $this->createStub(Environment::class);
         $twig->method('render')->willReturnCallback(function (string $template, array $params): string {
