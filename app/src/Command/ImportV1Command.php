@@ -49,6 +49,7 @@ final class ImportV1Command extends Command
     /** One exit code per {@see InvalidV1InstallationException::REASON_*}, read back by the caller. */
     private const int EXIT_NOT_V1_INSTALLATION = 2;
     private const int EXIT_CATALOG_NOT_EMPTY = 3;
+    private const int EXIT_INVALID_RECORD = 4;
 
     public function __construct(
         private readonly V1ImportService $importService,
@@ -77,6 +78,7 @@ final class ImportV1Command extends Command
             return match ($exception->reasonKey) {
                 InvalidV1InstallationException::REASON_NOT_V1_INSTALLATION => self::EXIT_NOT_V1_INSTALLATION,
                 InvalidV1InstallationException::REASON_CATALOG_NOT_EMPTY => self::EXIT_CATALOG_NOT_EMPTY,
+                InvalidV1InstallationException::REASON_INVALID_RECORD => self::EXIT_INVALID_RECORD,
                 default => Command::FAILURE,
             };
         }

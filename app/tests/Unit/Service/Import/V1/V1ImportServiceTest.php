@@ -170,6 +170,28 @@ final class V1ImportServiceTest extends TestCase
         $this->assertSame([$running->id], $items[0]->payload['anime_ids']);
     }
 
+    public function testCompletedWithoutDatesIsLoweredAndReportedWhateverTheType(): void
+    {
+        $builder = V1DatabaseBuilder::create($this->createTemporaryDirectory('v1-'));
+        $builder->label('Просмотрено');
+        $film = $builder->item(['name' => 'Undated film', 'type' => 'feature', 'date_premiere' => null]);
+        $builder->itemLabel($film, 'Просмотрено');
+        $builder->item(['name' => 'Undated tv', 'type' => 'tv', 'date_premiere' => null]);
+
+        $result = $this->service->import($builder->root);
+        $this->entityManager->clear();
+
+        $repository = $this->entityManager->getRepository(Anime::class);
+        $filmEntity = $repository->findOneBy(['title' => 'Undated film']);
+        $this->assertInstanceOf(Anime::class, $filmEntity);
+        $this->assertSame(WatchStatus::Plan, $filmEntity->getWatchStatus());
+        $this->assertSame(2, $result->statusesDowngraded);
+        $this->assertSame(2, $result->needsAttention);
+        $messages = array_map(static fn (SyncReviewItem $item): string => (string) $item->payload['message'], $this->entityManager->getRepository(SyncReviewItem::class)->findAll());
+        // The translator of this test has no catalogue: the key stands for the text.
+        $this->assertSame(['import_v1.review_status_downgraded', 'import_v1.review_status_downgraded'], $messages);
+    }
+
     public function testNormalisesValuesTheV2SchemaRefuses(): void
     {
         $builder = V1DatabaseBuilder::create($this->createTemporaryDirectory('v1-'));

@@ -34,9 +34,9 @@ use App\Entity\Storage;
 use App\Entity\Studio;
 
 /**
- * Everything {@see \App\Entity\Anime::fromV1()} needs from outside the aggregate: the v1
+ * Everything {@see V1AnimeFactory} needs from outside the aggregate: the v1
  * vocabulary, the heuristics and the reference entities that need deduplicating through the
- * database. The entity depends on this abstraction, never on the implementation, and has no
+ * database. The factory depends on this abstraction, never on the implementation, and has no
  * repository of its own.
  *
  * @internal

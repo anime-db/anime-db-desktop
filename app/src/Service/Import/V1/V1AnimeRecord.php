@@ -30,10 +30,10 @@ namespace App\Service\Import\V1;
 /**
  * One v1 `item` row together with its related rows, as read by {@see V1CatalogReader}: bare data,
  * no behaviour. Values are raw v1 values; every rule about them lives in
- * {@see V1AnimeResolverInterface} or in {@see \App\Entity\Anime::fromV1()}.
+ * {@see V1AnimeResolverInterface} or in {@see V1AnimeFactory}.
  *
  * Nothing in the type stops other code from building one with an arbitrary `dateAdd`, which
- * {@see \App\Entity\Anime::fromV1()} then trusts — hence `@internal`: only the v1 import builds it.
+ * {@see V1AnimeFactory} then trusts — hence `@internal`: only the v1 import builds it.
  *
  * @internal
  */

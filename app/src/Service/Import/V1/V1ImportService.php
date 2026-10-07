@@ -29,6 +29,7 @@ namespace App\Service\Import\V1;
 
 use App\Entity\Anime;
 use App\Entity\Enum\SyncReviewItemKind;
+use App\Entity\Enum\WatchStatus;
 use App\Entity\SeriesAnime;
 use App\Entity\TvAnime;
 use App\Repository\AnimeRepository;
@@ -57,6 +58,8 @@ final class V1ImportService
 {
     private const int PROGRESS_STEP = 10;
 
+    private readonly V1AnimeFactory $factory;
+
     public function __construct(
         private readonly V1CatalogReader $reader,
         private readonly V1AnimeResolver $resolver,
@@ -68,6 +71,7 @@ final class V1ImportService
         private readonly WsPublisher $wsPublisher,
         private readonly TranslatorInterface $translator,
     ) {
+        $this->factory = new V1AnimeFactory($resolver);
     }
 
     /** @throws InvalidV1InstallationException */
@@ -96,7 +100,13 @@ final class V1ImportService
         $total = \count($records);
         $created = [];
         foreach ($records as $index => $record) {
-            $anime = Anime::fromV1($record, $this->resolver);
+            try {
+                $anime = $this->factory->create($record);
+            } catch (\InvalidArgumentException|\DomainException $e) {
+                // All or nothing: the transaction rolls back, and the one record that broke an
+                // invariant is named so the user can fix it in v1 and run the import again.
+                throw new InvalidV1InstallationException(InvalidV1InstallationException::REASON_INVALID_RECORD, ['%id%' => $record->id, '%title%' => $record->title], \sprintf('Record %d of the v1 catalog cannot be imported: %s', $record->id, $e->getMessage()), $e);
+            }
             $this->entityManager->persist($anime);
             $created[] = [$anime, $record];
 
@@ -109,24 +119,41 @@ final class V1ImportService
         $this->entityManager->flush();
 
         $needsAttention = 0;
-        foreach ($created as [$anime]) {
-            // A series with no end date may still be airing: it is not forced to Completed, and
-            // the user is asked to look at it.
-            if ($anime instanceof TvAnime && $anime->getDateEnd() === null && $anime->id !== null) {
-                $this->reviewService->create(SyncReviewItemKind::NeedsCorrection, [
-                    'anime_id' => $anime->id,
-                    'anime_ids' => [$anime->id],
-                    'message' => $this->translator->trans('import_v1.review_unknown_end_date', ['%title%' => $anime->getTitle()]),
-                ]);
-                ++$needsAttention;
+        $downgraded = 0;
+        foreach ($created as [$anime, $record]) {
+            if ($anime->id === null) {
+                continue;
+            }
+
+            // A "Completed" the release dates cannot back up is demoted to Plan/Watching: whatever
+            // the type, the user is told, since a watched title must not silently become unwatched.
+            // A series with no end date may still be airing: it is not forced to Completed either.
+            $wasDowngraded = $this->resolver->resolveWatchStatus($record) === WatchStatus::Completed
+                && $anime->getWatchStatus() !== WatchStatus::Completed;
+            $unknownEnd = $anime instanceof TvAnime && $anime->getDateEnd() === null;
+            if (!$wasDowngraded && !$unknownEnd) {
+                continue;
+            }
+
+            $message = $wasDowngraded
+                ? $this->translator->trans('import_v1.review_status_downgraded', ['%title%' => $anime->getTitle(), '%status%' => $anime->getWatchStatus()->value])
+                : $this->translator->trans('import_v1.review_unknown_end_date', ['%title%' => $anime->getTitle()]);
+            $this->reviewService->create(SyncReviewItemKind::NeedsCorrection, [
+                'anime_id' => $anime->id,
+                'anime_ids' => [$anime->id],
+                'message' => $message,
+            ]);
+            ++$needsAttention;
+            if ($wasDowngraded) {
+                ++$downgraded;
             }
         }
 
-        return $this->buildResult($created, $needsAttention);
+        return $this->buildResult($created, $needsAttention, $downgraded);
     }
 
     /** @param list<array{0: Anime, 1: V1AnimeRecord}> $created */
-    private function buildResult(array $created, int $needsAttention): V1ImportResult
+    private function buildResult(array $created, int $needsAttention, int $downgraded): V1ImportResult
     {
         $fromLabel = $byDefault = $ja = $ru = $none = $sources = $descriptions = 0;
         $mapped = $dropped = $unmapped = $endDates = $durations = 0;
@@ -195,6 +222,7 @@ final class V1ImportService
             durationsCleared: $durations,
             episodesDroppedTitles: $episodesDropped,
             needsAttention: $needsAttention,
+            statusesDowngraded: $downgraded,
         );
     }
 }

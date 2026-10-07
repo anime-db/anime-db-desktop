@@ -116,4 +116,18 @@ final class ImportV1CommandTest extends TestCase
         $this->assertSame(3, $this->tester->getStatusCode());
         $this->assertStringContainsString('can only be imported into an empty catalog', (string) preg_replace('/\s+/', ' ', $this->tester->getDisplay()));
     }
+
+    public function testNamesTheRecordThatBreaksAnInvariantAndImportsNothing(): void
+    {
+        $builder = V1DatabaseBuilder::create($this->createTemporaryDirectory('v1-'));
+        $builder->item(['name' => 'Good', 'type' => 'feature']);
+        $bad = $builder->item(['name' => ' ', 'type' => 'feature']);
+
+        $this->tester->execute(['directory' => $builder->root]);
+
+        $this->assertSame(4, $this->tester->getStatusCode());
+        $display = (string) preg_replace('/\s+/', ' ', $this->tester->getDisplay());
+        $this->assertStringContainsString(\sprintf('(v1 id %d) cannot be imported, so nothing was imported', $bad), $display);
+        $this->assertStringNotContainsString('import_v1.', $display);
+    }
 }

@@ -794,15 +794,23 @@ SIGUSR2) `capture.js` кладёт рядом со снимками `<тема>/
 - **Чтение** — отдельный `PDO` с DSN `sqlite:file:<path>?mode=ro` и голый SQL (`V1CatalogReader`).
   Обычный `sqlite:<path>` открыл бы файл на запись. Сущностей Doctrine и второго соединения в
   `doctrine.yaml` нет: чужая схема не должна попасть в `schema:validate` и golden-схему.
-- **Шов в сущности** — `Anime::fromV1(V1AnimeRecord, V1AnimeResolverInterface)`, единственная
-  авторизованная точка нарушения инварианта `dateAdd`. DTO — голые данные; словари, эвристики и
-  дедуп справочников (`Label`/`Studio`/`Storage` по имени/пути) — в `V1AnimeResolver`; у фабрики
-  репозиториев нет. `@internal` на DTO и фабрике, тест `AnimeFromV1CallersTest` фиксирует, что её
-  зовёт только импортёр.
+- **Шов — `V1AnimeFactory` в `Service\Import\V1`, не в сущности.** Маппинг v1→v2 (даты, длительность,
+  страна, статус) живёт в импортёре и ходит в агрегат через его публичный API; `Entity/` не
+  зависит от `App\Service`. Единственное, чего не хватало снаружи, — исторические штампы:
+  узкий метод `Anime::restoreTimestamps($added, $updated)` с собственной проверкой (update не
+  раньше add). Читает v1 резолвер (`V1AnimeResolver`: словари, эвристики, дедуп
+  `Label`/`Studio`/`Storage` по имени/пути); у фабрики репозиториев нет. `@internal` на DTO и
+  фабрике; `AnimeRestoreTimestampsCallersTest` фиксирует, что `restoreTimestamps()` зовёт только
+  фабрика.
 - **Порядок в фабрике: даты → `episodesCount` → статус.** `Completed` требует `Released`
   (непустой `dateEnd`), а `SeriesAnime::setWatchStatus()` копирует число серий.
   `type != tv` без `date_end` получает `dateEnd = datePremiere`; ТВ без `date_end` — `Watching`
   и запись `SyncReviewItem` (`NeedsCorrection`).
+  «Просмотрено» без дат выхода (любой тип) понижается до `Plan`/`Watching`: это отдельная строка
+  отчёта и `NeedsCorrection` с текстом про статус, чтобы просмотренное не стало непросмотренным молча.
+- **Плохая запись — всё или ничего.** Нарушение инварианта v2 (пустое название и т. п.) откатывает
+  транзакцию и превращается в `InvalidV1InstallationException(REASON_INVALID_RECORD)` с `%id%` и
+  `%title%`; команда отвечает переведённым текстом и кодом выхода 4.
 - **Одна транзакция**: гард `countAll() > 0` (до любой записи) → безусловная чистка
   `sync_tombstone`/`sync_review_item` → persist → flush → commit. Индексы не форсируются: FTS держат
   триггеры, Meilisearch наполняет `AnimeSearchIndexListener`.

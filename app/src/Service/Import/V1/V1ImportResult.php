@@ -69,6 +69,7 @@ final class V1ImportResult
         public readonly int $durationsCleared = 0,
         public readonly array $episodesDroppedTitles = [],
         public readonly int $needsAttention = 0,
+        public readonly int $statusesDowngraded = 0,
     ) {
     }
 
@@ -125,6 +126,9 @@ final class V1ImportResult
         }
         if ($this->endDatesSynthesized > 0) {
             $lines[] = $translator->trans('import_v1.report_end_dates', ['%count%' => $this->endDatesSynthesized]);
+        }
+        if ($this->statusesDowngraded > 0) {
+            $lines[] = $translator->trans('import_v1.report_status_downgraded', ['%count%' => $this->statusesDowngraded]);
         }
         if ($this->needsAttention > 0) {
             $lines[] = $translator->trans('import_v1.report_needs_attention', ['%count%' => $this->needsAttention]);

@@ -44,8 +44,6 @@ use App\Entity\Exception\InvalidWatchStatusException;
 use App\Entity\ValueObject\PluginId;
 use App\Entity\ValueObject\Rating;
 use App\Event\WatchProgressChangedManuallyEvent;
-use App\Service\Import\V1\V1AnimeRecord;
-use App\Service\Import\V1\V1AnimeResolverInterface;
 use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
 use Doctrine\ORM\Mapping as ORM;
@@ -254,115 +252,6 @@ abstract class Anime implements AggregateRootInterface
         $this->descriptions = new ArrayCollection();
         $this->dateAdd = new \DateTimeImmutable();
         $this->dateUpdate = new \DateTimeImmutable();
-    }
-
-    /**
-     * Builds an aggregate out of a record of an AnimeDB v1 catalog (issue #951). The only
-     * authorised exception to the invariant that the constructor stamps dateAdd/dateUpdate: a
-     * migrated record keeps the dates it already has, since a re-import is refused on a
-     * non-empty catalog and the history would be lost for good otherwise.
-     *
-     * The factory has no repository: the resolver supplies the entity class, the status and the
-     * reference rows (labels, studios, storage) already deduplicated; the factory assembles the
-     * aggregate and lets the setters check the invariants.
-     *
-     * The order of the steps is fixed: dates, then the episode count, then the status.
-     * setWatchStatus(Completed) asks getProductionStatus(), which reads the dates, and
-     * SeriesAnime::setWatchStatus() copies the episode count into the watched episodes.
-     *
-     * @internal called by the v1 import only (a test keeps it so)
-     */
-    public static function fromV1(V1AnimeRecord $record, V1AnimeResolverInterface $resolver): self
-    {
-        $class = $resolver->resolveType($record)->entityClass();
-        $self = new $class();
-
-        if ($record->dateAdd !== null) {
-            $self->dateAdd = $record->dateAdd;
-        }
-        $self->dateUpdate = $record->dateUpdate ?? $self->dateAdd;
-
-        $self->setTitle($record->title);
-
-        $premiere = $record->datePremiere;
-        $end = $record->dateEnd;
-        if ($premiere !== null && $end !== null && $end < $premiere) {
-            $end = null;
-        }
-        // A film or an OVA has no end date of its own; a series without one may still be airing.
-        if ($end === null && $premiere !== null && $self->getType() !== AnimeType::Tv) {
-            $end = $premiere;
-        }
-        $self->setDatePremiereAndEnd($premiere, $end);
-
-        if ($record->duration !== null && $record->duration > 0) {
-            $self->setDurationMinutes($record->duration);
-        }
-
-        if ($self instanceof SeriesAnime && $record->episodesNumber !== null && $record->episodesNumber > 0) {
-            $self->setEpisodesCount($record->episodesNumber);
-        }
-
-        $status = $resolver->resolveWatchStatus($record);
-        if ($status === WatchStatus::Completed) {
-            // Completed needs a released title; a series with an unknown end is still on air.
-            $status = match ($self->getProductionStatus()) {
-                ProductionStatus::Released => $status,
-                ProductionStatus::Ongoing => WatchStatus::Watching,
-                ProductionStatus::Announced => WatchStatus::Plan,
-            };
-        }
-        $self->setWatchStatus($status);
-
-        if ($record->rating !== null && $record->rating >= 1 && $record->rating <= 5) {
-            $self->setUserRating(new Rating($record->rating));
-        }
-
-        $country = strtoupper(trim($record->country ?? ''));
-        if (preg_match('/^[A-Z]{2}\z/', $country) === 1) {
-            $self->setCountries([$country]);
-        }
-
-        $self->setNotes($resolver->resolveNotes($record));
-
-        $summary = trim($record->summary ?? '');
-        if ($summary !== '') {
-            $self->setDescription('ru', $summary);
-        }
-
-        foreach ($resolver->resolveStudios($record) as $studio) {
-            $self->addStudio($studio);
-        }
-        foreach ($resolver->resolveLabels($record) as $label) {
-            $self->addLabel($label);
-        }
-
-        $genres = $resolver->resolveGenres($record);
-        foreach ($genres->genres as $code) {
-            $self->addGenre($code);
-        }
-        foreach ($genres->themes as $code) {
-            $self->addTheme($code);
-        }
-        $self->setDemographic($genres->demographic);
-
-        foreach ($resolver->resolveNames($record) as $name) {
-            $self->addName($name->name, $name->locale, AnimeNameRole::Synonym);
-        }
-        foreach ($record->sources as $url) {
-            $self->addSource($url);
-        }
-
-        $storage = $resolver->resolveStorage($record);
-        if ($storage !== null) {
-            $self->setStorage($storage);
-            $path = trim($record->path ?? '');
-            if ($path !== '') {
-                $self->setStoragePath($path);
-            }
-        }
-
-        return $self;
     }
 
     public function getTitle(): string
@@ -900,6 +789,25 @@ abstract class Anime implements AggregateRootInterface
     public function getDescriptions(): Collection
     {
         return $this->descriptions;
+    }
+
+    /**
+     * Restores the creation and last-update stamps the constructor has set to "now", for a record
+     * that existed before it reached this catalog (an import). The one place where the history
+     * may be written from outside; a re-import is refused on a non-empty catalog, so the dates
+     * would be lost for good otherwise. A missing update stamp means "never touched since added".
+     */
+    public function restoreTimestamps(\DateTimeImmutable $added, ?\DateTimeImmutable $updated = null): self
+    {
+        $updated ??= $added;
+        if ($updated < $added) {
+            throw new \InvalidArgumentException('dateUpdate must not precede dateAdd');
+        }
+
+        $this->dateAdd = $added;
+        $this->dateUpdate = $updated;
+
+        return $this;
     }
 
     public function getDateAdd(): \DateTimeImmutable

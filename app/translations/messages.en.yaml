@@ -402,7 +402,9 @@ catalog_stage:
 import_v1:
     error_not_v1_installation: 'This is not an AnimeDB v1 installation directory: no readable database at "%path%".'
     error_catalog_not_empty: 'The catalog is not empty: AnimeDB v1 can only be imported into an empty catalog.'
+    error_invalid_record: 'Record "%title%" (v1 id %id%) cannot be imported, so nothing was imported. Fix it in AnimeDB v1 and run the import again.'
     review_unknown_end_date: 'The end date of "%title%" is unknown. Check its watch status.'
+    review_status_downgraded: '"%title%" was marked as watched in v1, but its release dates are unknown: the watch status was set to "%status%". Check it.'
     report_created: 'Entries created: %count% (status from a v1 label: %fromLabel%, default status: %byDefault%).'
     report_names: 'Alternative names: %count% (Japanese: %ja%, Russian: %ru%, no language: %none%).'
     report_related: 'Sources: %sources%, descriptions: %descriptions%, studios: %studios%, labels: %labels%.'
@@ -414,6 +416,7 @@ import_v1:
     report_storages_skipped: 'Storages skipped, no usable path: %names%.'
     report_episodes_dropped: 'Episode count not kept for entries of a non-series type: %count% (%titles%).'
     report_end_dates: 'End date set to the premiere date: %count%.'
+    report_status_downgraded: 'Entries whose "watched" status was lowered, release dates unknown: %count%.'
     report_needs_attention: 'Entries to check, end date unknown: %count%.'
 
 queue_purge:
