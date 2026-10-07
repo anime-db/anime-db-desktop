@@ -15,7 +15,6 @@
     },
     "require": {
         "core": ">=0.0.1",
-        "php": ">=8.5",
-        "plugin-contracts": "^0.25.1"
+        "php": ">=8.5"
     }
 }

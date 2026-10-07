@@ -130,20 +130,6 @@ function disposeFixture() {
 }
 
 /**
- * Pins the interface language, otherwise the first launch derives it from the host OS locale and
- * scenarios that look elements up by English labels depend on the machine they run on.
- *
- * @param {string} dir
- */
-function pinLocale(dir) {
-    const file = path.join(dir, 'config.json');
-    const config = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : {};
-    if (!config.locale) {
-        fs.writeFileSync(file, JSON.stringify({ ...config, locale: 'en' }));
-    }
-}
-
-/**
  * Copies the fixture into a fresh temp directory. The fixture is built in this same process from
  * the current migrations, so the copy needs no further migration.
  *
@@ -152,7 +138,6 @@ function pinLocale(dir) {
 function createIsolatedEnv() {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'animedb-env-'));
     fs.cpSync(fixtureDir(), dir, { recursive: true });
-    pinLocale(dir);
 
     return {
         dir,
