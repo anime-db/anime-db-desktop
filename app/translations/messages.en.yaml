@@ -607,6 +607,8 @@ anime_edit:
     error_cover_upload: The file could not be uploaded.
     error_cover_invalid: The file is not a PNG, JPEG or WebP image.
     error_cover_save: The cover could not be saved.
+    cover_reselect: 'Cover not saved: choose the file again after fixing the errors.'
+    flash_request_too_large: 'The file is too large, nothing was saved.'
 
 anime_new:
     title: New Anime — AnimeDB

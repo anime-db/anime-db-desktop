@@ -55,12 +55,15 @@ use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Session\Session;
+use Symfony\Component\HttpFoundation\Session\Storage\MockArraySessionStorage;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 use Symfony\Component\Security\Csrf\CsrfToken;
 use Symfony\Component\Security\Csrf\CsrfTokenManagerInterface;
+use Symfony\Contracts\Translation\TranslatorInterface;
 use Twig\Environment;
 
 /**
@@ -561,6 +564,49 @@ final class AnimeEditControllerTest extends TestCase
         $this->assertSame('old.webp', $this->reload($anime)->getCover());
     }
 
+    public function testAcceptedCoverWithAnErrorElsewhereAsksToChooseTheFileAgain(): void
+    {
+        $anime = $this->persistTv();
+
+        $response = $this->controller()->update($anime, $this->post(['countries' => 'bad'], $this->upload($this->imageBytes('png'), 'cover.png')));
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertSame('anime_edit.cover_reselect', $this->renderedParams()['errors']['cover']);
+        $this->assertSame('anime_edit.error_country_invalid', $this->renderedParams()['errors']['countries']);
+        $this->assertNull($this->reload($anime)->getCover());
+    }
+
+    public function testNoCoverReselectHintWithoutAFileInTheRequest(): void
+    {
+        $anime = $this->persistTv();
+
+        $this->controller()->update($anime, $this->post(['countries' => 'bad']));
+
+        $this->assertArrayNotHasKey('cover', $this->renderedParams()['errors']);
+    }
+
+    public function testEmptyBodyOverPostMaxSizeRedirectsToTheFormWithAFlash(): void
+    {
+        $anime = $this->persistTv();
+        $request = new Request(server: ['CONTENT_LENGTH' => '1048577']);
+        $session = new Session(new MockArraySessionStorage());
+        $request->setSession($session);
+
+        $response = $this->controller()->update($anime, $request);
+
+        $this->assertInstanceOf(RedirectResponse::class, $response);
+        $this->assertSame('/anime/'.$anime->id, $response->getTargetUrl());
+        $this->assertSame('anime_edit.flash_request_too_large', $session->getFlashBag()->get('danger')[0]['text']);
+    }
+
+    public function testEmptyBodyWithinPostMaxSizeStillFailsTheCsrfCheck(): void
+    {
+        $anime = $this->persistTv();
+        $this->expectException(BadRequestHttpException::class);
+
+        $this->controller()->update($anime, new Request(server: ['CONTENT_LENGTH' => '1048576']));
+    }
+
     public function testACoverErrorKeepsTheOtherTypedValues(): void
     {
         $anime = $this->persistTv();
@@ -768,6 +814,9 @@ final class AnimeEditControllerTest extends TestCase
             return '';
         });
 
-        return new AnimeEditController($this->entityManager, $csrf, $urls, $twig, new StudioRepository($this->entityManager), new AnimeCoverStorage(new ImageNormalizer(), $this->mediaDir));
+        $translator = $this->createStub(TranslatorInterface::class);
+        $translator->method('trans')->willReturnArgument(0);
+
+        return new AnimeEditController($this->entityManager, $csrf, $urls, $twig, new StudioRepository($this->entityManager), new AnimeCoverStorage(new ImageNormalizer(), $this->mediaDir), $translator, 1048576);
     }
 }

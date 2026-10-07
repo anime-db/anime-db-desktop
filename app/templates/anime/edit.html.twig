@@ -209,14 +209,14 @@
                 <button type="button" class="btn btn-outline-secondary btn-sm" data-rows-add>{{ 'anime_edit.add_button'|trans }}</button>
             </div>
 
-            <div class="mb-3">
+            <div class="mb-3" data-control="cover-size-limit">
                 <label for="anime-edit-cover" class="form-label">{{ 'anime_edit.field_cover'|trans }}</label>
                 {% if cover %}
                     <div class="mb-2"><img src="app-media://anime/{{ anime.id }}/{{ cover }}" alt="{{ anime.title }}" class="anime-edit__cover"></div>
                 {% endif %}
-                <input type="file" id="anime-edit-cover" name="cover" accept="image/png,image/jpeg,image/webp" class="form-control{% if errors.cover is defined %} is-invalid{% endif %}">
+                <input type="file" id="anime-edit-cover" name="cover" data-max-bytes="{{ cover_max_bytes }}" data-too-large-message="{{ 'anime_edit.error_cover_too_large'|trans }}" accept="image/png,image/jpeg,image/webp" class="form-control{% if errors.cover is defined %} is-invalid{% endif %}">
                 <div class="form-text">{{ 'anime_edit.cover_hint'|trans({'%size%': (cover_max_bytes / 1048576)|round}) }}</div>
-                {% if errors.cover is defined %}<div class="invalid-feedback d-block">{{ errors.cover|trans }}</div>{% endif %}
+                <div class="invalid-feedback d-block" data-cover-error{% if errors.cover is not defined %} hidden{% endif %}>{% if errors.cover is defined %}{{ errors.cover|trans }}{% endif %}</div>
                 {% if cover %}
                     <div class="form-check mt-2">
                         <input type="checkbox" class="form-check-input" id="anime-edit-cover-remove" name="cover_remove" value="1"{% if form.cover_remove %} checked{% endif %}>
