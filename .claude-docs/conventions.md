@@ -64,6 +64,7 @@ composer phpstan    # phpstan analyse по конфигу phpstan.dist.neon
 
 - **Во время работы над изменением** — гоняй только **затронутые** тесты: `vendor/bin/phpunit --filter <TestClassOrMethod>` или по пути к файлу `vendor/bin/phpunit tests/Unit/Path/SomeTest.php`. Быстро, дёшево, достаточно для итерации по конкретной правке.
 - **Один раз перед коммитом** — **обязательный** полный прогон: `vendor/bin/phpunit` (весь набор) + `composer phpstan` + `composer cs-check`. До коммита рабочее дерево должно быть зелёным по **полному** набору.
+- **HTTP-функциональные тесты** — `app/tests/Functional/` (база — `FunctionalTestCase` на `WebTestCase`), отдельный testsuite: `vendor/bin/phpunit --testsuite Functional`. БД и очередь в test-окружении — `app/var/test/{data,queue}.db` (см. `app/.env.test`), схема пересоздаётся в `setUp`; рабочий `data/data.db` не затрагивается (проверяет `DatabaseIsolationTest`). Предмет тестов — коды ответов, редиректы, CSRF, содержимое ответа; JS/htmx в браузере не исполняется.
 
 **Почему так.** Полный прогон 600+ тестов + PHPStan level 8 на каждой мелкой правке — это основная статья расхода бюджета автономного прогона (agent читает большой контекст + гоняет suite десятки раз). Точечные тесты при итерации срезают этот расход, не жертвуя итоговой проверкой: финальный полный прогон обязателен, а CI на PR в любом случае прогоняет весь набор.
 
