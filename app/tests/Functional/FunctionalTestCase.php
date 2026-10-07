@@ -44,17 +44,22 @@ abstract class FunctionalTestCase extends WebTestCase
 
     protected function setUp(): void
     {
-        $this->client = self::createClient();
-
-        $databaseFile = self::projectDir().'/var/test';
-        if (!is_dir($databaseFile)) {
-            mkdir($databaseFile, 0o777, true);
+        // Start from fresh files: SchemaTool::dropSchema() swallows errors, so a drop that fails
+        // leaves the old tables behind and createSchema() then dies with "table already exists".
+        $databaseDir = self::projectDir().'/var/test';
+        if (!is_dir($databaseDir)) {
+            mkdir($databaseDir, 0o777, true);
+        }
+        foreach (['data.db', 'queue.db'] as $file) {
+            foreach (['', '-journal', '-wal', '-shm'] as $suffix) {
+                @unlink($databaseDir.'/'.$file.$suffix);
+            }
         }
 
+        $this->client = self::createClient();
+
         $entityManager = $this->entityManager();
-        $tool = new SchemaTool($entityManager);
-        $tool->dropSchema($entityManager->getMetadataFactory()->getAllMetadata());
-        $tool->createSchema($entityManager->getMetadataFactory()->getAllMetadata());
+        (new SchemaTool($entityManager))->createSchema($entityManager->getMetadataFactory()->getAllMetadata());
 
         // Entity listeners dispatch to the Doctrine-backed `async` transport (var/test/queue.db);
         // its table is not part of the ORM schema.
