@@ -217,7 +217,7 @@ final class StorageEditControllerTest extends TestCase
         $storage = new Storage('Main folder', $missingPath, StorageType::Folder);
         $this->setStorageId($storage, 9);
 
-        $this->assertFalse(is_readable($storage->getPath()));
+        $this->assertFalse(is_readable($storage->requirePath()));
 
         $entityManager = $this->createMock(EntityManagerInterface::class);
         $entityManager->expects($this->once())->method('flush');

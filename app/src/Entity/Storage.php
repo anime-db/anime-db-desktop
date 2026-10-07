@@ -53,8 +53,8 @@ class Storage
     #[ORM\Column(length: 16, enumType: StorageType::class)]
     private StorageType $type;
 
-    #[ORM\Column(length: 1024)]
-    private string $path;
+    #[ORM\Column(length: 1024, nullable: true)]
+    private ?string $path = null;
 
     #[ORM\Column(type: 'unix_timestamp', nullable: true)]
     private ?\DateTimeImmutable $dateUpdate = null;
@@ -62,11 +62,11 @@ class Storage
     #[ORM\Column(type: 'unix_timestamp', nullable: true)]
     private ?\DateTimeImmutable $fileModified = null;
 
-    public function __construct(string $name, string $path, StorageType $type)
+    public function __construct(string $name, ?string $path, StorageType $type)
     {
         $this->rename($name);
-        $this->relocate($path);
         $this->type = $type;
+        $this->relocate($path);
     }
 
     public function getName(): string
@@ -91,6 +91,7 @@ class Storage
         return $this->type;
     }
 
+    /** Does not re-validate the path: change the type first, then {@see self::relocate()}, which checks it against the new type. */
     public function setType(StorageType $type): self
     {
         $this->type = $type;
@@ -98,9 +99,16 @@ class Storage
         return $this;
     }
 
-    public function getPath(): string
+    /** Null only for a type whose {@see StorageType::isPathRequired()} is false. */
+    public function getPath(): ?string
     {
         return $this->path;
+    }
+
+    /** For code paths that only handle storages of a {@see StorageType::isPathRequired()} type, where a missing path is a broken invariant. */
+    public function requirePath(): string
+    {
+        return $this->path ?? throw new \LogicException(\sprintf('Storage "%s" has no path.', $this->name));
     }
 
     /**
@@ -111,9 +119,15 @@ class Storage
      * relocate() must also work when reconnecting a storage whose drive letter
      * changed (desktop.ini marker match) before the new path has been confirmed reachable.
      */
-    public function relocate(string $path): self
+    public function relocate(?string $path): self
     {
-        $path = trim($path);
+        $path = $path === null ? '' : trim($path);
+        if ($path === '' && !$this->type->isPathRequired()) {
+            $this->path = null;
+
+            return $this;
+        }
+
         if ($path === '' || preg_match(self::ABSOLUTE_PATH_PATTERN, $path) !== 1) {
             throw new InvalidPathException(\sprintf('path must be an absolute Windows path, got "%s"', $path));
         }

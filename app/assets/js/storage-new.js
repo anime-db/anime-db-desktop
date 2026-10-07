@@ -37,12 +37,20 @@
 
         const writableTypes = (typeSelect.dataset.writableTypes || '').split(',').filter(Boolean);
 
+        const pathOptionalTypes = (typeSelect.dataset.pathOptionalTypes || '').split(',').filter(Boolean);
+
         function updatePickButtonVisibility() {
             pickButton.hidden = !window.animeDb || !writableTypes.includes(typeSelect.value);
         }
 
+        function updatePathRequired() {
+            pathInput.required = !pathOptionalTypes.includes(typeSelect.value);
+        }
+
         typeSelect.addEventListener('change', updatePickButtonVisibility);
+        typeSelect.addEventListener('change', updatePathRequired);
         updatePickButtonVisibility();
+        updatePathRequired();
 
         pickButton.addEventListener('click', async () => {
             if (!window.animeDb) {

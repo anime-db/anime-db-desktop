@@ -74,7 +74,7 @@ final class AnimeDownloadLinker
     {
         $anime = $download->getAnime();
         $storage = $download->getTargetStorage() ?? throw new DownloadTargetStorageMissingException($download->getInfoHash());
-        $root = $storage->getPath();
+        $root = $storage->requirePath();
         $resolvedPath = $this->jail->assertWithinRoot($root, $contentPath);
 
         $relativePath = $this->jail->relativePathUnderRoot($root, $resolvedPath);

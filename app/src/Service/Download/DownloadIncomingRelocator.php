@@ -92,7 +92,7 @@ final class DownloadIncomingRelocator
     {
         $storageId = $storage->id ?? throw new \LogicException('Storage must be persisted before its marker can be checked.');
 
-        return $this->markerService->readMarkerId($storage->getPath()) === $storageId;
+        return $this->markerService->readMarkerId($storage->requirePath()) === $storageId;
     }
 
     /**
@@ -104,7 +104,7 @@ final class DownloadIncomingRelocator
      */
     public function tryMove(Download $download, Storage $storage, string $resolvedContentPath, array $torrent, string $infoHash): void
     {
-        $storageRoot = rtrim($storage->getPath(), '\\/');
+        $storageRoot = rtrim($storage->requirePath(), '\\/');
 
         // basename() of content_path, NOT the torrent's own "name" field: libtorrent already
         // sanitized it for the filesystem (stripped characters Windows rejects, etc.), and a

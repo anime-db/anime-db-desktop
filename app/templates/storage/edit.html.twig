@@ -49,7 +49,7 @@
 
             <div class="mb-3">
                 <label for="storage-edit-path" class="form-label">{{ 'storage_edit.field_path'|trans }}</label>
-                <input type="text" id="storage-edit-path" name="path" value="{{ path }}" required class="form-control"{% if isPreset %} readonly{% endif %}>
+                <input type="text" id="storage-edit-path" name="path" value="{{ path }}" class="form-control"{% if isPreset %} readonly{% endif %}>
                 {% if isPreset %}
                     <div class="form-text">{{ 'storage_edit.preset_path_hint'|trans }}</div>
                 {% endif %}
