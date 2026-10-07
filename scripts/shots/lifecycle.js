@@ -163,6 +163,22 @@ function formatTimeoutMessage(timeoutMs, lastPage) {
 }
 
 /**
+ * Line for a non-zero exit of the child. Null after a timeout: the timeout message has already
+ * named the stuck page, and the tracker may have moved on since then.
+ *
+ * @param {RunWatchdog} watchdog
+ * @param {number|null} code
+ * @param {LastPageTracker} lastPage
+ * @returns {string|null}
+ */
+function formatExitLine(watchdog, code, lastPage) {
+    if (code === 0 || watchdog.timedOut) {
+        return null;
+    }
+    return `последняя страница: ${lastPage.describe()}`;
+}
+
+/**
  * Saves `<name>.FAILED.png` and `<name>.FAILED.html` of the current page. A failure of the
  * snapshot itself is logged and never thrown, so it cannot mask the original error.
  *
@@ -208,6 +224,7 @@ module.exports = {
     KILL_GRACE_MS,
     UNKNOWN_PAGE,
     resolveTimeoutMs,
+    formatExitLine,
     formatLastPageLine,
     formatTimeoutMessage,
     saveFailureArtifacts,

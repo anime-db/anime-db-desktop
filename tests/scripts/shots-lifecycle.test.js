@@ -28,7 +28,7 @@ const path = require('path');
 
 const {
     DEFAULT_TIMEOUT_MS, UNKNOWN_PAGE, LastPageTracker, resolveTimeoutMs,
-    formatLastPageLine, formatTimeoutMessage, saveFailureArtifacts, RunWatchdog, KILL_GRACE_MS, PID_MARKER,
+    formatLastPageLine, formatExitLine, formatTimeoutMessage, saveFailureArtifacts, RunWatchdog, KILL_GRACE_MS, PID_MARKER,
 } = require('../../scripts/shots/lifecycle');
 
 describe('resolveTimeoutMs', () => {
@@ -158,5 +158,43 @@ describe('RunWatchdog', () => {
         const watchdog = make();
         watchdog.start();
         expect(watchdog.finish(null)).toBe(1);
+    });
+});
+
+describe('formatExitLine', () => {
+    const watchdog = () => new RunWatchdog({ timeoutMs: 10, requestSnapshot: jest.fn(), killGroup: jest.fn() });
+
+    test('after a timeout the page that moved on is not reported again', () => {
+        jest.useFakeTimers();
+        const lines = [];
+        const tracker = new LastPageTracker();
+        tracker.push(formatLastPageLine('light/settings-sync-review (http://x/a)') + '\n');
+        const dog = new RunWatchdog({
+            timeoutMs: 10,
+            requestSnapshot: jest.fn(),
+            killGroup: jest.fn(),
+            onTimeout: () => lines.push(formatTimeoutMessage(10000, tracker.describe())),
+        });
+        dog.start();
+        jest.advanceTimersByTime(10);
+        tracker.push(formatLastPageLine('light/market (http://x/b)') + '\n');
+
+        const exitLine = formatExitLine(dog, 1, tracker);
+        if (exitLine !== null) {
+            lines.push(exitLine);
+        }
+        dog.finish(1);
+        jest.useRealTimers();
+
+        expect(lines).toHaveLength(1);
+        expect(lines[0]).toContain('light/settings-sync-review');
+        expect(lines.join('\n')).not.toContain('market');
+    });
+
+    test('a plain failure reports the last page, success reports nothing', () => {
+        const tracker = new LastPageTracker();
+        tracker.push(formatLastPageLine('light/market (http://x/b)') + '\n');
+        expect(formatExitLine(watchdog(), 1, tracker)).toBe('последняя страница: light/market (http://x/b)');
+        expect(formatExitLine(watchdog(), 0, tracker)).toBeNull();
     });
 });

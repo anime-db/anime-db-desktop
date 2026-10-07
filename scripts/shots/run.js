@@ -40,7 +40,7 @@ const path = require('path');
 const { findFreePort } = require('../../native/supervisor/port');
 const { waitForHealth } = require('../../native/supervisor/healthcheck');
 const {
-    RunWatchdog, LastPageTracker, resolveTimeoutMs, formatTimeoutMessage,
+    RunWatchdog, LastPageTracker, formatExitLine, resolveTimeoutMs, formatTimeoutMessage,
 } = require('./lifecycle');
 
 const rootDir   = path.resolve(__dirname, '..', '..');
@@ -282,8 +282,9 @@ function runCapture(port, animeId, server) {
         child.on('exit', (code) => {
             process.removeListener('SIGINT', onSignal);
             process.removeListener('SIGTERM', onSignal);
-            if (code !== 0) {
-                console.error(`[shots] последняя страница: ${lastPage.describe()}`);
+            const exitLine = formatExitLine(watchdog, code, lastPage);
+            if (exitLine !== null) {
+                console.error(`[shots] ${exitLine}`);
             }
             resolve(watchdog.finish(code));
         });
