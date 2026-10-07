@@ -40,6 +40,9 @@ const path = require('path');
 const { findFreePort } = require('../../native/supervisor/port');
 const { waitForHealth } = require('../../native/supervisor/healthcheck');
 const { createIsolatedEnv, disposeFixture } = require('../fixture');
+const {
+    RunWatchdog, LastPageTracker, formatExitLine, resolveTimeoutMs, formatTimeoutMessage,
+} = require('./lifecycle');
 
 const rootDir   = path.resolve(__dirname, '..', '..');
 const appDir    = path.join(rootDir, 'app');
@@ -196,19 +199,51 @@ function startPhpServer(port, env) {
 }
 
 /**
+ * Developer paths the run must never create or touch: they exist only if the isolation leaked.
+ */
+const LEAK_GUARDED_PATHS = [
+    path.join(rootDir, 'data'),
+    path.join(appDir, 'var', 'config.json'),
+];
+
+/**
+ * @returns {Map<string, number|null>} mtime of every guarded path, null when it does not exist
+ */
+function snapshotGuardedPaths() {
+    return new Map(LEAK_GUARDED_PATHS.map((p) => [p, fs.existsSync(p) ? fs.statSync(p).mtimeMs : null]));
+}
+
+/**
+ * @param {Map<string, number|null>} before
+ * @returns {string[]} guarded paths that appeared (or changed) during the run
+ */
+function findLeakedPaths(before) {
+    return LEAK_GUARDED_PATHS.filter((p) => {
+        const now = fs.existsSync(p) ? fs.statSync(p).mtimeMs : null;
+        return now !== before.get(p);
+    });
+}
+
+/**
  * @param {number} port
  * @param {string} animeId
+ * @param {import('child_process').ChildProcess} server
  * @param {Record<string, string>} env
  * @returns {Promise<number>}
  */
-function runCapture(port, animeId, env) {
+function runCapture(port, animeId, server, env) {
     return new Promise((resolve) => {
+        const timeoutMs = resolveTimeoutMs(process.env);
+        const lastPage  = new LastPageTracker();
+
+        // Own process group, so a timeout reaches Electron behind the xvfb-run shell wrapper.
         const child = spawn('xvfb-run', [
             '-a', 'node_modules/.bin/electron',
             '--no-sandbox', '--disable-gpu', '--disable-lcd-text',
             captureJs,
         ], {
             cwd: rootDir,
+            detached: true,
             env: {
                 ...process.env,
                 ...env,
@@ -216,10 +251,64 @@ function runCapture(port, animeId, env) {
                 SHOTS_OUT_DIR:  outDir,
                 SHOTS_ANIME_ID: animeId,
             },
-            stdio: 'inherit',
+            stdio: ['inherit', 'pipe', 'inherit'],
         });
 
-        child.on('exit', (code) => resolve(code === null ? 1 : code));
+        child.stdout.on('data', (chunk) => {
+            lastPage.push(chunk);
+            process.stdout.write(chunk);
+        });
+
+        const killGroup = (signal) => {
+            try {
+                process.kill(-child.pid, signal);
+            } catch {
+                // already gone
+            }
+        };
+
+        const watchdog = new RunWatchdog({
+            timeoutMs,
+            requestSnapshot: () => {
+                // Only the Electron main process: it saves the failed page, then exits.
+                if (lastPage.pid === null) {
+                    killGroup('SIGKILL');
+                    return;
+                }
+                try {
+                    process.kill(lastPage.pid, 'SIGUSR2');
+                } catch {
+                    // already gone
+                }
+            },
+            killGroup,
+            // The message is printed on exit, once capture.js has said which page it saved.
+            onTimeout: () => lastPage.markTimeout(),
+        });
+        watchdog.start();
+
+        // The child has its own process group, so Ctrl+C no longer reaches it by itself.
+        const onSignal = (signal) => {
+            killGroup('SIGKILL');
+            server.kill('SIGTERM');
+            process.exit(128 + (signal === 'SIGINT' ? 2 : 15));
+        };
+        process.once('SIGINT', onSignal);
+        process.once('SIGTERM', onSignal);
+
+        // 'close', not 'exit': stdout must be drained so the [shots:failed] line is not lost.
+        child.on('close', (code) => {
+            process.removeListener('SIGINT', onSignal);
+            process.removeListener('SIGTERM', onSignal);
+            if (watchdog.timedOut) {
+                console.error(`\n[shots] ${formatTimeoutMessage(timeoutMs, lastPage.describeFailed())}`);
+            }
+            const exitLine = formatExitLine(watchdog, code, lastPage);
+            if (exitLine !== null) {
+                console.error(`[shots] ${exitLine}`);
+            }
+            resolve(watchdog.finish(code));
+        });
     });
 }
 
@@ -231,11 +320,9 @@ async function main() {
     checkElectronRuntimeLibs();
 
     // The run works on a copy of the fixture, never on the developer's data/ and app/var/.
+    const guardedBefore = snapshotGuardedPaths();
     const isolated = createIsolatedEnv();
     const animeId = findFirstAnimeId(path.join(isolated.dir, 'data.db'));
-
-    fs.rmSync(outDir, { recursive: true, force: true });
-    fs.mkdirSync(outDir, { recursive: true });
 
     const port = await findFreePort(STARTUP_PORT);
     const server = startPhpServer(port, isolated.env);
@@ -243,7 +330,11 @@ async function main() {
     let exitCode = 1;
     try {
         await waitForHealth(port);
-        exitCode = await runCapture(port, animeId, isolated.env);
+        // Cleared only now that capturing really starts, so a run that dies earlier keeps the
+        // previous screenshots; *.FAILED.* of this run are written after this point.
+        fs.rmSync(outDir, { recursive: true, force: true });
+        fs.mkdirSync(outDir, { recursive: true });
+        exitCode = await runCapture(port, animeId, server, isolated.env);
     } catch (err) {
         console.error(`[shots] ${err.message}`);
         console.error(server.tail());
@@ -251,6 +342,15 @@ async function main() {
         server.kill('SIGTERM');
         isolated.cleanup();
         disposeFixture();
+    }
+
+    const leaked = findLeakedPaths(guardedBefore);
+    if (leaked.length > 0) {
+        console.error(
+            `[shots] isolation leaked: the run created or changed ${leaked.join(', ')} — `
+            + 'the environment did not reach the server or capture.js.',
+        );
+        exitCode = 1;
     }
 
     if (exitCode === 0) {
