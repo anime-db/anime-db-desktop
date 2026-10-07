@@ -33,6 +33,7 @@ const fs   = require('fs');
 const path = require('path');
 
 const { PageErrorTracker } = require('./page-errors');
+const { PID_MARKER, FAILED_MARKER, formatLastPageLine, saveFailureArtifacts } = require('./lifecycle');
 
 const PORT    = process.env.SHOTS_PORT;
 const OUT_DIR = process.env.SHOTS_OUT_DIR;
@@ -129,7 +130,31 @@ function loadPage(win, url) {
     });
 }
 
+// The page being processed, so a failure or a SIGTERM from run.js can snapshot it.
+let current = null;
+let failureSaved = false;
+
+/**
+ * @returns {Promise<void>}
+ */
+async function saveCurrentFailure() {
+    if (current === null || failureSaved) return;
+    failureSaved = true;
+    // Fixed up front: the walk may move on while the snapshot is being taken.
+    const { win, dir, name, label } = current;
+    await saveFailureArtifacts(win.webContents, dir, name);
+    console.log(`${FAILED_MARKER}${label}`);
+}
+
+// run.js sends SIGUSR2 to this process only on its own timeout and SIGKILLs the group after a
+// grace period. SIGTERM to the whole group would kill Xvfb and the renderer first, and Chromium
+// installs its own SIGTERM handler; SIGUSR2 is left alone by both.
+process.on('SIGUSR2', () => {
+    saveCurrentFailure().finally(() => app.exit(1));
+});
+
 async function main() {
+    console.log(`${PID_MARKER}${process.pid}`);
     await app.whenReady();
 
     const pages   = buildPages();
@@ -184,6 +209,8 @@ async function main() {
         for (const targetPage of pages) {
             const url = `http://127.0.0.1:${PORT}${targetPage.path}`;
             currentPageUrl = url;
+            current = { win, dir: themeDir, name: targetPage.name, label: `${theme}/${targetPage.name}` };
+            console.log(formatLastPageLine(`${theme}/${targetPage.name} (${url})`));
             await loadPage(win, url);
 
             if (!(await waitForRender(win))) {
@@ -205,7 +232,8 @@ async function main() {
     app.exit(0);
 }
 
-main().catch((err) => {
+main().catch(async (err) => {
     console.error(`[shots] ${err.stack || err.message}`);
+    await saveCurrentFailure();
     app.exit(1);
 });
