@@ -124,6 +124,35 @@ final class V1ImportServiceTest extends TestCase
         $this->assertCount(1, $this->entityManager->getRepository(Storage::class)->findAll());
     }
 
+    public function testResolvesTheStudioThroughTheV1Dictionary(): void
+    {
+        $builder = V1DatabaseBuilder::create($this->createTemporaryDirectory('v1-'));
+        $studio = $builder->studio('Madhouse');
+        $builder->item(['name' => 'Dictionary', 'type' => 'feature', 'studio' => $studio]);
+
+        $this->service->import($builder->root);
+        $this->entityManager->clear();
+
+        $anime = $this->entityManager->getRepository(Anime::class)->findOneBy(['title' => 'Dictionary']);
+        $this->assertInstanceOf(Anime::class, $anime);
+        $this->assertSame(['Madhouse'], array_map(static fn (Studio $s): string => $s->name, $anime->getStudios()->toArray()));
+        $this->assertCount(1, $this->entityManager->getRepository(Studio::class)->findAll());
+    }
+
+    public function testKeepsAPlainTextStudioWhenTheDictionaryHasNoSuchRow(): void
+    {
+        $builder = V1DatabaseBuilder::create($this->createTemporaryDirectory('v1-'));
+        $builder->studio('Madhouse');
+        $builder->item(['name' => 'Plain', 'type' => 'feature', 'studio' => 'Bones']);
+
+        $this->service->import($builder->root);
+        $this->entityManager->clear();
+
+        $anime = $this->entityManager->getRepository(Anime::class)->findOneBy(['title' => 'Plain']);
+        $this->assertInstanceOf(Anime::class, $anime);
+        $this->assertSame(['Bones'], array_map(static fn (Studio $s): string => $s->name, $anime->getStudios()->toArray()));
+    }
+
     public function testKeepsDateAddAndDateUpdateFromV1(): void
     {
         $builder = V1DatabaseBuilder::create($this->createTemporaryDirectory('v1-'));

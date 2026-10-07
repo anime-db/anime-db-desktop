@@ -41,6 +41,8 @@ use App\Entity\Exception\InvalidDateRangeException;
 use App\Entity\Exception\InvalidDurationException;
 use App\Entity\Exception\InvalidNameException;
 use App\Entity\Exception\InvalidWatchStatusException;
+use App\Entity\Import\V1AnimeRecord;
+use App\Entity\Import\V1AnimeResolverInterface;
 use App\Entity\ValueObject\PluginId;
 use App\Entity\ValueObject\Rating;
 use App\Event\WatchProgressChangedManuallyEvent;
@@ -475,6 +477,123 @@ abstract class Anime implements AggregateRootInterface
     abstract public function getType(): AnimeType;
 
     /**
+     * Builds an aggregate out of a record of an AnimeDB v1 catalog (issue #951), driven through
+     * the entity's own setters so every invariant is checked. The one place that restores the
+     * creation and last-update stamps the constructor sets to "now": a re-import is refused on a
+     * non-empty catalog, so the dates would be lost for good otherwise. The stamps are written
+     * here, from a {@see V1AnimeRecord}, and cannot be set from outside.
+     *
+     * The order of the steps is fixed: dates, then the episode count, then the status.
+     * setWatchStatus(Completed) asks getProductionStatus(), which reads the dates, and
+     * SeriesAnime::setWatchStatus() copies the episode count into the watched episodes.
+     *
+     * @internal used by the v1 import only
+     */
+    public static function fromV1(V1AnimeRecord $record, V1AnimeResolverInterface $resolver): self
+    {
+        $class = $resolver->resolveType($record)->entityClass();
+        $self = new $class();
+
+        $self->setTitle($record->title);
+
+        $premiere = $record->datePremiere;
+        $end = $record->dateEnd;
+        if ($premiere !== null && $end !== null && $end < $premiere) {
+            $end = null;
+        }
+        // A film or an OVA has no end date of its own; a series without one may still be airing.
+        if ($end === null && $premiere !== null && $self->getType() !== AnimeType::Tv) {
+            $end = $premiere;
+        }
+        $self->setDatePremiereAndEnd($premiere, $end);
+
+        if ($record->duration !== null && $record->duration > 0) {
+            $self->setDurationMinutes($record->duration);
+        }
+
+        if ($self instanceof SeriesAnime && $record->episodesNumber !== null && $record->episodesNumber > 0) {
+            $self->setEpisodesCount($record->episodesNumber);
+        }
+
+        $status = $resolver->resolveWatchStatus($record);
+        if ($status === WatchStatus::Completed) {
+            // Completed needs a released title; a series with an unknown end is still on air.
+            // The import reports every record this demotes.
+            $status = match ($self->getProductionStatus()) {
+                ProductionStatus::Released => $status,
+                ProductionStatus::Ongoing => WatchStatus::Watching,
+                ProductionStatus::Announced => WatchStatus::Plan,
+            };
+        }
+        $self->setWatchStatus($status);
+
+        if ($record->rating !== null && $record->rating >= 1 && $record->rating <= 5) {
+            $self->setUserRating(new Rating($record->rating));
+        }
+
+        $country = strtoupper(trim($record->country ?? ''));
+        if (preg_match('/^[A-Z]{2}\z/', $country) === 1) {
+            $self->setCountries([$country]);
+        }
+
+        $self->setNotes($resolver->resolveNotes($record));
+
+        $summary = trim($record->summary ?? '');
+        if ($summary !== '') {
+            $self->setDescription('ru', $summary);
+        }
+
+        foreach ($resolver->resolveStudios($record) as $studio) {
+            $self->addStudio($studio);
+        }
+        foreach ($resolver->resolveLabels($record) as $label) {
+            $self->addLabel($label);
+        }
+
+        $genres = $resolver->resolveGenres($record);
+        foreach ($genres->genres as $code) {
+            $self->addGenre($code);
+        }
+        foreach ($genres->themes as $code) {
+            $self->addTheme($code);
+        }
+        $self->setDemographic($genres->demographic);
+
+        foreach ($resolver->resolveNames($record) as $name) {
+            $self->addName($name->name, $name->locale, AnimeNameRole::Synonym);
+        }
+        foreach ($record->sources as $url) {
+            $self->addSource($url);
+        }
+
+        $storage = $resolver->resolveStorage($record);
+        if ($storage !== null) {
+            $self->setStorage($storage);
+            $path = trim($record->path ?? '');
+            if ($path !== '') {
+                $self->setStoragePath($path);
+            }
+        }
+
+        // Last, so nothing above can stamp "now" over the history. A missing update stamp means
+        // "never touched since added"; an update stamp before the add is a v1 glitch and dropped.
+        $added = $record->dateAdd;
+        $updated = $record->dateUpdate;
+        if ($added === null && $updated !== null) {
+            $added = $self->dateAdd < $updated ? $self->dateAdd : $updated;
+        }
+        if ($added !== null) {
+            if ($updated !== null && $updated < $added) {
+                $updated = null;
+            }
+            $self->dateAdd = $added;
+            $self->dateUpdate = $updated ?? $added;
+        }
+
+        return $self;
+    }
+
+    /**
      * Recreates $source under a different concrete class, the only mechanism available for
      * changing type: Doctrine's single-table discriminator is fixed per row, so switching
      * class requires a new row (a fresh PK) rather than an in-place discriminator update.
@@ -789,25 +908,6 @@ abstract class Anime implements AggregateRootInterface
     public function getDescriptions(): Collection
     {
         return $this->descriptions;
-    }
-
-    /**
-     * Restores the creation and last-update stamps the constructor has set to "now", for a record
-     * that existed before it reached this catalog (an import). The one place where the history
-     * may be written from outside; a re-import is refused on a non-empty catalog, so the dates
-     * would be lost for good otherwise. A missing update stamp means "never touched since added".
-     */
-    public function restoreTimestamps(\DateTimeImmutable $added, ?\DateTimeImmutable $updated = null): self
-    {
-        $updated ??= $added;
-        if ($updated < $added) {
-            throw new \InvalidArgumentException('dateUpdate must not precede dateAdd');
-        }
-
-        $this->dateAdd = $added;
-        $this->dateUpdate = $updated;
-
-        return $this;
     }
 
     public function getDateAdd(): \DateTimeImmutable

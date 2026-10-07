@@ -66,8 +66,9 @@ final class V1DatabaseBuilder
         foreach ([
             'CREATE TABLE storage (id INTEGER PRIMARY KEY AUTOINCREMENT, name VARCHAR(256) NOT NULL, path VARCHAR(1024) DEFAULT NULL, type VARCHAR(32) DEFAULT NULL)',
             'CREATE TABLE genre (id INTEGER PRIMARY KEY AUTOINCREMENT, name VARCHAR(128) NOT NULL)',
+            'CREATE TABLE studio (id INTEGER PRIMARY KEY AUTOINCREMENT, name VARCHAR(256) NOT NULL)',
             'CREATE TABLE label (id INTEGER PRIMARY KEY AUTOINCREMENT, name VARCHAR(128) NOT NULL)',
-            'CREATE TABLE item (id INTEGER PRIMARY KEY AUTOINCREMENT, storage INTEGER DEFAULT NULL, type VARCHAR(32) DEFAULT NULL, country VARCHAR(8) DEFAULT NULL, studio VARCHAR(256) DEFAULT NULL, name VARCHAR(256) NOT NULL, date_add DATETIME NOT NULL, date_update DATETIME DEFAULT NULL, date_premiere DATE DEFAULT NULL, date_end DATE DEFAULT NULL, duration INTEGER DEFAULT NULL, summary TEXT DEFAULT NULL, episodes_number VARCHAR(32) DEFAULT NULL, episodes TEXT DEFAULT NULL, translate TEXT DEFAULT NULL, file_info TEXT DEFAULT NULL, cover VARCHAR(256) DEFAULT NULL, rating INTEGER DEFAULT NULL, path VARCHAR(1024) DEFAULT NULL)',
+            'CREATE TABLE item (id INTEGER PRIMARY KEY AUTOINCREMENT, storage INTEGER DEFAULT NULL, type VARCHAR(32) DEFAULT NULL, country VARCHAR(8) DEFAULT NULL, studio INTEGER DEFAULT NULL, name VARCHAR(256) NOT NULL, date_add DATETIME NOT NULL, date_update DATETIME DEFAULT NULL, date_premiere DATE DEFAULT NULL, date_end DATE DEFAULT NULL, duration INTEGER DEFAULT NULL, summary TEXT DEFAULT NULL, episodes_number VARCHAR(32) DEFAULT NULL, episodes TEXT DEFAULT NULL, translate TEXT DEFAULT NULL, file_info TEXT DEFAULT NULL, cover VARCHAR(256) DEFAULT NULL, rating INTEGER DEFAULT NULL, path VARCHAR(1024) DEFAULT NULL)',
             'CREATE TABLE name (id INTEGER PRIMARY KEY AUTOINCREMENT, item_id INTEGER DEFAULT NULL, name VARCHAR(256) NOT NULL)',
             'CREATE TABLE source (id INTEGER PRIMARY KEY AUTOINCREMENT, item_id INTEGER DEFAULT NULL, url VARCHAR(256) NOT NULL)',
             'CREATE TABLE items_genres (item_id INTEGER NOT NULL, genre_id INTEGER NOT NULL)',
@@ -93,6 +94,10 @@ final class V1DatabaseBuilder
         }
         $storage = $builder->storage('Anime', '/mnt/anime', 'folder');
         $builder->storage('Backup', null, 'external');
+        $studios = [];
+        for ($n = 0; $n < 9; ++$n) {
+            $studios[$n] = $builder->studio('Studio '.$n);
+        }
         $builder->label('Online');
         $builder->label('Просмотрено');
         $builder->label('Брошено');
@@ -106,7 +111,7 @@ final class V1DatabaseBuilder
                 'name' => 'Title '.$i,
                 'type' => $type,
                 'country' => $i % 27 === 0 ? null : 'JP',
-                'studio' => 'Studio '.($i % 9),
+                'studio' => $studios[$i % 9],
                 'date_add' => \sprintf('%d-%02d-%02d 14:%02d:%02d', 2014 + $i % 3, 1 + $i % 12, 1 + $i % 28, $i % 60, $i % 60),
                 'date_update' => \sprintf('%d-%02d-%02d 10:00:00', 2015 + $i % 2, 1 + $i % 12, 1 + $i % 28),
                 'date_premiere' => $premiere,
@@ -172,6 +177,13 @@ final class V1DatabaseBuilder
         $this->pdo->prepare('INSERT INTO genre (name) VALUES (?)')->execute([$name]);
 
         return $this->genreIds[$name] = (int) $this->pdo->lastInsertId();
+    }
+
+    public function studio(string $name): int
+    {
+        $this->pdo->prepare('INSERT INTO studio (name) VALUES (?)')->execute([$name]);
+
+        return (int) $this->pdo->lastInsertId();
     }
 
     public function label(string $name): int

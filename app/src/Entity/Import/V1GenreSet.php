@@ -25,19 +25,33 @@
 
 declare(strict_types=1);
 
-namespace App\Service\Import\V1;
+namespace App\Entity\Import;
+
+use App\Entity\Enum\Demographic;
+use App\Entity\Enum\GenreCode;
+use App\Entity\Enum\ThemeCode;
 
 /**
- * A row of the v1 `storage` table, as read: bare data, no behaviour.
+ * How the v1 genres of one record landed in the v2 vocabularies.
  *
  * @internal
  */
-final class V1StorageRecord
+final class V1GenreSet
 {
+    /**
+     * @param list<GenreCode> $genres
+     * @param list<ThemeCode> $themes
+     * @param list<string>    $extraDemographics v1 names of demographics beyond the one kept
+     * @param list<string>    $droppedByDesign   v1 names of the 18+ axis, left out on purpose
+     * @param list<string>    $unmapped          v1 names that have no counterpart in v2
+     */
     public function __construct(
-        public readonly string $name,
-        public readonly ?string $path,
-        public readonly ?string $type,
+        public readonly array $genres = [],
+        public readonly array $themes = [],
+        public readonly ?Demographic $demographic = null,
+        public readonly array $extraDemographics = [],
+        public readonly array $droppedByDesign = [],
+        public readonly array $unmapped = [],
     ) {
     }
 }

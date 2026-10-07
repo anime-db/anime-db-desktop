@@ -25,8 +25,9 @@
 
 declare(strict_types=1);
 
-namespace App\Service\Import\V1;
+namespace App\Entity\Import;
 
+use App\Entity\Anime;
 use App\Entity\Enum\AnimeType;
 use App\Entity\Enum\WatchStatus;
 use App\Entity\Label;
@@ -34,9 +35,9 @@ use App\Entity\Storage;
 use App\Entity\Studio;
 
 /**
- * Everything {@see V1AnimeFactory} needs from outside the aggregate: the v1
+ * Everything {@see Anime::fromV1()} needs from outside the aggregate: the v1
  * vocabulary, the heuristics and the reference entities that need deduplicating through the
- * database. The factory depends on this abstraction, never on the implementation, and has no
+ * database. The entity depends on this abstraction, never on the implementation (that lives in the service layer), and has no
  * repository of its own.
  *
  * @internal

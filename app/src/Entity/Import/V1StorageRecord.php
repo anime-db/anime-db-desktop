@@ -25,18 +25,19 @@
 
 declare(strict_types=1);
 
-namespace App\Service\Import\V1;
+namespace App\Entity\Import;
 
 /**
- * An alternative title with the language the resolver settled on (null: unknown).
+ * A row of the v1 `storage` table, as read: bare data, no behaviour.
  *
  * @internal
  */
-final class V1AlternativeName
+final class V1StorageRecord
 {
     public function __construct(
         public readonly string $name,
-        public readonly ?string $locale,
+        public readonly ?string $path,
+        public readonly ?string $type,
     ) {
     }
 }

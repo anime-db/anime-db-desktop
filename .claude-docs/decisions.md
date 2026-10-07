@@ -794,14 +794,15 @@ SIGUSR2) `capture.js` кладёт рядом со снимками `<тема>/
 - **Чтение** — отдельный `PDO` с DSN `sqlite:file:<path>?mode=ro` и голый SQL (`V1CatalogReader`).
   Обычный `sqlite:<path>` открыл бы файл на запись. Сущностей Doctrine и второго соединения в
   `doctrine.yaml` нет: чужая схема не должна попасть в `schema:validate` и golden-схему.
-- **Шов — `V1AnimeFactory` в `Service\Import\V1`, не в сущности.** Маппинг v1→v2 (даты, длительность,
-  страна, статус) живёт в импортёре и ходит в агрегат через его публичный API; `Entity/` не
-  зависит от `App\Service`. Единственное, чего не хватало снаружи, — исторические штампы:
-  узкий метод `Anime::restoreTimestamps($added, $updated)` с собственной проверкой (update не
-  раньше add). Читает v1 резолвер (`V1AnimeResolver`: словари, эвристики, дедуп
-  `Label`/`Studio`/`Storage` по имени/пути); у фабрики репозиториев нет. `@internal` на DTO и
-  фабрике; `AnimeRestoreTimestampsCallersTest` фиксирует, что `restoreTimestamps()` зовёт только
-  фабрика.
+- **Шов — `Anime::fromV1(V1AnimeRecord, V1AnimeResolverInterface)` на сущности.** Маппинг v1→v2
+  (даты, длительность, страна, статус) живёт в фабричном методе агрегата и ходит в его же сеттеры,
+  так что инварианты проверяются. DTO и контракт резолвера лежат в слое сущностей
+  (`App\Entity\Import\`), поэтому `Entity/` не зависит от `App\Service` (проверяет
+  `EntityLayerDependencyTest`). Реализация `V1AnimeResolver` (словари, эвристики, дедуп
+  `Label`/`Studio`/`Storage` по имени/пути, репозитории) осталась в `Service\Import\V1`.
+  Исторические штампы `dateAdd`/`dateUpdate` пишет только `fromV1()` (по аналогии с `migrate()`
+  — приватные поля в области видимости `Anime`); публичного API для записи дат нет, собрать
+  `Anime` с произвольными датами без `V1AnimeRecord` нельзя. `@internal` на DTO и фабричном методе.
 - **Порядок в фабрике: даты → `episodesCount` → статус.** `Completed` требует `Released`
   (непустой `dateEnd`), а `SeriesAnime::setWatchStatus()` копирует число серий.
   `type != tv` без `date_end` получает `dateEnd = datePremiere`; ТВ без `date_end` — `Watching`

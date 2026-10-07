@@ -27,6 +27,8 @@ declare(strict_types=1);
 
 namespace App\Service\Import\V1;
 
+use App\Entity\Import\V1AnimeRecord;
+use App\Entity\Import\V1StorageRecord;
 use App\Service\Import\Exception\InvalidV1InstallationException;
 use Psr\Log\LoggerInterface;
 

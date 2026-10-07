@@ -30,6 +30,7 @@ namespace App\Service\Import\V1;
 use App\Entity\Anime;
 use App\Entity\Enum\SyncReviewItemKind;
 use App\Entity\Enum\WatchStatus;
+use App\Entity\Import\V1AnimeRecord;
 use App\Entity\SeriesAnime;
 use App\Entity\TvAnime;
 use App\Repository\AnimeRepository;
@@ -58,8 +59,6 @@ final class V1ImportService
 {
     private const int PROGRESS_STEP = 10;
 
-    private readonly V1AnimeFactory $factory;
-
     public function __construct(
         private readonly V1CatalogReader $reader,
         private readonly V1AnimeResolver $resolver,
@@ -71,7 +70,6 @@ final class V1ImportService
         private readonly WsPublisher $wsPublisher,
         private readonly TranslatorInterface $translator,
     ) {
-        $this->factory = new V1AnimeFactory($resolver);
     }
 
     /** @throws InvalidV1InstallationException */
@@ -101,7 +99,7 @@ final class V1ImportService
         $created = [];
         foreach ($records as $index => $record) {
             try {
-                $anime = $this->factory->create($record);
+                $anime = Anime::fromV1($record, $this->resolver);
             } catch (\InvalidArgumentException|\DomainException $e) {
                 // All or nothing: the transaction rolls back, and the one record that broke an
                 // invariant is named so the user can fix it in v1 and run the import again.
