@@ -29,6 +29,12 @@ const { buildFixture, createIsolatedEnv, disposeFixture } = require('../../scrip
 
 const rootDir = path.resolve(__dirname, '..', '..');
 const hasApp  = fs.existsSync(path.join(rootDir, 'app', 'vendor', 'autoload.php'));
+
+// CI sets REQUIRE_APP_TESTS=1 where app/vendor is installed: a missing vendor must fail, not skip.
+if (process.env.REQUIRE_APP_TESTS === '1' && !hasApp) {
+    throw new Error('REQUIRE_APP_TESTS=1, but app/vendor is not installed (run `composer install` in app/).');
+}
+
 const describeWithApp = hasApp ? describe : describe.skip;
 
 /**
@@ -47,6 +53,14 @@ function dumpCatalog(dbPath) {
         + 'echo $t, "\\n", json_encode($db->query("SELECT * FROM \\"$t\\" ORDER BY 1, 2")->fetchAll(PDO::FETCH_ASSOC)), "\\n"; }',
         dbPath,
     ], { encoding: 'utf8' });
+}
+
+function countAnime(dbPath) {
+    return Number(execFileSync('php', [
+        '-r',
+        'echo (new PDO("sqlite:".$argv[1]))->query("SELECT COUNT(*) FROM anime")->fetchColumn();',
+        dbPath,
+    ], { encoding: 'utf8' }));
 }
 
 function tree(dir) {
@@ -102,36 +116,53 @@ describeWithApp('fixture', () => {
 
     it('refuses to load into a non-empty catalog', () => {
         const env = createIsolatedEnv();
+        const dbPath = path.join(env.dir, 'data.db');
         try {
-            expect(() => execFileSync('php', [path.join(rootDir, 'app', 'bin', 'console'), 'app:fixture:load', '--no-interaction'], {
-                cwd: path.join(rootDir, 'app'),
-                env: { ...process.env, ...env.env },
-                stdio: 'pipe',
-            })).toThrow();
+            const before = countAnime(dbPath);
+            expect(before).toBeGreaterThan(0);
+
+            let error = null;
+            try {
+                execFileSync('php', [path.join(rootDir, 'app', 'bin', 'console'), 'app:fixture:load', '--no-interaction'], {
+                    cwd: path.join(rootDir, 'app'),
+                    env: { ...process.env, ...env.env },
+                    stdio: 'pipe',
+                    encoding: 'utf8',
+                });
+            } catch (err) {
+                error = err;
+            }
+
+            expect(error).not.toBeNull();
+            expect(error.status).toBe(1);
+            expect(`${error.stdout}${error.stderr}`).toContain('The catalog is not empty');
+            expect(countAnime(dbPath)).toBe(before);
         } finally {
             env.cleanup();
         }
     });
 
-    it('does not touch the developer data/ and app/var/config.json', () => {
+    it('does not touch the developer data/, app/var/config.json and public/media', () => {
         const paths = [
             path.join(rootDir, 'data', 'data.db'),
             path.join(rootDir, 'app', 'var', 'config.json'),
+            path.join(rootDir, 'app', 'public', 'media'),
         ];
-        const mtime = (p) => (fs.existsSync(p) ? fs.statSync(p).mtimeMs : null);
-        const before = paths.map(mtime);
+        const state = (p) => (fs.existsSync(p) ? fs.statSync(p).mtimeMs : null);
+        const before = paths.map(state);
 
-        const env = createIsolatedEnv();
+        // A build writes the database and config.json through the very paths under watch.
+        const dir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'animedb-fixture-iso-'));
         try {
-            execFileSync('php', [path.join(rootDir, 'app', 'bin', 'console'), 'app:queue:purge', '--no-interaction'], {
-                cwd: path.join(rootDir, 'app'),
-                env: { ...process.env, ...env.env },
-                stdio: 'pipe',
-            });
+            buildFixture(dir);
+
+            expect(fs.statSync(path.join(dir, 'data.db')).size).toBeGreaterThan(0);
+            expect(fs.existsSync(path.join(dir, 'config.json'))).toBe(true);
+            expect(countAnime(path.join(dir, 'data.db'))).toBeGreaterThan(0);
         } finally {
-            env.cleanup();
+            fs.rmSync(dir, { recursive: true, force: true });
         }
 
-        expect(paths.map(mtime)).toEqual(before);
+        expect(paths.map(state)).toEqual(before);
     });
 });
