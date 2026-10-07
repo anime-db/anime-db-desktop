@@ -27,32 +27,58 @@ declare(strict_types=1);
 
 namespace App\Tests\Functional;
 
+use Doctrine\DBAL\Connection;
+use Doctrine\Persistence\ManagerRegistry;
+
 /**
  * Guards the isolation promised by `.env.test`: the functional suite must run against
  * `var/test/data.db`, never the developer's `data/data.db`.
  */
 final class DatabaseIsolationTest extends FunctionalTestCase
 {
+    /** @var array<string, string|null> */
+    private static array $workingBefore = [];
+
+    public static function setUpBeforeClass(): void
+    {
+        // Captured before any test of this class boots the kernel or creates a schema.
+        self::$workingBefore = self::workingFilesState();
+    }
+
     public function testKernelUsesDedicatedTestDatabaseFiles(): void
     {
-        $connection = $this->entityManager()->getConnection();
-        $params = $connection->getParams();
+        $doctrine = self::getContainer()->get('doctrine');
+        self::assertInstanceOf(ManagerRegistry::class, $doctrine);
 
-        self::assertSame(self::projectDir().'/var/test/data.db', $params['path'] ?? null);
+        foreach (['default' => 'data.db', 'queue' => 'queue.db'] as $connection => $file) {
+            $params = $doctrine->getConnection($connection);
+            self::assertInstanceOf(Connection::class, $params);
+            $params = $params->getParams();
+
+            self::assertSame(self::projectDir().'/var/test/'.$file, $params['path'] ?? null, $connection);
+        }
         self::assertFileExists(self::projectDir().'/var/test/data.db');
+        self::assertFileExists(self::projectDir().'/var/test/queue.db');
     }
 
     public function testRequestsDoNotTouchTheWorkingDatabase(): void
     {
-        $working = self::projectDir().'/../data/data.db';
-        $existedBefore = file_exists($working);
-        $mtimeBefore = $existedBefore ? filemtime($working) : null;
-        clearstatcache();
-
         $this->client->request('GET', '/settings');
 
-        clearstatcache();
-        self::assertSame($existedBefore, file_exists($working));
-        self::assertSame($mtimeBefore, $existedBefore ? filemtime($working) : null);
+        self::assertSame(self::$workingBefore, self::workingFilesState());
+    }
+
+    /**
+     * @return array<string, string|null> file => size and content hash, null when absent
+     */
+    private static function workingFilesState(): array
+    {
+        $state = [];
+        foreach (['data.db', 'queue.db'] as $file) {
+            $path = self::projectDir().'/../data/'.$file;
+            $state[$file] = is_file($path) ? filesize($path).':'.md5_file($path) : null;
+        }
+
+        return $state;
     }
 }

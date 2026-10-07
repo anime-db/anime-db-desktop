@@ -41,13 +41,22 @@ final class PostLayerTest extends FunctionalTestCase
     {
         $crawler = $this->client->request('GET', '/settings');
         self::assertResponseIsSuccessful();
+        $configPath = self::getContainer()->getParameter('app.config_path');
+        self::assertIsString($configPath);
+        self::assertFileDoesNotExist($configPath, 'No locale may be persisted before the switch.');
 
         $token = $crawler->filter('form[action="/settings"] input[name="_token"]')->attr('value');
 
-        $this->client->request('POST', '/settings', ['_token' => $token, 'locale' => 'en']);
+        $this->client->request('POST', '/settings', ['_token' => $token, 'locale' => 'ru']);
 
         self::assertResponseStatusCodeSame(303);
         self::assertResponseRedirects('/settings');
+
+        // The request locale is negotiated from Accept-Language; the switch is persisted in config.json.
+        self::assertFileExists($configPath);
+        $config = json_decode((string) file_get_contents($configPath), true, 512, \JSON_THROW_ON_ERROR);
+        self::assertIsArray($config);
+        self::assertSame('ru', $config['locale'] ?? null);
     }
 
     public function testSettingsLocaleSwitchWithInvalidTokenIsBadRequest(): void
@@ -84,7 +93,8 @@ final class PostLayerTest extends FunctionalTestCase
 
         $this->client->request('POST', '/anime/'.$id.'/delete', ['_token' => $token]);
 
-        self::assertResponseStatusCodeSame(302);
+        self::assertResponseRedirects('/');
+        $this->entityManager()->clear();
         self::assertNull($this->entityManager()->find(Anime::class, $id));
     }
 

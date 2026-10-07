@@ -58,6 +58,14 @@ abstract class FunctionalTestCase extends WebTestCase
 
         $this->client = self::createClient();
 
+        // config.json holds the locale/theme a test may have switched; drop it so tests do not
+        // inherit each other's settings. The path is resolved by the container (it is relative
+        // to the CWD), exactly as the application sees it.
+        $configPath = self::getContainer()->getParameter('app.config_path');
+        if (\is_string($configPath)) {
+            @unlink($configPath);
+        }
+
         $entityManager = $this->entityManager();
         (new SchemaTool($entityManager))->createSchema($entityManager->getMetadataFactory()->getAllMetadata());
 
