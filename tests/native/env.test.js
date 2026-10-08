@@ -34,6 +34,7 @@ jest.mock('../../native/paths', () => ({
     getImportStagingDir:  jest.fn(() => '/fake/userData/import-staging'),
     getImportRejectionPath: jest.fn(() => '/fake/userData/import-rejected.json'),
     getImportAppliedPath: jest.fn(() => '/fake/userData/import-applied.json'),
+    getImportV1ReportPath: jest.fn(() => '/fake/userData/import-v1-report.json'),
     getConfigPath:        jest.fn(() => '/fake/userData/config.json'),
     getPluginsConfigPath: jest.fn(() => '/fake/userData/plugins.json'),
     getPluginsDir:        jest.fn(() => '/fake/userData/plugins'),
@@ -71,6 +72,7 @@ describe('buildCommonEnv', () => {
         expect(env.OAUTH_CALLBACK_FIXED_PORT).toBeUndefined();
         expect(env.MEDIA_DIR).toBe('/fake/userData/media');
         expect(env.IMPORT_STAGING_DIR).toBe('/fake/userData/import-staging');
+        expect(env.IMPORT_V1_REPORT_PATH).toBe('/fake/userData/import-v1-report.json');
         expect(env.IMPORT_REJECTION_PATH).toBe('/fake/userData/import-rejected.json');
         expect(env.IMPORT_APPLIED_PATH).toBe('/fake/userData/import-applied.json');
         expect(env.CONFIG_PATH).toBe('/fake/userData/config.json');

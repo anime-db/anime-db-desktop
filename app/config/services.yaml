@@ -39,6 +39,13 @@ parameters:
     app.import_applied_path.dev_default: '%kernel.project_dir%/var/import-applied.json'
     app.import_applied_path: '%env(default:app.import_applied_path.dev_default:IMPORT_APPLIED_PATH)%'
 
+    # In production Electron passes IMPORT_V1_REPORT_PATH (see native/paths.js,
+    # native/supervisor/env.js), pointing at %AppData%/import-v1-report.json — where
+    # app:catalog:import-v1 keeps the report of the last AnimeDB v1 import (issue #954), for
+    # App\Service\Import\V1\V1ImportReportStore to read on /settings/backup.
+    app.import_v1_report_path.dev_default: '%kernel.project_dir%/var/import-v1-report.json'
+    app.import_v1_report_path: '%env(default:app.import_v1_report_path.dev_default:IMPORT_V1_REPORT_PATH)%'
+
     # In production Electron passes CONFIG_PATH (see native/paths.js, native/supervisor/frankenphp.js),
     # pointing at %AppData%/config.json — the same file native/config.js writes appSecret to,
     # and where the user's pagination mode preference (issue #74) lives.
@@ -199,6 +206,7 @@ services:
             $importStagingDir: '%app.import_staging_dir%'
             $importRejectionPath: '%app.import_rejection_path%'
             $importAppliedPath: '%app.import_applied_path%'
+            $importV1ReportPath: '%app.import_v1_report_path%'
             $backupsDir: '%app.backups_dir%'
             $configPath: '%app.config_path%'
             $pluginsConfigPath: '%app.plugins_config_path%'

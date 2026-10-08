@@ -25,6 +25,7 @@ jest.mock('../../native/paths', () => ({
     getImportStagingDir: jest.fn(() => '/fake/userData/import-staging'),
     getMediaDir:          jest.fn(() => '/fake/userData/media'),
     getImportAppliedPath: jest.fn(() => '/fake/userData/import-applied.json'),
+    getImportV1ReportPath: jest.fn(() => '/fake/userData/import-v1-report.json'),
 }));
 
 const mockRestoreBackup = jest.fn();

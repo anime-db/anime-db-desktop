@@ -31,6 +31,7 @@ use App\Controller\Settings\BackupController;
 use App\Service\Backup\BackupListService;
 use App\Service\Import\ImportedPluginsService;
 use App\Service\Import\StagedImportService;
+use App\Service\Import\V1\V1ImportReportStore;
 use App\Service\Market\PluginRegistryCache;
 use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\PluginsConfigStore;
@@ -57,6 +58,7 @@ final class BackupControllerTest extends TestCase
     private string $backupsDir;
     private string $pluginsDir;
     private string $importAppliedPath;
+    private string $importV1ReportPath;
     private string $marketRegistryCachePath;
 
     protected function setUp(): void
@@ -66,6 +68,7 @@ final class BackupControllerTest extends TestCase
         $this->backupsDir = sys_get_temp_dir().'/animedb-backup-controller-test-backups-'.uniqid();
         $this->pluginsDir = sys_get_temp_dir().'/animedb-backup-controller-test-plugins-'.uniqid();
         $this->importAppliedPath = sys_get_temp_dir().'/animedb-backup-controller-test-applied-'.uniqid().'.json';
+        $this->importV1ReportPath = sys_get_temp_dir().'/animedb-backup-controller-test-v1-report-'.uniqid().'.json';
         $this->marketRegistryCachePath = sys_get_temp_dir().'/animedb-backup-controller-test-market-cache-'.uniqid().'.json';
     }
 
@@ -76,6 +79,7 @@ final class BackupControllerTest extends TestCase
         $this->removeDirectory($this->backupsDir);
         $this->removeDirectory($this->pluginsDir);
         @unlink($this->importAppliedPath);
+        @unlink($this->importV1ReportPath);
         @unlink($this->marketRegistryCachePath);
     }
 
@@ -84,7 +88,7 @@ final class BackupControllerTest extends TestCase
         $twig = $this->createMock(Environment::class);
         $twig->expects($this->once())
             ->method('render')
-            ->with('settings/backup/index.html.twig', ['stagedImport' => null, 'stagedImportRejectionReason' => null, 'backups' => [], 'importedPlugins' => []])
+            ->with('settings/backup/index.html.twig', ['stagedImport' => null, 'stagedImportRejectionReason' => null, 'backups' => [], 'importedPlugins' => [], 'importV1Report' => []])
             ->willReturn('<html></html>');
 
         $response = $this->createController(twig: $twig)->index();
@@ -99,7 +103,7 @@ final class BackupControllerTest extends TestCase
         $twig = $this->createMock(Environment::class);
         $twig->expects($this->once())
             ->method('render')
-            ->with('settings/backup/index.html.twig', ['stagedImport' => null, 'stagedImportRejectionReason' => 'incompatible_schema', 'backups' => [], 'importedPlugins' => []])
+            ->with('settings/backup/index.html.twig', ['stagedImport' => null, 'stagedImportRejectionReason' => 'incompatible_schema', 'backups' => [], 'importedPlugins' => [], 'importV1Report' => []])
             ->willReturn('<html></html>');
 
         $this->createController(twig: $twig)->index();
@@ -233,6 +237,66 @@ final class BackupControllerTest extends TestCase
         self::assertFileDoesNotExist($this->importAppliedPath);
     }
 
+    public function testIndexPassesThePersistedV1ReportLinesToTheTemplate(): void
+    {
+        file_put_contents($this->importV1ReportPath, (string) json_encode(['animeCreated' => 3]));
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('settings/backup/index.html.twig', $this->callback(fn (array $params): bool => \count($params['importV1Report']) >= 1))
+            ->willReturn('<html></html>');
+
+        $this->createController(twig: $twig)->index();
+
+        self::assertFileExists($this->importV1ReportPath);
+    }
+
+    public function testIndexDropsAnUnusableV1ReportFile(): void
+    {
+        file_put_contents($this->importV1ReportPath, '{broken');
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('settings/backup/index.html.twig', $this->callback(fn (array $params): bool => $params['importV1Report'] === []))
+            ->willReturn('<html></html>');
+
+        $this->createController(twig: $twig)->index();
+
+        self::assertFileDoesNotExist($this->importV1ReportPath);
+    }
+
+    public function testDismissImportV1ReportRejectsAnInvalidCsrfTokenAndKeepsTheFile(): void
+    {
+        file_put_contents($this->importV1ReportPath, '{"animeCreated":3}');
+
+        $csrfTokenManager = $this->createStub(CsrfTokenManagerInterface::class);
+        $csrfTokenManager->method('isTokenValid')->willReturn(false);
+
+        try {
+            $this->createController(csrfTokenManager: $csrfTokenManager)->dismissImportV1Report(new Request());
+            self::fail('Expected BadRequestHttpException.');
+        } catch (BadRequestHttpException) {
+            // expected
+        }
+
+        self::assertFileExists($this->importV1ReportPath);
+    }
+
+    public function testDismissImportV1ReportRemovesTheFileAndRedirects(): void
+    {
+        file_put_contents($this->importV1ReportPath, '{"animeCreated":3}');
+
+        $urlGenerator = $this->createStub(UrlGeneratorInterface::class);
+        $urlGenerator->method('generate')->willReturn('/settings/backup');
+
+        $response = $this->createController(urlGenerator: $urlGenerator)->dismissImportV1Report(new Request());
+
+        self::assertSame(303, $response->getStatusCode());
+        self::assertFileDoesNotExist($this->importV1ReportPath);
+    }
+
     public function testDismissImportedPluginsRejectsAnInvalidCsrfToken(): void
     {
         file_put_contents($this->importAppliedPath, '{"plugins":[]}');
@@ -285,6 +349,8 @@ final class BackupControllerTest extends TestCase
             new StagedImportService($this->importStagingDir, $this->importRejectionPath),
             new BackupListService($this->backupsDir),
             $importedPluginsService,
+            new V1ImportReportStore($this->importV1ReportPath, new NullLogger()),
+            new \Symfony\Component\Translation\Translator('en'),
             $csrfTokenManager,
             $urlGenerator ?? $this->createStub(UrlGeneratorInterface::class),
         );

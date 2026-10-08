@@ -447,3 +447,14 @@ IIFE, как было до #734), в бандле исполняется вез�
 - Длительность `0` сохраняется как «не задано» (домен не принимает 0). Эпизоды правятся только у `SeriesAnime`.
 - Правка ссылок не трогает `anime_external_id`; `AnimeSource` поднимает дату обновления через `AnimeAggregateTouchListener::resolveParent()`.
 - Меню «⋯» — Bootstrap-dropdown в `anime/_header.html.twig`; новые пункты (удаление, смена типа) добавляются `<li>` в тот же `<ul>`. Строки списков формы добавляет/удаляет контрол `repeatable-rows` (`<template>` с плейсхолдером `__INDEX__`).
+
+## Отчёт об импорте v1 (`import-v1-report.json`)
+
+- Файл `userData/import-v1-report.json` пишет сама команда `app:catalog:import-v1` (`V1ImportReportStore::save()`,
+  атомарно, сбой записи только логируется). Читает `V1ImportReportStore::load()` как недоверенный вход:
+  размер файла, типы полей и длины списков/строк ограничены, всё лишнее молча обнуляется; отчёт без созданных
+  записей читается как «отчёта нет».
+- Блок живёт на `/settings/backup`, закрывается POST-ом `settings_backup_import_v1_report_dismiss`; негодный файл
+  удаляется тем же GET, что перестал его показывать.
+- Не переиспользует `ImportedPluginsService`/`import-applied.json`: у импорта v1 нет нативного apply-шага.
+- `native/backup-restore` удаляет файл вместе с `import-applied.json` при успешном восстановлении (отдельный try/catch).

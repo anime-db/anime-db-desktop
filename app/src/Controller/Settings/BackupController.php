@@ -32,6 +32,7 @@ use App\Service\Import\ImportedPlugin;
 use App\Service\Import\ImportedPluginsService;
 use App\Service\Import\ImportedPluginStatus;
 use App\Service\Import\StagedImportService;
+use App\Service\Import\V1\V1ImportReportStore;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -40,6 +41,7 @@ use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 use Symfony\Component\Security\Csrf\CsrfToken;
 use Symfony\Component\Security\Csrf\CsrfTokenManagerInterface;
+use Symfony\Contracts\Translation\TranslatorInterface;
 use Twig\Environment;
 
 /**
@@ -76,6 +78,10 @@ use Twig\Environment;
  * in it is still worth acting on (see {@see self::index()}), `import-applied.json` is removed in
  * the same GET that stops showing it, the same "nothing left to look at" convention {@see
  * StagedImportService::readMarker()} already uses for a rejected/applied staged import above.
+ *
+ * `importV1Report` (issue #954) is the persisted report of the last AnimeDB v1 import, rendered as
+ * the same lines the console prints; {@see V1ImportReportStore} reads it as untrusted input and the
+ * block goes away once the user dismisses it.
  */
 final class BackupController
 {
@@ -84,6 +90,8 @@ final class BackupController
         private readonly StagedImportService $stagedImportService,
         private readonly BackupListService $backupListService,
         private readonly ImportedPluginsService $importedPluginsService,
+        private readonly V1ImportReportStore $importV1ReportStore,
+        private readonly TranslatorInterface $translator,
         private readonly CsrfTokenManagerInterface $csrfTokenManager,
         private readonly UrlGeneratorInterface $urlGenerator,
     ) {
@@ -98,11 +106,18 @@ final class BackupController
             $importedPlugins = [];
         }
 
+        $importV1Report = $this->importV1ReportStore->load();
+        if ($importV1Report === null) {
+            // Nothing (left) to show — drop an empty or unusable file along with the block.
+            $this->importV1ReportStore->dismiss();
+        }
+
         return new Response($this->twig->render('settings/backup/index.html.twig', [
             'stagedImport' => $this->stagedImportService->readMarker(),
             'stagedImportRejectionReason' => $this->stagedImportService->readRejectionReason(),
             'backups' => $this->backupListService->list(),
             'importedPlugins' => $importedPlugins,
+            'importV1Report' => $importV1Report?->render($this->translator) ?? [],
         ]));
     }
 
@@ -119,6 +134,22 @@ final class BackupController
         }
 
         $this->importedPluginsService->dismiss();
+
+        return new RedirectResponse($this->urlGenerator->generate('settings_backup_index'), Response::HTTP_SEE_OTHER);
+    }
+
+    /**
+     * Removes `import-v1-report.json` (issue #954); the next GET then shows no v1 import block.
+     */
+    #[Route('/settings/backup/import/v1-report/dismiss', name: 'settings_backup_import_v1_report_dismiss', methods: ['POST'])]
+    public function dismissImportV1Report(Request $request): RedirectResponse
+    {
+        $token = new CsrfToken('settings_backup_import_v1_report_dismiss', (string) $request->request->get('_token'));
+        if (!$this->csrfTokenManager->isTokenValid($token)) {
+            throw new BadRequestHttpException('Invalid CSRF token.');
+        }
+
+        $this->importV1ReportStore->dismiss();
 
         return new RedirectResponse($this->urlGenerator->generate('settings_backup_index'), Response::HTTP_SEE_OTHER);
     }
