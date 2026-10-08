@@ -44,6 +44,27 @@ function fail(message) {
     process.exit(1);
 }
 
+/**
+ * @returns {string}
+ */
+function playwrightBinary() {
+    return path.join(rootDir, 'node_modules', '.bin', 'playwright');
+}
+
+/**
+ * Exit code for a finished `spawnSync` result; a failure to start the process is reported, not swallowed.
+ *
+ * @param {import('child_process').SpawnSyncReturns<Buffer>} result
+ * @returns {number}
+ */
+function exitCodeOf(result) {
+    if (result.error) {
+        console.error(`\n[e2e] failed to run the command: ${result.error.message}\n`);
+    }
+
+    return result.status === null ? 1 : result.status;
+}
+
 function checkPrerequisites() {
     if (process.platform !== 'linux') {
         fail('this command only runs on Linux (Linux FrankenPHP build, Xvfb).');
@@ -57,6 +78,10 @@ function checkPrerequisites() {
     }
     if (!fs.existsSync(path.join(rootDir, 'node_modules', 'electron'))) {
         fail('Electron is missing — run `npm ci` first.');
+    }
+    if (!fs.existsSync(path.join(rootDir, 'node_modules', '@playwright', 'test'))
+        || !fs.existsSync(playwrightBinary())) {
+        fail('Playwright отсутствует — выполни `npm ci`.');
     }
     if (!fs.existsSync(frankenphpBinary())) {
         fail(`Linux FrankenPHP binary not found at ${frankenphpBinary()} — put it there or set E2E_FRANKENPHP_BIN.`);
@@ -90,4 +115,4 @@ function relaunchUnderXvfb() {
     return true;
 }
 
-module.exports = { checkPrerequisites, relaunchUnderXvfb, fail, rootDir };
+module.exports = { checkPrerequisites, playwrightBinary, exitCodeOf, relaunchUnderXvfb, fail, rootDir };

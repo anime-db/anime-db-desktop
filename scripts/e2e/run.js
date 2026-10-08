@@ -31,7 +31,7 @@ const { spawnSync } = require('child_process');
 const fs   = require('fs');
 const path = require('path');
 
-const { checkPrerequisites, relaunchUnderXvfb, rootDir } = require('./prereq');
+const { checkPrerequisites, relaunchUnderXvfb, playwrightBinary, exitCodeOf, rootDir } = require('./prereq');
 
 checkPrerequisites();
 
@@ -39,10 +39,10 @@ if (!relaunchUnderXvfb()) {
     fs.rmSync(path.join(rootDir, 'e2e-results'), { recursive: true, force: true });
 
     const result = spawnSync(
-        path.join(rootDir, 'node_modules', '.bin', 'playwright'),
+        playwrightBinary(),
         ['test', '-c', path.join(__dirname, 'playwright.config.js'), ...process.argv.slice(2)],
         { cwd: rootDir, stdio: 'inherit' },
     );
 
-    process.exit(result.status === null ? 1 : result.status);
+    process.exit(exitCodeOf(result));
 }
