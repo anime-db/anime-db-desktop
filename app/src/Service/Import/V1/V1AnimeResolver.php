@@ -52,7 +52,7 @@ use Doctrine\ORM\EntityManagerInterface;
 /**
  * Knows the AnimeDB v1 vocabulary: the type names, the Russian status labels, the genre
  * dictionary of MAL before its reorganisation and the script of an alternative name — and owns
- * the reference rows (labels, studios, storages), which are looked up by name (storages: by path)
+ * the reference rows (labels, studios, storages), which are looked up by name (storages: by path, or by name when there is none)
  * and created only when missing, so a catalog that already has them gets no second copy.
  *
  * Holds per-import state (the reference rows it has created and the storage counters), so
@@ -111,7 +111,7 @@ final class V1AnimeResolver implements V1AnimeResolverInterface
     /** @var array<string, Studio> */
     private array $studios = [];
 
-    /** @var array<string, Storage>|null by path */
+    /** @var array<string, Storage>|null by {@see storageKey()} */
     private ?array $storages = null;
 
     private int $storagesCreated = 0;
@@ -217,32 +217,28 @@ final class V1AnimeResolver implements V1AnimeResolverInterface
         }
 
         $path = trim($v1->path ?? '');
-        if ($path === '') {
-            $this->skipStorage($v1);
-
-            return null;
-        }
-
-        $storages = $this->storagesByPath();
-        if (isset($storages[$path])) {
-            return $storages[$path];
-        }
-
+        // v1 types match StorageType one to one; the fallback only guards against a hand-edited database
         $type = StorageType::tryFrom(strtolower(trim($v1->type ?? ''))) ?? StorageType::Folder;
         $name = trim($v1->name) !== '' ? $v1->name : $path;
 
         try {
-            $storage = new Storage($name, $path, $type);
+            $storage = new Storage($name, $path !== '' ? $path : null, $type);
         } catch (InvalidPathException|InvalidNameException) {
             $this->skipStorage($v1);
 
             return null;
         }
 
+        $key = $this->storageKey($storage);
+        $storages = $this->storagesByKey();
+        if (isset($storages[$key])) {
+            return $storages[$key];
+        }
+
         $this->entityManager->persist($storage);
-        $this->storages[$path] = $storage;
+        $this->storages[$key] = $storage;
         ++$this->storagesCreated;
-        if (!file_exists($path)) {
+        if ($storage->getPath() !== null && !file_exists($storage->getPath())) {
             ++$this->storagesUnavailable;
         }
 
@@ -394,16 +390,21 @@ final class V1AnimeResolver implements V1AnimeResolverInterface
         return $this->studios[$key] = $studio;
     }
 
+    /** Storages with a path are the same by path, the ones without (cassettes, discs) by name. */
+    private function storageKey(Storage $storage): string
+    {
+        $path = $storage->getPath();
+
+        return $path !== null ? 'path:'.$path : 'name:'.mb_strtolower($storage->getName());
+    }
+
     /** @return array<string, Storage> */
-    private function storagesByPath(): array
+    private function storagesByKey(): array
     {
         if ($this->storages === null) {
             $this->storages = [];
             foreach ($this->storageRepository->findAllOrderedByName() as $storage) {
-                $path = $storage->getPath();
-                if ($path !== null) {
-                    $this->storages[$path] = $storage;
-                }
+                $this->storages[$this->storageKey($storage)] = $storage;
             }
         }
 

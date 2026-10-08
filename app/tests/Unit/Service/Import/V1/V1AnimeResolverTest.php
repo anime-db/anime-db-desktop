@@ -244,6 +244,21 @@ final class V1AnimeResolverTest extends TestCase
         $this->assertSame(1, $this->resolver->storagesCreated());
     }
 
+    public function testStoragesWithoutPathAreDedupedByName(): void
+    {
+        $tape1 = $this->resolver->resolveStorage(new V1AnimeRecord(1, 'A', storage: new V1StorageRecord('Tape 1', null, 'video')));
+        $tape2 = $this->resolver->resolveStorage(new V1AnimeRecord(2, 'B', storage: new V1StorageRecord('Tape 2', null, 'video')));
+        $again = $this->resolver->resolveStorage(new V1AnimeRecord(3, 'C', storage: new V1StorageRecord('Tape 1', null, 'video')));
+
+        $this->assertNotNull($tape1);
+        $this->assertNotNull($tape2);
+        $this->assertNull($tape1->getPath());
+        $this->assertNotSame($tape1, $tape2);
+        $this->assertSame($tape1, $again);
+        $this->assertSame(2, $this->resolver->storagesCreated());
+        $this->assertSame(0, $this->resolver->storagesUnavailable());
+    }
+
     /**
      * @param list<string> $values
      *
