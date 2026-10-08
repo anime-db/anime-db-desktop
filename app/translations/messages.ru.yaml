@@ -399,6 +399,26 @@ catalog_stage:
     error_unsafe_entry: 'Архив каталога «%path%» содержит небезопасный путь записи «%entry%».'
     success: 'Архив каталога распакован в %stagingDir% (аниме: %animeCount%, медиафайлов: %mediaFileCount%).'
 
+import_v1:
+    error_not_v1_installation: 'Это не каталог установки AnimeDB v1: по пути «%path%» нет читаемой базы данных.'
+    error_catalog_not_empty: 'Каталог не пуст: AnimeDB v1 можно импортировать только в пустой каталог.'
+    error_invalid_record: 'Запись «%title%» (id в v1: %id%) не может быть импортирована, поэтому ничего не импортировано. Исправьте её в AnimeDB v1 и повторите импорт.'
+    review_unknown_end_date: 'Дата окончания «%title%» неизвестна. Проверьте статус просмотра.'
+    review_status_downgraded: '«%title%» отмечено в v1 как просмотренное, но дат выхода нет: статус просмотра установлен в «%status%». Проверьте его.'
+    report_created: 'Записей создано: %count% (статус из метки v1: %fromLabel%, статус по умолчанию: %byDefault%).'
+    report_names: 'Альтернативных названий: %count% (японских: %ja%, русских: %ru%, без языка: %none%).'
+    report_related: 'Источников: %sources%, описаний: %descriptions%, студий: %studios%, меток: %labels%.'
+    report_genres: 'Жанров, тем и аудиторий перенесено: %count%.'
+    report_genres_dropped: 'Жанров пропущено намеренно (18+): %count%.'
+    report_genres_unmapped: 'Жанров без аналога: %count% (%names%).'
+    report_covers: 'Обложек перенесено: %imported%, файлов не найдено: %missing%.'
+    report_storages: 'Хранилищ создано: %count% (указывают на несуществующий путь: %unavailable%).'
+    report_storages_skipped: 'Хранилища пропущены, пригодного пути нет: %names%.'
+    report_episodes_dropped: 'Число серий не сохранено у записей не-сериального типа: %count% (%titles%).'
+    report_end_dates: 'Дата окончания приравнена к дате премьеры: %count%.'
+    report_status_downgraded: 'Записей, у которых статус «просмотрено» понижен, дат выхода нет: %count%.'
+    report_needs_attention: 'Записей для проверки, дата окончания неизвестна: %count%.'
+
 queue_purge:
     success: 'Очередь сообщений очищена (удалено: %count%).'
 
