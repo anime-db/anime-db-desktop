@@ -470,3 +470,38 @@ IIFE, как было до #734), в бандле исполняется вез�
 настройку неприменённой точно так же, как прерванный запрос. Конкретный 3xx не проверяется —
 эндпоинты отвечают по-разному (303 у `/settings/pagination-mode`, 302 у переключателя синка). Те же грабли уже были с переключателем синка плагина, поэтому хелпер
 один на оба места, а его поведение закреплено тестами в `tests/scripts/e2e-framework.test.js`.
+
+## Пустой `COMPOSER_GITHUB_TOKEN` ломает `composer install` сильнее, чем его отсутствие
+
+Секрета `COMPOSER_GITHUB_TOKEN` у репозитория **нет** — в логе CI шаг
+`composer config --global github-oauth.github.com` печатался без значения (маски `***` нет,
+подставлять нечего), а приватных composer-зависимостей у приложения и не было: `app/composer.json`
+не объявляет `repositories`, `anime-db/plugin-contracts` приезжает с Packagist. Шаг был мёртвым и
+удалён (issue #971); то же записано в решении о публикации репозитория.
+
+Коварство не в мёртвом коде, а в попытке «починить» его передачей токена: пустая строка в
+`COMPOSER_AUTH` — это для composer **учётные данные**, он предъявляет их GitHub и получает отказ.
+
+```
+COMPOSER_AUTH='{"github-oauth":{"github.com":""}}' composer install   # Could not authenticate against github.com
+composer install                                                      # работает
+```
+
+Отказ при этом отложенный: при тёплом кэше composer сеть не нужна вовсе, поэтому ubuntu-джобы
+остаются зелёными. Так и вышло — зелёные ubuntu и красная Windows-джоба `runtime-parity`, у которой
+кэш был холодный. **Зелёный прогон здесь доказывает тёплый кэш, а не работающую авторизацию.**
+
+Правило: composer-авторизацию в workflow не добавлять, пока не появится приватная зависимость и
+непустой секрет; возврат любой из форм (`composer config`, `COMPOSER_AUTH`, запись `auth.json`)
+валит `tests/scripts/workflow-composer-auth.test.js`.
+
+## Отчёт об импорте v1 (`import-v1-report.json`)
+
+- Файл `userData/import-v1-report.json` пишет сама команда `app:catalog:import-v1` (`V1ImportReportStore::save()`,
+  атомарно, сбой записи только логируется). Читает `V1ImportReportStore::load()` как недоверенный вход:
+  размер файла, типы полей и длины списков/строк ограничены, всё лишнее молча обнуляется; отчёт без созданных
+  записей читается как «отчёта нет».
+- Блок живёт на `/settings/backup`, закрывается POST-ом `settings_backup_import_v1_report_dismiss`; негодный файл
+  удаляется тем же GET, что перестал его показывать.
+- Не переиспользует `ImportedPluginsService`/`import-applied.json`: у импорта v1 нет нативного apply-шага.
+- Каталог целиком заменяют два нативных пути — `native/backup-restore` (восстановление из бэкапа) и `native/supervisor/import-apply.js#apply()` (staged-импорт архива); оба удаляют файл при успехе (отдельный try/catch, сбой не превращает успех в ошибку). На откате файл не трогается.

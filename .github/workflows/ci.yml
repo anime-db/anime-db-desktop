@@ -78,9 +78,6 @@ jobs:
           extensions: apcu, gd, intl
           ini-values: apc.enable_cli=1
 
-      - name: Configure Composer auth for private repos
-        run: composer config --global github-oauth.github.com ${{ secrets.COMPOSER_GITHUB_TOKEN }}
-
       - name: Install dependencies
         uses: ramsey/composer-install@v4
         with:

@@ -97,6 +97,13 @@ async function startRestore(_event, name) {
             } catch (cleanupErr) {
                 console.error('[backup-restore] не удалось удалить import-applied.json:', cleanupErr.message);
             }
+            // Same reasoning for the v1 import report (issue #954): it describes the catalog this
+            // restore just replaced. Separate try/catch so one failed removal doesn't skip the other.
+            try {
+                fs.rmSync(paths.getImportV1ReportPath(), { force: true });
+            } catch (cleanupErr) {
+                console.error('[backup-restore] не удалось удалить import-v1-report.json:', cleanupErr.message);
+            }
         }
 
         // Lazy require: lifecycle/index.js requires this module before assigning its own

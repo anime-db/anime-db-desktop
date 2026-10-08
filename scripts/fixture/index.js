@@ -61,11 +61,14 @@ function envForDir(dir) {
         IMPORT_STAGING_DIR:           path.join(dir, 'import-staging'),
         IMPORT_REJECTION_PATH:        path.join(dir, 'import-rejected.json'),
         IMPORT_APPLIED_PATH:          path.join(dir, 'import-applied.json'),
+        IMPORT_V1_REPORT_PATH:        path.join(dir, 'import-v1-report.json'),
         NATIVE_TRANSLATIONS_OVERLAY_DIR: path.join(dir, 'native-translations'),
         MARKET_REGISTRY_CACHE_PATH:   path.join(dir, 'market-registry-cache.json'),
         MARKET_SNAPSHOT_CACHE_PATH:   path.join(dir, 'market-snapshot-cache.json'),
         MARKET_REFRESH_LOCK_PATH:     path.join(dir, 'market-refresh.lock'),
         BACKUPS_DIR:                  path.join(dir, 'backups'),
+        // Symfony share_dir (the cache.app pool); app/.env points it into the project otherwise.
+        APP_SHARE_DIR:                path.join(dir, 'share'),
     };
 }
 

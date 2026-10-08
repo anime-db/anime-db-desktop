@@ -32,6 +32,7 @@ jest.mock('fs', () => ({
 jest.mock('../../native/paths', () => ({
     getBackupsDir: jest.fn(() => '/fake/userData/backups'),
     getImportAppliedPath: jest.fn(() => '/fake/userData/import-applied.json'),
+    getImportV1ReportPath: jest.fn(() => '/fake/userData/import-v1-report.json'),
 }));
 
 const mockRestoreBackup = jest.fn();
@@ -146,6 +147,29 @@ describe('startRestore', () => {
         await startRestore(null, 'data-preimport-20260101-000000.db');
 
         expect(fs.rmSync).not.toHaveBeenCalled();
+    });
+
+    // Issue #954: the v1 import report describes the catalog just replaced, same as import-applied.json.
+    test('removes import-v1-report.json on a successful restore', async () => {
+        fs.existsSync.mockReturnValue(true);
+        mockRestoreBackup.mockImplementation(() => {});
+
+        await startRestore(null, 'data-preimport-20260101-000000.db');
+
+        expect(fs.rmSync).toHaveBeenCalledWith('/fake/userData/import-v1-report.json', { force: true });
+    });
+
+    test('removes import-v1-report.json even when removing import-applied.json throws', async () => {
+        fs.existsSync.mockReturnValue(true);
+        mockRestoreBackup.mockImplementation(() => {});
+        fs.rmSync.mockImplementation((target) => {
+            if (target === '/fake/userData/import-applied.json') throw new Error('EPERM');
+        });
+
+        const outcome = await startRestore(null, 'data-preimport-20260101-000000.db');
+
+        expect(outcome).toEqual({ ok: true });
+        expect(fs.rmSync).toHaveBeenCalledWith('/fake/userData/import-v1-report.json', { force: true });
     });
 
     // Reviewer feedback: this cleanup is purely informational (a stale plugin list, not the
