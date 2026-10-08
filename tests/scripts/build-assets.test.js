@@ -161,6 +161,7 @@ describe('bundleScripts', () => {
         expect(bundle).toContain('registerControl("open-folder-button"');
         expect(bundle).toContain('registerControl("app-notifications"');
         expect(bundle).toContain('registerControl("settings-backup"');
+        expect(bundle).toContain('registerControl("onboarding-import-v1"');
         expect(bundle).toContain('registerControl("storage-new"');
         expect(bundle).toContain('registerControl("storage-scan"');
         expect(bundle).toContain('registerControl("plugin-install"');

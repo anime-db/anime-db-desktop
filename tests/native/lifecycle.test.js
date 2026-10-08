@@ -52,6 +52,7 @@ jest.mock('../../native/shell', () => ({ configure: jest.fn() }));
 jest.mock('../../native/dialog', () => ({}));
 jest.mock('../../native/catalog-export', () => ({}));
 jest.mock('../../native/catalog-import', () => ({}));
+jest.mock('../../native/import-v1', () => ({}));
 jest.mock('../../native/backup-restore', () => ({}));
 jest.mock('../../native/supervisor', () => ({
     start:              jest.fn(() => Promise.resolve({ frankenphpPort: 8000, wsPort: 8001 })),

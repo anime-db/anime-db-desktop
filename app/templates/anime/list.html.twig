@@ -78,6 +78,32 @@
                             </div>
                         </div>
                     </div>
+                    {# Issue #953: only in this invitation, so only on an empty catalog — the import replaces
+                       the catalog, it never merges. The control is hidden outside Electron (no window.animeDb). #}
+                    <div class="col" data-control="onboarding-import-v1" id="onboarding-import-v1">
+                        <div class="card h-100">
+                            <div class="card-body d-flex flex-column align-items-center text-center">
+                                {{ icon('download') }}
+                                <h3 class="card-title h6 mt-3">{{ 'onboarding.import_v1_heading'|trans }}</h3>
+                                <p class="card-text text-body-secondary small flex-grow-1" id="onboarding-import-v1-description">{{ 'onboarding.import_v1_description'|trans }}</p>
+                                <button type="button" class="btn btn-outline-primary" id="onboarding-import-v1-pick">{{ 'onboarding.import_v1_button'|trans }}</button>
+                                <button type="button" class="btn btn-outline-secondary" id="onboarding-import-v1-cancel" hidden>{{ 'onboarding.import_v1_cancel_button'|trans }}</button>
+                                <div id="onboarding-import-v1-progress" class="w-100 mt-3" hidden>
+                                    <div class="progress" role="progressbar" aria-label="{{ 'onboarding.import_v1_heading'|trans }}" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
+                                        <div class="progress-bar" id="onboarding-import-v1-progress-bar" style="width: 0%"></div>
+                                    </div>
+                                    <p class="small mt-2 mb-0" id="onboarding-import-v1-progress-text"></p>
+                                </div>
+                                <p class="alert alert-danger w-100 mt-3 mb-0" id="onboarding-import-v1-error" role="alert" hidden></p>
+                                <p class="alert alert-secondary w-100 mt-3 mb-0" id="onboarding-import-v1-cancelled" hidden>{{ 'onboarding.import_v1_cancelled'|trans }}</p>
+                                <div class="w-100 mt-3 text-start" id="onboarding-import-v1-result" hidden>
+                                    <h4 class="h6">{{ 'onboarding.import_v1_done_heading'|trans }}</h4>
+                                    <ul class="small" id="onboarding-import-v1-report"></ul>
+                                    <button type="button" class="btn btn-primary" id="onboarding-import-v1-open">{{ 'onboarding.import_v1_open_catalog_button'|trans }}</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </section>
         {% endif %}
