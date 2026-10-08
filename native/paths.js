@@ -49,6 +49,7 @@ module.exports = {
     getImportStagingDir:   () => path.join(userDataDir(), 'import-staging'),
     getImportRejectionPath: () => path.join(userDataDir(), 'import-rejected.json'),
     getImportAppliedPath:  () => path.join(userDataDir(), 'import-applied.json'),
+    getImportV1ReportPath: () => path.join(userDataDir(), 'import-v1-report.json'),
     getConfigPath:         () => path.join(userDataDir(), 'config.json'),
     getPluginsConfigPath:  () => path.join(userDataDir(), 'plugins.json'),
     getPluginsDir:         () => path.join(userDataDir(), 'plugins'),
