@@ -71,7 +71,7 @@ function aptPackages(contents) {
  * Why a whitelist of the whole `on:` block instead of asserting the absence of specific triggers:
  * the list of ways to widen a trigger is open-ended and the dangerous entries are the ones nobody
  * thinks to forbid. `pull_request_target` is the sharp example — it runs on pull requests from
- * forks *with* the repository's secrets, which here include COMPOSER_GITHUB_TOKEN. The inline form
+ * forks *with* the repository's secrets and a write-scoped GITHUB_TOKEN. The inline form
  * (`on: [push, pull_request]`), a `push:` with no `tags:` filter and `schedule:` are three more.
  * Comparing the block as a whole makes any added key red, named or not.
  *

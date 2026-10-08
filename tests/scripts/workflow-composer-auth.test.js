@@ -49,9 +49,20 @@ const path = require('path');
 
 const workflowsDir = path.join(__dirname, '..', '..', '.github', 'workflows');
 
+/**
+ * GitHub Actions запускает и `*.yml`, и `*.yaml` — страж, который смотрит только на первое,
+ * пропустил бы возврат шага в новом файле со вторым расширением.
+ *
+ * @param {string} name
+ * @returns {boolean}
+ */
+function isWorkflowFile(name) {
+    return /\.ya?ml$/.test(name);
+}
+
 /** @returns {string[]} имена файлов всех workflow */
 function workflowNames() {
-    return fs.readdirSync(workflowsDir).filter((name) => name.endsWith('.yml')).sort();
+    return fs.readdirSync(workflowsDir).filter(isWorkflowFile).sort();
 }
 
 /**
@@ -86,6 +97,16 @@ describe('workflow не настраивают composer-авторизацию',
 
     test.each(workflowNames())('%s', (name) => {
         expect(authTraces(read(name))).toEqual([]);
+    });
+});
+
+describe('isWorkflowFile', () => {
+    test.each(['ci.yml', 'ci.yaml', 'e2e.yaml'])('%s — workflow', (name) => {
+        expect(isWorkflowFile(name)).toBe(true);
+    });
+
+    test.each(['README.md', 'ci.yml.bak', 'ci.yamlx', 'yml'])('%s — не workflow', (name) => {
+        expect(isWorkflowFile(name)).toBe(false);
     });
 });
 
