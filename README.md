@@ -158,9 +158,16 @@ npm run e2e:session               # поднять приложение на ф�
 
 Что требуется (только Linux): `composer install` в `app/`, `npm run assets`, `npm ci`, `php` и
 `xvfb-run` в `PATH` (без `DISPLAY` команда сама перезапускается под Xvfb) и **Linux-сборка
-FrankenPHP** версии из `scripts/versions.json` в `bin/frankenphp/frankenphp` (или путь в
-`E2E_FRANKENPHP_BIN`). Второй браузер не скачивается: Playwright запускает наш Electron
-(`node_modules/electron`) через `_electron.launch({ executablePath })`.
+FrankenPHP** версии из `scripts/versions.json` в `bin/frankenphp/frankenphp` — её кладёт
+`npm run download-e2e-runtime` (сверяет SHA-256 из `versions.json`, повторный запуск ничего не
+качает), либо путь задаётся в `E2E_FRANKENPHP_BIN`. Второй браузер не скачивается: Playwright
+запускает наш Electron (`node_modules/electron`) через `_electron.launch({ executablePath })`.
+
+**В CI набор идёт один раз на релиз** — workflow `E2E` (`.github/workflows/e2e.yml`): по тегу
+`v*.*.*` и по кнопке (`workflow_dispatch`). На каждый PR он не запускается намеренно: там
+работают прогон снимков и юниты. Падение прогона релиз не блокирует (публикует его отдельный
+workflow `build.yml`) — до отдельного решения после нескольких релизов. При падении trace и
+скриншот последнего состояния выкладываются артефактом `e2e-results`.
 
 Как это устроено:
 

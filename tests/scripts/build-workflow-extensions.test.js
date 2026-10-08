@@ -33,10 +33,11 @@
  * The check is a subset assertion, not equality: a workflow may legitimately enable more than
  * `require` names (runtime-parity.yml also wants apcu) — but never less.
  *
- * Only the two Windows workflows are covered, and that is the point rather than an oversight. The
- * ubuntu jobs run `composer install` too, but they run on every pull request, so a missing
- * extension there is red the same day someone adds it to `require`. build.yml runs only on a tag,
- * which is exactly why its drift went unseen for five days.
+ * Covered are the workflows whose trigger hides drift: build.yml and runtime-parity.yml (Windows,
+ * tag/dispatch only) and e2e.yml (ubuntu, tag/dispatch only — issue #942). The remaining ubuntu
+ * jobs run `composer install` too, but they run on every pull request, so a missing extension
+ * there is red the same day someone adds it to `require`. build.yml runs only on a tag, which is
+ * exactly why its drift went unseen for five days.
  */
 
 'use strict';
@@ -91,6 +92,18 @@ describe('build.yml PHP extensions', () => {
      */
     test('the runtime-parity workflow enables them too', () => {
         const enabled = workflowExtensions(path.join(repoRoot, '.github', 'workflows', 'runtime-parity.yml'));
+
+        expect(enabled).toEqual(expect.arrayContaining(composerRequiredExtensions()));
+    });
+
+    /**
+     * And the release E2E run (issue #942): it is an ubuntu job, but it runs only on a tag or a
+     * manual dispatch, so it shares build.yml's blind spot rather than the pull-request jobs'
+     * same-day feedback. setup-php on ubuntu happens to enable most of these by default, which is
+     * precisely what would make the drift silent until a release.
+     */
+    test('the release E2E workflow enables them too', () => {
+        const enabled = workflowExtensions(path.join(repoRoot, '.github', 'workflows', 'e2e.yml'));
 
         expect(enabled).toEqual(expect.arrayContaining(composerRequiredExtensions()));
     });
