@@ -209,6 +209,16 @@ test('название', covers({ routes: ['/anime/{id}'], features: ['inline-ed
 Сценарий, которому нужна кнопка «Заполнить из источника», включает офлайн-плагин:
 `test.use({ sourcePlugin: true })` (`scripts/e2e/plugins.js`, сеть не нужна).
 
+**Матрица покрытия.** `npm run coverage-matrix` сводит маршруты приложения
+(`bin/console debug:router`, `APP_ENV=prod`, свежий `APP_RUNTIME_DIR`, пустой `PLUGINS_DIR`) с метками
+сценариев (`playwright test --list`). Приложение, Xvfb и FrankenPHP не нужны. Markdown уходит в stdout,
+`-- --json` даёт те же разделы машинным видом; код выхода 0 (это артефакт, не гейт, порога нет), ошибка
+запуска источника — код 1 с сообщением. Файл в репозиторий не коммитится. Разделы: покрытые пути (с
+методами и сценариями), непокрытые пути, фичи, исключённые пути с причинами, сценарии без меток,
+метки `route:` без маршрута (в норме пусто). Ключ сверки — `path` дословно.
+Исключения — `scripts/coverage-matrix/exclusions.json`: `{"path": "...", "reason": "..."}`, причина
+обязательна и непустая.
+
 `e2e:session` печатает URL приложения и CDP-endpoint (`chromium.connectOverCDP(endpoint)`).
 Диалоги в такой сессии не подменены.
 
