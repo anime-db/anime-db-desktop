@@ -61,6 +61,7 @@ function envForDir(dir) {
         IMPORT_STAGING_DIR:           path.join(dir, 'import-staging'),
         IMPORT_REJECTION_PATH:        path.join(dir, 'import-rejected.json'),
         IMPORT_APPLIED_PATH:          path.join(dir, 'import-applied.json'),
+        IMPORT_V1_REPORT_PATH:        path.join(dir, 'import-v1-report.json'),
         NATIVE_TRANSLATIONS_OVERLAY_DIR: path.join(dir, 'native-translations'),
         MARKET_REGISTRY_CACHE_PATH:   path.join(dir, 'market-registry-cache.json'),
         MARKET_SNAPSHOT_CACHE_PATH:   path.join(dir, 'market-snapshot-cache.json'),

@@ -35,6 +35,7 @@ jest.mock('../../native/paths', () => ({
     getImportStagingDir:   jest.fn(() => '/fake/userData/import-staging'),
     getImportRejectionPath: jest.fn(() => '/fake/userData/import-rejected.json'),
     getImportAppliedPath: jest.fn(() => '/fake/userData/import-applied.json'),
+    getImportV1ReportPath: jest.fn(() => '/fake/userData/import-v1-report.json'),
     getConfigPath:         jest.fn(() => '/fake/userData/config.json'),
     getPluginsConfigPath:  jest.fn(() => '/fake/userData/plugins.json'),
     getFfprobeBinPath:     jest.fn(() => '/fake/bin/ffprobe/ffprobe.exe'),

@@ -25,6 +25,7 @@ jest.mock('../../native/paths', () => ({
     getImportStagingDir: jest.fn(() => '/fake/userData/import-staging'),
     getMediaDir:          jest.fn(() => '/fake/userData/media'),
     getImportAppliedPath: jest.fn(() => '/fake/userData/import-applied.json'),
+    getImportV1ReportPath: jest.fn(() => '/fake/userData/import-v1-report.json'),
 }));
 
 const mockRestoreBackup = jest.fn();
@@ -68,6 +69,7 @@ const MEDIA_DIR = '/fake/userData/media';
 const PRE_IMPORT_MEDIA_DIR = '/fake/userData/media.pre-import';
 const PREIMPORT_BACKUP_PATH = '/fake/userData/backups/data-preimport-20260922-000000.db';
 const IMPORT_APPLIED_PATH = '/fake/userData/import-applied.json';
+const IMPORT_V1_REPORT_PATH = '/fake/userData/import-v1-report.json';
 
 beforeEach(() => {
     jest.clearAllMocks();
@@ -307,6 +309,33 @@ describe('apply() — imported plugins manifest carry-over (issue #726)', () => 
 
         expect(result).toEqual({ applied: true, error: null });
         expect(fs.rmSync).toHaveBeenCalledWith(STAGING_DIR, { recursive: true, force: true });
+    });
+
+    // The v1 import report describes the catalog that was just replaced (issue #954).
+    test('removes the stale v1 import report on success', async () => {
+        const result = await apply(CONTEXT);
+
+        expect(result).toEqual({ applied: true, error: null });
+        expect(fs.rmSync).toHaveBeenCalledWith(IMPORT_V1_REPORT_PATH, { force: true });
+    });
+
+    test('still reports applied:true when removing the v1 import report throws', async () => {
+        fs.rmSync.mockImplementation((target) => {
+            if (target === IMPORT_V1_REPORT_PATH) throw new Error('EPERM: operation not permitted, unlink');
+        });
+
+        const result = await apply(CONTEXT);
+
+        expect(result).toEqual({ applied: true, error: null });
+        expect(fs.rmSync).toHaveBeenCalledWith(STAGING_DIR, { recursive: true, force: true });
+    });
+
+    test('keeps the v1 import report on the rollback path', async () => {
+        mockMigrationsRun.mockRejectedValue(new Error('migrate-failed'));
+
+        await apply(CONTEXT);
+
+        expect(fs.rmSync).not.toHaveBeenCalledWith(IMPORT_V1_REPORT_PATH, { force: true });
     });
 
     // The rollback path (issue #707) is untouched by #726 — a failed import must not carry a

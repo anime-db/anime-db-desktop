@@ -100,6 +100,7 @@ function buildCommonEnv({ meiliPort, meiliKey, qbittorrentPort, appPort, oauthCa
         IMPORT_STAGING_DIR:      paths.getImportStagingDir(),
         IMPORT_REJECTION_PATH:   paths.getImportRejectionPath(),
         IMPORT_APPLIED_PATH:     paths.getImportAppliedPath(),
+        IMPORT_V1_REPORT_PATH:   paths.getImportV1ReportPath(),
         CONFIG_PATH:             paths.getConfigPath(),
         PLUGINS_CONFIG_PATH:     paths.getPluginsConfigPath(),
         PLUGINS_DIR:             paths.getPluginsDir(),

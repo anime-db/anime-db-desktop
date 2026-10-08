@@ -74,8 +74,8 @@ final class V1CatalogReader
         $databasePath = self::databasePath($installationDir);
         $pdo = $this->open($databasePath);
 
-        $names = $this->groupByItem($pdo, 'SELECT item_id, name FROM name ORDER BY rowid');
-        $sources = $this->groupByItem($pdo, 'SELECT item_id, url FROM source ORDER BY rowid');
+        $names = $this->groupByItem($pdo, $this->linkedSelect($pdo, 'name', 'name'));
+        $sources = $this->groupByItem($pdo, $this->linkedSelect($pdo, 'source', 'url'));
 
         $labels = [];
         $genres = [];
@@ -200,6 +200,14 @@ final class V1CatalogReader
         }
 
         return null;
+    }
+
+    /** v1 links `name` and `source` rows to a record by `item`; `item_id` is tolerated for other layouts */
+    private function linkedSelect(\PDO $pdo, string $table, string $valueColumn): string
+    {
+        $linkColumn = $this->firstColumn($this->columns($pdo, $table), ['item', 'item_id']) ?? 'item';
+
+        return \sprintf('SELECT %s, %s FROM %s ORDER BY rowid', $linkColumn, $valueColumn, $table);
     }
 
     /** @return array<int, list<string>> */
