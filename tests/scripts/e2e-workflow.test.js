@@ -22,10 +22,11 @@
 /**
  * The release E2E workflow (issue #942) is the one workflow nothing else can check: it fires on a
  * tag, so a mistake in it surfaces at the next release and nowhere earlier. These tests pin the
- * four properties the issue states as acceptance criteria — the triggers (tag and dispatch, never
- * a pull request), the failure artifacts, and the two commands the run is made of — plus the one
- * invariant that silently rots: the Electron library list, which must stay identical to the one
- * frontend-smoke.yml already carries.
+ * properties the issue states as acceptance criteria — the triggers (exactly a tag and a dispatch),
+ * the failure artifacts, and the two commands the run is made of — plus the one invariant that
+ * silently rots: the Electron library list, which must stay identical to the one
+ * frontend-smoke.yml already carries. The checksum behaviour of the download itself lives in
+ * tests/scripts/download-e2e-runtime.test.js.
  *
  * No YAML parser: the repository has no YAML dependency, and the lines these tests read are
  * unambiguous (see tests/scripts/build-workflow-extensions.test.js for the same reasoning).
@@ -35,8 +36,6 @@
 
 const fs   = require('fs');
 const path = require('path');
-
-const { assetUrl, ASSET_NAME } = require('../../scripts/download-e2e-runtime');
 
 const repoRoot = path.join(__dirname, '..', '..');
 const workflowsDir = path.join(repoRoot, '.github', 'workflows');
@@ -68,29 +67,43 @@ function aptPackages(contents) {
         .sort();
 }
 
+/**
+ * Why a whitelist of the whole `on:` block instead of asserting the absence of specific triggers:
+ * the list of ways to widen a trigger is open-ended and the dangerous entries are the ones nobody
+ * thinks to forbid. `pull_request_target` is the sharp example — it runs on pull requests from
+ * forks *with* the repository's secrets, which here include COMPOSER_GITHUB_TOKEN. The inline form
+ * (`on: [push, pull_request]`), a `push:` with no `tags:` filter and `schedule:` are three more.
+ * Comparing the block as a whole makes any added key red, named or not.
+ *
+ * @returns {string} the `on:` block, comments and blank lines removed
+ */
+function triggerBlock(contents) {
+    const lines = contents.split('\n');
+    const start = lines.findIndex((line) => /^on:/.test(line));
+    const rest = lines.slice(start + 1);
+    const end = rest.findIndex((line) => /^[^\s#]/.test(line));
+
+    return [lines[start], ...(end === -1 ? rest : rest.slice(0, end))]
+        .filter((line) => line.trim() !== '' && !line.trim().startsWith('#'))
+        .join('\n');
+}
+
 describe('release E2E workflow triggers', () => {
-    const contents = workflow('e2e.yml');
-
-    test('runs on a version tag', () => {
-        expect(contents).toMatch(/on:\n\s+push:\n\s+tags:\n\s+- 'v\*\.\*\.\*'/);
+    test('are exactly a version tag and a manual dispatch', () => {
+        expect(triggerBlock(workflow('e2e.yml'))).toBe(
+            [
+                'on:',
+                '  push:',
+                '    tags:',
+                "      - 'v*.*.*'",
+                '  workflow_dispatch:',
+            ].join('\n'),
+        );
     });
 
-    test('runs on a manual dispatch', () => {
-        expect(contents).toMatch(/^\s*workflow_dispatch:\s*$/m);
-    });
-
-    /**
-     * The decision of issue #942 and the reason this workflow exists separately: the set is heavy,
-     * so a pull request keeps getting frontend-smoke.yml and the unit jobs instead. A `pull_request`
-     * trigger appearing here would silently multiply the cost of every PR.
-     */
-    test('does not run on a pull request', () => {
-        expect(contents).not.toMatch(/^\s*pull_request:/m);
-    });
-
-    /** A branch push would turn the release run into an every-commit run just as well. */
-    test('does not run on a branch push', () => {
-        expect(contents).not.toMatch(/^\s+branches:/m);
+    test('triggerBlock stops at the next top-level key', () => {
+        expect(triggerBlock('name: x\non:\n  push:\n    tags: [a]\n\njobs:\n  one:\n'))
+            .toBe('on:\n  push:\n    tags: [a]');
     });
 });
 
@@ -128,18 +141,5 @@ describe('release E2E workflow steps', () => {
     test('installs exactly the Electron libraries the shots run installs', () => {
         expect(aptPackages(contents)).toEqual(aptPackages(workflow('frontend-smoke.yml')));
         expect(aptPackages(contents)).toContain('xvfb');
-    });
-});
-
-describe('download-e2e-runtime', () => {
-    test('asks for the FrankenPHP version pinned in versions.json', () => {
-        const versions = JSON.parse(fs.readFileSync(path.join(repoRoot, 'scripts', 'versions.json'), 'utf8'));
-
-        expect(assetUrl()).toBe(
-            `https://github.com/php/frankenphp/releases/download/v${versions.frankenphp}/${ASSET_NAME}`,
-        );
-        // A bump that forgets the Linux checksum leaves the download unverifiable, so the pin is
-        // part of the version bump, not an optional extra.
-        expect(versions.sha256.frankenphpLinux).toMatch(/^[0-9a-f]{64}$/);
     });
 });

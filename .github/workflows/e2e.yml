@@ -70,13 +70,18 @@ jobs:
           extensions: apcu, zip, ctype, iconv, gd, intl, mbstring, openssl, pdo_sqlite
           ini-values: apc.enable_cli=1
 
-      - name: Configure Composer auth for private repos
-        run: composer config --global github-oauth.github.com ${{ secrets.COMPOSER_GITHUB_TOKEN }}
-
+      # Токен к приватным репозиториям живёт только в env этого шага, а не в глобальном
+      # ~/.config/composer/auth.json: следующие шаги исполняют чужой и свой код — lifecycle-скрипты
+      # зависимостей в `npm ci`, приложение и фикстурный плагин из scripts/e2e/plugins в `npm run
+      # e2e`, — и токену там делать нечего. Ровно по той же причине выше стоит
+      # `persist-credentials: false`; `composer config --global` оставил бы PAT на диске до конца
+      # джобы и обессмыслил бы обе меры. Composer читает COMPOSER_AUTH сам, auth.json ему не нужен.
       - name: Install PHP dependencies
         uses: ramsey/composer-install@v4
         with:
           working-directory: app
+        env:
+          COMPOSER_AUTH: '{"github-oauth":{"github.com":"${{ secrets.COMPOSER_GITHUB_TOKEN }}"}}'
 
       - name: Setup Node.js
         uses: actions/setup-node@v5

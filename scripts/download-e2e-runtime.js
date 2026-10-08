@@ -44,7 +44,7 @@ const versions = JSON.parse(fs.readFileSync(path.resolve(__dirname, 'versions.js
 const rootDir = path.resolve(__dirname, '..');
 
 const ASSET_NAME = 'frankenphp-linux-x86_64';
-const dest = path.join(rootDir, 'bin', 'frankenphp', 'frankenphp');
+const DEST = path.join(rootDir, 'bin', 'frankenphp', 'frankenphp');
 
 /**
  * @param {Buffer} buffer
@@ -54,12 +54,19 @@ function sha256(buffer) {
     return crypto.createHash('sha256').update(buffer).digest('hex');
 }
 
-async function main() {
+/**
+ * `dest` и `pinned` — параметры, а не только константы модуля, чтобы поведение вокруг суммы
+ * (отказ при несовпадении, отсутствие повторной загрузки, перекачка файла от старого пина, пустой
+ * или отсутствующий пин) проверялось тестами, а не только руками один раз.
+ *
+ * @param {{ dest?: string, pinned?: { frankenphp: string, sha256: Record<string, string> } }} options
+ */
+async function main({ dest = DEST, pinned = versions } = {}) {
     if (process.platform !== 'linux') {
         throw new Error('this binary is only usable on Linux; the shipped Windows runtime comes from download-bins.js.');
     }
 
-    const expected = versions.sha256.frankenphpLinux;
+    const expected = pinned.sha256?.frankenphpLinux;
     if (typeof expected !== 'string' || expected === '') {
         throw new Error('scripts/versions.json has no sha256.frankenphpLinux — add it together with the version bump.');
     }
@@ -67,12 +74,12 @@ async function main() {
     // Уже скачанный бинарь не перекачивается, но и не принимается на веру: сверяется по сумме,
     // иначе файл от прошлого пина молча остался бы в каталоге и прогон пошёл бы не на том PHP.
     if (fs.existsSync(dest) && sha256(fs.readFileSync(dest)) === expected) {
-        console.log(`FrankenPHP ${versions.frankenphp} (linux) is already in ${dest}`);
+        console.log(`FrankenPHP ${pinned.frankenphp} (linux) is already in ${dest}`);
 
         return;
     }
 
-    const url = assetUrl();
+    const url = assetUrl(pinned);
     console.log(`Downloading ${url}`);
     const buffer = await downloadBufferWithRetry(url);
 
@@ -84,11 +91,15 @@ async function main() {
     fs.mkdirSync(path.dirname(dest), { recursive: true });
     fs.writeFileSync(dest, buffer);
     fs.chmodSync(dest, 0o755);
-    console.log(`FrankenPHP ${versions.frankenphp} (linux) written to ${dest}`);
+    console.log(`FrankenPHP ${pinned.frankenphp} (linux) written to ${dest}`);
 }
 
-function assetUrl() {
-    return `https://github.com/php/frankenphp/releases/download/v${versions.frankenphp}/${ASSET_NAME}`;
+/**
+ * @param {{ frankenphp: string }} pinned
+ * @returns {string}
+ */
+function assetUrl(pinned = versions) {
+    return `https://github.com/php/frankenphp/releases/download/v${pinned.frankenphp}/${ASSET_NAME}`;
 }
 
 if (require.main === module) {
@@ -98,4 +109,4 @@ if (require.main === module) {
     });
 }
 
-module.exports = { main, assetUrl, sha256, dest, ASSET_NAME };
+module.exports = { main, assetUrl, sha256, DEST, ASSET_NAME };
