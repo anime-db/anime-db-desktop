@@ -39,9 +39,10 @@ async function linkToSource(page, session) {
     setSourceMode(session.dataDir, 'linkable', 3);
 
     await page.goto(urlOf(session, '/settings/plugins'));
-    // Ждём POST переключателя: иначе следующий goto() его отменит (scripts/e2e/actions.js).
+    // Ждём POST переключателя: иначе следующий переход его отменит (scripts/e2e/actions.js).
     await clickAwaitingPost(page, page.getByRole('switch', { name: 'Synchronization: off' }), '/settings/plugins/e2e-source/sync');
-    await page.goto(urlOf(session, '/settings/plugins'));
+    // У источника нет страницы настроек: переключатель оставляет пользователя на списке плагинов.
+    await expect(page).toHaveURL(urlOf(session, '/settings/plugins'));
     await expect(page.getByRole('switch', { name: 'Synchronization: on' })).toBeVisible();
 
     await page.goto(urlOf(session, '/anime/search-plugins'));

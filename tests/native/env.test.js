@@ -30,6 +30,7 @@ jest.mock('../../native/paths', () => ({
     getQueueDbPath:       jest.fn(() => '/fake/userData/queue.db'),
     getPhpIniDir:         jest.fn(() => '/fake/userData'),
     getRuntimeDir:        jest.fn(() => '/fake/userData/var'),
+    getShareDir:          jest.fn(() => '/fake/userData/share'),
     getMediaDir:          jest.fn(() => '/fake/userData/media'),
     getImportStagingDir:  jest.fn(() => '/fake/userData/import-staging'),
     getImportRejectionPath: jest.fn(() => '/fake/userData/import-rejected.json'),
@@ -77,6 +78,7 @@ describe('buildCommonEnv', () => {
         expect(env.IMPORT_APPLIED_PATH).toBe('/fake/userData/import-applied.json');
         expect(env.CONFIG_PATH).toBe('/fake/userData/config.json');
         expect(env.APP_RUNTIME_DIR).toBe('/fake/userData/var');
+        expect(env.APP_SHARE_DIR).toBe('/fake/userData/share');
         expect(env.BACKUPS_DIR).toBe('/fake/userData/backups');
         expect(env.FFPROBE_BIN).toBe('/fake/bin/ffprobe/ffprobe.exe');
     });

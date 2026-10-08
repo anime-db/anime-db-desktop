@@ -52,7 +52,7 @@ function frankenphpBinary() {
 
 /**
  * Environment of every PHP process of the run: prod, with all user data inside the environment
- * directory (including the Symfony runtime dir, so app/var is never touched).
+ * directory (including the Symfony runtime and share dirs, so app/var is never touched).
  *
  * @param {string} dataDir  environment directory
  * @param {Record<string, string>} dataEnv  user-data variables (see scripts/fixture envForDir)

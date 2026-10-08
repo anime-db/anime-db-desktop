@@ -18,6 +18,7 @@
         "shots": "node scripts/shots/run.js",
         "e2e": "node scripts/e2e/run.js",
         "e2e:session": "node scripts/e2e/session.js",
+        "coverage-matrix": "node scripts/coverage-matrix/index.js",
         "lint": "eslint native/ tests/native/ app/assets/js/ tests/public/ scripts/",
         "lint:fix": "eslint native/ tests/native/ app/assets/js/ tests/public/ scripts/ --fix",
         "test": "jest"
@@ -61,7 +62,8 @@
             "createDesktopShortcut": true,
             "createStartMenuShortcut": true,
             "runAfterFinish": true,
-            "include": "build/installer.nsh"
+            "include": "build/installer.nsh",
+            "license": "build/license.txt"
         },
         "files": [
             "native/**",
