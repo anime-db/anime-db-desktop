@@ -98,7 +98,7 @@ final class ScanStorageMessageHandler
             $lockAcquired = true;
             $this->wsPublisher->publish('backend.status', ['state' => 'busy']);
 
-            $atPath = is_readable($storage->getPath())
+            $atPath = is_readable($storage->requirePath())
                 ? null
                 : $this->storageMarkerService->findByMarker($storage);
 

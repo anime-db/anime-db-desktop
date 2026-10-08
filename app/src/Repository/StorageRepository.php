@@ -68,6 +68,7 @@ class StorageRepository
 
         return $this->entityManager->getRepository(Storage::class)->createQueryBuilder('s')
             ->where('s.type IN (:types)')
+            ->andWhere('s.path IS NOT NULL')
             ->setParameter('types', $writableTypes)
             ->orderBy('s.name', 'ASC')
             ->getQuery()

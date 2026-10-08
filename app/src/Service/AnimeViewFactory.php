@@ -111,7 +111,7 @@ final class AnimeViewFactory
      * serializeStorage(); a future storage-management screen listing Storage rows on
      * their own would need the plain root path and should not reuse this method as-is.
      *
-     * @return array{name: string, type: string, path: string, path_available: bool}|null
+     * @return array{name: string, type: string, path: string|null, path_available: bool}|null
      */
     private function serializeStorage(?Storage $storage, ?string $storagePath): ?array
     {
@@ -119,9 +119,12 @@ final class AnimeViewFactory
             return null;
         }
 
-        $path = $storagePath === null
-            ? $storage->getPath()
-            : rtrim($storage->getPath(), '\\/').\DIRECTORY_SEPARATOR.$storagePath;
+        $root = $storage->getPath();
+        $path = match (true) {
+            $root === null => null,
+            $storagePath === null => $root,
+            default => rtrim($root, '\\/').\DIRECTORY_SEPARATOR.$storagePath,
+        };
 
         return [
             'name' => $storage->getName(),
@@ -130,7 +133,7 @@ final class AnimeViewFactory
             // Checked here (server-side, at page load), not on button click: FrankenPHP runs
             // locally on the same machine as the user's files, so this is a real filesystem
             // check, not a network round-trip.
-            'path_available' => is_readable($path),
+            'path_available' => $path !== null && is_readable($path),
         ];
     }
 }

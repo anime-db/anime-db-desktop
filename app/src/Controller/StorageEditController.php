@@ -107,7 +107,7 @@ final class StorageEditController
 
         $previousPath = $storage->getPath();
         $previousType = $storage->getType();
-        $pathChanged = trim($path) !== $previousPath;
+        $pathChanged = (trim($path) === '' ? null : trim($path)) !== $previousPath;
         $typeChangingToUnwritable = $type !== $previousType && !$type->isWritable();
         $isPreset = $storageId === $this->settings->getPresetDownloadsStorageId();
 
@@ -146,16 +146,17 @@ final class StorageEditController
 
         try {
             $storage->rename($name);
+            $storage->setType($type);
             $storage->relocate($path);
         } catch (InvalidNameException|InvalidPathException) {
             return $this->renderForm($storage, name: $name, path: $path, type: $type, error: 'storage_edit.error_invalid');
         }
 
         if ($storage->getPath() !== $previousPath) {
-            $this->markerService->forget($storage, $previousPath);
+            if ($previousPath !== null) {
+                $this->markerService->forget($storage, $previousPath);
+            }
         }
-
-        $storage->setType($type);
 
         $this->entityManager->flush();
 
@@ -178,13 +179,17 @@ final class StorageEditController
         return new Response($this->twig->render('storage/edit.html.twig', [
             'storage' => $storage,
             'name' => $name ?? $storage->getName(),
-            'path' => $path ?? $storage->getPath(),
+            'path' => $path ?? $storage->getPath() ?? '',
             'type' => ($type ?? $storage->getType())->value,
             'error' => $error,
             'errorParams' => $errorParams,
             'types' => array_column(StorageType::cases(), 'value'),
             'nonWritableTypes' => array_column(
                 array_filter(StorageType::cases(), static fn (StorageType $type): bool => !$type->isWritable()),
+                'value',
+            ),
+            'pathOptionalTypes' => array_column(
+                array_filter(StorageType::cases(), static fn (StorageType $type): bool => !$type->isPathRequired()),
                 'value',
             ),
             'isPreset' => $storage->id !== null && $storage->id === $this->settings->getPresetDownloadsStorageId(),

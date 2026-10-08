@@ -114,10 +114,10 @@ final class StorageController
     public function paths(): JsonResponse
     {
         return new JsonResponse([
-            'paths' => array_map(
-                static fn (Storage $storage): string => $storage->getPath(),
+            'paths' => array_values(array_filter(array_map(
+                static fn (Storage $storage): ?string => $storage->getPath(),
                 $this->storages->findAllOrderedByName(),
-            ),
+            ), static fn (?string $path): bool => $path !== null)),
         ]);
     }
 

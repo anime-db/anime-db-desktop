@@ -46,7 +46,9 @@ final class StorageAvailabilityService
     {
         $ids = [];
         foreach ($storages as $storage) {
-            if (!is_readable($storage->getPath())) {
+            $path = $storage->getPath();
+            // A storage without a path (disc not inserted, video media) has nothing to check — not "unavailable".
+            if ($path !== null && !is_readable($path)) {
                 $ids[] = $storage->id ?? throw new \LogicException('Storage must be persisted before its path can be checked.');
             }
         }

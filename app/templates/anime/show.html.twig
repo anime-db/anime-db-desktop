@@ -114,6 +114,7 @@
                             <dt>{{ 'anime_detail.field_storage'|trans }}</dt>
                             <dd>{{ anime.storage.name }} ({{ ('storage_type.' ~ anime.storage.type)|trans }})</dd>
 
+                            {% if anime.storage.path is not null %}
                             <dt>{{ 'anime_detail.field_storage_path'|trans }}</dt>
                             <dd>
                                 <span class="anime-detail__path">{{ anime.storage.path }}</span>
@@ -128,6 +129,7 @@
                                     {%- endif %}
                                 >{{ 'anime_detail.open_folder_button'|trans }}</button>
                             </dd>
+                            {% endif %}
                         </dl>
                     {% else %}
                         <p class="anime-detail__files-empty">

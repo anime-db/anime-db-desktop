@@ -67,6 +67,9 @@ final class MediaLibrary implements MediaLibraryInterface
         }
 
         $rootPath = $storage->getPath();
+        if ($rootPath === null) {
+            throw new StorageUnavailableException('Storage has no path');
+        }
         $root = is_dir($rootPath) && is_readable($rootPath) ? realpath($rootPath) : false;
 
         if ($root === false) {

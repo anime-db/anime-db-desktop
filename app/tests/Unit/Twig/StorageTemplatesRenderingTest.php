@@ -121,6 +121,7 @@ final class StorageTemplatesRenderingTest extends KernelTestCase
             'errorParams' => [],
             'types' => array_column(StorageType::cases(), 'value'),
             'nonWritableTypes' => [],
+            'pathOptionalTypes' => ['external-r', 'video'],
             'isPreset' => true,
         ]);
 
@@ -143,6 +144,7 @@ final class StorageTemplatesRenderingTest extends KernelTestCase
             'errorParams' => [],
             'types' => array_column(StorageType::cases(), 'value'),
             'nonWritableTypes' => [],
+            'pathOptionalTypes' => ['external-r', 'video'],
             'isPreset' => false,
         ]);
 
@@ -165,6 +167,7 @@ final class StorageTemplatesRenderingTest extends KernelTestCase
             'errorParams' => [],
             'types' => array_column(StorageType::cases(), 'value'),
             'nonWritableTypes' => ['external-r', 'video'],
+            'pathOptionalTypes' => ['external-r', 'video'],
             'isPreset' => true,
         ]);
 
@@ -188,6 +191,7 @@ final class StorageTemplatesRenderingTest extends KernelTestCase
             'errorParams' => ['%name%' => 'AnimeDB'],
             'types' => array_column(StorageType::cases(), 'value'),
             'nonWritableTypes' => ['external-r', 'video'],
+            'pathOptionalTypes' => ['external-r', 'video'],
             'isPreset' => true,
         ]);
 

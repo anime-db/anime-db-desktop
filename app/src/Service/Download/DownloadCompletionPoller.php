@@ -254,7 +254,7 @@ final class DownloadCompletionPoller
         // on the target storage shrinks as this same torrent downloads, so a full-size comparison
         // would false-positive on a healthy torrent partway through (see class docblock).
         $amountLeft = (int) ($torrent['amount_left'] ?? $size);
-        if ($this->freeSpaceChecker->hasEnoughFreeSpace($amountLeft, $storage->getPath())) {
+        if ($this->freeSpaceChecker->hasEnoughFreeSpace($amountLeft, $storage->requirePath())) {
             return;
         }
 
@@ -296,7 +296,7 @@ final class DownloadCompletionPoller
             return;
         }
 
-        $root = $storage->getPath();
+        $root = $storage->requirePath();
 
         try {
             $resolvedPath = $this->jail->assertWithinRoot($root, $contentPath);

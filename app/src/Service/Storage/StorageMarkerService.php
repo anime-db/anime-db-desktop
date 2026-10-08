@@ -65,7 +65,7 @@ final class StorageMarkerService
     public function reconcile(Storage $storage): StorageMarkerResult
     {
         $id = $storage->id ?? throw new \LogicException('Storage must be persisted before its marker can be reconciled');
-        $path = $storage->getPath();
+        $path = $storage->requirePath();
         $markerId = $this->readMarkerId($path);
 
         if ($markerId === null) {
@@ -98,7 +98,7 @@ final class StorageMarkerService
      */
     public function relocateIfMarkerMoved(Storage $storage, string $path): bool
     {
-        if ($this->readMarkerId($path) !== $storage->id || $storage->getPath() === $path) {
+        if ($this->readMarkerId($path) !== $storage->id || $storage->requirePath() === $path) {
             return false;
         }
 
@@ -121,7 +121,7 @@ final class StorageMarkerService
     public function forget(Storage $storage, ?string $path = null): void
     {
         $id = $storage->id ?? throw new \LogicException('Storage must be persisted before its marker can be forgotten');
-        $path ??= $storage->getPath();
+        $path ??= $storage->requirePath();
 
         if ($this->readMarkerId($path) !== $id) {
             return;
@@ -154,7 +154,7 @@ final class StorageMarkerService
     public function findByMarker(Storage $storage): ?string
     {
         $storageId = $storage->id ?? throw new \LogicException('Storage must be persisted before its marker can be searched for');
-        $tail = $this->relativeTail($storage->getPath());
+        $tail = $this->relativeTail($storage->requirePath());
 
         if ($tail === null) {
             return null;
