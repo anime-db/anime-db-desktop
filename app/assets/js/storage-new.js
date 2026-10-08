@@ -39,8 +39,22 @@
 
         const pathOptionalTypes = (typeSelect.dataset.pathOptionalTypes || '').split(',').filter(Boolean);
 
+        const pathNotApplicableTypes = (typeSelect.dataset.pathNotApplicableTypes || '').split(',').filter(Boolean);
+        const notApplicableHint = form.querySelector('#storage-new-path-not-applicable');
+
         function updatePickButtonVisibility() {
             pickButton.hidden = !window.animeDb || !writableTypes.includes(typeSelect.value);
+        }
+
+        function updatePathApplicable() {
+            const applicable = !pathNotApplicableTypes.includes(typeSelect.value);
+            if (!applicable) {
+                pathInput.value = '';
+            }
+            pathInput.disabled = !applicable;
+            if (notApplicableHint) {
+                notApplicableHint.hidden = applicable;
+            }
         }
 
         function updatePathRequired() {
@@ -49,8 +63,10 @@
 
         typeSelect.addEventListener('change', updatePickButtonVisibility);
         typeSelect.addEventListener('change', updatePathRequired);
+        typeSelect.addEventListener('change', updatePathApplicable);
         updatePickButtonVisibility();
         updatePathRequired();
+        updatePathApplicable();
 
         pickButton.addEventListener('click', async () => {
             if (!window.animeDb) {

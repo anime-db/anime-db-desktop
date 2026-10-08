@@ -40,7 +40,7 @@
 
             <div class="mb-3">
                 <label for="storage-edit-type" class="form-label">{{ 'storage_edit.field_type'|trans }}</label>
-                <select id="storage-edit-type" name="type" data-path-optional-types="{{ pathOptionalTypes|join(',') }}" class="form-select">
+                <select id="storage-edit-type" name="type" data-path-optional-types="{{ pathOptionalTypes|join(',') }}" data-path-not-applicable-types="{{ pathNotApplicableTypes|join(',') }}" class="form-select">
                     {% for value in types %}
                         <option value="{{ value }}"{% if value == type %} selected{% endif %}{% if isPreset and value in nonWritableTypes %} disabled{% endif %}>{{ ('storage_type.' ~ value)|trans }}</option>
                     {% endfor %}
@@ -49,7 +49,8 @@
 
             <div class="mb-3">
                 <label for="storage-edit-path" class="form-label">{{ 'storage_edit.field_path'|trans }}</label>
-                <input type="text" id="storage-edit-path" name="path" value="{{ path }}"{% if type not in pathOptionalTypes %} required{% endif %} class="form-control"{% if isPreset %} readonly{% endif %}>
+                <input type="text" id="storage-edit-path" name="path" value="{{ type in pathNotApplicableTypes ? '' : path }}"{% if type in pathNotApplicableTypes %} disabled{% elseif type not in pathOptionalTypes %} required{% endif %} class="form-control"{% if isPreset %} readonly{% endif %}>
+                <div id="storage-edit-path-not-applicable" class="form-text"{% if type not in pathNotApplicableTypes %} hidden{% endif %}>{{ 'storage_edit.path_not_applicable_hint'|trans }}</div>
                 {% if isPreset %}
                     <div class="form-text">{{ 'storage_edit.preset_path_hint'|trans }}</div>
                 {% endif %}

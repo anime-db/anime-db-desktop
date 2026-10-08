@@ -115,6 +115,10 @@ final class StorageNewController
                 array_filter(StorageType::cases(), static fn (StorageType $type): bool => !$type->isPathRequired()),
                 'value',
             ),
+            'path_not_applicable_types' => array_column(
+                array_filter(StorageType::cases(), static fn (StorageType $type): bool => !$type->isReadable()),
+                'value',
+            ),
             'writable_types' => array_values(array_map(
                 static fn (StorageType $type): string => $type->value,
                 array_filter(StorageType::cases(), static fn (StorageType $type): bool => $type->isWritable()),

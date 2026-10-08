@@ -34,12 +34,28 @@
 
         const pathOptionalTypes = (typeSelect.dataset.pathOptionalTypes || '').split(',').filter(Boolean);
 
+        const pathNotApplicableTypes = (typeSelect.dataset.pathNotApplicableTypes || '').split(',').filter(Boolean);
+        const notApplicableHint = form.querySelector('#storage-edit-path-not-applicable');
+
+        function updatePathApplicable() {
+            const applicable = !pathNotApplicableTypes.includes(typeSelect.value);
+            if (!applicable) {
+                pathInput.value = '';
+            }
+            pathInput.disabled = !applicable;
+            if (notApplicableHint) {
+                notApplicableHint.hidden = applicable;
+            }
+        }
+
         function updatePathRequired() {
             pathInput.required = !pathOptionalTypes.includes(typeSelect.value);
         }
 
         typeSelect.addEventListener('change', updatePathRequired);
+        typeSelect.addEventListener('change', updatePathApplicable);
         updatePathRequired();
+        updatePathApplicable();
     }
 
     window.Controller.registerControl('storage-edit', mountStorageEdit);
