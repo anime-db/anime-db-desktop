@@ -37,10 +37,10 @@ use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Plugin\PluginUiAssetsResolver;
 use App\Service\Plugin\SettingsPageRegistry;
 use App\Service\Plugin\SyncRegistry;
+use App\Service\Plugin\SyncSeedDispatcher;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
-use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 use Twig\Environment;
@@ -89,7 +89,7 @@ use Twig\Environment;
  * `syncSeeded` back to `false` itself, so the next visit (presumably after OAuth is finished)
  * retries connect-seed instead of it staying silently un-seeded forever.
  *
- * `markSeededIfFirstVisit()`'s underlying `updatePluginSettings()` lock has a bounded number of
+ * {@see SyncSeedDispatcher}'s underlying `updatePluginSettings()` lock has a bounded number of
  * attempts (issue #340) and can throw {@see PluginsConfigStoreLockedException}
  * on exhaustion — exactly the shape a prefetch-plus-click double GET produces, the two racing
  * each other for the same lock (issue #422). That is lock contention, not a broken plugin, so it
@@ -120,8 +120,7 @@ final class PluginSettingsController
         private readonly InstalledPluginsRegistry $installedPlugins,
         private readonly SettingsPageRegistry $settingsPages,
         private readonly SyncRegistry $syncRegistry,
-        private readonly PluginsConfigStore $pluginsConfigStore,
-        private readonly MessageBusInterface $messageBus,
+        private readonly SyncSeedDispatcher $syncSeedDispatcher,
         private readonly UrlGeneratorInterface $urlGenerator,
         private readonly Environment $twig,
         private readonly LoggerInterface $logger,
@@ -159,24 +158,10 @@ final class PluginSettingsController
 
         $syncReviewUrl = null;
         if ($this->syncRegistry->findByPluginId($id) !== null) {
-            try {
-                $alreadySeeded = $this->markSeededIfFirstVisit($id);
-            } catch (PluginsConfigStoreLockedException $exception) {
-                // The lock is contended (e.g. a browser prefetch racing the user's own click,
-                // issue #422) rather than broken, so this must degrade like any other lock
-                // contention: skip the seed for this visit and fall through to a normal render.
-                // The next successful visit picks the seed back up.
-                $this->logger->info('Could not mark connect-seed as seeded because the plugins config store lock was exhausted; skipping seed dispatch for this visit.', [
-                    'pluginId' => $pluginId,
-                    'exception' => $exception,
-                ]);
-
-                $alreadySeeded = true;
-            }
-
-            if (!$alreadySeeded) {
-                $this->messageBus->dispatch(new SyncSeedMessage((string) $id));
-
+            // A contended lock (e.g. a browser prefetch racing the user's own click, issue #422)
+            // makes the dispatcher skip the seed for this visit; the page renders normally and
+            // the next successful visit picks the seed back up.
+            if ($this->syncSeedDispatcher->dispatchIfNotSeeded($id)) {
                 // Only the visit that actually queued the seed shows the notice — a later visit
                 // (syncSeeded already true) renders the plugin's own settings markup with nothing
                 // above it, same as before connect-seed existed.
@@ -225,29 +210,5 @@ final class PluginSettingsController
     private function oauthCallbackWarning(): bool
     {
         return $this->oauthCallbackFixedPort === '0';
-    }
-
-    /**
-     * Returns whether the plugin was already seeded before this call, atomically setting the
-     * flag if not — the check and the set happen under the same
-     * {@see PluginsConfigStore::updatePluginSettings()} lock, so two concurrent requests can
-     * never both observe "not seeded yet" and both dispatch {@see SyncSeedMessage}.
-     */
-    private function markSeededIfFirstVisit(PluginId $id): bool
-    {
-        $alreadySeeded = false;
-        $this->pluginsConfigStore->updatePluginSettings($id, static function (array $settings) use (&$alreadySeeded): array {
-            if (($settings['syncSeeded'] ?? false) === true) {
-                $alreadySeeded = true;
-
-                return $settings;
-            }
-
-            $settings['syncSeeded'] = true;
-
-            return $settings;
-        });
-
-        return $alreadySeeded;
     }
 }

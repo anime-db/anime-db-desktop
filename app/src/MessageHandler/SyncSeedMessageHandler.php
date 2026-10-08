@@ -134,7 +134,7 @@ final class SyncSeedMessageHandler
             // Issue #870: the seed is a successful pull too, so the periodic one waits its full age.
             $this->pullGate->markPulled($pluginId);
         } else {
-            $this->logger->info('Connect-seed for plugin "{pluginId}" did not complete (reauthorization required, or a failed item closed the EntityManager — see earlier log entries); resetting the seeded flag so the next settings-page visit retries it.', [
+            $this->logger->info('Connect-seed for plugin "{pluginId}" did not complete (reauthorization required, or a failed item closed the EntityManager — see earlier log entries); resetting the seeded flag so the next settings-page visit or periodic sync tick retries it.', [
                 'pluginId' => $message->pluginId,
             ]);
 

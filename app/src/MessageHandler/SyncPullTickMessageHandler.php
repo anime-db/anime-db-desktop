@@ -30,7 +30,9 @@ namespace App\MessageHandler;
 use App\Entity\ValueObject\PluginId;
 use App\Message\SyncPullMessage;
 use App\Message\SyncPullTickMessage;
+use App\Service\Plugin\SettingsPageRegistry;
 use App\Service\Plugin\SyncRegistry;
+use App\Service\Plugin\SyncSeedDispatcher;
 use App\Service\Sync\SyncPullGate;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 use Symfony\Component\Messenger\MessageBusInterface;
@@ -39,6 +41,11 @@ use Symfony\Component\Messenger\MessageBusInterface;
  * Runs on every {@see \App\Scheduler\SyncPullSchedule} tick (issue #870): for each active sync
  * plugin that passes {@see SyncPullGate::isDue()} it queues a {@see SyncPullMessage} on the `sync`
  * transport. The pull itself runs in that transport's consumer, not in the schedule's one.
+ *
+ * An active plugin without a settings page has no page visit to retry a connect-seed that stopped
+ * short ({@see SyncSeedMessageHandler} resets `syncSeeded`, which keeps the
+ * gate closed), so the tick re-queues it through {@see SyncSeedDispatcher}, which is a no-op while
+ * the plugin is seeded.
  */
 #[AsMessageHandler]
 final class SyncPullTickMessageHandler
@@ -47,13 +54,21 @@ final class SyncPullTickMessageHandler
         private readonly SyncRegistry $syncRegistry,
         private readonly SyncPullGate $gate,
         private readonly MessageBusInterface $bus,
+        private readonly SettingsPageRegistry $settingsPages,
+        private readonly SyncSeedDispatcher $syncSeedDispatcher,
     ) {
     }
 
     public function __invoke(SyncPullTickMessage $message): void
     {
         foreach ($this->syncRegistry->allActive() as $id => $sync) {
-            if ($this->gate->isDue(new PluginId((string) $id))) {
+            $pluginId = new PluginId((string) $id);
+            // The seed is itself a full pull, so no periodic pull is queued next to it.
+            if ($this->settingsPages->find($pluginId) === null && $this->syncSeedDispatcher->dispatchIfNotSeeded($pluginId)) {
+                continue;
+            }
+
+            if ($this->gate->isDue($pluginId)) {
                 $this->bus->dispatch(new SyncPullMessage((string) $id));
             }
         }
