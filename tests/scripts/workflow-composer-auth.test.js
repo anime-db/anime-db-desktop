@@ -33,7 +33,15 @@
  *    как передача токена, но до composer не доходит (composite-action), и установка тихо идёт
  *    анонимно. Отказ при этом отложенный: при тёплом кэше composer сеть не нужна вовсе, поэтому
  *    ubuntu-джобы остаются зелёными, а падает только та, у которой кэш холодный. Подробности —
- *    `.claude-docs/gotchas.md`.
+ *    `.claude-docs/gotchas.md`;
+ * 4. сам секрет `secrets.COMPOSER_GITHUB_TOKEN` не встречается НИГДЕ, кроме шага, который ставит
+ *    токен. Проверять по имени переменной недостаточно: тот же секрет можно отдать другому шагу под
+ *    другим именем или дописать в `$GITHUB_ENV`, и тогда его получат все последующие шаги — то есть
+ *    регрессия #971 вернётся, а проверка по `COMPOSER_AUTH:` этого не заметит.
+ *
+ * Проверки падают закрыто: если шаг с токеном записан в форме, которой `stepLines()` не распознаёт
+ * (многострочный `run` с переносом, `composer config -g`, прямая запись `auth.json`), шаг просто не
+ * найдётся и тест покраснеет — а не промолчит.
  *
  * Без YAML-парсера: в репозитории нет YAML-зависимости, а строки, которые читают эти тесты,
  * однозначны (то же обоснование, что в tests/scripts/build-workflow-extensions.test.js).
@@ -91,6 +99,33 @@ function installStep(contents) {
     return [lines[start], ...(end === -1 ? rest : rest.slice(0, end))].join('\n');
 }
 
+/**
+ * Текст шага, который ставит токен, — от строки с `run:` до следующего шага того же уровня.
+ *
+ * @param {string} contents
+ * @returns {string} пустая строка, если шага нет
+ */
+function authStep(contents) {
+    const lines = contents.split('\n');
+    const start = stepLines(contents).auth;
+    if (start === -1) {
+        return '';
+    }
+
+    const rest = lines.slice(start + 1);
+    const end = rest.findIndex((line) => /^ {6}- /.test(line));
+
+    return [lines[start], ...(end === -1 ? rest : rest.slice(0, end))].join('\n');
+}
+
+/**
+ * @param {string} text
+ * @returns {number} сколько раз встречается сам секрет
+ */
+function secretOccurrences(text) {
+    return (text.match(/secrets\.COMPOSER_GITHUB_TOKEN/g) || []).length;
+}
+
 describe('токен composer не остаётся на диске после установки', () => {
     const installing = workflowNames().filter((name) => read(name).includes('ramsey/composer-install'));
 
@@ -111,6 +146,13 @@ describe('токен composer не остаётся на диске после �
         expect(installStep(read(name))).not.toMatch(/^\s*COMPOSER_AUTH:/m);
     });
 
+    test.each(installing)('%s держит секрет только в шаге, который ставит токен', (name) => {
+        const contents = read(name);
+
+        expect(secretOccurrences(contents)).toEqual(secretOccurrences(authStep(contents)));
+        expect(secretOccurrences(contents)).toBe(1);
+    });
+
     test.each(workflowNames().filter((name) => !read(name).includes('ramsey/composer-install')))(
         '%s не трогает токен composer вовсе',
         (name) => {
@@ -118,8 +160,57 @@ describe('токен composer не остаётся на диске после �
 
             expect(contents).not.toContain('github-oauth');
             expect(contents).not.toContain('COMPOSER_AUTH');
+            expect(secretOccurrences(contents)).toBe(0);
         },
     );
+});
+
+describe('проверка по секрету краснеет на формах, которые её обходят', () => {
+    const WORKFLOW = [
+        '      - name: Configure Composer auth',
+        '        run: composer config --global github-oauth.github.com ${{ secrets.COMPOSER_GITHUB_TOKEN }}',
+        '',
+        '      - name: Install dependencies',
+        '        uses: ramsey/composer-install@v4',
+        '',
+        '      - name: Drop the Composer token from disk',
+        '        run: composer config --global --unset github-oauth.github.com',
+    ].join('\n');
+
+    test('эталон проходит', () => {
+        expect(secretOccurrences(WORKFLOW)).toBe(secretOccurrences(authStep(WORKFLOW)));
+    });
+
+    /** Тот же секрет другому шагу под другим именем — у тестов появляется доступ к токену. */
+    test('секрет под другим именем у другого шага', () => {
+        const leaky = `${WORKFLOW}\n\n      - name: Run tests\n        run: vendor/bin/phpunit\n        env:\n          GH_TOKEN: \${{ secrets.COMPOSER_GITHUB_TOKEN }}\n`;
+
+        expect(secretOccurrences(leaky)).not.toBe(secretOccurrences(authStep(leaky)));
+    });
+
+    /** Запись в $GITHUB_ENV отдаёт секрет всем последующим шагам джобы. */
+    test('секрет, дописанный в $GITHUB_ENV', () => {
+        const leaky = `${WORKFLOW}\n\n      - name: Export\n        run: echo 'COMPOSER_AUTH=\${{ secrets.COMPOSER_GITHUB_TOKEN }}' >> "$GITHUB_ENV"\n`;
+
+        expect(secretOccurrences(leaky)).not.toBe(secretOccurrences(authStep(leaky)));
+    });
+
+    /** Многострочный `composer config --global` с переносом: шаг не распознаётся, тест краснеет. */
+    test('многострочная форма шага не выдаёт себя за распознанную', () => {
+        const multiline = [
+            '      - name: Configure Composer auth',
+            '        run: |',
+            '          composer config --global \\',
+            '            github-oauth.github.com ${{ secrets.COMPOSER_GITHUB_TOKEN }}',
+            '',
+            '      - name: Install dependencies',
+            '        uses: ramsey/composer-install@v4',
+        ].join('\n');
+
+        expect(stepLines(multiline).auth).toBe(-1);
+        expect(authStep(multiline)).toBe('');
+        expect(secretOccurrences(multiline)).not.toBe(secretOccurrences(authStep(multiline)));
+    });
 });
 
 describe('stepLines', () => {
