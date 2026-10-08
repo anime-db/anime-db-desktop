@@ -1,0 +1,4 @@
+[
+    { "path": "/health", "reason": "Supervisor probe, not reachable from the interface" },
+    { "path": "/ws", "reason": "WebSocket upgrade endpoint, not reachable from the interface" }
+]
