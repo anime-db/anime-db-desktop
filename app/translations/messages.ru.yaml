@@ -710,6 +710,18 @@ onboarding:
     load_demo_heading: Загрузить демо-данные
     load_demo_description: Заполните каталог примерами записей, чтобы посмотреть, как это работает.
     load_demo_button: Загрузить демо-данные
+    import_v1_heading: Импорт из AnimeDB v1
+    import_v1_description: Выберите папку, в которую установлена AnimeDB v1, чтобы перенести коллекцию. Импорт замещает каталог и предлагается, только пока он пуст.
+    import_v1_button: Выбрать папку v1
+    import_v1_cancel_button: Отмена
+    import_v1_progress_read: 'Чтение базы v1: %current% из %total%.'
+    import_v1_progress_records: 'Создание записей: %current% из %total%.'
+    import_v1_progress_covers: 'Импорт обложек: %current% из %total%.'
+    import_v1_cancelled: Импорт отменён. Ничего не импортировано.
+    import_v1_error_generic: Импорт не удался. Ничего не импортировано. Проверьте папку и попробуйте снова.
+    import_v1_done_heading: Импорт завершён
+    import_v1_done_no_report: Импорт завершён.
+    import_v1_open_catalog_button: Открыть каталог
 
 storage_edit:
     title: Редактирование хранилища — AnimeDB

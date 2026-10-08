@@ -57,8 +57,18 @@ final class ImportV1CommandTest extends TestCase
 
     private CommandTester $tester;
 
+    /** @var list<array{0: string, 1: mixed}> */
+    private array $published = [];
+
+    private WsPublisher&\PHPUnit\Framework\MockObject\Stub $publisher;
+
     protected function setUp(): void
     {
+        $this->published = [];
+        $this->publisher = $this->createStub(WsPublisher::class);
+        $this->publisher->method('publish')->willReturnCallback(function (string $event, mixed $data): void {
+            $this->published[] = [$event, $data];
+        });
         $entityManager = $this->createInMemoryEntityManager();
         $translator = new Translator('en');
         $translator->addLoader('yaml', new YamlFileLoader());
@@ -72,12 +82,12 @@ final class ImportV1CommandTest extends TestCase
             new SyncTombstoneRepository($entityManager),
             new SyncReviewItemRepository($entityManager),
             new SyncReviewService(new SyncReviewItemRepository($entityManager)),
-            $this->createStub(WsPublisher::class),
+            $this->publisher,
             $translator,
             new ImageNormalizer(),
             new AnimeCoverStorage(new ImageNormalizer(), $this->createTemporaryDirectory('media-')),
         );
-        $this->tester = new CommandTester(new ImportV1Command($service, $translator));
+        $this->tester = new CommandTester(new ImportV1Command($service, $translator, $this->publisher));
     }
 
     protected function tearDown(): void
@@ -133,5 +143,41 @@ final class ImportV1CommandTest extends TestCase
         $display = (string) preg_replace('/\s+/', ' ', $this->tester->getDisplay());
         $this->assertStringContainsString(\sprintf('(v1 id %d) cannot be imported, so nothing was imported', $bad), $display);
         $this->assertStringNotContainsString('import_v1.', $display);
+    }
+
+    public function testPublishesTheWholeReportOnDone(): void
+    {
+        $builder = V1DatabaseBuilder::catalog($this->createTemporaryDirectory('v1-'), 20);
+
+        $this->tester->execute(['directory' => $builder->root]);
+
+        $done = array_values(array_filter($this->published, static fn (array $event): bool => $event[0] === 'import_v1.done'));
+        $this->assertCount(1, $done);
+        $this->assertSame(20, $done[0][1]['animeCreated']);
+        foreach (array_keys(get_object_vars(new \App\Service\Import\V1\V1ImportResult())) as $field) {
+            $this->assertArrayHasKey($field, $done[0][1]);
+        }
+        $this->assertSame([], array_filter($this->published, static fn (array $event): bool => $event[0] === 'import_v1.failed'));
+    }
+
+    public function testPublishesProgressForEveryPhase(): void
+    {
+        $builder = V1DatabaseBuilder::catalog($this->createTemporaryDirectory('v1-'), 20);
+
+        $this->tester->execute(['directory' => $builder->root]);
+
+        $phases = array_values(array_unique(array_map(static fn (array $event): string => $event[1]['phase'], array_filter($this->published, static fn (array $event): bool => $event[0] === 'import_v1.progress'))));
+        $this->assertEqualsCanonicalizing(['read', 'records', 'covers'], $phases);
+    }
+
+    public function testPublishesTheRefusalWithThePathItLookedFor(): void
+    {
+        $this->tester->execute(['directory' => $this->createTemporaryDirectory('v1-')]);
+
+        $failed = array_values(array_filter($this->published, static fn (array $event): bool => $event[0] === 'import_v1.failed'));
+        $this->assertCount(1, $failed);
+        $this->assertSame('not_v1_installation', $failed[0][1]['reason']);
+        $this->assertStringContainsString('anime.db', $failed[0][1]['params']['path']);
+        $this->assertSame([], array_filter($this->published, static fn (array $event): bool => $event[0] === 'import_v1.done'));
     }
 }
