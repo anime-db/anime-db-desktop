@@ -28,6 +28,7 @@ declare(strict_types=1);
 namespace App\Command;
 
 use App\Service\Import\Exception\InvalidV1InstallationException;
+use App\Service\Import\V1\V1ImportReportStore;
 use App\Service\Import\V1\V1ImportService;
 use App\Service\WsPublisher;
 use Symfony\Component\Console\Attribute\AsCommand;
@@ -57,6 +58,7 @@ final class ImportV1Command extends Command
         private readonly V1ImportService $importService,
         private readonly TranslatorInterface $translator,
         private readonly WsPublisher $wsPublisher,
+        private readonly V1ImportReportStore $reportStore,
     ) {
         parent::__construct();
     }
@@ -87,6 +89,7 @@ final class ImportV1Command extends Command
             };
         }
 
+        $this->reportStore->save($result);
         $io->success($result->render($this->translator));
         $this->wsPublisher->publish('import_v1.done', $result->toArray());
 
