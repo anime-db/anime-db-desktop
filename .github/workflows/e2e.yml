@@ -70,18 +70,19 @@ jobs:
           extensions: apcu, zip, ctype, iconv, gd, intl, mbstring, openssl, pdo_sqlite
           ini-values: apc.enable_cli=1
 
-      # Токен к приватным репозиториям живёт только в env этого шага, а не в глобальном
-      # ~/.config/composer/auth.json: следующие шаги исполняют чужой и свой код — lifecycle-скрипты
-      # зависимостей в `npm ci`, приложение и фикстурный плагин из scripts/e2e/plugins в `npm run
-      # e2e`, — и токену там делать нечего. Ровно по той же причине выше стоит
-      # `persist-credentials: false`; `composer config --global` оставил бы PAT на диске до конца
-      # джобы и обессмыслил бы обе меры. Composer читает COMPOSER_AUTH сам, auth.json ему не нужен.
+      # Токен ставится перед установкой и снимается сразу после неё: дальше джоба исполняет код, и
+      # секрету на диске там делать нечего (issue #971). Через `env` шага установки его передать
+      # нельзя — почему, см. .claude-docs/gotchas.md §«COMPOSER_AUTH на шаге ramsey/composer-install».
+      - name: Configure Composer auth
+        run: composer config --global github-oauth.github.com ${{ secrets.COMPOSER_GITHUB_TOKEN }}
+
       - name: Install PHP dependencies
         uses: ramsey/composer-install@v4
         with:
           working-directory: app
-        env:
-          COMPOSER_AUTH: '{"github-oauth":{"github.com":"${{ secrets.COMPOSER_GITHUB_TOKEN }}"}}'
+
+      - name: Drop the Composer token from disk
+        run: composer config --global --unset github-oauth.github.com
 
       - name: Setup Node.js
         uses: actions/setup-node@v5

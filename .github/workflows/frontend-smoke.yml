@@ -80,15 +80,19 @@ jobs:
           extensions: apcu, gd, intl
           ini-values: apc.enable_cli=1
 
-      # Токен живёт только в env этого шага, а не в глобальном ~/.config/composer/auth.json:
-      # дальше джоба исполняет код — lifecycle-скрипты зависимостей, тесты, прогон приложения, — и
-      # секрету там делать нечего. Composer читает COMPOSER_AUTH сам (issue #971).
+      # Токен ставится перед установкой и снимается сразу после неё: дальше джоба исполняет код, и
+      # секрету на диске там делать нечего (issue #971). Через `env` шага установки его передать
+      # нельзя — почему, см. .claude-docs/gotchas.md §«COMPOSER_AUTH на шаге ramsey/composer-install».
+      - name: Configure Composer auth
+        run: composer config --global github-oauth.github.com ${{ secrets.COMPOSER_GITHUB_TOKEN }}
+
       - name: Install PHP dependencies
         uses: ramsey/composer-install@v4
         with:
           working-directory: app
-        env:
-          COMPOSER_AUTH: '{"github-oauth":{"github.com":"${{ secrets.COMPOSER_GITHUB_TOKEN }}"}}'
+
+      - name: Drop the Composer token from disk
+        run: composer config --global --unset github-oauth.github.com
 
       - name: Setup Node.js
         uses: actions/setup-node@v5

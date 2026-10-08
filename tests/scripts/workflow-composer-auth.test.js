@@ -20,14 +20,20 @@
  */
 
 /**
- * `composer config --global github-oauth.github.com <секрет>` кладёт токен в
- * `~/.config/composer/auth.json`, и он остаётся там до конца джобы — то есть и на шагах, которые
+ * Токен composer нужен ровно на установку зависимостей. Если оставить его в глобальном
+ * `~/.config/composer/auth.json`, он лежит там до конца джобы — то есть и на шагах, которые
  * исполняют код: lifecycle-скрипты зависимостей в `npm ci`, тесты, прогон приложения под Xvfb,
- * запуск собранного приложения на гейте релиза. Шесть workflow делали именно так (issue #971).
+ * запуск собранного приложения на гейте релиза (issue #971). Поэтому после установки он снимается.
  *
- * Правка выглядит безобидной и возвращается копированием шага из соседнего файла — ровно тот класс
- * регрессии, который ловится только машинно. Проверяются обе половины: глобального конфига нет
- * нигде, а каждый шаг установки зависимостей несёт токен в своём `env`.
+ * Проверяются три вещи, и каждая ловит отдельную ошибку:
+ *
+ * 1. у каждого workflow, который ставит зависимости, есть и шаг с токеном, и шаг, снимающий его;
+ * 2. снятие идёт ПОСЛЕ установки (иначе оно бессмысленно);
+ * 3. ни один шаг `ramsey/composer-install` не несёт `COMPOSER_AUTH` в своём `env` — это выглядит
+ *    как передача токена, но до composer не доходит (composite-action), и установка тихо идёт
+ *    анонимно. Отказ при этом отложенный: при тёплом кэше composer сеть не нужна вовсе, поэтому
+ *    ubuntu-джобы остаются зелёными, а падает только та, у которой кэш холодный. Подробности —
+ *    `.claude-docs/gotchas.md`.
  *
  * Без YAML-парсера: в репозитории нет YAML-зависимости, а строки, которые читают эти тесты,
  * однозначны (то же обоснование, что в tests/scripts/build-workflow-extensions.test.js).
@@ -54,75 +60,85 @@ function read(name) {
 }
 
 /**
- * Текст шага, который ставит зависимости, от строки с `uses:` до следующего шага того же уровня.
+ * Номера строк трёх интересных шагов; -1, если шага нет.
  *
  * @param {string} contents
- * @returns {string|null} null, если workflow зависимости не ставит
+ * @returns {{ install: number, auth: number, unset: number }}
+ */
+function stepLines(contents) {
+    const lines = contents.split('\n');
+    const find = (predicate) => lines.findIndex(predicate);
+
+    return {
+        install: find((line) => line.includes('uses: ramsey/composer-install')),
+        auth: find((line) => /^\s*run: composer config --global github-oauth\.github\.com /.test(line)),
+        unset: find((line) => /^\s*run: composer config --global --unset github-oauth\.github\.com\s*$/.test(line)),
+    };
+}
+
+/**
+ * Текст шага установки — от строки с `uses:` до следующего шага того же уровня.
+ *
+ * @param {string} contents
+ * @returns {string}
  */
 function installStep(contents) {
     const lines = contents.split('\n');
-    const start = lines.findIndex((line) => line.includes('uses: ramsey/composer-install'));
-    if (start === -1) {
-        return null;
-    }
-
+    const start = stepLines(contents).install;
     const rest = lines.slice(start + 1);
     const end = rest.findIndex((line) => /^ {6}- /.test(line));
 
     return [lines[start], ...(end === -1 ? rest : rest.slice(0, end))].join('\n');
 }
 
-describe('токен composer не оседает на диске', () => {
-    const names = workflowNames();
+describe('токен composer не остаётся на диске после установки', () => {
+    const installing = workflowNames().filter((name) => read(name).includes('ramsey/composer-install'));
 
-    test('в репозитории есть workflow для проверки', () => {
-        expect(names.length).toBeGreaterThan(5);
+    test('в репозитории есть workflow, которые ставят зависимости', () => {
+        expect(installing.length).toBeGreaterThan(5);
     });
 
-    test.each(workflowNames())('%s не пишет github-oauth в глобальный конфиг', (name) => {
-        expect(read(name)).not.toMatch(/composer config .*github-oauth/);
+    test.each(installing)('%s снимает токен после установки', (name) => {
+        const { install, auth, unset } = stepLines(read(name));
+
+        expect(auth).toBeGreaterThan(-1);
+        expect(unset).toBeGreaterThan(-1);
+        expect(auth).toBeLessThan(install);
+        expect(unset).toBeGreaterThan(install);
     });
 
-    test.each(workflowNames())('%s передаёт токен только шагу установки', (name) => {
-        const contents = read(name);
-        const step = installStep(contents);
-
-        // Ключ, а не упоминание: про COMPOSER_AUTH говорят и комментарии рядом с шагом.
-        const keys = contents.match(/^\s*COMPOSER_AUTH:/gm) || [];
-
-        if (step === null) {
-            // Workflow не ставит PHP-зависимости — токену в нём вообще нечего делать.
-            expect(keys).toHaveLength(0);
-
-            return;
-        }
-
-        expect(step).toMatch(/^\s*COMPOSER_AUTH:/m);
-        expect(step).toContain('secrets.COMPOSER_GITHUB_TOKEN');
-        // Токен не должен появиться вне этого шага: ни в env джобы, ни в env workflow.
-        expect(keys).toHaveLength(1);
+    test.each(installing)('%s не пытается передать токен через env шага установки', (name) => {
+        expect(installStep(read(name))).not.toMatch(/^\s*COMPOSER_AUTH:/m);
     });
+
+    test.each(workflowNames().filter((name) => !read(name).includes('ramsey/composer-install')))(
+        '%s не трогает токен composer вовсе',
+        (name) => {
+            const contents = read(name);
+
+            expect(contents).not.toContain('github-oauth');
+            expect(contents).not.toContain('COMPOSER_AUTH');
+        },
+    );
 });
 
-describe('installStep', () => {
-    test('берёт шаг до начала следующего', () => {
+describe('stepLines', () => {
+    test('находит все три шага и их порядок', () => {
         const contents = [
+            '      - name: Configure Composer auth',
+            '        run: composer config --global github-oauth.github.com ${{ secrets.X }}',
+            '',
             '      - name: Install dependencies',
             '        uses: ramsey/composer-install@v4',
-            '        with:',
-            '          working-directory: app',
-            '        env:',
-            '          COMPOSER_AUTH: secret',
             '',
-            '      - name: Run tests',
-            '        run: vendor/bin/phpunit',
+            '      - name: Drop the Composer token from disk',
+            '        run: composer config --global --unset github-oauth.github.com',
         ].join('\n');
 
-        expect(installStep(contents)).toContain('COMPOSER_AUTH');
-        expect(installStep(contents)).not.toContain('phpunit');
+        expect(stepLines(contents)).toEqual({ auth: 1, install: 4, unset: 7 });
     });
 
-    test('отдаёт null, когда зависимости не ставятся', () => {
-        expect(installStep('name: x\njobs:\n  one:\n    steps:\n      - run: echo hi\n')).toBeNull();
+    test('отдаёт -1 для отсутствующих шагов', () => {
+        expect(stepLines('name: x\n')).toEqual({ auth: -1, install: -1, unset: -1 });
     });
 });
