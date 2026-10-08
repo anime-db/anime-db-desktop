@@ -32,6 +32,7 @@ use App\Service\Backup\BackupListService;
 use App\Service\Import\ImportedPluginsService;
 use App\Service\Import\StagedImportService;
 use App\Service\Import\V1\V1ImportReportStore;
+use App\Service\Import\V1\V1ImportResult;
 use App\Service\Market\PluginRegistryCache;
 use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\PluginsConfigStore;
@@ -241,13 +242,19 @@ final class BackupControllerTest extends TestCase
     {
         file_put_contents($this->importV1ReportPath, (string) json_encode(['animeCreated' => 3]));
 
+        $translator = new \Symfony\Component\Translation\Translator('en');
+        $translator->addLoader('array', new \Symfony\Component\Translation\Loader\ArrayLoader());
+        $translator->addResource('array', ['import_v1.report_created' => 'created %count%'], 'en');
+        $expected = (new V1ImportResult(animeCreated: 3))->render($translator);
+        self::assertSame('created 3', $expected[0]);
+
         $twig = $this->createMock(Environment::class);
         $twig->expects($this->once())
             ->method('render')
-            ->with('settings/backup/index.html.twig', $this->callback(fn (array $params): bool => \count($params['importV1Report']) >= 1))
+            ->with('settings/backup/index.html.twig', $this->callback(fn (array $params): bool => $params['importV1Report'] === $expected))
             ->willReturn('<html></html>');
 
-        $this->createController(twig: $twig)->index();
+        $this->createController(twig: $twig, translator: $translator)->index();
 
         self::assertFileExists($this->importV1ReportPath);
     }
@@ -332,6 +339,7 @@ final class BackupControllerTest extends TestCase
         ?Environment $twig = null,
         ?CsrfTokenManagerInterface $csrfTokenManager = null,
         ?UrlGeneratorInterface $urlGenerator = null,
+        ?\Symfony\Component\Translation\Translator $translator = null,
     ): BackupController {
         if ($csrfTokenManager === null) {
             $csrfTokenManager = $this->createStub(CsrfTokenManagerInterface::class);
@@ -350,7 +358,7 @@ final class BackupControllerTest extends TestCase
             new BackupListService($this->backupsDir),
             $importedPluginsService,
             new V1ImportReportStore($this->importV1ReportPath, new NullLogger()),
-            new \Symfony\Component\Translation\Translator('en'),
+            $translator ?? new \Symfony\Component\Translation\Translator('en'),
             $csrfTokenManager,
             $urlGenerator ?? $this->createStub(UrlGeneratorInterface::class),
         );

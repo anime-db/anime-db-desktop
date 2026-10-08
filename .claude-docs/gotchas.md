@@ -457,4 +457,4 @@ IIFE, как было до #734), в бандле исполняется вез�
 - Блок живёт на `/settings/backup`, закрывается POST-ом `settings_backup_import_v1_report_dismiss`; негодный файл
   удаляется тем же GET, что перестал его показывать.
 - Не переиспользует `ImportedPluginsService`/`import-applied.json`: у импорта v1 нет нативного apply-шага.
-- `native/backup-restore` удаляет файл вместе с `import-applied.json` при успешном восстановлении (отдельный try/catch).
+- Каталог целиком заменяют два нативных пути — `native/backup-restore` (восстановление из бэкапа) и `native/supervisor/import-apply.js#apply()` (staged-импорт архива); оба удаляют файл при успехе (отдельный try/catch, сбой не превращает успех в ошибку). На откате файл не трогается.
