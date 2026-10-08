@@ -494,3 +494,14 @@ composer install                                                      # рабо
 Правило: composer-авторизацию в workflow не добавлять, пока не появится приватная зависимость и
 непустой секрет; возврат любой из форм (`composer config`, `COMPOSER_AUTH`, запись `auth.json`)
 валит `tests/scripts/workflow-composer-auth.test.js`.
+
+## Отчёт об импорте v1 (`import-v1-report.json`)
+
+- Файл `userData/import-v1-report.json` пишет сама команда `app:catalog:import-v1` (`V1ImportReportStore::save()`,
+  атомарно, сбой записи только логируется). Читает `V1ImportReportStore::load()` как недоверенный вход:
+  размер файла, типы полей и длины списков/строк ограничены, всё лишнее молча обнуляется; отчёт без созданных
+  записей читается как «отчёта нет».
+- Блок живёт на `/settings/backup`, закрывается POST-ом `settings_backup_import_v1_report_dismiss`; негодный файл
+  удаляется тем же GET, что перестал его показывать.
+- Не переиспользует `ImportedPluginsService`/`import-applied.json`: у импорта v1 нет нативного apply-шага.
+- Каталог целиком заменяют два нативных пути — `native/backup-restore` (восстановление из бэкапа) и `native/supervisor/import-apply.js#apply()` (staged-импорт архива); оба удаляют файл при успехе (отдельный try/catch, сбой не превращает успех в ошибку). На откате файл не трогается.

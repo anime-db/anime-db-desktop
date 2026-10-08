@@ -349,6 +349,9 @@ settings_backup:
     import_plugins_heading: Плагины импортированного архива
     import_plugins_description: Эти плагины использовались на исходной машине. Установка не выполняется автоматически — при необходимости установите их вручную через Маркет.
     import_plugins_dismiss_button: Скрыть
+    import_v1_report_heading: Отчёт об импорте из AnimeDB v1
+    import_v1_report_description: Что импорт перенёс и что не смог. Оставьте отчёт, пока не проверите записи; после закрытия вернуть его нельзя.
+    import_v1_report_dismiss_button: Скрыть
     import_plugin_status_installed: установлен
     import_plugin_status_available_in_market: есть в Маркете
     import_plugin_status_manual_install: ставится вручную

@@ -349,6 +349,9 @@ settings_backup:
     import_plugins_heading: Plugins from the imported archive
     import_plugins_description: These plugins were used on the source machine. They are not installed automatically — install them manually from the Market if needed.
     import_plugins_dismiss_button: Dismiss
+    import_v1_report_heading: Report of the AnimeDB v1 import
+    import_v1_report_description: What the import brought over and what it could not. Keep it until you have checked the entries; dismissing it cannot be undone.
+    import_v1_report_dismiss_button: Dismiss
     import_plugin_status_installed: installed
     import_plugin_status_available_in_market: available in the Market
     import_plugin_status_manual_install: install manually
