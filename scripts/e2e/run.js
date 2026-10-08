@@ -31,6 +31,7 @@ const { spawnSync } = require('child_process');
 const fs   = require('fs');
 const path = require('path');
 
+const { snapshotGuardedPaths, findLeakedPaths } = require('../leak-guard');
 const { checkPrerequisites, relaunchUnderXvfb, playwrightBinary, exitCodeOf, rootDir } = require('./prereq');
 
 checkPrerequisites();
@@ -38,11 +39,24 @@ checkPrerequisites();
 if (!relaunchUnderXvfb()) {
     fs.rmSync(path.join(rootDir, 'e2e-results'), { recursive: true, force: true });
 
+    const guardedBefore = snapshotGuardedPaths();
+
     const result = spawnSync(
         playwrightBinary(),
         ['test', '-c', path.join(__dirname, 'playwright.config.js'), ...process.argv.slice(2)],
         { cwd: rootDir, stdio: 'inherit' },
     );
 
-    process.exit(exitCodeOf(result));
+    let exitCode = exitCodeOf(result);
+
+    const leaked = findLeakedPaths(guardedBefore);
+    if (leaked.length > 0) {
+        console.error(
+            `[e2e] isolation leaked: the run created or changed ${leaked.join(', ')} — `
+            + 'the environment did not reach the server or the scenarios.',
+        );
+        exitCode = 1;
+    }
+
+    process.exit(exitCode);
 }

@@ -45,6 +45,7 @@ use App\Service\Plugin\PluginRemover;
 use App\Service\Plugin\PluginSyntaxError;
 use App\Service\Plugin\SettingsPageRegistry;
 use App\Service\Plugin\SyncRegistry;
+use App\Service\Plugin\SyncSeedDispatcher;
 use App\Service\Plugin\ZipPluginInstaller;
 use App\Service\Translation\TranslationCoverageService;
 use App\Service\WsPublisher;
@@ -110,6 +111,7 @@ final class PluginController
         private readonly Environment $twig,
         private readonly MarketUpdateResolver $updateResolver,
         private readonly SyncRegistry $syncRegistry,
+        private readonly SyncSeedDispatcher $syncSeedDispatcher,
         private readonly LoggerInterface $logger = new NullLogger(),
     ) {
     }
@@ -135,8 +137,10 @@ final class PluginController
      * Switches `features.sync` of a single plugin (the only writer of that flag). Offered only for
      * an enabled plugin implementing {@see \AnimeDb\PluginContracts\Sync\SyncInterface}: the
      * plugin's settings page ({@see SettingsPageRegistry}) exists only while it is enabled, and
-     * turning sync on lands there for the connect-seed and authorization. Turning it off touches
-     * nothing but the flag, so `syncSeeded` and all synced data stay.
+     * turning sync on lands there for the connect-seed and authorization. A plugin without a
+     * settings page (the page is optional) stays on the plugins list and gets its connect-seed
+     * queued here through {@see SyncSeedDispatcher} instead. Turning sync off touches nothing but
+     * the flag, so `syncSeeded` and all synced data stay.
      */
     #[Route('/settings/plugins/{pluginId}/sync', name: 'settings_plugins_sync_toggle', methods: ['POST'])]
     public function toggleSync(string $pluginId, Request $request): RedirectResponse
@@ -162,9 +166,17 @@ final class PluginController
             return new RedirectResponse($this->urlGenerator->generate('settings_plugins_index', ['error' => 'busy_retry']));
         }
 
-        return new RedirectResponse($active
-            ? $this->urlGenerator->generate('settings_plugin_page', ['pluginId' => (string) $id])
-            : $this->urlGenerator->generate('settings_plugins_index'));
+        if (!$active) {
+            return new RedirectResponse($this->urlGenerator->generate('settings_plugins_index'));
+        }
+
+        if ($this->settingsPages->find($id) !== null) {
+            return new RedirectResponse($this->urlGenerator->generate('settings_plugin_page', ['pluginId' => (string) $id]));
+        }
+
+        $this->syncSeedDispatcher->dispatchIfNotSeeded($id);
+
+        return new RedirectResponse($this->urlGenerator->generate('settings_plugins_index'));
     }
 
     /**

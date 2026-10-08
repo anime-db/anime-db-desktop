@@ -25,7 +25,7 @@ const { execFileSync } = require('child_process');
 const fs   = require('fs');
 const path = require('path');
 
-const { buildFixture, createIsolatedEnv, disposeFixture } = require('../../scripts/fixture');
+const { buildFixture, createIsolatedEnv, disposeFixture, envForDir } = require('../../scripts/fixture');
 
 const rootDir = path.resolve(__dirname, '..', '..');
 const hasApp  = fs.existsSync(path.join(rootDir, 'app', 'vendor', 'autoload.php'));
@@ -164,5 +164,20 @@ describeWithApp('fixture', () => {
         }
 
         expect(paths.map(state)).toEqual(before);
+    });
+
+    test('the cache.app pool (share dir) lives inside the environment directory, not the project', () => {
+        const dir = path.join(require('os').tmpdir(), 'animedb-share-probe');
+        const env = envForDir(dir);
+        expect(env.APP_SHARE_DIR.startsWith(dir + path.sep)).toBe(true);
+
+        const out = execFileSync('php', [path.join(rootDir, 'app', 'bin', 'console'), 'about', '--no-interaction'], {
+            cwd: path.join(rootDir, 'app'),
+            env: { ...process.env, ...env, APP_ENV: 'prod', APP_RUNTIME_DIR: path.join(dir, 'var') },
+            encoding: 'utf8',
+        });
+        const share = out.split('\n').find((l) => l.includes('Share directory'));
+        expect(share).toContain(env.APP_SHARE_DIR);
+        expect(share).not.toContain(path.join(rootDir, 'app', 'var'));
     });
 });

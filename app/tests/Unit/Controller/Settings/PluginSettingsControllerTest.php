@@ -39,6 +39,7 @@ use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Plugin\PluginUiAssetsResolver;
 use App\Service\Plugin\SettingsPageRegistry;
 use App\Service\Plugin\SyncRegistry;
+use App\Service\Plugin\SyncSeedDispatcher;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
@@ -101,8 +102,11 @@ final class PluginSettingsControllerTest extends TestCase
             $this->installedPlugins,
             $settingsPages,
             $syncRegistry ?? new SyncRegistry([], new PluginsConfigStore($this->pluginsDir.'/plugins.json')),
-            $pluginsConfigStore ?? new PluginsConfigStore($this->pluginsDir.'/plugins.json'),
-            $messageBus ?? $this->createStub(MessageBusInterface::class),
+            new SyncSeedDispatcher(
+                $pluginsConfigStore ?? new PluginsConfigStore($this->pluginsDir.'/plugins.json'),
+                $messageBus ?? $this->createStub(MessageBusInterface::class),
+                $logger ?? $this->createStub(LoggerInterface::class),
+            ),
             $urlGenerator ?? $this->createStub(UrlGeneratorInterface::class),
             $twig ?? $this->createStub(Environment::class),
             $logger ?? $this->createStub(LoggerInterface::class),
