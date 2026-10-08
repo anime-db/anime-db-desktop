@@ -875,6 +875,14 @@ SIGUSR2) `capture.js` кладёт рядом со снимками `<тема>/
 - **Жанры**: нормализованное имя сверяется с `GenreCode`/`ThemeCode`/`Demographic`, плюс список
   исключений; 18+ ось (`Ecchi`, `Erotica`, `Hentai`, `Yuri`, `Yaoi`) дропается намеренно и считается
   отдельно от «без аналога».
+- **Обложки (issue #952)**: фаза между flush и commit. Файл `web/media/<item.cover>` читается
+  целиком, проходит `ImageNormalizer::normalize()` и кладётся `AnimeCoverStorage::store()`; исходные
+  jpg/png в v2 не попадают. Нет файла, нет `web/media/`, пустой/битый файл, `normalize() === null`,
+  путь с `..` или абсолютный — не ошибка, а счётчик `coversMissing` в `V1ImportResult` (строка отчёта
+  про потери данных). Исключение из `store()` или любое последующее откатывает транзакцию, а сервис
+  перед повторным броском удаляет `media/{id}/` всех записей, для которых звался `store()`
+  (`AnimeCoverStorage::discardDirectory()`). Снятие процесса `SIGKILL`/`taskkill /F` мусор оставляет —
+  принято осознанно. `date_update` поднимается `PreUpdate` у всех записей с обложкой — допустимо.
 - **Допущение о схеме v1**: имена колонок (`item.storage`, `item.studio`, `name.item_id`,
   `items_genres.genre_id` и т. д.) восстановлены по описанию задачи и проверены только на
   синтетической базе `tests/Support/V1DatabaseBuilder.php`; на живой базе v1 не прогонялись.

@@ -37,6 +37,8 @@ use App\Repository\SyncTombstoneRepository;
 use App\Service\Import\V1\V1AnimeResolver;
 use App\Service\Import\V1\V1CatalogReader;
 use App\Service\Import\V1\V1ImportService;
+use App\Service\Media\AnimeCoverStorage;
+use App\Service\Media\ImageNormalizer;
 use App\Service\Sync\SyncReviewService;
 use App\Service\WsPublisher;
 use App\Tests\Support\CreatesInMemoryEntityManager;
@@ -72,6 +74,8 @@ final class ImportV1CommandTest extends TestCase
             new SyncReviewService(new SyncReviewItemRepository($entityManager)),
             $this->createStub(WsPublisher::class),
             $translator,
+            new ImageNormalizer(),
+            new AnimeCoverStorage(new ImageNormalizer(), $this->createTemporaryDirectory('media-')),
         );
         $this->tester = new CommandTester(new ImportV1Command($service, $translator));
     }

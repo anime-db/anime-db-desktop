@@ -37,6 +37,8 @@ use App\Repository\AnimeRepository;
 use App\Repository\SyncReviewItemRepository;
 use App\Repository\SyncTombstoneRepository;
 use App\Service\Import\Exception\InvalidV1InstallationException;
+use App\Service\Media\AnimeCoverStorage;
+use App\Service\Media\ImageNormalizer;
 use App\Service\Sync\SyncReviewService;
 use App\Service\WsPublisher;
 use Doctrine\ORM\EntityManagerInterface;
@@ -47,9 +49,10 @@ use Symfony\Contracts\Translation\TranslatorInterface;
  * transformation through the ORM, never a swap of the database file.
  *
  * The whole insert is one transaction, so any failure leaves the catalog empty rather than half
- * imported. The frame is persist → flush → (covers, a later issue) → commit; covers are files
- * and need the ids of persisted rows, so the frame is fixed here, not left for that issue to
- * rewrite.
+ * imported. The frame is persist → flush → covers → commit; covers are files and need the ids of
+ * persisted rows. A file is outside the transaction, so when anything fails after the first cover
+ * was stored, the `media/{id}/` directories of this run are removed before the error goes on.
+ * A killed process cannot clean up, and the leftovers of that case are accepted.
  *
  * Search indexes are left to fill themselves: the full-text triggers run in the same transaction,
  * and the Meilisearch listener queues its own message per created anime. Forcing indexing here
@@ -69,6 +72,8 @@ final class V1ImportService
         private readonly SyncReviewService $reviewService,
         private readonly WsPublisher $wsPublisher,
         private readonly TranslatorInterface $translator,
+        private readonly ImageNormalizer $imageNormalizer,
+        private readonly AnimeCoverStorage $coverStorage,
     ) {
     }
 
@@ -84,11 +89,25 @@ final class V1ImportService
 
         $this->resolver->reset();
 
-        return $this->entityManager->wrapInTransaction(fn (): V1ImportResult => $this->insert($records));
+        $storedFor = [];
+        try {
+            return $this->entityManager->wrapInTransaction(function () use ($records, $installationDir, &$storedFor): V1ImportResult {
+                return $this->insert($records, rtrim($installationDir, '/\\'), $storedFor);
+            });
+        } catch (\Throwable $e) {
+            foreach ($storedFor as $animeId) {
+                $this->coverStorage->discardDirectory($animeId);
+            }
+
+            throw $e;
+        }
     }
 
-    /** @param list<V1AnimeRecord> $records */
-    private function insert(array $records): V1ImportResult
+    /**
+     * @param list<V1AnimeRecord> $records
+     * @param list<int>           $storedFor ids of the entries whose cover directory this run may have created
+     */
+    private function insert(array $records, string $installationDir, array &$storedFor): V1ImportResult
     {
         // Both tables outlive an emptied catalog and hold nothing the import could merge with.
         // Cleared before the records go in, so the review items raised below are not swept away.
@@ -115,6 +134,8 @@ final class V1ImportService
         }
 
         $this->entityManager->flush();
+
+        [$coversImported, $coversMissing] = $this->importCovers($created, $installationDir, $storedFor);
 
         $needsAttention = 0;
         $downgraded = 0;
@@ -147,11 +168,67 @@ final class V1ImportService
             }
         }
 
-        return $this->buildResult($created, $needsAttention, $downgraded);
+        return $this->buildResult($created, $needsAttention, $downgraded, $coversImported, $coversMissing);
+    }
+
+    /**
+     * A cover that is absent, unreadable or not a picture is a count in the report, not an error.
+     *
+     * @param list<array{0: Anime, 1: V1AnimeRecord}> $created
+     * @param list<int>                               $storedFor
+     *
+     * @return array{0: int, 1: int} imported, missing
+     */
+    private function importCovers(array $created, string $installationDir, array &$storedFor): array
+    {
+        $mediaDir = V1CatalogReader::mediaDir($installationDir);
+        $imported = $missing = 0;
+
+        foreach ($created as [$anime, $record]) {
+            $webp = $mediaDir !== null && $record->cover !== null ? $this->normalizeCover($mediaDir, $record->cover) : null;
+            if ($webp === null || $anime->id === null) {
+                ++$missing;
+
+                continue;
+            }
+
+            $storedFor[] = $anime->id;
+            $anime->setCover($this->coverStorage->store($anime, $webp));
+            ++$imported;
+        }
+
+        if ($imported > 0) {
+            $this->entityManager->flush();
+        }
+
+        return [$imported, $missing];
+    }
+
+    private function normalizeCover(string $mediaDir, string $cover): ?string
+    {
+        // The value is a relative path inside web/media/; anything that climbs out of it is not a cover.
+        if ($cover === '' || str_contains($cover, "\0") || preg_match('~(^|[/\\\\])\.\.([/\\\\]|$)|^[/\\\\]|^[A-Za-z]:~', $cover) === 1) {
+            return null;
+        }
+
+        $path = $mediaDir.'/'.$cover;
+        if (!is_file($path)) {
+            return null;
+        }
+        $size = @filesize($path);
+        if ($size === false || $size === 0 || $size > AnimeCoverStorage::MAX_BYTES) {
+            return null;
+        }
+        $bytes = @file_get_contents($path);
+        if ($bytes === false || $bytes === '' || !AnimeCoverStorage::isAllowedImage($bytes)) {
+            return null;
+        }
+
+        return $this->imageNormalizer->normalize($bytes);
     }
 
     /** @param list<array{0: Anime, 1: V1AnimeRecord}> $created */
-    private function buildResult(array $created, int $needsAttention, int $downgraded): V1ImportResult
+    private function buildResult(array $created, int $needsAttention, int $downgraded, int $coversImported, int $coversMissing): V1ImportResult
     {
         $fromLabel = $byDefault = $ja = $ru = $none = $sources = $descriptions = 0;
         $mapped = $dropped = $unmapped = $endDates = $durations = 0;
@@ -213,6 +290,8 @@ final class V1ImportService
             genresDroppedByDesign: $dropped,
             genresUnmapped: $unmapped,
             unmappedGenreNames: array_map('strval', array_keys($unmappedNames)),
+            coversImported: $coversImported,
+            coversMissing: $coversMissing,
             storagesCreated: $this->resolver->storagesCreated(),
             storagesUnavailable: $this->resolver->storagesUnavailable(),
             skippedStorageNames: $this->resolver->storagesSkipped(),
