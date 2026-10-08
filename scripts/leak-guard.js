@@ -17,12 +17,14 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
 
 'use strict';
 
 /*
- * Detects a run that leaked out of its isolated environment: snapshots the mtime of developer
- * paths before the run and reports those that appeared or changed after it.
+ * Detects a run that leaked out of its isolated environment: snapshots developer paths (recursively,
+ * so nested writes into an already existing directory are seen) before the run and reports those
+ * that appeared or changed after it.
  */
 
 const fs   = require('fs');
@@ -41,22 +43,40 @@ const LEAK_GUARDED_PATHS = [
 ];
 
 /**
- * @param {string[]} [guarded]
- * @returns {Map<string, number|null>} mtime of every guarded path, null when it does not exist
+ * @param {string} p
+ * @returns {string|null} signature of the path tree (mtime and size of every entry), null when absent
  */
-function snapshotGuardedPaths(guarded = LEAK_GUARDED_PATHS) {
-    return new Map(guarded.map((p) => [p, fs.existsSync(p) ? fs.statSync(p).mtimeMs : null]));
+function signature(p) {
+    if (!fs.existsSync(p)) {
+        return null;
+    }
+    const entries = [];
+    const walk = (cur) => {
+        const st = fs.lstatSync(cur);
+        entries.push(`${path.relative(p, cur)}:${st.mtimeMs}:${st.size}`);
+        if (st.isDirectory()) {
+            fs.readdirSync(cur).sort().forEach((name) => walk(path.join(cur, name)));
+        }
+    };
+    walk(p);
+
+    return entries.join('\n');
 }
 
 /**
- * @param {Map<string, number|null>} before
- * @returns {string[]} guarded paths that appeared (or changed) since the snapshot
+ * @param {string[]} [guarded]
+ * @returns {Map<string, string|null>} signature of every guarded path, null when it does not exist
+ */
+function snapshotGuardedPaths(guarded = LEAK_GUARDED_PATHS) {
+    return new Map(guarded.map((p) => [p, signature(p)]));
+}
+
+/**
+ * @param {Map<string, string|null>} before
+ * @returns {string[]} guarded paths that appeared (or changed, at any depth) since the snapshot
  */
 function findLeakedPaths(before) {
-    return [...before.keys()].filter((p) => {
-        const now = fs.existsSync(p) ? fs.statSync(p).mtimeMs : null;
-        return now !== before.get(p);
-    });
+    return [...before.keys()].filter((p) => signature(p) !== before.get(p));
 }
 
 module.exports = { LEAK_GUARDED_PATHS, snapshotGuardedPaths, findLeakedPaths };
