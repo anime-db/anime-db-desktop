@@ -392,7 +392,7 @@ final class QbittorrentDownloadServiceTest extends TestCase
     public function testEnqueueToRejectsANonWritableStorageWithoutTouchingQbittorrentOrWritingARow(): void
     {
         $anime = $this->persistAnime();
-        $storage = $this->makeStorage(StorageType::Video);
+        $storage = $this->makeStorage(StorageType::ExternalR);
 
         // makeService(null) throws on any HTTP request — the rejection must happen before any
         // network call.
@@ -406,7 +406,7 @@ final class QbittorrentDownloadServiceTest extends TestCase
             );
             $this->fail('Expected DownloadStorageNotWritableException to be thrown.');
         } catch (DownloadStorageNotWritableException $e) {
-            $this->assertSame(StorageType::Video, $e->type);
+            $this->assertSame(StorageType::ExternalR, $e->type);
         }
 
         $this->assertSame([], $this->downloads->findByInfoHash(self::MAGNET_HASH));

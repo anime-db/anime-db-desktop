@@ -181,7 +181,7 @@ class QbittorrentDownloadService implements DownloadServiceInterface
      */
     private function assertStorageAvailable(Storage $storage): void
     {
-        $path = $storage->getPath();
+        $path = $storage->requirePath();
         $storageId = $storage->id ?? throw new \LogicException('Storage must be persisted before a download can target it.');
 
         if (!$this->storageFilesystem->pathExists($path) || $this->markerService->readMarkerId($path) !== $storageId) {
@@ -226,7 +226,7 @@ class QbittorrentDownloadService implements DownloadServiceInterface
 
     private function submitToQbittorrent(DownloadSource $source, Storage $storage, string $infoHash, ?string $torrentFileContent): void
     {
-        $storageRoot = $storage->getPath();
+        $storageRoot = $storage->requirePath();
         $savePath = $this->jail->resolveIncomingSavePathForInfoHash($storageRoot, $infoHash);
 
         // A .torrent file's size is known up front — reject it here, before it is ever added to

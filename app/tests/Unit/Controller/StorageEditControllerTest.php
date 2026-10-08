@@ -217,7 +217,7 @@ final class StorageEditControllerTest extends TestCase
         $storage = new Storage('Main folder', $missingPath, StorageType::Folder);
         $this->setStorageId($storage, 9);
 
-        $this->assertFalse(is_readable($storage->getPath()));
+        $this->assertFalse(is_readable($storage->requirePath()));
 
         $entityManager = $this->createMock(EntityManagerInterface::class);
         $entityManager->expects($this->once())->method('flush');
@@ -268,6 +268,109 @@ final class StorageEditControllerTest extends TestCase
         $this->assertInstanceOf(RedirectResponse::class, $response);
         $this->assertSame($newDir, $storage->getPath());
         $this->assertFileDoesNotExist($oldMarker);
+    }
+
+    public function testUpdateFolderToPathlessTypeClearsPathAndForgetsMarker(): void
+    {
+        foreach (['external-r', 'video'] as $type) {
+            $dir = $this->makeDir();
+            $storage = new Storage('Main', $dir, StorageType::Folder);
+            $this->setStorageId($storage, 20);
+
+            $markerEntityManager = $this->createStub(EntityManagerInterface::class);
+            $markerEntityManager->method('find')->willReturn(null);
+            $markerService = new StorageMarkerService($markerEntityManager);
+            $markerService->reconcile($storage);
+            $marker = $dir.\DIRECTORY_SEPARATOR.'desktop.ini';
+            $this->assertFileExists($marker);
+
+            $entityManager = $this->createMock(EntityManagerInterface::class);
+            $entityManager->expects($this->once())->method('flush');
+
+            $controller = $this->createController(entityManager: $entityManager, markerService: $markerService);
+            $response = $controller->update($storage, Request::create('/storage/20/edit', 'POST', [
+                'name' => 'Main',
+                'path' => '',
+                'type' => $type,
+                '_token' => 'token',
+            ]));
+
+            $this->assertInstanceOf(RedirectResponse::class, $response);
+            $this->assertNull($storage->getPath());
+            $this->assertSame(StorageType::from($type), $storage->getType());
+            $this->assertFileDoesNotExist($marker);
+        }
+    }
+
+    public function testUpdatePathlessTypeToFolderWritesPathAndReconciles(): void
+    {
+        $dir = $this->makeDir();
+        $storage = new Storage('Disc', null, StorageType::Video);
+        $this->setStorageId($storage, 21);
+
+        $entityManager = $this->createMock(EntityManagerInterface::class);
+        $entityManager->expects($this->once())->method('flush');
+
+        $controller = $this->createController(entityManager: $entityManager);
+        $response = $controller->update($storage, Request::create('/storage/21/edit', 'POST', [
+            'name' => 'Disc',
+            'path' => $dir,
+            'type' => 'folder',
+            '_token' => 'token',
+        ]));
+
+        $this->assertInstanceOf(RedirectResponse::class, $response);
+        $this->assertSame($dir, $storage->getPath());
+        $this->assertFileExists($dir.\DIRECTORY_SEPARATOR.'desktop.ini');
+    }
+
+    public function testUpdateRenamingPathlessStorageIsNotAPathChange(): void
+    {
+        $storage = new Storage('Disc', null, StorageType::Video);
+        $this->setStorageId($storage, 22);
+
+        $settings = $this->createSettings();
+        $settings->setPresetDownloadsStorageId(22);
+
+        $downloads = $this->createMock(DownloadRepository::class);
+        $downloads->expects($this->never())->method('hasUnfinishedDownloadsForTargetStorage');
+
+        $entityManager = $this->createMock(EntityManagerInterface::class);
+        $entityManager->expects($this->once())->method('flush');
+
+        $controller = $this->createController(entityManager: $entityManager, downloads: $downloads, settings: $settings);
+        $response = $controller->update($storage, Request::create('/storage/22/edit', 'POST', [
+            'name' => 'Renamed',
+            'path' => '',
+            'type' => 'video',
+            '_token' => 'token',
+        ]));
+
+        $this->assertInstanceOf(RedirectResponse::class, $response);
+        $this->assertSame('Renamed', $storage->getName());
+        $this->assertNull($storage->getPath());
+    }
+
+    public function testUpdateFolderWithEmptyPathIsRejected(): void
+    {
+        $storage = new Storage('Main', sys_get_temp_dir(), StorageType::Folder);
+        $this->setStorageId($storage, 23);
+
+        $entityManager = $this->createMock(EntityManagerInterface::class);
+        $entityManager->expects($this->never())->method('flush');
+
+        $twig = $this->createStub(Environment::class);
+        $twig->method('render')->willReturn('form');
+
+        $controller = $this->createController(entityManager: $entityManager, twig: $twig);
+        $response = $controller->update($storage, Request::create('/storage/23/edit', 'POST', [
+            'name' => 'Main',
+            'path' => '',
+            'type' => 'folder',
+            '_token' => 'token',
+        ]));
+
+        $this->assertNotInstanceOf(RedirectResponse::class, $response);
     }
 
     public function testUpdateWithInvalidPathDoesNotFlushAndReRendersFormWithError(): void

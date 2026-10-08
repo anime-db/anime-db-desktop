@@ -89,7 +89,7 @@ final class ScanStorageService
      */
     public function scan(Storage $storage, ?callable $onProgress = null, ?string $atPath = null): ScanResult
     {
-        if (!$storage->getType()->isWritable()) {
+        if (!$storage->getType()->isWritable() || $storage->getPath() === null) {
             return ScanResult::items([]);
         }
 
@@ -101,7 +101,7 @@ final class ScanStorageService
             return ScanResult::conflict();
         }
 
-        $path = $storage->getPath();
+        $path = $storage->requirePath();
 
         /** @var array<string, Anime> $remainingLinked Anime::$storagePath => Anime, shrinks as files are matched */
         $remainingLinked = [];

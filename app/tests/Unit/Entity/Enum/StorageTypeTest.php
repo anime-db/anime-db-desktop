@@ -47,4 +47,33 @@ final class StorageTypeTest extends TestCase
     {
         $this->assertSame($expected, $type->isWritable());
     }
+
+    /** @return iterable<string, array{StorageType, bool}> */
+    public static function readability(): iterable
+    {
+        yield 'folder' => [StorageType::Folder, true];
+        yield 'external' => [StorageType::External, true];
+        yield 'external-r' => [StorageType::ExternalR, true];
+        yield 'video' => [StorageType::Video, false];
+    }
+
+    #[DataProvider('readability')]
+    public function testIsReadable(StorageType $type, bool $expected): void
+    {
+        $this->assertSame($expected, $type->isReadable());
+    }
+
+    public function testReadabilityIsNotTheInverseOfWritability(): void
+    {
+        $this->assertFalse(StorageType::ExternalR->isWritable());
+        $this->assertTrue(StorageType::ExternalR->isReadable());
+        $this->assertFalse(StorageType::Video->isWritable());
+        $this->assertFalse(StorageType::Video->isReadable());
+    }
+
+    #[DataProvider('types')]
+    public function testPathIsRequiredExactlyForWritableTypes(StorageType $type, bool $writable): void
+    {
+        $this->assertSame($writable, $type->isPathRequired());
+    }
 }

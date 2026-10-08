@@ -133,7 +133,7 @@ class DownloadOrphanAdopter
         foreach ($this->storages->findAllScannable() as $storage) {
             $storageId = $storage->id ?? throw new \LogicException('Storage must be persisted.');
             $storagesById[$storageId] = $storage;
-            $candidates[] = ['id' => $storageId, 'root' => $storage->getPath()];
+            $candidates[] = ['id' => $storageId, 'root' => $storage->requirePath()];
         }
 
         $candidate = $this->classifier->selectStorage($contentPath, $candidates);
@@ -156,7 +156,7 @@ class DownloadOrphanAdopter
      */
     public function assertFolderAvailable(Anime $anime, Storage $storage, DownloadAdoptionPlan $plan): void
     {
-        $folderPath = rtrim($storage->getPath(), '\\/').'\\'.$plan->name;
+        $folderPath = rtrim($storage->requirePath(), '\\/').'\\'.$plan->name;
 
         $owner = $this->animes->findByStorageAndPath($storage, $plan->name);
         if ($owner !== null && $owner->id !== $anime->id) {
@@ -166,7 +166,7 @@ class DownloadOrphanAdopter
         $ownStorage = $anime->getStorage();
         $ownPath = $anime->getStoragePath();
         if ($ownStorage !== null && $ownPath !== null && ($ownStorage->id !== $storage->id || $ownPath !== $plan->name)) {
-            throw new DownloadAdoptionRefusedException('download_adopt.error_anime_has_folder', ['%path%' => rtrim($ownStorage->getPath(), '\\/').'\\'.$ownPath]);
+            throw new DownloadAdoptionRefusedException('download_adopt.error_anime_has_folder', ['%path%' => rtrim($ownStorage->requirePath(), '\\/').'\\'.$ownPath]);
         }
 
         if ($plan->branch === DownloadAdoptionBranch::Incoming && $this->storageFilesystem->pathExists($folderPath)) {

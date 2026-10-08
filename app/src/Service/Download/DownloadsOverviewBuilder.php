@@ -309,7 +309,7 @@ final class DownloadsOverviewBuilder
         }
 
         try {
-            $this->folderJail->assertWithinRoot($targetStorage->getPath(), $path);
+            $this->folderJail->assertWithinRoot($targetStorage->requirePath(), $path);
         } catch (DownloadPathOutsideJailException) {
             return true;
         }
@@ -320,7 +320,7 @@ final class DownloadsOverviewBuilder
     /** @param array<string, ?int> $markerIdCache */
     private function readMarkerIdCached(Storage $targetStorage, array &$markerIdCache): ?int
     {
-        $path = $targetStorage->getPath();
+        $path = $targetStorage->requirePath();
         if (!\array_key_exists($path, $markerIdCache)) {
             $markerIdCache[$path] = $this->storageMarker->readMarkerId($path);
         }
