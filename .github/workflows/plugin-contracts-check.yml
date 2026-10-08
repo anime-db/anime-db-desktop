@@ -92,22 +92,11 @@ jobs:
           extensions: apcu, gd, intl
           ini-values: apc.enable_cli=1
 
-      # Токен ставится перед установкой и снимается сразу после неё: дальше джоба исполняет код, и
-      # секрету на диске там делать нечего (issue #971). Через `env` шага установки его передать
-      # нельзя — почему, см. .claude-docs/gotchas.md §«COMPOSER_AUTH на шаге ramsey/composer-install».
-      - name: Configure Composer auth
-        if: steps.bump.outputs.changed == 'true'
-        run: composer config --global github-oauth.github.com ${{ secrets.COMPOSER_GITHUB_TOKEN }}
-
       - name: Install dependencies
         if: steps.bump.outputs.changed == 'true'
         uses: ramsey/composer-install@v4
         with:
           working-directory: app
-
-      - name: Drop the Composer token from disk
-        if: steps.bump.outputs.changed == 'true'
-        run: composer config --global --unset github-oauth.github.com
 
       # Коды выхода команды: 0 — отставших нет; 1 — есть отставшие; 2 — проверить не удалось
       # (реестр не скачался, подпись не сошлась, версия контрактов нестабильная, данные реестра

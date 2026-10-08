@@ -471,19 +471,26 @@ IIFE, как было до #734), в бандле исполняется вез�
 эндпоинты отвечают по-разному (303 у `/settings/pagination-mode`, 302 у переключателя синка). Те же грабли уже были с переключателем синка плагина, поэтому хелпер
 один на оба места, а его поведение закреплено тестами в `tests/scripts/e2e-framework.test.js`.
 
-## `COMPOSER_AUTH` в `env` шага `ramsey/composer-install` не доходит до composer
+## Пустой `COMPOSER_GITHUB_TOKEN` ломает `composer install` сильнее, чем его отсутствие
 
-`ramsey/composer-install` — composite-action, и `env`, выставленный на шаге, который его вызывает,
-до самого `composer install` не добирается. Выглядит это как «токен передан», а по факту установка
-идёт анонимно.
+Секрета `COMPOSER_GITHUB_TOKEN` у репозитория **нет** — в логе CI шаг
+`composer config --global github-oauth.github.com` печатался без значения (маски `***` нет,
+подставлять нечего), а приватных composer-зависимостей у приложения и не было: `app/composer.json`
+не объявляет `repositories`, `anime-db/plugin-contracts` приезжает с Packagist. Шаг был мёртвым и
+удалён (issue #971); то же записано в решении о публикации репозитория.
 
-Отказ при этом **не наступает сразу**: при тёплом кэше composer (`actions/cache` внутри того же
-экшена) пакеты распаковываются из кэша и сеть не нужна вовсе. Поэтому ubuntu-джобы были зелёные, а
-упала только Windows-джоба с холодным кэшем — `Could not authenticate against github.com` в
-`AuthHelper.php` на шаге установки. Зелёный прогон здесь ничего не доказывает: он доказывает, что
-кэш был тёплый.
+Коварство не в мёртвом коде, а в попытке «починить» его передачей токена: пустая строка в
+`COMPOSER_AUTH` — это для composer **учётные данные**, он предъявляет их GitHub и получает отказ.
 
-Правильно — `composer config --global github-oauth.github.com <секрет>` перед установкой и
-`composer config --global --unset github-oauth.github.com` сразу после неё: окно, в котором токен
-лежит на диске, сжимается до одного шага, а не растягивается на всю джобу. Обе половины (и у каждого
-workflow, который ставит зависимости) закреплены тестом `tests/scripts/workflow-composer-auth.test.js`.
+```
+COMPOSER_AUTH='{"github-oauth":{"github.com":""}}' composer install   # Could not authenticate against github.com
+composer install                                                      # работает
+```
+
+Отказ при этом отложенный: при тёплом кэше composer сеть не нужна вовсе, поэтому ubuntu-джобы
+остаются зелёными. Так и вышло — зелёные ubuntu и красная Windows-джоба `runtime-parity`, у которой
+кэш был холодный. **Зелёный прогон здесь доказывает тёплый кэш, а не работающую авторизацию.**
+
+Правило: composer-авторизацию в workflow не добавлять, пока не появится приватная зависимость и
+непустой секрет; возврат любой из форм (`composer config`, `COMPOSER_AUTH`, запись `auth.json`)
+валит `tests/scripts/workflow-composer-auth.test.js`.
