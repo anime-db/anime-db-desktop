@@ -62,7 +62,8 @@
             "createDesktopShortcut": true,
             "createStartMenuShortcut": true,
             "runAfterFinish": true,
-            "include": "build/installer.nsh"
+            "include": "build/installer.nsh",
+            "license": "build/license.txt"
         },
         "files": [
             "native/**",
