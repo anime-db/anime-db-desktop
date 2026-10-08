@@ -11,6 +11,7 @@
         "prebuild": "node scripts/build.js",
         "build": "electron-builder --publish never",
         "download-bins": "node scripts/download-bins.js",
+        "download-e2e-runtime": "node scripts/download-e2e-runtime.js",
         "generate-php-ini": "node scripts/generate-php-ini.js",
         "check-runtime-parity": "node scripts/check-runtime-parity.js",
         "release-smoke": "node scripts/release-smoke.js",
