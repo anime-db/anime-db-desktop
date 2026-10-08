@@ -78,6 +78,17 @@ final class V1ImportResult
         return $this->namesJapanese + $this->namesRussian + $this->namesUnknownLocale;
     }
 
+    /**
+     * The whole report as plain data — the payload of the `import_v1.done` event, from which the
+     * onboarding screen renders the same lines as {@see render()} does for the console.
+     *
+     * @return array<string, int|list<string>>
+     */
+    public function toArray(): array
+    {
+        return get_object_vars($this);
+    }
+
     /** @return list<string> */
     public function render(TranslatorInterface $translator): array
     {

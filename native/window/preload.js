@@ -31,5 +31,7 @@ contextBridge.exposeInMainWorld('animeDb', {
     catalogExportStart:  (destinationDir) => ipcRenderer.invoke('catalog:export-start', destinationDir),
     catalogExportCancel: () => ipcRenderer.invoke('catalog:export-cancel'),
     catalogImportStart:  (archivePath) => ipcRenderer.invoke('catalog:import-start', archivePath),
+    importV1Start:       (installationDir) => ipcRenderer.invoke('import-v1:start', installationDir),
+    importV1Cancel:      () => ipcRenderer.invoke('import-v1:cancel'),
     backupRestoreStart:  (name) => ipcRenderer.invoke('backup:restore-start', name),
 });
