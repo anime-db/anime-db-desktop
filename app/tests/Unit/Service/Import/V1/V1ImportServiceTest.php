@@ -388,7 +388,10 @@ final class V1ImportServiceTest extends TestCase
         $builder->item(['name' => 'Not a picture', 'type' => 'feature', 'cover' => 'text.jpg']);
         $builder->item(['name' => 'Empty', 'type' => 'feature', 'cover' => 'empty.jpg']);
         $builder->item(['name' => 'No cover', 'type' => 'feature']);
-        $builder->item(['name' => 'Escapes', 'type' => 'feature', 'cover' => '../../app/Resources/anime.db']);
+        $builder->item(['name' => 'Escapes', 'type' => 'feature', 'cover' => '../../outside.jpg']);
+        $builder->item(['name' => 'Escapes absolute', 'type' => 'feature', 'cover' => $builder->root.'/outside.jpg']);
+        $builder->item(['name' => 'Escapes backslashes', 'type' => 'feature', 'cover' => '..\\..\\outside.jpg']);
+        file_put_contents($builder->root.'/outside.jpg', $this->jpeg());
         file_put_contents($builder->root.'/web/media/text.jpg', 'not an image');
         file_put_contents($builder->root.'/web/media/empty.jpg', '');
 
@@ -396,8 +399,26 @@ final class V1ImportServiceTest extends TestCase
         $this->entityManager->clear();
 
         $this->assertSame(0, $result->coversImported);
-        $this->assertSame(5, $result->coversMissing);
-        $this->assertSame(5, (new AnimeRepository($this->entityManager))->countAll());
+        $this->assertSame(7, $result->coversMissing);
+        $this->assertSame(7, (new AnimeRepository($this->entityManager))->countAll());
+        $this->assertSame([], glob($this->mediaDir.'/*') ?: []);
+    }
+
+    public function testOversizedAndUnsupportedCoversAreSkipped(): void
+    {
+        $builder = V1DatabaseBuilder::create($this->createTemporaryDirectory('v1-'))->withMedia();
+        $builder->item(['name' => 'Huge', 'type' => 'feature', 'cover' => 'huge.jpg']);
+        $builder->item(['name' => 'Gif', 'type' => 'feature', 'cover' => 'pic.gif']);
+        file_put_contents($builder->root.'/web/media/huge.jpg', $this->jpeg().str_repeat("\0", AnimeCoverStorage::MAX_BYTES));
+        $gif = imagecreatetruecolor(8, 8);
+        ob_start();
+        imagegif($gif);
+        file_put_contents($builder->root.'/web/media/pic.gif', (string) ob_get_clean());
+
+        $result = $this->service->import($builder->root);
+
+        $this->assertSame(0, $result->coversImported);
+        $this->assertSame(2, $result->coversMissing);
         $this->assertSame([], glob($this->mediaDir.'/*') ?: []);
     }
 

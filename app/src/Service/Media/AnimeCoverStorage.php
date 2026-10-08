@@ -77,12 +77,19 @@ final class AnimeCoverStorage
             throw new CoverUploadException('anime_edit.error_cover_too_large');
         }
 
-        $info = @getimagesizefromstring($bytes);
-        if ($info === false || !\in_array($info[2], self::ALLOWED_TYPES, true)) {
+        if (!self::isAllowedImage($bytes)) {
             throw new CoverUploadException('anime_edit.error_cover_invalid');
         }
 
         return $this->imageNormalizer->normalize($bytes) ?? throw new CoverUploadException('anime_edit.error_cover_invalid');
+    }
+
+    /** Whether the bytes really are an image of a type accepted as a cover (PNG, JPEG, WebP). */
+    public static function isAllowedImage(string $bytes): bool
+    {
+        $info = @getimagesizefromstring($bytes);
+
+        return $info !== false && \in_array($info[2], self::ALLOWED_TYPES, true);
     }
 
     /**

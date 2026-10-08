@@ -215,8 +215,12 @@ final class V1ImportService
         if (!is_file($path)) {
             return null;
         }
+        $size = @filesize($path);
+        if ($size === false || $size === 0 || $size > AnimeCoverStorage::MAX_BYTES) {
+            return null;
+        }
         $bytes = @file_get_contents($path);
-        if ($bytes === false || $bytes === '') {
+        if ($bytes === false || $bytes === '' || !AnimeCoverStorage::isAllowedImage($bytes)) {
             return null;
         }
 
