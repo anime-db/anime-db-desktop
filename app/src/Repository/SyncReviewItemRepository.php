@@ -43,6 +43,15 @@ class SyncReviewItemRepository
         $this->entityManager->flush();
     }
 
+    /**
+     * Drops every item, resolved or not (issue #951): they reference anime only through JSON
+     * payload ids, so they outlive an emptied catalog. Joins the connection's current transaction.
+     */
+    public function removeAll(): void
+    {
+        $this->entityManager->getConnection()->executeStatement('DELETE FROM sync_review_item');
+    }
+
     public function flush(): void
     {
         $this->entityManager->flush();
