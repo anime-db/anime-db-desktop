@@ -122,6 +122,21 @@ final class AnimeCoverStorage
         return $filename;
     }
 
+    /** Removes the whole `media/{id}/` directory of an entry that never made it into the database. */
+    public function discardDirectory(int $animeId): void
+    {
+        $dir = rtrim($this->mediaDir, '/\\').'/'.$animeId;
+        if (!is_dir($dir)) {
+            return;
+        }
+        foreach (scandir($dir) ?: [] as $name) {
+            if ($name !== '.' && $name !== '..') {
+                @unlink($dir.'/'.$name);
+            }
+        }
+        @rmdir($dir);
+    }
+
     /**
      * Deletes $filename of the entry unless the cover or a gallery image still points at it.
      * Call after the change of the cover has been flushed.

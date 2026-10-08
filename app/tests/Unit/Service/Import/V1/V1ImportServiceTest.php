@@ -47,6 +47,9 @@ use App\Service\Import\Exception\InvalidV1InstallationException;
 use App\Service\Import\V1\V1AnimeResolver;
 use App\Service\Import\V1\V1CatalogReader;
 use App\Service\Import\V1\V1ImportService;
+use App\Service\Media\AnimeCoverStorage;
+use App\Service\Media\CoverUploadException;
+use App\Service\Media\ImageNormalizer;
 use App\Service\Sync\SyncReviewService;
 use App\Service\WsPublisher;
 use App\Tests\Support\CreatesInMemoryEntityManager;
@@ -64,13 +67,20 @@ final class V1ImportServiceTest extends TestCase
 
     private EntityManager $entityManager;
     private V1ImportService $service;
+    private string $mediaDir;
     private SyncTombstoneRepository $tombstones;
 
     protected function setUp(): void
     {
         $this->entityManager = $this->createInMemoryEntityManager();
         $this->tombstones = new SyncTombstoneRepository($this->entityManager);
-        $this->service = new V1ImportService(
+        $this->mediaDir = $this->createTemporaryDirectory('media-');
+        $this->service = $this->createService(new ImageNormalizer(), new AnimeCoverStorage(new ImageNormalizer(), $this->mediaDir));
+    }
+
+    private function createService(ImageNormalizer $normalizer, AnimeCoverStorage $storage): V1ImportService
+    {
+        return new V1ImportService(
             new V1CatalogReader(new NullLogger()),
             new V1AnimeResolver(
                 $this->entityManager,
@@ -85,6 +95,8 @@ final class V1ImportServiceTest extends TestCase
             new SyncReviewService(new SyncReviewItemRepository($this->entityManager)),
             $this->createStub(WsPublisher::class),
             new Translator('en'),
+            $normalizer,
+            $storage,
         );
     }
 
@@ -344,6 +356,93 @@ final class V1ImportServiceTest extends TestCase
         $this->service->import($builder->root);
 
         $this->assertSame($before, [hash_file('sha256', $database), $this->listing($builder->root)]);
+    }
+
+    public function testMovesACoverIntoTheMediaDirAsWebp(): void
+    {
+        $builder = V1DatabaseBuilder::create($this->createTemporaryDirectory('v1-'))->withMedia();
+        $builder->item(['name' => 'With cover', 'type' => 'feature', 'cover' => '2014/02/08/145928/1.jpg']);
+        mkdir($builder->root.'/web/media/2014/02/08/145928', 0o777, true);
+        file_put_contents($builder->root.'/web/media/2014/02/08/145928/1.jpg', $this->jpeg());
+
+        $result = $this->service->import($builder->root);
+        $this->entityManager->clear();
+
+        $this->assertSame(1, $result->coversImported);
+        $this->assertSame(0, $result->coversMissing);
+        $anime = $this->entityManager->getRepository(Anime::class)->findOneBy(['title' => 'With cover']);
+        $this->assertInstanceOf(Anime::class, $anime);
+        $cover = $anime->getCover();
+        $this->assertNotNull($cover);
+        $this->assertStringEndsWith('.webp', $cover);
+        $path = $this->mediaDir.'/'.$anime->id.'/'.$cover;
+        $this->assertFileExists($path);
+        $this->assertSame('WEBP', substr((string) file_get_contents($path), 8, 4));
+        $this->assertSame([$cover], array_map('basename', glob($this->mediaDir.'/'.$anime->id.'/*') ?: []));
+    }
+
+    public function testMissingAndBrokenCoversAreCountedNotFatal(): void
+    {
+        $builder = V1DatabaseBuilder::create($this->createTemporaryDirectory('v1-'))->withMedia();
+        $builder->item(['name' => 'No file', 'type' => 'feature', 'cover' => 'gone.jpg']);
+        $builder->item(['name' => 'Not a picture', 'type' => 'feature', 'cover' => 'text.jpg']);
+        $builder->item(['name' => 'Empty', 'type' => 'feature', 'cover' => 'empty.jpg']);
+        $builder->item(['name' => 'No cover', 'type' => 'feature']);
+        $builder->item(['name' => 'Escapes', 'type' => 'feature', 'cover' => '../../app/Resources/anime.db']);
+        file_put_contents($builder->root.'/web/media/text.jpg', 'not an image');
+        file_put_contents($builder->root.'/web/media/empty.jpg', '');
+
+        $result = $this->service->import($builder->root);
+        $this->entityManager->clear();
+
+        $this->assertSame(0, $result->coversImported);
+        $this->assertSame(5, $result->coversMissing);
+        $this->assertSame(5, (new AnimeRepository($this->entityManager))->countAll());
+        $this->assertSame([], glob($this->mediaDir.'/*') ?: []);
+    }
+
+    public function testInstallationWithoutMediaDirImportsEveryCoverAsMissing(): void
+    {
+        $builder = V1DatabaseBuilder::catalog($this->createTemporaryDirectory('v1-'), 12);
+        $this->assertDirectoryDoesNotExist($builder->root.'/web/media');
+
+        $result = $this->service->import($builder->root);
+
+        $this->assertSame(12, $result->animeCreated);
+        $this->assertSame(0, $result->coversImported);
+        $this->assertSame(12, $result->coversMissing);
+    }
+
+    public function testFailureAfterTheCoversLeavesNoOrphanDirectories(): void
+    {
+        $builder = V1DatabaseBuilder::create($this->createTemporaryDirectory('v1-'))->withMedia();
+        $builder->item(['name' => 'First', 'type' => 'feature', 'cover' => 'a.jpg']);
+        $builder->item(['name' => 'Second', 'type' => 'feature', 'cover' => 'a.jpg']);
+        file_put_contents($builder->root.'/web/media/a.jpg', $this->jpeg());
+        // A plain file where the second entry's directory belongs makes its store() throw, after the first
+        // entry has already written its own directory.
+        file_put_contents($this->mediaDir.'/2', 'in the way');
+
+        $thrown = null;
+        try {
+            $this->service->import($builder->root);
+        } catch (\Throwable $e) {
+            $thrown = $e;
+        }
+
+        $this->assertInstanceOf(CoverUploadException::class, $thrown);
+
+        $this->assertSame([$this->mediaDir.'/2'], glob($this->mediaDir.'/*') ?: []);
+        $this->assertSame(0, (new AnimeRepository($this->entityManager))->countAll());
+    }
+
+    private function jpeg(): string
+    {
+        $image = imagecreatetruecolor(8, 8);
+        ob_start();
+        imagejpeg($image);
+
+        return (string) ob_get_clean();
     }
 
     /** @return list<string> */
