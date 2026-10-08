@@ -225,6 +225,15 @@ async function apply(context) {
         }
     }
 
+    // The v1 import report (issue #954) describes the catalog this import just replaced, so it
+    // is stale now. Its own try/catch: a lock on an informational file must not turn the
+    // already-successful import into a failed one.
+    try {
+        fs.rmSync(paths.getImportV1ReportPath(), { force: true });
+    } catch (err) {
+        console.error('[import-apply] не удалось удалить устаревший import-v1-report.json:', err.message);
+    }
+
     fs.rmSync(getPreImportMediaDir(), { recursive: true, force: true });
     fs.rmSync(stagingDir, { recursive: true, force: true });
 

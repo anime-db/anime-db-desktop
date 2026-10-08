@@ -24,6 +24,7 @@
 const { test, expect } = require('../fixtures');
 const { covers, urlOf } = require('../coverage');
 const { setSourceMode, removedFromSource, consumeQueuedRemovals } = require('../plugins');
+const { clickAwaitingPost } = require('../actions');
 
 // Gintama, linked to the offline source below, so the confirmation is the delete modal that offers
 // to delete from the source's list as well.
@@ -38,12 +39,9 @@ async function linkToSource(page, session) {
     setSourceMode(session.dataDir, 'linkable', 3);
 
     await page.goto(urlOf(session, '/settings/plugins'));
-    // Wait for the toggle POST to finish: the next goto() would otherwise cancel it.
-    await Promise.all([
-        page.waitForResponse((r) => r.request().method() === 'POST' && r.url().endsWith('/sync')),
-        page.getByRole('switch', { name: 'Synchronization: off' }).click(),
-    ]);
-    // The source has no settings page: the toggle leaves the user on the plugins list.
+    // Ждём POST переключателя: иначе следующий переход его отменит (scripts/e2e/actions.js).
+    await clickAwaitingPost(page, page.getByRole('switch', { name: 'Synchronization: off' }), '/settings/plugins/e2e-source/sync');
+    // У источника нет страницы настроек: переключатель оставляет пользователя на списке плагинов.
     await expect(page).toHaveURL(urlOf(session, '/settings/plugins'));
     await expect(page.getByRole('switch', { name: 'Synchronization: on' })).toBeVisible();
 

@@ -36,6 +36,7 @@ use App\Repository\SyncReviewItemRepository;
 use App\Repository\SyncTombstoneRepository;
 use App\Service\Import\V1\V1AnimeResolver;
 use App\Service\Import\V1\V1CatalogReader;
+use App\Service\Import\V1\V1ImportReportStore;
 use App\Service\Import\V1\V1ImportService;
 use App\Service\Media\AnimeCoverStorage;
 use App\Service\Media\ImageNormalizer;
@@ -56,6 +57,8 @@ final class ImportV1CommandTest extends TestCase
     use TemporaryDirectories;
 
     private CommandTester $tester;
+
+    private string $reportPath;
 
     /** @var list<array{0: string, 1: mixed}> */
     private array $published = [];
@@ -87,7 +90,8 @@ final class ImportV1CommandTest extends TestCase
             new ImageNormalizer(),
             new AnimeCoverStorage(new ImageNormalizer(), $this->createTemporaryDirectory('media-')),
         );
-        $this->tester = new CommandTester(new ImportV1Command($service, $translator, $this->publisher));
+        $this->reportPath = $this->createTemporaryDirectory('report-').'/import-v1-report.json';
+        $this->tester = new CommandTester(new ImportV1Command($service, $translator, $this->publisher, new V1ImportReportStore($this->reportPath, new NullLogger())));
     }
 
     protected function tearDown(): void
@@ -107,6 +111,24 @@ final class ImportV1CommandTest extends TestCase
         $this->assertStringContainsString('Genres with no counterpart', $display);
         $this->assertStringContainsString('Covers imported: 0', $display);
         $this->assertStringNotContainsString('import_v1.', $display, 'every message must be translated');
+    }
+
+    public function testPersistsTheReportAfterAnImport(): void
+    {
+        $builder = V1DatabaseBuilder::catalog($this->createTemporaryDirectory('v1-'), 20);
+
+        $this->tester->execute(['directory' => $builder->root]);
+
+        $this->assertFileExists($this->reportPath);
+        $stored = json_decode((string) file_get_contents($this->reportPath), true);
+        $this->assertSame(20, $stored['animeCreated']);
+    }
+
+    public function testWritesNoReportWhenTheImportFails(): void
+    {
+        $this->tester->execute(['directory' => $this->createTemporaryDirectory('v1-')]);
+
+        $this->assertFileDoesNotExist($this->reportPath);
     }
 
     public function testNamesWhatItDidNotFindAndWhereItLooked(): void

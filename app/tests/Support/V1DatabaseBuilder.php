@@ -69,8 +69,8 @@ final class V1DatabaseBuilder
             'CREATE TABLE studio (id INTEGER PRIMARY KEY AUTOINCREMENT, name VARCHAR(256) NOT NULL)',
             'CREATE TABLE label (id INTEGER PRIMARY KEY AUTOINCREMENT, name VARCHAR(128) NOT NULL)',
             'CREATE TABLE item (id INTEGER PRIMARY KEY AUTOINCREMENT, storage INTEGER DEFAULT NULL, type VARCHAR(32) DEFAULT NULL, country VARCHAR(8) DEFAULT NULL, studio INTEGER DEFAULT NULL, name VARCHAR(256) NOT NULL, date_add DATETIME NOT NULL, date_update DATETIME DEFAULT NULL, date_premiere DATE DEFAULT NULL, date_end DATE DEFAULT NULL, duration INTEGER DEFAULT NULL, summary TEXT DEFAULT NULL, episodes_number VARCHAR(32) DEFAULT NULL, episodes TEXT DEFAULT NULL, translate TEXT DEFAULT NULL, file_info TEXT DEFAULT NULL, cover VARCHAR(256) DEFAULT NULL, rating INTEGER DEFAULT NULL, path VARCHAR(1024) DEFAULT NULL)',
-            'CREATE TABLE name (id INTEGER PRIMARY KEY AUTOINCREMENT, item_id INTEGER DEFAULT NULL, name VARCHAR(256) NOT NULL)',
-            'CREATE TABLE source (id INTEGER PRIMARY KEY AUTOINCREMENT, item_id INTEGER DEFAULT NULL, url VARCHAR(256) NOT NULL)',
+            'CREATE TABLE name (id INTEGER PRIMARY KEY AUTOINCREMENT, item INTEGER DEFAULT NULL, name VARCHAR(256) NOT NULL)',
+            'CREATE TABLE source (id INTEGER PRIMARY KEY AUTOINCREMENT, item INTEGER DEFAULT NULL, url VARCHAR(256) NOT NULL)',
             'CREATE TABLE items_genres (item_id INTEGER NOT NULL, genre_id INTEGER NOT NULL)',
             'CREATE TABLE items_labels (item_id INTEGER NOT NULL, label_id INTEGER NOT NULL)',
         ] as $ddl) {
@@ -206,12 +206,12 @@ final class V1DatabaseBuilder
 
     public function name(int $itemId, string $name): void
     {
-        $this->pdo->prepare('INSERT INTO name (item_id, name) VALUES (?, ?)')->execute([$itemId, $name]);
+        $this->pdo->prepare('INSERT INTO name (item, name) VALUES (?, ?)')->execute([$itemId, $name]);
     }
 
     public function source(int $itemId, string $url): void
     {
-        $this->pdo->prepare('INSERT INTO source (item_id, url) VALUES (?, ?)')->execute([$itemId, $url]);
+        $this->pdo->prepare('INSERT INTO source (item, url) VALUES (?, ?)')->execute([$itemId, $url]);
     }
 
     public function itemGenre(int $itemId, string $genre): void

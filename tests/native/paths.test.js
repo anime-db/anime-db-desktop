@@ -69,6 +69,10 @@ test('getRuntimeDir returns var/ inside userData', () => {
     expect(paths.getRuntimeDir()).toBe(path.join(USER_DATA, 'var'));
 });
 
+test('getShareDir returns share/ inside userData', () => {
+    expect(paths.getShareDir()).toBe(path.join(USER_DATA, 'share'));
+});
+
 test('getMeilisearchKeyPath returns meilisearch-key.txt inside userData', () => {
     expect(paths.getMeilisearchKeyPath()).toBe(path.join(USER_DATA, 'meilisearch-key.txt'));
 });

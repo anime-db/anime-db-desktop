@@ -167,3 +167,87 @@ describe('e2e start-up diagnostics', () => {
         expect(exitCodeOf({ status: 0 })).toBe(0);
     });
 });
+
+/**
+ * The helper exists because of a real red release run: `POST /settings/pagination-mode` showed up in
+ * the trace with status -1 (aborted) because the scenario navigated away before the form submit
+ * finished, the setting never applied, and the failure surfaced two steps later on a hidden
+ * pagination. Both halves matter — the waiter has to be armed *before* the click, and the predicate
+ * has to match the method and the exact path — so both are pinned here.
+ */
+describe('clickAwaitingPost', () => {
+    const { clickAwaitingPost } = require('../../scripts/e2e/actions');
+
+    /**
+     * @param {{ method?: string, url?: string }} seen  the request the page will report
+     */
+    function pageDouble({ method = 'POST', url = 'http://127.0.0.1:8200/settings/pagination-mode', status = 303 } = {}) {
+        const order = [];
+
+        return {
+            order,
+            page: {
+                waitForResponse: (predicate) => {
+                    order.push('armed');
+
+                    return Promise.resolve({
+                        matched: predicate({ request: () => ({ method: () => method }), url: () => url }),
+                        status: () => status,
+                    });
+                },
+            },
+            locator: { click: () => { order.push('clicked'); return Promise.resolve(); } },
+        };
+    }
+
+    test('arms the response waiter before clicking', async () => {
+        const { page, locator, order } = pageDouble();
+
+        await clickAwaitingPost(page, locator, '/settings/pagination-mode');
+
+        expect(order).toEqual(['armed', 'clicked']);
+    });
+
+    test('matches the POST of that exact path', async () => {
+        const { page, locator } = pageDouble();
+
+        await expect(clickAwaitingPost(page, locator, '/settings/pagination-mode'))
+            .resolves.toMatchObject({ matched: true });
+    });
+
+    /**
+     * The reason the helper exists is that an unapplied setting must fail here and not two steps
+     * later. A 403 on a CSRF token that drifted, a 400 on a value the controller refuses and a 500
+     * all leave the setting unapplied exactly like an aborted request does.
+     */
+    test.each([[400], [403], [500]])('fails on status %i', async (status) => {
+        const { page, locator } = pageDouble({ status });
+
+        await expect(clickAwaitingPost(page, locator, '/settings/pagination-mode'))
+            .rejects.toThrow(`POST /settings/pagination-mode answered ${status}`);
+    });
+
+    /** 303 from /settings/pagination-mode and a plain 302 from the sync toggle are both success. */
+    test.each([[302], [303]])('accepts status %i', async (status) => {
+        const { page, locator } = pageDouble({ status });
+
+        await expect(clickAwaitingPost(page, locator, '/settings/pagination-mode')).resolves.toMatchObject({ matched: true });
+    });
+
+    test.each([
+        ['another method', { method: 'GET' }],
+        ['another path', { url: 'http://127.0.0.1:8200/settings/theme' }],
+        ['the path as a prefix of a longer one', { url: 'http://127.0.0.1:8200/settings/pagination-mode/extra' }],
+    ])('does not match %s', async (_name, seen) => {
+        const { page, locator } = pageDouble(seen);
+
+        await expect(clickAwaitingPost(page, locator, '/settings/pagination-mode')).resolves.toMatchObject({ matched: false });
+    });
+
+    /** The query string is not part of the path and must not keep the response from matching. */
+    test('ignores the query string', async () => {
+        const { page, locator } = pageDouble({ url: 'http://127.0.0.1:8200/settings/pagination-mode?from=settings' });
+
+        await expect(clickAwaitingPost(page, locator, '/settings/pagination-mode')).resolves.toMatchObject({ matched: true });
+    });
+});

@@ -187,4 +187,22 @@ final class BackupTemplateRenderingTest extends KernelTestCase
 
         self::assertStringNotContainsString('id="settings-backup-imported-plugins-section"', $html);
     }
+
+    public function testRendersTheImportV1ReportBlockOnlyWhenThereAreLines(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession();
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $context = ['stagedImport' => null, 'stagedImportRejectionReason' => null, 'backups' => [], 'importedPlugins' => []];
+
+        $html = $twig->render('settings/backup/index.html.twig', $context + ['importV1Report' => ['Entries created: <5>']]);
+        self::assertStringContainsString('id="settings-backup-import-v1-report-section"', $html);
+        self::assertStringContainsString('Entries created: &lt;5&gt;', $html);
+        self::assertStringContainsString('/settings/backup/import/v1-report/dismiss', $html);
+
+        $html = $twig->render('settings/backup/index.html.twig', $context + ['importV1Report' => []]);
+        self::assertStringNotContainsString('id="settings-backup-import-v1-report-section"', $html);
+    }
 }

@@ -40,6 +40,7 @@ const path = require('path');
 const { findFreePort } = require('../../native/supervisor/port');
 const { waitForHealth } = require('../../native/supervisor/healthcheck');
 const { createIsolatedEnv, disposeFixture } = require('../fixture');
+const { snapshotGuardedPaths, findLeakedPaths } = require('../leak-guard');
 const {
     RunWatchdog, LastPageTracker, formatExitLine, resolveTimeoutMs, formatTimeoutMessage,
 } = require('./lifecycle');
@@ -196,32 +197,6 @@ function startPhpServer(port, env) {
     child.tail = () => output.slice(-4000);
 
     return child;
-}
-
-/**
- * Developer paths the run must never create or touch: they exist only if the isolation leaked.
- */
-const LEAK_GUARDED_PATHS = [
-    path.join(rootDir, 'data'),
-    path.join(appDir, 'var', 'config.json'),
-];
-
-/**
- * @returns {Map<string, number|null>} mtime of every guarded path, null when it does not exist
- */
-function snapshotGuardedPaths() {
-    return new Map(LEAK_GUARDED_PATHS.map((p) => [p, fs.existsSync(p) ? fs.statSync(p).mtimeMs : null]));
-}
-
-/**
- * @param {Map<string, number|null>} before
- * @returns {string[]} guarded paths that appeared (or changed) during the run
- */
-function findLeakedPaths(before) {
-    return LEAK_GUARDED_PATHS.filter((p) => {
-        const now = fs.existsSync(p) ? fs.statSync(p).mtimeMs : null;
-        return now !== before.get(p);
-    });
 }
 
 /**
