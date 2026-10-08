@@ -43,7 +43,8 @@ async function linkToSource(page, session) {
         page.waitForResponse((r) => r.request().method() === 'POST' && r.url().endsWith('/sync')),
         page.getByRole('switch', { name: 'Synchronization: off' }).click(),
     ]);
-    await page.goto(urlOf(session, '/settings/plugins'));
+    // The source has no settings page: the toggle leaves the user on the plugins list.
+    await expect(page).toHaveURL(urlOf(session, '/settings/plugins'));
     await expect(page.getByRole('switch', { name: 'Synchronization: on' })).toBeVisible();
 
     await page.goto(urlOf(session, '/anime/search-plugins'));

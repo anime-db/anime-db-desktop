@@ -31,6 +31,7 @@ use AnimeDb\PluginContracts\Settings\SettingsPageInterface;
 use AnimeDb\PluginContracts\Sync\SyncInterface;
 use App\Controller\Settings\PluginController;
 use App\Entity\ValueObject\PluginId;
+use App\Message\SyncSeedMessage;
 use App\Service\Market\MarketSnapshot;
 use App\Service\Market\MarketSnapshotCache;
 use App\Service\Market\MarketSnapshotPlugin;
@@ -41,6 +42,7 @@ use App\Service\Plugin\PluginRemover;
 use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Plugin\SettingsPageRegistry;
 use App\Service\Plugin\SyncRegistry;
+use App\Service\Plugin\SyncSeedDispatcher;
 use App\Service\Plugin\ZipPluginInstaller;
 use App\Service\Translation\TranslationCoverageService;
 use App\Service\WsPublisher;
@@ -52,6 +54,8 @@ use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
+use Symfony\Component\Messenger\Envelope;
+use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 use Symfony\Component\Security\Csrf\CsrfTokenManagerInterface;
 use Twig\Environment;
@@ -137,6 +141,7 @@ final class PluginControllerTest extends TestCase
         ?Environment $twig = null,
         ?MarketSnapshotCache $snapshotCache = null,
         ?SyncRegistry $syncRegistry = null,
+        ?MessageBusInterface $messageBus = null,
     ): PluginController {
         return new PluginController(
             $this->registry,
@@ -150,6 +155,11 @@ final class PluginControllerTest extends TestCase
             $twig ?? $this->createStub(Environment::class),
             new MarketUpdateResolver($snapshotCache ?? new MarketSnapshotCache($this->rootDir.'/market-snapshot-cache.json'), self::CORE_VERSION),
             $syncRegistry ?? new SyncRegistry([], new PluginsConfigStore($this->pluginsDir.'/plugins.json')),
+            new SyncSeedDispatcher(
+                new PluginsConfigStore($this->pluginsDir.'/plugins.json'),
+                $messageBus ?? $this->createStub(MessageBusInterface::class),
+                new NullLogger(),
+            ),
         );
     }
 
@@ -915,10 +925,61 @@ final class PluginControllerTest extends TestCase
             ->with('settings_plugin_page', ['pluginId' => 'animedb-shikimori'])
             ->willReturn('/settings/plugins/animedb-shikimori');
 
-        $response = $this->controller(urlGenerator: $urlGenerator, syncRegistry: $this->syncRegistry(['animedb-shikimori']))
-            ->toggleSync('animedb-shikimori', $this->syncToggleRequest('animedb-shikimori', '1'));
+        // The settings page dispatches the connect-seed itself, so the toggle must not.
+        $messageBus = $this->createMock(MessageBusInterface::class);
+        $messageBus->expects($this->never())->method('dispatch');
+
+        $response = $this->controller(
+            settingsPages: $this->settingsPages(['animedb-shikimori' => $this->createStub(SettingsPageInterface::class)]),
+            urlGenerator: $urlGenerator,
+            syncRegistry: $this->syncRegistry(['animedb-shikimori']),
+            messageBus: $messageBus,
+        )->toggleSync('animedb-shikimori', $this->syncToggleRequest('animedb-shikimori', '1'));
 
         $this->assertSame('/settings/plugins/animedb-shikimori', $response->getTargetUrl());
+        $this->assertTrue($this->readPluginsJson()['animedb-shikimori']['features']['sync']);
+        $this->assertArrayNotHasKey('syncSeeded', $this->readPluginsJson()['animedb-shikimori']);
+    }
+
+    public function testToggleSyncOnWithoutSettingsPageStaysOnThePluginsListAndDispatchesSeedOnce(): void
+    {
+        $this->writeManifest('animedb-shikimori', 'Shikimori');
+        $this->registry->reconcile();
+
+        $urlGenerator = $this->createMock(UrlGeneratorInterface::class);
+        $urlGenerator->expects($this->once())
+            ->method('generate')
+            ->with('settings_plugins_index')
+            ->willReturn('/settings/plugins');
+
+        $messageBus = $this->createMock(MessageBusInterface::class);
+        $messageBus->expects($this->once())
+            ->method('dispatch')
+            ->with($this->callback(static fn (object $message): bool => $message instanceof SyncSeedMessage && $message->pluginId === 'animedb-shikimori'))
+            ->willReturnCallback(static fn (object $message): Envelope => new Envelope($message));
+
+        $controller = $this->controller(urlGenerator: $urlGenerator, syncRegistry: $this->syncRegistry(['animedb-shikimori']), messageBus: $messageBus);
+        $response = $controller->toggleSync('animedb-shikimori', $this->syncToggleRequest('animedb-shikimori', '1'));
+
+        $this->assertSame('/settings/plugins', $response->getTargetUrl());
+        $config = $this->readPluginsJson()['animedb-shikimori'];
+        $this->assertTrue($config['features']['sync']);
+        $this->assertTrue($config['syncSeeded']);
+    }
+
+    public function testToggleSyncOnWithoutSettingsPageDoesNotReseedAnAlreadySeededPlugin(): void
+    {
+        $this->writeManifest('animedb-shikimori', 'Shikimori');
+        $this->writePluginsJson(['animedb-shikimori' => ['enabled' => true, 'syncSeeded' => true]]);
+        $this->registry->reconcile();
+
+        $messageBus = $this->createMock(MessageBusInterface::class);
+        $messageBus->expects($this->never())->method('dispatch');
+
+        $response = $this->controller(syncRegistry: $this->syncRegistry(['animedb-shikimori']), messageBus: $messageBus)
+            ->toggleSync('animedb-shikimori', $this->syncToggleRequest('animedb-shikimori', '1'));
+
+        $this->assertSame('/settings/plugins', $response->getTargetUrl());
         $this->assertTrue($this->readPluginsJson()['animedb-shikimori']['features']['sync']);
     }
 
@@ -939,7 +1000,10 @@ final class PluginControllerTest extends TestCase
             ->with('settings_plugins_index')
             ->willReturn('/settings/plugins');
 
-        $response = $this->controller(urlGenerator: $urlGenerator, syncRegistry: $this->syncRegistry(['animedb-shikimori']))
+        $messageBus = $this->createMock(MessageBusInterface::class);
+        $messageBus->expects($this->never())->method('dispatch');
+
+        $response = $this->controller(urlGenerator: $urlGenerator, syncRegistry: $this->syncRegistry(['animedb-shikimori']), messageBus: $messageBus)
             ->toggleSync('animedb-shikimori', $this->syncToggleRequest('animedb-shikimori', '0'));
 
         $this->assertSame('/settings/plugins', $response->getTargetUrl());
