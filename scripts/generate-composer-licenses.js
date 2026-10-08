@@ -23,7 +23,6 @@
 
 const fs   = require('fs');
 const path = require('path');
-const { execFileSync } = require('child_process');
 
 const rootDir    = path.resolve(__dirname, '..');
 const appDir     = path.join(rootDir, 'app');
@@ -51,26 +50,24 @@ function findLicenseFile(packageDir) {
 }
 
 /**
+ * Reads production packages from composer.lock, the same source the PHP inventory test uses.
+ *
+ * @param {string} lockFile
  * @param {string} vendorDir
  * @returns {{ name: string, version: string, license: string, file: string|null }[]} production
  *          packages sorted by name
  */
-function collectPackages(vendorDir) {
-    const output = execFileSync('composer', ['licenses', '--no-dev', '--format=json', '--no-interaction'], {
-        cwd: appDir,
-        encoding: 'utf8',
-        maxBuffer: 16 * 1024 * 1024,
-    });
-    const { dependencies } = JSON.parse(output);
+function collectPackages(lockFile, vendorDir) {
+    const { packages } = JSON.parse(fs.readFileSync(lockFile, 'utf8'));
 
-    return Object.keys(dependencies)
-        .sort()
-        .map((name) => ({
-            name,
-            version: dependencies[name].version,
-            license: dependencies[name].license.join(', ') || 'none',
-            file: findLicenseFile(path.join(vendorDir, ...name.split('/'))),
-        }));
+    return packages
+        .map((pkg) => ({
+            name: pkg.name,
+            version: pkg.version,
+            license: (pkg.license ?? []).join(', ') || 'none',
+            file: findLicenseFile(path.join(vendorDir, ...pkg.name.split('/'))),
+        }))
+        .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 }
 
 /**
@@ -91,7 +88,7 @@ function render(packages) {
     return [
         '# PHP packages bundled with AnimeDB',
         '',
-        'Production dependencies of `app/composer.json` (`composer licenses --no-dev`), shipped under',
+        'Production dependencies of `app/composer.json` (`packages` of `app/composer.lock`), shipped under',
         '`resources/app/app/vendor/`. Each package carries its own license text in its directory; the path',
         'is relative to the AnimeDB installation directory. `' + NOT_FOUND + '` means the package ships no license file.',
         '',
@@ -105,7 +102,7 @@ function render(packages) {
 }
 
 function main() {
-    const packages = collectPackages(path.join(appDir, 'vendor'));
+    const packages = collectPackages(path.join(appDir, 'composer.lock'), path.join(appDir, 'vendor'));
     const content  = render(packages);
     const missing  = packages.filter((pkg) => pkg.file === null).map((pkg) => pkg.name);
 
@@ -130,4 +127,4 @@ if (require.main === module) {
     main();
 }
 
-module.exports = { findLicenseFile, render, LICENSE_FILE, NOT_FOUND, SHIPPED_VENDOR };
+module.exports = { findLicenseFile, collectPackages, render, LICENSE_FILE, NOT_FOUND, SHIPPED_VENDOR };

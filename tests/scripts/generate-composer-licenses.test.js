@@ -24,7 +24,7 @@
 const fs   = require('fs');
 const os   = require('os');
 const path = require('path');
-const { findLicenseFile, render, NOT_FOUND } = require('../../scripts/generate-composer-licenses');
+const { findLicenseFile, collectPackages, render, NOT_FOUND } = require('../../scripts/generate-composer-licenses');
 
 describe('findLicenseFile', () => {
     let dir;
@@ -65,9 +65,41 @@ describe('render', () => {
         expect(output).toMatch(new RegExp(`b/without\\s+\\| 2.0.0\\s+\\| MIT\\s+\\| ${NOT_FOUND}`));
     });
 
-    test('is stable for the same input', () => {
-        const packages = [{ name: 'a/b', version: '1', license: 'MIT', file: 'LICENSE' }];
+    test('aligns every column and the separator row', () => {
+        const output = render([
+            { name: 'vendor/long-name', version: 'v1.10.0', license: 'MIT, BSD-3-Clause', file: 'LICENSE' },
+            { name: 'a/b', version: '1', license: 'MIT', file: null },
+        ]);
+        const table = output.split('\n').filter((row) => row.startsWith('|'));
 
-        expect(render(packages)).toBe(render(packages));
+        expect(table).toEqual([
+            '| Package          | Version | License           | License text                                      |',
+            '|------------------|---------|-------------------|---------------------------------------------------|',
+            '| vendor/long-name | v1.10.0 | MIT, BSD-3-Clause | resources/app/app/vendor/vendor/long-name/LICENSE |',
+            '| a/b              | 1       | MIT               | NOT FOUND                                         |',
+        ]);
+    });
+});
+
+describe('collectPackages', () => {
+    test('reads and sorts packages from composer.lock', () => {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'anime-db-lock-'));
+        try {
+            fs.mkdirSync(path.join(dir, 'vendor', 'a', 'b'), { recursive: true });
+            fs.writeFileSync(path.join(dir, 'vendor', 'a', 'b', 'LICENSE'), 'text');
+            fs.writeFileSync(path.join(dir, 'composer.lock'), JSON.stringify({
+                packages: [
+                    { name: 'z/z', version: 'dev-master', license: ['MIT'] },
+                    { name: 'a/b', version: 'v1.0.0' },
+                ],
+            }));
+
+            expect(collectPackages(path.join(dir, 'composer.lock'), path.join(dir, 'vendor'))).toEqual([
+                { name: 'a/b', version: 'v1.0.0', license: 'none', file: 'LICENSE' },
+                { name: 'z/z', version: 'dev-master', license: 'MIT', file: null },
+            ]);
+        } finally {
+            fs.rmSync(dir, { recursive: true, force: true });
+        }
     });
 });

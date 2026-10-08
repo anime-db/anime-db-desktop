@@ -1,6 +1,6 @@
 # PHP packages bundled with AnimeDB
 
-Production dependencies of `app/composer.json` (`composer licenses --no-dev`), shipped under
+Production dependencies of `app/composer.json` (`packages` of `app/composer.lock`), shipped under
 `resources/app/app/vendor/`. Each package carries its own license text in its directory; the path
 is relative to the AnimeDB installation directory. `NOT FOUND` means the package ships no license file.
 
