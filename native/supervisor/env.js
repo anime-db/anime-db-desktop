@@ -95,6 +95,7 @@ function buildCommonEnv({ meiliPort, meiliKey, qbittorrentPort, appPort, oauthCa
         MESSENGER_TRANSPORT_DSN: 'doctrine://queue?auto_setup=0',
         PHPRC:                   paths.getPhpIniDir(),
         APP_RUNTIME_DIR:         paths.getRuntimeDir(),
+        APP_SHARE_DIR:           paths.getShareDir(),
         MEDIA_DIR:               paths.getMediaDir(),
         IMPORT_STAGING_DIR:      paths.getImportStagingDir(),
         IMPORT_REJECTION_PATH:   paths.getImportRejectionPath(),

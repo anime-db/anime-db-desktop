@@ -38,6 +38,8 @@ module.exports = {
     // Bundled prober, exactly where scripts/download-bins.js puts it (its `.version` file sits next to it).
     getFfprobeBinPath:     () => path.join(__dirname, '..', 'bin', 'ffprobe', 'ffprobe.exe'),
     getRuntimeDir:         () => path.join(userDataDir(), 'var'),
+    // Symfony's share_dir (the cache.app pool): survives cache clears, so it is not under var/cache.
+    getShareDir:           () => path.join(userDataDir(), 'share'),
     getMeilisearchKeyPath: () => path.join(userDataDir(), 'meilisearch-key.txt'),
     // qbittorrent-nox's own "--profile=<dir>" layout (see qBittorrent's CustomProfile,
     // src/base/profile_p.cpp): it appends "qBittorrent/config/qBittorrent.<ext>" to the profile
