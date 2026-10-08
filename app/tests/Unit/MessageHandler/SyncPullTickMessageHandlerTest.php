@@ -31,12 +31,17 @@ use AnimeDb\PluginContracts\Sync\SyncInterface;
 use App\Entity\ValueObject\PluginId;
 use App\Message\SyncPullMessage;
 use App\Message\SyncPullTickMessage;
+use App\Message\SyncSeedMessage;
 use App\MessageHandler\SyncPullTickMessageHandler;
+use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\PluginsConfigStore;
+use App\Service\Plugin\SettingsPageRegistry;
 use App\Service\Plugin\SyncRegistry;
+use App\Service\Plugin\SyncSeedDispatcher;
 use App\Service\Sync\SyncPullGate;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
 use Symfony\Component\Clock\MockClock;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\MessageBusInterface;
@@ -44,6 +49,20 @@ use Symfony\Component\Messenger\MessageBusInterface;
 final class SyncPullTickMessageHandlerTest extends TestCase
 {
     private const NOW = '2026-01-01T12:00:00+00:00';
+
+    /** @var list<string> plugin ids of the SyncSeedMessage dispatched by the last tick() */
+    private array $seeded = [];
+
+    public function testRetriesTheSeedOfAnUnseededPluginWithoutASettingsPageInsteadOfAPull(): void
+    {
+        $dispatched = $this->tick([
+            'acme-unseeded' => ['features' => ['sync' => true], 'syncSeeded' => false],
+            'acme-seeded' => ['features' => ['sync' => true], 'syncSeeded' => true],
+        ]);
+
+        $this->assertSame(['acme-unseeded'], $this->seeded);
+        $this->assertSame(['acme-seeded'], $dispatched);
+    }
 
     public function testQueuesAPullForEveryActiveSeededPluginWithoutALastPullMark(): void
     {
@@ -127,6 +146,14 @@ final class SyncPullTickMessageHandlerTest extends TestCase
 
         $syncs = array_map(fn () => $this->createStub(SyncInterface::class), $settings);
         $dispatched = [];
+        $this->seeded = [];
+        $seedBus = $this->createStub(MessageBusInterface::class);
+        $seedBus->method('dispatch')->willReturnCallback(function (object $message): Envelope {
+            \assert($message instanceof SyncSeedMessage);
+            $this->seeded[] = $message->pluginId;
+
+            return new Envelope($message);
+        });
         $bus = $this->createStub(MessageBusInterface::class);
         $bus->method('dispatch')->willReturnCallback(static function (object $message) use (&$dispatched): Envelope {
             \assert($message instanceof SyncPullMessage);
@@ -139,6 +166,8 @@ final class SyncPullTickMessageHandlerTest extends TestCase
             new SyncRegistry($syncs, $store),
             new SyncPullGate($store, new MockClock(new \DateTimeImmutable(self::NOW))),
             $bus,
+            new SettingsPageRegistry(new InstalledPluginsRegistry(sys_get_temp_dir().'/anime-sync-pull-tick-no-plugins', $store, new NullLogger())),
+            new SyncSeedDispatcher($store, $seedBus, new NullLogger()),
         );
         $handler(new SyncPullTickMessage());
         @unlink($path);
