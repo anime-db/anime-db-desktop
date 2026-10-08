@@ -50,6 +50,15 @@ async function clickAwaitingPost(page, locator, pathname) {
         locator.click(),
     ]);
 
+    // Дождаться ответа недостаточно: 400 на неизвестное значение, 403 на разошедшийся CSRF-токен и
+    // 500 дают ровно тот же симптом, ради которого хелпер и вводился, — настройка не применилась, а
+    // сценарий падает через два шага и совсем в другом месте. Проверяется «не ошибка», а не
+    // конкретный 3xx: эндпоинты отвечают по-разному — `/settings/pagination-mode` отдаёт 303
+    // (`HTTP_SEE_OTHER`), переключатель синка плагина — обычный 302.
+    if (response.status() >= 400) {
+        throw new Error(`POST ${pathname} answered ${response.status()}; the setting was not applied.`);
+    }
+
     return response;
 }
 

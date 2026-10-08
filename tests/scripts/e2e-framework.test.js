@@ -181,7 +181,7 @@ describe('clickAwaitingPost', () => {
     /**
      * @param {{ method?: string, url?: string }} seen  the request the page will report
      */
-    function pageDouble({ method = 'POST', url = 'http://127.0.0.1:8200/settings/pagination-mode' } = {}) {
+    function pageDouble({ method = 'POST', url = 'http://127.0.0.1:8200/settings/pagination-mode', status = 303 } = {}) {
         const order = [];
 
         return {
@@ -192,6 +192,7 @@ describe('clickAwaitingPost', () => {
 
                     return Promise.resolve({
                         matched: predicate({ request: () => ({ method: () => method }), url: () => url }),
+                        status: () => status,
                     });
                 },
             },
@@ -210,7 +211,27 @@ describe('clickAwaitingPost', () => {
     test('matches the POST of that exact path', async () => {
         const { page, locator } = pageDouble();
 
-        await expect(clickAwaitingPost(page, locator, '/settings/pagination-mode')).resolves.toEqual({ matched: true });
+        await expect(clickAwaitingPost(page, locator, '/settings/pagination-mode'))
+            .resolves.toMatchObject({ matched: true });
+    });
+
+    /**
+     * The reason the helper exists is that an unapplied setting must fail here and not two steps
+     * later. A 403 on a CSRF token that drifted, a 400 on a value the controller refuses and a 500
+     * all leave the setting unapplied exactly like an aborted request does.
+     */
+    test.each([[400], [403], [500]])('fails on status %i', async (status) => {
+        const { page, locator } = pageDouble({ status });
+
+        await expect(clickAwaitingPost(page, locator, '/settings/pagination-mode'))
+            .rejects.toThrow(`POST /settings/pagination-mode answered ${status}`);
+    });
+
+    /** 303 from /settings/pagination-mode and a plain 302 from the sync toggle are both success. */
+    test.each([[302], [303]])('accepts status %i', async (status) => {
+        const { page, locator } = pageDouble({ status });
+
+        await expect(clickAwaitingPost(page, locator, '/settings/pagination-mode')).resolves.toMatchObject({ matched: true });
     });
 
     test.each([
@@ -220,13 +241,13 @@ describe('clickAwaitingPost', () => {
     ])('does not match %s', async (_name, seen) => {
         const { page, locator } = pageDouble(seen);
 
-        await expect(clickAwaitingPost(page, locator, '/settings/pagination-mode')).resolves.toEqual({ matched: false });
+        await expect(clickAwaitingPost(page, locator, '/settings/pagination-mode')).resolves.toMatchObject({ matched: false });
     });
 
     /** The query string is not part of the path and must not keep the response from matching. */
     test('ignores the query string', async () => {
         const { page, locator } = pageDouble({ url: 'http://127.0.0.1:8200/settings/pagination-mode?from=settings' });
 
-        await expect(clickAwaitingPost(page, locator, '/settings/pagination-mode')).resolves.toEqual({ matched: true });
+        await expect(clickAwaitingPost(page, locator, '/settings/pagination-mode')).resolves.toMatchObject({ matched: true });
     });
 });
