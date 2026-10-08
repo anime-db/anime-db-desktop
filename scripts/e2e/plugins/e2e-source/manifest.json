@@ -1,0 +1,20 @@
+{
+    "id": "e2e-source",
+    "name": "E2E source",
+    "version": "0.0.1",
+    "type": "integration",
+    "description": "Offline filler used by the E2E scenarios: answers from memory, never touches the network.",
+    "author": "AnimeDB",
+    "locales": ["en", "ru"],
+    "features": {
+        "filler": true,
+        "sync": false,
+        "related": false,
+        "similar": false,
+        "new": false
+    },
+    "require": {
+        "core": ">=0.0.1",
+        "php": ">=8.5"
+    }
+}

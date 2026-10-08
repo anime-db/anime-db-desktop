@@ -35,6 +35,7 @@ const path = require('path');
 const { _electron: electron } = require('@playwright/test');
 
 const { createIsolatedEnv, envForDir } = require('../fixture');
+const { installSourcePlugin } = require('./plugins');
 const { startServer } = require('./server');
 
 const STARTUP_TIMEOUT_MS = 30000;
@@ -66,7 +67,7 @@ function prepareData() {
  *   close: () => Promise<void>,
  * }>}
  */
-async function launchApp({ actionTimeoutMs = 5000 } = {}) {
+async function launchApp({ actionTimeoutMs = 5000, sourcePlugin = false } = {}) {
     const data = prepareData();
     let server = null;
     let app = null;
@@ -82,11 +83,14 @@ async function launchApp({ actionTimeoutMs = 5000 } = {}) {
     };
 
     try {
+        if (sourcePlugin) {
+            installSourcePlugin(data.dir, data.env);
+        }
         server = await startServer(data.dir, data.env);
         app = await electron.launch({
             executablePath: require('electron'),
             args: ['--no-sandbox', '--disable-gpu', mainJs],
-            env: { ...process.env, E2E_PORT: String(server.port), E2E_USER_DATA_DIR: path.join(data.dir, 'electron') },
+            env: { ...process.env, E2E_PORT: String(server.port), E2E_USER_DATA_DIR: data.dir },
         });
         const page = await app.firstWindow();
         page.setDefaultTimeout(actionTimeoutMs);

@@ -55,6 +55,10 @@ module.exports = [
                     message:  'No scripted interaction in E2E: use Playwright locator actions (locator.click() etc.).',
                 },
                 {
+                    selector: 'CallExpression[callee.property.name=/^(click|dblclick|check|uncheck|setChecked|tap|hover|fill|selectOption|dragTo|dragAndDrop|press|type|clear|setInputFiles)$/] > ObjectExpression > Property[key.name=force][value.value=true]',
+                    message:  'No scripted interaction in E2E: `force: true` skips the actionability checks (a covered element gets clicked anyway); wait for the element to become actionable instead.',
+                },
+                {
                     selector: 'CallExpression[callee.property.name=/^(evaluate|evaluateAll|evaluateHandle|executeJavaScript|addInitScript|\\$eval|\\$\\$eval|evalOnSelector|evalOnSelectorAll)$/] :matches(Literal[value=/\\.(click|dispatchEvent)\\(/], TemplateElement[value.raw=/\\.(click|dispatchEvent)\\(/])',
                     message:  'No scripted interaction in E2E: use Playwright locator actions (locator.click() etc.).',
                 },
