@@ -92,15 +92,16 @@ jobs:
           extensions: apcu, gd, intl
           ini-values: apc.enable_cli=1
 
-      - name: Configure Composer auth for private repos
-        if: steps.bump.outputs.changed == 'true'
-        run: composer config --global github-oauth.github.com ${{ secrets.COMPOSER_GITHUB_TOKEN }}
-
+      # Токен живёт только в env этого шага, а не в глобальном ~/.config/composer/auth.json:
+      # дальше джоба исполняет код — lifecycle-скрипты зависимостей, тесты, прогон приложения, — и
+      # секрету там делать нечего. Composer читает COMPOSER_AUTH сам (issue #971).
       - name: Install dependencies
         if: steps.bump.outputs.changed == 'true'
         uses: ramsey/composer-install@v4
         with:
           working-directory: app
+        env:
+          COMPOSER_AUTH: '{"github-oauth":{"github.com":"${{ secrets.COMPOSER_GITHUB_TOKEN }}"}}'
 
       # Коды выхода команды: 0 — отставших нет; 1 — есть отставшие; 2 — проверить не удалось
       # (реестр не скачался, подпись не сошлась, версия контрактов нестабильная, данные реестра
