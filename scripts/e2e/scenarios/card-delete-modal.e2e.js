@@ -38,9 +38,11 @@ async function linkToSource(page, session) {
     setSourceMode(session.dataDir, 'linkable', 3);
 
     await page.goto(urlOf(session, '/settings/plugins'));
-    await page.getByRole('switch', { name: 'Synchronization: off' }).click();
-    // Switching sync on lands on the plugin's own settings page, which this fixture plugin does not have.
-    await expect(page).toHaveURL(urlOf(session, '/settings/plugins/e2e-source'));
+    // Wait for the toggle POST to finish: the next goto() would otherwise cancel it.
+    await Promise.all([
+        page.waitForResponse((r) => r.request().method() === 'POST' && r.url().endsWith('/sync')),
+        page.getByRole('switch', { name: 'Synchronization: off' }).click(),
+    ]);
     await page.goto(urlOf(session, '/settings/plugins'));
     await expect(page.getByRole('switch', { name: 'Synchronization: on' })).toBeVisible();
 
