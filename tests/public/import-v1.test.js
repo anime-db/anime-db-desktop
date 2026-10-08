@@ -36,6 +36,11 @@ const MESSAGES = {
     'import_v1.report_covers': 'covers %imported%, missing %missing%',
     'import_v1.report_storages': 'storages %count%, unavailable %unavailable%',
     'import_v1.report_storages_skipped': 'skipped %names%',
+    'import_v1.report_episodes_dropped': 'episodes dropped %count% (%titles%)',
+    'import_v1.report_end_dates': 'end dates %count%',
+    'import_v1.report_status_downgraded': 'downgraded %count%',
+    'import_v1.report_needs_attention': 'attention %count%',
+    'onboarding.import_v1_done_no_report': 'done, no report',
     'import_v1.error_not_v1_installation': 'not a v1 installation: %path%',
     'onboarding.import_v1_error_generic': 'generic failure',
     'onboarding.import_v1_progress_covers': 'covers %current%/%total%',
@@ -187,6 +192,24 @@ test('renders every field of the report, with 18+ genres and genres without a co
     expect(document.getElementById('onboarding-import-v1-cancel').hidden).toBe(true);
 });
 
+test('adds the conditional lines when their counters are non-zero', async () => {
+    await startImport();
+
+    emit('import_v1.done', {
+        ...FULL_REPORT,
+        episodesDroppedTitles: ['A', 'B'], endDatesSynthesized: 3, statusesDowngraded: 4, needsAttention: 5,
+    });
+    await flush();
+
+    const lines = [...document.querySelectorAll('#onboarding-import-v1-report li')].map((li) => li.textContent);
+    expect(lines.slice(8)).toEqual([
+        `episodes dropped ${isolated(2)} (${isolated('A, B')})`,
+        `end dates ${isolated(3)}`,
+        `downgraded ${isolated(4)}`,
+        `attention ${isolated(5)}`,
+    ]);
+});
+
 test('adds the lines for skipped storages only when there are some', async () => {
     await startImport();
 
@@ -232,6 +255,39 @@ test('cancel kills the process and returns the card to its initial state', async
     expect(document.getElementById('onboarding-import-v1-error').hidden).toBe(true);
     expect(document.getElementById('onboarding-import-v1-pick').hidden).toBe(false);
     expect(document.getElementById('onboarding-import-v1-cancel').hidden).toBe(true);
+});
+
+test('a done event that arrives before a late cancel wins: the report stays, "cancelled" stays hidden', async () => {
+    let finish;
+    await startImport(() => new Promise((resolve) => { finish = resolve; }));
+
+    document.getElementById('onboarding-import-v1-cancel').click();
+    emit('import_v1.done', FULL_REPORT);
+    await flush();
+    finish({ ok: true, code: 0 });
+    await flush();
+
+    expect(document.getElementById('onboarding-import-v1-result').hidden).toBe(false);
+    expect(document.getElementById('onboarding-import-v1-cancelled').hidden).toBe(true);
+    expect(document.querySelectorAll('#onboarding-import-v1-report li').length).toBeGreaterThan(1);
+});
+
+test('shows a report-less message when the process succeeded but no done event arrived', async () => {
+    jest.useFakeTimers();
+    try {
+        window.animeDb.importV1Start = jest.fn(() => Promise.resolve({ ok: true, code: 0 }));
+        document.getElementById('onboarding-import-v1-pick').click();
+        for (let i = 0; i < 70; i += 1) {
+            await jest.advanceTimersByTimeAsync(50);
+        }
+        await flush();
+    } finally {
+        jest.useRealTimers();
+    }
+
+    const items = [...document.querySelectorAll('#onboarding-import-v1-report li')].map((li) => li.textContent);
+    expect(document.getElementById('onboarding-import-v1-result').hidden).toBe(false);
+    expect(items).toEqual(['done, no report']);
 });
 
 test('does not persist the report anywhere', async () => {

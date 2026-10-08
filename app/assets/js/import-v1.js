@@ -227,18 +227,25 @@
             // matters for what never reaches the bus: a cancel (killing the process by PID bypasses
             // the command's own publishing), a process that could not spawn, a crash.
             const outcome = await window.animeDb.importV1Start(folder);
-            if (cancelRequested) {
+            // A result from the bus wins over a late cancel: the catalog is already filled (or the
+            // refusal already shown), so "cancelled" would be untrue.
+            if (settled) {
+                cancelRequested = false;
+            } else if (cancelRequested) {
                 cancelRequested = false;
                 resetControls();
                 cancelledBox.hidden = false;
-            } else if (outcome.ok && !settled) {
+            } else if (outcome.ok) {
                 await waitForDone();
                 if (!settled) {
                     resetControls();
                     reportList.replaceChildren();
+                    const item = document.createElement('li');
+                    item.textContent = await window.AppTranslations.trans('onboarding.import_v1_done_no_report');
+                    reportList.appendChild(item);
                     resultBox.hidden = false;
                 }
-            } else if (!outcome.ok && !settled) {
+            } else {
                 resetControls();
                 showError(null);
             }
