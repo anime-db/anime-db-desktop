@@ -339,6 +339,7 @@ describe('checkLicenseFiles', () => {
     test.each([
         ['our own GPLv3 text (extraFiles)',              'LICENSE.txt'],
         ['the third-party index (extraFiles)',           'THIRD-PARTY-LICENSES/README.md'],
+        ['the PHP package inventory (extraFiles)',       'THIRD-PARTY-LICENSES/COMPOSER-PACKAGES.md'],
         ['the PHP license from the upstream archive',    'resources/app/bin/licenses/frankenphp/license.txt'],
         ['the qbittorrent-nox bundle attribution',       'resources/app/bin/qbittorrent-nox/THIRD-PARTY-LICENSES/README.md'],
         ['the ffprobe bundle attribution',               'resources/app/bin/ffprobe/THIRD-PARTY-LICENSES/README.md'],
