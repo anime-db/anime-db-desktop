@@ -84,7 +84,7 @@ function checkPrerequisites() {
         fail('Playwright отсутствует — выполни `npm ci`.');
     }
     if (!fs.existsSync(frankenphpBinary())) {
-        fail(`Linux FrankenPHP binary not found at ${frankenphpBinary()} — put it there or set E2E_FRANKENPHP_BIN.`);
+        fail(`Linux FrankenPHP binary not found at ${frankenphpBinary()} — run \`npm run download-e2e-runtime\` or set E2E_FRANKENPHP_BIN.`);
     }
     if (spawnSync('which', ['php']).status !== 0) {
         fail('`php` was not found on PATH (needed for the fixture and the cache warm-up).');

@@ -1,0 +1,126 @@
+name: E2E
+
+# Прогон набора E2E (`npm run e2e`): боевой FrankenPHP с `app/Caddyfile`, `APP_ENV=prod`,
+# Electron под Xvfb, взаимодействие только локаторами Playwright. Это проверка поведения
+# интерфейса, а не того, что приложение запускается: за запуск поставочного состава отвечает
+# гейт релиза в build.yml (issue #942).
+#
+# Почему отдельный workflow и такие триггеры:
+#
+# * `push` по тегам `v*.*.*` — тот же триггер, что у build.yml, то есть набор идёт один раз на
+#   релиз, когда его результат реально на что-то влияет;
+# * `workflow_dispatch` — по кнопке, когда нужно прогнать набор вне релиза (например, после
+#   правки самих сценариев);
+# * на каждый PR прогон НЕ идёт — осознанное решение issue #942: набор тяжёлый (минуты на
+#   поднятие приложения), а регрессии фронтенда на PR продолжают ловить frontend-smoke.yml
+#   (прогон снимков) и юниты в ci.yml.
+#
+# Падение этого прогона релиз НЕ блокирует, и это тоже осознанно: новый набор на новой
+# инфраструктуре сперва должен показать, что он не флаки. Блокировки нет по построению —
+# релиз публикует отдельный workflow (build.yml), результат этого на него не влияет, а правил
+# ветки в репозитории нет (план не поддерживает branch protection). Перевод в блокирующий
+# гейт — отдельное решение после нескольких релизов, и тогда же workflow получит метку
+# `Quality Gate`.
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+# Сериализуем прогон одного тега (повторный пуш тега / ручной dispatch), но НЕ отменяем: как и
+# у build.yml, релизный прогон нужно доводить до конца.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  e2e:
+    name: E2E
+    runs-on: ubuntu-latest
+    # Граница «что-то зависло», а не бюджет: локально полный набор укладывается в ~2 минуты, к
+    # ним на раннере добавляются composer install, npm ci, системные библиотеки Electron и
+    # загрузка бинаря FrankenPHP (~170 МБ). У самого набора есть свой потолок на сценарий
+    # (90 с, `E2E_TIMEOUT_MS`), так что этот — про зависший apt/загрузку, а не про сценарии.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # Прогон поднимает приложение целиком, вместе с фикстурным плагином из
+          # scripts/e2e/plugins — то есть исполняет код, которому токен в .git/config не нужен
+          # и доступен быть не должен. Git самой джобе после checkout не нужен.
+          persist-credentials: false
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          # Тот же пин, что в ci.yml/build.yml/runtime-parity.yml/frontend-smoke.yml и
+          # остальных: версия обязана совпадать с той, что несёт запиненный в
+          # scripts/versions.json FrankenPHP (issue #536). Здесь это особенно существенно —
+          # `php` поднимает фикстуру и миграции, а сценарии идут на FrankenPHP, и расхождение
+          # минора означало бы прогон на двух разных PHP.
+          php-version: '8.5'
+          tools: composer
+          coverage: none
+          # Список полный, а не короткий «apcu, gd, intl» как в frontend-smoke.yml, хотя часть
+          # расширений setup-php на ubuntu включает и так. Причина — триггер: frontend-smoke
+          # идёт на каждый PR, поэтому пропавшее расширение там краснеет в тот же день, а этот
+          # прогон идёт только по тегу — ровно тот слепой угол, из-за которого релизная сборка
+          # пять дней была сломана (issue #535). Поэтому список явный и сверяется с `require`
+          # из app/composer.json тестом tests/scripts/build-workflow-extensions.test.js.
+          extensions: apcu, zip, ctype, iconv, gd, intl, mbstring, openssl, pdo_sqlite
+          ini-values: apc.enable_cli=1
+
+      - name: Configure Composer auth for private repos
+        run: composer config --global github-oauth.github.com ${{ secrets.COMPOSER_GITHUB_TOKEN }}
+
+      - name: Install PHP dependencies
+        uses: ramsey/composer-install@v4
+        with:
+          working-directory: app
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      # Тот же список, что в frontend-smoke.yml: Electron под Xvfb тянет библиотеки, которых нет
+      # в образе раннера. Списки обязаны совпадать — расхождение проверяется тестом
+      # tests/scripts/e2e-workflow.test.js, иначе один прогон починят, а второй останется
+      # красным по той же причине.
+      - name: Install Electron runtime libraries
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            xvfb libatk1.0-0t64 libatk-bridge2.0-0t64 libgtk-3-0t64 libgbm1 libnss3 \
+            libasound2t64 libcups2t64 libdrm2 libxkbcommon0 libpango-1.0-0 libcairo2 \
+            libatspi2.0-0t64 libxdamage1 libxrandr2 libxcomposite1 libxfixes3 libxshmfence1
+
+      - name: Build frontend assets
+        run: npm run assets
+
+      # Linux-сборка FrankenPHP запиненной версии в bin/frankenphp/frankenphp — её ждёт
+      # scripts/e2e/prereq.js. Поставочный download-bins.js здесь не подходит: он собирает
+      # Windows-состав (frankenphp.exe плюс DLL).
+      - name: Download the pinned Linux FrankenPHP
+        run: npm run download-e2e-runtime
+
+      - name: Run E2E
+        run: npm run e2e
+
+      # Trace и скриншот последнего состояния упавшего сценария. Без них разбор красного
+      # прогона идёт по одной строке stdout, и набор начинают гонять «мимо» (issue #942).
+      - name: Upload E2E artifacts
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: e2e-results
+          path: e2e-results/
+          # Прогон релизный, разбирают его днями, а не месяцами; дефолтные 90 дней для
+          # трейсов на несколько мегабайт — лишнее хранение.
+          retention-days: 14
+          if-no-files-found: warn
