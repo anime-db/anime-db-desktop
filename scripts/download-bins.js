@@ -532,6 +532,7 @@ if (require.main === module) {
 }
 
 module.exports = {
+    downloadBufferWithRetry,
     parseSha256Sums,
     verifyEd25519Signature,
     extractZipToDir,
