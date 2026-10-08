@@ -41,13 +41,15 @@ describe('coverage matrix', () => {
         ]);
     });
 
-    test('collectScenarios walks nested suites and strips @-less tags', () => {
+    test('collectScenarios walks nested suites and strips the leading @ from tags', () => {
         const report = { suites: [{ suites: [{ suites: [{ specs: [
-            { file: 'f.js', title: 't', tags: ['route:/a', 'feature:f1'] },
+            { file: 'f.js', title: 't', tags: ['@route:/a', '@feature:f1'] },
+            { file: 'f.js', title: 'plain', tags: ['route:/b', 'feature:f2'] },
             { file: 'f.js', title: 'bare', tags: [] },
         ] }] }] }] };
         expect(collectScenarios(report)).toEqual([
             { file: 'f.js', title: 't', routes: ['/a'], features: ['f1'] },
+            { file: 'f.js', title: 'plain', routes: ['/b'], features: ['f2'] },
             { file: 'f.js', title: 'bare', routes: [], features: [] },
         ]);
     });
