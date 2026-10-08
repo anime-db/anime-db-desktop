@@ -42,9 +42,11 @@ const test = base.test.extend({
         disposeFixture();
     }, { scope: 'worker', auto: true }],
 
-    // eslint-disable-next-line no-empty-pattern
-    session: async ({}, use, testInfo) => {
-        const session = await launchApp();
+    // `test.use({ sourcePlugin: true })` installs the offline "fill from source" plugin (plugins.js).
+    sourcePlugin: [false, { option: true }],
+
+    session: async ({ sourcePlugin }, use, testInfo) => {
+        const session = await launchApp({ sourcePlugin });
         await session.app.context().tracing.start({ screenshots: true, snapshots: true, sources: false });
 
         try {

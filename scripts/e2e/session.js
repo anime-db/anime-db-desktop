@@ -50,7 +50,7 @@ async function main() {
         '--no-sandbox', '--disable-gpu', `--remote-debugging-port=${cdpPort}`,
         path.join(__dirname, 'main.js'),
     ], {
-        env: { ...process.env, E2E_PORT: String(server.port), E2E_USER_DATA_DIR: path.join(data.dir, 'electron') },
+        env: { ...process.env, E2E_PORT: String(server.port), E2E_USER_DATA_DIR: data.dir },
         stdio: 'inherit',
     });
 

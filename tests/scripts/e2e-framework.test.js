@@ -25,6 +25,7 @@ const path = require('path');
 const { Linter } = require('eslint');
 
 const { stubOpenDialog, stubOpenDialogCancelled, stubMessageBox } = require('../../scripts/e2e/dialogs');
+const { covers } = require('../../scripts/e2e/coverage');
 
 const rootDir = path.resolve(__dirname, '..', '..');
 
@@ -53,10 +54,18 @@ describe('E2E lint guard: scripted interaction is forbidden', () => {
         "page.evalOnSelectorAll('#btn', (els) => els[0].click());",
         "page.locator('#btn').dispatchEvent('click');",
         "page.dispatchEvent('#btn', 'click');",
+        "page.locator('#btn').click({ force: true });",
+        "page.locator('#field').check({ force: true, timeout: 1000 });",
     ])('%s is rejected', (code) => {
         const messages = lintE2e(`'use strict';\n${code}\n`);
 
         expect(messages.some((m) => m.includes('No scripted interaction in E2E'))).toBe(true);
+    });
+
+    test('`force: true` of a plain filesystem call is not an interaction', () => {
+        const messages = lintE2e("'use strict';\nrequire('fs').rmSync('/tmp/x', { recursive: true, force: true });\n");
+
+        expect(messages.filter((m) => m.includes('No scripted interaction in E2E'))).toEqual([]);
     });
 
     test('locator.click() and a DOM-building evaluate() are allowed', () => {
@@ -67,6 +76,18 @@ describe('E2E lint guard: scripted interaction is forbidden', () => {
         );
 
         expect(messages.filter((m) => m.includes('No scripted interaction in E2E'))).toEqual([]);
+    });
+});
+
+describe('coverage label of a scenario', () => {
+    test('routes and features become Playwright tags the matrix can read', () => {
+        expect(covers({ routes: ['/anime/{id}', '/'], features: ['inline-editor'] })).toEqual({
+            tag: ['@route:/anime/{id}', '@route:/', '@feature:inline-editor'],
+        });
+    });
+
+    test('a scenario without any label is refused', () => {
+        expect(() => covers({})).toThrow('at least one route or feature');
     });
 });
 

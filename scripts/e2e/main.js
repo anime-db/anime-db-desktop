@@ -43,6 +43,9 @@ if (process.env.E2E_USER_DATA_DIR) {
 }
 
 require('../../native/dialog');
+// Accept-Language follows config.json, which the PHP side shares with this process through the
+// user-data directory (as in production) — what makes a language change apply to the next request.
+require('../../native/accept-language');
 
 app.whenReady().then(() => {
     const win = new BrowserWindow({
