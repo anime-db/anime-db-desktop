@@ -973,14 +973,22 @@ final class PluginControllerTest extends TestCase
         $this->writePluginsJson(['animedb-shikimori' => ['enabled' => true, 'syncSeeded' => true]]);
         $this->registry->reconcile();
 
+        $urlGenerator = $this->createMock(UrlGeneratorInterface::class);
+        $urlGenerator->expects($this->once())
+            ->method('generate')
+            ->with('settings_plugins_index')
+            ->willReturn('/settings/plugins');
+
         $messageBus = $this->createMock(MessageBusInterface::class);
         $messageBus->expects($this->never())->method('dispatch');
 
-        $response = $this->controller(syncRegistry: $this->syncRegistry(['animedb-shikimori']), messageBus: $messageBus)
+        $response = $this->controller(urlGenerator: $urlGenerator, syncRegistry: $this->syncRegistry(['animedb-shikimori']), messageBus: $messageBus)
             ->toggleSync('animedb-shikimori', $this->syncToggleRequest('animedb-shikimori', '1'));
 
         $this->assertSame('/settings/plugins', $response->getTargetUrl());
-        $this->assertTrue($this->readPluginsJson()['animedb-shikimori']['features']['sync']);
+        $config = $this->readPluginsJson()['animedb-shikimori'];
+        $this->assertTrue($config['features']['sync']);
+        $this->assertTrue($config['syncSeeded']);
     }
 
     public function testToggleSyncOffKeepsSyncSeededAndOtherSettingsAndRedirectsToThePluginsPage(): void
