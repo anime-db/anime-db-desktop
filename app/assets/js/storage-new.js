@@ -41,6 +41,7 @@
 
         const pathNotApplicableTypes = (typeSelect.dataset.pathNotApplicableTypes || '').split(',').filter(Boolean);
         const notApplicableHint = form.querySelector('#storage-new-path-not-applicable');
+        let savedPath = '';
 
         function updatePickButtonVisibility() {
             pickButton.hidden = !window.animeDb || !writableTypes.includes(typeSelect.value);
@@ -48,8 +49,12 @@
 
         function updatePathApplicable() {
             const applicable = !pathNotApplicableTypes.includes(typeSelect.value);
-            if (!applicable) {
+            if (!applicable && !pathInput.disabled) {
+                // Remember the typed path so switching the type back does not lose it.
+                savedPath = pathInput.value;
                 pathInput.value = '';
+            } else if (applicable && pathInput.disabled) {
+                pathInput.value = savedPath;
             }
             pathInput.disabled = !applicable;
             if (notApplicableHint) {
