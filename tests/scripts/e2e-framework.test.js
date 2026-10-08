@@ -134,15 +134,25 @@ describe('native dialog stubs', () => {
 describe('e2e start-up diagnostics', () => {
     afterEach(() => jest.restoreAllMocks());
 
-    test('missing Playwright is reported with a hint to run npm ci', () => {
-        jest.spyOn(fs, 'existsSync').mockImplementation((file) => !String(file).includes('playwright'));
-        const errors = jest.spyOn(console, 'error').mockImplementation(() => {});
-        jest.spyOn(process, 'exit').mockImplementation((code) => {
-            throw new Error(`exit:${code}`);
-        });
+    describe.each([
+        ['the binary', (file) => file.endsWith(path.join('.bin', 'playwright'))],
+        ['the package', (file) => file.includes(path.join('@playwright', 'test'))],
+    ])('when only %s is missing', (_name, isMissing) => {
+        const platform = Object.getOwnPropertyDescriptor(process, 'platform');
 
-        expect(() => checkPrerequisites()).toThrow('exit:1');
-        expect(errors.mock.calls.join('\n')).toMatch(/Playwright.*npm ci/);
+        beforeEach(() => Object.defineProperty(process, 'platform', { value: 'linux' }));
+        afterEach(() => Object.defineProperty(process, 'platform', platform));
+
+        test('Playwright is reported with a hint to run npm ci', () => {
+            jest.spyOn(fs, 'existsSync').mockImplementation((file) => !isMissing(String(file)));
+            const errors = jest.spyOn(console, 'error').mockImplementation(() => {});
+            jest.spyOn(process, 'exit').mockImplementation((code) => {
+                throw new Error(`exit:${code}`);
+            });
+
+            expect(() => checkPrerequisites()).toThrow('exit:1');
+            expect(errors.mock.calls.join('\n')).toMatch(/Playwright.*npm ci/);
+        });
     });
 
     test('a spawn error is printed and gives a non-zero exit code', () => {
