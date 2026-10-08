@@ -62,6 +62,7 @@ describe('render', () => {
         ]);
 
         expect(output).toContain('resources/app/app/vendor/a/with/LICENSE');
+        expect(NOT_FOUND).toBe('NOT FOUND');
         expect(output).toMatch(new RegExp(`b/without\\s+\\| 2.0.0\\s+\\| MIT\\s+\\| ${NOT_FOUND}`));
     });
 
