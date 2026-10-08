@@ -33,6 +33,9 @@ const crypto = require('crypto');
 const fs     = require('fs');
 const path   = require('path');
 
+const { envForDir } = require('../fixture');
+const { buildPhpEnv } = require('./server');
+
 const appDir = path.resolve(__dirname, '..', '..', 'app');
 
 const PLUGIN_ID = 'e2e-source';
@@ -62,12 +65,12 @@ function installSourcePlugin(dataDir, env) {
 }
 
 /**
- * Switches what the plugin answers: 'empty' (nothing found) or 'images' (one frame). In 'images'
+ * Switches what the plugin answers: 'empty' (nothing found), 'images' (one frame) or 'linkable' (one record, no media). In 'images'
  * the frame file is put where the host's media downloader looks for an already downloaded URL, so
  * the scenario needs no network.
  *
  * @param {string} dataDir
- * @param {'empty'|'images'} mode
+ * @param {'empty'|'images'|'linkable'} mode
  * @param {number} animeId
  */
 function setSourceMode(dataDir, mode, animeId) {
@@ -81,4 +84,36 @@ function setSourceMode(dataDir, mode, animeId) {
     }
 }
 
-module.exports = { installSourcePlugin, setSourceMode, PLUGIN_ID };
+/**
+ * External ids the host asked the plugin to remove from its list, in call order (the plugin's
+ * `removed` file; absent until the first call).
+ *
+ * @param {string} dataDir
+ * @returns {string[]}
+ */
+function removedFromSource(dataDir) {
+    const file = path.join(dataDir, 'plugins', PLUGIN_ID, 'removed');
+
+    return fs.existsSync(file) ? fs.readFileSync(file, 'utf8').split('\n').filter((line) => line !== '') : [];
+}
+
+/**
+ * Runs the queued deletions from the sources. The app removes an entry from a source's list through
+ * the message queue, whose consumer is a separate process the E2E run does not start; this runs
+ * the consumer for a few seconds, enough for the handful of jobs a scenario queues.
+ *
+ * @param {string} dataDir
+ */
+function consumeQueuedRemovals(dataDir) {
+    try {
+        execFileSync('php', [path.join(appDir, 'bin', 'console'), 'messenger:consume', 'async', '--time-limit=4', '--sleep=0.2', '--no-interaction'], {
+            cwd: appDir,
+            env: buildPhpEnv(dataDir, envForDir(dataDir)),
+            stdio: 'pipe',
+        });
+    } catch (err) {
+        throw new Error(`queue consume failed:\n${(err.stderr || err.stdout || err.message).toString()}`);
+    }
+}
+
+module.exports = { installSourcePlugin, setSourceMode, removedFromSource, consumeQueuedRemovals, PLUGIN_ID };

@@ -30,6 +30,8 @@ namespace AnimeDb\Plugins\E2eSource;
 use AnimeDb\PluginContracts\Filler\FillerInterface;
 use AnimeDb\PluginContracts\Filler\PluginAnimeData;
 use AnimeDb\PluginContracts\Search\SearchByPluginCandidate;
+use AnimeDb\PluginContracts\Sync\SyncItem;
+use AnimeDb\PluginContracts\Sync\SyncRemovalInterface;
 
 /**
  * Offline filler for the E2E scenarios. What it answers is chosen by the `mode` file next to the
@@ -37,28 +39,36 @@ use AnimeDb\PluginContracts\Search\SearchByPluginCandidate;
  *
  *  - `empty`  (default) — nothing is found, the host shows its "no match" notice;
  *  - `images` — one record whose gallery holds a single frame (the file is placed in the media
- *               directory beforehand, so the host never has to download it).
+ *               directory beforehand, so the host never has to download it);
+ *  - `linkable` — one record with no media, enough to link an existing entry to this source.
+ *
+ * It is also a sync source whose list can drop an entry ({@see SyncRemovalInterface}); the list is
+ * empty and nothing leaves the process. Every remove() call appends its external id to the
+ * `removed` file next to the manifest, so a scenario can tell whether the removal reached the plugin.
  */
-final class E2eSourceFiller implements FillerInterface
+final class E2eSourceFiller implements SyncRemovalInterface
 {
+    public const string LINKABLE_ID = 'e2e-linkable';
     public const string FRAME_URL = 'https://frames.invalid/e2e-frame.webp';
 
     public function find(string $name, ?callable $onHeartbeat = null): array
     {
-        if ($this->mode() !== 'images') {
-            return [];
-        }
-
-        return [new SearchByPluginCandidate('e2e-source', $name, 'e2e-1')];
+        return match ($this->mode()) {
+            'images' => [new SearchByPluginCandidate('e2e-source', $name, 'e2e-1')],
+            'linkable' => [new SearchByPluginCandidate('e2e-source', $name, self::LINKABLE_ID)],
+            default => [],
+        };
     }
 
     public function findById(string $externalId): ?PluginAnimeData
     {
-        if ($this->mode() !== 'images') {
-            return null;
-        }
-
-        return new PluginAnimeData(title: 'E2E', images: [self::FRAME_URL]);
+        // The host caches what findById() returns by (plugin, external id) outside the environment
+        // directory, so every mode answers under an id of its own.
+        return match ([$this->mode(), $externalId]) {
+            ['images', 'e2e-1'] => new PluginAnimeData(title: 'E2E', images: [self::FRAME_URL]),
+            ['linkable', self::LINKABLE_ID] => new PluginAnimeData(title: 'E2E'),
+            default => null,
+        };
     }
 
     public function resolveExternalId(array $urls): ?string
@@ -69,6 +79,21 @@ final class E2eSourceFiller implements FillerInterface
     public function getFillableFields(): array
     {
         return ['cover', 'images'];
+    }
+
+    public function push(SyncItem $item): SyncItem
+    {
+        return $item;
+    }
+
+    public function pull(): iterable
+    {
+        return [];
+    }
+
+    public function remove(string $externalId): void
+    {
+        file_put_contents(\dirname(__DIR__).'/removed', $externalId."\n", \FILE_APPEND | \LOCK_EX);
     }
 
     private function mode(): string
