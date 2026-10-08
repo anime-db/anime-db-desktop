@@ -181,6 +181,7 @@ async function start(onProgress, { safeMode = false, confirmStagedImport } = {})
         phpCommand.killOrphan('app:search:reindex'),
         phpCommand.killOrphan('app:plugin:reconcile'),
         phpCommand.killOrphan('app:catalog:export'),
+        phpCommand.killOrphan('app:catalog:import-v1'),
         phpCommand.killOrphan('app:downloads:poll'),
         phpCommand.killOrphan('app:queue:purge'),
         pluginsConsumer.killOrphan(),

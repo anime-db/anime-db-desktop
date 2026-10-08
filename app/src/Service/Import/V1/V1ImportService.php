@@ -80,7 +80,9 @@ final class V1ImportService
     /** @throws InvalidV1InstallationException */
     public function import(string $installationDir): V1ImportResult
     {
+        $this->wsPublisher->publish('import_v1.progress', ['phase' => 'read', 'current' => 0, 'total' => 1]);
         $records = $this->reader->read($installationDir);
+        $this->wsPublisher->publish('import_v1.progress', ['phase' => 'read', 'current' => 1, 'total' => 1]);
 
         // Before any write: the command can be run from the CLI, whatever the interface offers.
         if ($this->animeRepository->countAll() > 0) {
@@ -129,7 +131,7 @@ final class V1ImportService
 
             $current = $index + 1;
             if ($current % self::PROGRESS_STEP === 0 || $current === $total) {
-                $this->wsPublisher->publish('import.progress', ['phase' => 'v1', 'current' => $current, 'total' => $total]);
+                $this->wsPublisher->publish('import_v1.progress', ['phase' => 'records', 'current' => $current, 'total' => $total]);
             }
         }
 
@@ -183,8 +185,14 @@ final class V1ImportService
     {
         $mediaDir = V1CatalogReader::mediaDir($installationDir);
         $imported = $missing = 0;
+        $total = \count($created);
 
-        foreach ($created as [$anime, $record]) {
+        foreach ($created as $index => [$anime, $record]) {
+            $current = $index + 1;
+            if ($current % self::PROGRESS_STEP === 0 || $current === $total) {
+                $this->wsPublisher->publish('import_v1.progress', ['phase' => 'covers', 'current' => $current, 'total' => $total]);
+            }
+
             $webp = $mediaDir !== null && $record->cover !== null ? $this->normalizeCover($mediaDir, $record->cover) : null;
             if ($webp === null || $anime->id === null) {
                 ++$missing;

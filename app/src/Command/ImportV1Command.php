@@ -29,6 +29,7 @@ namespace App\Command;
 
 use App\Service\Import\Exception\InvalidV1InstallationException;
 use App\Service\Import\V1\V1ImportService;
+use App\Service\WsPublisher;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputArgument;
@@ -40,8 +41,9 @@ use Symfony\Contracts\Translation\TranslatorInterface;
 /**
  * Imports the collection of an AnimeDB v1 installation into an empty catalog (issue #951). The
  * argument is the installation directory, not a database file. Messages go through `trans()`
- * (`import_v1.*`) like {@see CatalogStageCommand}, since a later onboarding screen surfaces this
- * command's outcome to the user.
+ * (`import_v1.*`) like {@see CatalogStageCommand}, since the onboarding screen surfaces this
+ * command's outcome to the user: progress and outcome also go over the /ws bus as
+ * `import_v1.progress` / `import_v1.done` / `import_v1.failed`.
  */
 #[AsCommand(name: 'app:catalog:import-v1', description: 'Import the collection of an AnimeDB v1 installation into an empty catalog')]
 final class ImportV1Command extends Command
@@ -54,6 +56,7 @@ final class ImportV1Command extends Command
     public function __construct(
         private readonly V1ImportService $importService,
         private readonly TranslatorInterface $translator,
+        private readonly WsPublisher $wsPublisher,
     ) {
         parent::__construct();
     }
@@ -74,6 +77,7 @@ final class ImportV1Command extends Command
             $result = $this->importService->import($directory);
         } catch (InvalidV1InstallationException $exception) {
             $io->error($this->translator->trans('import_v1.error_'.$exception->reasonKey, $exception->params));
+            $this->wsPublisher->publish('import_v1.failed', ['reason' => $exception->reasonKey, 'params' => array_combine(array_map(static fn (string $name): string => trim($name, '%'), array_keys($exception->params)), $exception->params)]);
 
             return match ($exception->reasonKey) {
                 InvalidV1InstallationException::REASON_NOT_V1_INSTALLATION => self::EXIT_NOT_V1_INSTALLATION,
@@ -84,6 +88,7 @@ final class ImportV1Command extends Command
         }
 
         $io->success($result->render($this->translator));
+        $this->wsPublisher->publish('import_v1.done', $result->toArray());
 
         return Command::SUCCESS;
     }

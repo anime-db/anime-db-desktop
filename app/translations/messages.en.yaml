@@ -710,6 +710,18 @@ onboarding:
     load_demo_heading: Load demo data
     load_demo_description: Fill the catalog with sample entries to see how it works.
     load_demo_button: Load demo data
+    import_v1_heading: Import from AnimeDB v1
+    import_v1_description: Pick the folder where AnimeDB v1 is installed to bring over your collection. The import replaces the catalog and is only offered while it is empty.
+    import_v1_button: Choose the v1 folder
+    import_v1_cancel_button: Cancel
+    import_v1_progress_read: 'Reading the v1 database: %current% of %total%.'
+    import_v1_progress_records: 'Creating entries: %current% of %total%.'
+    import_v1_progress_covers: 'Importing covers: %current% of %total%.'
+    import_v1_cancelled: The import was cancelled. Nothing was imported.
+    import_v1_error_generic: The import failed. Nothing was imported. Check the folder and try again.
+    import_v1_done_heading: Import finished
+    import_v1_done_no_report: The import finished.
+    import_v1_open_catalog_button: Open the catalog
 
 storage_edit:
     title: Edit Storage — AnimeDB
