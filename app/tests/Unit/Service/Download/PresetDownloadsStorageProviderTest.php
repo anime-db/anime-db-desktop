@@ -130,8 +130,8 @@ final class PresetDownloadsStorageProviderTest extends TestCase
     {
         $storage = $this->provider()->getOrCreate();
 
-        $this->assertDirectoryExists($storage->getPath());
-        $this->assertSame($storage->id, $this->markerService->readMarkerId($storage->getPath()));
+        $this->assertDirectoryExists($storage->requirePath());
+        $this->assertSame($storage->id, $this->markerService->readMarkerId($storage->requirePath()));
     }
 
     public function testGetOrCreateReturnsTheSameStorageOnASecondCall(): void

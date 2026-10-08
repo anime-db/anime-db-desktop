@@ -108,11 +108,13 @@ npm run assets
 npm run shots
 ```
 
-Схема БД (`doctrine:migrations:migrate`) и очередь Messenger (`messenger:setup-transports`)
-поднимаются самим `npm run shots` — вручную это делать не нужно. А вот **демоданные каталога —
-ручной шаг**: без них снимается только пустой каталог, карточка аниме не снимается вовсе (в логе
-будет предупреждение). Поднимите приложение (`npm start`) и на пустом экране онбординга нажмите
-кнопку заполнения демоданными — после этого `npm run shots` увидит первую запись каталога.
+Прогон работает не с вашей dev-базой, а с детерминированной фикстурой (`scripts/fixture/`): схема
+накатывается на пустую SQLite-базу, затем команда `app:fixture:load` заливает семь записей каталога
+с обложками, метку, хранилище и настройки (`config.json`). Результат копируется во временный
+каталог, и в него же указывают `DATABASE_URL`, `CONFIG_PATH` и остальные пути пользовательских
+данных — `data/` и `app/var/` не читаются и не меняются; после прогона каталог удаляется. Поэтому
+`/anime/{id}` и `/anime/{id}/edit` снимаются и на чистом клоне, и в CI. Для своих сценариев
+используйте `createIsolatedEnv()` из `scripts/fixture/` — свежая копия фикстуры стоит миллисекунды.
 
 Команда требует Linux: снимки делаются под Xvfb (виртуальный X-сервер без физического экрана) —
 на нём же собирается и Electron из `devDependencies` для этой задачи. Нужны системные пакеты
@@ -142,6 +144,43 @@ libxrandr2 libxcomposite1 libxfixes3 libxshmfence1
 намеренно запускается напрямую, в обход `native/index.js` (см. комментарий в начале файла), и
 эту схему не регистрирует. На снимках каталога и карточки аниме вместо обложек будет плейсхолдер
 битого изображения — это ограничение метода, а не баг вёрстки.
+
+## E2E на Playwright
+
+Каркас сквозных проверок: приложение поднимается как в бою, а сценарии ходят по нему как
+пользователь. Не заменяет `npm run shots` (у снимков своя задача и своё состояние) и не входит в CI.
+
+```bash
+npm run e2e                       # все сценарии из scripts/e2e/scenarios/*.e2e.js
+npm run e2e -- -g "pick-folder"   # аргументы после `--` уходят в `playwright test`
+npm run e2e:session               # поднять приложение на фикстуре и оставить работать (Ctrl+C — стоп)
+```
+
+Что требуется (только Linux): `composer install` в `app/`, `npm run assets`, `npm ci`, `php` и
+`xvfb-run` в `PATH` (без `DISPLAY` команда сама перезапускается под Xvfb) и **Linux-сборка
+FrankenPHP** версии из `scripts/versions.json` в `bin/frankenphp/frankenphp` (или путь в
+`E2E_FRANKENPHP_BIN`). Второй браузер не скачивается: Playwright запускает наш Electron
+(`node_modules/electron`) через `_electron.launch({ executablePath })`.
+
+Как это устроено:
+
+- сервер — боевой FrankenPHP с `app/Caddyfile` (воркер, `try_files` в Caddy), `APP_ENV=prod`,
+  перед стартом выполняется `cache:warmup`; `php -S` и `scripts/shots/router.php` не используются;
+- данные — копия фикстуры (`scripts/fixture`) на каждый сценарий, включая runtime-каталог
+  Symfony. Точка подключения: `E2E_DATA_DIR` — каталог окружения, который используется как есть;
+- main-процесс — `scripts/e2e/main.js`: настоящие `preload.js` и IPC-обработчики `native/dialog`,
+  без супервизора (он стартует Windows-бинарники);
+- взаимодействие — **только** через локаторы Playwright. `locator.click()` ждёт реальной
+  кликабельности и отказывает на перекрытом элементе; `el.click()` внутри `evaluate()` /
+  `executeJavaScript()` кликает сквозь оверлей с `isTrusted=false`, поэтому ESLint запрещает его в
+  `scripts/e2e/` (правило проверено тестом `tests/scripts/e2e-framework.test.js`);
+- нативные диалоги — подмена в настоящем main-процессе через `electronApp.evaluate()`
+  (`scripts/e2e/dialogs.js`: `stubOpenDialog`, `stubOpenDialogCancelled`, `stubMessageBox`);
+- живучесть — таймаут на сценарий 90 с (`E2E_TIMEOUT_MS`), при падении в `e2e-results/` остаются
+  trace и скриншот последнего состояния (видео нет: `recordVideo` в Electron требует ffmpeg — второй загрузки — и без него виснет), итоговый вердикт называет упавшие сценарии, код выхода ненулевой.
+
+`e2e:session` печатает URL приложения и CDP-endpoint (`chromium.connectOverCDP(endpoint)`).
+Диалоги в такой сессии не подменены.
 
 ## Платформы
 

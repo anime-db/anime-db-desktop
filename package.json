@@ -15,11 +15,14 @@
         "check-runtime-parity": "node scripts/check-runtime-parity.js",
         "release-smoke": "node scripts/release-smoke.js",
         "shots": "node scripts/shots/run.js",
+        "e2e": "node scripts/e2e/run.js",
+        "e2e:session": "node scripts/e2e/session.js",
         "lint": "eslint native/ tests/native/ app/assets/js/ tests/public/ scripts/",
         "lint:fix": "eslint native/ tests/native/ app/assets/js/ tests/public/ scripts/ --fix",
         "test": "jest"
     },
     "devDependencies": {
+        "@playwright/test": "^1.63.0",
         "bootstrap": "^5.3.8",
         "electron": "^35.0.0",
         "electron-builder": "^25.0.0",

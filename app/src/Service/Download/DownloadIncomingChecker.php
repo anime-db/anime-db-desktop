@@ -102,10 +102,10 @@ final class DownloadIncomingChecker
     /** @return list<string> */
     public function storageRoots(): array
     {
-        return array_values(array_map(
-            static fn ($storage): string => $storage->getPath(),
+        return array_values(array_filter(array_map(
+            static fn ($storage): ?string => $storage->getPath(),
             $this->storages->findAllOrderedByName(),
-        ));
+        ), static fn (?string $path): bool => $path !== null));
     }
 
     /** @param ?array<string, mixed> $torrent */

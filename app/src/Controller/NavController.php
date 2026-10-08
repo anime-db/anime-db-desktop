@@ -60,7 +60,7 @@ final class NavController
     {
         $scannable = array_values(array_filter(
             $this->storages->findAllOrderedByName(),
-            static fn (Storage $storage): bool => $storage->getType()->isWritable(),
+            static fn (Storage $storage): bool => $storage->getType()->isWritable() && $storage->getPath() !== null,
         ));
 
         $unavailableIds = $this->storageAvailability->unavailableStorageIds($scannable);

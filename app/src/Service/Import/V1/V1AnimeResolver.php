@@ -400,7 +400,10 @@ final class V1AnimeResolver implements V1AnimeResolverInterface
         if ($this->storages === null) {
             $this->storages = [];
             foreach ($this->storageRepository->findAllOrderedByName() as $storage) {
-                $this->storages[$storage->getPath()] = $storage;
+                $path = $storage->getPath();
+                if ($path !== null) {
+                    $this->storages[$path] = $storage;
+                }
             }
         }
 

@@ -102,8 +102,8 @@ anime_name_role:
 storage_type:
     folder: Folder
     external: External
-    external-r: External (read-only)
-    video: Video
+    external-r: Recorded data disc (CD-R, CD-RW, DVD-R, DVD-RW)
+    video: Video media (DVD, BD, VHS)
 
 plugin_type:
     integration: Integration

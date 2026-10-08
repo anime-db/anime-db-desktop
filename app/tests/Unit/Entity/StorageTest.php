@@ -31,6 +31,7 @@ use App\Entity\Enum\StorageType;
 use App\Entity\Exception\InvalidNameException;
 use App\Entity\Exception\InvalidPathException;
 use App\Entity\Storage;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 final class StorageTest extends TestCase
@@ -144,5 +145,90 @@ final class StorageTest extends TestCase
         $storage->markScanned(new \DateTimeImmutable('2026-07-01 12:00:00'));
 
         $this->assertGreaterThanOrEqual($before, $storage->getDateUpdate());
+    }
+
+    /** @return iterable<string, array{StorageType}> */
+    public static function pathOptionalTypes(): iterable
+    {
+        yield 'external-r' => [StorageType::ExternalR];
+        yield 'video' => [StorageType::Video];
+    }
+
+    /** @return iterable<string, array{StorageType, ?string}> */
+    public static function missingPaths(): iterable
+    {
+        foreach ([StorageType::Folder, StorageType::External] as $type) {
+            yield $type->value.' null' => [$type, null];
+            yield $type->value.' empty' => [$type, ''];
+            yield $type->value.' blank' => [$type, '  '];
+            yield $type->value.' relative' => [$type, 'Anime\\Folder'];
+        }
+    }
+
+    #[DataProvider('pathOptionalTypes')]
+    public function testPathOptionalTypeIsCreatedWithoutPath(StorageType $type): void
+    {
+        $this->assertNull((new Storage('Disc', null, $type))->getPath());
+        $this->assertNull((new Storage('Disc', '', $type))->getPath());
+    }
+
+    public function testReadablePathOptionalTypeKeepsNonEmptyPath(): void
+    {
+        $this->assertSame('E:\\', (new Storage('Disc', 'E:\\', StorageType::ExternalR))->getPath());
+    }
+
+    public function testReadablePathOptionalTypeStillRejectsRelativePath(): void
+    {
+        $this->expectException(InvalidPathException::class);
+
+        new Storage('Disc', 'relative', StorageType::ExternalR);
+    }
+
+    public function testUnreadableTypeDropsPath(): void
+    {
+        $this->assertNull((new Storage('DVD', 'E:\\', StorageType::Video))->getPath());
+    }
+
+    public function testChangingToUnreadableTypeDropsPathOnRelocate(): void
+    {
+        $storage = new Storage('Main', 'E:\\', StorageType::Folder);
+        $storage->setType(StorageType::Video);
+        $storage->relocate('E:\\');
+
+        $this->assertNull($storage->getPath());
+    }
+
+    #[DataProvider('missingPaths')]
+    public function testPathRequiredTypeRejectsMissingPath(StorageType $type, ?string $path): void
+    {
+        $this->expectException(InvalidPathException::class);
+
+        new Storage('Main', $path, $type);
+    }
+
+    public function testRelocateClearsPathOfPathOptionalType(): void
+    {
+        $storage = new Storage('Disc', 'E:\\', StorageType::ExternalR);
+
+        $storage->relocate(null);
+
+        $this->assertNull($storage->getPath());
+    }
+
+    public function testRelocateValidatesAgainstTheCurrentType(): void
+    {
+        $storage = new Storage('Disc', null, StorageType::ExternalR);
+        $storage->setType(StorageType::Folder);
+
+        $this->expectException(InvalidPathException::class);
+
+        $storage->relocate(null);
+    }
+
+    public function testRequirePathThrowsWithoutPath(): void
+    {
+        $this->expectException(\LogicException::class);
+
+        (new Storage('Disc', null, StorageType::Video))->requirePath();
     }
 }

@@ -37,11 +37,10 @@ const { PID_MARKER, FAILED_MARKER, formatLastPageLine, saveFailureArtifacts } = 
 
 const PORT    = process.env.SHOTS_PORT;
 const OUT_DIR = process.env.SHOTS_OUT_DIR;
-// Empty string means the orchestrator found no anime row to link to — set by run.js.
-const ANIME_ID = process.env.SHOTS_ANIME_ID || null;
+const ANIME_ID = process.env.SHOTS_ANIME_ID;
 
-if (!PORT || !OUT_DIR) {
-    console.error('SHOTS_PORT and SHOTS_OUT_DIR must be set — this script is meant to be launched by scripts/shots/run.js');
+if (!PORT || !OUT_DIR || !ANIME_ID) {
+    console.error('SHOTS_PORT, SHOTS_OUT_DIR and SHOTS_ANIME_ID must be set — this script is meant to be launched by scripts/shots/run.js');
     app.exit(1);
 }
 
@@ -79,14 +78,15 @@ async function waitForRender(win) {
 }
 
 /**
- * Pages captured for every theme. `anime-card` and `anime-edit` are included only when the orchestrator found an
- * existing anime row (ANIME_ID), since the catalog is empty on a fresh clone until demo data is
- * seeded manually (see README).
+ * Pages captured for every theme. `anime-card` and `anime-edit` use the first catalog entry of
+ * the data fixture (ANIME_ID, see scripts/fixture).
  *
  * @returns {{ name: string, path: string }[]}
  */
 function buildPages() {
-    const pages = [
+    return [
+        { name: 'anime-card',      path: `/anime/${ANIME_ID}` },
+        { name: 'anime-edit',      path: `/anime/${ANIME_ID}/edit` },
         { name: 'catalog',         path: '/' },
         { name: 'anime-new',       path: '/anime/new' },
         { name: 'storage',         path: '/storage' },
@@ -99,17 +99,6 @@ function buildPages() {
         { name: 'plugins',         path: '/settings/plugins' },
         { name: 'plugin-widgets',  path: '/settings/plugins/widgets' },
     ];
-
-    if (ANIME_ID !== null) {
-        pages.unshift(
-            { name: 'anime-card', path: `/anime/${ANIME_ID}` },
-            { name: 'anime-edit', path: `/anime/${ANIME_ID}/edit` },
-        );
-    } else {
-        console.warn('[shots] no anime found in the catalog — skipping anime-card (see README on seeding demo data)');
-    }
-
-    return pages;
 }
 
 /**
