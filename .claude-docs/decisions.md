@@ -886,3 +886,20 @@ SIGUSR2) `capture.js` кладёт рядом со снимками `<тема>/
 - **Допущение о схеме v1**: имена колонок (`item.storage`, `item.studio`, `name.item_id`,
   `items_genres.genre_id` и т. д.) восстановлены по описанию задачи и проверены только на
   синтетической базе `tests/Support/V1DatabaseBuilder.php`; на живой базе v1 не прогонялись.
+
+### Вход в импорт из онбординга (issue #953)
+
+- Карточка «Импорт из AnimeDB v1» — четвёртая в приглашении `anime/list.html.twig`, то есть
+  показывается только пока `showOnboarding` (каталог пуст). Кнопки в настройках нет осознанно:
+  импорт — замещение пустого каталога, слияние двух каталогов не решается, а снимается постановкой.
+- Цепочка как у экспорта каталога: `app/assets/js/import-v1.js` → `window.animeDb.pickFolder()`
+  (выбирается корень установки v1, не файл БД) → `importV1Start(dir)` →
+  `native/import-v1/index.js` → `php-command.js` → `bin/console app:catalog:import-v1`. HTTP-эндпоинта
+  и нового IPC выбора файла нет. Отмена — `importV1Cancel()` → `phpCommand.killOrphan(...)`, сирота
+  от прошлого сеанса убирается в `supervisor.start()`.
+- События WS: `import_v1.progress` (`{phase: read|records|covers, current, total}`, публикует
+  `V1ImportService`), `import_v1.done` (`V1ImportResult::toArray()`) и `import_v1.failed`
+  (`{reason, params}`; публикует `ImportV1Command`). Возвращаемое значение IPC — только запасной путь
+  для исходов, не дошедших до шины (отмена, не удалось запустить, падение процесса).
+- Отчёт рисуется из `done` теми же ключами `import_v1.report_*`, что и консоль, и нигде не хранится:
+  при перезагрузке страницы он исчезает. Персистентность отчёта — задача V4, не копия этого экрана.

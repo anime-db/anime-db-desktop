@@ -304,4 +304,23 @@ final class AnimeListTemplateRenderingTest extends KernelTestCase
         $this->assertStringContainsString('id="anime-list-sort"', $html);
         $this->assertStringContainsString('anime-list__filters"', $html);
     }
+
+    /** Issue #953: the v1 import entry is part of the empty-catalog invitation. */
+    public function testEmptyCatalogOffersTheImportFromV1(): void
+    {
+        $html = $this->renderList(['showOnboarding' => true, 'hasActiveFillerPlugin' => true, 'hasScannableStorage' => false]);
+
+        $section = $this->onboardingSection($html);
+        $this->assertStringContainsString('data-control="onboarding-import-v1"', $section);
+        $this->assertStringContainsString('id="onboarding-import-v1-pick"', $section);
+        $this->assertStringContainsString('Import from AnimeDB v1', $section);
+    }
+
+    /** Issue #953: no import into a catalog that already holds entries — it would have to merge. */
+    public function testNonEmptyCatalogDoesNotOfferTheImportFromV1(): void
+    {
+        $html = $this->renderList(['showOnboarding' => false]);
+
+        $this->assertStringNotContainsString('onboarding-import-v1', $html);
+    }
 }
