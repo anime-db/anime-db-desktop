@@ -23,6 +23,7 @@
 
 const { test, expect } = require('../fixtures');
 const { covers, urlOf } = require('../coverage');
+const { clickAwaitingPost } = require('../actions');
 
 const cards = (page) => page.locator('.anime-card');
 const statusFilter = (page, status) => page.locator(`[data-filter-section="watch_status"] [data-value="${status}"] .anime-list__filter-value-name`);
@@ -53,7 +54,9 @@ test.describe('catalog list', () => {
 
     test('classic pagination: a narrow window pages the list and a page button switches the page', covers({ routes: ['/', '/settings', '/settings/pagination-mode', '/anime'], features: ['catalog-pagination'] }), async ({ app, page, session }) => {
         await page.goto(urlOf(session, '/settings'));
-        await page.locator('label[for="pagination-mode-classic"]').click();
+        // Форма уходит обычной навигацией: без ожидания POST-а следующий переход его отменяет, и
+        // режим остаётся прежним (см. scripts/e2e/actions.js).
+        await clickAwaitingPost(page, page.locator('label[for="pagination-mode-classic"]'), '/settings/pagination-mode');
         await expect(page.locator('#pagination-mode-classic')).toBeChecked();
 
         // One grid column makes the page six cards, so seven fixture entries need two pages.
