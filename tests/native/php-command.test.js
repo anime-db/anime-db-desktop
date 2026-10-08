@@ -30,6 +30,7 @@ jest.mock('../../native/paths', () => ({
     getQueueDbPath:        jest.fn(() => '/fake/userData/queue.db'),
     getPhpIniDir:          jest.fn(() => '/fake/userData'),
     getRuntimeDir:         jest.fn(() => '/fake/userData/var'),
+    getShareDir:           jest.fn(() => '/fake/userData/share'),
     getMediaDir:           jest.fn(() => '/fake/userData/media'),
     getImportStagingDir:   jest.fn(() => '/fake/userData/import-staging'),
     getImportRejectionPath: jest.fn(() => '/fake/userData/import-rejected.json'),
