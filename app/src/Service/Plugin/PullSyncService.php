@@ -27,9 +27,11 @@ declare(strict_types=1);
 
 namespace App\Service\Plugin;
 
+use AnimeDb\PluginContracts\Model\AnimeType as ContractAnimeType;
 use AnimeDb\PluginContracts\OAuth\ReauthRequiredException;
 use AnimeDb\PluginContracts\Sync\SyncInterface;
 use App\Entity\Anime;
+use App\Entity\Enum\AnimeType;
 use App\Entity\ValueObject\PluginId;
 use App\Repository\AnimeRepository;
 use App\Repository\SyncTombstoneRepository;
@@ -39,6 +41,7 @@ use App\Service\Sync\CrossVendorDuplicateDetector;
 use App\Service\Sync\DeletedFromSourceDetector;
 use App\Service\Sync\SyncConvergenceService;
 use App\Service\Sync\SyncProjection;
+use App\Service\Sync\TypeMismatchDetector;
 use Doctrine\ORM\EntityManager;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Log\LoggerInterface;
@@ -151,6 +154,7 @@ final class PullSyncService
         private readonly BulkFillerService $bulkFillerService,
         private readonly CrossVendorDuplicateDetector $duplicateDetector,
         private readonly DeletedFromSourceDetector $deletionDetector,
+        private readonly TypeMismatchDetector $typeMismatchDetector,
         private readonly SyncConvergenceService $convergenceService,
         private readonly SyncTombstoneRepository $tombstoneRepository,
         private readonly LoggerInterface $logger,
@@ -195,6 +199,8 @@ final class PullSyncService
         $tombstones = $this->tombstoneRepository->indexByPlugin($pluginId);
         /** @var list<Anime> $newlyCreated */
         $newlyCreated = [];
+        /** @var list<array{animeId: int, type: AnimeType, sourceType: ContractAnimeType}> $typeReports existing records whose source reports a type */
+        $typeReports = [];
         /** @var array<string, true> $presentExternalIds external ids still in the source's list */
         $presentExternalIds = [];
         // Set once this run's own EntityManager gets closed by a lost create race — see the
@@ -208,6 +214,7 @@ final class PullSyncService
                 $presentExternalIds[$item->externalId] = true;
                 $anime = $byExternalId[$item->externalId] ?? null;
                 $status = WatchStatusMapper::toWatchStatus($item->status);
+                $isNew = $anime === null;
 
                 try {
                     if ($anime === null) {
@@ -289,6 +296,13 @@ final class PullSyncService
                     );
 
                     $recoveryEntityManager?->flush();
+
+                    // A pull never changes a type: for a record that existed before this run the
+                    // source's type is only collected here and compared by TypeMismatchDetector after
+                    // the loop. A new record is created by the filler and has no type to compare.
+                    if ($item->type !== null && !$isNew && $anime->id !== null) {
+                        $typeReports[] = ['animeId' => $anime->id, 'type' => $anime->getType(), 'sourceType' => $item->type];
+                    }
                 } catch (ReauthRequiredException $exception) {
                     // Not this item's problem to isolate — the outer catch below stops the whole
                     // run for it, same as before this per-item isolation existed.
@@ -384,6 +398,8 @@ final class PullSyncService
             fn (Anime $anime): bool => $this->deletionDetector->hasConfirmedListMembership($anime, (string) $pluginId),
         );
         $this->deletionDetector->detect($pluginId, $disappeared);
+
+        $this->typeMismatchDetector->detect($pluginId, $typeReports);
 
         return true;
     }

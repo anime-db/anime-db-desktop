@@ -64,22 +64,35 @@ final class AnimeViewFactory
     {
         $changes = [];
         foreach (AnimeType::cases() as $type) {
-            try {
-                $change = $anime->planTypeChange($type);
-            } catch (InvalidAnimeTypeChangeException) {
-                continue;
+            $change = $this->serializeTypeChange($anime, $type);
+            if ($change !== null) {
+                $changes[] = $change;
             }
-
-            $changes[] = [
-                'type' => $type->value,
-                'lossy' => $change->isLossy(),
-                'lost_episodes_count' => $change->lostEpisodesCount,
-                'lost_watched_episodes' => $change->lostWatchedEpisodes,
-                'lost_date_end' => $change->lostDateEnd?->format('Y-m-d'),
-            ];
         }
 
         return $changes;
+    }
+
+    /**
+     * One entry of the "Change type…" dialog, or null when the domain refuses the change.
+     *
+     * @return array{type: string, lossy: bool, lost_episodes_count: ?int, lost_watched_episodes: ?int, lost_date_end: ?string}|null
+     */
+    public function serializeTypeChange(Anime $anime, AnimeType $type): ?array
+    {
+        try {
+            $change = $anime->planTypeChange($type);
+        } catch (InvalidAnimeTypeChangeException) {
+            return null;
+        }
+
+        return [
+            'type' => $type->value,
+            'lossy' => $change->isLossy(),
+            'lost_episodes_count' => $change->lostEpisodesCount,
+            'lost_watched_episodes' => $change->lostWatchedEpisodes,
+            'lost_date_end' => $change->lostDateEnd?->format('Y-m-d'),
+        ];
     }
 
     /** @return array<string, mixed> */

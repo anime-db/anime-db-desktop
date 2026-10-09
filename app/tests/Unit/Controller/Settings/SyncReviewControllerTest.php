@@ -46,6 +46,8 @@ use App\Repository\SyncReviewItemRepository;
 use App\Repository\SyncTombstoneRepository;
 use App\Service\AnimeDeleteFlash;
 use App\Service\AnimeDeleteService;
+use App\Service\AnimeTypeChangeService;
+use App\Service\AnimeViewFactory;
 use App\Service\Download\DownloadFolderJail;
 use App\Service\Download\DownloadIncomingChecker;
 use App\Service\JobLock\JobLockService;
@@ -63,6 +65,7 @@ use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\EntityManager;
 use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\ORM\Mapping\UnderscoreNamingStrategy;
 use Doctrine\ORM\ORMSetup;
 use Doctrine\ORM\Tools\SchemaTool;
 use PHPUnit\Framework\TestCase;
@@ -71,10 +74,16 @@ use Symfony\Component\Clock\MockClock;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\RequestStack;
+use Symfony\Component\HttpFoundation\Session\Session;
+use Symfony\Component\HttpFoundation\Session\Storage\MockArraySessionStorage;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
+use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
+use Symfony\Component\Security\Csrf\CsrfToken;
 use Symfony\Component\Security\Csrf\CsrfTokenManagerInterface;
+use Symfony\Component\Translation\Translator;
 use Symfony\Contracts\Translation\TranslatorInterface;
 use Twig\Environment;
 
@@ -91,6 +100,7 @@ final class SyncReviewControllerTest extends TestCase
         ?CsrfTokenManagerInterface $csrfTokenManager = null,
         ?UrlGeneratorInterface $urlGenerator = null,
         ?Environment $twig = null,
+        ?AnimeTypeChangeService $typeChangeService = null,
     ): SyncReviewController {
         if ($csrfTokenManager === null) {
             $csrfTokenManager = $this->createStub(CsrfTokenManagerInterface::class);
@@ -121,6 +131,23 @@ final class SyncReviewControllerTest extends TestCase
             $csrfTokenManager,
             $urlGenerator,
             $twig ?? $this->createStub(Environment::class),
+            // AnimeTypeChangeService is final — a real one over the same entity manager.
+            $typeChangeService ?? $this->createRealAnimeTypeChangeService($entityManager),
+            new AnimeViewFactory(new RequestStack()),
+            new Translator('en'),
+        );
+    }
+
+    private function createRealAnimeTypeChangeService(EntityManagerInterface $entityManager): AnimeTypeChangeService
+    {
+        $bus = $this->createStub(MessageBusInterface::class);
+        $bus->method('dispatch')->willReturnCallback(static fn (object $message): Envelope => new Envelope($message));
+
+        return new AnimeTypeChangeService(
+            $entityManager,
+            new SyncRegistry([], new PluginsConfigStore('')),
+            new JobLockService(DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]), $this->createStub(ProcessLivenessChecker::class), new MockClock(), 30, 3),
+            $bus,
         );
     }
 
@@ -174,6 +201,8 @@ final class SyncReviewControllerTest extends TestCase
 
         $config = ORMSetup::createAttributeMetadataConfig([\dirname(__DIR__, 4).'/src/Entity'], true);
         $config->enableNativeLazyObjects(true);
+        // As in doctrine.yaml: the raw SQL of the repositories names tables like `sync_review_item`.
+        $config->setNamingStrategy(new UnderscoreNamingStrategy(\CASE_LOWER));
 
         $connection = DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true], $config);
         $entityManager = new EntityManager($connection, $config);
@@ -637,5 +666,130 @@ final class SyncReviewControllerTest extends TestCase
     private function findSyncState(EntityManagerInterface $entityManager, Anime $anime, string $participantId): ?AnimeSyncState
     {
         return $entityManager->find(AnimeSyncState::class, ['anime' => $anime, 'participantId' => $participantId]);
+    }
+
+    /** @return array{0: SyncReviewController, 1: SyncReviewItem, 2: Anime, 3: EntityManager} */
+    private function typeMismatchFixture(string $sourceType, bool $series = true, ?CsrfTokenManagerInterface $csrfTokenManager = null): array
+    {
+        $entityManager = $this->createInMemoryEntityManager();
+
+        if ($series) {
+            $anime = new TvAnime();
+            $anime->setTitle('Trigun')->setDatePremiereAndEnd(new \DateTimeImmutable('1998-04-01'), new \DateTimeImmutable('1998-09-30'))->setWatchStatus(WatchStatus::Plan);
+            $anime->setEpisodesCount(26);
+        } else {
+            $anime = new \App\Entity\MovieAnime();
+            $anime->setTitle('Cowboy Bebop')->setWatchStatus(WatchStatus::Plan);
+        }
+        $entityManager->persist($anime);
+        $entityManager->flush();
+        $item = new SyncReviewItem(SyncReviewItemKind::TypeMismatch, ['anime_id' => $anime->id ?? 0, 'plugin_id' => 'animedb-shikimori', 'source_type' => $sourceType]);
+        $entityManager->persist($item);
+        $entityManager->flush();
+
+        $controller = $this->createController(
+            syncReviewItemRepository: new SyncReviewItemRepository($entityManager),
+            animeRepository: new AnimeRepository($entityManager),
+            entityManager: $entityManager,
+            csrfTokenManager: $csrfTokenManager,
+        );
+
+        return [$controller, $item, $anime, $entityManager];
+    }
+
+    /** @param array<string, string> $fields */
+    private function acceptRequest(SyncReviewItem $item, array $fields = []): Request
+    {
+        $request = Request::create('/settings/sync-review/'.$item->id.'/accept-type', 'POST', ['_token' => 'token'] + $fields);
+        $request->setSession(new Session(new MockArraySessionStorage()));
+
+        return $request;
+    }
+
+    private function storedType(EntityManager $entityManager, Anime $anime): string
+    {
+        return (string) $entityManager->getConnection()->fetchOne('SELECT type FROM anime WHERE id = ?', [$anime->id]);
+    }
+
+    private function isStoredResolved(EntityManager $entityManager, SyncReviewItem $item): bool
+    {
+        return $entityManager->getConnection()->fetchOne('SELECT resolved_at FROM sync_review_item WHERE id = ?', [$item->id]) !== null;
+    }
+
+    /** Issue #1002: inside the series types the source's type is taken at once. */
+    public function testAcceptTypeWithinSeriesTypesChangesTheTypeAndResolvesTheItem(): void
+    {
+        [$controller, $item, $anime, $entityManager] = $this->typeMismatchFixture('ova');
+
+        $controller->acceptType($item, $this->acceptRequest($item));
+
+        $this->assertSame('ova', $this->storedType($entityManager, $anime));
+        $this->assertTrue($this->isStoredResolved($entityManager, $item));
+    }
+
+    /** Issue #1002: series ⇄ movie goes through the dialog's confirmation. */
+    public function testAcceptTypeThatDropsDataNeedsTheConfirmation(): void
+    {
+        [$controller, $item, $anime, $entityManager] = $this->typeMismatchFixture('movie');
+
+        $controller->acceptType($item, $this->acceptRequest($item));
+
+        $this->assertSame('tv', $this->storedType($entityManager, $anime));
+        $this->assertFalse($this->isStoredResolved($entityManager, $item));
+
+        $controller->acceptType($item, $this->acceptRequest($item, ['confirm_loss' => '1']));
+
+        $this->assertSame('movie', $this->storedType($entityManager, $anime));
+        $this->assertTrue($this->isStoredResolved($entityManager, $item));
+    }
+
+    public function testAcceptTypeRejectsInvalidCsrfTokenAndChangesNothing(): void
+    {
+        $csrf = $this->createMock(CsrfTokenManagerInterface::class);
+        [$controller, $item, $anime, $entityManager] = $this->typeMismatchFixture('ova', csrfTokenManager: $csrf);
+        $csrf->expects($this->once())
+            ->method('isTokenValid')
+            ->with($this->equalTo(new CsrfToken('settings_sync_review_accept_type_'.$item->id, 'token')))
+            ->willReturn(false);
+
+        try {
+            $controller->acceptType($item, $this->acceptRequest($item));
+            $this->fail('An invalid CSRF token must be rejected.');
+        } catch (BadRequestHttpException) {
+        }
+
+        $this->assertSame('tv', $this->storedType($entityManager, $anime));
+        $this->assertFalse($this->isStoredResolved($entityManager, $item));
+    }
+
+    public function testAcceptTypeIgnoresATypeSentInTheRequest(): void
+    {
+        [$controller, $item, $anime, $entityManager] = $this->typeMismatchFixture('ova');
+
+        $controller->acceptType($item, $this->acceptRequest($item, ['type' => 'music']));
+
+        $this->assertSame('ova', $this->storedType($entityManager, $anime));
+    }
+
+    public function testAcceptTypeIsRefusedForAnotherKind(): void
+    {
+        [$controller, , $anime, $entityManager] = $this->typeMismatchFixture('ova');
+        $other = new SyncReviewItem(SyncReviewItemKind::DeletedFromSource, ['anime_id' => $anime->id, 'source_type' => 'ova']);
+        $entityManager->persist($other);
+        $entityManager->flush();
+
+        $this->expectException(BadRequestHttpException::class);
+        $controller->acceptType($other, $this->acceptRequest($other));
+    }
+
+    /** "Keep": the plain resolve leaves the type as it is. */
+    public function testKeepResolvesATypeMismatchWithoutChangingTheType(): void
+    {
+        [$controller, $item, $anime, $entityManager] = $this->typeMismatchFixture('ova');
+
+        $controller->resolve($item, Request::create('/settings/sync-review/'.$item->id.'/resolve', 'POST', ['_token' => 'token']));
+
+        $this->assertSame('tv', $this->storedType($entityManager, $anime));
+        $this->assertTrue($this->isStoredResolved($entityManager, $item));
     }
 }

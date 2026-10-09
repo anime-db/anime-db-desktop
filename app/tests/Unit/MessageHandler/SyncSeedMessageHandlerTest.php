@@ -197,7 +197,7 @@ final class SyncSeedMessageHandlerTest extends TestCase
         $sync->method('resolveExternalId')->willReturn('1');
         // A pull that misses the record by external id would create a second row from this data.
         $sync->method('findById')->willReturn(new PluginAnimeData(title: 'Cowboy Bebop'));
-        $sync->expects($this->once())->method('pull')->willReturn([new SyncItem('1', SyncStatus::Watching, 'Cowboy Bebop')]);
+        $sync->expects($this->once())->method('pull')->willReturn([new SyncItem('1', SyncStatus::Watching, 'Cowboy Bebop', type: null)]);
 
         [$syncRegistry, $pluginsConfigStore] = $this->newSyncRegistry(['animedb-shikimori' => $sync]);
         $this->newHandler($syncRegistry, $pluginsConfigStore)(new SyncSeedMessage('animedb-shikimori'));

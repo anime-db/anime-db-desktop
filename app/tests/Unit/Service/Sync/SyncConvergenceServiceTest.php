@@ -145,7 +145,7 @@ final class SyncConvergenceServiceTest extends TestCase
         $origin->expects($this->once())
             ->method('push')
             ->with($this->callback(static fn (SyncItem $item): bool => $item->externalId === '1' && $item->status === SyncStatus::Watching))
-            ->willReturn(new SyncItem('1', SyncStatus::Watching, 'Cowboy Bebop', updatedAt: new \DateTimeImmutable('2026-01-02')));
+            ->willReturn(new SyncItem('1', SyncStatus::Watching, 'Cowboy Bebop', type: null, updatedAt: new \DateTimeImmutable('2026-01-02')));
 
         $service = $this->newService([(string) $this->originPluginId => $origin]);
 
@@ -219,7 +219,7 @@ final class SyncConvergenceServiceTest extends TestCase
         $mal->expects($this->once())
             ->method('push')
             ->with($this->callback(static fn (SyncItem $item): bool => $item->externalId === '99' && $item->status === SyncStatus::Watching))
-            ->willReturn(new SyncItem('99', SyncStatus::Watching, 'Cowboy Bebop', updatedAt: new \DateTimeImmutable('2026-01-02')));
+            ->willReturn(new SyncItem('99', SyncStatus::Watching, 'Cowboy Bebop', type: null, updatedAt: new \DateTimeImmutable('2026-01-02')));
 
         $origin = $this->createMock(SyncInterface::class);
         $origin->expects($this->never())->method('push');
@@ -359,13 +359,13 @@ final class SyncConvergenceServiceTest extends TestCase
         $origin->expects($this->once())
             ->method('push')
             ->with($this->callback(static fn (SyncItem $item): bool => $item->externalId === '1' && $item->status === SyncStatus::Watching && $item->watchedEpisodes === 5))
-            ->willReturn(new SyncItem('1', SyncStatus::Watching, 'Cowboy Bebop', updatedAt: new \DateTimeImmutable(), watchedEpisodes: 5));
+            ->willReturn(new SyncItem('1', SyncStatus::Watching, 'Cowboy Bebop', type: null, updatedAt: new \DateTimeImmutable(), watchedEpisodes: 5));
 
         $mal = $this->createMock(SyncInterface::class);
         $mal->expects($this->once())
             ->method('push')
             ->with($this->callback(static fn (SyncItem $item): bool => $item->externalId === '99' && $item->status === SyncStatus::Watching && $item->watchedEpisodes === 5))
-            ->willReturn(new SyncItem('99', SyncStatus::Watching, 'Cowboy Bebop', updatedAt: new \DateTimeImmutable(), watchedEpisodes: 5));
+            ->willReturn(new SyncItem('99', SyncStatus::Watching, 'Cowboy Bebop', type: null, updatedAt: new \DateTimeImmutable(), watchedEpisodes: 5));
 
         $service = $this->newService([(string) $this->originPluginId => $origin, (string) $malPluginId => $mal]);
 
@@ -839,7 +839,7 @@ final class SyncConvergenceServiceTest extends TestCase
         $mal->expects($this->once())
             ->method('push')
             ->with($this->callback(static fn (SyncItem $item): bool => $item->externalId === '99' && $item->status === SyncStatus::Watching))
-            ->willReturn(new SyncItem('99', SyncStatus::Watching, 'Cowboy Bebop', updatedAt: new \DateTimeImmutable('2026-01-03')));
+            ->willReturn(new SyncItem('99', SyncStatus::Watching, 'Cowboy Bebop', type: null, updatedAt: new \DateTimeImmutable('2026-01-03')));
 
         $service2 = $this->newService([(string) $this->originPluginId => $origin, (string) $malPluginId => $mal]);
 
@@ -943,7 +943,7 @@ final class SyncConvergenceServiceTest extends TestCase
         $origin2->expects($this->once())
             ->method('push')
             ->with($this->callback(static fn (SyncItem $item): bool => $item->status === SyncStatus::Watching))
-            ->willReturn(new SyncItem('1', SyncStatus::Watching, 'Cowboy Bebop', updatedAt: new \DateTimeImmutable('2026-01-03')));
+            ->willReturn(new SyncItem('1', SyncStatus::Watching, 'Cowboy Bebop', type: null, updatedAt: new \DateTimeImmutable('2026-01-03')));
 
         $service2 = $this->newService([(string) $this->originPluginId => $origin2]);
 
@@ -1053,7 +1053,7 @@ final class SyncConvergenceServiceTest extends TestCase
         $mal2->expects($this->once())
             ->method('push')
             ->with($this->callback(static fn (SyncItem $item): bool => $item->externalId === '99' && $item->status === SyncStatus::Watching))
-            ->willReturn(new SyncItem('99', SyncStatus::Watching, 'Cowboy Bebop', updatedAt: new \DateTimeImmutable('2026-01-03')));
+            ->willReturn(new SyncItem('99', SyncStatus::Watching, 'Cowboy Bebop', type: null, updatedAt: new \DateTimeImmutable('2026-01-03')));
 
         $service2 = $this->newService([(string) $this->originPluginId => $origin, (string) $malPluginId => $mal2]);
 
@@ -1171,7 +1171,7 @@ final class SyncConvergenceServiceTest extends TestCase
         $mal2->expects($this->once())
             ->method('push')
             ->with($this->callback(static fn (SyncItem $item): bool => $item->externalId === '99' && $item->status === SyncStatus::Watching))
-            ->willReturn(new SyncItem('99', SyncStatus::Watching, 'Cowboy Bebop', updatedAt: new \DateTimeImmutable('2026-01-03')));
+            ->willReturn(new SyncItem('99', SyncStatus::Watching, 'Cowboy Bebop', type: null, updatedAt: new \DateTimeImmutable('2026-01-03')));
 
         $service2 = $this->newService([(string) $this->originPluginId => $origin, (string) $malPluginId => $mal2]);
 

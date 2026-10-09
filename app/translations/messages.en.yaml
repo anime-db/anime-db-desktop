@@ -212,6 +212,10 @@ settings_sync_review:
     correct_button: Correct
     keep_button: Keep in catalog
     not_duplicate_button: Not a duplicate
+    kind_type_mismatch: 'Source "%source%" reports another type: %source_type%'
+    type_mismatch_current: 'Current type: %type%'
+    accept_type_button: "Accept the source's type"
+    keep_type_button: Keep the type
     delete_button: Delete entry
 
 settings_plugins:

@@ -58,6 +58,16 @@ final class SyncReviewService
     }
 
     /**
+     * Every item of a kind, resolved ones included.
+     *
+     * @return SyncReviewItem[]
+     */
+    public function findAllByKind(SyncReviewItemKind $kind): array
+    {
+        return $this->repository->findAllByKind($kind);
+    }
+
+    /**
      * Backs the settings sidebar's "requires attention" badge (issue #822) — see
      * {@see SyncReviewItemRepository::countUnresolved()} for why this is a count query.
      */

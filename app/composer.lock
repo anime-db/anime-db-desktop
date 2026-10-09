@@ -4,20 +4,20 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "3058b7d9de86e559775d738d7beb09c0",
+    "content-hash": "11b875063016ff22a25d904c21ef3a77",
     "packages": [
         {
             "name": "anime-db/plugin-contracts",
-            "version": "v0.25.1",
+            "version": "v0.26.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/anime-db/anime-db-plugin-contracts.git",
-                "reference": "1db2dee42305e271c15774ff8b462fe6ddf87b29"
+                "reference": "2368c78bcfa2e19860a2bdacde73e340460bc3fb"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/anime-db/anime-db-plugin-contracts/zipball/1db2dee42305e271c15774ff8b462fe6ddf87b29",
-                "reference": "1db2dee42305e271c15774ff8b462fe6ddf87b29",
+                "url": "https://api.github.com/repos/anime-db/anime-db-plugin-contracts/zipball/2368c78bcfa2e19860a2bdacde73e340460bc3fb",
+                "reference": "2368c78bcfa2e19860a2bdacde73e340460bc3fb",
                 "shasum": ""
             },
             "require": {
@@ -63,9 +63,9 @@
             "homepage": "https://github.com/anime-db/anime-db-plugin-contracts",
             "support": {
                 "issues": "https://github.com/anime-db/anime-db-plugin-contracts/issues",
-                "source": "https://github.com/anime-db/anime-db-plugin-contracts/tree/v0.25.1"
+                "source": "https://github.com/anime-db/anime-db-plugin-contracts/tree/v0.26.0"
             },
-            "time": "2026-10-05T06:08:08+00:00"
+            "time": "2026-10-09T10:03:48+00:00"
         },
         {
             "name": "composer/semver",
@@ -10620,6 +10620,6 @@
         "ext-pdo_sqlite": "*",
         "ext-zip": "*"
     },
-    "platform-dev": [],
+    "platform-dev": {},
     "plugin-api-version": "2.9.0"
 }

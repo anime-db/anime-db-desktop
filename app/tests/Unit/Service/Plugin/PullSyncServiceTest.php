@@ -188,7 +188,7 @@ final class PullSyncServiceTest extends TestCase
             new NullLogger(),
         );
 
-        return new PullSyncService($entityManager, $animeRepository, $bulkFillerService, $duplicateDetector, $deletionDetector, $convergenceService, new SyncTombstoneRepository($entityManager), $logger ?? new NullLogger());
+        return new PullSyncService($entityManager, $animeRepository, $bulkFillerService, $duplicateDetector, $deletionDetector, new \App\Service\Sync\TypeMismatchDetector(new SyncReviewService(new SyncReviewItemRepository($entityManager))), $convergenceService, new SyncTombstoneRepository($entityManager), $logger ?? new NullLogger());
     }
 
     /**
@@ -371,7 +371,7 @@ final class PullSyncServiceTest extends TestCase
         $this->entityManager->flush();
 
         $sync = $this->createMock(SyncInterface::class);
-        $sync->expects($this->once())->method('pull')->willReturn([new SyncItem('1', SyncStatus::Watching, 'Cowboy Bebop')]);
+        $sync->expects($this->once())->method('pull')->willReturn([new SyncItem('1', SyncStatus::Watching, 'Cowboy Bebop', type: null)]);
 
         $completed = $this->service->pull($this->pluginId, $sync);
 
@@ -407,7 +407,7 @@ final class PullSyncServiceTest extends TestCase
         );
 
         $sync = $this->createMock(SyncInterface::class);
-        $sync->expects($this->once())->method('pull')->willReturn([new SyncItem('1', SyncStatus::Watching, 'Cowboy Bebop')]);
+        $sync->expects($this->once())->method('pull')->willReturn([new SyncItem('1', SyncStatus::Watching, 'Cowboy Bebop', type: null)]);
 
         $this->service->pull($this->pluginId, $sync);
 
@@ -438,12 +438,12 @@ final class PullSyncServiceTest extends TestCase
         $mal->expects($this->once())
             ->method('push')
             ->with($this->callback(static fn (SyncItem $item): bool => $item->externalId === '99' && $item->status === SyncStatus::Watching))
-            ->willReturn(new SyncItem('99', SyncStatus::Watching, 'Cowboy Bebop', updatedAt: new \DateTimeImmutable('2026-01-02')));
+            ->willReturn(new SyncItem('99', SyncStatus::Watching, 'Cowboy Bebop', type: null, updatedAt: new \DateTimeImmutable('2026-01-02')));
 
         $service = $this->newService($this->entityManager, new AnimeRepository($this->entityManager), [(string) $malPluginId => $mal]);
 
         $sync = $this->createMock(SyncInterface::class);
-        $sync->expects($this->once())->method('pull')->willReturn([new SyncItem('1', SyncStatus::Watching, 'Cowboy Bebop', updatedAt: new \DateTimeImmutable('2026-01-02'))]);
+        $sync->expects($this->once())->method('pull')->willReturn([new SyncItem('1', SyncStatus::Watching, 'Cowboy Bebop', type: null, updatedAt: new \DateTimeImmutable('2026-01-02'))]);
 
         $service->pull($this->pluginId, $sync);
 
@@ -478,7 +478,7 @@ final class PullSyncServiceTest extends TestCase
 
         $sync = $this->createMock(SyncInterface::class);
         $sync->expects($this->once())->method('pull')->willReturn([
-            new SyncItem('1', SyncStatus::Dropped, 'Cowboy Bebop', updatedAt: new \DateTimeImmutable('2020-01-01')),
+            new SyncItem('1', SyncStatus::Dropped, 'Cowboy Bebop', type: null, updatedAt: new \DateTimeImmutable('2020-01-01')),
         ]);
 
         $this->service->pull($this->pluginId, $sync);
@@ -499,7 +499,7 @@ final class PullSyncServiceTest extends TestCase
 
     public function testSkipsAnUnknownExternalIdWhenTheFillerCannotResolveIt(): void
     {
-        $sync = $this->syncFillerStub([new SyncItem('42', SyncStatus::Watching, 'Trigun')], data: null);
+        $sync = $this->syncFillerStub([new SyncItem('42', SyncStatus::Watching, 'Trigun', type: null)], data: null);
 
         $this->service->pull($this->pluginId, $sync);
 
@@ -520,7 +520,7 @@ final class PullSyncServiceTest extends TestCase
         $this->newAnimeDeleteService(sys_get_temp_dir().'/anime-pull-delete-'.uniqid())->delete($anime);
 
         $sync = $this->syncFillerStub(
-            [new SyncItem('42', SyncStatus::Completed, 'Trigun')],
+            [new SyncItem('42', SyncStatus::Completed, 'Trigun', type: null)],
             data: new PluginAnimeData(title: 'Trigun', type: ContractsAnimeType::Tv),
             fillableFields: ['title', 'type'],
         );
@@ -540,7 +540,7 @@ final class PullSyncServiceTest extends TestCase
         $this->newAnimeDeleteService(sys_get_temp_dir().'/anime-pull-delete-'.uniqid())->delete($anime);
 
         $sync = $this->syncFillerStub(
-            [new SyncItem('43', SyncStatus::Completed, 'Trigun Stampede')],
+            [new SyncItem('43', SyncStatus::Completed, 'Trigun Stampede', type: null)],
             data: new PluginAnimeData(title: 'Trigun Stampede', type: ContractsAnimeType::Tv),
             fillableFields: ['title', 'type'],
         );
@@ -572,7 +572,7 @@ final class PullSyncServiceTest extends TestCase
         $this->entityManager->flush();
 
         $sync = $this->createMock(SyncInterface::class);
-        $sync->method('pull')->willReturn([new SyncItem('42', SyncStatus::Watching, 'Trigun')]);
+        $sync->method('pull')->willReturn([new SyncItem('42', SyncStatus::Watching, 'Trigun', type: null)]);
         $this->assertTrue($this->service->pull($this->pluginId, $sync));
 
         $this->assertSame([$second], $this->allAnime());
@@ -592,7 +592,7 @@ final class PullSyncServiceTest extends TestCase
         );
 
         $sync = $this->syncFillerStub(
-            [new SyncItem('42', SyncStatus::Completed, 'Trigun')],
+            [new SyncItem('42', SyncStatus::Completed, 'Trigun', type: null)],
             data: $data,
             fillableFields: ['title', 'type', 'datePremiere', 'dateEnd'],
         );
@@ -617,8 +617,8 @@ final class PullSyncServiceTest extends TestCase
     {
         $sync = $this->syncFillerStubPerItem(
             [
-                new SyncItem('1', SyncStatus::Plan, 'Trigun'),
-                new SyncItem('2', SyncStatus::Plan, 'Bleach'),
+                new SyncItem('1', SyncStatus::Plan, 'Trigun', type: null),
+                new SyncItem('2', SyncStatus::Plan, 'Bleach', type: null),
             ],
             dataByExternalId: [
                 '1' => new PluginAnimeData(
@@ -669,7 +669,7 @@ final class PullSyncServiceTest extends TestCase
             $entityManager->persist($winner);
             $entityManager->flush();
 
-            yield new SyncItem('42', SyncStatus::Watching, 'Trigun');
+            yield new SyncItem('42', SyncStatus::Watching, 'Trigun', type: null);
         })();
 
         $sync = $this->syncFillerStub(
@@ -709,7 +709,7 @@ final class PullSyncServiceTest extends TestCase
             $entityManager->persist($winner);
             $entityManager->flush();
 
-            yield new SyncItem('42', SyncStatus::Watching, 'Trigun');
+            yield new SyncItem('42', SyncStatus::Watching, 'Trigun', type: null);
         })();
 
         $sync = $this->syncFillerStub(
@@ -787,10 +787,10 @@ final class PullSyncServiceTest extends TestCase
             new SyncReviewService(new SyncReviewItemRepository($this->entityManager)),
             new NullLogger(),
         );
-        $service = new PullSyncService($this->entityManager, new AnimeRepository($this->entityManager), $bulkFillerService, $duplicateDetector, $deletionDetector, $convergenceService, new SyncTombstoneRepository($this->entityManager), new NullLogger());
+        $service = new PullSyncService($this->entityManager, new AnimeRepository($this->entityManager), $bulkFillerService, $duplicateDetector, $deletionDetector, new \App\Service\Sync\TypeMismatchDetector(new SyncReviewService(new SyncReviewItemRepository($this->entityManager))), $convergenceService, new SyncTombstoneRepository($this->entityManager), new NullLogger());
 
         $sync = $this->syncFillerStub(
-            [new SyncItem('42', SyncStatus::Plan, 'Trigun')],
+            [new SyncItem('42', SyncStatus::Plan, 'Trigun', type: null)],
             data: new PluginAnimeData(title: 'Trigun', type: ContractsAnimeType::Tv),
             fillableFields: ['title', 'type'],
         );
@@ -965,7 +965,7 @@ final class PullSyncServiceTest extends TestCase
         $this->entityManager->flush();
 
         $sync = $this->createMock(SyncInterface::class);
-        $sync->expects($this->once())->method('pull')->willReturn([new SyncItem('77', SyncStatus::Watching, 'Trigun')]);
+        $sync->expects($this->once())->method('pull')->willReturn([new SyncItem('77', SyncStatus::Watching, 'Trigun', type: null)]);
 
         $this->service->pull($this->pluginId, $sync);
 
@@ -978,7 +978,7 @@ final class PullSyncServiceTest extends TestCase
         $data = new PluginAnimeData(title: 'Trigun', type: ContractsAnimeType::Tv);
 
         $firstRun = $this->syncFillerStub(
-            [new SyncItem('42', SyncStatus::Plan, 'Trigun')],
+            [new SyncItem('42', SyncStatus::Plan, 'Trigun', type: null)],
             data: $data,
             fillableFields: ['title', 'type'],
         );
@@ -986,7 +986,7 @@ final class PullSyncServiceTest extends TestCase
         $this->entityManager->clear();
 
         $secondRun = $this->createMock(SyncInterface::class);
-        $secondRun->expects($this->once())->method('pull')->willReturn([new SyncItem('42', SyncStatus::Watching, 'Trigun')]);
+        $secondRun->expects($this->once())->method('pull')->willReturn([new SyncItem('42', SyncStatus::Watching, 'Trigun', type: null)]);
         $this->service->pull($this->pluginId, $secondRun);
 
         $all = $this->allAnime();
@@ -1010,7 +1010,7 @@ final class PullSyncServiceTest extends TestCase
         $this->entityManager->flush();
 
         $sync = $this->createMock(SyncInterface::class);
-        $sync->expects($this->once())->method('pull')->willReturn([new SyncItem('42', SyncStatus::Completed, 'Trigun')]);
+        $sync->expects($this->once())->method('pull')->willReturn([new SyncItem('42', SyncStatus::Completed, 'Trigun', type: null)]);
 
         $this->service->pull($this->pluginId, $sync);
 
@@ -1038,9 +1038,9 @@ final class PullSyncServiceTest extends TestCase
 
         $sync = $this->createMock(SyncInterface::class);
         $sync->expects($this->once())->method('pull')->willReturn([
-            new SyncItem('1', SyncStatus::Watching, 'Cowboy Bebop'),
-            new SyncItem('2', SyncStatus::Plan, 'Trigun'),
-            new SyncItem('3', SyncStatus::Plan, 'Bleach'),
+            new SyncItem('1', SyncStatus::Watching, 'Cowboy Bebop', type: null),
+            new SyncItem('2', SyncStatus::Plan, 'Trigun', type: null),
+            new SyncItem('3', SyncStatus::Plan, 'Bleach', type: null),
         ]);
 
         $service->pull($this->pluginId, $sync);
@@ -1079,7 +1079,7 @@ final class PullSyncServiceTest extends TestCase
         $animeId = $anime->id;
 
         $pull = (function (): \Generator {
-            yield new SyncItem('1', SyncStatus::Watching, 'Cowboy Bebop');
+            yield new SyncItem('1', SyncStatus::Watching, 'Cowboy Bebop', type: null);
 
             throw new ReauthRequiredException('Refresh token is dead.');
         })();
@@ -1167,9 +1167,9 @@ final class PullSyncServiceTest extends TestCase
 
         $sync = $this->createMock(SyncInterface::class);
         $sync->expects($this->once())->method('pull')->willReturn([
-            new SyncItem('1', SyncStatus::Watching, 'Cowboy Bebop'),
-            new SyncItem('2', SyncStatus::Watching, 'Bleach'),
-            new SyncItem('3', SyncStatus::Watching, 'Trigun'),
+            new SyncItem('1', SyncStatus::Watching, 'Cowboy Bebop', type: null),
+            new SyncItem('2', SyncStatus::Watching, 'Bleach', type: null),
+            new SyncItem('3', SyncStatus::Watching, 'Trigun', type: null),
         ]);
 
         $completed = $service->pull($this->pluginId, $sync);
@@ -1189,8 +1189,8 @@ final class PullSyncServiceTest extends TestCase
     {
         $sync = $this->syncFillerStubPerItem(
             [
-                new SyncItem('1', SyncStatus::Watching, 'Trigun'),
-                new SyncItem('2', SyncStatus::Plan, 'Bleach'),
+                new SyncItem('1', SyncStatus::Watching, 'Trigun', type: null),
+                new SyncItem('2', SyncStatus::Plan, 'Bleach', type: null),
             ],
             dataByExternalId: [
                 '1' => new \RuntimeException('Simulated plugin findById() failure.'),
@@ -1240,7 +1240,7 @@ final class PullSyncServiceTest extends TestCase
         $service = $this->newService($this->entityManager, new AnimeRepository($this->entityManager), stateRepository: $stateRepository, logger: $logger);
 
         $sync = $this->createMock(SyncInterface::class);
-        $sync->expects($this->once())->method('pull')->willReturn([new SyncItem('42', SyncStatus::Watching, 'Trigun')]);
+        $sync->expects($this->once())->method('pull')->willReturn([new SyncItem('42', SyncStatus::Watching, 'Trigun', type: null)]);
 
         $service->pull($this->pluginId, $sync);
     }
@@ -1278,7 +1278,7 @@ final class PullSyncServiceTest extends TestCase
         $sync = $this->createMock(SyncInterface::class);
         // 'Bleach' (external id '2') is present but fails; 'Trigun' (external id '3') is
         // genuinely absent from this run's list.
-        $sync->expects($this->once())->method('pull')->willReturn([new SyncItem('2', SyncStatus::Watching, 'Bleach')]);
+        $sync->expects($this->once())->method('pull')->willReturn([new SyncItem('2', SyncStatus::Watching, 'Bleach', type: null)]);
 
         $service->pull($this->pluginId, $sync);
 
@@ -1341,12 +1341,12 @@ final class PullSyncServiceTest extends TestCase
             new SyncReviewService(new SyncReviewItemRepository($this->entityManager)),
             new NullLogger(),
         );
-        $service = new PullSyncService($this->entityManager, new AnimeRepository($this->entityManager), $bulkFillerService, $duplicateDetector, $deletionDetector, $convergenceService, new SyncTombstoneRepository($this->entityManager), new NullLogger());
+        $service = new PullSyncService($this->entityManager, new AnimeRepository($this->entityManager), $bulkFillerService, $duplicateDetector, $deletionDetector, new \App\Service\Sync\TypeMismatchDetector(new SyncReviewService(new SyncReviewItemRepository($this->entityManager))), $convergenceService, new SyncTombstoneRepository($this->entityManager), new NullLogger());
 
         $sync = $this->syncFillerStubPerItem(
             [
-                new SyncItem('1', SyncStatus::Watching, 'Bleach'),
-                new SyncItem('42', SyncStatus::Plan, 'Trigun'),
+                new SyncItem('1', SyncStatus::Watching, 'Bleach', type: null),
+                new SyncItem('42', SyncStatus::Plan, 'Trigun', type: null),
             ],
             dataByExternalId: [
                 '1' => new \RuntimeException('Simulated plugin findById() failure.'),
@@ -1400,8 +1400,8 @@ final class PullSyncServiceTest extends TestCase
 
         $sync = $this->createMock(SyncInterface::class);
         $sync->expects($this->once())->method('pull')->willReturn([
-            new SyncItem('1', SyncStatus::Watching, 'Cowboy Bebop'),
-            new SyncItem('2', SyncStatus::Watching, 'Trigun'),
+            new SyncItem('1', SyncStatus::Watching, 'Cowboy Bebop', type: null),
+            new SyncItem('2', SyncStatus::Watching, 'Trigun', type: null),
         ]);
 
         $completed = $service->pull($this->pluginId, $sync);
@@ -1479,8 +1479,8 @@ final class PullSyncServiceTest extends TestCase
 
         $sync = $this->createMock(SyncInterface::class);
         $sync->expects($this->once())->method('pull')->willReturn([
-            new SyncItem('1', SyncStatus::Watching, 'Cowboy Bebop'),
-            new SyncItem('2', SyncStatus::Watching, 'Trigun'),
+            new SyncItem('1', SyncStatus::Watching, 'Cowboy Bebop', type: null),
+            new SyncItem('2', SyncStatus::Watching, 'Trigun', type: null),
         ]);
 
         $completed = $service->pull($this->pluginId, $sync);
@@ -1554,8 +1554,8 @@ final class PullSyncServiceTest extends TestCase
 
         $sync = $this->createMock(SyncInterface::class);
         $sync->expects($this->once())->method('pull')->willReturn([
-            new SyncItem('1', SyncStatus::Watching, 'Cowboy Bebop'),
-            new SyncItem('2', SyncStatus::Watching, 'Trigun'),
+            new SyncItem('1', SyncStatus::Watching, 'Cowboy Bebop', type: null),
+            new SyncItem('2', SyncStatus::Watching, 'Trigun', type: null),
         ]);
 
         $completed = $service->pull($this->pluginId, $sync);

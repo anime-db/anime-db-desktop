@@ -117,8 +117,8 @@ final class PushSyncMessageHandlerTest extends TestCase
         $sync->method('resolveExternalId')->willReturn('1');
         $sync->expects($this->once())
             ->method('push')
-            ->with($this->equalTo(new SyncItem('1', SyncStatus::Watching, 'Cowboy Bebop')))
-            ->willReturn(new SyncItem('1', SyncStatus::Watching, 'Cowboy Bebop'));
+            ->with($this->equalTo(new SyncItem('1', SyncStatus::Watching, 'Cowboy Bebop', type: null)))
+            ->willReturn(new SyncItem('1', SyncStatus::Watching, 'Cowboy Bebop', type: null));
 
         $registry = new SyncRegistry(
             ['animedb-shikimori' => $sync],
@@ -283,7 +283,7 @@ final class PushSyncMessageHandlerTest extends TestCase
         $syncA->method('resolveExternalId')->willReturn('1');
         $syncA->expects($this->once())
             ->method('push')
-            ->willReturn(new SyncItem('1', SyncStatus::Watching, 'Cowboy Bebop'));
+            ->willReturn(new SyncItem('1', SyncStatus::Watching, 'Cowboy Bebop', type: null));
 
         $syncB = $this->createMock(SyncInterface::class);
         $syncB->method('resolveExternalId')->willReturn('1');
@@ -324,7 +324,7 @@ final class PushSyncMessageHandlerTest extends TestCase
         $syncB->method('resolveExternalId')->willReturn('1');
         $syncB->expects($this->once())
             ->method('push')
-            ->willReturn(new SyncItem('1', SyncStatus::Watching, 'Cowboy Bebop'));
+            ->willReturn(new SyncItem('1', SyncStatus::Watching, 'Cowboy Bebop', type: null));
 
         $registry = new SyncRegistry(
             ['animedb-shikimori' => $syncA, 'animedb-myanimelist' => $syncB],
@@ -407,13 +407,13 @@ final class PushSyncMessageHandlerTest extends TestCase
         $syncA->method('resolveExternalId')->willReturn('1');
         $syncA->expects($this->once())
             ->method('push')
-            ->willReturn(new SyncItem('1', SyncStatus::Watching, 'Cowboy Bebop'));
+            ->willReturn(new SyncItem('1', SyncStatus::Watching, 'Cowboy Bebop', type: null));
 
         $syncB = $this->createMock(SyncInterface::class);
         $syncB->method('resolveExternalId')->willReturn('1');
         $syncB->expects($this->once())
             ->method('push')
-            ->willReturn(new SyncItem('1', SyncStatus::Watching, 'Cowboy Bebop'));
+            ->willReturn(new SyncItem('1', SyncStatus::Watching, 'Cowboy Bebop', type: null));
 
         $registry = new SyncRegistry(
             ['animedb-shikimori' => $syncA, 'animedb-myanimelist' => $syncB],

@@ -390,6 +390,7 @@ final class SyncConvergenceService
             $externalId,
             WatchStatusMapper::toSyncStatus($projection->status),
             $anime->getTitle(),
+            type: null,
             updatedAt: $updatedAt,
             watchedEpisodes: $projection->watchedEpisodes,
         );
