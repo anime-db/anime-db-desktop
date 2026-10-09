@@ -47,6 +47,11 @@ body:has(.anime-list) {
     flex: 1 1 auto;
     min-width: 0;
     overflow-y: auto;
+
+    // Focusable only so keyboard scrolling works; not an interactive control.
+    &:focus {
+        outline: none;
+    }
 }
 
 .anime-list__onboarding {

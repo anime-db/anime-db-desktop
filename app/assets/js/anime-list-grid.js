@@ -297,6 +297,10 @@
             // The template contract: the grid lives inside #anime-list-catalog. Without it the
             // scroll reset and the infinite-scroll root silently stop working.
             console.error('anime-list-grid: #anime-list-catalog scroll container not found');
+        } else if (document.activeElement === null || document.activeElement === document.body) {
+            // The document no longer scrolls (issue #995), so PageDown/Space/arrows would do
+            // nothing until a click lands inside the area; focus it unless a field already has it.
+            scroller.focus({ preventScroll: true });
         }
         requestPage = requestPageCallback;
 

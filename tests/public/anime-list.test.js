@@ -92,7 +92,7 @@ function filterSectionsMarkup() {
 function setUpDom(columns = 1) {
     document.body.innerHTML = `
         <main data-control="anime-list">
-        <div id="anime-list-catalog">
+        <div id="anime-list-catalog" tabindex="-1">
         <input id="anime-list-search" type="search" />
         <button type="button" id="anime-list-filters-toggle" aria-expanded="true">
             Filters<span id="anime-list-filters-count" hidden></span>
@@ -1347,6 +1347,29 @@ test('?user_rating[]=5&user_rating_none=1 checks both "5" and "no rating" in the
     expect(listParams['user_rating[]']).toBe('5');
     expect(listParams.user_rating_none).toBe('1');
     expect(document.querySelectorAll('.anime-list__chip-label')).toHaveLength(2);
+});
+
+test('mounting focuses the catalog area when nothing has focus (issue #995)', async () => {
+    mockFetchQueue();
+    setUpDom();
+    document.activeElement.blur();
+
+    loadAnimeListModule();
+    await flushMicrotasks();
+
+    expect(document.activeElement).toBe(document.getElementById('anime-list-catalog'));
+});
+
+test('mounting does not steal focus from a field (issue #995)', async () => {
+    mockFetchQueue();
+    setUpDom();
+    const search = document.getElementById('anime-list-search');
+    search.focus();
+
+    loadAnimeListModule();
+    await flushMicrotasks();
+
+    expect(document.activeElement).toBe(search);
 });
 
 test('?name=...&sort=...&direction=... seeds the search box and the sort controls', async () => {

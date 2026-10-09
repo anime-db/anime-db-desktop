@@ -24,7 +24,7 @@
 
 {% block body %}
     <main class="anime-list" data-control="anime-list">
-        <div class="anime-list__catalog" id="anime-list-catalog">
+        <div class="anime-list__catalog" id="anime-list-catalog" tabindex="-1">
         {% if showOnboarding %}
             <section class="anime-list__onboarding text-center">
                 <h2 class="anime-list__onboarding-heading">{{ 'onboarding.heading'|trans }}</h2>
