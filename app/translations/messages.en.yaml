@@ -207,7 +207,8 @@ settings_sync_review:
     candidate_updated_at: 'updated %date%'
     auto_applied_winner: auto-resolved
     correct_button: Correct
-    resolve_button: Resolve
+    keep_button: Keep in catalog
+    not_duplicate_button: Not a duplicate
     delete_button: Delete entry
 
 settings_plugins:
