@@ -74,7 +74,6 @@ final class NavAddMenuScanSectionTemplateRenderingTest extends KernelTestCase
         $html = $twig->render('nav/_add_menu_scan_section.html.twig', [
             'connectedStorages' => [$this->storage(7, 'Main folder')],
             'disconnectedCount' => 2,
-            'hasScannableStorages' => true,
         ]);
 
         $this->assertStringContainsString('action="/storage/7/scan"', $html);
@@ -101,7 +100,6 @@ final class NavAddMenuScanSectionTemplateRenderingTest extends KernelTestCase
         $html = $twig->render('nav/_add_menu_scan_section.html.twig', [
             'connectedStorages' => [$this->storage(7, 'Main folder'), $this->storage(9, 'Backup folder')],
             'disconnectedCount' => 0,
-            'hasScannableStorages' => true,
         ]);
 
         $tokenForStorage7 = $this->extractTokenAfter($html, 'action="/storage/7/scan"');
@@ -130,7 +128,7 @@ final class NavAddMenuScanSectionTemplateRenderingTest extends KernelTestCase
         return $matches[1];
     }
 
-    public function testRendersTheAddStorageFallbackWhenNoneAreScannable(): void
+    public function testDoesNotRenderAnAddStorageItemOfItsOwnSinceTheMenuHasAStaticOne(): void
     {
         self::bootKernel();
         $this->pushRequestWithSession();
@@ -140,11 +138,29 @@ final class NavAddMenuScanSectionTemplateRenderingTest extends KernelTestCase
         $html = $twig->render('nav/_add_menu_scan_section.html.twig', [
             'connectedStorages' => [],
             'disconnectedCount' => 0,
-            'hasScannableStorages' => false,
         ]);
 
-        $this->assertStringContainsString('href="/storage/new"', $html);
+        $this->assertStringNotContainsString('/storage/new', $html);
         $this->assertStringNotContainsString('<form', $html);
         $this->assertStringNotContainsString('Not connected', $html);
+        $this->assertStringContainsString('No storages to scan', $html);
+    }
+
+    public function testDoesNotRenderThePlaceholderWhenThereAreStoragesToScan(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession();
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+
+        foreach ([[[$this->storage(7, 'Main folder')], 0], [[], 2]] as [$connected, $disconnected]) {
+            $html = $twig->render('nav/_add_menu_scan_section.html.twig', [
+                'connectedStorages' => $connected,
+                'disconnectedCount' => $disconnected,
+            ]);
+
+            $this->assertStringNotContainsString('No storages to scan', $html);
+        }
     }
 }

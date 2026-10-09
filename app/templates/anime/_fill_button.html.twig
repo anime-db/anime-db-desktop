@@ -29,7 +29,7 @@
         {% set targets = {alternativeNames: 'anime-names-', cover: 'anime-media-', images: 'anime-gallery-'} %}
         <form class="anime-detail__fill-form"
               hx-post="{{ path('anime_fill_field', {id: anime.id, field: field}) }}"
-              hx-target="#{{ targets[field]|default('anime-info-') ~ anime.id }}" hx-swap="outerHTML">
+              hx-target="#{{ targets[field]|default('anime-info-') ~ anime.id }}" hx-swap="outerHTML" hx-disabled-elt="find button">
             <input type="hidden" name="_token" value="{{ csrf_token('anime_fill_' ~ field ~ '_' ~ anime.id) }}">
             {% if plugins|length > 1 %}
                 <select name="plugin_id" class="anime-detail__fill-select" aria-label="{{ 'anime_detail.fill_source_label'|trans }}">

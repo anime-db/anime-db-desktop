@@ -252,6 +252,7 @@ settings_plugins:
     status_incompatible_badge: Incompatible
     incompatible_market_link: 'Check the plugin market'
     incompatible_market_update: 'Update to version %version% is available — open the plugin market'
+    remove_confirm: 'Remove plugin "%name%"? Its data accumulated in the catalog is kept.'
 
 settings_plugins_install:
     title: Install from ZIP — Settings — AnimeDB
@@ -512,7 +513,6 @@ anime_detail:
     field_episodes_count: Episode count
     field_duration_minutes: Duration
     field_studios: Studio
-    filter_studios: Filter studios by name
     field_countries: Country
     field_storage: Storage
     field_storage_path: File path
@@ -633,6 +633,7 @@ anime_edit:
     error_cover_save: The cover could not be saved.
     cover_reselect: 'Cover not saved: choose the file again after fixing the errors.'
     flash_request_too_large: 'The file is too large, nothing was saved.'
+    filter_studios: Filter studios by name
 
 anime_new:
     title: New Anime — AnimeDB
@@ -642,6 +643,9 @@ anime_new:
     field_watch_status: Watch status
     submit_button: Create
     error_invalid: Fill in the title and choose a type and watch status.
+    type_placeholder: — select —
+    type_hint: The type cannot be changed after the entry is created.
+    cancel_button: Cancel
 
 storage_new:
     title: New Storage — AnimeDB
@@ -653,7 +657,7 @@ storage_new:
     path_not_applicable_hint: This media type has no file path, so none is stored.
     submit_button: Create
     error_invalid: Enter a valid name, path, and storage type.
-    skip_link: Skip
+    cancel_button: Cancel
 
 storage_scan_prompt:
     title: Run a scan? — AnimeDB
@@ -750,6 +754,7 @@ plugin_widget:
 
 app_notification:
     close_button: Close
+    request_failed: Could not complete the action, please try again
 
 nav:
     aria_label: Main navigation
@@ -767,6 +772,7 @@ nav:
     add_menu_scan_error: Failed to load storages.
     add_menu_scan_item: 'Scan "%name%"'
     add_menu_scan_more: 'Not connected: %number% →'
+    add_menu_scan_none: No storages to scan
     add_menu_add_storage: Add storage…
     add_menu_empty_entry: Empty entry
 

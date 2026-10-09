@@ -88,6 +88,51 @@ final class StorageTemplatesRenderingTest extends KernelTestCase
         self::assertStringContainsString('storage/2/delete', $html);
     }
 
+    public function testStorageListShowsTheScanButtonOnlyForScannableStorages(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession('/storage');
+
+        $folder = $this->makeStorage('Folder', 1);
+        $video = $this->makeStorage('Video', 2, StorageType::Video);
+        $externalR = $this->makeStorage('Optical', 3, StorageType::ExternalR);
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('storage/list.html.twig', [
+            'storages' => [$folder, $video, $externalR],
+            'unavailableStorageIds' => [],
+            'presetStorageId' => null,
+            'error' => null,
+        ]);
+
+        self::assertStringContainsString('action="/storage/1/scan"', $html);
+        self::assertStringNotContainsString('action="/storage/2/scan"', $html);
+        self::assertStringNotContainsString('action="/storage/3/scan"', $html);
+    }
+
+    public function testStorageNewHasCancelButtonToTheListInsteadOfSkipLink(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession('/storage/new');
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('storage/new.html.twig', [
+            'name' => '',
+            'path' => '',
+            'type' => null,
+            'error' => null,
+            'types' => ['folder'],
+            'path_optional_types' => [],
+            'path_not_applicable_types' => [],
+            'writable_types' => ['folder'],
+        ]);
+
+        self::assertMatchesRegularExpression('#<a href="/storage" class="btn btn-outline-secondary">Cancel</a>#', $html);
+        self::assertStringNotContainsString('Skip', $html);
+    }
+
     public function testStorageListRendersTranslatedErrorWithStorageName(): void
     {
         self::bootKernel();

@@ -47,11 +47,13 @@
             <div class="row g-3 mb-3">
                 <div class="col-md-6">
                     <label for="anime-new-type" class="form-label">{{ 'anime_new.field_type'|trans }}</label>
-                    <select id="anime-new-type" name="type" class="form-select">
+                    <select id="anime-new-type" name="type" required aria-describedby="anime-new-type-hint" class="form-select">
+                        <option value=""{% if type is empty %} selected{% endif %} disabled>{{ 'anime_new.type_placeholder'|trans }}</option>
                         {% for value in types %}
                             <option value="{{ value }}"{% if value == type %} selected{% endif %}>{{ ('anime_type.' ~ value)|trans }}</option>
                         {% endfor %}
                     </select>
+                    <div id="anime-new-type-hint" class="form-text">{{ 'anime_new.type_hint'|trans }}</div>
                 </div>
 
                 <div class="col-md-6">
@@ -64,7 +66,10 @@
                 </div>
             </div>
 
-            <button type="submit" class="btn btn-primary">{{ 'anime_new.submit_button'|trans }}</button>
+            <div class="d-flex gap-2">
+                <button type="submit" class="btn btn-primary">{{ 'anime_new.submit_button'|trans }}</button>
+                <a href="{{ path('home_index') }}" class="btn btn-outline-secondary">{{ 'anime_new.cancel_button'|trans }}</a>
+            </div>
         </form>
     </main>
 {% endblock %}

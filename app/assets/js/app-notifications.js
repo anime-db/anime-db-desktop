@@ -28,27 +28,58 @@
 // history/list can reuse them without changing this file. Outside Electron (window.animeDb absent),
 // mounting is a no-op, same as the window.animeDb guards in storage-new.js/anime-detail.js.
 (function () {
-    function mountAppNotifications(container) {
+    function renderNotification(container, { title, message }) {
         const template = document.getElementById('app-notification-template');
 
-        if (!template || !window.animeDb || !window.animeDb.onNotification) {
+        if (!template) {
             return;
         }
 
-        function showNotification({ title, message }) {
-            const notification = template.content.firstElementChild.cloneNode(true);
+        const notification = template.content.firstElementChild.cloneNode(true);
+        const messageElement = notification.querySelector('.app-notification__message');
 
-            notification.querySelector('.app-notification__title').textContent = title;
-            notification.querySelector('.app-notification__message').textContent = message;
-            notification.querySelector('.app-notification__close').addEventListener('click', () => {
-                notification.remove();
-            });
+        notification.querySelector('.app-notification__title').textContent = title;
+        if (message) {
+            messageElement.textContent = message;
+        } else {
+            messageElement.remove();
+        }
+        notification.querySelector('.app-notification__close').addEventListener('click', () => {
+            notification.remove();
+        });
 
-            container.append(notification);
+        container.append(notification);
+    }
+
+    function mountAppNotifications(container) {
+        if (!document.getElementById('app-notification-template') || !window.animeDb || !window.animeDb.onNotification) {
+            return;
         }
 
-        window.animeDb.onNotification(showNotification);
+        window.animeDb.onNotification((payload) => renderNotification(container, payload));
     }
+
+    // One global handler for htmx requests that failed unexpectedly (5xx, 4xx such as an expired
+    // CSRF token, or no response at all): htmx leaves the fragment untouched in all of these cases,
+    // so without it the user would assume the action was saved. Fragments with their own expected
+    // 4xx handling swap the response themselves and never reach htmx:responseError.
+    function notifyRequestFailed() {
+        const container = document.getElementById('app-notifications');
+
+        if (container && container.dataset.requestError) {
+            renderNotification(container, { title: container.dataset.requestError });
+        }
+    }
+
+    // A re-evaluation of this module (the test suite loads it once per test) must not stack a second
+    // listener on the same document, or one failure would render several notifications.
+    if (window.appNotificationsRequestFailedHandler) {
+        document.removeEventListener('htmx:responseError', window.appNotificationsRequestFailedHandler);
+        document.removeEventListener('htmx:sendError', window.appNotificationsRequestFailedHandler);
+    }
+    window.appNotificationsRequestFailedHandler = notifyRequestFailed;
+    document.addEventListener('htmx:responseError', notifyRequestFailed);
+    document.addEventListener('htmx:sendError', notifyRequestFailed);
 
     window.Controller.registerControl('app-notifications', mountAppNotifications);
 })();
