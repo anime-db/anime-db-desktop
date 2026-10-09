@@ -122,7 +122,7 @@ download_status:
 
 settings:
     title: Настройки — AnimeDB
-    heading: Настройки
+    heading: Интерфейс
     language_label: Язык интерфейса
     language_unavailable_option: '%language% — недоступно'
     language_plugin_translation_note: Интерфейс плагинов переводят их авторы — на языке, не входящем в число встроенных в приложение, часть интерфейса плагинов может остаться непереведённой.
@@ -177,7 +177,7 @@ settings_labels:
 
 settings_plugin_widgets:
     title: Виджеты плагинов — Настройки — AnimeDB
-    heading: Виджеты плагинов
+    heading: Виджеты
     busy_retry_error: Настройки плагинов сейчас заняты другим обновлением. Повторите попытку через мгновение.
     plugin_column: Плагин
     widget_column: Виджет
@@ -194,11 +194,14 @@ settings_plugin_widgets:
     catalog:
         heading: Каталог
         empty: Нет доступных виджетов для каталога.
+    empty_hint: Виджеты приходят с установленными плагинами.
+    open_market_link: Открыть маркет
 
 settings_sync_review:
     title: Требует внимания — Настройки — AnimeDB
     heading: Требует внимания
     empty: Нет элементов, требующих внимания.
+    empty_hint: Сюда попадают записи, синхронизация которых требует вашего решения.
     kind_potential_duplicate: Возможный дубликат
     kind_deleted_from_source: 'Удалено из списка на источнике «%source%»'
     kind_deletion_conflict: 'Конфликт: удалено на «%source%», но ещё в списке на: %others%'
@@ -216,8 +219,9 @@ settings_plugins:
     sync_toggle: Синхронизация
     busy_retry_error: Настройки плагинов сейчас заняты другим обновлением. Повторите попытку через мгновение.
     title: Плагины — Настройки — AnimeDB
-    installed_heading: Установленные плагины
+    installed_heading: Установленные
     installed_empty: Плагинов пока не установлено.
+    open_market_link: Открыть маркет
     name_column: Название
     id_column: Идентификатор
     version_column: Версия
@@ -230,7 +234,7 @@ settings_plugins:
     settings_link: Настройки
     remove_button: Удалить
     remove_success: 'Плагин «%pluginId%» удалён. Накопленные им данные в каталоге сохранены и будут использованы при повторной установке.'
-    install_heading: Установить из ZIP
+    install_heading: Установка из ZIP
     install_file_label: ZIP-архив плагина
     third_party_warning: Плагин из стороннего источника, не проходил проверку маркета. Установить его на свой страх и риск?
     confirm_button: Понимаю, установить
@@ -257,7 +261,7 @@ settings_plugins_install:
 
 settings_market:
     title: Маркет плагинов — Настройки — AnimeDB
-    heading: Маркет плагинов
+    heading: Маркет
     empty: В маркете пока нет ни одного плагина.
     filter_filler_empty: Среди плагинов маркета пока нет ни одного источника.
     filter_filler_banner: Показаны плагины-источники
@@ -303,7 +307,7 @@ settings_plugin_page:
 
 settings_proxy:
     title: Прокси-сервер — Настройки — AnimeDB
-    heading: Прокси-сервер
+    heading: Прокси и входящие соединения
     save_success: Настройки прокси сохранены.
     torrent_proxy_error: Настройки сохранены, но не удалось применить SOCKS5-прокси к торрент-клиенту. Загрузки остаются на паузе, пока прокси не будет подтверждён.
     mode_label: Режим
@@ -338,7 +342,7 @@ settings_proxy:
 
 settings_backup:
     title: Резервное копирование каталога — Настройки — AnimeDB
-    heading: Резервное копирование каталога
+    heading: Экспорт и импорт
     unavailable_outside_app: Это действие доступно только в приложении AnimeDB.
     staged_import_banner: 'Импорт архива «%name%» подготовлен %date% и применится при следующем запуске приложения.'
     staged_import_cancel_button: Отменить подготовленный импорт
@@ -503,7 +507,7 @@ storage_list:
 
 anime_detail:
     title: '%title% — AnimeDB'
-    back_link: ← Каталог
+    back_link: Каталог
     my_heading: Моё
     field_summary: Описание
     info_heading: Информация

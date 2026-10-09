@@ -17,15 +17,13 @@
  #
  # You should have received a copy of the GNU General Public License
  # along with this program. If not, see <https://www.gnu.org/licenses/>.
+ #
+ # The "back" link shared by the entry page and the edit page: an arrow icon plus the label.
+ # Expects: url (string), label (string); optional: inline (bool, true when rendered inside a
+ # container that already has its own padding), catalog_control (bool, mounts the catalog-back-link control).
  #}
-{#
- # Rendered by PluginWidgetController when the plugin's own render() throws: the failure is
- # isolated to this widget's slot, so the retry button re-issues the very same GET instead of
- # reloading the whole page. Expects: pluginId (string), retryUrl (string).
- #}
-<div class="plugin-widget plugin-widget--error">
-    <p class="plugin-widget__error-text">{{ 'plugin_widget.error'|trans({'%source%': bidi_isolate(pluginId)}) }}</p>
-    <button type="button" class="btn btn-sm btn-outline-secondary" hx-get="{{ retryUrl }}" hx-target="closest .plugin-widget" hx-swap="outerHTML">
-        {{- 'plugin_widget.retry_button'|trans -}}
-    </button>
+<div class="anime-detail__back{% if inline|default(false) %} anime-detail__back--inline{% endif %}">
+    <a href="{{ url }}" class="anime-detail__back-link"{% if catalog_control|default(false) %} data-control="catalog-back-link"{% endif %}>
+        {{- icon('arrow-left') }} <span>{{ label }}</span>
+    </a>
 </div>

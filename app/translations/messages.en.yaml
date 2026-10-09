@@ -122,7 +122,7 @@ download_status:
 
 settings:
     title: Settings — AnimeDB
-    heading: Settings
+    heading: Interface
     language_label: Interface language
     language_unavailable_option: '%language% — unavailable'
     language_plugin_translation_note: Plugin interfaces are translated by their own authors — outside the app's built-in languages, some plugin screens may stay untranslated.
@@ -177,7 +177,7 @@ settings_labels:
 
 settings_plugin_widgets:
     title: Plugin widgets — Settings — AnimeDB
-    heading: Plugin widgets
+    heading: Widgets
     busy_retry_error: Plugin settings are busy with another update right now. Please try again in a moment.
     plugin_column: Plugin
     widget_column: Widget
@@ -194,11 +194,14 @@ settings_plugin_widgets:
     catalog:
         heading: Catalog
         empty: No widgets available for the catalog.
+    empty_hint: Widgets come with installed plugins.
+    open_market_link: Open the market
 
 settings_sync_review:
     title: Requires attention — Settings — AnimeDB
     heading: Requires attention
     empty: Nothing needs attention right now.
+    empty_hint: Entries whose sync needs your decision show up here.
     kind_potential_duplicate: Potential duplicate
     kind_deleted_from_source: 'Removed from the list on source "%source%"'
     kind_deletion_conflict: 'Conflict: removed on "%source%" but still listed on: %others%'
@@ -216,8 +219,9 @@ settings_plugins:
     sync_toggle: Synchronization
     busy_retry_error: Plugin settings are busy with another update right now. Please try again in a moment.
     title: Plugins — Settings — AnimeDB
-    installed_heading: Installed plugins
+    installed_heading: Installed
     installed_empty: No plugins installed yet.
+    open_market_link: Open the market
     name_column: Name
     id_column: Id
     version_column: Version
@@ -257,7 +261,7 @@ settings_plugins_install:
 
 settings_market:
     title: Plugin market — Settings — AnimeDB
-    heading: Plugin market
+    heading: Market
     empty: The market has no plugins yet.
     filter_filler_empty: No plugin sources are available in the market right now.
     filter_filler_banner: Showing plugin sources
@@ -303,7 +307,7 @@ settings_plugin_page:
 
 settings_proxy:
     title: Proxy server — Settings — AnimeDB
-    heading: Proxy server
+    heading: Proxy and incoming connections
     save_success: Proxy settings have been saved.
     torrent_proxy_error: Settings were saved, but the SOCKS5 proxy could not be applied to the torrent client. Torrents stay paused until the proxy is confirmed.
     mode_label: Mode
@@ -338,7 +342,7 @@ settings_proxy:
 
 settings_backup:
     title: Catalog backup — Settings — AnimeDB
-    heading: Catalog backup
+    heading: Export and import
     unavailable_outside_app: This action is only available inside the AnimeDB app.
     staged_import_banner: 'The archive "%name%" was staged for import on %date% and will be applied on the next app start.'
     staged_import_cancel_button: Cancel staged import
@@ -503,7 +507,7 @@ storage_list:
 
 anime_detail:
     title: '%title% — AnimeDB'
-    back_link: ← Catalog
+    back_link: Catalog
     my_heading: My list
     field_summary: Description
     info_heading: Information

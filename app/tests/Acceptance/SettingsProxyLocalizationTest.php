@@ -52,8 +52,8 @@ final class SettingsProxyLocalizationTest extends KernelTestCase
      */
     public static function provideAcceptLanguageToExpectedHeading(): iterable
     {
-        yield 'ru' => ['ru', 'Прокси-сервер'];
-        yield 'en' => ['en', 'Proxy server'];
+        yield 'ru' => ['ru', 'Прокси и входящие соединения'];
+        yield 'en' => ['en', 'Proxy and incoming connections'];
     }
 
     #[DataProvider('provideAcceptLanguageToExpectedHeading')]
@@ -69,7 +69,7 @@ final class SettingsProxyLocalizationTest extends KernelTestCase
         $body = (string) $response->getContent();
 
         self::assertStringContainsString(
-            '<h1>'.$expectedHeading.'</h1>',
+            '<h1 class="mb-4">'.$expectedHeading.'</h1>',
             $body,
             'The page heading was not translated into the negotiated locale.',
         );

@@ -30,11 +30,27 @@
     // где цветом не передаётся информация в одиночку. Текстом на светлом фоне не работает
     // (2.97:1), для текста и заливок под белый текст есть --bs-primary — см. _palette.scss.
     --adb-accent: #{$adb-accent};
+    --adb-input-border-color: #{$adb-input-border-color};
+}
+
+// Скроллбар страницы резервирует место всегда: иначе шапка сдвигается на ширину полосы при
+// переходе между страницами с прокруткой и без неё.
+html {
+    scrollbar-gutter: stable;
 }
 
 // WCAG AA (4.5:1) контраст в тёмной теме (issue #879). Светлая тема уже проходит норму везде,
 // кроме активного пункта шапки — тот фикс цветонейтральный (_nav.scss) и не завязан на тему.
 [data-bs-theme="dark"] {
+    --adb-input-border-color: #{$adb-input-border-color-dark};
+
+    // Заполненная звезда оценки: в светлой теме она тёмно-янтарная (_anime-detail.scss), в
+    // тёмной яркий --bs-warning и так контрастен.
+    .anime-detail__star--on,
+    .anime-detail__star:hover {
+        color: var(--bs-warning);
+    }
+
     // Резервное (невыбранное/disabled) состояние .btn-outline-secondary — кнопки-иконки в
     // таблицах, «Classic» в пагинации, невыбранные варианты темы, «Rebuild search index» —
     // замерено на 3.29:1 к фону #212529. $gray-500 (#adb5bd) даёт 7.43:1. Hover/active не

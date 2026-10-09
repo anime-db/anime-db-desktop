@@ -44,7 +44,7 @@
                         <input type="hidden" name="_token" value="{{ csrf_token('download_unlink_' ~ download.id) }}">
                         <input type="hidden" name="version" value="{{ download.version }}">
                         <input type="hidden" name="status" value="{{ download.status }}">
-                        <button type="submit">{{ 'anime_detail.downloads_unlink_button'|trans }}</button>
+                        <button type="submit" class="btn btn-sm btn-outline-secondary">{{ 'anime_detail.downloads_unlink_button'|trans }}</button>
                     </form>
                     {% else %}
                     <a class="anime-detail__downloads-manage-link" href="{{ path('downloads_index') }}">{{ 'anime_detail.downloads_manage_link'|trans }}</a>

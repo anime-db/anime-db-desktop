@@ -88,11 +88,9 @@
 
 {% block body %}
     {% import _self as m %}
-    <div class="anime-detail__back">
-        <a href="{{ path('anime_show', {id: anime.id}) }}" class="anime-detail__back-link">{{ 'anime_edit.back_link'|trans }}</a>
-    </div>
-
     <main class="container py-4 anime-edit">
+        {{ include('anime/_back_link.html.twig', {url: path('anime_show', {id: anime.id}), label: 'anime_edit.back_link'|trans, inline: true}) }}
+
         <h1>{{ 'anime_edit.heading'|trans({'%title%': anime.title}) }}</h1>
 
         {% if errors is not empty %}

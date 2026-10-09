@@ -501,7 +501,7 @@ final class SettingsTemplateRenderingTest extends KernelTestCase
         $twig = self::getContainer()->get('twig');
         $html = $twig->render('settings/label/index.html.twig', ['labels' => [$label], 'labelCounts' => [2 => 4], 'error' => null]);
 
-        $this->assertStringContainsString('<h1>Tags</h1>', $html);
+        $this->assertStringContainsString('<h1 class="mb-4">Tags</h1>', $html);
         $this->assertStringContainsString('Tag name', $html);
         // The label name is wrapped in bidi-isolate characters by bidi_isolate() (see
         // data-confirm on the delete form), so the exact text around it is asserted separately

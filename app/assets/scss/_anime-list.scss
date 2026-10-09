@@ -441,30 +441,7 @@
     font-size: 0.75em;
 }
 
-.anime-card__badge--watching {
-    background: var(--bs-success-bg-subtle);
-    color: var(--bs-success-text-emphasis);
-}
-
-.anime-card__badge--completed {
-    background: var(--bs-info-bg-subtle);
-    color: var(--bs-info-text-emphasis);
-}
-
-.anime-card__badge--plan {
-    background: var(--bs-warning-bg-subtle);
-    color: var(--bs-warning-text-emphasis);
-}
-
-.anime-card__badge--dropped {
-    background: var(--bs-danger-bg-subtle);
-    color: var(--bs-danger-text-emphasis);
-}
-
-.anime-card__badge--on_hold {
-    background: var(--bs-secondary-bg-subtle);
-    color: var(--bs-secondary-text-emphasis);
-}
+@include watch-status-badge-variants("anime-card__badge");
 
 .anime-card__meta {
     margin: 0;
