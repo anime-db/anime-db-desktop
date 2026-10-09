@@ -181,22 +181,25 @@
         const pageCount = Math.max(1, Math.ceil(total / limit));
         const currentPage = Math.floor(offset / limit) + 1;
 
-        pagination.replaceChildren();
-        pagination.hidden = pageCount <= 1;
+        // The clicked page button is rebuilt with the rest: focus goes to the current page's button.
+        window.FocusRestore.run(pagination, () => {
+            pagination.replaceChildren();
+            pagination.hidden = pageCount <= 1;
 
-        for (let page = 1; page <= pageCount; page += 1) {
-            const button = document.createElement('button');
-            button.type = 'button';
-            button.textContent = String(page);
-            if (page === currentPage) {
-                button.setAttribute('aria-current', 'true');
+            for (let page = 1; page <= pageCount; page += 1) {
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.textContent = String(page);
+                if (page === currentPage) {
+                    button.setAttribute('aria-current', 'true');
+                }
+                // Jumping to page 1 is treated the same as a fresh search (isNewQuery = true) —
+                // it puts the viewport back where a reset expects it. Any other page is just
+                // browsing the same result set at a different offset, so the scroll stays put.
+                button.addEventListener('click', () => requestPage((page - 1) * limit, true, page === 1));
+                pagination.appendChild(button);
             }
-            // Jumping to page 1 is treated the same as a fresh search (isNewQuery = true) —
-            // it puts the viewport back where a reset expects it. Any other page is just
-            // browsing the same result set at a different offset, so the scroll stays put.
-            button.addEventListener('click', () => requestPage((page - 1) * limit, true, page === 1));
-            pagination.appendChild(button);
-        }
+        }, () => pagination.querySelector('[aria-current]'));
     }
 
     function setupInfiniteScroll(total, limit, offset) {

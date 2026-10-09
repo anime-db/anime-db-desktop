@@ -30,6 +30,7 @@
 // controller.js is required once at file scope, not inside loadStorageScanModule() — see
 // controller.test.js for why a fresh require() per test would leak document-level listeners.
 require('../../app/assets/js/controller.js');
+require('../../app/assets/js/focus-restore.js');
 
 function mountControls(root = document.body) {
     root.dispatchEvent(new CustomEvent('htmx:load', { bubbles: true, detail: { elt: root } }));
@@ -603,5 +604,44 @@ describe('journal run', () => {
         await flushMany();
 
         expect(document.querySelector('#storage-scan-results li').textContent).toBe('storage_list.entry_missing');
+    });
+});
+
+describe('focus after confirming a candidate', () => {
+    function needsConfirmation(path) {
+        return {
+            type:         'NeedsConfirmation',
+            storage_path: path,
+            cleaned_name: path,
+            candidates:   [{ anime_id: 7, title: 'Steins;Gate' }],
+        };
+    }
+
+    async function confirmFirst(items) {
+        const watchers = mockScanWatcher();
+        mockTranslations();
+        global.fetch = jest.fn(() => Promise.resolve(jsonResponse({ anime: { title: 'Steins;Gate' } })));
+        loadStorageScanModule();
+        await watchers['42'].onDone({ items });
+        await flushMicrotasks();
+
+        const buttons = document.querySelectorAll('#storage-scan-results [data-scan-confirm]');
+        buttons[0].focus();
+        buttons[0].click();
+        await flushMicrotasks();
+
+        return buttons;
+    }
+
+    test('moves to the confirm button of the next unresolved item', async () => {
+        const buttons = await confirmFirst([needsConfirmation('/a'), needsConfirmation('/b')]);
+
+        expect(document.activeElement).toBe(buttons[1]);
+    });
+
+    test('moves to the group heading when nothing is left to confirm', async () => {
+        await confirmFirst([needsConfirmation('/a')]);
+
+        expect(document.activeElement).toBe(document.querySelector('#storage-scan-results h3'));
     });
 });
