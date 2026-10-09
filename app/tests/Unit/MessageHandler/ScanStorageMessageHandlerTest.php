@@ -29,6 +29,7 @@ namespace App\Tests\Unit\MessageHandler;
 
 use AnimeDb\PluginContracts\Catalog\AnimeFilesChangedEvent;
 use AnimeDb\PluginContracts\Catalog\FilesChangeReason;
+use AnimeDb\PluginContracts\Search\SearchByPluginCandidate;
 use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
 use App\Entity\Enum\StorageType;
@@ -47,9 +48,12 @@ use App\Service\Plugin\Filler\CachedFillerLookup;
 use App\Service\Plugin\Filler\PluginAnimeDataMerger;
 use App\Service\Plugin\Filler\PluginMediaDownloaderInterface;
 use App\Service\Plugin\FillerRegistry;
+use App\Service\Plugin\InstalledPluginsRegistry;
+use App\Service\Plugin\PluginDisplayName;
 use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Storage\FilenameCleaner;
 use App\Service\Storage\OrphanAnimeMatcher;
+use App\Service\Storage\Scan\ScanCandidate;
 use App\Service\Storage\ScanStorageService;
 use App\Service\Storage\Search\SearchByPluginChain;
 use App\Service\Storage\StorageMarkerService;
@@ -115,6 +119,44 @@ final class ScanStorageMessageHandlerTest extends TestCase
         foreach ($this->dirsToClean as $dir) {
             $this->removeDir($dir);
         }
+    }
+
+    public function testSerializedCandidateCarriesThePluginDisplayNameOrNullForACatalogEntry(): void
+    {
+        $pluginsDir = $this->makeStorageDir();
+        mkdir($pluginsDir.'/acme-list');
+        file_put_contents($pluginsDir.'/acme-list/manifest.json', (string) json_encode([
+            'id' => 'acme-list',
+            'name' => 'Acme List',
+            'version' => '1.0.0',
+            'type' => 'integration',
+            'features' => ['widget' => true],
+            'require' => ['core' => '>=2.0.0', 'php' => '>=8.2'],
+        ]));
+        $registry = new InstalledPluginsRegistry($pluginsDir, new PluginsConfigStore($pluginsDir.'/plugins.json'), new NullLogger());
+        $registry->reconcile();
+
+        $handler = $this->newHandler($this->createStub(ProcessLivenessChecker::class), $this->newWsPublisher(), pluginDisplayName: new PluginDisplayName($registry));
+        $serialize = new \ReflectionMethod($handler, 'serializeCandidate');
+
+        $this->assertSame(
+            ['anime_id' => null, 'plugin_id' => 'acme-list', 'external_id' => '7', 'plugin_name' => 'Acme List', 'title' => 'Trigun'],
+            $serialize->invoke($handler, ScanCandidate::fromPlugin(new SearchByPluginCandidate('acme-list', 'Trigun', '7'))),
+        );
+        // No manifest for the plugin: the id is the fallback name.
+        $this->assertSame(
+            'gone-plugin',
+            $serialize->invoke($handler, ScanCandidate::fromPlugin(new SearchByPluginCandidate('gone-plugin', 'Trigun', '7')))['plugin_name'],
+        );
+
+        $orphan = new TvAnime();
+        $orphan->setTitle('Trigun')->setWatchStatus(WatchStatus::Plan);
+        $this->entityManager->persist($orphan);
+        $this->entityManager->flush();
+
+        $serialized = $serialize->invoke($handler, ScanCandidate::fromOrphan($orphan));
+        $this->assertSame($orphan->id, $serialized['anime_id']);
+        $this->assertNull($serialized['plugin_name']);
     }
 
     public function testDoesNotScanAgainWhileAnActiveProcessHoldsTheLock(): void
@@ -480,6 +522,7 @@ final class ScanStorageMessageHandlerTest extends TestCase
         ?iterable $driveRoots = null,
         ?EventDispatcherInterface $eventDispatcher = null,
         ?LoggerInterface $logger = null,
+        ?PluginDisplayName $pluginDisplayName = null,
     ): ScanStorageMessageHandler {
         $animeRepository = new AnimeRepository($this->entityManager);
         $storageMarkerService = new StorageMarkerService($this->entityManager, $driveRoots);
@@ -525,6 +568,11 @@ final class ScanStorageMessageHandlerTest extends TestCase
             $wsPublisher,
             $logger ?? new NullLogger(),
             $eventDispatcher ?? $this->createStub(EventDispatcherInterface::class),
+            $pluginDisplayName ?? new PluginDisplayName(new InstalledPluginsRegistry(
+                $this->makeStorageDir(),
+                new PluginsConfigStore($this->makeStorageDir().'/plugins.json'),
+                new NullLogger(),
+            )),
         );
     }
 

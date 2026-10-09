@@ -25,22 +25,22 @@
 
 declare(strict_types=1);
 
-namespace App\Tests\Unit\Twig;
+namespace App\Tests\Unit\Service\Plugin;
 
 use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\PluginDisplayName;
 use App\Service\Plugin\PluginsConfigStore;
-use App\Twig\PluginNameExtension;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
+use Symfony\Component\Filesystem\Filesystem;
 
-final class PluginNameExtensionTest extends TestCase
+final class PluginDisplayNameTest extends TestCase
 {
     private string $pluginsDir;
 
     protected function setUp(): void
     {
-        $this->pluginsDir = sys_get_temp_dir().'/anime-plugin-name-ext-'.uniqid();
+        $this->pluginsDir = sys_get_temp_dir().'/anime-plugin-display-name-'.uniqid();
         mkdir($this->pluginsDir.'/acme-list', recursive: true);
         file_put_contents($this->pluginsDir.'/acme-list/manifest.json', (string) json_encode([
             'id' => 'acme-list',
@@ -54,27 +54,29 @@ final class PluginNameExtensionTest extends TestCase
 
     protected function tearDown(): void
     {
-        (new \Symfony\Component\Filesystem\Filesystem())->remove($this->pluginsDir);
+        (new Filesystem())->remove($this->pluginsDir);
     }
 
-    private function extension(): PluginNameExtension
+    private function displayName(): PluginDisplayName
     {
         $registry = new InstalledPluginsRegistry($this->pluginsDir, new PluginsConfigStore($this->pluginsDir.'/plugins.json'), new NullLogger());
         $registry->reconcile();
 
-        return new PluginNameExtension(new PluginDisplayName($registry));
+        return new PluginDisplayName($registry);
     }
 
-    public function testInstalledPluginIsShownByManifestName(): void
+    public function testInstalledPluginIsNamedByItsManifest(): void
     {
-        $this->assertSame('Acme List', $this->extension()->name('acme-list'));
+        $this->assertSame('Acme List', $this->displayName()->name('acme-list'));
     }
 
-    public function testRemovedPluginAndNonPluginIdsFallBackToTheRawValue(): void
+    public function testNotInstalledPluginFallsBackToItsId(): void
     {
-        $extension = $this->extension();
+        $this->assertSame('gone-plugin', $this->displayName()->name('gone-plugin'));
+    }
 
-        $this->assertSame('gone-plugin', $extension->name('gone-plugin'));
-        $this->assertSame('local', $extension->name('local'));
+    public function testInvalidPluginIdFallsBackToTheRawValue(): void
+    {
+        $this->assertSame('Not A Valid Id!', $this->displayName()->name('Not A Valid Id!'));
     }
 }

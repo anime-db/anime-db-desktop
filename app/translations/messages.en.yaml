@@ -498,6 +498,10 @@ storage_list:
     files_missing_text: '%title% (%path%)'
     auto_linked_text: 'Added automatically: %title%'
     create_entry_link: 'Create entry: %title%'
+    cleaned_name_text: 'Search name: %name%'
+    candidate_label: '%title% — %source%'
+    candidate_source_catalog: already in the catalog
+    none_match_link: 'None of these match — create an entry'
     confirm_button: Confirm
     confirm_error: Failed to confirm the selection.
     confirmed_text: 'Confirmed: %title%'
