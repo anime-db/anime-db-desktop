@@ -867,6 +867,45 @@ final class SettingsTemplateRenderingTest extends KernelTestCase
         $this->assertStringContainsString('120', $html);
     }
 
+    public function testMarketIndexRefreshButtonOffersCatalogLoadWhileRegistryIsUnavailable(): void
+    {
+        $html = $this->renderMarketIndexForRegistry(true);
+
+        $this->assertStringContainsString('Load catalog', $html);
+        $this->assertStringNotContainsString('Check for updates', $html);
+    }
+
+    public function testMarketIndexRefreshButtonOffersUpdateCheckWhenRegistryIsAvailable(): void
+    {
+        $html = $this->renderMarketIndexForRegistry(false);
+
+        $this->assertStringContainsString('Check for updates', $html);
+        $this->assertStringNotContainsString('Load catalog', $html);
+    }
+
+    private function renderMarketIndexForRegistry(bool $registryUnavailable): string
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession();
+        /** @var LocaleSwitcher $localeSwitcher */
+        $localeSwitcher = self::getContainer()->get(LocaleSwitcher::class);
+        $localeSwitcher->setLocale('en');
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+
+        return $twig->render('settings/market/index.html.twig', [
+            'items' => [],
+            'registryUnavailable' => $registryUnavailable,
+            'hasIncompatiblePlugin' => false,
+            'installedPluginId' => null,
+            'updatedPluginId' => null,
+            'installError' => null,
+            'installErrorParams' => [],
+            'featureFilter' => null,
+        ]);
+    }
+
     /**
      * Regression (issue #834 review): filtering the market to `?feature=filler` and finding no
      * plugin source must say so, not fall back to {@see MarketController::renderIndex()}'s generic

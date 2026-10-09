@@ -1656,6 +1656,73 @@ final class MarketControllerTest extends TestCase
     }
 
     /**
+     * The failed/timeout fragments replace the whole control, so they must keep telling the
+     * template that no usable catalog is loaded — otherwise the button label reverts to the
+     * "check for updates" wording right after an unsuccessful load.
+     */
+    public function testRefreshStatusFragmentsKeepRegistryUnavailableWhenNoSnapshotIsReady(): void
+    {
+        $configStore = new AppConfigStore($this->configPath);
+        $configStore->update(static fn (array $config): array => [
+            ...$config,
+            MarketRefreshService::CONFIG_KEY_LAST_REFRESH_ATTEMPT_AT => (new \DateTimeImmutable())->format(\DateTimeInterface::ATOM),
+        ]);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->exactly(2))
+            ->method('render')
+            ->with('settings/market/_refresh_area.html.twig', $this->callback(
+                static fn (array $params): bool => $params['registryUnavailable'] === true,
+            ))
+            ->willReturn('<div id="market-refresh-area"></div>');
+
+        $controller = $this->controller(
+            $this->snapshotCacheServing(null),
+            $this->assetDownloaderServingPluginZip(),
+            $twig,
+            configStore: $configStore,
+        );
+
+        // failed: the attempt timestamp moved past the (null) baseline.
+        $controller->refreshStatus(Request::create('/settings/market/refresh/status', 'GET', [
+            'refreshBaselineAt' => null,
+            'refreshBaselineAttemptAt' => null,
+            'refreshStartedAt' => (new \DateTimeImmutable('-1 second'))->format(\DateTimeInterface::ATOM),
+        ]));
+
+        // timeout: the baseline equals the current attempt timestamp and the window elapsed.
+        $attemptAt = $configStore->read()[MarketRefreshService::CONFIG_KEY_LAST_REFRESH_ATTEMPT_AT];
+        $controller->refreshStatus(Request::create('/settings/market/refresh/status', 'GET', [
+            'refreshBaselineAt' => null,
+            'refreshBaselineAttemptAt' => $attemptAt,
+            'refreshStartedAt' => (new \DateTimeImmutable('-1 hour'))->format(\DateTimeInterface::ATOM),
+        ]));
+    }
+
+    public function testRefreshStatusFragmentIsAvailableWhenTheSnapshotIsReady(): void
+    {
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('settings/market/_refresh_area.html.twig', $this->callback(
+                static fn (array $params): bool => $params['state'] === 'timeout' && $params['registryUnavailable'] === false,
+            ))
+            ->willReturn('<div id="market-refresh-area"></div>');
+
+        $controller = $this->controller(
+            $this->snapshotCacheServing($this->snapshot([])),
+            $this->assetDownloaderServingPluginZip(),
+            $twig,
+        );
+
+        $controller->refreshStatus(Request::create('/settings/market/refresh/status', 'GET', [
+            'refreshBaselineAt' => null,
+            'refreshBaselineAttemptAt' => null,
+            'refreshStartedAt' => (new \DateTimeImmutable('-1 hour'))->format(\DateTimeInterface::ATOM),
+        ]));
+    }
+
+    /**
      * Neither timestamp moved yet and the window has not elapsed — keep polling.
      */
     public function testRefreshStatusKeepsCheckingWhenNeitherTimestampAdvancedAndTheWindowHasNotElapsed(): void
