@@ -736,6 +736,8 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
         $this->assertSame(1, substr_count($html, 'data-type-change-loss='), 'only the lossy type has a loss block');
         $this->assertStringContainsString('name="confirm_loss"', $html);
         $this->assertStringContainsString('I understand this cannot be undone', $html);
+        $this->assertStringContainsString('downloads and links are kept', $html);
+        $this->assertStringNotContainsString('dates are kept', $html);
     }
 
     public function testNoTypeChangeMenuItemWithoutOfferedTypes(): void

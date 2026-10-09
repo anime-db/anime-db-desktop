@@ -597,7 +597,7 @@ anime_detail:
 anime_type_change:
     title: Change type
     field_type: New type
-    hint: 'The entry is now: %type%. It stays the same entry: downloads, links and dates are kept.'
+    hint: 'The entry is now: %type%. It stays the same entry: downloads and links are kept.'
     loss_intro: 'This change drops the following, and it cannot be undone:'
     lost_episodes: 'episodes: %number%'
     lost_watched: 'watched: %number%'
