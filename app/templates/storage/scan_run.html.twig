@@ -28,6 +28,6 @@
 
         {% include 'storage/_scan_run_results.html.twig' %}
 
-        <p><a href="{{ path('storage_scans', {id: storage.id}) }}">{{ 'storage_scan_log.back_link'|trans }}</a></p>
+        {{ include('_back_link.html.twig', {url: path('storage_scans', {id: storage.id}), label: 'storage_scan_log.back_link'|trans, inline: true}) }}
     </main>
 {% endblock %}

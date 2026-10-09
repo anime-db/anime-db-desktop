@@ -241,7 +241,9 @@
             return;
         }
         sortDirectionButton.dataset.direction = sortDirection;
-        sortDirectionButton.textContent = sortDirection === 'desc' ? '↓' : '↑';
+        sortDirectionButton.querySelectorAll('[data-sort-icon]').forEach((icon) => {
+            icon.hidden = icon.dataset.sortIcon !== sortDirection;
+        });
         sortDirectionButton.setAttribute(
             'aria-label',
             sortDirectionButton.dataset[sortDirection === 'desc' ? 'labelDesc' : 'labelAsc'],

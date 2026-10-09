@@ -42,11 +42,13 @@ function setUpDom(labels = [{ id: 1, name: 'Sci-Fi' }]) {
                  data-labels='${JSON.stringify(labels)}'
                  data-update-url="/anime/1/labels"
                  data-search-url="/labels"
-                 data-csrf-token="csrf-token">
+                 data-csrf-token="csrf-token"
+                 data-remove-label="Remove tag &quot;%label%&quot;">
             <div class="anime-detail__labels-header">
                 <h2 class="anime-detail__labels-heading">Labels</h2>
                 <button type="button" data-labels-edit>Edit</button>
             </div>
+            <template id="icon-x-lg"><svg data-icon="x-lg"></svg></template>
             <ul class="anime-detail__labels-list" data-labels-view></ul>
             <div class="anime-detail__labels-editor" data-labels-editor hidden>
                 <ul class="anime-detail__labels-chips" data-labels-chips></ul>
@@ -140,7 +142,11 @@ test('clicking a chip\'s remove button removes just that chip', async () => {
 
     const chips = document.querySelectorAll('[data-labels-chips] li');
     expect(chips).toHaveLength(2);
-    chips[0].querySelector('button').click();
+    const removeButton = chips[0].querySelector('button');
+    expect(removeButton.querySelector('svg[data-icon="x-lg"]')).not.toBeNull();
+    expect(removeButton.textContent).toBe('');
+    expect(removeButton.getAttribute('aria-label')).toBe(`Remove tag "First"`);
+    removeButton.click();
 
     const remaining = Array.from(document.querySelectorAll('[data-labels-chips] li span')).map((el) => el.textContent);
     expect(remaining).toEqual(['Second']);

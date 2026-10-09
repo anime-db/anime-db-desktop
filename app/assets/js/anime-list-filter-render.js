@@ -426,7 +426,10 @@
                 'aria-label',
                 window.AppTranslations.resolveKey(catalogue, 'anime_list.filter_chip_remove_button', { label: name }),
             );
-            remove.textContent = '×';
+            const removeIcon = document.getElementById('icon-x-lg');
+            if (removeIcon) {
+                remove.appendChild(removeIcon.content.cloneNode(true));
+            }
             remove.addEventListener('click', () => context.onRemove(sectionKey, value));
             chip.appendChild(remove);
 

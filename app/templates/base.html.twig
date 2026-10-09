@@ -122,13 +122,14 @@
     {% endfor %}
     {% block body %}{% endblock %}
     <div id="app-notifications" class="app-notifications" data-control="app-notifications" data-request-error="{{ 'app_notification.request_failed'|trans }}" aria-live="polite"></div>
+    <template id="icon-x-lg">{{ icon('x-lg') }}</template>
     <template id="app-notification-template">
         <div class="app-notification" role="alert">
             <div class="app-notification__text">
                 <strong class="app-notification__title"></strong>
                 <p class="app-notification__message"></p>
             </div>
-            <button type="button" class="app-notification__close" aria-label="{{ 'app_notification.close_button'|trans }}">&times;</button>
+            <button type="button" class="app-notification__close" aria-label="{{ 'app_notification.close_button'|trans }}">{{ icon('x-lg') }}</button>
         </div>
     </template>
     <script src="{{ asset('js/htmx.min.js') }}"></script>
