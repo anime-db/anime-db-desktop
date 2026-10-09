@@ -36,6 +36,7 @@ use App\Entity\Enum\WatchStatus;
 use App\Entity\Storage;
 use App\Entity\TvAnime;
 use App\Repository\AnimeRepository;
+use App\Repository\DownloadRepository;
 use App\Repository\StorageRepository;
 use App\Service\AnimeViewFactory;
 use App\Service\Storage\ManualLinkService;
@@ -122,6 +123,7 @@ final class AnimeFilesLinkControllerTest extends TestCase
         $service = new ManualLinkService(
             new StorageRepository($this->entityManager),
             new AnimeRepository($this->entityManager),
+            new DownloadRepository($this->entityManager),
             $markers,
             $this->newJobLockService(),
             $this->entityManager,

@@ -581,6 +581,7 @@ anime_detail:
     files_error_outside_storages: The folder is not inside any storage.
     files_error_storage_root: A whole storage cannot be linked.
     files_error_scan_running: This storage is being scanned, try again after it finishes.
+    files_error_storage_has_downloads: 'The path of storage "%storage%" cannot be updated while downloads are in progress into it.'
     files_error_ambiguous_name: 'Ambiguous folder name "%name%": the storage has several items that differ only by letter case.'
     files_error_entry_not_found: 'Item "%name%" was not found in storage "%storage%" or cannot be read.'
     files_error_entry_not_visible: 'Item "%name%" is not visible to the scanner: it has a hidden name, or it is neither a folder nor a video file.'

@@ -32,9 +32,11 @@ use AnimeDb\PluginContracts\Catalog\FilesChangeReason;
 use AnimeDb\PluginContracts\Model\AnimeId;
 use App\Entity\Anime;
 use App\Entity\Enum\StorageType;
+use App\Entity\Exception\InvalidPathException;
 use App\Entity\Storage;
 use App\Message\ScanStorageMessage;
 use App\Repository\AnimeRepository;
+use App\Repository\DownloadRepository;
 use App\Repository\StorageRepository;
 use App\Service\JobLock\JobLockService;
 use App\Service\Path\LexicalPathNormalizer;
@@ -57,6 +59,7 @@ final class ManualLinkService
     public function __construct(
         private readonly StorageRepository $storages,
         private readonly AnimeRepository $animes,
+        private readonly DownloadRepository $downloads,
         private readonly StorageMarkerService $markerService,
         private readonly JobLockService $jobLock,
         private readonly EntityManagerInterface $entityManager,
@@ -86,17 +89,11 @@ final class ManualLinkService
             return ManualLinkResult::refused(ManualLinkStatus::InvalidPath);
         }
 
-        $relocateTo = null;
+        $relocate = false;
         $marked = $this->findStorageByMarker($selectedPath);
         if ($marked !== null) {
             [$storage, $rootPath] = $marked;
-            if (!$this->isSamePath($storage->requirePath(), $rootPath)) {
-                if ($relocateStorageId !== $storage->id) {
-                    return ManualLinkResult::relocateRequired($storage, $rootPath);
-                }
-
-                $relocateTo = $rootPath;
-            }
+            $relocate = !$this->isSamePath($storage->requirePath(), $rootPath);
         } else {
             $storage = $this->findStorageByPath($path);
             if ($storage === null) {
@@ -151,9 +148,22 @@ final class ManualLinkService
             return ManualLinkResult::occupied($storage, $name, $holder);
         }
 
-        if ($relocateTo !== null) {
+        if ($relocate) {
+            // Same guard as StorageEditController: the torrent client still writes into the old root.
+            if ($this->downloads->hasUnfinishedDownloadsForTargetStorage($storageId)) {
+                return ManualLinkResult::refused(ManualLinkStatus::StorageHasDownloads, $storage);
+            }
+
+            if ($relocateStorageId !== $storage->id) {
+                return ManualLinkResult::relocateRequired($storage, $rootPath);
+            }
+
             $previousPath = $storage->requirePath();
-            $storage->relocate($relocateTo);
+            try {
+                $storage->relocate($this->absoluteRoot($rootPath));
+            } catch (InvalidPathException) {
+                return ManualLinkResult::refused(ManualLinkStatus::InvalidPath, $storage);
+            }
             $this->markerService->forget($storage, $previousPath);
         }
 
@@ -269,6 +279,28 @@ final class ManualLinkService
         }
 
         return null;
+    }
+
+    /**
+     * The marker directory the way {@see Storage::relocate()} accepts it: backslash separators and
+     * resolved segments, with the root shape (drive, UNC share, POSIX root) kept, which normalize()
+     * strips.
+     */
+    private function absoluteRoot(string $path): string
+    {
+        $normalized = LexicalPathNormalizer::normalize($path);
+
+        if (preg_match('/^[A-Za-z]:$/', $normalized) === 1) {
+            return $normalized.'\\';
+        }
+        if (preg_match('/^(?:\\\\|\/\/)/', $path) === 1) {
+            return '\\\\'.$normalized;
+        }
+        if (str_starts_with($path, '/')) {
+            return '/'.str_replace('\\', '/', $normalized);
+        }
+
+        return $normalized;
     }
 
     private function isSamePath(string $a, string $b): bool

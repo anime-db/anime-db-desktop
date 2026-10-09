@@ -581,6 +581,7 @@ anime_detail:
     files_error_outside_storages: Папка не входит ни в одно хранилище.
     files_error_storage_root: Нельзя привязать хранилище целиком.
     files_error_scan_running: Идёт сканирование этого хранилища, повторите после него.
+    files_error_storage_has_downloads: 'Путь хранилища «%storage%» нельзя обновить, пока в него идут загрузки.'
     files_error_ambiguous_name: 'Неоднозначное имя папки «%name%»: в хранилище есть несколько элементов, различающихся только регистром.'
     files_error_entry_not_found: 'Элемент «%name%» не найден в хранилище «%storage%» или недоступен для чтения.'
     files_error_entry_not_visible: 'Элемент «%name%» не виден сканеру: скрытое имя либо это не папка и не видеофайл.'

@@ -32,12 +32,14 @@ use AnimeDb\PluginContracts\Catalog\FilesChangeReason;
 use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
 use App\Entity\Anime;
+use App\Entity\Download;
 use App\Entity\Enum\StorageType;
 use App\Entity\Enum\WatchStatus;
 use App\Entity\Storage;
 use App\Entity\TvAnime;
 use App\Message\ScanStorageMessage;
 use App\Repository\AnimeRepository;
+use App\Repository\DownloadRepository;
 use App\Repository\StorageRepository;
 use App\Service\JobLock\JobLockService;
 use App\Service\Storage\ManualLinkResult;
@@ -125,6 +127,7 @@ final class ManualLinkServiceTest extends TestCase
         return new ManualLinkService(
             new StorageRepository($this->entityManager),
             new AnimeRepository($this->entityManager),
+            new DownloadRepository($this->entityManager),
             $this->markers,
             $this->jobLock,
             $this->entityManager,
@@ -245,6 +248,71 @@ final class ManualLinkServiceTest extends TestCase
         $this->assertSame($storage, $anime->getStorage());
         $this->assertNull($this->markers->readMarkerId($oldRoot));
         $this->assertSame($storage->id, $this->markers->readMarkerId($newRoot));
+    }
+
+    public function testRelocationIsRefusedWhileDownloadsTargetTheStorage(): void
+    {
+        $oldRoot = $this->makeDir();
+        $newRoot = $this->makeDir();
+        mkdir($newRoot.'/Trigun');
+        $storage = $this->newStorage($oldRoot);
+        file_put_contents($newRoot.'/desktop.ini', \sprintf("[AnimeDB]\nid=%d\n", $storage->id));
+        $anime = $this->newAnime();
+        $download = new Download(str_repeat('a', 40), $anime);
+        $download->assignTargetStorage($storage);
+        $this->entityManager->persist($download);
+        $this->entityManager->flush();
+
+        foreach ([null, $storage->id] as $confirmed) {
+            $result = $this->link($anime, $newRoot.'/Trigun', $confirmed);
+
+            $this->assertSame(ManualLinkStatus::StorageHasDownloads, $result->status);
+            $this->assertSame($oldRoot, $storage->getPath());
+            $this->assertNull($anime->getStorage());
+        }
+    }
+
+    public function testConfirmedRelocationAcceptsAMarkerPathWithForwardSlashes(): void
+    {
+        $oldRoot = $this->makeDir();
+        $newRoot = $this->makeDir();
+        mkdir($newRoot.'/Trigun');
+        $storage = $this->newStorage($oldRoot);
+        file_put_contents($newRoot.'/desktop.ini', \sprintf("[AnimeDB]\nid=%d\n", $storage->id));
+        $anime = $this->newAnime();
+
+        $result = $this->link($anime, $newRoot.'/Trigun', $storage->id);
+
+        $this->assertSame(ManualLinkStatus::Linked, $result->status);
+        $this->assertSame($newRoot, $storage->getPath());
+    }
+
+    public function testSelectingTheRootOfAMovedStorageIsRefusedWithoutAskingToRelocate(): void
+    {
+        $oldRoot = $this->makeDir();
+        $newRoot = $this->makeDir();
+        $storage = $this->newStorage($oldRoot);
+        file_put_contents($newRoot.'/desktop.ini', \sprintf("[AnimeDB]\nid=%d\n", $storage->id));
+
+        $result = $this->link($this->newAnime(), $newRoot);
+
+        $this->assertSame(ManualLinkStatus::StorageRoot, $result->status);
+        $this->assertSame($oldRoot, $storage->getPath());
+    }
+
+    public function testAMovedStoragePathIsNotOfferedWhenTheEntryIsOccupied(): void
+    {
+        $oldRoot = $this->makeDir();
+        $newRoot = $this->makeDir();
+        mkdir($newRoot.'/Trigun');
+        $storage = $this->newStorage($oldRoot);
+        file_put_contents($newRoot.'/desktop.ini', \sprintf("[AnimeDB]\nid=%d\n", $storage->id));
+        $this->newAnime('Other')->setStorage($storage)->setStoragePath('Trigun');
+        $this->entityManager->flush();
+
+        $result = $this->link($this->newAnime(), $newRoot.'/Trigun');
+
+        $this->assertSame(ManualLinkStatus::Occupied, $result->status);
     }
 
     public function testAPathWithDotSegmentsIsRefusedSoItCannotEscapeTheMarkedStorage(): void

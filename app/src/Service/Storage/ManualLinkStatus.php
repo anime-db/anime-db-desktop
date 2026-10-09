@@ -45,6 +45,9 @@ enum ManualLinkStatus
 
     case ScanRunning;
 
+    /** The storage has to be moved to link the entry, but unfinished downloads still target its old path. */
+    case StorageHasDownloads;
+
     /** Several entries of the storage root differ from the selected name only by case. */
     case AmbiguousName;
 
