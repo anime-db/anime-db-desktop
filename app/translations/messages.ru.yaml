@@ -564,7 +564,28 @@ anime_detail:
     field_dates: Даты выхода
     files_heading: Файлы
     files_not_linked: Не привязано
-    files_link: Привязать
+    files_link: Привязать…
+    files_change: Изменить…
+    files_pick_folder: Папку…
+    files_pick_video: Видеофайл…
+    files_video_filter: Видео
+    files_unlink: Отвязать
+    files_unlink_confirm: Связь записи с файлами будет снята. Сами файлы не затрагиваются. Продолжить?
+    files_unlinked: Связь с файлами снята.
+    files_relocate_confirm: Хранилище «%name%» теперь находится здесь — обновить путь?
+    files_request_failed: Не удалось выполнить запрос. Обновите страницу и повторите.
+    files_linked: 'Привязано: «%name%» в хранилище «%storage%».'
+    files_linked_top_level: 'Привязано к папке верхнего уровня «%name%» (хранилище «%storage%»).'
+    files_create_storage: Создать хранилище
+    files_error_invalid_path: Нужен абсолютный путь к папке или файлу.
+    files_error_outside_storages: Папка не входит ни в одно хранилище.
+    files_error_storage_root: Нельзя привязать хранилище целиком.
+    files_error_scan_running: Идёт сканирование этого хранилища, повторите после него.
+    files_error_storage_has_downloads: 'Путь хранилища «%storage%» нельзя обновить, пока в него идут загрузки.'
+    files_error_ambiguous_name: 'Неоднозначное имя папки «%name%»: в хранилище есть несколько элементов, различающихся только регистром.'
+    files_error_entry_not_found: 'Элемент «%name%» не найден в хранилище «%storage%» или недоступен для чтения.'
+    files_error_entry_not_visible: 'Элемент «%name%» не виден сканеру: скрытое имя либо это не папка и не видеофайл.'
+    files_error_occupied: 'Элемент «%name%» хранилища «%storage%» уже привязан к другой записи:'
     notes_add_button: Добавить заметку
     notes_edit_button: Изменить
     rating_star_label: 'Оценка: %rating%'
@@ -684,6 +705,9 @@ storage_new:
     path_not_applicable_hint: У этого типа носителя нет файлового пути, поэтому он не сохраняется.
     submit_button: Создать
     error_invalid: Укажите корректные название, путь и тип хранилища.
+    path_purpose_hint: Хранилище — это папка, в которой лежат папки с аниме.
+    error_already_connected: 'Эта папка уже подключена как хранилище «%name%».'
+    existing_storage_link: Открыть хранилище
     cancel_button: Отмена
 
 storage_scan_prompt:

@@ -867,12 +867,28 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
         $this->assertStringContainsString('hx-target="#anime-names-2"', $html);
     }
 
-    public function testFilesBlockStaysVisibleWithoutStorageAndLinksToTheStoragePage(): void
+    public function testFilesBlockWithoutStorageOffersTheLinkMenu(): void
     {
         $html = $this->renderShow($this->minimalAnime(), 'en');
 
         $this->assertStringContainsString('Not linked', $html);
-        $this->assertStringContainsString('<a href="/storage">Link</a>', $html);
+        $this->assertStringContainsString('data-files-pick="folder"', $html);
+        $this->assertStringContainsString('data-files-pick="video"', $html);
+        $this->assertStringContainsString('>Link…</summary>', $html);
+        $this->assertStringNotContainsString('data-files-unlink', $html);
+        $this->assertStringContainsString('data-link-url="/anime/2/link-files"', $html);
+    }
+
+    public function testFilesBlockWithStorageOffersChangeAndUnlink(): void
+    {
+        $anime = $this->minimalAnime();
+        $anime['storage'] = ['name' => 'Local', 'type' => 'folder', 'path' => '/anime/aot', 'path_available' => true];
+
+        $html = $this->renderShow($anime, 'en');
+
+        $this->assertStringContainsString('>Change…</summary>', $html);
+        $this->assertStringContainsString('data-files-unlink', $html);
+        $this->assertStringContainsString('data-unlink-url="/anime/2/unlink-files"', $html);
     }
 
     public function testSourcesAreAVerticalListLabelledWithTheDomainWithoutWww(): void
@@ -1139,7 +1155,9 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
 
         $this->assertStringContainsString('id="anime-downloads-1"', $html);
         $this->assertStringNotContainsString('hx-post="/downloads/42/unlink"', $html);
-        $this->assertStringNotContainsString('Отвязать', $html);
+        // Scoped to the downloads block: the Files block has its own "Отвязать" (issue #997).
+        $this->assertSame(1, preg_match('#id="anime-downloads-1".*?</section>#s', $html, $downloadsBlock));
+        $this->assertStringNotContainsString('Отвязать', $downloadsBlock[0] ?? '');
         $this->assertStringContainsString('href="/downloads"', $html);
         $this->assertStringContainsString('Управлять на странице «Загрузки»', $html);
     }
