@@ -771,6 +771,7 @@ nav:
     add_menu_scan_error: Failed to load storages.
     add_menu_scan_item: 'Scan "%name%"'
     add_menu_scan_more: 'Not connected: %number% →'
+    add_menu_scan_none: No storages to scan
     add_menu_add_storage: Add storage…
     add_menu_empty_entry: Empty entry
 

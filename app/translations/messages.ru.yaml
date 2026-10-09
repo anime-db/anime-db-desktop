@@ -771,6 +771,7 @@ nav:
     add_menu_scan_error: Не удалось загрузить хранилища.
     add_menu_scan_item: 'Сканировать «%name%»'
     add_menu_scan_more: 'Не подключено: %number% →'
+    add_menu_scan_none: Нет хранилищ для сканирования
     add_menu_add_storage: Добавить хранилище…
     add_menu_empty_entry: Пустая запись
 
