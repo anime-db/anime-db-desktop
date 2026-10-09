@@ -326,6 +326,30 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
     }
 
     /**
+     * The empty-state partial is shared by the settings pages: the action link is optional and the
+     * hint only appears when given.
+     */
+    public function testEmptyStatePartialRendersOptionalActionAndHint(): void
+    {
+        self::bootKernel();
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+
+        $bare = $twig->render('_empty_state.html.twig', ['icon' => 'display', 'text' => 'Nothing here']);
+        $this->assertStringContainsString('data-icon="display"', $bare);
+        $this->assertStringContainsString('Nothing here', $bare);
+        $this->assertStringNotContainsString('<a ', $bare);
+        $this->assertStringNotContainsString('empty-state__hint', $bare);
+
+        $full = $twig->render('_empty_state.html.twig', ['icon' => 'display', 'text' => 'Nothing here', 'hint' => 'Why', 'action_url' => '/settings/market', 'action_label' => 'Go']);
+        $this->assertStringContainsString('empty-state__hint', $full);
+        $this->assertStringContainsString('Why', $full);
+        $this->assertStringContainsString('Go', $full);
+        $this->assertStringContainsString('href="/settings/market"', $full);
+    }
+
+    /**
      * The catalog link (issue #719) must always be present, even with no history to go back to -
      * anime-detail.js decides at runtime whether a click goes back through history or follows this
      * href, so the href itself must stay a working plain link to the catalog root.
@@ -345,7 +369,9 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
 
         $this->assertStringContainsString('data-control="catalog-back-link"', $html);
         $this->assertStringContainsString('href="/"', $html);
-        $this->assertStringContainsString('← Каталог', $html);
+        $this->assertStringContainsString('data-icon="arrow-left"', $html);
+        $this->assertStringNotContainsString('←', $html);
+        $this->assertStringContainsString('Каталог', $html);
     }
 
     public function testShowRendersAnimeWithoutOptionalFieldsWithoutErrors(): void
@@ -688,6 +714,44 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
         $this->assertStringContainsString('removed from the download client and stop seeding; the downloaded files stay.', $message);
     }
 
+    public function testTypeChangeDialogListsTheValuesASeriesLosesBecomingAMovie(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession('/anime/1');
+
+        $anime = $this->fullyPopulatedAnime() + [
+            'type_changes' => [
+                ['type' => 'ova', 'lossy' => false, 'lost_episodes_count' => null, 'lost_watched_episodes' => null, 'lost_date_end' => null],
+                ['type' => 'movie', 'lossy' => true, 'lost_episodes_count' => 1150, 'lost_watched_episodes' => 1149, 'lost_date_end' => '2010-07-04'],
+            ],
+        ];
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('anime/_header.html.twig', ['anime' => $anime]);
+
+        $this->assertStringContainsString('Change type…', $html);
+        $this->assertStringContainsString('action="/anime/1/change-type"', $html);
+        $this->assertMatchesRegularExpression('/data-type-change-loss="movie"[^>]*>.*episodes: 1150, watched: 1149, end date: 2010-07-04.*the series end date will not be restored/s', $html);
+        $this->assertSame(1, substr_count($html, 'data-type-change-loss='), 'only the lossy type has a loss block');
+        $this->assertStringContainsString('name="confirm_loss"', $html);
+        $this->assertStringContainsString('I understand this cannot be undone', $html);
+        $this->assertStringContainsString('downloads and links are kept', $html);
+        $this->assertStringNotContainsString('dates are kept', $html);
+    }
+
+    public function testNoTypeChangeMenuItemWithoutOfferedTypes(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession('/anime/1');
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('anime/_header.html.twig', ['anime' => $this->fullyPopulatedAnime()]);
+
+        $this->assertStringNotContainsString('Change type…', $html);
+    }
+
     public function testEditFormShowsErrorsNextToTheFieldsAndKeepsTheTypedValues(): void
     {
         self::bootKernel();
@@ -805,12 +869,28 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
         $this->assertStringContainsString('hx-target="#anime-names-2"', $html);
     }
 
-    public function testFilesBlockStaysVisibleWithoutStorageAndLinksToTheStoragePage(): void
+    public function testFilesBlockWithoutStorageOffersTheLinkMenu(): void
     {
         $html = $this->renderShow($this->minimalAnime(), 'en');
 
         $this->assertStringContainsString('Not linked', $html);
-        $this->assertStringContainsString('<a href="/storage">Link</a>', $html);
+        $this->assertStringContainsString('data-files-pick="folder"', $html);
+        $this->assertStringContainsString('data-files-pick="video"', $html);
+        $this->assertStringContainsString('>Link…</summary>', $html);
+        $this->assertStringNotContainsString('data-files-unlink', $html);
+        $this->assertStringContainsString('data-link-url="/anime/2/link-files"', $html);
+    }
+
+    public function testFilesBlockWithStorageOffersChangeAndUnlink(): void
+    {
+        $anime = $this->minimalAnime();
+        $anime['storage'] = ['name' => 'Local', 'type' => 'folder', 'path' => '/anime/aot', 'path_available' => true];
+
+        $html = $this->renderShow($anime, 'en');
+
+        $this->assertStringContainsString('>Change…</summary>', $html);
+        $this->assertStringContainsString('data-files-unlink', $html);
+        $this->assertStringContainsString('data-unlink-url="/anime/2/unlink-files"', $html);
     }
 
     public function testSourcesAreAVerticalListLabelledWithTheDomainWithoutWww(): void
@@ -1077,7 +1157,9 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
 
         $this->assertStringContainsString('id="anime-downloads-1"', $html);
         $this->assertStringNotContainsString('hx-post="/downloads/42/unlink"', $html);
-        $this->assertStringNotContainsString('Отвязать', $html);
+        // Scoped to the downloads block: the Files block has its own "Отвязать" (issue #997).
+        $this->assertSame(1, preg_match('#id="anime-downloads-1".*?</section>#s', $html, $downloadsBlock));
+        $this->assertStringNotContainsString('Отвязать', $downloadsBlock[0] ?? '');
         $this->assertStringContainsString('href="/downloads"', $html);
         $this->assertStringContainsString('Управлять на странице «Загрузки»', $html);
     }

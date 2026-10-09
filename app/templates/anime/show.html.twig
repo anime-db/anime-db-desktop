@@ -39,9 +39,7 @@
 {% endblock %}
 
 {% block body %}
-    <div class="anime-detail__back">
-        <a href="{{ path('home_index') }}" class="anime-detail__back-link" data-control="catalog-back-link">{{ 'anime_detail.back_link'|trans }}</a>
-    </div>
+    {{ include('anime/_back_link.html.twig', {url: path('home_index'), label: 'anime_detail.back_link'|trans, catalog_control: true}) }}
 
     <main class="anime-detail">
         {{ include('anime/_header.html.twig', {anime: anime}) }}
@@ -94,8 +92,8 @@
                         <ul class="anime-detail__labels-suggestions" data-labels-suggestions hidden></ul>
                         <p class="anime-detail__labels-error" data-labels-error hidden>{{ 'anime_detail.labels_save_error'|trans }}</p>
                         <div class="anime-detail__labels-actions">
-                            <button type="button" data-labels-save>{{ 'anime_detail.labels_save_button'|trans }}</button>
-                            <button type="button" data-labels-cancel>{{ 'anime_detail.labels_cancel_button'|trans }}</button>
+                            <button type="button" class="btn btn-sm btn-primary" data-labels-save>{{ 'anime_detail.labels_save_button'|trans }}</button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" data-labels-cancel>{{ 'anime_detail.labels_cancel_button'|trans }}</button>
                         </div>
                     </div>
                 </section>
@@ -106,38 +104,7 @@
             <div class="anime-detail__column anime-detail__column--right">
                 {{ include('anime/_info.html.twig', {anime: anime, fillable_fields: fillable_fields, fill_error: null}) }}
 
-                <section class="anime-detail__files">
-                    <h2 class="anime-detail__section-heading">{{ 'anime_detail.files_heading'|trans }}</h2>
-
-                    {% if anime.storage %}
-                        <dl class="anime-detail__fields">
-                            <dt>{{ 'anime_detail.field_storage'|trans }}</dt>
-                            <dd>{{ anime.storage.name }} ({{ ('storage_type.' ~ anime.storage.type)|trans }})</dd>
-
-                            {% if anime.storage.path is not null %}
-                            <dt>{{ 'anime_detail.field_storage_path'|trans }}</dt>
-                            <dd>
-                                <span class="anime-detail__path">{{ anime.storage.path }}</span>
-                                <button
-                                    type="button"
-                                    class="anime-detail__open-folder-button"
-                                    data-control="open-folder-button"
-                                    data-open-folder-path="{{ anime.storage.path }}"
-                                    {%- if not anime.storage.path_available %}
-                                        disabled
-                                        title="{{ 'anime_detail.path_unavailable_tooltip'|trans }}"
-                                    {%- endif %}
-                                >{{ 'anime_detail.open_folder_button'|trans }}</button>
-                            </dd>
-                            {% endif %}
-                        </dl>
-                    {% else %}
-                        <p class="anime-detail__files-empty">
-                            {{ 'anime_detail.files_not_linked'|trans }}
-                            <a href="{{ path('storage_index') }}">{{ 'anime_detail.files_link'|trans }}</a>
-                        </p>
-                    {% endif %}
-                </section>
+                {{ include('anime/_files.html.twig', {anime: anime, files_message: null}) }}
 
                 {{ include('plugin/_widget_slots.html.twig', {widgets: widgets|filter(w => w.slot == 'side'), entryId: anime.id}) }}
 

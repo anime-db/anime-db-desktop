@@ -58,12 +58,12 @@ final class SyncReviewService
     }
 
     /**
-     * Backs the settings sidebar's "needs correction" badge (issue #822) — see
-     * {@see SyncReviewItemRepository::countUnresolvedByKind()} for why this is a count query.
+     * Backs the settings sidebar's "requires attention" badge (issue #822) — see
+     * {@see SyncReviewItemRepository::countUnresolved()} for why this is a count query.
      */
-    public function countUnresolvedNeedsCorrection(): int
+    public function countUnresolved(): int
     {
-        return $this->repository->countUnresolvedByKind(SyncReviewItemKind::NeedsCorrection);
+        return $this->repository->countUnresolved();
     }
 
     public function resolve(SyncReviewItem $item): void

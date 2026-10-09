@@ -92,6 +92,7 @@ function filterSectionsMarkup() {
 function setUpDom(columns = 1) {
     document.body.innerHTML = `
         <main data-control="anime-list">
+        <div id="anime-list-catalog" tabindex="-1">
         <input id="anime-list-search" type="search" />
         <button type="button" id="anime-list-filters-toggle" aria-expanded="true">
             Filters<span id="anime-list-filters-count" hidden></span>
@@ -115,6 +116,7 @@ function setUpDom(columns = 1) {
         <p id="anime-list-error" hidden></p>
         <nav id="anime-list-pagination" hidden></nav>
         <div id="anime-list-sentinel" hidden></div>
+        </div>
         <aside id="anime-list-filters">
             <div id="anime-list-filter-sections" data-csrf-token="test-csrf-token">${filterSectionsMarkup()}</div>
             <div class="anime-list__filter-apply-bar">
@@ -268,7 +270,7 @@ beforeEach(() => {
     jest.useFakeTimers();
     setUpDom();
     resizeObserverInstances = mockResizeObserver();
-    window.scrollTo = jest.fn();
+    Element.prototype.scrollTo = jest.fn();
     mockIntersectionObserver();
 });
 
@@ -399,7 +401,11 @@ test('a full list replacement resets the window scroll position, an append does 
     }));
     await flushMicrotasks();
 
-    expect(window.scrollTo).toHaveBeenCalledTimes(1);
+    expect(Element.prototype.scrollTo).toHaveBeenCalledTimes(1);
+    expect(Element.prototype.scrollTo.mock.instances[0]).toBe(document.getElementById('anime-list-catalog'));
+    expect(Element.prototype.scrollTo).toHaveBeenCalledWith({ top: 0 });
+    // The sentinel is observed relative to the catalog area (issue #995), not the window.
+    expect(global.IntersectionObserver).toHaveBeenCalledWith(expect.any(Function), { root: document.getElementById('anime-list-catalog') });
 
     // The sentinel entering the viewport triggers an append (loadPage(offset + limit, false)),
     // which must not reset the scroll position the user is currently reading.
@@ -417,7 +423,7 @@ test('a full list replacement resets the window scroll position, an append does 
     }));
     await flushMicrotasks();
 
-    expect(window.scrollTo).toHaveBeenCalledTimes(1);
+    expect(Element.prototype.scrollTo).toHaveBeenCalledTimes(1);
 });
 
 test('navigating to a classic pagination page other than the first does not reset the window scroll', async () => {
@@ -440,8 +446,8 @@ test('navigating to a classic pagination page other than the first does not rese
     }));
     await flushMicrotasks();
 
-    expect(window.scrollTo).toHaveBeenCalledTimes(1);
-    window.scrollTo.mockClear();
+    expect(Element.prototype.scrollTo).toHaveBeenCalledTimes(1);
+    Element.prototype.scrollTo.mockClear();
 
     const pageTwoButton = document.querySelectorAll('#anime-list-pagination button')[1];
     pageTwoButton.dispatchEvent(new Event('click'));
@@ -460,7 +466,7 @@ test('navigating to a classic pagination page other than the first does not rese
     // Page navigation replaces the grid contents (replace === true) same as a fresh search, but
     // it is not a "the list composition changed" event from the top — the scroll reset must key
     // off the target offset, not the replace flag alone.
-    expect(window.scrollTo).not.toHaveBeenCalled();
+    expect(Element.prototype.scrollTo).not.toHaveBeenCalled();
 });
 
 test('a stale response that outlives an abort during the catalogue fetch is dropped', async () => {
@@ -562,7 +568,7 @@ test('clicking a sort field reloads from offset 0 with the chosen field and mark
     await flushMicrotasks();
     calls[0].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 0, limit: 6, offset: 0 }));
     await flushMicrotasks();
-    window.scrollTo.mockClear();
+    Element.prototype.scrollTo.mockClear();
 
     dispatchClick(document.querySelector('[data-sort-field="name"]'));
     await flushMicrotasks();
@@ -577,7 +583,7 @@ test('clicking a sort field reloads from offset 0 with the chosen field and mark
     // or a filter change.
     calls[1].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 0, limit: 6, offset: 0 }));
     await flushMicrotasks();
-    expect(window.scrollTo).toHaveBeenCalledTimes(1);
+    expect(Element.prototype.scrollTo).toHaveBeenCalledTimes(1);
 });
 
 test('toggling sort direction flips desc/asc, reloads and updates the button label', async () => {
@@ -587,7 +593,7 @@ test('toggling sort direction flips desc/asc, reloads and updates the button lab
     await flushMicrotasks();
     calls[0].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 0, limit: 6, offset: 0 }));
     await flushMicrotasks();
-    window.scrollTo.mockClear();
+    Element.prototype.scrollTo.mockClear();
 
     const directionButton = document.getElementById('anime-list-sort-direction');
     dispatchClick(directionButton);
@@ -602,7 +608,7 @@ test('toggling sort direction flips desc/asc, reloads and updates the button lab
     // the current one (issue #687).
     calls[1].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 0, limit: 6, offset: 0 }));
     await flushMicrotasks();
-    expect(window.scrollTo).toHaveBeenCalledTimes(1);
+    expect(Element.prototype.scrollTo).toHaveBeenCalledTimes(1);
 });
 
 test('a search query change resets the window scroll position', async () => {
@@ -612,7 +618,7 @@ test('a search query change resets the window scroll position', async () => {
     await flushMicrotasks();
     calls[0].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 0, limit: 6, offset: 0 }));
     await flushMicrotasks();
-    window.scrollTo.mockClear();
+    Element.prototype.scrollTo.mockClear();
 
     const searchInput = document.getElementById('anime-list-search');
     searchInput.value = 'gate';
@@ -624,7 +630,7 @@ test('a search query change resets the window scroll position', async () => {
     calls[1].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 0, limit: 6, offset: 0 }));
     await flushMicrotasks();
 
-    expect(window.scrollTo).toHaveBeenCalledTimes(1);
+    expect(Element.prototype.scrollTo).toHaveBeenCalledTimes(1);
 });
 
 test('clicking classic pagination page 1 resets the window scroll position', async () => {
@@ -634,7 +640,7 @@ test('clicking classic pagination page 1 resets the window scroll position', asy
     await flushMicrotasks();
     calls[0].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 2, limit: 1, offset: 0 }));
     await flushMicrotasks();
-    window.scrollTo.mockClear();
+    Element.prototype.scrollTo.mockClear();
 
     // Jumping back to page 1 is treated the same as a fresh search (issue #687) — unlike a jump
     // to any other page, which the "does not reset" test above covers.
@@ -646,7 +652,7 @@ test('clicking classic pagination page 1 resets the window scroll position', asy
     calls[1].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 2, limit: 1, offset: 0 }));
     await flushMicrotasks();
 
-    expect(window.scrollTo).toHaveBeenCalledTimes(1);
+    expect(Element.prototype.scrollTo).toHaveBeenCalledTimes(1);
 });
 
 test('a column-count change in infinite scroll tops up the last row to a full row', async () => {
@@ -704,7 +710,7 @@ test('a column-count change in classic mode re-pages around the first record of 
     expect(calls).toHaveLength(2);
     calls[1].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 100, limit: 30, offset: 30 }));
     await flushMicrotasks();
-    window.scrollTo.mockClear();
+    Element.prototype.scrollTo.mockClear();
 
     // newLimit = 3 × 6 = 18; the record at index 30 now falls on page floor(30/18)+1 = 2, i.e.
     // offset 18. A widening resize (e.g. to 10 columns, newLimit 60) would land on page 1 (offset
@@ -718,7 +724,7 @@ test('a column-count change in classic mode re-pages around the first record of 
     expect(queryParams(calls[2].url)).toMatchObject({ offset: '18', limit: '18' });
     calls[2].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 100, limit: 18, offset: 18 }));
     await flushMicrotasks();
-    expect(window.scrollTo).not.toHaveBeenCalled();
+    expect(Element.prototype.scrollTo).not.toHaveBeenCalled();
 });
 
 test('a column-count change in classic mode does not reset the window scroll when the anchor lands back on offset 0', async () => {
@@ -738,7 +744,7 @@ test('a column-count change in classic mode does not reset the window scroll whe
     expect(calls).toHaveLength(2);
     calls[1].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 100, limit: 30, offset: 30 }));
     await flushMicrotasks();
-    window.scrollTo.mockClear();
+    Element.prototype.scrollTo.mockClear();
 
     // newLimit = 10 × 6 = 60; floor(30 / 60) + 1 = 1, so the anchor lands back on offset 0 — the
     // exact same request a brand-new search would send. The gate must tell these apart by an
@@ -751,7 +757,7 @@ test('a column-count change in classic mode does not reset the window scroll whe
     expect(queryParams(calls[2].url)).toMatchObject({ offset: '0', limit: '60' });
     calls[2].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 100, limit: 60, offset: 0 }));
     await flushMicrotasks();
-    expect(window.scrollTo).not.toHaveBeenCalled();
+    expect(Element.prototype.scrollTo).not.toHaveBeenCalled();
 });
 
 test('a resize that arrives before the first response still restores the row invariant', async () => {
@@ -1096,7 +1102,7 @@ test('applying a pending filter resets the window scroll position', async () => 
         type: [], date_premiere_decade: [], user_rating: [], labels: [], genres: [], themes: [], studios: [],
     }));
     await flushMicrotasks();
-    window.scrollTo.mockClear();
+    Element.prototype.scrollTo.mockClear();
 
     document.querySelector('[data-filter-section="watch_status"] .anime-list__filter-value-name')
         .dispatchEvent(new Event('click', { bubbles: true }));
@@ -1106,7 +1112,7 @@ test('applying a pending filter resets the window scroll position', async () => 
     byKind(calls, 'list')[1].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 0, limit: 6, offset: 0 }));
     await flushMicrotasks();
 
-    expect(window.scrollTo).toHaveBeenCalledTimes(1);
+    expect(Element.prototype.scrollTo).toHaveBeenCalledTimes(1);
 });
 
 test('removing an applied filter chip resets the window scroll position', async () => {
@@ -1116,7 +1122,7 @@ test('removing an applied filter chip resets the window scroll position', async 
     loadAnimeListModule();
     await flushMicrotasks();
     await applyWatchingFilter(calls);
-    window.scrollTo.mockClear();
+    Element.prototype.scrollTo.mockClear();
 
     document.querySelector('.anime-list__chip-remove').dispatchEvent(new Event('click', { bubbles: true }));
     await flushMicrotasks();
@@ -1125,7 +1131,7 @@ test('removing an applied filter chip resets the window scroll position', async 
     byKind(calls, 'list')[2].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 0, limit: 6, offset: 0 }));
     await flushMicrotasks();
 
-    expect(window.scrollTo).toHaveBeenCalledTimes(1);
+    expect(Element.prototype.scrollTo).toHaveBeenCalledTimes(1);
 });
 
 test('"reset all" resets the window scroll position', async () => {
@@ -1135,7 +1141,7 @@ test('"reset all" resets the window scroll position', async () => {
     loadAnimeListModule();
     await flushMicrotasks();
     await applyWatchingFilter(calls);
-    window.scrollTo.mockClear();
+    Element.prototype.scrollTo.mockClear();
 
     document.getElementById('anime-list-chips-reset').dispatchEvent(new Event('click', { bubbles: true }));
     await flushMicrotasks();
@@ -1144,7 +1150,7 @@ test('"reset all" resets the window scroll position', async () => {
     byKind(calls, 'list')[2].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 0, limit: 6, offset: 0 }));
     await flushMicrotasks();
 
-    expect(window.scrollTo).toHaveBeenCalledTimes(1);
+    expect(Element.prototype.scrollTo).toHaveBeenCalledTimes(1);
 });
 
 test('the filters badge text always equals the number of applied chips', async () => {
@@ -1341,6 +1347,29 @@ test('?user_rating[]=5&user_rating_none=1 checks both "5" and "no rating" in the
     expect(listParams['user_rating[]']).toBe('5');
     expect(listParams.user_rating_none).toBe('1');
     expect(document.querySelectorAll('.anime-list__chip-label')).toHaveLength(2);
+});
+
+test('mounting focuses the catalog area when nothing has focus (issue #995)', async () => {
+    mockFetchQueue();
+    setUpDom();
+    document.activeElement.blur();
+
+    loadAnimeListModule();
+    await flushMicrotasks();
+
+    expect(document.activeElement).toBe(document.getElementById('anime-list-catalog'));
+});
+
+test('mounting does not steal focus from a field (issue #995)', async () => {
+    mockFetchQueue();
+    setUpDom();
+    const search = document.getElementById('anime-list-search');
+    search.focus();
+
+    loadAnimeListModule();
+    await flushMicrotasks();
+
+    expect(document.activeElement).toBe(search);
 });
 
 test('?name=...&sort=...&direction=... seeds the search box and the sort controls', async () => {
@@ -1646,7 +1675,7 @@ test('a filter selected before navigating to a card round-trips through a fresh 
     jest.resetModules();
     setUpDom();
     resizeObserverInstances = mockResizeObserver();
-    window.scrollTo = jest.fn();
+    Element.prototype.scrollTo = jest.fn();
     mockIntersectionObserver();
     window.history.replaceState({}, '', returnUrl);
     calls = mockFetchQueueAll();
@@ -2187,7 +2216,7 @@ test('a section-toggle click while a persist POST is still in flight is queued r
     expect(lastPersistBody().collapsed.slice().sort()).toEqual(['genres', 'studios']);
 });
 
-test('scrolling the page recomputes the filter panel\'s --anime-list-filters-top offset (issue #879)', async () => {
+test('the filter panel does not manage a --anime-list-filters-top offset any more (issue #995)', async () => {
     const calls = mockFetchQueueAll();
     setUpTranslations();
 
@@ -2198,94 +2227,13 @@ test('scrolling the page recomputes the filter panel\'s --anime-list-filters-top
     await flushMicrotasks();
 
     const panel = document.getElementById('anime-list-filters');
-    // jsdom never runs real layout, so getBoundingClientRect() always reports zeros — stand in
-    // for "the panel has not scrolled up to the sticky pin point yet, its top sits 96px into the
-    // viewport" the same way a real scroll position would move it.
     panel.getBoundingClientRect = jest.fn(() => ({ top: 96 }));
-
     window.dispatchEvent(new Event('scroll'));
-    // The handler is scheduled via requestAnimationFrame, not run synchronously from the scroll
-    // event — jest.useFakeTimers() (beforeEach above) fakes requestAnimationFrame too, so it
-    // needs an explicit advance rather than a real awaited frame.
-    jest.advanceTimersByTime(16);
-
-    expect(panel.style.getPropertyValue('--anime-list-filters-top')).toBe('96px');
-});
-
-test('a negative getBoundingClientRect().top (scrolled past the sticky pin point) clamps the offset to 0 (issue #879)', async () => {
-    const calls = mockFetchQueueAll();
-    setUpTranslations();
-
-    loadAnimeListModule();
-    await flushMicrotasks();
-    byKind(calls, 'list')[0].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 0, limit: 6, offset: 0 }));
-    byKind(calls, 'facets')[0].resolve(emptyFacets());
-    await flushMicrotasks();
-
-    const panel = document.getElementById('anime-list-filters');
-    panel.getBoundingClientRect = jest.fn(() => ({ top: -40 }));
-
     window.dispatchEvent(new Event('resize'));
     jest.advanceTimersByTime(16);
+    document.getElementById('anime-list-filters-toggle').dispatchEvent(new Event('click', { bubbles: true }));
+    document.getElementById('anime-list-filters-toggle').dispatchEvent(new Event('click', { bubbles: true }));
 
-    expect(panel.style.getPropertyValue('--anime-list-filters-top')).toBe('0px');
-});
-
-// While the panel is hidden, getBoundingClientRect() reports zeros in a real browser too (same as
-// jsdom's default without any stub), so --anime-list-filters-top gets pinned at 0px during that
-// time. Showing the panel again must recompute it right away rather than leaving it at 0px until
-// the next scroll/resize fires — otherwise the panel reopens with the overflow bug issue #879 was
-// filed for, for however long it takes the user to scroll.
-test('showing the filter panel again after hiding it recomputes --anime-list-filters-top immediately (issue #879)', async () => {
-    const calls = mockFetchQueueAll();
-    setUpTranslations();
-
-    loadAnimeListModule();
-    await flushMicrotasks();
-    byKind(calls, 'list')[0].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 0, limit: 6, offset: 0 }));
-    byKind(calls, 'facets')[0].resolve(emptyFacets());
-    await flushMicrotasks();
-
-    const panel = document.getElementById('anime-list-filters');
-    const toggleButton = document.getElementById('anime-list-filters-toggle');
-
-    toggleButton.dispatchEvent(new Event('click', { bubbles: true }));
-    expect(panel.hidden).toBe(true);
-    window.dispatchEvent(new Event('scroll'));
-    jest.advanceTimersByTime(16);
-    expect(panel.style.getPropertyValue('--anime-list-filters-top')).toBe('0px');
-
-    panel.getBoundingClientRect = jest.fn(() => ({ top: 150 }));
-    toggleButton.dispatchEvent(new Event('click', { bubbles: true }));
-
-    expect(panel.hidden).toBe(false);
-    expect(panel.style.getPropertyValue('--anime-list-filters-top')).toBe('150px');
-});
-
-// Mirrors the AnimeListGrid.destroy() remount tests (issue #734): a destroy() that silently stops
-// removing its window-level scroll/resize listeners (or passes the wrong function reference to
-// removeEventListener) would leave the old instance's handler attached, but nothing else in this
-// file calls destroy() directly or asserts on it, so the suite would stay green regardless.
-test('destroy() removes the scroll/resize listeners so a torn-down panel is not recomputed on scroll (issue #879)', async () => {
-    const calls = mockFetchQueueAll();
-    setUpTranslations();
-
-    loadAnimeListModule();
-    await flushMicrotasks();
-    byKind(calls, 'list')[0].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 0, limit: 6, offset: 0 }));
-    byKind(calls, 'facets')[0].resolve(emptyFacets());
-    await flushMicrotasks();
-
-    const root = document.querySelector('[data-control="anime-list"]');
-    const panel = document.getElementById('anime-list-filters');
-
-    root.dispatchEvent(new CustomEvent('htmx:beforeCleanupElement', { bubbles: true }));
-
-    // Still reports zeros from jsdom's lack of real layout until stubbed, same as the tests above —
-    // if destroy() left the scroll listener attached, this stub would make it write 96px.
-    panel.getBoundingClientRect = jest.fn(() => ({ top: 96 }));
-    window.dispatchEvent(new Event('scroll'));
-    jest.advanceTimersByTime(16);
-
-    expect(panel.style.getPropertyValue('--anime-list-filters-top')).toBe('0px');
+    expect(panel.style.getPropertyValue('--anime-list-filters-top')).toBe('');
+    expect(panel.getBoundingClientRect).not.toHaveBeenCalled();
 });

@@ -24,7 +24,13 @@
 
 {% macro section(placement, widgets, activeCount, hardLimit, recommendedLimit = null) %}
     {% if widgets is empty %}
-        <p class="text-body-secondary">{{ ('settings_plugin_widgets.'~placement~'.empty')|trans }}</p>
+        {{ include('_empty_state.html.twig', {
+            icon: 'display',
+            text: ('settings_plugin_widgets.'~placement~'.empty')|trans,
+            hint: 'settings_plugin_widgets.empty_hint'|trans,
+            action_url: path('settings_market_index'),
+            action_label: 'settings_plugin_widgets.open_market_link'|trans
+        }) }}
     {% else %}
         <p class="text-body-secondary">
             {{ 'settings_plugin_widgets.active_count'|trans({'%count%': activeCount, '%limit%': hardLimit}) }}
@@ -92,7 +98,7 @@
 
 {% block settings_content %}
     <div class="py-4">
-        <h1>{{ 'settings_plugin_widgets.heading'|trans }}</h1>
+        <h1 class="mb-4">{{ 'settings_plugin_widgets.heading'|trans }}</h1>
 
         {% if error == 'hard_limit_exceeded' %}
             <p class="alert alert-danger">{{ 'settings_plugin_widgets.hard_limit_reached'|trans({'%limit%': limitReached}) }}</p>

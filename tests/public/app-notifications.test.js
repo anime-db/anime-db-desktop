@@ -36,7 +36,7 @@ function mountControls(root = document.body) {
 
 function setUpDom() {
     document.body.innerHTML = `
-        <div id="app-notifications" data-control="app-notifications" aria-live="polite"></div>
+        <div id="app-notifications" data-control="app-notifications" data-request-error="Action failed" aria-live="polite"></div>
         <template id="app-notification-template">
             <div class="app-notification" role="alert">
                 <div class="app-notification__text">
@@ -140,4 +140,15 @@ test('without the notification template, mounting is a no-op and never calls onN
 
     expect(document.getElementById('app-notifications').children).toHaveLength(0);
     expect(onNotification).not.toHaveBeenCalled();
+});
+
+test.each(['htmx:responseError', 'htmx:sendError'])('%s renders the generic failure notification', (eventName) => {
+    loadAppNotificationsModule();
+
+    document.body.dispatchEvent(new CustomEvent(eventName, { bubbles: true }));
+
+    const container = document.getElementById('app-notifications');
+    expect(container.children).toHaveLength(1);
+    expect(container.querySelector('.app-notification__title').textContent).toBe('Action failed');
+    expect(container.querySelector('.app-notification__message')).toBeNull();
 });

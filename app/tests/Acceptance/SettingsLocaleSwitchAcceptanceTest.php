@@ -190,7 +190,7 @@ final class SettingsLocaleSwitchAcceptanceTest extends KernelTestCase
         $body = (string) $getResponse->getContent();
 
         self::assertStringContainsString('<html lang="ru"', $body, 'The rendered document must reflect the new locale.');
-        self::assertStringContainsString('<h1>Настройки</h1>', $body, 'settings.heading must resolve from the "ru" catalogue, not the "en" default_locale fallback that a broken LocaleSubscriber priority would leave in place.');
+        self::assertStringContainsString('<h1 class="mb-4">Интерфейс</h1>', $body, 'settings.heading must resolve from the "ru" catalogue, not the "en" default_locale fallback that a broken LocaleSubscriber priority would leave in place.');
         self::assertStringContainsString('<option value="ru" selected>', $body, 'The language switcher must mark the locale just switched to as selected.');
         self::assertStringNotContainsString('<option value="en" selected>', $body, 'The previous locale must no longer be marked selected once "ru" is active.');
     }

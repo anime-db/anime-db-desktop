@@ -1,0 +1,29 @@
+{#
+ # AnimeDb package.
+ #
+ # @author    Peter Gribanov <info@peter-gribanov.ru>
+ # @copyright Copyright (c) 2026, Peter Gribanov
+ # @license   https://www.gnu.org/licenses/gpl-3.0.html GPL-3.0-or-later
+ #
+ # This program is free software: you can redistribute it and/or modify
+ # it under the terms of the GNU General Public License as published by
+ # the Free Software Foundation, either version 3 of the License, or
+ # (at your option) any later version.
+ #
+ # This program is distributed in the hope that it will be useful,
+ # but WITHOUT ANY WARRANTY; without even the implied warranty of
+ # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ # GNU General Public License for more details.
+ #
+ # You should have received a copy of the GNU General Public License
+ # along with this program. If not, see <https://www.gnu.org/licenses/>.
+ #
+ # The "back" link shared by the entry page and the edit page: an arrow icon plus the label.
+ # Expects: url (string), label (string); optional: inline (bool, true when rendered inside a
+ # container that already has its own padding), catalog_control (bool, mounts the catalog-back-link control).
+ #}
+<div class="anime-detail__back{% if inline|default(false) %} anime-detail__back--inline{% endif %}">
+    <a href="{{ url }}" class="anime-detail__back-link"{% if catalog_control|default(false) %} data-control="catalog-back-link"{% endif %}>
+        {{- icon('arrow-left') }} <span>{{ label }}</span>
+    </a>
+</div>

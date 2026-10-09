@@ -56,8 +56,7 @@ use Symfony\Component\Messenger\MessageBusInterface;
  *
  * In one transaction a {@see \App\Entity\SyncTombstone} is written per cached external id and the
  * entry is removed (the rest of its rows go by ON DELETE CASCADE), so a later pull or storage scan
- * does not create the title again. The tombstone is written here and not by a Doctrine listener:
- * {@see AnimeTypeMigrator} removes entries too, and a type change must leave no tombstone.
+ * does not create the title again.
  *
  * With $removeFromSources the entry is also deleted from the user's list on the sources
  * ({@see SourceRemovalPlanner}, issue #918): the tombstone of each target source is written with the

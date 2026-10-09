@@ -33,9 +33,12 @@ use AnimeDb\PluginContracts\Model\AnimeId;
 use App\Entity\Storage;
 use App\Message\ScanStorageMessage;
 use App\Service\JobLock\JobLockService;
+use App\Service\Plugin\PluginDisplayName;
 use App\Service\Storage\Scan\ScanCandidate;
 use App\Service\Storage\Scan\ScanItemType;
 use App\Service\Storage\Scan\ScanResultItem;
+use App\Service\Storage\Scan\ScanRunJournal;
+use App\Service\Storage\Scan\ScanRunStatus;
 use App\Service\Storage\ScanStorageService;
 use App\Service\Storage\StorageMarkerService;
 use App\Service\WsPublisher;
@@ -59,6 +62,9 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
  * reassigned, external drive reconnected elsewhere), it searches for the storage's desktop.ini
  * marker under every other drive root before giving up.
  *
+ * Records every run in the scan journal ({@see ScanRunJournal}, issue #998) through DBAL, after the lock
+ * is acquired and independently of the scan's own EntityManager.
+ *
  * Also dispatches {@see AnimeFilesChangedEvent} for every Updated/AutoLinked item in the scan
  * result — see {@see self::dispatchFilesAddedEvents()}.
  */
@@ -73,6 +79,8 @@ final class ScanStorageMessageHandler
         private readonly WsPublisher $wsPublisher,
         private readonly LoggerInterface $logger,
         private readonly EventDispatcherInterface $eventDispatcher,
+        private readonly PluginDisplayName $pluginDisplayName,
+        private readonly ScanRunJournal $journal,
     ) {
     }
 
@@ -80,6 +88,7 @@ final class ScanStorageMessageHandler
     {
         $jobKey = ScanStorageMessage::jobKey($message->storageId);
         $lockAcquired = false;
+        $runId = null;
 
         try {
             $storage = $this->entityManager->find(Storage::class, $message->storageId);
@@ -96,6 +105,7 @@ final class ScanStorageMessageHandler
                 return;
             }
             $lockAcquired = true;
+            $runId = $this->journalStart($message->storageId);
             $this->wsPublisher->publish('backend.status', ['state' => 'busy']);
 
             $atPath = is_readable($storage->requirePath())
@@ -117,6 +127,7 @@ final class ScanStorageMessageHandler
             );
 
             if ($result->conflicted) {
+                $this->journalFail($runId, ScanRunStatus::MarkerConflict, 'The storage desktop.ini marker is owned by another storage.');
                 $this->wsPublisher->publish('scan.failed', [
                     'storage_id' => $message->storageId,
                     'reason' => 'marker_conflict',
@@ -126,13 +137,17 @@ final class ScanStorageMessageHandler
                 return;
             }
 
+            $items = array_map($this->serializeItem(...), $result->items);
+            $this->journalDone($runId, $items);
+
             $this->wsPublisher->publish('scan.done', [
                 'storage_id' => $message->storageId,
-                'items' => array_map($this->serializeItem(...), $result->items),
+                'items' => $items,
             ]);
 
             $this->dispatchFilesAddedEvents($result->items);
         } catch (\Throwable $exception) {
+            $this->journalFail($runId, ScanRunStatus::Failed, $exception->getMessage());
             $this->wsPublisher->publish('scan.failed', [
                 'storage_id' => $message->storageId,
                 'reason' => 'exception',
@@ -151,6 +166,55 @@ final class ScanStorageMessageHandler
                 }
             }
         }
+    }
+
+    /*
+     * The journal is a record of the scan, not a part of it: a failure to write it (full disk,
+     * locked database) is logged and the scan carries on and reports its own outcome as usual. A row
+     * left Running by such a failure reads as interrupted once the lock is released.
+     */
+
+    private function journalStart(int $storageId): ?int
+    {
+        try {
+            return $this->journal->start($storageId);
+        } catch (\Throwable $exception) {
+            $this->logJournalFailure($exception);
+
+            return null;
+        }
+    }
+
+    /** @param list<array<string, mixed>> $items */
+    private function journalDone(?int $runId, array $items): void
+    {
+        if ($runId === null) {
+            return;
+        }
+
+        try {
+            $this->journal->done($runId, $items);
+        } catch (\Throwable $exception) {
+            $this->logJournalFailure($exception);
+        }
+    }
+
+    private function journalFail(?int $runId, ScanRunStatus $status, string $message): void
+    {
+        if ($runId === null) {
+            return;
+        }
+
+        try {
+            $this->journal->fail($runId, $status, $message);
+        } catch (\Throwable $exception) {
+            $this->logJournalFailure($exception);
+        }
+    }
+
+    private function logJournalFailure(\Throwable $exception): void
+    {
+        $this->logger->error('Failed to write the storage scan journal; the scan itself is not affected.', ['exception' => $exception]);
     }
 
     /**
@@ -205,7 +269,7 @@ final class ScanStorageMessageHandler
 
     /**
      * @return array{type: string, storage_path: string, cleaned_name: ?string, anime: ?array{id: ?int, title: string},
-     *               candidates: list<array{anime_id: ?int, plugin_id: ?string, external_id: ?string, title: string}>,
+     *               candidates: list<array{anime_id: ?int, plugin_id: ?string, external_id: ?string, plugin_name: ?string, title: string}>,
      *               already_linked_storage_path: ?string, error_message: ?string}
      */
     private function serializeItem(ScanResultItem $item): array
@@ -231,12 +295,12 @@ final class ScanStorageMessageHandler
      * StorageScanConfirmController, which used to fall back to a placeholder plugin id with no
      * real filler registered under it for exactly this reason.
      *
-     * @return array{anime_id: ?int, plugin_id: ?string, external_id: ?string, title: string}
+     * @return array{anime_id: ?int, plugin_id: ?string, external_id: ?string, plugin_name: ?string, title: string}
      */
     private function serializeCandidate(ScanCandidate $candidate): array
     {
         if ($candidate->orphan !== null) {
-            return ['anime_id' => $candidate->orphan->id, 'plugin_id' => null, 'external_id' => null, 'title' => $candidate->orphan->getTitle()];
+            return ['anime_id' => $candidate->orphan->id, 'plugin_id' => null, 'external_id' => null, 'plugin_name' => null, 'title' => $candidate->orphan->getTitle()];
         }
 
         $plugin = $candidate->plugin ?? throw new \LogicException('ScanCandidate must carry either an orphan or a plugin match');
@@ -245,6 +309,7 @@ final class ScanStorageMessageHandler
             'anime_id' => null,
             'plugin_id' => $plugin->getPluginId(),
             'external_id' => $plugin->getExternalId(),
+            'plugin_name' => $this->pluginDisplayName->name($plugin->getPluginId()),
             'title' => $plugin->getName(),
         ];
     }

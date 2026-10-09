@@ -36,7 +36,6 @@ use App\Entity\TvAnime;
 use App\Entity\ValueObject\PluginId;
 use App\Repository\AnimeRepository;
 use App\Repository\SyncTombstoneRepository;
-use App\Service\Media\MediaExtensions;
 use App\Service\Plugin\Filler\BulkFillerService;
 use App\Service\Storage\Exception\StoragePathConflictException;
 use App\Service\Storage\Scan\LinkedCandidateResult;
@@ -89,7 +88,7 @@ final class ScanStorageService
      */
     public function scan(Storage $storage, ?callable $onProgress = null, ?string $atPath = null): ScanResult
     {
-        if (!$storage->getType()->isWritable() || $storage->getPath() === null) {
+        if (!$storage->isScannable()) {
             return ScanResult::items([]);
         }
 
@@ -168,15 +167,12 @@ final class ScanStorageService
         $finder = (new Finder())
             ->in($path)
             ->ignoreUnreadableDirs()
-            ->depth('== 0')
-            ->notName('.*');
+            ->depth('== 0');
 
         foreach ($finder as $file) {
-            if ($file->isFile() && !\in_array(strtolower($file->getExtension()), MediaExtensions::VIDEO, true)) {
-                continue;
+            if (TopLevelEntry::isVisibleToScanner($file)) {
+                yield $file;
             }
-
-            yield $file;
         }
     }
 

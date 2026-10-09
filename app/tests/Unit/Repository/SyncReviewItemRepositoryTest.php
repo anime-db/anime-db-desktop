@@ -107,36 +107,34 @@ final class SyncReviewItemRepositoryTest extends TestCase
 
     /**
      * Acceptance (issue #822): the settings sidebar badge is computed on every settings page
-     * load, so {@see SyncReviewItemRepository::countUnresolvedByKind()} must count in SQL rather
+     * load, so {@see SyncReviewItemRepository::countUnresolved()} must count in SQL rather
      * than loading every unresolved item and counting in PHP. Asserting on a QueryBuilder built
      * separately in the test proves nothing about the method under test — instead, a DBAL logging
      * middleware records the SQL the repository *actually* executes, so a rewrite to
      * `count($repository->findBy(...))` (loading every row in PHP) is caught: it would issue a
      * `SELECT` of every column instead of the single `COUNT(...)` query asserted below.
      */
-    public function testCountUnresolvedByKindCountsInSql(): void
+    public function testCountUnresolvedCountsEveryKindInSqlAndSkipsResolved(): void
     {
-        $needsCorrectionUnresolved = new SyncReviewItem(SyncReviewItemKind::NeedsCorrection, ['anime_id' => 1, 'candidates' => []]);
-        $needsCorrectionResolved = new SyncReviewItem(SyncReviewItemKind::NeedsCorrection, ['anime_id' => 2, 'candidates' => []]);
-        $needsCorrectionResolved->resolve();
-        $duplicateUnresolved = new SyncReviewItem(SyncReviewItemKind::PotentialDuplicate, ['anime_ids' => [3, 4]]);
-
-        $this->repository->save($needsCorrectionUnresolved);
-        $this->repository->save($needsCorrectionResolved);
-        $this->repository->save($duplicateUnresolved);
+        foreach (SyncReviewItemKind::cases() as $kind) {
+            $this->repository->save(new SyncReviewItem($kind, ['anime_id' => 1]));
+        }
+        $resolved = new SyncReviewItem(SyncReviewItemKind::NeedsCorrection, ['anime_id' => 2]);
+        $resolved->resolve();
+        $this->repository->save($resolved);
 
         $this->queryLogger->executedSql = [];
-        $result = $this->repository->countUnresolvedByKind(SyncReviewItemKind::NeedsCorrection);
+        $result = $this->repository->countUnresolved();
 
-        $this->assertSame(1, $result);
-        $this->assertCount(1, $this->queryLogger->executedSql, 'countUnresolvedByKind() must run exactly one query.');
+        $this->assertSame(\count(SyncReviewItemKind::cases()), $result);
+        $this->assertCount(1, $this->queryLogger->executedSql, 'countUnresolved() must run exactly one query.');
         $this->assertStringContainsStringIgnoringCase('COUNT(', $this->queryLogger->executedSql[0]);
         $this->assertStringNotContainsStringIgnoringCase('payload', $this->queryLogger->executedSql[0], 'The query must not fetch row data — it must count in SQL, not load rows to count in PHP.');
+    }
 
-        $this->queryLogger->executedSql = [];
-        $this->assertSame(0, $this->repository->countUnresolvedByKind(SyncReviewItemKind::DeletionConflict));
-        $this->assertCount(1, $this->queryLogger->executedSql);
-        $this->assertStringContainsStringIgnoringCase('COUNT(', $this->queryLogger->executedSql[0]);
+    public function testCountUnresolvedReturnsZeroWhenNothingIsUnresolved(): void
+    {
+        $this->assertSame(0, $this->repository->countUnresolved());
     }
 
     public function testSaveOfResolvedItemPersistsResolvedAt(): void

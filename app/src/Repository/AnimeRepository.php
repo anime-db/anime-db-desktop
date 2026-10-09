@@ -508,6 +508,26 @@ class AnimeRepository
     }
 
     /**
+     * Anime id => storage_path of every record linked to the storage, as stored. Scalars only:
+     * the scan journal reads this on page loads to compute which journal items are resolved.
+     *
+     * @return array<int, string>
+     */
+    public function findStoragePathsByStorageId(int $storageId): array
+    {
+        $rows = $this->entityManager->createQuery(
+            'SELECT a.id AS id, a.storagePath AS path FROM '.Anime::class.' a WHERE IDENTITY(a.storage) = :storageId AND a.storagePath IS NOT NULL',
+        )->setParameter('storageId', $storageId)->getArrayResult();
+
+        $paths = [];
+        foreach ($rows as $row) {
+            $paths[(int) $row['id']] = (string) $row['path'];
+        }
+
+        return $paths;
+    }
+
+    /**
      * The Anime (if any) already linked to $storagePath within $storage — used by
      * ScanStorageService::linkToChosenCandidate() (issue #147) to reject a confirm that
      * would otherwise silently steal an already-occupied storage_path from another Anime.

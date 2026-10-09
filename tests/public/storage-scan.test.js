@@ -198,6 +198,69 @@ test('a candidate needing confirmation renders Bootstrap form-check radios and a
     expect(li.textContent).toBe('storage_list.confirmed_text');
 });
 
+test('a confirmation card shows the folder, the differing cleaned name, each candidate source and a prefilled "none match" link, with the first candidate preselected', async () => {
+    const watchers = mockScanWatcher();
+    mockTranslations();
+    loadStorageScanModule();
+
+    await watchers['42'].onDone({
+        items: [{
+            type:         'NeedsConfirmation',
+            storage_path: 'Steins Gate (2011) 1080p',
+            cleaned_name: 'Steins Gate',
+            candidates:   [
+                { anime_id: 7, plugin_id: null, plugin_name: null, title: 'Steins;Gate' },
+                { anime_id: null, plugin_id: 'acme', plugin_name: 'Acme List', external_id: '1', title: 'Steins;Gate 0' },
+                { anime_id: null, plugin_id: 'bare', plugin_name: null, external_id: '2', title: 'Steins;Gate Movie' },
+            ],
+        }],
+    });
+    await flushMicrotasks();
+
+    const li = document.querySelector('#storage-scan-results li');
+    expect(li.querySelector('p').textContent).toBe('Steins Gate (2011) 1080p');
+    expect(window.AppTranslations.trans).toHaveBeenCalledWith('storage_list.cleaned_name_text', { name: 'Steins Gate' });
+
+    const labels = li.querySelectorAll('.form-check-label');
+    expect(window.AppTranslations.trans).toHaveBeenCalledWith('storage_list.candidate_source_catalog');
+    expect(window.AppTranslations.trans).toHaveBeenCalledWith('storage_list.candidate_label', { title: 'Steins;Gate', source: 'storage_list.candidate_source_catalog' });
+    expect(window.AppTranslations.trans).toHaveBeenCalledWith('storage_list.candidate_label', { title: 'Steins;Gate 0', source: 'Acme List' });
+    expect(window.AppTranslations.trans).toHaveBeenCalledWith('storage_list.candidate_label', { title: 'Steins;Gate Movie', source: 'bare' });
+    expect(labels).toHaveLength(3);
+    expect(Array.from(labels).map((l) => l.textContent)).toEqual(Array(3).fill('storage_list.candidate_label'));
+    expect(li.querySelector('p.text-body-secondary').textContent).toBe('storage_list.cleaned_name_text');
+
+    const radios = li.querySelectorAll('.form-check-input');
+    expect(Array.from(radios).map((radio) => radio.checked)).toEqual([true, false, false]);
+
+    const link = li.querySelector('a');
+    expect(link.textContent).toBe('storage_list.none_match_link');
+    expect(link.getAttribute('href')).toBe('/anime/new?title=Steins+Gate&storage_id=42&storage_path=Steins+Gate+%282011%29+1080p');
+});
+
+test('a confirmation card omits the cleaned name when it equals the folder', async () => {
+    const watchers = mockScanWatcher();
+    mockTranslations();
+    loadStorageScanModule();
+
+    await watchers['42'].onDone({
+        items: [{
+            type:         'NeedsConfirmation',
+            storage_path: 'Trigun',
+            cleaned_name: 'Trigun',
+            candidates:   [{ anime_id: 1, title: 'Trigun' }],
+        }],
+    });
+    await flushMicrotasks();
+
+    expect(window.AppTranslations.trans).not.toHaveBeenCalledWith('storage_list.cleaned_name_text', expect.anything());
+
+    const li = document.querySelector('#storage-scan-results li');
+    expect(li.querySelector('p').textContent).toBe('Trigun');
+    expect(li.querySelector('.form-check-input')).not.toBeNull();
+    expect(li.querySelector('p.text-body-secondary')).toBeNull();
+});
+
 test('confirming a plugin candidate posts its real pluginId/externalId instead of a bare name', async () => {
     const watchers = mockScanWatcher();
     mockTranslations();
@@ -407,4 +470,138 @@ test('mounting strips the started query parameter from the address bar', () => {
 
     expect(window.location.search).toBe('');
     expect(window.location.pathname).toBe('/storage/42/scan-progress');
+});
+
+function setUpJournalDom() {
+    document.body.innerHTML = `
+        <section id="storage-scan"
+                 data-control="storage-scan"
+                 data-storage-id="42"
+                 data-items-url="/storage/42/scans/7/items"
+                 data-confirm-url="/storage/42/scan/confirm"
+                 data-confirm-token="csrf-token"
+                 data-anime-new-url="/anime/new">
+            <p id="storage-scan-error" hidden></p>
+            <div id="storage-scan-results" hidden></div>
+        </section>
+    `;
+}
+
+async function flushMany() {
+    for (let i = 0; i < 200; i += 1) {
+        await Promise.resolve();
+    }
+}
+
+describe('journal run', () => {
+    beforeEach(() => {
+        setUpJournalDom();
+        mockTranslations();
+    });
+
+    test('items come from the endpoint and no scan subscription is made', async () => {
+        const watchers = mockScanWatcher();
+        global.fetch = jest.fn(() => Promise.resolve(jsonResponse({
+            latest: true,
+            items: [{ type: 'NeedsManualEntry', storage_path: 'Trigun', cleaned_name: 'Trigun', resolved: false }],
+        })));
+        loadStorageScanModule();
+        await flushMany();
+
+        expect(global.fetch).toHaveBeenCalledWith('/storage/42/scans/7/items', expect.anything());
+        expect(window.ScanWatcher.watch).not.toHaveBeenCalled();
+        expect(watchers).toEqual({});
+        expect(document.querySelector('#storage-scan-results a').href).toContain('/anime/new?');
+    });
+
+    test('an old run shows no actions', async () => {
+        global.fetch = jest.fn(() => Promise.resolve(jsonResponse({
+            latest: false,
+            items: [
+                { type: 'NeedsManualEntry', storage_path: 'Trigun', resolved: false },
+                { type: 'NeedsConfirmation', storage_path: 'Bleach', resolved: false, candidates: [{ anime_id: 1, title: 'Bleach' }] },
+            ],
+        })));
+        mockScanWatcher();
+        loadStorageScanModule();
+        await flushMany();
+
+        const results = document.getElementById('storage-scan-results');
+        expect(results.hidden).toBe(false);
+        expect(results.querySelector('a')).toBeNull();
+        expect(results.querySelector('button')).toBeNull();
+        expect(results.querySelector('input')).toBeNull();
+    });
+
+    test('the latest run offers actions for open items and collapses resolved ones', async () => {
+        global.fetch = jest.fn(() => Promise.resolve(jsonResponse({
+            latest: true,
+            items: [
+                { type: 'NeedsConfirmation', storage_path: 'Bleach', resolved: false, candidates: [{ anime_id: 1, title: 'Bleach' }] },
+                { type: 'NeedsConfirmation', storage_path: 'Monster', resolved: true, candidates: [{ anime_id: 2, title: 'Monster' }] },
+            ],
+        })));
+        mockScanWatcher();
+        loadStorageScanModule();
+        await flushMany();
+
+        const results = document.getElementById('storage-scan-results');
+        expect(results.querySelectorAll(':scope > section > ul > li button')).toHaveLength(1);
+        const details = results.querySelector('details');
+        expect(details).not.toBeNull();
+        expect(details.querySelector('button')).toBeNull();
+        expect(details.querySelector('input')).toBeNull();
+    });
+
+    test('items with missing keys render without throwing', async () => {
+        global.fetch = jest.fn(() => Promise.resolve(jsonResponse({
+            latest: true,
+            items: [
+                { type: 'NeedsConfirmation' },
+                { type: 'NeedsManualEntry' },
+                { type: 'Conflict' },
+                { type: 'Error' },
+                { type: 'AutoLinked' },
+                { type: 'FilesMissing' },
+                { type: 'Mystery' },
+                {},
+            ],
+        })));
+        mockScanWatcher();
+        loadStorageScanModule();
+        await flushMany();
+
+        expect(document.getElementById('storage-scan-error').hidden).toBe(true);
+        expect(document.getElementById('storage-scan-results').hidden).toBe(false);
+    });
+
+    test('a failed items request shows the load error', async () => {
+        global.fetch = jest.fn(() => Promise.resolve({ ok: false, status: 500, json: () => Promise.resolve({}) }));
+        mockScanWatcher();
+        loadStorageScanModule();
+        await flushMany();
+
+        const error = document.getElementById('storage-scan-error');
+        expect(error.hidden).toBe(false);
+        expect(error.textContent).toBe('storage_list.journal_load_error');
+    });
+
+    test('a confirmation refused with 410 tells the folder is gone', async () => {
+        global.fetch = jest.fn((url) => Promise.resolve(
+            url === '/storage/42/scan/confirm'
+                ? { ok: false, status: 410, json: () => Promise.resolve({ error: 'entry_missing' }) }
+                : jsonResponse({
+                    latest: true,
+                    items: [{ type: 'NeedsConfirmation', storage_path: 'Bleach', resolved: false, candidates: [{ anime_id: 1, title: 'Bleach' }] }],
+                }),
+        ));
+        mockScanWatcher();
+        loadStorageScanModule();
+        await flushMany();
+
+        document.querySelector('#storage-scan-results button').click();
+        await flushMany();
+
+        expect(document.querySelector('#storage-scan-results li').textContent).toBe('storage_list.entry_missing');
+    });
 });

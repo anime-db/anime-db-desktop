@@ -1,0 +1,41 @@
+/**
+ * AnimeDb package.
+ *
+ * @author    Peter Gribanov <info@peter-gribanov.ru>
+ * @copyright Copyright (c) 2026, Peter Gribanov
+ * @license   https://www.gnu.org/licenses/gpl-3.0.html GPL-3.0-or-later
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+
+// Единственный источник цвета статуса просмотра: «статус → вариант Bootstrap». Оба набора
+// классов — бейдж в каталоге (.anime-card__badge--*) и бейдж в карточке записи
+// (.anime-detail__watch-status-badge--*) — собираются из этой map, поэтому один и тот же статус
+// выглядит одинаково везде. Раскладка привычная по MyAnimeList/Shikimori.
+$watch-status-variants: (
+    "watching": "success",
+    "completed": "info",
+    "on_hold": "warning",
+    "dropped": "danger",
+    "plan": "secondary",
+);
+
+@mixin watch-status-badge-variants($block) {
+    @each $status, $variant in $watch-status-variants {
+        .#{$block}--#{$status} {
+            background: var(--bs-#{$variant}-bg-subtle);
+            color: var(--bs-#{$variant}-text-emphasis);
+        }
+    }
+}

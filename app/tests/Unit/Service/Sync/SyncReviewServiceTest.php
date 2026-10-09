@@ -81,23 +81,13 @@ final class SyncReviewServiceTest extends TestCase
         $this->assertTrue($item->isResolved());
     }
 
-    /**
-     * The settings sidebar badge (issue #822) must count only {@see SyncReviewItemKind::NeedsCorrection}
-     * items — a {@see SyncReviewItemKind::PotentialDuplicate} must never inflate it. Asserting the
-     * exact kind forwarded to the repository is the only thing that would catch a wrong kind here,
-     * since a stub returning the same count for every kind (as callers of this service use in their
-     * own tests) cannot distinguish "queried the right kind" from "queried any kind".
-     */
-    public function testCountUnresolvedNeedsCorrectionQueriesOnlyTheNeedsCorrectionKind(): void
+    public function testCountUnresolvedDelegatesToTheRepositoryCountOfAllKinds(): void
     {
         $repository = $this->createMock(SyncReviewItemRepository::class);
-        $repository->expects($this->once())
-            ->method('countUnresolvedByKind')
-            ->with(SyncReviewItemKind::NeedsCorrection)
-            ->willReturn(3);
+        $repository->expects($this->once())->method('countUnresolved')->willReturn(3);
 
         $service = new SyncReviewService($repository);
 
-        $this->assertSame(3, $service->countUnresolvedNeedsCorrection());
+        $this->assertSame(3, $service->countUnresolved());
     }
 }

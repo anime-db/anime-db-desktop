@@ -64,12 +64,13 @@ const RENDER_POLL_TIMEOUT_MS  = 5000;
 
 /**
  * @param {import('electron').BrowserWindow} win
- * @returns {Promise<boolean>} false if the deadline was hit without the grid settling
+ * @param {string} [pollScript] page state to wait for; defaults to the catalog grid having settled
+ * @returns {Promise<boolean>} false if the deadline was hit without the state being reached
  */
-async function waitForRender(win) {
+async function waitForRender(win, pollScript = RENDER_POLL_SCRIPT) {
     const deadline = Date.now() + RENDER_POLL_TIMEOUT_MS;
     do {
-        if (await win.webContents.executeJavaScript(RENDER_POLL_SCRIPT)) {
+        if (await win.webContents.executeJavaScript(pollScript)) {
             return true;
         }
         await new Promise((resolve) => setTimeout(resolve, RENDER_POLL_INTERVAL_MS));
@@ -77,15 +78,37 @@ async function waitForRender(win) {
     return false;
 }
 
+// The "Change type…" dialog of a series (issue #1001): opened from the card's menu with "Movie"
+// chosen, which is the case that lists the lost values and asks for the confirmation. It is
+// captured at the smaller window size the dialog has to fit.
+const CHANGE_TYPE_DIALOG_SCRIPT = `(() => {
+    const trigger = document.querySelector('[data-bs-target^="#anime-type-modal-"]');
+    if (trigger === null) {
+        throw new Error('The "Change type…" menu item is missing on the card.');
+    }
+    trigger.click();
+    const select = document.querySelector('[data-type-change-select]');
+    select.value = 'movie';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+})()`;
+const MODAL_SHOWN_SCRIPT = `(() => {
+    const modal = document.querySelector('.modal.show');
+    return modal !== null && getComputedStyle(modal).opacity === '1';
+})()`;
+const CHANGE_TYPE_WINDOW = { width: 1000, height: 640 };
+
 /**
  * Pages captured for every theme. `anime-card` and `anime-edit` use the first catalog entry of
- * the data fixture (ANIME_ID, see scripts/fixture).
+ * the data fixture (ANIME_ID, see scripts/fixture). A page may set `size` (size of the
+ * window for that page) and `script` (run in the page once it has loaded; `waitFor` is polled
+ * afterwards until it returns true).
  *
- * @returns {{ name: string, path: string }[]}
+ * @returns {{ name: string, path: string, size?: { width: number, height: number }, script?: string, waitFor?: string }[]}
  */
 function buildPages() {
     return [
         { name: 'anime-card',      path: `/anime/${ANIME_ID}` },
+        { name: 'anime-change-type', path: `/anime/${ANIME_ID}`, size: CHANGE_TYPE_WINDOW, script: CHANGE_TYPE_DIALOG_SCRIPT, waitFor: MODAL_SHOWN_SCRIPT },
         { name: 'anime-edit',      path: `/anime/${ANIME_ID}/edit` },
         { name: 'catalog',         path: '/' },
         { name: 'anime-new',       path: '/anime/new' },
@@ -200,10 +223,18 @@ async function main() {
             currentPageUrl = url;
             current = { win, dir: themeDir, name: targetPage.name, label: `${theme}/${targetPage.name}` };
             console.log(formatLastPageLine(`${theme}/${targetPage.name} (${url})`));
+            const size = targetPage.size ?? { width: WINDOW_WIDTH, height: WINDOW_HEIGHT };
+            win.setSize(size.width, size.height);
             await loadPage(win, url);
 
             if (!(await waitForRender(win))) {
                 tracker.recordFailure(url, 'catalog grid did not settle within the timeout');
+            }
+            if (targetPage.script !== undefined) {
+                await win.webContents.executeJavaScript(targetPage.script);
+                if (!(await waitForRender(win, targetPage.waitFor))) {
+                    tracker.recordFailure(url, 'page state did not settle within the timeout');
+                }
             }
 
             const image = await win.webContents.capturePage();

@@ -78,6 +78,9 @@ final class SettingsNavigationService
         'storage_new' => 'storage',
         'storage_create' => 'storage',
         'storage_edit' => 'storage',
+        'storage_scans' => 'storage',
+        'storage_scan_run' => 'storage',
+        'storage_scan_run_items' => 'storage',
         'storage_update' => 'storage',
         'settings_labels_index' => 'labels',
         'settings_sync_review_index' => 'sync_review',
@@ -118,7 +121,7 @@ final class SettingsNavigationService
             new SettingsNavGroup($this->trans('group_catalog'), [
                 $this->item('storage', 'item_storage', 'storage_index', $active),
                 $this->item('labels', 'item_labels', 'settings_labels_index', $active),
-                $this->item('sync_review', 'item_sync_review', 'settings_sync_review_index', $active, badge: $this->needsCorrectionBadge()),
+                $this->item('sync_review', 'item_sync_review', 'settings_sync_review_index', $active, badge: $this->needsAttentionBadge()),
                 $this->item('backup', 'item_backup', 'settings_backup_index', $active),
                 $this->item('search_index', 'item_search_index', 'settings_search_index', $active),
             ]),
@@ -189,19 +192,20 @@ final class SettingsNavigationService
 
     /**
      * Badge count for the sidebar's "Requires attention" item (issue #382, moved from the old
-     * flat `/settings` link list by issue #822): unresolved `NeedsCorrection` items specifically,
-     * not every `SyncReviewItem` kind — the one kind a user cannot otherwise notice until they open
-     * the page. Fails open to no badge (rather than a 500 for every settings page) on any
+     * flat `/settings` link list by issue #822): every unresolved `SyncReviewItem` of any kind
+     * (`NeedsCorrection`, `DeletedFromSource`, `DeletionConflict`, `PotentialDuplicate`), i.e.
+     * exactly the rows the "Requires attention" page lists; none of them is surfaced elsewhere in
+     * the UI. Fails open to no badge (rather than a 500 for every settings page) on any
      * repository failure, logged the same way as {@see self::buildPluginSettingsGroup()}.
      */
-    private function needsCorrectionBadge(): ?int
+    private function needsAttentionBadge(): ?int
     {
         try {
-            $count = $this->syncReview->countUnresolvedNeedsCorrection();
+            $count = $this->syncReview->countUnresolved();
 
             return $count > 0 ? $count : null;
         } catch (\Throwable $exception) {
-            $this->logger->error('Failed to compute the "needs correction" sidebar badge; omitting it.', [
+            $this->logger->error('Failed to compute the "requires attention" sidebar badge; omitting it.', [
                 'exception' => $exception,
             ]);
 

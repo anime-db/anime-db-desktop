@@ -31,6 +31,7 @@ use App\Entity\Enum\StorageType;
 use App\Entity\Exception\InvalidNameException;
 use App\Entity\Exception\InvalidPathException;
 use App\Entity\Storage;
+use App\Service\Storage\StorageMarkerResult;
 use App\Service\Storage\StorageMarkerService;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\HttpFoundation\RedirectResponse;
@@ -63,9 +64,10 @@ final class StorageNewController
     }
 
     #[Route('/storage/new', name: 'storage_new', methods: ['GET'])]
-    public function new(): Response
+    public function new(Request $request): Response
     {
-        return $this->renderForm();
+        // Prefilled by the "create storage" link of an entry's Files block (issue #997).
+        return $this->renderForm(path: (string) $request->query->get('path', ''));
     }
 
     #[Route('/storage/new', name: 'storage_create', methods: ['POST'])]
@@ -90,8 +92,22 @@ final class StorageNewController
         $this->entityManager->persist($storage);
         $this->entityManager->flush();
 
-        if ($type->isWritable()) {
-            $this->markerService->reconcile($storage);
+        if ($type->isWritable() && $this->markerService->reconcile($storage) === StorageMarkerResult::Conflict) {
+            // The folder already carries another storage's marker: this row would be a duplicate
+            // that reports marker_conflict on every scan, so it is not kept (issue #997).
+            $ownerId = $this->markerService->readMarkerId($storage->requirePath());
+            $owner = $ownerId === null ? null : $this->entityManager->find(Storage::class, $ownerId);
+            $this->entityManager->remove($storage);
+            $this->entityManager->flush();
+
+            return $this->renderForm(
+                name: $name,
+                path: $path,
+                type: $type,
+                error: 'storage_new.error_already_connected',
+                errorParams: ['%name%' => $owner?->getName() ?? ''],
+                existingStorageId: $owner?->id,
+            );
         }
 
         $storageId = $storage->id ?? throw new \LogicException('Storage must be assigned an id right after flush().');
@@ -99,17 +115,22 @@ final class StorageNewController
         return new RedirectResponse($this->urlGenerator->generate('storage_scan_prompt', ['id' => $storageId]));
     }
 
+    /** @param array<string, string> $errorParams */
     private function renderForm(
         string $name = '',
         string $path = '',
         ?StorageType $type = null,
         ?string $error = null,
+        array $errorParams = [],
+        ?int $existingStorageId = null,
     ): Response {
         return new Response($this->twig->render('storage/new.html.twig', [
             'name' => $name,
             'path' => $path,
             'type' => $type?->value,
             'error' => $error,
+            'error_params' => $errorParams,
+            'existing_storage_id' => $existingStorageId,
             'types' => array_column(StorageType::cases(), 'value'),
             'path_optional_types' => array_column(
                 array_filter(StorageType::cases(), static fn (StorageType $type): bool => !$type->isPathRequired()),

@@ -1,0 +1,50 @@
+{#
+ # AnimeDb package.
+ #
+ # @author    Peter Gribanov <info@peter-gribanov.ru>
+ # @copyright Copyright (c) 2026, Peter Gribanov
+ # @license   https://www.gnu.org/licenses/gpl-3.0.html GPL-3.0-or-later
+ #
+ # This program is free software: you can redistribute it and/or modify
+ # it under the terms of the GNU General Public License as published by
+ # the Free Software Foundation, either version 3 of the License, or
+ # (at your option) any later version.
+ #
+ # This program is distributed in the hope that it will be useful,
+ # but WITHOUT ANY WARRANTY; without even the implied warranty of
+ # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ # GNU General Public License for more details.
+ #
+ # You should have received a copy of the GNU General Public License
+ # along with this program. If not, see <https://www.gnu.org/licenses/>.
+ #}
+{#
+ # Results of one scan journal run (issue #998): the status line and the #storage-scan section that
+ # storage-scan.js fills from the run's items endpoint — the same renderer as a live scan. Expects
+ # `storage` and `run` (App\Service\Storage\Scan\ScanRun).
+ #}
+<p class="mb-2">
+    <span class="badge text-bg-secondary">{{ ('storage_scan_log.status_' ~ run.status.value)|trans }}</span>
+    <span class="text-body-secondary ms-1">{{ run.startedAt|date('Y-m-d H:i') }}</span>
+</p>
+
+{% if run.errorMessage is not null and run.status.value in ['failed', 'marker_conflict'] %}
+    <p class="alert alert-danger">{{ 'storage_scan_log.run_error'|trans({'%message%': run.errorMessage}) }}</p>
+{% endif %}
+
+{% if run.status.value == 'done' %}
+    <section class="storage-scan mb-4"
+             id="storage-scan"
+             data-control="storage-scan"
+             data-storage-id="{{ storage.id }}"
+             data-items-url="{{ path('storage_scan_run_items', {id: storage.id, run: run.id}) }}"
+             data-confirm-url="{{ path('storage_scan_confirm', {id: storage.id}) }}"
+             data-confirm-token="{{ csrf_token('storage_scan_confirm_' ~ storage.id) }}"
+             data-anime-new-url="{{ path('anime_new') }}">
+        <p id="storage-scan-error" hidden></p>
+
+        <div id="storage-scan-results" hidden></div>
+    </section>
+{% elseif run.status.value == 'interrupted' %}
+    <p class="text-body-secondary">{{ 'storage_scan_log.interrupted_hint'|trans }}</p>
+{% endif %}
