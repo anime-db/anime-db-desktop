@@ -176,8 +176,8 @@ settings_labels:
     delete_button: Удалить
 
 settings_plugin_widgets:
-    title: Виджеты — Настройки — AnimeDB
-    heading: Виджеты
+    title: Виджеты плагинов — Настройки — AnimeDB
+    heading: Виджеты плагинов
     busy_retry_error: Настройки плагинов сейчас заняты другим обновлением. Повторите попытку через мгновение.
     plugin_column: Плагин
     widget_column: Виджет
@@ -218,8 +218,8 @@ settings_plugins:
     sync_off: выкл.
     sync_toggle: Синхронизация
     busy_retry_error: Настройки плагинов сейчас заняты другим обновлением. Повторите попытку через мгновение.
-    title: Установленные — Настройки — AnimeDB
-    installed_heading: Установленные
+    title: Установленные плагины — Настройки — AnimeDB
+    installed_heading: Установленные плагины
     installed_empty: Плагинов пока не установлено.
     open_market_link: Открыть маркет
     name_column: Название
@@ -234,7 +234,7 @@ settings_plugins:
     settings_link: Настройки
     remove_button: Удалить
     remove_success: 'Плагин «%pluginId%» удалён. Накопленные им данные в каталоге сохранены и будут использованы при повторной установке.'
-    install_heading: Установка из ZIP
+    install_heading: Установка плагина из ZIP
     install_file_label: ZIP-архив плагина
     third_party_warning: Плагин из стороннего источника, не проходил проверку маркета. Установить его на свой страх и риск?
     confirm_button: Понимаю, установить
@@ -257,11 +257,11 @@ settings_plugins:
     incompatible_market_update: 'Доступно обновление до версии %version% — открыть маркет плагинов'
 
 settings_plugins_install:
-    title: Установка из ZIP — Настройки — AnimeDB
+    title: Установка плагина из ZIP — Настройки — AnimeDB
 
 settings_market:
-    title: Маркет — Настройки — AnimeDB
-    heading: Маркет
+    title: Маркет плагинов — Настройки — AnimeDB
+    heading: Маркет плагинов
     empty: В маркете пока нет ни одного плагина.
     filter_filler_empty: Среди плагинов маркета пока нет ни одного источника.
     filter_filler_banner: Показаны плагины-источники
@@ -341,8 +341,8 @@ settings_proxy:
     incoming_connections_socks5_hint: Под SOCKS5-прокси входящие подключения не работают независимо от правил брандмауэра, поэтому включение недоступно. Уже включённую настройку можно выключить в любой момент.
 
 settings_backup:
-    title: Экспорт и импорт — Настройки — AnimeDB
-    heading: Экспорт и импорт
+    title: Экспорт и импорт каталога — Настройки — AnimeDB
+    heading: Экспорт и импорт каталога
     unavailable_outside_app: Это действие доступно только в приложении AnimeDB.
     staged_import_banner: 'Импорт архива «%name%» подготовлен %date% и применится при следующем запуске приложения.'
     staged_import_cancel_button: Отменить подготовленный импорт

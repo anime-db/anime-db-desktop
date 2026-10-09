@@ -176,8 +176,8 @@ settings_labels:
     delete_button: Delete
 
 settings_plugin_widgets:
-    title: Widgets — Settings — AnimeDB
-    heading: Widgets
+    title: Plugin widgets — Settings — AnimeDB
+    heading: Plugin widgets
     busy_retry_error: Plugin settings are busy with another update right now. Please try again in a moment.
     plugin_column: Plugin
     widget_column: Widget
@@ -218,8 +218,8 @@ settings_plugins:
     sync_off: off
     sync_toggle: Synchronization
     busy_retry_error: Plugin settings are busy with another update right now. Please try again in a moment.
-    title: Installed — Settings — AnimeDB
-    installed_heading: Installed
+    title: Installed plugins — Settings — AnimeDB
+    installed_heading: Installed plugins
     installed_empty: No plugins installed yet.
     open_market_link: Open the market
     name_column: Name
@@ -234,7 +234,7 @@ settings_plugins:
     settings_link: Settings
     remove_button: Remove
     remove_success: 'Plugin "%pluginId%" has been removed. Its data accumulated in the catalog is kept and will be reused if the plugin is installed again.'
-    install_heading: Install from ZIP
+    install_heading: Install plugin from ZIP
     install_file_label: Plugin ZIP archive
     third_party_warning: This plugin comes from a third-party source and has not passed marketplace review. Install it at your own risk?
     confirm_button: I understand, install
@@ -257,11 +257,11 @@ settings_plugins:
     incompatible_market_update: 'Update to version %version% is available — open the plugin market'
 
 settings_plugins_install:
-    title: Install from ZIP — Settings — AnimeDB
+    title: Install plugin from ZIP — Settings — AnimeDB
 
 settings_market:
-    title: Market — Settings — AnimeDB
-    heading: Market
+    title: Plugin market — Settings — AnimeDB
+    heading: Plugin market
     empty: The market has no plugins yet.
     filter_filler_empty: No plugin sources are available in the market right now.
     filter_filler_banner: Showing plugin sources
@@ -341,8 +341,8 @@ settings_proxy:
     incoming_connections_socks5_hint: Incoming connections do not work through a SOCKS5 proxy regardless of firewall rules, so enabling is unavailable. An already-enabled setting can still be turned off at any time.
 
 settings_backup:
-    title: Export and import — Settings — AnimeDB
-    heading: Export and import
+    title: Catalog export and import — Settings — AnimeDB
+    heading: Catalog export and import
     unavailable_outside_app: This action is only available inside the AnimeDB app.
     staged_import_banner: 'The archive "%name%" was staged for import on %date% and will be applied on the next app start.'
     staged_import_cancel_button: Cancel staged import

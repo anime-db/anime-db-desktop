@@ -43,7 +43,7 @@ test.describe('settings: backup', () => {
     test('the page opens in the app with an empty destination and a disabled start button', covers({ routes: ['/settings/backup'], features: ['catalog-backup'] }), async ({ page, session }) => {
         await page.goto(urlOf(session, '/settings/backup'));
 
-        await expect(page.getByRole('heading', { level: 1 })).toHaveText('Export and import');
+        await expect(page.getByRole('heading', { level: 1 })).toHaveText('Catalog export and import');
         await expect(page.locator('#settings-backup-unavailable')).toBeHidden();
         await expect(page.locator('#settings-backup-path')).toHaveValue('');
         await expect(page.locator('#settings-backup-start')).toBeDisabled();
