@@ -67,7 +67,8 @@
                          data-labels="{{ anime.labels|json_encode }}"
                          data-update-url="{{ path('anime_labels_update', {id: anime.id}) }}"
                          data-search-url="{{ path('labels_index') }}"
-                         data-csrf-token="{{ csrf_token('anime_labels_update_' ~ anime.id) }}">
+                         data-csrf-token="{{ csrf_token('anime_labels_update_' ~ anime.id) }}"
+                         data-remove-label="{{ 'anime_detail.labels_chip_remove_button'|trans({'%label%': '%label%'}) }}">
                     <div class="anime-detail__labels-header">
                         <h2 class="anime-detail__labels-heading">{{ 'anime_detail.labels_heading'|trans }}</h2>
                         <button type="button" class="anime-detail__labels-edit-button" data-labels-edit

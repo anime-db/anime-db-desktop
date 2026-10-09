@@ -554,6 +554,7 @@ anime_detail:
     labels_save_button: Save
     labels_cancel_button: Cancel
     labels_save_error: Failed to save tags.
+    labels_chip_remove_button: 'Remove tag "%label%"'
     open_folder_button: Open files
     path_unavailable_tooltip: Path is unavailable
     sources_heading: External sources

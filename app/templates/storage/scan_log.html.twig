@@ -59,6 +59,6 @@
             </div>
         {% endif %}
 
-        {{ include('_back_link.html.twig', {url: path('storage_index'), label: 'storage_scan_log.storages_link'|trans}) }}
+        {{ include('_back_link.html.twig', {url: path('storage_index'), label: 'storage_scan_log.storages_link'|trans, inline: true}) }}
     </main>
 {% endblock %}

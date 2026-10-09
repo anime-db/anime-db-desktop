@@ -554,6 +554,7 @@ anime_detail:
     labels_save_button: Сохранить
     labels_cancel_button: Отмена
     labels_save_error: Не удалось сохранить метки.
+    labels_chip_remove_button: 'Убрать метку «%label%»'
     open_folder_button: Перейти к файлам
     path_unavailable_tooltip: Путь не доступен
     sources_heading: Внешние источники

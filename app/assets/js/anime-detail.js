@@ -34,6 +34,7 @@
         const updateUrl = widget.dataset.updateUrl;
         const searchUrl = widget.dataset.searchUrl;
         const csrfToken = widget.dataset.csrfToken;
+        const removeLabelTemplate = widget.dataset.removeLabel || '';
 
         const view = widget.querySelector('[data-labels-view]');
         const editor = widget.querySelector('[data-labels-editor]');
@@ -103,6 +104,7 @@
                 const remove = document.createElement('button');
                 remove.type = 'button';
                 remove.className = 'anime-detail__labels-chip-remove';
+                remove.setAttribute('aria-label', removeLabelTemplate.replace('%label%', name));
                 const removeIcon = document.getElementById('icon-x-lg');
                 if (removeIcon) {
                     remove.appendChild(removeIcon.content.cloneNode(true));
