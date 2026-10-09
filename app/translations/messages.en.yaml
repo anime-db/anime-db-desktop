@@ -564,7 +564,28 @@ anime_detail:
     field_dates: Air dates
     files_heading: Files
     files_not_linked: Not linked
-    files_link: Link
+    files_link: Link…
+    files_change: Change…
+    files_pick_folder: Folder…
+    files_pick_video: Video file…
+    files_video_filter: Video
+    files_unlink: Unlink
+    files_unlink_confirm: The entry's link to its files will be removed. The files themselves are not touched. Continue?
+    files_unlinked: The link to the files was removed.
+    files_relocate_confirm: Storage "%name%" is now located here — update its path?
+    files_request_failed: The request failed. Reload the page and try again.
+    files_linked: 'Linked: "%name%" in storage "%storage%".'
+    files_linked_top_level: 'Linked to the top-level folder "%name%" (storage "%storage%").'
+    files_create_storage: Create storage
+    files_error_invalid_path: An absolute path to a folder or file is required.
+    files_error_outside_storages: The folder is not inside any storage.
+    files_error_storage_root: A whole storage cannot be linked.
+    files_error_scan_running: This storage is being scanned, try again after it finishes.
+    files_error_storage_has_downloads: 'The path of storage "%storage%" cannot be updated while downloads are in progress into it.'
+    files_error_ambiguous_name: 'Ambiguous folder name "%name%": the storage has several items that differ only by letter case.'
+    files_error_entry_not_found: 'Item "%name%" was not found in storage "%storage%" or cannot be read.'
+    files_error_entry_not_visible: 'Item "%name%" is not visible to the scanner: it has a hidden name, or it is neither a folder nor a video file.'
+    files_error_occupied: 'Item "%name%" of storage "%storage%" is already linked to another entry:'
     notes_add_button: Add a note
     notes_edit_button: Edit
     rating_star_label: 'Rating: %rating%'
@@ -665,6 +686,9 @@ storage_new:
     path_not_applicable_hint: This media type has no file path, so none is stored.
     submit_button: Create
     error_invalid: Enter a valid name, path, and storage type.
+    path_purpose_hint: A storage is a folder that contains the folders with anime.
+    error_already_connected: 'This folder is already connected as storage "%name%".'
+    existing_storage_link: Open storage
     cancel_button: Cancel
 
 storage_scan_prompt:

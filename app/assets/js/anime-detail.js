@@ -256,6 +256,106 @@
     window.Controller.registerControl('open-folder-button', mountOpenFolderButton);
 })();
 
+// The "Files" block's manual link (issue #997). The picker result goes to the server, which lifts
+// it to a top-level item of a storage and re-renders the whole block with the outcome; a storage
+// that moved answers 409 with {relocate: {...}} and the same request is repeated once the user
+// agrees to update its path.
+(function () {
+    function mountFilesLink(root) {
+        const menu = root.querySelector('.anime-detail__files-menu');
+        const actions = root.querySelector('[data-files-actions]');
+
+        if (!window.animeDb) {
+            // Pickers exist only inside Electron; in a plain browser there is nothing to offer.
+            if (actions) {
+                actions.hidden = true;
+            }
+
+            return;
+        }
+
+        async function post(url, fields) {
+            const body = new FormData();
+            body.append('_token', root.dataset.token);
+            Object.entries(fields).forEach(([name, value]) => body.append(name, value));
+
+            return fetch(url, { method: 'POST', body, headers: { 'HX-Request': 'true' } });
+        }
+
+        function show(html) {
+            window.htmx.swap(root, html, { swapStyle: 'outerHTML' });
+        }
+
+        // The block is replaced only by a successful answer; anything else (expired token, server
+        // error, lost connection) leaves it in place so the action can be repeated.
+        async function showResponse(response) {
+            if (!response.ok) {
+                window.alert(root.dataset.requestFailed);
+
+                return;
+            }
+
+            show(await response.text());
+        }
+
+        async function link(path) {
+            try {
+                let response = await post(root.dataset.linkUrl, { path });
+
+                if (response.status === 409) {
+                    const { relocate } = await response.json();
+                    const message = root.dataset.relocateConfirm.replace('%name%', relocate.name);
+                    if (!window.confirm(message)) {
+                        return;
+                    }
+
+                    response = await post(root.dataset.linkUrl, { path, relocate_storage_id: relocate.storage_id });
+                }
+
+                await showResponse(response);
+            } catch {
+                window.alert(root.dataset.requestFailed);
+            }
+        }
+
+        root.querySelectorAll('[data-files-pick]').forEach((button) => {
+            button.addEventListener('click', async () => {
+                if (menu) {
+                    menu.open = false;
+                }
+
+                const path = button.dataset.filesPick === 'video'
+                    ? await window.animeDb.pickFile([{
+                        name: root.dataset.videoFilterName,
+                        extensions: root.dataset.videoExtensions.split(','),
+                    }])
+                    : await window.animeDb.pickFolder();
+
+                if (path) {
+                    await link(path);
+                }
+            });
+        });
+
+        const unlinkButton = root.querySelector('[data-files-unlink]');
+        if (unlinkButton) {
+            unlinkButton.addEventListener('click', async () => {
+                if (!window.confirm(root.dataset.unlinkConfirm)) {
+                    return;
+                }
+
+                try {
+                    await showResponse(await post(root.dataset.unlinkUrl, {}));
+                } catch {
+                    window.alert(root.dataset.requestFailed);
+                }
+            });
+        }
+    }
+
+    window.Controller.registerControl('files-link', mountFilesLink);
+})();
+
 // The "← Catalog" link (issue #719). The catalog itself writes its filters/sort/search into its
 // own URL and reads them back from that same URL on load (issue #713), so a real back navigation
 // through browser history reopens it exactly as it was left - no state needs to be carried here.

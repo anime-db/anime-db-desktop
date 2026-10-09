@@ -28,6 +28,7 @@ declare(strict_types=1);
 namespace App\Service\Download;
 
 use App\Service\Exception\DownloadPathOutsideJailException;
+use App\Service\Path\LexicalPathNormalizer;
 
 /**
  * Keeps every download-related filesystem path inside the root of the Storage a download was
@@ -58,7 +59,7 @@ use App\Service\Exception\DownloadPathOutsideJailException;
 final class DownloadFolderJail
 {
     private const string WINDOWS_ABSOLUTE_PATH_PATTERN = '/^[A-Za-z]:\\\\/';
-    private const string LONG_PATH_PREFIX = '\\\\?\\';
+    private const string LONG_PATH_PREFIX = LexicalPathNormalizer::LONG_PATH_PREFIX;
     private const string INCOMING_DIR_NAME = '.anime-db';
     private const string INCOMING_SUBDIR_NAME = 'incoming';
 
@@ -145,18 +146,13 @@ final class DownloadFolderJail
     {
         $root = $this->normalize(rtrim($root, '\\/'));
         $resolved = $this->normalize($path);
-        // normalize() always canonicalizes to backslash-separated form (see its docblock) —
-        // the boundary separator below must match that, not the host OS's DIRECTORY_SEPARATOR
-        // (this test suite runs on Linux CI, but downloads roots/save-paths are Windows paths).
-        $boundary = $root.'\\';
-
         // Windows filesystems are case-insensitive (NTFS is case-preserving, not case-sensitive):
         // qBittorrent/libtorrent is free to echo content_path back with different segment casing
         // than the configured downloads root, so the boundary check has to fold case — a
         // byte-identical comparison here would reject a legitimately-inside path over nothing
         // but a differently-cased drive letter or folder name. The returned $resolved keeps its
         // original casing; only this membership check is case-folded.
-        if (mb_strtolower($resolved) !== mb_strtolower($root) && !str_starts_with(mb_strtolower($resolved), mb_strtolower($boundary))) {
+        if (!LexicalPathNormalizer::isWithin($root, $resolved)) {
             throw new DownloadPathOutsideJailException(\sprintf('"%s" resolves outside the downloads root "%s".', $path, $root));
         }
 
@@ -182,37 +178,8 @@ final class DownloadFolderJail
         return $path;
     }
 
-    /**
-     * Normalizes separators and resolves "." / ".." segments purely lexically (no disk access),
-     * the same "resolve both sides, compare with a trailing-separator boundary prefix" approach
-     * native/protocols/app-media.js already uses for the media-file jail. A leading "\\?\" is
-     * stripped first so a long-path-prefixed and a plain path compare equal.
-     */
     private function normalize(string $path): string
     {
-        $path = str_replace(self::LONG_PATH_PREFIX, '', $path);
-        $path = str_replace('/', '\\', $path);
-
-        $segments = explode('\\', $path);
-        $stack = [];
-        foreach ($segments as $segment) {
-            if ($segment === '' || $segment === '.') {
-                continue;
-            }
-
-            if ($segment === '..') {
-                // Never pop the drive/UNC root itself (index 0) — mirrors how a real
-                // filesystem clamps ".." at the root instead of erroring or escaping it.
-                if (\count($stack) > 1) {
-                    array_pop($stack);
-                }
-
-                continue;
-            }
-
-            $stack[] = $segment;
-        }
-
-        return implode('\\', $stack);
+        return LexicalPathNormalizer::normalize($path);
     }
 }
