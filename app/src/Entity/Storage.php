@@ -105,6 +105,12 @@ class Storage
         return $this->path;
     }
 
+    /** Whether a scan can run at all: the type is writable and a path is set. Single source of truth for the scan service, the scan button and the "Add" menu. */
+    public function isScannable(): bool
+    {
+        return $this->type->isWritable() && $this->path !== null;
+    }
+
     /** For code paths that only handle storages of a {@see StorageType::isPathRequired()} type, where a missing path is a broken invariant. */
     public function requirePath(): string
     {

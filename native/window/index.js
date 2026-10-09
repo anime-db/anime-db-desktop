@@ -158,6 +158,23 @@ function setupHistoryNavigation(browserWindow) {
 }
 
 /**
+ * Blocks page zoom by Ctrl+wheel and by pinch. The page zoom is not wanted in the app, while the
+ * system (DPI) scaling is applied by Electron itself and is left alone. Ctrl+/- are already
+ * inert because the application menu is removed. Pinch is limited through the visual zoom limits;
+ * Ctrl+wheel is reverted to level 0 as soon as the zoom change is reported.
+ *
+ * @param {import('electron').BrowserWindow} browserWindow
+ */
+function disablePageZoom(browserWindow) {
+    const { webContents } = browserWindow;
+
+    webContents.setVisualZoomLevelLimits(1, 1);
+    webContents.on('zoom-changed', () => {
+        webContents.setZoomLevel(0);
+    });
+}
+
+/**
  * Создаёт главное окно и загружает Symfony-приложение по порту. Preload с
  * contextIsolation даёт странице доступ к shell.openPath() через window.animeDb
  * (issue #105), не открывая ей произвольный доступ к Node.js.
@@ -186,6 +203,7 @@ function createWindow(port) {
     });
     interceptExternalNavigation(win, port);
     setupHistoryNavigation(win);
+    disablePageZoom(win);
     win.loadURL(`http://127.0.0.1:${port}`);
     win.on('closed', () => { win = null; });
     return win;

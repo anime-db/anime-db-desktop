@@ -60,7 +60,7 @@ final class NavController
     {
         $scannable = array_values(array_filter(
             $this->storages->findAllOrderedByName(),
-            static fn (Storage $storage): bool => $storage->getType()->isWritable() && $storage->getPath() !== null,
+            static fn (Storage $storage): bool => $storage->isScannable(),
         ));
 
         $unavailableIds = $this->storageAvailability->unavailableStorageIds($scannable);
@@ -72,7 +72,6 @@ final class NavController
         return new Response($this->twig->render('nav/_add_menu_scan_section.html.twig', [
             'connectedStorages' => $connected,
             'disconnectedCount' => \count($scannable) - \count($connected),
-            'hasScannableStorages' => $scannable !== [],
         ]));
     }
 }
