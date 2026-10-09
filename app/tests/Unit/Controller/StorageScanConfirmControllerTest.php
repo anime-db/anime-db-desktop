@@ -78,9 +78,24 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 final class StorageScanConfirmControllerTest extends TestCase
 {
     private EntityManager $entityManager;
+    private string $storageDir;
+
+    protected function tearDown(): void
+    {
+        foreach (glob($this->storageDir.'/*') ?: [] as $file) {
+            unlink($file);
+        }
+        rmdir($this->storageDir);
+    }
 
     protected function setUp(): void
     {
+        $this->storageDir = sys_get_temp_dir().'/animedb-confirm-'.bin2hex(random_bytes(4));
+        mkdir($this->storageDir);
+        foreach (['Trigun.mkv', 'Bleach.mkv', 'Bleach2.mkv'] as $name) {
+            touch($this->storageDir.'/'.$name);
+        }
+
         if (!Type::hasType(UnixTimestampType::NAME)) {
             Type::addType(UnixTimestampType::NAME, UnixTimestampType::class);
         }
@@ -151,7 +166,7 @@ final class StorageScanConfirmControllerTest extends TestCase
 
     private function persistStorage(): Storage
     {
-        $storage = new Storage('Main folder', 'D:\\Anime', StorageType::Folder);
+        $storage = new Storage('Main folder', $this->storageDir, StorageType::Folder);
         $this->entityManager->persist($storage);
         $this->entityManager->flush();
 
@@ -527,5 +542,48 @@ final class StorageScanConfirmControllerTest extends TestCase
             'storage_path' => 'Trigun.mkv',
             'anime_id' => 999,
         ]));
+    }
+
+    public function testConfirmRefusesAFolderThatIsGoneAndLinksNothing(): void
+    {
+        $storage = $this->persistStorage();
+
+        $orphan = new TvAnime();
+        $orphan->setTitle('Trigun')->setWatchStatus(WatchStatus::Plan);
+        $this->entityManager->persist($orphan);
+        $this->entityManager->flush();
+        $orphanId = $orphan->id;
+        unlink($this->storageDir.'/Trigun.mkv');
+
+        $response = $this->createController()->confirm($storage, $this->jsonRequest([
+            'token' => 'token',
+            'storage_path' => 'Trigun.mkv',
+            'anime_id' => $orphanId,
+        ]));
+
+        $this->assertSame(410, $response->getStatusCode());
+        $this->assertSame(['error' => 'entry_missing'], json_decode((string) $response->getContent(), true));
+        $this->entityManager->clear();
+        $reloaded = $this->entityManager->find(Anime::class, $orphanId);
+        $this->assertInstanceOf(Anime::class, $reloaded);
+        $this->assertNull($reloaded->getStorage());
+        $this->assertNull($reloaded->getStoragePath());
+    }
+
+    public function testConfirmRefusesAPluginCandidateWhenTheFolderIsGone(): void
+    {
+        $storage = $this->persistStorage();
+        unlink($this->storageDir.'/Bleach.mkv');
+
+        $response = $this->createController()->confirm($storage, $this->jsonRequest([
+            'token' => 'token',
+            'storage_path' => 'Bleach.mkv',
+            'plugin_id' => 'acme',
+            'external_id' => '1',
+            'name' => 'Bleach',
+        ]));
+
+        $this->assertSame(410, $response->getStatusCode());
+        $this->assertSame(0, $this->entityManager->getConnection()->fetchOne('SELECT COUNT(*) FROM anime'));
     }
 }

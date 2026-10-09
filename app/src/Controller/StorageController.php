@@ -33,6 +33,8 @@ use App\Repository\DownloadRepository;
 use App\Repository\StorageRepository;
 use App\Service\AppSettingsProvider;
 use App\Service\JobLock\JobLockService;
+use App\Service\Storage\Scan\ScanItemResolver;
+use App\Service\Storage\Scan\ScanRunJournal;
 use App\Service\Storage\StorageAvailabilityService;
 use App\Service\Storage\StorageMarkerService;
 use Doctrine\ORM\EntityManagerInterface;
@@ -63,6 +65,10 @@ use Twig\Environment;
  * background and not at application startup — and never tries to guess a replacement path;
  * fixing it is left to the user via storage_edit (StorageEditController) or storage_delete above.
  *
+ * With no scan running, the progress page shows the newest run of the scan journal (issue #998,
+ * {@see StorageScanLogController}); the list shows the date and the number of items of that run
+ * that still need a decision.
+ *
  * The scan's own progress/confirmation UI moved to its own page (issue #834, {@see scanProgress()})
  * — this controller's index() no longer renders it, and no longer accepts the old `scanned`/
  * `storage_id` query parameters.
@@ -81,6 +87,8 @@ final class StorageController
         private readonly JobLockService $jobLockService,
         private readonly DownloadRepository $downloads,
         private readonly AppSettingsProvider $settings,
+        private readonly ScanRunJournal $scanRuns,
+        private readonly ScanItemResolver $scanItemResolver,
     ) {
     }
 
@@ -95,8 +103,17 @@ final class StorageController
     {
         $storages = $this->storages->findAllOrderedByName();
 
+        $lastScans = [];
+        foreach ($storages as $storage) {
+            $run = $storage->id !== null ? $this->scanRuns->findLatest($storage->id) : null;
+            if ($run !== null) {
+                $lastScans[$storage->id] = ['run' => $run, 'needsDecision' => $this->scanItemResolver->needsDecisionCount($run)];
+            }
+        }
+
         return new Response($this->twig->render('storage/list.html.twig', [
             'storages' => $storages,
+            'lastScans' => $lastScans,
             'unavailableStorageIds' => $this->storageAvailability->unavailableStorageIds($storages),
             'presetStorageId' => $this->settings->getPresetDownloadsStorageId(),
             'error' => $error,
@@ -158,10 +175,14 @@ final class StorageController
     {
         $storageId = $storage->id ?? throw new \LogicException('Storage must be persisted before its scan progress can be shown.');
 
+        $started = $request->query->getBoolean('started')
+            || $this->jobLockService->isLocked(ScanStorageMessage::jobKey($storageId));
+
         return new Response($this->twig->render('storage/scan_progress.html.twig', [
             'storage' => $storage,
-            'started' => $request->query->getBoolean('started')
-                || $this->jobLockService->isLocked(ScanStorageMessage::jobKey($storageId)),
+            'started' => $started,
+            // Without a running scan the page shows the last journal run instead of "not started".
+            'latestRun' => $started ? null : $this->scanRuns->findLatest($storageId),
         ]));
     }
 

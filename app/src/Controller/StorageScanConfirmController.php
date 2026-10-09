@@ -36,6 +36,7 @@ use App\Entity\Storage;
 use App\Service\Storage\Exception\StoragePathConflictException;
 use App\Service\Storage\Scan\ScanCandidate;
 use App\Service\Storage\ScanStorageService;
+use App\Service\Storage\TopLevelEntry;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -54,7 +55,8 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
  * (часть 5) uses for its own exactly-one-candidate case — this action just skips re-running
  * that rule.
  *
- * The scan result (часть 5) is not persisted anywhere (see #122), so the candidate the user
+ * The scan result (часть 5) is kept by the scan journal (issue #998) and sent as the scan.done event
+ * (часть 7.5), but the candidate the user
  * picked is not looked up again in the catalog: it comes back exactly as the frontend received
  * it in the scan.done payload (часть 7.5) — an anime_id for an orphan candidate, or a plugin
  * candidate's real pluginId/externalId/name (issue #832; see
@@ -94,6 +96,12 @@ final class StorageScanConfirmController
         $storagePath = $payload['storage_path'] ?? null;
         if (!\is_string($storagePath) || $storagePath === '') {
             throw new BadRequestHttpException('"storage_path" is required.');
+        }
+
+        // The scan result may be days old (issue #998): the folder it names can be gone by now, and
+        // a link to a folder that does not exist is worse than a refusal.
+        if (!TopLevelEntry::exists($storage, $storagePath)) {
+            return new JsonResponse(['error' => 'entry_missing'], JsonResponse::HTTP_GONE);
         }
 
         $animeId = $payload['anime_id'] ?? null;

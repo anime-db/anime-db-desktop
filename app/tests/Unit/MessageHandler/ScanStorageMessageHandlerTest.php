@@ -54,10 +54,12 @@ use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Storage\FilenameCleaner;
 use App\Service\Storage\OrphanAnimeMatcher;
 use App\Service\Storage\Scan\ScanCandidate;
+use App\Service\Storage\Scan\ScanRunJournal;
 use App\Service\Storage\ScanStorageService;
 use App\Service\Storage\Search\SearchByPluginChain;
 use App\Service\Storage\StorageMarkerService;
 use App\Service\WsPublisher;
+use App\Tests\Support\RunsMigrations;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Types\Type;
@@ -82,6 +84,8 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
  */
 final class ScanStorageMessageHandlerTest extends TestCase
 {
+    use RunsMigrations;
+
     private const HEARTBEAT_INTERVAL_SECONDS = 30;
     private const STALE_AFTER_MISSED_HEARTBEATS = 3;
 
@@ -109,6 +113,7 @@ final class ScanStorageMessageHandlerTest extends TestCase
 
         $schemaTool = new SchemaTool($this->entityManager);
         $schemaTool->createSchema($this->entityManager->getMetadataFactory()->getAllMetadata());
+        $this->runMigrationFile($connection, \dirname(__DIR__, 3).'/migrations/Version20261008000000.php');
 
         $this->queueConnection = DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]);
         $this->clock = new MockClock(new \DateTimeImmutable('@1000'));
@@ -510,6 +515,164 @@ final class ScanStorageMessageHandlerTest extends TestCase
         $this->assertSame(0, (int) $lockCount);
     }
 
+    public function testSuccessfulScanIsJournaledWithoutUpdatedItemsAndWithVersionedItems(): void
+    {
+        $dir = $this->makeStorageDir();
+        $this->touchFile($dir.'/Trigun.mkv');
+
+        $storage = new Storage('Main folder', $dir, StorageType::Folder);
+        $this->entityManager->persist($storage);
+        $this->entityManager->flush();
+        $storageId = $this->requireId($storage);
+
+        $handler = $this->newHandler($this->createStub(ProcessLivenessChecker::class), $this->newWsPublisher());
+        $handler(new ScanStorageMessage($storageId));
+
+        $row = $this->journalRows($storageId);
+        $this->assertCount(1, $row);
+        $this->assertSame('done', $row[0]['status']);
+        $this->assertNotNull($row[0]['finished_at']);
+        $this->assertSame(['NeedsManualEntry' => 1], json_decode((string) $row[0]['counts'], true));
+        $items = json_decode((string) $row[0]['items'], true);
+        $this->assertCount(1, $items);
+        $this->assertSame(1, $items[0]['v']);
+        $this->assertSame('Trigun.mkv', $items[0]['storage_path']);
+    }
+
+    public function testUpdatedItemsAreCountedButNotStored(): void
+    {
+        $dir = $this->makeStorageDir();
+        $this->touchFile($dir.'/Trigun.mkv');
+
+        $storage = new Storage('Main folder', $dir, StorageType::Folder);
+        $this->entityManager->persist($storage);
+        $anime = (new TvAnime())->setTitle('Trigun')->setWatchStatus(WatchStatus::Plan);
+        $anime->setStorage($storage)->setStoragePath('Trigun.mkv');
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+        $storageId = $this->requireId($storage);
+        // The file is newer than the last check, which makes the entry an Updated one.
+        touch($dir.'/Trigun.mkv', time() + 3600);
+
+        $handler = $this->newHandler($this->createStub(ProcessLivenessChecker::class), $this->newWsPublisher());
+        $handler(new ScanStorageMessage($storageId));
+
+        $row = $this->journalRows($storageId)[0];
+        $this->assertSame(['Updated' => 1], json_decode((string) $row['counts'], true));
+        $this->assertSame([], json_decode((string) $row['items'], true));
+    }
+
+    public function testAClosedEntityManagerStillLeavesAFailedRunInTheJournal(): void
+    {
+        $dir = $this->makeStorageDir();
+        $storage = new Storage('Main folder', $dir, StorageType::Folder);
+        $this->entityManager->persist($storage);
+        $this->entityManager->flush();
+        $storageId = $this->requireId($storage);
+
+        // The scan fails after the lock is taken (its directory is gone) while the scan's
+        // EntityManager is closed, as it is after any failed flush: the journal must not need it.
+        $this->removeDir($dir);
+        $this->entityManager->close();
+
+        $wsPublisher = $this->newWsPublisher();
+        $handler = $this->newHandler($this->createStub(ProcessLivenessChecker::class), $wsPublisher);
+
+        try {
+            $handler(new ScanStorageMessage($storageId));
+            $this->fail('Expected UnrecoverableMessageHandlingException.');
+        } catch (UnrecoverableMessageHandlingException) {
+            // expected
+        }
+
+        $rows = $this->journalRows($storageId);
+        $this->assertCount(1, $rows);
+        $this->assertSame('failed', $rows[0]['status']);
+        $this->assertNotSame('', (string) $rows[0]['error_message']);
+        $this->assertNotNull($rows[0]['finished_at']);
+        $this->assertJobLockReleased($storageId);
+    }
+
+    public function testMarkerConflictIsJournaledAsMarkerConflict(): void
+    {
+        $dir = $this->makeStorageDir();
+        $this->touchFile($dir.'/New.mkv');
+
+        $owner = new Storage('Owner', $this->makeStorageDir(), StorageType::Folder);
+        $this->entityManager->persist($owner);
+        $this->entityManager->flush();
+        file_put_contents($dir.'/desktop.ini', "[AnimeDB]\nid={$owner->id}\n");
+
+        $storage = new Storage('Target', $dir, StorageType::Folder);
+        $this->entityManager->persist($storage);
+        $this->entityManager->flush();
+        $storageId = $this->requireId($storage);
+
+        $handler = $this->newHandler($this->createStub(ProcessLivenessChecker::class), $this->newWsPublisher());
+        $handler(new ScanStorageMessage($storageId));
+
+        $this->assertSame('marker_conflict', $this->journalRows($storageId)[0]['status']);
+    }
+
+    public function testNoRunningRowAppearsWhenTheLockWasNotAcquired(): void
+    {
+        $dir = $this->makeStorageDir();
+        $storage = new Storage('Main folder', $dir, StorageType::Folder);
+        $this->entityManager->persist($storage);
+        $this->entityManager->flush();
+        $storageId = $this->requireId($storage);
+
+        $this->insertLock(\sprintf('scan:storage:%d', $storageId), pid: 424242, heartbeatAt: 1000);
+        $livenessChecker = $this->createStub(ProcessLivenessChecker::class);
+        $livenessChecker->method('getStartedAt')->willReturn(new \DateTimeImmutable('@1000'));
+
+        $handler = $this->newHandler($livenessChecker, $this->newWsPublisher());
+        $handler(new ScanStorageMessage($storageId));
+
+        $this->assertSame([], $this->journalRows($storageId));
+    }
+
+    public function testAnUnknownStorageLeavesNoJournalRow(): void
+    {
+        $handler = $this->newHandler($this->createStub(ProcessLivenessChecker::class), $this->newWsPublisher());
+
+        try {
+            $handler(new ScanStorageMessage(999));
+        } catch (UnrecoverableMessageHandlingException) {
+            // expected
+        }
+
+        $this->assertSame([], $this->journalRows(999));
+    }
+
+    public function testABrokenJournalDoesNotTurnAFinishedScanIntoAFailedOne(): void
+    {
+        $dir = $this->makeStorageDir();
+        $this->touchFile($dir.'/Trigun.mkv');
+        $storage = new Storage('Main folder', $dir, StorageType::Folder);
+        $this->entityManager->persist($storage);
+        $this->entityManager->flush();
+        $storageId = $this->requireId($storage);
+        $this->entityManager->getConnection()->executeStatement('DROP TABLE scan_run');
+
+        $wsPublisher = $this->newWsPublisher();
+        $handler = $this->newHandler($this->createStub(ProcessLivenessChecker::class), $wsPublisher);
+        $handler(new ScanStorageMessage($storageId));
+
+        $events = array_column($wsPublisher->since(0), 'event');
+        $this->assertContains('scan.done', $events);
+        $this->assertNotContains('scan.failed', $events);
+    }
+
+    /** @return list<array<string, mixed>> */
+    private function journalRows(int $storageId): array
+    {
+        return $this->entityManager->getConnection()->fetchAllAssociative(
+            'SELECT * FROM scan_run WHERE storage_id = :storageId ORDER BY id',
+            ['storageId' => $storageId],
+        );
+    }
+
     private function requireId(Storage $storage): int
     {
         return $storage->id ?? throw new \LogicException('Storage must be persisted before use in this test.');
@@ -573,6 +736,8 @@ final class ScanStorageMessageHandlerTest extends TestCase
                 new PluginsConfigStore($this->makeStorageDir().'/plugins.json'),
                 new NullLogger(),
             )),
+            // The journal goes through the connection itself, not through $this->entityManager.
+            new ScanRunJournal($this->entityManager->getConnection(), $jobLockService, $this->clock),
         );
     }
 

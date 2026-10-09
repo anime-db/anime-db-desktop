@@ -56,7 +56,15 @@
                 <div id="storage-scan-results" hidden></div>
             </section>
         {% else %}
-            <p class="text-body-secondary">{{ 'storage_scan_progress.not_started'|trans }}</p>
+            {% if latestRun %}
+                <h2 class="h5">{{ 'storage_scan_progress.last_run_heading'|trans }}</h2>
+
+                {% include 'storage/_scan_run_results.html.twig' with {run: latestRun} %}
+
+                <p><a href="{{ path('storage_scans', {id: storage.id}) }}">{{ 'storage_list.scan_log_link'|trans }}</a></p>
+            {% else %}
+                <p class="text-body-secondary">{{ 'storage_scan_progress.not_started'|trans }}</p>
+            {% endif %}
 
             <form method="post" action="{{ path('storage_scan', {id: storage.id}) }}" class="mb-3">
                 <input type="hidden" name="_token" value="{{ csrf_token('storage_scan_' ~ storage.id) }}">

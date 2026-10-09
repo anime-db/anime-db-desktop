@@ -50,10 +50,11 @@ use Doctrine\DBAL\Schema\Table;
 final class MappingSchemaComparator
 {
     /**
-     * Bookkeeping table of the migrations bundle. It is created by the bundle rather than by a
-     * migration or an entity, so it is absent from the mapping by design.
+     * Tables that are absent from the mapping by design: `doctrine_migration_versions` is the
+     * bookkeeping table of the migrations bundle, created by the bundle rather than by a migration
+     * or an entity; `scan_run` is the storage scan journal, written and read through DBAL only.
      */
-    private const UNMAPPED_TABLES = ['doctrine_migration_versions'];
+    private const UNMAPPED_TABLES = ['doctrine_migration_versions', 'scan_run'];
 
     /**
      * @return list<string> one line per divergence, empty when the mapping matches the schema

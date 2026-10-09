@@ -33,6 +33,7 @@ use App\Controller\AnimeNewController;
 use App\Entity\Anime;
 use App\Entity\Enum\StorageType;
 use App\Entity\Storage;
+use App\Repository\AnimeRepository;
 use Doctrine\ORM\EntityManagerInterface;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\RedirectResponse;
@@ -51,6 +52,7 @@ final class AnimeNewControllerTest extends TestCase
         ?UrlGeneratorInterface $urlGenerator = null,
         ?Environment $twig = null,
         ?EventDispatcherInterface $eventDispatcher = null,
+        ?AnimeRepository $animes = null,
     ): AnimeNewController {
         if ($csrfTokenManager === null) {
             $csrfTokenManager = $this->createStub(CsrfTokenManagerInterface::class);
@@ -68,6 +70,7 @@ final class AnimeNewControllerTest extends TestCase
             $urlGenerator,
             $twig ?? $this->createStub(Environment::class),
             $eventDispatcher ?? $this->createStub(EventDispatcherInterface::class),
+            $animes ?? $this->createStub(AnimeRepository::class),
         );
     }
 
@@ -154,7 +157,7 @@ final class AnimeNewControllerTest extends TestCase
 
     public function testCreateLinksStorageWhenStorageIdAndPathArePresent(): void
     {
-        $storage = new Storage('Local', \sys_get_temp_dir(), StorageType::Folder);
+        $storage = $this->storageWithFolder('Frieren.mkv');
 
         $persistedAnime = null;
         $entityManager = $this->entityManagerAssigningId(1, $persistedAnime);
@@ -270,5 +273,102 @@ final class AnimeNewControllerTest extends TestCase
 
         $this->expectException(BadRequestHttpException::class);
         $controller->create($request);
+    }
+
+    private function storageWithFolder(string ...$names): Storage
+    {
+        $dir = sys_get_temp_dir().'/animedb-new-'.bin2hex(random_bytes(4));
+        mkdir($dir);
+        foreach ($names as $name) {
+            touch($dir.'/'.$name);
+        }
+        $this->dirs[] = $dir;
+
+        return new Storage('Local', $dir, StorageType::Folder);
+    }
+
+    /** @var list<string> */
+    private array $dirs = [];
+
+    protected function tearDown(): void
+    {
+        foreach ($this->dirs as $dir) {
+            array_map('unlink', glob($dir.'/*') ?: []);
+            rmdir($dir);
+        }
+    }
+
+    public function testCreateReportsAFormErrorWhenTheFolderIsGone(): void
+    {
+        $storage = $this->storageWithFolder();
+        $entityManager = $this->createMock(EntityManagerInterface::class);
+        $entityManager->method('find')->willReturn($storage);
+        $entityManager->expects($this->never())->method('persist');
+        $entityManager->expects($this->never())->method('flush');
+
+        $captured = [];
+        $twig = $this->createMock(Environment::class);
+        $twig->method('render')->willReturnCallback(static function (string $template, array $params) use (&$captured): string {
+            $captured = $params;
+
+            return '';
+        });
+
+        $response = $this->createController(entityManager: $entityManager, twig: $twig)->create(Request::create('/anime/new', 'POST', [
+            'title' => 'Frieren', 'type' => 'tv', 'watch_status' => 'plan',
+            'storage_id' => '3', 'storage_path' => 'Frieren.mkv', '_token' => 'token',
+        ]));
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertSame('anime_new.error_entry_missing', $captured['error']);
+    }
+
+    public function testCreateReportsAFormErrorWhenAnotherRecordHoldsThePairInsteadOfFailingOnTheUniqueIndex(): void
+    {
+        $storage = $this->storageWithFolder('Frieren.mkv');
+        $entityManager = $this->createMock(EntityManagerInterface::class);
+        $entityManager->method('find')->willReturn($storage);
+        $entityManager->expects($this->never())->method('persist');
+        $entityManager->expects($this->never())->method('flush');
+
+        // Stored by a v1 import: other case and a trailing separator.
+        $animes = $this->createStub(AnimeRepository::class);
+        $animes->method('findStoragePathsByStorageId')->willReturn([9 => 'frieren.MKV\\']);
+
+        $captured = [];
+        $twig = $this->createMock(Environment::class);
+        $twig->method('render')->willReturnCallback(static function (string $template, array $params) use (&$captured): string {
+            $captured = $params;
+
+            return '';
+        });
+
+        $response = $this->createController(entityManager: $entityManager, twig: $twig, animes: $animes)->create(Request::create('/anime/new', 'POST', [
+            'title' => 'Frieren', 'type' => 'tv', 'watch_status' => 'plan',
+            'storage_id' => '3', 'storage_path' => 'Frieren.mkv', '_token' => 'token',
+        ]));
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertSame('anime_new.error_storage_path_taken', $captured['error']);
+        $this->assertSame('Frieren', $captured['title']);
+    }
+
+    public function testNewShowsTheErrorRightAwayWhenTheLinkedFolderIsGone(): void
+    {
+        $storage = $this->storageWithFolder();
+        $entityManager = $this->createStub(EntityManagerInterface::class);
+        $entityManager->method('find')->willReturn($storage);
+
+        $captured = [];
+        $twig = $this->createMock(Environment::class);
+        $twig->method('render')->willReturnCallback(static function (string $template, array $params) use (&$captured): string {
+            $captured = $params;
+
+            return '';
+        });
+
+        $this->createController(entityManager: $entityManager, twig: $twig)->new(Request::create('/anime/new?storage_id=3&storage_path=Gone'));
+
+        $this->assertSame('anime_new.error_entry_missing', $captured['error']);
     }
 }
