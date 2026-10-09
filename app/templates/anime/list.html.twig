@@ -24,6 +24,7 @@
 
 {% block body %}
     <main class="anime-list" data-control="anime-list">
+        <div class="anime-list__catalog" id="anime-list-catalog">
         {% if showOnboarding %}
             <section class="anime-list__onboarding text-center">
                 <h2 class="anime-list__onboarding-heading">{{ 'onboarding.heading'|trans }}</h2>
@@ -156,8 +157,7 @@
                 >↓</button>
             </div>
 
-            <div class="anime-list__layout">
-                <div class="anime-list__main">
+            <div class="anime-list__main">
                     <div class="anime-list__chips sticky-top" id="anime-list-chips">
                         <ul class="anime-list__chip-list" id="anime-list-chip-list"></ul>
                         <span class="anime-list__chips-shown" id="anime-list-chips-shown"></span>
@@ -171,8 +171,11 @@
 
                     <nav class="anime-list__pagination" id="anime-list-pagination" hidden></nav>
                     <div class="anime-list__sentinel" id="anime-list-sentinel" hidden></div>
-                </div>
+            </div>
+        {% endif %}
+        </div>
 
+        {% if not showOnboarding %}
                 <aside class="anime-list__filters" id="anime-list-filters" aria-label="{{ 'anime_list.filters_toggle_button'|trans }}">
                     <div
                         class="anime-list__filter-sections"
@@ -207,7 +210,6 @@
                         <button type="button" class="anime-list__filter-apply-button" id="anime-list-filter-apply" disabled>{{ 'anime_list.filter_apply_button'|trans }}</button>
                     </div>
                 </aside>
-            </div>
         {% endif %}
     </main>
 {% endblock %}
