@@ -37,8 +37,10 @@ use App\Entity\ValueObject\PluginId;
  * record, it only compares the type a source reports for a title with the type of the record and
  * flags a difference as {@see SyncReviewItemKind::TypeMismatch} for the user to decide.
  *
- * - One item per (record, plugin, source type). Resolved items count too, so "keep" is final for
- *   that source value; only a new value on the source raises a new item.
+ * - The source type is compared with the newest item of the (record, plugin) pair, whatever its
+ *   status: the same value raises nothing (so "keep" is final for it), a different one closes the
+ *   open items of the pair and raises a new item. A value that comes back after another one is
+ *   therefore flagged again.
  * - A record whose type equals the source's closes the open items of that (record, plugin) pair.
  * - A source that reports no type (`null`) is not a difference and never reaches this class.
  */
@@ -58,8 +60,8 @@ final class TypeMismatchDetector
             return;
         }
 
-        /** @var array<int, array<string, true>> $known source types with an item (any status), by anime id */
-        $known = [];
+        /** @var array<int, array{id: int, sourceType: string}> $latest the newest item of the pair (any status), by anime id */
+        $latest = [];
         /** @var array<int, list<\App\Entity\SyncReviewItem>> $open */
         $open = [];
         foreach ($this->reviewService->findAllByKind(SyncReviewItemKind::TypeMismatch) as $item) {
@@ -68,7 +70,10 @@ final class TypeMismatchDetector
                 continue;
             }
 
-            $known[$animeId][(string) ($item->payload['source_type'] ?? '')] = true;
+            $id = (int) $item->id;
+            if (!isset($latest[$animeId]) || $id > $latest[$animeId]['id']) {
+                $latest[$animeId] = ['id' => $id, 'sourceType' => (string) ($item->payload['source_type'] ?? '')];
+            }
             if (!$item->isResolved()) {
                 $open[$animeId][] = $item;
             }
@@ -85,8 +90,12 @@ final class TypeMismatchDetector
                 continue;
             }
 
-            if (isset($known[$animeId][$report['sourceType']->value])) {
+            if (($latest[$animeId]['sourceType'] ?? null) === $report['sourceType']->value) {
                 continue;
+            }
+
+            foreach ($open[$animeId] ?? [] as $item) {
+                $this->reviewService->resolve($item);
             }
 
             $this->reviewService->create(SyncReviewItemKind::TypeMismatch, [

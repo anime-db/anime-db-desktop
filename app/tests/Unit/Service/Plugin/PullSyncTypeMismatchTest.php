@@ -155,6 +155,32 @@ final class PullSyncTypeMismatchTest extends TestCase
         $this->assertFalse($items[1]->isResolved());
     }
 
+    public function testASourceTypeReturningAfterAnotherOneRaisesANewItem(): void
+    {
+        $this->pull(ContractAnimeType::Tv);
+        $this->resolveAll();
+        $this->pull(ContractAnimeType::Ova);
+        $this->resolveAll();
+        $this->pull(ContractAnimeType::Tv);
+
+        $items = $this->items();
+        $this->assertCount(3, $items);
+        $this->assertSame('tv', $items[2]->payload['source_type']);
+        $this->assertFalse($items[2]->isResolved());
+    }
+
+    public function testAChangedSourceTypeClosesTheOpenItemOfThePair(): void
+    {
+        $this->pull(ContractAnimeType::Tv);
+        $this->pull(ContractAnimeType::Ova);
+
+        $items = $this->items();
+        $this->assertCount(2, $items);
+        $this->assertTrue($items[0]->isResolved());
+        $this->assertSame('ova', $items[1]->payload['source_type']);
+        $this->assertFalse($items[1]->isResolved());
+    }
+
     public function testMatchingTypesCloseTheOpenItem(): void
     {
         $this->pull(ContractAnimeType::Tv);
