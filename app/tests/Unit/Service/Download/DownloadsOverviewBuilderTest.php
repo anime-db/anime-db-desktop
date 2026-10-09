@@ -495,7 +495,7 @@ final class DownloadsOverviewBuilderTest extends TestCase
         $orphan = $result['orphans'][0];
         self::assertFalse($orphan['hasCard']);
         self::assertSame('Mystery torrent', $orphan['displayName']);
-        self::assertSame('Без карточки', $orphan['statusText']);
+        self::assertSame('Без записи', $orphan['statusText']);
     }
 
     public function testCanDeleteFilesOnlyForDataUnderTheTargetStoragesIncoming(): void

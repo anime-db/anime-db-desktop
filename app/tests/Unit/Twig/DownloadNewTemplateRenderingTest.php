@@ -236,7 +236,7 @@ final class DownloadNewTemplateRenderingTest extends KernelTestCase
             'downloadsLink' => true,
         ]);
 
-        $this->assertStringContainsString('already in the torrent client without a card', $html);
+        $this->assertStringContainsString('already in the torrent client without an entry', $html);
         $this->assertStringContainsString('href="/downloads"', $html);
         $this->assertStringContainsString('magnet:?xt=urn:btih:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', $html);
     }

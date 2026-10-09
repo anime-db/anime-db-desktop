@@ -95,7 +95,7 @@ final class CatalogStageCommandTest extends TestCase
         $exitCode = $tester->execute(['archive' => $archivePath]);
 
         $this->assertSame(3, $exitCode);
-        $this->assertStringContainsString('no valid manifest.json', $this->normalizeDisplay($tester));
+        $this->assertStringContainsString('does not look like a catalog backup', $this->normalizeDisplay($tester));
     }
 
     public function testReturnsDistinctExitCodeForAnArchiveWithAnUnsupportedFormatVersion(): void

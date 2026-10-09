@@ -236,7 +236,7 @@ final class PluginSettingsPageRenderingTest extends KernelTestCase
 
         $this->assertStringContainsString('alert-info', $html);
         $this->assertStringContainsString('<a href="/settings/sync-review">', $html);
-        $this->assertStringContainsString('Go to sync review', $html);
+        $this->assertStringContainsString('Go to Requires attention', $html);
         $this->assertStringContainsString('<form>settings</form>', $html);
     }
 
@@ -260,7 +260,7 @@ final class PluginSettingsPageRenderingTest extends KernelTestCase
         // permanent nav items, see SettingsNavigationService), so the notice itself — not that
         // substring — is what must be absent here.
         $this->assertStringNotContainsString('alert-info', $html);
-        $this->assertStringNotContainsString('Go to sync review', $html);
+        $this->assertStringNotContainsString('Go to Requires attention', $html);
     }
 
     /**

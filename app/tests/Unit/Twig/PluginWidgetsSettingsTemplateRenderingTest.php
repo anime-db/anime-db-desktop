@@ -181,7 +181,7 @@ final class PluginWidgetsSettingsTemplateRenderingTest extends KernelTestCase
         $html = $this->renderWith($rows, []);
 
         $this->assertStringNotContainsString('name="slot"', $html);
-        $this->assertStringContainsString('<th>Position on the card</th>', $html);
+        $this->assertStringContainsString('<th>Position on the entry page</th>', $html);
     }
 
     public function testCatalogSectionHasNoSlotColumnNorSelect(): void
@@ -191,7 +191,7 @@ final class PluginWidgetsSettingsTemplateRenderingTest extends KernelTestCase
         $html = $this->renderWith([], $this->oneWidgetRow());
 
         $this->assertStringNotContainsString('name="slot"', $html);
-        $this->assertStringNotContainsString('<th>Position on the card</th>', $html);
+        $this->assertStringNotContainsString('<th>Position on the entry page</th>', $html);
     }
 
     /**

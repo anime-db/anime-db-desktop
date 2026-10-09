@@ -39,7 +39,7 @@
         {% endif %}
         <form hx-post="{{ path('settings_market_refresh') }}" hx-target="#market-refresh-area" hx-swap="outerHTML" hx-disabled-elt="find button">
             <input type="hidden" name="_token" value="{{ csrf_token('settings_market_refresh') }}">
-            <button type="submit" class="btn btn-secondary">{{ 'settings_market.refresh_button'|trans }}</button>
+            <button type="submit" class="btn btn-secondary">{{ (registryUnavailable|default(false) ? 'settings_market.load_catalog_button' : 'settings_market.refresh_button')|trans }}</button>
         </form>
     {% endif %}
 </div>

@@ -354,7 +354,7 @@ final class SettingsTemplateRenderingTest extends KernelTestCase
         $twig = self::getContainer()->get('twig');
         $html = $twig->render('settings/label/index.html.twig', ['labels' => [], 'labelCounts' => [], 'error' => null]);
 
-        $this->assertStringContainsString('Вешаются на карточке аниме', $html);
+        $this->assertStringContainsString('Вешаются на странице записи', $html);
     }
 
     // Issue #823: the anime count next to a label is a link into the catalog filtered by that
