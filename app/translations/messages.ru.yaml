@@ -569,6 +569,7 @@ anime_detail:
     files_unlink_confirm: Связь записи с файлами будет снята. Сами файлы не затрагиваются. Продолжить?
     files_unlinked: Связь с файлами снята.
     files_relocate_confirm: Хранилище «%name%» теперь находится здесь — обновить путь?
+    files_request_failed: Не удалось выполнить запрос. Обновите страницу и повторите.
     files_linked: 'Привязано: «%name%» в хранилище «%storage%».'
     files_linked_top_level: 'Привязано к папке верхнего уровня «%name%» (хранилище «%storage%»).'
     files_create_storage: Создать хранилище

@@ -286,20 +286,36 @@
             window.htmx.swap(root, html, { swapStyle: 'outerHTML' });
         }
 
-        async function link(path) {
-            let response = await post(root.dataset.linkUrl, { path });
+        // The block is replaced only by a successful answer; anything else (expired token, server
+        // error, lost connection) leaves it in place so the action can be repeated.
+        async function showResponse(response) {
+            if (!response.ok) {
+                window.alert(root.dataset.requestFailed);
 
-            if (response.status === 409) {
-                const { relocate } = await response.json();
-                const message = root.dataset.relocateConfirm.replace('%name%', relocate.name);
-                if (!window.confirm(message)) {
-                    return;
-                }
-
-                response = await post(root.dataset.linkUrl, { path, relocate_storage_id: relocate.storage_id });
+                return;
             }
 
             show(await response.text());
+        }
+
+        async function link(path) {
+            try {
+                let response = await post(root.dataset.linkUrl, { path });
+
+                if (response.status === 409) {
+                    const { relocate } = await response.json();
+                    const message = root.dataset.relocateConfirm.replace('%name%', relocate.name);
+                    if (!window.confirm(message)) {
+                        return;
+                    }
+
+                    response = await post(root.dataset.linkUrl, { path, relocate_storage_id: relocate.storage_id });
+                }
+
+                await showResponse(response);
+            } catch (error) {
+                window.alert(root.dataset.requestFailed);
+            }
         }
 
         root.querySelectorAll('[data-files-pick]').forEach((button) => {
@@ -328,7 +344,11 @@
                     return;
                 }
 
-                show(await (await post(root.dataset.unlinkUrl, {})).text());
+                try {
+                    await showResponse(await post(root.dataset.unlinkUrl, {}));
+                } catch (error) {
+                    window.alert(root.dataset.requestFailed);
+                }
             });
         }
     }

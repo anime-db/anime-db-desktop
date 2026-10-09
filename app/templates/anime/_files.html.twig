@@ -31,7 +31,8 @@
     data-video-extensions="{{ constant('App\\Service\\Media\\MediaExtensions::VIDEO')|join(',') }}"
     data-video-filter-name="{{ 'anime_detail.files_video_filter'|trans }}"
     data-relocate-confirm="{{ 'anime_detail.files_relocate_confirm'|trans }}"
-    data-unlink-confirm="{{ 'anime_detail.files_unlink_confirm'|trans }}">
+    data-unlink-confirm="{{ 'anime_detail.files_unlink_confirm'|trans }}"
+    data-request-failed="{{ 'anime_detail.files_request_failed'|trans }}">
     <h2 class="anime-detail__section-heading">{{ 'anime_detail.files_heading'|trans }}</h2>
 
     {% if files_message|default(null) %}

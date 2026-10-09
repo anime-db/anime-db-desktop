@@ -232,8 +232,10 @@ final class ManualLinkServiceTest extends TestCase
         $oldRoot = $this->makeDir();
         $newRoot = $this->makeDir();
         mkdir($newRoot.'/Trigun');
-        $storage = $this->newStorage($oldRoot);
-        file_put_contents($newRoot.'/desktop.ini', \sprintf("[AnimeDB]\nid=%d\n", $storage->id));
+        $storage = $this->newStorage($oldRoot, withMarker: true);
+        $this->assertSame($storage->id, $this->markers->readMarkerId($oldRoot));
+        rename($oldRoot.'/desktop.ini', $newRoot.'/desktop.ini');
+        copy($newRoot.'/desktop.ini', $oldRoot.'/desktop.ini');
         $anime = $this->newAnime();
 
         $result = $this->link($anime, $newRoot.'/Trigun', $storage->id);
@@ -241,6 +243,23 @@ final class ManualLinkServiceTest extends TestCase
         $this->assertSame(ManualLinkStatus::Linked, $result->status);
         $this->assertSame($newRoot, $storage->getPath());
         $this->assertSame($storage, $anime->getStorage());
+        $this->assertNull($this->markers->readMarkerId($oldRoot));
+        $this->assertSame($storage->id, $this->markers->readMarkerId($newRoot));
+    }
+
+    public function testAPathWithDotSegmentsIsRefusedSoItCannotEscapeTheMarkedStorage(): void
+    {
+        $root = $this->makeDir().'/S';
+        $other = dirname($root).'/O';
+        mkdir($root.'/x', recursive: true);
+        mkdir($other.'/x', recursive: true);
+        $this->newStorage($root, withMarker: true);
+        $anime = $this->newAnime();
+
+        $result = $this->link($anime, $root.'/../O/x');
+
+        $this->assertSame(ManualLinkStatus::InvalidPath, $result->status);
+        $this->assertNull($anime->getStorage());
     }
 
     public function testRelocationConfirmedForAnotherStorageIsNotApplied(): void

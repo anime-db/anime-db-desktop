@@ -76,6 +76,11 @@ final class ManualLinkService
             return ManualLinkResult::refused(ManualLinkStatus::InvalidPath);
         }
 
+        // The marker climb works on the raw string, so a path that could leave a directory sideways is not accepted.
+        if (preg_grep('/^\.\.?$/', preg_split('/[\\\\\/]+/', $selectedPath) ?: []) !== []) {
+            return ManualLinkResult::refused(ManualLinkStatus::InvalidPath);
+        }
+
         $path = LexicalPathNormalizer::normalize($selectedPath);
         if ($path === '') {
             return ManualLinkResult::refused(ManualLinkStatus::InvalidPath);
@@ -108,6 +113,10 @@ final class ManualLinkService
         $storageId = $storage->id ?? throw new \LogicException('A storage must be persisted before an entry can be linked to it.');
         if ($this->jobLock->isLocked(ScanStorageMessage::jobKey($storageId))) {
             return ManualLinkResult::refused(ManualLinkStatus::ScanRunning, $storage);
+        }
+
+        if (!LexicalPathNormalizer::isWithin($normalizedRoot, $path)) {
+            return ManualLinkResult::refused(ManualLinkStatus::InvalidPath, $storage);
         }
 
         $relative = ltrim(substr($path, \strlen($normalizedRoot)), '\\');

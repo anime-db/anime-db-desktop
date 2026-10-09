@@ -54,6 +54,7 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
+use Symfony\Component\Security\Csrf\CsrfToken;
 use Symfony\Component\Security\Csrf\CsrfTokenManagerInterface;
 use Twig\Environment;
 
@@ -69,6 +70,8 @@ final class AnimeFilesLinkControllerTest extends TestCase
 
     /** @var list<string> */
     private array $dirsToClean = [];
+
+    private ?int $csrfAnimeId = null;
 
     protected function setUp(): void
     {
@@ -127,7 +130,12 @@ final class AnimeFilesLinkControllerTest extends TestCase
         );
 
         $csrf = $this->createStub(CsrfTokenManagerInterface::class);
-        $csrf->method('isTokenValid')->willReturn($validCsrf);
+        // Accepts only the token the template issues: id bound to the last created entry, value 'token'.
+        $csrf->method('isTokenValid')->willReturnCallback(
+            fn (CsrfToken $token): bool => $validCsrf
+                && $token->getId() === 'anime_files_'.$this->csrfAnimeId
+                && $token->getValue() === 'token',
+        );
 
         $urls = $this->createStub(UrlGeneratorInterface::class);
         $urls->method('generate')->willReturnCallback(
@@ -162,6 +170,7 @@ final class AnimeFilesLinkControllerTest extends TestCase
         $anime->setTitle($title)->setWatchStatus(WatchStatus::Plan);
         $this->entityManager->persist($anime);
         $this->entityManager->flush();
+        $this->csrfAnimeId = $anime->id;
 
         return $anime;
     }
@@ -270,6 +279,27 @@ final class AnimeFilesLinkControllerTest extends TestCase
         foreach ([
             static fn () => $controller->link($anime, Request::create('/', 'POST', ['path' => '/x'])),
             static fn () => $controller->unlink($anime, Request::create('/', 'POST')),
+        ] as $call) {
+            try {
+                $call();
+                $this->fail('A BadRequestHttpException was expected.');
+            } catch (BadRequestHttpException) {
+                $this->addToAssertionCount(1);
+            }
+        }
+    }
+
+    public function testATokenIssuedForAnotherEntryOrWithAnotherValueIsRejected(): void
+    {
+        $first = $this->newAnime('First');
+        $second = $this->newAnime('Second');
+        $controller = $this->createController();
+
+        foreach ([
+            static fn () => $controller->link($first, Request::create('/', 'POST', ['path' => '/x', '_token' => 'token'])),
+            static fn () => $controller->unlink($first, Request::create('/', 'POST', ['_token' => 'token'])),
+            static fn () => $controller->link($second, Request::create('/', 'POST', ['path' => '/x', '_token' => 'other'])),
+            static fn () => $controller->unlink($second, Request::create('/', 'POST', ['_token' => 'other'])),
         ] as $call) {
             try {
                 $call();

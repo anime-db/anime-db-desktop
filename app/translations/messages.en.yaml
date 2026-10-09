@@ -569,6 +569,7 @@ anime_detail:
     files_unlink_confirm: The entry's link to its files will be removed. The files themselves are not touched. Continue?
     files_unlinked: The link to the files was removed.
     files_relocate_confirm: Storage "%name%" is now located here — update its path?
+    files_request_failed: The request failed. Reload the page and try again.
     files_linked: 'Linked: "%name%" in storage "%storage%".'
     files_linked_top_level: 'Linked to the top-level folder "%name%" (storage "%storage%").'
     files_create_storage: Create storage
