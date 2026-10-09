@@ -82,7 +82,9 @@
 }
 
 .anime-edit__locale {
-    flex: 0 0 90px;
+    flex: 0 0 auto;
+    min-width: 90px;
+    width: calc(10ch + 1.5rem);
 }
 
 .anime-edit__role {
