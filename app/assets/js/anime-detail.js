@@ -313,7 +313,7 @@
                 }
 
                 await showResponse(response);
-            } catch (error) {
+            } catch {
                 window.alert(root.dataset.requestFailed);
             }
         }
@@ -346,7 +346,7 @@
 
                 try {
                     await showResponse(await post(root.dataset.unlinkUrl, {}));
-                } catch (error) {
+                } catch {
                     window.alert(root.dataset.requestFailed);
                 }
             });
