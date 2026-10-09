@@ -133,10 +133,9 @@
             return li;
         }
 
-        async function buildManualEntryItem(item) {
-            const li = document.createElement('li');
-            li.className = 'list-group-item';
-
+        // Link to the new-entry form prefilled with the cleaned name, this storage and the folder;
+        // shared by the zero-candidate item and the "none of these" escape of the confirmation card.
+        async function buildManualEntryLink(item, labelKey, labelParams) {
             const link = document.createElement('a');
             const params = new URLSearchParams({
                 title: item.cleaned_name ?? '',
@@ -144,11 +143,18 @@
                 storage_path: item.storage_path,
             });
             link.href = `${animeNewUrl}?${params.toString()}`;
-            link.textContent = await window.AppTranslations.trans('storage_list.create_entry_link', {
-                title: item.cleaned_name ?? item.storage_path,
-            });
+            link.textContent = await window.AppTranslations.trans(labelKey, labelParams);
 
-            li.appendChild(link);
+            return link;
+        }
+
+        async function buildManualEntryItem(item) {
+            const li = document.createElement('li');
+            li.className = 'list-group-item';
+
+            li.appendChild(await buildManualEntryLink(item, 'storage_list.create_entry_link', {
+                title: item.cleaned_name ?? item.storage_path,
+            }));
 
             return li;
         }
@@ -222,13 +228,22 @@
 
             const path = document.createElement('p');
             path.className = 'mb-2';
-            path.textContent = item.cleaned_name ?? item.storage_path;
+            path.textContent = item.storage_path;
             li.appendChild(path);
+
+            if (item.cleaned_name && item.cleaned_name !== item.storage_path) {
+                const cleaned = document.createElement('p');
+                cleaned.className = 'mb-2 text-body-secondary';
+                cleaned.textContent = await window.AppTranslations.trans('storage_list.cleaned_name_text', {
+                    name: item.cleaned_name,
+                });
+                li.appendChild(cleaned);
+            }
 
             const radios = [];
             const radioGroupName = `storage-scan-confirm-${index}`;
 
-            item.candidates.forEach((candidate, candidateIndex) => {
+            for (const [candidateIndex, candidate] of item.candidates.entries()) {
                 const wrapper = document.createElement('div');
                 wrapper.className = 'form-check';
 
@@ -246,12 +261,18 @@
                 const label = document.createElement('label');
                 label.className = 'form-check-label';
                 label.htmlFor = radio.id;
-                label.textContent = candidate.title;
+                const source = candidate.anime_id !== null
+                    ? await window.AppTranslations.trans('storage_list.candidate_source_catalog')
+                    : (candidate.plugin_name ?? candidate.plugin_id);
+                label.textContent = await window.AppTranslations.trans('storage_list.candidate_label', {
+                    title: candidate.title,
+                    source,
+                });
 
                 wrapper.appendChild(radio);
                 wrapper.appendChild(label);
                 li.appendChild(wrapper);
-            });
+            }
 
             const button = document.createElement('button');
             button.type = 'button';
@@ -267,6 +288,11 @@
                 confirmCandidate(item, item.candidates[Number(checked.value)], li, radios, button);
             });
             li.appendChild(button);
+
+            const none = document.createElement('p');
+            none.className = 'mt-2 mb-0';
+            none.appendChild(await buildManualEntryLink(item, 'storage_list.none_match_link'));
+            li.appendChild(none);
 
             return li;
         }

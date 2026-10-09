@@ -31,6 +31,7 @@ use App\Entity\Enum\SyncReviewItemKind;
 use App\Entity\SyncReviewItem;
 use App\Entity\TvAnime;
 use App\Service\Plugin\InstalledPluginsRegistry;
+use App\Service\Plugin\PluginDisplayName;
 use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Sync\SourceRemovalPlan;
 use App\Twig\PluginNameExtension;
@@ -73,7 +74,7 @@ final class SyncReviewTemplateRenderingTest extends KernelTestCase
         self::bootKernel();
         $registry = new InstalledPluginsRegistry($this->pluginsDir, new PluginsConfigStore($this->pluginsDir.'/plugins.json'), new NullLogger());
         $registry->reconcile();
-        self::getContainer()->set(PluginNameExtension::class, new PluginNameExtension($registry));
+        self::getContainer()->set(PluginNameExtension::class, new PluginNameExtension(new PluginDisplayName($registry)));
 
         $request = Request::create('/settings/sync-review');
         $request->setSession(new Session(new MockArraySessionStorage()));

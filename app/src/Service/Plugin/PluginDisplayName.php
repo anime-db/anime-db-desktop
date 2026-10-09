@@ -25,34 +25,28 @@
 
 declare(strict_types=1);
 
-namespace App\Twig;
+namespace App\Service\Plugin;
 
-use App\Service\Plugin\PluginDisplayName;
-use Twig\Extension\AbstractExtension;
-use Twig\TwigFunction;
+use App\Entity\ValueObject\PluginId;
 
 /**
- * `plugin_name()` turns a plugin id stored in a payload or a snapshot row into the display name
- * from the plugin's manifest. A plugin that is no longer installed has no manifest to read, and an
- * id that is not a valid plugin id (e.g. a non-plugin participant) has none either, so both fall
- * back to the raw value.
+ * Turns a plugin id into the display name from the plugin's manifest. A plugin that is no longer
+ * installed has no manifest to read, and an id that is not a valid plugin id (e.g. a non-plugin
+ * participant) has none either, so both fall back to the raw value.
  */
-final class PluginNameExtension extends AbstractExtension
+final class PluginDisplayName
 {
     public function __construct(
-        private readonly PluginDisplayName $displayName,
+        private readonly InstalledPluginsRegistry $installedPlugins,
     ) {
-    }
-
-    public function getFunctions(): array
-    {
-        return [
-            new TwigFunction('plugin_name', $this->name(...)),
-        ];
     }
 
     public function name(string $pluginId): string
     {
-        return $this->displayName->name($pluginId);
+        try {
+            return $this->installedPlugins->get(new PluginId($pluginId))?->manifest->name ?? $pluginId;
+        } catch (\InvalidArgumentException) {
+            return $pluginId;
+        }
     }
 }
