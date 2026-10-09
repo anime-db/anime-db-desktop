@@ -344,6 +344,8 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
 
         $full = $twig->render('_empty_state.html.twig', ['icon' => 'display', 'text' => 'Nothing here', 'hint' => 'Why', 'action_url' => '/settings/market', 'action_label' => 'Go']);
         $this->assertStringContainsString('empty-state__hint', $full);
+        $this->assertStringContainsString('Why', $full);
+        $this->assertStringContainsString('Go', $full);
         $this->assertStringContainsString('href="/settings/market"', $full);
     }
 

@@ -121,7 +121,7 @@ download_status:
     failed: Ошибка
 
 settings:
-    title: Настройки — AnimeDB
+    title: Интерфейс — Настройки — AnimeDB
     heading: Интерфейс
     language_label: Язык интерфейса
     language_unavailable_option: '%language% — недоступно'
@@ -176,7 +176,7 @@ settings_labels:
     delete_button: Удалить
 
 settings_plugin_widgets:
-    title: Виджеты плагинов — Настройки — AnimeDB
+    title: Виджеты — Настройки — AnimeDB
     heading: Виджеты
     busy_retry_error: Настройки плагинов сейчас заняты другим обновлением. Повторите попытку через мгновение.
     plugin_column: Плагин
@@ -218,7 +218,7 @@ settings_plugins:
     sync_off: выкл.
     sync_toggle: Синхронизация
     busy_retry_error: Настройки плагинов сейчас заняты другим обновлением. Повторите попытку через мгновение.
-    title: Плагины — Настройки — AnimeDB
+    title: Установленные — Настройки — AnimeDB
     installed_heading: Установленные
     installed_empty: Плагинов пока не установлено.
     open_market_link: Открыть маркет
@@ -260,7 +260,7 @@ settings_plugins_install:
     title: Установка из ZIP — Настройки — AnimeDB
 
 settings_market:
-    title: Маркет плагинов — Настройки — AnimeDB
+    title: Маркет — Настройки — AnimeDB
     heading: Маркет
     empty: В маркете пока нет ни одного плагина.
     filter_filler_empty: Среди плагинов маркета пока нет ни одного источника.
@@ -306,7 +306,7 @@ settings_plugin_page:
     sync_seed_started_link: Перейти к обзору синхронизации
 
 settings_proxy:
-    title: Прокси-сервер — Настройки — AnimeDB
+    title: Прокси и входящие соединения — Настройки — AnimeDB
     heading: Прокси и входящие соединения
     save_success: Настройки прокси сохранены.
     torrent_proxy_error: Настройки сохранены, но не удалось применить SOCKS5-прокси к торрент-клиенту. Загрузки остаются на паузе, пока прокси не будет подтверждён.
@@ -341,7 +341,7 @@ settings_proxy:
     incoming_connections_socks5_hint: Под SOCKS5-прокси входящие подключения не работают независимо от правил брандмауэра, поэтому включение недоступно. Уже включённую настройку можно выключить в любой момент.
 
 settings_backup:
-    title: Резервное копирование каталога — Настройки — AnimeDB
+    title: Экспорт и импорт — Настройки — AnimeDB
     heading: Экспорт и импорт
     unavailable_outside_app: Это действие доступно только в приложении AnimeDB.
     staged_import_banner: 'Импорт архива «%name%» подготовлен %date% и применится при следующем запуске приложения.'

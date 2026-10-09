@@ -121,7 +121,7 @@ download_status:
     failed: Failed
 
 settings:
-    title: Settings — AnimeDB
+    title: Interface — Settings — AnimeDB
     heading: Interface
     language_label: Interface language
     language_unavailable_option: '%language% — unavailable'
@@ -176,7 +176,7 @@ settings_labels:
     delete_button: Delete
 
 settings_plugin_widgets:
-    title: Plugin widgets — Settings — AnimeDB
+    title: Widgets — Settings — AnimeDB
     heading: Widgets
     busy_retry_error: Plugin settings are busy with another update right now. Please try again in a moment.
     plugin_column: Plugin
@@ -218,7 +218,7 @@ settings_plugins:
     sync_off: off
     sync_toggle: Synchronization
     busy_retry_error: Plugin settings are busy with another update right now. Please try again in a moment.
-    title: Plugins — Settings — AnimeDB
+    title: Installed — Settings — AnimeDB
     installed_heading: Installed
     installed_empty: No plugins installed yet.
     open_market_link: Open the market
@@ -260,7 +260,7 @@ settings_plugins_install:
     title: Install from ZIP — Settings — AnimeDB
 
 settings_market:
-    title: Plugin market — Settings — AnimeDB
+    title: Market — Settings — AnimeDB
     heading: Market
     empty: The market has no plugins yet.
     filter_filler_empty: No plugin sources are available in the market right now.
@@ -306,7 +306,7 @@ settings_plugin_page:
     sync_seed_started_link: Go to sync review
 
 settings_proxy:
-    title: Proxy server — Settings — AnimeDB
+    title: Proxy and incoming connections — Settings — AnimeDB
     heading: Proxy and incoming connections
     save_success: Proxy settings have been saved.
     torrent_proxy_error: Settings were saved, but the SOCKS5 proxy could not be applied to the torrent client. Torrents stay paused until the proxy is confirmed.
@@ -341,7 +341,7 @@ settings_proxy:
     incoming_connections_socks5_hint: Incoming connections do not work through a SOCKS5 proxy regardless of firewall rules, so enabling is unavailable. An already-enabled setting can still be turned off at any time.
 
 settings_backup:
-    title: Catalog backup — Settings — AnimeDB
+    title: Export and import — Settings — AnimeDB
     heading: Export and import
     unavailable_outside_app: This action is only available inside the AnimeDB app.
     staged_import_banner: 'The archive "%name%" was staged for import on %date% and will be applied on the next app start.'

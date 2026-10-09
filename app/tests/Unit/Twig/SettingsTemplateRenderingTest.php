@@ -688,7 +688,7 @@ final class SettingsTemplateRenderingTest extends KernelTestCase
         $twig = self::getContainer()->get('twig');
         $html = $twig->render('settings/proxy/index.html.twig', ['settings' => $settings, 'saved' => false]);
 
-        $this->assertStringContainsString('Прокси-сервер', $html);
+        $this->assertStringContainsString('Прокси и входящие соединения', $html);
         $this->assertStringContainsString('proxy.example', $html);
     }
 
