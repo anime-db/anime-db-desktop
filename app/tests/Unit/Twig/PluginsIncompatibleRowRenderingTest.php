@@ -83,6 +83,17 @@ final class PluginsIncompatibleRowRenderingTest extends KernelTestCase
         );
     }
 
+    public function testRemoveFormAsksForConfirmationNamingThePlugin(): void
+    {
+        $html = $this->render($this->plugin(true), []);
+
+        $matched = preg_match('#<form[^>]*action="/settings/plugins/animedb-shikimori/remove"[^>]*>#', $html, $matches);
+        self::assertSame(1, $matched, 'Expected the remove form to be present.');
+        self::assertStringContainsString('data-confirm="', $matches[0]);
+        self::assertStringContainsString('Shikimori', $matches[0]);
+        self::assertStringContainsString('is kept', $matches[0]);
+    }
+
     /**
      * The page navigation also links to the market, so match the link by its text.
      */

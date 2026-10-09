@@ -30,8 +30,13 @@ namespace App\Tests\Unit\Twig;
 use App\Entity\Enum\SyncReviewItemKind;
 use App\Entity\SyncReviewItem;
 use App\Entity\TvAnime;
+use App\Service\Plugin\InstalledPluginsRegistry;
+use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Sync\SourceRemovalPlan;
+use App\Twig\PluginNameExtension;
+use Psr\Log\NullLogger;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
+use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\HttpFoundation\Session\Session;
@@ -40,9 +45,35 @@ use Twig\Environment;
 
 final class SyncReviewTemplateRenderingTest extends KernelTestCase
 {
-    private function render(SyncReviewItemKind $kind, bool $withAnime = true, ?SourceRemovalPlan $plan = null): string
+    private string $pluginsDir;
+
+    protected function setUp(): void
+    {
+        $this->pluginsDir = sys_get_temp_dir().'/anime-sync-review-plugins-'.uniqid();
+        mkdir($this->pluginsDir.'/animedb-shikimori', recursive: true);
+        file_put_contents($this->pluginsDir.'/animedb-shikimori/manifest.json', (string) json_encode([
+            'id' => 'animedb-shikimori',
+            'name' => 'Shikimori Sync',
+            'version' => '1.0.0',
+            'type' => 'integration',
+            'features' => ['widget' => true],
+            'require' => ['core' => '>=2.0.0', 'php' => '>=8.2'],
+        ]));
+    }
+
+    protected function tearDown(): void
+    {
+        parent::tearDown();
+        (new Filesystem())->remove($this->pluginsDir);
+    }
+
+    /** @param array<int, array<string, mixed>> $needsCorrection */
+    private function render(SyncReviewItemKind $kind, bool $withAnime = true, ?SourceRemovalPlan $plan = null, array $needsCorrection = []): string
     {
         self::bootKernel();
+        $registry = new InstalledPluginsRegistry($this->pluginsDir, new PluginsConfigStore($this->pluginsDir.'/plugins.json'), new NullLogger());
+        $registry->reconcile();
+        self::getContainer()->set(PluginNameExtension::class, new PluginNameExtension($registry));
 
         $request = Request::create('/settings/sync-review');
         $request->setSession(new Session(new MockArraySessionStorage()));
@@ -63,7 +94,7 @@ final class SyncReviewTemplateRenderingTest extends KernelTestCase
             'items' => [$item],
             'duplicateClusters' => [20 => []],
             'deletionDetails' => [20 => ['anime' => $withAnime ? $anime : null, 'deletedFrom' => 'animedb-shikimori', 'stillPresentOn' => ['animedb-mal'], 'hasStorage' => true, 'hasFinishedDownloads' => true, 'sourceRemoval' => $plan ?? new SourceRemovalPlan()]],
-            'needsCorrectionDetails' => [],
+            'needsCorrectionDetails' => $needsCorrection,
         ]);
     }
 
@@ -109,5 +140,43 @@ final class SyncReviewTemplateRenderingTest extends KernelTestCase
     public function testNoDeleteActionWhenTheEntryIsAlreadyGone(): void
     {
         $this->assertStringNotContainsString('delete-anime', $this->render(SyncReviewItemKind::DeletedFromSource, withAnime: false));
+    }
+
+    public function testAnInstalledSourceIsShownByItsManifestNameAndAnUninstalledOneByItsId(): void
+    {
+        $html = $this->render(SyncReviewItemKind::DeletionConflict);
+        $this->assertStringContainsString('Shikimori Sync', $html);
+        $this->assertStringNotContainsString('animedb-shikimori', $html);
+        $this->assertStringContainsString('animedb-mal', $html);
+
+        $this->assertStringContainsString('Shikimori Sync', $this->render(SyncReviewItemKind::DeletedFromSource));
+    }
+
+    public function testCandidatesAreLabelledWithThePluginNameOrLocal(): void
+    {
+        $candidates = [
+            ['participant_id' => 'animedb-shikimori', 'status' => 'watching', 'watched_episodes' => 3, 'updated_at' => null],
+            ['participant_id' => 'animedb-mal', 'status' => 'completed', 'watched_episodes' => 5, 'updated_at' => null],
+            ['participant_id' => 'local', 'status' => 'planned', 'watched_episodes' => null, 'updated_at' => null],
+        ];
+        $html = $this->render(SyncReviewItemKind::NeedsCorrection, needsCorrection: [20 => ['anime' => null, 'candidates' => $candidates, 'winnerStatus' => null, 'winnerWatchedEpisodes' => null]]);
+
+        $this->assertStringContainsString('<bdi>Shikimori Sync</bdi>', $html);
+        $this->assertStringContainsString('<bdi>animedb-mal</bdi>', $html);
+        $this->assertStringContainsString('<bdi>Local</bdi>', $html);
+        $this->assertStringContainsString('value="animedb-shikimori"', $html);
+    }
+
+    public function testResolveButtonSaysWhatItDoesForEachKind(): void
+    {
+        foreach ([SyncReviewItemKind::DeletedFromSource, SyncReviewItemKind::DeletionConflict] as $kind) {
+            $html = $this->render($kind);
+            $this->assertStringContainsString('Keep in catalog', $html);
+            $this->assertStringNotContainsString('Not a duplicate', $html);
+        }
+
+        $html = $this->render(SyncReviewItemKind::PotentialDuplicate);
+        $this->assertStringContainsString('Not a duplicate', $html);
+        $this->assertStringNotContainsString('Keep in catalog', $html);
     }
 }

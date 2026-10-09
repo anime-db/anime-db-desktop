@@ -37,6 +37,12 @@ $danger: #b00;
 
 $body-color: #333;
 $border-color: #ddd;
+// Рамка полей ввода — отдельно от $border-color (разделителей): 1.36:1 к белому у #ddd делало
+// пустые поля почти невидимыми. #868e96 даёт 3.32:1 к белому (WCAG 1.4.11, ≥3:1). Значение —
+// CSS-переменная, чтобы тёмная тема подменила его в _theme.scss (там 3.29:1 к #212529).
+$adb-input-border-color: #868e96;
+$adb-input-border-color-dark: #6c757d;
+$input-border-color: var(--adb-input-border-color);
 
 // Bootstrap's default heading scale (h1 40px, h2 32px, ...) reads as oversized in a desktop app
 // whose window starts at 1000px — e.g. the "Plugin widgets" h1 and "Anime detail page" h2 on the
