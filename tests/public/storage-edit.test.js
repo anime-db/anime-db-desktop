@@ -50,3 +50,38 @@ test('storage-edit toggles required on the path field by type', () => {
     select.dispatchEvent(new Event('change'));
     expect(path.required).toBe(true);
 });
+
+test('storage-edit disables and clears the path for a not-applicable type and restores it on return', () => {
+    document.body.innerHTML = `
+        <form data-control="storage-edit">
+            <select id="storage-edit-type" data-path-not-applicable-types="video">
+                <option value="external-r">external-r</option>
+                <option value="video">video</option>
+            </select>
+            <input type="text" id="storage-edit-path" value="D:\\Discs">
+            <p id="storage-edit-path-not-applicable" hidden></p>
+        </form>
+    `;
+    jest.isolateModules(() => {
+        require('../../app/assets/js/storage-edit.js');
+    });
+    document.body.dispatchEvent(new CustomEvent('htmx:load', { bubbles: true, detail: { elt: document.body } }));
+
+    const select = document.getElementById('storage-edit-type');
+    const path = document.getElementById('storage-edit-path');
+    const hint = document.getElementById('storage-edit-path-not-applicable');
+    expect(path.disabled).toBe(false);
+    expect(hint.hidden).toBe(true);
+
+    select.value = 'video';
+    select.dispatchEvent(new Event('change'));
+    expect(path.disabled).toBe(true);
+    expect(path.value).toBe('');
+    expect(hint.hidden).toBe(false);
+
+    select.value = 'external-r';
+    select.dispatchEvent(new Event('change'));
+    expect(path.disabled).toBe(false);
+    expect(path.value).toBe('D:\\Discs');
+    expect(hint.hidden).toBe(true);
+});

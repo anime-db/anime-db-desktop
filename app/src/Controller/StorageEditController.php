@@ -192,6 +192,10 @@ final class StorageEditController
                 array_filter(StorageType::cases(), static fn (StorageType $type): bool => !$type->isPathRequired()),
                 'value',
             ),
+            'pathNotApplicableTypes' => array_column(
+                array_filter(StorageType::cases(), static fn (StorageType $type): bool => !$type->isReadable()),
+                'value',
+            ),
             'isPreset' => $storage->id !== null && $storage->id === $this->settings->getPresetDownloadsStorageId(),
         ]));
     }

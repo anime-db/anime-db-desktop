@@ -29,6 +29,7 @@ namespace App\Tests\Unit\Twig;
 
 use App\Entity\Enum\StorageType;
 use App\Entity\Storage;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RequestStack;
@@ -122,6 +123,7 @@ final class StorageTemplatesRenderingTest extends KernelTestCase
             'types' => array_column(StorageType::cases(), 'value'),
             'nonWritableTypes' => [],
             'pathOptionalTypes' => ['external-r', 'video'],
+            'pathNotApplicableTypes' => ['video'],
             'isPreset' => true,
         ]);
 
@@ -145,6 +147,7 @@ final class StorageTemplatesRenderingTest extends KernelTestCase
             'types' => array_column(StorageType::cases(), 'value'),
             'nonWritableTypes' => [],
             'pathOptionalTypes' => ['external-r', 'video'],
+            'pathNotApplicableTypes' => ['video'],
             'isPreset' => false,
         ]);
 
@@ -168,6 +171,7 @@ final class StorageTemplatesRenderingTest extends KernelTestCase
             'types' => array_column(StorageType::cases(), 'value'),
             'nonWritableTypes' => ['external-r', 'video'],
             'pathOptionalTypes' => ['external-r', 'video'],
+            'pathNotApplicableTypes' => ['video'],
             'isPreset' => true,
         ]);
 
@@ -192,9 +196,85 @@ final class StorageTemplatesRenderingTest extends KernelTestCase
             'types' => array_column(StorageType::cases(), 'value'),
             'nonWritableTypes' => ['external-r', 'video'],
             'pathOptionalTypes' => ['external-r', 'video'],
+            'pathNotApplicableTypes' => ['video'],
             'isPreset' => true,
         ]);
 
         self::assertMatchesRegularExpression('/alert-danger[^"]*"[^>]*>[^<]*AnimeDB/s', $html);
+    }
+
+    /**
+     * @return iterable<string, array{string, bool, bool, bool}> type, disabled, required, hint visible
+     */
+    public static function pathStateProvider(): iterable
+    {
+        yield 'video' => ['video', true, false, true];
+        yield 'external-r' => ['external-r', false, false, false];
+        yield 'folder' => ['folder', false, true, false];
+        yield 'external' => ['external', false, true, false];
+    }
+
+    #[DataProvider('pathStateProvider')]
+    public function testStorageEditPathFieldState(string $type, bool $disabled, bool $required, bool $hintVisible): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession('/storage/3/edit');
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('storage/edit.html.twig', [
+            'storage' => $this->makeStorage('AnimeDB', 3),
+            'name' => 'AnimeDB',
+            'path' => '/some/path',
+            'type' => $type,
+            'error' => null,
+            'errorParams' => [],
+            'types' => array_column(StorageType::cases(), 'value'),
+            'nonWritableTypes' => [],
+            'pathOptionalTypes' => ['external-r', 'video'],
+            'pathNotApplicableTypes' => ['video'],
+            'isPreset' => false,
+        ]);
+
+        $input = self::firstMatch('/<input[^>]*id="storage-edit-path"[^>]*>/', $html);
+        self::assertSame($disabled, (bool) preg_match('/\bdisabled\b/', $input));
+        self::assertSame($required, (bool) preg_match('/\brequired\b/', $input));
+        self::assertSame($disabled, !str_contains($input, '/some/path'));
+        $hint = self::firstMatch('/<div id="storage-edit-path-not-applicable"[^>]*>/', $html);
+        self::assertSame($hintVisible, !str_contains($hint, 'hidden'));
+    }
+
+    #[DataProvider('pathStateProvider')]
+    public function testStorageNewPathFieldState(string $type, bool $disabled, bool $required, bool $hintVisible): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession('/storage/new');
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('storage/new.html.twig', [
+            'name' => 'AnimeDB',
+            'path' => '/some/path',
+            'type' => $type,
+            'error' => null,
+            'types' => array_column(StorageType::cases(), 'value'),
+            'path_optional_types' => ['external-r', 'video'],
+            'path_not_applicable_types' => ['video'],
+            'writable_types' => ['folder', 'external'],
+        ]);
+
+        $input = self::firstMatch('/<input[^>]*id="storage-new-path"[^>]*>/', $html);
+        self::assertSame($disabled, (bool) preg_match('/\bdisabled\b/', $input));
+        self::assertSame($required, (bool) preg_match('/\brequired\b/', $input));
+        self::assertSame($disabled, !str_contains($input, '/some/path'));
+        $hint = self::firstMatch('/<div id="storage-new-path-not-applicable"[^>]*>/', $html);
+        self::assertSame($hintVisible, !str_contains($hint, 'hidden'));
+    }
+
+    private static function firstMatch(string $pattern, string $subject): string
+    {
+        self::assertSame(1, preg_match($pattern, $subject, $matches));
+
+        return (string) ($matches[0] ?? '');
     }
 }

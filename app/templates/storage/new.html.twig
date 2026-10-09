@@ -40,7 +40,7 @@
 
             <div class="mb-3">
                 <label for="storage-new-type" class="form-label">{{ 'storage_new.field_type'|trans }}</label>
-                <select id="storage-new-type" name="type" data-writable-types="{{ writable_types|join(',') }}" data-path-optional-types="{{ path_optional_types|join(',') }}" class="form-select">
+                <select id="storage-new-type" name="type" data-writable-types="{{ writable_types|join(',') }}" data-path-optional-types="{{ path_optional_types|join(',') }}" data-path-not-applicable-types="{{ path_not_applicable_types|join(',') }}" class="form-select">
                     {% for value in types %}
                         <option value="{{ value }}"{% if value == type %} selected{% endif %}>{{ ('storage_type.' ~ value)|trans }}</option>
                     {% endfor %}
@@ -50,9 +50,10 @@
             <div class="mb-3">
                 <label for="storage-new-path" class="form-label">{{ 'storage_new.field_path'|trans }}</label>
                 <div class="d-flex gap-2">
-                    <input type="text" id="storage-new-path" name="path" value="{{ path }}"{% if type not in path_optional_types %} required{% endif %} class="form-control">
+                    <input type="text" id="storage-new-path" name="path" value="{{ type in path_not_applicable_types ? '' : path }}"{% if type in path_not_applicable_types %} disabled{% elseif type not in path_optional_types %} required{% endif %} class="form-control">
                     <button type="button" id="storage-new-pick-folder" class="btn btn-outline-secondary text-nowrap" hidden>{{ 'storage_new.pick_folder_button'|trans }}</button>
                 </div>
+                <div id="storage-new-path-not-applicable" class="form-text"{% if type not in path_not_applicable_types %} hidden{% endif %}>{{ 'storage_new.path_not_applicable_hint'|trans }}</div>
             </div>
 
             <button type="submit" class="btn btn-primary">{{ 'storage_new.submit_button'|trans }}</button>

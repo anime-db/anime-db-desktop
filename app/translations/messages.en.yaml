@@ -649,6 +649,7 @@ storage_new:
     field_type: Type
     field_path: Path
     pick_folder_button: Choose folder…
+    path_not_applicable_hint: This media type has no file path, so none is stored.
     submit_button: Create
     error_invalid: Enter a valid name, path, and storage type.
     skip_link: Skip
@@ -737,6 +738,7 @@ storage_edit:
     error_preset_path: 'Cannot change the path of storage "%name%": it is used as the default downloads storage.'
     error_preset_type: 'Cannot make storage "%name%" non-writable: it is used as the default downloads storage.'
     error_unfinished_downloads: 'Cannot change storage "%name%": it still has unfinished or failed downloads. Remove them to free the storage.'
+    path_not_applicable_hint: This media type has no file path, so none is stored.
     preset_path_hint: The default downloads storage's path cannot be changed.
 
 plugin_widget:

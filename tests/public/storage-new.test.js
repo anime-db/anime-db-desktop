@@ -128,3 +128,35 @@ test('choosing "cancel" from the folder dialog leaves the path field untouched',
 
     expect(document.getElementById('storage-new-path').value).toBe('/keep/me');
 });
+
+test('a not-applicable type disables and clears the path field, returning restores the typed value', () => {
+    document.body.innerHTML = `
+        <form data-control="storage-new">
+            <select id="storage-new-type" data-path-not-applicable-types="video">
+                <option value="local">local</option>
+                <option value="video">video</option>
+            </select>
+            <input type="text" id="storage-new-path" value="">
+            <button type="button" id="storage-new-pick-folder" hidden></button>
+            <p id="storage-new-path-not-applicable" hidden></p>
+        </form>
+    `;
+    loadStorageNewModule();
+
+    const typeSelect = document.getElementById('storage-new-type');
+    const path = document.getElementById('storage-new-path');
+    const hint = document.getElementById('storage-new-path-not-applicable');
+    path.value = '/media/anime';
+
+    typeSelect.value = 'video';
+    typeSelect.dispatchEvent(new Event('change'));
+    expect(path.disabled).toBe(true);
+    expect(path.value).toBe('');
+    expect(hint.hidden).toBe(false);
+
+    typeSelect.value = 'local';
+    typeSelect.dispatchEvent(new Event('change'));
+    expect(path.disabled).toBe(false);
+    expect(path.value).toBe('/media/anime');
+    expect(hint.hidden).toBe(true);
+});
