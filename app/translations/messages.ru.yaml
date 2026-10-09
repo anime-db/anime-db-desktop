@@ -158,12 +158,12 @@ settings_search_index:
     heading: Поисковый индекс
     reindex_button: Переиндексировать
     reindex_success: Поисковый индекс успешно перестроен.
-    reindex_error: Не удалось перестроить поисковый индекс. Убедитесь, что Meilisearch запущен.
+    reindex_error: Не удалось перестроить поисковый индекс. Перезапустите приложение.
 
 settings_labels:
     title: Метки — Настройки — AnimeDB
     heading: Метки
-    description: Метки — ваши ярлыки для записей каталога. Вешаются на карточке аниме, по ним можно фильтровать каталог.
+    description: Метки — ваши ярлыки для записей каталога. Вешаются на странице записи, по ним можно фильтровать каталог.
     empty_name_error: Имя метки не может быть пустым.
     name_placeholder: Название метки
     add_button: Добавить
@@ -182,7 +182,7 @@ settings_plugin_widgets:
     plugin_column: Плагин
     widget_column: Виджет
     active_column: Включён
-    slot_column: Место на карточке
+    slot_column: Место на странице записи
     slot_bottom: Внизу
     slot_side: Справа
     active_count: 'Активно виджетов: %count% из %limit%.'
@@ -200,12 +200,12 @@ settings_plugin_widgets:
 settings_sync_review:
     title: Требует внимания — Настройки — AnimeDB
     heading: Требует внимания
-    empty: Нет элементов, требующих внимания.
+    empty: Нет пунктов, требующих внимания.
     empty_hint: Сюда попадают записи, синхронизация которых требует вашего решения.
     kind_potential_duplicate: Возможный дубликат
     kind_deleted_from_source: 'Удалено из списка на источнике «%source%»'
     kind_deletion_conflict: 'Конфликт: удалено на «%source%», но ещё в списке на: %others%'
-    kind_needs_correction: 'Конфликт синхронизации: разные значения прогресса просмотра у участников'
+    kind_needs_correction: 'Конфликт синхронизации: разные значения прогресса просмотра в источниках'
     participant_local: Локально
     candidate_updated_at: 'обновлено %date%'
     auto_applied_winner: разрешено автоматически
@@ -228,8 +228,8 @@ settings_plugins:
     version_column: Версия
     type_column: Тип
     languages_column: Языки
-    missing_fallback_locale: 'Плагин не поставляет текущую локаль интерфейса и её фолбэк — в его части интерфейса будут показаны сырые ключи перевода.'
-    translation_coverage_column: Покрытие интерфейса
+    missing_fallback_locale: 'Плагин не поддерживает текущий язык приложения и язык по умолчанию — часть интерфейса плагина останется без перевода.'
+    translation_coverage_column: Перевод
     translation_coverage_badge: '%locale%: переведено %covered% из %total% строк интерфейса приложения'
     actions_column: Действия
     settings_link: Настройки
@@ -244,10 +244,10 @@ settings_plugins:
     update_success: 'Плагин «%pluginId%» успешно обновлён. Настройки плагина сохранены.'
     install_error_no_file: Выберите ZIP-архив плагина для установки.
     install_error_not_zip: Выберите файл с расширением .zip.
-    install_error_incompatible_core: 'Плагин требует версию ядра "%requiredCore%", установлена версия "%currentCore%".'
-    install_error_incompatible_plugin_contracts: 'Плагин требует версию контракта плагинов "%requiredPluginContracts%", установлена версия "%installedPluginContracts%".'
+    install_error_incompatible_core: 'Плагин требует другую версию AnimeDB (нужна %requiredCore%, установлена %currentCore%).'
+    install_error_incompatible_plugin_contracts: 'Плагин несовместим с этой версией AnimeDB (нужна версия интерфейса плагинов %requiredPluginContracts%, установлена %installedPluginContracts%).'
     install_error_syntax: 'Установка прервана: в PHP-файлах плагина есть синтаксические ошибки:'
-    install_error_invalid_manifest: Некорректный или отсутствующий manifest.json в архиве.
+    install_error_invalid_manifest: Архив не похож на плагин AnimeDB.
     install_error_generic: Не удалось распаковать или установить архив. Убедитесь, что это корректный ZIP-архив плагина.
     status_column: Статус
     status_enabled: Включён
@@ -272,16 +272,16 @@ settings_market:
     description_column: Описание
     type_column: Тип
     version_column: Версия
-    translation_coverage_column: Покрытие интерфейса
+    translation_coverage_column: Перевод
     translation_coverage_badge: 'Переведено %percent%% строк интерфейса приложения'
     locales_column: Языки
     locale_missing_warning: Интерфейс этого плагина будет не на текущем языке приложения.
-    locale_missing_fallback_warning: Плагин не поддерживает текущий язык приложения и язык, на который он переключается по умолчанию, — вместо перевода вы увидите сырые идентификаторы ключей.
+    locale_missing_fallback_warning: Плагин не поддерживает текущий язык приложения и язык по умолчанию — часть интерфейса плагина останется без перевода.
     incompatible_plugins_summary: Часть плагинов недоступна для вашей версии приложения. Обновление приложения может сделать их доступными.
     actions_column: Действия
     already_installed: Уже установлен
-    incompatible_core: 'Нужна версия ядра, совместимая с "%requiredCore%".'
-    incompatible_plugin_contracts: Нет ни одной опубликованной версии, совместимой с версией контракта плагинов, установленной в этом приложении.
+    incompatible_core: 'Плагин требует другую версию AnimeDB (нужна %requiredCore%).'
+    incompatible_plugin_contracts: Нет ни одной опубликованной версии плагина, совместимой с этой версией AnimeDB.
     install_button: Установить
     install_success: 'Плагин «%pluginId%» успешно установлен.'
     update_button: Обновить
@@ -289,13 +289,14 @@ settings_market:
     registry_unavailable: Каталог маркета ещё не готов. Он появится после ближайшего фонового обновления.
     install_error_registry_unavailable: Каталог маркета ещё не готов. Попробуйте ещё раз позже.
     install_error_unknown_plugin: Этот плагин больше не числится в каталоге маркета.
-    install_error_incompatible_core: 'Плагин требует версию ядра "%requiredCore%", установлена версия "%currentCore%".'
-    install_error_incompatible_plugin_contracts: 'Ни одна опубликованная версия этого плагина не совместима с установленной версией контракта плагинов "%currentPluginContracts%".'
+    install_error_incompatible_core: 'Плагин требует другую версию AnimeDB (нужна %requiredCore%, установлена %currentCore%).'
+    install_error_incompatible_plugin_contracts: 'Ни одна опубликованная версия этого плагина не совместима с этой версией AnimeDB (версия интерфейса плагинов %currentPluginContracts%).'
     install_error_download_failed: Не удалось скачать архив плагина ни с одного из зеркал маркета.
     install_error_already_installed: 'Плагин «%pluginId%» уже установлен.'
-    install_error_invalid_manifest: Некорректный manifest.json в архиве плагина.
+    install_error_invalid_manifest: Архив не похож на плагин AnimeDB.
     install_error_generic: Не удалось распаковать или установить архив плагина.
     refresh_button: Проверить обновления
+    load_catalog_button: Загрузить каталог
     refresh_checking: Проверяю обновления…
     refresh_failed: Не удалось обновить каталог маркета. Попробуйте ещё раз позже.
     refresh_timeout: Проверка обновлений всё ещё выполняется или прервалась. Попробуйте ещё раз позже.
@@ -304,8 +305,8 @@ settings_plugin_page:
     title_suffix: Настройки плагина — AnimeDB
     render_error: Не удалось отобразить страницу настроек этого плагина. Попробуйте ещё раз позже.
     oauth_fixed_port_warning: 'Вход через OAuth для некоторых плагинов недоступен: порт 41813 занят другой программой.'
-    sync_seed_started: Первоначальная синхронизация с этим плагином поставлена в очередь. Если аккаунт не был подключён, подключите его в настройках плагина и затем снова откройте эту страницу. Результаты появятся на странице обзора синхронизации.
-    sync_seed_started_link: Перейти к обзору синхронизации
+    sync_seed_started: Первоначальная синхронизация с этим плагином поставлена в очередь. Если аккаунт не был подключён, подключите его в настройках плагина и затем снова откройте эту страницу. Результаты появятся в разделе «Требует внимания».
+    sync_seed_started_link: Перейти в «Требует внимания»
 
 settings_proxy:
     title: Прокси и входящие соединения — Настройки — AnimeDB
@@ -385,7 +386,7 @@ settings_backup:
     import_progress_media: 'Распаковка медиафайлов: %current%/%total%'
     import_done_text: Архив каталога принят для импорта.
     import_error_unreadable: 'Не удалось прочитать выбранный файл «%path%» как архив.'
-    import_error_missing_manifest: 'В выбранном архиве «%path%» нет валидного манифеста, импорт невозможен.'
+    import_error_missing_manifest: 'Выбранный архив «%path%» не похож на резервную копию каталога, импорт невозможен.'
     import_error_unsupported_format_version: 'Выбранный архив «%path%» создан несовместимой версией приложения.'
     import_error_missing_database: 'В выбранном архиве «%path%» нет базы данных каталога.'
     import_error_unsafe_entry: 'Выбранный архив «%path%» содержит небезопасные пути файлов и был отклонён.'
@@ -402,7 +403,7 @@ settings_backup:
 
 catalog_stage:
     error_unreadable: 'Не удалось прочитать архив каталога «%path%».'
-    error_missing_manifest: 'В архиве каталога «%path%» нет валидного manifest.json.'
+    error_missing_manifest: 'Архив «%path%» не похож на резервную копию каталога.'
     error_unsupported_format_version: 'Архив каталога «%path%» имеет неподдерживаемую версию формата (%formatVersion%).'
     error_missing_database: 'В архиве каталога «%path%» нет data.db.'
     error_unsafe_entry: 'Архив каталога «%path%» содержит небезопасный путь записи «%entry%».'
@@ -432,7 +433,7 @@ queue_purge:
     success: 'Очередь сообщений очищена (удалено: %count%).'
 
 anime_list:
-    title: Список — AnimeDB
+    title: Каталог — AnimeDB
     empty: Список пуст.
     error: Не удалось загрузить список.
     search_placeholder: Поиск по названию…
@@ -463,7 +464,7 @@ anime_list:
     filter_no_rating: Без оценки
     filter_no_date_premiere: Без даты премьеры
     filter_decade_label: '%decade%-е'
-    filter_value_instant_hint: Показать только это значение — применяется сразу
+    filter_value_instant_hint: Применить сразу вместе с отмеченными
     filter_value_accumulate_hint: 'Отметить, чтобы применить позже кнопкой «Отфильтровать»'
 
 storage_list:
@@ -475,16 +476,16 @@ storage_list:
     type_column: Тип
     path_column: Путь
     path_unavailable: Путь недоступен
-    last_scan_column: Последний скан
+    last_scan_column: Последнее сканирование
     actions_column: Действия
     edit_button: Редактировать
     delete_button: Удалить
     delete_confirm: Удалить хранилище «%name%»?
     never_scanned: Ещё не сканировалось
-    scan_button: Скан
+    scan_button: Просканировать
     scan_progress_text: '%processed%/%total% (%percent%%)'
-    scan_failed_marker_conflict: 'Скан не выполнен: маркер хранилища занят другим хранилищем.'
-    scan_failed_exception: 'Скан завершился ошибкой: %message%'
+    scan_failed_marker_conflict: 'Сканирование не выполнено: эта папка уже подключена как другое хранилище.'
+    scan_failed_exception: 'Сканирование завершилось ошибкой: %message%'
     scan_no_response: Сканирование ещё выполняется или результат не получен.
     scan_result_empty: Изменений не найдено.
     group_updated: Обновлено
@@ -565,7 +566,7 @@ anime_detail:
     error_fill_not_found: Источник не нашёл совпадение по этому аниме.
     error_fill_image_rejected: Источник вернул изображение, которое не удалось сохранить.
     error_fill_date_range_rejected: Источник вернул дату, конфликтующую с уже сохранённой.
-    downloads_heading: Загрузки этой карточки
+    downloads_heading: Загрузки этой записи
     downloads_manage_link: Управлять на странице «Загрузки»
     downloads_unlink_button: Отвязать
     downloads_unlink_conflict_error: Состояние изменилось, обновите страницу.
@@ -584,17 +585,17 @@ anime_detail:
     files_relocate_confirm: Хранилище «%name%» теперь находится здесь — обновить путь?
     files_request_failed: Не удалось выполнить запрос. Обновите страницу и повторите.
     files_linked: 'Привязано: «%name%» в хранилище «%storage%».'
-    files_linked_top_level: 'Привязано к папке верхнего уровня «%name%» (хранилище «%storage%»).'
+    files_linked_top_level: 'Привязана папка «%name%» из хранилища «%storage%» — в неё входит выбранная папка.'
     files_create_storage: Создать хранилище
     files_error_invalid_path: Нужен абсолютный путь к папке или файлу.
     files_error_outside_storages: Папка не входит ни в одно хранилище.
     files_error_storage_root: Нельзя привязать хранилище целиком.
     files_error_scan_running: Идёт сканирование этого хранилища, повторите после него.
     files_error_storage_has_downloads: 'Путь хранилища «%storage%» нельзя обновить, пока в него идут загрузки.'
-    files_error_ambiguous_name: 'Неоднозначное имя папки «%name%»: в хранилище есть несколько элементов, различающихся только регистром.'
-    files_error_entry_not_found: 'Элемент «%name%» не найден в хранилище «%storage%» или недоступен для чтения.'
-    files_error_entry_not_visible: 'Элемент «%name%» не виден сканеру: скрытое имя либо это не папка и не видеофайл.'
-    files_error_occupied: 'Элемент «%name%» хранилища «%storage%» уже привязан к другой записи:'
+    files_error_ambiguous_name: 'В хранилище несколько папок «%name%», различающихся только регистром букв, — привязать однозначно нельзя.'
+    files_error_entry_not_found: 'Папка или файл «%name%» не найдены в хранилище «%storage%» или недоступны для чтения.'
+    files_error_entry_not_visible: '«%name%» не будет найдено при сканировании: имя начинается с точки или это не папка и не видеофайл.'
+    files_error_occupied: 'Папка или файл «%name%» хранилища «%storage%» уже привязаны к другой записи:'
     notes_add_button: Добавить заметку
     notes_edit_button: Изменить
     rating_star_label: 'Оценка: %rating%'
@@ -644,7 +645,7 @@ anime_edit:
     field_title: Название
     field_names: Альтернативные названия
     field_name: Название
-    field_locale: Локаль
+    field_locale: Язык
     field_role: Роль
     field_descriptions: Описания
     field_description_text: Текст описания
@@ -657,12 +658,12 @@ anime_edit:
     field_date_premiere: Дата премьеры
     field_date_end: Дата окончания
     field_duration_minutes: Длительность, мин
-    field_episodes_count: Эпизоды
-    field_countries: Страны (ISO-коды)
+    field_episodes_count: Количество серий
+    field_countries: Страны
     field_sources: Ссылки на источники
     field_notes: Заметки
     add_button: Добавить
-    add_locale_button: Добавить локаль
+    add_locale_button: Добавить язык
     remove_button: Удалить
     save_button: Сохранить
     cancel_button: Отмена
@@ -672,13 +673,13 @@ anime_edit:
     error_too_long: Слишком длинное значение (не более 256 символов).
     error_role_invalid: Выберите роль.
     error_locale_invalid: Укажите код языка, например en или ru.
-    error_locale_duplicate: Эта локаль уже используется.
+    error_locale_duplicate: Этот язык уже используется.
     error_choice_invalid: Выберите значение из списка.
     error_date_invalid: Укажите корректную дату.
     error_date_range: Дата окончания не может быть раньше даты премьеры.
     error_date_end_completed: Для просмотренной записи дата окончания должна быть задана и не позже сегодняшней.
     error_number_invalid: Укажите целое число, ноль или больше.
-    error_episodes_below_watched: Число эпизодов не может быть меньше числа просмотренных.
+    error_episodes_below_watched: Количество серий не может быть меньше числа просмотренных.
     error_country_invalid: Укажите двухбуквенные коды стран через запятую.
     error_url_invalid: Укажите корректный http- или https-адрес (не длиннее 512 символов).
     field_cover: Изображение обложки
@@ -730,10 +731,10 @@ storage_scan_prompt:
     skip_link: Пропустить
 
 storage_scan_progress:
-    title: Скан хранилища — AnimeDB
-    heading: Результаты скана
-    not_started: Скан не запущен.
-    scan_button: Запустить скан
+    title: Сканирование хранилища — AnimeDB
+    heading: Результаты сканирования
+    not_started: Сканирование не запущено.
+    scan_button: Запустить сканирование
     catalog_link: ← Каталог
     last_run_heading: Последнее сканирование
 
@@ -755,27 +756,27 @@ storage_scan_log:
     status_running: Идёт
     status_done: Завершено
     status_failed: Ошибка
-    status_marker_conflict: Конфликт маркера
+    status_marker_conflict: Папка подключена как другое хранилище
     status_interrupted: Прервано
 
 search_plugins:
     title: Найти в плагинах — AnimeDB
     heading: Найти в плагинах
-    name_label: Название тайтла
+    name_label: Название
     search_button: Найти
     loading: Поиск…
     enter_query_hint: Введите название и нажмите «Найти».
     group_loading: Загрузка…
     group_error: Не удалось получить результаты.
     group_empty: Ничего не найдено.
-    preview_error: Не удалось загрузить данные тайтла.
+    preview_error: Не удалось загрузить данные аниме.
     error_fill_not_found: Не удалось заполнить запись из этого источника. Попробуйте снова или выберите другого кандидата.
-    error_conflict_claimed: Этот тайтл уже привязан к другой записи каталога.
+    error_conflict_claimed: Это аниме уже привязано к другой записи каталога.
     error_conflict_claimed_link: Перейти к записи →
-    error_conflict_linked_other: 'У этой записи уже есть связь с «%plugin%» на другой тайтл.'
+    error_conflict_linked_other: 'У этой записи уже есть связь с «%plugin%» на другое аниме.'
     preview_field_type: Тип
-    preview_field_dates: Даты показа
-    preview_field_episodes_count: Число эпизодов
+    preview_field_dates: Даты выхода
+    preview_field_episodes_count: Количество серий
     preview_field_genres: Жанры
     already_in_catalog_link: Уже в каталоге →
     possible_match_heading: 'Возможно, уже в каталоге: %title%'
@@ -789,9 +790,9 @@ search_plugins:
 
 onboarding:
     heading: Каталог пуст
-    description: Найдите тайтл в плагинах-источниках, добавьте хранилище с файлами аниме или загрузите демо-данные, чтобы начать.
+    description: Найдите аниме в плагинах-источниках, добавьте хранилище с файлами аниме или загрузите демо-данные, чтобы начать.
     search_plugins_heading: Найти в плагинах
-    search_plugins_description: Найдите тайтл по названию во внешних источниках и добавьте его в каталог.
+    search_plugins_description: Найдите аниме по названию во внешних источниках и добавьте его в каталог.
     search_plugins_button: Найти в плагинах
     search_plugins_unavailable_not_installed_button: Открыть маркет
     search_plugins_unavailable_disabled_button: Настроить плагины
@@ -866,7 +867,7 @@ downloads:
     heading: Загрузки
     empty: Загрузок пока нет.
     qbittorrent_unavailable: Не удалось получить данные от торрент-клиента. Показан список из базы данных без живых полей.
-    no_card_badge: Без карточки
+    no_card_badge: Без записи
     column_name: Название
     column_status: Статус
     column_size: Размер
@@ -897,7 +898,7 @@ downloads:
     status_completed: Готово и привязано
     status_seeding_stopped: Раздача остановлена
     status_missing_from_client: Нет в торрент-клиенте
-    status_no_card: Без карточки
+    status_no_card: Без записи
     status_failed_disk_space: 'Ошибка: не хватает места на диске.'
     status_failed_storage_conflict: 'Ошибка: конфликт хранилища.'
     status_failed_name_conflict: 'Ошибка: конфликт имени.'
@@ -933,7 +934,7 @@ download_new:
     error_unreadable_source: Не удалось прочитать раздачу.
     error_insufficient_space: 'Нужно %needed%, свободно %free% в «%path%».'
     error_already_linked: Эта раздача уже привязана к записи #%id%.
-    error_already_in_client: 'Этот торрент уже есть в торрент-клиенте без карточки. Его можно привязать к выбранной записи: торрент останется там, где лежит, выбранное хранилище не используется.'
+    error_already_in_client: 'Этот торрент уже есть в торрент-клиенте без записи. Его можно привязать к выбранной записи: торрент останется там, где лежит, выбранное хранилище не используется.'
     error_already_in_client_link: 'Открыть «Загрузки»'
     action_adopt_selected: 'Привязать к выбранной записи'
     error_storage_unavailable: Хранилище недоступно.

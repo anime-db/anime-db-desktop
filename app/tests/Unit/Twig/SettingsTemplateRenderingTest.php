@@ -354,7 +354,7 @@ final class SettingsTemplateRenderingTest extends KernelTestCase
         $twig = self::getContainer()->get('twig');
         $html = $twig->render('settings/label/index.html.twig', ['labels' => [], 'labelCounts' => [], 'error' => null]);
 
-        $this->assertStringContainsString('Вешаются на карточке аниме', $html);
+        $this->assertStringContainsString('Вешаются на странице записи', $html);
     }
 
     // Issue #823: the anime count next to a label is a link into the catalog filtered by that
@@ -547,7 +547,7 @@ final class SettingsTemplateRenderingTest extends KernelTestCase
         $twig = self::getContainer()->get('twig');
         $html = $twig->render('settings/sync_review/index.html.twig', ['items' => [], 'duplicateClusters' => []]);
 
-        $this->assertStringContainsString('Нет элементов, требующих внимания.', $html);
+        $this->assertStringContainsString('Нет пунктов, требующих внимания.', $html);
     }
 
     public function testSyncReviewIndexRendersDuplicateClusterWithLinksToAnimeCards(): void
@@ -865,6 +865,45 @@ final class SettingsTemplateRenderingTest extends KernelTestCase
         $html = $twig->render('settings/proxy/_test_result.html.twig', ['result' => ProxyTestResult::success(120)]);
 
         $this->assertStringContainsString('120', $html);
+    }
+
+    public function testMarketIndexRefreshButtonOffersCatalogLoadWhileRegistryIsUnavailable(): void
+    {
+        $html = $this->renderMarketIndexForRegistry(true);
+
+        $this->assertStringContainsString('Load catalog', $html);
+        $this->assertStringNotContainsString('Check for updates', $html);
+    }
+
+    public function testMarketIndexRefreshButtonOffersUpdateCheckWhenRegistryIsAvailable(): void
+    {
+        $html = $this->renderMarketIndexForRegistry(false);
+
+        $this->assertStringContainsString('Check for updates', $html);
+        $this->assertStringNotContainsString('Load catalog', $html);
+    }
+
+    private function renderMarketIndexForRegistry(bool $registryUnavailable): string
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession();
+        /** @var LocaleSwitcher $localeSwitcher */
+        $localeSwitcher = self::getContainer()->get(LocaleSwitcher::class);
+        $localeSwitcher->setLocale('en');
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+
+        return $twig->render('settings/market/index.html.twig', [
+            'items' => [],
+            'registryUnavailable' => $registryUnavailable,
+            'hasIncompatiblePlugin' => false,
+            'installedPluginId' => null,
+            'updatedPluginId' => null,
+            'installError' => null,
+            'installErrorParams' => [],
+            'featureFilter' => null,
+        ]);
     }
 
     /**

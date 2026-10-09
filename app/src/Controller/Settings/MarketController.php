@@ -313,6 +313,7 @@ final class MarketController
         $response = new Response($this->twig->render('settings/market/_refresh_area.html.twig', [
             'state' => $state,
             'statusUrl' => $statusUrl,
+            'registryUnavailable' => !$this->isSnapshotReady($this->snapshotCache->load()),
         ]));
 
         if ($state === 'done') {
@@ -320,6 +321,11 @@ final class MarketController
         }
 
         return $response;
+    }
+
+    private function isSnapshotReady(?MarketSnapshot $snapshot): bool
+    {
+        return $snapshot !== null && $snapshot->isBuiltFor($this->coreVersion);
     }
 
     private function stringOrNull(mixed $value): ?string
@@ -421,7 +427,7 @@ final class MarketController
         ?string $featureFilter = null,
     ): Response {
         $snapshot = $this->snapshotCache->load();
-        $snapshotReady = $snapshot !== null && $snapshot->isBuiltFor($this->coreVersion);
+        $snapshotReady = $this->isSnapshotReady($snapshot);
 
         if (!$snapshotReady && $this->shouldDispatchRefresh()) {
             $this->messageBus->dispatch(new RefreshMarketSnapshotMessage());

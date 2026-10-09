@@ -146,7 +146,7 @@ final class DownloadsTemplateRenderingTest extends KernelTestCase
         $html = $this->render(['rows' => [], 'orphans' => [$orphan], 'qbittorrentAvailable' => true]);
 
         $this->assertStringContainsString('Mystery torrent', $html);
-        $this->assertStringContainsString('Без карточки', $html);
+        $this->assertStringContainsString('Без записи', $html);
         $this->assertStringNotContainsString('<a href="/anime/1">', $html);
     }
 
