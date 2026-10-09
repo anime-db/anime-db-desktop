@@ -26,12 +26,12 @@ const { covers, urlOf } = require('../coverage');
 
 test('switching the interface language changes the visible text and survives a reload', covers({ routes: ['/settings'], features: ['locale-switch'] }), async ({ page, session }) => {
     await page.goto(urlOf(session, '/settings'));
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Settings');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Interface');
     await expect(page.locator('html')).toHaveAttribute('lang', 'en');
 
     await page.locator('#locale').selectOption('ru');
 
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Настройки');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Интерфейс');
     await expect(page.locator('label[for="locale"]')).toHaveText('Язык интерфейса');
     await expect(page.locator('html')).toHaveAttribute('lang', 'ru');
 
@@ -40,6 +40,6 @@ test('switching the interface language changes the visible text and survives a r
 
     await page.goto(urlOf(session, '/settings'));
     await page.locator('#locale').selectOption('en');
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Settings');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Interface');
     await expect(page.locator('html')).toHaveAttribute('lang', 'en');
 });
