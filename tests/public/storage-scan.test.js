@@ -227,6 +227,8 @@ test('a confirmation card shows the folder, the differing cleaned name, each can
     expect(window.AppTranslations.trans).toHaveBeenCalledWith('storage_list.candidate_label', { title: 'Steins;Gate 0', source: 'Acme List' });
     expect(window.AppTranslations.trans).toHaveBeenCalledWith('storage_list.candidate_label', { title: 'Steins;Gate Movie', source: 'bare' });
     expect(labels).toHaveLength(3);
+    expect(Array.from(labels).map((l) => l.textContent)).toEqual(Array(3).fill('storage_list.candidate_label'));
+    expect(li.querySelector('p.text-body-secondary').textContent).toBe('storage_list.cleaned_name_text');
 
     const radios = li.querySelectorAll('.form-check-input');
     expect(Array.from(radios).map((radio) => radio.checked)).toEqual([true, false, false]);
@@ -252,6 +254,11 @@ test('a confirmation card omits the cleaned name when it equals the folder', asy
     await flushMicrotasks();
 
     expect(window.AppTranslations.trans).not.toHaveBeenCalledWith('storage_list.cleaned_name_text', expect.anything());
+
+    const li = document.querySelector('#storage-scan-results li');
+    expect(li.querySelector('p').textContent).toBe('Trigun');
+    expect(li.querySelector('.form-check-input')).not.toBeNull();
+    expect(li.querySelector('p.text-body-secondary')).toBeNull();
 });
 
 test('confirming a plugin candidate posts its real pluginId/externalId instead of a bare name', async () => {
