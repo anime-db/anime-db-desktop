@@ -183,6 +183,10 @@ final class AnimeTypeChangeServiceTest extends TestCase
         $this->service()->change($anime, AnimeType::Movie);
         $movie = $this->entityManager->find(Anime::class, $anime->id);
         $this->assertNotNull($movie);
+        $this->entityManager->getConnection()->executeStatement('UPDATE anime SET episodes_count = 12, watched_episodes = 5 WHERE id = ?', [$anime->id]);
+        $this->entityManager->clear();
+        $movie = $this->entityManager->find(Anime::class, $anime->id);
+        $this->assertNotNull($movie);
 
         $this->service()->change($movie, AnimeType::Tv);
 
