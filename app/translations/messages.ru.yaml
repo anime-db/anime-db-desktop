@@ -498,6 +498,10 @@ storage_list:
     files_missing_text: '%title% (%path%)'
     auto_linked_text: 'Добавлено автоматически: %title%'
     create_entry_link: 'Создать запись: %title%'
+    cleaned_name_text: 'Имя для поиска: %name%'
+    candidate_label: '%title% — %source%'
+    candidate_source_catalog: уже в каталоге
+    none_match_link: 'Ни один не подходит — создать запись'
     confirm_button: Подтвердить
     confirm_error: Не удалось подтвердить выбор.
     confirmed_text: 'Подтверждено: %title%'

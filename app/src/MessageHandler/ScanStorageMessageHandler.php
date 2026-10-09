@@ -33,6 +33,7 @@ use AnimeDb\PluginContracts\Model\AnimeId;
 use App\Entity\Storage;
 use App\Message\ScanStorageMessage;
 use App\Service\JobLock\JobLockService;
+use App\Service\Plugin\PluginDisplayName;
 use App\Service\Storage\Scan\ScanCandidate;
 use App\Service\Storage\Scan\ScanItemType;
 use App\Service\Storage\Scan\ScanResultItem;
@@ -73,6 +74,7 @@ final class ScanStorageMessageHandler
         private readonly WsPublisher $wsPublisher,
         private readonly LoggerInterface $logger,
         private readonly EventDispatcherInterface $eventDispatcher,
+        private readonly PluginDisplayName $pluginDisplayName,
     ) {
     }
 
@@ -205,7 +207,7 @@ final class ScanStorageMessageHandler
 
     /**
      * @return array{type: string, storage_path: string, cleaned_name: ?string, anime: ?array{id: ?int, title: string},
-     *               candidates: list<array{anime_id: ?int, plugin_id: ?string, external_id: ?string, title: string}>,
+     *               candidates: list<array{anime_id: ?int, plugin_id: ?string, external_id: ?string, plugin_name: ?string, title: string}>,
      *               already_linked_storage_path: ?string, error_message: ?string}
      */
     private function serializeItem(ScanResultItem $item): array
@@ -231,12 +233,12 @@ final class ScanStorageMessageHandler
      * StorageScanConfirmController, which used to fall back to a placeholder plugin id with no
      * real filler registered under it for exactly this reason.
      *
-     * @return array{anime_id: ?int, plugin_id: ?string, external_id: ?string, title: string}
+     * @return array{anime_id: ?int, plugin_id: ?string, external_id: ?string, plugin_name: ?string, title: string}
      */
     private function serializeCandidate(ScanCandidate $candidate): array
     {
         if ($candidate->orphan !== null) {
-            return ['anime_id' => $candidate->orphan->id, 'plugin_id' => null, 'external_id' => null, 'title' => $candidate->orphan->getTitle()];
+            return ['anime_id' => $candidate->orphan->id, 'plugin_id' => null, 'external_id' => null, 'plugin_name' => null, 'title' => $candidate->orphan->getTitle()];
         }
 
         $plugin = $candidate->plugin ?? throw new \LogicException('ScanCandidate must carry either an orphan or a plugin match');
@@ -245,6 +247,7 @@ final class ScanStorageMessageHandler
             'anime_id' => null,
             'plugin_id' => $plugin->getPluginId(),
             'external_id' => $plugin->getExternalId(),
+            'plugin_name' => $this->pluginDisplayName->name($plugin->getPluginId()),
             'title' => $plugin->getName(),
         ];
     }

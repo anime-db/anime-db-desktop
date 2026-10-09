@@ -198,6 +198,62 @@ test('a candidate needing confirmation renders Bootstrap form-check radios and a
     expect(li.textContent).toBe('storage_list.confirmed_text');
 });
 
+test('a confirmation card shows the folder, the differing cleaned name, each candidate source and a prefilled "none match" link, with the first candidate preselected', async () => {
+    const watchers = mockScanWatcher();
+    mockTranslations();
+    loadStorageScanModule();
+
+    await watchers['42'].onDone({
+        items: [{
+            type:         'NeedsConfirmation',
+            storage_path: 'Steins Gate (2011) 1080p',
+            cleaned_name: 'Steins Gate',
+            candidates:   [
+                { anime_id: 7, plugin_id: null, plugin_name: null, title: 'Steins;Gate' },
+                { anime_id: null, plugin_id: 'acme', plugin_name: 'Acme List', external_id: '1', title: 'Steins;Gate 0' },
+                { anime_id: null, plugin_id: 'bare', plugin_name: null, external_id: '2', title: 'Steins;Gate Movie' },
+            ],
+        }],
+    });
+    await flushMicrotasks();
+
+    const li = document.querySelector('#storage-scan-results li');
+    expect(li.querySelector('p').textContent).toBe('Steins Gate (2011) 1080p');
+    expect(window.AppTranslations.trans).toHaveBeenCalledWith('storage_list.cleaned_name_text', { name: 'Steins Gate' });
+
+    const labels = li.querySelectorAll('.form-check-label');
+    expect(window.AppTranslations.trans).toHaveBeenCalledWith('storage_list.candidate_source_catalog');
+    expect(window.AppTranslations.trans).toHaveBeenCalledWith('storage_list.candidate_label', { title: 'Steins;Gate', source: 'storage_list.candidate_source_catalog' });
+    expect(window.AppTranslations.trans).toHaveBeenCalledWith('storage_list.candidate_label', { title: 'Steins;Gate 0', source: 'Acme List' });
+    expect(window.AppTranslations.trans).toHaveBeenCalledWith('storage_list.candidate_label', { title: 'Steins;Gate Movie', source: 'bare' });
+    expect(labels).toHaveLength(3);
+
+    const radios = li.querySelectorAll('.form-check-input');
+    expect(Array.from(radios).map((radio) => radio.checked)).toEqual([true, false, false]);
+
+    const link = li.querySelector('a');
+    expect(link.textContent).toBe('storage_list.none_match_link');
+    expect(link.getAttribute('href')).toBe('/anime/new?title=Steins+Gate&storage_id=42&storage_path=Steins+Gate+%282011%29+1080p');
+});
+
+test('a confirmation card omits the cleaned name when it equals the folder', async () => {
+    const watchers = mockScanWatcher();
+    mockTranslations();
+    loadStorageScanModule();
+
+    await watchers['42'].onDone({
+        items: [{
+            type:         'NeedsConfirmation',
+            storage_path: 'Trigun',
+            cleaned_name: 'Trigun',
+            candidates:   [{ anime_id: 1, title: 'Trigun' }],
+        }],
+    });
+    await flushMicrotasks();
+
+    expect(window.AppTranslations.trans).not.toHaveBeenCalledWith('storage_list.cleaned_name_text', expect.anything());
+});
+
 test('confirming a plugin candidate posts its real pluginId/externalId instead of a bare name', async () => {
     const watchers = mockScanWatcher();
     mockTranslations();
