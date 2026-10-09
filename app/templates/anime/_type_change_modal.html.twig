@@ -1,0 +1,69 @@
+{#
+ # AnimeDb package.
+ #
+ # @author    Peter Gribanov <info@peter-gribanov.ru>
+ # @copyright Copyright (c) 2026, Peter Gribanov
+ # @license   https://www.gnu.org/licenses/gpl-3.0.html GPL-3.0-or-later
+ #
+ # This program is free software: you can redistribute it and/or modify
+ # it under the terms of the GNU General Public License as published by
+ # the Free Software Foundation, either version 3 of the License, or
+ # (at your option) any later version.
+ #
+ # This program is distributed in the hope that it will be useful,
+ # but WITHOUT ANY WARRANTY; without even the implied warranty of
+ # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ # GNU General Public License for more details.
+ #
+ # You should have received a copy of the GNU General Public License
+ # along with this program. If not, see <https://www.gnu.org/licenses/>.
+ #}
+{#
+ # The "Change type…" dialog of the entry card (issue #1001). `anime` is the AnimeViewFactory view: its
+ # `type_changes` lists the types the entry can take and what each change would drop. A change that drops
+ # something (a series becoming a movie) shows the values and a box to tick before the button works; the
+ # data-control="anime-type-change" script (anime-type-change.js) toggles that block with the chosen type.
+ #}
+{% macro type_change_modal(id, action, token, anime) %}
+    <div class="modal fade" id="{{ id }}" tabindex="-1" aria-labelledby="{{ id }}-title" aria-hidden="true">
+        <div class="modal-dialog">
+            <form class="modal-content" method="post" action="{{ action }}" data-control="anime-type-change">
+                <input type="hidden" name="_token" value="{{ token }}">
+                <div class="modal-header">
+                    <h2 class="modal-title fs-5" id="{{ id }}-title">{{ 'anime_type_change.title'|trans }}</h2>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ 'anime_type_change.cancel'|trans }}"></button>
+                </div>
+                <div class="modal-body">
+                    <label class="form-label" for="{{ id }}-type">{{ 'anime_type_change.field_type'|trans }}</label>
+                    <select class="form-select" name="type" id="{{ id }}-type" data-type-change-select>
+                        {% for change in anime.type_changes %}
+                            <option value="{{ change.type }}">{{ ('anime_type.' ~ change.type)|trans }}</option>
+                        {% endfor %}
+                    </select>
+                    <p class="small text-body-secondary mt-2 mb-0">{{ 'anime_type_change.hint'|trans({'%type%': ('anime_type.' ~ anime.type)|trans}) }}</p>
+                    {% for change in anime.type_changes %}
+                        {% if change.lossy %}
+                            {% set lost = [] %}
+                            {% if change.lost_episodes_count is not null %}{% set lost = lost|merge([('anime_type_change.lost_episodes'|trans({'%number%': change.lost_episodes_count}))]) %}{% endif %}
+                            {% if change.lost_watched_episodes is not null %}{% set lost = lost|merge([('anime_type_change.lost_watched'|trans({'%number%': change.lost_watched_episodes}))]) %}{% endif %}
+                            {% if change.lost_date_end is not null %}{% set lost = lost|merge([('anime_type_change.lost_date_end'|trans({'%date%': change.lost_date_end}))]) %}{% endif %}
+                            <div class="alert alert-warning mt-3 mb-0" data-type-change-loss="{{ change.type }}" hidden>
+                                <p class="mb-1">{{ 'anime_type_change.loss_intro'|trans }}</p>
+                                <p class="mb-1 fw-semibold">{{ lost is not empty ? lost|join(', ') : 'anime_type_change.lost_nothing'|trans }}</p>
+                                <p class="mb-0">{{ 'anime_type_change.loss_warning'|trans }}</p>
+                            </div>
+                        {% endif %}
+                    {% endfor %}
+                    <div class="form-check mt-3" data-type-change-confirm hidden>
+                        <input class="form-check-input" type="checkbox" name="confirm_loss" value="1" id="{{ id }}-confirm" data-type-change-confirm-box>
+                        <label class="form-check-label" for="{{ id }}-confirm">{{ 'anime_type_change.confirm_loss'|trans }}</label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">{{ 'anime_type_change.cancel'|trans }}</button>
+                    <button type="submit" class="btn btn-primary" data-type-change-submit>{{ 'anime_type_change.submit'|trans }}</button>
+                </div>
+            </form>
+        </div>
+    </div>
+{% endmacro %}

@@ -24,7 +24,9 @@
  # alternativeNames fill: the official Japanese title shown here comes from the same names.
  #}
 {% from 'anime/_delete_confirm.html.twig' import delete_confirm, delete_modal %}
+{% from 'anime/_type_change_modal.html.twig' import type_change_modal %}
 {% set delete_plan = delete_source_removal|default(null) %}
+{% set type_changes = anime.type_changes|default([]) %}
 {% set japanese_name = (anime.names|filter(name => name.role == 'official' and name.locale == 'ja')|first)|default(null) %}
 {% set date_premiere = anime.date_premiere|default(null) %}
 {% set date_end = anime.date_end|default(null) %}
@@ -42,12 +44,15 @@
         <p class="anime-detail__subtitle">{{ subtitle_parts|join(' · ') }}</p>
     </div>
 
-    {# Entry actions menu: each later action (change type, ...) adds its own <li> here. #}
+    {# Entry actions menu: each later action adds its own <li> here. #}
     <div class="dropdown anime-detail__menu">
         <button type="button" class="btn btn-outline-secondary anime-detail__menu-toggle" data-bs-toggle="dropdown" aria-expanded="false"
                 title="{{ 'anime_detail.menu_button'|trans }}" aria-label="{{ 'anime_detail.menu_button'|trans }}">&#8943;</button>
         <ul class="dropdown-menu dropdown-menu-end">
             <li><a class="dropdown-item" href="{{ path('anime_edit', {id: anime.id}) }}">{{ 'anime_detail.menu_edit'|trans }}</a></li>
+            {% if type_changes is not empty %}
+                <li><button type="button" class="dropdown-item" data-bs-toggle="modal" data-bs-target="#anime-type-modal-{{ anime.id }}">{{ 'anime_detail.menu_change_type'|trans }}</button></li>
+            {% endif %}
             <li>
                 {% if delete_plan is not null and delete_plan.hasTargets %}
                     <button type="button" class="dropdown-item text-danger" data-bs-toggle="modal" data-bs-target="#anime-delete-modal-{{ anime.id }}">{{ 'anime_detail.menu_delete'|trans }}</button>
@@ -61,6 +66,9 @@
             </li>
         </ul>
     </div>
+    {% if type_changes is not empty %}
+        {{ type_change_modal('anime-type-modal-' ~ anime.id, path('anime_change_type', {id: anime.id}), csrf_token('anime_change_type_' ~ anime.id), anime) }}
+    {% endif %}
     {% if delete_plan is not null and delete_plan.hasTargets %}
         {{ delete_modal('anime-delete-modal-' ~ anime.id, path('anime_delete', {id: anime.id}), csrf_token('anime_delete_' ~ anime.id), anime.title, anime.storage is not null, delete_has_finished_downloads|default(false), delete_plan) }}
     {% endif %}

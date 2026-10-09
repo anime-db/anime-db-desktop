@@ -28,10 +28,9 @@ declare(strict_types=1);
 namespace App\Entity\Exception;
 
 /**
- * Thrown by AnimeTypeMigrator::migrate() when the migration does not cross the
- * Movie/Series boundary, or the source anime's production status is no longer
- * "announced".
+ * Thrown by Anime::planTypeChange() when the entry already has the requested type, or the change
+ * would leave the entry in a state the domain forbids.
  */
-final class InvalidAnimeTypeMigrationException extends \InvalidArgumentException
+final class InvalidAnimeTypeChangeException extends \InvalidArgumentException
 {
 }

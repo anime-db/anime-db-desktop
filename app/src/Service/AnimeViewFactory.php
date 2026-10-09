@@ -31,6 +31,8 @@ use App\Entity\Anime;
 use App\Entity\AnimeImage;
 use App\Entity\AnimeName;
 use App\Entity\AnimeSource;
+use App\Entity\Enum\AnimeType;
+use App\Entity\Exception\InvalidAnimeTypeChangeException;
 use App\Entity\Label;
 use App\Entity\SeriesAnime;
 use App\Entity\Storage;
@@ -52,6 +54,34 @@ final class AnimeViewFactory
     {
     }
 
+    /**
+     * What the "Change type…" dialog offers (issue #1001): every other type the entry can take, with
+     * the values the change would drop. A type the domain refuses for this entry is not offered.
+     *
+     * @return list<array{type: string, lossy: bool, lost_episodes_count: ?int, lost_watched_episodes: ?int, lost_date_end: ?string}>
+     */
+    private function serializeTypeChanges(Anime $anime): array
+    {
+        $changes = [];
+        foreach (AnimeType::cases() as $type) {
+            try {
+                $change = $anime->planTypeChange($type);
+            } catch (InvalidAnimeTypeChangeException) {
+                continue;
+            }
+
+            $changes[] = [
+                'type' => $type->value,
+                'lossy' => $change->isLossy(),
+                'lost_episodes_count' => $change->lostEpisodesCount,
+                'lost_watched_episodes' => $change->lostWatchedEpisodes,
+                'lost_date_end' => $change->lostDateEnd?->format('Y-m-d'),
+            ];
+        }
+
+        return $changes;
+    }
+
     /** @return array<string, mixed> */
     public function serialize(Anime $anime): array
     {
@@ -69,6 +99,7 @@ final class AnimeViewFactory
             'duration_minutes' => $anime->getDurationMinutes(),
             'date_premiere' => $anime->getDatePremiere()?->format('Y-m-d'),
             'date_end' => $anime->getDateEnd()?->format('Y-m-d'),
+            'type_changes' => $this->serializeTypeChanges($anime),
             'studios' => array_map(static fn (Studio $studio): array => ['id' => $studio->id, 'name' => $studio->name], $anime->getStudios()->toArray()),
             'countries' => $anime->getCountries() ?? [],
             'storage' => $this->serializeStorage($anime->getStorage(), $anime->getStoragePath()),

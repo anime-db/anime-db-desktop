@@ -45,8 +45,8 @@ enum AnimeType: string
     case Music = 'music';
 
     /**
-     * Single source of truth for the type-to-class mapping: both Anime::migrate() and
-     * AnimeRepository need it, and it must not drift between the two (issue #74 review).
+     * Single source of truth for the type-to-class mapping, so it must not drift
+     * between its users (issue #74 review).
      *
      * @return class-string<Anime>
      */
