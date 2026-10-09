@@ -116,7 +116,7 @@ body:has(.anime-list) {
     font-size: 0.85em;
 }
 
-.anime-list__sort-field[aria-current="true"] {
+.anime-list__sort-field[aria-pressed="true"] {
     border-color: var(--bs-primary);
     font-weight: bold;
 }
@@ -399,7 +399,7 @@ body:has(.anime-list) {
     padding: 16px;
 }
 
-.anime-list__pagination button[aria-current="true"] {
+.anime-list__pagination button[aria-current="page"] {
     font-weight: bold;
 }
 

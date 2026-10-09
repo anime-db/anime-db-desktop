@@ -34,15 +34,41 @@
         const idInput = root.querySelector('#download-new-anime-id');
         const results = root.querySelector('#download-new-anime-results');
 
+        searchInput.setAttribute('role', 'combobox');
+        searchInput.setAttribute('aria-autocomplete', 'list');
+        searchInput.setAttribute('aria-controls', results.id);
+        searchInput.setAttribute('aria-expanded', 'false');
+        results.setAttribute('role', 'listbox');
+
         let debounceTimer = null;
         // Bumped on every search() call, including the query === '' short-circuit, so a response
         // to an older query can never overwrite the list a newer one already rendered — fetch()
         // calls settle in whatever order the network returns them, not the order they were sent.
         let latestRequestId = 0;
 
+        let activeIndex = -1;
+
+        function setActive(index) {
+            const options = results.querySelectorAll('[role="option"]');
+            activeIndex = index;
+            options.forEach((option, i) => {
+                const active = i === index;
+                option.classList.toggle('active', active);
+                option.setAttribute('aria-selected', active ? 'true' : 'false');
+            });
+            if (index >= 0 && options[index]) {
+                searchInput.setAttribute('aria-activedescendant', options[index].id);
+            } else {
+                searchInput.removeAttribute('aria-activedescendant');
+            }
+        }
+
         function hideResults() {
             results.hidden = true;
             results.innerHTML = '';
+            activeIndex = -1;
+            searchInput.setAttribute('aria-expanded', 'false');
+            searchInput.removeAttribute('aria-activedescendant');
         }
 
         function selectAnime(id, title) {
@@ -53,8 +79,13 @@
 
         function renderResults(items) {
             results.innerHTML = '';
-            items.forEach((item) => {
+            activeIndex = -1;
+            searchInput.removeAttribute('aria-activedescendant');
+            items.forEach((item, index) => {
                 const entry = document.createElement('li');
+                entry.id = `${results.id}-option-${index}`;
+                entry.setAttribute('role', 'option');
+                entry.setAttribute('aria-selected', 'false');
                 entry.className = 'list-group-item list-group-item-action';
                 entry.textContent = item.title;
                 // mousedown (not click) with preventDefault: a click fires only after mouseup, and
@@ -68,6 +99,7 @@
                 results.appendChild(entry);
             });
             results.hidden = items.length === 0;
+            searchInput.setAttribute('aria-expanded', items.length === 0 ? 'false' : 'true');
         }
 
         async function search(query) {
@@ -99,6 +131,28 @@
                 clearTimeout(debounceTimer);
             }
             debounceTimer = setTimeout(() => search(searchInput.value.trim()), SEARCH_DEBOUNCE_MS);
+        });
+
+        searchInput.addEventListener('keydown', (event) => {
+            const options = results.querySelectorAll('[role="option"]');
+            if (results.hidden || options.length === 0) {
+                return;
+            }
+
+            if (event.key === 'ArrowDown') {
+                event.preventDefault();
+                setActive((activeIndex + 1) % options.length);
+            } else if (event.key === 'ArrowUp') {
+                event.preventDefault();
+                setActive(activeIndex <= 0 ? options.length - 1 : activeIndex - 1);
+            } else if (event.key === 'Enter' && activeIndex >= 0) {
+                // The form must not be submitted by the Enter that picks an entry.
+                event.preventDefault();
+                options[activeIndex].dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+            } else if (event.key === 'Escape') {
+                event.preventDefault();
+                hideResults();
+            }
         });
 
         searchInput.addEventListener('blur', () => {

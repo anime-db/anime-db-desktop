@@ -44,14 +44,14 @@
                      data-confirm-url="{{ path('storage_scan_confirm', {id: storage.id}) }}"
                      data-confirm-token="{{ csrf_token('storage_scan_confirm_' ~ storage.id) }}"
                      data-anime-new-url="{{ path('anime_new') }}">
-                <div id="storage-scan-progress">
+                <div id="storage-scan-progress" aria-live="polite">
                     <div class="progress">
-                        <div class="progress-bar" id="storage-scan-progress-bar" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+                        <div class="progress-bar" id="storage-scan-progress-bar" role="progressbar" aria-label="{{ 'storage_scan_progress.progress_label'|trans }}" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
                     </div>
                     <span id="storage-scan-progress-text"></span>
                 </div>
 
-                <p id="storage-scan-error" hidden></p>
+                <p id="storage-scan-error" role="alert" hidden></p>
 
                 <div id="storage-scan-results" hidden></div>
             </section>

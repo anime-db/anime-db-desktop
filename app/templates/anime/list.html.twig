@@ -143,7 +143,7 @@
                         type="button"
                         class="anime-list__sort-field"
                         data-sort-field="{{ field }}"
-                        {% if field == 'date_update' %}aria-current="true"{% endif %}
+                        aria-pressed="{{ field == 'date_update' ? 'true' : 'false' }}"
                     >{{ ('anime_list.sort_field_' ~ field)|trans }}</button>
                 {% endfor %}
                 <button
@@ -160,16 +160,16 @@
             <div class="anime-list__main">
                     <div class="anime-list__chips sticky-top" id="anime-list-chips">
                         <ul class="anime-list__chip-list" id="anime-list-chip-list"></ul>
-                        <span class="anime-list__chips-shown" id="anime-list-chips-shown"></span>
+                        <span class="anime-list__chips-shown" id="anime-list-chips-shown" role="status"></span>
                         <button type="button" class="anime-list__chips-reset" id="anime-list-chips-reset" disabled>{{ 'anime_list.filter_reset_all_button'|trans }}</button>
                     </div>
 
                     <div class="anime-list__grid" id="anime-list-grid"></div>
 
-                    <p class="anime-list__empty" id="anime-list-empty" hidden>{{ 'anime_list.empty'|trans }}</p>
-                    <p class="anime-list__error" id="anime-list-error" hidden>{{ 'anime_list.error'|trans }}</p>
+                    <p class="anime-list__empty" id="anime-list-empty" role="status" hidden>{{ 'anime_list.empty'|trans }}</p>
+                    <p class="anime-list__error" id="anime-list-error" role="alert" hidden>{{ 'anime_list.error'|trans }}</p>
 
-                    <nav class="anime-list__pagination" id="anime-list-pagination" hidden></nav>
+                    <nav class="anime-list__pagination" id="anime-list-pagination" aria-label="{{ 'anime_list.pagination_label'|trans }}" hidden></nav>
                     <div class="anime-list__sentinel" id="anime-list-sentinel" hidden></div>
             </div>
         {% endif %}

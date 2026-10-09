@@ -152,3 +152,93 @@ test('a slower response to an earlier query does not overwrite the results of a 
     const titles = Array.from(document.querySelectorAll('#download-new-anime-results li')).map((node) => node.textContent);
     expect(titles).toEqual(['Attack on Titan']);
 });
+
+describe('combobox keyboard support', () => {
+    async function openResults() {
+        const calls = mockFetchQueue();
+        loadDownloadNewModule();
+
+        const searchInput = document.getElementById('download-new-anime-search');
+        searchInput.focus();
+        typeSearch('a');
+        await flushMicrotasks();
+        calls[0].resolve(jsonResponse({ items: [{ id: 1, title: 'First' }, { id: 2, title: 'Second' }] }));
+        await flushMicrotasks();
+
+        return searchInput;
+    }
+
+    function press(input, key) {
+        const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });
+        input.dispatchEvent(event);
+
+        return event;
+    }
+
+    test('exposes combobox/listbox/option semantics', async () => {
+        const input = await openResults();
+        const list = document.getElementById('download-new-anime-results');
+
+        expect(input.getAttribute('role')).toBe('combobox');
+        expect(input.getAttribute('aria-controls')).toBe('download-new-anime-results');
+        expect(input.getAttribute('aria-expanded')).toBe('true');
+        expect(list.getAttribute('role')).toBe('listbox');
+
+        const options = list.querySelectorAll('[role="option"]');
+        expect(options).toHaveLength(2);
+        expect(options[0].id).not.toBe('');
+        expect(options[0].id).not.toBe(options[1].id);
+    });
+
+    test('arrow keys move the active option and wrap around', async () => {
+        const input = await openResults();
+        const options = document.querySelectorAll('#download-new-anime-results [role="option"]');
+
+        press(input, 'ArrowDown');
+        expect(input.getAttribute('aria-activedescendant')).toBe(options[0].id);
+        press(input, 'ArrowDown');
+        expect(input.getAttribute('aria-activedescendant')).toBe(options[1].id);
+        press(input, 'ArrowDown');
+        expect(input.getAttribute('aria-activedescendant')).toBe(options[0].id);
+        press(input, 'ArrowUp');
+        expect(input.getAttribute('aria-activedescendant')).toBe(options[1].id);
+        expect(options[1].getAttribute('aria-selected')).toBe('true');
+        expect(options[0].getAttribute('aria-selected')).toBe('false');
+    });
+
+    test('Enter selects the active option like a click and does not submit the form', async () => {
+        const input = await openResults();
+
+        press(input, 'ArrowDown');
+        press(input, 'ArrowDown');
+        const event = press(input, 'Enter');
+
+        expect(event.defaultPrevented).toBe(true);
+        expect(document.getElementById('download-new-anime-id').value).toBe('2');
+        expect(input.value).toBe('Second');
+        expect(document.getElementById('download-new-anime-results').hidden).toBe(true);
+        expect(input.getAttribute('aria-expanded')).toBe('false');
+        expect(input.hasAttribute('aria-activedescendant')).toBe(false);
+    });
+
+    test('Enter without an active option is left alone', async () => {
+        const input = await openResults();
+
+        const event = press(input, 'Enter');
+
+        expect(event.defaultPrevented).toBe(false);
+        expect(document.getElementById('download-new-anime-id').value).toBe('');
+    });
+
+    test('Escape closes the list', async () => {
+        const input = await openResults();
+
+        press(input, 'ArrowDown');
+        press(input, 'Escape');
+
+        expect(document.getElementById('download-new-anime-results').hidden).toBe(true);
+        expect(input.getAttribute('aria-expanded')).toBe('false');
+        expect(input.hasAttribute('aria-activedescendant')).toBe(false);
+        expect(document.getElementById('download-new-anime-id').value).toBe('');
+    });
+});

@@ -70,6 +70,7 @@
                                         name="active"
                                         value="1"
                                         data-submit-on-change
+                                        aria-label="{{ 'settings_plugin_widgets.active_label'|trans({'%title%': widget.title}) }}"
                                         {% if widget.active %}checked{% endif %}
                                         {% if not widget.active and activeCount >= hardLimit %}disabled title="{{ 'settings_plugin_widgets.hard_limit_reached'|trans({'%limit%': hardLimit}) }}"{% endif %}
                                     >
@@ -80,7 +81,7 @@
                                     {% if widget.active %}
                                         <form method="post" action="{{ path('settings_plugin_widgets_slot', {pluginId: widget.pluginId, widgetName: widget.widgetName}) }}">
                                             <input type="hidden" name="_token" value="{{ csrf_token('settings_plugin_widgets_slot_'~widget.pluginId~'_'~widget.widgetName) }}">
-                                            <select class="form-select form-select-sm" name="slot" data-submit-on-change>
+                                            <select class="form-select form-select-sm" name="slot" data-submit-on-change aria-label="{{ 'settings_plugin_widgets.slot_label'|trans({'%title%': widget.title}) }}">
                                                 <option value="bottom" {% if widget.slot == 'bottom' %}selected{% endif %}>{{ 'settings_plugin_widgets.slot_bottom'|trans }}</option>
                                                 <option value="side" {% if widget.slot == 'side' %}selected{% endif %}>{{ 'settings_plugin_widgets.slot_side'|trans }}</option>
                                             </select>

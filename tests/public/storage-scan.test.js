@@ -180,6 +180,11 @@ test('a candidate needing confirmation renders Bootstrap form-check radios and a
     const checks = li.querySelectorAll('.form-check');
     expect(checks).toHaveLength(2);
 
+    // The radios of one folder form a named group.
+    const group = li.querySelector('fieldset');
+    expect(group.querySelectorAll('.form-check-input')).toHaveLength(2);
+    expect(group.querySelector('legend').textContent).toBe('/anime/steins-gate');
+
     const radio = li.querySelector('.form-check-input');
     const label = li.querySelector('.form-check-label');
     expect(radio.type).toBe('radio');

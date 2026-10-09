@@ -191,7 +191,7 @@
                 button.type = 'button';
                 button.textContent = String(page);
                 if (page === currentPage) {
-                    button.setAttribute('aria-current', 'true');
+                    button.setAttribute('aria-current', 'page');
                 }
                 // Jumping to page 1 is treated the same as a fresh search (isNewQuery = true) —
                 // it puts the viewport back where a reset expects it. Any other page is just

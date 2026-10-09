@@ -22,15 +22,22 @@
 
 {% macro field_error(errors, key) %}
     {% if errors[key] is defined %}
-        <div class="invalid-feedback d-block" data-field-error="{{ key }}">{{ errors[key]|trans }}</div>
+        <div class="invalid-feedback d-block" id="{{ _self.error_id(key) }}" data-field-error="{{ key }}">{{ errors[key]|trans }}</div>
     {% endif %}
 {% endmacro %}
+
+{% macro error_id(key) %}anime-edit-error-{{ key|replace({'.': '-'}) }}{% endmacro %}
+
+{# Attributes tying a field to its field_error() message; empty when the field has no error. #}
+{% macro field_attrs(errors, key) %}{% if errors[key] is defined %} aria-describedby="{{ _self.error_id(key) }}" aria-invalid="true"{% endif %}{% endmacro %}
+
+{% macro invalid_class(errors, key) %}{% if errors[key] is defined %} is-invalid{% endif %}{% endmacro %}
 
 {% macro name_row(index, row, roles, errors) %}
     {% import _self as m %}
     <div class="anime-edit__row" data-rows-item>
         <div class="anime-edit__row-fields">
-            <input type="text" name="names[{{ index }}][name]" value="{{ row.name }}" maxlength="256" class="form-control" placeholder="{{ 'anime_edit.field_name'|trans }}" aria-label="{{ 'anime_edit.field_name'|trans }}">
+            <input type="text" name="names[{{ index }}][name]" value="{{ row.name }}" maxlength="256" class="form-control{{ m.invalid_class(errors, 'names.' ~ index) }}" placeholder="{{ 'anime_edit.field_name'|trans }}" aria-label="{{ 'anime_edit.field_name'|trans }}"{{ m.field_attrs(errors, 'names.' ~ index) }}>
             <input type="text" name="names[{{ index }}][locale]" value="{{ row.locale }}" maxlength="16" class="form-control anime-edit__locale" placeholder="{{ 'anime_edit.field_locale'|trans }}" aria-label="{{ 'anime_edit.field_locale'|trans }}">
             <select name="names[{{ index }}][role]" class="form-select anime-edit__role" aria-label="{{ 'anime_edit.field_role'|trans }}">
                 {% for role in roles %}
@@ -48,7 +55,7 @@
     <div class="anime-edit__row" data-rows-item>
         <div class="anime-edit__row-fields">
             <input type="text" name="descriptions[{{ index }}][locale]" value="{{ row.locale }}" maxlength="8" class="form-control anime-edit__locale" placeholder="{{ 'anime_edit.field_locale'|trans }}" aria-label="{{ 'anime_edit.field_locale'|trans }}">
-            <textarea name="descriptions[{{ index }}][text]" rows="3" class="form-control" aria-label="{{ 'anime_edit.field_description_text'|trans }}">{{ row.text }}</textarea>
+            <textarea name="descriptions[{{ index }}][text]" rows="3" class="form-control{{ m.invalid_class(errors, 'descriptions.' ~ index) }}" aria-label="{{ 'anime_edit.field_description_text'|trans }}"{{ m.field_attrs(errors, 'descriptions.' ~ index) }}>{{ row.text }}</textarea>
             <button type="button" class="btn btn-outline-secondary" data-rows-remove aria-label="{{ 'anime_edit.remove_button'|trans }}" title="{{ 'anime_edit.remove_button'|trans }}">{{ icon('x-lg') }}</button>
         </div>
         {{ m.field_error(errors, 'descriptions.' ~ index) }}
@@ -59,7 +66,7 @@
     {% import _self as m %}
     <div class="anime-edit__row" data-rows-item>
         <div class="anime-edit__row-fields">
-            <input type="{{ field == 'sources' ? 'url' : 'text' }}" name="{{ field }}[{{ index }}]" value="{{ value }}" class="form-control" aria-label="{{ label|trans }}">
+            <input type="{{ field == 'sources' ? 'url' : 'text' }}" name="{{ field }}[{{ index }}]" value="{{ value }}" class="form-control{{ m.invalid_class(errors, field ~ '.' ~ index) }}" aria-label="{{ label|trans }}"{{ m.field_attrs(errors, field ~ '.' ~ index) }}>
             <button type="button" class="btn btn-outline-secondary" data-rows-remove aria-label="{{ 'anime_edit.remove_button'|trans }}" title="{{ 'anime_edit.remove_button'|trans }}">{{ icon('x-lg') }}</button>
         </div>
         {{ m.field_error(errors, field ~ '.' ~ index) }}
@@ -102,44 +109,44 @@
 
             <div class="mb-3">
                 <label for="anime-edit-title" class="form-label">{{ 'anime_edit.field_title'|trans }}</label>
-                <input type="text" id="anime-edit-title" name="title" value="{{ form.title }}" maxlength="256" required class="form-control">
+                <input type="text" id="anime-edit-title" name="title" value="{{ form.title }}" maxlength="256" required class="form-control{{ m.invalid_class(errors, 'title') }}"{{ m.field_attrs(errors, 'title') }}>
                 {{ m.field_error(errors, 'title') }}
             </div>
 
-            <div class="mb-3" data-control="repeatable-rows">
-                <label class="form-label">{{ 'anime_edit.field_names'|trans }}</label>
+            <fieldset class="mb-3" data-control="repeatable-rows">
+                <legend class="form-label">{{ 'anime_edit.field_names'|trans }}</legend>
                 <div data-rows-list>
                     {% for row in form.names %}{{ m.name_row(loop.index0, row, role_choices, errors) }}{% endfor %}
                 </div>
                 <template data-rows-template>{{ m.name_row('__INDEX__', {name: '', locale: '', role: 'synonym'}, role_choices, {}) }}</template>
                 <button type="button" class="btn btn-outline-secondary btn-sm" data-rows-add>{{ 'anime_edit.add_button'|trans }}</button>
-            </div>
+            </fieldset>
 
-            <div class="mb-3" data-control="repeatable-rows">
-                <label class="form-label">{{ 'anime_edit.field_descriptions'|trans }}</label>
+            <fieldset class="mb-3" data-control="repeatable-rows">
+                <legend class="form-label">{{ 'anime_edit.field_descriptions'|trans }}</legend>
                 <div data-rows-list>
                     {% for row in form.descriptions %}{{ m.description_row(loop.index0, row, errors) }}{% endfor %}
                 </div>
                 <template data-rows-template>{{ m.description_row('__INDEX__', {locale: '', text: ''}, {}) }}</template>
                 <button type="button" class="btn btn-outline-secondary btn-sm" data-rows-add>{{ 'anime_edit.add_locale_button'|trans }}</button>
-            </div>
+            </fieldset>
 
-            <div class="mb-3">
-                <label class="form-label">{{ 'anime_edit.field_genres'|trans }}</label>
+            <fieldset class="mb-3"{{ m.field_attrs(errors, 'genres') }}>
+                <legend class="form-label">{{ 'anime_edit.field_genres'|trans }}</legend>
                 {{ m.checkboxes('genres', genre_choices, form.genres, 'genre') }}
                 {{ m.field_error(errors, 'genres') }}
-            </div>
+            </fieldset>
 
-            <div class="mb-3">
-                <label class="form-label">{{ 'anime_edit.field_themes'|trans }}</label>
+            <fieldset class="mb-3"{{ m.field_attrs(errors, 'themes') }}>
+                <legend class="form-label">{{ 'anime_edit.field_themes'|trans }}</legend>
                 {{ m.checkboxes('themes', theme_choices, form.themes, 'theme') }}
                 {{ m.field_error(errors, 'themes') }}
-            </div>
+            </fieldset>
 
-            <div class="mb-3" data-control="repeatable-rows">
-                <label class="form-label" for="anime-edit-studios-filter">{{ 'anime_edit.field_studios'|trans }}</label>
+            <fieldset class="mb-3" data-control="repeatable-rows"{{ m.field_attrs(errors, 'studios') }}>
+                <legend class="form-label">{{ 'anime_edit.field_studios'|trans }}</legend>
                 <div data-control="choice-filter">
-                    <input type="search" id="anime-edit-studios-filter" class="form-control form-control-sm mb-1" data-filter-input placeholder="{{ 'anime_edit.filter_studios'|trans }}" autocomplete="off">
+                    <input type="search" id="anime-edit-studios-filter" class="form-control form-control-sm mb-1" data-filter-input placeholder="{{ 'anime_edit.filter_studios'|trans }}" aria-label="{{ 'anime_edit.filter_studios'|trans }}" autocomplete="off">
                     <div class="anime-edit__choices anime-edit__choices--list" data-studio-choices>
                         {% for studio in studio_choices|filter(s => s.id in form.studios) %}{{ m.studio_choice(studio, true) }}{% endfor %}
                         {% for studio in studio_choices|filter(s => s.id not in form.studios) %}{{ m.studio_choice(studio, false) }}{% endfor %}
@@ -153,12 +160,12 @@
                 <template data-rows-template>{{ m.text_row('new_studios', '__INDEX__', '', {}, 'anime_edit.field_new_studios') }}</template>
                 <button type="button" class="btn btn-outline-secondary btn-sm" data-rows-add>{{ 'anime_edit.add_button'|trans }}</button>
                 {{ m.field_error(errors, 'new_studios') }}
-            </div>
+            </fieldset>
 
             <div class="row g-3 mb-3">
                 <div class="col-md-4">
                     <label for="anime-edit-demographic" class="form-label">{{ 'anime_edit.field_demographic'|trans }}</label>
-                    <select id="anime-edit-demographic" name="demographic" class="form-select">
+                    <select id="anime-edit-demographic" name="demographic" class="form-select{{ m.invalid_class(errors, 'demographic') }}"{{ m.field_attrs(errors, 'demographic') }}>
                         <option value="">{{ 'anime_edit.demographic_none'|trans }}</option>
                         {% for value in demographic_choices %}
                             <option value="{{ value }}"{% if value == form.demographic %} selected{% endif %}>{{ ('demographic.' ~ value)|trans }}</option>
@@ -168,12 +175,12 @@
                 </div>
                 <div class="col-md-4">
                     <label for="anime-edit-date-premiere" class="form-label">{{ 'anime_edit.field_date_premiere'|trans }}</label>
-                    <input type="date" id="anime-edit-date-premiere" name="date_premiere" value="{{ form.date_premiere }}" class="form-control">
+                    <input type="date" id="anime-edit-date-premiere" name="date_premiere" value="{{ form.date_premiere }}" class="form-control{{ m.invalid_class(errors, 'date_premiere') }}"{{ m.field_attrs(errors, 'date_premiere') }}>
                     {{ m.field_error(errors, 'date_premiere') }}
                 </div>
                 <div class="col-md-4">
                     <label for="anime-edit-date-end" class="form-label">{{ 'anime_edit.field_date_end'|trans }}</label>
-                    <input type="date" id="anime-edit-date-end" name="date_end" value="{{ form.date_end }}" class="form-control">
+                    <input type="date" id="anime-edit-date-end" name="date_end" value="{{ form.date_end }}" class="form-control{{ m.invalid_class(errors, 'date_end') }}"{{ m.field_attrs(errors, 'date_end') }}>
                     {{ m.field_error(errors, 'date_end') }}
                 </div>
             </div>
@@ -181,31 +188,31 @@
             <div class="row g-3 mb-3">
                 <div class="col-md-4">
                     <label for="anime-edit-duration" class="form-label">{{ 'anime_edit.field_duration_minutes'|trans }}</label>
-                    <input type="text" inputmode="numeric" id="anime-edit-duration" name="duration_minutes" value="{{ form.duration_minutes }}" class="form-control">
+                    <input type="text" inputmode="numeric" id="anime-edit-duration" name="duration_minutes" value="{{ form.duration_minutes }}" class="form-control{{ m.invalid_class(errors, 'duration_minutes') }}"{{ m.field_attrs(errors, 'duration_minutes') }}>
                     {{ m.field_error(errors, 'duration_minutes') }}
                 </div>
                 {% if is_series %}
                     <div class="col-md-4">
                         <label for="anime-edit-episodes" class="form-label">{{ 'anime_edit.field_episodes_count'|trans }}</label>
-                        <input type="text" inputmode="numeric" id="anime-edit-episodes" name="episodes_count" value="{{ form.episodes_count }}" class="form-control">
+                        <input type="text" inputmode="numeric" id="anime-edit-episodes" name="episodes_count" value="{{ form.episodes_count }}" class="form-control{{ m.invalid_class(errors, 'episodes_count') }}"{{ m.field_attrs(errors, 'episodes_count') }}>
                         {{ m.field_error(errors, 'episodes_count') }}
                     </div>
                 {% endif %}
                 <div class="col-md-4">
                     <label for="anime-edit-countries" class="form-label">{{ 'anime_edit.field_countries'|trans }}</label>
-                    <input type="text" id="anime-edit-countries" name="countries" value="{{ form.countries }}" placeholder="JP, US" class="form-control">
+                    <input type="text" id="anime-edit-countries" name="countries" value="{{ form.countries }}" placeholder="JP, US" class="form-control{{ m.invalid_class(errors, 'countries') }}"{{ m.field_attrs(errors, 'countries') }}>
                     {{ m.field_error(errors, 'countries') }}
                 </div>
             </div>
 
-            <div class="mb-3" data-control="repeatable-rows">
-                <label class="form-label">{{ 'anime_edit.field_sources'|trans }}</label>
+            <fieldset class="mb-3" data-control="repeatable-rows">
+                <legend class="form-label">{{ 'anime_edit.field_sources'|trans }}</legend>
                 <div data-rows-list>
                     {% for value in form.sources %}{{ m.text_row('sources', loop.index0, value, errors, 'anime_edit.field_sources') }}{% endfor %}
                 </div>
                 <template data-rows-template>{{ m.text_row('sources', '__INDEX__', '', {}, 'anime_edit.field_sources') }}</template>
                 <button type="button" class="btn btn-outline-secondary btn-sm" data-rows-add>{{ 'anime_edit.add_button'|trans }}</button>
-            </div>
+            </fieldset>
 
             <div class="mb-3" data-control="cover-size-limit">
                 <label for="anime-edit-cover" class="form-label">{{ 'anime_edit.field_cover'|trans }}</label>

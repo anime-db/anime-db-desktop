@@ -61,6 +61,16 @@
   max-height: 12rem;
 }
 
+// A group caption rendered as <legend class="form-label"> must look like the <label> it replaced:
+// Bootstrap's reboot floats a legend and sizes it as a heading.
+.anime-edit legend.form-label {
+    float: none;
+    width: auto;
+    padding: 0;
+    font-size: inherit;
+    line-height: inherit;
+}
+
 .anime-edit__row {
     margin-bottom: 8px;
 }
