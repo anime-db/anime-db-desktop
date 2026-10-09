@@ -200,7 +200,7 @@ settings_plugin_widgets:
 settings_sync_review:
     title: Требует внимания — Настройки — AnimeDB
     heading: Требует внимания
-    empty: Нет элементов, требующих внимания.
+    empty: Нет пунктов, требующих внимания.
     empty_hint: Сюда попадают записи, синхронизация которых требует вашего решения.
     kind_potential_duplicate: Возможный дубликат
     kind_deleted_from_source: 'Удалено из списка на источнике «%source%»'
@@ -585,17 +585,17 @@ anime_detail:
     files_relocate_confirm: Хранилище «%name%» теперь находится здесь — обновить путь?
     files_request_failed: Не удалось выполнить запрос. Обновите страницу и повторите.
     files_linked: 'Привязано: «%name%» в хранилище «%storage%».'
-    files_linked_top_level: 'Привязано к папке верхнего уровня «%name%» (хранилище «%storage%»).'
+    files_linked_top_level: 'Привязана папка «%name%» из хранилища «%storage%» — в неё входит выбранная папка.'
     files_create_storage: Создать хранилище
     files_error_invalid_path: Нужен абсолютный путь к папке или файлу.
     files_error_outside_storages: Папка не входит ни в одно хранилище.
     files_error_storage_root: Нельзя привязать хранилище целиком.
     files_error_scan_running: Идёт сканирование этого хранилища, повторите после него.
     files_error_storage_has_downloads: 'Путь хранилища «%storage%» нельзя обновить, пока в него идут загрузки.'
-    files_error_ambiguous_name: 'Неоднозначное имя папки «%name%»: в хранилище есть несколько элементов, различающихся только регистром.'
-    files_error_entry_not_found: 'Элемент «%name%» не найден в хранилище «%storage%» или недоступен для чтения.'
-    files_error_entry_not_visible: 'Элемент «%name%» не виден сканеру: скрытое имя либо это не папка и не видеофайл.'
-    files_error_occupied: 'Элемент «%name%» хранилища «%storage%» уже привязан к другой записи:'
+    files_error_ambiguous_name: 'В хранилище несколько папок «%name%», различающихся только регистром букв, — привязать однозначно нельзя.'
+    files_error_entry_not_found: 'Папка или файл «%name%» не найдены в хранилище «%storage%» или недоступны для чтения.'
+    files_error_entry_not_visible: '«%name%» не будет найдено при сканировании: имя начинается с точки или это не папка и не видеофайл.'
+    files_error_occupied: 'Папка или файл «%name%» хранилища «%storage%» уже привязаны к другой записи:'
     notes_add_button: Добавить заметку
     notes_edit_button: Изменить
     rating_star_label: 'Оценка: %rating%'
@@ -756,7 +756,7 @@ storage_scan_log:
     status_running: Идёт
     status_done: Завершено
     status_failed: Ошибка
-    status_marker_conflict: Конфликт маркера
+    status_marker_conflict: Папка подключена как другое хранилище
     status_interrupted: Прервано
 
 search_plugins:

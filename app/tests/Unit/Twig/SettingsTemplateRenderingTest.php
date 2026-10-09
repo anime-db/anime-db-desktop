@@ -547,7 +547,7 @@ final class SettingsTemplateRenderingTest extends KernelTestCase
         $twig = self::getContainer()->get('twig');
         $html = $twig->render('settings/sync_review/index.html.twig', ['items' => [], 'duplicateClusters' => []]);
 
-        $this->assertStringContainsString('Нет элементов, требующих внимания.', $html);
+        $this->assertStringContainsString('Нет пунктов, требующих внимания.', $html);
     }
 
     public function testSyncReviewIndexRendersDuplicateClusterWithLinksToAnimeCards(): void
