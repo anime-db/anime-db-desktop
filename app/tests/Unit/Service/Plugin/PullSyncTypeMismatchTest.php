@@ -56,6 +56,7 @@ final class PullSyncTypeMismatchTest extends TestCase
     use BuildsPullSyncService;
 
     private const ID = 'animedb-shikimori';
+    private const OTHER_ID = 'animedb-myanimelist';
 
     private EntityManager $entityManager;
     private Anime $anime;
@@ -81,13 +82,13 @@ final class PullSyncTypeMismatchTest extends TestCase
         $this->entityManager->flush();
     }
 
-    private function pull(?ContractAnimeType $sourceType): void
+    private function pull(?ContractAnimeType $sourceType, string $pluginId = self::ID): void
     {
         $sync = $this->createStub(SyncInterface::class);
         $sync->method('pull')->willReturn([new SyncItem('1', SyncStatus::Plan, 'Cowboy Bebop', type: $sourceType)]);
 
-        $registry = new SyncRegistry([self::ID => $sync], new PluginsConfigStore(sys_get_temp_dir().'/anime-type-mismatch-'.uniqid().'.json'));
-        $this->assertTrue($this->newPullSyncService($registry)->pull(new PluginId(self::ID), $sync));
+        $registry = new SyncRegistry([$pluginId => $sync], new PluginsConfigStore(sys_get_temp_dir().'/anime-type-mismatch-'.uniqid().'.json'));
+        $this->assertTrue($this->newPullSyncService($registry)->pull(new PluginId($pluginId), $sync));
     }
 
     /** @return list<SyncReviewItem> */
@@ -184,5 +185,36 @@ final class PullSyncTypeMismatchTest extends TestCase
         $item = $this->items()[0];
         $this->assertTrue($item->forgetAnime($this->anime->id ?? 0));
         $this->assertTrue($item->isResolved());
+    }
+
+    private function rememberSecondPlugin(): void
+    {
+        $this->anime->rememberExternalId(new PluginId(self::OTHER_ID), '1');
+        $this->entityManager->flush();
+    }
+
+    public function testAnotherPluginReportingTheSameTypeRaisesItsOwnItem(): void
+    {
+        $this->rememberSecondPlugin();
+        $this->pull(ContractAnimeType::Tv);
+        $this->resolveAll();
+        $this->pull(ContractAnimeType::Tv, self::OTHER_ID);
+
+        $items = $this->items();
+        $this->assertCount(2, $items);
+        $this->assertSame(self::OTHER_ID, $items[1]->payload['plugin_id']);
+        $this->assertFalse($items[1]->isResolved());
+    }
+
+    public function testMatchingTypeFromOnePluginKeepsTheOpenItemOfAnother(): void
+    {
+        $this->rememberSecondPlugin();
+        $this->pull(ContractAnimeType::Tv, self::OTHER_ID);
+        $this->pull(ContractAnimeType::Movie);
+
+        $items = $this->items();
+        $this->assertCount(1, $items);
+        $this->assertSame(self::OTHER_ID, $items[0]->payload['plugin_id']);
+        $this->assertFalse($items[0]->isResolved());
     }
 }

@@ -81,6 +81,7 @@ use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
+use Symfony\Component\Security\Csrf\CsrfToken;
 use Symfony\Component\Security\Csrf\CsrfTokenManagerInterface;
 use Symfony\Component\Translation\Translator;
 use Symfony\Contracts\Translation\TranslatorInterface;
@@ -668,7 +669,7 @@ final class SyncReviewControllerTest extends TestCase
     }
 
     /** @return array{0: SyncReviewController, 1: SyncReviewItem, 2: Anime, 3: EntityManager} */
-    private function typeMismatchFixture(string $sourceType, bool $series = true): array
+    private function typeMismatchFixture(string $sourceType, bool $series = true, ?CsrfTokenManagerInterface $csrfTokenManager = null): array
     {
         $entityManager = $this->createInMemoryEntityManager();
 
@@ -690,6 +691,7 @@ final class SyncReviewControllerTest extends TestCase
             syncReviewItemRepository: new SyncReviewItemRepository($entityManager),
             animeRepository: new AnimeRepository($entityManager),
             entityManager: $entityManager,
+            csrfTokenManager: $csrfTokenManager,
         );
 
         return [$controller, $item, $anime, $entityManager];
@@ -739,6 +741,25 @@ final class SyncReviewControllerTest extends TestCase
 
         $this->assertSame('movie', $this->storedType($entityManager, $anime));
         $this->assertTrue($this->isStoredResolved($entityManager, $item));
+    }
+
+    public function testAcceptTypeRejectsInvalidCsrfTokenAndChangesNothing(): void
+    {
+        $csrf = $this->createMock(CsrfTokenManagerInterface::class);
+        [$controller, $item, $anime, $entityManager] = $this->typeMismatchFixture('ova', csrfTokenManager: $csrf);
+        $csrf->expects($this->once())
+            ->method('isTokenValid')
+            ->with($this->equalTo(new CsrfToken('settings_sync_review_accept_type_'.$item->id, 'token')))
+            ->willReturn(false);
+
+        try {
+            $controller->acceptType($item, $this->acceptRequest($item));
+            $this->fail('An invalid CSRF token must be rejected.');
+        } catch (BadRequestHttpException) {
+        }
+
+        $this->assertSame('tv', $this->storedType($entityManager, $anime));
+        $this->assertFalse($this->isStoredResolved($entityManager, $item));
     }
 
     public function testAcceptTypeIgnoresATypeSentInTheRequest(): void
