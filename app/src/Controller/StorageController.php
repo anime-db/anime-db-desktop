@@ -118,7 +118,9 @@ final class StorageController
                 $lastScans[$storage->id] = [
                     'run' => $done,
                     'needsDecision' => $done !== null ? $this->scanItemResolver->needsDecisionCount($done) : 0,
-                    'failedRun' => $latest->status !== ScanRunStatus::Done && $latest->id !== $done?->id ? $latest : null,
+                    // The journal reads a Running row without a live job lock as Interrupted, so Running here is a live scan.
+                    'running' => $latest->status === ScanRunStatus::Running,
+                    'failedRun' => !\in_array($latest->status, [ScanRunStatus::Done, ScanRunStatus::Running], true) && $latest->id !== $done?->id ? $latest : null,
                 ];
             }
         }

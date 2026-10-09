@@ -72,6 +72,9 @@
                                     {% else %}
                                         {{ storage.dateUpdate ? storage.dateUpdate|date('Y-m-d H:i') : ('storage_list.never_scanned'|trans) }}
                                     {% endif %}
+                                    {% if lastScan and lastScan.running %}
+                                        <div class="text-body-secondary"><a href="{{ path('storage_scan_progress', {id: storage.id}) }}">{{ 'storage_list.scan_running'|trans }}</a></div>
+                                    {% endif %}
                                     {% if lastScan and lastScan.failedRun %}
                                         <div class="text-danger-emphasis">{{ ('storage_scan_log.status_' ~ lastScan.failedRun.status.value)|trans }}: {{ lastScan.failedRun.startedAt|date('Y-m-d H:i') }}</div>
                                     {% endif %}

@@ -48,6 +48,18 @@ final class TopLevelEntry
     }
 
     /**
+     * Whether the storage root itself can be read — the same `is_readable()` check as
+     * {@see StorageAvailabilityService}. When it cannot (a disconnected disk), {@see self::exists()}
+     * says false for every entry, which must not be read as "the folder is gone".
+     */
+    public static function isRootReadable(Storage $storage): bool
+    {
+        $root = $storage->getPath();
+
+        return $root !== null && is_readable($root);
+    }
+
+    /**
      * Whether the top-level entry $name is still in the storage root. $name is a bare name: anything
      * with a separator or a dot segment is not a top-level entry. Existence only — what the scanner
      * would show of it is {@see self::isVisibleToScanner()}'s business.

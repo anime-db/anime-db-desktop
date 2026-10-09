@@ -431,6 +431,54 @@ final class StorageControllerTest extends TestCase
         $this->createController(storages: $storages, twig: $twig, journal: $journal, animes: $animes)->index();
     }
 
+    public function testListShowsALiveRunningScanNeutrallyInsteadOfAsAFailedOne(): void
+    {
+        $storage = new Storage('Main folder', 'D:\\Anime', StorageType::Folder);
+        $this->setStorageId($storage, 1);
+        $storages = $this->createStub(StorageRepository::class);
+        $storages->method('findAllOrderedByName')->willReturn([$storage]);
+
+        $journal = $this->createJournal($this->createJobLockService(ScanStorageMessage::jobKey(1)));
+        $journal->start(1);
+        $animes = $this->createStub(AnimeRepository::class);
+        $animes->method('findStoragePathsByStorageId')->willReturn([]);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('storage/list.html.twig', $this->callback(
+                static fn (array $params): bool => $params['lastScans'][1]['running'] === true
+                    && $params['lastScans'][1]['failedRun'] === null,
+            ))
+            ->willReturn('<html></html>');
+
+        $this->createController(storages: $storages, twig: $twig, journal: $journal, animes: $animes)->index();
+    }
+
+    public function testListTreatsARunningRowWithoutALiveLockAsInterrupted(): void
+    {
+        $storage = new Storage('Main folder', 'D:\\Anime', StorageType::Folder);
+        $this->setStorageId($storage, 1);
+        $storages = $this->createStub(StorageRepository::class);
+        $storages->method('findAllOrderedByName')->willReturn([$storage]);
+
+        $journal = $this->createJournal($this->createJobLockService());
+        $journal->start(1);
+        $animes = $this->createStub(AnimeRepository::class);
+        $animes->method('findStoragePathsByStorageId')->willReturn([]);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('storage/list.html.twig', $this->callback(
+                static fn (array $params): bool => $params['lastScans'][1]['running'] === false
+                    && $params['lastScans'][1]['failedRun']?->status === ScanRunStatus::Interrupted,
+            ))
+            ->willReturn('<html></html>');
+
+        $this->createController(storages: $storages, twig: $twig, journal: $journal, animes: $animes)->index();
+    }
+
     public function testListKeepsTheCounterAndDateOfTheLastDoneRunAfterAFailedOne(): void
     {
         $storage = new Storage('Main folder', 'D:\\Anime', StorageType::Folder);

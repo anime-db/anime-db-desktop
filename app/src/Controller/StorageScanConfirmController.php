@@ -100,6 +100,10 @@ final class StorageScanConfirmController
 
         // The scan result may be days old (issue #998): the folder it names can be gone by now, and
         // a link to a folder that does not exist is worse than a refusal.
+        if (!TopLevelEntry::isRootReadable($storage)) {
+            return new JsonResponse(['error' => 'storage_unavailable', 'storage' => $storage->getName()], JsonResponse::HTTP_SERVICE_UNAVAILABLE);
+        }
+
         if (!TopLevelEntry::exists($storage, $storagePath)) {
             return new JsonResponse(['error' => 'entry_missing'], JsonResponse::HTTP_GONE);
         }

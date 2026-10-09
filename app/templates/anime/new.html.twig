@@ -27,7 +27,7 @@
         <h1>{{ 'anime_new.heading'|trans }}</h1>
 
         {% if error %}
-            <p class="alert alert-danger">{{ error|trans }}</p>
+            <p class="alert alert-danger">{{ error|trans(error_params ?? {}) }}</p>
         {% endif %}
 
         <form method="post" action="{{ path('anime_create') }}">

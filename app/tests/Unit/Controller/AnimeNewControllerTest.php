@@ -323,6 +323,31 @@ final class AnimeNewControllerTest extends TestCase
         $this->assertSame('anime_new.error_entry_missing', $captured['error']);
     }
 
+    public function testCreateReportsAnUnavailableStorageWhenTheRootIsUnreadable(): void
+    {
+        $storage = $this->storageWithFolder();
+        $storage->relocate($storage->getPath().'/disconnected');
+        $entityManager = $this->createMock(EntityManagerInterface::class);
+        $entityManager->method('find')->willReturn($storage);
+        $entityManager->expects($this->never())->method('persist');
+
+        $captured = [];
+        $twig = $this->createMock(Environment::class);
+        $twig->method('render')->willReturnCallback(static function (string $template, array $params) use (&$captured): string {
+            $captured = $params;
+
+            return '';
+        });
+
+        $this->createController(entityManager: $entityManager, twig: $twig)->create(Request::create('/anime/new', 'POST', [
+            'title' => 'Frieren', 'type' => 'tv', 'watch_status' => 'plan',
+            'storage_id' => '3', 'storage_path' => 'Frieren.mkv', '_token' => 'token',
+        ]));
+
+        $this->assertSame('anime_new.error_storage_unavailable', $captured['error']);
+        $this->assertSame(['%name%' => 'Local'], $captured['error_params']);
+    }
+
     public function testCreateReportsAFormErrorWhenAnotherRecordHoldsThePairInsteadOfFailingOnTheUniqueIndex(): void
     {
         $storage = $this->storageWithFolder('Frieren.mkv');

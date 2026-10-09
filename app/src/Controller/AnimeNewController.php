@@ -88,6 +88,7 @@ final class AnimeNewController
             storageId: $storageId,
             storagePath: $storagePath,
             error: $storage !== null ? $this->linkRefusal($storage, (string) $storagePath) : null,
+            errorParams: $storage !== null ? ['%name%' => $storage->getName()] : [],
         );
     }
 
@@ -129,6 +130,7 @@ final class AnimeNewController
                         storageId: $storageId,
                         storagePath: $storagePath,
                         error: $refusal,
+                        errorParams: ['%name%' => $storage->getName()],
                     );
                 }
 
@@ -163,6 +165,10 @@ final class AnimeNewController
      */
     private function linkRefusal(Storage $storage, string $storagePath): ?string
     {
+        if (!TopLevelEntry::isRootReadable($storage)) {
+            return 'anime_new.error_storage_unavailable';
+        }
+
         if (!TopLevelEntry::exists($storage, $storagePath)) {
             return 'anime_new.error_entry_missing';
         }
@@ -177,6 +183,7 @@ final class AnimeNewController
         return null;
     }
 
+    /** @param array<string, string> $errorParams */
     private function renderForm(
         string $title = '',
         ?AnimeType $type = null,
@@ -184,6 +191,8 @@ final class AnimeNewController
         mixed $storageId = null,
         mixed $storagePath = null,
         ?string $error = null,
+        /* @var array<string, string> $errorParams */
+        array $errorParams = [],
     ): Response {
         return new Response($this->twig->render('anime/new.html.twig', [
             'title' => $title,
@@ -192,6 +201,7 @@ final class AnimeNewController
             'storage_id' => $storageId,
             'storage_path' => $storagePath,
             'error' => $error,
+            'error_params' => $errorParams,
             'types' => array_column(AnimeType::cases(), 'value'),
             'watch_statuses' => array_column(WatchStatus::cases(), 'value'),
         ]));

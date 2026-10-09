@@ -586,4 +586,24 @@ final class StorageScanConfirmControllerTest extends TestCase
         $this->assertSame(410, $response->getStatusCode());
         $this->assertSame(0, $this->entityManager->getConnection()->fetchOne('SELECT COUNT(*) FROM anime'));
     }
+
+    public function testConfirmReportsAnUnavailableStorageInsteadOfAMissingFolderWhenTheRootIsUnreadable(): void
+    {
+        $storage = $this->persistStorage();
+        $storage->relocate($this->storageDir.'/disconnected');
+
+        $response = $this->createController()->confirm($storage, $this->jsonRequest([
+            'token' => 'token',
+            'storage_path' => 'Bleach.mkv',
+            'plugin_id' => 'acme',
+            'external_id' => '1',
+            'name' => 'Bleach',
+        ]));
+
+        $this->assertSame(503, $response->getStatusCode());
+        $this->assertSame(
+            ['error' => 'storage_unavailable', 'storage' => 'Main folder'],
+            json_decode((string) $response->getContent(), true),
+        );
+    }
 }

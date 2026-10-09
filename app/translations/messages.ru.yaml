@@ -513,6 +513,8 @@ storage_list:
     needs_decision: 'Требуют решения: %count%'
     scan_log_link: Журнал сканирования
     entry_missing: Папки больше нет.
+    scan_running: Идёт сканирование
+    storage_unavailable: 'Хранилище «%name%» сейчас недоступно — подключите диск и повторите.'
     resolved_summary: 'Решено: %count%'
     journal_load_error: Не удалось загрузить результаты сканирования.
     manual_entry_text: 'Совпадений не найдено: %path%'
@@ -683,6 +685,7 @@ anime_new:
     type_hint: Тип нельзя изменить после создания записи.
     cancel_button: Отмена
     error_entry_missing: Папки больше нет.
+    error_storage_unavailable: 'Хранилище «%name%» сейчас недоступно — подключите диск и повторите.'
     error_storage_path_taken: Эта папка уже привязана к другой записи.
 
 storage_new:

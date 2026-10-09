@@ -513,6 +513,8 @@ storage_list:
     needs_decision: 'Needs a decision: %count%'
     scan_log_link: Scan journal
     entry_missing: The folder no longer exists.
+    scan_running: Scan in progress
+    storage_unavailable: 'Storage “%name%” is not available right now — connect the disk and try again.'
     resolved_summary: 'Resolved: %count%'
     journal_load_error: Failed to load the scan results.
     manual_entry_text: 'No match found: %path%'
@@ -683,6 +685,7 @@ anime_new:
     type_hint: The type cannot be changed after the entry is created.
     cancel_button: Cancel
     error_entry_missing: The folder no longer exists.
+    error_storage_unavailable: 'Storage “%name%” is not available right now — connect the disk and try again.'
     error_storage_path_taken: Another entry is already linked to this folder.
 
 storage_new:

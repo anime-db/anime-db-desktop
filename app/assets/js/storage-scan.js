@@ -52,6 +52,14 @@
         }
     }
 
+    // The server refused a confirmation because the storage root is not readable (HTTP 503, a disconnected disk).
+    class StorageUnavailableError extends Error {
+        constructor(storageName) {
+            super('Storage is unavailable');
+            this.storageName = storageName;
+        }
+    }
+
     // The server refused a confirmation because the folder is no longer in the storage (HTTP 410).
     class EntryMissingError extends Error {
         constructor() {
@@ -209,6 +217,10 @@
                     if (response.status === 410) {
                         throw new EntryMissingError();
                     }
+                    if (response.status === 503) {
+                        const data = await response.json();
+                        throw new StorageUnavailableError(data.storage ?? '');
+                    }
                     if (response.status === 409) {
                         const data = await response.json();
                         throw new ConflictError(data.conflict);
@@ -233,6 +245,15 @@
                     if (reason instanceof EntryMissingError) {
                         li.replaceChildren();
                         li.textContent = await window.AppTranslations.trans('storage_list.entry_missing');
+
+                        return;
+                    }
+
+                    if (reason instanceof StorageUnavailableError) {
+                        li.replaceChildren();
+                        li.textContent = await window.AppTranslations.trans('storage_list.storage_unavailable', {
+                            name: reason.storageName,
+                        });
 
                         return;
                     }
