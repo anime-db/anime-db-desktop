@@ -27,6 +27,7 @@ declare(strict_types=1);
 
 namespace App\Service\Storage;
 
+use App\Entity\Storage;
 use App\Service\Media\MediaExtensions;
 
 /**
@@ -44,5 +45,32 @@ final class TopLevelEntry
         }
 
         return !$entry->isFile() || \in_array(strtolower($entry->getExtension()), MediaExtensions::VIDEO, true);
+    }
+
+    /**
+     * Whether the storage root itself can be read — the same `is_readable()` check as
+     * {@see StorageAvailabilityService}. When it cannot (a disconnected disk), {@see self::exists()}
+     * says false for every entry, which must not be read as "the folder is gone".
+     */
+    public static function isRootReadable(Storage $storage): bool
+    {
+        $root = $storage->getPath();
+
+        return $root !== null && is_readable($root);
+    }
+
+    /**
+     * Whether the top-level entry $name is still in the storage root. $name is a bare name: anything
+     * with a separator or a dot segment is not a top-level entry. Existence only — what the scanner
+     * would show of it is {@see self::isVisibleToScanner()}'s business.
+     */
+    public static function exists(Storage $storage, string $name): bool
+    {
+        $root = $storage->getPath();
+        if ($root === null || $name === '' || $name === '.' || $name === '..' || preg_match('/[\\\\\/]/', $name) === 1) {
+            return false;
+        }
+
+        return file_exists(rtrim($root, '\\/').\DIRECTORY_SEPARATOR.$name);
     }
 }

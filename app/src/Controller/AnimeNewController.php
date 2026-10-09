@@ -33,6 +33,9 @@ use AnimeDb\PluginContracts\Model\AnimeId;
 use App\Entity\Enum\AnimeType;
 use App\Entity\Enum\WatchStatus;
 use App\Entity\Storage;
+use App\Repository\AnimeRepository;
+use App\Service\Storage\Scan\ScanItemResolver;
+use App\Service\Storage\TopLevelEntry;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -69,16 +72,23 @@ final class AnimeNewController
         private readonly UrlGeneratorInterface $urlGenerator,
         private readonly Environment $twig,
         private readonly EventDispatcherInterface $eventDispatcher,
+        private readonly AnimeRepository $animes,
     ) {
     }
 
     #[Route('/anime/new', name: 'anime_new', methods: ['GET'])]
     public function new(Request $request): Response
     {
+        $storageId = $request->query->get('storage_id');
+        $storagePath = $request->query->get('storage_path');
+        $storage = $this->findLinkTarget($storageId, $storagePath);
+
         return $this->renderForm(
             title: (string) $request->query->get('title', ''),
-            storageId: $request->query->get('storage_id'),
-            storagePath: $request->query->get('storage_path'),
+            storageId: $storageId,
+            storagePath: $storagePath,
+            error: $storage !== null ? $this->linkRefusal($storage, (string) $storagePath) : null,
+            errorParams: $storage !== null ? ['%name%' => $storage->getName()] : [],
         );
     }
 
@@ -109,8 +119,21 @@ final class AnimeNewController
         $anime->setTitle($title)->setWatchStatus($watchStatus);
 
         if (\is_string($storageId) && $storageId !== '' && \is_string($storagePath) && $storagePath !== '') {
-            $storage = $this->entityManager->find(Storage::class, $storageId);
-            if ($storage instanceof Storage) {
+            $storage = $this->findLinkTarget($storageId, $storagePath);
+            if ($storage !== null) {
+                $refusal = $this->linkRefusal($storage, $storagePath);
+                if ($refusal !== null) {
+                    return $this->renderForm(
+                        title: $title,
+                        type: $type,
+                        watchStatus: $watchStatus,
+                        storageId: $storageId,
+                        storagePath: $storagePath,
+                        error: $refusal,
+                        errorParams: ['%name%' => $storage->getName()],
+                    );
+                }
+
                 $anime->setStorage($storage)->setStoragePath($storagePath);
             }
         }
@@ -124,6 +147,43 @@ final class AnimeNewController
         return new RedirectResponse($this->urlGenerator->generate('anime_show', ['id' => $anime->id]));
     }
 
+    private function findLinkTarget(mixed $storageId, mixed $storagePath): ?Storage
+    {
+        if (!\is_string($storageId) || $storageId === '' || !\is_string($storagePath) || $storagePath === '') {
+            return null;
+        }
+
+        $storage = $this->entityManager->find(Storage::class, $storageId);
+
+        return $storage instanceof Storage ? $storage : null;
+    }
+
+    /**
+     * Why the record cannot be linked to the folder, as a translation key (issue #998): the folder
+     * is gone, or another record already holds the pair — which the unique index would otherwise
+     * turn into a 500 on flush.
+     */
+    private function linkRefusal(Storage $storage, string $storagePath): ?string
+    {
+        if (!TopLevelEntry::isRootReadable($storage)) {
+            return 'anime_new.error_storage_unavailable';
+        }
+
+        if (!TopLevelEntry::exists($storage, $storagePath)) {
+            return 'anime_new.error_entry_missing';
+        }
+
+        $key = ScanItemResolver::pathKey($storagePath);
+        foreach ($this->animes->findStoragePathsByStorageId($storage->id ?? 0) as $held) {
+            if (ScanItemResolver::pathKey($held) === $key) {
+                return 'anime_new.error_storage_path_taken';
+            }
+        }
+
+        return null;
+    }
+
+    /** @param array<string, string> $errorParams */
     private function renderForm(
         string $title = '',
         ?AnimeType $type = null,
@@ -131,6 +191,8 @@ final class AnimeNewController
         mixed $storageId = null,
         mixed $storagePath = null,
         ?string $error = null,
+        /* @var array<string, string> $errorParams */
+        array $errorParams = [],
     ): Response {
         return new Response($this->twig->render('anime/new.html.twig', [
             'title' => $title,
@@ -139,6 +201,7 @@ final class AnimeNewController
             'storage_id' => $storageId,
             'storage_path' => $storagePath,
             'error' => $error,
+            'error_params' => $errorParams,
             'types' => array_column(AnimeType::cases(), 'value'),
             'watch_statuses' => array_column(WatchStatus::cases(), 'value'),
         ]));

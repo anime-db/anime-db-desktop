@@ -25,6 +25,12 @@
 // scan just triggered from this page: subscribes through window.ScanWatcher (scan.js, issue
 // #139) to the storage_id the server put in the redirect's query string, then renders progress
 // and the final scan.done/scan.failed payload without a page reload.
+//
+// The same section can instead carry data-items-url (issue #998): the results of a scan journal
+// run are then fetched from that endpoint and rendered by the very same code, with no
+// subscription. Actions (confirm, create an entry) exist only when the endpoint says the run is
+// the latest one, and only for items that are not resolved yet; resolved items are collapsed.
+// Any key of an item may be missing — stored items are a versioned format.
 (function () {
     const GROUPS = [
         { type: 'Updated', labelKey: 'storage_list.group_updated' },
@@ -46,6 +52,21 @@
         }
     }
 
+    // The server refused a confirmation because the storage root is not readable (HTTP 503, a disconnected disk).
+    class StorageUnavailableError extends Error {
+        constructor(storageName) {
+            super('Storage is unavailable');
+            this.storageName = storageName;
+        }
+    }
+
+    // The server refused a confirmation because the folder is no longer in the storage (HTTP 410).
+    class EntryMissingError extends Error {
+        constructor() {
+            super('storage scan confirm entry missing');
+        }
+    }
+
     // Guards against a scan that finished (or is still running) before this page managed to
     // subscribe: without it a missed scan.progress/scan.done leaves the progress bar stuck at
     // 0% forever with no feedback (issue #156).
@@ -60,11 +81,15 @@
         const confirmUrl = root.dataset.confirmUrl;
         const confirmToken = root.dataset.confirmToken;
         const animeNewUrl = root.dataset.animeNewUrl;
+        const itemsUrl = root.dataset.itemsUrl ?? null;
+
+        // False for a journal run that is not the latest one; a live scan is always actionable.
+        let actionsEnabled = true;
 
         // The server now decides whether a scan is running from its own job lock, not from this
         // URL's `?started=1` (issue #834 review) — stripping it here keeps a later F5 or
         // back/forward navigation from looking like a fresh "just triggered a scan" request.
-        if (window.history && window.location.search !== '') {
+        if (itemsUrl === null && window.history && window.location.search !== '') {
             window.history.replaceState(null, '', window.location.pathname);
         }
 
@@ -74,7 +99,7 @@
         const errorBox = root.querySelector('#storage-scan-error');
         const resultsBox = root.querySelector('#storage-scan-results');
 
-        let noResponseTimer = setTimeout(onNoResponse, NO_RESPONSE_TIMEOUT_MS);
+        let noResponseTimer = itemsUrl === null ? setTimeout(onNoResponse, NO_RESPONSE_TIMEOUT_MS) : null;
 
         function clearNoResponseTimer() {
             if (noResponseTimer !== null) {
@@ -116,8 +141,8 @@
             const li = document.createElement('li');
             li.className = 'list-group-item';
             li.textContent = await window.AppTranslations.trans(labelKey, {
-                title: item.anime?.title ?? item.storage_path,
-                path: item.storage_path,
+                title: item.anime?.title ?? item.storage_path ?? '',
+                path: item.storage_path ?? '',
             });
 
             return li;
@@ -127,7 +152,7 @@
             const li = document.createElement('li');
             li.className = 'list-group-item';
             li.textContent = await window.AppTranslations.trans('storage_list.auto_linked_text', {
-                title: item.anime?.title ?? item.storage_path,
+                title: item.anime?.title ?? item.storage_path ?? '',
             });
 
             return li;
@@ -140,7 +165,7 @@
             const params = new URLSearchParams({
                 title: item.cleaned_name ?? '',
                 storage_id: storageId,
-                storage_path: item.storage_path,
+                storage_path: item.storage_path ?? '',
             });
             link.href = `${animeNewUrl}?${params.toString()}`;
             link.textContent = await window.AppTranslations.trans(labelKey, labelParams);
@@ -148,12 +173,20 @@
             return link;
         }
 
-        async function buildManualEntryItem(item) {
+        async function buildManualEntryItem(item, interactive) {
             const li = document.createElement('li');
             li.className = 'list-group-item';
 
+            if (!interactive) {
+                li.textContent = await window.AppTranslations.trans('storage_list.manual_entry_text', {
+                    path: item.storage_path ?? '',
+                });
+
+                return li;
+            }
+
             li.appendChild(await buildManualEntryLink(item, 'storage_list.create_entry_link', {
-                title: item.cleaned_name ?? item.storage_path,
+                title: item.cleaned_name ?? item.storage_path ?? '',
             }));
 
             return li;
@@ -165,7 +198,7 @@
             // A plugin candidate carries its real pluginId/externalId (issue #832) so the server
             // can find-or-create by that pair instead of a bare title it could never dedupe the
             // catalog by.
-            const body = candidate.anime_id !== null
+            const body = candidate.anime_id != null
                 ? { token: confirmToken, storage_path: item.storage_path, anime_id: candidate.anime_id }
                 : {
                     token: confirmToken,
@@ -181,6 +214,13 @@
                 body: JSON.stringify(body),
             })
                 .then(async (response) => {
+                    if (response.status === 410) {
+                        throw new EntryMissingError();
+                    }
+                    if (response.status === 503) {
+                        const data = await response.json();
+                        throw new StorageUnavailableError(data.storage ?? '');
+                    }
                     if (response.status === 409) {
                         const data = await response.json();
                         throw new ConflictError(data.conflict);
@@ -202,6 +242,22 @@
                     );
                 })
                 .catch(async (reason) => {
+                    if (reason instanceof EntryMissingError) {
+                        li.replaceChildren();
+                        li.textContent = await window.AppTranslations.trans('storage_list.entry_missing');
+
+                        return;
+                    }
+
+                    if (reason instanceof StorageUnavailableError) {
+                        li.replaceChildren();
+                        li.textContent = await window.AppTranslations.trans('storage_list.storage_unavailable', {
+                            name: reason.storageName,
+                        });
+
+                        return;
+                    }
+
                     if (reason instanceof ConflictError && reason.conflict) {
                         li.replaceChildren();
                         li.textContent = await window.AppTranslations.trans('storage_list.conflict_text', {
@@ -222,13 +278,13 @@
                 });
         }
 
-        async function buildConfirmationItem(item, index) {
+        async function buildConfirmationItem(item, index, interactive) {
             const li = document.createElement('li');
             li.className = 'list-group-item';
 
             const path = document.createElement('p');
             path.className = 'mb-2';
-            path.textContent = item.storage_path;
+            path.textContent = item.storage_path ?? '';
             li.appendChild(path);
 
             if (item.cleaned_name && item.cleaned_name !== item.storage_path) {
@@ -240,10 +296,26 @@
                 li.appendChild(cleaned);
             }
 
+            const candidates = Array.isArray(item.candidates) ? item.candidates : [];
+
+            if (!interactive) {
+                const titles = candidates.map((candidate) => candidate.title ?? '').filter((title) => title !== '');
+                if (titles.length > 0) {
+                    const summary = document.createElement('p');
+                    summary.className = 'mb-0 text-body-secondary';
+                    summary.textContent = await window.AppTranslations.trans('storage_list.candidates_text', {
+                        titles: titles.join(', '),
+                    });
+                    li.appendChild(summary);
+                }
+
+                return li;
+            }
+
             const radios = [];
             const radioGroupName = `storage-scan-confirm-${index}`;
 
-            for (const [candidateIndex, candidate] of item.candidates.entries()) {
+            for (const [candidateIndex, candidate] of candidates.entries()) {
                 const wrapper = document.createElement('div');
                 wrapper.className = 'form-check';
 
@@ -261,11 +333,11 @@
                 const label = document.createElement('label');
                 label.className = 'form-check-label';
                 label.htmlFor = radio.id;
-                const source = candidate.anime_id !== null
+                const source = candidate.anime_id != null
                     ? await window.AppTranslations.trans('storage_list.candidate_source_catalog')
-                    : (candidate.plugin_name ?? candidate.plugin_id);
+                    : (candidate.plugin_name ?? candidate.plugin_id ?? '');
                 label.textContent = await window.AppTranslations.trans('storage_list.candidate_label', {
-                    title: candidate.title,
+                    title: candidate.title ?? '',
                     source,
                 });
 
@@ -285,7 +357,7 @@
                 }
 
                 radios.forEach((radio) => { radio.disabled = true; });
-                confirmCandidate(item, item.candidates[Number(checked.value)], li, radios, button);
+                confirmCandidate(item, candidates[Number(checked.value)], li, radios, button);
             });
             li.appendChild(button);
 
@@ -301,7 +373,7 @@
             const li = document.createElement('li');
             li.className = 'list-group-item';
             li.textContent = await window.AppTranslations.trans('storage_list.conflict_text', {
-                title: item.anime?.title ?? item.storage_path,
+                title: item.anime?.title ?? item.storage_path ?? '',
                 path: item.already_linked_storage_path ?? '',
             });
 
@@ -312,7 +384,7 @@
             const li = document.createElement('li');
             li.className = 'list-group-item';
             li.textContent = await window.AppTranslations.trans('storage_list.error_text', {
-                path: item.storage_path,
+                path: item.storage_path ?? '',
                 message: item.error_message ?? '',
             });
 
@@ -322,7 +394,7 @@
         // Every ScanItemType case is handled here (issue #832) — an item of a type this
         // function does not recognize used to be silently dropped from the results list, which
         // is exactly how a new server-side type (Conflict, Error) would have gone unnoticed.
-        async function buildItem(type, item, index) {
+        async function buildItem(type, item, index, interactive) {
             switch (type) {
                 case 'Updated':
                     return buildInfoItem(item, 'storage_list.updated_text');
@@ -331,9 +403,9 @@
                 case 'AutoLinked':
                     return buildAutoLinkedItem(item);
                 case 'NeedsManualEntry':
-                    return buildManualEntryItem(item);
+                    return buildManualEntryItem(item, interactive);
                 case 'NeedsConfirmation':
-                    return buildConfirmationItem(item, index);
+                    return buildConfirmationItem(item, index, interactive);
                 case 'Conflict':
                     return buildConflictItem(item);
                 case 'Error':
@@ -352,26 +424,49 @@
             heading.textContent = await window.AppTranslations.trans(group.labelKey);
             section.appendChild(heading);
 
+            // Only a journal item can be resolved (the server computes it); the rest of the items
+            // keep their actions as long as the run is actionable.
+            const open = items.filter((item) => item.resolved !== true);
+            const resolved = items.filter((item) => item.resolved === true);
+
             const list = document.createElement('ul');
             list.className = 'list-group';
-            for (const [index, item] of items.entries()) {
-                const li = await buildItem(group.type, item, index);
+            for (const [index, item] of open.entries()) {
+                const li = await buildItem(group.type, item, index, actionsEnabled);
                 if (li !== null) {
                     list.appendChild(li);
                 }
             }
             section.appendChild(list);
 
+            if (resolved.length > 0) {
+                const details = document.createElement('details');
+                details.className = 'mt-2';
+
+                const summary = document.createElement('summary');
+                summary.textContent = await window.AppTranslations.trans('storage_list.resolved_summary', {
+                    count: resolved.length,
+                });
+                details.appendChild(summary);
+
+                const resolvedList = document.createElement('ul');
+                resolvedList.className = 'list-group mt-2';
+                for (const [index, item] of resolved.entries()) {
+                    const li = await buildItem(group.type, item, index, false);
+                    if (li !== null) {
+                        resolvedList.appendChild(li);
+                    }
+                }
+                details.appendChild(resolvedList);
+                section.appendChild(details);
+            }
+
             return section;
         }
 
-        async function onDone(data) {
-            clearNoResponseTimer();
-            progressBox.hidden = true;
+        async function renderResults(items) {
             resultsBox.hidden = false;
             resultsBox.replaceChildren();
-
-            const items = Array.isArray(data.items) ? data.items : [];
 
             for (const group of GROUPS) {
                 const groupItems = items.filter((item) => item.type === group.type);
@@ -388,9 +483,38 @@
             }
         }
 
+        async function onDone(data) {
+            clearNoResponseTimer();
+            progressBox.hidden = true;
+
+            await renderResults(Array.isArray(data.items) ? data.items : []);
+        }
+
+        async function loadJournalRun() {
+            try {
+                const response = await fetch(itemsUrl, { headers: { Accept: 'application/json' } });
+                if (!response.ok) {
+                    throw new Error(`Items request failed with status ${response.status}`);
+                }
+
+                const data = await response.json();
+                actionsEnabled = data.latest === true;
+                await renderResults(Array.isArray(data.items) ? data.items : []);
+            } catch {
+                errorBox.hidden = false;
+                errorBox.textContent = await window.AppTranslations.trans('storage_list.journal_load_error');
+            }
+        }
+
         // window.AppTranslations.getCatalogue() (see translations.js) is a network round-trip and
         // scan.progress/scan.done may already be on the bus by the time it resolves — subscribing
         // does not need to wait on it (issue #156).
+        if (itemsUrl !== null) {
+            loadJournalRun();
+
+            return function unmountJournalRun() {};
+        }
+
         window.ScanWatcher.watch(storageId, { onProgress, onDone, onFailed });
 
         // Symmetric demount (issue #734): a node removed by an htmx swap must not leave its timer

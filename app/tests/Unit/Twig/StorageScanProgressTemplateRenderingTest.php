@@ -29,6 +29,8 @@ namespace App\Tests\Unit\Twig;
 
 use App\Entity\Enum\StorageType;
 use App\Entity\Storage;
+use App\Service\Storage\Scan\ScanRun;
+use App\Service\Storage\Scan\ScanRunStatus;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RequestStack;
@@ -69,7 +71,7 @@ final class StorageScanProgressTemplateRenderingTest extends KernelTestCase
 
         /** @var Environment $twig */
         $twig = self::getContainer()->get('twig');
-        $html = $twig->render('storage/scan_progress.html.twig', ['storage' => $this->storage(), 'started' => true]);
+        $html = $twig->render('storage/scan_progress.html.twig', ['storage' => $this->storage(), 'started' => true, 'latestRun' => null, 'failedRun' => null]);
 
         $this->assertStringContainsString('data-control="storage-scan"', $html);
         $this->assertStringContainsString('data-storage-id="7"', $html);
@@ -83,9 +85,61 @@ final class StorageScanProgressTemplateRenderingTest extends KernelTestCase
 
         /** @var Environment $twig */
         $twig = self::getContainer()->get('twig');
-        $html = $twig->render('storage/scan_progress.html.twig', ['storage' => $this->storage(), 'started' => false]);
+        $html = $twig->render('storage/scan_progress.html.twig', ['storage' => $this->storage(), 'started' => false, 'latestRun' => null, 'failedRun' => null]);
 
         $this->assertStringNotContainsString('data-control="storage-scan"', $html);
         $this->assertStringContainsString('action="/storage/7/scan"', $html);
+    }
+
+    private function journalRun(ScanRunStatus $status, ?string $error = null): ScanRun
+    {
+        return new ScanRun(3, 7, new \DateTimeImmutable('@1000'), new \DateTimeImmutable('@1060'), $status, $error, ['NeedsManualEntry' => 2], []);
+    }
+
+    public function testNotStartedWithAJournalRunRendersItsResultsInsteadOfTheNotStartedText(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession();
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('storage/scan_progress.html.twig', ['storage' => $this->storage(), 'started' => false, 'latestRun' => $this->journalRun(ScanRunStatus::Done), 'failedRun' => null]);
+
+        $this->assertStringContainsString('data-control="storage-scan"', $html);
+        $this->assertStringContainsString('data-items-url="/storage/7/scans/3/items"', $html);
+        $this->assertStringNotContainsString('storage_scan_progress.not_started', $html);
+        $this->assertStringContainsString('action="/storage/7/scan"', $html);
+    }
+
+    public function testAFailedRunShowsItsErrorAndNoResultsSection(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession();
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('storage/_scan_run_results.html.twig', ['storage' => $this->storage(), 'run' => $this->journalRun(ScanRunStatus::Failed, 'boom')]);
+
+        $this->assertStringContainsString('boom', $html);
+        $this->assertStringNotContainsString('data-control="storage-scan"', $html);
+    }
+
+    public function testTheJournalPagesRender(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession();
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+
+        $log = $twig->render('storage/scan_log.html.twig', [
+            'storage' => $this->storage(),
+            'runs' => [$this->journalRun(ScanRunStatus::Done), $this->journalRun(ScanRunStatus::Interrupted)],
+            'groupLabelKeys' => \App\Controller\StorageScanLogController::GROUP_LABEL_KEYS,
+        ]);
+        $this->assertStringContainsString('href="/storage/7/scans/3"', $log);
+
+        $page = $twig->render('storage/scan_run.html.twig', ['storage' => $this->storage(), 'run' => $this->journalRun(ScanRunStatus::Done)]);
+        $this->assertStringContainsString('data-items-url="/storage/7/scans/3/items"', $page);
     }
 }

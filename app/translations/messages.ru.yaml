@@ -510,6 +510,15 @@ storage_list:
     error_text: 'Ошибка: %path% — %message%'
     delete_error_preset: 'Нельзя удалить хранилище «%name%»: оно используется для загрузок по умолчанию.'
     delete_error_unfinished_downloads: 'Нельзя удалить хранилище «%name%»: в нём есть незавершённые закачки или закачки с ошибкой. Удалите их, чтобы освободить хранилище.'
+    needs_decision: 'Требуют решения: %count%'
+    scan_log_link: Журнал сканирования
+    entry_missing: Папки больше нет.
+    scan_running: Идёт сканирование
+    storage_unavailable: 'Хранилище «%name%» сейчас недоступно — подключите диск и повторите.'
+    resolved_summary: 'Решено: %count%'
+    journal_load_error: Не удалось загрузить результаты сканирования.
+    manual_entry_text: 'Совпадений не найдено: %path%'
+    candidates_text: 'Варианты: %titles%'
 
 anime_detail:
     title: '%title% — AnimeDB'
@@ -694,6 +703,9 @@ anime_new:
     type_placeholder: — выберите —
     type_hint: Тип нельзя изменить после создания записи.
     cancel_button: Отмена
+    error_entry_missing: Папки больше нет.
+    error_storage_unavailable: 'Хранилище «%name%» сейчас недоступно — подключите диск и повторите.'
+    error_storage_path_taken: Эта папка уже привязана к другой записи.
 
 storage_new:
     title: Новое хранилище — AnimeDB
@@ -723,6 +735,28 @@ storage_scan_progress:
     not_started: Скан не запущен.
     scan_button: Запустить скан
     catalog_link: ← Каталог
+    last_run_heading: Последнее сканирование
+
+storage_scan_log:
+    title: Журнал сканирования — AnimeDB
+    heading: 'Журнал сканирования: %name%'
+    run_title: Результаты сканирования — AnimeDB
+    run_heading: 'Результаты сканирования: %name%'
+    empty: Сканирований ещё не было.
+    started_column: Начато
+    status_column: Статус
+    counts_column: Найдено
+    open_link: Открыть
+    back_link: ← Журнал сканирования
+    storages_link: ← Хранилища
+    count_text: '%label%: %count%'
+    run_error: 'Сканирование не удалось: %message%'
+    interrupted_hint: Сканирование прервалось, не закончившись; запустите его снова.
+    status_running: Идёт
+    status_done: Завершено
+    status_failed: Ошибка
+    status_marker_conflict: Конфликт маркера
+    status_interrupted: Прервано
 
 search_plugins:
     title: Найти в плагинах — AnimeDB
