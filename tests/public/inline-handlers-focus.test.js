@@ -70,3 +70,42 @@ test('ignores a corrupt record', () => {
     expect(document.activeElement).toBe(document.body);
     expect(window.sessionStorage.getItem('submit-on-change-focus')).toBeNull();
 });
+
+test('picks the control in the form whose action was remembered when name and value repeat', () => {
+    document.body.innerHTML = `
+        <form action="/widgets/1"><input type="checkbox" id="w1" name="active" value="1" data-submit-on-change></form>
+        <form action="/widgets/2"><input type="checkbox" id="w2" name="active" value="1" data-submit-on-change></form>
+    `;
+    window.sessionStorage.setItem(
+        'submit-on-change-focus',
+        JSON.stringify({ name: 'active', value: '1', action: '/widgets/2' }),
+    );
+
+    loadModule();
+
+    expect(document.activeElement).toBe(document.getElementById('w2'));
+});
+
+test('remembers the action on change and restores focus to that very control after the reload', () => {
+    document.body.innerHTML = `
+        <form action="/widgets/1"><input type="checkbox" id="w1" name="active" value="1" data-submit-on-change></form>
+        <form action="/widgets/2"><input type="checkbox" id="w2" name="active" value="1" data-submit-on-change></form>
+    `;
+    document.querySelectorAll('form').forEach((form) => {
+        form.submit = jest.fn();
+    });
+    loadModule();
+
+    const second = document.getElementById('w2');
+    second.checked = true;
+    second.dispatchEvent(new Event('change', { bubbles: true }));
+
+    expect(JSON.parse(window.sessionStorage.getItem('submit-on-change-focus'))).toEqual({
+        name: 'active', value: '1', action: '/widgets/2',
+    });
+
+    document.getElementById('w1').focus();
+    loadModule();
+
+    expect(document.activeElement).toBe(second);
+});

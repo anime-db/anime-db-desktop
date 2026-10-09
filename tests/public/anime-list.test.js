@@ -994,6 +994,7 @@ test('the "Shown X of Y" denominator uses the latest facets catalog_total, refre
 test('a checkbox accumulates without firing a request; the value label applies it immediately', async () => {
     const calls = mockFetchQueueAll();
     setUpTranslations();
+    window.AppTranslations.resolveKey = (catalogue, key, params) => (params ? `${key}:${JSON.stringify(params)}` : key);
 
     loadAnimeListModule();
     await flushMicrotasks();
@@ -1019,7 +1020,11 @@ test('a checkbox accumulates without firing a request; the value label applies i
 
     const nameButton = row.querySelector('.anime-list__filter-value-name');
     // Both the checkbox and the name button carry the value; the label tells them apart.
-    expect(nameButton.getAttribute('aria-label')).toBe('anime_list.filter_value_instant_label');
+    const instantLabel = nameButton.getAttribute('aria-label');
+    expect(instantLabel.startsWith('anime_list.filter_value_instant_label:')).toBe(true);
+    expect(JSON.parse(instantLabel.slice('anime_list.filter_value_instant_label:'.length))).toEqual({
+        name: row.querySelector('.anime-list__filter-value-name').textContent,
+    });
     nameButton.dispatchEvent(new Event('click', { bubbles: true }));
     await flushMicrotasks();
 
