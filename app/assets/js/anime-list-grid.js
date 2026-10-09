@@ -47,6 +47,8 @@
     let emptyMessage = null;
     let pagination = null;
     let sentinel = null;
+    // The catalog area is the scroll container (issue #995), not the window.
+    let scroller = null;
 
     let sentinelObserver = null;
     let resizeObserver = null;
@@ -128,12 +130,14 @@
             grid.replaceChildren();
         }
         if (replace && isNewQuery) {
-            // The grid collapsing to a shorter height would otherwise leave the window scroll
+            // The grid collapsing to a shorter height would otherwise leave the catalog area's scroll
             // position wherever the browser clamps it, not at the top of the new list. Gated on
             // an explicit isNewQuery flag from the caller (issue #687), not on offset === 0: a
             // column-count requery of the same page can land back on offset 0 too, and that is
             // not a "the result set changed" event the way a search/sort/filter change is.
-            window.scrollTo(0, 0);
+            if (scroller) {
+                scroller.scrollTo({ top: 0 });
+            }
         }
         for (const anime of items) {
             grid.appendChild(buildCard(anime, catalogue));
@@ -209,7 +213,7 @@
             if (entries.some((entry) => entry.isIntersecting)) {
                 requestPage(offset + limit, false, false);
             }
-        });
+        }, { root: scroller });
         sentinelObserver.observe(sentinel);
     }
 
@@ -288,6 +292,16 @@
         emptyMessage = root.querySelector('#anime-list-empty');
         pagination = root.querySelector('#anime-list-pagination');
         sentinel = root.querySelector('#anime-list-sentinel');
+        scroller = root.querySelector('#anime-list-catalog');
+        if (!scroller) {
+            // The template contract: the grid lives inside #anime-list-catalog. Without it the
+            // scroll reset and the infinite-scroll root silently stop working.
+            console.error('anime-list-grid: #anime-list-catalog scroll container not found');
+        } else if (document.activeElement === null || document.activeElement === document.body) {
+            // The document no longer scrolls (issue #995), so PageDown/Space/arrows would do
+            // nothing until a click lands inside the area; focus it unless a field already has it.
+            scroller.focus({ preventScroll: true });
+        }
         requestPage = requestPageCallback;
 
         resizeObserver = new ResizeObserver(() => {
@@ -318,6 +332,7 @@
         grid = null;
         emptyMessage = null;
         pagination = null;
+        scroller = null;
         sentinel = null;
     }
 
