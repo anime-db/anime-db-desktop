@@ -71,7 +71,7 @@ final class StorageScanProgressTemplateRenderingTest extends KernelTestCase
 
         /** @var Environment $twig */
         $twig = self::getContainer()->get('twig');
-        $html = $twig->render('storage/scan_progress.html.twig', ['storage' => $this->storage(), 'started' => true, 'latestRun' => null]);
+        $html = $twig->render('storage/scan_progress.html.twig', ['storage' => $this->storage(), 'started' => true, 'latestRun' => null, 'failedRun' => null]);
 
         $this->assertStringContainsString('data-control="storage-scan"', $html);
         $this->assertStringContainsString('data-storage-id="7"', $html);
@@ -85,7 +85,7 @@ final class StorageScanProgressTemplateRenderingTest extends KernelTestCase
 
         /** @var Environment $twig */
         $twig = self::getContainer()->get('twig');
-        $html = $twig->render('storage/scan_progress.html.twig', ['storage' => $this->storage(), 'started' => false, 'latestRun' => null]);
+        $html = $twig->render('storage/scan_progress.html.twig', ['storage' => $this->storage(), 'started' => false, 'latestRun' => null, 'failedRun' => null]);
 
         $this->assertStringNotContainsString('data-control="storage-scan"', $html);
         $this->assertStringContainsString('action="/storage/7/scan"', $html);
@@ -103,7 +103,7 @@ final class StorageScanProgressTemplateRenderingTest extends KernelTestCase
 
         /** @var Environment $twig */
         $twig = self::getContainer()->get('twig');
-        $html = $twig->render('storage/scan_progress.html.twig', ['storage' => $this->storage(), 'started' => false, 'latestRun' => $this->journalRun(ScanRunStatus::Done)]);
+        $html = $twig->render('storage/scan_progress.html.twig', ['storage' => $this->storage(), 'started' => false, 'latestRun' => $this->journalRun(ScanRunStatus::Done), 'failedRun' => null]);
 
         $this->assertStringContainsString('data-control="storage-scan"', $html);
         $this->assertStringContainsString('data-items-url="/storage/7/scans/3/items"', $html);

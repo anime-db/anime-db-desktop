@@ -56,7 +56,10 @@ final class ScanRunJournal
     ) {
     }
 
-    /** Opens a Running row and drops the runs of the storage beyond the last {@see self::KEEP_RUNS}. */
+    /**
+     * Opens a Running row and drops the runs of the storage beyond the last {@see self::KEEP_RUNS},
+     * except its newest Done run: a streak of failures must not evict the last useful result.
+     */
     public function start(int $storageId): int
     {
         $this->connection->insert('scan_run', [
@@ -71,8 +74,10 @@ final class ScanRunJournal
         $this->connection->executeStatement(
             'DELETE FROM scan_run WHERE storage_id = :storageId AND id NOT IN (
                 SELECT id FROM scan_run WHERE storage_id = :storageId ORDER BY id DESC LIMIT '.self::KEEP_RUNS.'
-            )',
-            ['storageId' => $storageId],
+            ) AND id != COALESCE((
+                SELECT MAX(id) FROM scan_run WHERE storage_id = :storageId AND status = :done
+            ), 0)',
+            ['storageId' => $storageId, 'done' => ScanRunStatus::Done->value],
         );
 
         return $runId;
@@ -115,6 +120,17 @@ final class ScanRunJournal
         return $row === false ? null : $this->hydrate($row, isLatest: true, withItems: true);
     }
 
+    /** The newest successfully finished run of the storage, with its items: the actionable one. */
+    public function findLatestDone(int $storageId): ?ScanRun
+    {
+        $row = $this->connection->fetchAssociative(
+            'SELECT * FROM scan_run WHERE storage_id = :storageId AND status = :done ORDER BY id DESC LIMIT 1',
+            ['storageId' => $storageId, 'done' => ScanRunStatus::Done->value],
+        );
+
+        return $row === false ? null : $this->hydrate($row, isLatest: false, withItems: true);
+    }
+
     /** The run with its items, or null when it does not exist or belongs to another storage. */
     public function find(int $storageId, int $runId): ?ScanRun
     {
@@ -134,6 +150,15 @@ final class ScanRunJournal
         return (int) $this->connection->fetchOne(
             'SELECT MAX(id) FROM scan_run WHERE storage_id = :storageId',
             ['storageId' => $storageId],
+        ) === $runId;
+    }
+
+    /** Whether the run is the newest Done run of the storage — the only one whose items can be acted on. */
+    public function isLatestDone(int $storageId, int $runId): bool
+    {
+        return (int) $this->connection->fetchOne(
+            'SELECT MAX(id) FROM scan_run WHERE storage_id = :storageId AND status = :done',
+            ['storageId' => $storageId, 'done' => ScanRunStatus::Done->value],
         ) === $runId;
     }
 

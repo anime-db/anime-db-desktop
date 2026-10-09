@@ -56,6 +56,15 @@
                 <div id="storage-scan-results" hidden></div>
             </section>
         {% else %}
+            {% if failedRun %}
+                <p class="alert alert-warning">
+                    <span class="badge text-bg-secondary">{{ ('storage_scan_log.status_' ~ failedRun.status.value)|trans }}</span>
+                    <span class="ms-1">{{ failedRun.startedAt|date('Y-m-d H:i') }}</span>
+                    {% if failedRun.errorMessage is not null and failedRun.status.value in ['failed', 'marker_conflict'] %}
+                        {{ 'storage_scan_log.run_error'|trans({'%message%': failedRun.errorMessage}) }}
+                    {% endif %}
+                </p>
+            {% endif %}
             {% if latestRun %}
                 <h2 class="h5">{{ 'storage_scan_progress.last_run_heading'|trans }}</h2>
 

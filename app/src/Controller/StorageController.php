@@ -34,7 +34,9 @@ use App\Repository\StorageRepository;
 use App\Service\AppSettingsProvider;
 use App\Service\JobLock\JobLockService;
 use App\Service\Storage\Scan\ScanItemResolver;
+use App\Service\Storage\Scan\ScanRun;
 use App\Service\Storage\Scan\ScanRunJournal;
+use App\Service\Storage\Scan\ScanRunStatus;
 use App\Service\Storage\StorageAvailabilityService;
 use App\Service\Storage\StorageMarkerService;
 use Doctrine\ORM\EntityManagerInterface;
@@ -105,9 +107,19 @@ final class StorageController
 
         $lastScans = [];
         foreach ($storages as $storage) {
-            $run = $storage->id !== null ? $this->scanRuns->findLatest($storage->id) : null;
-            if ($run !== null) {
-                $lastScans[$storage->id] = ['run' => $run, 'needsDecision' => $this->scanItemResolver->needsDecisionCount($run)];
+            if ($storage->id === null) {
+                continue;
+            }
+
+            // The date and the counter come from the last Done run; a newer failed one is shown beside them.
+            $done = $this->scanRuns->findLatestDone($storage->id);
+            $latest = $this->scanRuns->findLatest($storage->id);
+            if ($latest !== null) {
+                $lastScans[$storage->id] = [
+                    'run' => $done,
+                    'needsDecision' => $done !== null ? $this->scanItemResolver->needsDecisionCount($done) : 0,
+                    'failedRun' => $latest->status !== ScanRunStatus::Done && $latest->id !== $done?->id ? $latest : null,
+                ];
             }
         }
 
@@ -182,8 +194,17 @@ final class StorageController
             'storage' => $storage,
             'started' => $started,
             // Without a running scan the page shows the last journal run instead of "not started".
-            'latestRun' => $started ? null : $this->scanRuns->findLatest($storageId),
+            'latestRun' => $started ? null : $this->scanRuns->findLatestDone($storageId),
+            'failedRun' => $started ? null : $this->failedRunAfterLatestDone($storageId),
         ]));
+    }
+
+    /** The newest run when it is not a Done one (and so hides nothing from latestRun), else null. */
+    private function failedRunAfterLatestDone(int $storageId): ?ScanRun
+    {
+        $latest = $this->scanRuns->findLatest($storageId);
+
+        return $latest !== null && $latest->status !== ScanRunStatus::Done ? $latest : null;
     }
 
     /**

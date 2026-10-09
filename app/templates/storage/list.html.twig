@@ -64,13 +64,16 @@
                                 </td>
                                 <td>
                                     {% set lastScan = lastScans[storage.id] ?? null %}
-                                    {% if lastScan %}
+                                    {% if lastScan and lastScan.run %}
                                         {{ (lastScan.run.finishedAt ?? lastScan.run.startedAt)|date('Y-m-d H:i') }}
                                         {% if lastScan.needsDecision > 0 %}
                                             <div class="text-warning-emphasis">{{ 'storage_list.needs_decision'|trans({'%count%': lastScan.needsDecision}) }}</div>
                                         {% endif %}
                                     {% else %}
                                         {{ storage.dateUpdate ? storage.dateUpdate|date('Y-m-d H:i') : ('storage_list.never_scanned'|trans) }}
+                                    {% endif %}
+                                    {% if lastScan and lastScan.failedRun %}
+                                        <div class="text-danger-emphasis">{{ ('storage_scan_log.status_' ~ lastScan.failedRun.status.value)|trans }}: {{ lastScan.failedRun.startedAt|date('Y-m-d H:i') }}</div>
                                     {% endif %}
                                     {% if storage.scannable %}
                                         <div><a href="{{ path('storage_scans', {id: storage.id}) }}">{{ 'storage_list.scan_log_link'|trans }}</a></div>

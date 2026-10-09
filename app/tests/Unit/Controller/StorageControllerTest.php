@@ -40,6 +40,7 @@ use App\Service\JobLock\JobLockService;
 use App\Service\JobLock\ProcessLivenessChecker;
 use App\Service\Storage\Scan\ScanItemResolver;
 use App\Service\Storage\Scan\ScanRunJournal;
+use App\Service\Storage\Scan\ScanRunStatus;
 use App\Service\Storage\StorageAvailabilityService;
 use App\Service\Storage\StorageMarkerService;
 use App\Tests\Support\RunsMigrations;
@@ -428,6 +429,57 @@ final class StorageControllerTest extends TestCase
             ->willReturn('<html></html>');
 
         $this->createController(storages: $storages, twig: $twig, journal: $journal, animes: $animes)->index();
+    }
+
+    public function testListKeepsTheCounterAndDateOfTheLastDoneRunAfterAFailedOne(): void
+    {
+        $storage = new Storage('Main folder', 'D:\\Anime', StorageType::Folder);
+        $this->setStorageId($storage, 1);
+        $storages = $this->createStub(StorageRepository::class);
+        $storages->method('findAllOrderedByName')->willReturn([$storage]);
+
+        $journal = $this->createJournal($this->createJobLockService());
+        $doneId = $journal->start(1);
+        $journal->done($doneId, [['type' => 'NeedsManualEntry', 'storage_path' => 'Trigun']]);
+        $failedId = $journal->start(1);
+        $journal->fail($failedId, ScanRunStatus::Failed, 'disk is gone');
+        $animes = $this->createStub(AnimeRepository::class);
+        $animes->method('findStoragePathsByStorageId')->willReturn([]);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('storage/list.html.twig', $this->callback(
+                static fn (array $params): bool => $params['lastScans'][1]['run']?->id === $doneId
+                    && $params['lastScans'][1]['needsDecision'] === 1
+                    && $params['lastScans'][1]['failedRun']?->id === $failedId,
+            ))
+            ->willReturn('<html></html>');
+
+        $this->createController(storages: $storages, twig: $twig, journal: $journal, animes: $animes)->index();
+    }
+
+    public function testScanProgressKeepsTheLastDoneRunBesideAFailedOne(): void
+    {
+        $storage = new Storage('Main folder', 'D:\\Anime', StorageType::Folder);
+        $this->setStorageId($storage, 42);
+        $jobLockService = $this->createJobLockService();
+        $journal = $this->createJournal($jobLockService);
+        $doneId = $journal->start(42);
+        $journal->done($doneId, []);
+        $failedId = $journal->start(42);
+        $journal->fail($failedId, ScanRunStatus::Failed, 'disk is gone');
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('storage/scan_progress.html.twig', $this->callback(
+                static fn (array $params): bool => $params['latestRun']?->id === $doneId && $params['failedRun']?->id === $failedId,
+            ))
+            ->willReturn('<html></html>');
+
+        $this->createController(twig: $twig, jobLockService: $jobLockService, journal: $journal)
+            ->scanProgress($storage, Request::create('/storage/42/scan-progress'));
     }
 
     public function testScanProgressShowsTheLatestJournalRunInsteadOfNotStarted(): void

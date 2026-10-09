@@ -62,6 +62,7 @@ use App\Service\WsPublisher;
 use App\Tests\Support\RunsMigrations;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DriverManager;
+use Doctrine\DBAL\Exception as DBALException;
 use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\EntityManager;
 use Doctrine\ORM\ORMSetup;
@@ -653,7 +654,8 @@ final class ScanStorageMessageHandlerTest extends TestCase
         $this->entityManager->persist($storage);
         $this->entityManager->flush();
         $storageId = $this->requireId($storage);
-        $this->entityManager->getConnection()->executeStatement('DROP TABLE scan_run');
+        // start() still works and opens the row; only the closing update() throws.
+        $this->breakJournalUpdates();
 
         $wsPublisher = $this->newWsPublisher();
         $handler = $this->newHandler($this->createStub(ProcessLivenessChecker::class), $wsPublisher);
@@ -662,6 +664,61 @@ final class ScanStorageMessageHandlerTest extends TestCase
         $events = array_column($wsPublisher->since(0), 'event');
         $this->assertContains('scan.done', $events);
         $this->assertNotContains('scan.failed', $events);
+        $this->assertCount(1, $this->journalRows($storageId));
+        $this->assertJobLockReleased($storageId);
+    }
+
+    public function testABrokenJournalDoesNotReplaceTheScanException(): void
+    {
+        $dir = $this->makeStorageDir();
+        $storage = new Storage('Main folder', $dir, StorageType::Folder);
+        $this->entityManager->persist($storage);
+        $this->entityManager->flush();
+        $storageId = $this->requireId($storage);
+        $this->removeDir($dir);
+        $this->breakJournalUpdates();
+
+        $wsPublisher = $this->newWsPublisher();
+        $handler = $this->newHandler($this->createStub(ProcessLivenessChecker::class), $wsPublisher);
+
+        try {
+            $handler(new ScanStorageMessage($storageId));
+            $this->fail('Expected UnrecoverableMessageHandlingException.');
+        } catch (UnrecoverableMessageHandlingException $exception) {
+            $this->assertNotInstanceOf(DBALException::class, $exception->getPrevious());
+        }
+
+        $this->assertContains('scan.failed', array_column($wsPublisher->since(0), 'event'));
+        $this->assertJobLockReleased($storageId);
+    }
+
+    public function testABrokenJournalDoesNotTurnAMarkerConflictIntoAnException(): void
+    {
+        $dir = $this->makeStorageDir();
+        $this->touchFile($dir.'/New.mkv');
+        $owner = new Storage('Owner', $this->makeStorageDir(), StorageType::Folder);
+        $this->entityManager->persist($owner);
+        $this->entityManager->flush();
+        file_put_contents($dir.'/desktop.ini', "[AnimeDB]\nid={$owner->id}\n");
+        $storage = new Storage('Target', $dir, StorageType::Folder);
+        $this->entityManager->persist($storage);
+        $this->entityManager->flush();
+        $storageId = $this->requireId($storage);
+        $this->breakJournalUpdates();
+
+        $wsPublisher = $this->newWsPublisher();
+        $handler = $this->newHandler($this->createStub(ProcessLivenessChecker::class), $wsPublisher);
+        $handler(new ScanStorageMessage($storageId));
+
+        $this->assertContains('scan.failed', array_column($wsPublisher->since(0), 'event'));
+    }
+
+    /** Makes every UPDATE of the journal throw, while INSERT (start()) keeps working. */
+    private function breakJournalUpdates(): void
+    {
+        $this->entityManager->getConnection()->executeStatement(
+            "CREATE TRIGGER scan_run_no_update BEFORE UPDATE ON scan_run BEGIN SELECT RAISE(ABORT, 'journal is broken'); END",
+        );
     }
 
     /** @return list<array<string, mixed>> */

@@ -31,6 +31,7 @@ use App\Entity\Storage;
 use App\Service\Storage\Scan\ScanItemResolver;
 use App\Service\Storage\Scan\ScanRun;
 use App\Service\Storage\Scan\ScanRunJournal;
+use App\Service\Storage\Scan\ScanRunStatus;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
@@ -95,8 +96,8 @@ final class StorageScanLogController
 
         return new JsonResponse([
             'run' => ['id' => $scanRun->id, 'status' => $scanRun->status->value],
-            // Only the newest run is actionable: a confirmation addresses (storage, folder), not a run.
-            'latest' => $this->journal->isLatest($scanRun->storageId, $scanRun->id),
+            // Only the newest Done run is actionable: a confirmation addresses (storage, folder), not a run.
+            'latest' => $scanRun->status === ScanRunStatus::Done && $this->journal->isLatestDone($scanRun->storageId, $scanRun->id),
             'items' => $this->resolver->annotate($scanRun->storageId, $scanRun->items),
         ]);
     }

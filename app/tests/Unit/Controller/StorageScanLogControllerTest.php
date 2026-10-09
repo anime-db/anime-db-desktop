@@ -35,6 +35,7 @@ use App\Service\JobLock\JobLockService;
 use App\Service\JobLock\ProcessLivenessChecker;
 use App\Service\Storage\Scan\ScanItemResolver;
 use App\Service\Storage\Scan\ScanRunJournal;
+use App\Service\Storage\Scan\ScanRunStatus;
 use App\Tests\Support\RunsMigrations;
 use Doctrine\DBAL\DriverManager;
 use PHPUnit\Framework\TestCase;
@@ -105,6 +106,17 @@ final class StorageScanLogControllerTest extends TestCase
 
         $this->assertFalse(json_decode((string) $this->controller()->items($this->storage(1), $old)->getContent(), true)['latest']);
         $this->assertTrue(json_decode((string) $this->controller()->items($this->storage(1), $new)->getContent(), true)['latest']);
+    }
+
+    public function testAFailedRunDoesNotTakeActionabilityFromTheLastDoneRun(): void
+    {
+        $done = $this->journal->start(1);
+        $this->journal->done($done, [['type' => 'NeedsManualEntry', 'storage_path' => 'Trigun']]);
+        $failed = $this->journal->start(1);
+        $this->journal->fail($failed, ScanRunStatus::Failed, 'disk is gone');
+
+        $this->assertTrue(json_decode((string) $this->controller()->items($this->storage(1), $done)->getContent(), true)['latest']);
+        $this->assertFalse(json_decode((string) $this->controller()->items($this->storage(1), $failed)->getContent(), true)['latest']);
     }
 
     public function testARunOfAnotherStorageIsNotFoundOnTheItemsEndpoint(): void

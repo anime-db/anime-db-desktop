@@ -178,4 +178,16 @@ final class ScanRunJournalTest extends TestCase
         $this->assertSame([['v' => 1]], $run?->items);
         $this->assertSame([], $run->counts);
     }
+
+    public function testAStreakOfFailuresDoesNotEvictTheLastDoneRun(): void
+    {
+        $done = $this->journal->start(1);
+        $this->journal->done($done, []);
+        for ($i = 0; $i < ScanRunJournal::KEEP_RUNS + 2; ++$i) {
+            $this->journal->fail($this->journal->start(1), ScanRunStatus::Failed, 'disk is gone');
+        }
+
+        $this->assertSame($done, $this->journal->findLatestDone(1)?->id);
+        $this->assertTrue($this->journal->isLatestDone(1, $done));
+    }
 }
