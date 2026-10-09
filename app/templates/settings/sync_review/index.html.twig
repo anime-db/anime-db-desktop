@@ -24,6 +24,7 @@
 
 {% block settings_content %}
     {% from 'anime/_delete_confirm.html.twig' import delete_confirm, delete_modal %}
+    {% from 'anime/_type_change_modal.html.twig' import type_change_modal %}
     <div class="py-4">
         <h1 class="mb-4">{{ 'settings_sync_review.heading'|trans }}</h1>
 
@@ -60,6 +61,13 @@
                             {% if detail.anime is not null %}
                                 <a href="{{ path('anime_show', {id: detail.anime.id}) }}"><bdi>{{ detail.anime.title }}</bdi></a>
                             {% endif %}
+                        {% elseif typeMismatchDetails[item.id] is defined %}
+                            {% set mismatch = typeMismatchDetails[item.id] %}
+                            <p>{{ 'settings_sync_review.kind_type_mismatch'|trans({'%source%': bidi_isolate(plugin_name(mismatch.pluginId)), '%source_type%': ('anime_type.' ~ mismatch.sourceType)|trans}) }}</p>
+                            {% if mismatch.anime is not null %}
+                                <a href="{{ path('anime_show', {id: mismatch.anime.id}) }}"><bdi>{{ mismatch.anime.title }}</bdi></a>
+                                <p class="small text-body-secondary mb-0">{{ 'settings_sync_review.type_mismatch_current'|trans({'%type%': ('anime_type.' ~ mismatch.anime.type.value)|trans}) }}</p>
+                            {% endif %}
                         {% elseif correction is not null %}
                             <p>{{ 'settings_sync_review.kind_needs_correction'|trans }}</p>
                             {% if correction.anime is not null %}
@@ -93,8 +101,20 @@
                             <div class="d-flex gap-2 mt-2">
                                 <form method="post" action="{{ path('settings_sync_review_resolve', {id: item.id}) }}">
                                     <input type="hidden" name="_token" value="{{ csrf_token('settings_sync_review_resolve_' ~ item.id) }}">
-                                    <button type="submit" class="btn btn-outline-secondary btn-sm">{{ (item.kind.value == 'potential_duplicate' ? 'settings_sync_review.not_duplicate_button' : 'settings_sync_review.keep_button')|trans }}</button>
+                                    <button type="submit" class="btn btn-outline-secondary btn-sm">{{ (item.kind.value == 'potential_duplicate' ? 'settings_sync_review.not_duplicate_button' : (item.kind.value == 'type_mismatch' ? 'settings_sync_review.keep_type_button' : 'settings_sync_review.keep_button'))|trans }}</button>
                                 </form>
+                                {% if typeMismatchDetails[item.id] is defined and typeMismatchDetails[item.id].typeChange is not null %}
+                                    {% set mismatch = typeMismatchDetails[item.id] %}
+                                    {% if mismatch.typeChange.lossy %}
+                                        <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#sync-review-type-modal-{{ item.id }}">{{ 'settings_sync_review.accept_type_button'|trans }}</button>
+                                        {{ type_change_modal('sync-review-type-modal-' ~ item.id, path('settings_sync_review_accept_type', {id: item.id}), csrf_token('settings_sync_review_accept_type_' ~ item.id), {type: mismatch.anime.type.value, type_changes: [mismatch.typeChange]}) }}
+                                    {% else %}
+                                        <form method="post" action="{{ path('settings_sync_review_accept_type', {id: item.id}) }}">
+                                            <input type="hidden" name="_token" value="{{ csrf_token('settings_sync_review_accept_type_' ~ item.id) }}">
+                                            <button type="submit" class="btn btn-primary btn-sm">{{ 'settings_sync_review.accept_type_button'|trans }}</button>
+                                        </form>
+                                    {% endif %}
+                                {% endif %}
                                 {% if deletionDetails[item.id] is defined and deletionDetails[item.id].anime is not null %}
                                     {% set detail = deletionDetails[item.id] %}
                                     {% if detail.sourceRemoval.hasTargets %}

@@ -28,14 +28,19 @@ declare(strict_types=1);
 namespace App\Controller\Settings;
 
 use App\Entity\Anime;
+use App\Entity\Enum\AnimeType;
 use App\Entity\Enum\SyncReviewItemKind;
 use App\Entity\Enum\WatchStatus;
+use App\Entity\Exception\InvalidAnimeTypeChangeException;
 use App\Entity\SyncReviewItem;
 use App\Repository\AnimeRepository;
 use App\Repository\DownloadRepository;
 use App\Service\AnimeDeleteFlash;
 use App\Service\AnimeDeleteOutcome;
 use App\Service\AnimeDeleteService;
+use App\Service\AnimeTypeChangeOutcome;
+use App\Service\AnimeTypeChangeService;
+use App\Service\AnimeViewFactory;
 use App\Service\Sync\DeletedFromSourceDetector;
 use App\Service\Sync\SourceRemovalPlan;
 use App\Service\Sync\SourceRemovalPlanner;
@@ -46,11 +51,13 @@ use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpFoundation\Session\FlashBagAwareSessionInterface;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 use Symfony\Component\Security\Csrf\CsrfToken;
 use Symfony\Component\Security\Csrf\CsrfTokenManagerInterface;
+use Symfony\Contracts\Translation\TranslatorInterface;
 use Twig\Environment;
 
 /**
@@ -70,6 +77,11 @@ use Twig\Environment;
  * {@see DeletedFromSourceDetector::forgetListMembership()}, which removes the now-stale
  * AnimeSyncState snapshot row for the source plugin before flipping resolved_at — without it, the
  * next pull would see the same disappearance again and raise a duplicate review item.
+ *
+ * TypeMismatch (issue #1002): "keep" is the plain {@see resolve()}; {@see acceptType()} takes the
+ * type the source reports through {@see AnimeTypeChangeService}, the same service as the entry
+ * card's "Change type…" — a change that drops data (series ⇄ movie) shows that dialog's loss block
+ * and needs its confirmation.
  */
 final class SyncReviewController
 {
@@ -86,6 +98,9 @@ final class SyncReviewController
         private readonly CsrfTokenManagerInterface $csrfTokenManager,
         private readonly UrlGeneratorInterface $urlGenerator,
         private readonly Environment $twig,
+        private readonly AnimeTypeChangeService $typeChangeService,
+        private readonly AnimeViewFactory $animeViewFactory,
+        private readonly TranslatorInterface $translator,
     ) {
     }
 
@@ -99,6 +114,7 @@ final class SyncReviewController
             'duplicateClusters' => $this->duplicateClusters($items),
             'deletionDetails' => $this->deletionDetails($items),
             'needsCorrectionDetails' => $this->needsCorrectionDetails($items),
+            'typeMismatchDetails' => $this->typeMismatchDetails($items),
         ]));
     }
 
@@ -120,6 +136,53 @@ final class SyncReviewController
         }
 
         return new RedirectResponse($this->urlGenerator->generate('settings_sync_review_index'));
+    }
+
+    /**
+     * "Accept the source's type" of a TypeMismatch item (issue #1002). The type comes from the item's
+     * payload, never from the request. A change that drops data needs `confirm_loss`, as in the entry
+     * card's dialog. The item is resolved only once the type is the source's; a refusal leaves it open.
+     */
+    #[Route('/settings/sync-review/{id}/accept-type', name: 'settings_sync_review_accept_type', methods: ['POST'])]
+    public function acceptType(SyncReviewItem $item, Request $request): Response
+    {
+        $itemId = $item->id ?? throw new \LogicException('SyncReviewItem id must be set after persisting');
+        $this->assertValidCsrfToken('settings_sync_review_accept_type_'.$itemId, $request);
+
+        if ($item->kind !== SyncReviewItemKind::TypeMismatch) {
+            throw new BadRequestHttpException('Only a type mismatch item can accept the type of the source.');
+        }
+
+        $targetType = AnimeType::tryFrom((string) ($item->payload['source_type'] ?? ''))
+            ?? throw new BadRequestHttpException('Unknown source type.');
+        $animeId = $item->payload['anime_id'] ?? null;
+        $anime = \is_int($animeId) ? ($this->animeRepository->findByIds([$animeId])[$animeId] ?? null) : null;
+
+        if ($anime === null || $anime->getType() === $targetType) {
+            $this->syncReview->resolve($item);
+
+            return $this->backToIndex();
+        }
+
+        try {
+            $change = $anime->planTypeChange($targetType);
+            if ($change->isLossy() && !$request->request->getBoolean('confirm_loss')) {
+                $this->flash($request, 'danger', 'anime_type_change.flash_not_confirmed');
+            } elseif ($this->typeChangeService->change($anime, $targetType) === AnimeTypeChangeOutcome::Changed) {
+                // The service clears the entity manager, so the item is loaded again to be resolved.
+                $fresh = $this->entityManager->find(SyncReviewItem::class, $itemId);
+                if ($fresh !== null) {
+                    $this->syncReview->resolve($fresh);
+                }
+                $this->flash($request, 'success', 'anime_type_change.flash_changed', ['%type%' => $this->translator->trans('anime_type.'.$targetType->value)]);
+            } else {
+                $this->flash($request, 'danger', 'anime_type_change.flash_sync_running');
+            }
+        } catch (InvalidAnimeTypeChangeException) {
+            $this->flash($request, 'danger', 'anime_type_change.flash_invalid');
+        }
+
+        return $this->backToIndex();
     }
 
     /**
@@ -157,6 +220,54 @@ final class SyncReviewController
         }
 
         return new RedirectResponse($this->urlGenerator->generate('settings_sync_review_index'));
+    }
+
+    private function backToIndex(): Response
+    {
+        return new RedirectResponse($this->urlGenerator->generate('settings_sync_review_index'));
+    }
+
+    /** @param array<string, string> $parameters */
+    private function flash(Request $request, string $type, string $key, array $parameters = []): void
+    {
+        $session = $request->getSession();
+        \assert($session instanceof FlashBagAwareSessionInterface);
+
+        $session->getFlashBag()->add($type, ['text' => $this->translator->trans($key, $parameters), 'link_url' => null, 'link_label' => null]);
+    }
+
+    /**
+     * Display data for TypeMismatch items (issue #1002): the source and its type from the payload, and
+     * the record's type **as it is now** (read here, not a snapshot taken when the item was raised).
+     * `typeChange` has the shape the "Change type…" dialog takes and is null when the record is gone or
+     * the domain refuses the change.
+     *
+     * @param SyncReviewItem[] $items
+     *
+     * @return array<int, array{anime: ?Anime, pluginId: string, sourceType: string, typeChange: ?array<string, mixed>}>
+     */
+    private function typeMismatchDetails(array $items): array
+    {
+        $details = [];
+        foreach ($items as $item) {
+            if ($item->kind !== SyncReviewItemKind::TypeMismatch) {
+                continue;
+            }
+
+            $id = $item->id ?? throw new \LogicException('SyncReviewItem id must be set after persisting');
+            $animeId = $item->payload['anime_id'] ?? null;
+            $anime = \is_int($animeId) ? ($this->animeRepository->findByIds([$animeId])[$animeId] ?? null) : null;
+            $sourceType = AnimeType::tryFrom((string) ($item->payload['source_type'] ?? ''));
+
+            $details[$id] = [
+                'anime' => $anime,
+                'pluginId' => (string) ($item->payload['plugin_id'] ?? ''),
+                'sourceType' => $sourceType !== null ? $sourceType->value : '',
+                'typeChange' => $anime !== null && $sourceType !== null ? $this->animeViewFactory->serializeTypeChange($anime, $sourceType) : null,
+            ];
+        }
+
+        return $details;
     }
 
     /**

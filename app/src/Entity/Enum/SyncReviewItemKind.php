@@ -36,6 +36,8 @@ namespace App\Entity\Enum;
  *   participants disagreeing"): the engine already applied its best-effort max-updatedAt
  *   arbitration, this item is the "Поправить" prompt for a human to pin the actually-correct
  *   value (see SyncReconciler and .claude-docs/sync.md's reconciliation registry, pitfall #4).
+ * - TypeMismatch — the source reports another type for a title than the catalog record has; a pull
+ *   never changes a type, so it is left for the user to accept or to keep.
  *
  * No CHECK constraint pins these values in the migration (SQLite can't ALTER one), so adding a
  * case here is enough — the enumType column validates at the app layer.
@@ -46,4 +48,5 @@ enum SyncReviewItemKind: string
     case DeletedFromSource = 'deleted_from_source';
     case DeletionConflict = 'deletion_conflict';
     case NeedsCorrection = 'needs_correction';
+    case TypeMismatch = 'type_mismatch';
 }

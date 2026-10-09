@@ -301,7 +301,7 @@ final class SyncPullMessageHandlerTest extends TestCase
         $sync = $this->createMock(SyncInterface::class);
         $sync->method('resolveExternalId')->willReturn('1');
         $sync->method('findById')->willReturn(new PluginAnimeData(title: 'Cowboy Bebop'));
-        $sync->expects($this->once())->method('pull')->willReturn([new SyncItem('1', SyncStatus::Watching, 'Cowboy Bebop')]);
+        $sync->expects($this->once())->method('pull')->willReturn([new SyncItem('1', SyncStatus::Watching, 'Cowboy Bebop', type: null)]);
 
         $store = $this->store(['features' => ['sync' => true], 'syncSeeded' => true]);
         $this->handler($sync, $store)(new SyncPullMessage(self::ID));

@@ -27,6 +27,7 @@ declare(strict_types=1);
 
 namespace App\Repository;
 
+use App\Entity\Enum\SyncReviewItemKind;
 use App\Entity\SyncReviewItem;
 use Doctrine\ORM\EntityManagerInterface;
 
@@ -61,6 +62,16 @@ class SyncReviewItemRepository
     {
         return $this->entityManager->getRepository(SyncReviewItem::class)
             ->findBy(['resolvedAt' => null], ['createdAt' => 'ASC']);
+    }
+
+    /**
+     * Every item of a kind, resolved ones included.
+     *
+     * @return SyncReviewItem[]
+     */
+    public function findAllByKind(SyncReviewItemKind $kind): array
+    {
+        return $this->entityManager->getRepository(SyncReviewItem::class)->findBy(['kind' => $kind]);
     }
 
     /**

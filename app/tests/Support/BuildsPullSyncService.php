@@ -107,6 +107,7 @@ trait BuildsPullSyncService
             $bulkFillerService,
             $duplicateDetector,
             $deletionDetector,
+            new \App\Service\Sync\TypeMismatchDetector(new SyncReviewService(new SyncReviewItemRepository($this->entityManager))),
             $convergenceService,
             new SyncTombstoneRepository($this->entityManager),
             new NullLogger(),

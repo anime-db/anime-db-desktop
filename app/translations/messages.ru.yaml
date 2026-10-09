@@ -212,6 +212,10 @@ settings_sync_review:
     correct_button: Поправить
     keep_button: Оставить в каталоге
     not_duplicate_button: Это не дубликат
+    kind_type_mismatch: 'Источник «%source%» указывает другой тип: %source_type%'
+    type_mismatch_current: 'Текущий тип: %type%'
+    accept_type_button: "Принять тип источника"
+    keep_type_button: Оставить
     delete_button: Удалить запись
 
 settings_plugins:

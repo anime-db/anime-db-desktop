@@ -173,7 +173,7 @@ final class PushSyncMessageHandler
         }
 
         try {
-            $confirmed = $sync->push(new SyncItem($externalId, $status, $anime->getTitle(), updatedAt: $anime->getWatchProgressUpdatedAt(), watchedEpisodes: $watchedEpisodes));
+            $confirmed = $sync->push(new SyncItem($externalId, $status, $anime->getTitle(), type: null, updatedAt: $anime->getWatchProgressUpdatedAt(), watchedEpisodes: $watchedEpisodes));
         } catch (ReauthRequiredException $exception) {
             $this->logger->warning('Sync plugin "{plugin}" needs reauthorization; skipping push for it, not retrying.', [
                 'plugin' => $pluginId,
@@ -212,7 +212,7 @@ final class PushSyncMessageHandler
             }
 
             try {
-                $confirmed = $sync->push(new SyncItem($externalId, $status, $anime->getTitle(), updatedAt: $anime->getWatchProgressUpdatedAt(), watchedEpisodes: $watchedEpisodes));
+                $confirmed = $sync->push(new SyncItem($externalId, $status, $anime->getTitle(), type: null, updatedAt: $anime->getWatchProgressUpdatedAt(), watchedEpisodes: $watchedEpisodes));
             } catch (ReauthRequiredException $exception) {
                 $this->logger->warning('Sync plugin "{plugin}" needs reauthorization; skipping push for it, not retrying.', [
                     'plugin' => $id,
