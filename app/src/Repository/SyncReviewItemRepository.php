@@ -27,7 +27,6 @@ declare(strict_types=1);
 
 namespace App\Repository;
 
-use App\Entity\Enum\SyncReviewItemKind;
 use App\Entity\SyncReviewItem;
 use Doctrine\ORM\EntityManagerInterface;
 
@@ -65,18 +64,17 @@ class SyncReviewItemRepository
     }
 
     /**
-     * Backs the settings sidebar's "needs correction" badge (issue #822), rendered on every
+     * Backs the settings sidebar's "requires attention" badge (issue #822), rendered on every
      * settings page load, so it must be a count query rather than loading every unresolved item
-     * and counting in PHP the way {@see \App\Controller\SettingsController} used to.
+     * and counting in PHP the way {@see \App\Controller\SettingsController} used to. Counts every
+     * kind: the same set of rows {@see self::findAllUnresolvedOrderedByCreatedAt()} returns.
      */
-    public function countUnresolvedByKind(SyncReviewItemKind $kind): int
+    public function countUnresolved(): int
     {
         return (int) $this->entityManager->createQueryBuilder()
             ->select('COUNT(item.id)')
             ->from(SyncReviewItem::class, 'item')
             ->andWhere('item.resolvedAt IS NULL')
-            ->andWhere('item.kind = :kind')
-            ->setParameter('kind', $kind)
             ->getQuery()
             ->getSingleScalarResult();
     }
