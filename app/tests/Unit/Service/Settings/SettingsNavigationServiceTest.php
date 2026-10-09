@@ -27,7 +27,6 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Service\Settings;
 
-use App\Entity\Enum\SyncReviewItemKind;
 use App\Repository\SyncReviewItemRepository;
 use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\PluginsConfigStore;
@@ -113,20 +112,10 @@ final class SettingsNavigationServiceTest extends TestCase
         return $requestStack;
     }
 
-    /**
-     * A stub that returns $count only for {@see SyncReviewItemKind::NeedsCorrection} and a
-     * distinct sentinel for every other kind, so a bug that queries the wrong kind (issue #382:
-     * the badge must count NeedsCorrection only, never PotentialDuplicate) surfaces as a wrong
-     * badge value instead of passing unnoticed.
-     */
     private function syncReview(int $count = 0): SyncReviewService
     {
         $repository = $this->createStub(SyncReviewItemRepository::class);
-        $repository->method('countUnresolvedByKind')->willReturnMap([
-            [SyncReviewItemKind::NeedsCorrection, $count],
-            [SyncReviewItemKind::PotentialDuplicate, 99],
-            [SyncReviewItemKind::DeletionConflict, 99],
-        ]);
+        $repository->method('countUnresolved')->willReturn($count);
 
         return new SyncReviewService($repository);
     }
@@ -287,7 +276,7 @@ final class SettingsNavigationServiceTest extends TestCase
         $this->findGroupContaining($groups, 'backup');
     }
 
-    public function testTheNeedsCorrectionBadgeReflectsTheUnresolvedCount(): void
+    public function testTheNeedsAttentionBadgeReflectsTheUnresolvedCount(): void
     {
         $groups = $this->service(syncReview: $this->syncReview(3))->groups();
 
@@ -296,7 +285,7 @@ final class SettingsNavigationServiceTest extends TestCase
         self::assertSame(3, $item->badge);
     }
 
-    public function testTheNeedsCorrectionBadgeIsOmittedWhenTheUnresolvedCountIsZero(): void
+    public function testTheNeedsAttentionBadgeIsOmittedWhenTheUnresolvedCountIsZero(): void
     {
         $groups = $this->service(syncReview: $this->syncReview(0))->groups();
 
@@ -305,10 +294,10 @@ final class SettingsNavigationServiceTest extends TestCase
         self::assertNull($item->badge);
     }
 
-    public function testTheNeedsCorrectionBadgeIsOmittedRatherThanCrashingWhenTheCountQueryFails(): void
+    public function testTheNeedsAttentionBadgeIsOmittedRatherThanCrashingWhenTheCountQueryFails(): void
     {
         $repository = $this->createStub(SyncReviewItemRepository::class);
-        $repository->method('countUnresolvedByKind')->willThrowException(new \RuntimeException('database is unavailable'));
+        $repository->method('countUnresolved')->willThrowException(new \RuntimeException('database is unavailable'));
 
         $groups = $this->service(syncReview: new SyncReviewService($repository))->groups();
 
