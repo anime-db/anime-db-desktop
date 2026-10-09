@@ -305,6 +305,26 @@ final class AnimeListTemplateRenderingTest extends KernelTestCase
         $this->assertStringContainsString('anime-list__filters"', $html);
     }
 
+    /**
+     * Issue #995: anime-list-grid.js finds its scroll container by #anime-list-catalog; the grid and
+     * the sentinel must live inside it and the filters panel beside it, or the scroll reset and the
+     * infinite-scroll root silently stop working.
+     */
+    public function testCatalogScrollContainerWrapsGridAndSentinelButNotFilters(): void
+    {
+        $html = $this->renderList(['showOnboarding' => false]);
+
+        $start = strpos($html, 'id="anime-list-catalog"');
+        $this->assertNotFalse($start);
+        $filters = strpos($html, 'id="anime-list-filters"');
+        $this->assertNotFalse($filters);
+        $this->assertGreaterThan($start, $filters);
+
+        $catalog = substr($html, $start, $filters - $start);
+        $this->assertStringContainsString('id="anime-list-grid"', $catalog);
+        $this->assertStringContainsString('id="anime-list-sentinel"', $catalog);
+    }
+
     /** Issue #953: the v1 import entry is part of the empty-catalog invitation. */
     public function testEmptyCatalogOffersTheImportFromV1(): void
     {

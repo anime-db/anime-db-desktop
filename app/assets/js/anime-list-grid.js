@@ -293,6 +293,11 @@
         pagination = root.querySelector('#anime-list-pagination');
         sentinel = root.querySelector('#anime-list-sentinel');
         scroller = root.querySelector('#anime-list-catalog');
+        if (!scroller) {
+            // The template contract: the grid lives inside #anime-list-catalog. Without it the
+            // scroll reset and the infinite-scroll root silently stop working.
+            console.error('anime-list-grid: #anime-list-catalog scroll container not found');
+        }
         requestPage = requestPageCallback;
 
         resizeObserver = new ResizeObserver(() => {
