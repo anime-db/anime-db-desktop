@@ -69,7 +69,7 @@
                     >{{ anime.watched_episodes ?: 0 }} / {{ anime.episodes_count ?: '?' }}</button>
 
                     {% if anime.episodes_count is null or (anime.watched_episodes ?: 0) < anime.episodes_count %}
-                        <form class="anime-detail__progress-increment-form" data-focus-return="anime-progress-increment-{{ anime.id }}"
+                        <form class="anime-detail__progress-increment-form" data-focus-return="anime-progress-increment-{{ anime.id }} anime-progress-value-{{ anime.id }}"
                               hx-post="{{ path('anime_editable_increment_watched_episodes', {id: anime.id}) }}"
                               hx-target="#anime-editable-{{ anime.id }}" hx-swap="outerHTML">
                             <input type="hidden" name="_token" value="{{ csrf_token('anime_editable_increment_watched_episodes_' ~ anime.id) }}">

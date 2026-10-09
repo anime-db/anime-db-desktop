@@ -126,6 +126,24 @@ describe('in-place edit forms', () => {
 
         expect(document.activeElement).toBe(document.getElementById('anime-notes-add-1'));
     });
+
+    test('the +1 button falls back to the progress value once the last episode is marked', () => {
+        document.body.innerHTML = `
+            <section id="anime-editable-1">
+                <form class="anime-detail__progress-increment-form" data-focus-return="anime-progress-increment-1 anime-progress-value-1">
+                    <button id="anime-progress-increment-1">+1</button>
+                </form>
+            </section>
+        `;
+        loadAnimeDetailModule();
+        document.getElementById('anime-progress-increment-1').focus();
+
+        document.dispatchEvent(new CustomEvent('htmx:beforeSwap'));
+        document.getElementById('anime-editable-1').innerHTML = '<button id="anime-progress-value-1">12 / 12</button>';
+        document.dispatchEvent(new CustomEvent('htmx:afterSettle'));
+
+        expect(document.activeElement).toBe(document.getElementById('anime-progress-value-1'));
+    });
 });
 
 describe('labels editor', () => {
