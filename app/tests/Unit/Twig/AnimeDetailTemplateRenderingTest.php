@@ -714,6 +714,44 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
         $this->assertStringContainsString('removed from the download client and stop seeding; the downloaded files stay.', $message);
     }
 
+    public function testTypeChangeDialogListsTheValuesASeriesLosesBecomingAMovie(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession('/anime/1');
+
+        $anime = $this->fullyPopulatedAnime() + [
+            'type_changes' => [
+                ['type' => 'ova', 'lossy' => false, 'lost_episodes_count' => null, 'lost_watched_episodes' => null, 'lost_date_end' => null],
+                ['type' => 'movie', 'lossy' => true, 'lost_episodes_count' => 1150, 'lost_watched_episodes' => 1149, 'lost_date_end' => '2010-07-04'],
+            ],
+        ];
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('anime/_header.html.twig', ['anime' => $anime]);
+
+        $this->assertStringContainsString('Change type…', $html);
+        $this->assertStringContainsString('action="/anime/1/change-type"', $html);
+        $this->assertMatchesRegularExpression('/data-type-change-loss="movie"[^>]*>.*episodes: 1150, watched: 1149, end date: 2010-07-04.*the series end date will not be restored/s', $html);
+        $this->assertSame(1, substr_count($html, 'data-type-change-loss='), 'only the lossy type has a loss block');
+        $this->assertStringContainsString('name="confirm_loss"', $html);
+        $this->assertStringContainsString('I understand this cannot be undone', $html);
+        $this->assertStringContainsString('downloads and links are kept', $html);
+        $this->assertStringNotContainsString('dates are kept', $html);
+    }
+
+    public function testNoTypeChangeMenuItemWithoutOfferedTypes(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession('/anime/1');
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('anime/_header.html.twig', ['anime' => $this->fullyPopulatedAnime()]);
+
+        $this->assertStringNotContainsString('Change type…', $html);
+    }
+
     public function testEditFormShowsErrorsNextToTheFieldsAndKeepsTheTypedValues(): void
     {
         self::bootKernel();

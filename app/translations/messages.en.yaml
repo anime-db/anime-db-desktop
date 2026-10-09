@@ -601,6 +601,25 @@ anime_detail:
     menu_button: Entry actions
     menu_edit: Edit
     menu_delete: Delete
+    menu_change_type: Change type…
+
+anime_type_change:
+    title: Change type
+    field_type: New type
+    hint: 'The entry is now: %type%. It stays the same entry: downloads and links are kept.'
+    loss_intro: 'This change drops the following, and it cannot be undone:'
+    lost_episodes: 'episodes: %number%'
+    lost_watched: 'watched: %number%'
+    lost_date_end: 'end date: %date%'
+    lost_nothing: 'no episode or end date is set'
+    loss_warning: 'If you change the type back, the series end date will not be restored.'
+    confirm_loss: 'I understand this cannot be undone'
+    submit: Change type
+    cancel: Cancel
+    flash_changed: 'The type was changed to: %type%.'
+    flash_not_confirmed: 'The type was not changed: confirm that the lost data cannot be restored.'
+    flash_sync_running: 'A sync is running, try again later.'
+    flash_invalid: 'The type cannot be changed this way.'
 
 anime_delete:
     confirm: 'Delete "%title%"? Only the catalog entry is deleted.'

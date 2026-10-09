@@ -35,7 +35,7 @@ use App\Entity\Enum\GenreCode;
 use App\Entity\Enum\ProductionStatus;
 use App\Entity\Enum\ThemeCode;
 use App\Entity\Enum\WatchStatus;
-use App\Entity\Exception\InvalidAnimeTypeMigrationException;
+use App\Entity\Exception\InvalidAnimeTypeChangeException;
 use App\Entity\Exception\InvalidCountryCodeException;
 use App\Entity\Exception\InvalidDateRangeException;
 use App\Entity\Exception\InvalidDurationException;
@@ -43,6 +43,7 @@ use App\Entity\Exception\InvalidNameException;
 use App\Entity\Exception\InvalidWatchStatusException;
 use App\Entity\Import\V1AnimeRecord;
 use App\Entity\Import\V1AnimeResolverInterface;
+use App\Entity\ValueObject\AnimeTypeChange;
 use App\Entity\ValueObject\PluginId;
 use App\Entity\ValueObject\Rating;
 use App\Event\WatchProgressChangedManuallyEvent;
@@ -369,7 +370,7 @@ abstract class Anime implements AggregateRootInterface
      * AnimeNewController deliberately does NOT call this on create: the old preUpdate listener
      * never fired on INSERT either, and a brand-new anime has no source link yet for push to act
      * on, so it uses the plain setWatchStatus() instead, same as the other creation paths
-     * (BulkFillerService, ScanStorageService, SampleAnimeSeeder, migrate()).
+     * (BulkFillerService, ScanStorageService, SampleAnimeSeeder).
      *
      * isset() rather than a direct read of $this->watchStatus: the typed property has no default,
      * so reading it directly on the very first assignment would throw instead of reporting
@@ -594,97 +595,48 @@ abstract class Anime implements AggregateRootInterface
     }
 
     /**
-     * Recreates $source under a different concrete class, the only mechanism available for
-     * changing type: Doctrine's single-table discriminator is fixed per row, so switching
-     * class requires a new row (a fresh PK) rather than an in-place discriminator update.
+     * Works out what changing this entry's type to $targetType leaves in the columns the type
+     * touches, without changing the entry itself: Doctrine's single-table discriminator is fixed
+     * per object, so the row is updated by id by the caller (see AnimeTypeChangeService) and the
+     * entry is loaded afresh. Only a series becoming a movie loses anything: the episode count
+     * and the watched episodes are dropped and the end date becomes the premiere (a movie has no
+     * end date of its own; an empty premiere takes the former end date, or both dates would end
+     * up empty and a watched entry would turn "announced"). Every other change keeps all values.
      *
-     * A no-op migration to the source's own type (e.g. Tv => Tv) is rejected below; any
-     * other target, whether crossing the Movie/Series boundary or between SeriesAnime
-     * leaves (e.g. Tv => Ova), is allowed.
-     *
-     * Only builds and returns the replacement; persisting the result and removing $this
-     * is infrastructure work left to the caller (see AnimeTypeMigrator).
+     * @throws InvalidAnimeTypeChangeException for the same type, or a result the domain forbids
      */
-    public function migrate(AnimeType $targetType): self
+    public function planTypeChange(AnimeType $targetType): AnimeTypeChange
     {
-        if ($this->getType() === $targetType) {
-            throw new InvalidAnimeTypeMigrationException('Type migration to the same type is not allowed');
+        $currentType = $this->getType();
+        if ($currentType === $targetType) {
+            throw new InvalidAnimeTypeChangeException('The entry already has this type');
         }
 
-        if ($this->getProductionStatus() !== ProductionStatus::Announced) {
-            throw new InvalidAnimeTypeMigrationException('Type migration is only allowed while production status is announced');
+        $episodesCount = $this instanceof SeriesAnime ? $this->getEpisodesCount() : null;
+        $watchedEpisodes = $this instanceof SeriesAnime ? $this->getWatchedEpisodes() : null;
+
+        if ($targetType !== AnimeType::Movie) {
+            // A movie has no episodes, so they are already empty when it becomes a series.
+            return new AnimeTypeChange($currentType, $targetType, $episodesCount, $watchedEpisodes, $this->datePremiere, $this->dateEnd);
         }
 
-        $targetClass = $targetType->entityClass();
-        $target = new $targetClass();
-
-        $target->setTitle($this->title)
-            ->setDatePremiere($this->datePremiere)
-            ->setDateEnd($this->dateEnd)
-            ->setDurationMinutes($this->durationMinutes)
-            ->setNotes($this->notes)
-            ->setUserRating($this->userRating)
-            ->setCover($this->cover)
-            ->setStorage($this->storage)
-            ->setStoragePath($this->storagePath)
-            ->setDemographic($this->demographic)
-            ->setCountries($this->countries)
-            ->setWatchStatus($this->watchStatus);
-
-        // No public setter exists for these — they are sync bookkeeping, not something a caller
-        // should ever set directly. Carried over by direct property assignment (legal here: both
-        // are private to Anime, and migrate() is itself a method of Anime) so the reconciliation
-        // snapshot's timestamp basis survives a type migration instead of resetting to null,
-        // which would otherwise make every participant look "changed" on the next sync (issue
-        // #365, "camp #13").
-        $target->watchProgressUpdatedAt = $this->watchProgressUpdatedAt;
-        $target->watchProgressRejectedAt = $this->watchProgressRejectedAt;
-
-        foreach ($this->getGenreCodes() as $code) {
-            $target->addGenre($code);
+        $premiere = $this->datePremiere ?? $this->dateEnd;
+        $now = new \DateTimeImmutable();
+        if ($this->watchStatus === WatchStatus::Completed && ($premiere === null || $premiere > $now)) {
+            throw new InvalidAnimeTypeChangeException('A completed entry needs a premiere date that is not in the future');
         }
 
-        foreach ($this->getThemeCodes() as $code) {
-            $target->addTheme($code);
-        }
-
-        foreach ($this->getStudios() as $studio) {
-            $target->addStudio($studio);
-        }
-
-        foreach ($this->getLabels() as $label) {
-            $target->addLabel($label);
-        }
-
-        foreach ($this->getNames() as $name) {
-            $target->addName($name->name, $name->locale, $name->role);
-        }
-
-        foreach ($this->getImages() as $image) {
-            $target->addImage($image->source);
-        }
-
-        foreach ($this->getSources() as $link) {
-            $target->addSource($link->url);
-        }
-
-        // External ids live in their own table (issue #297), so a type migration must carry
-        // them over explicitly or every synced plugin link would be silently orphaned by the
-        // class swap.
-        foreach ($this->externalIds as $entry) {
-            $target->rememberExternalId(new PluginId($entry->pluginId), $entry->externalId);
-        }
-
-        foreach ($this->getDescriptions() as $description) {
-            $target->setDescription($description->locale, $description->description);
-        }
-
-        if ($this instanceof SeriesAnime && $target instanceof SeriesAnime) {
-            $target->setEpisodesCount($this->getEpisodesCount());
-            $target->setWatchedEpisodes($this->getWatchedEpisodes());
-        }
-
-        return $target;
+        return new AnimeTypeChange(
+            $currentType,
+            $targetType,
+            null,
+            null,
+            $premiere,
+            $premiere,
+            $episodesCount,
+            $watchedEpisodes,
+            $this->dateEnd !== null && $this->dateEnd != $premiere ? $this->dateEnd : null,
+        );
     }
 
     /** @return list<string>|null */

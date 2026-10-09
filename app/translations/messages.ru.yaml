@@ -601,6 +601,25 @@ anime_detail:
     menu_button: Действия с записью
     menu_edit: Изменить
     menu_delete: Удалить
+    menu_change_type: Сменить тип…
+
+anime_type_change:
+    title: Смена типа
+    field_type: Новый тип
+    hint: 'Сейчас у записи тип: %type%. Запись остаётся той же: загрузки и ссылки сохраняются.'
+    loss_intro: 'При смене пропадёт следующее, вернуть это нельзя:'
+    lost_episodes: 'серий: %number%'
+    lost_watched: 'просмотрено: %number%'
+    lost_date_end: 'окончание: %date%'
+    lost_nothing: 'число серий и дата окончания не заданы'
+    loss_warning: 'Если сменить тип обратно, дата окончания сериала не вернётся.'
+    confirm_loss: 'Понимаю, что это нельзя вернуть'
+    submit: Сменить тип
+    cancel: Отмена
+    flash_changed: 'Тип изменён на: %type%.'
+    flash_not_confirmed: 'Тип не изменён: подтвердите, что теряемое нельзя вернуть.'
+    flash_sync_running: 'Идёт синхронизация, попробуйте позже.'
+    flash_invalid: 'Так сменить тип нельзя.'
 
 anime_delete:
     confirm: 'Удалить «%title%»? Удаляется только запись каталога.'

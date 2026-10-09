@@ -27,8 +27,10 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Service;
 
+use App\Entity\Enum\AnimeType;
 use App\Entity\Enum\WatchStatus;
 use App\Entity\MovieAnime;
+use App\Entity\TvAnime;
 use App\Service\AnimeViewFactory;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\Request;
@@ -100,5 +102,40 @@ final class AnimeViewFactoryTest extends TestCase
 
         $this->assertNull($view['date_premiere']);
         $this->assertNull($view['date_end']);
+    }
+
+    public function testSerializeListsTypeChangesWithExactLostValuesForMovie(): void
+    {
+        $anime = new TvAnime();
+        $anime->setTitle('Detective Conan')
+            ->setDatePremiereAndEnd(new \DateTimeImmutable('1996-01-08'), new \DateTimeImmutable('2010-07-04'))
+            ->setWatchStatus(WatchStatus::Watching);
+        $anime->setEpisodesCount(1150);
+        $anime->setWatchedEpisodes(1149);
+
+        $changes = $this->createViewFactory('en')->serialize($anime)['type_changes'];
+
+        $byType = [];
+        foreach ($changes as $change) {
+            $byType[$change['type']] = $change;
+        }
+        $this->assertArrayNotHasKey(AnimeType::Tv->value, $byType);
+        $this->assertArrayHasKey(AnimeType::Movie->value, $byType);
+        $this->assertSame([
+            'type' => 'movie',
+            'lossy' => true,
+            'lost_episodes_count' => 1150,
+            'lost_watched_episodes' => 1149,
+            'lost_date_end' => '2010-07-04',
+        ], $byType['movie']);
+        foreach ($byType as $type => $change) {
+            if ($type === 'movie') {
+                continue;
+            }
+            $this->assertFalse($change['lossy'], $type);
+            $this->assertNull($change['lost_episodes_count'], $type);
+            $this->assertNull($change['lost_watched_episodes'], $type);
+            $this->assertNull($change['lost_date_end'], $type);
+        }
     }
 }
