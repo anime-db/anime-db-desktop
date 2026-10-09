@@ -46,6 +46,7 @@ use App\Repository\SyncReviewItemRepository;
 use App\Repository\SyncTombstoneRepository;
 use App\Service\AnimeDeleteFlash;
 use App\Service\AnimeDeleteService;
+use App\Service\AnimeTypeChangeFlash;
 use App\Service\AnimeTypeChangeService;
 use App\Service\AnimeViewFactory;
 use App\Service\Download\DownloadFolderJail;
@@ -134,7 +135,7 @@ final class SyncReviewControllerTest extends TestCase
             // AnimeTypeChangeService is final — a real one over the same entity manager.
             $typeChangeService ?? $this->createRealAnimeTypeChangeService($entityManager),
             new AnimeViewFactory(new RequestStack()),
-            new Translator('en'),
+            new AnimeTypeChangeFlash(new Translator('en')),
         );
     }
 

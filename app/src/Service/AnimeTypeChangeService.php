@@ -42,6 +42,10 @@ use Symfony\Component\Messenger\MessageBusInterface;
  * all stay. What the new type does to the entry is decided by {@see Anime::planTypeChange()}; this
  * class only writes it: one UPDATE by id of `type` and the columns the type touches.
  *
+ * A change that drops data (a series becoming a movie) cannot be undone, so it is applied only with
+ * `$lossConfirmed` set; otherwise nothing is changed and {@see AnimeTypeChangeOutcome::LossNotConfirmed}
+ * is returned.
+ *
  * Refused, with nothing changed, while an active sync plugin holds its {@see SyncSeedMessage::jobKey()}
  * lock, as the deletion of an entry is ({@see AnimeDeleteService}).
  *
@@ -63,10 +67,14 @@ final class AnimeTypeChangeService
     /**
      * @throws \App\Entity\Exception\InvalidAnimeTypeChangeException the entry has this type already, or the result is forbidden
      */
-    public function change(Anime $anime, AnimeType $targetType): AnimeTypeChangeOutcome
+    public function change(Anime $anime, AnimeType $targetType, bool $lossConfirmed): AnimeTypeChangeOutcome
     {
         $animeId = $anime->id ?? throw new \LogicException('Anime must be persisted before its type can be changed.');
         $change = $anime->planTypeChange($targetType);
+
+        if ($change->isLossy() && !$lossConfirmed) {
+            return AnimeTypeChangeOutcome::LossNotConfirmed;
+        }
 
         if ($this->isSyncRunning()) {
             return AnimeTypeChangeOutcome::SyncRunning;

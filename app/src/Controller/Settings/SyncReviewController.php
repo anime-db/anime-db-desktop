@@ -38,6 +38,7 @@ use App\Repository\DownloadRepository;
 use App\Service\AnimeDeleteFlash;
 use App\Service\AnimeDeleteOutcome;
 use App\Service\AnimeDeleteService;
+use App\Service\AnimeTypeChangeFlash;
 use App\Service\AnimeTypeChangeOutcome;
 use App\Service\AnimeTypeChangeService;
 use App\Service\AnimeViewFactory;
@@ -51,13 +52,11 @@ use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
-use Symfony\Component\HttpFoundation\Session\FlashBagAwareSessionInterface;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 use Symfony\Component\Security\Csrf\CsrfToken;
 use Symfony\Component\Security\Csrf\CsrfTokenManagerInterface;
-use Symfony\Contracts\Translation\TranslatorInterface;
 use Twig\Environment;
 
 /**
@@ -100,7 +99,7 @@ final class SyncReviewController
         private readonly Environment $twig,
         private readonly AnimeTypeChangeService $typeChangeService,
         private readonly AnimeViewFactory $animeViewFactory,
-        private readonly TranslatorInterface $translator,
+        private readonly AnimeTypeChangeFlash $typeChangeFlash,
     ) {
     }
 
@@ -165,21 +164,17 @@ final class SyncReviewController
         }
 
         try {
-            $change = $anime->planTypeChange($targetType);
-            if ($change->isLossy() && !$request->request->getBoolean('confirm_loss')) {
-                $this->flash($request, 'danger', 'anime_type_change.flash_not_confirmed');
-            } elseif ($this->typeChangeService->change($anime, $targetType) === AnimeTypeChangeOutcome::Changed) {
+            $outcome = $this->typeChangeService->change($anime, $targetType, $request->request->getBoolean('confirm_loss'));
+            if ($outcome === AnimeTypeChangeOutcome::Changed) {
                 // The service clears the entity manager, so the item is loaded again to be resolved.
                 $fresh = $this->entityManager->find(SyncReviewItem::class, $itemId);
                 if ($fresh !== null) {
                     $this->syncReview->resolve($fresh);
                 }
-                $this->flash($request, 'success', 'anime_type_change.flash_changed', ['%type%' => $this->translator->trans('anime_type.'.$targetType->value)]);
-            } else {
-                $this->flash($request, 'danger', 'anime_type_change.flash_sync_running');
             }
+            $this->typeChangeFlash->add($request, $outcome, $targetType);
         } catch (InvalidAnimeTypeChangeException) {
-            $this->flash($request, 'danger', 'anime_type_change.flash_invalid');
+            $this->typeChangeFlash->addInvalid($request);
         }
 
         return $this->backToIndex();
@@ -225,15 +220,6 @@ final class SyncReviewController
     private function backToIndex(): Response
     {
         return new RedirectResponse($this->urlGenerator->generate('settings_sync_review_index'));
-    }
-
-    /** @param array<string, string> $parameters */
-    private function flash(Request $request, string $type, string $key, array $parameters = []): void
-    {
-        $session = $request->getSession();
-        \assert($session instanceof FlashBagAwareSessionInterface);
-
-        $session->getFlashBag()->add($type, ['text' => $this->translator->trans($key, $parameters), 'link_url' => null, 'link_label' => null]);
     }
 
     /**

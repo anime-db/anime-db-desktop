@@ -31,6 +31,7 @@ use App\Controller\AnimeTypeChangeController;
 use App\Entity\Enum\WatchStatus;
 use App\Entity\TvAnime;
 use App\Message\SyncSeedMessage;
+use App\Service\AnimeTypeChangeFlash;
 use App\Service\AnimeTypeChangeService;
 use App\Tests\Support\BuildsAnimeDeleteService;
 use App\Tests\Support\CreatesInMemoryEntityManager;
@@ -98,7 +99,7 @@ final class AnimeTypeChangeControllerTest extends TestCase
             new AnimeTypeChangeService($this->entityManager, $this->newSyncRegistryWithActive($activeSyncs), $jobLock ?? $this->newJobLockService(), $bus),
             $csrf,
             $urls,
-            new Translator('en'),
+            new AnimeTypeChangeFlash(new Translator('en')),
         );
     }
 
