@@ -326,6 +326,30 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
     }
 
     /**
+     * The empty-state partial is shared by the settings pages: the action link is optional and the
+     * hint only appears when given.
+     */
+    public function testEmptyStatePartialRendersOptionalActionAndHint(): void
+    {
+        self::bootKernel();
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+
+        $bare = $twig->render('_empty_state.html.twig', ['icon' => 'display', 'text' => 'Nothing here']);
+        $this->assertStringContainsString('data-icon="display"', $bare);
+        $this->assertStringContainsString('Nothing here', $bare);
+        $this->assertStringNotContainsString('<a ', $bare);
+        $this->assertStringNotContainsString('empty-state__hint', $bare);
+
+        $full = $twig->render('_empty_state.html.twig', ['icon' => 'display', 'text' => 'Nothing here', 'hint' => 'Why', 'action_url' => '/settings/market', 'action_label' => 'Go']);
+        $this->assertStringContainsString('empty-state__hint', $full);
+        $this->assertStringContainsString('Why', $full);
+        $this->assertStringContainsString('Go', $full);
+        $this->assertStringContainsString('href="/settings/market"', $full);
+    }
+
+    /**
      * The catalog link (issue #719) must always be present, even with no history to go back to -
      * anime-detail.js decides at runtime whether a click goes back through history or follows this
      * href, so the href itself must stay a working plain link to the catalog root.
@@ -345,7 +369,9 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
 
         $this->assertStringContainsString('data-control="catalog-back-link"', $html);
         $this->assertStringContainsString('href="/"', $html);
-        $this->assertStringContainsString('← Каталог', $html);
+        $this->assertStringContainsString('data-icon="arrow-left"', $html);
+        $this->assertStringNotContainsString('←', $html);
+        $this->assertStringContainsString('Каталог', $html);
     }
 
     public function testShowRendersAnimeWithoutOptionalFieldsWithoutErrors(): void

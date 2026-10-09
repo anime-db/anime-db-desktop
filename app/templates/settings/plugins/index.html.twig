@@ -24,7 +24,7 @@
 
 {% block settings_content %}
     <div class="py-4">
-        <h1>{{ 'settings_plugins.installed_heading'|trans }}</h1>
+        <h1 class="mb-4">{{ 'settings_plugins.installed_heading'|trans }}</h1>
 
         {% if error == 'busy_retry' %}
             <p class="alert alert-danger">{{ 'settings_plugins.busy_retry_error'|trans }}</p>
@@ -43,7 +43,12 @@
         {% endif %}
 
         {% if installedPlugins is empty %}
-            <p class="text-body-secondary">{{ 'settings_plugins.installed_empty'|trans }}</p>
+            {{ include('_empty_state.html.twig', {
+                icon: 'download',
+                text: 'settings_plugins.installed_empty'|trans,
+                action_url: path('settings_market_index'),
+                action_label: 'settings_plugins.open_market_link'|trans
+            }) }}
         {% else %}
             <div class="table-responsive">
                 <table class="table align-middle">

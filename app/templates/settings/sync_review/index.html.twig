@@ -25,10 +25,14 @@
 {% block settings_content %}
     {% from 'anime/_delete_confirm.html.twig' import delete_confirm, delete_modal %}
     <div class="py-4">
-        <h1>{{ 'settings_sync_review.heading'|trans }}</h1>
+        <h1 class="mb-4">{{ 'settings_sync_review.heading'|trans }}</h1>
 
         {% if items is empty %}
-            <p class="text-body-secondary">{{ 'settings_sync_review.empty'|trans }}</p>
+            {{ include('_empty_state.html.twig', {
+                icon: 'arrow-repeat',
+                text: 'settings_sync_review.empty'|trans,
+                hint: 'settings_sync_review.empty_hint'|trans
+            }) }}
         {% else %}
             {# No `.list-group` here on purpose: it draws a visible bordered box around the whole
              # <ul>, and the resolve form below swaps a single <li> to an empty response on

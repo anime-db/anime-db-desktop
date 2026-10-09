@@ -36,7 +36,7 @@
 
 {% block settings_content %}
     <div class="py-4">
-        <h1>{{ pluginName }}</h1>
+        <h1 class="mb-4">{{ pluginName }}</h1>
 
         {% if oauthCallbackWarning is defined and oauthCallbackWarning %}
             <p class="alert alert-warning">{{ 'settings_plugin_page.oauth_fixed_port_warning'|trans }}</p>

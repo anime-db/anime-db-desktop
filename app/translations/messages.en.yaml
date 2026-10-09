@@ -121,8 +121,8 @@ download_status:
     failed: Failed
 
 settings:
-    title: Settings — AnimeDB
-    heading: Settings
+    title: Interface — Settings — AnimeDB
+    heading: Interface
     language_label: Interface language
     language_unavailable_option: '%language% — unavailable'
     language_plugin_translation_note: Plugin interfaces are translated by their own authors — outside the app's built-in languages, some plugin screens may stay untranslated.
@@ -194,11 +194,14 @@ settings_plugin_widgets:
     catalog:
         heading: Catalog
         empty: No widgets available for the catalog.
+    empty_hint: Widgets come with installed plugins.
+    open_market_link: Open the market
 
 settings_sync_review:
     title: Requires attention — Settings — AnimeDB
     heading: Requires attention
     empty: Nothing needs attention right now.
+    empty_hint: Entries whose sync needs your decision show up here.
     kind_potential_duplicate: Potential duplicate
     kind_deleted_from_source: 'Removed from the list on source "%source%"'
     kind_deletion_conflict: 'Conflict: removed on "%source%" but still listed on: %others%'
@@ -216,9 +219,10 @@ settings_plugins:
     sync_off: off
     sync_toggle: Synchronization
     busy_retry_error: Plugin settings are busy with another update right now. Please try again in a moment.
-    title: Plugins — Settings — AnimeDB
+    title: Installed plugins — Settings — AnimeDB
     installed_heading: Installed plugins
     installed_empty: No plugins installed yet.
+    open_market_link: Open the market
     name_column: Name
     id_column: Id
     version_column: Version
@@ -231,7 +235,7 @@ settings_plugins:
     settings_link: Settings
     remove_button: Remove
     remove_success: 'Plugin "%pluginId%" has been removed. Its data accumulated in the catalog is kept and will be reused if the plugin is installed again.'
-    install_heading: Install from ZIP
+    install_heading: Install plugin from ZIP
     install_file_label: Plugin ZIP archive
     third_party_warning: This plugin comes from a third-party source and has not passed marketplace review. Install it at your own risk?
     confirm_button: I understand, install
@@ -255,7 +259,7 @@ settings_plugins:
     remove_confirm: 'Remove plugin "%name%"? Its data accumulated in the catalog is kept.'
 
 settings_plugins_install:
-    title: Install from ZIP — Settings — AnimeDB
+    title: Install plugin from ZIP — Settings — AnimeDB
 
 settings_market:
     title: Plugin market — Settings — AnimeDB
@@ -304,8 +308,8 @@ settings_plugin_page:
     sync_seed_started_link: Go to sync review
 
 settings_proxy:
-    title: Proxy server — Settings — AnimeDB
-    heading: Proxy server
+    title: Proxy and incoming connections — Settings — AnimeDB
+    heading: Proxy and incoming connections
     save_success: Proxy settings have been saved.
     torrent_proxy_error: Settings were saved, but the SOCKS5 proxy could not be applied to the torrent client. Torrents stay paused until the proxy is confirmed.
     mode_label: Mode
@@ -339,8 +343,8 @@ settings_proxy:
     incoming_connections_socks5_hint: Incoming connections do not work through a SOCKS5 proxy regardless of firewall rules, so enabling is unavailable. An already-enabled setting can still be turned off at any time.
 
 settings_backup:
-    title: Catalog backup — Settings — AnimeDB
-    heading: Catalog backup
+    title: Catalog export and import — Settings — AnimeDB
+    heading: Catalog export and import
     unavailable_outside_app: This action is only available inside the AnimeDB app.
     staged_import_banner: 'The archive "%name%" was staged for import on %date% and will be applied on the next app start.'
     staged_import_cancel_button: Cancel staged import
@@ -505,7 +509,7 @@ storage_list:
 
 anime_detail:
     title: '%title% — AnimeDB'
-    back_link: ← Catalog
+    back_link: Catalog
     my_heading: My list
     field_summary: Description
     info_heading: Information
