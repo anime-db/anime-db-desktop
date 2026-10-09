@@ -24,6 +24,7 @@
 // Loads the real repeatable-rows.js against a DOM shaped like a list of anime/edit.html.twig
 // (issue #914): add appends a row from the template with a fresh index, remove drops just that row.
 require('../../app/assets/js/controller.js');
+require('../../app/assets/js/focus-restore.js');
 
 function mountControls(root = document.body) {
     root.dispatchEvent(new CustomEvent('htmx:load', { bubbles: true, detail: { elt: root } }));
@@ -66,5 +67,27 @@ describe('repeatable-rows', () => {
         document.querySelector('[data-rows-add]').click();
 
         expect(names()).toEqual(['sources[1]', 'sources[2]']);
+    });
+});
+
+describe('repeatable-rows focus after removal', () => {
+    beforeEach(setUpDom);
+
+    test('focus moves to the field of the neighbouring row', () => {
+        const removeButtons = document.querySelectorAll('[data-rows-remove]');
+        removeButtons[0].focus();
+        removeButtons[0].click();
+
+        expect(document.activeElement).toBe(document.querySelector('input[name="sources[1]"]'));
+    });
+
+    test('focus moves to the Add button once no rows are left', () => {
+        document.querySelectorAll('[data-rows-remove]')[0].click();
+        const last = document.querySelector('[data-rows-remove]');
+        last.focus();
+        last.click();
+
+        expect(document.querySelectorAll('[data-rows-item]')).toHaveLength(0);
+        expect(document.activeElement).toBe(document.querySelector('[data-rows-add]'));
     });
 });

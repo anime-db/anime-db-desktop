@@ -115,6 +115,17 @@
         return cell.dataset.version !== String(row.version) || cell.dataset.status !== String(row.coreStatus);
     }
 
+    // Gives every focusable element of a row the key FocusRestore.run() matches across the
+    // wholesale tbody rebuild: the row's info hash plus the element's role (its visible label, the
+    // same text for the same action on every poll).
+    function stampFocusKeys(tbody) {
+        tbody.querySelectorAll('tr[data-info-hash]').forEach((tr) => {
+            tr.querySelectorAll('a[href], button').forEach((element) => {
+                element.dataset.focusKey = `${tr.dataset.infoHash}:${element.textContent.trim()}`;
+            });
+        });
+    }
+
     function mountDownloadsList(root) {
         const statusUrl = root.dataset.statusUrl;
         const noCardLabel = root.dataset.noCardLabel;
@@ -160,20 +171,24 @@
                 }
             });
 
-            tbody.replaceChildren();
-            data.rows.concat(data.orphans).forEach((row) => {
-                const tr = buildRow(row, noCardLabel);
-                const actionsCell = tr.querySelector('[data-field="actions"]');
-                const preservedActions = preservedActionsByHash.get(row.infoHash);
-                if (preservedActions) {
-                    if (actionsCellIsStale(preservedActions, row)) {
-                        markActionsCellStale(preservedActions, staleHintLabel);
+            stampFocusKeys(tbody);
+            window.FocusRestore.run(tbody, () => {
+                tbody.replaceChildren();
+                data.rows.concat(data.orphans).forEach((row) => {
+                    const tr = buildRow(row, noCardLabel);
+                    const actionsCell = tr.querySelector('[data-field="actions"]');
+                    const preservedActions = preservedActionsByHash.get(row.infoHash);
+                    if (preservedActions) {
+                        if (actionsCellIsStale(preservedActions, row)) {
+                            markActionsCellStale(preservedActions, staleHintLabel);
+                        }
+                        actionsCell.replaceWith(preservedActions);
+                    } else if (row.hasCard) {
+                        markActionsCellStale(actionsCell, staleHintLabel);
                     }
-                    actionsCell.replaceWith(preservedActions);
-                } else if (row.hasCard) {
-                    markActionsCellStale(actionsCell, staleHintLabel);
-                }
-                tbody.appendChild(tr);
+                    tbody.appendChild(tr);
+                });
+                stampFocusKeys(tbody);
             });
         }
 

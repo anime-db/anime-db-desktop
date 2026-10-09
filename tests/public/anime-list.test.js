@@ -31,6 +31,7 @@
 // controller.js is required once at file scope, not per test — see controller.test.js for why a
 // fresh require() per test would leak document-level listeners.
 require('../../app/assets/js/controller.js');
+require('../../app/assets/js/focus-restore.js');
 
 function visibleSortIcon(button) {
     return Array.from(button.querySelectorAll('[data-sort-icon]'))
@@ -2248,4 +2249,46 @@ test('the filter panel does not manage a --anime-list-filters-top offset any mor
 
     expect(panel.style.getPropertyValue('--anime-list-filters-top')).toBe('');
     expect(panel.getBoundingClientRect).not.toHaveBeenCalled();
+});
+
+test('after navigating by pagination, focus is on the current page button', async () => {
+    const calls = mockFetchQueue();
+    window.AppTranslations = {
+        getCatalogue: jest.fn(() => Promise.resolve({})),
+        resolveKey:   (catalogue, key) => key,
+    };
+
+    loadAnimeListModule();
+    await flushMicrotasks();
+    calls[0].resolve(jsonResponse({ items: [animeItem(1, 'Steins;Gate')], pagination_mode: 'classic', total: 3, limit: 1, offset: 0 }));
+    await flushMicrotasks();
+
+    const pageTwoButton = document.querySelectorAll('#anime-list-pagination button')[1];
+    pageTwoButton.focus();
+    pageTwoButton.dispatchEvent(new Event('click'));
+    await flushMicrotasks();
+    calls[1].resolve(jsonResponse({ items: [animeItem(2, 'Mushishi')], pagination_mode: 'classic', total: 3, limit: 1, offset: 1 }));
+    await flushMicrotasks();
+
+    expect(document.activeElement).toBe(document.querySelector('#anime-list-pagination [aria-current]'));
+    expect(document.activeElement.textContent).toBe('2');
+});
+
+test('removing the last filter chip moves focus to the search field', async () => {
+    const calls = mockFetchQueueAll();
+    setUpTranslations();
+
+    loadAnimeListModule();
+    await flushMicrotasks();
+    await applyWatchingFilter(calls);
+
+    const chipRemove = document.querySelector('.anime-list__chip-remove');
+    chipRemove.focus();
+    chipRemove.dispatchEvent(new Event('click', { bubbles: true }));
+    await flushMicrotasks();
+    byKind(calls, 'list')[2].resolve(jsonResponse({ items: [], pagination_mode: 'classic', total: 0, limit: 6, offset: 0 }));
+    await flushMicrotasks();
+
+    expect(document.querySelectorAll('.anime-list__chip-remove')).toHaveLength(0);
+    expect(document.activeElement).toBe(document.getElementById('anime-list-search'));
 });
