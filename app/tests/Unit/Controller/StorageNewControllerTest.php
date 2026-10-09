@@ -28,6 +28,7 @@ declare(strict_types=1);
 namespace App\Tests\Unit\Controller;
 
 use App\Controller\StorageNewController;
+use App\Entity\Enum\StorageType;
 use App\Entity\Storage;
 use App\Service\Storage\StorageMarkerService;
 use Doctrine\ORM\EntityManagerInterface;
@@ -133,7 +134,7 @@ final class StorageNewControllerTest extends TestCase
             ))
             ->willReturn('<html></html>');
 
-        $response = $this->createController(twig: $twig)->new();
+        $response = $this->createController(twig: $twig)->new(new Request());
 
         $this->assertSame(200, $response->getStatusCode());
     }
@@ -184,6 +185,65 @@ final class StorageNewControllerTest extends TestCase
 
         $this->assertInstanceOf(RedirectResponse::class, $response);
         $this->assertSame('/storage/11/scan-prompt', $response->getTargetUrl());
+    }
+
+    public function testNewPrefillsThePathFromTheQuery(): void
+    {
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('storage/new.html.twig', $this->callback(static fn (array $params): bool => $params['path'] === 'D:\\Anime'))
+            ->willReturn('<html></html>');
+
+        $this->createController(twig: $twig)->new(new Request(['path' => 'D:\\Anime']));
+    }
+
+    public function testCreateOnAFolderAlreadyConnectedAsAStorageDoesNotKeepADuplicate(): void
+    {
+        $dir = $this->makeDir();
+        file_put_contents($dir.\DIRECTORY_SEPARATOR.'desktop.ini', "[AnimeDB]\nid=3\n");
+
+        $owner = new Storage('Owner', $dir, StorageType::Folder);
+        (new \ReflectionProperty(Storage::class, 'id'))->setValue($owner, 3);
+
+        $markerEntityManager = $this->createStub(EntityManagerInterface::class);
+        $markerEntityManager->method('find')->willReturn($owner);
+
+        $persistedStorage = null;
+        $entityManager = $this->createMock(EntityManagerInterface::class);
+        $entityManager->method('persist')->willReturnCallback(function (Storage $storage) use (&$persistedStorage): void {
+            $persistedStorage = $storage;
+        });
+        $entityManager->method('flush')->willReturnCallback(function () use (&$persistedStorage): void {
+            (new \ReflectionProperty(Storage::class, 'id'))->setValue($persistedStorage, 7);
+        });
+        $entityManager->method('find')->willReturn($owner);
+        $entityManager->expects($this->once())->method('remove')->with($this->callback(function (Storage $s) use (&$persistedStorage): bool {
+            return $s === $persistedStorage;
+        }));
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('storage/new.html.twig', $this->callback(
+                static fn (array $params): bool => $params['error'] === 'storage_new.error_already_connected'
+                    && $params['error_params'] === ['%name%' => 'Owner']
+                    && $params['existing_storage_id'] === 3,
+            ))
+            ->willReturn('<html></html>');
+
+        $response = $this->createController(
+            entityManager: $entityManager,
+            markerService: new StorageMarkerService($markerEntityManager),
+            twig: $twig,
+        )->create(Request::create('/storage/new', 'POST', [
+            'name' => 'Duplicate',
+            'path' => $dir,
+            'type' => 'folder',
+            '_token' => 'token',
+        ]));
+
+        $this->assertSame(200, $response->getStatusCode());
     }
 
     public function testCreateDoesNotWriteMarkerForNonWritableType(): void

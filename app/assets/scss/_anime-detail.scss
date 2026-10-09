@@ -516,6 +516,35 @@
     cursor: not-allowed;
 }
 
+.anime-detail__files-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.anime-detail__files-actions .anime-detail__open-folder-button {
+    margin-inline-start: 0;
+}
+
+.anime-detail__files-menu summary {
+    display: inline-block;
+    list-style: none;
+}
+
+.anime-detail__files-menu-items {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+    margin-top: 4px;
+}
+
+.anime-detail__files-message--error {
+    color: var(--bs-danger);
+}
+
 .anime-detail__source-list {
     display: flex;
     flex-direction: column;

@@ -1,0 +1,84 @@
+{#
+ # AnimeDb package.
+ #
+ # @author    Peter Gribanov <info@peter-gribanov.ru>
+ # @copyright Copyright (c) 2026, Peter Gribanov
+ # @license   https://www.gnu.org/licenses/gpl-3.0.html GPL-3.0-or-later
+ #
+ # This program is free software: you can redistribute it and/or modify
+ # it under the terms of the GNU General Public License as published by
+ # the Free Software Foundation, either version 3 of the License, or
+ # (at your option) any later version.
+ #
+ # This program is distributed in the hope that it will be useful,
+ # but WITHOUT ANY WARRANTY; without even the implied warranty of
+ # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ # GNU General Public License for more details.
+ #
+ # You should have received a copy of the GNU General Public License
+ # along with this program. If not, see <https://www.gnu.org/licenses/>.
+ #}
+{#
+ # "Files" block of the entry card. Rendered by anime/show.html.twig (initial load) and by
+ # AnimeFilesLinkController after a link/unlink (issue #997), so the root with its id is always
+ # emitted and serves as the swap target. The `files-link` control (assets/js/anime-detail.js)
+ # drives the folder/file pickers and posts the choice; every refusal comes back as `files_message`.
+ #}
+<section class="anime-detail__files" id="anime-files-{{ anime.id }}" data-control="files-link"
+    data-link-url="{{ path('anime_link_files', {id: anime.id}) }}"
+    data-unlink-url="{{ path('anime_unlink_files', {id: anime.id}) }}"
+    data-token="{{ csrf_token('anime_files_' ~ anime.id) }}"
+    data-video-extensions="{{ constant('App\\Service\\Media\\MediaExtensions::VIDEO')|join(',') }}"
+    data-video-filter-name="{{ 'anime_detail.files_video_filter'|trans }}"
+    data-relocate-confirm="{{ 'anime_detail.files_relocate_confirm'|trans }}"
+    data-unlink-confirm="{{ 'anime_detail.files_unlink_confirm'|trans }}">
+    <h2 class="anime-detail__section-heading">{{ 'anime_detail.files_heading'|trans }}</h2>
+
+    {% if files_message|default(null) %}
+        <p class="anime-detail__files-message anime-detail__files-message--{{ files_message.kind }}" role="{{ files_message.kind == 'error' ? 'alert' : 'status' }}">
+            {{ files_message.key|trans(files_message.params) }}
+            {% if files_message.link_url|default(null) %}
+                <a href="{{ files_message.link_url }}">{{ files_message.link_text is defined ? files_message.link_text : files_message.link_key|trans }}</a>
+            {% endif %}
+        </p>
+    {% endif %}
+
+    {% if anime.storage %}
+        <dl class="anime-detail__fields">
+            <dt>{{ 'anime_detail.field_storage'|trans }}</dt>
+            <dd>{{ anime.storage.name }} ({{ ('storage_type.' ~ anime.storage.type)|trans }})</dd>
+
+            {% if anime.storage.path is not null %}
+            <dt>{{ 'anime_detail.field_storage_path'|trans }}</dt>
+            <dd>
+                <span class="anime-detail__path">{{ anime.storage.path }}</span>
+                <button
+                    type="button"
+                    class="anime-detail__open-folder-button"
+                    data-control="open-folder-button"
+                    data-open-folder-path="{{ anime.storage.path }}"
+                    {%- if not anime.storage.path_available %}
+                        disabled
+                        title="{{ 'anime_detail.path_unavailable_tooltip'|trans }}"
+                    {%- endif %}
+                >{{ 'anime_detail.open_folder_button'|trans }}</button>
+            </dd>
+            {% endif %}
+        </dl>
+    {% else %}
+        <p class="anime-detail__files-empty">{{ 'anime_detail.files_not_linked'|trans }}</p>
+    {% endif %}
+
+    <div class="anime-detail__files-actions" data-files-actions>
+        <details class="anime-detail__files-menu">
+            <summary class="anime-detail__open-folder-button">{{ (anime.storage ? 'anime_detail.files_change' : 'anime_detail.files_link')|trans }}</summary>
+            <div class="anime-detail__files-menu-items">
+                <button type="button" class="anime-detail__open-folder-button" data-files-pick="folder">{{ 'anime_detail.files_pick_folder'|trans }}</button>
+                <button type="button" class="anime-detail__open-folder-button" data-files-pick="video">{{ 'anime_detail.files_pick_video'|trans }}</button>
+            </div>
+        </details>
+        {% if anime.storage %}
+            <button type="button" class="anime-detail__open-folder-button" data-files-unlink>{{ 'anime_detail.files_unlink'|trans }}</button>
+        {% endif %}
+    </div>
+</section>
