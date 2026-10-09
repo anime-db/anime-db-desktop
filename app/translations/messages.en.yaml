@@ -739,7 +739,7 @@ storage_scan_progress:
     heading: Scan results
     not_started: The scan has not been started.
     scan_button: Run scan
-    catalog_link: ← Catalog
+    catalog_link: Catalog
     last_run_heading: Last scan
 
 storage_scan_log:
@@ -752,8 +752,8 @@ storage_scan_log:
     status_column: Status
     counts_column: Found
     open_link: Open
-    back_link: ← Scan journal
-    storages_link: ← Storage
+    back_link: Scan journal
+    storages_link: Storage
     count_text: '%label%: %count%'
     run_error: 'Scan failed: %message%'
     interrupted_hint: The scan was interrupted before it finished; run it again.

@@ -103,7 +103,10 @@
                 const remove = document.createElement('button');
                 remove.type = 'button';
                 remove.className = 'anime-detail__labels-chip-remove';
-                remove.textContent = '×';
+                const removeIcon = document.getElementById('icon-x-lg');
+                if (removeIcon) {
+                    remove.appendChild(removeIcon.content.cloneNode(true));
+                }
                 remove.addEventListener('click', () => {
                     chips.splice(index, 1);
                     renderChips();

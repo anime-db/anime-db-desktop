@@ -488,3 +488,11 @@ body:has(.anime-list) {
     color: var(--bs-secondary-color);
     font-size: 0.75em;
 }
+
+.anime-list__sort-direction,
+.anime-list__chip-remove,
+.anime-list__filter-section-chevron {
+    .bi {
+        vertical-align: -0.125em;
+    }
+}

@@ -730,3 +730,22 @@
 [dir="rtl"] .anime-detail__back-link .bi {
     transform: scaleX(-1);
 }
+
+// Icon-only controls: the SVG inherits the button's text size and colour (currentColor), so the
+// buttons keep the height they had with a Unicode glyph.
+.anime-detail__progress-increment,
+.anime-detail__labels-chip-remove,
+.anime-detail__labels-edit-button,
+.anime-detail__star,
+.anime-detail__menu-toggle {
+    .bi {
+        vertical-align: -0.125em;
+    }
+}
+
+.anime-detail__progress-increment {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.85em;
+}

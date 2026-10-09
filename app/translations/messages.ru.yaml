@@ -739,7 +739,7 @@ storage_scan_progress:
     heading: Результаты сканирования
     not_started: Сканирование не запущено.
     scan_button: Запустить сканирование
-    catalog_link: ← Каталог
+    catalog_link: Каталог
     last_run_heading: Последнее сканирование
 
 storage_scan_log:
@@ -752,8 +752,8 @@ storage_scan_log:
     status_column: Статус
     counts_column: Найдено
     open_link: Открыть
-    back_link: ← Журнал сканирования
-    storages_link: ← Хранилища
+    back_link: Журнал сканирования
+    storages_link: Хранилища
     count_text: '%label%: %count%'
     run_error: 'Сканирование не удалось: %message%'
     interrupted_hint: Сканирование прервалось, не закончившись; запустите его снова.

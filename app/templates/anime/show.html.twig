@@ -39,7 +39,7 @@
 {% endblock %}
 
 {% block body %}
-    {{ include('anime/_back_link.html.twig', {url: path('home_index'), label: 'anime_detail.back_link'|trans, catalog_control: true}) }}
+    {{ include('_back_link.html.twig', {url: path('home_index'), label: 'anime_detail.back_link'|trans, catalog_control: true}) }}
 
     <main class="anime-detail">
         {{ include('anime/_header.html.twig', {anime: anime}) }}
@@ -72,7 +72,7 @@
                         <h2 class="anime-detail__labels-heading">{{ 'anime_detail.labels_heading'|trans }}</h2>
                         <button type="button" class="anime-detail__labels-edit-button" data-labels-edit
                                 title="{{ 'anime_detail.labels_edit_button'|trans }}"
-                                aria-label="{{ 'anime_detail.labels_edit_button'|trans }}">&#9998;</button>
+                                aria-label="{{ 'anime_detail.labels_edit_button'|trans }}">{{ icon('pencil') }}</button>
                     </div>
 
                     <ul class="anime-detail__labels-list" data-labels-view>
