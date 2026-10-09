@@ -122,7 +122,7 @@ final class AnimeTypeChangeServiceTest extends TestCase
         $anime = $this->persistSeries();
         $id = $anime->id;
 
-        $outcome = $this->service()->change($anime, AnimeType::Movie);
+        $outcome = $this->service()->change($anime, AnimeType::Movie, true);
 
         $this->assertSame(AnimeTypeChangeOutcome::Changed, $outcome);
         $this->assertSame(1, $this->rows('anime'));
@@ -151,7 +151,7 @@ final class AnimeTypeChangeServiceTest extends TestCase
         $anime->setDatePremiereAndEnd(null, new \DateTimeImmutable('2010-07-04'));
         $this->entityManager->flush();
 
-        $this->service()->change($anime, AnimeType::Movie);
+        $this->service()->change($anime, AnimeType::Movie, true);
 
         $row = $this->row($anime->id);
         $expected = (new \DateTimeImmutable('2010-07-04'))->getTimestamp();
@@ -164,7 +164,7 @@ final class AnimeTypeChangeServiceTest extends TestCase
         $anime = $this->persistSeries();
         $before = $this->row($anime->id);
 
-        $this->service()->change($anime, AnimeType::Ova);
+        $this->service()->change($anime, AnimeType::Ova, true);
 
         $after = $this->row($anime->id);
         $this->assertSame('ova', $after['type']);
@@ -177,10 +177,33 @@ final class AnimeTypeChangeServiceTest extends TestCase
         $this->assertSame(1149, $reloaded->getWatchedEpisodes());
     }
 
+    public function testLossyChangeWithoutConfirmationChangesNothing(): void
+    {
+        $anime = $this->persistSeries();
+        $before = $this->row($anime->id);
+
+        $outcome = $this->service()->change($anime, AnimeType::Movie, false);
+
+        $this->assertSame(AnimeTypeChangeOutcome::LossNotConfirmed, $outcome);
+        $this->assertSame($before, $this->row($anime->id));
+        $this->assertSame([], $this->dispatched);
+        $this->assertTrue($this->entityManager->contains($anime));
+    }
+
+    public function testChangeWithinSeriesNeedsNoConfirmation(): void
+    {
+        $anime = $this->persistSeries();
+
+        $outcome = $this->service()->change($anime, AnimeType::Ova, false);
+
+        $this->assertSame(AnimeTypeChangeOutcome::Changed, $outcome);
+        $this->assertSame('ova', $this->row($anime->id)['type']);
+    }
+
     public function testMovieToSeriesLeavesEpisodesEmpty(): void
     {
         $anime = $this->persistSeries();
-        $this->service()->change($anime, AnimeType::Movie);
+        $this->service()->change($anime, AnimeType::Movie, true);
         $movie = $this->entityManager->find(Anime::class, $anime->id);
         $this->assertNotNull($movie);
         $this->entityManager->getConnection()->executeStatement('UPDATE anime SET episodes_count = 12, watched_episodes = 5 WHERE id = ?', [$anime->id]);
@@ -188,7 +211,7 @@ final class AnimeTypeChangeServiceTest extends TestCase
         $movie = $this->entityManager->find(Anime::class, $anime->id);
         $this->assertNotNull($movie);
 
-        $this->service()->change($movie, AnimeType::Tv);
+        $this->service()->change($movie, AnimeType::Tv, true);
 
         $row = $this->row($anime->id);
         $this->assertSame('tv', $row['type']);
@@ -200,7 +223,7 @@ final class AnimeTypeChangeServiceTest extends TestCase
     {
         $anime = $this->persistSeries();
 
-        $this->service()->change($anime, AnimeType::Ova);
+        $this->service()->change($anime, AnimeType::Ova, true);
 
         $this->assertGreaterThan(1600000000, $this->row($anime->id)['date_update']);
         $this->assertFalse($this->entityManager->contains($anime), 'the stale object must not outlive the change');
@@ -214,7 +237,7 @@ final class AnimeTypeChangeServiceTest extends TestCase
         $jobLock = $this->newJobLockService();
         $this->assertTrue($jobLock->acquire(SyncSeedMessage::jobKey('animedb-shikimori')));
 
-        $outcome = $this->service($jobLock, ['animedb-shikimori'])->change($anime, AnimeType::Movie);
+        $outcome = $this->service($jobLock, ['animedb-shikimori'])->change($anime, AnimeType::Movie, true);
 
         $this->assertSame(AnimeTypeChangeOutcome::SyncRunning, $outcome);
         $row = $this->row($anime->id);
@@ -228,7 +251,7 @@ final class AnimeTypeChangeServiceTest extends TestCase
         $anime = $this->persistSeries();
 
         try {
-            $this->service()->change($anime, AnimeType::Tv);
+            $this->service()->change($anime, AnimeType::Tv, true);
             $this->fail('Expected the same type to be refused.');
         } catch (InvalidAnimeTypeChangeException) {
             $this->assertSame([], $this->dispatched);

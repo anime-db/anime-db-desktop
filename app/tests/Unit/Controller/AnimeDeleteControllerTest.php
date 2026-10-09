@@ -243,7 +243,7 @@ final class AnimeDeleteControllerTest extends TestCase
             $this->createStub(Environment::class),
             new \App\Service\AnimeTypeChangeService($this->entityManager, $registry, new \App\Service\JobLock\JobLockService(DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]), $this->createStub(\App\Service\JobLock\ProcessLivenessChecker::class), new \Symfony\Component\Clock\MockClock(), 30, 3), $this->createStub(MessageBusInterface::class)),
             new \App\Service\AnimeViewFactory(new \Symfony\Component\HttpFoundation\RequestStack()),
-            $this->createStub(\Symfony\Contracts\Translation\TranslatorInterface::class),
+            new \App\Service\AnimeTypeChangeFlash($this->createStub(\Symfony\Contracts\Translation\TranslatorInterface::class)),
         );
     }
 

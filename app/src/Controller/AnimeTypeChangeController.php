@@ -30,18 +30,16 @@ namespace App\Controller;
 use App\Entity\Anime;
 use App\Entity\Enum\AnimeType;
 use App\Entity\Exception\InvalidAnimeTypeChangeException;
-use App\Service\AnimeTypeChangeOutcome;
+use App\Service\AnimeTypeChangeFlash;
 use App\Service\AnimeTypeChangeService;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
-use Symfony\Component\HttpFoundation\Session\FlashBagAwareSessionInterface;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 use Symfony\Component\Security\Csrf\CsrfToken;
 use Symfony\Component\Security\Csrf\CsrfTokenManagerInterface;
-use Symfony\Contracts\Translation\TranslatorInterface;
 
 /**
  * "Change type…" in the entry card's actions menu (issue #1001). The dialog is part of the card
@@ -56,7 +54,7 @@ final class AnimeTypeChangeController
         private readonly AnimeTypeChangeService $changeService,
         private readonly CsrfTokenManagerInterface $csrfTokenManager,
         private readonly UrlGeneratorInterface $urlGenerator,
-        private readonly TranslatorInterface $translator,
+        private readonly AnimeTypeChangeFlash $flash,
     ) {
     }
 
@@ -74,30 +72,12 @@ final class AnimeTypeChangeController
             ?? throw new BadRequestHttpException('Unknown anime type.');
 
         try {
-            $change = $anime->planTypeChange($targetType);
-            if ($change->isLossy() && !$request->request->getBoolean('confirm_loss')) {
-                $this->flash($request, 'danger', 'anime_type_change.flash_not_confirmed');
-            } else {
-                $outcome = $this->changeService->change($anime, $targetType);
-                if ($outcome === AnimeTypeChangeOutcome::Changed) {
-                    $this->flash($request, 'success', 'anime_type_change.flash_changed', ['%type%' => $this->translator->trans('anime_type.'.$targetType->value)]);
-                } else {
-                    $this->flash($request, 'danger', 'anime_type_change.flash_sync_running');
-                }
-            }
+            $outcome = $this->changeService->change($anime, $targetType, $request->request->getBoolean('confirm_loss'));
+            $this->flash->add($request, $outcome, $targetType);
         } catch (InvalidAnimeTypeChangeException) {
-            $this->flash($request, 'danger', 'anime_type_change.flash_invalid');
+            $this->flash->addInvalid($request);
         }
 
         return new RedirectResponse($this->urlGenerator->generate('anime_show', ['id' => $animeId]));
-    }
-
-    /** @param array<string, string> $parameters */
-    private function flash(Request $request, string $type, string $key, array $parameters = []): void
-    {
-        $session = $request->getSession();
-        \assert($session instanceof FlashBagAwareSessionInterface);
-
-        $session->getFlashBag()->add($type, ['text' => $this->translator->trans($key, $parameters), 'link_url' => null, 'link_label' => null]);
     }
 }

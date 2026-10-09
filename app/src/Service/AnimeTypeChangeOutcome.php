@@ -33,4 +33,6 @@ enum AnimeTypeChangeOutcome
     case Changed;
     /** A sync run (seed or periodic pull) of an active plugin holds its job lock. */
     case SyncRunning;
+    /** The change drops data and the user has not confirmed the loss. */
+    case LossNotConfirmed;
 }
