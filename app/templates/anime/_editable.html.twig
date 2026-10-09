@@ -74,7 +74,7 @@
                                 type="submit"
                                 class="anime-detail__progress-increment"
                                 title="{{ 'anime_detail.increment_episode_button'|trans }}"
-                            >+</button>
+                            >{{ icon('plus-lg') }}</button>
                         </form>
                     {% endif %}
                 {% endif %}
@@ -137,7 +137,7 @@
                             class="anime-detail__star{% if anime.user_rating is not null and value <= anime.user_rating %} anime-detail__star--on{% endif %}"
                             aria-pressed="{{ value == anime.user_rating ? 'true' : 'false' }}"
                             aria-label="{{ 'anime_detail.rating_star_label'|trans({'%rating%': value}) }}"
-                        >&#9733;</button>
+                        >{{ icon('star-fill') }}</button>
                     </form>
                 {% endfor %}
             </div>

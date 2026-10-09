@@ -154,7 +154,7 @@
                     data-label-asc="{{ 'anime_list.sort_direction_asc'|trans }}"
                     data-label-desc="{{ 'anime_list.sort_direction_desc'|trans }}"
                     aria-label="{{ 'anime_list.sort_direction_desc'|trans }}"
-                >↓</button>
+                ><span data-sort-icon="desc">{{ icon('sort-down') }}</span><span data-sort-icon="asc" hidden>{{ icon('sort-up') }}</span></button>
             </div>
 
             <div class="anime-list__main">
@@ -186,7 +186,7 @@
                             {% set collapsed = section in collapsedFilterSections %}
                             <section class="anime-list__filter-section" data-filter-section="{{ section }}">
                                 <button type="button" class="anime-list__filter-section-toggle" aria-expanded="{{ collapsed ? 'false' : 'true' }}">
-                                    <span class="anime-list__filter-section-chevron">▾</span>
+                                    <span class="anime-list__filter-section-chevron">{{ icon('chevron-down') }}</span>
                                     {{ ('anime_list.filter_section_' ~ section)|trans }}
                                     <span class="anime-list__filter-section-count" hidden></span>
                                 </button>

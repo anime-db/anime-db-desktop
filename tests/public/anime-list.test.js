@@ -32,6 +32,13 @@
 // fresh require() per test would leak document-level listeners.
 require('../../app/assets/js/controller.js');
 
+function visibleSortIcon(button) {
+    return Array.from(button.querySelectorAll('[data-sort-icon]'))
+        .filter((el) => !el.hidden)
+        .map((el) => el.querySelector('svg').dataset.icon)
+        .join(',');
+}
+
 function mountControls(root = document.body) {
     root.dispatchEvent(new CustomEvent('htmx:load', { bubbles: true, detail: { elt: root } }));
 }
@@ -104,7 +111,8 @@ function setUpDom(columns = 1) {
             <button type="button" data-sort-field="date_premiere">Premiere</button>
             <button type="button" data-sort-field="date_end">End</button>
             <button type="button" id="anime-list-sort-direction" data-direction="desc"
-                data-label-asc="Ascending" data-label-desc="Descending">↓</button>
+                data-label-asc="Ascending" data-label-desc="Descending"><span data-sort-icon="desc"><svg data-icon="sort-down"></svg></span><span data-sort-icon="asc" hidden><svg data-icon="sort-up"></svg></span></button>
+        <template id="icon-x-lg"><svg data-icon="x-lg"></svg></template>
         </div>
         <div id="anime-list-chips">
             <ul id="anime-list-chip-list"></ul>
@@ -601,7 +609,8 @@ test('toggling sort direction flips desc/asc, reloads and updates the button lab
 
     expect(calls).toHaveLength(2);
     expect(queryParams(calls[1].url).direction).toBe('asc');
-    expect(directionButton.textContent).toBe('↑');
+    expect(visibleSortIcon(directionButton)).toBe('sort-up');
+    expect(directionButton.textContent).toBe('');
     expect(directionButton.getAttribute('aria-label')).toBe('Ascending');
 
     // Same as the sort-field case above: a direction flip is a new result set, not a re-page of
@@ -1124,7 +1133,10 @@ test('removing an applied filter chip resets the window scroll position', async 
     await applyWatchingFilter(calls);
     Element.prototype.scrollTo.mockClear();
 
-    document.querySelector('.anime-list__chip-remove').dispatchEvent(new Event('click', { bubbles: true }));
+    const chipRemove = document.querySelector('.anime-list__chip-remove');
+    expect(chipRemove.querySelector('svg[data-icon="x-lg"]')).not.toBeNull();
+    expect(chipRemove.textContent).toBe('');
+    chipRemove.dispatchEvent(new Event('click', { bubbles: true }));
     await flushMicrotasks();
 
     expect(byKind(calls, 'list')).toHaveLength(3);
@@ -1382,7 +1394,7 @@ test('?name=...&sort=...&direction=... seeds the search box and the sort control
 
     expect(document.getElementById('anime-list-search').value).toBe('gate');
     expect(document.querySelector('[data-sort-field="user_rating"]').getAttribute('aria-current')).toBe('true');
-    expect(document.getElementById('anime-list-sort-direction').textContent).toBe('↑');
+    expect(visibleSortIcon(document.getElementById('anime-list-sort-direction'))).toBe('sort-up');
     expect(queryParams(byKind(calls, 'list')[0].url)).toMatchObject({
         name: 'gate', sort: 'user_rating', direction: 'asc',
     });
@@ -1726,7 +1738,7 @@ test('state built by appendFilterParams() and placed in the URL restores in full
 
     expect(document.getElementById('anime-list-search').value).toBe('steins');
     expect(document.querySelector('[data-sort-field="name"]').getAttribute('aria-current')).toBe('true');
-    expect(document.getElementById('anime-list-sort-direction').textContent).toBe('↑');
+    expect(visibleSortIcon(document.getElementById('anime-list-sort-direction'))).toBe('sort-up');
 
     // One chip per applied value: watch_status, type, genres, themes, studios, labels (6) plus
     // two rating values ('5' and 'none') plus the date_premiere decade bucket = 9.

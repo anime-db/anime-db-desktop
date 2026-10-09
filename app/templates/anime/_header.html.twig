@@ -47,7 +47,7 @@
     {# Entry actions menu: each later action adds its own <li> here. #}
     <div class="dropdown anime-detail__menu">
         <button type="button" class="btn btn-outline-secondary anime-detail__menu-toggle" data-bs-toggle="dropdown" aria-expanded="false"
-                title="{{ 'anime_detail.menu_button'|trans }}" aria-label="{{ 'anime_detail.menu_button'|trans }}">&#8943;</button>
+                title="{{ 'anime_detail.menu_button'|trans }}" aria-label="{{ 'anime_detail.menu_button'|trans }}">{{ icon('three-dots') }}</button>
         <ul class="dropdown-menu dropdown-menu-end">
             <li><a class="dropdown-item" href="{{ path('anime_edit', {id: anime.id}) }}">{{ 'anime_detail.menu_edit'|trans }}</a></li>
             {% if type_changes is not empty %}

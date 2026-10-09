@@ -37,7 +37,7 @@
                     <option value="{{ role }}"{% if role == row.role %} selected{% endif %}>{{ ('anime_name_role.' ~ role)|trans }}</option>
                 {% endfor %}
             </select>
-            <button type="button" class="btn btn-outline-secondary" data-rows-remove aria-label="{{ 'anime_edit.remove_button'|trans }}" title="{{ 'anime_edit.remove_button'|trans }}">&times;</button>
+            <button type="button" class="btn btn-outline-secondary" data-rows-remove aria-label="{{ 'anime_edit.remove_button'|trans }}" title="{{ 'anime_edit.remove_button'|trans }}">{{ icon('x-lg') }}</button>
         </div>
         {{ m.field_error(errors, 'names.' ~ index) }}
     </div>
@@ -49,7 +49,7 @@
         <div class="anime-edit__row-fields">
             <input type="text" name="descriptions[{{ index }}][locale]" value="{{ row.locale }}" maxlength="8" class="form-control anime-edit__locale" placeholder="{{ 'anime_edit.field_locale'|trans }}" aria-label="{{ 'anime_edit.field_locale'|trans }}">
             <textarea name="descriptions[{{ index }}][text]" rows="3" class="form-control" aria-label="{{ 'anime_edit.field_description_text'|trans }}">{{ row.text }}</textarea>
-            <button type="button" class="btn btn-outline-secondary" data-rows-remove aria-label="{{ 'anime_edit.remove_button'|trans }}" title="{{ 'anime_edit.remove_button'|trans }}">&times;</button>
+            <button type="button" class="btn btn-outline-secondary" data-rows-remove aria-label="{{ 'anime_edit.remove_button'|trans }}" title="{{ 'anime_edit.remove_button'|trans }}">{{ icon('x-lg') }}</button>
         </div>
         {{ m.field_error(errors, 'descriptions.' ~ index) }}
     </div>
@@ -60,7 +60,7 @@
     <div class="anime-edit__row" data-rows-item>
         <div class="anime-edit__row-fields">
             <input type="{{ field == 'sources' ? 'url' : 'text' }}" name="{{ field }}[{{ index }}]" value="{{ value }}" class="form-control" aria-label="{{ label|trans }}">
-            <button type="button" class="btn btn-outline-secondary" data-rows-remove aria-label="{{ 'anime_edit.remove_button'|trans }}" title="{{ 'anime_edit.remove_button'|trans }}">&times;</button>
+            <button type="button" class="btn btn-outline-secondary" data-rows-remove aria-label="{{ 'anime_edit.remove_button'|trans }}" title="{{ 'anime_edit.remove_button'|trans }}">{{ icon('x-lg') }}</button>
         </div>
         {{ m.field_error(errors, field ~ '.' ~ index) }}
     </div>
@@ -89,7 +89,7 @@
 {% block body %}
     {% import _self as m %}
     <main class="container py-4 anime-edit">
-        {{ include('anime/_back_link.html.twig', {url: path('anime_show', {id: anime.id}), label: 'anime_edit.back_link'|trans, inline: true}) }}
+        {{ include('_back_link.html.twig', {url: path('anime_show', {id: anime.id}), label: 'anime_edit.back_link'|trans, inline: true}) }}
 
         <h1>{{ 'anime_edit.heading'|trans({'%title%': anime.title}) }}</h1>
 

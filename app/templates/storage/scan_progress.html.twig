@@ -81,6 +81,6 @@
             </form>
         {% endif %}
 
-        <p><a href="{{ path('home_index') }}">{{ 'storage_scan_progress.catalog_link'|trans }}</a></p>
+        {{ include('_back_link.html.twig', {url: path('home_index'), label: 'storage_scan_progress.catalog_link'|trans, inline: true}) }}
     </main>
 {% endblock %}
