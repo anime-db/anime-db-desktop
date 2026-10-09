@@ -192,6 +192,23 @@
             return li;
         }
 
+        // A resolved item's controls are replaced with plain text, which drops keyboard focus to
+        // <body>. Continue from the next unresolved item's confirm button, or the group heading
+        // when nothing is left to confirm. Focus that moved elsewhere on purpose is left alone.
+        function focusAfterResolve(li) {
+            const active = document.activeElement;
+            if (active !== document.body && active !== li) {
+                return;
+            }
+
+            const next = Array.from(resultsBox.querySelectorAll('[data-scan-confirm]'))
+                .find((candidate) => (li.compareDocumentPosition(candidate) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0);
+            const target = next ?? li.closest('section')?.querySelector('h3');
+            if (target) {
+                target.focus();
+            }
+        }
+
         function confirmCandidate(item, candidate, li, radios, button) {
             button.disabled = true;
 
@@ -240,11 +257,13 @@
                             : 'storage_list.confirmed_text',
                         { title },
                     );
+                    focusAfterResolve(li);
                 })
                 .catch(async (reason) => {
                     if (reason instanceof EntryMissingError) {
                         li.replaceChildren();
                         li.textContent = await window.AppTranslations.trans('storage_list.entry_missing');
+                        focusAfterResolve(li);
 
                         return;
                     }
@@ -254,6 +273,7 @@
                         li.textContent = await window.AppTranslations.trans('storage_list.storage_unavailable', {
                             name: reason.storageName,
                         });
+                        focusAfterResolve(li);
 
                         return;
                     }
@@ -264,6 +284,7 @@
                             title: reason.conflict.anime?.title ?? candidate.title,
                             path: reason.conflict.storage_path ?? '',
                         });
+                        focusAfterResolve(li);
 
                         return;
                     }
@@ -276,6 +297,7 @@
                     error.setAttribute('role', 'alert');
                     error.textContent = await window.AppTranslations.trans('storage_list.confirm_error');
                     li.appendChild(error);
+                    button.focus();
                 });
         }
 
@@ -359,6 +381,7 @@
             const button = document.createElement('button');
             button.type = 'button';
             button.className = 'btn btn-primary mt-2';
+            button.dataset.scanConfirm = '';
             button.textContent = await window.AppTranslations.trans('storage_list.confirm_button');
             button.addEventListener('click', () => {
                 const checked = radios.find((radio) => radio.checked);
@@ -431,6 +454,7 @@
 
             const heading = document.createElement('h3');
             heading.className = 'h6';
+            heading.tabIndex = -1;
             heading.textContent = await window.AppTranslations.trans(group.labelKey);
             section.appendChild(heading);
 

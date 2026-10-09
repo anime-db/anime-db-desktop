@@ -177,3 +177,17 @@ test('losing focus to the Save button does not trigger a duplicate submit', () =
     expect(requestSubmit).not.toHaveBeenCalled();
     expect(inputGroup().hidden).toBe(false);
 });
+
+test('Escape cancels the edit and moves focus to the label name button', () => {
+    setUpDom();
+    loadSettingsLabelsModule();
+    nameButton().click();
+    input().value = 'changed';
+    expect(document.activeElement).toBe(input());
+
+    pressKey('Escape');
+
+    expect(input().value).toBe('favorite');
+    expect(inputGroup().hidden).toBe(true);
+    expect(document.activeElement).toBe(nameButton());
+});

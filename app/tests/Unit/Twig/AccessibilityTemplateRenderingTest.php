@@ -142,7 +142,7 @@ final class AccessibilityTemplateRenderingTest extends KernelTestCase
         $this->assertMatchesRegularExpression('/name="watched_episodes"\s+aria-label="Episodes watched"/', $progress);
 
         $status = $this->render('anime/_editable.html.twig', ['anime' => $anime, 'editing' => 'watch_status', 'error' => null, 'watch_statuses' => ['watching']]);
-        $this->assertStringContainsString('<select name="watch_status" aria-label="Watch status">', $status);
+        $this->assertStringContainsString('<select name="watch_status" autofocus aria-label="Watch status">', $status);
     }
 
     /**

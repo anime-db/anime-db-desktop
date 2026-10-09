@@ -411,39 +411,54 @@
 
     // `entries`: appliedFilterEntries() output. `context`: { lastFacets, onRemove(sectionKey, value) }.
     function renderChips(entries, catalogue, context) {
-        chipList.replaceChildren();
-        entries.forEach(({ sectionKey, value }) => {
-            const name = resolveValueName(sectionKey, value, catalogue, context.lastFacets);
-            const label = `${sectionTitle(sectionKey, catalogue)}: ${name}`;
+        const removeButtons = () => Array.from(chipList.querySelectorAll('.anime-list__chip-remove'));
+        const focusedIndex = removeButtons().indexOf(document.activeElement);
 
-            const chip = document.createElement('li');
-            chip.className = 'anime-list__chip';
+        // A removed chip's button is gone after the rebuild: focus moves to the chip that took its
+        // place (or the last one), else to "Reset all" while it is usable, else the search field.
+        window.FocusRestore.run(chipList, () => {
+            chipList.replaceChildren();
+            entries.forEach(({ sectionKey, value }) => {
+                const name = resolveValueName(sectionKey, value, catalogue, context.lastFacets);
+                const label = `${sectionTitle(sectionKey, catalogue)}: ${name}`;
 
-            const text = document.createElement('span');
-            text.className = 'anime-list__chip-label';
-            text.textContent = label;
-            chip.appendChild(text);
+                const chip = document.createElement('li');
+                chip.className = 'anime-list__chip';
 
-            const remove = document.createElement('button');
-            remove.type = 'button';
-            remove.className = 'anime-list__chip-remove';
-            remove.setAttribute(
-                'aria-label',
-                window.AppTranslations.resolveKey(catalogue, 'anime_list.filter_chip_remove_button', { label: name }),
-            );
-            const removeIcon = document.getElementById('icon-x-lg');
-            if (removeIcon) {
-                remove.appendChild(removeIcon.content.cloneNode(true));
-            }
+                const text = document.createElement('span');
+                text.className = 'anime-list__chip-label';
+                text.textContent = label;
+                chip.appendChild(text);
+
+                const remove = document.createElement('button');
+                remove.type = 'button';
+                remove.className = 'anime-list__chip-remove';
+                remove.setAttribute(
+                    'aria-label',
+                    window.AppTranslations.resolveKey(catalogue, 'anime_list.filter_chip_remove_button', { label: name }),
+                );
+                const removeIcon = document.getElementById('icon-x-lg');
+                if (removeIcon) {
+                    remove.appendChild(removeIcon.content.cloneNode(true));
+                }
+                remove.dataset.focusKey = `chip-remove:${sectionKey}:${value}`;
             remove.addEventListener('click', () => context.onRemove(sectionKey, value));
-            chip.appendChild(remove);
+                chip.appendChild(remove);
 
-            chipList.appendChild(chip);
+                chipList.appendChild(chip);
+            });
+
+            chipsResetButton.disabled = entries.length === 0;
+            filtersCountBadge.textContent = ` · ${entries.length}`;
+            filtersCountBadge.hidden = entries.length === 0;
+        }, () => {
+            const buttons = removeButtons();
+            if (buttons.length > 0) {
+                return buttons[Math.min(Math.max(focusedIndex, 0), buttons.length - 1)];
+            }
+
+            return chipsResetButton.disabled ? document.getElementById('anime-list-search') : chipsResetButton;
         });
-
-        chipsResetButton.disabled = entries.length === 0;
-        filtersCountBadge.textContent = ` · ${entries.length}`;
-        filtersCountBadge.hidden = entries.length === 0;
     }
 
     window.AnimeListFilterRender = {

@@ -52,7 +52,12 @@
             const button = event.target.closest('[data-rows-remove]');
             const row = button && button.closest('[data-rows-item]');
             if (row && list.contains(row)) {
+                const neighbour = row.nextElementSibling || row.previousElementSibling;
                 row.remove();
+                // The focused remove button went away with its row: continue in the neighbouring
+                // row's field, or on "Add" once the list is empty.
+                const field = neighbour && neighbour.querySelector('input, textarea, select');
+                (field || addButton).focus();
             }
         }
 

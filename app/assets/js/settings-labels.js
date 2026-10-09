@@ -38,8 +38,8 @@
         }
 
         const originalValue = input.value;
-        // Set by the Escape handler so the focusout it triggers (via input.blur()) is not read as
-        // a save — Escape must cancel even though losing focus otherwise saves.
+        // Set by the Escape handler so the focusout triggered by moving focus to the name
+        // button is not read as a save — Escape must cancel even though losing focus otherwise saves.
         let cancelled = false;
 
         function showReadMode() {
@@ -82,7 +82,7 @@
                 input.value = originalValue;
                 errorBox.hidden = true;
                 showReadMode();
-                input.blur();
+                nameButton.focus();
             } else if (event.key === 'Enter') {
                 event.preventDefault();
                 trySave();

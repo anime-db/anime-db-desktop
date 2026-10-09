@@ -30,6 +30,7 @@
 // controller.js is required once at file scope, not inside loadAnimeDetailModule() — see
 // controller.test.js for why a fresh require() per test would leak document-level listeners.
 require('../../app/assets/js/controller.js');
+require('../../app/assets/js/focus-restore.js');
 
 function mountControls(root = document.body) {
     root.dispatchEvent(new CustomEvent('htmx:load', { bubbles: true, detail: { elt: root } }));

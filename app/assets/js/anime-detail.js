@@ -109,9 +109,16 @@
                 if (removeIcon) {
                     remove.appendChild(removeIcon.content.cloneNode(true));
                 }
+                remove.dataset.focusKey = `chip-remove:${name}`;
                 remove.addEventListener('click', () => {
                     chips.splice(index, 1);
-                    renderChips();
+                    // The removed chip's button is gone after the rebuild, so focus goes to the
+                    // chip that took its place (or the one before it), else to the input.
+                    window.FocusRestore.run(chipsList, renderChips, () => {
+                        const buttons = chipsList.querySelectorAll('.anime-detail__labels-chip-remove');
+
+                        return buttons[Math.min(index, buttons.length - 1)] ?? input;
+                    });
                 });
                 chip.appendChild(remove);
 
@@ -186,6 +193,7 @@
             editor.hidden = true;
             view.hidden = false;
             hideSuggestions();
+            editButton.focus();
         }
 
         function saveLabels() {
@@ -226,6 +234,17 @@
         input.addEventListener('input', () => showSuggestions(input.value));
 
         input.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                if (suggestions.hidden) {
+                    closeEditor();
+                } else {
+                    hideSuggestions();
+                }
+
+                return;
+            }
+
             if (event.key === ',' || event.key === 'Enter') {
                 event.preventDefault();
                 addChip(input.value);
@@ -288,7 +307,32 @@
         }
 
         function show(html) {
+            const id = root.id;
             window.htmx.swap(root, html, { swapStyle: 'outerHTML' });
+
+            // The swap destroys the focused element: continue from the new block's own message
+            // (an error is announced as an alert, so it is the first thing to reach), else its menu.
+            const block = document.getElementById(id);
+            const message = block && block.querySelector('.anime-detail__files-message--error');
+            if (message) {
+                message.setAttribute('tabindex', '-1');
+                message.focus();
+            } else if (block) {
+                const summary = block.querySelector('.anime-detail__files-menu > summary');
+                if (summary) {
+                    summary.focus();
+                }
+            }
+        }
+
+        if (menu) {
+            menu.addEventListener('keydown', (event) => {
+                if (event.key === 'Escape' && menu.open) {
+                    event.preventDefault();
+                    menu.open = false;
+                    menu.querySelector('summary').focus();
+                }
+            });
         }
 
         // The block is replaced only by a successful answer; anything else (expired token, server
@@ -395,4 +439,42 @@
     }
 
     window.Controller.registerControl('catalog-back-link', mountCatalogBackLink);
+})();
+
+// Keyboard handling of the card's in-place edit forms (issue #1010, anime/_editable.html.twig and
+// _notes.html.twig). Escape in an open form presses its "Cancel" button. The forms are swapped out
+// by htmx, which only returns focus to an element that has the same id in the new markup; a form's
+// Save/Cancel buttons have none, so the form names the ids that should receive focus instead
+// (data-focus-return, first one present wins) and the swap is followed by hand. Delegated on the
+// document: the fragments are replaced, so per-element listeners would be lost with them.
+(function () {
+    let pendingFocusIds = null;
+
+    document.addEventListener('keydown', (event) => {
+        if (event.key !== 'Escape' || event.defaultPrevented || !(event.target instanceof Element)) {
+            return;
+        }
+
+        const form = event.target.closest('form.anime-detail__inline-form');
+        const cancel = form && form.querySelector('[data-inline-cancel]');
+        if (cancel) {
+            event.preventDefault();
+            cancel.click();
+        }
+    });
+
+    document.addEventListener('htmx:beforeSwap', () => {
+        const owner = document.activeElement && document.activeElement.closest('[data-focus-return]');
+        pendingFocusIds = owner ? owner.dataset.focusReturn.split(' ') : null;
+    });
+
+    document.addEventListener('htmx:afterSettle', () => {
+        const ids = pendingFocusIds;
+        pendingFocusIds = null;
+
+        const target = ids && ids.map((id) => document.getElementById(id)).find((element) => element !== null);
+        if (target) {
+            target.focus();
+        }
+    });
 })();

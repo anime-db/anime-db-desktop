@@ -26,6 +26,7 @@
 // time (the setTimeout chain only schedules its next tick once the previous fetch() has settled),
 // and polling stops while the tab is hidden, resuming immediately once it is visible again.
 require('../../app/assets/js/controller.js');
+require('../../app/assets/js/focus-restore.js');
 
 const POLL_INTERVAL_MS = 2000;
 
@@ -424,4 +425,30 @@ test('the empty state reappears once the last row disappears from a poll respons
     expect(emptyMessage.hidden).toBe(false);
     expect(tableWrapper.hidden).toBe(true);
     expect(document.querySelectorAll('[data-downloads-rows] tr')).toHaveLength(0);
+});
+
+test('a poll keeps focus on the same button of the same download', async () => {
+    const calls = mockFetchQueue();
+    loadDownloadsListModule();
+    const row = (hash) => ({
+        infoHash: hash, hasCard: false, animeUrl: `/anime/${hash}`, displayName: `Name ${hash}`, statusText: 'Waiting',
+        sizeText: null, progressText: null, downloadSpeedText: null, uploadSpeedText: null, etaText: null,
+        peersText: null, targetStorageName: null,
+    });
+    const response = () => jsonResponse({ qbittorrentAvailable: true, rows: [row('a'), row('b')], orphans: [] });
+
+    calls[0].resolve(response());
+    await flushMicrotasks();
+
+    const link = document.querySelector('tr[data-info-hash="b"] a');
+    link.focus();
+    expect(document.activeElement).toBe(link);
+
+    jest.advanceTimersByTime(POLL_INTERVAL_MS);
+    calls[1].resolve(response());
+    await flushMicrotasks();
+
+    const rebuilt = document.querySelector('tr[data-info-hash="b"] a');
+    expect(rebuilt).not.toBe(link);
+    expect(document.activeElement).toBe(rebuilt);
 });
