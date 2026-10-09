@@ -53,9 +53,9 @@
                         {% elseif deletionDetails[item.id] is defined %}
                             {% set detail = deletionDetails[item.id] %}
                             {% if item.kind.value == 'deletion_conflict' %}
-                                <p>{{ 'settings_sync_review.kind_deletion_conflict'|trans({'%source%': bidi_isolate(detail.deletedFrom), '%others%': bidi_isolate(detail.stillPresentOn|join(', '))}) }}</p>
+                                <p>{{ 'settings_sync_review.kind_deletion_conflict'|trans({'%source%': bidi_isolate(plugin_name(detail.deletedFrom)), '%others%': bidi_isolate(detail.stillPresentOn|map(id => plugin_name(id))|join(', '))}) }}</p>
                             {% else %}
-                                <p>{{ 'settings_sync_review.kind_deleted_from_source'|trans({'%source%': bidi_isolate(detail.deletedFrom)}) }}</p>
+                                <p>{{ 'settings_sync_review.kind_deleted_from_source'|trans({'%source%': bidi_isolate(plugin_name(detail.deletedFrom))}) }}</p>
                             {% endif %}
                             {% if detail.anime is not null %}
                                 <a href="{{ path('anime_show', {id: detail.anime.id}) }}"><bdi>{{ detail.anime.title }}</bdi></a>
@@ -76,7 +76,7 @@
                                         <div class="form-check">
                                             <input class="form-check-input" type="radio" name="participant_id" id="sync-review-candidate-{{ item.id }}-{{ loop.index }}" value="{{ candidate.participant_id }}" required>
                                             <label class="form-check-label" for="sync-review-candidate-{{ item.id }}-{{ loop.index }}">
-                                                <bdi>{{ candidate.participant_id == 'local' ? ('settings_sync_review.participant_local'|trans) : candidate.participant_id }}</bdi>:
+                                                <bdi>{{ candidate.participant_id == 'local' ? ('settings_sync_review.participant_local'|trans) : plugin_name(candidate.participant_id) }}</bdi>:
                                                 {{ ('watch_status.' ~ candidate.status)|trans }}
                                                 {%- if candidate.watched_episodes is not null %} {{ candidate.watched_episodes }}{% endif %}
                                                 {%- if candidate.updated_at is not null %}, {{ 'settings_sync_review.candidate_updated_at'|trans({'%date%': (candidate.updated_at|date('Y-m-d H:i'))}) }}{% endif %}
@@ -93,7 +93,7 @@
                             <div class="d-flex gap-2 mt-2">
                                 <form method="post" action="{{ path('settings_sync_review_resolve', {id: item.id}) }}">
                                     <input type="hidden" name="_token" value="{{ csrf_token('settings_sync_review_resolve_' ~ item.id) }}">
-                                    <button type="submit" class="btn btn-outline-secondary btn-sm">{{ 'settings_sync_review.resolve_button'|trans }}</button>
+                                    <button type="submit" class="btn btn-outline-secondary btn-sm">{{ (item.kind.value == 'potential_duplicate' ? 'settings_sync_review.not_duplicate_button' : 'settings_sync_review.keep_button')|trans }}</button>
                                 </form>
                                 {% if deletionDetails[item.id] is defined and deletionDetails[item.id].anime is not null %}
                                     {% set detail = deletionDetails[item.id] %}

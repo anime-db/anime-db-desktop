@@ -210,7 +210,8 @@ settings_sync_review:
     candidate_updated_at: 'обновлено %date%'
     auto_applied_winner: разрешено автоматически
     correct_button: Поправить
-    resolve_button: Разобрано
+    keep_button: Оставить в каталоге
+    not_duplicate_button: Это не дубликат
     delete_button: Удалить запись
 
 settings_plugins:
