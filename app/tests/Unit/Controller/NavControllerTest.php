@@ -64,8 +64,7 @@ final class NavControllerTest extends TestCase
             ->method('render')
             ->with('nav/_add_menu_scan_section.html.twig', $this->callback(
                 static fn (array $params): bool => $params['connectedStorages'] === [$connected]
-                    && $params['disconnectedCount'] === 1
-                    && $params['hasScannableStorages'] === true,
+                    && $params['disconnectedCount'] === 1,
             ))
             ->willReturn('<li></li>');
 
@@ -88,24 +87,6 @@ final class NavControllerTest extends TestCase
             ->method('render')
             ->with('nav/_add_menu_scan_section.html.twig', $this->callback(
                 static fn (array $params): bool => $params['connectedStorages'] === []
-                    && $params['disconnectedCount'] === 0
-                    && $params['hasScannableStorages'] === false,
-            ))
-            ->willReturn('<li></li>');
-
-        $this->controller($storages, $twig)->addMenuScanSection();
-    }
-
-    public function testNoScannableStorageAtAllIsFlagged(): void
-    {
-        $storages = $this->createStub(StorageRepository::class);
-        $storages->method('findAllOrderedByName')->willReturn([]);
-
-        $twig = $this->createMock(Environment::class);
-        $twig->expects($this->once())
-            ->method('render')
-            ->with('nav/_add_menu_scan_section.html.twig', $this->callback(
-                static fn (array $params): bool => $params['hasScannableStorages'] === false
                     && $params['disconnectedCount'] === 0,
             ))
             ->willReturn('<li></li>');

@@ -123,7 +123,7 @@
                                                 </button>
                                             </form>
                                         {% endif %}
-                                        <form method="post" action="{{ path('settings_plugins_remove', {pluginId: plugin.id}) }}">
+                                        <form method="post" action="{{ path('settings_plugins_remove', {pluginId: plugin.id}) }}" data-confirm="{{ 'settings_plugins.remove_confirm'|trans({'%name%': bidi_isolate(plugin.manifest.name)}) }}">
                                             <input type="hidden" name="_token" value="{{ csrf_token('settings_plugins_remove_' ~ plugin.id) }}">
                                             <button type="submit" class="btn btn-outline-danger btn-sm btn-icon" title="{{ 'settings_plugins.remove_button'|trans }}" aria-label="{{ 'settings_plugins.remove_button'|trans }}">
                                                 {{ icon('trash') }}

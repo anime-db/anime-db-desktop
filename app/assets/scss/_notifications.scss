@@ -23,9 +23,11 @@
 // поэтому цвета взяты из danger-набора Bootstrap: он определён для обеих тем.
 .app-notifications {
     position: fixed;
-    top: 16px;
+    // Below the fixed top nav (min-height 48px, z-index 1030) plus a gap; above it in the stack
+    // (Bootstrap's toast level) so the close button is never covered by the nav's buttons.
+    top: 64px;
     inset-inline-end: 16px;
-    z-index: 1000;
+    z-index: 1090;
     display: flex;
     flex-direction: column;
     gap: 8px;

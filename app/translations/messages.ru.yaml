@@ -251,6 +251,7 @@ settings_plugins:
     status_incompatible_badge: Несовместим
     incompatible_market_link: 'Проверить в маркете плагинов'
     incompatible_market_update: 'Доступно обновление до версии %version% — открыть маркет плагинов'
+    remove_confirm: 'Удалить плагин «%name%»? Накопленные им данные в каталоге сохранятся.'
 
 settings_plugins_install:
     title: Установка из ZIP — Настройки — AnimeDB
@@ -511,7 +512,6 @@ anime_detail:
     field_episodes_count: Количество серий
     field_duration_minutes: Длительность
     field_studios: Студия
-    filter_studios: Фильтр студий по названию
     field_countries: Страна
     field_storage: Хранилище
     field_storage_path: Путь к файлу
@@ -632,6 +632,7 @@ anime_edit:
     error_cover_save: Не удалось сохранить обложку.
     cover_reselect: 'Обложка не сохранена: после исправления ошибок выберите файл снова.'
     flash_request_too_large: 'Файл слишком большой, ничего не сохранено.'
+    filter_studios: Фильтр студий по названию
 
 anime_new:
     title: Новая запись — AnimeDB
@@ -641,6 +642,9 @@ anime_new:
     field_watch_status: Статус просмотра
     submit_button: Создать
     error_invalid: Заполните название и выберите тип и статус просмотра.
+    type_placeholder: — выберите —
+    type_hint: Тип нельзя изменить после создания записи.
+    cancel_button: Отмена
 
 storage_new:
     title: Новое хранилище — AnimeDB
@@ -652,7 +656,7 @@ storage_new:
     path_not_applicable_hint: У этого типа носителя нет файлового пути, поэтому он не сохраняется.
     submit_button: Создать
     error_invalid: Укажите корректные название, путь и тип хранилища.
-    skip_link: Пропустить
+    cancel_button: Отмена
 
 storage_scan_prompt:
     title: Запустить сканирование? — AnimeDB
@@ -749,6 +753,7 @@ plugin_widget:
 
 app_notification:
     close_button: Закрыть
+    request_failed: Не удалось выполнить действие, попробуйте ещё раз
 
 nav:
     aria_label: Основная навигация
