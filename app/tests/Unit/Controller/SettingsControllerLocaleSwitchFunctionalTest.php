@@ -184,7 +184,7 @@ final class SettingsControllerLocaleSwitchFunctionalTest extends KernelTestCase
         // settings.heading is not defined by the "de" plugin fixture above. LocaleSubscriber must
         // have recomputed the translator's fallback chain from this request's own negotiation, not
         // from whatever chain a previous request left behind.
-        self::assertStringContainsString('<h1>Settings</h1>', $html, 'A key missing from the "de" catalog must fall through to English.');
+        self::assertStringContainsString('<h1 class="mb-4">Interface</h1>', $html, 'A key missing from the "de" catalog must fall through to English.');
     }
 
     private function createController(): SettingsController

@@ -34,6 +34,8 @@ const mockWebContents = {
     on: jest.fn((event, handler) => { handlers[event] = handler; }),
     setWindowOpenHandler: jest.fn((handler) => { handlers.windowOpen = handler; }),
     navigationHistory: mockNavigationHistory,
+    setVisualZoomLevelLimits: jest.fn(),
+    setZoomLevel: jest.fn(),
 };
 
 let mockWorkAreaSize = { width: 1920, height: 1080 };
@@ -263,4 +265,14 @@ test('Ctrl+Alt+Left is left untouched, since it collides with other shortcuts on
 
     expect(event.preventDefault).not.toHaveBeenCalled();
     expect(mockNavigationHistory.goBack).not.toHaveBeenCalled();
+});
+
+test('pinch zoom is blocked by pinning the visual zoom limits to 1', () => {
+    expect(mockWebContents.setVisualZoomLevelLimits).toHaveBeenCalledWith(1, 1);
+});
+
+test('a Ctrl+wheel zoom change is reverted to zoom level 0', () => {
+    handlers['zoom-changed']({}, 'in');
+
+    expect(mockWebContents.setZoomLevel).toHaveBeenCalledWith(0);
 });

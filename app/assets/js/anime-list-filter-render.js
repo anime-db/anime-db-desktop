@@ -150,7 +150,7 @@
 
         const checkbox = document.createElement('input');
         checkbox.type = inputType;
-        checkbox.className = 'anime-list__filter-checkbox';
+        checkbox.className = 'form-check-input anime-list__filter-checkbox';
         if (inputType === 'radio') {
             checkbox.name = `anime-list-filter-${sectionKey}`;
         }

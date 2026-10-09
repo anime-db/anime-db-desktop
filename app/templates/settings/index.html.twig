@@ -24,7 +24,7 @@
 
 {% block settings_content %}
     <div class="py-4">
-        <h1>{{ 'settings.heading'|trans }}</h1>
+        <h1 class="mb-4">{{ 'settings.heading'|trans }}</h1>
 
         <form method="post" action="{{ path('settings_set_locale') }}" class="mb-4">
             <input type="hidden" name="_token" value="{{ csrf_token('settings_set_locale') }}">

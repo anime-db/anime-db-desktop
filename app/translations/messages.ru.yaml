@@ -121,8 +121,8 @@ download_status:
     failed: Ошибка
 
 settings:
-    title: Настройки — AnimeDB
-    heading: Настройки
+    title: Интерфейс — Настройки — AnimeDB
+    heading: Интерфейс
     language_label: Язык интерфейса
     language_unavailable_option: '%language% — недоступно'
     language_plugin_translation_note: Интерфейс плагинов переводят их авторы — на языке, не входящем в число встроенных в приложение, часть интерфейса плагинов может остаться непереведённой.
@@ -194,11 +194,14 @@ settings_plugin_widgets:
     catalog:
         heading: Каталог
         empty: Нет доступных виджетов для каталога.
+    empty_hint: Виджеты приходят с установленными плагинами.
+    open_market_link: Открыть маркет
 
 settings_sync_review:
     title: Требует внимания — Настройки — AnimeDB
     heading: Требует внимания
     empty: Нет элементов, требующих внимания.
+    empty_hint: Сюда попадают записи, синхронизация которых требует вашего решения.
     kind_potential_duplicate: Возможный дубликат
     kind_deleted_from_source: 'Удалено из списка на источнике «%source%»'
     kind_deletion_conflict: 'Конфликт: удалено на «%source%», но ещё в списке на: %others%'
@@ -207,7 +210,8 @@ settings_sync_review:
     candidate_updated_at: 'обновлено %date%'
     auto_applied_winner: разрешено автоматически
     correct_button: Поправить
-    resolve_button: Разобрано
+    keep_button: Оставить в каталоге
+    not_duplicate_button: Это не дубликат
     delete_button: Удалить запись
 
 settings_plugins:
@@ -215,9 +219,10 @@ settings_plugins:
     sync_off: выкл.
     sync_toggle: Синхронизация
     busy_retry_error: Настройки плагинов сейчас заняты другим обновлением. Повторите попытку через мгновение.
-    title: Плагины — Настройки — AnimeDB
+    title: Установленные плагины — Настройки — AnimeDB
     installed_heading: Установленные плагины
     installed_empty: Плагинов пока не установлено.
+    open_market_link: Открыть маркет
     name_column: Название
     id_column: Идентификатор
     version_column: Версия
@@ -230,7 +235,7 @@ settings_plugins:
     settings_link: Настройки
     remove_button: Удалить
     remove_success: 'Плагин «%pluginId%» удалён. Накопленные им данные в каталоге сохранены и будут использованы при повторной установке.'
-    install_heading: Установить из ZIP
+    install_heading: Установка плагина из ZIP
     install_file_label: ZIP-архив плагина
     third_party_warning: Плагин из стороннего источника, не проходил проверку маркета. Установить его на свой страх и риск?
     confirm_button: Понимаю, установить
@@ -251,9 +256,10 @@ settings_plugins:
     status_incompatible_badge: Несовместим
     incompatible_market_link: 'Проверить в маркете плагинов'
     incompatible_market_update: 'Доступно обновление до версии %version% — открыть маркет плагинов'
+    remove_confirm: 'Удалить плагин «%name%»? Накопленные им данные в каталоге сохранятся.'
 
 settings_plugins_install:
-    title: Установка из ZIP — Настройки — AnimeDB
+    title: Установка плагина из ZIP — Настройки — AnimeDB
 
 settings_market:
     title: Маркет плагинов — Настройки — AnimeDB
@@ -302,8 +308,8 @@ settings_plugin_page:
     sync_seed_started_link: Перейти к обзору синхронизации
 
 settings_proxy:
-    title: Прокси-сервер — Настройки — AnimeDB
-    heading: Прокси-сервер
+    title: Прокси и входящие соединения — Настройки — AnimeDB
+    heading: Прокси и входящие соединения
     save_success: Настройки прокси сохранены.
     torrent_proxy_error: Настройки сохранены, но не удалось применить SOCKS5-прокси к торрент-клиенту. Загрузки остаются на паузе, пока прокси не будет подтверждён.
     mode_label: Режим
@@ -337,8 +343,8 @@ settings_proxy:
     incoming_connections_socks5_hint: Под SOCKS5-прокси входящие подключения не работают независимо от правил брандмауэра, поэтому включение недоступно. Уже включённую настройку можно выключить в любой момент.
 
 settings_backup:
-    title: Резервное копирование каталога — Настройки — AnimeDB
-    heading: Резервное копирование каталога
+    title: Экспорт и импорт каталога — Настройки — AnimeDB
+    heading: Экспорт и импорт каталога
     unavailable_outside_app: Это действие доступно только в приложении AnimeDB.
     staged_import_banner: 'Импорт архива «%name%» подготовлен %date% и применится при следующем запуске приложения.'
     staged_import_cancel_button: Отменить подготовленный импорт
@@ -503,7 +509,7 @@ storage_list:
 
 anime_detail:
     title: '%title% — AnimeDB'
-    back_link: ← Каталог
+    back_link: Каталог
     my_heading: Моё
     field_summary: Описание
     info_heading: Информация
@@ -511,7 +517,6 @@ anime_detail:
     field_episodes_count: Количество серий
     field_duration_minutes: Длительность
     field_studios: Студия
-    filter_studios: Фильтр студий по названию
     field_countries: Страна
     field_storage: Хранилище
     field_storage_path: Путь к файлу
@@ -632,6 +637,7 @@ anime_edit:
     error_cover_save: Не удалось сохранить обложку.
     cover_reselect: 'Обложка не сохранена: после исправления ошибок выберите файл снова.'
     flash_request_too_large: 'Файл слишком большой, ничего не сохранено.'
+    filter_studios: Фильтр студий по названию
 
 anime_new:
     title: Новая запись — AnimeDB
@@ -641,6 +647,9 @@ anime_new:
     field_watch_status: Статус просмотра
     submit_button: Создать
     error_invalid: Заполните название и выберите тип и статус просмотра.
+    type_placeholder: — выберите —
+    type_hint: Тип нельзя изменить после создания записи.
+    cancel_button: Отмена
 
 storage_new:
     title: Новое хранилище — AnimeDB
@@ -652,7 +661,7 @@ storage_new:
     path_not_applicable_hint: У этого типа носителя нет файлового пути, поэтому он не сохраняется.
     submit_button: Создать
     error_invalid: Укажите корректные название, путь и тип хранилища.
-    skip_link: Пропустить
+    cancel_button: Отмена
 
 storage_scan_prompt:
     title: Запустить сканирование? — AnimeDB
@@ -749,6 +758,7 @@ plugin_widget:
 
 app_notification:
     close_button: Закрыть
+    request_failed: Не удалось выполнить действие, попробуйте ещё раз
 
 nav:
     aria_label: Основная навигация
@@ -766,6 +776,7 @@ nav:
     add_menu_scan_error: Не удалось загрузить хранилища.
     add_menu_scan_item: 'Сканировать «%name%»'
     add_menu_scan_more: 'Не подключено: %number% →'
+    add_menu_scan_none: Нет хранилищ для сканирования
     add_menu_add_storage: Добавить хранилище…
     add_menu_empty_entry: Пустая запись
 

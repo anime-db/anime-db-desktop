@@ -89,7 +89,7 @@ final class ScanStorageService
      */
     public function scan(Storage $storage, ?callable $onProgress = null, ?string $atPath = null): ScanResult
     {
-        if (!$storage->getType()->isWritable() || $storage->getPath() === null) {
+        if (!$storage->isScannable()) {
             return ScanResult::items([]);
         }
 
