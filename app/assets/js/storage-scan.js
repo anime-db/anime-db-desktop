@@ -273,6 +273,7 @@
 
                     const error = document.createElement('p');
                     error.className = 'alert alert-danger mt-2';
+                    error.setAttribute('role', 'alert');
                     error.textContent = await window.AppTranslations.trans('storage_list.confirm_error');
                     li.appendChild(error);
                 });
@@ -315,6 +316,14 @@
             const radios = [];
             const radioGroupName = `storage-scan-confirm-${index}`;
 
+            // The folder path is already printed above, so the legend only names the group for
+            // assistive technology.
+            const group = document.createElement('fieldset');
+            const legend = document.createElement('legend');
+            legend.className = 'visually-hidden';
+            legend.textContent = item.storage_path ?? '';
+            group.appendChild(legend);
+
             for (const [candidateIndex, candidate] of candidates.entries()) {
                 const wrapper = document.createElement('div');
                 wrapper.className = 'form-check';
@@ -343,8 +352,9 @@
 
                 wrapper.appendChild(radio);
                 wrapper.appendChild(label);
-                li.appendChild(wrapper);
+                group.appendChild(wrapper);
             }
+            li.appendChild(group);
 
             const button = document.createElement('button');
             button.type = 'button';

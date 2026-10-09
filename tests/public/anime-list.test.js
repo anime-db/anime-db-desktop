@@ -106,7 +106,7 @@ function setUpDom(columns = 1) {
         </button>
         <div id="anime-list-sort">
             <button type="button" data-sort-field="name">Name</button>
-            <button type="button" data-sort-field="date_update" aria-current="true">Updated</button>
+            <button type="button" data-sort-field="date_update" aria-pressed="true">Updated</button>
             <button type="button" data-sort-field="user_rating">Rating</button>
             <button type="button" data-sort-field="date_premiere">Premiere</button>
             <button type="button" data-sort-field="date_end">End</button>
@@ -471,6 +471,10 @@ test('navigating to a classic pagination page other than the first does not rese
     }));
     await flushMicrotasks();
 
+    const pageButtons = document.querySelectorAll('#anime-list-pagination button');
+    expect(pageButtons[0].hasAttribute('aria-current')).toBe(false);
+    expect(pageButtons[1].getAttribute('aria-current')).toBe('page');
+
     // Page navigation replaces the grid contents (replace === true) same as a fresh search, but
     // it is not a "the list composition changed" event from the top — the scroll reset must key
     // off the target offset, not the replace flag alone.
@@ -583,8 +587,8 @@ test('clicking a sort field reloads from offset 0 with the chosen field and mark
 
     expect(calls).toHaveLength(2);
     expect(queryParams(calls[1].url)).toMatchObject({ sort: 'name', direction: 'desc', offset: '0' });
-    expect(document.querySelector('[data-sort-field="name"]').getAttribute('aria-current')).toBe('true');
-    expect(document.querySelector('[data-sort-field="date_update"]').hasAttribute('aria-current')).toBe(false);
+    expect(document.querySelector('[data-sort-field="name"]').getAttribute('aria-pressed')).toBe('true');
+    expect(document.querySelector('[data-sort-field="date_update"]').getAttribute('aria-pressed')).toBe('false');
 
     // A sort-field change is a genuinely new result set (issue #687's isNewQuery=true call
     // sites), so the window scroll position must reset once the reload lands, same as a search
@@ -1013,6 +1017,8 @@ test('a checkbox accumulates without firing a request; the value label applies i
     expect(applyButton.disabled).toBe(false);
 
     const nameButton = row.querySelector('.anime-list__filter-value-name');
+    // Both the checkbox and the name button carry the value; the label tells them apart.
+    expect(nameButton.getAttribute('aria-label')).toBe('anime_list.filter_value_instant_label');
     nameButton.dispatchEvent(new Event('click', { bubbles: true }));
     await flushMicrotasks();
 
@@ -1393,7 +1399,7 @@ test('?name=...&sort=...&direction=... seeds the search box and the sort control
     await flushMicrotasks();
 
     expect(document.getElementById('anime-list-search').value).toBe('gate');
-    expect(document.querySelector('[data-sort-field="user_rating"]').getAttribute('aria-current')).toBe('true');
+    expect(document.querySelector('[data-sort-field="user_rating"]').getAttribute('aria-pressed')).toBe('true');
     expect(visibleSortIcon(document.getElementById('anime-list-sort-direction'))).toBe('sort-up');
     expect(queryParams(byKind(calls, 'list')[0].url)).toMatchObject({
         name: 'gate', sort: 'user_rating', direction: 'asc',
@@ -1594,7 +1600,7 @@ test('a popstate event reseeds filters/search/sort from the new URL, refreshes t
 
     expect(document.querySelectorAll('.anime-list__chip-label')).toHaveLength(1);
     expect(document.getElementById('anime-list-search').value).toBe('gate');
-    expect(document.querySelector('[data-sort-field="name"]').getAttribute('aria-current')).toBe('true');
+    expect(document.querySelector('[data-sort-field="name"]').getAttribute('aria-pressed')).toBe('true');
 
     // Simulates the browser landing back on the plain /anime entry that pushUrlState() itself
     // would have created had this filter/search/sort been applied through the UI instead of
@@ -1612,8 +1618,8 @@ test('a popstate event reseeds filters/search/sort from the new URL, refreshes t
     expect(replaceSpy).not.toHaveBeenCalled();
     expect(document.querySelectorAll('.anime-list__chip-label')).toHaveLength(0);
     expect(document.getElementById('anime-list-search').value).toBe('');
-    expect(document.querySelector('[data-sort-field="date_update"]').getAttribute('aria-current')).toBe('true');
-    expect(document.querySelector('[data-sort-field="name"]').hasAttribute('aria-current')).toBe(false);
+    expect(document.querySelector('[data-sort-field="date_update"]').getAttribute('aria-pressed')).toBe('true');
+    expect(document.querySelector('[data-sort-field="name"]').getAttribute('aria-pressed')).toBe('false');
 
     expect(byKind(calls, 'list')).toHaveLength(2);
     expect(queryParams(byKind(calls, 'list')[1].url)).toMatchObject({ sort: 'date_update', direction: 'desc' });
@@ -1737,7 +1743,7 @@ test('state built by appendFilterParams() and placed in the URL restores in full
     });
 
     expect(document.getElementById('anime-list-search').value).toBe('steins');
-    expect(document.querySelector('[data-sort-field="name"]').getAttribute('aria-current')).toBe('true');
+    expect(document.querySelector('[data-sort-field="name"]').getAttribute('aria-pressed')).toBe('true');
     expect(visibleSortIcon(document.getElementById('anime-list-sort-direction'))).toBe('sort-up');
 
     // One chip per applied value: watch_status, type, genres, themes, studios, labels (6) plus

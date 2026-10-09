@@ -26,12 +26,125 @@
 // `document` (rather than binding at load) is required because settings/plugin/widgets.html.twig
 // and storage/list.html.twig render some of this markup through HTMX after the initial page parse.
 (function () {
-    document.addEventListener('change', (event) => {
-        const target = event.target.closest('[data-submit-on-change]');
-        if (target && target.form) {
-            target.form.submit();
+    // `data-submit-on-change` applies a setting the moment it changes, with two refinements for
+    // keyboard users (issue #1011):
+    //  - a <select> changed from the keyboard (arrow keys step through the options and fire
+    //    `change` on every step) is applied on Enter or when it loses focus, not per keypress;
+    //    a choice made with the mouse is still applied at once;
+    //  - a radio/checkbox is applied at once, but its name/value are parked in sessionStorage so
+    //    the page that loads after the form POST can put the focus back on the same control.
+    const FOCUS_STORAGE_KEY = 'submit-on-change-focus';
+    const keyboardDriven = new WeakSet();
+    const pendingSelects = new WeakSet();
+
+    function rememberFocus(target) {
+        try {
+            window.sessionStorage.setItem(FOCUS_STORAGE_KEY, JSON.stringify({
+                name: target.name,
+                value: target.value,
+                action: target.form.getAttribute('action'),
+            }));
+        } catch {
+            // Storage can be unavailable; losing the focus restore is harmless.
+        }
+    }
+
+    function applyChange(target) {
+        pendingSelects.delete(target);
+        if (target.type === 'radio' || target.type === 'checkbox') {
+            rememberFocus(target);
+        }
+        target.form.submit();
+    }
+
+    function restoreFocus() {
+        let stored = null;
+        try {
+            stored = window.sessionStorage.getItem(FOCUS_STORAGE_KEY);
+            window.sessionStorage.removeItem(FOCUS_STORAGE_KEY);
+        } catch {
+            return;
+        }
+        if (stored === null) {
+            return;
+        }
+
+        let wanted;
+        try {
+            wanted = JSON.parse(stored);
+        } catch {
+            return;
+        }
+        if (wanted === null || typeof wanted !== 'object') {
+            return;
+        }
+
+        const match = Array.from(document.querySelectorAll('[data-submit-on-change]')).find((control) => (
+            control.name === wanted.name
+            && control.value === wanted.value
+            && (wanted.action === undefined || !control.form || control.form.getAttribute('action') === wanted.action)
+        ));
+        if (match) {
+            match.focus();
+        }
+    }
+
+    document.addEventListener('keydown', (event) => {
+        const target = event.target.closest ? event.target.closest('[data-submit-on-change]') : null;
+        if (!target || target.tagName !== 'SELECT') {
+            return;
+        }
+
+        if (event.key === 'Enter') {
+            if (pendingSelects.has(target) && target.form) {
+                event.preventDefault();
+                applyChange(target);
+            }
+
+            return;
+        }
+
+        if (event.key !== 'Tab' && event.key !== 'Escape') {
+            keyboardDriven.add(target);
         }
     });
+
+    ['pointerdown', 'mousedown'].forEach((eventName) => {
+        document.addEventListener(eventName, (event) => {
+            const target = event.target.closest ? event.target.closest('[data-submit-on-change]') : null;
+            if (target) {
+                keyboardDriven.delete(target);
+            }
+        });
+    });
+
+    document.addEventListener('focusout', (event) => {
+        const target = event.target;
+        if (target instanceof HTMLSelectElement && pendingSelects.has(target) && target.form) {
+            applyChange(target);
+        }
+    });
+
+    document.addEventListener('change', (event) => {
+        const target = event.target.closest('[data-submit-on-change]');
+        if (!target || !target.form) {
+            return;
+        }
+
+        if (target.tagName === 'SELECT' && keyboardDriven.has(target)) {
+            pendingSelects.add(target);
+
+            return;
+        }
+
+        applyChange(target);
+    });
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', restoreFocus);
+    } else {
+        restoreFocus();
+    }
 
     document.addEventListener('submit', (event) => {
         const message = event.target.dataset.confirm;

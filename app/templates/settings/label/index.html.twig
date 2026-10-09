@@ -33,7 +33,7 @@
 
         <form method="post" action="{{ path('settings_labels_add') }}" class="d-flex gap-2 mb-4">
             <input type="hidden" name="_token" value="{{ csrf_token('settings_labels_add') }}">
-            <input type="text" name="name" maxlength="32" required placeholder="{{ 'settings_labels.name_placeholder'|trans }}" class="form-control w-auto">
+            <input type="text" name="name" maxlength="32" required aria-label="{{ 'settings_labels.new_name_label'|trans }}" placeholder="{{ 'settings_labels.name_placeholder'|trans }}" class="form-control w-auto">
             <button type="submit" class="btn btn-primary d-inline-flex align-items-center gap-2">
                 {{ icon('plus-lg') }}
                 {{ 'settings_labels.add_button'|trans }}
@@ -55,7 +55,7 @@
                                 <bdi>{{ label.name }}</bdi>
                             </button>
                             <span class="settings-label__name-input-group" data-settings-label-input-group>
-                                <input type="text" name="name" value="{{ label.name }}" maxlength="32" required
+                                <input type="text" name="name" value="{{ label.name }}" maxlength="32" required aria-label="{{ 'settings_labels.rename_label'|trans }}"
                                        class="form-control form-control-sm w-auto" data-settings-label-name-input>
                                 <button type="submit" class="btn btn-outline-primary btn-sm">{{ 'settings_labels.save_button'|trans }}</button>
                             </span>

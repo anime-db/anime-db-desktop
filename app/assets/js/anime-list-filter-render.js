@@ -166,6 +166,11 @@
         nameButton.className = 'anime-list__filter-value-name';
         nameButton.textContent = entry.name;
         nameButton.title = window.AppTranslations.resolveKey(catalogue, 'anime_list.filter_value_instant_hint');
+        nameButton.setAttribute('aria-label', window.AppTranslations.resolveKey(
+            catalogue,
+            'anime_list.filter_value_instant_label',
+            { name: entry.name },
+        ));
         nameButton.addEventListener('click', () => {
             checkbox.checked = true;
             hooks.onInstantApply(sectionKey, entry.id, inputType);

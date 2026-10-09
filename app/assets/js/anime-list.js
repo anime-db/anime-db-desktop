@@ -226,9 +226,9 @@
     function updateSortFieldButtons() {
         sortContainer.querySelectorAll('[data-sort-field]').forEach((button) => {
             if (button.dataset.sortField === sortField) {
-                button.setAttribute('aria-current', 'true');
+                button.setAttribute('aria-pressed', 'true');
             } else {
-                button.removeAttribute('aria-current');
+                button.setAttribute('aria-pressed', 'false');
             }
         });
     }

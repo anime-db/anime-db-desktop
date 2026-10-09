@@ -174,6 +174,8 @@ settings_labels:
     delete_confirm: Удалить метку «%name%»?
     delete_confirm_with_count: 'Удалить метку «%name%»? Записей с этой меткой: %count%.'
     delete_button: Удалить
+    new_name_label: Новая метка
+    rename_label: Название метки
 
 settings_plugin_widgets:
     title: Виджеты плагинов — Настройки — AnimeDB
@@ -185,6 +187,8 @@ settings_plugin_widgets:
     slot_column: Место на странице записи
     slot_bottom: Внизу
     slot_side: Справа
+    active_label: 'Активен: %title%'
+    slot_label: 'Место: %title%'
     active_count: 'Активно виджетов: %count% из %limit%.'
     recommendation_warning: Рекомендуется не более %limit% активных виджетов — большее количество может перегрузить интерфейс и снизить производительность.
     hard_limit_reached: Достигнут жёсткий лимит в %limit% активных виджетов для этого размещения.
@@ -470,6 +474,8 @@ anime_list:
     filter_decade_label: '%decade%-е'
     filter_value_instant_hint: Применить сразу вместе с отмеченными
     filter_value_accumulate_hint: 'Отметить, чтобы применить позже кнопкой «Отфильтровать»'
+    filter_value_instant_label: 'Применить сразу: %name%'
+    pagination_label: Страницы каталога
 
 storage_list:
     title: Хранилища — AnimeDB
@@ -562,6 +568,8 @@ anime_detail:
     save_button: Сохранить
     cancel_button: Отмена
     increment_episode_button: Отметить следующую серию просмотренной
+    watched_episodes_label: Просмотрено серий
+    watch_status_label: Статус просмотра
     error_watch_status_invalid: Недопустимый статус просмотра.
     error_watch_status_not_released: Нельзя отметить как «Просмотрено», пока аниме не вышло.
     error_user_rating_invalid: Оценка должна быть от 1 до 5.
@@ -742,6 +750,7 @@ storage_scan_progress:
     scan_button: Запустить сканирование
     catalog_link: Каталог
     last_run_heading: Последнее сканирование
+    progress_label: Прогресс сканирования
 
 storage_scan_log:
     title: Журнал сканирования — AnimeDB

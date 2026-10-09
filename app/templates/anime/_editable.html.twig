@@ -44,6 +44,7 @@
                         <input
                             type="number"
                             name="watched_episodes"
+                            aria-label="{{ 'anime_detail.watched_episodes_label'|trans }}"
                             min="0"
                             {%- if anime.episodes_count is not null %} max="{{ anime.episodes_count }}"{% endif %}
                             value="{{ anime.watched_episodes ?: 0 }}"
@@ -88,7 +89,7 @@
                       hx-post="{{ path('anime_editable_update_watch_status', {id: anime.id}) }}"
                       hx-target="#anime-editable-{{ anime.id }}" hx-swap="outerHTML">
                     <input type="hidden" name="_token" value="{{ csrf_token('anime_editable_watch_status_' ~ anime.id) }}">
-                    <select name="watch_status">
+                    <select name="watch_status" aria-label="{{ 'anime_detail.watch_status_label'|trans }}">
                         {% for status in watch_statuses %}
                             <option
                                 value="{{ status }}"

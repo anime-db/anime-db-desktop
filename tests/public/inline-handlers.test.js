@@ -88,6 +88,120 @@ describe('data-submit-on-change', () => {
     });
 });
 
+describe('data-submit-on-change keyboard behaviour', () => {
+    const SELECT = `
+        <form>
+            <select id="locale" name="locale" data-submit-on-change>
+                <option value="en">en</option>
+                <option value="ru">ru</option>
+            </select>
+        </form>
+    `;
+
+    function key(target, name) {
+        const event = new KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true });
+        target.dispatchEvent(event);
+
+        return event;
+    }
+
+    function change(target) {
+        target.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
+    beforeEach(() => {
+        window.sessionStorage.clear();
+    });
+
+    test('an arrow key on a select does not submit the form', () => {
+        document.body.innerHTML = SELECT;
+        const select = document.getElementById('locale');
+
+        key(select, 'ArrowDown');
+        change(select);
+
+        expect(HTMLFormElement.prototype.submit).not.toHaveBeenCalled();
+    });
+
+    test('Enter submits a select changed from the keyboard, once', () => {
+        document.body.innerHTML = SELECT;
+        const select = document.getElementById('locale');
+
+        key(select, 'ArrowDown');
+        change(select);
+        const event = key(select, 'Enter');
+
+        expect(event.defaultPrevented).toBe(true);
+        expect(HTMLFormElement.prototype.submit).toHaveBeenCalledTimes(1);
+
+        select.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
+        expect(HTMLFormElement.prototype.submit).toHaveBeenCalledTimes(1);
+    });
+
+    test('Enter on an untouched select does nothing', () => {
+        document.body.innerHTML = SELECT;
+
+        const event = key(document.getElementById('locale'), 'Enter');
+
+        expect(event.defaultPrevented).toBe(false);
+        expect(HTMLFormElement.prototype.submit).not.toHaveBeenCalled();
+    });
+
+    test('losing focus submits a select changed from the keyboard', () => {
+        document.body.innerHTML = SELECT;
+        const select = document.getElementById('locale');
+
+        key(select, 'ArrowDown');
+        change(select);
+        select.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
+
+        expect(HTMLFormElement.prototype.submit).toHaveBeenCalledTimes(1);
+    });
+
+    test('blur without a change submits nothing', () => {
+        document.body.innerHTML = SELECT;
+
+        document.getElementById('locale').dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
+
+        expect(HTMLFormElement.prototype.submit).not.toHaveBeenCalled();
+    });
+
+    test('a mouse choice after keyboard use is applied at once', () => {
+        document.body.innerHTML = SELECT;
+        const select = document.getElementById('locale');
+
+        key(select, 'ArrowDown');
+        select.dispatchEvent(new Event('mousedown', { bubbles: true }));
+        change(select);
+
+        expect(HTMLFormElement.prototype.submit).toHaveBeenCalledTimes(1);
+    });
+
+    test('a radio stores its name and value before submitting', () => {
+        document.body.innerHTML = `
+            <form action="/settings">
+                <input type="radio" name="theme" value="dark" data-submit-on-change>
+            </form>
+        `;
+
+        change(document.querySelector('input'));
+
+        expect(HTMLFormElement.prototype.submit).toHaveBeenCalledTimes(1);
+        expect(JSON.parse(window.sessionStorage.getItem('submit-on-change-focus'))).toMatchObject({
+            name: 'theme',
+            value: 'dark',
+        });
+    });
+
+    test('a select does not store a focus target', () => {
+        document.body.innerHTML = SELECT;
+
+        change(document.getElementById('locale'));
+
+        expect(window.sessionStorage.getItem('submit-on-change-focus')).toBeNull();
+    });
+});
+
 describe('data-confirm', () => {
     function setUpDeleteForm() {
         document.body.innerHTML = `

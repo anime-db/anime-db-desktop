@@ -174,6 +174,8 @@ settings_labels:
     delete_confirm: Delete tag "%name%"?
     delete_confirm_with_count: 'Delete tag "%name%"? Items with this tag: %count%.'
     delete_button: Delete
+    new_name_label: New tag
+    rename_label: Tag name
 
 settings_plugin_widgets:
     title: Plugin widgets — Settings — AnimeDB
@@ -185,6 +187,8 @@ settings_plugin_widgets:
     slot_column: Position on the entry page
     slot_bottom: At the bottom
     slot_side: On the right
+    active_label: 'Active: %title%'
+    slot_label: 'Position: %title%'
     active_count: 'Active widgets: %count% of %limit%.'
     recommendation_warning: More than %limit% active widgets is not recommended — it may clutter the UI and hurt performance.
     hard_limit_reached: The hard limit of %limit% active widgets for this placement has been reached.
@@ -470,6 +474,8 @@ anime_list:
     filter_decade_label: '%decade%s'
     filter_value_instant_hint: Apply immediately along with the checked values
     filter_value_accumulate_hint: Check to apply later with the Filter button
+    filter_value_instant_label: 'Apply now: %name%'
+    pagination_label: Catalog pages
 
 storage_list:
     title: Storage — AnimeDB
@@ -562,6 +568,8 @@ anime_detail:
     save_button: Save
     cancel_button: Cancel
     increment_episode_button: Mark next episode as watched
+    watched_episodes_label: Episodes watched
+    watch_status_label: Watch status
     error_watch_status_invalid: Invalid watch status.
     error_watch_status_not_released: Cannot mark as Completed while the anime has not been released yet.
     error_user_rating_invalid: Rating must be between 1 and 5.
@@ -742,6 +750,7 @@ storage_scan_progress:
     scan_button: Run scan
     catalog_link: Catalog
     last_run_heading: Last scan
+    progress_label: Scan progress
 
 storage_scan_log:
     title: Scan journal — AnimeDB
