@@ -30,6 +30,7 @@ namespace App;
 use App\Service\Plugin\DependencyInjection\Compiler\BackgroundTaskQueueScopePass;
 use App\Service\Plugin\DependencyInjection\Compiler\CatalogReaderScopePass;
 use App\Service\Plugin\DependencyInjection\Compiler\OwnManifestScopePass;
+use App\Service\Plugin\DependencyInjection\Compiler\PluginCacheDirectoryScopePass;
 use App\Service\Plugin\DependencyInjection\Compiler\PluginDataStoreScopePass;
 use App\Service\Plugin\DependencyInjection\Compiler\SettingsStoreScopePass;
 use App\Service\Plugin\DependencyInjection\Compiler\TagPluginServicesPass;
@@ -165,6 +166,10 @@ class Kernel extends BaseKernel
         // so a services.yaml default would just be another independent copy of the same
         // placeholder this replaces. coreVersion() is also what builds the pre-container
         // InstalledPluginsRegistry instance above, so both stay in sync by construction.
+        // Under the runtime directory (APP_RUNTIME_DIR in production, var/ in dev) like cache/ and
+        // log/ — not in the plugins directory, which an update replaces wholesale.
+        $container->setParameter('app.plugin_cache_dir', (($_SERVER['APP_RUNTIME_DIR'] ?? null) ?: $this->getProjectDir().'/var').'/plugin-cache');
+
         $container->setParameter('app.core_version', $this->coreVersion());
 
         // Read once here rather than left to an %env()% default: there is no equivalent env var
@@ -175,6 +180,7 @@ class Kernel extends BaseKernel
 
         $container->addCompilerPass(new TagPluginServicesPass($this->installedPluginsRegistry(), $this->pluginLoaderLogger()));
         $container->addCompilerPass(new PluginDataStoreScopePass($this->installedPluginsRegistry()));
+        $container->addCompilerPass(new PluginCacheDirectoryScopePass($this->installedPluginsRegistry()));
         $container->addCompilerPass(new SettingsStoreScopePass($this->installedPluginsRegistry()));
         $container->addCompilerPass(new OwnManifestScopePass($this->installedPluginsRegistry()));
         $container->addCompilerPass(new CatalogReaderScopePass($this->installedPluginsRegistry()));

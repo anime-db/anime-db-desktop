@@ -120,7 +120,7 @@ final class PluginRemoverPersistenceTest extends TestCase
         $this->registry->reconcile();
         $this->assertTrue($this->registry->has($pluginId));
 
-        (new PluginRemover($this->registry))->remove($pluginId);
+        (new PluginRemover($this->registry, new \App\Service\Plugin\PluginCacheDirectories(sys_get_temp_dir().'/anime-plugin-cache-unused', new NullLogger())))->remove($pluginId);
 
         $this->assertDirectoryDoesNotExist($this->pluginsDir.'/'.$pluginId);
         $this->assertFalse($this->registry->has($pluginId));
