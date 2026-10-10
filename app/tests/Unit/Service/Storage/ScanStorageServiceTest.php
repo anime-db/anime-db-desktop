@@ -155,7 +155,7 @@ final class ScanStorageServiceTest extends TestCase
             new StorageMarkerService($this->entityManager),
             new FilenameCleaner(),
             new OrphanAnimeMatcher($this->animeRepository),
-            $pluginChain ?? new SearchByPluginChain([], new PluginsConfigStore(''), $this->createStub(\App\Service\AppSettingsProvider::class)),
+            $pluginChain ?? new SearchByPluginChain([], new PluginsConfigStore(''), new \App\Service\Plugin\DefaultSearchPluginRegistry([], new PluginsConfigStore(''), $this->createStub(\App\Service\AppSettingsProvider::class))),
             $this->animeRepository,
             $this->entityManager,
             $bulkFillerService ?? $this->newBulkFillerService([]),
@@ -194,7 +194,7 @@ final class ScanStorageServiceTest extends TestCase
         $plugin = $this->createStub(SearchByPluginInterface::class);
         $plugin->method('find')->willReturn($candidates);
 
-        return new SearchByPluginChain(['test-plugin' => $plugin], new PluginsConfigStore(''), $this->createStub(\App\Service\AppSettingsProvider::class));
+        return new SearchByPluginChain(['test-plugin' => $plugin], new PluginsConfigStore(''), new \App\Service\Plugin\DefaultSearchPluginRegistry(['test-plugin' => $plugin], new PluginsConfigStore(''), $this->createStub(\App\Service\AppSettingsProvider::class)));
     }
 
     public function testConflictWhenMarkerOwnedByAnotherActiveStorageAbortsScanWithNoSideEffects(): void
@@ -1047,7 +1047,7 @@ final class ScanStorageServiceTest extends TestCase
         $plugin->method('find')->willReturnCallback(static fn (string $name): array => $name === 'Bleach'
             ? [new SearchByPluginCandidate((string) $pluginId, 'Bleach', '104')]
             : []);
-        $pluginChain = new SearchByPluginChain(['test-plugin' => $plugin], new PluginsConfigStore(''), $this->createStub(\App\Service\AppSettingsProvider::class));
+        $pluginChain = new SearchByPluginChain(['test-plugin' => $plugin], new PluginsConfigStore(''), new \App\Service\Plugin\DefaultSearchPluginRegistry(['test-plugin' => $plugin], new PluginsConfigStore(''), $this->createStub(\App\Service\AppSettingsProvider::class)));
 
         $service = $this->newService($pluginChain);
 
@@ -1133,7 +1133,7 @@ final class ScanStorageServiceTest extends TestCase
         // Both files resolve to the same plugin candidate regardless of their cleaned name.
         $plugin = $this->createStub(SearchByPluginInterface::class);
         $plugin->method('find')->willReturn([new SearchByPluginCandidate((string) $pluginId, 'Bleach', '104')]);
-        $pluginChain = new SearchByPluginChain(['test-plugin' => $plugin], new PluginsConfigStore(''), $this->createStub(\App\Service\AppSettingsProvider::class));
+        $pluginChain = new SearchByPluginChain(['test-plugin' => $plugin], new PluginsConfigStore(''), new \App\Service\Plugin\DefaultSearchPluginRegistry(['test-plugin' => $plugin], new PluginsConfigStore(''), $this->createStub(\App\Service\AppSettingsProvider::class)));
 
         $service = new ScanStorageService(
             new StorageMarkerService($this->entityManager),
@@ -1204,7 +1204,7 @@ final class ScanStorageServiceTest extends TestCase
 
             return [];
         });
-        $pluginChain = new SearchByPluginChain(['test-plugin' => $plugin], new PluginsConfigStore(''), $this->createStub(\App\Service\AppSettingsProvider::class));
+        $pluginChain = new SearchByPluginChain(['test-plugin' => $plugin], new PluginsConfigStore(''), new \App\Service\Plugin\DefaultSearchPluginRegistry(['test-plugin' => $plugin], new PluginsConfigStore(''), $this->createStub(\App\Service\AppSettingsProvider::class)));
 
         $service = $this->newService($pluginChain);
 

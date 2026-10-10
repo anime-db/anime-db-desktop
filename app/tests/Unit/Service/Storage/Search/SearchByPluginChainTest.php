@@ -32,6 +32,7 @@ use AnimeDb\PluginContracts\Search\SearchByPluginInterface;
 use App\Entity\ValueObject\PluginId;
 use App\Service\AppConfigStore;
 use App\Service\AppSettingsProvider;
+use App\Service\Plugin\DefaultSearchPluginRegistry;
 use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Storage\Search\SearchByPluginChain;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -72,11 +73,7 @@ final class SearchByPluginChainTest extends TestCase
     #[DataProvider('provideNames')]
     public function testFindReturnsEmptyListWhenChainIsEmpty(string $name): void
     {
-        $chain = new SearchByPluginChain(
-            [],
-            new PluginsConfigStore($this->path),
-            $this->settings(),
-        );
+        $chain = $this->chain([]);
 
         $this->assertSame([], $chain->find($name));
     }
@@ -91,11 +88,7 @@ final class SearchByPluginChainTest extends TestCase
         $second = $this->createMock(SearchByPluginInterface::class);
         $second->expects($this->never())->method('find');
 
-        $chain = new SearchByPluginChain(
-            ['animedb-shikimori' => $first, 'animedb-anilist' => $second],
-            new PluginsConfigStore($this->path),
-            $this->settings(),
-        );
+        $chain = $this->chain(['animedb-shikimori' => $first, 'animedb-anilist' => $second]);
 
         $this->assertSame($expected, $chain->find('Bleach'));
     }
@@ -110,11 +103,7 @@ final class SearchByPluginChainTest extends TestCase
         $plugin = $this->createStub(SearchByPluginInterface::class);
         $plugin->method('find')->willReturn($expected);
 
-        $chain = new SearchByPluginChain(
-            ['animedb-shikimori' => $plugin],
-            new PluginsConfigStore($this->path),
-            $this->settings(),
-        );
+        $chain = $this->chain(['animedb-shikimori' => $plugin]);
 
         $this->assertSame($expected, $chain->find('Bleach'));
     }
@@ -129,11 +118,7 @@ final class SearchByPluginChainTest extends TestCase
         $second = $this->createStub(SearchByPluginInterface::class);
         $second->method('find')->willReturn($expected);
 
-        $chain = new SearchByPluginChain(
-            ['animedb-shikimori' => $first, 'animedb-anilist' => $second],
-            new PluginsConfigStore($this->path),
-            $this->settings(),
-        );
+        $chain = $this->chain(['animedb-shikimori' => $first, 'animedb-anilist' => $second]);
 
         $this->assertSame($expected, $chain->find('Bleach'));
     }
@@ -147,11 +132,7 @@ final class SearchByPluginChainTest extends TestCase
         $disabled = $this->createMock(SearchByPluginInterface::class);
         $disabled->expects($this->never())->method('find');
 
-        $chain = new SearchByPluginChain(
-            ['animedb-shikimori' => $disabled],
-            new PluginsConfigStore($this->path),
-            $this->settings(),
-        );
+        $chain = $this->chain(['animedb-shikimori' => $disabled]);
 
         $this->assertSame([], $chain->find('Bleach'));
     }
@@ -167,11 +148,7 @@ final class SearchByPluginChainTest extends TestCase
         $plugin = $this->createStub(SearchByPluginInterface::class);
         $plugin->method('find')->willReturn($expected);
 
-        $chain = new SearchByPluginChain(
-            ['animedb-shikimori' => $plugin],
-            new PluginsConfigStore($this->path),
-            $this->settings(),
-        );
+        $chain = $this->chain(['animedb-shikimori' => $plugin]);
 
         $this->assertSame($expected, $chain->find('Bleach'));
     }
@@ -183,11 +160,7 @@ final class SearchByPluginChainTest extends TestCase
         $plugin = $this->createStub(SearchByPluginInterface::class);
         $plugin->method('find')->willReturn($expected);
 
-        $chain = new SearchByPluginChain(
-            ['animedb-shikimori' => $plugin],
-            new PluginsConfigStore($this->path),
-            $this->settings(),
-        );
+        $chain = $this->chain(['animedb-shikimori' => $plugin]);
 
         $this->assertSame($expected, $chain->find('Bleach'));
     }
@@ -208,11 +181,7 @@ final class SearchByPluginChainTest extends TestCase
         $pureSearch = $this->createStub(SearchByPluginInterface::class);
         $pureSearch->method('find')->willReturn($expected);
 
-        $chain = new SearchByPluginChain(
-            ['animedb-shikimori' => $disabled, 'animedb-mal' => $pureSearch],
-            new PluginsConfigStore($this->path),
-            $this->settings(),
-        );
+        $chain = $this->chain(['animedb-shikimori' => $disabled, 'animedb-mal' => $pureSearch]);
 
         $this->assertSame($expected, $chain->find('Bleach'));
     }
@@ -236,7 +205,7 @@ final class SearchByPluginChainTest extends TestCase
         $b->method('find')->willReturn($expected);
         $this->settings()->setDefaultSearchPluginId(new PluginId('pl-b'));
 
-        $chain = new SearchByPluginChain(['pl-a' => $a, 'pl-b' => $b], new PluginsConfigStore($this->path), $this->settings());
+        $chain = $this->chain(['pl-a' => $a, 'pl-b' => $b]);
 
         $this->assertSame($expected, $chain->find('Bleach'));
     }
@@ -256,11 +225,7 @@ final class SearchByPluginChainTest extends TestCase
             return $plugin;
         };
         $this->settings()->setDefaultSearchPluginId(new PluginId('pl-b'));
-        $chain = new SearchByPluginChain(
-            ['pl-a' => $make('pl-a', []), 'pl-b' => $make('pl-b', []), 'pl-c' => $make('pl-c', $expected)],
-            new PluginsConfigStore($this->path),
-            $this->settings(),
-        );
+        $chain = $this->chain(['pl-a' => $make('pl-a', []), 'pl-b' => $make('pl-b', []), 'pl-c' => $make('pl-c', $expected)]);
 
         $this->assertSame($expected, $chain->find('Bleach'));
         $this->assertSame(['pl-b', 'pl-a', 'pl-c'], $calls);
@@ -305,6 +270,14 @@ final class SearchByPluginChainTest extends TestCase
         $this->assertSame($before, file_get_contents($this->configPath));
     }
 
+    /** @param array<string, SearchByPluginInterface> $plugins */
+    private function chain(array $plugins): SearchByPluginChain
+    {
+        $store = new PluginsConfigStore($this->path);
+
+        return new SearchByPluginChain($plugins, $store, new DefaultSearchPluginRegistry($plugins, $store, $this->settings()));
+    }
+
     private function settings(): AppSettingsProvider
     {
         return new AppSettingsProvider(new AppConfigStore($this->configPath));
@@ -327,6 +300,6 @@ final class SearchByPluginChainTest extends TestCase
             $plugins[$id] = $plugin;
         }
 
-        return new SearchByPluginChain($plugins, new PluginsConfigStore($this->path), $this->settings());
+        return $this->chain($plugins);
     }
 }

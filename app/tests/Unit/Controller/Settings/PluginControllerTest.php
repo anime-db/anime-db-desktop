@@ -40,7 +40,6 @@ use App\Service\Market\MarketSnapshotCache;
 use App\Service\Market\MarketSnapshotPlugin;
 use App\Service\Market\MarketUpdateResolver;
 use App\Service\Plugin\DefaultSearchPluginRegistry;
-use App\Service\Plugin\DefaultSearchPluginSelection;
 use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\PluginCacheWarmer;
 use App\Service\Plugin\PluginRemover;
@@ -147,7 +146,7 @@ final class PluginControllerTest extends TestCase
         ?MarketSnapshotCache $snapshotCache = null,
         ?SyncRegistry $syncRegistry = null,
         ?MessageBusInterface $messageBus = null,
-        ?DefaultSearchPluginSelection $defaultSearch = null,
+        ?DefaultSearchPluginRegistry $defaultSearch = null,
     ): PluginController {
         return new PluginController(
             $this->registry,
@@ -171,12 +170,12 @@ final class PluginControllerTest extends TestCase
     }
 
     /** @param array<string, SearchByPluginInterface> $plugins */
-    private function defaultSearchSelection(?AppSettingsProvider $settings = null, array $plugins = []): DefaultSearchPluginSelection
+    private function defaultSearchSelection(?AppSettingsProvider $settings = null, array $plugins = []): DefaultSearchPluginRegistry
     {
         $settings ??= new AppSettingsProvider(new AppConfigStore($this->rootDir.'/default-search-config.json'));
         $store = new PluginsConfigStore($this->pluginsDir.'/plugins.json');
 
-        return new DefaultSearchPluginSelection($plugins, $store, $settings, new DefaultSearchPluginRegistry($plugins, $store, $settings));
+        return new DefaultSearchPluginRegistry($plugins, $store, $settings);
     }
 
     /** @param list<string> $syncPluginIds */

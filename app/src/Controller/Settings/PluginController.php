@@ -32,7 +32,7 @@ use AnimeDb\PluginContracts\Manifest\PluginType;
 use App\Entity\ValueObject\Exception\InvalidPluginIdException;
 use App\Entity\ValueObject\PluginId;
 use App\Service\Market\MarketUpdateResolver;
-use App\Service\Plugin\DefaultSearchPluginSelection;
+use App\Service\Plugin\DefaultSearchPluginRegistry;
 use App\Service\Plugin\Exception\IncompatiblePluginContractsVersionException;
 use App\Service\Plugin\Exception\IncompatiblePluginCoreVersionException;
 use App\Service\Plugin\Exception\InvalidInstalledPluginException;
@@ -113,7 +113,7 @@ final class PluginController
         private readonly MarketUpdateResolver $updateResolver,
         private readonly SyncRegistry $syncRegistry,
         private readonly SyncSeedDispatcher $syncSeedDispatcher,
-        private readonly DefaultSearchPluginSelection $defaultSearch,
+        private readonly DefaultSearchPluginRegistry $defaultSearch,
         private readonly LoggerInterface $logger = new NullLogger(),
     ) {
     }
