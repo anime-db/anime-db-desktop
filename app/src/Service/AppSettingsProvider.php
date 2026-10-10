@@ -129,8 +129,8 @@ class AppSettingsProvider
      * The plugin whose {@see \AnimeDb\PluginContracts\Search\SearchByPluginInterface} implementation is
      * used by default, e.g. "animedb-shikimori". Null once none is configured yet or the
      * configured id no longer names an installed search plugin — the caller
-     * ({@see Plugin\DefaultSearchPluginRegistry}) is what actually cascades to the
-     * next available one and persists it back via {@see self::setDefaultSearchPluginId()}. A
+     * ({@see Plugin\DefaultSearchPluginRegistry}) is what checks availability; nothing is picked
+     * implicitly. A
      * malformed value (hand-edited config.json) is treated the same as "not configured", not a
      * fatal error.
      */

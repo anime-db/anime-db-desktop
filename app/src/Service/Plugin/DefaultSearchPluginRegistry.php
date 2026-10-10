@@ -33,24 +33,19 @@ use App\Service\AppSettingsProvider;
 use Symfony\Component\DependencyInjection\Attribute\AutowireIterator;
 
 /**
- * Tracks which installed {@see SearchByPluginInterface} plugin is the app's default search
- * plugin, cascading automatically once the configured one is no longer available: uninstalled,
- * disabled, or its filler feature turned off (issue #293 item 5, carried over from v1's
- * install-wizard "default search plugin" setting).
+ * The app's default search plugin: which installed {@see SearchByPluginInterface} plugins can be
+ * chosen, which one is chosen now, and storing a new choice (issue #1019).
  *
- * There is no explicit "plugin removed" event to hook in this app yet (plugin removal itself is
- * a separate, not-yet-built feature, issue #225) — the cascade instead runs lazily on every
- * {@see self::getDefault()} call, comparing the persisted id ({@see AppSettingsProvider}) against
- * whichever search plugins are actually available *now*. Because the DI container is fully
- * rebuilt after any plugin mutation ("Atomic Cache Swap", see architecture docs), the very next
- * read after an install/remove/enable/disable already sees the post-mutation set of plugins, so
- * no separate hook is needed: a stale configured id is corrected (and persisted) the first time
- * it is asked for, and if no search plugin is left at all, the setting is cleared and search is
- * effectively disabled.
+ * The choice is explicit only: nothing is ever picked implicitly and nothing is written to the
+ * settings by a read. {@see self::selected()} returns the stored choice while that plugin is
+ * available, otherwise null ("not chosen"). A stored id that is not available any more (plugin
+ * uninstalled, disabled, or its filler feature turned off) stays untouched in the settings and is
+ * exposed through {@see self::unavailableSelected()}, so a settings page can show it instead of
+ * pretending nothing is chosen; it takes effect again as soon as the plugin is available.
  *
- * Same active-gating as {@see \App\Service\Storage\Search\SearchByPluginChain}: a plugin whose
- * filler feature is off ({@see FillerActiveTrait}) is treated as unavailable here too, for the
- * same reason that chain skips it — see that class for the "pure search plugin" exception.
+ * "Available" means an active search capability — the same active-gating as
+ * {@see \App\Service\Storage\Search\SearchByPluginChain}: a plugin whose filler feature is off
+ * ({@see FillerActiveTrait}) is unavailable here too, for the same reason that chain skips it.
  */
 final class DefaultSearchPluginRegistry
 {
@@ -65,46 +60,66 @@ final class DefaultSearchPluginRegistry
     ) {
     }
 
-    /**
-     * Returns the current default search plugin id, cascading to the next available one (or to
-     * null, if none is left) when the previously configured plugin is no longer available.
-     */
-    public function getDefault(): ?PluginId
-    {
-        $available = $this->availablePluginIds();
-
-        $configured = $this->appSettings->getDefaultSearchPluginId();
-        if ($configured !== null && \in_array((string) $configured, $available, true)) {
-            return $configured;
-        }
-
-        $fallbackId = $available !== [] ? new PluginId($available[0]) : null;
-        $this->appSettings->setDefaultSearchPluginId($fallbackId);
-
-        return $fallbackId;
-    }
-
-    /**
-     * Explicitly picks the default search plugin, e.g. from a future settings page. Not
-     * restricted to $this->plugins on purpose: {@see self::getDefault()} already re-validates
-     * availability on every read, so a temporarily-disabled plugin can still be set as the
-     * intended default ahead of being re-enabled.
-     */
-    public function setDefault(?PluginId $pluginId): void
-    {
-        $this->appSettings->setDefaultSearchPluginId($pluginId);
-    }
-
-    /** @return list<string> plugin ids with an active search capability, in registration order */
-    private function availablePluginIds(): array
+    /** @return list<PluginId> plugins with an active search capability, in registration order */
+    public function available(): array
     {
         $ids = [];
         foreach ($this->plugins as $id => $plugin) {
-            if ($this->isFillerActive(new PluginId((string) $id))) {
-                $ids[] = (string) $id;
+            $pluginId = new PluginId((string) $id);
+            if ($this->isFillerActive($pluginId)) {
+                $ids[] = $pluginId;
             }
         }
 
         return $ids;
+    }
+
+    /** The stored choice while that plugin is available, null otherwise. Never writes. */
+    public function selected(): ?PluginId
+    {
+        $configured = $this->appSettings->getDefaultSearchPluginId();
+        if ($configured === null) {
+            return null;
+        }
+
+        foreach ($this->available() as $pluginId) {
+            if ((string) $pluginId === (string) $configured) {
+                return $configured;
+            }
+        }
+
+        return null;
+    }
+
+    /** The stored choice when it is not an available search plugin right now, null otherwise. */
+    public function unavailableSelected(): ?PluginId
+    {
+        $configured = $this->appSettings->getDefaultSearchPluginId();
+        if ($configured === null || $this->selected() !== null) {
+            return null;
+        }
+
+        return $configured;
+    }
+
+    /**
+     * Only an available plugin can be chosen. Re-submitting the stored choice that is unavailable
+     * right now is a no-op, not an error. Null clears the choice.
+     *
+     * @return bool false (nothing stored) when $pluginId is not an available search plugin
+     */
+    public function select(?PluginId $pluginId): bool
+    {
+        if ($pluginId !== null && (string) $pluginId === (string) $this->unavailableSelected()) {
+            return true;
+        }
+
+        if ($pluginId !== null && !\in_array((string) $pluginId, array_map('strval', $this->available()), true)) {
+            return false;
+        }
+
+        $this->appSettings->setDefaultSearchPluginId($pluginId);
+
+        return true;
     }
 }

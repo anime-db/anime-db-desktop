@@ -70,24 +70,34 @@ final class DefaultSearchPluginRegistryTest extends TestCase
         );
     }
 
-    public function testGetDefaultReturnsNullWhenNoSearchPluginIsInstalled(): void
+    /** @return array<string, mixed> */
+    private function storedSettings(): array
     {
-        $registry = $this->registry([]);
-
-        $this->assertNull($registry->getDefault());
+        return json_decode((string) file_get_contents($this->appConfigPath), true);
     }
 
-    public function testGetDefaultFallsBackToTheFirstAvailablePluginWhenNoneIsConfigured(): void
+    public function testSelectedReturnsNullWhenNoSearchPluginIsInstalled(): void
+    {
+        $this->assertNull($this->registry([])->selected());
+    }
+
+    public function testSelectedWithoutStoredChoiceReturnsNullAndDoesNotTouchSettings(): void
     {
         $registry = $this->registry([
-            'animedb-shikimori' => $this->createSearch(),
+            'animedb-anidb' => $this->createSearch(),
             'animedb-anilist' => $this->createSearch(),
         ]);
 
-        $this->assertSame('animedb-shikimori', (string) $registry->getDefault());
+        $this->assertNull($registry->selected());
+        $this->assertNull($registry->unavailableSelected());
+        $this->assertFileDoesNotExist($this->appConfigPath);
+
+        file_put_contents($this->appConfigPath, '{"other":1}');
+        $this->assertNull($registry->selected());
+        $this->assertSame('{"other":1}', file_get_contents($this->appConfigPath));
     }
 
-    public function testGetDefaultReturnsTheConfiguredPluginWhenStillAvailable(): void
+    public function testSelectedReturnsTheStoredPluginWhenAvailable(): void
     {
         file_put_contents($this->appConfigPath, json_encode(['defaultSearchPluginId' => 'animedb-anilist']));
 
@@ -96,38 +106,23 @@ final class DefaultSearchPluginRegistryTest extends TestCase
             'animedb-anilist' => $this->createSearch(),
         ]);
 
-        $this->assertSame('animedb-anilist', (string) $registry->getDefault());
+        $this->assertSame('animedb-anilist', (string) $registry->selected());
+        $this->assertNull($registry->unavailableSelected());
     }
 
-    public function testGetDefaultCascadesToNextPluginWhenConfiguredOneWasRemoved(): void
+    public function testUnavailableStoredChoiceIsExposedAndSettingsStayUntouched(): void
     {
-        file_put_contents($this->appConfigPath, json_encode(['defaultSearchPluginId' => 'animedb-shikimori']));
+        $stored = json_encode(['defaultSearchPluginId' => 'animedb-gone']);
+        file_put_contents($this->appConfigPath, $stored);
 
-        $registry = $this->registry([
-            'animedb-anilist' => $this->createSearch(),
-        ]);
+        $registry = $this->registry(['animedb-anilist' => $this->createSearch()]);
 
-        $default = $registry->getDefault();
-
-        $this->assertSame('animedb-anilist', (string) $default);
-        // The cascade is persisted, not just returned in-memory.
-        $this->assertSame(
-            'animedb-anilist',
-            json_decode((string) file_get_contents($this->appConfigPath), true)['defaultSearchPluginId'],
-        );
+        $this->assertNull($registry->selected());
+        $this->assertSame('animedb-gone', (string) $registry->unavailableSelected());
+        $this->assertSame($stored, file_get_contents($this->appConfigPath));
     }
 
-    public function testGetDefaultCascadesToNullAndClearsSettingWhenNoSearchPluginIsLeft(): void
-    {
-        file_put_contents($this->appConfigPath, json_encode(['defaultSearchPluginId' => 'animedb-shikimori']));
-
-        $registry = $this->registry([]);
-
-        $this->assertNull($registry->getDefault());
-        $this->assertNull(json_decode((string) file_get_contents($this->appConfigPath), true)['defaultSearchPluginId']);
-    }
-
-    public function testGetDefaultCascadesWhenConfiguredPluginsFillerFeatureIsDisabled(): void
+    public function testStoredChoiceWithDisabledFillerFeatureIsUnavailable(): void
     {
         file_put_contents($this->appConfigPath, json_encode(['defaultSearchPluginId' => 'animedb-shikimori']));
         file_put_contents($this->pluginsConfigPath, json_encode([
@@ -139,30 +134,44 @@ final class DefaultSearchPluginRegistryTest extends TestCase
             'animedb-anilist' => $this->createSearch(),
         ]);
 
-        $this->assertSame('animedb-anilist', (string) $registry->getDefault());
+        $this->assertNull($registry->selected());
+        $this->assertSame('animedb-shikimori', (string) $registry->unavailableSelected());
+        $this->assertSame(['animedb-anilist'], array_map('strval', $registry->available()));
     }
 
-    public function testSetDefaultPersistsTheGivenPluginId(): void
+    public function testSelectPersistsAnAvailablePlugin(): void
     {
-        $registry = $this->registry([
-            'animedb-anilist' => $this->createSearch(),
-        ]);
+        $registry = $this->registry(['animedb-anilist' => $this->createSearch()]);
 
-        $registry->setDefault(new PluginId('animedb-anilist'));
-
-        $this->assertSame('animedb-anilist', (string) $registry->getDefault());
+        $this->assertTrue($registry->select(new PluginId('animedb-anilist')));
+        $this->assertSame('animedb-anilist', (string) $registry->selected());
     }
 
-    public function testSetDefaultWithNullClearsTheSetting(): void
+    public function testSelectRejectsAnUnavailablePluginWithoutWriting(): void
+    {
+        $registry = $this->registry(['animedb-anilist' => $this->createSearch()]);
+
+        $this->assertFalse($registry->select(new PluginId('animedb-unknown')));
+        $this->assertFileDoesNotExist($this->appConfigPath);
+    }
+
+    public function testSelectAcceptsResubmittingTheStoredUnavailableChoice(): void
+    {
+        $stored = json_encode(['defaultSearchPluginId' => 'animedb-gone']);
+        file_put_contents($this->appConfigPath, $stored);
+        $registry = $this->registry(['animedb-anilist' => $this->createSearch()]);
+
+        $this->assertTrue($registry->select(new PluginId('animedb-gone')));
+        $this->assertSame($stored, file_get_contents($this->appConfigPath));
+    }
+
+    public function testSelectNullClearsTheChoice(): void
     {
         file_put_contents($this->appConfigPath, json_encode(['defaultSearchPluginId' => 'animedb-anilist']));
+        $registry = $this->registry(['animedb-anilist' => $this->createSearch()]);
 
-        $registry = $this->registry([
-            'animedb-anilist' => $this->createSearch(),
-        ]);
-
-        $registry->setDefault(null);
-
-        $this->assertNull(json_decode((string) file_get_contents($this->appConfigPath), true)['defaultSearchPluginId']);
+        $this->assertTrue($registry->select(null));
+        $this->assertNull($this->storedSettings()['defaultSearchPluginId']);
+        $this->assertNull($registry->selected());
     }
 }

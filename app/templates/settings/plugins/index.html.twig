@@ -42,6 +42,42 @@
             <p class="alert alert-success">{{ 'settings_plugins.remove_success'|trans({'%pluginId%': removedPluginId}) }}</p>
         {% endif %}
 
+        {% if defaultSearchSaved|default(false) %}
+            <p class="alert alert-success">{{ 'settings_plugins.default_search_saved'|trans }}</p>
+        {% endif %}
+
+        {% if searchChoices|default([]) is not empty or unavailableSearchId|default('') != '' %}
+            <form method="post" action="{{ path('settings_plugins_default_search') }}" class="mb-4">
+                <input type="hidden" name="_token" value="{{ csrf_token('settings_plugins_default_search') }}">
+                <fieldset>
+                    <legend class="h5">{{ 'settings_plugins.default_search_heading'|trans }}</legend>
+                    <p class="text-body-secondary small">{{ 'settings_plugins.default_search_hint'|trans }}</p>
+                    <div data-control="choice-filter">
+                        <input type="search" id="default-search-filter" class="form-control form-control-sm mb-1" data-filter-input placeholder="{{ 'settings_plugins.default_search_filter'|trans }}" aria-label="{{ 'settings_plugins.default_search_filter'|trans }}" autocomplete="off">
+                        <div class="list-group mb-2">
+                            <label class="list-group-item" data-filter-item data-filter-text="{{ 'settings_plugins.default_search_none'|trans }}">
+                                <input class="form-check-input me-2" type="radio" name="plugin" value=""{% if selectedSearchId|default('') == '' and unavailableSearchId|default('') == '' %} checked{% endif %}>
+                                {{ 'settings_plugins.default_search_none'|trans }}
+                            </label>
+                            {% if unavailableSearchId|default('') != '' %}
+                                <label class="list-group-item" data-filter-item data-filter-text="{{ unavailableSearchId }}">
+                                    <input class="form-check-input me-2" type="radio" name="plugin" value="{{ unavailableSearchId }}" checked>
+                                    <code>{{ unavailableSearchId }}</code> <span class="text-body-secondary">{{ 'settings_plugins.default_search_unavailable'|trans }}</span>
+                                </label>
+                            {% endif %}
+                            {% for choice in searchChoices %}
+                                <label class="list-group-item" data-filter-item data-filter-text="{{ choice.name }} {{ choice.id }}">
+                                    <input class="form-check-input me-2" type="radio" name="plugin" value="{{ choice.id }}"{% if selectedSearchId == choice.id %} checked{% endif %}>
+                                    {{ choice.name }} <code>{{ choice.id }}</code>
+                                </label>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </fieldset>
+                <button type="submit" class="btn btn-primary btn-sm">{{ 'settings_plugins.default_search_save'|trans }}</button>
+            </form>
+        {% endif %}
+
         {% if installedPlugins is empty %}
             {{ include('_empty_state.html.twig', {
                 icon: 'download',
