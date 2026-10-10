@@ -168,7 +168,7 @@ class Kernel extends BaseKernel
         // InstalledPluginsRegistry instance above, so both stay in sync by construction.
         // Under the runtime directory (APP_RUNTIME_DIR in production, var/ in dev) like cache/ and
         // log/ — not in the plugins directory, which an update replaces wholesale.
-        $container->setParameter('app.plugin_cache_dir', ($_SERVER['APP_RUNTIME_DIR'] ?? $this->getProjectDir().'/var').'/plugin-cache');
+        $container->setParameter('app.plugin_cache_dir', (($_SERVER['APP_RUNTIME_DIR'] ?? null) ?: $this->getProjectDir().'/var').'/plugin-cache');
 
         $container->setParameter('app.core_version', $this->coreVersion());
 

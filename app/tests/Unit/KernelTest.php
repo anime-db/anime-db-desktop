@@ -27,10 +27,12 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit;
 
+use App\Kernel;
 use App\Service\Version\AppVersionResolver;
 use Composer\InstalledVersions;
 use Psr\Log\NullLogger;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
+use Symfony\Component\DependencyInjection\ContainerBuilder;
 
 /**
  * Container-level regression test for PR #563's review: a unit test constructing
@@ -38,11 +40,49 @@ use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
  * directly and passing `pluginContractsVersion` by hand cannot catch a wiring bug where the actual
  * compiled container never delivers a real value to either of them. Only booting the real kernel
  * and reading the compiled `app.plugin_contracts_version` parameter exercises
- * {@see \App\Kernel::build()} and {@see \App\Kernel::configureContainer()} the same way
+ * {@see Kernel::build()} and {@see Kernel::configureContainer()} the same way
  * `bin/console`/FrankenPHP does.
  */
 final class KernelTest extends KernelTestCase
 {
+    public function testPluginCacheDirLivesUnderTheRuntimeDirectory(): void
+    {
+        $previous = $_SERVER['APP_RUNTIME_DIR'] ?? null;
+        $_SERVER['APP_RUNTIME_DIR'] = '/x';
+        try {
+            $container = new ContainerBuilder();
+            (new Kernel('test', true))->build($container);
+        } finally {
+            $this->restoreRuntimeDir($previous);
+        }
+
+        $this->assertSame('/x/plugin-cache', $container->getParameter('app.plugin_cache_dir'));
+    }
+
+    public function testPluginCacheDirFallsBackToVarWhenTheRuntimeDirectoryIsEmpty(): void
+    {
+        $previous = $_SERVER['APP_RUNTIME_DIR'] ?? null;
+        $_SERVER['APP_RUNTIME_DIR'] = '';
+        try {
+            $kernel = new Kernel('test', true);
+            $container = new ContainerBuilder();
+            $kernel->build($container);
+        } finally {
+            $this->restoreRuntimeDir($previous);
+        }
+
+        $this->assertSame($kernel->getProjectDir().'/var/plugin-cache', $container->getParameter('app.plugin_cache_dir'));
+    }
+
+    private function restoreRuntimeDir(?string $previous): void
+    {
+        if ($previous === null) {
+            unset($_SERVER['APP_RUNTIME_DIR']);
+        } else {
+            $_SERVER['APP_RUNTIME_DIR'] = $previous;
+        }
+    }
+
     public function testPluginContractsVersionParameterIsSetFromInstalledVersions(): void
     {
         self::bootKernel();
@@ -59,7 +99,7 @@ final class KernelTest extends KernelTestCase
      * hand cannot catch a wiring bug where the compiled container never delivers a real value to
      * it — this is exactly the failure PR #563 hit for `pluginContractsVersion`. Only booting the
      * real kernel and reading the compiled `app.core_version` parameter exercises
-     * {@see \App\Kernel::build()}/{@see \App\Kernel::coreVersion()} the same way `bin/console`/
+     * {@see Kernel::build()}/{@see Kernel::coreVersion()} the same way `bin/console`/
      * FrankenPHP does. Asserted against {@see AppVersionResolver} directly, the same source
      * `coreVersion()` reads from when CORE_VERSION is unset — true in this test process, so this
      * also pins that the parameter is not null in a unit test, one of the three modes issue #565
