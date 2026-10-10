@@ -41,6 +41,8 @@ use App\Entity\ValueObject\PluginId;
  * request). Rolling the plugin back here, rather than leaving it in the index, is what lets the
  * native side restart into a known-good, pre-plugin state instead of looping on a broken one.
  *
+ * Also deletes the plugin's `plugin-cache/<id>/` directory ({@see PluginCacheDirectories}).
+ *
  * A no-op (besides the reconcile) when the plugin id is not currently installed — the caller may
  * race with a manual removal or an already-completed rollback, and idempotency here means it does
  * not need to check first.
@@ -53,8 +55,10 @@ use App\Entity\ValueObject\PluginId;
  */
 final class PluginRemover
 {
-    public function __construct(private readonly InstalledPluginsRegistry $registry)
-    {
+    public function __construct(
+        private readonly InstalledPluginsRegistry $registry,
+        private readonly PluginCacheDirectories $cacheDirectories,
+    ) {
     }
 
     public function remove(PluginId $id): void
@@ -64,6 +68,10 @@ final class PluginRemover
             if ($installed !== null) {
                 PluginDirectoryRemover::remove($installed->installPath);
             }
+
+            // Never throws (failures are logged): a leftover cache must not keep the plugin
+            // installed, and the startup cleanup picks it up later.
+            $this->cacheDirectories->remove($id);
 
             $this->registry->reconcile();
         });

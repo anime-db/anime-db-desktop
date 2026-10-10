@@ -211,6 +211,7 @@ services:
             $configPath: '%app.config_path%'
             $pluginsConfigPath: '%app.plugins_config_path%'
             $pluginsDir: '%app.plugins_dir%'
+            $pluginCacheDir: '%app.plugin_cache_dir%'
             $nativeTranslationsDir: '%app.native_translations_dir%'
             $nativeTranslationsOverlayDir: '%app.native_translations_overlay_dir%'
             $coreVersion: '%app.core_version%'

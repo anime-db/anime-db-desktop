@@ -463,6 +463,33 @@ final class CatalogExportServiceTest extends TestCase
         $this->assertSame([basename($result->archivePath)], $remaining);
     }
 
+    public function testExportDoesNotContainThePluginCache(): void
+    {
+        $connection = $this->createConnection();
+        $this->seedSchema($connection);
+        $connection->insert('anime', ['id' => 1, 'title' => 'Cowboy Bebop', 'cover' => 'cover.webp']);
+        $connection->insert('doctrine_migration_versions', ['version' => 'Version20260917120000']);
+        mkdir($this->mediaDir.'/1', 0o755, true);
+        file_put_contents($this->mediaDir.'/1/cover.webp', 'cover-bytes');
+        // Next to media/ and inside it, in case a future change walks the directory.
+        foreach ([$this->mediaDir.'/plugin-cache/some-plugin', $this->mediaDir.'/../plugin-cache-'.basename($this->mediaDir).'/some-plugin'] as $dir) {
+            mkdir($dir, 0o755, true);
+            file_put_contents($dir.'/dump.bin', 'cached');
+        }
+
+        try {
+            $result = $this->createService($connection)->export($this->destinationDir);
+        } finally {
+            $this->removeDirectory($this->mediaDir.'/../plugin-cache-'.basename($this->mediaDir));
+        }
+
+        $zip = new \ZipArchive();
+        $zip->open($result->archivePath);
+        for ($i = 0; $i < $zip->numFiles; ++$i) {
+            $this->assertStringNotContainsString('plugin-cache', (string) $zip->getNameIndex($i));
+        }
+    }
+
     private function createService(Connection $connection, ?LoggerInterface $logger = null, ?int $freeBytes = \PHP_INT_MAX, ?WsPublisher $wsPublisher = null, ?InstalledPluginsRegistry $pluginsRegistry = null): CatalogExportService
     {
         $freeSpaceProvider = new class($freeBytes) implements FreeSpaceProvider {

@@ -633,6 +633,23 @@ final class ZipPluginInstallerTest extends TestCase
         $this->assertNoLeftoverTempDirectories();
     }
 
+    public function testUpdateLeavesThePluginCacheDirectoryUntouched(): void
+    {
+        mkdir($this->pluginsDir.'/animedb-shikimori', recursive: true);
+        file_put_contents($this->pluginsDir.'/animedb-shikimori/manifest.json', $this->validManifestJson('animedb-shikimori', '1.0.0'));
+        $this->registry->reconcile();
+        $cacheDir = $this->rootDir.'/plugin-cache/animedb-shikimori';
+        mkdir($cacheDir, recursive: true);
+        file_put_contents($cacheDir.'/dump.bin', 'cached');
+
+        $this->installer()->update($this->createZip([
+            'manifest.json' => $this->validManifestJson('animedb-shikimori', '2.0.0'),
+            'src/Plugin.php' => '<?php // v2 entry point',
+        ]));
+
+        $this->assertSame('cached', file_get_contents($cacheDir.'/dump.bin'));
+    }
+
     #[Group('runtime-parity')]
     public function testUpdatePreservesPluginSettingsAcrossTheDirectorySwap(): void
     {

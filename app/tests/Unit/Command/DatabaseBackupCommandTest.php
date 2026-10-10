@@ -73,6 +73,32 @@ final class DatabaseBackupCommandTest extends TestCase
         $this->assertSame('hello', $row['v']);
     }
 
+    public function testBackupIsASingleDatabaseFileAndDoesNotTouchThePluginCache(): void
+    {
+        $runtimeDir = sys_get_temp_dir().'/animedb-backup-runtime-'.uniqid();
+        mkdir($runtimeDir.'/plugin-cache/some-plugin', recursive: true);
+        file_put_contents($runtimeDir.'/plugin-cache/some-plugin/dump.bin', 'cached');
+        $backupPath = $runtimeDir.'/backup.db';
+
+        try {
+            $connection = $this->createConnection($this->dbPath);
+            $connection->executeStatement('CREATE TABLE t (id INTEGER PRIMARY KEY)');
+
+            (new CommandTester(new DatabaseBackupCommand($connection)))->execute(['path' => $backupPath]);
+
+            $this->assertSame(['backup.db', 'plugin-cache'], array_values(array_diff((array) scandir($runtimeDir), ['.', '..'])));
+            $this->assertStringStartsWith('SQLite format 3', (string) file_get_contents($backupPath));
+            $this->assertStringNotContainsString('plugin-cache', (string) file_get_contents($backupPath));
+            $this->assertSame('cached', file_get_contents($runtimeDir.'/plugin-cache/some-plugin/dump.bin'));
+        } finally {
+            @unlink($backupPath);
+            @unlink($runtimeDir.'/plugin-cache/some-plugin/dump.bin');
+            @rmdir($runtimeDir.'/plugin-cache/some-plugin');
+            @rmdir($runtimeDir.'/plugin-cache');
+            @rmdir($runtimeDir);
+        }
+    }
+
     private function createConnection(string $path): Connection
     {
         return DriverManager::getConnection(['driver' => 'pdo_sqlite', 'path' => $path]);

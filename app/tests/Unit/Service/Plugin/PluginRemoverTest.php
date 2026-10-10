@@ -65,7 +65,7 @@ final class PluginRemoverTest extends TestCase
         $this->registry->reconcile();
         $this->assertTrue($this->registry->has(new PluginId('animedb-shikimori')));
 
-        (new PluginRemover($this->registry))->remove(new PluginId('animedb-shikimori'));
+        (new PluginRemover($this->registry, new \App\Service\Plugin\PluginCacheDirectories(sys_get_temp_dir().'/anime-plugin-cache-unused', new NullLogger())))->remove(new PluginId('animedb-shikimori'));
 
         $this->assertDirectoryDoesNotExist($this->pluginsDir.'/animedb-shikimori');
         $this->assertFalse($this->registry->has(new PluginId('animedb-shikimori')));
@@ -77,7 +77,7 @@ final class PluginRemoverTest extends TestCase
         $this->installFixture('animedb-anilist');
         $this->registry->reconcile();
 
-        (new PluginRemover($this->registry))->remove(new PluginId('animedb-shikimori'));
+        (new PluginRemover($this->registry, new \App\Service\Plugin\PluginCacheDirectories(sys_get_temp_dir().'/anime-plugin-cache-unused', new NullLogger())))->remove(new PluginId('animedb-shikimori'));
 
         $this->assertFalse($this->registry->has(new PluginId('animedb-shikimori')));
         $this->assertTrue($this->registry->has(new PluginId('animedb-anilist')));
@@ -88,7 +88,7 @@ final class PluginRemoverTest extends TestCase
     {
         $this->registry->reconcile();
 
-        (new PluginRemover($this->registry))->remove(new PluginId('animedb-unknown'));
+        (new PluginRemover($this->registry, new \App\Service\Plugin\PluginCacheDirectories(sys_get_temp_dir().'/anime-plugin-cache-unused', new NullLogger())))->remove(new PluginId('animedb-unknown'));
 
         $this->assertFalse($this->registry->has(new PluginId('animedb-unknown')));
     }
@@ -127,7 +127,7 @@ final class PluginRemoverTest extends TestCase
         $registryWithWriter->reconcile();
         $this->assertFileExists($overlayDir.'/kk.json');
 
-        (new PluginRemover($registryWithWriter))->remove(new PluginId('lang-kazakh'));
+        (new PluginRemover($registryWithWriter, new \App\Service\Plugin\PluginCacheDirectories(sys_get_temp_dir().'/anime-plugin-cache-unused', new NullLogger())))->remove(new PluginId('lang-kazakh'));
 
         $this->assertFileDoesNotExist($overlayDir.'/kk.json');
     }
