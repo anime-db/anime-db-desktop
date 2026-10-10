@@ -29,6 +29,9 @@ namespace App\Tests\Unit\Service\Storage\Search;
 
 use AnimeDb\PluginContracts\Search\SearchByPluginCandidate;
 use AnimeDb\PluginContracts\Search\SearchByPluginInterface;
+use App\Entity\ValueObject\PluginId;
+use App\Service\AppConfigStore;
+use App\Service\AppSettingsProvider;
 use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Storage\Search\SearchByPluginChain;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -37,15 +40,17 @@ use PHPUnit\Framework\TestCase;
 final class SearchByPluginChainTest extends TestCase
 {
     private string $path;
+    private string $configPath;
 
     protected function setUp(): void
     {
         $this->path = sys_get_temp_dir().'/anime-plugins-test-'.uniqid().'.json';
+        $this->configPath = sys_get_temp_dir().'/anime-config-test-'.uniqid().'.json';
     }
 
     protected function tearDown(): void
     {
-        foreach ([$this->path, $this->path.'.tmp', $this->path.'.lock'] as $file) {
+        foreach ([$this->path, $this->path.'.tmp', $this->path.'.lock', $this->configPath, $this->configPath.'.tmp', $this->configPath.'.lock'] as $file) {
             if (is_file($file)) {
                 unlink($file);
             }
@@ -70,6 +75,7 @@ final class SearchByPluginChainTest extends TestCase
         $chain = new SearchByPluginChain(
             [],
             new PluginsConfigStore($this->path),
+            $this->settings(),
         );
 
         $this->assertSame([], $chain->find($name));
@@ -88,6 +94,7 @@ final class SearchByPluginChainTest extends TestCase
         $chain = new SearchByPluginChain(
             ['animedb-shikimori' => $first, 'animedb-anilist' => $second],
             new PluginsConfigStore($this->path),
+            $this->settings(),
         );
 
         $this->assertSame($expected, $chain->find('Bleach'));
@@ -106,6 +113,7 @@ final class SearchByPluginChainTest extends TestCase
         $chain = new SearchByPluginChain(
             ['animedb-shikimori' => $plugin],
             new PluginsConfigStore($this->path),
+            $this->settings(),
         );
 
         $this->assertSame($expected, $chain->find('Bleach'));
@@ -124,6 +132,7 @@ final class SearchByPluginChainTest extends TestCase
         $chain = new SearchByPluginChain(
             ['animedb-shikimori' => $first, 'animedb-anilist' => $second],
             new PluginsConfigStore($this->path),
+            $this->settings(),
         );
 
         $this->assertSame($expected, $chain->find('Bleach'));
@@ -141,6 +150,7 @@ final class SearchByPluginChainTest extends TestCase
         $chain = new SearchByPluginChain(
             ['animedb-shikimori' => $disabled],
             new PluginsConfigStore($this->path),
+            $this->settings(),
         );
 
         $this->assertSame([], $chain->find('Bleach'));
@@ -160,6 +170,7 @@ final class SearchByPluginChainTest extends TestCase
         $chain = new SearchByPluginChain(
             ['animedb-shikimori' => $plugin],
             new PluginsConfigStore($this->path),
+            $this->settings(),
         );
 
         $this->assertSame($expected, $chain->find('Bleach'));
@@ -175,6 +186,7 @@ final class SearchByPluginChainTest extends TestCase
         $chain = new SearchByPluginChain(
             ['animedb-shikimori' => $plugin],
             new PluginsConfigStore($this->path),
+            $this->settings(),
         );
 
         $this->assertSame($expected, $chain->find('Bleach'));
@@ -199,8 +211,122 @@ final class SearchByPluginChainTest extends TestCase
         $chain = new SearchByPluginChain(
             ['animedb-shikimori' => $disabled, 'animedb-mal' => $pureSearch],
             new PluginsConfigStore($this->path),
+            $this->settings(),
         );
 
         $this->assertSame($expected, $chain->find('Bleach'));
+    }
+
+    public function testFindAsksTheSelectedPluginFirst(): void
+    {
+        $order = [];
+        $chain = $this->chainRecordingOrder(['pl-a', 'pl-b', 'pl-c'], $order);
+        $this->settings()->setDefaultSearchPluginId(new PluginId('pl-b'));
+
+        $this->assertSame([], $chain->find('Bleach'));
+        $this->assertSame(['pl-b', 'pl-a', 'pl-c'], $order);
+    }
+
+    public function testFindStopsAtTheSelectedPluginWhenItAnswers(): void
+    {
+        $expected = [new SearchByPluginCandidate('pl-b', 'Bleach', '1')];
+        $a = $this->createMock(SearchByPluginInterface::class);
+        $a->expects($this->never())->method('find');
+        $b = $this->createStub(SearchByPluginInterface::class);
+        $b->method('find')->willReturn($expected);
+        $this->settings()->setDefaultSearchPluginId(new PluginId('pl-b'));
+
+        $chain = new SearchByPluginChain(['pl-a' => $a, 'pl-b' => $b], new PluginsConfigStore($this->path), $this->settings());
+
+        $this->assertSame($expected, $chain->find('Bleach'));
+    }
+
+    public function testFindFallsBackToTheRestInOriginalOrderWhenSelectedReturnsNothing(): void
+    {
+        $expected = [new SearchByPluginCandidate('pl-c', 'Bleach', '1')];
+        $calls = [];
+        $make = function (string $id, array $result) use (&$calls): SearchByPluginInterface {
+            $plugin = $this->createStub(SearchByPluginInterface::class);
+            $plugin->method('find')->willReturnCallback(static function () use ($id, $result, &$calls): array {
+                $calls[] = $id;
+
+                return $result;
+            });
+
+            return $plugin;
+        };
+        $this->settings()->setDefaultSearchPluginId(new PluginId('pl-b'));
+        $chain = new SearchByPluginChain(
+            ['pl-a' => $make('pl-a', []), 'pl-b' => $make('pl-b', []), 'pl-c' => $make('pl-c', $expected)],
+            new PluginsConfigStore($this->path),
+            $this->settings(),
+        );
+
+        $this->assertSame($expected, $chain->find('Bleach'));
+        $this->assertSame(['pl-b', 'pl-a', 'pl-c'], $calls);
+    }
+
+    public function testFindKeepsRegistrationOrderAndWritesNothingWithoutASelection(): void
+    {
+        $order = [];
+        $chain = $this->chainRecordingOrder(['pl-a', 'pl-b', 'pl-c'], $order);
+
+        $chain->find('Bleach');
+
+        $this->assertSame(['pl-a', 'pl-b', 'pl-c'], $order);
+        $this->assertFileDoesNotExist($this->configPath);
+    }
+
+    public function testFindKeepsRegistrationOrderWhenSelectedPluginIsNotInstalled(): void
+    {
+        $order = [];
+        $chain = $this->chainRecordingOrder(['pl-a', 'pl-b', 'pl-c'], $order);
+        $this->settings()->setDefaultSearchPluginId(new PluginId('pl-gone'));
+        $before = file_get_contents($this->configPath);
+
+        $chain->find('Bleach');
+
+        $this->assertSame(['pl-a', 'pl-b', 'pl-c'], $order);
+        $this->assertSame($before, file_get_contents($this->configPath));
+        $this->assertSame('pl-gone', (string) $this->settings()->getDefaultSearchPluginId());
+    }
+
+    public function testFindSkipsSelectedPluginWithFillerDisabledAndKeepsOrder(): void
+    {
+        file_put_contents($this->path, json_encode(['pl-b' => ['features' => ['filler' => false]]]));
+        $order = [];
+        $chain = $this->chainRecordingOrder(['pl-a', 'pl-b', 'pl-c'], $order);
+        $this->settings()->setDefaultSearchPluginId(new PluginId('pl-b'));
+        $before = file_get_contents($this->configPath);
+
+        $chain->find('Bleach');
+
+        $this->assertSame(['pl-a', 'pl-c'], $order);
+        $this->assertSame($before, file_get_contents($this->configPath));
+    }
+
+    private function settings(): AppSettingsProvider
+    {
+        return new AppSettingsProvider(new AppConfigStore($this->configPath));
+    }
+
+    /**
+     * @param list<string> $ids
+     * @param list<string> $order filled with the ids of the plugins asked, in call order
+     */
+    private function chainRecordingOrder(array $ids, array &$order): SearchByPluginChain
+    {
+        $plugins = [];
+        foreach ($ids as $id) {
+            $plugin = $this->createStub(SearchByPluginInterface::class);
+            $plugin->method('find')->willReturnCallback(static function () use ($id, &$order): array {
+                $order[] = $id;
+
+                return [];
+            });
+            $plugins[$id] = $plugin;
+        }
+
+        return new SearchByPluginChain($plugins, new PluginsConfigStore($this->path), $this->settings());
     }
 }

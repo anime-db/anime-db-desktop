@@ -30,6 +30,7 @@ namespace App\Service\Storage\Search;
 use AnimeDb\PluginContracts\Search\SearchByPluginCandidate;
 use AnimeDb\PluginContracts\Search\SearchByPluginInterface;
 use App\Entity\ValueObject\PluginId;
+use App\Service\AppSettingsProvider;
 use App\Service\Plugin\FillerActiveTrait;
 use App\Service\Plugin\PluginsConfigStore;
 use Symfony\Component\DependencyInjection\Attribute\AutowireIterator;
@@ -60,6 +61,9 @@ use Symfony\Component\DependencyInjection\Attribute\AutowireIterator;
  * only for the fill to then be refused, leaving a title-only placeholder behind (issue #280). A
  * "pure" search plugin with no filler toggle at all (implements only `SearchByPluginInterface`)
  * has nothing to gate on and stays active — see {@see FillerActiveTrait} for that default.
+ *
+ * The order is registration order, except that the plugin the user explicitly picked as the default
+ * search plugin is consulted first (issue #1019); still only the first non-empty answer wins.
  */
 final class SearchByPluginChain
 {
@@ -70,17 +74,14 @@ final class SearchByPluginChain
         #[AutowireIterator('app.search_by_plugin', indexAttribute: 'id')]
         private readonly iterable $plugins,
         private readonly PluginsConfigStore $pluginsConfigStore,
+        private readonly AppSettingsProvider $appSettings,
     ) {
     }
 
     /** @return list<SearchByPluginCandidate> */
     public function find(string $name): array
     {
-        foreach ($this->plugins as $id => $plugin) {
-            if (!$this->isFillerActive(new PluginId((string) $id))) {
-                continue;
-            }
-
+        foreach ($this->orderedActivePlugins() as $plugin) {
             $candidates = $plugin->find($name);
 
             if ($candidates !== []) {
@@ -94,5 +95,38 @@ final class SearchByPluginChain
         }
 
         return [];
+    }
+
+    /**
+     * Active plugins in registration order, except that the plugin the user explicitly chose as
+     * the default search plugin goes first (issue #1019). The choice is read straight from
+     * {@see AppSettingsProvider::getDefaultSearchPluginId()}, never through
+     * {@see \App\Service\Plugin\DefaultSearchPluginRegistry::getDefault()}: that one falls
+     * back to the first available plugin and persists it, which would turn "no choice" into a
+     * stored alphabetical pick. A choice that is not an active plugin right now changes nothing.
+     *
+     * @return list<SearchByPluginInterface>
+     */
+    private function orderedActivePlugins(): array
+    {
+        $preferredId = $this->appSettings->getDefaultSearchPluginId();
+        $preferred = null;
+        $rest = [];
+
+        foreach ($this->plugins as $id => $plugin) {
+            if (!$this->isFillerActive(new PluginId((string) $id))) {
+                continue;
+            }
+
+            if ($preferredId !== null && (string) $preferredId === (string) $id) {
+                $preferred = $plugin;
+
+                continue;
+            }
+
+            $rest[] = $plugin;
+        }
+
+        return $preferred !== null ? [$preferred, ...$rest] : $rest;
     }
 }

@@ -27,15 +27,20 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Controller\Settings;
 
+use AnimeDb\PluginContracts\Search\SearchByPluginInterface;
 use AnimeDb\PluginContracts\Settings\SettingsPageInterface;
 use AnimeDb\PluginContracts\Sync\SyncInterface;
 use App\Controller\Settings\PluginController;
 use App\Entity\ValueObject\PluginId;
 use App\Message\SyncSeedMessage;
+use App\Service\AppConfigStore;
+use App\Service\AppSettingsProvider;
 use App\Service\Market\MarketSnapshot;
 use App\Service\Market\MarketSnapshotCache;
 use App\Service\Market\MarketSnapshotPlugin;
 use App\Service\Market\MarketUpdateResolver;
+use App\Service\Plugin\DefaultSearchPluginRegistry;
+use App\Service\Plugin\DefaultSearchPluginSelection;
 use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\PluginCacheWarmer;
 use App\Service\Plugin\PluginRemover;
@@ -142,6 +147,7 @@ final class PluginControllerTest extends TestCase
         ?MarketSnapshotCache $snapshotCache = null,
         ?SyncRegistry $syncRegistry = null,
         ?MessageBusInterface $messageBus = null,
+        ?DefaultSearchPluginSelection $defaultSearch = null,
     ): PluginController {
         return new PluginController(
             $this->registry,
@@ -160,7 +166,17 @@ final class PluginControllerTest extends TestCase
                 $messageBus ?? $this->createStub(MessageBusInterface::class),
                 new NullLogger(),
             ),
+            $defaultSearch ?? $this->defaultSearchSelection(),
         );
+    }
+
+    /** @param array<string, SearchByPluginInterface> $plugins */
+    private function defaultSearchSelection(?AppSettingsProvider $settings = null, array $plugins = []): DefaultSearchPluginSelection
+    {
+        $settings ??= new AppSettingsProvider(new AppConfigStore($this->rootDir.'/default-search-config.json'));
+        $store = new PluginsConfigStore($this->pluginsDir.'/plugins.json');
+
+        return new DefaultSearchPluginSelection($plugins, $store, $settings, new DefaultSearchPluginRegistry($plugins, $store, $settings));
     }
 
     /** @param list<string> $syncPluginIds */
@@ -780,6 +796,58 @@ final class PluginControllerTest extends TestCase
 
         $this->expectException(BadRequestHttpException::class);
         $this->controller(csrfTokenManager: $csrf)->install(Request::create('/settings/plugins/install', 'POST', ['_token' => 'bad']));
+    }
+
+    public function testSetDefaultSearchStoresTheChosenPluginAndEmptyClearsIt(): void
+    {
+        $settings = new AppSettingsProvider(new AppConfigStore($this->rootDir.'/cfg.json'));
+        $selection = $this->defaultSearchSelection($settings, ['animedb-shikimori' => $this->createStub(SearchByPluginInterface::class)]);
+        $controller = $this->controller(defaultSearch: $selection);
+
+        $response = $controller->setDefaultSearch(Request::create('/x', 'POST', ['_token' => 't', 'plugin' => 'animedb-shikimori']));
+
+        $this->assertInstanceOf(RedirectResponse::class, $response);
+        $this->assertSame('animedb-shikimori', (string) $settings->getDefaultSearchPluginId());
+
+        $controller->setDefaultSearch(Request::create('/x', 'POST', ['_token' => 't', 'plugin' => '']));
+
+        $this->assertNull($settings->getDefaultSearchPluginId());
+    }
+
+    public function testSetDefaultSearchRejectsAnUnavailablePluginWithoutWriting(): void
+    {
+        $settings = new AppSettingsProvider(new AppConfigStore($this->rootDir.'/cfg.json'));
+        $controller = $this->controller(defaultSearch: $this->defaultSearchSelection($settings));
+
+        try {
+            $controller->setDefaultSearch(Request::create('/x', 'POST', ['_token' => 't', 'plugin' => 'animedb-unknown']));
+            $this->fail('Expected BadRequestHttpException.');
+        } catch (BadRequestHttpException) {
+        }
+
+        $this->assertFileDoesNotExist($this->rootDir.'/cfg.json');
+    }
+
+    public function testSelectionReadsStoredIdWithoutPersistingAFallback(): void
+    {
+        $settings = new AppSettingsProvider(new AppConfigStore($this->rootDir.'/cfg.json'));
+        $selection = $this->defaultSearchSelection($settings, ['animedb-anidb' => $this->createStub(SearchByPluginInterface::class)]);
+
+        $this->assertNull($selection->selected());
+        $this->assertFileDoesNotExist($this->rootDir.'/cfg.json');
+
+        $settings->setDefaultSearchPluginId(new PluginId('animedb-gone'));
+        $this->assertNull($selection->selected());
+        $this->assertSame('animedb-gone', (string) $settings->getDefaultSearchPluginId());
+    }
+
+    public function testSetDefaultSearchRejectsInvalidCsrfToken(): void
+    {
+        $csrf = $this->createStub(CsrfTokenManagerInterface::class);
+        $csrf->method('isTokenValid')->willReturn(false);
+
+        $this->expectException(BadRequestHttpException::class);
+        $this->controller(csrfTokenManager: $csrf)->setDefaultSearch(Request::create('/x', 'POST', ['plugin' => '']));
     }
 
     public function testRemoveDeletesThePluginAndRedirectsToIndexWithRemovedPluginId(): void

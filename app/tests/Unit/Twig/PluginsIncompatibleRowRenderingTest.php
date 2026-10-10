@@ -94,6 +94,29 @@ final class PluginsIncompatibleRowRenderingTest extends KernelTestCase
         self::assertStringContainsString('is kept', $matches[0]);
     }
 
+    public function testDefaultSearchSelectOffersNoneAndMarksTheStoredChoice(): void
+    {
+        $html = $this->render($this->plugin(true), [], [
+            'searchChoices' => [['id' => 'animedb-shikimori', 'name' => 'Shikimori']],
+            'selectedSearchId' => 'animedb-shikimori',
+        ]);
+
+        self::assertStringContainsString('action="/settings/plugins/default-search"', $html);
+        self::assertStringContainsString('data-filter-input', $html);
+        self::assertMatchesRegularExpression('#<input[^>]*name="plugin" value=""(?![^>]*checked)[^>]*>#', $html);
+        self::assertMatchesRegularExpression('#<input[^>]*name="plugin" value="animedb-shikimori" checked>#', $html);
+    }
+
+    public function testDefaultSearchSelectChecksNoneWhenNothingIsStored(): void
+    {
+        $html = $this->render($this->plugin(true), [], [
+            'searchChoices' => [['id' => 'animedb-shikimori', 'name' => 'Shikimori']],
+            'selectedSearchId' => '',
+        ]);
+
+        self::assertMatchesRegularExpression('#<input[^>]*name="plugin" value="" checked>#', $html);
+    }
+
     /**
      * The page navigation also links to the market, so match the link by its text.
      */
@@ -104,8 +127,9 @@ final class PluginsIncompatibleRowRenderingTest extends KernelTestCase
 
     /**
      * @param array<string, string> $marketUpdates
+     * @param array<string, mixed>  $extra
      */
-    private function render(InstalledPlugin $plugin, array $marketUpdates): string
+    private function render(InstalledPlugin $plugin, array $marketUpdates, array $extra = []): string
     {
         self::bootKernel();
 
@@ -135,7 +159,7 @@ final class PluginsIncompatibleRowRenderingTest extends KernelTestCase
             'installErrorParams' => [],
             'syntaxErrors' => [],
             'manifestErrors' => [],
-        ]);
+        ] + $extra);
     }
 
     private function plugin(bool $compatible): InstalledPlugin

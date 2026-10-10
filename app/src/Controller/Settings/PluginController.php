@@ -32,6 +32,7 @@ use AnimeDb\PluginContracts\Manifest\PluginType;
 use App\Entity\ValueObject\Exception\InvalidPluginIdException;
 use App\Entity\ValueObject\PluginId;
 use App\Service\Market\MarketUpdateResolver;
+use App\Service\Plugin\DefaultSearchPluginSelection;
 use App\Service\Plugin\Exception\IncompatiblePluginContractsVersionException;
 use App\Service\Plugin\Exception\IncompatiblePluginCoreVersionException;
 use App\Service\Plugin\Exception\InvalidInstalledPluginException;
@@ -112,6 +113,7 @@ final class PluginController
         private readonly MarketUpdateResolver $updateResolver,
         private readonly SyncRegistry $syncRegistry,
         private readonly SyncSeedDispatcher $syncSeedDispatcher,
+        private readonly DefaultSearchPluginSelection $defaultSearch,
         private readonly LoggerInterface $logger = new NullLogger(),
     ) {
     }
@@ -119,6 +121,7 @@ final class PluginController
     #[Route('/settings/plugins', name: 'settings_plugins_index', methods: ['GET'])]
     public function index(Request $request): Response
     {
+        $defaultSearchSaved = $request->query->get('defaultSearchSaved') === '1';
         $installedPluginId = (string) $request->query->get('installed', '');
         $updatedPluginId = (string) $request->query->get('updated', '');
         $removedPluginId = (string) $request->query->get('removed', '');
@@ -130,6 +133,7 @@ final class PluginController
             installedPluginId: $installedPluginId !== '' ? $installedPluginId : null,
             updatedPluginId: $updatedPluginId !== '' ? $updatedPluginId : null,
             removedPluginId: $removedPluginId !== '' ? $removedPluginId : null,
+            defaultSearchSaved: $defaultSearchSaved,
         );
     }
 
@@ -177,6 +181,31 @@ final class PluginController
         $this->syncSeedDispatcher->dispatchIfNotSeeded($id);
 
         return new RedirectResponse($this->urlGenerator->generate('settings_plugins_index'));
+    }
+
+    /**
+     * Stores the plugin that is asked first when a storage scan looks a title up (issue #1019);
+     * an empty `plugin` value clears the choice. Only a currently available search plugin is
+     * accepted, so a forged id cannot park an unknown plugin in the settings.
+     */
+    #[Route('/settings/plugins/default-search', name: 'settings_plugins_default_search', methods: ['POST'])]
+    public function setDefaultSearch(Request $request): RedirectResponse
+    {
+        $this->assertValidCsrfToken('settings_plugins_default_search', $request);
+
+        $value = (string) $request->request->get('plugin', '');
+
+        try {
+            $id = $value !== '' ? new PluginId($value) : null;
+        } catch (InvalidPluginIdException) {
+            throw new BadRequestHttpException('Invalid plugin id.');
+        }
+
+        if (!$this->defaultSearch->select($id)) {
+            throw new BadRequestHttpException(\sprintf('Plugin "%s" is not an available search plugin.', $value));
+        }
+
+        return new RedirectResponse($this->urlGenerator->generate('settings_plugins_index', ['defaultSearchSaved' => '1']));
     }
 
     /**
@@ -291,6 +320,7 @@ final class PluginController
         ?string $installedPluginId = null,
         ?string $updatedPluginId = null,
         ?string $removedPluginId = null,
+        bool $defaultSearchSaved = false,
     ): Response {
         $installedPlugins = $this->installedPlugins->all();
 
@@ -309,7 +339,17 @@ final class PluginController
             }
         }
 
+        $searchChoices = [];
+        foreach ($this->defaultSearch->available() as $pluginId) {
+            $installed = $this->installedPlugins->get($pluginId);
+            $searchChoices[] = ['id' => (string) $pluginId, 'name' => $installed !== null ? $installed->manifest->name : (string) $pluginId];
+        }
+        $selectedSearch = $this->defaultSearch->selected();
+
         return new Response($this->twig->render('settings/plugins/index.html.twig', [
+            'searchChoices' => $searchChoices,
+            'selectedSearchId' => $selectedSearch !== null ? (string) $selectedSearch : '',
+            'defaultSearchSaved' => $defaultSearchSaved,
             'syncPluginIds' => $syncPluginIds,
             'syncActiveIds' => $syncActiveIds,
             'error' => $error,
