@@ -841,6 +841,68 @@ final class PluginControllerTest extends TestCase
         $this->assertSame('animedb-gone', (string) $settings->getDefaultSearchPluginId());
     }
 
+    public function testSelectionKeepsAStoredUnavailableChoiceWhenItIsResubmitted(): void
+    {
+        $settings = new AppSettingsProvider(new AppConfigStore($this->rootDir.'/cfg.json'));
+        $settings->setDefaultSearchPluginId(new PluginId('animedb-gone'));
+        $selection = $this->defaultSearchSelection($settings, ['animedb-anidb' => $this->createStub(SearchByPluginInterface::class)]);
+
+        $this->assertSame('animedb-gone', (string) $selection->unavailableSelected());
+        $this->assertTrue($selection->select(new PluginId('animedb-gone')));
+        $this->assertSame('animedb-gone', (string) $settings->getDefaultSearchPluginId());
+        $this->assertFalse($selection->select(new PluginId('animedb-other')));
+    }
+
+    public function testIndexPassesSearchChoicesWithManifestNamesAndTheStoredSelection(): void
+    {
+        $this->writeManifest('animedb-shikimori', 'Shikimori');
+        $this->registry->reconcile();
+        $settings = new AppSettingsProvider(new AppConfigStore($this->rootDir.'/cfg.json'));
+        $settings->setDefaultSearchPluginId(new PluginId('animedb-shikimori'));
+        $selection = $this->defaultSearchSelection($settings, [
+            'animedb-shikimori' => $this->createStub(SearchByPluginInterface::class),
+            'animedb-uninstalled' => $this->createStub(SearchByPluginInterface::class),
+        ]);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('settings/plugins/index.html.twig', $this->callback(function (array $params): bool {
+                self::assertSame([
+                    ['id' => 'animedb-shikimori', 'name' => 'Shikimori'],
+                    ['id' => 'animedb-uninstalled', 'name' => 'animedb-uninstalled'],
+                ], $params['searchChoices']);
+                self::assertSame('animedb-shikimori', $params['selectedSearchId']);
+                self::assertSame('', $params['unavailableSearchId']);
+                self::assertTrue($params['defaultSearchSaved']);
+
+                return true;
+            }))
+            ->willReturn('<html></html>');
+
+        $this->controller(twig: $twig, defaultSearch: $selection)->index(Request::create('/settings/plugins', 'GET', ['defaultSearchSaved' => '1']));
+    }
+
+    public function testIndexPassesAStoredUnavailableChoiceSeparately(): void
+    {
+        $settings = new AppSettingsProvider(new AppConfigStore($this->rootDir.'/cfg.json'));
+        $settings->setDefaultSearchPluginId(new PluginId('animedb-gone'));
+        $selection = $this->defaultSearchSelection($settings, ['animedb-anidb' => $this->createStub(SearchByPluginInterface::class)]);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('settings/plugins/index.html.twig', $this->callback(function (array $params): bool {
+                self::assertSame('', $params['selectedSearchId']);
+                self::assertSame('animedb-gone', $params['unavailableSearchId']);
+
+                return true;
+            }))
+            ->willReturn('<html></html>');
+
+        $this->controller(twig: $twig, defaultSearch: $selection)->index(Request::create('/settings/plugins'));
+    }
+
     public function testSetDefaultSearchRejectsInvalidCsrfToken(): void
     {
         $csrf = $this->createStub(CsrfTokenManagerInterface::class);

@@ -345,10 +345,12 @@ final class PluginController
             $searchChoices[] = ['id' => (string) $pluginId, 'name' => $installed !== null ? $installed->manifest->name : (string) $pluginId];
         }
         $selectedSearch = $this->defaultSearch->selected();
+        $unavailableSearch = $this->defaultSearch->unavailableSelected();
 
         return new Response($this->twig->render('settings/plugins/index.html.twig', [
             'searchChoices' => $searchChoices,
             'selectedSearchId' => $selectedSearch !== null ? (string) $selectedSearch : '',
+            'unavailableSearchId' => $unavailableSearch !== null ? (string) $unavailableSearch : '',
             'defaultSearchSaved' => $defaultSearchSaved,
             'syncPluginIds' => $syncPluginIds,
             'syncActiveIds' => $syncActiveIds,

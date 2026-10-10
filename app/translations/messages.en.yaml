@@ -227,6 +227,7 @@ settings_plugins:
     default_search_hint: 'Asked first when a storage scan looks up a title; the other plugins follow in their usual order. Without a choice the usual order is kept.'
     default_search_filter: 'Filter plugins'
     default_search_none: 'Not selected'
+    default_search_unavailable: '(unavailable now, still saved)'
     default_search_save: 'Save'
     default_search_saved: 'Default search plugin saved.'
     sync_on: on

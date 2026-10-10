@@ -117,6 +117,19 @@ final class PluginsIncompatibleRowRenderingTest extends KernelTestCase
         self::assertMatchesRegularExpression('#<input[^>]*name="plugin" value="" checked>#', $html);
     }
 
+    public function testDefaultSearchSelectShowsAStoredButUnavailableChoiceAsChecked(): void
+    {
+        $html = $this->render($this->plugin(true), [], [
+            'searchChoices' => [],
+            'selectedSearchId' => '',
+            'unavailableSearchId' => 'animedb-gone',
+        ]);
+
+        self::assertMatchesRegularExpression('#<input[^>]*name="plugin" value="animedb-gone" checked>#', $html);
+        self::assertMatchesRegularExpression('#<input[^>]*name="plugin" value=""(?![^>]*checked)[^>]*>#', $html);
+        self::assertStringContainsString('still saved', $html);
+    }
+
     /**
      * The page navigation also links to the market, so match the link by its text.
      */

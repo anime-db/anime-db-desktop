@@ -40,7 +40,9 @@ use Symfony\Component\DependencyInjection\Attribute\AutowireIterator;
  * The current choice is read via {@see AppSettingsProvider::getDefaultSearchPluginId()}, never
  * {@see DefaultSearchPluginRegistry::getDefault()}: that one persists a fallback pick, which
  * would make "nothing chosen" indistinguishable from a real choice. A stored id that is not an
- * available plugin any more is shown as "not chosen" and left untouched in the settings.
+ * available plugin any more stays untouched in the settings and is exposed through
+ * {@see unavailableSelected()}, so the page can show it instead of pretending nothing is chosen
+ * (the scan chain starts asking it again as soon as the plugin is available).
  */
 final class DefaultSearchPluginSelection
 {
@@ -86,12 +88,29 @@ final class DefaultSearchPluginSelection
         return null;
     }
 
+    /** The stored choice when it is not an available search plugin right now, null otherwise. */
+    public function unavailableSelected(): ?PluginId
+    {
+        $configured = $this->appSettings->getDefaultSearchPluginId();
+        if ($configured === null || $this->selected() !== null) {
+            return null;
+        }
+
+        return $configured;
+    }
+
     /**
+     * Re-submitting the stored choice that is unavailable right now is a no-op, not an error.
+     *
      * @return bool false (nothing stored) when $pluginId is not an available search plugin;
      *              null clears the choice
      */
     public function select(?PluginId $pluginId): bool
     {
+        if ($pluginId !== null && (string) $pluginId === (string) $this->unavailableSelected()) {
+            return true;
+        }
+
         if ($pluginId !== null && !\in_array((string) $pluginId, array_map('strval', $this->available()), true)) {
             return false;
         }

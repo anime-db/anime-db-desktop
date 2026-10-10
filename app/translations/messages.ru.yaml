@@ -227,6 +227,7 @@ settings_plugins:
     default_search_hint: 'Опрашивается первым при поиске тайтла в скане хранилища; остальные идут следом в обычном порядке. Без выбора порядок не меняется.'
     default_search_filter: 'Фильтр плагинов'
     default_search_none: 'Не выбран'
+    default_search_unavailable: '(сейчас недоступен, выбор сохранён)'
     default_search_save: 'Сохранить'
     default_search_saved: 'Плагин поиска по умолчанию сохранён.'
     sync_on: вкл.
