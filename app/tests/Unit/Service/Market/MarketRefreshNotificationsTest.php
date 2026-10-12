@@ -34,6 +34,7 @@ use App\Service\Market\MarketSnapshotBuilder;
 use App\Service\Market\MarketSnapshotCache;
 use App\Service\Market\MarketUpdateNotifier;
 use App\Service\Market\MarketUpdateResolver;
+use App\Service\Market\PluginRegistry;
 use App\Service\Market\PluginRegistryCache;
 use App\Service\Market\PluginRegistryFetcher;
 use App\Service\Market\PluginRegistryHighWaterMarkStore;
@@ -74,6 +75,7 @@ final class MarketRefreshNotificationsTest extends TestCase
     private string $secretKey;
     private string $trustedPublicKey;
     private MarketRefreshService $service;
+    private MarketSnapshotCache $snapshotCache;
 
     protected function setUp(): void
     {
@@ -127,12 +129,44 @@ final class MarketRefreshNotificationsTest extends TestCase
 
     public function testFailedRefreshRecordsNothing(): void
     {
+        // A snapshot that already holds a newer version: only the success check keeps the notifier quiet.
         $this->serve(1, '1.1.0');
+        $this->snapshotCache->store((new MarketSnapshotBuilder())->build(PluginRegistry::fromJson($this->registryJson, new NullLogger()), '2.5.0'));
         $this->registryReachable = false;
 
         $this->assertFalse($this->service->refresh());
 
         $this->assertSame(0, $this->rows());
+    }
+
+    public function testRefreshSkippedByTheBusyLockRecordsNothing(): void
+    {
+        $this->serve(1, '1.1.0');
+        $this->snapshotCache->store((new MarketSnapshotBuilder())->build(PluginRegistry::fromJson($this->registryJson, new NullLogger()), '2.5.0'));
+        $holder = fopen($this->dir.'/refresh.lock', 'c');
+        $this->assertNotFalse($holder);
+        flock($holder, \LOCK_EX);
+
+        try {
+            $this->assertTrue($this->service->refresh());
+        } finally {
+            flock($holder, \LOCK_UN);
+            fclose($holder);
+        }
+
+        $this->assertSame(0, $this->rows());
+    }
+
+    public function testFailingNotificationDoesNotFailTheRefresh(): void
+    {
+        $this->serve(1, '1.1.0');
+        // The notifier reads the installed-plugins index; an index that throws makes notify() throw.
+        file_put_contents($this->dir.'/plugins/installed-plugins.php', "<?php throw new \\RuntimeException('broken index');");
+
+        $this->assertTrue($this->service->refresh());
+
+        $this->assertNotNull($this->snapshotCache->load());
+        $this->assertNotNull((new AppConfigStore($this->dir.'/config.json'))->read()[MarketRefreshService::CONFIG_KEY_LAST_REFRESH_AT] ?? null);
     }
 
     public function testTheSameVersionNotifiesOnceEvenAfterTheRecordWasReadOrDeleted(): void
@@ -213,7 +247,7 @@ final class MarketRefreshNotificationsTest extends TestCase
         $renderer = new NotificationRenderer($kinds, $translator, $this->createStub(AppSettingsProvider::class), new NearestBuiltInLocale(), $this->createStub(NotificationSubjectLinker::class), new NullLogger());
         $center = new NotificationCenter($this->connection, $kinds, $renderer, $this->createStub(WsPublisher::class), new NullLogger());
 
-        $snapshotCache = new MarketSnapshotCache($this->dir.'/snapshot.json');
+        $this->snapshotCache = $snapshotCache = new MarketSnapshotCache($this->dir.'/snapshot.json');
         $notifier = new MarketUpdateNotifier(
             new InstalledPluginsRegistry($this->dir.'/plugins', new PluginsConfigStore($this->dir.'/plugins.json'), new NullLogger()),
             new MarketUpdateResolver($snapshotCache, '2.5.0'),
