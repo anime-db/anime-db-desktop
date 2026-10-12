@@ -34,28 +34,25 @@ use App\Service\Notification\NotificationParam;
 use App\Service\Notification\NotificationParamType;
 use App\Service\Notification\NotificationSeverity;
 
-/** A background storage scan failed (issue #1026). The subject is the scan run, when the journal has one. */
-final class ScanFailedKind implements NotificationKindInterface
+/**
+ * A download moved from Pending to Failed (issue #1026). `reason` is the failure reason stored on
+ * the download; null is a failure without one and renders a generic text. A new failure reason of
+ * `Download::markFailed()` is added to {@see self::REASONS} together with its ru/en texts.
+ */
+final class DownloadFailedNotificationKind implements NotificationKindInterface
 {
-    public const string KIND = 'scan_failed';
+    public const string KIND = 'download_failed';
 
-    public const string REASON_MARKER_CONFLICT = 'marker_conflict';
-    public const string REASON_EXCEPTION = 'exception';
+    /** The closed set of non-null `reason` codes. */
+    public const array REASONS = ['disk_space', 'unexpected_layout', 'storage_conflict', 'name_conflict', 'move_failed'];
 
-    /** The closed set of `reason` codes. */
-    public const array REASONS = [self::REASON_MARKER_CONFLICT, self::REASON_EXCEPTION];
-
-    public static function scanFailed(string $storageName, string $reason, ?int $storageId = null, ?int $runId = null): NotificationDraft
+    public static function draft(string $animeTitle, int $animeId, ?string $reason): NotificationDraft
     {
-        if (!\in_array($reason, self::REASONS, true)) {
-            throw new \InvalidArgumentException(\sprintf('Unknown scan failure reason "%s".', $reason));
+        if ($reason !== null && !\in_array($reason, self::REASONS, true)) {
+            throw new \InvalidArgumentException(\sprintf('Unknown download failure reason "%s".', $reason));
         }
 
-        return new NotificationDraft(
-            self::KIND,
-            ['name' => $storageName, 'reason' => $reason],
-            ...ScanRunSubject::of($storageId, $runId),
-        );
+        return new NotificationDraft(self::KIND, ['name' => $animeTitle, 'reason' => $reason], 'anime', (string) $animeId);
     }
 
     public function definition(): NotificationKindDefinition
@@ -66,9 +63,9 @@ final class ScanFailedKind implements NotificationKindInterface
             NotificationMergePolicy::Always,
             [
                 'name' => new NotificationParam(NotificationParamType::String),
-                'reason' => new NotificationParam(NotificationParamType::String, codes: self::REASONS),
+                'reason' => new NotificationParam(NotificationParamType::String, nullable: true, codes: self::REASONS),
             ],
-            static fn (): NotificationDraft => self::scanFailed('Anime', self::REASON_MARKER_CONFLICT, 3, 12),
+            static fn (): NotificationDraft => self::draft('Cowboy Bebop', 7, 'disk_space'),
         );
     }
 }

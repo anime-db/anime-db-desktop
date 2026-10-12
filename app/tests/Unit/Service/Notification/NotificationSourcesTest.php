@@ -29,10 +29,10 @@ namespace App\Tests\Unit\Service\Notification;
 
 use App\Service\AppSettingsProvider;
 use App\Service\NearestBuiltInLocale;
-use App\Service\Notification\Kind\DownloadCompletedKind;
-use App\Service\Notification\Kind\DownloadFailedKind;
-use App\Service\Notification\Kind\ScanAttentionKind;
-use App\Service\Notification\Kind\ScanFailedKind;
+use App\Service\Notification\Kind\DownloadCompletedNotificationKind;
+use App\Service\Notification\Kind\DownloadFailedNotificationKind;
+use App\Service\Notification\Kind\ScanAttentionNotificationKind;
+use App\Service\Notification\Kind\ScanFailedNotificationKind;
 use App\Service\Notification\NotificationCenter;
 use App\Service\Notification\NotificationKindRegistry;
 use App\Service\Notification\NotificationRenderer;
@@ -65,7 +65,7 @@ final class NotificationSourcesTest extends TestCase
 
     private function center(): NotificationCenter
     {
-        $registry = new NotificationKindRegistry([new ScanFailedKind(), new ScanAttentionKind(), new DownloadCompletedKind(), new DownloadFailedKind()]);
+        $registry = new NotificationKindRegistry([new ScanFailedNotificationKind(), new ScanAttentionNotificationKind(), new DownloadCompletedNotificationKind(), new DownloadFailedNotificationKind()]);
         $renderer = new NotificationRenderer(
             $registry,
             $this->createStub(\Symfony\Contracts\Translation\TranslatorInterface::class),
@@ -82,9 +82,9 @@ final class NotificationSourcesTest extends TestCase
     {
         $center = $this->center();
 
-        $center->record(ScanAttentionKind::scanAttention('Main', 1, 0, 0, 0, 0, 3, 10));
-        $center->record(ScanAttentionKind::scanAttention('Main', 0, 2, 0, 0, 4, 3, 11));
-        $center->record(ScanAttentionKind::scanAttention('Other', 1, 0, 0, 0, 0, 4, 12));
+        $center->record(ScanAttentionNotificationKind::draft('Main', 1, 0, 0, 0, 0, 3, 10));
+        $center->record(ScanAttentionNotificationKind::draft('Main', 0, 2, 0, 0, 4, 3, 11));
+        $center->record(ScanAttentionNotificationKind::draft('Other', 1, 0, 0, 0, 0, 4, 12));
 
         $rows = $this->connection->fetchAllAssociative('SELECT * FROM notification ORDER BY id');
         $this->assertCount(2, $rows);
@@ -102,12 +102,12 @@ final class NotificationSourcesTest extends TestCase
     {
         $center = $this->center();
 
-        $center->record(ScanFailedKind::scanFailed('Main', 'exception', 3, 10));
-        $center->record(ScanFailedKind::scanFailed('Main', 'exception', 3, 11));
-        $center->record(DownloadCompletedKind::downloadCompleted('Trigun', 7));
-        $center->record(DownloadCompletedKind::downloadCompleted('Trigun', 7));
-        $center->record(DownloadFailedKind::downloadFailed('Trigun', 7, null));
-        $center->record(DownloadFailedKind::downloadFailed('Trigun', 7, null));
+        $center->record(ScanFailedNotificationKind::draft('Main', 'exception', 3, 10));
+        $center->record(ScanFailedNotificationKind::draft('Main', 'exception', 3, 11));
+        $center->record(DownloadCompletedNotificationKind::draft('Trigun', 7));
+        $center->record(DownloadCompletedNotificationKind::draft('Trigun', 7));
+        $center->record(DownloadFailedNotificationKind::draft('Trigun', 7, null));
+        $center->record(DownloadFailedNotificationKind::draft('Trigun', 7, null));
 
         $this->assertSame(6, (int) $this->connection->fetchOne('SELECT COUNT(*) FROM notification'));
         $this->assertSame(
@@ -118,23 +118,23 @@ final class NotificationSourcesTest extends TestCase
 
     public function testScanDraftsWithoutAJournalRunHaveNoSubject(): void
     {
-        $this->assertNull(ScanFailedKind::scanFailed('Main', 'marker_conflict')->subject());
-        $this->assertNull(ScanAttentionKind::scanAttention('Main', 1, 2, 3, 4, 5, 3)->subject());
-        $this->assertSame(['type' => 'storage_scan_run', 'id' => '3:12'], ScanAttentionKind::scanAttention('Main', 1, 2, 3, 4, 5, 3, 12)->subject());
+        $this->assertNull(ScanFailedNotificationKind::draft('Main', 'marker_conflict')->subject());
+        $this->assertNull(ScanAttentionNotificationKind::draft('Main', 1, 2, 3, 4, 5, 3)->subject());
+        $this->assertSame(['type' => 'storage_scan_run', 'id' => '3:12'], ScanAttentionNotificationKind::draft('Main', 1, 2, 3, 4, 5, 3, 12)->subject());
     }
 
     public function testFactoriesRejectCodesOutsideTheClosedSets(): void
     {
         $this->expectException(\InvalidArgumentException::class);
 
-        DownloadFailedKind::downloadFailed('Trigun', 7, 'brand_new_reason');
+        DownloadFailedNotificationKind::draft('Trigun', 7, 'brand_new_reason');
     }
 
     public function testScanFailedRejectsAnUnknownReason(): void
     {
         $this->expectException(\InvalidArgumentException::class);
 
-        ScanFailedKind::scanFailed('Main', 'brand_new_reason');
+        ScanFailedNotificationKind::draft('Main', 'brand_new_reason');
     }
 
     /** @return iterable<string, array<string>> */
@@ -163,6 +163,6 @@ final class NotificationSourcesTest extends TestCase
             }
         }
         $this->assertEqualsCanonicalizing(['marker_conflict', 'exception'], array_keys($catalogue['scan_failed']['reason']));
-        $this->assertEqualsCanonicalizing(['none', ...DownloadFailedKind::REASONS], array_keys($catalogue['download_failed']['reason']));
+        $this->assertEqualsCanonicalizing(['none', ...DownloadFailedNotificationKind::REASONS], array_keys($catalogue['download_failed']['reason']));
     }
 }

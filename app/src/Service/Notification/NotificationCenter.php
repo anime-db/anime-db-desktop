@@ -109,22 +109,6 @@ class NotificationCenter
     }
 
     /**
-     * Marks the unread record of a merging kind with this key as read: the situation it described
-     * is gone. Never throws, like {@see record()}.
-     */
-    public function resolve(string $kind, string $dedupKey): void
-    {
-        try {
-            $this->connection->executeStatement(
-                'UPDATE notification SET read_at = ? WHERE dedup_key = ? AND read_at IS NULL',
-                [time(), $kind.':'.$dedupKey],
-            );
-        } catch (\Throwable $e) {
-            $this->logger->error('Resolving a notification failed.', ['kind' => $kind, 'exception' => $e]);
-        }
-    }
-
-    /**
      * One atomic statement: an unread record with the same key (the partial unique index) absorbs
      * the event, otherwise a new record is inserted. A `once` key is claimed in the same
      * transaction, so a failed insert releases it again.

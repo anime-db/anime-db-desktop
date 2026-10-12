@@ -29,7 +29,7 @@ namespace App\EventSubscriber;
 
 use AnimeDb\PluginContracts\Download\DownloadCompletedEvent;
 use App\Entity\Anime;
-use App\Service\Notification\Kind\DownloadCompletedKind;
+use App\Service\Notification\Kind\DownloadCompletedNotificationKind;
 use App\Service\Notification\NotificationCenter;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Log\LoggerInterface;
@@ -63,7 +63,7 @@ final class DownloadCompletedNotificationSubscriber implements EventSubscriberIn
                 return;
             }
 
-            $this->center->record(DownloadCompletedKind::downloadCompleted($anime->getTitle(), $event->anime->value));
+            $this->center->record(DownloadCompletedNotificationKind::draft($anime->getTitle(), $event->anime->value));
         } catch (\Throwable $exception) {
             $this->logger->error('Preparing the download_completed notification failed; the download itself is not affected.', ['exception' => $exception]);
         }

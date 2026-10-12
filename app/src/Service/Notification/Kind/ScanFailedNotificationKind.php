@@ -34,36 +34,27 @@ use App\Service\Notification\NotificationParam;
 use App\Service\Notification\NotificationParamType;
 use App\Service\Notification\NotificationSeverity;
 
-/**
- * A finished background scan left items that need the user's action (issue #1026). Merged by
- * storage while unread: a repeated scan refreshes the counters of the unread record, and a scan with nothing left to act on marks it read.
- */
-final class ScanAttentionKind implements NotificationKindInterface
+/** A background storage scan failed (issue #1026). The subject is the scan run, when the journal has one. */
+final class ScanFailedNotificationKind implements NotificationKindInterface
 {
-    public const string KIND = 'scan_attention';
+    public const string KIND = 'scan_failed';
 
-    public static function scanAttention(
-        string $storageName,
-        int $needsConfirmation,
-        int $needsManualEntry,
-        int $filesMissing,
-        int $conflict,
-        int $error,
-        int $storageId,
-        ?int $runId = null,
-    ): NotificationDraft {
+    public const string REASON_MARKER_CONFLICT = 'marker_conflict';
+    public const string REASON_EXCEPTION = 'exception';
+
+    /** The closed set of `reason` codes. */
+    public const array REASONS = [self::REASON_MARKER_CONFLICT, self::REASON_EXCEPTION];
+
+    public static function draft(string $storageName, string $reason, ?int $storageId = null, ?int $runId = null): NotificationDraft
+    {
+        if (!\in_array($reason, self::REASONS, true)) {
+            throw new \InvalidArgumentException(\sprintf('Unknown scan failure reason "%s".', $reason));
+        }
+
         return new NotificationDraft(
             self::KIND,
-            [
-                'name' => $storageName,
-                'needs_confirmation' => $needsConfirmation,
-                'needs_manual_entry' => $needsManualEntry,
-                'files_missing' => $filesMissing,
-                'conflict' => $conflict,
-                'error' => $error,
-            ],
+            ['name' => $storageName, 'reason' => $reason],
             ...ScanRunSubject::of($storageId, $runId),
-            dedupKey: 'storage:'.$storageId,
         );
     }
 
@@ -71,17 +62,13 @@ final class ScanAttentionKind implements NotificationKindInterface
     {
         return new NotificationKindDefinition(
             self::KIND,
-            NotificationSeverity::Warning,
-            NotificationMergePolicy::CoalesceUnread,
+            NotificationSeverity::Error,
+            NotificationMergePolicy::Always,
             [
                 'name' => new NotificationParam(NotificationParamType::String),
-                'needs_confirmation' => new NotificationParam(NotificationParamType::Int),
-                'needs_manual_entry' => new NotificationParam(NotificationParamType::Int),
-                'files_missing' => new NotificationParam(NotificationParamType::Int),
-                'conflict' => new NotificationParam(NotificationParamType::Int),
-                'error' => new NotificationParam(NotificationParamType::Int),
+                'reason' => new NotificationParam(NotificationParamType::String, codes: self::REASONS),
             ],
-            static fn (): NotificationDraft => self::scanAttention('Anime', 2, 1, 0, 3, 1, 3, 12),
+            static fn (): NotificationDraft => self::draft('Anime', self::REASON_MARKER_CONFLICT, 3, 12),
         );
     }
 }

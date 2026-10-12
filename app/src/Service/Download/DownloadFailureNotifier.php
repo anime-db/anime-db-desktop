@@ -28,7 +28,7 @@ declare(strict_types=1);
 namespace App\Service\Download;
 
 use App\Entity\Download;
-use App\Service\Notification\Kind\DownloadFailedKind;
+use App\Service\Notification\Kind\DownloadFailedNotificationKind;
 use App\Service\Notification\NotificationCenter;
 use Psr\Log\LoggerInterface;
 
@@ -53,7 +53,7 @@ class DownloadFailureNotifier
             $anime = $download->getAnime();
             $animeId = $anime->id ?? throw new \LogicException('Anime must have an id once it has a Download row pointing at it.');
 
-            $this->center->record(DownloadFailedKind::downloadFailed($anime->getTitle(), $animeId, $reason));
+            $this->center->record(DownloadFailedNotificationKind::draft($anime->getTitle(), $animeId, $reason));
         } catch (\Throwable $exception) {
             $this->logger->error('Preparing the download_failed notification failed; the download itself is not affected.', ['exception' => $exception]);
         }

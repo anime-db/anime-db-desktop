@@ -517,12 +517,8 @@ final class ScanStorageMessageHandlerTest extends TestCase
         $this->assertSame(999, $failed['data']['storage_id']);
         $this->assertSame('exception', $failed['data']['reason']);
 
-        // Recorded before the exception is rethrown; no journal row yet, so no subject.
-        $this->assertCount(1, $this->notifications->drafts);
-        $draft = $this->notifications->drafts[0];
-        $this->assertSame('scan_failed', $draft->kind);
-        $this->assertSame(['name' => '#999', 'reason' => 'exception'], $draft->params);
-        $this->assertNull($draft->subject());
+        // The storage is gone (a race with its deletion): there is nothing to notify about.
+        $this->assertSame([], $this->notifications->drafts);
 
         // The entity lookup fails before JobLockService ever touches the connection, so the
         // table may not exist yet — that in itself proves no lock was taken.
@@ -797,18 +793,14 @@ final class ScanStorageMessageHandlerTest extends TestCase
         $this->assertSame([], $this->notifications->drafts);
     }
 
-    public function testACleanScanResolvesTheUnreadScanAttentionOfTheStorageOnly(): void
+    public function testACleanScanWritesNothingAndLeavesTheUnreadRecordAlone(): void
     {
-        $this->invokeNotifyAttention([ScanResultItem::updated(new TvAnime(), 'U')]);
-        $this->invokeNotifyAttention([]);
-        $this->assertCount(2, $this->notifications->resolved);
-        foreach ($this->notifications->resolved as $resolved) {
-            $this->assertMatchesRegularExpression('/^scan_attention:storage:\d+$/', $resolved);
-        }
-
-        $this->notifications->resolved = [];
         $this->invokeNotifyAttention([ScanResultItem::error('C', 'C', 'boom')]);
-        $this->assertSame([], $this->notifications->resolved);
+        $this->assertCount(1, $this->notifications->drafts);
+
+        $this->invokeNotifyAttention([]);
+        $this->invokeNotifyAttention([ScanResultItem::updated(new TvAnime(), 'U')]);
+        $this->assertCount(1, $this->notifications->drafts);
     }
 
     public function testAFailingNotificationDoesNotTurnAFinishedScanIntoAFailedOne(): void
@@ -832,15 +824,19 @@ final class ScanStorageMessageHandlerTest extends TestCase
 
     public function testAFailingNotificationDoesNotReplaceTheScanException(): void
     {
+        $storage = new Storage('Main folder', '/nonexistent/'.uniqid('', true), StorageType::Folder);
+        $this->entityManager->persist($storage);
+        $this->entityManager->flush();
+
         $wsPublisher = $this->newWsPublisher();
         $handler = $this->newHandler($this->createStub(ProcessLivenessChecker::class), $wsPublisher, notificationCenter: new RecordingNotificationCenter(failing: true));
 
         try {
-            $handler(new ScanStorageMessage(999));
+            $handler(new ScanStorageMessage($this->requireId($storage)));
             $this->fail('Expected UnrecoverableMessageHandlingException.');
         } catch (UnrecoverableMessageHandlingException $exception) {
-            $this->assertInstanceOf(\RuntimeException::class, $exception->getPrevious());
-            $this->assertStringContainsString('Storage #999 not found', $exception->getPrevious()->getMessage());
+            $this->assertInstanceOf(\Throwable::class, $exception->getPrevious());
+            $this->assertNotSame('record() failed', $exception->getPrevious()->getMessage());
         }
     }
 
