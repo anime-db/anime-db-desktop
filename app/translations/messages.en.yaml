@@ -983,3 +983,8 @@ download_adopt:
     error_anime_has_folder: 'The entry already has the folder "%path%".'
     error_incoming_target_exists: '"%path%" already exists in the storage — moving out of the temporary folder would end in a name conflict.'
     error_storage_mismatch: 'The download''s files are not in its storage "%storage%" — they cannot be linked.'
+
+notification:
+    fallback:
+        title: Notification
+        body: 'Could not display the notification text from %date%.'
