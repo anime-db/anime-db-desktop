@@ -277,22 +277,10 @@ if (!gotLock) {
                 getWindow: () => mainWindow,
                 Notification,
                 isSystemNotificationsEnabled: getSystemNotifications,
-                onToastClick: (url) => {
-                    if (!mainWindow || mainWindow.isDestroyed()) return;
-                    if (mainWindow.isMinimized()) mainWindow.restore();
-                    mainWindow.show();
-                    mainWindow.focus();
-                    if (url === null) return;
-                    // Only the local backend is navigable from a toast; anything else is ignored.
-                    const base   = `http://127.0.0.1:${frankenphpPort}`;
-                    let target;
-                    try {
-                        target = new URL(url, base);
-                    } catch {
-                        return;
-                    }
-                    if (target.origin === base) mainWindow.loadURL(target.href);
-                },
+                onToastClick: notifications.createToastClickHandler({
+                    getWindow: () => mainWindow,
+                    getBaseUrl: () => `http://127.0.0.1:${frankenphpPort}`,
+                }),
             });
 
             wsClient.on('backend-event', ({ event, data }) => {

@@ -21,7 +21,9 @@
 
 'use strict';
 
-const { createNotificationDelivery, createShownTracker, UNREAD_COUNT_CHANNEL } = require('../../native/notifications');
+const {
+    createNotificationDelivery, createShownTracker, createToastClickHandler, UNREAD_COUNT_CHANNEL,
+} = require('../../native/notifications');
 
 function setup({ focused = false, visible = true, enabled = true, supported = true } = {}) {
     const win = {
@@ -131,5 +133,74 @@ describe('shown tracker', () => {
         tracker.markShown(3, 1);
 
         expect(tracker.markShown(1, 1)).toBe(true);
+    });
+});
+
+describe('toast click handler', () => {
+    const BASE = 'http://127.0.0.1:8000';
+
+    function setupClick({ destroyed = false, minimized = false } = {}) {
+        const win = {
+            isDestroyed: jest.fn(() => destroyed),
+            isMinimized: jest.fn(() => minimized),
+            restore:     jest.fn(),
+            show:        jest.fn(),
+            focus:       jest.fn(),
+            loadURL:     jest.fn(),
+        };
+        const click = createToastClickHandler({ getWindow: () => win, getBaseUrl: () => BASE });
+
+        return { win, click };
+    }
+
+    test('a relative path is opened on the local backend', () => {
+        const { win, click } = setupClick();
+        click('/anime/1');
+        expect(win.loadURL).toHaveBeenCalledWith(`${BASE}/anime/1`);
+        expect(win.show).toHaveBeenCalled();
+        expect(win.focus).toHaveBeenCalled();
+    });
+
+    test('an absolute url on the same origin is opened', () => {
+        const { win, click } = setupClick();
+        click(`${BASE}/anime/2?x=1`);
+        expect(win.loadURL).toHaveBeenCalledWith(`${BASE}/anime/2?x=1`);
+    });
+
+    test.each([
+        'https://evil.example/',
+        '//evil.example/x',
+        'javascript:alert(1)',
+        'file:///C:/Windows/win.ini',
+        'http://127.0.0.1:9999/',
+        'http://localhost:8000/',
+    ])('foreign url %s is not loaded, the window is still shown and focused', (url) => {
+        const { win, click } = setupClick();
+        click(url);
+        expect(win.loadURL).not.toHaveBeenCalled();
+        expect(win.show).toHaveBeenCalled();
+        expect(win.focus).toHaveBeenCalled();
+    });
+
+    test('an invalid url does not throw and is not loaded', () => {
+        const { win, click } = setupClick();
+        expect(() => click('http://')).not.toThrow();
+        expect(win.loadURL).not.toHaveBeenCalled();
+    });
+
+    test('a null url only shows and focuses the window, restoring it when minimized', () => {
+        const { win, click } = setupClick({ minimized: true });
+        click(null);
+        expect(win.restore).toHaveBeenCalled();
+        expect(win.show).toHaveBeenCalled();
+        expect(win.focus).toHaveBeenCalled();
+        expect(win.loadURL).not.toHaveBeenCalled();
+    });
+
+    test('a destroyed window is left alone', () => {
+        const { win, click } = setupClick({ destroyed: true });
+        click('/anime/1');
+        expect(win.show).not.toHaveBeenCalled();
+        expect(win.loadURL).not.toHaveBeenCalled();
     });
 });

@@ -1041,4 +1041,49 @@ final class SettingsTemplateRenderingTest extends KernelTestCase
 
         $this->assertStringContainsString('Ошибка аутентификации на прокси-сервере.', $html);
     }
+
+    /**
+     * @return array{0: string, 1: string} [html, the switch's own <input> tag]
+     */
+    private function renderSystemNotificationsSwitch(bool $enabled): array
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession();
+        /** @var LocaleSwitcher $localeSwitcher */
+        $localeSwitcher = self::getContainer()->get(LocaleSwitcher::class);
+        $localeSwitcher->setLocale('en');
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('settings/index.html.twig', [
+            'availableLocales' => ['en', 'ru'],
+            'unavailableLocale' => null,
+            'themePreference' => ThemePreference::System,
+            'paginationMode' => PaginationMode::InfiniteScroll,
+            'systemNotifications' => $enabled,
+        ]);
+
+        $matched = preg_match('/<input[^>]*name="systemNotifications"[^>]*>/s', $html, $matches);
+        $this->assertSame(1, $matched, 'Expected the system notifications switch to be present.');
+
+        return [$html, $matches[0]];
+    }
+
+    public function testSettingsIndexRendersSystemNotificationsSwitchChecked(): void
+    {
+        [$html, $input] = $this->renderSystemNotificationsSwitch(true);
+
+        $this->assertStringContainsString('action="/settings/system-notifications"', $html);
+        $this->assertMatchesRegularExpression('/name="_token" value="[^"]+"/', substr($html, (int) strpos($html, '/settings/system-notifications')));
+        $this->assertStringContainsString(' checked', $input);
+        $this->assertStringContainsString('System notifications', $html);
+        $this->assertStringContainsString('Show a system notification when the window is hidden or not in focus.', $html);
+    }
+
+    public function testSettingsIndexRendersSystemNotificationsSwitchUncheckedWhenDisabled(): void
+    {
+        [, $input] = $this->renderSystemNotificationsSwitch(false);
+
+        $this->assertStringNotContainsString('checked', $input);
+    }
 }

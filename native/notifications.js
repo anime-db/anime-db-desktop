@@ -108,7 +108,39 @@ function createNotificationDelivery({ getWindow, Notification, isSystemNotificat
     };
 }
 
+/**
+ * Toast click handler: always brings the window to the front, then opens the notification url
+ * only when it resolves to the local backend origin. The url comes from a WS payload and the main
+ * window has the preload bridge, so anything else (external host, other port, non-http scheme) is
+ * ignored.
+ *
+ * @param {object} deps
+ * @param {() => (import('electron').BrowserWindow | null)} deps.getWindow
+ * @param {() => string} deps.getBaseUrl local backend origin, e.g. 'http://127.0.0.1:8000'
+ * @returns {(url: string|null) => void}
+ */
+function createToastClickHandler({ getWindow, getBaseUrl }) {
+    return (url) => {
+        const win = getWindow();
+        if (win === null || win === undefined || win.isDestroyed()) return;
+        if (win.isMinimized()) win.restore();
+        win.show();
+        win.focus();
+        if (url === null || url === undefined) return;
+
+        const base = getBaseUrl();
+        let target;
+        try {
+            target = new URL(url, base);
+        } catch {
+            return;
+        }
+        if (target.origin === base) win.loadURL(target.href);
+    };
+}
+
 module.exports = {
+    createToastClickHandler,
     NOTIFICATION_CREATED_EVENT,
     UNREAD_COUNT_CHANNEL,
     createShownTracker,
