@@ -52,7 +52,7 @@ final class DownloadCompletedNotificationSubscriberTest extends TestCase
         if ($findFails !== null) {
             $entityManager->method('find')->willThrowException($findFails);
         } else {
-            $entityManager->method('find')->willReturn($anime);
+            $entityManager->method('find')->willReturnCallback(static fn (string $class, mixed $id): ?Anime => $class === Anime::class && $id === 7 ? $anime : null);
         }
 
         return new DownloadCompletedNotificationSubscriber($center, $entityManager, new NullLogger());

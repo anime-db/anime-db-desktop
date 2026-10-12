@@ -36,7 +36,7 @@ use App\Service\Notification\NotificationSeverity;
 
 /**
  * A finished background scan left items that need the user's action (issue #1026). Merged by
- * storage while unread: a repeated scan refreshes the counters of the unread record.
+ * storage while unread: a repeated scan refreshes the counters of the unread record, and a scan with nothing left to act on marks it read.
  */
 final class ScanAttentionKind implements NotificationKindInterface
 {

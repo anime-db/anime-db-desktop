@@ -254,11 +254,14 @@ final class ScanStorageMessageHandler
             $filesMissing = $counts[ScanItemType::FilesMissing->name] ?? 0;
             $conflict = $counts[ScanItemType::Conflict->name] ?? 0;
             $error = $counts[ScanItemType::Error->name] ?? 0;
+            $storageId = $storage->id ?? throw new \LogicException('A scanned storage must have an id.');
             if ($needsConfirmation + $needsManualEntry + $filesMissing + $conflict + $error === 0) {
+                // Nothing left to act on: the unread record of an earlier scan would show stale counters.
+                $this->notificationCenter->resolve(ScanAttentionKind::KIND, 'storage:'.$storageId);
+
                 return;
             }
 
-            $storageId = $storage->id ?? throw new \LogicException('A scanned storage must have an id.');
             $this->notificationCenter->record(ScanAttentionKind::scanAttention(
                 $storage->getName(),
                 $needsConfirmation,

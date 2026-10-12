@@ -78,7 +78,7 @@ final class DownloadCompletionPollerTest extends TestCase
     private StorageMarkerService $markerService;
     private RecordingNotificationCenter $notifications;
 
-    /** @var list<list<mixed>> statuses of all downloads in the database at each record() */
+    /** @var list<array<mixed>> status by id of all downloads in the database at each record() */
     private array $statusesAtRecord = [];
     private Storage $storage;
     private string $root;
@@ -103,7 +103,7 @@ final class DownloadCompletionPollerTest extends TestCase
 
         $this->notifications = new RecordingNotificationCenter();
         $this->notifications->onRecord = function (): void {
-            $this->statusesAtRecord[] = $this->entityManager->getConnection()->fetchFirstColumn('SELECT status FROM downloads');
+            $this->statusesAtRecord[] = $this->entityManager->getConnection()->fetchAllKeyValue('SELECT id, status FROM downloads');
         };
         $this->downloads = new DownloadRepository($this->entityManager);
         $this->markerService = new StorageMarkerService($this->entityManager);
@@ -164,15 +164,18 @@ final class DownloadCompletionPollerTest extends TestCase
     }
 
     /** Exactly one `download_failed`, recorded after the flush that made the row Failed. */
-    private function assertFailureNotified(?string $reason): void
+    private function assertFailureNotified(?string $reason, Anime $anime): void
     {
         $this->assertCount(1, $this->notifications->drafts);
         $draft = $this->notifications->drafts[0];
         $this->assertSame('download_failed', $draft->kind);
         $this->assertSame(['name' => 'Test', 'reason' => $reason], $draft->params);
         $this->assertSame('anime', $draft->subjectType);
+        $this->assertSame((string) $anime->id, $draft->subjectId);
         $this->assertCount(1, $this->statusesAtRecord);
-        $this->assertContains('failed', $this->statusesAtRecord[0]);
+        $failed = $this->entityManager->getRepository(Download::class)->findOneBy(['anime' => $anime]);
+        $this->assertNotNull($failed?->id);
+        $this->assertSame('failed', $this->statusesAtRecord[0][(int) $failed->id] ?? null);
     }
 
     private function persistAnime(): TvAnime
@@ -502,7 +505,7 @@ final class DownloadCompletionPollerTest extends TestCase
         $this->assertNotNull($secondRow);
         $this->assertSame(DownloadStatus::Failed, $secondRow->getStatus());
         $this->assertSame('storage_conflict', $secondRow->getFailureReason());
-        $this->assertFailureNotified('storage_conflict');
+        $this->assertFailureNotified('storage_conflict', $second);
         $this->assertNull($second->getStoragePath());
 
         // The pass reached the end: the third download after the conflict is still processed.
@@ -579,7 +582,7 @@ final class DownloadCompletionPollerTest extends TestCase
         $this->assertSame(DownloadStatus::Failed, $stored->getStatus());
         $this->assertNull($anime->getStorage());
         $this->assertNull($anime->getStoragePath());
-        $this->assertFailureNotified(null);
+        $this->assertFailureNotified(null, $anime);
 
         $this->assertCount(1, $logged);
         $this->assertSame(self::HASH, $logged[0]['context']['infoHash']);
@@ -645,7 +648,7 @@ final class DownloadCompletionPollerTest extends TestCase
         $this->assertTrue($stored->isFailed());
         $this->assertSame(DownloadStatus::Failed, $stored->getStatus());
         $this->assertSame('disk_space', $stored->getFailureReason());
-        $this->assertFailureNotified('disk_space');
+        $this->assertFailureNotified('disk_space', $anime);
 
         // Once Failed, the row drops out of findDistinctPendingInfoHashes() — a second poll must
         // not stop (or log) it again.
@@ -1549,7 +1552,7 @@ final class DownloadCompletionPollerTest extends TestCase
         $this->assertNotNull($stored);
         $this->assertSame(DownloadStatus::Failed, $stored->getStatus());
         $this->assertSame('name_conflict', $stored->getFailureReason());
-        $this->assertFailureNotified('name_conflict');
+        $this->assertFailureNotified('name_conflict', $anime);
     }
 
     public function testNoNotificationWhenMarkFailedDoesNotTransition(): void
@@ -1626,7 +1629,7 @@ final class DownloadCompletionPollerTest extends TestCase
         $this->assertNotNull($stored);
         $this->assertSame(DownloadStatus::Failed, $stored->getStatus());
         $this->assertSame('name_conflict', $stored->getFailureReason());
-        $this->assertFailureNotified('name_conflict');
+        $this->assertFailureNotified('name_conflict', $anime);
     }
 
     /**
@@ -1733,7 +1736,7 @@ final class DownloadCompletionPollerTest extends TestCase
         $this->assertNotNull($stored);
         $this->assertSame(DownloadStatus::Failed, $stored->getStatus());
         $this->assertSame('name_conflict', $stored->getFailureReason());
-        $this->assertFailureNotified('name_conflict');
+        $this->assertFailureNotified('name_conflict', $anime);
     }
 
     /**
@@ -1820,7 +1823,7 @@ final class DownloadCompletionPollerTest extends TestCase
         $this->assertNotNull($stored);
         $this->assertSame(DownloadStatus::Failed, $stored->getStatus());
         $this->assertSame('name_conflict', $stored->getFailureReason());
-        $this->assertFailureNotified('name_conflict');
+        $this->assertFailureNotified('name_conflict', $anime);
     }
 
     /**
@@ -1886,7 +1889,7 @@ final class DownloadCompletionPollerTest extends TestCase
         $this->assertNotNull($stored);
         $this->assertSame(DownloadStatus::Failed, $stored->getStatus());
         $this->assertSame('move_failed', $stored->getFailureReason());
-        $this->assertFailureNotified('move_failed');
+        $this->assertFailureNotified('move_failed', $anime);
     }
 
     /**
@@ -1943,7 +1946,7 @@ final class DownloadCompletionPollerTest extends TestCase
         $this->assertNotNull($stored);
         $this->assertSame(DownloadStatus::Failed, $stored->getStatus());
         $this->assertSame('unexpected_layout', $stored->getFailureReason());
-        $this->assertFailureNotified('unexpected_layout');
+        $this->assertFailureNotified('unexpected_layout', $anime);
         $this->assertSame(0, $stored->getMoveAttempts());
     }
 
@@ -2154,7 +2157,7 @@ final class DownloadCompletionPollerTest extends TestCase
         $this->assertNotNull($stored);
         $this->assertSame(DownloadStatus::Failed, $stored->getStatus());
         $this->assertSame('move_failed', $stored->getFailureReason());
-        $this->assertFailureNotified('move_failed');
+        $this->assertFailureNotified('move_failed', $anime);
     }
 
     /**
@@ -2333,7 +2336,7 @@ final class DownloadCompletionPollerTest extends TestCase
         $this->assertFalse($stored->isCompleted());
         $this->assertSame(DownloadStatus::Failed, $stored->getStatus());
         $this->assertSame('unexpected_layout', $stored->getFailureReason());
-        $this->assertFailureNotified('unexpected_layout');
+        $this->assertFailureNotified('unexpected_layout', $anime);
     }
 }
 

@@ -797,6 +797,20 @@ final class ScanStorageMessageHandlerTest extends TestCase
         $this->assertSame([], $this->notifications->drafts);
     }
 
+    public function testACleanScanResolvesTheUnreadScanAttentionOfTheStorageOnly(): void
+    {
+        $this->invokeNotifyAttention([ScanResultItem::updated(new TvAnime(), 'U')]);
+        $this->invokeNotifyAttention([]);
+        $this->assertCount(2, $this->notifications->resolved);
+        foreach ($this->notifications->resolved as $resolved) {
+            $this->assertMatchesRegularExpression('/^scan_attention:storage:\d+$/', $resolved);
+        }
+
+        $this->notifications->resolved = [];
+        $this->invokeNotifyAttention([ScanResultItem::error('C', 'C', 'boom')]);
+        $this->assertSame([], $this->notifications->resolved);
+    }
+
     public function testAFailingNotificationDoesNotTurnAFinishedScanIntoAFailedOne(): void
     {
         $dir = $this->makeStorageDir();

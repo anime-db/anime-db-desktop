@@ -43,6 +43,14 @@ final class RecordingNotificationCenter extends NotificationCenter
     {
     }
 
+    /** @var list<string> "kind:dedupKey" of every resolve() call */
+    public array $resolved = [];
+
+    public function resolve(string $kind, string $dedupKey): void
+    {
+        $this->resolved[] = $kind.':'.$dedupKey;
+    }
+
     public function record(NotificationDraft $draft): void
     {
         if ($this->failing) {
