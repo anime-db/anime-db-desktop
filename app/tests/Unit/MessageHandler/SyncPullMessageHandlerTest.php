@@ -359,6 +359,24 @@ final class SyncPullMessageHandlerTest extends TestCase
         $this->assertSame([], $notifications->drafts);
     }
 
+    public function testPullThatClosesAnItemWhileRaisingOneStillRecordsTheNotification(): void
+    {
+        $this->addReviewItems(1);
+        $sync = $this->createMock(SyncInterface::class);
+        $sync->method('pull')->willReturnCallback(function (): array {
+            $this->entityManager->createQuery('UPDATE '.SyncReviewItem::class.' item SET item.resolvedAt = :now')->setParameter('now', new \DateTimeImmutable())->execute();
+            $this->addReviewItems(1);
+
+            return [];
+        });
+
+        $notifications = new RecordingNotificationCenter();
+        $store = $this->store(['features' => ['sync' => true], 'syncSeeded' => true]);
+        $this->handler($sync, $store, null, null, $notifications)(new SyncPullMessage(self::ID));
+
+        $this->assertEquals([SyncReviewNotificationKind::draft(1)], $notifications->drafts);
+    }
+
     private function addReviewItems(int $count): void
     {
         for ($i = 0; $i < $count; ++$i) {

@@ -54,7 +54,7 @@ use Symfony\Component\Messenger\Attribute\AsMessageHandler;
  * is set when the seed is dispatched, not when it finishes, so a seed that was lost or has not run yet
  * must not let the pull miss records that only have a source URL and create duplicates of them.
  *
- * When the run leaves more unresolved review items than it started with, a `sync_review` notification
+ * When the run raised new unresolved review items (created, not the net change: a run may close others), a `sync_review` notification
  * is recorded after the lock is released, i.e. after the pull's own commits (issue #1028).
  *
  * A successful pull records `syncLastPullAt`. A `false` result (reauthorization needed) is only
@@ -98,7 +98,7 @@ final class SyncPullMessageHandler
             return;
         }
 
-        $unresolvedBefore = $this->syncReview->countUnresolved();
+        $watermark = $this->syncReview->watermark();
 
         try {
             // Backfill, then the catch-up of pending removals, then the pull (issue #918), see SyncSeedMessageHandler.
@@ -109,9 +109,8 @@ final class SyncPullMessageHandler
             $this->jobLockService->release($jobKey);
         }
 
-        $unresolvedAfter = $this->syncReview->countUnresolved();
-        if ($unresolvedAfter > $unresolvedBefore) {
-            $this->notifications->record(SyncReviewNotificationKind::draft($unresolvedAfter));
+        if ($this->syncReview->countUnresolvedRaisedSince($watermark) > 0) {
+            $this->notifications->record(SyncReviewNotificationKind::draft($this->syncReview->countUnresolved()));
         }
 
         if ($pulled) {

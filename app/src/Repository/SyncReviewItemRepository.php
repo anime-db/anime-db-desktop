@@ -89,4 +89,27 @@ class SyncReviewItemRepository
             ->getQuery()
             ->getSingleScalarResult();
     }
+
+    /** Highest item id, resolved ones included; 0 when there are none. A watermark for {@see self::countUnresolvedAfter()}. */
+    public function maxId(): int
+    {
+        return (int) $this->entityManager->createQueryBuilder()
+            ->select('MAX(item.id)')
+            ->from(SyncReviewItem::class, 'item')
+            ->getQuery()
+            ->getSingleScalarResult();
+    }
+
+    /** Unresolved items created after the {@see self::maxId()} watermark: what a run raised, whatever it closed meanwhile. */
+    public function countUnresolvedAfter(int $watermark): int
+    {
+        return (int) $this->entityManager->createQueryBuilder()
+            ->select('COUNT(item.id)')
+            ->from(SyncReviewItem::class, 'item')
+            ->andWhere('item.resolvedAt IS NULL')
+            ->andWhere('item.id > :watermark')
+            ->setParameter('watermark', $watermark)
+            ->getQuery()
+            ->getSingleScalarResult();
+    }
 }

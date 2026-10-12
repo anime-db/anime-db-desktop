@@ -345,6 +345,24 @@ final class SyncSeedMessageHandlerTest extends TestCase
         $this->assertSame([], $notifications->drafts);
     }
 
+    public function testSeedThatClosesAnItemWhileRaisingOneStillRecordsTheNotification(): void
+    {
+        $this->addReviewItems(1);
+        $sync = $this->createMock(SyncInterface::class);
+        $sync->method('pull')->willReturnCallback(function (): array {
+            $this->entityManager->createQuery('UPDATE '.SyncReviewItem::class.' item SET item.resolvedAt = :now')->setParameter('now', new \DateTimeImmutable())->execute();
+            $this->addReviewItems(1);
+
+            return [];
+        });
+
+        $notifications = new RecordingNotificationCenter();
+        [$syncRegistry, $pluginsConfigStore] = $this->newSyncRegistry(['animedb-shikimori' => $sync]);
+        $this->newHandler($syncRegistry, $pluginsConfigStore, null, $notifications)(new SyncSeedMessage('animedb-shikimori'));
+
+        $this->assertEquals([SyncReviewNotificationKind::draft(1)], $notifications->drafts);
+    }
+
     private function addReviewItems(int $count): void
     {
         for ($i = 0; $i < $count; ++$i) {

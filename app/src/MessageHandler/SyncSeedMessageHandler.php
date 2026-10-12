@@ -134,12 +134,11 @@ final class SyncSeedMessageHandler
         $this->backfillService->backfill($pluginId, $sync);
         $this->sourceRemoval->retryPending($pluginId, $sync);
 
-        $unresolvedBefore = $this->syncReview->countUnresolved();
+        $watermark = $this->syncReview->watermark();
         $seeded = $this->pullSyncService->pull($pluginId, $sync, fn () => $this->jobLockService->heartbeat($jobKey));
         // Issue #1028: after the pull's commits; the seed is what fills the review queue right after connecting a plugin.
-        $unresolvedAfter = $this->syncReview->countUnresolved();
-        if ($unresolvedAfter > $unresolvedBefore) {
-            $this->notifications->record(SyncReviewNotificationKind::draft($unresolvedAfter));
+        if ($this->syncReview->countUnresolvedRaisedSince($watermark) > 0) {
+            $this->notifications->record(SyncReviewNotificationKind::draft($this->syncReview->countUnresolved()));
         }
 
         if ($seeded) {
