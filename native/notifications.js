@@ -57,6 +57,13 @@ function createShownTracker(limit = MAX_SHOWN_PAIRS) {
 }
 
 /**
+ * AppUserModelID of the app. Must equal build.appId in the root package.json (checked by a jest
+ * test): electron-builder strips the `build` field from the packaged package.json, so it cannot be
+ * read at runtime.
+ */
+const APP_USER_MODEL_ID = 'org.anime-db.desktop';
+
+/**
  * Windows binds toasts to the process AppUserModelID; it must equal the one the installer puts on
  * the shortcut (build.appId), otherwise the toast is attributed to another app or not shown.
  *
@@ -158,4 +165,5 @@ module.exports = {
     createShownTracker,
     createNotificationDelivery,
     applyAppUserModelId,
+    APP_USER_MODEL_ID,
 };

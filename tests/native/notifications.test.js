@@ -22,7 +22,7 @@
 'use strict';
 
 const {
-    createNotificationDelivery, createShownTracker, createToastClickHandler, applyAppUserModelId, UNREAD_COUNT_CHANNEL,
+    createNotificationDelivery, createShownTracker, createToastClickHandler, applyAppUserModelId, APP_USER_MODEL_ID, UNREAD_COUNT_CHANNEL,
 } = require('../../native/notifications');
 
 function setup({ focused = false, visible = true, minimized = false, enabled = true, supported = true, noWindow = false } = {}) {
@@ -232,16 +232,20 @@ describe('toast click handler', () => {
 describe('AppUserModelID', () => {
     const { build } = require('../../package.json');
 
-    test('win32 sets the id from build.appId', () => {
+    test('the constant matches build.appId of the installer', () => {
+        expect(APP_USER_MODEL_ID).toBeTruthy();
+        expect(APP_USER_MODEL_ID).toBe(build.appId);
+    });
+
+    test('win32 sets the id', () => {
         const app = { setAppUserModelId: jest.fn() };
-        applyAppUserModelId(app, 'win32', build.appId);
-        expect(app.setAppUserModelId).toHaveBeenCalledWith(build.appId);
-        expect(build.appId).toBeTruthy();
+        applyAppUserModelId(app, 'win32', APP_USER_MODEL_ID);
+        expect(app.setAppUserModelId).toHaveBeenCalledWith(APP_USER_MODEL_ID);
     });
 
     test.each(['linux', 'darwin'])('%s does not set it', (platform) => {
         const app = { setAppUserModelId: jest.fn() };
-        applyAppUserModelId(app, platform, build.appId);
+        applyAppUserModelId(app, platform, APP_USER_MODEL_ID);
         expect(app.setAppUserModelId).not.toHaveBeenCalled();
     });
 });
