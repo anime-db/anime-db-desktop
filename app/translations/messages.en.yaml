@@ -865,6 +865,17 @@ app_notification:
     close_button: Close
     request_failed: Could not complete the action, please try again
 
+notification_list:
+    bell_label: Notifications
+    title: Notifications
+    page_title: Notification history
+    read_all: Mark all as read
+    show_all: Show all notifications
+    empty: No notifications yet.
+    loading: Loading…
+    load_failed: Could not load notifications.
+    unread_marker: 'Unread:'
+
 nav:
     aria_label: Main navigation
     brand: AnimeDB

@@ -42,7 +42,9 @@ final class BaseTemplateRenderingTest extends KernelTestCase
 
         /** @var RequestStack $requestStack */
         $requestStack = self::getContainer()->get('request_stack');
-        $requestStack->push(Request::create('/'));
+        $request = Request::create('/');
+        $request->setSession(new Session(new MockArraySessionStorage()));
+        $requestStack->push($request);
 
         /** @var Environment $twig */
         $twig = self::getContainer()->get('twig');
@@ -64,6 +66,7 @@ final class BaseTemplateRenderingTest extends KernelTestCase
 
         $request = Request::create('/');
         $request->setLocale('ar');
+        $request->setSession(new Session(new MockArraySessionStorage()));
 
         /** @var RequestStack $requestStack */
         $requestStack = self::getContainer()->get('request_stack');

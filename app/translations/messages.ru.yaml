@@ -865,6 +865,17 @@ app_notification:
     close_button: Закрыть
     request_failed: Не удалось выполнить действие, попробуйте ещё раз
 
+notification_list:
+    bell_label: Оповещения
+    title: Оповещения
+    page_title: История оповещений
+    read_all: Прочитать все
+    show_all: Показать все оповещения
+    empty: Оповещений пока нет.
+    loading: Загрузка…
+    load_failed: Не удалось загрузить оповещения.
+    unread_marker: 'Не прочитано:'
+
 nav:
     aria_label: Основная навигация
     brand: AnimeDB

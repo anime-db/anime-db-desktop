@@ -101,6 +101,21 @@
                 </ul>
             </div>
 
+            {% set unreadNotifications = notification_unread_count() %}
+            <div class="dropdown app-nav__bell" data-control="notifications-bell"
+                 data-list-url="{{ path('notifications_recent') }}"
+                 data-mark-read-url="{{ path('notifications_mark_read') }}"
+                 data-read-all-url="{{ path('notifications_read_all') }}"
+                 data-csrf-token="{{ csrf_token('notifications') }}">
+                <button type="button" class="btn btn-outline-secondary position-relative d-inline-flex align-items-center" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false" aria-label="{{ 'notification_list.bell_label'|trans }}">
+                    {{ icon('bell') }}
+                    <span class="app-nav__bell-badge" data-bell-badge{% if unreadNotifications == 0 %} hidden{% endif %}>{{ unreadNotifications }}</span>
+                </button>
+                <div class="dropdown-menu dropdown-menu-end notification-dropdown" data-bell-list data-error="{{ 'notification_list.load_failed'|trans }}">
+                    <p class="notification-dropdown__empty">{{ 'notification_list.loading'|trans }}</p>
+                </div>
+            </div>
+
             <a class="app-nav__link{% if current_nav_section == 'downloads' %} app-nav__link--active{% endif %} btn btn-outline-secondary d-inline-flex align-items-center gap-1" href="{{ path('downloads_index') }}"{% if current_nav_section == 'downloads' %} aria-current="page"{% endif %}>
                 {{ icon('download') }}
                 {{ 'nav.downloads_link'|trans }}

@@ -81,3 +81,23 @@
         display: none;
     }
 }
+
+// Колокол оповещений (issue #1025). Счётчик скрывается атрибутом `hidden`, который bell-контрол
+// выставляет при нуле; `display` задан здесь, поэтому `[hidden]` возвращаем явно.
+.app-nav__bell-badge {
+    position: absolute;
+    top: -6px;
+    inset-inline-end: -6px;
+    min-width: 18px;
+    padding: 0 5px;
+    border-radius: 9px;
+    background: var(--bs-danger);
+    color: #fff;
+    font-size: 0.7rem;
+    line-height: 18px;
+    text-align: center;
+
+    &[hidden] {
+        display: none;
+    }
+}
