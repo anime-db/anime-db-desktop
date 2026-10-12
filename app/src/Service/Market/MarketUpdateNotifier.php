@@ -57,7 +57,7 @@ final class MarketUpdateNotifier
             }
 
             $this->notifications->record(
-                PluginUpdateNotificationKind::plugin_update((string) $plugin->id, $plugin->manifest->name, $version),
+                PluginUpdateNotificationKind::draft((string) $plugin->id, $plugin->manifest->name, $version),
             );
         }
     }

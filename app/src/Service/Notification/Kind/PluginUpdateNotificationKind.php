@@ -41,13 +41,16 @@ use App\Service\Notification\NotificationSeverity;
 final class PluginUpdateNotificationKind implements NotificationKindInterface
 {
     public const string KIND = 'plugin_update';
+    public const string SUBJECT_MARKET_PLUGIN = 'market_plugin';
 
-    public static function plugin_update(string $pluginId, string $name, string $version): NotificationDraft
+    public static function draft(string $pluginId, string $name, string $version): NotificationDraft
     {
         return new NotificationDraft(
             self::KIND,
             ['name' => $name, 'version' => $version],
-            dedupKey: $pluginId.':'.$version,
+            self::SUBJECT_MARKET_PLUGIN,
+            $pluginId,
+            $pluginId.':'.$version,
         );
     }
 
@@ -61,7 +64,7 @@ final class PluginUpdateNotificationKind implements NotificationKindInterface
                 'name' => new NotificationParam(NotificationParamType::String),
                 'version' => new NotificationParam(NotificationParamType::String),
             ],
-            static fn (): NotificationDraft => self::plugin_update('sample/plugin', 'Sample plugin', '1.2.0'),
+            static fn (): NotificationDraft => self::draft('sample/plugin', 'Sample plugin', '1.2.0'),
         );
     }
 }

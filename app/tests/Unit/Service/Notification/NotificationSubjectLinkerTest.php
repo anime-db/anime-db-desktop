@@ -54,7 +54,11 @@ final class NotificationSubjectLinkerTest extends TestCase
         $connection->executeStatement('CREATE TABLE anime (id INTEGER PRIMARY KEY)');
         $connection->executeStatement('INSERT INTO anime (id) VALUES (7)');
         $generator = $this->createStub(UrlGeneratorInterface::class);
-        $generator->method('generate')->willReturnCallback(static fn (string $route, array $params): string => $route === 'settings_plugin_page' ? '/settings/plugins/'.$params['pluginId'] : '/anime/'.$params['id']);
+        $generator->method('generate')->willReturnCallback(static fn (string $route, array $params = []): string => match ($route) {
+            'settings_plugin_page' => '/settings/plugins/'.$params['pluginId'],
+            'settings_market_index' => '/settings/market',
+            default => '/anime/'.$params['id'],
+        });
 
         $dir = $this->createTemporaryDirectory('linker');
         mkdir($dir.'/animedb-mal');
@@ -104,5 +108,18 @@ final class NotificationSubjectLinkerTest extends TestCase
     {
         $this->assertNull($this->linker(enabled: false)->urlFor('plugin', 'animedb-mal'));
         $this->assertNull($this->linker(withPage: false)->urlFor('plugin', 'animedb-mal'));
+    }
+
+    public function testMarketPluginLinksToTheMarketPageEvenWhenNotInstalled(): void
+    {
+        $linker = $this->linker();
+
+        $this->assertSame('/settings/market', $linker->urlFor('market_plugin', 'animedb-mal'));
+        $this->assertSame('/settings/market', $linker->urlFor('market_plugin', 'animedb-gone'));
+    }
+
+    public function testMarketPluginWithMalformedIdHasNoLink(): void
+    {
+        $this->assertNull($this->linker()->urlFor('market_plugin', 'Not A Plugin'));
     }
 }
