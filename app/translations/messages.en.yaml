@@ -987,6 +987,9 @@ download_adopt:
     error_storage_mismatch: 'The download''s files are not in its storage "%storage%" — they cannot be linked.'
 
 notification:
+    sync_reauth:
+        title: Sync plugin needs reauthorization
+        body: 'Sync plugin "%plugin_name%" lost its authorization. Open its settings and connect again — synchronization is paused until then.'
     fallback:
         title: Notification
         body: 'Could not display the notification text from %date%.'

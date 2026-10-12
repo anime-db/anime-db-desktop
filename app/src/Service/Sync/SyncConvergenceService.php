@@ -101,6 +101,7 @@ final class SyncConvergenceService
         private readonly SyncRegistry $syncRegistry,
         private readonly SyncReviewService $reviewService,
         private readonly LoggerInterface $logger,
+        private readonly SyncReauthTracker $reauthTracker,
     ) {
     }
 
@@ -417,6 +418,7 @@ final class SyncConvergenceService
             return null;
         }
 
+        $this->reauthTracker->onSyncSucceeded($participantId);
         $this->clearPushPending($anime, $participantId, $existingRow, $entityManager);
 
         return new ParticipantState(
