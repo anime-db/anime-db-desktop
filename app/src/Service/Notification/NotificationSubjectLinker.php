@@ -35,7 +35,7 @@ use Doctrine\DBAL\Connection;
 use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 
 /**
- * Builds the link of a notification subject (an anime or an installed plugin's settings page). No subject, an unknown subject type or a subject that
+ * Builds the link of a notification subject (an anime, an installed plugin's settings page or the market page of a plugin). No subject, an unknown subject type or a subject that
  * no longer exists give no link: the record still shows its text from the `params` snapshot.
  */
 class NotificationSubjectLinker
@@ -62,6 +62,10 @@ class NotificationSubjectLinker
             return $this->pluginUrl($id);
         }
 
+        if ($type === 'market_plugin' && $id !== null) {
+            return $this->marketUrl($id);
+        }
+
         if ($type === null || $id === null || !isset(self::SUBJECTS[$type]) || preg_match('/^\d+$/', $id) !== 1) {
             return null;
         }
@@ -73,6 +77,20 @@ class NotificationSubjectLinker
         }
 
         return $this->urlGenerator->generate($subject['route'], ['id' => (int) $id]);
+    }
+
+    /**
+     * The market page has no per-plugin anchors, so the link is the page itself: the plugin's "Update" button is there.
+     */
+    private function marketUrl(string $id): ?string
+    {
+        try {
+            new PluginId($id);
+        } catch (InvalidPluginIdException) {
+            return null;
+        }
+
+        return $this->urlGenerator->generate('settings_market_index');
     }
 
     /** The scan run page; a run already evicted from the journal (or a malformed id) has no link. */

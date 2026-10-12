@@ -96,6 +96,7 @@ final class MarketRefreshService
          */
         private readonly ?string $coreVersion,
         private readonly string $refreshLockPath,
+        private readonly ?MarketUpdateNotifier $updateNotifier = null,
     ) {
     }
 
@@ -122,10 +123,30 @@ final class MarketRefreshService
                 return true;
             }
 
-            return $this->doRefresh();
+            $success = $this->doRefresh();
         } finally {
             flock($lockHandle, \LOCK_UN);
             fclose($lockHandle);
+        }
+
+        // Only a refresh this call actually completed notifies (not the "already in progress" no-op
+        // above), and only once the lock is released: the notifier writes to the database.
+        if ($success) {
+            $this->notifyAboutUpdates();
+        }
+
+        return $success;
+    }
+
+    /**
+     * A failing notification must not turn a stored snapshot into a failed refresh.
+     */
+    private function notifyAboutUpdates(): void
+    {
+        try {
+            $this->updateNotifier?->notify();
+        } catch (\Throwable $e) {
+            $this->logger->error('market refresh: recording update notifications failed.', ['exception' => $e]);
         }
     }
 
