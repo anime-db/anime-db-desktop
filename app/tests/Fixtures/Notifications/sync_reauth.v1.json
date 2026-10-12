@@ -1,0 +1,12 @@
+{
+    "kind": "sync_reauth",
+    "severity": "warning",
+    "params": {
+        "plugin_id": "sample-sync",
+        "plugin_name": "Sample Sync"
+    },
+    "subject": {
+        "type": "plugin",
+        "id": "sample-sync"
+    }
+}

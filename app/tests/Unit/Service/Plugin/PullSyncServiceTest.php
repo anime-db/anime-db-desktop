@@ -64,6 +64,7 @@ use App\Service\Search\AnimeSearchResolver;
 use App\Service\Sync\CrossVendorDuplicateDetector;
 use App\Service\Sync\DeletedFromSourceDetector;
 use App\Service\Sync\SyncConvergenceService;
+use App\Service\Sync\SyncReauthTracker;
 use App\Service\Sync\SyncReconciler;
 use App\Service\Sync\SyncReviewService;
 use App\Tests\Support\BuildsAnimeDeleteService;
@@ -131,6 +132,7 @@ final class PullSyncServiceTest extends TestCase
         array $otherSyncs = [],
         ?AnimeSyncStateRepository $stateRepository = null,
         ?LoggerInterface $logger = null,
+        ?SyncReauthTracker $reauthTracker = null,
     ): PullSyncService {
         $bulkFillerService = new BulkFillerService(
             // Never consulted by fillNewFrom() — it works off the sync plugin instance directly.
@@ -186,9 +188,10 @@ final class PullSyncServiceTest extends TestCase
             $syncRegistry,
             new SyncReviewService(new SyncReviewItemRepository($entityManager)),
             new NullLogger(),
+            $reauthTracker ?? new \App\Tests\Support\NullSyncReauthTracker(),
         );
 
-        return new PullSyncService($entityManager, $animeRepository, $bulkFillerService, $duplicateDetector, $deletionDetector, new \App\Service\Sync\TypeMismatchDetector(new SyncReviewService(new SyncReviewItemRepository($entityManager))), $convergenceService, new SyncTombstoneRepository($entityManager), $logger ?? new NullLogger());
+        return new PullSyncService($entityManager, $animeRepository, $bulkFillerService, $duplicateDetector, $deletionDetector, new \App\Service\Sync\TypeMismatchDetector(new SyncReviewService(new SyncReviewItemRepository($entityManager))), $convergenceService, new SyncTombstoneRepository($entityManager), $logger ?? new NullLogger(), $reauthTracker ?? new \App\Tests\Support\NullSyncReauthTracker());
     }
 
     /**
@@ -786,8 +789,9 @@ final class PullSyncServiceTest extends TestCase
             $syncRegistry,
             new SyncReviewService(new SyncReviewItemRepository($this->entityManager)),
             new NullLogger(),
+            new \App\Tests\Support\NullSyncReauthTracker(),
         );
-        $service = new PullSyncService($this->entityManager, new AnimeRepository($this->entityManager), $bulkFillerService, $duplicateDetector, $deletionDetector, new \App\Service\Sync\TypeMismatchDetector(new SyncReviewService(new SyncReviewItemRepository($this->entityManager))), $convergenceService, new SyncTombstoneRepository($this->entityManager), new NullLogger());
+        $service = new PullSyncService($this->entityManager, new AnimeRepository($this->entityManager), $bulkFillerService, $duplicateDetector, $deletionDetector, new \App\Service\Sync\TypeMismatchDetector(new SyncReviewService(new SyncReviewItemRepository($this->entityManager))), $convergenceService, new SyncTombstoneRepository($this->entityManager), new NullLogger(), new \App\Tests\Support\NullSyncReauthTracker());
 
         $sync = $this->syncFillerStub(
             [new SyncItem('42', SyncStatus::Plan, 'Trigun', type: null)],
@@ -1105,6 +1109,22 @@ final class PullSyncServiceTest extends TestCase
         $this->assertCount(0, $items);
     }
 
+    public function testReauthRequiredReportsToTheTrackerAndASuccessfulRunClearsIt(): void
+    {
+        $tracker = new \App\Tests\Support\RecordingSyncReauthTracker();
+        $service = $this->newService($this->entityManager, new AnimeRepository($this->entityManager), reauthTracker: $tracker);
+
+        $dead = (function (): \Generator {
+            throw new ReauthRequiredException('Refresh token is dead.');
+            yield; // @phpstan-ignore deadCode.unreachable
+        })();
+        $this->assertFalse($service->pull($this->pluginId, $this->syncFillerStub($dead, data: null)));
+        $this->assertSame(['required:'.$this->pluginId], $tracker->calls);
+
+        $this->assertTrue($service->pull($this->pluginId, $this->syncFillerStub((static fn (): \Generator => yield from [])(), data: null)));
+        $this->assertSame(['required:'.$this->pluginId, 'ok:'.$this->pluginId], $tracker->calls);
+    }
+
     /**
      * Unlike ReauthRequiredException, a transient failure (network error, external source
      * down, ...) must still propagate uncaught, so a caller's own retry logic sees it — this is
@@ -1340,8 +1360,9 @@ final class PullSyncServiceTest extends TestCase
             $syncRegistry,
             new SyncReviewService(new SyncReviewItemRepository($this->entityManager)),
             new NullLogger(),
+            new \App\Tests\Support\NullSyncReauthTracker(),
         );
-        $service = new PullSyncService($this->entityManager, new AnimeRepository($this->entityManager), $bulkFillerService, $duplicateDetector, $deletionDetector, new \App\Service\Sync\TypeMismatchDetector(new SyncReviewService(new SyncReviewItemRepository($this->entityManager))), $convergenceService, new SyncTombstoneRepository($this->entityManager), new NullLogger());
+        $service = new PullSyncService($this->entityManager, new AnimeRepository($this->entityManager), $bulkFillerService, $duplicateDetector, $deletionDetector, new \App\Service\Sync\TypeMismatchDetector(new SyncReviewService(new SyncReviewItemRepository($this->entityManager))), $convergenceService, new SyncTombstoneRepository($this->entityManager), new NullLogger(), new \App\Tests\Support\NullSyncReauthTracker());
 
         $sync = $this->syncFillerStubPerItem(
             [
