@@ -71,7 +71,10 @@ class NotificationCenter
             }
 
             $now = new \DateTimeImmutable();
-            $written = $this->write($definition, $draft, $now->getTimestamp());
+            // The merge key is namespaced by kind here, not by the callers' convention: two kinds
+            // that happen to build the same raw key must never merge into or silence each other.
+            $dedupKey = $draft->dedupKey === null ? null : $draft->kind.':'.$draft->dedupKey;
+            $written = $this->write($definition, $draft, $dedupKey, $now->getTimestamp());
         } catch (\Throwable $e) {
             $this->logger->error('Recording a notification failed.', ['kind' => $draft->kind, 'exception' => $e]);
 
@@ -112,13 +115,13 @@ class NotificationCenter
      *
      * @return array{id: int, occurrences: int}|null null when a `once` key has already fired
      */
-    private function write(NotificationKindDefinition $definition, NotificationDraft $draft, int $now): ?array
+    private function write(NotificationKindDefinition $definition, NotificationDraft $draft, ?string $dedupKey, int $now): ?array
     {
-        return $this->connection->transactional(function () use ($definition, $draft, $now): ?array {
+        return $this->connection->transactional(function () use ($definition, $draft, $dedupKey, $now): ?array {
             if ($definition->policy === NotificationMergePolicy::Once) {
                 $claimed = $this->connection->executeStatement(
                     'INSERT OR IGNORE INTO notification_once_key (dedup_key, created_at) VALUES (?, ?)',
-                    [$draft->dedupKey, $now],
+                    [$dedupKey, $now],
                 );
                 if ($claimed === 0) {
                     return null;
@@ -143,7 +146,7 @@ class NotificationCenter
                     'subject_type' => $draft->subjectType,
                     'subject_id' => $draft->subjectId,
                     'occurred_at' => $now,
-                    'dedup_key' => $definition->policy === NotificationMergePolicy::Always ? null : $draft->dedupKey,
+                    'dedup_key' => $definition->policy === NotificationMergePolicy::Always ? null : $dedupKey,
                 ],
             );
             if ($row === false) {

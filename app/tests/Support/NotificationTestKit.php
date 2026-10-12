@@ -53,10 +53,16 @@ final class NotificationTestKit extends NotificationDraft
         );
     }
 
-    public static function definition(NotificationMergePolicy $policy = NotificationMergePolicy::CoalesceUnread): NotificationKindDefinition
+    /** A draft of another kind with the given raw merge key, to check that keys are kept apart per kind. */
+    public static function otherKindDraft(string $kind, string $name, string $dedupKey): NotificationDraft
+    {
+        return new self($kind, ['name' => $name, 'count' => 1, 'reason' => 'network'], null, null, $dedupKey);
+    }
+
+    public static function definition(NotificationMergePolicy $policy = NotificationMergePolicy::CoalesceUnread, string $kind = self::KIND): NotificationKindDefinition
     {
         return new NotificationKindDefinition(
-            self::KIND,
+            $kind,
             NotificationSeverity::Warning,
             $policy,
             [

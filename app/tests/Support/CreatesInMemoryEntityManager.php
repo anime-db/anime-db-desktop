@@ -61,6 +61,7 @@ trait CreatesInMemoryEntityManager
         $entityManager = new EntityManager($connection, $config);
 
         (new SchemaTool($entityManager))->createSchema($entityManager->getMetadataFactory()->getAllMetadata());
+        NotificationSchemaIndex::create($entityManager->getConnection());
 
         return $entityManager;
     }

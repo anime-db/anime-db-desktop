@@ -66,7 +66,10 @@ final class NotificationCenterTest extends TestCase
 
     private function center(NotificationMergePolicy $policy = NotificationMergePolicy::CoalesceUnread, ?WsPublisher $ws = null, ?NotificationRenderer $renderer = null, ?NotificationTestLogger $logger = null): NotificationCenter
     {
-        $registry = new NotificationKindRegistry([NotificationTestKit::definition($policy)]);
+        $registry = new NotificationKindRegistry([
+            NotificationTestKit::definition($policy),
+            NotificationTestKit::definition($policy, 'other_event'),
+        ]);
 
         if ($ws === null) {
             $ws = $this->createStub(WsPublisher::class);
@@ -261,11 +264,39 @@ final class NotificationCenterTest extends TestCase
         $this->assertSame(0, $this->rows());
     }
 
-    public function testDocblockForbidsCallingFromDomainEventListenerAndTransactions(): void
+    public function testTwoKindsWithTheSameRawKeyKeepSeparateRecords(): void
     {
-        $doc = (string) (new \ReflectionMethod(NotificationCenter::class, 'record'))->getDocComment();
+        $center = $this->center();
 
-        $this->assertStringContainsString('DomainEventListener', $doc);
-        $this->assertStringContainsString('wrapInTransaction', $doc);
+        $center->record(NotificationTestKit::otherKindDraft('test_event', 'A', 'anime:42'));
+        $center->record(NotificationTestKit::otherKindDraft('other_event', 'B', 'anime:42'));
+
+        $this->assertSame(2, $this->rows());
+        $this->assertSame(1, $this->rows("kind = 'test_event' AND occurrences = 1"));
+        $this->assertSame(1, $this->rows("kind = 'other_event' AND occurrences = 1"));
+    }
+
+    public function testOnceKeyOfOneKindDoesNotSilenceAnotherKind(): void
+    {
+        $center = $this->center(NotificationMergePolicy::Once);
+
+        $center->record(NotificationTestKit::otherKindDraft('test_event', 'A', 'anime:42'));
+        $center->record(NotificationTestKit::otherKindDraft('other_event', 'B', 'anime:42'));
+        $center->record(NotificationTestKit::otherKindDraft('other_event', 'B', 'anime:42'));
+
+        $this->assertSame(2, $this->rows());
+    }
+
+    public function testRecordInsideARolledBackTransactionIsLostButTheEventIsAlreadyPublished(): void
+    {
+        $center = $this->center();
+
+        $this->connection->beginTransaction();
+        $center->record(NotificationTestKit::testEvent('A', 1, 'network'));
+        $this->connection->rollBack();
+
+        // the documented reason not to call record() from inside a transaction
+        $this->assertSame(0, $this->rows());
+        $this->assertCount(1, $this->published);
     }
 }

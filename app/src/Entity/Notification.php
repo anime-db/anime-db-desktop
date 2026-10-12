@@ -39,14 +39,15 @@ use Doctrine\ORM\Mapping as ORM;
  * Records are written through {@see \App\Service\Notification\NotificationCenter}, one atomic SQL
  * statement per record; the entity is for reading and for marking a record read.
  *
- * Merge key: the unique index on `dedup_key`, partial in the schema (WHERE `read_at` IS NULL, see the
- * migration): DBAL cannot express a SQLite partial index in the mapping, so the mapping declares
- * only its columns and the predicate lives in the migration.
+ * Merge key: the unique index UNIQ_NOTIFICATION_DEDUP_UNREAD on `dedup_key`, partial in the schema
+ * (WHERE `read_at` IS NULL, see the migration). DBAL cannot express a SQLite partial unique index in
+ * the mapping, and a full UNIQUE there would make SchemaTool build a different schema than production,
+ * so the mapping does not declare it at all: MappingSchemaComparator skips it, and the test harnesses
+ * add it after createSchema() (see NotificationSchemaIndex).
  */
 #[ORM\Entity]
 #[ORM\Table(name: 'notification')]
 #[ORM\Index(name: 'IDX_NOTIFICATION_OCCURRED_AT', columns: ['occurred_at'])]
-#[ORM\UniqueConstraint(name: 'UNIQ_NOTIFICATION_DEDUP_UNREAD', columns: ['dedup_key'])]
 class Notification
 {
     #[ORM\Id, ORM\GeneratedValue, ORM\Column]

@@ -58,6 +58,12 @@ final class MappingSchemaComparator
     private const UNMAPPED_TABLES = ['doctrine_migration_versions', 'scan_run', 'notification_once_key'];
 
     /**
+     * Indexes absent from the mapping by design, as `table.index`: the partial unique index of the
+     * notification merge key cannot be expressed in the ORM mapping (see the Notification entity).
+     */
+    private const UNMAPPED_INDEXES = ['notification.UNIQ_NOTIFICATION_DEDUP_UNREAD'];
+
+    /**
      * @return list<string> one line per divergence, empty when the mapping matches the schema
      */
     public static function divergences(SchemaDiff $diff): array
@@ -110,6 +116,10 @@ final class MappingSchemaComparator
             }
 
             foreach ($tableDiff->getDroppedIndexes() as $index) {
+                if (\in_array($name.'.'.$index->getName(), self::UNMAPPED_INDEXES, true)) {
+                    continue;
+                }
+
                 $divergences[] = \sprintf('index %s on %s: in the schema, missing from the mapping', $index->getName(), $name);
             }
 

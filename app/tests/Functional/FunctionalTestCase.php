@@ -27,6 +27,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Functional;
 
+use App\Tests\Support\NotificationSchemaIndex;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Tools\SchemaTool;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
@@ -68,6 +69,7 @@ abstract class FunctionalTestCase extends WebTestCase
 
         $entityManager = $this->entityManager();
         (new SchemaTool($entityManager))->createSchema($entityManager->getMetadataFactory()->getAllMetadata());
+        NotificationSchemaIndex::create($entityManager->getConnection());
 
         // Entity listeners dispatch to the Doctrine-backed `async` transport (var/test/queue.db);
         // its table is not part of the ORM schema.
