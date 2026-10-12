@@ -52,9 +52,10 @@ final class MappingSchemaComparator
     /**
      * Tables that are absent from the mapping by design: `doctrine_migration_versions` is the
      * bookkeeping table of the migrations bundle, created by the bundle rather than by a migration
-     * or an entity; `scan_run` is the storage scan journal, written and read through DBAL only.
+     * or an entity; `scan_run` is the storage scan journal, written and read through DBAL only;
+     * `notification_once_key` holds the keys of the once-only notifications, also DBAL only.
      */
-    private const UNMAPPED_TABLES = ['doctrine_migration_versions', 'scan_run'];
+    private const UNMAPPED_TABLES = ['doctrine_migration_versions', 'scan_run', 'notification_once_key'];
 
     /**
      * @return list<string> one line per divergence, empty when the mapping matches the schema
