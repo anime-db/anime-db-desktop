@@ -142,4 +142,28 @@ final class SyncReauthTrackerTest extends TestCase
 
         $this->assertSame([], $this->recorded);
     }
+
+    public function testTheDraftCarriesTheManifestNameOfAnInstalledPlugin(): void
+    {
+        $dir = $this->createTemporaryDirectory('reauth-installed');
+        mkdir($dir.'/animedb-mal');
+        file_put_contents($dir.'/animedb-mal/manifest.json', (string) json_encode([
+            'id' => 'animedb-mal',
+            'name' => 'MAL Sync',
+            'version' => '1.0.0',
+            'type' => 'integration',
+            'features' => ['sync' => true],
+            'require' => ['core' => '>=2.0.0', 'php' => '>=8.2'],
+        ]));
+        $installed = new InstalledPluginsRegistry($dir, new PluginsConfigStore($dir.'/plugins.json'), new NullLogger());
+        $installed->reconcile();
+        $center = $this->createStub(NotificationCenter::class);
+        $center->method('record')->willReturnCallback(function (NotificationDraft $draft): void {
+            $this->recorded[] = $draft;
+        });
+
+        (new SyncReauthTracker($this->connection, $center, $installed, new NullLogger()))->onReauthRequired('animedb-mal');
+
+        $this->assertEquals(SyncReauthNotificationKind::draft('animedb-mal', 'MAL Sync'), $this->recorded[0]);
+    }
 }

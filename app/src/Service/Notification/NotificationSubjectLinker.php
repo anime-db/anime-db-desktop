@@ -29,7 +29,7 @@ namespace App\Service\Notification;
 
 use App\Entity\ValueObject\Exception\InvalidPluginIdException;
 use App\Entity\ValueObject\PluginId;
-use App\Service\Plugin\InstalledPluginsRegistry;
+use App\Service\Plugin\SettingsPageRegistry;
 use Doctrine\DBAL\Connection;
 use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 
@@ -47,7 +47,7 @@ class NotificationSubjectLinker
     public function __construct(
         private readonly UrlGeneratorInterface $urlGenerator,
         private readonly Connection $connection,
-        private readonly InstalledPluginsRegistry $installedPlugins,
+        private readonly SettingsPageRegistry $settingsPages,
     ) {
     }
 
@@ -78,7 +78,8 @@ class NotificationSubjectLinker
             return null;
         }
 
-        return $this->installedPlugins->has($pluginId)
+        // Same reachability gate as the settings route: an installed but disabled plugin, or one without a settings page, is a 404 there.
+        return $this->settingsPages->find($pluginId) !== null
             ? $this->urlGenerator->generate('settings_plugin_page', ['pluginId' => $id])
             : null;
     }

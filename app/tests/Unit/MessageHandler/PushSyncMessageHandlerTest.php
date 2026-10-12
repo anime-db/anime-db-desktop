@@ -538,4 +538,44 @@ final class PushSyncMessageHandlerTest extends TestCase
         $this->expectException(UnrecoverableMessageHandlingException::class);
         $handler(new PushSyncMessage($animeId, new \DateTimeImmutable(), 'animedb-shikimori'));
     }
+
+    public function testOldFormatMessageSetsTheFlagForTheDeadPluginAndClearsItForTheAliveOne(): void
+    {
+        $anime = new MovieAnime();
+        $anime->setTitle('Cowboy Bebop')->setWatchStatus(WatchStatus::Watching)->addSource('https://shikimori.one/animes/1')->addSource('https://myanimelist.net/anime/1');
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+        $animeId = $anime->id ?? throw new \LogicException('Anime must have an id after persisting.');
+        file_put_contents($this->pluginsConfigPath, json_encode([
+            'animedb-shikimori' => ['features' => ['sync' => true]],
+            'animedb-myanimelist' => ['features' => ['sync' => true]],
+        ]));
+
+        $dead = $this->createStub(SyncInterface::class);
+        $dead->method('resolveExternalId')->willReturn('1');
+        $dead->method('push')->willThrowException(new ReauthRequiredException('Refresh token is dead.'));
+        $alive = $this->createStub(SyncInterface::class);
+        $alive->method('resolveExternalId')->willReturn('1');
+        $alive->method('push')->willReturn(new SyncItem('1', SyncStatus::Watching, 'Cowboy Bebop', type: null));
+        $registry = new SyncRegistry(['animedb-shikimori' => $dead, 'animedb-myanimelist' => $alive], new PluginsConfigStore($this->pluginsConfigPath));
+
+        $tracker = new \App\Tests\Support\RecordingSyncReauthTracker();
+        $handler = new PushSyncMessageHandler($this->entityManager, $registry, new AnimeSyncStateRepository($this->entityManager), new NullLogger(), 300, $this->jobLockService, $tracker);
+
+        $serialized = \sprintf(
+            'O:27:"App\Message\PushSyncMessage":2:{s:7:"animeId";i:%d;s:12:"dispatchedAt";O:17:"DateTimeImmutable":3:{s:4:"date";s:26:"%s";s:13:"timezone_type";i:1;s:8:"timezone";s:6:"+00:00";}}',
+            $animeId,
+            (new \DateTimeImmutable())->format('Y-m-d H:i:s.u'),
+        );
+        /** @var PushSyncMessage $oldFormatMessage */
+        $oldFormatMessage = unserialize($serialized);
+
+        try {
+            $handler($oldFormatMessage);
+            $this->fail('Expected an unrecoverable exception.');
+        } catch (UnrecoverableMessageHandlingException) {
+        }
+
+        $this->assertSame(['required:animedb-shikimori', 'ok:animedb-myanimelist'], $tracker->calls);
+    }
 }
