@@ -993,3 +993,25 @@ notification:
     fallback:
         title: Оповещение
         body: 'Не удалось показать текст оповещения от %date%.'
+    scan_failed:
+        title: 'Сбой скана хранилища: %name%'
+        body: 'Скан хранилища «%name%» не завершился: %reason%'
+        reason:
+            marker_conflict: 'маркер хранилища принадлежит другому хранилищу'
+            exception: 'произошла непредвиденная ошибка'
+    scan_attention:
+        title: 'Скан «%name%» требует вашего внимания'
+        body: 'Подтвердить: %needs_confirmation%. Ввести вручную: %needs_manual_entry%. Нет файлов: %files_missing%. Конфликтов: %conflict%. Ошибок: %error%.'
+    download_completed:
+        title: 'Загрузка завершена: %name%'
+        body: 'Загрузка «%name%» завершена, файлы привязаны к записи.'
+    download_failed:
+        title: 'Сбой загрузки: %name%'
+        body: 'Загрузка «%name%» не удалась: %reason%'
+        reason:
+            none: 'загрузку не удалось завершить'
+            disk_space: 'не хватает места на диске'
+            unexpected_layout: 'у скачанных файлов неожиданная структура'
+            storage_conflict: 'папка уже привязана к другой записи'
+            name_conflict: 'имя целевой папки уже занято'
+            move_failed: 'не удалось переместить файлы в хранилище'

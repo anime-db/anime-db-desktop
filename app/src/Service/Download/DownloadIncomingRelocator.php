@@ -77,6 +77,7 @@ final class DownloadIncomingRelocator
         private readonly DownloadStorageFilesystem $storageFilesystem,
         private readonly EntityManagerInterface $entityManager,
         private readonly LoggerInterface $logger,
+        private readonly DownloadFailureNotifier $failureNotifier,
     ) {
     }
 
@@ -125,8 +126,11 @@ final class DownloadIncomingRelocator
         // pointing there is not one — AnimeDownloadLinker::link() compares the same way.
         $occupant = $this->animes->findByStorageAndPath($storage, $folderName);
         if ($occupant !== null && $occupant->id !== $download->getAnime()->id) {
-            $download->markFailed('name_conflict');
+            $failed = $download->markFailed('name_conflict');
             $this->entityManager->flush();
+            if ($failed) {
+                $this->failureNotifier->notify($download, 'name_conflict');
+            }
             $this->logger->warning('Failing download completion: the move target is already linked to another catalog entry.', [
                 'infoHash' => $infoHash,
                 'targetPath' => $targetPath,
@@ -145,8 +149,11 @@ final class DownloadIncomingRelocator
         // move that stalled partway (e.g. a locked file, with only some of its files landed) stuck
         // Pending forever instead of ever hitting MAX_MOVE_ATTEMPTS below.
         if ($download->getMoveAttempts() === 0 && $this->storageFilesystem->pathExists($targetPath)) {
-            $download->markFailed('name_conflict');
+            $failed = $download->markFailed('name_conflict');
             $this->entityManager->flush();
+            if ($failed) {
+                $this->failureNotifier->notify($download, 'name_conflict');
+            }
             $this->logger->warning('Failing download completion: the move target already exists on disk.', [
                 'infoHash' => $infoHash,
                 'targetPath' => $targetPath,
@@ -156,8 +163,11 @@ final class DownloadIncomingRelocator
         }
 
         if ($download->getMoveAttempts() >= self::MAX_MOVE_ATTEMPTS) {
-            $download->markFailed('move_failed');
+            $failed = $download->markFailed('move_failed');
             $this->entityManager->flush();
+            if ($failed) {
+                $this->failureNotifier->notify($download, 'move_failed');
+            }
             $this->logger->warning('Failing download completion: it is still under the incoming directory after the maximum number of move attempts.', [
                 'infoHash' => $infoHash,
                 'attempts' => $download->getMoveAttempts(),

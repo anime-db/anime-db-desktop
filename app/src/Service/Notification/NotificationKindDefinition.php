@@ -80,6 +80,9 @@ final readonly class NotificationKindDefinition
             foreach ($param->codes as $code) {
                 $keys[] = $this->codeKey($name, $code);
             }
+            if ($param->codes !== [] && $param->nullable) {
+                $keys[] = $this->codeKey($name, NotificationParam::NULL_CODE);
+            }
         }
 
         return $keys;

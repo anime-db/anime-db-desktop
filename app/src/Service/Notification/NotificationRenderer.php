@@ -126,7 +126,7 @@ class NotificationRenderer
         foreach ($definition->resolveParams($params) as $name => $value) {
             $codes = $definition->params[$name]->codes;
             if ($codes !== []) {
-                $codeKey = $definition->codeKey($name, (string) $value);
+                $codeKey = $definition->codeKey($name, $value === null ? NotificationParam::NULL_CODE : (string) $value);
                 $text = $this->translator->trans($codeKey, [], 'messages', $locale);
                 $degraded = $degraded || self::isDegraded($text, $codeKey, $this->translator->trans($codeKey, [], 'messages', $locale), []);
                 $placeholders['%'.$name.'%'] = $text;

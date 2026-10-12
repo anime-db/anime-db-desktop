@@ -53,8 +53,14 @@ final class NotificationSubjectLinkerTest extends TestCase
         $connection = DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]);
         $connection->executeStatement('CREATE TABLE anime (id INTEGER PRIMARY KEY)');
         $connection->executeStatement('INSERT INTO anime (id) VALUES (7)');
+        $connection->executeStatement('CREATE TABLE scan_run (id INTEGER PRIMARY KEY, storage_id INTEGER NOT NULL)');
+        $connection->executeStatement('INSERT INTO scan_run (id, storage_id) VALUES (12, 3)');
         $generator = $this->createStub(UrlGeneratorInterface::class);
-        $generator->method('generate')->willReturnCallback(static fn (string $route, array $params): string => $route === 'settings_plugin_page' ? '/settings/plugins/'.$params['pluginId'] : '/anime/'.$params['id']);
+        $generator->method('generate')->willReturnCallback(static fn (string $route, array $params): string => match ($route) {
+            'storage_scan_run' => \sprintf('/storage/%d/scans/%d', $params['id'], $params['run']),
+            'settings_plugin_page' => '/settings/plugins/'.$params['pluginId'],
+            default => '/anime/'.$params['id'],
+        });
 
         $dir = $this->createTemporaryDirectory('linker');
         mkdir($dir.'/animedb-mal');
@@ -89,6 +95,17 @@ final class NotificationSubjectLinkerTest extends TestCase
         $this->assertNull($linker->urlFor('anime', '8'));
         $this->assertNull($linker->urlFor('unknown', '7'));
         $this->assertNull($linker->urlFor('anime', 'x'));
+    }
+
+    public function testScanRunSubjectLinksToTheRunPageUnlessTheRunIsGone(): void
+    {
+        $linker = $this->linker();
+
+        $this->assertSame('/storage/3/scans/12', $linker->urlFor('storage_scan_run', '3:12'));
+        $this->assertNull($linker->urlFor('storage_scan_run', '3:13'));
+        $this->assertNull($linker->urlFor('storage_scan_run', '4:12'));
+        $this->assertNull($linker->urlFor('storage_scan_run', 'x'));
+        $this->assertNull($linker->urlFor('storage_scan_run', null));
     }
 
     public function testInstalledPluginHasALinkAndARemovedOrMalformedOneHasNot(): void

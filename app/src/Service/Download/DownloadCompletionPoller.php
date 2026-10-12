@@ -131,6 +131,7 @@ final class DownloadCompletionPoller
         private readonly EntityManagerInterface $entityManager,
         private readonly FreeSpaceChecker $freeSpaceChecker,
         private readonly LoggerInterface $logger,
+        private readonly DownloadFailureNotifier $failureNotifier,
     ) {
     }
 
@@ -263,10 +264,16 @@ final class DownloadCompletionPoller
         // commands, and "stop" on an unknown id answers 200 while silently doing nothing.
         $this->client->stop((string) ($torrent['hash'] ?? ''));
 
+        $failed = [];
         foreach ($pending as $download) {
-            $download->markFailed('disk_space');
+            if ($download->markFailed('disk_space')) {
+                $failed[] = $download;
+            }
         }
         $this->entityManager->flush();
+        foreach ($failed as $download) {
+            $this->failureNotifier->notify($download, 'disk_space');
+        }
 
         $this->logger->warning('Paused download: not enough free disk space for its remaining bytes.', [
             'infoHash' => $infoHash,
@@ -286,8 +293,11 @@ final class DownloadCompletionPoller
             // download targeted is gone (deleted while it was still in flight — ON DELETE SET
             // NULL on target_storage_id), and leaving it Pending would just retry (and log) on
             // every poll forever, wedging findDistinctPendingInfoHashes() on this hash for good.
-            $download->markFailed();
+            $failed = $download->markFailed();
             $this->entityManager->flush();
+            if ($failed) {
+                $this->failureNotifier->notify($download, null);
+            }
             $this->logger->warning('Failing download completion: its target storage was deleted while the download was still in flight.', [
                 'infoHash' => $infoHash,
                 'contentPath' => $contentPath,
@@ -320,8 +330,11 @@ final class DownloadCompletionPoller
             // calling setLocation() with no target name would otherwise merge every file straight
             // into the storage root (see DownloadIncomingRelocator's class docblock).
             if ($this->jail->isBareIncomingRootForHash($relativePath, $infoHash)) {
-                $download->markFailed('unexpected_layout');
+                $failed = $download->markFailed('unexpected_layout');
                 $this->entityManager->flush();
+                if ($failed) {
+                    $this->failureNotifier->notify($download, 'unexpected_layout');
+                }
                 $this->logger->warning('Failing download completion: content_path is the bare incoming directory for this torrent, with no name-carrying subfolder to derive a move target from (likely qBittorrent\'s "don\'t create a subfolder" option).', [
                     'infoHash' => $infoHash,
                     'contentPath' => $contentPath,
@@ -350,8 +363,11 @@ final class DownloadCompletionPoller
             // storage. Unlike the jail/hidden-entry skips above, this never resolves itself on its
             // own (content_path keeps reporting the same root on every poll), so leaving the row
             // Pending would warn and retry forever instead of surfacing as a failure.
-            $download->markFailed('unexpected_layout');
+            $failed = $download->markFailed('unexpected_layout');
             $this->entityManager->flush();
+            if ($failed) {
+                $this->failureNotifier->notify($download, 'unexpected_layout');
+            }
             $this->logger->warning('Failing download completion: content_path resolves to the storage root itself, with no top-level entry to link.', [
                 'infoHash' => $infoHash,
                 'contentPath' => $contentPath,
@@ -394,8 +410,11 @@ final class DownloadCompletionPoller
             // forever. link() threw before touching the entity or flushing, so undo the in-memory
             // Completed and persist a terminal Failed instead.
             $download->revertToPending();
-            $download->markFailed('storage_conflict');
+            $failed = $download->markFailed('storage_conflict');
             $this->entityManager->flush();
+            if ($failed) {
+                $this->failureNotifier->notify($download, 'storage_conflict');
+            }
             $this->logger->warning(\sprintf(
                 'Failing download completion: the content path is already linked to anime #%d. To free it: '
                 .'if anime #%d got this folder from another download of its own, run app:downloads:unlink '

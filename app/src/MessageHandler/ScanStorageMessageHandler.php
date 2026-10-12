@@ -33,6 +33,9 @@ use AnimeDb\PluginContracts\Model\AnimeId;
 use App\Entity\Storage;
 use App\Message\ScanStorageMessage;
 use App\Service\JobLock\JobLockService;
+use App\Service\Notification\Kind\ScanAttentionNotificationKind;
+use App\Service\Notification\Kind\ScanFailedNotificationKind;
+use App\Service\Notification\NotificationCenter;
 use App\Service\Plugin\PluginDisplayName;
 use App\Service\Storage\Scan\ScanCandidate;
 use App\Service\Storage\Scan\ScanItemType;
@@ -81,6 +84,7 @@ final class ScanStorageMessageHandler
         private readonly EventDispatcherInterface $eventDispatcher,
         private readonly PluginDisplayName $pluginDisplayName,
         private readonly ScanRunJournal $journal,
+        private readonly NotificationCenter $notificationCenter,
     ) {
     }
 
@@ -89,6 +93,7 @@ final class ScanStorageMessageHandler
         $jobKey = ScanStorageMessage::jobKey($message->storageId);
         $lockAcquired = false;
         $runId = null;
+        $storage = null;
 
         try {
             $storage = $this->entityManager->find(Storage::class, $message->storageId);
@@ -133,12 +138,14 @@ final class ScanStorageMessageHandler
                     'reason' => 'marker_conflict',
                     'message' => 'The storage desktop.ini marker is owned by another storage.',
                 ]);
+                $this->notifyFailed($storage, $message->storageId, $runId, ScanFailedNotificationKind::REASON_MARKER_CONFLICT);
 
                 return;
             }
 
             $items = array_map($this->serializeItem(...), $result->items);
             $this->journalDone($runId, $items);
+            $this->notifyAttention($storage, $runId, $result->items);
 
             $this->wsPublisher->publish('scan.done', [
                 'storage_id' => $message->storageId,
@@ -153,6 +160,10 @@ final class ScanStorageMessageHandler
                 'reason' => 'exception',
                 'message' => $exception->getMessage(),
             ]);
+            // A storage deleted while the message was queued is a race, not a scan failure: nothing to report.
+            if ($storage !== null) {
+                $this->notifyFailed($storage, $message->storageId, $runId, ScanFailedNotificationKind::REASON_EXCEPTION);
+            }
 
             throw new UnrecoverableMessageHandlingException(\sprintf('Storage scan failed for storage #%d.', $message->storageId), previous: $exception);
         } finally {
@@ -210,6 +221,65 @@ final class ScanStorageMessageHandler
         } catch (\Throwable $exception) {
             $this->logJournalFailure($exception);
         }
+    }
+
+    /*
+     * Notifications are written after the scan's own flush and the journal, never inside the scan's
+     * transaction. Neither building the draft nor recording it may change the outcome of the scan:
+     * a failure here must not reach the catch (\Throwable) of __invoke() (it would publish
+     * `scan.failed` for a scan that succeeded), so it is logged and swallowed.
+     */
+
+    private function notifyFailed(Storage $storage, int $storageId, ?int $runId, string $reason): void
+    {
+        try {
+            $this->notificationCenter->record(ScanFailedNotificationKind::draft($storage->getName(), $reason, $storageId, $runId));
+        } catch (\Throwable $exception) {
+            $this->logNotificationFailure($exception);
+        }
+    }
+
+    /**
+     * `scan_attention` when the result has an item the user has to act on; Updated and AutoLinked
+     * items need nothing and do not count.
+     *
+     * @param list<ScanResultItem> $items
+     */
+    private function notifyAttention(Storage $storage, ?int $runId, array $items): void
+    {
+        try {
+            $counts = [];
+            foreach ($items as $item) {
+                $counts[$item->type->name] = ($counts[$item->type->name] ?? 0) + 1;
+            }
+            $needsConfirmation = $counts[ScanItemType::NeedsConfirmation->name] ?? 0;
+            $needsManualEntry = $counts[ScanItemType::NeedsManualEntry->name] ?? 0;
+            $filesMissing = $counts[ScanItemType::FilesMissing->name] ?? 0;
+            $conflict = $counts[ScanItemType::Conflict->name] ?? 0;
+            $error = $counts[ScanItemType::Error->name] ?? 0;
+            $storageId = $storage->id ?? throw new \LogicException('A scanned storage must have an id.');
+            if ($needsConfirmation + $needsManualEntry + $filesMissing + $conflict + $error === 0) {
+                return;
+            }
+
+            $this->notificationCenter->record(ScanAttentionNotificationKind::draft(
+                $storage->getName(),
+                $needsConfirmation,
+                $needsManualEntry,
+                $filesMissing,
+                $conflict,
+                $error,
+                $storageId,
+                $runId,
+            ));
+        } catch (\Throwable $exception) {
+            $this->logNotificationFailure($exception);
+        }
+    }
+
+    private function logNotificationFailure(\Throwable $exception): void
+    {
+        $this->logger->error('Failed to record a storage scan notification; the scan itself is not affected.', ['exception' => $exception]);
     }
 
     private function logJournalFailure(\Throwable $exception): void
