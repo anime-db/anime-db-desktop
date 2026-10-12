@@ -67,8 +67,8 @@ final class NotificationCenterTest extends TestCase
     private function center(NotificationMergePolicy $policy = NotificationMergePolicy::CoalesceUnread, ?WsPublisher $ws = null, ?NotificationRenderer $renderer = null, ?NotificationTestLogger $logger = null): NotificationCenter
     {
         $registry = new NotificationKindRegistry([
-            NotificationTestKit::definition($policy),
-            NotificationTestKit::definition($policy, 'other_event'),
+            new NotificationTestKit($policy),
+            new NotificationTestKit($policy, 'other_event'),
         ]);
 
         if ($ws === null) {
@@ -131,7 +131,7 @@ final class NotificationCenterTest extends TestCase
     {
         $center = $this->center();
         $center->record(NotificationTestKit::testEvent('A', 1, 'network'));
-        $this->connection->executeStatement('UPDATE notification SET read_at = 5');
+        $this->connection->executeStatement('UPDATE notification SET read_at = '.time());
 
         $center->record(NotificationTestKit::testEvent('A', 1, 'network'));
 
@@ -173,14 +173,31 @@ final class NotificationCenterTest extends TestCase
         $center = $this->center(NotificationMergePolicy::Always);
         $now = time();
         $insert = 'INSERT INTO notification (kind, severity, params, occurred_at, read_at, occurrences) VALUES (\'test_event\', \'info\', \'{}\', ?, ?, 1)';
-        $this->connection->executeStatement($insert, [$now - 31 * 86400, $now]);
-        $this->connection->executeStatement($insert, [$now - 31 * 86400, null]);
-        $this->connection->executeStatement($insert, [$now - 29 * 86400, $now]);
+        $this->connection->executeStatement($insert, [$now - 40 * 86400, $now - 31 * 86400]);
+        $this->connection->executeStatement($insert, [$now - 40 * 86400, null]);
+        $this->connection->executeStatement($insert, [$now - 40 * 86400, $now - 29 * 86400]);
 
         $center->record(NotificationTestKit::testEvent('A', 1, 'network'));
 
         $this->assertSame(3, $this->rows());
         $this->assertSame(1, $this->rows('read_at IS NULL AND occurred_at < '.($now - 30 * 86400)));
+    }
+
+    public function testRetentionCountsFromReadAtNotFromOccurredAt(): void
+    {
+        $center = $this->center(NotificationMergePolicy::Always);
+        $now = time();
+        $insert = 'INSERT INTO notification (kind, severity, params, occurred_at, read_at, occurrences) VALUES (\'test_event\', \'info\', \'{}\', ?, ?, 1)';
+        // happened 40 days ago, read just now: kept
+        $this->connection->executeStatement($insert, [$now - 40 * 86400, $now]);
+        // read 31 days ago: dropped
+        $this->connection->executeStatement($insert, [$now - 40 * 86400, $now - 31 * 86400]);
+
+        $center->record(NotificationTestKit::testEvent('A', 1, 'network'));
+
+        $this->assertSame(1, $this->rows('read_at = '.$now));
+        $this->assertSame(0, $this->rows('read_at = '.($now - 31 * 86400)));
+        $this->assertSame(2, $this->rows());
     }
 
     public function testCapEvictsReadRecordsFirstAndUnreadOnlyWhenUnreadAloneExceedIt(): void

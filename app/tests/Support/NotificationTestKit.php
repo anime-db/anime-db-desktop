@@ -27,6 +27,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Support;
 
+use App\Service\Notification\Kind\NotificationKindInterface;
 use App\Service\Notification\NotificationDraft;
 use App\Service\Notification\NotificationKindDefinition;
 use App\Service\Notification\NotificationMergePolicy;
@@ -38,13 +39,19 @@ use App\Service\Notification\NotificationSeverity;
  * A test-only notification kind (the production code has none yet) with its draft factory, used to
  * exercise the mechanism: merge policies, rendering, the renderability gate.
  */
-final class NotificationTestKit extends NotificationDraft
+final class NotificationTestKit implements NotificationKindInterface
 {
     public const KIND = 'test_event';
 
+    public function __construct(
+        private readonly NotificationMergePolicy $policy = NotificationMergePolicy::CoalesceUnread,
+        private readonly string $kind = self::KIND,
+    ) {
+    }
+
     public static function testEvent(string $name, int $count, string $reason, ?int $animeId = null): NotificationDraft
     {
-        return new self(
+        return new NotificationDraft(
             self::KIND,
             ['name' => $name, 'count' => $count, 'reason' => $reason],
             $animeId !== null ? 'anime' : null,
@@ -56,15 +63,15 @@ final class NotificationTestKit extends NotificationDraft
     /** A draft of another kind with the given raw merge key, to check that keys are kept apart per kind. */
     public static function otherKindDraft(string $kind, string $name, string $dedupKey): NotificationDraft
     {
-        return new self($kind, ['name' => $name, 'count' => 1, 'reason' => 'network'], null, null, $dedupKey);
+        return new NotificationDraft($kind, ['name' => $name, 'count' => 1, 'reason' => 'network'], null, null, $dedupKey);
     }
 
-    public static function definition(NotificationMergePolicy $policy = NotificationMergePolicy::CoalesceUnread, string $kind = self::KIND): NotificationKindDefinition
+    public function definition(): NotificationKindDefinition
     {
         return new NotificationKindDefinition(
-            $kind,
+            $this->kind,
             NotificationSeverity::Warning,
-            $policy,
+            $this->policy,
             [
                 'name' => new NotificationParam(NotificationParamType::String),
                 // added after v1 of the kind: carries a default for older records

@@ -40,8 +40,8 @@ use Symfony\Contracts\Translation\TranslatorInterface;
  * The locale is the raw one from {@see AppSettingsProvider::getLocale()}, not the request's (there
  * is no request in a php-cli worker) and not {@see NearestBuiltInLocale::resolve()}d (that folds e.g.
  * `uk` into `ru`, so a translation plugin's locale would speak a different language than the rest
- * of the UI). A render is degraded when a text is empty, still holds a `%name%` placeholder or
- * equals its translation key. Order: the user's locale as is, then the fallback chain of the
+ * of the UI). A render is degraded when a text is empty, equals its translation key or its
+ * catalogue message uses a `%name%` that no parameter fills. Order: the user's locale as is, then the fallback chain of the
  * nearest built-in locales, then `notification.fallback.*` with a warning in the log.
  */
 class NotificationRenderer
@@ -128,7 +128,7 @@ class NotificationRenderer
             if ($codes !== []) {
                 $codeKey = $definition->codeKey($name, (string) $value);
                 $text = $this->translator->trans($codeKey, [], 'messages', $locale);
-                $degraded = $degraded || self::isDegraded($text, $codeKey);
+                $degraded = $degraded || self::isDegraded($text, $codeKey, $this->translator->trans($codeKey, [], 'messages', $locale), []);
                 $placeholders['%'.$name.'%'] = $text;
             } else {
                 $placeholders['%'.$name.'%'] = self::stringify($value);
@@ -138,8 +138,8 @@ class NotificationRenderer
         $title = $this->translator->trans($definition->titleKey(), $placeholders, 'messages', $locale);
         $body = $this->translator->trans($definition->bodyKey(), $placeholders, 'messages', $locale);
         $degraded = $degraded
-            || self::isDegraded($title, $definition->titleKey())
-            || self::isDegraded($body, $definition->bodyKey());
+            || self::isDegraded($title, $definition->titleKey(), $this->translator->trans($definition->titleKey(), [], 'messages', $locale), $placeholders)
+            || self::isDegraded($body, $definition->bodyKey(), $this->translator->trans($definition->bodyKey(), [], 'messages', $locale), $placeholders);
 
         return new RenderedNotification($title, $body, $url, $degraded);
     }
@@ -171,9 +171,20 @@ class NotificationRenderer
         }
     }
 
-    private static function isDegraded(string $text, string $key): bool
+    /**
+     * Unfilled placeholders are looked up in the catalogue message (`$raw`, translated without
+     * parameters), never in the substituted text: a parameter value such as `%foo%` is user data.
+     *
+     * @param array<string, string> $provided placeholders by their `%name%` form
+     */
+    private static function isDegraded(string $text, string $key, string $raw, array $provided): bool
     {
-        return trim($text) === '' || $text === $key || preg_match('/%[A-Za-z_][A-Za-z0-9_]*%/', $text) === 1;
+        if (trim($text) === '' || $text === $key) {
+            return true;
+        }
+        preg_match_all('/%[A-Za-z_][A-Za-z0-9_]*%/', $raw, $matches);
+
+        return array_diff($matches[0], array_keys($provided)) !== [];
     }
 
     private static function stringify(string|int|bool|null $value): string

@@ -27,11 +27,12 @@ declare(strict_types=1);
 
 namespace App\Service\Notification;
 
+use App\Service\Notification\Kind\NotificationKindInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autoconfigure;
 use Symfony\Component\DependencyInjection\Attribute\AutowireIterator;
 
 /**
- * The set of notification kind definitions, tagged `app.notification_kind`. A kind stored in the
+ * The set of notification kind definitions, collected from the {@see NotificationKindInterface} implementations, tagged `app.notification_kind`. A kind stored in the
  * database but absent here is a normal case (see {@see NotificationRenderer}), hence tryFrom().
  * Public so the renderability gate test can read the real set from the container.
  */
@@ -42,13 +43,14 @@ class NotificationKindRegistry
     private array $definitions = [];
 
     /**
-     * @param iterable<NotificationKindDefinition> $definitions
+     * @param iterable<NotificationKindInterface> $kinds
      */
     public function __construct(
         #[AutowireIterator('app.notification_kind')]
-        iterable $definitions = [],
+        iterable $kinds = [],
     ) {
-        foreach ($definitions as $definition) {
+        foreach ($kinds as $kind) {
+            $definition = $kind->definition();
             $this->definitions[$definition->kind] = $definition;
         }
     }

@@ -29,9 +29,9 @@ namespace App\Service\Notification;
 
 /**
  * A notification to record: the kind, the snapshot of its parameters, the subject for the link and
- * the merge key. The only way to build one is a typed factory method per kind
- * (`NotificationDraft::<kind>(...)`) — sources never assemble the `params` array by hand. The kinds'
- * factory methods are added together with their sources; this class holds none by itself.
+ * the merge key. Sources build one only through the typed static factory method of the
+ * kind's class (see {@see Kind\NotificationKindInterface}) and never assemble the `params` array
+ * by hand; this class holds no kind-specific methods.
  *
  * `params` holds JSON scalars only (string/int/bool/null): dates, enums and objects do not belong
  * there, the time of the event is the `occurredAt` column.
@@ -39,9 +39,11 @@ namespace App\Service\Notification;
 class NotificationDraft
 {
     /**
+     * @internal for the factory methods of the kind classes only
+     *
      * @param array<string, string|int|bool|null> $params
      */
-    protected function __construct(
+    public function __construct(
         public readonly string $kind,
         public readonly array $params,
         public readonly ?string $subjectType = null,

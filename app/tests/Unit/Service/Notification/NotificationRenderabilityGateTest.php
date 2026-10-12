@@ -68,7 +68,7 @@ final class NotificationRenderabilityGateTest extends KernelTestCase
         foreach ($messages ?? NotificationTestKit::messages() as $locale => $catalogue) {
             $translator->addResource('array', $catalogue, $locale);
         }
-        $registry = new NotificationKindRegistry($withDefinition ? [NotificationTestKit::definition()] : []);
+        $registry = new NotificationKindRegistry($withDefinition ? [new NotificationTestKit()] : []);
         $renderer = new NotificationRenderer(
             $registry,
             $translator,
@@ -164,10 +164,6 @@ final class NotificationRenderabilityGateTest extends KernelTestCase
         $registry = $container->get(NotificationKindRegistry::class);
         $this->assertInstanceOf(Translator::class, $translator);
         $this->assertInstanceOf(NotificationKindRegistry::class, $registry);
-        if ($registry->all() === []) {
-            // Without this the test would be green for any gate implementation.
-            $this->markTestSkipped('No production notification kind is registered yet; the gate is covered by the test-kind cases above.');
-        }
         $renderer = new NotificationRenderer(
             $registry,
             $translator,

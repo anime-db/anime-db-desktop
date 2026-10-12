@@ -60,7 +60,7 @@ final class NotificationRendererTest extends TestCase
         $linker ??= $this->createStub(NotificationSubjectLinker::class);
 
         return new NotificationRenderer(
-            new NotificationKindRegistry([NotificationTestKit::definition()]),
+            new NotificationKindRegistry([new NotificationTestKit()]),
             $translator,
             $settings,
             new NearestBuiltInLocale(),
@@ -106,6 +106,14 @@ final class NotificationRendererTest extends TestCase
         $rendered = $this->render($this->renderer('uk', $messages));
 
         $this->assertSame('Подія: Naruto', $rendered->title);
+    }
+
+    public function testPlaceholderLookingParameterValueIsNotDegraded(): void
+    {
+        $rendered = $this->render($this->renderer('en'), params: ['name' => '%foo%', 'count' => 3, 'reason' => 'disk_space']);
+
+        $this->assertSame('Test event: %foo%', $rendered->title);
+        $this->assertFalse($rendered->degraded);
     }
 
     public function testDefaultFillsAParameterMissingFromAnOlderRecord(): void
@@ -180,7 +188,7 @@ final class NotificationRendererTest extends TestCase
         $settings = $this->createStub(AppSettingsProvider::class);
         $logger = NotificationTestKit::logger();
         $renderer = new NotificationRenderer(
-            new NotificationKindRegistry([NotificationTestKit::definition()]),
+            new NotificationKindRegistry([new NotificationTestKit()]),
             $translator,
             $settings,
             new NearestBuiltInLocale(),

@@ -158,14 +158,14 @@ class NotificationCenter
     }
 
     /**
-     * Read records older than READ_RETENTION_DAYS go; above MAX_RECORDS the oldest read records go
+     * Records read more than READ_RETENTION_DAYS ago go (counted from `read_at`); above MAX_RECORDS the oldest read records go
      * first and unread ones only when the unread alone exceed the cap. `notification_once_key` is
      * left alone.
      */
     private function applyRetention(int $now): void
     {
         $this->connection->executeStatement(
-            'DELETE FROM notification WHERE read_at IS NOT NULL AND occurred_at < ?',
+            'DELETE FROM notification WHERE read_at IS NOT NULL AND read_at < ?',
             [$now - self::READ_RETENTION_DAYS * 86400],
         );
 
