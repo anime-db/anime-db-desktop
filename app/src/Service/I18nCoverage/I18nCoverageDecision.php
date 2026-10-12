@@ -37,12 +37,14 @@ final class I18nCoverageDecision
 {
     /**
      * @param list<string> $missingKeys
+     * @param list<string> $divergentKeys keys the plugin ships whose placeholders differ from the app's
      */
     private function __construct(
         public readonly I18nCoverageAction $action,
         public readonly array $missingKeys,
         public readonly ?string $body,
         public readonly ?string $comment,
+        public readonly array $divergentKeys = [],
     ) {
     }
 
@@ -58,25 +60,28 @@ final class I18nCoverageDecision
 
     /**
      * @param list<string> $missingKeys
+     * @param list<string> $divergentKeys
      */
-    public static function create(array $missingKeys, string $body): self
+    public static function create(array $missingKeys, string $body, array $divergentKeys = []): self
     {
-        return new self(I18nCoverageAction::CREATE, $missingKeys, $body, null);
+        return new self(I18nCoverageAction::CREATE, $missingKeys, $body, null, $divergentKeys);
     }
 
     /**
      * @param list<string> $missingKeys
+     * @param list<string> $divergentKeys
      */
-    public static function rewriteBody(array $missingKeys, string $body): self
+    public static function rewriteBody(array $missingKeys, string $body, array $divergentKeys = []): self
     {
-        return new self(I18nCoverageAction::REWRITE_BODY, $missingKeys, $body, null);
+        return new self(I18nCoverageAction::REWRITE_BODY, $missingKeys, $body, null, $divergentKeys);
     }
 
     /**
      * @param list<string> $missingKeys
+     * @param list<string> $divergentKeys
      */
-    public static function rewriteBodyAndComment(array $missingKeys, string $body, string $comment): self
+    public static function rewriteBodyAndComment(array $missingKeys, string $body, string $comment, array $divergentKeys = []): self
     {
-        return new self(I18nCoverageAction::REWRITE_BODY_AND_COMMENT, $missingKeys, $body, $comment);
+        return new self(I18nCoverageAction::REWRITE_BODY_AND_COMMENT, $missingKeys, $body, $comment, $divergentKeys);
     }
 }

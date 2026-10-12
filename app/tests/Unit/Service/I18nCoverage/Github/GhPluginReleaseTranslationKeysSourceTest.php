@@ -128,4 +128,20 @@ final class GhPluginReleaseTranslationKeysSourceTest extends TestCase
 
         return $zipPath;
     }
+
+    public function testValuesByLocaleExposesEveryLocaleCatalog(): void
+    {
+        $zip = $this->buildZip([
+            'translations/messages.de.yaml' => "welcome: 'Hallo %name%'\n",
+            'translations/messages.ja.yaml' => "welcome: Konnichiwa\ngoodbye: Sayonara\n",
+        ]);
+
+        $source = new GhPluginReleaseTranslationKeysSource('p', new FakeGhReleaseZipDownloader($zip));
+
+        self::assertSame(
+            ['de' => ['welcome' => 'Hallo %name%'], 'ja' => ['welcome' => 'Konnichiwa', 'goodbye' => 'Sayonara']],
+            $source->valuesByLocale(),
+        );
+        self::assertSame(['welcome'], $source->keys());
+    }
 }

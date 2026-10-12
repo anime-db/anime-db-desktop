@@ -216,4 +216,146 @@ final class I18nCoverageIssueDeciderTest extends TestCase
         self::assertNotNull($decision->comment);
         self::assertStringContainsString('farewell', $decision->comment);
     }
+
+    /**
+     * @return array{0: list<string>, 1: array<string, string>, 2: list<string>, 3: array<string, array<string, string>>}
+     */
+    private static function catalogs(bool $divergent): array
+    {
+        return [
+            ['welcome', 'goodbye'],
+            ['welcome' => 'Hello %name%', 'goodbye' => 'Bye'],
+            ['welcome', 'goodbye'],
+            ['de' => ['welcome' => $divergent ? 'Hallo %nme%' : 'Hallo %name%', 'goodbye' => 'Tschuss']],
+        ];
+    }
+
+    public function testDivergentPlaceholdersWithNoOpenIssueCreateOne(): void
+    {
+        [$appKeys, $appValues, $pluginKeys, $pluginValues] = self::catalogs(true);
+
+        $decision = (new I18nCoverageIssueDecider())->decide(
+            'animedb-language-pack',
+            $appKeys,
+            $pluginKeys,
+            I18nCoverageIssueSnapshot::none(),
+            [],
+            $appValues,
+            $pluginValues,
+        );
+
+        self::assertSame(I18nCoverageAction::CREATE, $decision->action);
+        self::assertSame([], $decision->missingKeys);
+        self::assertSame(['welcome'], $decision->divergentKeys);
+        self::assertNotNull($decision->body);
+        self::assertStringContainsString('Расходятся плейсхолдеры с приложением:', $decision->body);
+        self::assertStringContainsString('- `welcome` (de): не хватает `%name%`; лишние `%nme%`', $decision->body);
+    }
+
+    public function testMatchingPlaceholdersWithNoOpenIssueDoNothing(): void
+    {
+        [$appKeys, $appValues, $pluginKeys, $pluginValues] = self::catalogs(false);
+
+        $decision = (new I18nCoverageIssueDecider())->decide(
+            'animedb-language-pack',
+            $appKeys,
+            $pluginKeys,
+            I18nCoverageIssueSnapshot::none(),
+            [],
+            $appValues,
+            $pluginValues,
+        );
+
+        self::assertSame(I18nCoverageAction::NONE, $decision->action);
+    }
+
+    public function testDivergentPlaceholdersKeepAnOpenIssueOpen(): void
+    {
+        [$appKeys, $appValues, $pluginKeys, $pluginValues] = self::catalogs(true);
+        $previousBody = I18nCoverageIssueBody::render('animedb-language-pack', [], [], [], ['welcome' => ['de' => ['missing' => ['name'], 'extra' => ['nme']]]]);
+
+        $decision = (new I18nCoverageIssueDecider())->decide(
+            'animedb-language-pack',
+            $appKeys,
+            $pluginKeys,
+            I18nCoverageIssueSnapshot::open(7, $previousBody),
+            [],
+            $appValues,
+            $pluginValues,
+        );
+
+        self::assertSame(I18nCoverageAction::REWRITE_BODY, $decision->action);
+    }
+
+    public function testFixedPlaceholdersCloseAnOpenIssueAndNoLongerDivergentIsReportedInTheComment(): void
+    {
+        [$appKeys, $appValues, $pluginKeys, $pluginValues] = self::catalogs(false);
+        $previousBody = I18nCoverageIssueBody::render('animedb-language-pack', [], [], [], ['welcome' => ['de' => ['missing' => ['name'], 'extra' => ['nme']]]]);
+
+        $decision = (new I18nCoverageIssueDecider())->decide(
+            'animedb-language-pack',
+            $appKeys,
+            $pluginKeys,
+            I18nCoverageIssueSnapshot::open(7, $previousBody),
+            [],
+            $appValues,
+            $pluginValues,
+        );
+
+        self::assertSame(I18nCoverageAction::CLOSE, $decision->action);
+    }
+
+    public function testBothMissingAndDivergentKeysAreReportedAndTrackedOnAnOpenIssue(): void
+    {
+        $previousBody = I18nCoverageIssueBody::render('animedb-language-pack', ['goodbye'], []);
+
+        $decision = (new I18nCoverageIssueDecider())->decide(
+            'animedb-language-pack',
+            ['welcome', 'goodbye'],
+            ['welcome'],
+            I18nCoverageIssueSnapshot::open(7, $previousBody),
+            [],
+            ['welcome' => 'Hello %name%'],
+            ['de' => ['welcome' => 'Hallo']],
+        );
+
+        self::assertSame(I18nCoverageAction::REWRITE_BODY_AND_COMMENT, $decision->action);
+        self::assertSame(['goodbye'], $decision->missingKeys);
+        self::assertSame(['welcome'], $decision->divergentKeys);
+        self::assertStringContainsString("Стали расходиться по плейсхолдерам:\n- `welcome`", (string) $decision->comment);
+        self::assertSame(['welcome'], I18nCoverageIssueBody::parsePreviousDivergentDelta((string) $decision->body));
+        self::assertSame(['goodbye'], I18nCoverageIssueBody::parsePreviousDelta((string) $decision->body));
+    }
+
+    public function testDivergenceInAnyPluginLocaleMakesTheKeyDivergent(): void
+    {
+        $decision = (new I18nCoverageIssueDecider())->decide(
+            'animedb-language-pack',
+            ['welcome'],
+            ['welcome'],
+            I18nCoverageIssueSnapshot::none(),
+            [],
+            ['welcome' => 'Hello %name%'],
+            ['de' => ['welcome' => 'Hallo %name%'], 'ja' => ['welcome' => 'Konnichiwa']],
+        );
+
+        self::assertSame(['welcome'], $decision->divergentKeys);
+        self::assertStringContainsString('- `welcome` (ja): не хватает `%name%`; лишние —', (string) $decision->body);
+        self::assertStringNotContainsString('(de)', (string) $decision->body);
+    }
+
+    public function testPlaceholdersOfOrphanedKeysAreNotCompared(): void
+    {
+        $decision = (new I18nCoverageIssueDecider())->decide(
+            'animedb-language-pack',
+            ['welcome'],
+            ['welcome', 'old'],
+            I18nCoverageIssueSnapshot::none(),
+            [],
+            ['welcome' => 'Hello', 'old' => 'Old %x%'],
+            ['de' => ['welcome' => 'Hallo', 'old' => 'Alt']],
+        );
+
+        self::assertSame(I18nCoverageAction::NONE, $decision->action);
+    }
 }

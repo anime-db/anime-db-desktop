@@ -32,10 +32,16 @@ use App\Service\I18nCoverage\ApplicationTranslationKeysSource;
 final class FakeApplicationTranslationKeysSource implements ApplicationTranslationKeysSource
 {
     /**
-     * @param list<string> $keys
+     * @param list<string>          $keys
+     * @param array<string, string> $values
      */
-    public function __construct(private readonly array $keys)
+    public function __construct(private readonly array $keys, private readonly array $values = [])
     {
+    }
+
+    public function values(): array
+    {
+        return $this->values;
     }
 
     public function keys(): array

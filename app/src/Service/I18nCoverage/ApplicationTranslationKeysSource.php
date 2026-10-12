@@ -37,4 +37,9 @@ interface ApplicationTranslationKeysSource
      * @return list<string> flattened dot-notation keys of the app's reference `messages` catalog
      */
     public function keys(): array;
+
+    /**
+     * @return array<string, string> flattened dot-notation key => value of the reference catalog
+     */
+    public function values(): array;
 }
