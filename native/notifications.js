@@ -57,6 +57,18 @@ function createShownTracker(limit = MAX_SHOWN_PAIRS) {
 }
 
 /**
+ * Windows binds toasts to the process AppUserModelID; it must equal the one the installer puts on
+ * the shortcut (build.appId), otherwise the toast is attributed to another app or not shown.
+ *
+ * @param {{ setAppUserModelId: (id: string) => void }} app
+ * @param {string} platform
+ * @param {string} appId
+ */
+function applyAppUserModelId(app, platform, appId) {
+    if (platform === 'win32') app.setAppUserModelId(appId);
+}
+
+/**
  * Single decision point between an OS toast and an in-app popup for 'notification.created'.
  *
  * @param {object} deps
@@ -145,4 +157,5 @@ module.exports = {
     UNREAD_COUNT_CHANNEL,
     createShownTracker,
     createNotificationDelivery,
+    applyAppUserModelId,
 };

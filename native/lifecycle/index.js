@@ -44,6 +44,7 @@ const paths            = require('../paths');
 const { logCrash }     = require('../crash-log');
 const { getLocale, getSystemNotifications } = require('../config');
 const notifications    = require('../notifications');
+const { build: { appId } } = require('../../package.json');
 const i18n             = require('../i18n');
 const { MigrationBootstrapError } = require('../supervisor/migrations');
 const { CacheInvalidationError } = require('../supervisor/cache-invalidation');
@@ -191,6 +192,9 @@ if (!gotLock) {
     proxy.registerProxyAuthHandler();
 
     app.whenReady().then(async () => {
+        // Before the first Notification is created (see createNotificationDelivery below).
+        notifications.applyAppUserModelId(app, process.platform, appId);
+
         // Must run before the safe-mode dialog and before createSplash() below — the splash
         // page's prefers-color-scheme (see native/splash/splash.html) reflects whatever
         // themeSource is set to at the moment its window is created.

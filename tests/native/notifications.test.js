@@ -22,14 +22,14 @@
 'use strict';
 
 const {
-    createNotificationDelivery, createShownTracker, createToastClickHandler, UNREAD_COUNT_CHANNEL,
+    createNotificationDelivery, createShownTracker, createToastClickHandler, applyAppUserModelId, UNREAD_COUNT_CHANNEL,
 } = require('../../native/notifications');
 
-function setup({ focused = false, visible = true, enabled = true, supported = true } = {}) {
+function setup({ focused = false, visible = true, minimized = false, enabled = true, supported = true, noWindow = false } = {}) {
     const win = {
         isDestroyed: jest.fn(() => false),
         isVisible:   jest.fn(() => visible),
-        isMinimized: jest.fn(() => false),
+        isMinimized: jest.fn(() => minimized),
         isFocused:   jest.fn(() => focused),
         webContents: { send: jest.fn() },
     };
@@ -44,7 +44,7 @@ function setup({ focused = false, visible = true, enabled = true, supported = tr
     Notification.isSupported = jest.fn(() => supported);
     const onToastClick = jest.fn();
     const delivery = createNotificationDelivery({
-        getWindow: () => win,
+        getWindow: () => (noWindow ? null : win),
         Notification,
         isSystemNotificationsEnabled: () => enabled,
         onToastClick,
@@ -101,6 +101,30 @@ describe('notification delivery', () => {
         expect(toasts[0].show).toHaveBeenCalled();
         expect(win.webContents.send).toHaveBeenCalledWith(UNREAD_COUNT_CHANNEL, 3);
         expect(win.webContents.send).not.toHaveBeenCalledWith('app-notification', expect.anything());
+    });
+
+    test('focused but minimized window gets a toast, not a popup', () => {
+        const { delivery, toasts, win } = setup({ focused: true, minimized: true });
+        delivery.handle(event());
+
+        expect(toasts).toHaveLength(1);
+        expect(win.webContents.send).not.toHaveBeenCalledWith('app-notification', expect.anything());
+    });
+
+    test('no window: toast is shown, nothing is sent, no exception', () => {
+        const { delivery, toasts, win } = setup({ noWindow: true });
+        expect(() => delivery.handle(event())).not.toThrow();
+
+        expect(toasts).toHaveLength(1);
+        expect(win.webContents.send).not.toHaveBeenCalled();
+    });
+
+    test('unsupported notifications: no toast, no exception', () => {
+        const { delivery, toasts, Notification } = setup({ supported: false });
+        expect(() => delivery.handle(event())).not.toThrow();
+
+        expect(toasts).toHaveLength(0);
+        expect(Notification).not.toHaveBeenCalled();
     });
 
     test('disabled setting suppresses the toast but not the popup', () => {
@@ -202,5 +226,22 @@ describe('toast click handler', () => {
         click('/anime/1');
         expect(win.show).not.toHaveBeenCalled();
         expect(win.loadURL).not.toHaveBeenCalled();
+    });
+});
+
+describe('AppUserModelID', () => {
+    const { build } = require('../../package.json');
+
+    test('win32 sets the id from build.appId', () => {
+        const app = { setAppUserModelId: jest.fn() };
+        applyAppUserModelId(app, 'win32', build.appId);
+        expect(app.setAppUserModelId).toHaveBeenCalledWith(build.appId);
+        expect(build.appId).toBeTruthy();
+    });
+
+    test.each(['linux', 'darwin'])('%s does not set it', (platform) => {
+        const app = { setAppUserModelId: jest.fn() };
+        applyAppUserModelId(app, platform, build.appId);
+        expect(app.setAppUserModelId).not.toHaveBeenCalled();
     });
 });
