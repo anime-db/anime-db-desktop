@@ -43,6 +43,7 @@ use App\Repository\StudioRepository;
 use App\Repository\SyncTombstoneRepository;
 use App\Service\JobLock\JobLockService;
 use App\Service\JobLock\ProcessLivenessChecker;
+use App\Service\Notification\NotificationCenter;
 use App\Service\Plugin\Filler\BulkFillerService;
 use App\Service\Plugin\Filler\CachedFillerLookup;
 use App\Service\Plugin\Filler\PluginAnimeDataMerger;
@@ -54,11 +55,13 @@ use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Storage\FilenameCleaner;
 use App\Service\Storage\OrphanAnimeMatcher;
 use App\Service\Storage\Scan\ScanCandidate;
+use App\Service\Storage\Scan\ScanResultItem;
 use App\Service\Storage\Scan\ScanRunJournal;
 use App\Service\Storage\ScanStorageService;
 use App\Service\Storage\Search\SearchByPluginChain;
 use App\Service\Storage\StorageMarkerService;
 use App\Service\WsPublisher;
+use App\Tests\Support\RecordingNotificationCenter;
 use App\Tests\Support\RunsMigrations;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DriverManager;
@@ -67,6 +70,7 @@ use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\EntityManager;
 use Doctrine\ORM\ORMSetup;
 use Doctrine\ORM\Tools\SchemaTool;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
@@ -93,12 +97,14 @@ final class ScanStorageMessageHandlerTest extends TestCase
     private EntityManager $entityManager;
     private Connection $queueConnection;
     private MockClock $clock;
+    private RecordingNotificationCenter $notifications;
 
     /** @var list<string> */
     private array $dirsToClean = [];
 
     protected function setUp(): void
     {
+        $this->notifications = new RecordingNotificationCenter();
         if (!Type::hasType(UnixTimestampType::NAME)) {
             Type::addType(UnixTimestampType::NAME, UnixTimestampType::class);
         }
@@ -482,6 +488,13 @@ final class ScanStorageMessageHandlerTest extends TestCase
         $this->assertSame(['state' => 'idle'], $idle['data']);
 
         $this->assertJobLockReleased($storageId);
+
+        $this->assertCount(1, $this->notifications->drafts);
+        $draft = $this->notifications->drafts[0];
+        $this->assertSame('scan_failed', $draft->kind);
+        $this->assertSame(['name' => 'Target', 'reason' => 'marker_conflict'], $draft->params);
+        $this->assertSame('storage_scan_run', $draft->subjectType);
+        $this->assertSame($storageId.':'.$this->journalRows($storageId)[0]['id'], $draft->subjectId);
     }
 
     public function testUnknownStorageIsWrappedIntoAnUnrecoverableExceptionAndPublishesScanFailed(): void
@@ -503,6 +516,13 @@ final class ScanStorageMessageHandlerTest extends TestCase
         $this->assertSame('scan.failed', $failed['event']);
         $this->assertSame(999, $failed['data']['storage_id']);
         $this->assertSame('exception', $failed['data']['reason']);
+
+        // Recorded before the exception is rethrown; no journal row yet, so no subject.
+        $this->assertCount(1, $this->notifications->drafts);
+        $draft = $this->notifications->drafts[0];
+        $this->assertSame('scan_failed', $draft->kind);
+        $this->assertSame(['name' => '#999', 'reason' => 'exception'], $draft->params);
+        $this->assertNull($draft->subject());
 
         // The entity lookup fails before JobLockService ever touches the connection, so the
         // table may not exist yet — that in itself proves no lock was taken.
@@ -714,6 +734,113 @@ final class ScanStorageMessageHandlerTest extends TestCase
     }
 
     /** Makes every UPDATE of the journal throw, while INSERT (start()) keeps working. */
+    public function testASuccessfulScanWithAnItemToActOnRecordsScanAttentionForTheRun(): void
+    {
+        $dir = $this->makeStorageDir();
+        $this->touchFile($dir.'/Trigun.mkv');
+        $storage = new Storage('Main folder', $dir, StorageType::Folder);
+        $this->entityManager->persist($storage);
+        $this->entityManager->flush();
+        $storageId = $this->requireId($storage);
+
+        $handler = $this->newHandler($this->createStub(ProcessLivenessChecker::class), $this->newWsPublisher());
+        $handler(new ScanStorageMessage($storageId));
+
+        $this->assertCount(1, $this->notifications->drafts);
+        $draft = $this->notifications->drafts[0];
+        $this->assertSame('scan_attention', $draft->kind);
+        $this->assertSame('Main folder', $draft->params['name']);
+        $this->assertSame(1, array_sum(array_diff_key($draft->params, ['name' => 1])));
+        $this->assertSame('storage:'.$storageId, $draft->dedupKey);
+        $this->assertSame($storageId.':'.$this->journalRows($storageId)[0]['id'], $draft->subjectId);
+    }
+
+    /** @return iterable<string, array{ScanResultItem, array<string, int>}> */
+    public static function attentionItems(): iterable
+    {
+        $anime = new TvAnime();
+        $zero = ['needs_confirmation' => 0, 'needs_manual_entry' => 0, 'files_missing' => 0, 'conflict' => 0, 'error' => 0];
+
+        yield 'needs confirmation' => [ScanResultItem::needsConfirmation('A', 'A', []), array_replace($zero, ['needs_confirmation' => 1])];
+        yield 'needs manual entry' => [ScanResultItem::needsManualEntry('A', 'A'), array_replace($zero, ['needs_manual_entry' => 1])];
+        yield 'files missing' => [ScanResultItem::filesMissing($anime, 'A'), array_replace($zero, ['files_missing' => 1])];
+        yield 'conflict' => [ScanResultItem::conflict($anime, 'A', 'B'), array_replace($zero, ['conflict' => 1])];
+        yield 'error' => [ScanResultItem::error('A', 'A', 'boom'), array_replace($zero, ['error' => 1])];
+    }
+
+    /** @param array<string, int> $expectedCounts */
+    #[DataProvider('attentionItems')]
+    public function testEachOfTheFiveItemTypesAloneRecordsScanAttentionWithItsCounter(ScanResultItem $item, array $expectedCounts): void
+    {
+        $this->invokeNotifyAttention([ScanResultItem::updated(new TvAnime(), 'U'), $item, ScanResultItem::autoLinked(new TvAnime(), 'L')]);
+
+        $this->assertCount(1, $this->notifications->drafts);
+        $this->assertSame(['name' => 'Main folder'] + $expectedCounts, $this->notifications->drafts[0]->params);
+    }
+
+    public function testScanAttentionCountsEveryTypeAndSkipsScansWithoutItemsToActOn(): void
+    {
+        $anime = new TvAnime();
+        $this->invokeNotifyAttention([
+            ScanResultItem::needsManualEntry('A', 'A'),
+            ScanResultItem::needsManualEntry('B', 'B'),
+            ScanResultItem::error('C', 'C', 'boom'),
+        ]);
+        $this->assertSame(
+            ['name' => 'Main folder', 'needs_confirmation' => 0, 'needs_manual_entry' => 2, 'files_missing' => 0, 'conflict' => 0, 'error' => 1],
+            $this->notifications->drafts[0]->params,
+        );
+
+        $this->notifications->drafts = [];
+        $this->invokeNotifyAttention([ScanResultItem::updated($anime, 'U'), ScanResultItem::autoLinked($anime, 'L')]);
+        $this->invokeNotifyAttention([]);
+        $this->assertSame([], $this->notifications->drafts);
+    }
+
+    public function testAFailingNotificationDoesNotTurnAFinishedScanIntoAFailedOne(): void
+    {
+        $dir = $this->makeStorageDir();
+        $this->touchFile($dir.'/Trigun.mkv');
+        $storage = new Storage('Main folder', $dir, StorageType::Folder);
+        $this->entityManager->persist($storage);
+        $this->entityManager->flush();
+        $storageId = $this->requireId($storage);
+
+        $wsPublisher = $this->newWsPublisher();
+        $handler = $this->newHandler($this->createStub(ProcessLivenessChecker::class), $wsPublisher, notificationCenter: new RecordingNotificationCenter(failing: true));
+        $handler(new ScanStorageMessage($storageId));
+
+        $events = array_column($wsPublisher->since(0), 'event');
+        $this->assertContains('scan.done', $events);
+        $this->assertNotContains('scan.failed', $events);
+        $this->assertJobLockReleased($storageId);
+    }
+
+    public function testAFailingNotificationDoesNotReplaceTheScanException(): void
+    {
+        $wsPublisher = $this->newWsPublisher();
+        $handler = $this->newHandler($this->createStub(ProcessLivenessChecker::class), $wsPublisher, notificationCenter: new RecordingNotificationCenter(failing: true));
+
+        try {
+            $handler(new ScanStorageMessage(999));
+            $this->fail('Expected UnrecoverableMessageHandlingException.');
+        } catch (UnrecoverableMessageHandlingException $exception) {
+            $this->assertInstanceOf(\RuntimeException::class, $exception->getPrevious());
+            $this->assertStringContainsString('Storage #999 not found', $exception->getPrevious()->getMessage());
+        }
+    }
+
+    /** @param list<ScanResultItem> $items */
+    private function invokeNotifyAttention(array $items): void
+    {
+        $storage = new Storage('Main folder', $this->makeStorageDir(), StorageType::Folder);
+        $this->entityManager->persist($storage);
+        $this->entityManager->flush();
+
+        $handler = $this->newHandler($this->createStub(ProcessLivenessChecker::class), $this->newWsPublisher());
+        (new \ReflectionMethod($handler, 'notifyAttention'))->invoke($handler, $storage, 5, $items);
+    }
+
     private function breakJournalUpdates(): void
     {
         $this->entityManager->getConnection()->executeStatement(
@@ -743,6 +870,7 @@ final class ScanStorageMessageHandlerTest extends TestCase
         ?EventDispatcherInterface $eventDispatcher = null,
         ?LoggerInterface $logger = null,
         ?PluginDisplayName $pluginDisplayName = null,
+        ?NotificationCenter $notificationCenter = null,
     ): ScanStorageMessageHandler {
         $animeRepository = new AnimeRepository($this->entityManager);
         $storageMarkerService = new StorageMarkerService($this->entityManager, $driveRoots);
@@ -795,6 +923,7 @@ final class ScanStorageMessageHandlerTest extends TestCase
             )),
             // The journal goes through the connection itself, not through $this->entityManager.
             new ScanRunJournal($this->entityManager->getConnection(), $jobLockService, $this->clock),
+            $notificationCenter ?? $this->notifications,
         );
     }
 

@@ -988,3 +988,25 @@ notification:
     fallback:
         title: Notification
         body: 'Could not display the notification text from %date%.'
+    scan_failed:
+        title: 'Storage scan failed: %name%'
+        body: 'The scan of the storage "%name%" did not finish: %reason%'
+        reason:
+            marker_conflict: 'the storage marker belongs to another storage'
+            exception: 'an unexpected error occurred'
+    scan_attention:
+        title: 'The scan of "%name%" needs your attention'
+        body: 'To confirm: %needs_confirmation%. To enter manually: %needs_manual_entry%. Files missing: %files_missing%. Conflicts: %conflict%. Errors: %error%.'
+    download_completed:
+        title: 'Download finished: %name%'
+        body: 'The download of "%name%" has finished and its files are linked to the entry.'
+    download_failed:
+        title: 'Download failed: %name%'
+        body: 'The download of "%name%" failed: %reason%'
+        reason:
+            none: 'the download could not be completed'
+            disk_space: 'not enough free disk space'
+            unexpected_layout: 'the downloaded files have an unexpected layout'
+            storage_conflict: 'the folder is already linked to another entry'
+            name_conflict: 'the target folder name is already taken'
+            move_failed: 'the files could not be moved to the storage'

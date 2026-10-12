@@ -41,6 +41,7 @@ use App\Repository\AnimeRepository;
 use App\Repository\DownloadRepository;
 use App\Service\Download\AnimeDownloadLinker;
 use App\Service\Download\DownloadCompletionPoller;
+use App\Service\Download\DownloadFailureNotifier;
 use App\Service\Download\DownloadFolderJail;
 use App\Service\Download\DownloadIncomingRelocator;
 use App\Service\Download\FreeSpaceChecker;
@@ -48,6 +49,7 @@ use App\Service\Download\NativeDownloadStorageFilesystem;
 use App\Service\Download\NativeFreeSpaceProvider;
 use App\Service\Qbittorrent\QbittorrentClient;
 use App\Service\Storage\StorageMarkerService;
+use App\Tests\Support\RecordingNotificationCenter;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\EntityManager;
@@ -165,11 +167,13 @@ final class PollDownloadsMessageHandlerTest extends TestCase
                 new NativeDownloadStorageFilesystem(),
                 $this->entityManager,
                 new NullLogger(),
+                new DownloadFailureNotifier(new RecordingNotificationCenter(), new NullLogger()),
             ),
             $eventDispatcher,
             $this->entityManager,
             new FreeSpaceChecker(new NativeFreeSpaceProvider()),
             new NullLogger(),
+            new DownloadFailureNotifier(new RecordingNotificationCenter(), new NullLogger()),
         );
 
         $handler = new PollDownloadsMessageHandler($poller);

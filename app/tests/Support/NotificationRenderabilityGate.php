@@ -100,8 +100,10 @@ final class NotificationRenderabilityGate
             if ($param->codes === []) {
                 continue;
             }
+            // a nullable code parameter is rendered with null as well (its generic text)
+            $codes = $param->nullable ? [...$param->codes, null] : $param->codes;
             $variants = array_merge(...array_map(
-                static fn (array $variant): array => array_map(static fn (string $code): array => [$name => $code] + $variant, $param->codes),
+                static fn (array $variant): array => array_map(static fn (?string $code): array => [$name => $code] + $variant, $codes),
                 $variants,
             ));
         }

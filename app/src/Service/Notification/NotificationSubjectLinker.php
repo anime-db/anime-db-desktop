@@ -27,6 +27,7 @@ declare(strict_types=1);
 
 namespace App\Service\Notification;
 
+use App\Service\Notification\Kind\ScanRunSubject;
 use Doctrine\DBAL\Connection;
 use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 
@@ -49,6 +50,9 @@ class NotificationSubjectLinker
 
     public function urlFor(?string $type, ?string $id): ?string
     {
+        if ($type === ScanRunSubject::TYPE) {
+            return $this->scanRunUrl($id);
+        }
         if ($type === null || $id === null || !isset(self::SUBJECTS[$type]) || preg_match('/^\d+$/', $id) !== 1) {
             return null;
         }
@@ -60,5 +64,20 @@ class NotificationSubjectLinker
         }
 
         return $this->urlGenerator->generate($subject['route'], ['id' => (int) $id]);
+    }
+
+    /** The scan run page; a run already evicted from the journal (or a malformed id) has no link. */
+    private function scanRunUrl(?string $id): ?string
+    {
+        if ($id === null || preg_match('/^(\d+):(\d+)$/', $id, $m) !== 1) {
+            return null;
+        }
+
+        $exists = $this->connection->fetchOne('SELECT 1 FROM scan_run WHERE id = ? AND storage_id = ?', [(int) $m[2], (int) $m[1]]);
+        if ($exists === false) {
+            return null;
+        }
+
+        return $this->urlGenerator->generate('storage_scan_run', ['id' => (int) $m[1], 'run' => (int) $m[2]]);
     }
 }

@@ -43,6 +43,7 @@ use App\Repository\AnimeRepository;
 use App\Repository\DownloadRepository;
 use App\Service\Download\AnimeDownloadLinker;
 use App\Service\Download\DownloadCompletionPoller;
+use App\Service\Download\DownloadFailureNotifier;
 use App\Service\Download\DownloadFolderJail;
 use App\Service\Download\DownloadIncomingRelocator;
 use App\Service\Download\DownloadStorageFilesystem;
@@ -51,6 +52,7 @@ use App\Service\Download\FreeSpaceProvider;
 use App\Service\Download\NativeFreeSpaceProvider;
 use App\Service\Qbittorrent\QbittorrentClient;
 use App\Service\Storage\StorageMarkerService;
+use App\Tests\Support\RecordingNotificationCenter;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Types\Type;
@@ -74,6 +76,10 @@ final class DownloadCompletionPollerTest extends TestCase
     private EntityManager $entityManager;
     private DownloadRepository $downloads;
     private StorageMarkerService $markerService;
+    private RecordingNotificationCenter $notifications;
+
+    /** @var list<list<mixed>> statuses of all downloads in the database at each record() */
+    private array $statusesAtRecord = [];
     private Storage $storage;
     private string $root;
 
@@ -95,6 +101,10 @@ final class DownloadCompletionPollerTest extends TestCase
         $schemaTool = new SchemaTool($this->entityManager);
         $schemaTool->createSchema($this->entityManager->getMetadataFactory()->getAllMetadata());
 
+        $this->notifications = new RecordingNotificationCenter();
+        $this->notifications->onRecord = function (): void {
+            $this->statusesAtRecord[] = $this->entityManager->getConnection()->fetchFirstColumn('SELECT status FROM downloads');
+        };
         $this->downloads = new DownloadRepository($this->entityManager);
         $this->markerService = new StorageMarkerService($this->entityManager);
 
@@ -149,7 +159,20 @@ final class DownloadCompletionPollerTest extends TestCase
             $filesystem ?? new StubDownloadStorageFilesystem(),
             $this->entityManager,
             new NullLogger(),
+            new DownloadFailureNotifier($this->notifications, new NullLogger()),
         );
+    }
+
+    /** Exactly one `download_failed`, recorded after the flush that made the row Failed. */
+    private function assertFailureNotified(?string $reason): void
+    {
+        $this->assertCount(1, $this->notifications->drafts);
+        $draft = $this->notifications->drafts[0];
+        $this->assertSame('download_failed', $draft->kind);
+        $this->assertSame(['name' => 'Test', 'reason' => $reason], $draft->params);
+        $this->assertSame('anime', $draft->subjectType);
+        $this->assertCount(1, $this->statusesAtRecord);
+        $this->assertContains('failed', $this->statusesAtRecord[0]);
     }
 
     private function persistAnime(): TvAnime
@@ -234,6 +257,7 @@ final class DownloadCompletionPollerTest extends TestCase
             // this Linux test runner — only tests about the free-space check itself override this.
             new FreeSpaceChecker($freeSpaceProvider ?? new NativeFreeSpaceProvider()),
             new NullLogger(),
+            new DownloadFailureNotifier($this->notifications, new NullLogger()),
         );
     }
 
@@ -390,6 +414,7 @@ final class DownloadCompletionPollerTest extends TestCase
             $this->entityManager,
             new FreeSpaceChecker(new NativeFreeSpaceProvider()),
             new NullLogger(),
+            new DownloadFailureNotifier($this->notifications, new NullLogger()),
         );
 
         $poller->poll();
@@ -463,6 +488,7 @@ final class DownloadCompletionPollerTest extends TestCase
             $this->entityManager,
             new FreeSpaceChecker(new NativeFreeSpaceProvider()),
             $logger,
+            new DownloadFailureNotifier($this->notifications, new NullLogger()),
         );
 
         $poller->poll();
@@ -476,6 +502,7 @@ final class DownloadCompletionPollerTest extends TestCase
         $this->assertNotNull($secondRow);
         $this->assertSame(DownloadStatus::Failed, $secondRow->getStatus());
         $this->assertSame('storage_conflict', $secondRow->getFailureReason());
+        $this->assertFailureNotified('storage_conflict');
         $this->assertNull($second->getStoragePath());
 
         // The pass reached the end: the third download after the conflict is still processed.
@@ -542,6 +569,7 @@ final class DownloadCompletionPollerTest extends TestCase
             $this->entityManager,
             new FreeSpaceChecker(new NativeFreeSpaceProvider()),
             $logger,
+            new DownloadFailureNotifier($this->notifications, new NullLogger()),
         );
 
         $poller->poll();
@@ -551,6 +579,7 @@ final class DownloadCompletionPollerTest extends TestCase
         $this->assertSame(DownloadStatus::Failed, $stored->getStatus());
         $this->assertNull($anime->getStorage());
         $this->assertNull($anime->getStoragePath());
+        $this->assertFailureNotified(null);
 
         $this->assertCount(1, $logged);
         $this->assertSame(self::HASH, $logged[0]['context']['infoHash']);
@@ -604,6 +633,7 @@ final class DownloadCompletionPollerTest extends TestCase
             $this->entityManager,
             new FreeSpaceChecker($freeSpaceProvider),
             new NullLogger(),
+            new DownloadFailureNotifier($this->notifications, new NullLogger()),
         );
 
         $poller->poll();
@@ -615,6 +645,7 @@ final class DownloadCompletionPollerTest extends TestCase
         $this->assertTrue($stored->isFailed());
         $this->assertSame(DownloadStatus::Failed, $stored->getStatus());
         $this->assertSame('disk_space', $stored->getFailureReason());
+        $this->assertFailureNotified('disk_space');
 
         // Once Failed, the row drops out of findDistinctPendingInfoHashes() — a second poll must
         // not stop (or log) it again.
@@ -699,6 +730,7 @@ final class DownloadCompletionPollerTest extends TestCase
             $this->entityManager,
             new FreeSpaceChecker($freeSpaceProvider),
             new NullLogger(),
+            new DownloadFailureNotifier($this->notifications, new NullLogger()),
         );
 
         $poller->poll();
@@ -786,6 +818,7 @@ final class DownloadCompletionPollerTest extends TestCase
             $this->entityManager,
             new FreeSpaceChecker(new NativeFreeSpaceProvider()),
             $logger,
+            new DownloadFailureNotifier($this->notifications, new NullLogger()),
         );
 
         $poller->poll();
@@ -846,6 +879,7 @@ final class DownloadCompletionPollerTest extends TestCase
             $this->entityManager,
             new FreeSpaceChecker(new NativeFreeSpaceProvider()),
             new NullLogger(),
+            new DownloadFailureNotifier($this->notifications, new NullLogger()),
         );
 
         $poller->poll();
@@ -919,6 +953,7 @@ final class DownloadCompletionPollerTest extends TestCase
             $entityManager,
             new FreeSpaceChecker(new NativeFreeSpaceProvider()),
             $logger,
+            new DownloadFailureNotifier($this->notifications, new NullLogger()),
         );
 
         $poller->poll();
@@ -971,6 +1006,7 @@ final class DownloadCompletionPollerTest extends TestCase
             $this->entityManager,
             new FreeSpaceChecker(new NativeFreeSpaceProvider()),
             new NullLogger(),
+            new DownloadFailureNotifier($this->notifications, new NullLogger()),
         );
 
         $poller->poll();
@@ -1041,6 +1077,7 @@ final class DownloadCompletionPollerTest extends TestCase
             $this->entityManager,
             new FreeSpaceChecker(new NativeFreeSpaceProvider()),
             new NullLogger(),
+            new DownloadFailureNotifier($this->notifications, new NullLogger()),
         );
 
         // Must not throw: poll() isolates this failure the same way it does any other.
@@ -1138,6 +1175,7 @@ final class DownloadCompletionPollerTest extends TestCase
             $this->entityManager,
             new FreeSpaceChecker(new NativeFreeSpaceProvider()),
             new NullLogger(),
+            new DownloadFailureNotifier($this->notifications, new NullLogger()),
         );
 
         $poller->poll();
@@ -1172,6 +1210,7 @@ final class DownloadCompletionPollerTest extends TestCase
             $this->entityManager,
             new FreeSpaceChecker(new NativeFreeSpaceProvider()),
             new NullLogger(),
+            new DownloadFailureNotifier($this->notifications, new NullLogger()),
         );
 
         $poller->poll();
@@ -1224,6 +1263,7 @@ final class DownloadCompletionPollerTest extends TestCase
             $this->entityManager,
             new FreeSpaceChecker(new NativeFreeSpaceProvider()),
             new NullLogger(),
+            new DownloadFailureNotifier($this->notifications, new NullLogger()),
         );
     }
 
@@ -1323,6 +1363,7 @@ final class DownloadCompletionPollerTest extends TestCase
             $this->entityManager,
             new FreeSpaceChecker(new NativeFreeSpaceProvider()),
             $logger,
+            new DownloadFailureNotifier($this->notifications, new NullLogger()),
         );
 
         $poller->poll();
@@ -1379,6 +1420,7 @@ final class DownloadCompletionPollerTest extends TestCase
             $this->entityManager,
             new FreeSpaceChecker(new NativeFreeSpaceProvider()),
             new NullLogger(),
+            new DownloadFailureNotifier($this->notifications, new NullLogger()),
         );
 
         $poller->poll();
@@ -1443,6 +1485,7 @@ final class DownloadCompletionPollerTest extends TestCase
             $this->entityManager,
             new FreeSpaceChecker(new NativeFreeSpaceProvider()),
             new NullLogger(),
+            new DownloadFailureNotifier($this->notifications, new NullLogger()),
         );
 
         $poller->poll();
@@ -1496,6 +1539,7 @@ final class DownloadCompletionPollerTest extends TestCase
             $this->entityManager,
             new FreeSpaceChecker(new NativeFreeSpaceProvider()),
             new NullLogger(),
+            new DownloadFailureNotifier($this->notifications, new NullLogger()),
         );
 
         $poller->poll();
@@ -1505,6 +1549,29 @@ final class DownloadCompletionPollerTest extends TestCase
         $this->assertNotNull($stored);
         $this->assertSame(DownloadStatus::Failed, $stored->getStatus());
         $this->assertSame('name_conflict', $stored->getFailureReason());
+        $this->assertFailureNotified('name_conflict');
+    }
+
+    public function testNoNotificationWhenMarkFailedDoesNotTransition(): void
+    {
+        $anime = $this->persistAnime();
+        $download = $this->saveDownload(self::HASH, $anime);
+        $download->markFailed('name_conflict');
+        $this->entityManager->flush();
+
+        $client = new QbittorrentClient(new MockHttpClient(), self::BASE_URL);
+        $filesystem = new StubDownloadStorageFilesystem(existingPaths: [$this->root.'\\Release.Name']);
+
+        // The row is already Failed, so the conflict branch's markFailed() answers false: no second alert.
+        $this->makeRelocator($client, $filesystem)->tryMove(
+            $download,
+            $this->storage,
+            $this->incomingContentPath(self::HASH, 'Release.Name'),
+            ['hash' => self::HASH],
+            self::HASH,
+        );
+
+        $this->assertSame([], $this->notifications->drafts);
     }
 
     /**
@@ -1549,6 +1616,7 @@ final class DownloadCompletionPollerTest extends TestCase
             $this->entityManager,
             new FreeSpaceChecker(new NativeFreeSpaceProvider()),
             new NullLogger(),
+            new DownloadFailureNotifier($this->notifications, new NullLogger()),
         );
 
         $poller->poll();
@@ -1558,6 +1626,7 @@ final class DownloadCompletionPollerTest extends TestCase
         $this->assertNotNull($stored);
         $this->assertSame(DownloadStatus::Failed, $stored->getStatus());
         $this->assertSame('name_conflict', $stored->getFailureReason());
+        $this->assertFailureNotified('name_conflict');
     }
 
     /**
@@ -1600,6 +1669,7 @@ final class DownloadCompletionPollerTest extends TestCase
             $this->entityManager,
             new FreeSpaceChecker(new NativeFreeSpaceProvider()),
             new NullLogger(),
+            new DownloadFailureNotifier($this->notifications, new NullLogger()),
         );
 
         $poller->poll();
@@ -1663,6 +1733,7 @@ final class DownloadCompletionPollerTest extends TestCase
         $this->assertNotNull($stored);
         $this->assertSame(DownloadStatus::Failed, $stored->getStatus());
         $this->assertSame('name_conflict', $stored->getFailureReason());
+        $this->assertFailureNotified('name_conflict');
     }
 
     /**
@@ -1698,6 +1769,7 @@ final class DownloadCompletionPollerTest extends TestCase
             $this->entityManager,
             new FreeSpaceChecker(new NativeFreeSpaceProvider()),
             new NullLogger(),
+            new DownloadFailureNotifier($this->notifications, new NullLogger()),
         );
     }
 
@@ -1739,6 +1811,7 @@ final class DownloadCompletionPollerTest extends TestCase
             $this->entityManager,
             new FreeSpaceChecker(new NativeFreeSpaceProvider()),
             new NullLogger(),
+            new DownloadFailureNotifier($this->notifications, new NullLogger()),
         );
 
         $poller->poll();
@@ -1747,6 +1820,7 @@ final class DownloadCompletionPollerTest extends TestCase
         $this->assertNotNull($stored);
         $this->assertSame(DownloadStatus::Failed, $stored->getStatus());
         $this->assertSame('name_conflict', $stored->getFailureReason());
+        $this->assertFailureNotified('name_conflict');
     }
 
     /**
@@ -1792,6 +1866,7 @@ final class DownloadCompletionPollerTest extends TestCase
             $this->entityManager,
             new FreeSpaceChecker(new NativeFreeSpaceProvider()),
             new NullLogger(),
+            new DownloadFailureNotifier($this->notifications, new NullLogger()),
         );
 
         $poller->poll();
@@ -1811,6 +1886,7 @@ final class DownloadCompletionPollerTest extends TestCase
         $this->assertNotNull($stored);
         $this->assertSame(DownloadStatus::Failed, $stored->getStatus());
         $this->assertSame('move_failed', $stored->getFailureReason());
+        $this->assertFailureNotified('move_failed');
     }
 
     /**
@@ -1857,6 +1933,7 @@ final class DownloadCompletionPollerTest extends TestCase
             $this->entityManager,
             new FreeSpaceChecker(new NativeFreeSpaceProvider()),
             new NullLogger(),
+            new DownloadFailureNotifier($this->notifications, new NullLogger()),
         );
 
         $poller->poll();
@@ -1866,6 +1943,7 @@ final class DownloadCompletionPollerTest extends TestCase
         $this->assertNotNull($stored);
         $this->assertSame(DownloadStatus::Failed, $stored->getStatus());
         $this->assertSame('unexpected_layout', $stored->getFailureReason());
+        $this->assertFailureNotified('unexpected_layout');
         $this->assertSame(0, $stored->getMoveAttempts());
     }
 
@@ -1913,6 +1991,7 @@ final class DownloadCompletionPollerTest extends TestCase
             $this->entityManager,
             new FreeSpaceChecker(new NativeFreeSpaceProvider()),
             new NullLogger(),
+            new DownloadFailureNotifier($this->notifications, new NullLogger()),
         );
 
         $poller->poll();
@@ -1982,6 +2061,7 @@ final class DownloadCompletionPollerTest extends TestCase
             $this->entityManager,
             new FreeSpaceChecker(new NativeFreeSpaceProvider()),
             new NullLogger(),
+            new DownloadFailureNotifier($this->notifications, new NullLogger()),
         );
         $firstPoller->poll();
 
@@ -2005,6 +2085,7 @@ final class DownloadCompletionPollerTest extends TestCase
             $this->entityManager,
             new FreeSpaceChecker(new NativeFreeSpaceProvider()),
             new NullLogger(),
+            new DownloadFailureNotifier($this->notifications, new NullLogger()),
         );
         $secondPoller->poll();
 
@@ -2064,6 +2145,7 @@ final class DownloadCompletionPollerTest extends TestCase
             $this->entityManager,
             new FreeSpaceChecker(new NativeFreeSpaceProvider()),
             new NullLogger(),
+            new DownloadFailureNotifier($this->notifications, new NullLogger()),
         );
         $poller->poll();
 
@@ -2072,6 +2154,7 @@ final class DownloadCompletionPollerTest extends TestCase
         $this->assertNotNull($stored);
         $this->assertSame(DownloadStatus::Failed, $stored->getStatus());
         $this->assertSame('move_failed', $stored->getFailureReason());
+        $this->assertFailureNotified('move_failed');
     }
 
     /**
@@ -2117,6 +2200,7 @@ final class DownloadCompletionPollerTest extends TestCase
             $this->entityManager,
             new FreeSpaceChecker(new NativeFreeSpaceProvider()),
             new NullLogger(),
+            new DownloadFailureNotifier($this->notifications, new NullLogger()),
         );
 
         $poller->poll();
@@ -2249,6 +2333,7 @@ final class DownloadCompletionPollerTest extends TestCase
         $this->assertFalse($stored->isCompleted());
         $this->assertSame(DownloadStatus::Failed, $stored->getStatus());
         $this->assertSame('unexpected_layout', $stored->getFailureReason());
+        $this->assertFailureNotified('unexpected_layout');
     }
 }
 
