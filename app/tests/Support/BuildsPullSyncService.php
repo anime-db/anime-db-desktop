@@ -99,6 +99,7 @@ trait BuildsPullSyncService
             $syncRegistry,
             new SyncReviewService(new SyncReviewItemRepository($this->entityManager)),
             new NullLogger(),
+            new NullSyncReauthTracker(),
         );
 
         return new PullSyncService(
@@ -111,6 +112,7 @@ trait BuildsPullSyncService
             $convergenceService,
             new SyncTombstoneRepository($this->entityManager),
             new NullLogger(),
+            new NullSyncReauthTracker(),
         );
     }
 }

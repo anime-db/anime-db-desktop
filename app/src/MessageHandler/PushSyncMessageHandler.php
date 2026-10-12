@@ -40,6 +40,7 @@ use App\Repository\AnimeSyncStateRepository;
 use App\Service\JobLock\JobLockService;
 use App\Service\Plugin\SyncRegistry;
 use App\Service\Plugin\WatchStatusMapper;
+use App\Service\Sync\SyncReauthTracker;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
@@ -110,6 +111,7 @@ final class PushSyncMessageHandler
         private readonly LoggerInterface $logger,
         private readonly int $pushOnEditTtlSeconds,
         private readonly JobLockService $jobLockService,
+        private readonly SyncReauthTracker $reauthTracker,
     ) {
     }
 
@@ -180,9 +182,13 @@ final class PushSyncMessageHandler
                 'exception' => $exception,
             ]);
 
+            // Never throws: the unrecoverable exception below must survive the bookkeeping.
+            $this->reauthTracker->onReauthRequired($pluginId);
+
             throw new UnrecoverableMessageHandlingException(sprintf('Sync plugin "%s" needs reauthorization, not retrying this message.', $pluginId));
         }
 
+        $this->reauthTracker->onSyncSucceeded($pluginId);
         $this->updateSnapshot($anime, $pluginId, $confirmed);
     }
 
@@ -220,10 +226,12 @@ final class PushSyncMessageHandler
                 ]);
 
                 $pluginsNeedingReauth[] = $id;
+                $this->reauthTracker->onReauthRequired($id);
 
                 continue;
             }
 
+            $this->reauthTracker->onSyncSucceeded($id);
             $this->updateSnapshot($anime, $id, $confirmed);
         }
 

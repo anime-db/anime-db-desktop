@@ -127,6 +127,20 @@ final class SettingsController
     }
 
     /**
+     * Persists the "system notifications" switch to %AppData%/config.json; native/config.js reads
+     * it on every notification, so no event is published. Same PRG shape as {@see self::setTheme()}.
+     */
+    #[Route('/settings/system-notifications', name: 'settings_set_system_notifications', methods: ['POST'])]
+    public function setSystemNotifications(Request $request): RedirectResponse
+    {
+        $this->assertValidCsrfToken('settings_set_system_notifications', $request);
+
+        $this->settings->setSystemNotificationsEnabled($request->request->getBoolean('systemNotifications'));
+
+        return new RedirectResponse($this->urlGenerator->generate('settings_index'), Response::HTTP_SEE_OTHER);
+    }
+
+    /**
      * Persists the chosen catalog pagination style to %AppData%/config.json (issue #665), same
      * PRG shape as {@see self::setTheme()}. Defaults to infinite scroll ({@see AppSettingsProvider::getPaginationMode()})
      * until the user picks classic pagination here — this is the only place that can.
@@ -212,6 +226,7 @@ final class SettingsController
             'unavailableLocale' => $unavailableLocale,
             'themePreference' => $this->settings->getThemePreference(),
             'paginationMode' => $this->settings->getPaginationMode(),
+            'systemNotifications' => $this->settings->isSystemNotificationsEnabled(),
         ]));
     }
 

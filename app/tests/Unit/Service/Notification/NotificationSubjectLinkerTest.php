@@ -27,14 +27,28 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Service\Notification;
 
+use AnimeDb\PluginContracts\Settings\SettingsPageInterface;
 use App\Service\Notification\NotificationSubjectLinker;
+use App\Service\Plugin\InstalledPluginsRegistry;
+use App\Service\Plugin\PluginsConfigStore;
+use App\Service\Plugin\SettingsPageRegistry;
+use App\Tests\Support\TemporaryDirectories;
 use Doctrine\DBAL\DriverManager;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
+use Symfony\Component\DependencyInjection\ServiceLocator;
 use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 
 final class NotificationSubjectLinkerTest extends TestCase
 {
-    private function linker(): NotificationSubjectLinker
+    use TemporaryDirectories;
+
+    protected function tearDown(): void
+    {
+        $this->removeTemporaryDirectories();
+    }
+
+    private function linker(bool $enabled = true, bool $withPage = true): NotificationSubjectLinker
     {
         $connection = DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]);
         $connection->executeStatement('CREATE TABLE anime (id INTEGER PRIMARY KEY)');
@@ -42,11 +56,30 @@ final class NotificationSubjectLinkerTest extends TestCase
         $connection->executeStatement('CREATE TABLE scan_run (id INTEGER PRIMARY KEY, storage_id INTEGER NOT NULL)');
         $connection->executeStatement('INSERT INTO scan_run (id, storage_id) VALUES (12, 3)');
         $generator = $this->createStub(UrlGeneratorInterface::class);
-        $generator->method('generate')->willReturnCallback(static fn (string $route, array $params): string => $route === 'storage_scan_run'
-            ? \sprintf('/storage/%d/scans/%d', $params['id'], $params['run'])
-            : '/anime/'.$params['id']);
+        $generator->method('generate')->willReturnCallback(static fn (string $route, array $params): string => match ($route) {
+            'storage_scan_run' => \sprintf('/storage/%d/scans/%d', $params['id'], $params['run']),
+            'settings_plugin_page' => '/settings/plugins/'.$params['pluginId'],
+            default => '/anime/'.$params['id'],
+        });
 
-        return new NotificationSubjectLinker($generator, $connection);
+        $dir = $this->createTemporaryDirectory('linker');
+        mkdir($dir.'/animedb-mal');
+        file_put_contents($dir.'/animedb-mal/manifest.json', (string) json_encode([
+            'id' => 'animedb-mal',
+            'name' => 'MAL',
+            'version' => '1.0.0',
+            'type' => 'integration',
+            'features' => ['widget' => true],
+            'require' => ['core' => '>=2.0.0', 'php' => '>=8.2'],
+        ]));
+        if (!$enabled) {
+            file_put_contents($dir.'/plugins.json', (string) json_encode(['animedb-mal' => ['enabled' => false]]));
+        }
+        $plugins = new InstalledPluginsRegistry($dir, new PluginsConfigStore($dir.'/plugins.json'), new NullLogger());
+        $plugins->reconcile();
+        $pages = $withPage ? ['animedb-mal' => fn (): SettingsPageInterface => $this->createStub(SettingsPageInterface::class)] : [];
+
+        return new NotificationSubjectLinker($generator, $connection, new SettingsPageRegistry($plugins, new ServiceLocator($pages)));
     }
 
     public function testExistingSubjectHasALink(): void
@@ -73,5 +106,20 @@ final class NotificationSubjectLinkerTest extends TestCase
         $this->assertNull($linker->urlFor('storage_scan_run', '4:12'));
         $this->assertNull($linker->urlFor('storage_scan_run', 'x'));
         $this->assertNull($linker->urlFor('storage_scan_run', null));
+    }
+
+    public function testInstalledPluginHasALinkAndARemovedOrMalformedOneHasNot(): void
+    {
+        $linker = $this->linker();
+
+        $this->assertSame('/settings/plugins/animedb-mal', $linker->urlFor('plugin', 'animedb-mal'));
+        $this->assertNull($linker->urlFor('plugin', 'animedb-gone'));
+        $this->assertNull($linker->urlFor('plugin', 'Not A Plugin'));
+    }
+
+    public function testInstalledPluginWithoutAReachableSettingsPageHasNoLink(): void
+    {
+        $this->assertNull($this->linker(enabled: false)->urlFor('plugin', 'animedb-mal'));
+        $this->assertNull($this->linker(withPage: false)->urlFor('plugin', 'animedb-mal'));
     }
 }

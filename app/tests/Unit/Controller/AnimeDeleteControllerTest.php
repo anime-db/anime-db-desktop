@@ -231,7 +231,7 @@ final class AnimeDeleteControllerTest extends TestCase
         return new SyncReviewController(
             $syncReview,
             new AnimeRepository($this->entityManager),
-            new SyncConvergenceService(new SyncReconciler(), $states, new PendingSyncPushRepository($this->entityManager), $registry, $syncReview, new NullLogger()),
+            new SyncConvergenceService(new SyncReconciler(), $states, new PendingSyncPushRepository($this->entityManager), $registry, $syncReview, new NullLogger(), new \App\Tests\Support\NullSyncReauthTracker()),
             new DeletedFromSourceDetector($registry, $syncReview, $states),
             $this->newAnimeDeleteService($this->mediaDir, $syncRegistry, $jobLock, bus: $bus),
             $this->flash(),

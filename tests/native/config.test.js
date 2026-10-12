@@ -41,6 +41,7 @@ const {
     mapOsLocaleToAppLocale,
     getProxySettings,
     getThemePreference,
+    getSystemNotifications,
 } = require('../../native/config');
 
 let tmpDir;
@@ -313,5 +314,17 @@ describe('getLocale', () => {
 
         fs.writeFileSync(configPath, JSON.stringify({ locale: 'ru' }), 'utf8');
         expect(getLocale()).toBe('ru');
+    });
+});
+
+describe('getSystemNotifications', () => {
+    test('is enabled when the key is missing', () => {
+        expect(getSystemNotifications()).toBe(true);
+    });
+
+    test('is disabled only by an explicit false', () => {
+        fs.writeFileSync(path.join(tmpDir, 'config.json'), JSON.stringify({ systemNotifications: false }), 'utf8');
+
+        expect(getSystemNotifications()).toBe(false);
     });
 });
