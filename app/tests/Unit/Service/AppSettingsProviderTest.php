@@ -208,6 +208,27 @@ final class AppSettingsProviderTest extends TestCase
         $this->assertSame('light', $data['themePreference']);
     }
 
+    public function testSystemNotificationsAreEnabledByDefault(): void
+    {
+        $provider = new AppSettingsProvider(new AppConfigStore($this->configPath));
+
+        $this->assertTrue($provider->isSystemNotificationsEnabled());
+    }
+
+    public function testSetSystemNotificationsEnabledPersistsOnlyThatKey(): void
+    {
+        file_put_contents($this->configPath, json_encode(['appSecret' => 'abc']));
+
+        $provider = new AppSettingsProvider(new AppConfigStore($this->configPath));
+        $provider->setSystemNotificationsEnabled(false);
+
+        $data = json_decode((string) file_get_contents($this->configPath), true);
+
+        $this->assertFalse($provider->isSystemNotificationsEnabled());
+        $this->assertSame('abc', $data['appSecret']);
+        $this->assertFalse($data['systemNotifications']);
+    }
+
     public function testGetDefaultSearchPluginIdReturnsNullWhenFileIsMissing(): void
     {
         $provider = new AppSettingsProvider(new AppConfigStore($this->configPath));

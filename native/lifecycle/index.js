@@ -21,7 +21,7 @@
 
 'use strict';
 
-const { app, dialog, session } = require('electron');
+const { app, dialog, session, Notification } = require('electron');
 require('../protocols/app-media');
 require('../accept-language');
 require('../content-security-policy');
@@ -42,7 +42,8 @@ const firewall         = require('../firewall');
 const theme            = require('../theme');
 const paths            = require('../paths');
 const { logCrash }     = require('../crash-log');
-const { getLocale }    = require('../config');
+const { getLocale, getSystemNotifications } = require('../config');
+const notifications    = require('../notifications');
 const i18n             = require('../i18n');
 const { MigrationBootstrapError } = require('../supervisor/migrations');
 const { CacheInvalidationError } = require('../supervisor/cache-invalidation');
@@ -272,8 +273,31 @@ if (!gotLock) {
 
             tray.create(mainWindow, onQuit);
 
+            const notificationDelivery = notifications.createNotificationDelivery({
+                getWindow: () => mainWindow,
+                Notification,
+                isSystemNotificationsEnabled: getSystemNotifications,
+                onToastClick: (url) => {
+                    if (!mainWindow || mainWindow.isDestroyed()) return;
+                    if (mainWindow.isMinimized()) mainWindow.restore();
+                    mainWindow.show();
+                    mainWindow.focus();
+                    if (url === null) return;
+                    // Only the local backend is navigable from a toast; anything else is ignored.
+                    const base   = `http://127.0.0.1:${frankenphpPort}`;
+                    let target;
+                    try {
+                        target = new URL(url, base);
+                    } catch {
+                        return;
+                    }
+                    if (target.origin === base) mainWindow.loadURL(target.href);
+                },
+            });
+
             wsClient.on('backend-event', ({ event, data }) => {
                 if (event === 'backend.status') tray.setState(data.state);
+                if (event === notifications.NOTIFICATION_CREATED_EVENT) notificationDelivery.handle(data);
                 if (event === proxy.PROXY_CHANGED_EVENT) {
                     proxy.applyProxy(session.defaultSession).catch((err) => {
                         console.error('[proxy] не удалось применить настройки прокси:', err);

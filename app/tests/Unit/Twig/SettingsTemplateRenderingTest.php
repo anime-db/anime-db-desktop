@@ -107,6 +107,7 @@ final class SettingsTemplateRenderingTest extends KernelTestCase
             'unavailableLocale' => null,
             'themePreference' => ThemePreference::System,
             'paginationMode' => PaginationMode::InfiniteScroll,
+            'systemNotifications' => true,
         ]);
 
         $this->assertStringContainsString('Настройки', $html);
@@ -137,6 +138,7 @@ final class SettingsTemplateRenderingTest extends KernelTestCase
             'unavailableLocale' => null,
             'themePreference' => ThemePreference::System,
             'paginationMode' => PaginationMode::InfiniteScroll,
+            'systemNotifications' => true,
         ]);
 
         $expectedIconByOption = ['system' => 'display', 'light' => 'sun', 'dark' => 'moon-stars'];
@@ -164,6 +166,7 @@ final class SettingsTemplateRenderingTest extends KernelTestCase
             'unavailableLocale' => null,
             'themePreference' => ThemePreference::System,
             'paginationMode' => PaginationMode::InfiniteScroll,
+            'systemNotifications' => true,
         ]);
 
         $this->assertStringContainsString('<option value="en" selected>English</option>', $html);
@@ -192,6 +195,7 @@ final class SettingsTemplateRenderingTest extends KernelTestCase
             'unavailableLocale' => null,
             'themePreference' => ThemePreference::System,
             'paginationMode' => PaginationMode::InfiniteScroll,
+            'systemNotifications' => true,
         ]);
 
         $this->assertStringContainsString('<option value="ru" selected>Русский</option>', $html);
@@ -222,6 +226,7 @@ final class SettingsTemplateRenderingTest extends KernelTestCase
             'unavailableLocale' => 'de',
             'themePreference' => ThemePreference::System,
             'paginationMode' => PaginationMode::InfiniteScroll,
+            'systemNotifications' => true,
         ]);
 
         $this->assertStringContainsString('<option value="" disabled selected>Deutsch — unavailable</option>', $html);
@@ -247,6 +252,7 @@ final class SettingsTemplateRenderingTest extends KernelTestCase
             'unavailableLocale' => null,
             'themePreference' => ThemePreference::System,
             'paginationMode' => PaginationMode::InfiniteScroll,
+            'systemNotifications' => true,
         ]);
 
         $this->assertStringContainsString('<option value="de">Deutsch</option>', $html);

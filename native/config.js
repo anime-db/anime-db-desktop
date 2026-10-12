@@ -160,6 +160,16 @@ function getThemePreference() {
     return VALID_THEME_PREFERENCES.includes(config.themePreference) ? config.themePreference : 'system';
 }
 
+/**
+ * Reads the "systemNotifications" key from config.json (written by
+ * AppSettingsProvider::setSystemNotifications() on the PHP side). Enabled unless explicitly false.
+ *
+ * @returns {boolean}
+ */
+function getSystemNotifications() {
+    return readConfig().systemNotifications !== false;
+}
+
 module.exports = {
     getOrCreateAppSecret,
     getOrCreateLocale,
@@ -167,4 +177,5 @@ module.exports = {
     mapOsLocaleToAppLocale,
     getProxySettings,
     getThemePreference,
+    getSystemNotifications,
 };

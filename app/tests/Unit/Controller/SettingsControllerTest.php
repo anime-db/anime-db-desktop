@@ -161,6 +161,7 @@ final class SettingsControllerTest extends TestCase
                 'unavailableLocale' => null,
                 'themePreference' => ThemePreference::System,
                 'paginationMode' => PaginationMode::InfiniteScroll,
+                'systemNotifications' => true,
             ])
             ->willReturn('<html></html>');
 
@@ -182,6 +183,7 @@ final class SettingsControllerTest extends TestCase
                 'unavailableLocale' => null,
                 'themePreference' => ThemePreference::System,
                 'paginationMode' => PaginationMode::InfiniteScroll,
+                'systemNotifications' => true,
             ])
             ->willReturn('<html></html>');
 
@@ -206,6 +208,7 @@ final class SettingsControllerTest extends TestCase
                 'unavailableLocale' => 'de',
                 'themePreference' => ThemePreference::System,
                 'paginationMode' => PaginationMode::InfiniteScroll,
+                'systemNotifications' => true,
             ])
             ->willReturn('<html></html>');
 
