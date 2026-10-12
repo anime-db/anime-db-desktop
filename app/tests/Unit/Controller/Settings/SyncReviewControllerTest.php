@@ -179,6 +179,7 @@ final class SyncReviewControllerTest extends TestCase
             new SyncRegistry([], new PluginsConfigStore('')),
             new SyncReviewService($this->createStub(SyncReviewItemRepository::class)),
             new NullLogger(),
+            new \App\Tests\Support\NullSyncReauthTracker(),
         );
     }
 

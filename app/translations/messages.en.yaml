@@ -130,6 +130,8 @@ settings:
     theme_option_system: System
     theme_option_light: Light
     theme_option_dark: Dark
+    system_notifications_label: System notifications
+    system_notifications_hint: Show a system notification when the window is hidden or not in focus.
     pagination_mode_label: Catalog pagination
     pagination_mode_option_infinite_scroll: Infinite scroll
     pagination_mode_option_classic: Classic
@@ -985,6 +987,9 @@ download_adopt:
     error_storage_mismatch: 'The download''s files are not in its storage "%storage%" — they cannot be linked.'
 
 notification:
+    sync_reauth:
+        title: Sync plugin needs reauthorization
+        body: 'Sync plugin "%plugin_name%" lost its authorization. Open its settings and connect again — synchronization is paused until then.'
     fallback:
         title: Notification
         body: 'Could not display the notification text from %date%.'

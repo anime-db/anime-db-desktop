@@ -126,6 +126,24 @@ class AppSettingsProvider
     }
 
     /**
+     * Whether OS toasts are shown for new notifications while the window is hidden or unfocused.
+     * Enabled unless explicitly switched off; read by native/config.js (getSystemNotifications()).
+     */
+    public function isSystemNotificationsEnabled(): bool
+    {
+        return ($this->configStore->read()['systemNotifications'] ?? true) !== false;
+    }
+
+    public function setSystemNotificationsEnabled(bool $enabled): void
+    {
+        $this->configStore->update(static function (array $config) use ($enabled): array {
+            $config['systemNotifications'] = $enabled;
+
+            return $config;
+        });
+    }
+
+    /**
      * The plugin whose {@see \AnimeDb\PluginContracts\Search\SearchByPluginInterface} implementation is
      * used by default, e.g. "animedb-shikimori". Null once none is configured yet or the
      * configured id no longer names an installed search plugin — the caller

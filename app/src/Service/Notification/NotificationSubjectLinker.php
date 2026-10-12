@@ -27,11 +27,14 @@ declare(strict_types=1);
 
 namespace App\Service\Notification;
 
+use App\Entity\ValueObject\Exception\InvalidPluginIdException;
+use App\Entity\ValueObject\PluginId;
+use App\Service\Plugin\SettingsPageRegistry;
 use Doctrine\DBAL\Connection;
 use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 
 /**
- * Builds the link of a notification subject. No subject, an unknown subject type or a subject that
+ * Builds the link of a notification subject (an anime or an installed plugin's settings page). No subject, an unknown subject type or a subject that
  * no longer exists give no link: the record still shows its text from the `params` snapshot.
  */
 class NotificationSubjectLinker
@@ -44,11 +47,16 @@ class NotificationSubjectLinker
     public function __construct(
         private readonly UrlGeneratorInterface $urlGenerator,
         private readonly Connection $connection,
+        private readonly SettingsPageRegistry $settingsPages,
     ) {
     }
 
     public function urlFor(?string $type, ?string $id): ?string
     {
+        if ($type === 'plugin' && $id !== null) {
+            return $this->pluginUrl($id);
+        }
+
         if ($type === null || $id === null || !isset(self::SUBJECTS[$type]) || preg_match('/^\d+$/', $id) !== 1) {
             return null;
         }
@@ -60,5 +68,19 @@ class NotificationSubjectLinker
         }
 
         return $this->urlGenerator->generate($subject['route'], ['id' => (int) $id]);
+    }
+
+    private function pluginUrl(string $id): ?string
+    {
+        try {
+            $pluginId = new PluginId($id);
+        } catch (InvalidPluginIdException) {
+            return null;
+        }
+
+        // Same reachability gate as the settings route: an installed but disabled plugin, or one without a settings page, is a 404 there.
+        return $this->settingsPages->find($pluginId) !== null
+            ? $this->urlGenerator->generate('settings_plugin_page', ['pluginId' => $id])
+            : null;
     }
 }
