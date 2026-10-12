@@ -44,6 +44,7 @@ use App\Service\Download\AnimeDownloadLinker;
 use App\Service\Download\DownloadAdoptionPathClassifier;
 use App\Service\Download\DownloadAdoptionRefusedException;
 use App\Service\Download\DownloadCompletionPoller;
+use App\Service\Download\DownloadFailureNotifier;
 use App\Service\Download\DownloadFolderJail;
 use App\Service\Download\DownloadIncomingRelocator;
 use App\Service\Download\DownloadOrphanAdopter;
@@ -52,6 +53,7 @@ use App\Service\Download\FreeSpaceChecker;
 use App\Service\Download\NativeFreeSpaceProvider;
 use App\Service\Qbittorrent\QbittorrentClient;
 use App\Service\Storage\StorageMarkerService;
+use App\Tests\Support\RecordingNotificationCenter;
 use Doctrine\DBAL\Driver\Exception as DriverException;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
@@ -480,11 +482,12 @@ final class DownloadOrphanAdopterTest extends TestCase
             $this->downloads,
             new AnimeDownloadLinker(new AnimeRepository($this->entityManager), $this->entityManager, $jail),
             $jail,
-            new DownloadIncomingRelocator($client, new AnimeRepository($this->entityManager), $this->markerService, new AdoptTestFilesystem([]), $this->entityManager, new NullLogger()),
+            new DownloadIncomingRelocator($client, new AnimeRepository($this->entityManager), $this->markerService, new AdoptTestFilesystem([]), $this->entityManager, new NullLogger(), new DownloadFailureNotifier(new RecordingNotificationCenter(), new NullLogger())),
             $eventDispatcher,
             $this->entityManager,
             new FreeSpaceChecker(new NativeFreeSpaceProvider()),
             new NullLogger(),
+            new DownloadFailureNotifier(new RecordingNotificationCenter(), new NullLogger()),
         );
 
         $poller->poll();

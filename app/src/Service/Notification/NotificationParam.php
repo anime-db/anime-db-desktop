@@ -32,10 +32,14 @@ namespace App\Service\Notification;
  *
  * Evolution rule: a parameter is only ever added, and an added one declares a default here, which
  * the renderer substitutes into records stored before it existed. A code parameter (`$codes` not
- * empty) is translated as `notification.<kind>.<param>.<code>` and declares the closed set of codes.
+ * empty) is translated as `notification.<kind>.<param>.<code>` and declares the closed set of codes;
+ * if it is nullable, null is translated as the {@see self::NULL_CODE} code.
  */
 final readonly class NotificationParam
 {
+    /** The code under which a nullable code parameter holding null is translated (`notification.<kind>.<param>.none`). */
+    public const string NULL_CODE = 'none';
+
     /**
      * @param list<string> $codes
      */

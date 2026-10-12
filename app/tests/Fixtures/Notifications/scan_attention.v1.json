@@ -1,0 +1,1 @@
+{"kind":"scan_attention","severity":"warning","params":{"name":"Anime","needs_confirmation":2,"needs_manual_entry":1,"files_missing":0,"conflict":3,"error":1},"subject":{"type":"storage_scan_run","id":"3:12"}}
