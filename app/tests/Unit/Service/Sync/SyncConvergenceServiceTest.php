@@ -92,7 +92,7 @@ final class SyncConvergenceServiceTest extends TestCase
     }
 
     /** @param array<string, SyncInterface> $syncs every active plugin, origin included where relevant */
-    private function newService(array $syncs): SyncConvergenceService
+    private function newService(array $syncs, ?\App\Service\Sync\SyncReauthTracker $reauthTracker = null): SyncConvergenceService
     {
         $settings = [];
         foreach (array_keys($syncs) as $id) {
@@ -109,6 +109,7 @@ final class SyncConvergenceServiceTest extends TestCase
             $syncRegistry,
             new SyncReviewService(new SyncReviewItemRepository($this->entityManager)),
             new NullLogger(),
+            $reauthTracker ?? new \App\Tests\Support\NullSyncReauthTracker(),
         );
     }
 
@@ -1119,6 +1120,41 @@ final class SyncConvergenceServiceTest extends TestCase
         $this->assertFalse($originState->pushPending);
     }
 
+    public function testASuccessfulForwardPushClearsTheReauthFlagButAReauthFailureDoesNotTouchIt(): void
+    {
+        $malPluginId = new PluginId('animedb-mal');
+
+        $anime = new TvAnime();
+        $anime->setTitle('Cowboy Bebop')->setWatchStatus(WatchStatus::Plan);
+        $anime->rememberExternalId($this->originPluginId, '1');
+        $anime->rememberExternalId($malPluginId, '99');
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+        $this->seedLastSeen($anime, 'local', WatchStatus::Plan, '2026-01-01');
+        $this->seedLastSeen($anime, (string) $this->originPluginId, WatchStatus::Plan, '2026-01-01');
+        $this->seedLastSeen($anime, (string) $malPluginId, WatchStatus::Plan, '2026-01-01');
+
+        $origin = $this->createStub(SyncInterface::class);
+        $origin->method('push')->willReturnCallback(static fn (SyncItem $item): SyncItem => $item);
+        $mal = $this->createStub(SyncInterface::class);
+        $mal->method('push')->willThrowException(new ReauthRequiredException('Refresh token is dead.'));
+
+        $tracker = new \App\Tests\Support\RecordingSyncReauthTracker();
+        $service = $this->newService([(string) $this->originPluginId => $origin, (string) $malPluginId => $mal], $tracker);
+        $service->reconcilePulledItem($anime, (string) $this->originPluginId, new SyncProjection(WatchStatus::Watching, null), new \DateTimeImmutable('2026-01-02'), $this->entityManager);
+
+        // the origin was pushed back successfully; the dead plugin neither sets nor clears anything
+        $this->assertNotContains('required:animedb-mal', $tracker->calls);
+        $this->assertNotContains('ok:animedb-mal', $tracker->calls);
+
+        $mal2 = $this->createStub(SyncInterface::class);
+        $mal2->method('push')->willReturnCallback(static fn (SyncItem $item): SyncItem => $item);
+        $tracker2 = new \App\Tests\Support\RecordingSyncReauthTracker();
+        $this->newService([(string) $this->originPluginId => $origin, (string) $malPluginId => $mal2], $tracker2)
+            ->reconcilePulledItem($anime, (string) $this->originPluginId, new SyncProjection(WatchStatus::Watching, null), new \DateTimeImmutable('2026-01-03'), $this->entityManager);
+        $this->assertContains('ok:animedb-mal', $tracker2->calls);
+    }
+
     /**
      * Acceptance (issue #862, PR #891 review): {@see ReauthRequiredException} means the plugin
      * itself needs the user to re-authorize, but PushSyncMessageHandler's own handling for that
@@ -1253,6 +1289,7 @@ final class SyncConvergenceServiceTest extends TestCase
             $syncRegistry,
             new SyncReviewService(new SyncReviewItemRepository($this->entityManager)),
             new NullLogger(),
+            new \App\Tests\Support\NullSyncReauthTracker(),
         );
 
         try {

@@ -41,6 +41,7 @@ use App\Service\Sync\CrossVendorDuplicateDetector;
 use App\Service\Sync\DeletedFromSourceDetector;
 use App\Service\Sync\SyncConvergenceService;
 use App\Service\Sync\SyncProjection;
+use App\Service\Sync\SyncReauthTracker;
 use App\Service\Sync\TypeMismatchDetector;
 use Doctrine\ORM\EntityManager;
 use Doctrine\ORM\EntityManagerInterface;
@@ -158,6 +159,7 @@ final class PullSyncService
         private readonly SyncConvergenceService $convergenceService,
         private readonly SyncTombstoneRepository $tombstoneRepository,
         private readonly LoggerInterface $logger,
+        private readonly SyncReauthTracker $reauthTracker,
     ) {
     }
 
@@ -189,7 +191,13 @@ final class PullSyncService
      */
     public function pull(PluginId $pluginId, SyncInterface $sync, ?\Closure $onItem = null): bool
     {
-        return $this->doPull($pluginId, $sync, $onItem);
+        $finished = $this->doPull($pluginId, $sync, $onItem);
+        if ($finished) {
+            // A run that reached the end talked to the plugin's API with a live session.
+            $this->reauthTracker->onSyncSucceeded((string) $pluginId);
+        }
+
+        return $finished;
     }
 
     private function doPull(PluginId $pluginId, SyncInterface $sync, ?\Closure $onItem): bool
@@ -348,6 +356,9 @@ final class PullSyncService
             if ($recoveryEntityManager === null) {
                 $this->entityManager->flush();
             }
+
+            // After the flush above: the notification is recorded outside any transaction.
+            $this->reauthTracker->onReauthRequired((string) $pluginId);
 
             return false;
         }
