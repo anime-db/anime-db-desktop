@@ -36,22 +36,28 @@ use AnimeDb\PluginContracts\Sync\SyncStatus;
 use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
 use App\Entity\Anime;
+use App\Entity\Enum\SyncReviewItemKind;
 use App\Entity\Enum\WatchStatus;
 use App\Entity\MovieAnime;
+use App\Entity\SyncReviewItem;
 use App\Entity\ValueObject\PluginId;
 use App\Message\SyncPullMessage;
 use App\Message\SyncSeedMessage;
 use App\MessageHandler\SyncPullMessageHandler;
 use App\Repository\AnimeRepository;
+use App\Repository\SyncReviewItemRepository;
 use App\Repository\SyncTombstoneRepository;
 use App\Service\JobLock\JobLockService;
 use App\Service\JobLock\ProcessLivenessChecker;
+use App\Service\Notification\Kind\SyncReviewNotificationKind;
 use App\Service\Plugin\ExternalIdBackfillService;
 use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Plugin\SyncRegistry;
 use App\Service\Sync\SourceRemovalService;
 use App\Service\Sync\SyncPullGate;
+use App\Service\Sync\SyncReviewService;
 use App\Tests\Support\BuildsPullSyncService;
+use App\Tests\Support\RecordingNotificationCenter;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\EntityManager;
@@ -321,7 +327,47 @@ final class SyncPullMessageHandlerTest extends TestCase
         return new PluginsConfigStore($this->path);
     }
 
-    private function handler(SyncInterface $sync, PluginsConfigStore $store, ?LoggerInterface $logger = null, ?JobLockService $locks = null): SyncPullMessageHandler
+    public function testPullThatRaisesReviewItemsRecordsOneSyncReviewNotificationAfterTheirCommit(): void
+    {
+        $sync = $this->createMock(SyncInterface::class);
+        $sync->method('pull')->willReturnCallback(function (): array {
+            $this->addReviewItems(2);
+
+            return [];
+        });
+
+        $notifications = new RecordingNotificationCenter();
+        $notifications->onRecord = fn () => $this->assertSame(3, (new SyncReviewService(new SyncReviewItemRepository($this->entityManager)))->countUnresolved(), 'record() runs after the items are committed');
+        $this->addReviewItems(1);
+        $store = $this->store(['features' => ['sync' => true], 'syncSeeded' => true]);
+        $this->handler($sync, $store, null, null, $notifications)(new SyncPullMessage(self::ID));
+
+        $this->assertCount(1, $notifications->drafts);
+        $this->assertEquals(SyncReviewNotificationKind::draft(3), $notifications->drafts[0]);
+    }
+
+    public function testPullThatRaisesNoReviewItemsRecordsNoNotification(): void
+    {
+        $sync = $this->createMock(SyncInterface::class);
+        $sync->method('pull')->willReturn([]);
+
+        $notifications = new RecordingNotificationCenter();
+        $this->addReviewItems(2);
+        $store = $this->store(['features' => ['sync' => true], 'syncSeeded' => true]);
+        $this->handler($sync, $store, null, null, $notifications)(new SyncPullMessage(self::ID));
+
+        $this->assertSame([], $notifications->drafts);
+    }
+
+    private function addReviewItems(int $count): void
+    {
+        for ($i = 0; $i < $count; ++$i) {
+            $this->entityManager->persist(new SyncReviewItem(SyncReviewItemKind::PotentialDuplicate, ['anime_ids' => [1, 2]]));
+        }
+        $this->entityManager->flush();
+    }
+
+    private function handler(SyncInterface $sync, PluginsConfigStore $store, ?LoggerInterface $logger = null, ?JobLockService $locks = null, ?RecordingNotificationCenter $notifications = null): SyncPullMessageHandler
     {
         $registry = new SyncRegistry([self::ID => $sync], $store);
 
@@ -332,6 +378,8 @@ final class SyncPullMessageHandlerTest extends TestCase
             new SourceRemovalService(new SyncTombstoneRepository($this->entityManager), new AnimeRepository($this->entityManager), new NullLogger()),
             $this->newPullSyncService($registry),
             $locks ?? $this->jobLockService(),
+            new SyncReviewService(new SyncReviewItemRepository($this->entityManager)),
+            $notifications ?? new RecordingNotificationCenter(),
             $logger ?? new NullLogger(),
         );
     }

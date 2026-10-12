@@ -31,12 +31,15 @@ use AnimeDb\PluginContracts\Sync\SyncInterface;
 use App\Entity\ValueObject\PluginId;
 use App\Message\SyncSeedMessage;
 use App\Service\JobLock\JobLockService;
+use App\Service\Notification\Kind\SyncReviewNotificationKind;
+use App\Service\Notification\NotificationCenter;
 use App\Service\Plugin\ExternalIdBackfillService;
 use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Plugin\PullSyncService;
 use App\Service\Plugin\SyncRegistry;
 use App\Service\Sync\SourceRemovalService;
 use App\Service\Sync\SyncPullGate;
+use App\Service\Sync\SyncReviewService;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 
@@ -76,6 +79,8 @@ final class SyncSeedMessageHandler
         private readonly PluginsConfigStore $pluginsConfigStore,
         private readonly JobLockService $jobLockService,
         private readonly SyncPullGate $pullGate,
+        private readonly SyncReviewService $syncReview,
+        private readonly NotificationCenter $notifications,
         private readonly LoggerInterface $logger,
     ) {
     }
@@ -129,7 +134,14 @@ final class SyncSeedMessageHandler
         $this->backfillService->backfill($pluginId, $sync);
         $this->sourceRemoval->retryPending($pluginId, $sync);
 
+        $unresolvedBefore = $this->syncReview->countUnresolved();
         $seeded = $this->pullSyncService->pull($pluginId, $sync, fn () => $this->jobLockService->heartbeat($jobKey));
+        // Issue #1028: after the pull's commits; the seed is what fills the review queue right after connecting a plugin.
+        $unresolvedAfter = $this->syncReview->countUnresolved();
+        if ($unresolvedAfter > $unresolvedBefore) {
+            $this->notifications->record(SyncReviewNotificationKind::draft($unresolvedAfter));
+        }
+
         if ($seeded) {
             // Issue #870: the seed is a successful pull too, so the periodic one waits its full age.
             $this->pullGate->markPulled($pluginId);
