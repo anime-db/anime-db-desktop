@@ -21,7 +21,7 @@
 
 'use strict';
 
-const { app, dialog, session } = require('electron');
+const { app, dialog, session, Notification } = require('electron');
 require('../protocols/app-media');
 require('../accept-language');
 require('../content-security-policy');
@@ -42,7 +42,8 @@ const firewall         = require('../firewall');
 const theme            = require('../theme');
 const paths            = require('../paths');
 const { logCrash }     = require('../crash-log');
-const { getLocale }    = require('../config');
+const { getLocale, getSystemNotifications } = require('../config');
+const notifications    = require('../notifications');
 const i18n             = require('../i18n');
 const { MigrationBootstrapError } = require('../supervisor/migrations');
 const { CacheInvalidationError } = require('../supervisor/cache-invalidation');
@@ -190,6 +191,9 @@ if (!gotLock) {
     proxy.registerProxyAuthHandler();
 
     app.whenReady().then(async () => {
+        // Before the first Notification is created (see createNotificationDelivery below).
+        notifications.applyAppUserModelId(app, process.platform, notifications.APP_USER_MODEL_ID);
+
         // Must run before the safe-mode dialog and before createSplash() below — the splash
         // page's prefers-color-scheme (see native/splash/splash.html) reflects whatever
         // themeSource is set to at the moment its window is created.
@@ -272,8 +276,19 @@ if (!gotLock) {
 
             tray.create(mainWindow, onQuit);
 
+            const notificationDelivery = notifications.createNotificationDelivery({
+                getWindow: () => mainWindow,
+                Notification,
+                isSystemNotificationsEnabled: getSystemNotifications,
+                onToastClick: notifications.createToastClickHandler({
+                    getWindow: () => mainWindow,
+                    getBaseUrl: () => `http://127.0.0.1:${frankenphpPort}`,
+                }),
+            });
+
             wsClient.on('backend-event', ({ event, data }) => {
                 if (event === 'backend.status') tray.setState(data.state);
+                if (event === notifications.NOTIFICATION_CREATED_EVENT) notificationDelivery.handle(data);
                 if (event === proxy.PROXY_CHANGED_EVENT) {
                     proxy.applyProxy(session.defaultSession).catch((err) => {
                         console.error('[proxy] не удалось применить настройки прокси:', err);

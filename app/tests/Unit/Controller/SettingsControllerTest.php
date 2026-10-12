@@ -161,6 +161,7 @@ final class SettingsControllerTest extends TestCase
                 'unavailableLocale' => null,
                 'themePreference' => ThemePreference::System,
                 'paginationMode' => PaginationMode::InfiniteScroll,
+                'systemNotifications' => true,
             ])
             ->willReturn('<html></html>');
 
@@ -182,6 +183,7 @@ final class SettingsControllerTest extends TestCase
                 'unavailableLocale' => null,
                 'themePreference' => ThemePreference::System,
                 'paginationMode' => PaginationMode::InfiniteScroll,
+                'systemNotifications' => true,
             ])
             ->willReturn('<html></html>');
 
@@ -206,6 +208,7 @@ final class SettingsControllerTest extends TestCase
                 'unavailableLocale' => 'de',
                 'themePreference' => ThemePreference::System,
                 'paginationMode' => PaginationMode::InfiniteScroll,
+                'systemNotifications' => true,
             ])
             ->willReturn('<html></html>');
 
@@ -336,6 +339,56 @@ final class SettingsControllerTest extends TestCase
 
         $this->expectException(BadRequestHttpException::class);
         $controller->setTheme($request);
+    }
+
+    public function testSetSystemNotificationsPersistsEnabledAndRedirectsWithSeeOther(): void
+    {
+        $urlGenerator = $this->createMock(UrlGeneratorInterface::class);
+        $urlGenerator->expects($this->once())->method('generate')->with('settings_index')->willReturn('/settings');
+
+        $controller = $this->createController(urlGenerator: $urlGenerator);
+        $request = Request::create('/settings/system-notifications', 'POST', ['systemNotifications' => '1', '_token' => 'token']);
+
+        $response = $controller->setSystemNotifications($request);
+
+        $this->assertSame(303, $response->getStatusCode());
+        $this->assertSame('/settings', $response->getTargetUrl());
+        $data = json_decode((string) file_get_contents($this->configPath), true);
+        $this->assertTrue($data['systemNotifications']);
+    }
+
+    /**
+     * A browser omits an unchecked checkbox from the POST body entirely, so a missing field is the
+     * way the switch gets turned off.
+     */
+    public function testSetSystemNotificationsWithoutFieldPersistsDisabled(): void
+    {
+        $controller = $this->createController();
+        $controller->setSystemNotifications(
+            Request::create('/settings/system-notifications', 'POST', ['systemNotifications' => '1', '_token' => 'token']),
+        );
+        $controller->setSystemNotifications(
+            Request::create('/settings/system-notifications', 'POST', ['_token' => 'token']),
+        );
+
+        $data = json_decode((string) file_get_contents($this->configPath), true);
+        $this->assertFalse($data['systemNotifications']);
+    }
+
+    public function testSetSystemNotificationsRejectsInvalidCsrfToken(): void
+    {
+        $csrf = $this->createStub(CsrfTokenManagerInterface::class);
+        $csrf->method('isTokenValid')->willReturn(false);
+
+        $controller = $this->createController(csrfTokenManager: $csrf);
+        $request = Request::create('/settings/system-notifications', 'POST', ['systemNotifications' => '1', '_token' => 'bad']);
+
+        try {
+            $controller->setSystemNotifications($request);
+            $this->fail('Expected BadRequestHttpException.');
+        } catch (BadRequestHttpException) {
+            $this->assertFalse(is_file($this->configPath) && str_contains((string) file_get_contents($this->configPath), 'systemNotifications'));
+        }
     }
 
     /**

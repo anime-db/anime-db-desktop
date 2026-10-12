@@ -126,6 +126,8 @@ function loadLifecycle() {
     const fakeWindow = {
         isMinimized: jest.fn(() => false),
         isDestroyed: jest.fn(() => false),
+        isVisible:   jest.fn(() => true),
+        isFocused:   jest.fn(() => true),
         show:        jest.fn(),
         hide:        jest.fn(),
         focus:       jest.fn(),
@@ -651,6 +653,23 @@ describe('plugin activation (issue #411)', () => {
 
         expect(() => supervisorEventHandlers['plugin-activation-failed']({ pluginId: 'animedb-shikimori' })).not.toThrow();
         expect(fakeWindow.webContents.send).not.toHaveBeenCalled();
+    });
+});
+
+describe('notification.created routing', () => {
+    test('a notification.created backend event reaches delivery: counter and in-app popup go to the focused window', async () => {
+        const { fakeWindow, wsClientHandlers } = loadLifecycle();
+        await new Promise((r) => setTimeout(r, 500));
+
+        wsClientHandlers['backend-event']({
+            event: 'notification.created',
+            data:  { id: 7, occurrences: 1, title: 'T', body: 'B', url: null, unread_count: 4 },
+        });
+
+        expect(fakeWindow.webContents.send).toHaveBeenCalledWith('app-notification-unread-count', 4);
+        expect(fakeWindow.webContents.send).toHaveBeenCalledWith('app-notification', {
+            type: 'notification', title: 'T', message: 'B',
+        });
     });
 });
 

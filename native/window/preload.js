@@ -28,6 +28,7 @@ contextBridge.exposeInMainWorld('animeDb', {
     pickFolder: () => ipcRenderer.invoke('dialog:pick-folder'),
     pickFile:   (filters) => ipcRenderer.invoke('dialog:pick-file', filters),
     onNotification: (callback) => ipcRenderer.on('app-notification', (_event, data) => callback(data)),
+    onUnreadCount: (callback) => ipcRenderer.on('app-notification-unread-count', (_event, count) => callback(count)),
     catalogExportStart:  (destinationDir) => ipcRenderer.invoke('catalog:export-start', destinationDir),
     catalogExportCancel: () => ipcRenderer.invoke('catalog:export-cancel'),
     catalogImportStart:  (archivePath) => ipcRenderer.invoke('catalog:import-start', archivePath),

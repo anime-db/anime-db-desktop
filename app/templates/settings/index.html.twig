@@ -62,6 +62,16 @@
             </fieldset>
         </form>
 
+        <form method="post" action="{{ path('settings_set_system_notifications') }}" class="mb-4">
+            <input type="hidden" name="_token" value="{{ csrf_token('settings_set_system_notifications') }}">
+            <div class="form-check form-switch mb-3">
+                <input type="checkbox" class="form-check-input" role="switch" name="systemNotifications" id="system-notifications"
+                       value="1"{% if systemNotifications %} checked{% endif %} data-submit-on-change>
+                <label class="form-check-label" for="system-notifications">{{ 'settings.system_notifications_label'|trans }}</label>
+                <div class="form-text">{{ 'settings.system_notifications_hint'|trans }}</div>
+            </div>
+        </form>
+
         <form method="post" action="{{ path('settings_set_pagination_mode') }}" class="mb-4">
             <input type="hidden" name="_token" value="{{ csrf_token('settings_set_pagination_mode') }}">
             <fieldset class="mb-3">
