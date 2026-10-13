@@ -598,7 +598,7 @@ final class ScanStorageServiceTest extends TestCase
         $this->assertInstanceOf(MovieAnime::class, $anime);
         $this->assertSame('Bleach: Memories of Nobody', $anime->getTitle());
         $this->assertSame(91, $anime->getDurationMinutes());
-        $this->assertSame('104', $anime->getExternalId($pluginId, $filler));
+        $this->assertSame('104', $anime->getCachedExternalId($pluginId));
     }
 
     /**

@@ -31,6 +31,7 @@ use AnimeDb\PluginContracts\Filler\FillerInterface;
 use AnimeDb\PluginContracts\Filler\PluginAnimeData;
 use App\Entity\Anime;
 use App\Entity\ValueObject\PluginId;
+use App\Service\Plugin\ExternalIdResolver;
 use App\Service\Plugin\FillerRegistry;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Log\LoggerInterface;
@@ -40,7 +41,7 @@ use Psr\Log\LoggerInterface;
  * from one explicitly chosen plugin, as opposed to {@see BulkFillerService}'s create-and-fill-
  * everything path. The resolve chain itself is the same shape as BulkFillerService's own
  * resolve()/findById() (find() -> first candidate -> findById()), just entered differently:
- * {@see Anime::getExternalId()} is tried first, since an already-persisted anime usually
+ * {@see ExternalIdResolver::resolve()} is tried first, since an already-persisted anime usually
  * already has a source URL a plugin can resolve an id from without a find() round trip at all.
  *
  * A plugin's find()/findById()/resolveExternalId() throwing, or returning nothing, is treated
@@ -55,6 +56,7 @@ final class FieldFillerService
         private readonly EntityManagerInterface $entityManager,
         private readonly CachedFillerLookup $lookup,
         private readonly LoggerInterface $logger,
+        private readonly ExternalIdResolver $externalIdResolver,
     ) {
     }
 
@@ -103,7 +105,7 @@ final class FieldFillerService
 
     private function resolve(FillerInterface $filler, PluginId $pluginId, Anime $anime): ?PluginAnimeData
     {
-        $externalId = $anime->getExternalId($pluginId, $filler);
+        $externalId = $this->externalIdResolver->resolve($anime, $pluginId, $filler);
 
         if ($externalId === null) {
             $candidates = $filler->find($anime->getTitle());
@@ -111,8 +113,11 @@ final class FieldFillerService
                 return null;
             }
 
-            $externalId = $candidates[0]->getExternalId();
-            $anime->rememberExternalId($pluginId, $externalId);
+            // An id pinned to another anime is not cached: the fill ends as "not found".
+            $externalId = $this->externalIdResolver->claim($anime, $pluginId, $candidates[0]->getExternalId());
+            if ($externalId === null) {
+                return null;
+            }
         }
 
         return $this->lookup->findById($filler, $pluginId, $externalId);

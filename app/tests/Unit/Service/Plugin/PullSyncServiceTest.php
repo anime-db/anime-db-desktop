@@ -189,6 +189,7 @@ final class PullSyncServiceTest extends TestCase
             new SyncReviewService(new SyncReviewItemRepository($entityManager)),
             new NullLogger(),
             $reauthTracker ?? new \App\Tests\Support\NullSyncReauthTracker(),
+            new \App\Service\Plugin\ExternalIdResolver(new AnimeRepository($this->entityManager), new NullLogger()),
         );
 
         return new PullSyncService($entityManager, $animeRepository, $bulkFillerService, $duplicateDetector, $deletionDetector, new \App\Service\Sync\TypeMismatchDetector(new SyncReviewService(new SyncReviewItemRepository($entityManager))), $convergenceService, new SyncTombstoneRepository($entityManager), $logger ?? new NullLogger(), $reauthTracker ?? new \App\Tests\Support\NullSyncReauthTracker());
@@ -790,6 +791,7 @@ final class PullSyncServiceTest extends TestCase
             new SyncReviewService(new SyncReviewItemRepository($this->entityManager)),
             new NullLogger(),
             new \App\Tests\Support\NullSyncReauthTracker(),
+            new \App\Service\Plugin\ExternalIdResolver(new AnimeRepository($this->entityManager), new NullLogger()),
         );
         $service = new PullSyncService($this->entityManager, new AnimeRepository($this->entityManager), $bulkFillerService, $duplicateDetector, $deletionDetector, new \App\Service\Sync\TypeMismatchDetector(new SyncReviewService(new SyncReviewItemRepository($this->entityManager))), $convergenceService, new SyncTombstoneRepository($this->entityManager), new NullLogger(), new \App\Tests\Support\NullSyncReauthTracker());
 
@@ -1361,6 +1363,7 @@ final class PullSyncServiceTest extends TestCase
             new SyncReviewService(new SyncReviewItemRepository($this->entityManager)),
             new NullLogger(),
             new \App\Tests\Support\NullSyncReauthTracker(),
+            new \App\Service\Plugin\ExternalIdResolver(new AnimeRepository($this->entityManager), new NullLogger()),
         );
         $service = new PullSyncService($this->entityManager, new AnimeRepository($this->entityManager), $bulkFillerService, $duplicateDetector, $deletionDetector, new \App\Service\Sync\TypeMismatchDetector(new SyncReviewService(new SyncReviewItemRepository($this->entityManager))), $convergenceService, new SyncTombstoneRepository($this->entityManager), new NullLogger(), new \App\Tests\Support\NullSyncReauthTracker());
 

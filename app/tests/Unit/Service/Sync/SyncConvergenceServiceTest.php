@@ -92,7 +92,7 @@ final class SyncConvergenceServiceTest extends TestCase
     }
 
     /** @param array<string, SyncInterface> $syncs every active plugin, origin included where relevant */
-    private function newService(array $syncs, ?\App\Service\Sync\SyncReauthTracker $reauthTracker = null): SyncConvergenceService
+    private function newService(array $syncs, ?\App\Service\Sync\SyncReauthTracker $reauthTracker = null, ?\App\Service\Plugin\ExternalIdResolver $resolver = null): SyncConvergenceService
     {
         $settings = [];
         foreach (array_keys($syncs) as $id) {
@@ -110,6 +110,7 @@ final class SyncConvergenceServiceTest extends TestCase
             new SyncReviewService(new SyncReviewItemRepository($this->entityManager)),
             new NullLogger(),
             $reauthTracker ?? new \App\Tests\Support\NullSyncReauthTracker(),
+            $resolver ?? new \App\Service\Plugin\ExternalIdResolver(new \App\Repository\AnimeRepository($this->entityManager), new NullLogger()),
         );
     }
 
@@ -1290,6 +1291,7 @@ final class SyncConvergenceServiceTest extends TestCase
             new SyncReviewService(new SyncReviewItemRepository($this->entityManager)),
             new NullLogger(),
             new \App\Tests\Support\NullSyncReauthTracker(),
+            new \App\Service\Plugin\ExternalIdResolver(new \App\Repository\AnimeRepository($this->entityManager), new NullLogger()),
         );
 
         try {
@@ -1319,5 +1321,93 @@ final class SyncConvergenceServiceTest extends TestCase
         $this->assertIsArray($malRow);
         $this->assertSame(0, (int) $malRow['push_pending'], 'The push_pending marker must not survive a failed persistConfirmedState on its own.');
         $this->assertSame('plan', $malRow['last_status']);
+    }
+
+    public function testAPluginWhoseResolvedIdIsPinnedToAnotherAnimeIsNotAParticipant(): void
+    {
+        $malPluginId = new PluginId('animedb-mal');
+
+        $owner = new TvAnime();
+        $owner->setTitle('Cowboy Bebop (duplicate)')->setWatchStatus(WatchStatus::Plan);
+        $owner->rememberExternalId($malPluginId, '99');
+        $this->entityManager->persist($owner);
+
+        $anime = new TvAnime();
+        $anime->setTitle('Cowboy Bebop')->setWatchStatus(WatchStatus::Plan);
+        $anime->rememberExternalId($this->originPluginId, '1');
+        $anime->addSource('https://mal.example/anime/99');
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+
+        $this->seedLastSeen($anime, 'local', WatchStatus::Plan, '2026-01-01');
+        $this->seedLastSeen($anime, (string) $this->originPluginId, WatchStatus::Plan, '2026-01-01');
+
+        $mal = $this->createMock(SyncInterface::class);
+        $mal->method('resolveExternalId')->willReturn('99');
+        $mal->expects($this->never())->method('push');
+
+        $origin = $this->createMock(SyncInterface::class);
+        $origin->expects($this->never())->method('push');
+
+        $service = $this->newService([(string) $this->originPluginId => $origin, (string) $malPluginId => $mal]);
+
+        $service->reconcilePulledItem(
+            $anime,
+            (string) $this->originPluginId,
+            new SyncProjection(WatchStatus::Watching, null),
+            new \DateTimeImmutable('2026-01-02'),
+            $this->entityManager,
+        );
+        $this->entityManager->flush();
+
+        $this->assertNull($anime->getCachedExternalId($malPluginId));
+        $this->assertSame(WatchStatus::Watching, $anime->getWatchStatus());
+    }
+
+    public function testTheOwnerOfAResolvedIdIsLookedUpThroughTheGivenEntityManager(): void
+    {
+        $malPluginId = new PluginId('animedb-mal');
+
+        $owner = new TvAnime();
+        $owner->setTitle('Cowboy Bebop (duplicate)')->setWatchStatus(WatchStatus::Plan);
+        $owner->rememberExternalId($malPluginId, '99');
+        $this->entityManager->persist($owner);
+
+        $anime = new TvAnime();
+        $anime->setTitle('Cowboy Bebop')->setWatchStatus(WatchStatus::Plan);
+        $anime->rememberExternalId($this->originPluginId, '1');
+        $anime->addSource('https://mal.example/anime/99');
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+
+        $this->seedLastSeen($anime, 'local', WatchStatus::Plan, '2026-01-01');
+        $this->seedLastSeen($anime, (string) $this->originPluginId, WatchStatus::Plan, '2026-01-01');
+
+        // The resolver's own repository is bound to a different, empty database: only the manager
+        // passed to reconcilePulledItem() knows the owner of MAL id 99.
+        $config = $this->entityManager->getConfiguration();
+        $otherEntityManager = new EntityManager(DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true], $config), $config);
+        (new SchemaTool($otherEntityManager))->createSchema($otherEntityManager->getMetadataFactory()->getAllMetadata());
+        $resolver = new \App\Service\Plugin\ExternalIdResolver(new \App\Repository\AnimeRepository($otherEntityManager), new NullLogger());
+
+        $mal = $this->createMock(SyncInterface::class);
+        $mal->method('resolveExternalId')->willReturn('99');
+        $mal->expects($this->never())->method('push');
+
+        $origin = $this->createMock(SyncInterface::class);
+        $origin->expects($this->never())->method('push');
+
+        $service = $this->newService([(string) $this->originPluginId => $origin, (string) $malPluginId => $mal], null, $resolver);
+
+        $service->reconcilePulledItem(
+            $anime,
+            (string) $this->originPluginId,
+            new SyncProjection(WatchStatus::Watching, null),
+            new \DateTimeImmutable('2026-01-02'),
+            $this->entityManager,
+        );
+        $this->entityManager->flush();
+
+        $this->assertNull($anime->getCachedExternalId($malPluginId));
     }
 }

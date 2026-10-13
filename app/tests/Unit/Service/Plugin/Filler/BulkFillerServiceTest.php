@@ -143,7 +143,7 @@ final class BulkFillerServiceTest extends TestCase
         $this->assertInstanceOf(MovieAnime::class, $anime);
         $this->assertSame('Bleach: Memories of Nobody', $anime->getTitle());
         $this->assertSame(91, $anime->getDurationMinutes());
-        $this->assertSame('104', $anime->getExternalId($pluginId, $filler));
+        $this->assertSame('104', $anime->getCachedExternalId($pluginId));
     }
 
     /**
@@ -194,7 +194,7 @@ final class BulkFillerServiceTest extends TestCase
         $anime = $service->fillNewFromPlugin($pluginId, 'Bleach: Memories of Nobody', '104');
 
         $this->assertInstanceOf(MovieAnime::class, $anime);
-        $this->assertSame('104', $anime->getExternalId($pluginId, $filler));
+        $this->assertSame('104', $anime->getCachedExternalId($pluginId));
     }
 
     public function testFillNewFromPluginReturnsNullAndLogsAWarningWhenFindThrows(): void
@@ -257,7 +257,7 @@ final class BulkFillerServiceTest extends TestCase
         $this->assertInstanceOf(MovieAnime::class, $anime);
         $this->assertSame('Bleach: Memories of Nobody', $anime->getTitle());
         $this->assertSame(91, $anime->getDurationMinutes());
-        $this->assertSame('104', $anime->getExternalId($pluginId, $filler));
+        $this->assertSame('104', $anime->getCachedExternalId($pluginId));
     }
 
     public function testFillNewFromReturnsNullWhenTheFillerCannotResolveTheExternalId(): void
@@ -396,7 +396,7 @@ final class BulkFillerServiceTest extends TestCase
         $this->assertTrue($result->filledFromPlugin);
         $this->assertInstanceOf(MovieAnime::class, $result->anime);
         $this->assertSame(91, $result->anime->getDurationMinutes());
-        $this->assertSame('104', $result->anime->getExternalId($pluginId, $filler));
+        $this->assertSame('104', $result->anime->getCachedExternalId($pluginId));
     }
 
     public function testFindOrCreateFromPluginFallsBackToATitleOnlyAnimeWithTheExternalIdPreservedWhenThePluginIsUnreachable(): void
@@ -414,7 +414,7 @@ final class BulkFillerServiceTest extends TestCase
         $this->assertFalse($result->wasFound);
         $this->assertFalse($result->filledFromPlugin);
         $this->assertSame('Bleach', $result->anime->getTitle());
-        $this->assertSame('104', $result->anime->getExternalId($pluginId, $filler));
+        $this->assertSame('104', $result->anime->getCachedExternalId($pluginId));
     }
 
     public function testFindOrCreateFromPluginWithAnEmptyExternalIdCreatesATitleOnlyAnimeWithoutLinkingAnything(): void
@@ -530,7 +530,7 @@ final class BulkFillerServiceTest extends TestCase
         $this->assertSame('Bleach (user title)', $anime->getTitle());
         $this->assertSame(24, $anime->getDurationMinutes());
         $this->assertSame(366, $anime->getEpisodesCount());
-        $this->assertSame('104', $anime->getExternalId($pluginId, $filler));
+        $this->assertSame('104', $anime->getCachedExternalId($pluginId));
     }
 
     public function testFillExistingFromPluginThrowsWhenThePairAlreadyBelongsToADifferentAnime(): void

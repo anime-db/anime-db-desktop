@@ -105,6 +105,7 @@ final class FieldFillerServiceTest extends TestCase
             $this->entityManager,
             new CachedFillerLookup($cache ?? new ArrayAdapter()),
             $logger ?? new NullLogger(),
+            new \App\Service\Plugin\ExternalIdResolver(new \App\Repository\AnimeRepository($this->entityManager), new NullLogger()),
         );
     }
 
@@ -403,5 +404,48 @@ final class FieldFillerServiceTest extends TestCase
 
         $this->assertSame(FillResult::ImageRejected, $service->fill($anime, $pluginId, 'images'));
         $this->assertCount(0, $anime->getImages());
+    }
+
+    public function testFillReturnsNotFoundWhenTheIdFromTheSourceUrlIsPinnedToAnotherAnime(): void
+    {
+        $pluginId = new PluginId('animedb-shikimori');
+        $owner = $this->persistedAnime('Bleach (duplicate)');
+        $owner->rememberExternalId($pluginId, '104');
+        $this->entityManager->flush();
+
+        $filler = $this->createMock(FillerInterface::class);
+        $filler->method('getFillableFields')->willReturn(['durationMinutes']);
+        $filler->method('resolveExternalId')->willReturn('104');
+        $filler->expects($this->never())->method('findById');
+
+        $anime = $this->persistedAnime();
+        $service = $this->newService([(string) $pluginId => $filler]);
+
+        $this->assertSame(FillResult::NotFound, $service->fill($anime, $pluginId, 'durationMinutes'));
+        $this->assertNull($anime->getCachedExternalId($pluginId));
+        $this->entityManager->flush();
+        $this->assertCount(1, $this->entityManager->getRepository(\App\Entity\AnimeExternalId::class)->findAll());
+    }
+
+    public function testFillReturnsNotFoundWhenTheFindCandidateIsPinnedToAnotherAnime(): void
+    {
+        $pluginId = new PluginId('animedb-shikimori');
+        $owner = $this->persistedAnime('Bleach (duplicate)');
+        $owner->rememberExternalId($pluginId, '104');
+        $this->entityManager->flush();
+
+        $filler = $this->createMock(FillerInterface::class);
+        $filler->method('getFillableFields')->willReturn(['durationMinutes']);
+        $filler->method('resolveExternalId')->willReturn(null);
+        $filler->method('find')->willReturn([new ContractsSearchByPluginCandidate((string) $pluginId, 'Bleach', '104')]);
+        $filler->expects($this->never())->method('findById');
+
+        $anime = $this->persistedAnime();
+        $service = $this->newService([(string) $pluginId => $filler]);
+
+        $this->assertSame(FillResult::NotFound, $service->fill($anime, $pluginId, 'durationMinutes'));
+        $this->assertNull($anime->getCachedExternalId($pluginId));
+        $this->entityManager->flush();
+        $this->assertCount(1, $this->entityManager->getRepository(\App\Entity\AnimeExternalId::class)->findAll());
     }
 }
