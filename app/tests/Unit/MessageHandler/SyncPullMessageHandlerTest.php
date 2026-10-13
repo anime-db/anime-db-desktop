@@ -377,6 +377,57 @@ final class SyncPullMessageHandlerTest extends TestCase
         $this->assertEquals([SyncReviewNotificationKind::draft(1)], $notifications->drafts);
     }
 
+    public function testPullThatThrowsAfterRaisingReviewItemsStillRecordsTheNotificationAndRethrows(): void
+    {
+        $sync = $this->createMock(SyncInterface::class);
+        $sync->method('pull')->willReturnCallback(function (): array {
+            $this->addReviewItems(2);
+
+            throw new \RuntimeException('network');
+        });
+
+        $notifications = new RecordingNotificationCenter();
+        $store = $this->store(['features' => ['sync' => true], 'syncSeeded' => true]);
+
+        try {
+            $this->handler($sync, $store, null, null, $notifications)(new SyncPullMessage(self::ID));
+            $this->fail('The exception must propagate.');
+        } catch (\RuntimeException $e) {
+            $this->assertSame('network', $e->getMessage());
+        }
+
+        $this->assertEquals([SyncReviewNotificationKind::draft(2)], $notifications->drafts);
+    }
+
+    public function testAFailingWatermarkDoesNotCancelThePull(): void
+    {
+        $this->entityManager->getConnection()->executeStatement('DROP TABLE '.$this->entityManager->getClassMetadata(SyncReviewItem::class)->getTableName());
+        $sync = $this->createMock(SyncInterface::class);
+        $sync->expects($this->once())->method('pull')->willReturn([]);
+
+        $notifications = new RecordingNotificationCenter();
+        $store = $this->store(['features' => ['sync' => true], 'syncSeeded' => true]);
+        $this->handler($sync, $store, null, null, $notifications)(new SyncPullMessage(self::ID));
+
+        $this->assertSame([], $notifications->drafts);
+        $this->assertSame(self::NOW, $store->getPluginSettings(new PluginId(self::ID))['syncLastPullAt'] ?? null);
+    }
+
+    public function testAFailingNotificationAfterASuccessfulPullDoesNotFailTheMessage(): void
+    {
+        $sync = $this->createMock(SyncInterface::class);
+        $sync->method('pull')->willReturnCallback(function (): array {
+            $this->addReviewItems(1);
+
+            return [];
+        });
+
+        $store = $this->store(['features' => ['sync' => true], 'syncSeeded' => true]);
+        $this->handler($sync, $store, null, null, new RecordingNotificationCenter(true))(new SyncPullMessage(self::ID));
+
+        $this->assertSame(self::NOW, $store->getPluginSettings(new PluginId(self::ID))['syncLastPullAt'] ?? null);
+    }
+
     private function addReviewItems(int $count): void
     {
         for ($i = 0; $i < $count; ++$i) {

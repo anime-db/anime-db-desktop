@@ -43,13 +43,18 @@ final class SyncReviewNotificationKind implements NotificationKindInterface
 {
     public const string KIND = 'sync_review';
     public const string DEDUP_KEY = 'global';
+    public const string SUBJECT_QUEUE = 'sync_review_queue';
+    /** The queue has no id of its own, but a subject needs a type+id pair. */
+    public const string SUBJECT_QUEUE_ID = 'all';
 
     public static function draft(int $unresolvedCount): NotificationDraft
     {
         return new NotificationDraft(
             self::KIND,
             ['count' => $unresolvedCount],
-            dedupKey: self::DEDUP_KEY,
+            self::SUBJECT_QUEUE,
+            self::SUBJECT_QUEUE_ID,
+            self::DEDUP_KEY,
         );
     }
 

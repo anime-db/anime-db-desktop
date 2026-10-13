@@ -55,7 +55,7 @@ use Symfony\Component\Messenger\Attribute\AsMessageHandler;
  * must not let the pull miss records that only have a source URL and create duplicates of them.
  *
  * When the run raised new unresolved review items (created, not the net change: a run may close others), a `sync_review` notification
- * is recorded after the lock is released, i.e. after the pull's own commits (issue #1028).
+ * is recorded after the lock is released, also when the run threw, i.e. after the pull's own commits (issue #1028).
  *
  * A successful pull records `syncLastPullAt`. A `false` result (reauthorization needed) is only
  * logged: `syncSeeded` stays as is, and the next hourly tick retries.
@@ -98,7 +98,8 @@ final class SyncPullMessageHandler
             return;
         }
 
-        $watermark = $this->syncReview->watermark();
+        // Before the backfill and the removals catch-up: review items they raise belong to this run too.
+        $watermark = $this->takeWatermark();
 
         try {
             // Backfill, then the catch-up of pending removals, then the pull (issue #918), see SyncSeedMessageHandler.
@@ -107,10 +108,8 @@ final class SyncPullMessageHandler
             $pulled = $this->pullSyncService->pull($pluginId, $sync, fn () => $this->jobLockService->heartbeat($jobKey));
         } finally {
             $this->jobLockService->release($jobKey);
-        }
-
-        if ($this->syncReview->countUnresolvedRaisedSince($watermark) > 0) {
-            $this->notifications->record(SyncReviewNotificationKind::draft($this->syncReview->countUnresolved()));
+            // Also for a pull that threw: the items it raised before that are already committed.
+            $this->notifyRaisedSince($watermark);
         }
 
         if ($pulled) {
@@ -122,5 +121,32 @@ final class SyncPullMessageHandler
         $this->logger->info('Periodic pull for plugin "{pluginId}" did not complete (reauthorization required, or a failed item closed the EntityManager — see earlier log entries); it will be retried on a later tick.', [
             'pluginId' => $message->pluginId,
         ]);
+    }
+
+    /** Issue #1028: bookkeeping of the notification never changes the outcome of the sync run, so a failure here is only logged. */
+    private function takeWatermark(): ?int
+    {
+        try {
+            return $this->syncReview->watermark();
+        } catch (\Throwable $e) {
+            $this->logger->error('Sync review watermark could not be taken, the run goes on without a sync_review notification: {error}', ['error' => $e->getMessage(), 'exception' => $e]);
+
+            return null;
+        }
+    }
+
+    private function notifyRaisedSince(?int $watermark): void
+    {
+        if ($watermark === null) {
+            return;
+        }
+
+        try {
+            if ($this->syncReview->countUnresolvedRaisedSince($watermark) > 0) {
+                $this->notifications->record(SyncReviewNotificationKind::draft($this->syncReview->countUnresolved()));
+            }
+        } catch (\Throwable $e) {
+            $this->logger->error('The sync_review notification could not be recorded: {error}', ['error' => $e->getMessage(), 'exception' => $e]);
+        }
     }
 }

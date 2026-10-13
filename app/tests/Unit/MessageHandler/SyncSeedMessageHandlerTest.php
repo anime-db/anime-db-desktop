@@ -363,6 +363,57 @@ final class SyncSeedMessageHandlerTest extends TestCase
         $this->assertEquals([SyncReviewNotificationKind::draft(1)], $notifications->drafts);
     }
 
+    public function testSeedThatThrowsAfterRaisingReviewItemsStillRecordsTheNotificationAndRethrows(): void
+    {
+        $sync = $this->createMock(SyncInterface::class);
+        $sync->method('pull')->willReturnCallback(function (): array {
+            $this->addReviewItems(2);
+
+            throw new \RuntimeException('network');
+        });
+
+        $notifications = new RecordingNotificationCenter();
+        [$syncRegistry, $pluginsConfigStore] = $this->newSyncRegistry(['animedb-shikimori' => $sync]);
+
+        try {
+            $this->newHandler($syncRegistry, $pluginsConfigStore, null, $notifications)(new SyncSeedMessage('animedb-shikimori'));
+            $this->fail('The exception must propagate.');
+        } catch (\RuntimeException $e) {
+            $this->assertSame('network', $e->getMessage());
+        }
+
+        $this->assertEquals([SyncReviewNotificationKind::draft(2)], $notifications->drafts);
+    }
+
+    public function testAFailingWatermarkDoesNotCancelTheSeed(): void
+    {
+        $this->entityManager->getConnection()->executeStatement('DROP TABLE '.$this->entityManager->getClassMetadata(SyncReviewItem::class)->getTableName());
+        $sync = $this->createMock(SyncInterface::class);
+        $sync->expects($this->once())->method('pull')->willReturn([]);
+
+        $notifications = new RecordingNotificationCenter();
+        [$syncRegistry, $pluginsConfigStore] = $this->newSyncRegistry(['animedb-shikimori' => $sync]);
+        $this->newHandler($syncRegistry, $pluginsConfigStore, null, $notifications)(new SyncSeedMessage('animedb-shikimori'));
+
+        $this->assertSame([], $notifications->drafts);
+        $this->assertArrayHasKey('syncLastPullAt', $pluginsConfigStore->getPluginSettings(new PluginId('animedb-shikimori')));
+    }
+
+    public function testAFailingNotificationAfterASuccessfulSeedDoesNotFailTheMessage(): void
+    {
+        $sync = $this->createMock(SyncInterface::class);
+        $sync->method('pull')->willReturnCallback(function (): array {
+            $this->addReviewItems(1);
+
+            return [];
+        });
+
+        [$syncRegistry, $pluginsConfigStore] = $this->newSyncRegistry(['animedb-shikimori' => $sync]);
+        $this->newHandler($syncRegistry, $pluginsConfigStore, null, new RecordingNotificationCenter(true))(new SyncSeedMessage('animedb-shikimori'));
+
+        $this->assertArrayHasKey('syncLastPullAt', $pluginsConfigStore->getPluginSettings(new PluginId('animedb-shikimori')));
+    }
+
     private function addReviewItems(int $count): void
     {
         for ($i = 0; $i < $count; ++$i) {

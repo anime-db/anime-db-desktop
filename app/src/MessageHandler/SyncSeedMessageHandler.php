@@ -122,23 +122,26 @@ final class SyncSeedMessageHandler
 
     private function seed(SyncSeedMessage $message, PluginId $pluginId, SyncInterface $sync, string $jobKey): void
     {
-        // Issue #867: the external-id backfill runs here, synchronously and before the pull, rather
-        // than as a separately dispatched message — the pull matches pulled items against
-        // AnimeRepository::indexByExternalId(), which only sees ids that are already cached, so a
-        // backfill racing or trailing the pull would let it create second rows for titles that
-        // already sit in the catalog with a source URL. The ordering has to live in this handler:
-        // FIFO order between two messages is not guaranteed once they travel on different transports.
-        // The catch-up of pending removals on the source (issue #918) goes after the backfill: the
-        // cache of external ids has to be complete before deciding to delete, otherwise a live entry
-        // that only has a source URL would not be seen as holding the id and its list item would go.
-        $this->backfillService->backfill($pluginId, $sync);
-        $this->sourceRemoval->retryPending($pluginId, $sync);
+        // Issue #1028: before the backfill and the catch-up, so the items they create count too.
+        $watermark = $this->takeReviewWatermark();
 
-        $watermark = $this->syncReview->watermark();
-        $seeded = $this->pullSyncService->pull($pluginId, $sync, fn () => $this->jobLockService->heartbeat($jobKey));
-        // Issue #1028: after the pull's commits; the seed is what fills the review queue right after connecting a plugin.
-        if ($this->syncReview->countUnresolvedRaisedSince($watermark) > 0) {
-            $this->notifications->record(SyncReviewNotificationKind::draft($this->syncReview->countUnresolved()));
+        try {
+            // Issue #867: the external-id backfill runs here, synchronously and before the pull, rather
+            // than as a separately dispatched message — the pull matches pulled items against
+            // AnimeRepository::indexByExternalId(), which only sees ids that are already cached, so a
+            // backfill racing or trailing the pull would let it create second rows for titles that
+            // already sit in the catalog with a source URL. The ordering has to live in this handler:
+            // FIFO order between two messages is not guaranteed once they travel on different transports.
+            // The catch-up of pending removals on the source (issue #918) goes after the backfill: the
+            // cache of external ids has to be complete before deciding to delete, otherwise a live entry
+            // that only has a source URL would not be seen as holding the id and its list item would go.
+            $this->backfillService->backfill($pluginId, $sync);
+            $this->sourceRemoval->retryPending($pluginId, $sync);
+
+            $seeded = $this->pullSyncService->pull($pluginId, $sync, fn () => $this->jobLockService->heartbeat($jobKey));
+        } finally {
+            // Also when the run threw: items created before the failure are already committed.
+            $this->notifyAboutRaisedReviewItems($watermark);
         }
 
         if ($seeded) {
@@ -154,6 +157,33 @@ final class SyncSeedMessageHandler
 
                 return $settings;
             });
+        }
+    }
+
+    /** Issue #1028: a failure of the notification bookkeeping must never change the outcome of the sync run. */
+    private function takeReviewWatermark(): ?int
+    {
+        try {
+            return $this->syncReview->watermark();
+        } catch (\Throwable $e) {
+            $this->logger->error('Could not take the sync review watermark; the run goes on without a notification: {error}', ['error' => $e->getMessage(), 'exception' => $e]);
+
+            return null;
+        }
+    }
+
+    private function notifyAboutRaisedReviewItems(?int $watermark): void
+    {
+        if ($watermark === null) {
+            return;
+        }
+
+        try {
+            if ($this->syncReview->countUnresolvedRaisedSince($watermark) > 0) {
+                $this->notifications->record(SyncReviewNotificationKind::draft($this->syncReview->countUnresolved()));
+            }
+        } catch (\Throwable $e) {
+            $this->logger->error('Could not record the sync review notification: {error}', ['error' => $e->getMessage(), 'exception' => $e]);
         }
     }
 }

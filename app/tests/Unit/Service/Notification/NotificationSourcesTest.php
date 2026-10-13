@@ -91,7 +91,8 @@ final class NotificationSourcesTest extends TestCase
         $this->assertSame(2, (int) $rows[0]['occurrences']);
         $this->assertSame('warning', $rows[0]['severity']);
         $this->assertSame(['count' => 7], json_decode((string) $rows[0]['params'], true));
-        $this->assertNull($rows[0]['subject_type']);
+        $this->assertSame('sync_review_queue', $rows[0]['subject_type']);
+        $this->assertSame('all', $rows[0]['subject_id']);
     }
 
     public function testSyncReviewFixtureIsExactlyTheRowTheFactoryWrites(): void
