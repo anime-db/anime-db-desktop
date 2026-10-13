@@ -35,8 +35,9 @@ function setUpDom(count = 2) {
         <div id="app-notifications" data-control="app-notifications"></div>
         <template id="app-notification-template"><div class="app-notification"></div></template>
         <div class="app-nav__bell" data-control="notifications-bell" data-list-url="/notifications/recent"
-             data-mark-read-url="/notifications/read" data-read-all-url="/notifications/read-all" data-csrf-token="tok">
-            <button type="button"><span data-bell-badge${count === 0 ? ' hidden' : ''}>${count}</span></button>
+             data-mark-read-url="/notifications/read" data-read-all-url="/notifications/read-all" data-csrf-token="tok"
+             data-label="Notifications" data-label-unread="Notifications, unread: %count%">
+            <button type="button" aria-label="Notifications"><span data-bell-badge${count === 0 ? ' hidden' : ''}>${count}</span></button>
             <div data-bell-list data-error="Load failed"></div>
         </div>
     `;
@@ -188,4 +189,17 @@ test('a failed read all keeps the list', async () => {
 
     expect(list.querySelector('[data-notification-unread]')).not.toBeNull();
     expect(list.textContent).not.toBe('Load failed');
+});
+
+test('the button accessible name follows the unread count', () => {
+    let deliver;
+    window.animeDb = { onUnreadCount: jest.fn((callback) => { deliver = callback; }) };
+    loadModules();
+    const button = document.querySelector('button');
+
+    deliver(3);
+    expect(button.getAttribute('aria-label')).toBe('Notifications, unread: 3');
+
+    deliver(0);
+    expect(button.getAttribute('aria-label')).toBe('Notifications');
 });

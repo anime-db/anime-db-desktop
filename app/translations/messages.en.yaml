@@ -867,6 +867,7 @@ app_notification:
 
 notification_list:
     bell_label: Notifications
+    bell_label_unread: 'Notifications, unread: %count%'
     title: Notifications
     page_title: Notification history
     read_all: Mark all as read

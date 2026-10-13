@@ -106,10 +106,12 @@
                  data-list-url="{{ path('notifications_recent') }}"
                  data-mark-read-url="{{ path('notifications_mark_read') }}"
                  data-read-all-url="{{ path('notifications_read_all') }}"
-                 data-csrf-token="{{ csrf_token('notifications') }}">
-                <button type="button" class="btn btn-outline-secondary position-relative d-inline-flex align-items-center" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false" aria-label="{{ 'notification_list.bell_label'|trans }}">
+                 data-csrf-token="{{ csrf_token('notifications') }}"
+                 data-label="{{ 'notification_list.bell_label'|trans }}"
+                 data-label-unread="{{ 'notification_list.bell_label_unread'|trans({'%count%': '%count%'}) }}">
+                <button type="button" class="btn btn-outline-secondary position-relative d-inline-flex align-items-center" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false" aria-label="{% if unreadNotifications > 0 %}{{ 'notification_list.bell_label_unread'|trans({'%count%': unreadNotifications}) }}{% else %}{{ 'notification_list.bell_label'|trans }}{% endif %}">
                     {{ icon('bell') }}
-                    <span class="app-nav__bell-badge" data-bell-badge{% if unreadNotifications == 0 %} hidden{% endif %}>{{ unreadNotifications }}</span>
+                    <span class="app-nav__bell-badge" data-bell-badge aria-hidden="true"{% if unreadNotifications == 0 %} hidden{% endif %}>{{ unreadNotifications }}</span>
                 </button>
                 <div class="dropdown-menu dropdown-menu-end notification-dropdown" data-bell-list data-error="{{ 'notification_list.load_failed'|trans }}">
                     <p class="notification-dropdown__empty">{{ 'notification_list.loading'|trans }}</p>

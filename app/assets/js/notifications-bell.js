@@ -33,6 +33,7 @@
     function mountNotificationsBell(root) {
         const badge = root.querySelector('[data-bell-badge]');
         const list = root.querySelector('[data-bell-list]');
+        const button = root.querySelector('button');
 
         function setCount(count) {
             const number = Number(count);
@@ -40,11 +41,15 @@
             if (!Number.isFinite(number) || number <= 0) {
                 badge.textContent = '0';
                 badge.hidden = true;
+                button.setAttribute('aria-label', root.dataset.label);
 
                 return;
             }
-            badge.textContent = String(Math.floor(number));
+            const unread = String(Math.floor(number));
+
+            badge.textContent = unread;
             badge.hidden = false;
+            button.setAttribute('aria-label', root.dataset.labelUnread.replace('%count%', unread));
         }
 
         function post(url, params) {

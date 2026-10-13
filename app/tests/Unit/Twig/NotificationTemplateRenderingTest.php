@@ -27,6 +27,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Twig;
 
+use App\Repository\NotificationRepository;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RequestStack;
@@ -79,7 +80,24 @@ final class NotificationTemplateRenderingTest extends KernelTestCase
         $html = $this->render('base.html.twig', []);
 
         self::assertStringContainsString('data-control="notifications-bell"', $html);
-        self::assertMatchesRegularExpression('#<span class="app-nav__bell-badge" data-bell-badge hidden>0</span>#', $html);
+        self::assertMatchesRegularExpression('#<span class="app-nav__bell-badge" data-bell-badge aria-hidden="true" hidden>0</span>#', $html);
+    }
+
+    public function testTheBellLabelIsPlainWhenNothingIsUnread(): void
+    {
+        $html = $this->render('base.html.twig', []);
+
+        self::assertMatchesRegularExpression('#<button[^>]*aria-label="(Notifications|Оповещения)">#', $html);
+        self::assertStringContainsString('data-bell-badge aria-hidden="true" hidden', $html);
+    }
+
+    public function testTheBellLabelCarriesTheUnreadCount(): void
+    {
+        $html = $this->render('base.html.twig', [], 3);
+
+        self::assertMatchesRegularExpression('#<button[^>]*aria-label="[^"]*3"#', $html);
+        self::assertStringContainsString('data-bell-badge aria-hidden="true">3</span>', $html);
+        self::assertStringContainsString('data-label-unread="', $html);
     }
 
     /** @return array<string, mixed> */
@@ -97,7 +115,7 @@ final class NotificationTemplateRenderingTest extends KernelTestCase
     }
 
     /** @param array<string, mixed> $context */
-    private function render(string $template, array $context): string
+    private function render(string $template, array $context, ?int $unread = null): string
     {
         self::bootKernel();
         $request = Request::create('/');
@@ -105,6 +123,12 @@ final class NotificationTemplateRenderingTest extends KernelTestCase
         /** @var RequestStack $requestStack */
         $requestStack = self::getContainer()->get('request_stack');
         $requestStack->push($request);
+
+        if ($unread !== null) {
+            $repository = $this->createStub(NotificationRepository::class);
+            $repository->method('countUnread')->willReturn($unread);
+            self::getContainer()->set(NotificationRepository::class, $repository);
+        }
 
         /** @var Environment $twig */
         $twig = self::getContainer()->get('twig');

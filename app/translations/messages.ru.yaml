@@ -867,6 +867,7 @@ app_notification:
 
 notification_list:
     bell_label: Оповещения
+    bell_label_unread: 'Оповещения, непрочитанных: %count%'
     title: Оповещения
     page_title: История оповещений
     read_all: Прочитать все
