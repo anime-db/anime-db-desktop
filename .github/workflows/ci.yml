@@ -45,6 +45,32 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
+        with:
+          # Глубина 2 нужна шагу «golden-фикстуры оповещений неизменны» ниже: на pull_request
+          # HEAD — merge-коммит, и сравнивать его надо с первым родителем (master), а при
+          # глубине 1 по умолчанию HEAD^1 в клоне нет.
+          fetch-depth: 2
+
+      # Каждая когда-либо выпущенная форма записи оповещения (kind + params + subject) обязана
+      # рендериться текущим кодом: в БД у пользователя остаются записи старой формы. PHPUnit-гейт
+      # рендеримости (#1023) проверяет только те фикстуры, что лежат в каталоге, поэтому самый
+      # дешёвый обход красного гейта — удалить или переписать фикстуру. Этот шаг его закрывает:
+      # фикстуры только добавляются, новая форма вида — новый файл `<kind>.v<N+1>.json` (#1030).
+      #
+      # `--diff-filter=a` — всё, кроме добавления: удаление, правка, переименование, а также смена
+      # типа файла (T, например фикстура заменена симлинком на другую, зелёную).
+      #
+      # Только на pull_request: master закрыт ruleset-ом, а на push HEAD^1 — не база PR.
+      # Ослабление самого гейта (тест, рендерер) этот шаг не ловит — оно видно в диффе ревью.
+      - name: Golden notification fixtures are append-only
+        if: ${{ github.event_name == 'pull_request' }}
+        run: |
+          changed="$(git diff --name-status --diff-filter=a HEAD^1 HEAD -- app/tests/Fixtures/Notifications/)"
+          if [ -n "$changed" ]; then
+            echo "::error::Golden-фикстуры оповещений нельзя удалять, менять или переименовывать — только добавлять новую версию <kind>.v<N+1>.json:"
+            echo "$changed"
+            exit 1
+          fi
 
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
