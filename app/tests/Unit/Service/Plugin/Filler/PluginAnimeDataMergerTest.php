@@ -737,10 +737,25 @@ final class PluginAnimeDataMergerTest extends TestCase
     {
         $anime = $this->newAnime();
 
-        $data = new PluginAnimeData(title: 'Bleach', externalUrls: ['https://пример.рф/a', 'https://xn--e1afmkfd.xn--p1ai/a']);
-        $this->newMerger()->apply($anime, $data, ['externalUrls']);
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->never())->method('warning');
 
-        $this->assertCount(1, $this->sourceUrls($anime));
+        $data = new PluginAnimeData(title: 'Bleach', externalUrls: ['https://пример.рф/a', 'https://xn--e1afmkfd.xn--p1ai/a']);
+        $this->newMerger([], $logger)->apply($anime, $data, ['externalUrls']);
+
+        $this->assertSame(['https://xn--e1afmkfd.xn--p1ai/a'], $this->sourceUrls($anime));
+    }
+
+    public function testApplyExternalUrlsStoresAnIdnAddressInAsciiForm(): void
+    {
+        $anime = $this->newAnime();
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->never())->method('warning');
+
+        $data = new PluginAnimeData(title: 'Bleach', externalUrls: ['https://пример.рф/a']);
+        $this->newMerger([], $logger)->apply($anime, $data, ['externalUrls']);
+
+        $this->assertSame(['https://xn--e1afmkfd.xn--p1ai/a'], $this->sourceUrls($anime));
     }
 
     public function testApplyExternalUrlsKeepsLinksToDifferentSitesWithTheSameId(): void
