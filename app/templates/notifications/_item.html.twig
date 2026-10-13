@@ -1,0 +1,30 @@
+{#
+ # AnimeDb package.
+ #
+ # @author    Peter Gribanov <info@peter-gribanov.ru>
+ # @copyright Copyright (c) 2026, Peter Gribanov
+ # @license   https://www.gnu.org/licenses/gpl-3.0.html GPL-3.0-or-later
+ #
+ # This program is free software: you can redistribute it and/or modify
+ # it under the terms of the GNU General Public License as published by
+ # the Free Software Foundation, either version 3 of the License, or
+ # (at your option) any later version.
+ #
+ # This program is distributed in the hope that it will be useful,
+ # but WITHOUT ANY WARRANTY; without even the implied warranty of
+ # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ # GNU General Public License for more details.
+ #
+ # You should have received a copy of the GNU General Public License
+ # along with this program. If not, see <https://www.gnu.org/licenses/>.
+ #}
+{# One notification of the history: `item` is built by NotificationController. A record with no
+   living subject has no url and is shown as plain text from the stored params. #}
+<li class="notification-item notification-item--{{ item.severity }}{% if not item.read %} notification-item--unread{% endif %}" data-notification-id="{{ item.id }}"{% if not item.read %} data-notification-unread{% endif %}>
+    <div class="notification-item__title">
+        {%- if not item.read %}<span class="visually-hidden">{{ 'notification_list.unread_marker'|trans }}</span>{% endif -%}
+        {%- if item.url is not null %}<a href="{{ item.url }}">{{ item.title }}</a>{% else %}{{ item.title }}{% endif -%}
+    </div>
+    {% if item.body is not empty %}<div class="notification-item__body">{{ item.body }}</div>{% endif %}
+    <time class="notification-item__time" datetime="{{ item.occurredAt|date('c') }}">{{ item.occurredAt|date('Y-m-d H:i') }}</time>
+</li>
