@@ -210,6 +210,11 @@
                 <div data-rows-list>
                     {% for value in form.sources %}{{ m.text_row('sources', loop.index0, value, errors, 'anime_edit.field_sources') }}{% endfor %}
                 </div>
+                {# The list as rendered: only a link from it that the user removed is deleted on save. #}
+                {% if form.sources_original|default(null) is not null %}
+                    <input type="hidden" name="sources_original_set" value="1">
+                    {% for value in form.sources_original %}<input type="hidden" name="sources_original[{{ loop.index0 }}]" value="{{ value }}">{% endfor %}
+                {% endif %}
                 <template data-rows-template>{{ m.text_row('sources', '__INDEX__', '', {}, 'anime_edit.field_sources') }}</template>
                 <button type="button" class="btn btn-outline-secondary btn-sm" data-rows-add>{{ 'anime_edit.add_button'|trans }}</button>
             </fieldset>

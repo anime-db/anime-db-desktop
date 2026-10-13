@@ -41,6 +41,7 @@ use App\Entity\Studio;
 use App\Repository\StudioRepository;
 use App\Service\Media\AnimeCoverStorage;
 use App\Service\Media\CoverUploadException;
+use App\Service\Plugin\Filler\SaturationQueue;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\RedirectResponse;
@@ -83,6 +84,7 @@ final class AnimeEditController
         private readonly TranslatorInterface $translator,
         /** post_max_size in bytes; null reads it from php.ini (0 means unlimited) */
         private readonly ?int $postMaxBytes = null,
+        private readonly ?SaturationQueue $saturationQueue = null,
     ) {
     }
 
@@ -148,8 +150,13 @@ final class AnimeEditController
             $anime->setCover(null);
         }
 
-        $this->apply($anime, $form);
+        $sourcesAdded = $this->apply($anime, $form);
         $this->entityManager->flush();
+
+        // Links the user just added may name sources no plugin has filled the record from yet.
+        if ($sourcesAdded && $anime->id !== null) {
+            $this->saturationQueue?->enqueue($anime->id);
+        }
 
         // After the flush: only now the entry no longer points at the old file.
         if ($previousCover !== null && $previousCover !== $anime->getCover()) {
@@ -234,6 +241,7 @@ final class AnimeEditController
             'episodes_count' => $anime instanceof SeriesAnime ? (string) $anime->getEpisodesCount() : '',
             'countries' => implode(', ', $anime->getCountries() ?? []),
             'sources' => array_map(static fn (AnimeSource $source): string => $source->url, $anime->getSources()->toArray()),
+            'sources_original' => array_map(static fn (AnimeSource $source): string => $source->url, $anime->getSources()->toArray()),
             'notes' => $anime->getNotes() ?? '',
             'cover_remove' => false,
         ];
@@ -274,6 +282,7 @@ final class AnimeEditController
             'episodes_count' => $anime instanceof SeriesAnime ? $this->text($request->request->get('episodes_count')) : '',
             'countries' => $this->text($request->request->get('countries')),
             'sources' => array_map(AnimeSource::normalizeUrl(...), $this->strings($request, 'sources')),
+            'sources_original' => $request->request->has('sources_original_set') ? array_map(AnimeSource::normalizeUrl(...), $this->strings($request, 'sources_original')) : null,
             'notes' => trim((string) $request->request->get('notes', '')),
             'cover_remove' => $request->request->getBoolean('cover_remove'),
         ];
@@ -389,8 +398,12 @@ final class AnimeEditController
         return $errors;
     }
 
-    /** @param array<string, mixed> $form already validated: nothing below throws on it */
-    private function apply(Anime $anime, array $form): void
+    /**
+     * @param array<string, mixed> $form already validated: nothing below throws on it
+     *
+     * @return bool whether at least one source was added
+     */
+    private function apply(Anime $anime, array $form): bool
     {
         $anime->setTitle($form['title']);
         $this->applyNames($anime, $form['names']);
@@ -432,8 +445,10 @@ final class AnimeEditController
 
         $countries = $this->parseCountries($form['countries']);
         $anime->setCountries($countries === [] ? null : $countries);
-        $this->applySources($anime, $form['sources']);
+        $sourcesAdded = $this->applySources($anime, $form['sources'], $form['sources_original']);
         $anime->setNotes($form['notes'] === '' ? null : $form['notes']);
+
+        return $sourcesAdded;
     }
 
     /** @param list<array{name: string, locale: string, role: string}> $rows */
@@ -525,24 +540,40 @@ final class AnimeEditController
         }
     }
 
-    /** @param list<string> $urls */
-    private function applySources(Anime $anime, array $urls): void
+    /**
+     * Three-way merge of the links (issue #1049): the record may have gained links in the
+     * background since the form was opened, so only a link that was in the form as rendered
+     * ($original) and was removed by the user is deleted; any other link already on the record
+     * stays. A null $original (a request that did not carry the list) keeps the old behaviour:
+     * every link missing from $urls is removed.
+     *
+     * @param list<string>      $urls     the links as posted
+     * @param list<string>|null $original the links as the form was rendered
+     *
+     * @return bool whether at least one link was added
+     */
+    private function applySources(Anime $anime, array $urls, ?array $original): bool
     {
         $wanted = array_flip(array_filter($urls, static fn (string $url): bool => $url !== ''));
+        $originalSet = $original === null ? null : array_flip($original);
 
         $present = [];
         foreach ($anime->getSources()->toArray() as $source) {
             if (isset($wanted[$source->url])) {
                 $present[$source->url] = true;
-            } else {
+            } elseif ($originalSet === null || isset($originalSet[$source->url])) {
                 $anime->removeSource($source);
             }
         }
+        $added = false;
         foreach (array_keys($wanted) as $url) {
             if (!isset($present[$url])) {
                 $anime->addSource($url);
+                $added = true;
             }
         }
+
+        return $added;
     }
 
     private function findStudio(string $id): ?Studio

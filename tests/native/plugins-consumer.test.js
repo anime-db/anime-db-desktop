@@ -135,7 +135,7 @@ describe('start', () => {
         await start(CONTEXT);
 
         expect(spawn).toHaveBeenCalledTimes(1);
-        expect(spawn.mock.calls[0][1].slice(-3)).toEqual(['messenger:consume', 'plugins', 'sync']);
+        expect(spawn.mock.calls[0][1].slice(-4)).toEqual(['messenger:consume', 'plugins', 'sync', 'saturation_bulk']);
     });
 
     // issue #701: the acceptance criteria require the existing messenger-consumer's transport

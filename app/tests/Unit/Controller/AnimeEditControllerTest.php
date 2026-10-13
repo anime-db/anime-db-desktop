@@ -367,6 +367,25 @@ final class AnimeEditControllerTest extends TestCase
         $this->assertSame($keptId, $this->sourceId($anime, 'https://a.example/1'));
     }
 
+    public function testSourceAddedAfterTheFormWasOpenedSurvivesTheSaveAndARemovedOriginalIsDeleted(): void
+    {
+        $anime = $this->persistTv(static function (TvAnime $anime): void {
+            $anime->addSource('https://a.example/1');
+            $anime->addSource('https://b.example/2');
+            $anime->addSource('https://background.example/3'); // added after the form was rendered
+        });
+
+        $this->controller()->update($anime, $this->post([
+            'sources' => ['https://a.example/1'],
+            'sources_original_set' => '1',
+            'sources_original' => ['https://a.example/1', 'https://b.example/2'],
+        ]));
+
+        $urls = array_map(static fn ($s): string => $s->url, $this->reload($anime)->getSources()->toArray());
+        sort($urls);
+        $this->assertSame(['https://a.example/1', 'https://background.example/3'], $urls);
+    }
+
     public function testIdnSourceIsSavedInAsciiFormAndNotDuplicated(): void
     {
         $anime = $this->persistTv();

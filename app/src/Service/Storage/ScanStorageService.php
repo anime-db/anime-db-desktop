@@ -37,6 +37,7 @@ use App\Entity\ValueObject\PluginId;
 use App\Repository\AnimeRepository;
 use App\Repository\SyncTombstoneRepository;
 use App\Service\Plugin\Filler\BulkFillerService;
+use App\Service\Plugin\Filler\SaturationQueue;
 use App\Service\Storage\Exception\StoragePathConflictException;
 use App\Service\Storage\Scan\LinkedCandidateResult;
 use App\Service\Storage\Scan\ScanCandidate;
@@ -59,6 +60,15 @@ use Symfony\Component\Finder\SplFileInfo;
  */
 final class ScanStorageService
 {
+    /**
+     * Ids of the records the running scan() created from a plugin (issue #1049), queued for
+     * saturation after the scan's final flush; null outside of a scan() call, so a confirmation
+     * going through linkToChosenPluginCandidate() on its own collects nothing.
+     *
+     * @var list<int>|null
+     */
+    private ?array $createdFromPlugin = null;
+
     public function __construct(
         private readonly StorageMarkerService $markerService,
         private readonly FilenameCleaner $filenameCleaner,
@@ -69,6 +79,7 @@ final class ScanStorageService
         private readonly BulkFillerService $bulkFillerService,
         private readonly SyncTombstoneRepository $tombstoneRepository,
         private readonly LoggerInterface $logger,
+        private readonly ?SaturationQueue $saturationQueue = null,
     ) {
     }
 
@@ -87,6 +98,31 @@ final class ScanStorageService
      *                                              its stale path
      */
     public function scan(Storage $storage, ?callable $onProgress = null, ?string $atPath = null): ScanResult
+    {
+        $this->createdFromPlugin = [];
+
+        try {
+            $result = $this->doScan($storage, $onProgress, $atPath);
+            $created = $this->takeCreatedFromPlugin();
+        } finally {
+            $this->createdFromPlugin = null;
+        }
+
+        // After the final flush of doScan(): saturation must see the storage link of the record.
+        foreach ($created as $animeId) {
+            $this->saturationQueue?->enqueue($animeId, bulk: true);
+        }
+
+        return $result;
+    }
+
+    /** @return list<int> */
+    private function takeCreatedFromPlugin(): array
+    {
+        return $this->createdFromPlugin ?? [];
+    }
+
+    private function doScan(Storage $storage, ?callable $onProgress, ?string $atPath): ScanResult
     {
         if (!$storage->isScannable()) {
             return ScanResult::items([]);
@@ -386,6 +422,8 @@ final class ScanStorageService
         $anime = $result->anime;
         if ($result->wasFound) {
             $this->assertAnimeIsFreeToLink($anime, $storage, $storagePath);
+        } elseif ($this->createdFromPlugin !== null && $anime->id !== null) {
+            $this->createdFromPlugin[] = $anime->id;
         }
         $anime->setStorage($storage)->setStoragePath($storagePath);
 

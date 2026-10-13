@@ -625,6 +625,8 @@ anime_detail:
     menu_edit: Изменить
     menu_delete: Удалить
     menu_change_type: Сменить тип…
+    menu_saturate: Дозаполнить по ссылкам
+    flash_saturate_started: Дозаполнение по ссылкам записи запущено в фоне.
 
 anime_type_change:
     title: Смена типа
@@ -794,6 +796,7 @@ search_plugins:
     group_empty: Ничего не найдено.
     preview_error: Не удалось загрузить данные аниме.
     error_fill_not_found: Не удалось заполнить запись из этого источника. Попробуйте снова или выберите другого кандидата.
+    error_fill_failed: Не удалось получить данные из источника, попробуйте позже.
     error_conflict_claimed: Это аниме уже привязано к другой записи каталога.
     error_conflict_claimed_link: Перейти к записи →
     error_conflict_linked_other: 'У этой записи уже есть связь с «%plugin%» на другое аниме.'

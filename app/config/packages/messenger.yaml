@@ -88,6 +88,22 @@ framework:
                     # comes back no sooner than an hour later.
                     redeliver_timeout: 3600
 
+            # Record saturation from source links (issue #1049). `saturation` carries interactive
+            # triggers and is listed first in the `async` consumer; `saturation_bulk` carries the
+            # mass paths (pull sync, v1 import, storage scan) and is listed last in the plugins
+            # consumer, so it never delays `plugins`/`sync`. Nothing here is retried: the handler
+            # never throws. redeliver_timeout is that of `plugins`: a run waits on plugin rate limiters.
+            saturation:
+                dsn: '%env(MESSENGER_TRANSPORT_DSN)%'
+                options:
+                    queue_name: saturation
+
+            saturation_bulk:
+                dsn: '%env(MESSENGER_TRANSPORT_DSN)%'
+                options:
+                    queue_name: saturation_bulk
+                    redeliver_timeout: 900
+
         routing:
             'App\Message\ScanStorageMessage': async
             'App\Message\IndexAnimeMessage': async
@@ -99,3 +115,5 @@ framework:
             'App\Message\RefreshMarketSnapshotMessage': async
             'App\Message\DownloadAnimeMediaMessage': media
             'App\Message\RunPluginBackgroundTaskMessage': plugins
+            # The transport is always chosen at dispatch (TransportNamesStamp); this is only a default.
+            'App\Message\SaturateAnimeMessage': saturation

@@ -37,6 +37,7 @@ use App\Repository\AnimeRepository;
 use App\Repository\SyncTombstoneRepository;
 use App\Service\Plugin\Exception\ExternalIdAlreadyClaimedException;
 use App\Service\Plugin\Filler\BulkFillerService;
+use App\Service\Plugin\Filler\SaturationQueue;
 use App\Service\Sync\CrossVendorDuplicateDetector;
 use App\Service\Sync\DeletedFromSourceDetector;
 use App\Service\Sync\SyncConvergenceService;
@@ -160,6 +161,7 @@ final class PullSyncService
         private readonly SyncTombstoneRepository $tombstoneRepository,
         private readonly LoggerInterface $logger,
         private readonly SyncReauthTracker $reauthTracker,
+        private readonly ?SaturationQueue $saturationQueue = null,
     ) {
     }
 
@@ -198,6 +200,21 @@ final class PullSyncService
         }
 
         return $finished;
+    }
+
+    /**
+     * Queues the saturation of every record this run created (issue #1049) into the mass queue,
+     * after the run's own flush.
+     *
+     * @param list<Anime> $created
+     */
+    private function enqueueSaturation(array $created): void
+    {
+        foreach ($created as $anime) {
+            if ($anime->id !== null) {
+                $this->saturationQueue?->enqueue($anime->id, bulk: true);
+            }
+        }
     }
 
     private function doPull(PluginId $pluginId, SyncInterface $sync, ?\Closure $onItem): bool
@@ -356,6 +373,7 @@ final class PullSyncService
             if ($recoveryEntityManager === null) {
                 $this->entityManager->flush();
             }
+            $this->enqueueSaturation($newlyCreated);
 
             // After the flush above: the notification is recorded outside any transaction.
             $this->reauthTracker->onReauthRequired((string) $pluginId);
@@ -386,8 +404,12 @@ final class PullSyncService
             // fully succeed rather than being handed a shared EntityManager it cannot use —
             // reusing the same `false` this method already returns for a dead OAuth session,
             // rather than silently claiming success over a now-unusable EntityManager.
+            $this->enqueueSaturation($newlyCreated);
+
             return $this->entityManager->isOpen();
         }
+
+        $this->enqueueSaturation($newlyCreated);
 
         foreach ($newlyCreated as $anime) {
             $this->duplicateDetector->detect($anime);

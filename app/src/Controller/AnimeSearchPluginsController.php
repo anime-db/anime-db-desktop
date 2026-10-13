@@ -41,6 +41,7 @@ use App\Service\Plugin\Exception\ExternalIdAlreadyClaimedException;
 use App\Service\Plugin\Filler\BulkFillerService;
 use App\Service\Plugin\Filler\CachedFillerLookup;
 use App\Service\Plugin\Filler\FillResult;
+use App\Service\Plugin\Filler\SaturationQueue;
 use App\Service\Plugin\FillerAvailabilityPresenter;
 use App\Service\Plugin\FillerRegistry;
 use App\Service\Plugin\InstalledPluginsRegistry;
@@ -90,6 +91,7 @@ final class AnimeSearchPluginsController
         private readonly UrlGeneratorInterface $urlGenerator,
         private readonly Environment $twig,
         private readonly LoggerInterface $logger,
+        private readonly ?SaturationQueue $saturationQueue = null,
     ) {
     }
 
@@ -118,6 +120,7 @@ final class AnimeSearchPluginsController
     {
         return match ((string) $request->query->get('error', '')) {
             'fill_not_found' => ['messageKey' => 'search_plugins.error_fill_not_found', 'messageParams' => [], 'link' => null],
+            'fill_failed' => ['messageKey' => 'search_plugins.error_fill_failed', 'messageParams' => [], 'link' => null],
             'conflict_claimed' => $this->resolveConflictClaimedError($request),
             'conflict_linked_other' => $this->resolveConflictLinkedOtherError($request),
             default => null,
@@ -334,6 +337,8 @@ final class AnimeSearchPluginsController
         if (!$result->wasFound) {
             $animeId = $result->anime->id ?? throw new \LogicException('Anime must have an id once it has been flushed.');
             $this->eventDispatcher->dispatch(new AnimeFilesChangedEvent(new AnimeId($animeId), FilesChangeReason::Created));
+            // The confirmed candidate's own links may name sources no other plugin has filled yet.
+            $this->saturationQueue?->enqueue($animeId);
         }
 
         return new RedirectResponse($this->urlGenerator->generate('anime_show', ['id' => $result->anime->id]));
@@ -372,6 +377,8 @@ final class AnimeSearchPluginsController
         }
         $query = trim((string) $request->request->get('q', ''));
 
+        $sourcesBefore = $anime->getSources()->count();
+
         try {
             $result = $this->bulkFiller->fillExistingFromPlugin($anime, $pluginId, $externalId);
         } catch (ExternalIdAlreadyClaimedException $exception) {
@@ -390,6 +397,14 @@ final class AnimeSearchPluginsController
 
         if ($result === FillResult::NotFound) {
             return new RedirectResponse($this->urlGenerator->generate('anime_search_plugins', ['error' => 'fill_not_found', 'q' => $query]));
+        }
+
+        if ($result === FillResult::Failed) {
+            return new RedirectResponse($this->urlGenerator->generate('anime_search_plugins', ['error' => 'fill_failed', 'q' => $query]));
+        }
+
+        if ($anime->getSources()->count() > $sourcesBefore) {
+            $this->saturationQueue?->enqueue($animeId);
         }
 
         return new RedirectResponse($this->urlGenerator->generate('anime_show', ['id' => $animeId]));

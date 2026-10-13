@@ -625,6 +625,8 @@ anime_detail:
     menu_edit: Edit
     menu_delete: Delete
     menu_change_type: Change type…
+    menu_saturate: Fill from links
+    flash_saturate_started: Filling from the links of this record has started in the background.
 
 anime_type_change:
     title: Change type
@@ -794,6 +796,7 @@ search_plugins:
     group_empty: Nothing found.
     preview_error: Could not load the anime's data.
     error_fill_not_found: Could not fill in the record from this source. Try again or pick a different candidate.
+    error_fill_failed: Could not get data from the source. Try again later.
     error_conflict_claimed: This anime is already linked to a different catalog entry.
     error_conflict_claimed_link: Go to the record →
     error_conflict_linked_other: 'This entry already has a link with "%plugin%" to a different anime.'

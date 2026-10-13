@@ -73,6 +73,10 @@ function buildEnv(context) {
  * Принятый компромисс: воркер один, порядок влияет лишь на выбор следующего сообщения, пока он
  * свободен; уже идущий pull задерживает фоновые задачи плагинов на всё своё время.
  *
+ * Транспорт `saturation_bulk` (issue #1049, массовое насыщение записей по ссылкам: pull, импорт v1,
+ * скан хранилища) потребляется тем же процессом последним — он низкоприоритетен относительно
+ * `plugins` и `sync`. Интерактивная очередь `saturation` живёт в messenger-consumer.js.
+ *
  * `messenger:setup-transports` для транспортов `plugins`/`sync` не запускается здесь отдельно —
  * он общий с транспортами `async`/`media` (одна и та же таблица `messenger_messages`) и уже выполняется
  * перед стартом этого процесса как часть messenger-consumer.js#start (см. supervisor/index.js).
@@ -83,7 +87,7 @@ function buildEnv(context) {
 function spawnProcess(context, backoffIdx = 0) {
     if (stopping) return;
 
-    child = spawn(BINARY, ['php-cli', CONSOLE, 'messenger:consume', 'plugins', 'sync'], {
+    child = spawn(BINARY, ['php-cli', CONSOLE, 'messenger:consume', 'plugins', 'sync', 'saturation_bulk'], {
         cwd: paths.getAppRootDir(),
         env: buildEnv(context),
         stdio: ['ignore', 'pipe', 'pipe'],

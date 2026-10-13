@@ -730,6 +730,26 @@ abstract class Anime implements AggregateRootInterface
         return null;
     }
 
+    /** The AnimeExternalId row cached for $pluginId, if any (see {@see getCachedExternalId()}). */
+    public function getExternalIdEntry(PluginId $pluginId): ?AnimeExternalId
+    {
+        foreach ($this->externalIds as $entry) {
+            if ($entry->pluginId === (string) $pluginId) {
+                return $entry;
+            }
+        }
+
+        return null;
+    }
+
+    /** Marks the cached row of $pluginId as filled from that plugin; a no-op without such a row. */
+    public function markExternalIdFilled(PluginId $pluginId): self
+    {
+        $this->getExternalIdEntry($pluginId)?->markFilled();
+
+        return $this;
+    }
+
     /**
      * @return list<PluginId> every plugin this anime already has a cached external id for
      */

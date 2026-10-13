@@ -53,4 +53,10 @@ enum FillResult
      * whole, neither date changed. See {@see PluginAnimeDataMerger::applyDatePremiereAndEnd()}.
      */
     case DateRangeRejected;
+
+    /**
+     * The plugin threw while resolving the data (network failure, temporary ban): unlike {@see
+     * self::NotFound}, this says nothing about the source's own answer and is worth retrying.
+     */
+    case Failed;
 }
