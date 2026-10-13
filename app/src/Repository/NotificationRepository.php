@@ -89,21 +89,38 @@ class NotificationRepository
             return 0;
         }
 
-        return (int) $this->entityManager->createQuery(
-            'UPDATE '.Notification::class.' n SET n.readAt = :now WHERE n.id IN (:ids) AND n.readAt IS NULL'
-        )
-            ->setParameter('now', new \DateTimeImmutable(), 'unix_timestamp')
-            ->setParameter('ids', $ids)
-            ->execute();
+        /** @var list<Notification> $records */
+        $records = $this->entityManager->createQuery(
+            'SELECT n FROM '.Notification::class.' n WHERE n.id IN (:ids) AND n.readAt IS NULL'
+        )->setParameter('ids', $ids)->getResult();
+
+        return $this->markAll($records);
     }
 
     /** @return int the number of records that changed */
     public function markAllRead(): int
     {
-        return (int) $this->entityManager->createQuery(
-            'UPDATE '.Notification::class.' n SET n.readAt = :now WHERE n.readAt IS NULL'
-        )
-            ->setParameter('now', new \DateTimeImmutable(), 'unix_timestamp')
-            ->execute();
+        /** @var list<Notification> $records */
+        $records = $this->entityManager->createQuery(
+            'SELECT n FROM '.Notification::class.' n WHERE n.readAt IS NULL'
+        )->getResult();
+
+        return $this->markAll($records);
+    }
+
+    /**
+     * The "read" rule lives in {@see Notification::markRead()}; the history is capped, so loading the
+     * records and going through the entity costs nothing noticeable.
+     *
+     * @param list<Notification> $records
+     */
+    private function markAll(array $records): int
+    {
+        foreach ($records as $record) {
+            $record->markRead();
+        }
+        $this->entityManager->flush();
+
+        return \count($records);
     }
 }

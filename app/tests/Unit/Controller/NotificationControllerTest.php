@@ -76,6 +76,32 @@ final class NotificationControllerTest extends TestCase
         self::assertSame(0, $this->repository->countUnread());
     }
 
+    public function testHistoryMarksOnlyTheRecordsItShowedNotOnesThatArrivedMeanwhile(): void
+    {
+        $shown = $this->persist('a', 100);
+        $test = $this;
+        $this->repository = new class($this->entityManager, $test) extends NotificationRepository {
+            public function __construct(EntityManager $em, private readonly NotificationControllerTest $test)
+            {
+                parent::__construct($em);
+            }
+
+            public function findAll(): array
+            {
+                $records = parent::findAll();
+                $this->test->persistLate();
+
+                return $records;
+            }
+        };
+
+        $this->controller()->index();
+
+        $this->entityManager->clear();
+        self::assertTrue($this->entityManager->find(Notification::class, $shown->id)?->isRead());
+        self::assertSame(1, $this->repository->countUnread());
+    }
+
     public function testDropdownListIsLimitedAndDoesNotMarkAnythingRead(): void
     {
         for ($i = 1; $i <= 12; ++$i) {
@@ -102,12 +128,16 @@ final class NotificationControllerTest extends TestCase
     public function testMarkReadMarksOnlyTheGivenIdsAndReturnsTheCount(): void
     {
         $shown = $this->persist('a', 100);
-        $this->persist('late', 200);
+        $late = $this->persist('late', 200);
 
         $response = $this->controller()->markRead($this->post(['ids' => [(string) $shown->id, 'junk'], '_token' => 'ok']));
 
         self::assertInstanceOf(JsonResponse::class, $response);
         self::assertSame('{"unread_count":1}', $response->getContent());
+
+        $this->entityManager->clear();
+        self::assertTrue($this->entityManager->find(Notification::class, $shown->id)?->isRead());
+        self::assertFalse($this->entityManager->find(Notification::class, $late->id)?->isRead());
     }
 
     public function testMarkReadWithAnInvalidTokenIsRejectedAndChangesNothing(): void
@@ -165,6 +195,12 @@ final class NotificationControllerTest extends TestCase
         $this->expectException(BadRequestHttpException::class);
 
         $this->controller()->readAll($this->post([]));
+    }
+
+    /** @internal for the repository spy of the history test */
+    public function persistLate(): void
+    {
+        $this->persist('late', 300);
     }
 
     /** @param array<string, mixed> $data */

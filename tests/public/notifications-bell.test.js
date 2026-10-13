@@ -132,3 +132,60 @@ test('a failed list request shows the error text', async () => {
 
     expect(document.querySelector('[data-bell-list]').textContent).toBe('Load failed');
 });
+
+const LIST_HTML = '<ul><li data-notification-id="7" data-notification-unread></li></ul>';
+
+function openMenu() {
+    document.querySelector('[data-control="notifications-bell"]')
+        .dispatchEvent(new CustomEvent('show.bs.dropdown', { bubbles: true }));
+}
+
+test('a failed mark-read request keeps the loaded list', async () => {
+    global.fetch = jest.fn((url) => {
+        if (url === '/notifications/recent') {
+            return Promise.resolve({ ok: true, text: () => Promise.resolve(LIST_HTML) });
+        }
+
+        return Promise.resolve({ ok: false, status: 400 });
+    });
+    loadModules();
+
+    openMenu();
+    await flush();
+    await flush();
+    await flush();
+
+    const list = document.querySelector('[data-bell-list]');
+    expect(list.querySelector('[data-notification-id="7"]')).not.toBeNull();
+    expect(list.textContent).not.toBe('Load failed');
+    expect(badge().textContent).toBe('2');
+});
+
+test('read all clears the unread marks and updates the badge', async () => {
+    global.fetch = jest.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve({ unread_count: 0 }) }));
+    loadModules();
+    const list = document.querySelector('[data-bell-list]');
+    list.innerHTML = '<button type="button" data-bell-read-all></button><li data-notification-unread class="notification-item--unread"></li>';
+
+    list.querySelector('[data-bell-read-all]').click();
+    await flush();
+    await flush();
+
+    expect(global.fetch.mock.calls[0][0]).toBe('/notifications/read-all');
+    expect(badge().hidden).toBe(true);
+    expect(list.querySelector('[data-notification-unread]')).toBeNull();
+});
+
+test('a failed read all keeps the list', async () => {
+    global.fetch = jest.fn(() => Promise.resolve({ ok: false, status: 400 }));
+    loadModules();
+    const list = document.querySelector('[data-bell-list]');
+    list.innerHTML = '<button type="button" data-bell-read-all></button><li data-notification-unread></li>';
+
+    list.querySelector('[data-bell-read-all]').click();
+    await flush();
+    await flush();
+
+    expect(list.querySelector('[data-notification-unread]')).not.toBeNull();
+    expect(list.textContent).not.toBe('Load failed');
+});

@@ -89,7 +89,8 @@
                 .then((html) => {
                     list.innerHTML = html;
 
-                    return markShownRead();
+                    // A failed mark is not a failed load: the shown list stays, the records stay unread.
+                    markShownRead().catch(() => {});
                 })
                 .catch(() => {
                     list.textContent = list.dataset.error;
@@ -109,9 +110,7 @@
                         item.classList.remove('notification-item--unread');
                     });
                 })
-                .catch(() => {
-                    list.textContent = list.dataset.error;
-                });
+                .catch(() => {});
         }
 
         root.addEventListener('show.bs.dropdown', onShow);
