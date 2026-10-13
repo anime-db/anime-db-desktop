@@ -30,12 +30,14 @@ namespace App\Tests\Unit\Service\Plugin;
 use AnimeDb\PluginContracts\ExternalIdResolutionInterface;
 use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
+use App\Entity\Anime;
 use App\Entity\AnimeExternalId;
 use App\Entity\Enum\WatchStatus;
 use App\Entity\TvAnime;
 use App\Entity\ValueObject\PluginId;
 use App\Repository\AnimeRepository;
 use App\Service\Plugin\ExternalIdResolver;
+use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\EntityManager;
@@ -168,5 +170,38 @@ final class ExternalIdResolverTest extends TestCase
 
         $this->assertNull($this->resolver()->resolve($a, $this->pluginId, $this->plugin(null)));
         $this->assertNull($a->getCachedExternalId($this->pluginId));
+    }
+
+    public function testUnflushedClaimOfTheSameIdBlocksAnotherAnime(): void
+    {
+        $a = $this->anime('A');
+        $b = $this->anime('B');
+        $resolver = $this->resolver();
+
+        $this->assertSame('X', $resolver->claim($a, $this->pluginId, 'X'));
+        $this->assertNull($resolver->claim($b, $this->pluginId, 'X'));
+
+        $this->assertNull($b->getCachedExternalId($this->pluginId));
+        $this->entityManager->flush();
+        $this->assertCount(1, $this->entityManager->getRepository(AnimeExternalId::class)->findAll());
+        $this->assertCount(1, $this->logs);
+    }
+
+    public function testSameAnimeLoadedByAnotherEntityManagerIsNotAForeignOwner(): void
+    {
+        $a = $this->anime('A', 'X');
+        $this->entityManager->clear();
+
+        // The claimant is one instance of anime #A with no cached id; the owner lookup runs through
+        // another manager and yields a second instance of the very same row.
+        $claimant = $this->entityManager->find(TvAnime::class, $a->id) ?? throw new \LogicException('missing');
+        (new \ReflectionProperty(Anime::class, 'externalIds'))->setValue($claimant, new ArrayCollection());
+        $this->assertNull($claimant->getCachedExternalId($this->pluginId));
+
+        $config = $this->entityManager->getConfiguration();
+        $other = new EntityManager($this->entityManager->getConnection(), $config);
+
+        $this->assertSame('X', $this->resolver()->claim($claimant, $this->pluginId, 'X', $other));
+        $this->assertCount(0, $this->logs);
     }
 }

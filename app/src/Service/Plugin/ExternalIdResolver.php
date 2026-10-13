@@ -44,10 +44,23 @@ use Psr\Log\LoggerInterface;
  */
 final class ExternalIdResolver
 {
+    /**
+     * Ids cached in memory but not flushed yet, per EntityManager: the owner lookup is a DQL query
+     * and does not see them. Weak references, so a finished unit of work does not pin its anime.
+     *
+     * @var \WeakMap<object, array<string, \WeakReference<Anime>>>
+     */
+    private \WeakMap $pending;
+
+    /** Stands for the default EntityManager in {@see $pending}. */
+    private readonly \stdClass $defaultScope;
+
     public function __construct(
         private readonly AnimeRepository $animeRepository,
         private readonly LoggerInterface $logger,
     ) {
+        $this->pending = new \WeakMap();
+        $this->defaultScope = new \stdClass();
     }
 
     /**
@@ -84,7 +97,9 @@ final class ExternalIdResolver
         }
 
         $repository = $entityManager !== null ? new AnimeRepository($entityManager) : $this->animeRepository;
-        $owner = $repository->resolve($pluginId, $externalId);
+        $scope = $entityManager ?? $this->defaultScope;
+        $key = $pluginId.'|'.$externalId;
+        $owner = $repository->resolve($pluginId, $externalId) ?? $this->pendingOwner($scope, $key, $pluginId, $externalId, $anime);
         if ($owner !== null && $owner !== $anime && ($owner->id === null || $owner->id !== $anime->id)) {
             $this->logger->warning('Possible duplicate anime: external id {externalId} of plugin {pluginId} is already pinned to anime #{ownerId}, not caching it for anime #{animeId}.', [
                 'pluginId' => (string) $pluginId,
@@ -97,7 +112,20 @@ final class ExternalIdResolver
         }
 
         $anime->rememberExternalId($pluginId, $externalId);
+        $claims = $this->pending[$scope] ?? [];
+        $claims[$key] = \WeakReference::create($anime);
+        $this->pending[$scope] = $claims;
 
         return $externalId;
+    }
+
+    private function pendingOwner(object $scope, string $key, PluginId $pluginId, string $externalId, Anime $anime): ?Anime
+    {
+        $holder = ($this->pending[$scope][$key] ?? null)?->get();
+        if ($holder === null || $holder === $anime || ($holder->id !== null && $holder->id === $anime->id) || $holder->getCachedExternalId($pluginId) !== $externalId) {
+            return null;
+        }
+
+        return $holder;
     }
 }
