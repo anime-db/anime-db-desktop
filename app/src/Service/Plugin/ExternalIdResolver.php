@@ -33,6 +33,7 @@ use App\Entity\ValueObject\PluginId;
 use App\Repository\AnimeRepository;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Log\LoggerInterface;
+use Symfony\Contracts\Service\ResetInterface;
 
 /**
  * The one place that turns a plugin-recognised external id into a cached AnimeExternalId row.
@@ -42,7 +43,7 @@ use Psr\Log\LoggerInterface;
  * lazy resolution therefore goes through here: an id owned by another anime is not cached, the
  * call returns null, and a warning is logged. A negative result is never cached.
  */
-final class ExternalIdResolver
+final class ExternalIdResolver implements ResetInterface
 {
     /**
      * Ids cached in memory but not flushed yet, per EntityManager: the owner lookup is a DQL query
@@ -61,6 +62,12 @@ final class ExternalIdResolver
     ) {
         $this->pending = new \WeakMap();
         $this->defaultScope = new \stdClass();
+    }
+
+    /** Drops the unflushed claims, so they do not outlive the request in a long-running process. */
+    public function reset(): void
+    {
+        $this->pending = new \WeakMap();
     }
 
     /**

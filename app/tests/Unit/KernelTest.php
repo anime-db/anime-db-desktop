@@ -28,11 +28,14 @@ declare(strict_types=1);
 namespace App\Tests\Unit;
 
 use App\Kernel;
+use App\Service\Plugin\ExternalIdResolver;
 use App\Service\Version\AppVersionResolver;
 use Composer\InstalledVersions;
 use Psr\Log\NullLogger;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
+use Symfony\Component\DependencyInjection\ServicesResetter;
+use Symfony\Contracts\Service\ResetInterface;
 
 /**
  * Container-level regression test for PR #563's review: a unit test constructing
@@ -45,6 +48,19 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
  */
 final class KernelTest extends KernelTestCase
 {
+    public function testExternalIdResolverIsResetBetweenRequests(): void
+    {
+        self::bootKernel();
+        $container = self::getContainer();
+
+        $this->assertInstanceOf(ResetInterface::class, $container->get(ExternalIdResolver::class));
+
+        $resetter = $container->get('services_resetter');
+        $this->assertInstanceOf(ServicesResetter::class, $resetter);
+        $services = (new \ReflectionProperty(ServicesResetter::class, 'resettableServices'))->getValue($resetter);
+        $this->assertContains(ExternalIdResolver::class, array_map(static fn (object $service): string => $service::class, iterator_to_array($services, false)));
+    }
+
     public function testPluginCacheDirLivesUnderTheRuntimeDirectory(): void
     {
         $previous = $_SERVER['APP_RUNTIME_DIR'] ?? null;

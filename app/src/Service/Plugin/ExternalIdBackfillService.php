@@ -37,7 +37,7 @@ use Psr\Log\LoggerInterface;
 
 /**
  * Catalog sweep (issue #258) that resolves and caches a sync plugin's external id for every Anime that already carries a matching source URL, via
- * {@see Anime::getExternalId()} (issue #211) — instead of leaving it to be resolved lazily,
+ * {@see ExternalIdResolver::resolve()} (issue #211) — instead of leaving it to be resolved lazily,
  * one record at a time, the first time pull-dedup (issue #215a) or cross-vendor dedup
  * (issue #216) needs it.
  *

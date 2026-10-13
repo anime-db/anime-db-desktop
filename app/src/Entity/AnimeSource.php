@@ -56,12 +56,13 @@ class AnimeSource
 
     /**
      * Brings a url with raw non-ASCII characters to its ASCII form: bytes outside ASCII in the path,
-     * query and fragment are percent-encoded, an IDN host goes through punycode (needs `intl`; without
-     * it the host is left as is and the url stays invalid). Already encoded urls are not encoded twice,
+     * query and fragment are percent-encoded, an IDN host goes through punycode, the scheme is lower-cased.
+     * Already encoded urls are not encoded twice,
      * spaces and control characters are left alone so such garbage is still rejected by {@see isValidUrl()}.
      */
     public static function normalizeUrl(string $url): string
     {
+        $url = preg_replace_callback('~^(https?)(://)~i', static fn (array $m): string => strtolower($m[1]).$m[2], $url) ?? $url;
         if (preg_match('/[\x80-\xFF]/', $url) !== 1) {
             return $url;
         }
@@ -69,7 +70,7 @@ class AnimeSource
         if (preg_match('~^(https?://)([^/?#]*)(.*)$~is', $url, $m) === 1) {
             [, $scheme, $authority, $rest] = $m;
             if (preg_match('/^(.*@)?([^:@\[\]]*)(:\d*)?$/s', $authority, $a) === 1 && preg_match('/[\x80-\xFF]/', $a[2]) === 1) {
-                $host = \function_exists('idn_to_ascii') ? idn_to_ascii($a[2], \IDNA_DEFAULT, \INTL_IDNA_VARIANT_UTS46) : false;
+                $host = idn_to_ascii($a[2], \IDNA_DEFAULT, \INTL_IDNA_VARIANT_UTS46);
                 if ($host === false) {
                     return $url;
                 }

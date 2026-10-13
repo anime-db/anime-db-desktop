@@ -63,7 +63,7 @@ use Psr\Log\LoggerInterface;
  * unfinished unit of work, so read() must never flush it out from under the caller. Populating the
  * cache row stays the job of the background sweep
  * ({@see ExternalIdBackfillService}) and of
- * {@see Anime::getExternalId()}'s callers elsewhere. $resolverFactory is null for a plugin with no
+ * {@see ExternalIdResolver::resolve()}'s callers elsewhere. $resolverFactory is null for a plugin with no
  * `app.filler`/`app.sync`/`app.search_by_plugin`-tagged service at all (see the compiler pass), in
  * which case a cache miss stays null — this covers both "genuinely no external id" (a `type:
  * local` plugin) and "an external-id-capable plugin whose cache nobody has populated yet", the
