@@ -31,12 +31,15 @@ use AnimeDb\PluginContracts\Sync\SyncInterface;
 use App\Entity\ValueObject\PluginId;
 use App\Message\SyncSeedMessage;
 use App\Service\JobLock\JobLockService;
+use App\Service\Notification\Kind\SyncReviewNotificationKind;
+use App\Service\Notification\NotificationCenter;
 use App\Service\Plugin\ExternalIdBackfillService;
 use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Plugin\PullSyncService;
 use App\Service\Plugin\SyncRegistry;
 use App\Service\Sync\SourceRemovalService;
 use App\Service\Sync\SyncPullGate;
+use App\Service\Sync\SyncReviewService;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 
@@ -76,6 +79,8 @@ final class SyncSeedMessageHandler
         private readonly PluginsConfigStore $pluginsConfigStore,
         private readonly JobLockService $jobLockService,
         private readonly SyncPullGate $pullGate,
+        private readonly SyncReviewService $syncReview,
+        private readonly NotificationCenter $notifications,
         private readonly LoggerInterface $logger,
     ) {
     }
@@ -117,19 +122,28 @@ final class SyncSeedMessageHandler
 
     private function seed(SyncSeedMessage $message, PluginId $pluginId, SyncInterface $sync, string $jobKey): void
     {
-        // Issue #867: the external-id backfill runs here, synchronously and before the pull, rather
-        // than as a separately dispatched message — the pull matches pulled items against
-        // AnimeRepository::indexByExternalId(), which only sees ids that are already cached, so a
-        // backfill racing or trailing the pull would let it create second rows for titles that
-        // already sit in the catalog with a source URL. The ordering has to live in this handler:
-        // FIFO order between two messages is not guaranteed once they travel on different transports.
-        // The catch-up of pending removals on the source (issue #918) goes after the backfill: the
-        // cache of external ids has to be complete before deciding to delete, otherwise a live entry
-        // that only has a source URL would not be seen as holding the id and its list item would go.
-        $this->backfillService->backfill($pluginId, $sync);
-        $this->sourceRemoval->retryPending($pluginId, $sync);
+        // Issue #1028: before the backfill and the catch-up, so the items they create count too.
+        $watermark = $this->takeReviewWatermark();
 
-        $seeded = $this->pullSyncService->pull($pluginId, $sync, fn () => $this->jobLockService->heartbeat($jobKey));
+        try {
+            // Issue #867: the external-id backfill runs here, synchronously and before the pull, rather
+            // than as a separately dispatched message — the pull matches pulled items against
+            // AnimeRepository::indexByExternalId(), which only sees ids that are already cached, so a
+            // backfill racing or trailing the pull would let it create second rows for titles that
+            // already sit in the catalog with a source URL. The ordering has to live in this handler:
+            // FIFO order between two messages is not guaranteed once they travel on different transports.
+            // The catch-up of pending removals on the source (issue #918) goes after the backfill: the
+            // cache of external ids has to be complete before deciding to delete, otherwise a live entry
+            // that only has a source URL would not be seen as holding the id and its list item would go.
+            $this->backfillService->backfill($pluginId, $sync);
+            $this->sourceRemoval->retryPending($pluginId, $sync);
+
+            $seeded = $this->pullSyncService->pull($pluginId, $sync, fn () => $this->jobLockService->heartbeat($jobKey));
+        } finally {
+            // Also when the run threw: items created before the failure are already committed.
+            $this->notifyAboutRaisedReviewItems($watermark);
+        }
+
         if ($seeded) {
             // Issue #870: the seed is a successful pull too, so the periodic one waits its full age.
             $this->pullGate->markPulled($pluginId);
@@ -143,6 +157,33 @@ final class SyncSeedMessageHandler
 
                 return $settings;
             });
+        }
+    }
+
+    /** Issue #1028: a failure of the notification bookkeeping must never change the outcome of the sync run. */
+    private function takeReviewWatermark(): ?int
+    {
+        try {
+            return $this->syncReview->watermark();
+        } catch (\Throwable $e) {
+            $this->logger->error('Could not take the sync review watermark; the run goes on without a notification: {error}', ['error' => $e->getMessage(), 'exception' => $e]);
+
+            return null;
+        }
+    }
+
+    private function notifyAboutRaisedReviewItems(?int $watermark): void
+    {
+        if ($watermark === null) {
+            return;
+        }
+
+        try {
+            if ($this->syncReview->countUnresolvedRaisedSince($watermark) > 0) {
+                $this->notifications->record(SyncReviewNotificationKind::draft($this->syncReview->countUnresolved()));
+            }
+        } catch (\Throwable $e) {
+            $this->logger->error('Could not record the sync review notification: {error}', ['error' => $e->getMessage(), 'exception' => $e]);
         }
     }
 }

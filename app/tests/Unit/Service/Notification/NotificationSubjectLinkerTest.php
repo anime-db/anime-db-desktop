@@ -60,6 +60,7 @@ final class NotificationSubjectLinkerTest extends TestCase
             'storage_scan_run' => \sprintf('/storage/%d/scans/%d', $params['id'], $params['run']),
             'settings_plugin_page' => '/settings/plugins/'.$params['pluginId'],
             'settings_market_index' => '/settings/market',
+            'settings_sync_review_index' => '/settings/sync-review',
             default => '/anime/'.$params['id'],
         });
 
@@ -86,6 +87,14 @@ final class NotificationSubjectLinkerTest extends TestCase
     public function testExistingSubjectHasALink(): void
     {
         $this->assertSame('/anime/7', $this->linker()->urlFor('anime', '7'));
+    }
+
+    public function testSyncReviewQueueSubjectLinksToTheQueuePage(): void
+    {
+        $linker = $this->linker();
+
+        $this->assertSame('/settings/sync-review', $linker->urlFor('sync_review_queue', 'all'));
+        $this->assertNull($linker->urlFor('sync_review_queue', '7'));
     }
 
     public function testNoSubjectVanishedSubjectAndUnknownTypeHaveNoLink(): void
