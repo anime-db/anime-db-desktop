@@ -35,6 +35,7 @@ use AnimeDb\PluginContracts\Model\ThemeCode as ContractsThemeCode;
 use App\Entity\Anime;
 use App\Entity\AnimeImage;
 use App\Entity\AnimeName;
+use App\Entity\AnimeSource;
 use App\Entity\Enum\AnimeNameRole;
 use App\Entity\Enum\Demographic;
 use App\Entity\Enum\GenreCode;
@@ -52,7 +53,7 @@ use Psr\Log\LoggerInterface;
  * Applies a plugin-supplied {@see PluginAnimeData} onto an {@see Anime}, one field at a time,
  * enforcing the merge-vs-overwrite rule the issue requires to live on the host's schema rather
  * than in the plugin (issue #231): collection fields (alternative names, descriptions, genres,
- * themes, studios, countries, images) are unioned via Anime's own add*()/set-with-existing
+ * themes, studios, countries, images, external urls) are unioned via Anime's own add*()/set-with-existing
  * methods, which already de-duplicate or merge by key — nothing that already exists is lost.
  * Scalar fields (title, date_premiere, date_end, duration_minutes, demographic,
  * episodes_count, cover) are overwritten outright — except date_premiere/date_end, which are
@@ -79,6 +80,8 @@ final class PluginAnimeDataMerger
      * @var array<string, Studio>
      */
     private array $studioCache = [];
+
+    private const EXTERNAL_URLS_MAX_COUNT = 50;
 
     public function __construct(
         private readonly StudioRepository $studioRepository,
@@ -125,6 +128,9 @@ final class PluginAnimeDataMerger
                 'countries' => $this->applyCountries($anime, $data->countries ?? []),
                 'cover' => $this->applyCover($anime, $data->cover),
                 'images' => $this->applyImages($anime, $data->images ?? []),
+                // `??` rather than a direct read: an object cached before the contract gained this
+                // property comes back from deserialization with it uninitialized.
+                'externalUrls' => $this->applyExternalUrls($anime, $data->externalUrls ?? []),
                 default => null, // type: not applicable to an already-constructed entity, see class docblock
             };
 
@@ -261,6 +267,53 @@ final class PluginAnimeDataMerger
     {
         if ($demographic !== null) {
             $anime->setDemographic(Demographic::from($demographic->value));
+        }
+    }
+
+    /**
+     * Add-only: links are appended to the record's sources, nothing is removed or replaced. Only
+     * urls passing {@see AnimeSource::isValidUrl()} (the same rule as the edit form) after
+     * {@see AnimeSource::normalizeUrl()} are accepted, and the normalized form is stored;
+     * at most {@see self::EXTERNAL_URLS_MAX_COUNT} new sources are added per call. Urls the record
+     * already has (see {@see Anime::addSource()}) neither count against the limit nor are added.
+     * Skipped urls are logged, one warning per reason.
+     *
+     * @param string[] $urls
+     */
+    private function applyExternalUrls(Anime $anime, array $urls): void
+    {
+        $added = 0;
+        $invalid = 0;
+        $overLimit = 0;
+        $rejected = [];
+        foreach ($urls as $url) {
+            $url = AnimeSource::normalizeUrl($url);
+            if (!AnimeSource::isValidUrl($url)) {
+                ++$invalid;
+                if (\count($rejected) < 5) {
+                    $rejected[] = $url;
+                }
+
+                continue;
+            }
+            if ($anime->hasSource($url)) {
+                continue;
+            }
+            if ($added >= self::EXTERNAL_URLS_MAX_COUNT) {
+                ++$overLimit;
+
+                continue;
+            }
+
+            $anime->addSource($url);
+            ++$added;
+        }
+
+        if ($invalid > 0) {
+            $this->logger->warning('Skipped external urls: not a valid absolute http(s) url or too long.', ['animeId' => $anime->id, 'count' => $invalid, 'urls' => $rejected]);
+        }
+        if ($overLimit > 0) {
+            $this->logger->warning('Skipped external urls: too many new urls in one call.', ['animeId' => $anime->id, 'count' => $overLimit, 'limit' => self::EXTERNAL_URLS_MAX_COUNT]);
         }
     }
 

@@ -8,8 +8,8 @@ is relative to the AnimeDB installation directory. `NOT FOUND` means the package
 
 | Package                             | Version | License          | License text                                                         |
 |-------------------------------------|---------|------------------|----------------------------------------------------------------------|
-| anime-db/plugin-contracts           | v0.26.1 | GPL-3.0-or-later | resources/app/app/vendor/anime-db/plugin-contracts/LICENSE           |
-| composer/semver                     | 3.5.0   | MIT              | resources/app/app/vendor/composer/semver/LICENSE                     |
+| anime-db/plugin-contracts           | v0.26.2 | GPL-3.0-or-later | resources/app/app/vendor/anime-db/plugin-contracts/LICENSE           |
+| composer/semver                     | 3.5.1   | MIT              | resources/app/app/vendor/composer/semver/LICENSE                     |
 | doctrine/collections                | 2.6.0   | MIT              | resources/app/app/vendor/doctrine/collections/LICENSE                |
 | doctrine/dbal                       | 4.4.3   | MIT              | resources/app/app/vendor/doctrine/dbal/LICENSE                       |
 | doctrine/deprecations               | 1.1.6   | MIT              | resources/app/app/vendor/doctrine/deprecations/LICENSE               |

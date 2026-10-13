@@ -71,7 +71,6 @@ use Twig\Environment;
 final class AnimeEditController
 {
     private const MAX_NAME_LENGTH = 256;
-    private const MAX_URL_LENGTH = 512;
     private const STUDIO_CHOICES_LIMIT = 1000;
 
     public function __construct(
@@ -274,7 +273,7 @@ final class AnimeEditController
             'duration_minutes' => $this->text($request->request->get('duration_minutes')),
             'episodes_count' => $anime instanceof SeriesAnime ? $this->text($request->request->get('episodes_count')) : '',
             'countries' => $this->text($request->request->get('countries')),
-            'sources' => $this->strings($request, 'sources'),
+            'sources' => array_map(AnimeSource::normalizeUrl(...), $this->strings($request, 'sources')),
             'notes' => trim((string) $request->request->get('notes', '')),
             'cover_remove' => $request->request->getBoolean('cover_remove'),
         ];
@@ -573,9 +572,7 @@ final class AnimeEditController
 
     private function isValidUrl(string $url): bool
     {
-        return mb_strlen($url) <= self::MAX_URL_LENGTH
-            && filter_var($url, \FILTER_VALIDATE_URL) !== false
-            && \in_array(parse_url($url, \PHP_URL_SCHEME), ['http', 'https'], true);
+        return AnimeSource::isValidUrl($url);
     }
 
     private function text(mixed $value): string

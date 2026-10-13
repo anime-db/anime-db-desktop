@@ -700,4 +700,132 @@ final class PluginAnimeDataMergerTest extends TestCase
         $this->assertSame('Placeholder', $anime->getTitle());
         $this->assertSame([], $result->unapplied);
     }
+
+    /** @return list<string> */
+    private function sourceUrls(\App\Entity\Anime $anime): array
+    {
+        return array_values(array_map(static fn (\App\Entity\AnimeSource $source): string => $source->url, $anime->getSources()->toArray()));
+    }
+
+    public function testApplyExternalUrlsAddsNewUrlsAndKeepsExistingSources(): void
+    {
+        $anime = $this->newAnime();
+        $anime->addSource('https://example.org/a');
+
+        $data = new PluginAnimeData(title: 'Bleach', externalUrls: ['https://anidb.net/anime/1', 'https://example.org/b']);
+        $this->newMerger()->apply($anime, $data, ['externalUrls']);
+
+        $this->assertSame(['https://example.org/a', 'https://anidb.net/anime/1', 'https://example.org/b'], $this->sourceUrls($anime));
+    }
+
+    public function testApplyExternalUrlsSkipsDuplicatesByNormalizedAddressAndStoresOriginal(): void
+    {
+        $anime = $this->newAnime();
+        $anime->addSource('https://myanimelist.net/anime/1');
+
+        $data = new PluginAnimeData(title: 'Bleach', externalUrls: [
+            'http://www.MyAnimeList.net/anime/1/',
+            'http://www.Example.org/x/',
+            'https://example.org/x',
+        ]);
+        $this->newMerger()->apply($anime, $data, ['externalUrls']);
+
+        $this->assertSame(['https://myanimelist.net/anime/1', 'http://www.Example.org/x/'], $this->sourceUrls($anime));
+    }
+
+    public function testApplyExternalUrlsKeepsLinksToDifferentSitesWithTheSameId(): void
+    {
+        $anime = $this->newAnime();
+
+        $data = new PluginAnimeData(title: 'Bleach', externalUrls: ['https://myanimelist.net/anime/5114', 'https://shikimori.io/animes/5114']);
+        $this->newMerger()->apply($anime, $data, ['externalUrls']);
+
+        $this->assertSame(['https://myanimelist.net/anime/5114', 'https://shikimori.io/animes/5114'], $this->sourceUrls($anime));
+    }
+
+    public function testApplyExternalUrlsFiltersInvalidUrlsAndLogsOnce(): void
+    {
+        $anime = $this->newAnime();
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->once())->method('warning');
+
+        $data = new PluginAnimeData(title: 'Bleach', externalUrls: [
+            'ftp://example.org/a',
+            '/relative/path',
+            'https://example.org/'.str_repeat('a', 520),
+            'javascript:alert(1)',
+            'https://example.org/a b',
+            'HTTPS://example.org/upper',
+            'https://example.org/ok',
+        ]);
+        $this->newMerger([], $logger)->apply($anime, $data, ['externalUrls']);
+
+        $this->assertSame(['https://example.org/ok'], $this->sourceUrls($anime));
+    }
+
+    public function testApplyExternalUrlsEncodesNonAsciiAndDeduplicates(): void
+    {
+        $encoded = 'https://ja.wikipedia.org/wiki/%E8%91%AC%E9%80%81%E3%81%AE%E3%83%95%E3%83%AA%E3%83%BC%E3%83%AC%E3%83%B3';
+        $anime = $this->newAnime();
+        $data = new PluginAnimeData(title: 'Frieren', externalUrls: ['https://ja.wikipedia.org/wiki/葬送のフリーレン', $encoded]);
+        $this->newMerger()->apply($anime, $data, ['externalUrls']);
+
+        $this->assertSame([$encoded], $this->sourceUrls($anime));
+    }
+
+    public function testApplyExternalUrlsTakesAtMostFiftyUrls(): void
+    {
+        $anime = $this->newAnime();
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->once())->method('warning');
+
+        $urls = [];
+        for ($i = 1; $i <= 51; ++$i) {
+            $urls[] = 'https://example.org/'.$i;
+        }
+        $this->newMerger([], $logger)->apply($anime, new PluginAnimeData(title: 'Bleach', externalUrls: $urls), ['externalUrls']);
+
+        $this->assertCount(50, $anime->getSources());
+    }
+
+    public function testApplyExternalUrlsLengthBoundary(): void
+    {
+        $anime = $this->newAnime();
+        $prefix = 'https://example.org/';
+        $ok = $prefix.str_repeat('a', 512 - \strlen($prefix));
+        $tooLong = $ok.'a';
+
+        $this->newMerger()->apply($anime, new PluginAnimeData(title: 'Bleach', externalUrls: [$tooLong, $ok]), ['externalUrls']);
+
+        $this->assertSame([$ok], $this->sourceUrls($anime));
+    }
+
+    public function testApplyExternalUrlsKnownAddressesDoNotConsumeTheLimit(): void
+    {
+        $anime = $this->newAnime();
+        $urls = [];
+        for ($i = 1; $i <= 50; ++$i) {
+            $anime->addSource('https://example.org/'.$i);
+            $urls[] = 'https://example.org/'.$i;
+        }
+        $urls[] = 'https://example.org/new';
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->never())->method('warning');
+
+        $this->newMerger([], $logger)->apply($anime, new PluginAnimeData(title: 'Bleach', externalUrls: $urls), ['externalUrls']);
+
+        $this->assertCount(51, $anime->getSources());
+    }
+
+    public function testApplyExternalUrlsToleratesAnUninitializedProperty(): void
+    {
+        $anime = $this->newAnime();
+        $anime->addSource('https://example.org/a');
+
+        /** @var PluginAnimeData $data */
+        $data = (new \ReflectionClass(PluginAnimeData::class))->newInstanceWithoutConstructor();
+        $this->newMerger()->apply($anime, $data, ['externalUrls']);
+
+        $this->assertSame(['https://example.org/a'], $this->sourceUrls($anime));
+    }
 }

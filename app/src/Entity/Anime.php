@@ -1046,11 +1046,26 @@ abstract class Anime implements AggregateRootInterface
         return $this->sources;
     }
 
+    /** Idempotent: a url that points at an already known source (by {@see AnimeSource::key()}) is not added again. */
     public function addSource(string $url): self
     {
-        $this->sources->add(new AnimeSource($this, $url));
+        if (!$this->hasSource($url)) {
+            $this->sources->add(new AnimeSource($this, $url));
+        }
 
         return $this;
+    }
+
+    public function hasSource(string $url): bool
+    {
+        $key = AnimeSource::key($url);
+        foreach ($this->sources as $source) {
+            if (AnimeSource::key($source->url) === $key) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public function removeSource(AnimeSource $source): self

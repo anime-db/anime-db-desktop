@@ -46,9 +46,67 @@ class AnimeSource
     #[ORM\Column(length: 512)]
     public readonly string $url;
 
+    public const MAX_URL_LENGTH = 512;
+
     public function __construct(Anime $anime, string $url)
     {
         $this->anime = $anime;
         $this->url = $url;
+    }
+
+    /**
+     * Brings a url with raw non-ASCII characters to its ASCII form: bytes outside ASCII in the path,
+     * query and fragment are percent-encoded, an IDN host goes through punycode (needs `intl`; without
+     * it the host is left as is and the url stays invalid). Already encoded urls are not encoded twice,
+     * spaces and control characters are left alone so such garbage is still rejected by {@see isValidUrl()}.
+     */
+    public static function normalizeUrl(string $url): string
+    {
+        if (preg_match('/[\x80-\xFF]/', $url) !== 1) {
+            return $url;
+        }
+
+        if (preg_match('~^(https?://)([^/?#]*)(.*)$~is', $url, $m) === 1) {
+            [, $scheme, $authority, $rest] = $m;
+            if (preg_match('/^(.*@)?([^:@\[\]]*)(:\d*)?$/s', $authority, $a) === 1 && preg_match('/[\x80-\xFF]/', $a[2]) === 1) {
+                $host = \function_exists('idn_to_ascii') ? idn_to_ascii($a[2], \IDNA_DEFAULT, \INTL_IDNA_VARIANT_UTS46) : false;
+                if ($host === false) {
+                    return $url;
+                }
+                $authority = $a[1].$host.($a[3] ?? '');
+            }
+            $url = $scheme.$authority.$rest;
+        }
+
+        return preg_replace_callback('/[\x80-\xFF]/', static fn (array $m): string => rawurlencode($m[0]), $url) ?? $url;
+    }
+
+    /** The single rule for an acceptable source url: absolute http(s), valid characters, fits the column. */
+    public static function isValidUrl(string $url): bool
+    {
+        return mb_strlen($url) <= self::MAX_URL_LENGTH
+            && filter_var($url, \FILTER_VALIDATE_URL) !== false
+            && \in_array(parse_url($url, \PHP_URL_SCHEME), ['http', 'https'], true);
+    }
+
+    /**
+     * Comparison key: scheme and `www.` ignored, host lower-cased, no trailing slash. Falls back
+     * to the raw url when it cannot be parsed, so unusual legacy values still compare by identity.
+     */
+    public static function key(string $url): string
+    {
+        $parts = parse_url($url);
+        if ($parts === false || !isset($parts['host'])) {
+            return $url;
+        }
+
+        $key = preg_replace('/^www\./', '', strtolower($parts['host']))
+            .(isset($parts['port']) ? ':'.$parts['port'] : '')
+            .($parts['path'] ?? '');
+        if (isset($parts['query'])) {
+            $key .= '?'.$parts['query'];
+        }
+
+        return rtrim($key, '/');
     }
 }
