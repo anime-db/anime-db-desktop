@@ -33,6 +33,7 @@ use App\Service\Notification\Kind\DownloadCompletedNotificationKind;
 use App\Service\Notification\Kind\DownloadFailedNotificationKind;
 use App\Service\Notification\Kind\ScanAttentionNotificationKind;
 use App\Service\Notification\Kind\ScanFailedNotificationKind;
+use App\Service\Notification\Kind\SyncReviewNotificationKind;
 use App\Service\Notification\NotificationCenter;
 use App\Service\Notification\NotificationKindRegistry;
 use App\Service\Notification\NotificationRenderer;
@@ -65,7 +66,7 @@ final class NotificationSourcesTest extends TestCase
 
     private function center(): NotificationCenter
     {
-        $registry = new NotificationKindRegistry([new ScanFailedNotificationKind(), new ScanAttentionNotificationKind(), new DownloadCompletedNotificationKind(), new DownloadFailedNotificationKind()]);
+        $registry = new NotificationKindRegistry([new ScanFailedNotificationKind(), new ScanAttentionNotificationKind(), new DownloadCompletedNotificationKind(), new DownloadFailedNotificationKind(), new SyncReviewNotificationKind()]);
         $renderer = new NotificationRenderer(
             $registry,
             $this->createStub(\Symfony\Contracts\Translation\TranslatorInterface::class),
@@ -76,6 +77,38 @@ final class NotificationSourcesTest extends TestCase
         );
 
         return new NotificationCenter($this->connection, $registry, $renderer, $this->createStub(WsPublisher::class), new NullLogger());
+    }
+
+    public function testRepeatedSyncReviewRunsShareOneUnreadRecordWithTheLatestCount(): void
+    {
+        $center = $this->center();
+
+        $center->record(SyncReviewNotificationKind::draft(3));
+        $center->record(SyncReviewNotificationKind::draft(7));
+
+        $rows = $this->connection->fetchAllAssociative('SELECT * FROM notification');
+        $this->assertCount(1, $rows);
+        $this->assertSame(2, (int) $rows[0]['occurrences']);
+        $this->assertSame('warning', $rows[0]['severity']);
+        $this->assertSame(['count' => 7], json_decode((string) $rows[0]['params'], true));
+        $this->assertSame('sync_review_queue', $rows[0]['subject_type']);
+        $this->assertSame('all', $rows[0]['subject_id']);
+    }
+
+    public function testSyncReviewFixtureIsExactlyTheRowTheFactoryWrites(): void
+    {
+        $this->center()->record(SyncReviewNotificationKind::draft(3));
+
+        $row = $this->connection->fetchAssociative('SELECT kind, severity, params, subject_type, subject_id FROM notification');
+        $this->assertIsArray($row);
+        $actual = [
+            'kind' => $row['kind'],
+            'severity' => $row['severity'],
+            'params' => json_decode((string) $row['params'], true),
+            'subject' => $row['subject_type'] === null ? null : ['type' => $row['subject_type'], 'id' => $row['subject_id']],
+        ];
+
+        $this->assertSame(json_decode((string) file_get_contents(\dirname(__DIR__, 3).'/Fixtures/Notifications/sync_review.v1.json'), true), $actual);
     }
 
     public function testRepeatedScanAttentionOfAStorageUpdatesTheUnreadRecord(): void
