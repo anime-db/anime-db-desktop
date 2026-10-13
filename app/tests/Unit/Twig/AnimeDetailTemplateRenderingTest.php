@@ -900,8 +900,65 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
 
         $html = $this->renderShow($anime, 'en');
 
-        $this->assertStringContainsString('<span class="anime-detail__source-label">example.org</span>', $html);
+        $this->assertStringContainsString("<span class=\"anime-detail__source-label\">\u{2068}example.org\u{2069}</span>", $html);
         $this->assertStringContainsString('https://www.example.org/favicon.ico', $html);
+    }
+
+    /** Issue #1045: the card shows the readable host (isolated), while href and favicon stay ASCII. */
+    public function testShowRendersReadableSourceHostButKeepsAsciiLinkAndFavicon(): void
+    {
+        $anime = $this->fullyPopulatedAnime();
+        $anime['sources'] = [['url' => 'https://xn--e1afmkfd.xn--p1ai/%D1%81', 'domain' => 'xn--e1afmkfd.xn--p1ai']];
+
+        $html = $this->renderShow($anime, 'en');
+
+        $this->assertStringContainsString('title="пример.рф"', $html);
+        $this->assertStringContainsString("\u{2068}пример.рф\u{2069}", $html);
+        $this->assertStringContainsString('href="https://xn--e1afmkfd.xn--p1ai/%D1%81"', $html);
+        $this->assertStringContainsString('src="https://xn--e1afmkfd.xn--p1ai/favicon.ico"', $html);
+    }
+
+    /** Issue #1045: the edit form (also when re-shown after a validation error) fills sources in readable form. */
+    public function testEditFormShowsSourcesInReadableForm(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession('/anime/1/edit');
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('anime/edit.html.twig', [
+            'anime' => ['id' => 1, 'title' => 'Shingeki no Kyojin', 'type' => 'tv'],
+            'is_series' => true,
+            'form' => [
+                'title' => '',
+                'names' => [],
+                'descriptions' => [],
+                'genres' => [],
+                'themes' => [],
+                'studios' => [],
+                'new_studios' => [],
+                'demographic' => '',
+                'date_premiere' => '',
+                'date_end' => '',
+                'duration_minutes' => '',
+                'episodes_count' => '',
+                'countries' => '',
+                'sources' => ['https://xn--e1afmkfd.xn--p1ai/%D1%81%D1%82%D1%80%D0%B0%D0%BD%D0%B8%D1%86%D0%B0'],
+                'notes' => '',
+                'cover_remove' => false,
+            ],
+            'cover' => null,
+            'cover_max_bytes' => 5 * 1024 * 1024,
+            'errors' => ['title' => 'anime_edit.error_title_required'],
+            'genre_choices' => [],
+            'theme_choices' => [],
+            'demographic_choices' => [],
+            'role_choices' => [],
+            'studio_choices' => [],
+            'csrf_token_id' => 'anime_edit_1',
+        ]);
+
+        $this->assertStringContainsString('value="https://пример.рф/страница"', $html);
     }
 
     public function testFillErrorIsRenderedInsideTheFragmentOfTheFieldThatCausedIt(): void
