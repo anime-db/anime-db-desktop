@@ -670,4 +670,60 @@ final class BulkFillerServiceTest extends TestCase
         $this->assertFalse($dispatched[0]->isCover);
         $this->assertCount(0, $anime->getImages());
     }
+
+    public function testFillNewFromPluginAddsExternalUrlsAsSourcesWhenThePluginDeclaresThem(): void
+    {
+        $pluginId = new PluginId('animedb-shikimori');
+        $data = new PluginAnimeData(title: 'Bleach', externalUrls: ['https://myanimelist.net/anime/269']);
+
+        $filler = $this->createStub(FillerInterface::class);
+        $filler->method('find')->willReturn([new ContractsSearchByPluginCandidate((string) $pluginId, 'Bleach', '269')]);
+        $filler->method('findById')->willReturn($data);
+        $filler->method('getFillableFields')->willReturn(['title', 'externalUrls']);
+
+        $anime = $this->newService([(string) $pluginId => $filler])->fillNewFromPlugin($pluginId, 'Bleach');
+
+        $this->assertSame(['https://myanimelist.net/anime/269'], array_map(static fn ($s): string => $s->url, $anime?->getSources()->toArray() ?? []));
+    }
+
+    public function testFillNewFromPluginAddsNoSourcesWhenThePluginDoesNotDeclareExternalUrls(): void
+    {
+        $pluginId = new PluginId('animedb-shikimori');
+        $data = new PluginAnimeData(title: 'Bleach', externalUrls: ['https://myanimelist.net/anime/269']);
+
+        $filler = $this->createStub(FillerInterface::class);
+        $filler->method('find')->willReturn([new ContractsSearchByPluginCandidate((string) $pluginId, 'Bleach', '269')]);
+        $filler->method('findById')->willReturn($data);
+        $filler->method('getFillableFields')->willReturn(['title']);
+
+        $anime = $this->newService([(string) $pluginId => $filler])->fillNewFromPlugin($pluginId, 'Bleach');
+
+        $this->assertCount(0, $anime?->getSources() ?? []);
+    }
+
+    public function testFillExistingFromPluginAddsExternalUrlsToAnAlreadyFilledAnime(): void
+    {
+        $pluginId = new PluginId('animedb-shikimori');
+        $data = new PluginAnimeData(title: 'Bleach', durationMinutes: 91, externalUrls: ['https://myanimelist.net/anime/269']);
+
+        $filler = $this->createStub(FillerInterface::class);
+        $filler->method('findById')->with('269')->willReturn($data);
+        $filler->method('getFillableFields')->willReturn(['title', 'durationMinutes', 'externalUrls']);
+
+        $anime = new TvAnime();
+        $anime->setTitle('Bleach')->setWatchStatus(WatchStatus::Plan);
+        $anime->setDurationMinutes(24);
+        $anime->addSource('https://example.org/a');
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+
+        $result = $this->newService([(string) $pluginId => $filler])->fillExistingFromPlugin($anime, $pluginId, '269');
+
+        $this->assertSame(FillResult::Applied, $result);
+        $this->assertSame(24, $anime->getDurationMinutes());
+        $this->assertSame(
+            ['https://example.org/a', 'https://myanimelist.net/anime/269'],
+            array_map(static fn ($s): string => $s->url, $anime->getSources()->toArray()),
+        );
+    }
 }

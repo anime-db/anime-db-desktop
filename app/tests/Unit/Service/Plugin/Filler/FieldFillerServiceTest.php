@@ -448,4 +448,22 @@ final class FieldFillerServiceTest extends TestCase
         $this->entityManager->flush();
         $this->assertCount(1, $this->entityManager->getRepository(\App\Entity\AnimeExternalId::class)->findAll());
     }
+
+    public function testFillDoesNotChangeSourcesEvenWhenThePluginReturnsExternalUrls(): void
+    {
+        $pluginId = new PluginId('animedb-shikimori');
+        $data = new PluginAnimeData(title: 'Bleach', durationMinutes: 24, externalUrls: ['https://myanimelist.net/anime/269']);
+
+        $filler = $this->createStub(FillerInterface::class);
+        $filler->method('getFillableFields')->willReturn(['durationMinutes', 'externalUrls']);
+        $filler->method('resolveExternalId')->willReturn('269');
+        $filler->method('findById')->willReturn($data);
+
+        $anime = $this->persistedAnime();
+
+        $service = $this->newService([(string) $pluginId => $filler]);
+
+        $this->assertSame(FillResult::Applied, $service->fill($anime, $pluginId, 'durationMinutes'));
+        $this->assertCount(0, $anime->getSources());
+    }
 }

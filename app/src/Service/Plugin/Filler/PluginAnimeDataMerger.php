@@ -80,6 +80,9 @@ final class PluginAnimeDataMerger
      */
     private array $studioCache = [];
 
+    private const EXTERNAL_URL_MAX_LENGTH = 512;
+    private const EXTERNAL_URLS_MAX_COUNT = 50;
+
     public function __construct(
         private readonly StudioRepository $studioRepository,
         private readonly EntityManagerInterface $entityManager,
@@ -125,6 +128,9 @@ final class PluginAnimeDataMerger
                 'countries' => $this->applyCountries($anime, $data->countries ?? []),
                 'cover' => $this->applyCover($anime, $data->cover),
                 'images' => $this->applyImages($anime, $data->images ?? []),
+                // `??` rather than a direct read: an object cached before the contract gained this
+                // property comes back from deserialization with it uninitialized.
+                'externalUrls' => $this->applyExternalUrls($anime, $data->externalUrls ?? []),
                 default => null, // type: not applicable to an already-constructed entity, see class docblock
             };
 
@@ -262,6 +268,68 @@ final class PluginAnimeDataMerger
         if ($demographic !== null) {
             $anime->setDemographic(Demographic::from($demographic->value));
         }
+    }
+
+    /**
+     * Add-only: links are appended to the record's sources, nothing is removed or replaced. Only
+     * absolute http(s) urls up to {@see self::EXTERNAL_URL_MAX_LENGTH} characters are accepted, at
+     * most {@see self::EXTERNAL_URLS_MAX_COUNT} per call; anything else is logged and skipped.
+     * Duplicates are detected by the normalized address alone (scheme and `www.` ignored, host
+     * lower-cased, no trailing slash), against existing sources and within the list; the original
+     * address is what gets stored.
+     *
+     * @param string[] $urls
+     */
+    private function applyExternalUrls(Anime $anime, array $urls): void
+    {
+        $known = [];
+        foreach ($anime->getSources() as $source) {
+            $known[$this->normalizeUrl($source->url) ?? $source->url] = true;
+        }
+
+        $accepted = 0;
+        foreach ($urls as $url) {
+            if ($accepted >= self::EXTERNAL_URLS_MAX_COUNT) {
+                $this->logger->warning('Skipped an external url: too many urls in one call.', ['animeId' => $anime->id, 'limit' => self::EXTERNAL_URLS_MAX_COUNT]);
+
+                continue;
+            }
+
+            $normalized = mb_strlen($url) > self::EXTERNAL_URL_MAX_LENGTH ? null : $this->normalizeUrl($url);
+            if ($normalized === null) {
+                $this->logger->warning('Skipped an external url: not an absolute http(s) url or too long.', ['animeId' => $anime->id, 'length' => mb_strlen($url)]);
+
+                continue;
+            }
+
+            ++$accepted;
+            if (isset($known[$normalized])) {
+                continue;
+            }
+
+            $known[$normalized] = true;
+            $anime->addSource($url);
+        }
+    }
+
+    /** @return string|null comparison key, or null when $url is not an absolute http(s) url */
+    private function normalizeUrl(string $url): ?string
+    {
+        $parts = parse_url($url);
+        if ($parts === false || !isset($parts['scheme'], $parts['host'])) {
+            return null;
+        }
+        if (!\in_array(strtolower($parts['scheme']), ['http', 'https'], true)) {
+            return null;
+        }
+
+        $host = preg_replace('/^www\./', '', strtolower($parts['host']));
+        $key = $host.(isset($parts['port']) ? ':'.$parts['port'] : '').($parts['path'] ?? '');
+        if (isset($parts['query'])) {
+            $key .= '?'.$parts['query'];
+        }
+
+        return rtrim($key, '/');
     }
 
     /** @param string[] $studios */
