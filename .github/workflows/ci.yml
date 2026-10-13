@@ -57,12 +57,15 @@ jobs:
       # дешёвый обход красного гейта — удалить или переписать фикстуру. Этот шаг его закрывает:
       # фикстуры только добавляются, новая форма вида — новый файл `<kind>.v<N+1>.json` (#1030).
       #
+      # `--diff-filter=a` — всё, кроме добавления: удаление, правка, переименование, а также смена
+      # типа файла (T, например фикстура заменена симлинком на другую, зелёную).
+      #
       # Только на pull_request: master закрыт ruleset-ом, а на push HEAD^1 — не база PR.
       # Ослабление самого гейта (тест, рендерер) этот шаг не ловит — оно видно в диффе ревью.
       - name: Golden notification fixtures are append-only
         if: ${{ github.event_name == 'pull_request' }}
         run: |
-          changed="$(git diff --name-status --diff-filter=DMR HEAD^1 HEAD -- app/tests/Fixtures/Notifications/)"
+          changed="$(git diff --name-status --diff-filter=a HEAD^1 HEAD -- app/tests/Fixtures/Notifications/)"
           if [ -n "$changed" ]; then
             echo "::error::Golden-фикстуры оповещений нельзя удалять, менять или переименовывать — только добавлять новую версию <kind>.v<N+1>.json:"
             echo "$changed"
