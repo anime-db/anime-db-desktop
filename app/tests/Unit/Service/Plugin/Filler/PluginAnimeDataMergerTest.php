@@ -743,17 +743,20 @@ final class PluginAnimeDataMergerTest extends TestCase
         $this->assertSame(['https://myanimelist.net/anime/5114', 'https://shikimori.io/animes/5114'], $this->sourceUrls($anime));
     }
 
-    public function testApplyExternalUrlsFiltersInvalidUrlsAndLogsEachDrop(): void
+    public function testApplyExternalUrlsFiltersInvalidUrlsAndLogsOnce(): void
     {
         $anime = $this->newAnime();
         $logger = $this->createMock(LoggerInterface::class);
-        $logger->expects($this->exactly(4))->method('warning');
+        $logger->expects($this->once())->method('warning');
 
         $data = new PluginAnimeData(title: 'Bleach', externalUrls: [
             'ftp://example.org/a',
             '/relative/path',
             'https://example.org/'.str_repeat('a', 520),
             'javascript:alert(1)',
+            'https://ru.wikipedia.org/wiki/Блич',
+            'https://example.org/a b',
+            'HTTPS://example.org/upper',
             'https://example.org/ok',
         ]);
         $this->newMerger([], $logger)->apply($anime, $data, ['externalUrls']);
@@ -774,6 +777,35 @@ final class PluginAnimeDataMergerTest extends TestCase
         $this->newMerger([], $logger)->apply($anime, new PluginAnimeData(title: 'Bleach', externalUrls: $urls), ['externalUrls']);
 
         $this->assertCount(50, $anime->getSources());
+    }
+
+    public function testApplyExternalUrlsLengthBoundary(): void
+    {
+        $anime = $this->newAnime();
+        $prefix = 'https://example.org/';
+        $ok = $prefix.str_repeat('a', 512 - \strlen($prefix));
+        $tooLong = $ok.'a';
+
+        $this->newMerger()->apply($anime, new PluginAnimeData(title: 'Bleach', externalUrls: [$tooLong, $ok]), ['externalUrls']);
+
+        $this->assertSame([$ok], $this->sourceUrls($anime));
+    }
+
+    public function testApplyExternalUrlsKnownAddressesDoNotConsumeTheLimit(): void
+    {
+        $anime = $this->newAnime();
+        $urls = [];
+        for ($i = 1; $i <= 50; ++$i) {
+            $anime->addSource('https://example.org/'.$i);
+            $urls[] = 'https://example.org/'.$i;
+        }
+        $urls[] = 'https://example.org/new';
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->never())->method('warning');
+
+        $this->newMerger([], $logger)->apply($anime, new PluginAnimeData(title: 'Bleach', externalUrls: $urls), ['externalUrls']);
+
+        $this->assertCount(51, $anime->getSources());
     }
 
     public function testApplyExternalUrlsToleratesAnUninitializedProperty(): void

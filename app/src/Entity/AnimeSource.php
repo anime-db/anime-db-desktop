@@ -46,9 +46,40 @@ class AnimeSource
     #[ORM\Column(length: 512)]
     public readonly string $url;
 
+    public const MAX_URL_LENGTH = 512;
+
     public function __construct(Anime $anime, string $url)
     {
         $this->anime = $anime;
         $this->url = $url;
+    }
+
+    /** The single rule for an acceptable source url: absolute http(s), valid characters, fits the column. */
+    public static function isValidUrl(string $url): bool
+    {
+        return mb_strlen($url) <= self::MAX_URL_LENGTH
+            && filter_var($url, \FILTER_VALIDATE_URL) !== false
+            && \in_array(parse_url($url, \PHP_URL_SCHEME), ['http', 'https'], true);
+    }
+
+    /**
+     * Comparison key: scheme and `www.` ignored, host lower-cased, no trailing slash. Falls back
+     * to the raw url when it cannot be parsed, so unusual legacy values still compare by identity.
+     */
+    public static function key(string $url): string
+    {
+        $parts = parse_url($url);
+        if ($parts === false || !isset($parts['host'])) {
+            return $url;
+        }
+
+        $key = preg_replace('/^www\./', '', strtolower($parts['host']))
+            .(isset($parts['port']) ? ':'.$parts['port'] : '')
+            .($parts['path'] ?? '');
+        if (isset($parts['query'])) {
+            $key .= '?'.$parts['query'];
+        }
+
+        return rtrim($key, '/');
     }
 }

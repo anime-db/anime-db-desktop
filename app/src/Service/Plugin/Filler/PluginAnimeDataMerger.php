@@ -35,6 +35,7 @@ use AnimeDb\PluginContracts\Model\ThemeCode as ContractsThemeCode;
 use App\Entity\Anime;
 use App\Entity\AnimeImage;
 use App\Entity\AnimeName;
+use App\Entity\AnimeSource;
 use App\Entity\Enum\AnimeNameRole;
 use App\Entity\Enum\Demographic;
 use App\Entity\Enum\GenreCode;
@@ -52,7 +53,7 @@ use Psr\Log\LoggerInterface;
  * Applies a plugin-supplied {@see PluginAnimeData} onto an {@see Anime}, one field at a time,
  * enforcing the merge-vs-overwrite rule the issue requires to live on the host's schema rather
  * than in the plugin (issue #231): collection fields (alternative names, descriptions, genres,
- * themes, studios, countries, images) are unioned via Anime's own add*()/set-with-existing
+ * themes, studios, countries, images, external urls) are unioned via Anime's own add*()/set-with-existing
  * methods, which already de-duplicate or merge by key — nothing that already exists is lost.
  * Scalar fields (title, date_premiere, date_end, duration_minutes, demographic,
  * episodes_count, cover) are overwritten outright — except date_premiere/date_end, which are
@@ -80,7 +81,6 @@ final class PluginAnimeDataMerger
      */
     private array $studioCache = [];
 
-    private const EXTERNAL_URL_MAX_LENGTH = 512;
     private const EXTERNAL_URLS_MAX_COUNT = 50;
 
     public function __construct(
@@ -272,64 +272,43 @@ final class PluginAnimeDataMerger
 
     /**
      * Add-only: links are appended to the record's sources, nothing is removed or replaced. Only
-     * absolute http(s) urls up to {@see self::EXTERNAL_URL_MAX_LENGTH} characters are accepted, at
-     * most {@see self::EXTERNAL_URLS_MAX_COUNT} per call; anything else is logged and skipped.
-     * Duplicates are detected by the normalized address alone (scheme and `www.` ignored, host
-     * lower-cased, no trailing slash), against existing sources and within the list; the original
-     * address is what gets stored.
+     * urls passing {@see AnimeSource::isValidUrl()} (the same rule as the edit form) are accepted;
+     * at most {@see self::EXTERNAL_URLS_MAX_COUNT} new sources are added per call. Urls the record
+     * already has (see {@see Anime::addSource()}) neither count against the limit nor are added.
+     * Skipped urls are logged, one warning per reason.
      *
      * @param string[] $urls
      */
     private function applyExternalUrls(Anime $anime, array $urls): void
     {
-        $known = [];
-        foreach ($anime->getSources() as $source) {
-            $known[$this->normalizeUrl($source->url) ?? $source->url] = true;
-        }
-
-        $accepted = 0;
+        $added = 0;
+        $invalid = 0;
+        $overLimit = 0;
         foreach ($urls as $url) {
-            if ($accepted >= self::EXTERNAL_URLS_MAX_COUNT) {
-                $this->logger->warning('Skipped an external url: too many urls in one call.', ['animeId' => $anime->id, 'limit' => self::EXTERNAL_URLS_MAX_COUNT]);
+            if (!AnimeSource::isValidUrl($url)) {
+                ++$invalid;
+
+                continue;
+            }
+            if ($anime->hasSource($url)) {
+                continue;
+            }
+            if ($added >= self::EXTERNAL_URLS_MAX_COUNT) {
+                ++$overLimit;
 
                 continue;
             }
 
-            $normalized = mb_strlen($url) > self::EXTERNAL_URL_MAX_LENGTH ? null : $this->normalizeUrl($url);
-            if ($normalized === null) {
-                $this->logger->warning('Skipped an external url: not an absolute http(s) url or too long.', ['animeId' => $anime->id, 'length' => mb_strlen($url)]);
-
-                continue;
-            }
-
-            ++$accepted;
-            if (isset($known[$normalized])) {
-                continue;
-            }
-
-            $known[$normalized] = true;
             $anime->addSource($url);
-        }
-    }
-
-    /** @return string|null comparison key, or null when $url is not an absolute http(s) url */
-    private function normalizeUrl(string $url): ?string
-    {
-        $parts = parse_url($url);
-        if ($parts === false || !isset($parts['scheme'], $parts['host'])) {
-            return null;
-        }
-        if (!\in_array(strtolower($parts['scheme']), ['http', 'https'], true)) {
-            return null;
+            ++$added;
         }
 
-        $host = preg_replace('/^www\./', '', strtolower($parts['host']));
-        $key = $host.(isset($parts['port']) ? ':'.$parts['port'] : '').($parts['path'] ?? '');
-        if (isset($parts['query'])) {
-            $key .= '?'.$parts['query'];
+        if ($invalid > 0) {
+            $this->logger->warning('Skipped external urls: not a valid absolute http(s) url or too long.', ['animeId' => $anime->id, 'count' => $invalid]);
         }
-
-        return rtrim($key, '/');
+        if ($overLimit > 0) {
+            $this->logger->warning('Skipped external urls: too many new urls in one call.', ['animeId' => $anime->id, 'count' => $overLimit, 'limit' => self::EXTERNAL_URLS_MAX_COUNT]);
+        }
     }
 
     /** @param string[] $studios */
