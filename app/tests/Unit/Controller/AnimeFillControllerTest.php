@@ -125,6 +125,7 @@ final class AnimeFillControllerTest extends TestCase
             $this->entityManager,
             new CachedFillerLookup(new ArrayAdapter()),
             new NullLogger(),
+            new \App\Service\Plugin\ExternalIdResolver(new \App\Repository\AnimeRepository($this->entityManager), new NullLogger()),
         );
 
         $fillableFieldsPresenter = new FillableFieldsPresenter(

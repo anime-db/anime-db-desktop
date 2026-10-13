@@ -38,6 +38,7 @@ use App\Message\PushSyncMessage;
 use App\Message\SyncSeedMessage;
 use App\Repository\AnimeSyncStateRepository;
 use App\Service\JobLock\JobLockService;
+use App\Service\Plugin\ExternalIdResolver;
 use App\Service\Plugin\SyncRegistry;
 use App\Service\Plugin\WatchStatusMapper;
 use App\Service\Sync\SyncReauthTracker;
@@ -112,6 +113,7 @@ final class PushSyncMessageHandler
         private readonly int $pushOnEditTtlSeconds,
         private readonly JobLockService $jobLockService,
         private readonly SyncReauthTracker $reauthTracker,
+        private readonly ExternalIdResolver $externalIdResolver,
     ) {
     }
 
@@ -167,7 +169,7 @@ final class PushSyncMessageHandler
             return;
         }
 
-        $externalId = $anime->getExternalId(new PluginId($pluginId), $sync);
+        $externalId = $this->externalIdResolver->resolve($anime, new PluginId($pluginId), $sync);
         if ($externalId === null) {
             // This plugin doesn't recognize any of the anime's source URLs — nothing to push it
             // under.
@@ -210,7 +212,7 @@ final class PushSyncMessageHandler
                 continue;
             }
 
-            $externalId = $anime->getExternalId(new PluginId($id), $sync);
+            $externalId = $this->externalIdResolver->resolve($anime, new PluginId($id), $sync);
             if ($externalId === null) {
                 // This plugin doesn't recognize any of the anime's source URLs — nothing to
                 // push it under.

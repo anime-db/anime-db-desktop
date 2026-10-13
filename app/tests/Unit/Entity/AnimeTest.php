@@ -27,7 +27,6 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Entity;
 
-use AnimeDb\PluginContracts\ExternalIdResolutionInterface;
 use App\Entity\Enum\AnimeNameRole;
 use App\Entity\Enum\Demographic;
 use App\Entity\Enum\GenreCode;
@@ -44,7 +43,6 @@ use App\Entity\Label;
 use App\Entity\MovieAnime;
 use App\Entity\Storage;
 use App\Entity\Studio;
-use App\Entity\ValueObject\PluginId;
 use App\Entity\ValueObject\Rating;
 use App\Event\WatchProgressChangedManuallyEvent;
 use PHPUnit\Framework\TestCase;
@@ -676,52 +674,5 @@ final class AnimeTest extends TestCase
         $anime->setWatchStatus(WatchStatus::Completed);
 
         $this->assertSame(WatchStatus::Completed, $anime->getWatchStatus());
-    }
-
-    public function testGetExternalIdReturnsCachedValueWithoutCallingPlugin(): void
-    {
-        $anime = new MovieAnime();
-        $anime->addSource('https://shikimori.one/animes/1-cowboy-bebop');
-        $pluginId = new PluginId('animedb-shikimori');
-        $seedingPlugin = $this->createStub(ExternalIdResolutionInterface::class);
-        $seedingPlugin->method('resolveExternalId')->willReturn('1');
-        $anime->getExternalId($pluginId, $seedingPlugin);
-
-        $plugin = $this->createMock(ExternalIdResolutionInterface::class);
-        $plugin->expects($this->never())->method('resolveExternalId');
-
-        $this->assertSame('1', $anime->getExternalId($pluginId, $plugin));
-    }
-
-    public function testGetExternalIdResolvesAndCachesFromPlugin(): void
-    {
-        $anime = new MovieAnime();
-        $anime->addSource('https://shikimori.one/animes/1-cowboy-bebop');
-        $pluginId = new PluginId('animedb-shikimori');
-
-        $plugin = $this->createMock(ExternalIdResolutionInterface::class);
-        $plugin->expects($this->once())
-            ->method('resolveExternalId')
-            ->with(['https://shikimori.one/animes/1-cowboy-bebop'])
-            ->willReturn('1');
-
-        $id = $anime->getExternalId($pluginId, $plugin);
-
-        $this->assertSame('1', $id);
-        $this->assertSame('1', $anime->getCachedExternalId($pluginId));
-    }
-
-    public function testGetExternalIdReturnsNullWithoutCachingWhenPluginCannotResolve(): void
-    {
-        $anime = new MovieAnime();
-        $anime->addSource('https://myanimelist.net/anime/1');
-        $pluginId = new PluginId('animedb-shikimori');
-
-        $plugin = $this->createStub(ExternalIdResolutionInterface::class);
-        $plugin->method('resolveExternalId')->willReturn(null);
-
-        $id = $anime->getExternalId($pluginId, $plugin);
-
-        $this->assertNull($id);
     }
 }

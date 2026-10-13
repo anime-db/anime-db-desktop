@@ -180,6 +180,7 @@ final class SyncReviewControllerTest extends TestCase
             new SyncReviewService($this->createStub(SyncReviewItemRepository::class)),
             new NullLogger(),
             new \App\Tests\Support\NullSyncReauthTracker(),
+            new \App\Service\Plugin\ExternalIdResolver(new AnimeRepository($entityManager), new NullLogger()),
         );
     }
 

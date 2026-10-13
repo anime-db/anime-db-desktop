@@ -37,6 +37,7 @@ use App\Entity\SeriesAnime;
 use App\Entity\ValueObject\PluginId;
 use App\Repository\AnimeSyncStateRepository;
 use App\Repository\PendingSyncPushRepository;
+use App\Service\Plugin\ExternalIdResolver;
 use App\Service\Plugin\SyncRegistry;
 use App\Service\Plugin\WatchStatusMapper;
 use Doctrine\ORM\EntityManagerInterface;
@@ -102,6 +103,7 @@ final class SyncConvergenceService
         private readonly SyncReviewService $reviewService,
         private readonly LoggerInterface $logger,
         private readonly SyncReauthTracker $reauthTracker,
+        private readonly ExternalIdResolver $externalIdResolver,
     ) {
     }
 
@@ -149,7 +151,7 @@ final class SyncConvergenceService
         }
 
         $available = [$localState, $originState];
-        $otherSyncs = $this->otherActiveResolvableSyncs($anime, $originParticipantId);
+        $otherSyncs = $this->otherActiveResolvableSyncs($anime, $originParticipantId, $entityManager);
         foreach ($otherSyncs as $participantId => $sync) {
             if (isset($lastSeen[$participantId])) {
                 $available[] = $lastSeen[$participantId];
@@ -460,7 +462,7 @@ final class SyncConvergenceService
      * @return array<string, SyncInterface> active plugins other than $excludeParticipantId that
      *                                      resolve an external id for $anime, keyed by plugin id
      */
-    private function otherActiveResolvableSyncs(Anime $anime, string $excludeParticipantId): array
+    private function otherActiveResolvableSyncs(Anime $anime, string $excludeParticipantId, EntityManagerInterface $entityManager): array
     {
         $syncs = [];
         foreach ($this->syncRegistry->allActive() as $id => $sync) {
@@ -468,7 +470,7 @@ final class SyncConvergenceService
                 continue;
             }
 
-            if ($anime->getExternalId(new PluginId($id), $sync) !== null) {
+            if ($this->externalIdResolver->resolve($anime, new PluginId($id), $sync, $entityManager) !== null) {
                 $syncs[$id] = $sync;
             }
         }

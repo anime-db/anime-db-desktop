@@ -27,7 +27,6 @@ declare(strict_types=1);
 
 namespace App\Entity;
 
-use AnimeDb\PluginContracts\ExternalIdResolutionInterface;
 use App\Entity\Enum\AnimeNameRole;
 use App\Entity\Enum\AnimeType;
 use App\Entity\Enum\Demographic;
@@ -713,35 +712,10 @@ abstract class Anime implements AggregateRootInterface
     }
 
     /**
-     * Resolves and caches the external id this plugin uses for the anime, e.g. the
-     * Shikimori id parsed from a shikimori.one source URL.
-     *
-     * Cached as an AnimeExternalId row (issue #297; previously metadata['external_id']
-     * [$pluginId], an unindexed JSON blob) — a separate table from a plugin's own filler data,
-     * which now lives in the `anime_plugin_data` table too (issue #299, see
-     * {@see \App\Service\Plugin\PluginDataStore}): a future overwrite of that plugin's raw
-     * filler data must not accidentally clobber an already-resolved id.
-     */
-    public function getExternalId(PluginId $pluginId, ExternalIdResolutionInterface $plugin): ?string
-    {
-        $cached = $this->getCachedExternalId($pluginId);
-        if ($cached !== null) {
-            return $cached;
-        }
-
-        $urls = array_map(static fn (AnimeSource $source): string => $source->url, $this->getSources()->toArray());
-        $id = $plugin->resolveExternalId($urls);
-
-        if ($id !== null) {
-            $this->rememberExternalId($pluginId, $id);
-        }
-
-        return $id;
-    }
-
-    /**
      * Peeks the AnimeExternalId row already cached for $pluginId, if any, without ever
-     * calling out to a plugin to resolve one — the read-only half of getExternalId(), used
+     * calling out to a plugin to resolve one. Lazy resolution lives in
+     * {@see \App\Service\Plugin\ExternalIdResolver}, which checks the id is not pinned to another
+     * anime first. Used
      * where a caller only wants to check what's already known (e.g. ExternalIdBackfillService
      * skipping a row that's already resolved).
      */
@@ -771,8 +745,8 @@ abstract class Anime implements AggregateRootInterface
      * Caches an external id obtained without a resolveExternalId() round trip — e.g. from
      * FillerInterface::find() during bulk fill-in (issue #227), where the id comes back
      * directly from the plugin's search result instead of being parsed from a source URL.
-     * Writes the same AnimeExternalId slot getExternalId() reads/writes, so a later
-     * getExternalId() call for this plugin returns the cached value without re-resolving it.
+     * Does not check the id is free: lazy callers go through
+     * {@see \App\Service\Plugin\ExternalIdResolver::claim()}.
      */
     public function rememberExternalId(PluginId $pluginId, string $externalId): self
     {

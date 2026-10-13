@@ -100,6 +100,7 @@ trait BuildsPullSyncService
             new SyncReviewService(new SyncReviewItemRepository($this->entityManager)),
             new NullLogger(),
             new NullSyncReauthTracker(),
+            new \App\Service\Plugin\ExternalIdResolver(new AnimeRepository($this->entityManager), new NullLogger()),
         );
 
         return new PullSyncService(
