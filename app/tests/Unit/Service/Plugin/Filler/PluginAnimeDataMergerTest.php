@@ -754,7 +754,6 @@ final class PluginAnimeDataMergerTest extends TestCase
             '/relative/path',
             'https://example.org/'.str_repeat('a', 520),
             'javascript:alert(1)',
-            'https://ru.wikipedia.org/wiki/Блич',
             'https://example.org/a b',
             'HTTPS://example.org/upper',
             'https://example.org/ok',
@@ -762,6 +761,16 @@ final class PluginAnimeDataMergerTest extends TestCase
         $this->newMerger([], $logger)->apply($anime, $data, ['externalUrls']);
 
         $this->assertSame(['https://example.org/ok'], $this->sourceUrls($anime));
+    }
+
+    public function testApplyExternalUrlsEncodesNonAsciiAndDeduplicates(): void
+    {
+        $encoded = 'https://ja.wikipedia.org/wiki/%E8%91%AC%E9%80%81%E3%81%AE%E3%83%95%E3%83%AA%E3%83%BC%E3%83%AC%E3%83%B3';
+        $anime = $this->newAnime();
+        $data = new PluginAnimeData(title: 'Frieren', externalUrls: ['https://ja.wikipedia.org/wiki/葬送のフリーレン', $encoded]);
+        $this->newMerger()->apply($anime, $data, ['externalUrls']);
+
+        $this->assertSame([$encoded], $this->sourceUrls($anime));
     }
 
     public function testApplyExternalUrlsTakesAtMostFiftyUrls(): void

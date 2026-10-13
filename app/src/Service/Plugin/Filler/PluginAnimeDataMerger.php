@@ -272,7 +272,8 @@ final class PluginAnimeDataMerger
 
     /**
      * Add-only: links are appended to the record's sources, nothing is removed or replaced. Only
-     * urls passing {@see AnimeSource::isValidUrl()} (the same rule as the edit form) are accepted;
+     * urls passing {@see AnimeSource::isValidUrl()} (the same rule as the edit form) after
+     * {@see AnimeSource::normalizeUrl()} are accepted, and the normalized form is stored;
      * at most {@see self::EXTERNAL_URLS_MAX_COUNT} new sources are added per call. Urls the record
      * already has (see {@see Anime::addSource()}) neither count against the limit nor are added.
      * Skipped urls are logged, one warning per reason.
@@ -284,9 +285,14 @@ final class PluginAnimeDataMerger
         $added = 0;
         $invalid = 0;
         $overLimit = 0;
+        $rejected = [];
         foreach ($urls as $url) {
+            $url = AnimeSource::normalizeUrl($url);
             if (!AnimeSource::isValidUrl($url)) {
                 ++$invalid;
+                if (\count($rejected) < 5) {
+                    $rejected[] = $url;
+                }
 
                 continue;
             }
@@ -304,7 +310,7 @@ final class PluginAnimeDataMerger
         }
 
         if ($invalid > 0) {
-            $this->logger->warning('Skipped external urls: not a valid absolute http(s) url or too long.', ['animeId' => $anime->id, 'count' => $invalid]);
+            $this->logger->warning('Skipped external urls: not a valid absolute http(s) url or too long.', ['animeId' => $anime->id, 'count' => $invalid, 'urls' => $rejected]);
         }
         if ($overLimit > 0) {
             $this->logger->warning('Skipped external urls: too many new urls in one call.', ['animeId' => $anime->id, 'count' => $overLimit, 'limit' => self::EXTERNAL_URLS_MAX_COUNT]);

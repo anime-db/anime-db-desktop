@@ -273,7 +273,7 @@ final class AnimeEditController
             'duration_minutes' => $this->text($request->request->get('duration_minutes')),
             'episodes_count' => $anime instanceof SeriesAnime ? $this->text($request->request->get('episodes_count')) : '',
             'countries' => $this->text($request->request->get('countries')),
-            'sources' => $this->strings($request, 'sources'),
+            'sources' => array_map(AnimeSource::normalizeUrl(...), $this->strings($request, 'sources')),
             'notes' => trim((string) $request->request->get('notes', '')),
             'cover_remove' => $request->request->getBoolean('cover_remove'),
         ];
