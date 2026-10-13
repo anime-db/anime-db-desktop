@@ -149,7 +149,7 @@ final class ScanStorageServiceTest extends TestCase
         touch($path, $mtime ?? time());
     }
 
-    private function newService(?SearchByPluginChain $pluginChain = null, ?BulkFillerService $bulkFillerService = null, ?LoggerInterface $logger = null): ScanStorageService
+    private function newService(?SearchByPluginChain $pluginChain = null, ?BulkFillerService $bulkFillerService = null, ?LoggerInterface $logger = null, ?\App\Service\Plugin\Filler\SaturationQueue $saturationQueue = null): ScanStorageService
     {
         return new ScanStorageService(
             new StorageMarkerService($this->entityManager),
@@ -161,6 +161,7 @@ final class ScanStorageServiceTest extends TestCase
             $bulkFillerService ?? $this->newBulkFillerService([]),
             new SyncTombstoneRepository($this->entityManager),
             $logger ?? new NullLogger(),
+            $saturationQueue,
         );
     }
 
@@ -557,6 +558,30 @@ final class ScanStorageServiceTest extends TestCase
         /** @var Anime $reloaded */
         $reloaded = $this->entityManager->find(Anime::class, $animeId);
         $this->assertSame('Trigun', $reloaded->getTitle());
+    }
+
+    public function testARecordCreatedFromAPluginCandidateIsQueuedForSaturationIntoTheBulkQueueAfterTheScan(): void
+    {
+        $dir = $this->makeStorageDir();
+        $this->touchFile($dir.'/Trigun.mkv');
+        $storage = new Storage('Main folder', $dir, StorageType::Folder);
+        $this->entityManager->persist($storage);
+        $this->entityManager->flush();
+        $bus = new \App\Tests\Support\RecordingSaturationBus();
+        $filler = $this->createStub(FillerInterface::class);
+        $filler->method('findById')->willReturn(new PluginAnimeData(title: 'Trigun', type: ContractsAnimeType::Tv));
+        $filler->method('getFillableFields')->willReturn(['title', 'type']);
+        $service = $this->newService(
+            $this->pluginChainReturning(new SearchByPluginCandidate('animedb-shikimori', 'Trigun', '1')),
+            $this->newBulkFillerService(['animedb-shikimori' => $filler]),
+            saturationQueue: $bus->queue(),
+        );
+
+        $result = $service->scan($storage);
+
+        $animeId = $result->items[0]->anime?->id;
+        $this->assertNotNull($animeId);
+        $this->assertSame([['id' => $animeId, 'force' => false, 'transport' => 'saturation_bulk']], $bus->saturations());
     }
 
     /**

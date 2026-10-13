@@ -29,6 +29,7 @@ namespace App\Service\Plugin\Filler;
 
 use App\Entity\Anime;
 use App\Service\Plugin\FillerRegistry;
+use Psr\Log\LoggerInterface;
 
 /**
  * Whether the "fill from links" action (issue #1049) has anything to work with: at least one
@@ -40,6 +41,7 @@ final class SaturationAvailability
 {
     public function __construct(
         private readonly FillerRegistry $fillerRegistry,
+        private readonly LoggerInterface $logger,
     ) {
     }
 
@@ -50,9 +52,17 @@ final class SaturationAvailability
             return false;
         }
 
-        foreach ($this->fillerRegistry->findAllActive() as $filler) {
-            if ($filler->resolveExternalId($urls) !== null) {
-                return true;
+        foreach ($this->fillerRegistry->findAllActive() as $pluginId => $filler) {
+            try {
+                if ($filler->resolveExternalId($urls) !== null) {
+                    return true;
+                }
+            } catch (\Throwable $exception) {
+                // Plugin code: one broken filler must not take the record card down with it.
+                $this->logger->warning('Filler "{plugin}" failed to resolve an external id for the saturation check.', [
+                    'plugin' => (string) $pluginId,
+                    'exception' => $exception,
+                ]);
             }
         }
 

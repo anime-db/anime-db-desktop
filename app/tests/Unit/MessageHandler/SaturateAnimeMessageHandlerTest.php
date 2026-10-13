@@ -27,6 +27,8 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\MessageHandler;
 
+use AnimeDb\PluginContracts\Filler\FillerInterface;
+use AnimeDb\PluginContracts\Filler\PluginAnimeData;
 use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
 use App\Entity\Enum\WatchStatus;
@@ -84,11 +86,32 @@ final class SaturateAnimeMessageHandlerTest extends TestCase
         $liveness->method('getStartedAt')->willReturn(new \DateTimeImmutable('@0'));
         $this->lock = new JobLockService(DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]), $liveness, new MockClock(new \DateTimeImmutable('@1000')), 30, 3);
         $this->dispatched = [];
+        $this->fillerCalls = [];
     }
+
+    /** @var list<array{id: string, locked: bool}> findById() calls of the stub filler */
+    private array $fillerCalls = [];
+
+    /** A filler that recognises every link and records whether the record's lock was held during its call. */
+    private function filler(): FillerInterface
+    {
+        $filler = $this->createStub(FillerInterface::class);
+        $filler->method('getFillableFields')->willReturn(['title']);
+        $filler->method('resolveExternalId')->willReturn('104');
+        $filler->method('findById')->willReturnCallback(function (string $id): PluginAnimeData {
+            $this->fillerCalls[] = ['id' => $id, 'locked' => $this->lock->isLocked('saturate:'.$this->currentId)];
+
+            return new PluginAnimeData(title: 'Bleach');
+        });
+
+        return $filler;
+    }
+
+    private int $currentId = 0;
 
     private function handler(): SaturateAnimeMessageHandler
     {
-        $registry = new FillerRegistry([], new PluginsConfigStore(sys_get_temp_dir().'/anime-saturate-handler-'.uniqid().'.json'));
+        $registry = new FillerRegistry(['animedb-shikimori' => $this->filler()], new PluginsConfigStore(sys_get_temp_dir().'/anime-saturate-handler-'.uniqid().'.json'));
         $repository = new AnimeRepository($this->entityManager);
         $saturation = new SaturationService(
             $registry,
@@ -118,10 +141,12 @@ final class SaturateAnimeMessageHandlerTest extends TestCase
     private function persistAnime(): int
     {
         $anime = (new TvAnime())->setTitle('Bleach')->setWatchStatus(WatchStatus::Plan);
+        $anime->addSource('https://source.example/104');
         $this->entityManager->persist($anime);
         $this->entityManager->flush();
+        $this->currentId = $anime->id ?? 0;
 
-        return $anime->id ?? 0;
+        return $this->currentId;
     }
 
     public function testBusyLockRequeuesIntoTheSameTransportWithA30SecondDelay(): void
@@ -149,6 +174,21 @@ final class SaturateAnimeMessageHandlerTest extends TestCase
         $this->handler()(new SaturateAnimeMessage($id));
 
         $this->assertSame([], $this->dispatched);
+        $this->assertSame([['id' => '104', 'locked' => true]], $this->fillerCalls, 'the run happens exactly once, under the lock');
+        $this->assertFalse($this->lock->isLocked('saturate:'.$id));
+    }
+
+    public function testForceRunsAgainForARowThatIsAlreadyFilledAndAPlainRunDoesNot(): void
+    {
+        $id = $this->persistAnime();
+        $this->handler()(new SaturateAnimeMessage($id));
+        $this->assertCount(1, $this->fillerCalls);
+
+        $this->handler()(new SaturateAnimeMessage($id));
+        $this->assertCount(1, $this->fillerCalls, 'filled_at is set, a plain run skips the plugin');
+
+        $this->handler()(new SaturateAnimeMessage($id, true));
+        $this->assertCount(2, $this->fillerCalls, 'force re-fills it');
         $this->assertFalse($this->lock->isLocked('saturate:'.$id));
     }
 
@@ -157,6 +197,7 @@ final class SaturateAnimeMessageHandlerTest extends TestCase
         $this->handler()(new SaturateAnimeMessage(999));
 
         $this->assertSame([], $this->dispatched);
+        $this->assertSame([], $this->fillerCalls);
         $this->assertFalse($this->lock->isLocked('saturate:999'));
     }
 
@@ -168,6 +209,7 @@ final class SaturateAnimeMessageHandlerTest extends TestCase
         $this->handler()(new SaturateAnimeMessage($id));
 
         $this->assertSame([], $this->dispatched);
+        $this->assertSame([], $this->fillerCalls);
         $this->assertFalse($this->lock->isLocked('saturate:'.$id));
     }
 }

@@ -78,7 +78,7 @@ final class V1ImportServiceTest extends TestCase
         $this->service = $this->createService(new ImageNormalizer(), new AnimeCoverStorage(new ImageNormalizer(), $this->mediaDir));
     }
 
-    private function createService(ImageNormalizer $normalizer, AnimeCoverStorage $storage): V1ImportService
+    private function createService(ImageNormalizer $normalizer, AnimeCoverStorage $storage, ?\App\Service\Plugin\Filler\SaturationQueue $saturationQueue = null): V1ImportService
     {
         return new V1ImportService(
             new V1CatalogReader(new NullLogger()),
@@ -97,6 +97,7 @@ final class V1ImportServiceTest extends TestCase
             new Translator('en'),
             $normalizer,
             $storage,
+            $saturationQueue,
         );
     }
 
@@ -300,6 +301,39 @@ final class V1ImportServiceTest extends TestCase
         $this->assertFalse($this->tombstones->exists('plugin-a', 'ext-1'));
         $this->assertFalse($this->tombstones->exists('plugin-b', 'ext-2'));
         $this->assertCount(0, $this->entityManager->getRepository(SyncReviewItem::class)->findAll());
+    }
+
+    public function testEveryImportedRecordIsQueuedForSaturationIntoTheBulkQueue(): void
+    {
+        $bus = new \App\Tests\Support\RecordingSaturationBus();
+        $service = $this->createService(new ImageNormalizer(), new AnimeCoverStorage(new ImageNormalizer(), $this->mediaDir), $bus->queue());
+        $ok = V1DatabaseBuilder::create($this->createTemporaryDirectory('v1-'));
+        $ok->item(['name' => 'Good', 'type' => 'feature']);
+        $ok->item(['name' => 'Other', 'type' => 'feature']);
+        $service->import($ok->root);
+
+        $saturations = $bus->saturations();
+        $this->assertCount(2, $saturations);
+        $this->assertSame(array_map(static fn ($a): int => (int) $a->id, $this->entityManager->getRepository(Anime::class)->findAll()), array_column($saturations, 'id'));
+        $this->assertSame(['saturation_bulk'], array_values(array_unique(array_column($saturations, 'transport'))));
+        $this->assertSame([false], array_values(array_unique(array_column($saturations, 'force'))));
+    }
+
+    public function testARolledBackImportQueuesNothing(): void
+    {
+        $bus = new \App\Tests\Support\RecordingSaturationBus();
+        $service = $this->createService(new ImageNormalizer(), new AnimeCoverStorage(new ImageNormalizer(), $this->mediaDir), $bus->queue());
+        $builder = V1DatabaseBuilder::create($this->createTemporaryDirectory('v1-'));
+        $builder->item(['name' => 'Good', 'type' => 'feature']);
+        $builder->item(['name' => 'Other', 'type' => 'feature']);
+        $builder->item(['name' => ' ', 'type' => 'feature']);
+
+        try {
+            $service->import($builder->root);
+            $this->fail('Expected the empty title to abort the import');
+        } catch (\Throwable) {
+        }
+        $this->assertSame([], $bus->saturations());
     }
 
     public function testAFailureRollsEverythingBack(): void

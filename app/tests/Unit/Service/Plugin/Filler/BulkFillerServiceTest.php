@@ -528,7 +528,7 @@ final class BulkFillerServiceTest extends TestCase
         $this->assertSame(FillResult::Applied, $this->newService([(string) $pluginId => $filler])->fillExistingFromPlugin($anime, $pluginId, '104'));
 
         $this->assertNotNull($anime->getExternalIdEntry($pluginId)?->getFilledAt());
-        $this->assertNotFalse($this->entityManager->getConnection()->fetchOne('SELECT filled_at FROM anime_external_id WHERE anime_id = ?', [$anime->id]));
+        $this->assertNotNull($this->entityManager->getConnection()->fetchOne('SELECT filled_at FROM anime_external_id WHERE anime_id = ?', [$anime->id]));
     }
 
     public function testFillExistingFromPluginMarksAnAlreadySeededRowFilled(): void
@@ -593,7 +593,8 @@ final class BulkFillerServiceTest extends TestCase
 
         $this->assertNotNull($built?->getExternalIdEntry($pluginId)?->getFilledAt());
         $this->assertNull($titleOnly->getExternalIdEntry($pluginId)?->getFilledAt());
-        $this->assertNull($this->entityManager->getConnection()->fetchOne('SELECT filled_at FROM anime_external_id WHERE anime_id = ?', [$titleOnly->id]) ?: null);
+        $this->assertSame(1, (int) $this->entityManager->getConnection()->fetchOne('SELECT COUNT(*) FROM anime_external_id WHERE anime_id = ?', [$titleOnly->id]));
+        $this->assertNull($this->entityManager->getConnection()->fetchOne('SELECT filled_at FROM anime_external_id WHERE anime_id = ?', [$titleOnly->id]));
     }
 
     public function testFillExistingFromPluginFillsOnlyEmptyFieldsAndNeverOverwritesAlreadyFilledOnes(): void

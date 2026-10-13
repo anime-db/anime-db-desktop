@@ -206,14 +206,12 @@ final class PullSyncService
      * Queues the saturation of every record this run created (issue #1049) into the mass queue,
      * after the run's own flush.
      *
-     * @param list<Anime> $created
+     * @param list<int> $createdIds
      */
-    private function enqueueSaturation(array $created): void
+    private function enqueueSaturation(array $createdIds): void
     {
-        foreach ($created as $anime) {
-            if ($anime->id !== null) {
-                $this->saturationQueue?->enqueue($anime->id, bulk: true);
-            }
+        foreach (array_unique($createdIds) as $id) {
+            $this->saturationQueue?->enqueue($id, bulk: true);
         }
     }
 
@@ -224,6 +222,10 @@ final class PullSyncService
         $tombstones = $this->tombstoneRepository->indexByPlugin($pluginId);
         /** @var list<Anime> $newlyCreated */
         $newlyCreated = [];
+        // Ids of every record this run created — including those created after the switch to the
+        // recovery EntityManager, which $newlyCreated deliberately skips (stale identity map).
+        /** @var list<int> $createdIds */
+        $createdIds = [];
         /** @var list<array{animeId: int, type: AnimeType, sourceType: ContractAnimeType}> $typeReports existing records whose source reports a type */
         $typeReports = [];
         /** @var array<string, true> $presentExternalIds external ids still in the source's list */
@@ -292,6 +294,9 @@ final class PullSyncService
                         }
 
                         $byExternalId[$item->externalId] = $anime;
+                        if ($anime->id !== null) {
+                            $createdIds[] = $anime->id;
+                        }
                         if ($recoveryEntityManager === null) {
                             $newlyCreated[] = $anime;
                         }
@@ -373,7 +378,7 @@ final class PullSyncService
             if ($recoveryEntityManager === null) {
                 $this->entityManager->flush();
             }
-            $this->enqueueSaturation($newlyCreated);
+            $this->enqueueSaturation($createdIds);
 
             // After the flush above: the notification is recorded outside any transaction.
             $this->reauthTracker->onReauthRequired((string) $pluginId);
@@ -404,12 +409,12 @@ final class PullSyncService
             // fully succeed rather than being handed a shared EntityManager it cannot use —
             // reusing the same `false` this method already returns for a dead OAuth session,
             // rather than silently claiming success over a now-unusable EntityManager.
-            $this->enqueueSaturation($newlyCreated);
+            $this->enqueueSaturation($createdIds);
 
             return $this->entityManager->isOpen();
         }
 
-        $this->enqueueSaturation($newlyCreated);
+        $this->enqueueSaturation($createdIds);
 
         foreach ($newlyCreated as $anime) {
             $this->duplicateDetector->detect($anime);
