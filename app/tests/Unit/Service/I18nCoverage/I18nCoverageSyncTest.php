@@ -195,6 +195,26 @@ final class I18nCoverageSyncTest extends TestCase
         self::assertStringContainsString('farewell', $thirdExecutor->comments[0]['comment']);
     }
 
+    public function testDivergentPlaceholdersFromTheSourcesCreateAnIssue(): void
+    {
+        $executor = new FakeI18nCoverageIssueExecutor();
+
+        $decision = (new I18nCoverageSync())->run(
+            'animedb-language-pack',
+            new FakeApplicationTranslationKeysSource(['welcome'], ['welcome' => 'Hello %name%']),
+            new FakePluginTranslationKeysSource(['welcome'], ['de' => ['welcome' => 'Hallo']]),
+            new FakeI18nCoverageIssueStateSource(I18nCoverageIssueSnapshot::none(), existingLabels: ['animedb-language-pack']),
+            new FakeCodeownersSource(self::CODEOWNERS),
+            $executor,
+            dryRun: false,
+        );
+
+        self::assertSame(I18nCoverageAction::CREATE, $decision->action);
+        self::assertSame([], $decision->missingKeys);
+        self::assertSame(['welcome'], $decision->divergentKeys);
+        self::assertCount(1, $executor->createdIssues);
+    }
+
     public function testEmptyDeltaWithNoOpenIssueDoesNothingAtAll(): void
     {
         $executor = new FakeI18nCoverageIssueExecutor();

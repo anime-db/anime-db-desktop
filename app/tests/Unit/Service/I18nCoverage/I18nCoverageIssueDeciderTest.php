@@ -287,7 +287,7 @@ final class I18nCoverageIssueDeciderTest extends TestCase
         self::assertSame(I18nCoverageAction::REWRITE_BODY, $decision->action);
     }
 
-    public function testFixedPlaceholdersCloseAnOpenIssueAndNoLongerDivergentIsReportedInTheComment(): void
+    public function testFixedPlaceholdersCloseAnOpenIssue(): void
     {
         [$appKeys, $appValues, $pluginKeys, $pluginValues] = self::catalogs(false);
         $previousBody = I18nCoverageIssueBody::render('animedb-language-pack', [], [], [], ['welcome' => ['de' => ['missing' => ['name'], 'extra' => ['nme']]]]);
@@ -303,6 +303,26 @@ final class I18nCoverageIssueDeciderTest extends TestCase
         );
 
         self::assertSame(I18nCoverageAction::CLOSE, $decision->action);
+    }
+
+    public function testKeyThatNoLongerDivergesIsReportedInTheCommentWhileMissingKeysRemain(): void
+    {
+        $previousBody = I18nCoverageIssueBody::render('animedb-language-pack', ['goodbye'], [], [], ['welcome' => ['de' => ['missing' => ['name'], 'extra' => ['nme']]]]);
+
+        $decision = (new I18nCoverageIssueDecider())->decide(
+            'animedb-language-pack',
+            ['welcome', 'goodbye'],
+            ['welcome'],
+            I18nCoverageIssueSnapshot::open(7, $previousBody),
+            [],
+            ['welcome' => 'Hello %name%'],
+            ['de' => ['welcome' => 'Hallo %name%']],
+        );
+
+        self::assertSame(I18nCoverageAction::REWRITE_BODY_AND_COMMENT, $decision->action);
+        self::assertSame(['goodbye'], $decision->missingKeys);
+        self::assertSame([], $decision->divergentKeys);
+        self::assertStringContainsString("Больше не расходятся по плейсхолдерам:\n- `welcome`", (string) $decision->comment);
     }
 
     public function testBothMissingAndDivergentKeysAreReportedAndTrackedOnAnOpenIssue(): void
