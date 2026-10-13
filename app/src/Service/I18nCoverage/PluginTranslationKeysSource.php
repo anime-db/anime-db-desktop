@@ -41,4 +41,10 @@ interface PluginTranslationKeysSource
      * @return list<string> flattened dot-notation keys the plugin's own catalog(s) define
      */
     public function keys(): array;
+
+    /**
+     * @return array<string, array<string, string>> locale => (flattened dot-notation key => value)
+     *                                              for every locale catalog the plugin ships
+     */
+    public function valuesByLocale(): array;
 }

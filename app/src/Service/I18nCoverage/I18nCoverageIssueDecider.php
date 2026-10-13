@@ -27,6 +27,8 @@ declare(strict_types=1);
 
 namespace App\Service\I18nCoverage;
 
+use App\Service\Translation\PlaceholderParity;
+
 /**
  * Decides what, if anything, should happen to a plugin's `i18n-coverage` issue on this run —
  * issue #515's five-row state table. A pure function of already-resolved values (two key sets,
@@ -43,16 +45,18 @@ namespace App\Service\I18nCoverage;
  * Orphaned keys (`pluginKeys \ appKeys` — the reverse subtraction of the same two sets `missing`
  * comes from) are rendered into the body as a purely informational section
  * ({@see I18nCoverageIssueBody::render()}) but never feed into the five-row decision table below:
- * every action here is still a function of `missing` alone. In particular a plugin with orphaned
+ * every action here is still a function of `missing` and the placeholder-divergent keys alone. In particular a plugin with orphaned
  * keys but no missing ones still gets its issue closed — orphaned keys have no bearing on whether
  * an issue should exist at all.
  */
 final class I18nCoverageIssueDecider
 {
     /**
-     * @param list<string> $appKeys    the app's own reference key set
-     * @param list<string> $pluginKeys the plugin's own key set
-     * @param list<string> $owners     `@handle` mentions for the plugin body, empty when unresolved
+     * @param list<string>                         $appKeys              the app's own reference key set
+     * @param list<string>                         $pluginKeys           the plugin's own key set
+     * @param list<string>                         $owners               `@handle` mentions for the plugin body, empty when unresolved
+     * @param array<string, string>                $appValues            the app's reference key => value map
+     * @param array<string, array<string, string>> $pluginValuesByLocale locale => (key => value) of the plugin
      */
     public function decide(
         string $pluginId,
@@ -60,31 +64,84 @@ final class I18nCoverageIssueDecider
         array $pluginKeys,
         I18nCoverageIssueSnapshot $issue,
         array $owners,
+        array $appValues = [],
+        array $pluginValuesByLocale = [],
     ): I18nCoverageDecision {
         $missingKeys = array_values(array_unique(array_diff($appKeys, $pluginKeys)));
         sort($missingKeys);
 
-        if ($missingKeys === []) {
+        $divergent = self::divergentPlaceholders($appKeys, $pluginKeys, $appValues, $pluginValuesByLocale);
+        $divergentKeys = array_keys($divergent);
+
+        if ($missingKeys === [] && $divergentKeys === []) {
             return $issue->exists ? I18nCoverageDecision::close() : I18nCoverageDecision::none();
         }
 
         $orphanedKeys = array_values(array_unique(array_diff($pluginKeys, $appKeys)));
         sort($orphanedKeys);
 
-        $body = I18nCoverageIssueBody::render($pluginId, $missingKeys, $owners, $orphanedKeys);
+        $body = I18nCoverageIssueBody::render($pluginId, $missingKeys, $owners, $orphanedKeys, $divergent);
 
         if (!$issue->exists) {
-            return I18nCoverageDecision::create($missingKeys, $body);
+            return I18nCoverageDecision::create($missingKeys, $body, $divergentKeys);
         }
 
         $previousMissingKeys = I18nCoverageIssueBody::parsePreviousDelta($issue->body);
+        $previousDivergentKeys = I18nCoverageIssueBody::parsePreviousDivergentDelta($issue->body);
 
-        if ($previousMissingKeys === $missingKeys) {
-            return I18nCoverageDecision::rewriteBody($missingKeys, $body);
+        if ($previousMissingKeys === $missingKeys && $previousDivergentKeys === $divergentKeys) {
+            return I18nCoverageDecision::rewriteBody($missingKeys, $body, $divergentKeys);
         }
 
-        $comment = I18nCoverageIssueBody::renderComment($previousMissingKeys, $missingKeys);
+        $comment = I18nCoverageIssueBody::renderComment(
+            $previousMissingKeys,
+            $missingKeys,
+            $previousDivergentKeys,
+            $divergentKeys,
+        );
 
-        return I18nCoverageDecision::rewriteBodyAndComment($missingKeys, $body, $comment);
+        return I18nCoverageDecision::rewriteBodyAndComment($missingKeys, $body, $comment, $divergentKeys);
+    }
+
+    /**
+     * Keys present both in the app and in the plugin whose %name% placeholder set differs from the
+     * app's in at least one plugin locale. Orphaned keys have no reference value and are skipped.
+     *
+     * @param list<string>                         $appKeys
+     * @param list<string>                         $pluginKeys
+     * @param array<string, string>                $appValues
+     * @param array<string, array<string, string>> $pluginValuesByLocale
+     *
+     * @return array<string, array<string, array{missing: list<string>, extra: list<string>}>> key => locale => diff, both levels sorted
+     */
+    private static function divergentPlaceholders(
+        array $appKeys,
+        array $pluginKeys,
+        array $appValues,
+        array $pluginValuesByLocale,
+    ): array {
+        $shared = array_values(array_unique(array_intersect($appKeys, $pluginKeys)));
+        sort($shared);
+        ksort($pluginValuesByLocale);
+
+        $result = [];
+        foreach ($shared as $key) {
+            if (!isset($appValues[$key])) {
+                continue;
+            }
+
+            foreach ($pluginValuesByLocale as $locale => $catalog) {
+                if (!isset($catalog[$key])) {
+                    continue;
+                }
+
+                $diff = PlaceholderParity::diff($appValues[$key], $catalog[$key]);
+                if ($diff !== null) {
+                    $result[$key][(string) $locale] = $diff;
+                }
+            }
+        }
+
+        return $result;
     }
 }

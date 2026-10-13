@@ -74,16 +74,46 @@ final class GhPluginReleaseTranslationKeysSource implements PluginTranslationKey
     ) {
     }
 
+    /**
+     * @var array<string, array<string, string>>|null
+     */
+    private ?array $valuesByLocale = null;
+
     public function keys(): array
     {
-        return self::keysFromZip($this->downloader->downloadLatestReleaseZip($this->pluginId));
+        $keySets = array_map(
+            static fn (array $catalog): array => array_keys($catalog),
+            array_values($this->valuesByLocale()),
+        );
+
+        if ($keySets === []) {
+            return [];
+        }
+
+        $intersected = array_reduce(
+            \array_slice($keySets, 1),
+            static fn (array $carry, array $keys): array => array_intersect($carry, $keys),
+            $keySets[0],
+        );
+
+        $result = array_values($intersected);
+        sort($result);
+
+        return $result;
+    }
+
+    public function valuesByLocale(): array
+    {
+        return $this->valuesByLocale ??= self::catalogsFromZip(
+            $this->downloader->downloadLatestReleaseZip($this->pluginId),
+        );
     }
 
     /**
-     * @return list<string> sorted intersection of the key sets of every
-     *                      `translations/messages.*.yaml` file the archive contains
+     * @return array<string, array<string, string>> locale => catalog for every
+     *                                              `translations/messages.<locale>.yaml` file the archive contains
      */
-    private static function keysFromZip(string $zipPath): array
+    private static function catalogsFromZip(string $zipPath): array
     {
         $extractDir = sys_get_temp_dir().\DIRECTORY_SEPARATOR.'i18n-coverage-extract-'.bin2hex(random_bytes(8));
 
@@ -100,28 +130,18 @@ final class GhPluginReleaseTranslationKeysSource implements PluginTranslationKey
 
         $translationsRoot = self::resolveTranslationsRoot($extractDir);
 
-        $keySets = [];
+        $catalogs = [];
         foreach (glob($translationsRoot.'/translations/messages.*.yaml') ?: [] as $file) {
             $catalog = TranslationCatalog::loadFile($file);
             if ($catalog !== null) {
-                $keySets[] = array_keys($catalog);
+                $locale = substr(basename($file, '.yaml'), \strlen('messages.'));
+                $catalogs[$locale] = $catalog;
             }
         }
 
-        if ($keySets === []) {
-            return [];
-        }
+        ksort($catalogs);
 
-        $intersected = array_reduce(
-            \array_slice($keySets, 1),
-            static fn (array $carry, array $keys): array => array_intersect($carry, $keys),
-            $keySets[0],
-        );
-
-        $result = array_values($intersected);
-        sort($result);
-
-        return $result;
+        return $catalogs;
     }
 
     /**

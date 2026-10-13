@@ -99,4 +99,54 @@ final class I18nCoverageIssueBodyTest extends TestCase
 
         self::assertSame(['goodbye', 'welcome'], I18nCoverageIssueBody::parsePreviousDelta($body));
     }
+
+    public function testParsePreviousDeltaReadsTheOldListMarkerAsMissingOnly(): void
+    {
+        $body = "text\n<!-- i18n-coverage:delta:[\"welcome\",\"goodbye\"] -->";
+
+        self::assertSame(['goodbye', 'welcome'], I18nCoverageIssueBody::parsePreviousDelta($body));
+        self::assertSame([], I18nCoverageIssueBody::parsePreviousDivergentDelta($body));
+    }
+
+    public function testRenderedMarkerWithDivergentKeysRoundTrips(): void
+    {
+        $body = I18nCoverageIssueBody::render('p', ['goodbye'], [], [], [
+            'welcome' => ['de' => ['missing' => ['name'], 'extra' => []]],
+        ]);
+
+        self::assertSame(['goodbye'], I18nCoverageIssueBody::parsePreviousDelta($body));
+        self::assertSame(['welcome'], I18nCoverageIssueBody::parsePreviousDivergentDelta($body));
+        self::assertStringContainsString('- `welcome` (de): не хватает `%name%`; лишние —', $body);
+        self::assertStringContainsString('Ключей с расходящимися плейсхолдерами: 1.', $body);
+    }
+
+    public function testRenderWithoutDivergentKeysKeepsTheOldListMarker(): void
+    {
+        $body = I18nCoverageIssueBody::render('p', ['welcome'], []);
+
+        self::assertStringContainsString('<!-- i18n-coverage:delta:["welcome"] -->', $body);
+        self::assertStringNotContainsString('Расходятся плейсхолдеры', $body);
+    }
+
+    public function testCommentAgainstAnOldFormatDeltaListsAppearedDivergentKeys(): void
+    {
+        $previous = '<!-- i18n-coverage:delta:["goodbye"] -->';
+
+        $comment = I18nCoverageIssueBody::renderComment(
+            I18nCoverageIssueBody::parsePreviousDelta($previous),
+            ['goodbye'],
+            I18nCoverageIssueBody::parsePreviousDivergentDelta($previous),
+            ['welcome'],
+        );
+
+        self::assertSame("Дельта изменилась с прошлого прогона.\n\nСтали расходиться по плейсхолдерам:\n- `welcome`", $comment);
+    }
+
+    public function testCommentListsKeysThatNoLongerDiverge(): void
+    {
+        $comment = I18nCoverageIssueBody::renderComment([], [], ['welcome'], ['other']);
+
+        self::assertStringContainsString("Стали расходиться по плейсхолдерам:\n- `other`", $comment);
+        self::assertStringContainsString("Больше не расходятся по плейсхолдерам:\n- `welcome`", $comment);
+    }
 }

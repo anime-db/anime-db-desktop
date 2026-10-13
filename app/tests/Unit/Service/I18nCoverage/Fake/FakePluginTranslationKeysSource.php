@@ -32,10 +32,16 @@ use App\Service\I18nCoverage\PluginTranslationKeysSource;
 final class FakePluginTranslationKeysSource implements PluginTranslationKeysSource
 {
     /**
-     * @param list<string> $keys
+     * @param list<string>                         $keys
+     * @param array<string, array<string, string>> $valuesByLocale
      */
-    public function __construct(private readonly array $keys)
+    public function __construct(private readonly array $keys, private readonly array $valuesByLocale = [])
     {
+    }
+
+    public function valuesByLocale(): array
+    {
+        return $this->valuesByLocale;
     }
 
     public function keys(): array
