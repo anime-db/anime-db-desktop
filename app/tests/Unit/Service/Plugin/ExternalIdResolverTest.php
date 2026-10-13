@@ -45,6 +45,7 @@ use Doctrine\ORM\ORMSetup;
 use Doctrine\ORM\Tools\SchemaTool;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\AbstractLogger;
+use Symfony\Contracts\Service\ResetInterface;
 
 final class ExternalIdResolverTest extends TestCase
 {
@@ -185,6 +186,24 @@ final class ExternalIdResolverTest extends TestCase
         $this->entityManager->flush();
         $this->assertCount(1, $this->entityManager->getRepository(AnimeExternalId::class)->findAll());
         $this->assertCount(1, $this->logs);
+    }
+
+    public function testResetDropsUnflushedClaims(): void
+    {
+        $a = $this->anime('A');
+        $b = $this->anime('B');
+        $resolver = $this->resolver();
+
+        $this->assertSame('X', $resolver->claim($a, $this->pluginId, 'X'));
+        $resolver->reset();
+
+        $this->assertSame('X', $resolver->claim($b, $this->pluginId, 'X'));
+        $this->assertCount(0, $this->logs);
+    }
+
+    public function testResolverIsResettable(): void
+    {
+        $this->assertInstanceOf(ResetInterface::class, $this->resolver());
     }
 
     public function testSameAnimeLoadedByAnotherEntityManagerIsNotAForeignOwner(): void

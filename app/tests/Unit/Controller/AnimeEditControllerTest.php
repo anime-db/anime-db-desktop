@@ -367,6 +367,21 @@ final class AnimeEditControllerTest extends TestCase
         $this->assertSame($keptId, $this->sourceId($anime, 'https://a.example/1'));
     }
 
+    public function testIdnSourceIsSavedInAsciiFormAndNotDuplicated(): void
+    {
+        $anime = $this->persistTv();
+
+        $this->controller()->update($anime, $this->post(['sources' => ['https://пример.рф/a']]));
+        $anime = $this->reload($anime);
+        $this->assertSame(['https://xn--e1afmkfd.xn--p1ai/a'], array_map(static fn ($s): string => $s->url, $anime->getSources()->toArray()));
+
+        $keptId = $this->sourceId($anime, 'https://xn--e1afmkfd.xn--p1ai/a');
+        $this->assertNotNull($keptId);
+
+        $this->controller()->update($anime, $this->post(['sources' => ['https://пример.рф/a']]));
+        $this->assertSame($keptId, $this->sourceId($this->reload($anime), 'https://xn--e1afmkfd.xn--p1ai/a'));
+    }
+
     public function testOnlyChangingSourcesBumpsTheDateAndReindexesTheEntry(): void
     {
         $anime = $this->persistTv();

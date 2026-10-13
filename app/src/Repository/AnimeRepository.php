@@ -548,7 +548,7 @@ class AnimeRepository
     /**
      * Reverse lookup for pull-sync idempotency (issue #257) and the create/resolve
      * conflict path (issue #297): the Anime, if any, already carrying $externalId for
-     * $pluginId in the anime_external_id index (see Anime::getExternalId()/
+     * $pluginId in the anime_external_id index (see ExternalIdResolver::resolve()/
      * rememberExternalId()). Used both to fold an already-synced SyncItem onto its known
      * local Anime and to detect a "new" SyncItem that in fact already has a local match, so
      * a repeated pull of the same plugin never creates a duplicate.
@@ -637,7 +637,7 @@ class AnimeRepository
      * A single page of the whole catalog, ordered by id, with $sources eagerly joined — what
      * ExternalIdBackfillService (issue #258) walks page by page rather than loading the
      * whole catalog into memory at once, same LIMIT/OFFSET + Paginator pattern as
-     * AnimeReindexService::reindexAll(). $sources is joined because Anime::getExternalId()
+     * AnimeReindexService::reindexAll(). $sources is joined because ExternalIdResolver::resolve()
      * resolves against it.
      *
      * @return list<Anime>

@@ -94,10 +94,33 @@ final class AnimeSourceTest extends TestCase
 
     public function testNormalizeUrlConvertsIdnHost(): void
     {
-        if (!\function_exists('idn_to_ascii')) {
-            $this->markTestSkipped('intl is not available');
-        }
-
         $this->assertSame('https://xn--e1afmkfd.xn--p1ai/a', AnimeSource::normalizeUrl('https://пример.рф/a'));
+    }
+
+    public function testNormalizeUrlMakesCyrillicDomainCaseInsensitive(): void
+    {
+        $expected = 'https://xn--e1afmkfd.xn--p1ai/%D1%81%D1%82%D1%80%D0%B0%D0%BD%D0%B8%D1%86%D0%B0';
+        $upper = AnimeSource::normalizeUrl('https://ПРИМЕР.РФ/страница');
+        $lower = AnimeSource::normalizeUrl('https://пример.рф/страница');
+
+        $this->assertSame($expected, $upper);
+        $this->assertSame($expected, $lower);
+        $this->assertTrue(AnimeSource::isValidUrl($upper));
+        $this->assertTrue(AnimeSource::isValidUrl($lower));
+        $this->assertSame(AnimeSource::key($upper), AnimeSource::key($lower));
+    }
+
+    public function testNormalizeUrlLowercasesTheScheme(): void
+    {
+        $url = AnimeSource::normalizeUrl('HTTPS://example.org/a');
+
+        $this->assertSame('https://example.org/a', $url);
+        $this->assertTrue(AnimeSource::isValidUrl($url));
+        $this->assertSame('http://example.org/A', AnimeSource::normalizeUrl('HtTp://example.org/A'));
+    }
+
+    public function testNormalizeUrlKeepsThePortOfAnIdnHost(): void
+    {
+        $this->assertSame('https://xn--j1ail.xn--p1ai:8080/', AnimeSource::normalizeUrl('https://кто.рф:8080/'));
     }
 }

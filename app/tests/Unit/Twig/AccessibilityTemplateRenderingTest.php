@@ -145,10 +145,23 @@ final class AccessibilityTemplateRenderingTest extends KernelTestCase
         $this->assertStringContainsString('<select name="watch_status" autofocus aria-label="Watch status">', $status);
     }
 
+    public function testOnlySourceFieldsOfTheEditFormAreLeftToRight(): void
+    {
+        $html = $this->renderEdit([], ['https://example.org/a']);
+
+        // The saved row and the row template of the dynamic list.
+        $this->assertSame(2, preg_match_all('/<input[^>]*\bdir="ltr"[^>]*>/', $html, $m));
+        foreach ($m[0] as $input) {
+            $this->assertMatchesRegularExpression('/name="sources\[/', $input);
+        }
+        $this->assertSame(0, preg_match_all('/<input[^>]*name="names[^>]*\bdir=/', $html));
+    }
+
     /**
      * @param array<string, string> $errors
+     * @param list<string>          $sources
      */
-    private function renderEdit(array $errors): string
+    private function renderEdit(array $errors, array $sources = []): string
     {
         return $this->render('anime/edit.html.twig', [
             'anime' => ['id' => 5, 'title' => 'T', 'type' => 'tv'],
@@ -157,7 +170,7 @@ final class AccessibilityTemplateRenderingTest extends KernelTestCase
                 'title' => '', 'names' => [['name' => 'a', 'locale' => 'en', 'role' => 'synonym']], 'descriptions' => [],
                 'genres' => [], 'themes' => [], 'studios' => [], 'new_studios' => [], 'demographic' => '',
                 'date_premiere' => '', 'date_end' => '', 'duration_minutes' => '', 'episodes_count' => '', 'countries' => '',
-                'sources' => [], 'cover_remove' => false, 'notes' => '',
+                'sources' => $sources, 'cover_remove' => false, 'notes' => '',
             ],
             'errors' => $errors,
             'genre_choices' => ['action'], 'theme_choices' => ['mecha'], 'demographic_choices' => [], 'role_choices' => ['synonym'],
