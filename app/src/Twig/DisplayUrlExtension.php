@@ -58,6 +58,13 @@ final class DisplayUrlExtension extends AbstractExtension
             return $host;
         }
 
+        // the readable host must normalize back to the stored one (transitional processing maps
+        // e.g. "ß" to "ss", which is a different domain)
+        $back = idn_to_ascii($unicode, \IDNA_DEFAULT, \INTL_IDNA_VARIANT_UTS46);
+        if ($back === false || strtolower($back) !== strtolower($host)) {
+            return $host;
+        }
+
         $checker = new \Spoofchecker();
         $checker->setChecks(
             \Spoofchecker::MIXED_SCRIPT_CONFUSABLE
@@ -68,7 +75,20 @@ final class DisplayUrlExtension extends AbstractExtension
         // mixing scripts (e.g. Cyrillic + Latin) is only caught by the restriction level check
         $checker->setRestrictionLevel(\Spoofchecker::HIGHLY_RESTRICTIVE);
 
-        return $checker->isSuspicious($unicode) ? $host : $unicode;
+        // ASCII subdomains ("www.") must not taint an IDN label, but the TLD stays in the check so
+        // that a Cyrillic name under a Latin TLD is still treated as mixed-script
+        $labels = explode('.', $unicode);
+        $last = array_key_last($labels);
+        $labels = array_filter(
+            $labels,
+            static fn (string $label, int $i): bool => $i === $last || preg_match('/[\x80-\xFF]/', $label) === 1,
+            \ARRAY_FILTER_USE_BOTH,
+        );
+        if ($checker->isSuspicious(implode('.', $labels))) {
+            return $host;
+        }
+
+        return $unicode;
     }
 
     public static function displayUrl(string $url): string
@@ -92,7 +112,8 @@ final class DisplayUrlExtension extends AbstractExtension
     private static function decodeEscapes(string $value): string
     {
         return (string) preg_replace_callback(
-            '/(?:%[89A-Fa-f][0-9A-Fa-f])+/',
+            // upper-case only: normalization re-encodes with upper-case hex, so lower-case escapes would not round-trip
+            '/(?:%[89A-F][0-9A-F])+/',
             static function (array $match): string {
                 $escapes = str_split($match[0], 3);
                 $bytes = '';

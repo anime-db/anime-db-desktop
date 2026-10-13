@@ -128,8 +128,21 @@ final class DisplayUrlExtensionTest extends TestCase
             'https://ja.wikipedia.org/wiki/%E8%91%AC%E9%80%81%E3%81%AE%E3%83%95%E3%83%AA%E3%83%BC%E3%83%AC%E3%83%B3',
             'https://xn--nidb-43d.net/%E2%80%AE',
             'https://example.org/a%2Fb%20c?q=%26',
+            'https://xn--strae-oqa.de/',
+            'https://www.xn--e1afmkfd.xn--p1ai/',
+            'https://example.org/%d1%91',
         ] as $stored) {
             $this->assertSame($stored, AnimeSource::normalizeUrl(DisplayUrlExtension::displayUrl($stored)), $stored);
         }
+    }
+
+    public function testAsciiSubdomainDoesNotHideIdnLabel(): void
+    {
+        $this->assertSame('www.пример.рф', DisplayUrlExtension::displayHost('www.xn--e1afmkfd.xn--p1ai'));
+    }
+
+    public function testLowerCaseEscapesStayEncoded(): void
+    {
+        $this->assertSame('https://example.org/%d1%91', DisplayUrlExtension::displayUrl('https://example.org/%d1%91'));
     }
 }
