@@ -1004,6 +1004,9 @@ notification:
     fallback:
         title: Notification
         body: 'Could not display the notification text from %date%.'
+    plugin_update:
+        title: 'Update available: %name%'
+        body: 'A new version %version% of the plugin "%name%" is available.'
     scan_failed:
         title: 'Storage scan failed: %name%'
         body: 'The scan of the storage "%name%" did not finish: %reason%'

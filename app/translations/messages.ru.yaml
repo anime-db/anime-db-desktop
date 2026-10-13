@@ -1004,6 +1004,9 @@ notification:
     fallback:
         title: Оповещение
         body: 'Не удалось показать текст оповещения от %date%.'
+    plugin_update:
+        title: 'Доступно обновление: %name%'
+        body: 'Доступна новая версия %version% плагина «%name%».'
     scan_failed:
         title: 'Сбой скана хранилища: %name%'
         body: 'Скан хранилища «%name%» не завершился: %reason%'
