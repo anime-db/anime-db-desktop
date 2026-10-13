@@ -30,6 +30,7 @@ namespace App\Service\Notification;
 use App\Entity\ValueObject\Exception\InvalidPluginIdException;
 use App\Entity\ValueObject\PluginId;
 use App\Service\Notification\Kind\ScanRunSubject;
+use App\Service\Notification\Kind\SyncReviewNotificationKind;
 use App\Service\Plugin\SettingsPageRegistry;
 use Doctrine\DBAL\Connection;
 use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
@@ -56,6 +57,10 @@ class NotificationSubjectLinker
     {
         if ($type === ScanRunSubject::TYPE) {
             return $this->scanRunUrl($id);
+        }
+
+        if ($type === SyncReviewNotificationKind::SUBJECT_QUEUE) {
+            return $id === SyncReviewNotificationKind::SUBJECT_QUEUE_ID ? $this->urlGenerator->generate('settings_sync_review_index') : null;
         }
 
         if ($type === 'plugin' && $id !== null) {

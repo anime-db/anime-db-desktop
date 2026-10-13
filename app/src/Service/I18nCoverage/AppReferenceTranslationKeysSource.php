@@ -51,7 +51,12 @@ final class AppReferenceTranslationKeysSource implements ApplicationTranslationK
 
     public function keys(): array
     {
-        return array_keys(TranslationCatalog::loadFile($this->referenceCatalogPath()) ?? []);
+        return array_keys($this->values());
+    }
+
+    public function values(): array
+    {
+        return TranslationCatalog::loadFile($this->referenceCatalogPath()) ?? [];
     }
 
     private function referenceCatalogPath(): string

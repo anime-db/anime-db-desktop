@@ -63,7 +63,15 @@ final class I18nCoverageSync
         $issue = $issueState->currentState();
         $owners = CodeownersOwnerResolver::resolve($codeowners->content(), $pluginId);
 
-        $decision = $this->decider->decide($pluginId, $appKeys->keys(), $pluginKeys->keys(), $issue, $owners);
+        $decision = $this->decider->decide(
+            $pluginId,
+            $appKeys->keys(),
+            $pluginKeys->keys(),
+            $issue,
+            $owners,
+            $appKeys->values(),
+            $pluginKeys->valuesByLocale(),
+        );
 
         if (!$dryRun) {
             $this->apply($pluginId, $decision, $issue, $issueState, $executor);

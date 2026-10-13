@@ -76,6 +76,21 @@ final class SyncReviewService
         return $this->repository->countUnresolved();
     }
 
+    /** Watermark taken before a run, see {@see self::countUnresolvedRaisedSince()}. */
+    public function watermark(): int
+    {
+        return $this->repository->maxId();
+    }
+
+    /**
+     * Unresolved items created since the {@see self::watermark()}: counts what a run raised, not the
+     * net change of the queue, which a run closing items (or the user resolving them) would mask.
+     */
+    public function countUnresolvedRaisedSince(int $watermark): int
+    {
+        return $this->repository->countUnresolvedAfter($watermark);
+    }
+
     public function resolve(SyncReviewItem $item): void
     {
         $item->resolve();

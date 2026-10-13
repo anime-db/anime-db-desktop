@@ -32,9 +32,11 @@ namespace App\Service\I18nCoverage;
  * single place both directions of that round trip are implemented, so they cannot drift apart
  * (the body is the only persisted state between runs; there is no separate store).
  *
- * The delta is embedded as an HTML comment carrying a sorted JSON array right after the
- * human-readable part: invisible when the issue is rendered, trivial to parse back out, and
- * immune to a human lightly editing the prose above it.
+ * The delta is embedded as an HTML comment carrying JSON right after the human-readable part:
+ * invisible when the issue is rendered, trivial to parse back out, and immune to a human lightly
+ * editing the prose above it. With no placeholder-divergent keys the JSON is a sorted array of the
+ * missing keys (the original format, still what older open issues carry); otherwise it is an object
+ * `{"missing": [...], "divergent": [...]}`.
  */
 final class I18nCoverageIssueBody
 {
@@ -42,29 +44,61 @@ final class I18nCoverageIssueBody
     private const string DELTA_MARKER_SUFFIX = ' -->';
 
     /**
-     * @param list<string> $missingKeys  sorted
-     * @param list<string> $owners       `@handle` mentions, empty when CODEOWNERS has no entry
-     * @param list<string> $orphanedKeys sorted; keys the plugin still ships that the app no longer
-     *                                   references (renamed or removed on the app side). Purely
-     *                                   informational — not part of the delta tracked by
-     *                                   {@see I18nCoverageIssueDecider} or the marker parsed back
-     *                                   out by {@see parsePreviousDelta()}
+     * @param list<string>                                                                    $missingKeys   sorted
+     * @param list<string>                                                                    $owners        `@handle` mentions, empty when CODEOWNERS has no entry
+     * @param list<string>                                                                    $orphanedKeys  sorted; keys the plugin still ships that the app no longer
+     *                                                                                                       references (renamed or removed on the app side). Purely
+     *                                                                                                       informational — not part of the delta tracked by
+     *                                                                                                       {@see I18nCoverageIssueDecider} or the marker parsed back
+     *                                                                                                       out by {@see parsePreviousDelta()}
+     * @param array<string, array<string, array{missing: list<string>, extra: list<string>}>> $divergentKeys
+     *                                                                                                       key => plugin locale => placeholder diff against the app, sorted
      */
-    public static function render(string $pluginId, array $missingKeys, array $owners, array $orphanedKeys = []): string
-    {
+    public static function render(
+        string $pluginId,
+        array $missingKeys,
+        array $owners,
+        array $orphanedKeys = [],
+        array $divergentKeys = [],
+    ): string {
         $lines = [
             \sprintf('Перевод плагина `%s` отстаёт от приложения.', $pluginId),
             \sprintf('Отсутствует ключей перевода: %d.', \count($missingKeys)),
-            '',
-            'Issue закроется автоматически, когда очередной прогон снова не найдёт отсутствующих ключей '
-            .'(то есть не раньше следующего релиза приложения — версия в это сравнение не входит).',
-            '',
-            'Отсутствующие ключи:',
-            '',
         ];
 
-        foreach ($missingKeys as $key) {
-            $lines[] = \sprintf('- `%s`', $key);
+        if ($divergentKeys !== []) {
+            $lines[] = \sprintf('Ключей с расходящимися плейсхолдерами: %d.', \count($divergentKeys));
+        }
+
+        $lines[] = '';
+        $lines[] = 'Issue закроется автоматически, когда очередной прогон снова не найдёт отсутствующих ключей '
+            .'и ключей с расходящимися плейсхолдерами '
+            .'(то есть не раньше следующего релиза приложения — версия в это сравнение не входит).';
+
+        if ($missingKeys !== []) {
+            $lines[] = '';
+            $lines[] = 'Отсутствующие ключи:';
+            $lines[] = '';
+            foreach ($missingKeys as $key) {
+                $lines[] = \sprintf('- `%s`', $key);
+            }
+        }
+
+        if ($divergentKeys !== []) {
+            $lines[] = '';
+            $lines[] = 'Расходятся плейсхолдеры с приложением:';
+            $lines[] = '';
+            foreach ($divergentKeys as $key => $locales) {
+                foreach ($locales as $locale => $diff) {
+                    $lines[] = \sprintf(
+                        '- `%s` (%s): не хватает %s; лишние %s',
+                        $key,
+                        $locale,
+                        self::formatPlaceholders($diff['missing']),
+                        self::formatPlaceholders($diff['extra']),
+                    );
+                }
+            }
         }
 
         if ($orphanedKeys !== []) {
@@ -84,35 +118,56 @@ final class I18nCoverageIssueBody
             $lines[] = \sprintf('cc %s', implode(' ', $owners));
         }
 
+        $divergentNames = array_keys($divergentKeys);
+        $delta = $divergentNames === [] ? $missingKeys : ['missing' => $missingKeys, 'divergent' => $divergentNames];
+
         $lines[] = '';
-        $lines[] = self::DELTA_MARKER_PREFIX.json_encode($missingKeys, \JSON_THROW_ON_ERROR).self::DELTA_MARKER_SUFFIX;
+        $lines[] = self::DELTA_MARKER_PREFIX.json_encode($delta, \JSON_THROW_ON_ERROR).self::DELTA_MARKER_SUFFIX;
 
         return implode("\n", $lines);
     }
 
     /**
-     * @param list<string> $previousMissingKeys sorted
-     * @param list<string> $missingKeys         sorted
+     * @param list<string> $names
      */
-    public static function renderComment(array $previousMissingKeys, array $missingKeys): string
+    private static function formatPlaceholders(array $names): string
     {
-        $newlyMissing = array_values(array_diff($missingKeys, $previousMissingKeys));
-        $newlyCovered = array_values(array_diff($previousMissingKeys, $missingKeys));
+        if ($names === []) {
+            return '—';
+        }
+
+        return implode(', ', array_map(static fn (string $name): string => \sprintf('`%%%s%%`', $name), $names));
+    }
+
+    /**
+     * @param list<string> $previousMissingKeys   sorted
+     * @param list<string> $missingKeys           sorted
+     * @param list<string> $previousDivergentKeys sorted
+     * @param list<string> $divergentKeys         sorted
+     */
+    public static function renderComment(
+        array $previousMissingKeys,
+        array $missingKeys,
+        array $previousDivergentKeys = [],
+        array $divergentKeys = [],
+    ): string {
+        $sections = [
+            'Стали отсутствовать:' => array_diff($missingKeys, $previousMissingKeys),
+            'Больше не отсутствуют:' => array_diff($previousMissingKeys, $missingKeys),
+            'Стали расходиться по плейсхолдерам:' => array_diff($divergentKeys, $previousDivergentKeys),
+            'Больше не расходятся по плейсхолдерам:' => array_diff($previousDivergentKeys, $divergentKeys),
+        ];
 
         $lines = ['Дельта изменилась с прошлого прогона.'];
 
-        if ($newlyMissing !== []) {
-            $lines[] = '';
-            $lines[] = 'Стали отсутствовать:';
-            foreach ($newlyMissing as $key) {
-                $lines[] = \sprintf('- `%s`', $key);
+        foreach ($sections as $title => $keys) {
+            if ($keys === []) {
+                continue;
             }
-        }
 
-        if ($newlyCovered !== []) {
             $lines[] = '';
-            $lines[] = 'Больше не отсутствуют:';
-            foreach ($newlyCovered as $key) {
+            $lines[] = $title;
+            foreach ($keys as $key) {
                 $lines[] = \sprintf('- `%s`', $key);
             }
         }
@@ -121,33 +176,69 @@ final class I18nCoverageIssueBody
     }
 
     /**
-     * @return list<string> sorted; empty when $body carries no marker or the marker does not
-     *                      parse as a JSON array of strings
+     * @return list<string> sorted missing keys; empty when $body carries no marker or the marker
+     *                      does not parse. An old-format marker (plain JSON array) is read as
+     *                      "missing keys only"
      */
     public static function parsePreviousDelta(string $body): array
     {
+        return self::parseMarker($body)['missing'];
+    }
+
+    /**
+     * @return list<string> sorted placeholder-divergent keys; empty for an old-format marker
+     */
+    public static function parsePreviousDivergentDelta(string $body): array
+    {
+        return self::parseMarker($body)['divergent'];
+    }
+
+    /**
+     * @return array{missing: list<string>, divergent: list<string>}
+     */
+    private static function parseMarker(string $body): array
+    {
+        $empty = ['missing' => [], 'divergent' => []];
+
         $start = strpos($body, self::DELTA_MARKER_PREFIX);
         if ($start === false) {
-            return [];
+            return $empty;
         }
 
         $jsonStart = $start + \strlen(self::DELTA_MARKER_PREFIX);
         $end = strpos($body, self::DELTA_MARKER_SUFFIX, $jsonStart);
         if ($end === false) {
-            return [];
+            return $empty;
         }
 
         try {
             $decoded = json_decode(substr($body, $jsonStart, $end - $jsonStart), true, flags: \JSON_THROW_ON_ERROR);
         } catch (\JsonException) {
-            return [];
+            return $empty;
         }
 
         if (!\is_array($decoded)) {
-            return [];
+            return $empty;
         }
 
-        $keys = array_values(array_filter($decoded, static fn (mixed $key): bool => \is_string($key)));
+        if (array_is_list($decoded)) {
+            return ['missing' => self::stringKeys($decoded), 'divergent' => []];
+        }
+
+        return [
+            'missing' => self::stringKeys(\is_array($decoded['missing'] ?? null) ? $decoded['missing'] : []),
+            'divergent' => self::stringKeys(\is_array($decoded['divergent'] ?? null) ? $decoded['divergent'] : []),
+        ];
+    }
+
+    /**
+     * @param array<mixed> $values
+     *
+     * @return list<string>
+     */
+    private static function stringKeys(array $values): array
+    {
+        $keys = array_values(array_filter($values, static fn (mixed $key): bool => \is_string($key)));
         sort($keys);
 
         return $keys;

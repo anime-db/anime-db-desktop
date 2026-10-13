@@ -36,22 +36,28 @@ use AnimeDb\PluginContracts\Sync\SyncStatus;
 use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
 use App\Entity\Anime;
+use App\Entity\Enum\SyncReviewItemKind;
 use App\Entity\Enum\WatchStatus;
 use App\Entity\MovieAnime;
+use App\Entity\SyncReviewItem;
 use App\Entity\ValueObject\PluginId;
 use App\Message\SyncPullMessage;
 use App\Message\SyncSeedMessage;
 use App\MessageHandler\SyncPullMessageHandler;
 use App\Repository\AnimeRepository;
+use App\Repository\SyncReviewItemRepository;
 use App\Repository\SyncTombstoneRepository;
 use App\Service\JobLock\JobLockService;
 use App\Service\JobLock\ProcessLivenessChecker;
+use App\Service\Notification\Kind\SyncReviewNotificationKind;
 use App\Service\Plugin\ExternalIdBackfillService;
 use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Plugin\SyncRegistry;
 use App\Service\Sync\SourceRemovalService;
 use App\Service\Sync\SyncPullGate;
+use App\Service\Sync\SyncReviewService;
 use App\Tests\Support\BuildsPullSyncService;
+use App\Tests\Support\RecordingNotificationCenter;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\EntityManager;
@@ -321,7 +327,116 @@ final class SyncPullMessageHandlerTest extends TestCase
         return new PluginsConfigStore($this->path);
     }
 
-    private function handler(SyncInterface $sync, PluginsConfigStore $store, ?LoggerInterface $logger = null, ?JobLockService $locks = null): SyncPullMessageHandler
+    public function testPullThatRaisesReviewItemsRecordsOneSyncReviewNotificationAfterTheirCommit(): void
+    {
+        $sync = $this->createMock(SyncInterface::class);
+        $sync->method('pull')->willReturnCallback(function (): array {
+            $this->addReviewItems(2);
+
+            return [];
+        });
+
+        $notifications = new RecordingNotificationCenter();
+        $notifications->onRecord = fn () => $this->assertSame(3, (new SyncReviewService(new SyncReviewItemRepository($this->entityManager)))->countUnresolved(), 'record() runs after the items are committed');
+        $this->addReviewItems(1);
+        $store = $this->store(['features' => ['sync' => true], 'syncSeeded' => true]);
+        $this->handler($sync, $store, null, null, $notifications)(new SyncPullMessage(self::ID));
+
+        $this->assertCount(1, $notifications->drafts);
+        $this->assertEquals(SyncReviewNotificationKind::draft(3), $notifications->drafts[0]);
+    }
+
+    public function testPullThatRaisesNoReviewItemsRecordsNoNotification(): void
+    {
+        $sync = $this->createMock(SyncInterface::class);
+        $sync->method('pull')->willReturn([]);
+
+        $notifications = new RecordingNotificationCenter();
+        $this->addReviewItems(2);
+        $store = $this->store(['features' => ['sync' => true], 'syncSeeded' => true]);
+        $this->handler($sync, $store, null, null, $notifications)(new SyncPullMessage(self::ID));
+
+        $this->assertSame([], $notifications->drafts);
+    }
+
+    public function testPullThatClosesAnItemWhileRaisingOneStillRecordsTheNotification(): void
+    {
+        $this->addReviewItems(1);
+        $sync = $this->createMock(SyncInterface::class);
+        $sync->method('pull')->willReturnCallback(function (): array {
+            $this->entityManager->createQuery('UPDATE '.SyncReviewItem::class.' item SET item.resolvedAt = :now')->setParameter('now', new \DateTimeImmutable())->execute();
+            $this->addReviewItems(1);
+
+            return [];
+        });
+
+        $notifications = new RecordingNotificationCenter();
+        $store = $this->store(['features' => ['sync' => true], 'syncSeeded' => true]);
+        $this->handler($sync, $store, null, null, $notifications)(new SyncPullMessage(self::ID));
+
+        $this->assertEquals([SyncReviewNotificationKind::draft(1)], $notifications->drafts);
+    }
+
+    public function testPullThatThrowsAfterRaisingReviewItemsStillRecordsTheNotificationAndRethrows(): void
+    {
+        $sync = $this->createMock(SyncInterface::class);
+        $sync->method('pull')->willReturnCallback(function (): array {
+            $this->addReviewItems(2);
+
+            throw new \RuntimeException('network');
+        });
+
+        $notifications = new RecordingNotificationCenter();
+        $store = $this->store(['features' => ['sync' => true], 'syncSeeded' => true]);
+
+        try {
+            $this->handler($sync, $store, null, null, $notifications)(new SyncPullMessage(self::ID));
+            $this->fail('The exception must propagate.');
+        } catch (\RuntimeException $e) {
+            $this->assertSame('network', $e->getMessage());
+        }
+
+        $this->assertEquals([SyncReviewNotificationKind::draft(2)], $notifications->drafts);
+    }
+
+    public function testAFailingWatermarkDoesNotCancelThePull(): void
+    {
+        $this->entityManager->getConnection()->executeStatement('DROP TABLE '.$this->entityManager->getClassMetadata(SyncReviewItem::class)->getTableName());
+        $sync = $this->createMock(SyncInterface::class);
+        $sync->expects($this->once())->method('pull')->willReturn([]);
+
+        $notifications = new RecordingNotificationCenter();
+        $store = $this->store(['features' => ['sync' => true], 'syncSeeded' => true]);
+        $this->handler($sync, $store, null, null, $notifications)(new SyncPullMessage(self::ID));
+
+        $this->assertSame([], $notifications->drafts);
+        $this->assertSame(self::NOW, $store->getPluginSettings(new PluginId(self::ID))['syncLastPullAt'] ?? null);
+    }
+
+    public function testAFailingNotificationAfterASuccessfulPullDoesNotFailTheMessage(): void
+    {
+        $sync = $this->createMock(SyncInterface::class);
+        $sync->method('pull')->willReturnCallback(function (): array {
+            $this->addReviewItems(1);
+
+            return [];
+        });
+
+        $store = $this->store(['features' => ['sync' => true], 'syncSeeded' => true]);
+        $this->handler($sync, $store, null, null, new RecordingNotificationCenter(true))(new SyncPullMessage(self::ID));
+
+        $this->assertSame(self::NOW, $store->getPluginSettings(new PluginId(self::ID))['syncLastPullAt'] ?? null);
+    }
+
+    private function addReviewItems(int $count): void
+    {
+        for ($i = 0; $i < $count; ++$i) {
+            $this->entityManager->persist(new SyncReviewItem(SyncReviewItemKind::PotentialDuplicate, ['anime_ids' => [1, 2]]));
+        }
+        $this->entityManager->flush();
+    }
+
+    private function handler(SyncInterface $sync, PluginsConfigStore $store, ?LoggerInterface $logger = null, ?JobLockService $locks = null, ?RecordingNotificationCenter $notifications = null): SyncPullMessageHandler
     {
         $registry = new SyncRegistry([self::ID => $sync], $store);
 
@@ -332,6 +447,8 @@ final class SyncPullMessageHandlerTest extends TestCase
             new SourceRemovalService(new SyncTombstoneRepository($this->entityManager), new AnimeRepository($this->entityManager), new NullLogger()),
             $this->newPullSyncService($registry),
             $locks ?? $this->jobLockService(),
+            new SyncReviewService(new SyncReviewItemRepository($this->entityManager)),
+            $notifications ?? new RecordingNotificationCenter(),
             $logger ?? new NullLogger(),
         );
     }

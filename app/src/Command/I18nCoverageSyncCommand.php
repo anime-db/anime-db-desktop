@@ -107,6 +107,11 @@ final class I18nCoverageSyncCommand extends Command
             $io->listing($decision->missingKeys);
         }
 
+        $io->writeln(\sprintf('Keys with diverging placeholders: %d', \count($decision->divergentKeys)));
+        if ($decision->divergentKeys !== []) {
+            $io->listing($decision->divergentKeys);
+        }
+
         if ($decision->body !== null) {
             $io->section('Body');
             $io->writeln($decision->body);

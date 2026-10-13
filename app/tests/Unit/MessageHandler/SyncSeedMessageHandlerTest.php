@@ -36,22 +36,28 @@ use AnimeDb\PluginContracts\Sync\SyncStatus;
 use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
 use App\Entity\Anime;
+use App\Entity\Enum\SyncReviewItemKind;
 use App\Entity\Enum\WatchStatus;
 use App\Entity\MovieAnime;
+use App\Entity\SyncReviewItem;
 use App\Entity\ValueObject\PluginId;
 use App\Message\SyncSeedMessage;
 use App\MessageHandler\SyncSeedMessageHandler;
 use App\Repository\AnimeRepository;
+use App\Repository\SyncReviewItemRepository;
 use App\Repository\SyncTombstoneRepository;
 use App\Service\JobLock\JobLockService;
 use App\Service\JobLock\ProcessLivenessChecker;
+use App\Service\Notification\Kind\SyncReviewNotificationKind;
 use App\Service\Plugin\ExternalIdBackfillService;
 use App\Service\Plugin\PluginsConfigStore;
 use App\Service\Plugin\PullSyncService;
 use App\Service\Plugin\SyncRegistry;
 use App\Service\Sync\SourceRemovalService;
 use App\Service\Sync\SyncPullGate;
+use App\Service\Sync\SyncReviewService;
 use App\Tests\Support\BuildsPullSyncService;
+use App\Tests\Support\RecordingNotificationCenter;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\EntityManager;
@@ -103,7 +109,7 @@ final class SyncSeedMessageHandlerTest extends TestCase
         $sync->expects($this->once())->method('pull')->willReturn([]);
 
         [$syncRegistry, $pluginsConfigStore] = $this->newSyncRegistry(['animedb-shikimori' => $sync]);
-        $handler = new SyncSeedMessageHandler($syncRegistry, $this->newBackfillService(), $this->newSourceRemoval(), $this->newPullSyncService($syncRegistry), $pluginsConfigStore, $this->jobLockService(), $this->pullGate($pluginsConfigStore), new NullLogger());
+        $handler = new SyncSeedMessageHandler($syncRegistry, $this->newBackfillService(), $this->newSourceRemoval(), $this->newPullSyncService($syncRegistry), $pluginsConfigStore, $this->jobLockService(), $this->pullGate($pluginsConfigStore), new SyncReviewService(new SyncReviewItemRepository($this->entityManager)), new RecordingNotificationCenter(), new NullLogger());
 
         $handler(new SyncSeedMessage('animedb-shikimori'));
     }
@@ -121,7 +127,7 @@ final class SyncSeedMessageHandlerTest extends TestCase
         });
 
         [$syncRegistry, $pluginsConfigStore] = $this->newSyncRegistry(['animedb-shikimori' => $sync]);
-        $handler = new SyncSeedMessageHandler($syncRegistry, $this->newBackfillService(), $this->newSourceRemoval(), $this->newPullSyncService($syncRegistry), $pluginsConfigStore, $jobLockService, $this->pullGate($pluginsConfigStore), new NullLogger());
+        $handler = new SyncSeedMessageHandler($syncRegistry, $this->newBackfillService(), $this->newSourceRemoval(), $this->newPullSyncService($syncRegistry), $pluginsConfigStore, $jobLockService, $this->pullGate($pluginsConfigStore), new SyncReviewService(new SyncReviewItemRepository($this->entityManager)), new RecordingNotificationCenter(), new NullLogger());
 
         $handler(new SyncSeedMessage('animedb-shikimori'));
 
@@ -151,7 +157,7 @@ final class SyncSeedMessageHandlerTest extends TestCase
         $sync->expects($this->never())->method('pull');
 
         [$syncRegistry, $pluginsConfigStore] = $this->newSyncRegistry(['animedb-shikimori' => $sync]);
-        $handler = new SyncSeedMessageHandler($syncRegistry, $this->newBackfillService(), $this->newSourceRemoval(), $this->newPullSyncService($syncRegistry), $pluginsConfigStore, $jobLockService, $this->pullGate($pluginsConfigStore), new NullLogger());
+        $handler = new SyncSeedMessageHandler($syncRegistry, $this->newBackfillService(), $this->newSourceRemoval(), $this->newPullSyncService($syncRegistry), $pluginsConfigStore, $jobLockService, $this->pullGate($pluginsConfigStore), new SyncReviewService(new SyncReviewItemRepository($this->entityManager)), new RecordingNotificationCenter(), new NullLogger());
 
         $handler(new SyncSeedMessage('animedb-shikimori'));
     }
@@ -163,7 +169,7 @@ final class SyncSeedMessageHandlerTest extends TestCase
         $logger = $this->createMock(LoggerInterface::class);
         $logger->expects($this->once())->method('info');
 
-        $handler = new SyncSeedMessageHandler($syncRegistry, $this->newBackfillService(), $this->newSourceRemoval(), $this->newPullSyncService($syncRegistry), $pluginsConfigStore, $this->jobLockService(), $this->pullGate($pluginsConfigStore), $logger);
+        $handler = new SyncSeedMessageHandler($syncRegistry, $this->newBackfillService(), $this->newSourceRemoval(), $this->newPullSyncService($syncRegistry), $pluginsConfigStore, $this->jobLockService(), $this->pullGate($pluginsConfigStore), new SyncReviewService(new SyncReviewItemRepository($this->entityManager)), new RecordingNotificationCenter(), $logger);
 
         $handler(new SyncSeedMessage('animedb-shikimori'));
     }
@@ -180,7 +186,7 @@ final class SyncSeedMessageHandlerTest extends TestCase
         $sync->expects($this->once())->method('pull')->willThrowException(new ReauthRequiredException('Refresh token is dead.'));
 
         [$syncRegistry, $pluginsConfigStore] = $this->newSyncRegistry(['animedb-shikimori' => $sync], ['syncSeeded' => true]);
-        $handler = new SyncSeedMessageHandler($syncRegistry, $this->newBackfillService(), $this->newSourceRemoval(), $this->newPullSyncService($syncRegistry), $pluginsConfigStore, $this->jobLockService(), $this->pullGate($pluginsConfigStore), new NullLogger());
+        $handler = new SyncSeedMessageHandler($syncRegistry, $this->newBackfillService(), $this->newSourceRemoval(), $this->newPullSyncService($syncRegistry), $pluginsConfigStore, $this->jobLockService(), $this->pullGate($pluginsConfigStore), new SyncReviewService(new SyncReviewItemRepository($this->entityManager)), new RecordingNotificationCenter(), new NullLogger());
 
         $handler(new SyncSeedMessage('animedb-shikimori'));
 
@@ -307,7 +313,116 @@ final class SyncSeedMessageHandlerTest extends TestCase
         $this->assertFalse((new SyncTombstoneRepository($this->entityManager))->exists('animedb-shikimori', '99'));
     }
 
-    private function newHandler(SyncRegistry $syncRegistry, PluginsConfigStore $pluginsConfigStore, ?LoggerInterface $backfillLogger = null): SyncSeedMessageHandler
+    public function testSeedThatRaisesReviewItemsRecordsOneSyncReviewNotificationAfterTheirCommit(): void
+    {
+        $sync = $this->createMock(SyncInterface::class);
+        $sync->method('pull')->willReturnCallback(function (): array {
+            $this->addReviewItems(2);
+
+            return [];
+        });
+
+        $notifications = new RecordingNotificationCenter();
+        $notifications->onRecord = fn () => $this->assertSame(3, (new SyncReviewService(new SyncReviewItemRepository($this->entityManager)))->countUnresolved(), 'record() runs after the items are committed');
+        $this->addReviewItems(1);
+        [$syncRegistry, $pluginsConfigStore] = $this->newSyncRegistry(['animedb-shikimori' => $sync]);
+        $this->newHandler($syncRegistry, $pluginsConfigStore, null, $notifications)(new SyncSeedMessage('animedb-shikimori'));
+
+        $this->assertCount(1, $notifications->drafts);
+        $this->assertEquals(SyncReviewNotificationKind::draft(3), $notifications->drafts[0]);
+    }
+
+    public function testSeedThatRaisesNoReviewItemsRecordsNoNotification(): void
+    {
+        $sync = $this->createMock(SyncInterface::class);
+        $sync->method('pull')->willReturn([]);
+
+        $notifications = new RecordingNotificationCenter();
+        $this->addReviewItems(2);
+        [$syncRegistry, $pluginsConfigStore] = $this->newSyncRegistry(['animedb-shikimori' => $sync]);
+        $this->newHandler($syncRegistry, $pluginsConfigStore, null, $notifications)(new SyncSeedMessage('animedb-shikimori'));
+
+        $this->assertSame([], $notifications->drafts);
+    }
+
+    public function testSeedThatClosesAnItemWhileRaisingOneStillRecordsTheNotification(): void
+    {
+        $this->addReviewItems(1);
+        $sync = $this->createMock(SyncInterface::class);
+        $sync->method('pull')->willReturnCallback(function (): array {
+            $this->entityManager->createQuery('UPDATE '.SyncReviewItem::class.' item SET item.resolvedAt = :now')->setParameter('now', new \DateTimeImmutable())->execute();
+            $this->addReviewItems(1);
+
+            return [];
+        });
+
+        $notifications = new RecordingNotificationCenter();
+        [$syncRegistry, $pluginsConfigStore] = $this->newSyncRegistry(['animedb-shikimori' => $sync]);
+        $this->newHandler($syncRegistry, $pluginsConfigStore, null, $notifications)(new SyncSeedMessage('animedb-shikimori'));
+
+        $this->assertEquals([SyncReviewNotificationKind::draft(1)], $notifications->drafts);
+    }
+
+    public function testSeedThatThrowsAfterRaisingReviewItemsStillRecordsTheNotificationAndRethrows(): void
+    {
+        $sync = $this->createMock(SyncInterface::class);
+        $sync->method('pull')->willReturnCallback(function (): array {
+            $this->addReviewItems(2);
+
+            throw new \RuntimeException('network');
+        });
+
+        $notifications = new RecordingNotificationCenter();
+        [$syncRegistry, $pluginsConfigStore] = $this->newSyncRegistry(['animedb-shikimori' => $sync]);
+
+        try {
+            $this->newHandler($syncRegistry, $pluginsConfigStore, null, $notifications)(new SyncSeedMessage('animedb-shikimori'));
+            $this->fail('The exception must propagate.');
+        } catch (\RuntimeException $e) {
+            $this->assertSame('network', $e->getMessage());
+        }
+
+        $this->assertEquals([SyncReviewNotificationKind::draft(2)], $notifications->drafts);
+    }
+
+    public function testAFailingWatermarkDoesNotCancelTheSeed(): void
+    {
+        $this->entityManager->getConnection()->executeStatement('DROP TABLE '.$this->entityManager->getClassMetadata(SyncReviewItem::class)->getTableName());
+        $sync = $this->createMock(SyncInterface::class);
+        $sync->expects($this->once())->method('pull')->willReturn([]);
+
+        $notifications = new RecordingNotificationCenter();
+        [$syncRegistry, $pluginsConfigStore] = $this->newSyncRegistry(['animedb-shikimori' => $sync]);
+        $this->newHandler($syncRegistry, $pluginsConfigStore, null, $notifications)(new SyncSeedMessage('animedb-shikimori'));
+
+        $this->assertSame([], $notifications->drafts);
+        $this->assertArrayHasKey('syncLastPullAt', $pluginsConfigStore->getPluginSettings(new PluginId('animedb-shikimori')));
+    }
+
+    public function testAFailingNotificationAfterASuccessfulSeedDoesNotFailTheMessage(): void
+    {
+        $sync = $this->createMock(SyncInterface::class);
+        $sync->method('pull')->willReturnCallback(function (): array {
+            $this->addReviewItems(1);
+
+            return [];
+        });
+
+        [$syncRegistry, $pluginsConfigStore] = $this->newSyncRegistry(['animedb-shikimori' => $sync]);
+        $this->newHandler($syncRegistry, $pluginsConfigStore, null, new RecordingNotificationCenter(true))(new SyncSeedMessage('animedb-shikimori'));
+
+        $this->assertArrayHasKey('syncLastPullAt', $pluginsConfigStore->getPluginSettings(new PluginId('animedb-shikimori')));
+    }
+
+    private function addReviewItems(int $count): void
+    {
+        for ($i = 0; $i < $count; ++$i) {
+            $this->entityManager->persist(new SyncReviewItem(SyncReviewItemKind::PotentialDuplicate, ['anime_ids' => [1, 2]]));
+        }
+        $this->entityManager->flush();
+    }
+
+    private function newHandler(SyncRegistry $syncRegistry, PluginsConfigStore $pluginsConfigStore, ?LoggerInterface $backfillLogger = null, ?RecordingNotificationCenter $notifications = null): SyncSeedMessageHandler
     {
         return new SyncSeedMessageHandler(
             $syncRegistry,
@@ -317,6 +432,8 @@ final class SyncSeedMessageHandlerTest extends TestCase
             $pluginsConfigStore,
             $this->jobLockService(),
             $this->pullGate($pluginsConfigStore),
+            new SyncReviewService(new SyncReviewItemRepository($this->entityManager)),
+            $notifications ?? new RecordingNotificationCenter(),
             new NullLogger(),
         );
     }
