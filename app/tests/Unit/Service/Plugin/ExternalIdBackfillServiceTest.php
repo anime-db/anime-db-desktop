@@ -34,10 +34,12 @@ use App\Entity\Anime;
 use App\Entity\Enum\WatchStatus;
 use App\Entity\MovieAnime;
 use App\Entity\ValueObject\PluginId;
+use App\Message\ExternalIdConflictMessage;
 use App\Repository\AnimeRepository;
 use App\Service\JobLock\JobLockService;
 use App\Service\JobLock\ProcessLivenessChecker;
 use App\Service\Plugin\ExternalIdBackfillService;
+use App\Tests\Support\RecordingSaturationBus;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Types\Type;
@@ -48,6 +50,7 @@ use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Symfony\Component\Clock\MockClock;
+use Symfony\Component\Messenger\Stamp\DispatchAfterCurrentBusStamp;
 
 /**
  * Exercises ExternalIdBackfillService end to end: a real EntityManager/SQLite
@@ -241,13 +244,40 @@ final class ExternalIdBackfillServiceTest extends TestCase
         return $this->entityManager->find(Anime::class, $id) ?? throw new \LogicException(\sprintf('Anime #%d must exist.', $id));
     }
 
-    private function newService(?ProcessLivenessChecker $livenessChecker = null, ?LoggerInterface $logger = null): ExternalIdBackfillService
+    public function testDispatchesConflictMessageWithTheOwnerWhenIdIsHeldByAnotherRecord(): void
+    {
+        $owner = new MovieAnime();
+        $owner->setTitle('Owner')->setWatchStatus(WatchStatus::Watching)->addSource('https://shikimori.one/animes/1');
+        $owner->rememberExternalId(new PluginId(self::PLUGIN_ID), '1');
+        $other = new MovieAnime();
+        $other->setTitle('Other')->setWatchStatus(WatchStatus::Watching)->addSource('https://shikimori.one/animes/1');
+        $this->entityManager->persist($owner);
+        $this->entityManager->persist($other);
+        $this->entityManager->flush();
+        $ownerId = $this->requireId($owner);
+        $otherId = $this->requireId($other);
+
+        $sync = $this->createStub(SyncInterface::class);
+        $sync->method('resolveExternalId')->willReturn('1');
+        $bus = new RecordingSaturationBus();
+
+        $this->newService(null, null, $bus)->backfill(new PluginId(self::PLUGIN_ID), $sync);
+
+        $this->assertCount(1, $bus->dispatched);
+        [$message, $stamps] = $bus->dispatched[0];
+        $this->assertEquals(new ExternalIdConflictMessage(self::PLUGIN_ID, '1', $ownerId, $otherId), $message);
+        $this->assertInstanceOf(DispatchAfterCurrentBusStamp::class, $stamps[0]);
+        $this->assertNull($this->requireAnime($otherId)->getCachedExternalId(new PluginId(self::PLUGIN_ID)));
+    }
+
+    private function newService(?ProcessLivenessChecker $livenessChecker = null, ?LoggerInterface $logger = null, ?RecordingSaturationBus $bus = null): ExternalIdBackfillService
     {
         return new ExternalIdBackfillService(
             $this->entityManager,
             new AnimeRepository($this->entityManager),
             $this->newJobLockService($livenessChecker),
             $logger ?? new NullLogger(),
+            $bus,
         );
     }
 

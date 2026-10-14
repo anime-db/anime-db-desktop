@@ -30,10 +30,13 @@ namespace App\Service\Plugin;
 use AnimeDb\PluginContracts\Sync\SyncInterface;
 use App\Entity\AnimeSource;
 use App\Entity\ValueObject\PluginId;
+use App\Message\ExternalIdConflictMessage;
 use App\Repository\AnimeRepository;
 use App\Service\JobLock\JobLockService;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Log\LoggerInterface;
+use Symfony\Component\Messenger\MessageBusInterface;
+use Symfony\Component\Messenger\Stamp\DispatchAfterCurrentBusStamp;
 
 /**
  * Catalog sweep (issue #258) that resolves and caches a sync plugin's external id for every Anime that already carries a matching source URL, via
@@ -73,6 +76,7 @@ final class ExternalIdBackfillService
         private readonly AnimeRepository $animeRepository,
         private readonly JobLockService $jobLockService,
         private readonly LoggerInterface $logger,
+        private readonly ?MessageBusInterface $messageBus = null,
     ) {
     }
 
@@ -95,7 +99,7 @@ final class ExternalIdBackfillService
             // (plugin_id, external_id) is UNIQUE: a record whose resolved id is already held by
             // another one must be skipped, not flushed — a constraint violation would close the
             // EntityManager and take the whole seed down with it.
-            $taken = $this->animeRepository->findCachedExternalIds($pluginId);
+            $taken = $this->animeRepository->findCachedExternalOwners($pluginId);
 
             $processed = 0;
             $set = 0;
@@ -138,13 +142,19 @@ final class ExternalIdBackfillService
                             'anime_id' => $anime->id,
                             'external_id' => $externalId,
                         ]);
+                        if ($anime->id !== null && $taken[$externalId] > 0 && $taken[$externalId] !== $anime->id) {
+                            $this->messageBus?->dispatch(
+                                new ExternalIdConflictMessage((string) $pluginId, $externalId, $taken[$externalId], $anime->id),
+                                [new DispatchAfterCurrentBusStamp()],
+                            );
+                        }
                         ++$skipped;
 
                         continue;
                     }
 
                     $anime->rememberExternalId($pluginId, $externalId);
-                    $taken[$externalId] = true;
+                    $taken[$externalId] = $anime->id ?? 0;
                     ++$set;
                 }
 

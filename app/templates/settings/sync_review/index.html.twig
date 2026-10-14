@@ -51,6 +51,16 @@
                                     <li><a href="{{ path('anime_show', {id: anime.id}) }}"><bdi>{{ anime.title }}</bdi></a></li>
                                 {% endfor %}
                             </ul>
+                            {% if duplicateConflicts[item.id] is defined %}
+                                <ul class="small mt-2 mb-1">
+                                    {% for conflict in duplicateConflicts[item.id] %}
+                                        {% if conflict.owner is not null and conflict.other is not null %}
+                                            <li>{{ 'settings_sync_review.id_conflict'|trans({'%source%': bidi_isolate(plugin_name(conflict.pluginId)), '%owner%': bidi_isolate(conflict.owner.title), '%other%': bidi_isolate(conflict.other.title)}) }}</li>
+                                        {% endif %}
+                                    {% endfor %}
+                                </ul>
+                                <p class="small text-body-secondary mb-0">{{ 'settings_sync_review.id_conflict_hint'|trans }}</p>
+                            {% endif %}
                         {% elseif deletionDetails[item.id] is defined %}
                             {% set detail = deletionDetails[item.id] %}
                             {% if item.kind.value == 'deletion_conflict' %}

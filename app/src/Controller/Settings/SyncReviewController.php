@@ -111,6 +111,7 @@ final class SyncReviewController
         return new Response($this->twig->render('settings/sync_review/index.html.twig', [
             'items' => $items,
             'duplicateClusters' => $this->duplicateClusters($items),
+            'duplicateConflicts' => $this->duplicateConflicts($items),
             'deletionDetails' => $this->deletionDetails($items),
             'needsCorrectionDetails' => $this->needsCorrectionDetails($items),
             'typeMismatchDetails' => $this->typeMismatchDetails($items),
@@ -283,6 +284,41 @@ final class SyncReviewController
         }
 
         return $clusters;
+    }
+
+    /**
+     * The external id conflicts of each PotentialDuplicate item, ready for display.
+     *
+     * @param SyncReviewItem[] $items
+     *
+     * @return array<int, list<array{pluginId: string, owner: ?Anime, other: ?Anime}>>
+     */
+    private function duplicateConflicts(array $items): array
+    {
+        $result = [];
+        foreach ($items as $item) {
+            /** @var list<array{plugin_id: string, external_id: string, owner_id: int, anime_id?: int}> $conflicts */
+            $conflicts = $item->payload['conflicts'] ?? [];
+            if ($conflicts === []) {
+                continue;
+            }
+
+            $id = $item->id ?? throw new \LogicException('SyncReviewItem id must be set after persisting');
+            /** @var list<int> $animeIds */
+            $animeIds = $item->payload['anime_ids'] ?? [];
+            $animeById = $this->animeRepository->findByIds($animeIds);
+            foreach ($conflicts as $conflict) {
+                // Conflicts stored before anime_id was recorded fall back to the first non-owner record.
+                $otherId = $conflict['anime_id'] ?? current(array_filter($animeIds, static fn (int $animeId): bool => $animeId !== $conflict['owner_id']));
+                $result[$id][] = [
+                    'pluginId' => $conflict['plugin_id'],
+                    'owner' => $animeById[$conflict['owner_id']] ?? null,
+                    'other' => $otherId !== false ? ($animeById[$otherId] ?? null) : null,
+                ];
+            }
+        }
+
+        return $result;
     }
 
     /**

@@ -218,6 +218,8 @@ settings_sync_review:
     correct_button: Поправить
     keep_button: Оставить в каталоге
     not_duplicate_button: Это не дубликат
+    id_conflict: '«%source%»: id закреплён за «%owner%», у «%other%» синхронизации и заполнения из этого источника нет'
+    id_conflict_hint: 'Кнопка «Это не дубликат» скроет пункт; синхронизация второй записи с этими источниками не появится'
     kind_type_mismatch: 'Источник «%source%» указывает другой тип: %source_type%'
     type_mismatch_current: 'Текущий тип: %type%'
     accept_type_button: "Принять тип источника"

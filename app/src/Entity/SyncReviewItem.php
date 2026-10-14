@@ -75,6 +75,35 @@ class SyncReviewItem
         $this->resolvedAt = new \DateTimeImmutable();
     }
 
+    /** Whether a PotentialDuplicate item stems from external id conflicts rather than matching names. */
+    public function hasConflicts(): bool
+    {
+        return ($this->payload['conflicts'] ?? []) !== [];
+    }
+
+    /**
+     * Appends an external id conflict, unless one with the same (plugin_id, external_id) is there.
+     *
+     * @param array{plugin_id: string, external_id: string, owner_id: int, anime_id?: int} $conflict
+     *
+     * @return bool whether the payload changed
+     */
+    public function addConflict(array $conflict): bool
+    {
+        /** @var list<array{plugin_id: string, external_id: string, owner_id: int, anime_id?: int}> $conflicts */
+        $conflicts = $this->payload['conflicts'] ?? [];
+        foreach ($conflicts as $known) {
+            if ($known['plugin_id'] === $conflict['plugin_id'] && $known['external_id'] === $conflict['external_id']) {
+                return false;
+            }
+        }
+
+        $conflicts[] = $conflict;
+        $this->payload = ['conflicts' => $conflicts] + $this->payload;
+
+        return true;
+    }
+
     /**
      * Reacts to the catalog entry $animeId having been deleted (issue #916). The references live
      * in a JSON payload without a foreign key, so nothing else would tidy them up. An item about

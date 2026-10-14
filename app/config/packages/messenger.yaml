@@ -109,6 +109,7 @@ framework:
             'App\Message\IndexAnimeMessage': async
             'App\Message\DeleteFromIndexMessage': async
             'App\Message\PushSyncMessage': async
+            'App\Message\ExternalIdConflictMessage': async
             'App\Message\RemoveFromSourceMessage': async
             'App\Message\SyncSeedMessage': sync
             'App\Message\SyncPullMessage': sync
