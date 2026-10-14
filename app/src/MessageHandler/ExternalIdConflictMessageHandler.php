@@ -62,7 +62,7 @@ final class ExternalIdConflictMessageHandler
             return;
         }
 
-        $conflict = ['plugin_id' => $message->pluginId, 'external_id' => $message->externalId, 'owner_id' => $message->ownerId];
+        $conflict = ['plugin_id' => $message->pluginId, 'external_id' => $message->externalId, 'owner_id' => $message->ownerId, 'anime_id' => $message->animeId];
         $suppressed = false;
 
         foreach ($this->reviewService->findAllByKind(SyncReviewItemKind::PotentialDuplicate) as $item) {

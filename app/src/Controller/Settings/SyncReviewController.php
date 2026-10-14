@@ -297,7 +297,7 @@ final class SyncReviewController
     {
         $result = [];
         foreach ($items as $item) {
-            /** @var list<array{plugin_id: string, external_id: string, owner_id: int}> $conflicts */
+            /** @var list<array{plugin_id: string, external_id: string, owner_id: int, anime_id?: int}> $conflicts */
             $conflicts = $item->payload['conflicts'] ?? [];
             if ($conflicts === []) {
                 continue;
@@ -308,7 +308,8 @@ final class SyncReviewController
             $animeIds = $item->payload['anime_ids'] ?? [];
             $animeById = $this->animeRepository->findByIds($animeIds);
             foreach ($conflicts as $conflict) {
-                $otherId = current(array_filter($animeIds, static fn (int $animeId): bool => $animeId !== $conflict['owner_id']));
+                // Conflicts stored before anime_id was recorded fall back to the first non-owner record.
+                $otherId = $conflict['anime_id'] ?? current(array_filter($animeIds, static fn (int $animeId): bool => $animeId !== $conflict['owner_id']));
                 $result[$id][] = [
                     'pluginId' => $conflict['plugin_id'],
                     'owner' => $animeById[$conflict['owner_id']] ?? null,

@@ -250,6 +250,38 @@ final class SyncReviewControllerTest extends TestCase
         $this->assertSame(200, $response->getStatusCode());
     }
 
+    public function testIndexPassesConflictPartnerFromThePayloadNotTheFirstNonOwner(): void
+    {
+        $item = new SyncReviewItem(SyncReviewItemKind::PotentialDuplicate, [
+            'anime_ids' => [1, 2, 3],
+            'conflicts' => [['plugin_id' => 'aa-one', 'external_id' => 'X', 'owner_id' => 1, 'anime_id' => 3]],
+        ]);
+        (new \ReflectionProperty(SyncReviewItem::class, 'id'))->setValue($item, 10);
+
+        $animes = [];
+        foreach ([1 => 'First', 2 => 'Second', 3 => 'Third'] as $id => $title) {
+            $animes[$id] = new TvAnime();
+            $animes[$id]->setTitle($title);
+            (new \ReflectionProperty(Anime::class, 'id'))->setValue($animes[$id], $id);
+        }
+
+        $syncReviewItemRepository = $this->createStub(SyncReviewItemRepository::class);
+        $syncReviewItemRepository->method('findAllUnresolvedOrderedByCreatedAt')->willReturn([$item]);
+        $animeRepository = $this->createStub(AnimeRepository::class);
+        $animeRepository->method('findByIds')->willReturn($animes);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('settings/sync_review/index.html.twig', $this->callback(
+                static fn (array $params): bool => [10 => [['pluginId' => 'aa-one', 'owner' => $animes[1], 'other' => $animes[3]]]] === $params['duplicateConflicts'],
+            ))
+            ->willReturn('<html></html>');
+
+        $controller = $this->createController(syncReviewItemRepository: $syncReviewItemRepository, animeRepository: $animeRepository, twig: $twig);
+        $controller->index();
+    }
+
     public function testIndexPassesDeletionDetailsToTemplate(): void
     {
         $item = new SyncReviewItem(SyncReviewItemKind::DeletionConflict, [

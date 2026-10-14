@@ -111,7 +111,7 @@ final class ExternalIdConflictMessageHandlerTest extends TestCase
         $items = $this->items();
         $this->assertCount(1, $items);
         $this->assertSame([$this->ownerId, (int) $high->id], $items[0]->payload['anime_ids']);
-        $this->assertSame([['plugin_id' => 'aa-three', 'external_id' => 'Z', 'owner_id' => (int) $high->id]], $items[0]->payload['conflicts']);
+        $this->assertSame([['plugin_id' => 'aa-three', 'external_id' => 'Z', 'owner_id' => (int) $high->id, 'anime_id' => $this->ownerId]], $items[0]->payload['conflicts']);
     }
 
     public function testRepeatedMessageIsIdempotentAndOtherPluginIsAppended(): void
@@ -128,14 +128,19 @@ final class ExternalIdConflictMessageHandlerTest extends TestCase
     public function testExtendsOpenItemRaisedByTitlesEvenForALargerCluster(): void
     {
         $third = $this->anime('Third');
-        $this->reviews->create(SyncReviewItemKind::PotentialDuplicate, ['anime_ids' => [$this->ownerId, $this->otherId, (int) $third->id]]);
+        $thirdId = (int) $third->id;
+        $this->reviews->create(SyncReviewItemKind::PotentialDuplicate, ['anime_ids' => [$this->ownerId, $this->otherId, $thirdId]]);
 
-        ($this->handler)($this->message());
+        // The conflicting record is the third one, not the first non-owner.
+        ($this->handler)(new ExternalIdConflictMessage('aa-one', 'X', $this->ownerId, $thirdId));
 
         $items = $this->items();
         $this->assertCount(1, $items);
-        $this->assertCount(1, $items[0]->payload['conflicts']);
-        $this->assertCount(3, $items[0]->payload['anime_ids']);
+        $this->assertSame(
+            [['plugin_id' => 'aa-one', 'external_id' => 'X', 'owner_id' => $this->ownerId, 'anime_id' => $thirdId]],
+            $items[0]->payload['conflicts'],
+        );
+        $this->assertSame([$this->ownerId, $this->otherId, $thirdId], $items[0]->payload['anime_ids']);
     }
 
     public function testClosedItemWithConflictsSuppressesThePairForAllPlugins(): void
