@@ -51,6 +51,11 @@ final class SyncReviewService
         return $item;
     }
 
+    public function save(SyncReviewItem $item): void
+    {
+        $this->repository->save($item);
+    }
+
     /** @return SyncReviewItem[] */
     public function findUnresolved(): array
     {

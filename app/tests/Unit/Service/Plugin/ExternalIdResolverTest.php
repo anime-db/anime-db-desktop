@@ -35,8 +35,10 @@ use App\Entity\AnimeExternalId;
 use App\Entity\Enum\WatchStatus;
 use App\Entity\TvAnime;
 use App\Entity\ValueObject\PluginId;
+use App\Message\ExternalIdConflictMessage;
 use App\Repository\AnimeRepository;
 use App\Service\Plugin\ExternalIdResolver;
+use App\Tests\Support\RecordingSaturationBus;
 use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Types\Type;
@@ -45,6 +47,8 @@ use Doctrine\ORM\ORMSetup;
 use Doctrine\ORM\Tools\SchemaTool;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\AbstractLogger;
+use Psr\Log\NullLogger;
+use Symfony\Component\Messenger\Stamp\DispatchAfterCurrentBusStamp;
 use Symfony\Contracts\Service\ResetInterface;
 
 final class ExternalIdResolverTest extends TestCase
@@ -222,5 +226,44 @@ final class ExternalIdResolverTest extends TestCase
 
         $this->assertSame('X', $this->resolver()->claim($claimant, $this->pluginId, 'X', $other));
         $this->assertCount(0, $this->logs);
+    }
+
+    public function testResolveDispatchesConflictMessageAfterCurrentBus(): void
+    {
+        $owner = $this->anime('Owner', 'X');
+        $other = $this->anime('Other');
+        $bus = new RecordingSaturationBus();
+        $resolver = new ExternalIdResolver(new AnimeRepository($this->entityManager), new NullLogger(), $bus);
+
+        $this->assertNull($resolver->resolve($other, $this->pluginId, $this->plugin('X')));
+
+        $this->assertCount(1, $bus->dispatched);
+        [$message, $stamps] = $bus->dispatched[0];
+        $this->assertEquals(new ExternalIdConflictMessage('animedb-shikimori', 'X', (int) $owner->id, (int) $other->id), $message);
+        $this->assertInstanceOf(DispatchAfterCurrentBusStamp::class, $stamps[0]);
+        $this->assertNull($other->getCachedExternalId($this->pluginId));
+    }
+
+    public function testPublicClaimDoesNotDispatchConflictMessage(): void
+    {
+        $this->anime('Owner', 'X');
+        $other = $this->anime('Other');
+        $bus = new RecordingSaturationBus();
+        $resolver = new ExternalIdResolver(new AnimeRepository($this->entityManager), new NullLogger(), $bus);
+
+        $this->assertNull($resolver->claim($other, $this->pluginId, 'X'));
+        $this->assertSame([], $bus->dispatched);
+    }
+
+    public function testNoMessageWhenAnimeHasNoIdYet(): void
+    {
+        $this->anime('Owner', 'X');
+        $unsaved = new TvAnime();
+        $unsaved->setTitle('New')->setWatchStatus(WatchStatus::Plan);
+        $bus = new RecordingSaturationBus();
+        $resolver = new ExternalIdResolver(new AnimeRepository($this->entityManager), new NullLogger(), $bus);
+
+        $this->assertNull($resolver->resolve($unsaved, $this->pluginId, $this->plugin('X')));
+        $this->assertSame([], $bus->dispatched);
     }
 }

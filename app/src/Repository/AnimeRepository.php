@@ -634,6 +634,29 @@ class AnimeRepository
     }
 
     /**
+     * Like {@see self::findCachedExternalIds()}, but with the owning anime id.
+     *
+     * @return array<string, int> external id => anime id
+     */
+    public function findCachedExternalOwners(PluginId $pluginId): array
+    {
+        /** @var list<array{externalId: string, animeId: int|string}> $rows */
+        $rows = $this->entityManager->getRepository(AnimeExternalId::class)->createQueryBuilder('e')
+            ->select('e.externalId', 'IDENTITY(e.anime) AS animeId')
+            ->andWhere('e.pluginId = :pluginId')
+            ->setParameter('pluginId', (string) $pluginId)
+            ->getQuery()
+            ->getArrayResult();
+
+        $owners = [];
+        foreach ($rows as $row) {
+            $owners[(string) $row['externalId']] = (int) $row['animeId'];
+        }
+
+        return $owners;
+    }
+
+    /**
      * A single page of the whole catalog, ordered by id, with $sources eagerly joined — what
      * ExternalIdBackfillService (issue #258) walks page by page rather than loading the
      * whole catalog into memory at once, same LIMIT/OFFSET + Paginator pattern as

@@ -30,9 +30,12 @@ namespace App\Service\Plugin;
 use AnimeDb\PluginContracts\ExternalIdResolutionInterface;
 use App\Entity\Anime;
 use App\Entity\ValueObject\PluginId;
+use App\Message\ExternalIdConflictMessage;
 use App\Repository\AnimeRepository;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Log\LoggerInterface;
+use Symfony\Component\Messenger\MessageBusInterface;
+use Symfony\Component\Messenger\Stamp\DispatchAfterCurrentBusStamp;
 use Symfony\Contracts\Service\ResetInterface;
 
 /**
@@ -59,6 +62,7 @@ final class ExternalIdResolver implements ResetInterface
     public function __construct(
         private readonly AnimeRepository $animeRepository,
         private readonly LoggerInterface $logger,
+        private readonly ?MessageBusInterface $messageBus = null,
     ) {
         $this->pending = new \WeakMap();
         $this->defaultScope = new \stdClass();
@@ -89,7 +93,20 @@ final class ExternalIdResolver implements ResetInterface
             return null;
         }
 
-        return $this->claim($anime, $pluginId, $externalId, $entityManager);
+        $result = $this->tryClaim($anime, $pluginId, $externalId, $entityManager);
+        if ($result instanceof Anime) {
+            // Only an id recognised from the record's links is a signal; both records need ids to be referenced.
+            if ($result->id !== null && $anime->id !== null) {
+                $this->messageBus?->dispatch(
+                    new ExternalIdConflictMessage((string) $pluginId, $externalId, $result->id, $anime->id),
+                    [new DispatchAfterCurrentBusStamp()],
+                );
+            }
+
+            return null;
+        }
+
+        return $result;
     }
 
     /**
@@ -98,6 +115,14 @@ final class ExternalIdResolver implements ResetInterface
      * @return ?string $externalId, or null when it is pinned to another anime
      */
     public function claim(Anime $anime, PluginId $pluginId, string $externalId, ?EntityManagerInterface $entityManager = null): ?string
+    {
+        $result = $this->tryClaim($anime, $pluginId, $externalId, $entityManager);
+
+        return $result instanceof Anime ? null : $result;
+    }
+
+    /** @return string|Anime $externalId when cached, the owning anime when the id is pinned to it */
+    private function tryClaim(Anime $anime, PluginId $pluginId, string $externalId, ?EntityManagerInterface $entityManager): string|Anime
     {
         if ($anime->getCachedExternalId($pluginId) === $externalId) {
             return $externalId;
@@ -115,7 +140,7 @@ final class ExternalIdResolver implements ResetInterface
                 'ownerId' => $owner->id,
             ]);
 
-            return null;
+            return $owner;
         }
 
         $anime->rememberExternalId($pluginId, $externalId);
