@@ -472,6 +472,53 @@ final class AnimeSearchPluginsControllerTest extends TestCase
     }
 
     /**
+     * A plugin that throws from findById() is a failure, not "nothing found": the redirect carries
+     * `error=fill_failed`, the search screen shows `error_fill_failed` (not `error_fill_not_found`)
+     * and no saturation message is queued.
+     */
+    public function testFillExistingRedirectsWithFillFailedWhenThePluginThrowsAndQueuesNothing(): void
+    {
+        $this->writeManifest('animedb-shikimori', 'Shikimori');
+
+        $existing = new TvAnime();
+        $existing->setTitle('Trigun')->setWatchStatus(WatchStatus::Plan);
+        $this->entityManager->persist($existing);
+        $this->entityManager->flush();
+        $existingId = $existing->id ?? throw new \LogicException('must have id');
+
+        $filler = $this->createStub(FillerInterface::class);
+        $filler->method('getFillableFields')->willReturn(['title']);
+        $filler->method('findById')->willThrowException(new \RuntimeException('upstream is down'));
+
+        $bus = new \App\Tests\Support\RecordingSaturationBus();
+        $controller = $this->createController(['animedb-shikimori' => $filler], saturationQueue: $bus->queue());
+
+        $response = $controller->fillExisting($existingId, Request::create('/anime/search-plugins/fill-existing/'.$existingId, 'POST', [
+            'plugin_id' => 'animedb-shikimori',
+            'external_id' => '1',
+            'q' => 'Trigun',
+            '_token' => 'irrelevant',
+        ]));
+
+        $location = $response->headers->get('Location') ?? '';
+        $this->assertStringStartsWith('/anime_search_plugins?', $location);
+        $this->assertStringContainsString('error=fill_failed', $location);
+        $this->assertStringNotContainsString('fill_not_found', $location);
+        $this->assertSame([], $bus->saturations(), 'a failed fill must not queue saturation');
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('anime/search_plugins/index.html.twig', $this->callback(static function (array $params): bool {
+                self::assertSame('search_plugins.error_fill_failed', $params['error']['messageKey']);
+
+                return true;
+            }))
+            ->willReturn('<main></main>');
+        $this->createController([], $twig)->index(Request::create('/anime/search-plugins?error=fill_failed&q=Trigun'));
+    }
+
+    /**
      * Issue #848, point 3: when ($pluginId, $externalId) was claimed by a different Anime between
      * the preview and this click, {@see BulkFillerService::fillExistingFromPlugin()} throws
      * {@see ExternalIdAlreadyClaimedException} rather than returning a result. Before this issue

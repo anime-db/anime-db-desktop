@@ -51,6 +51,7 @@ use App\Service\Plugin\PluginsConfigStore;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\EntityManager;
+use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\ORMSetup;
 use Doctrine\ORM\Tools\SchemaTool;
 use PHPUnit\Framework\TestCase;
@@ -109,7 +110,7 @@ final class SaturateAnimeMessageHandlerTest extends TestCase
 
     private int $currentId = 0;
 
-    private function handler(): SaturateAnimeMessageHandler
+    private function handler(?EntityManagerInterface $handlerEntityManager = null): SaturateAnimeMessageHandler
     {
         $registry = new FillerRegistry(['animedb-shikimori' => $this->filler()], new PluginsConfigStore(sys_get_temp_dir().'/anime-saturate-handler-'.uniqid().'.json'));
         $repository = new AnimeRepository($this->entityManager);
@@ -135,7 +136,7 @@ final class SaturateAnimeMessageHandlerTest extends TestCase
             return new Envelope($message, $stamps);
         });
 
-        return new SaturateAnimeMessageHandler($saturation, new SaturationQueue($bus), $this->lock, $this->entityManager, new NullLogger());
+        return new SaturateAnimeMessageHandler($saturation, new SaturationQueue($bus), $this->lock, $handlerEntityManager ?? $this->entityManager, new NullLogger());
     }
 
     private function persistAnime(): int
@@ -199,6 +200,20 @@ final class SaturateAnimeMessageHandlerTest extends TestCase
         $this->assertSame([], $this->dispatched);
         $this->assertSame([], $this->fillerCalls);
         $this->assertFalse($this->lock->isLocked('saturate:999'));
+    }
+
+    public function testLockIsReleasedAndNothingIsThrownWhenTheRunThrows(): void
+    {
+        $id = $this->persistAnime();
+        $failing = $this->createStub(EntityManagerInterface::class);
+        $failing->method('isOpen')->willReturn(true);
+        $failing->method('find')->willThrowException(new \RuntimeException('database is gone'));
+
+        $this->handler($failing)(new SaturateAnimeMessage($id));
+
+        $this->assertSame([], $this->dispatched);
+        $this->assertSame([], $this->fillerCalls);
+        $this->assertFalse($this->lock->isLocked('saturate:'.$id), 'the lock is released in finally');
     }
 
     public function testClosedEntityManagerDropsTheMessageWithoutAnException(): void
