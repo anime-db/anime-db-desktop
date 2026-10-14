@@ -53,6 +53,14 @@
             {% if type_changes is not empty %}
                 <li><button type="button" class="dropdown-item" data-bs-toggle="modal" data-bs-target="#anime-type-modal-{{ anime.id }}">{{ 'anime_detail.menu_change_type'|trans }}</button></li>
             {% endif %}
+            {% if anime.can_saturate|default(false) %}
+                <li>
+                    <form method="post" action="{{ path('anime_saturate', {id: anime.id}) }}">
+                        <input type="hidden" name="_token" value="{{ csrf_token('anime_saturate_' ~ anime.id) }}">
+                        <button type="submit" class="dropdown-item">{{ 'anime_detail.menu_saturate'|trans }}</button>
+                    </form>
+                </li>
+            {% endif %}
             <li>
                 {% if delete_plan is not null and delete_plan.hasTargets %}
                     <button type="button" class="dropdown-item text-danger" data-bs-toggle="modal" data-bs-target="#anime-delete-modal-{{ anime.id }}">{{ 'anime_detail.menu_delete'|trans }}</button>

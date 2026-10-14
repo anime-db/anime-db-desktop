@@ -141,6 +141,7 @@ final class AnimeSearchPluginsControllerTest extends TestCase
         ?Environment $twig = null,
         ?UrlGeneratorInterface $urlGenerator = null,
         ?CsrfTokenManagerInterface $csrfTokenManager = null,
+        ?\App\Service\Plugin\Filler\SaturationQueue $saturationQueue = null,
     ): AnimeSearchPluginsController {
         $pluginsConfigStore = new PluginsConfigStore($this->pluginsConfigPath);
         $fillerRegistry = new FillerRegistry($fillers, $pluginsConfigStore);
@@ -185,6 +186,7 @@ final class AnimeSearchPluginsControllerTest extends TestCase
             $urlGenerator,
             $twig ?? $this->createStub(Environment::class),
             new NullLogger(),
+            $saturationQueue,
         );
     }
 
@@ -306,6 +308,52 @@ final class AnimeSearchPluginsControllerTest extends TestCase
         $this->assertNotNull($this->animeRepository->resolve(new \App\Entity\ValueObject\PluginId('animedb-shikimori'), '1'));
     }
 
+    public function testAddQueuesTheSaturationOfTheCreatedRecordOnlyOnce(): void
+    {
+        $this->writeManifest('animedb-shikimori', 'Shikimori');
+        $filler = $this->createStub(FillerInterface::class);
+        $filler->method('getFillableFields')->willReturn(['title']);
+        $filler->method('findById')->willReturn(new PluginAnimeData(title: 'Trigun'));
+        $bus = new \App\Tests\Support\RecordingSaturationBus();
+        $controller = $this->createController(['animedb-shikimori' => $filler], saturationQueue: $bus->queue());
+        $request = static fn (): Request => Request::create('/anime/search-plugins/add', 'POST', [
+            'plugin_id' => 'animedb-shikimori',
+            'external_id' => '1',
+            'name' => 'Trigun',
+            '_token' => 'irrelevant',
+        ]);
+
+        $controller->add($request());
+        $controller->add($request());
+
+        $created = $this->animeRepository->resolve(new \App\Entity\ValueObject\PluginId('animedb-shikimori'), '1');
+        $this->assertNotNull($created);
+        $this->assertSame([['id' => (int) $created->id, 'force' => false, 'transport' => 'saturation']], $bus->saturations(), 'the second add finds the record and queues nothing');
+    }
+
+    public function testFillExistingQueuesSaturationOnlyWhenItBroughtNewLinks(): void
+    {
+        $this->writeManifest('animedb-shikimori', 'Shikimori');
+        $existing = new TvAnime();
+        $existing->setTitle('Trigun')->setWatchStatus(WatchStatus::Plan);
+        $this->entityManager->persist($existing);
+        $this->entityManager->flush();
+        $existingId = $existing->id ?? throw new \LogicException('must have id');
+
+        $withLinks = $this->createStub(FillerInterface::class);
+        $withLinks->method('getFillableFields')->willReturn(['title', 'externalUrls']);
+        $withLinks->method('findById')->willReturn(new PluginAnimeData(title: 'Trigun', externalUrls: ['https://other.example/1']));
+        $bus = new \App\Tests\Support\RecordingSaturationBus();
+        $request = Request::create('/x', 'POST', ['plugin_id' => 'animedb-shikimori', 'external_id' => '1', '_token' => 'irrelevant']);
+
+        $this->createController(['animedb-shikimori' => $withLinks], saturationQueue: $bus->queue())->fillExisting($existingId, $request);
+        $this->assertSame([['id' => $existingId, 'force' => false, 'transport' => 'saturation']], $bus->saturations());
+
+        // Nothing new the second time: the link is already on the record.
+        $this->createController(['animedb-shikimori' => $withLinks], saturationQueue: $bus->queue())->fillExisting($existingId, $request);
+        $this->assertCount(1, $bus->saturations());
+    }
+
     public function testAddingTheSamePluginAndExternalIdTwiceDoesNotDuplicateAndRedirectsToTheSameAnime(): void
     {
         $this->writeManifest('animedb-shikimori', 'Shikimori');
@@ -421,6 +469,53 @@ final class AnimeSearchPluginsControllerTest extends TestCase
         $this->assertStringContainsString('error=fill_not_found', $location);
         $this->assertStringContainsString('q=Trigun', $location, 'the search query must survive the redirect back to the search screen');
         $this->assertNull($existing->getCachedExternalId(new \App\Entity\ValueObject\PluginId('animedb-shikimori')), 'a NotFound result must not link the external id');
+    }
+
+    /**
+     * A plugin that throws from findById() is a failure, not "nothing found": the redirect carries
+     * `error=fill_failed`, the search screen shows `error_fill_failed` (not `error_fill_not_found`)
+     * and no saturation message is queued.
+     */
+    public function testFillExistingRedirectsWithFillFailedWhenThePluginThrowsAndQueuesNothing(): void
+    {
+        $this->writeManifest('animedb-shikimori', 'Shikimori');
+
+        $existing = new TvAnime();
+        $existing->setTitle('Trigun')->setWatchStatus(WatchStatus::Plan);
+        $this->entityManager->persist($existing);
+        $this->entityManager->flush();
+        $existingId = $existing->id ?? throw new \LogicException('must have id');
+
+        $filler = $this->createStub(FillerInterface::class);
+        $filler->method('getFillableFields')->willReturn(['title']);
+        $filler->method('findById')->willThrowException(new \RuntimeException('upstream is down'));
+
+        $bus = new \App\Tests\Support\RecordingSaturationBus();
+        $controller = $this->createController(['animedb-shikimori' => $filler], saturationQueue: $bus->queue());
+
+        $response = $controller->fillExisting($existingId, Request::create('/anime/search-plugins/fill-existing/'.$existingId, 'POST', [
+            'plugin_id' => 'animedb-shikimori',
+            'external_id' => '1',
+            'q' => 'Trigun',
+            '_token' => 'irrelevant',
+        ]));
+
+        $location = $response->headers->get('Location') ?? '';
+        $this->assertStringStartsWith('/anime_search_plugins?', $location);
+        $this->assertStringContainsString('error=fill_failed', $location);
+        $this->assertStringNotContainsString('fill_not_found', $location);
+        $this->assertSame([], $bus->saturations(), 'a failed fill must not queue saturation');
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('anime/search_plugins/index.html.twig', $this->callback(static function (array $params): bool {
+                self::assertSame('search_plugins.error_fill_failed', $params['error']['messageKey']);
+
+                return true;
+            }))
+            ->willReturn('<main></main>');
+        $this->createController([], $twig)->index(Request::create('/anime/search-plugins?error=fill_failed&q=Trigun'));
     }
 
     /**

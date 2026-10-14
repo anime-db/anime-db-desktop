@@ -367,6 +367,95 @@ final class AnimeEditControllerTest extends TestCase
         $this->assertSame($keptId, $this->sourceId($anime, 'https://a.example/1'));
     }
 
+    public function testSourceAddedAfterTheFormWasOpenedSurvivesTheSaveAndARemovedOriginalIsDeleted(): void
+    {
+        $anime = $this->persistTv(static function (TvAnime $anime): void {
+            $anime->addSource('https://a.example/1');
+            $anime->addSource('https://b.example/2');
+            $anime->addSource('https://background.example/3'); // added after the form was rendered
+        });
+
+        $this->controller()->update($anime, $this->post([
+            'sources' => ['https://a.example/1'],
+            'sources_original_set' => '1',
+            'sources_original' => ['https://a.example/1', 'https://b.example/2'],
+        ]));
+
+        $urls = array_map(static fn ($s): string => $s->url, $this->reload($anime)->getSources()->toArray());
+        sort($urls);
+        $this->assertSame(['https://a.example/1', 'https://background.example/3'], $urls);
+    }
+
+    public function testFieldsFilledInTheBackgroundSurviveASaveThatLeftThemAsRendered(): void
+    {
+        $anime = $this->persistTv(static function (TvAnime $anime): void {
+            // Filled by saturation after the form was rendered with these fields empty.
+            $anime->setEpisodesCount(12);
+            $anime->setDurationMinutes(24);
+            $anime->setCountries(['JP']);
+            $anime->setDescription('en', 'Background text');
+            $anime->addGenre(GenreCode::from('adventure'));
+        });
+
+        $this->controller()->update($anime, $this->post([
+            'originals_set' => '1',
+            'originals' => ['episodes_count' => [''], 'duration_minutes' => [''], 'countries' => [''], 'demographic' => ['']],
+            'episodes_count' => '',
+            'duration_minutes' => '',
+            'countries' => '',
+        ]));
+
+        $anime = $this->reload($anime);
+        $this->assertInstanceOf(TvAnime::class, $anime);
+        $this->assertSame(12, $anime->getEpisodesCount());
+        $this->assertSame(24, $anime->getDurationMinutes());
+        $this->assertSame(['JP'], $anime->getCountries());
+        $this->assertSame(['en' => 'Background text'], $this->descriptions($anime));
+        $this->assertCount(1, $anime->getGenreCodes());
+    }
+
+    public function testAFieldTheUserClearedOrChangedIsStillApplied(): void
+    {
+        $anime = $this->persistTv(static function (TvAnime $anime): void {
+            $anime->setEpisodesCount(12);
+            $anime->setDurationMinutes(24);
+        });
+
+        $this->controller()->update($anime, $this->post([
+            'originals_set' => '1',
+            'originals' => ['episodes_count' => ['12'], 'duration_minutes' => ['24']],
+            'episodes_count' => '',
+            'duration_minutes' => '25',
+        ]));
+
+        $anime = $this->reload($anime);
+        $this->assertInstanceOf(TvAnime::class, $anime);
+        $this->assertNull($anime->getEpisodesCount());
+        $this->assertSame(25, $anime->getDurationMinutes());
+    }
+
+    public function testSavingWithANewLinkQueuesTheSaturationOfThatRecordOnlyIntoTheInteractiveQueue(): void
+    {
+        $anime = $this->persistTv();
+        $bus = new \App\Tests\Support\RecordingSaturationBus();
+
+        $this->controller($bus)->update($anime, $this->post(['sources' => ['https://a.example/1']]));
+
+        $this->assertSame([['id' => (int) $anime->id, 'force' => false, 'transport' => 'saturation']], $bus->saturations());
+    }
+
+    public function testSavingWithoutNewLinksQueuesNothing(): void
+    {
+        $anime = $this->persistTv(static function (TvAnime $anime): void {
+            $anime->addSource('https://a.example/1');
+        });
+        $bus = new \App\Tests\Support\RecordingSaturationBus();
+
+        $this->controller($bus)->update($anime, $this->post(['sources' => ['https://a.example/1']]));
+
+        $this->assertSame([], $bus->saturations());
+    }
+
     public function testIdnSourceIsSavedInAsciiFormAndNotDuplicated(): void
     {
         $anime = $this->persistTv();
@@ -812,7 +901,7 @@ final class AnimeEditControllerTest extends TestCase
         return $this->rendered ?? throw new \LogicException('The form was not rendered.');
     }
 
-    private function controller(): AnimeEditController
+    private function controller(?\App\Tests\Support\RecordingSaturationBus $bus = null): AnimeEditController
     {
         $csrf = $this->createStub(CsrfTokenManagerInterface::class);
         $csrf->method('isTokenValid')->willReturnCallback(
@@ -832,6 +921,6 @@ final class AnimeEditControllerTest extends TestCase
         $translator = $this->createStub(TranslatorInterface::class);
         $translator->method('trans')->willReturnArgument(0);
 
-        return new AnimeEditController($this->entityManager, $csrf, $urls, $twig, new StudioRepository($this->entityManager), new AnimeCoverStorage(new ImageNormalizer(), $this->mediaDir), $translator, 1048576);
+        return new AnimeEditController($this->entityManager, $csrf, $urls, $twig, new StudioRepository($this->entityManager), new AnimeCoverStorage(new ImageNormalizer(), $this->mediaDir), $translator, 1048576, $bus?->queue());
     }
 }

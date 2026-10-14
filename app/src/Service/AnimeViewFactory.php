@@ -37,6 +37,7 @@ use App\Entity\Label;
 use App\Entity\SeriesAnime;
 use App\Entity\Storage;
 use App\Entity\Studio;
+use App\Service\Plugin\Filler\SaturationAvailability;
 use Symfony\Component\HttpFoundation\RequestStack;
 
 /**
@@ -50,8 +51,10 @@ final class AnimeViewFactory
 {
     private const DEFAULT_LOCALE = 'en';
 
-    public function __construct(private readonly RequestStack $requestStack)
-    {
+    public function __construct(
+        private readonly RequestStack $requestStack,
+        private readonly ?SaturationAvailability $saturationAvailability = null,
+    ) {
     }
 
     /**
@@ -113,6 +116,7 @@ final class AnimeViewFactory
             'date_premiere' => $anime->getDatePremiere()?->format('Y-m-d'),
             'date_end' => $anime->getDateEnd()?->format('Y-m-d'),
             'type_changes' => $this->serializeTypeChanges($anime),
+            'can_saturate' => $this->saturationAvailability?->isAvailable($anime) ?? false,
             'studios' => array_map(static fn (Studio $studio): array => ['id' => $studio->id, 'name' => $studio->name], $anime->getStudios()->toArray()),
             'countries' => $anime->getCountries() ?? [],
             'storage' => $this->serializeStorage($anime->getStorage(), $anime->getStoragePath()),

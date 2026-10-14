@@ -41,6 +41,7 @@ use App\Entity\Studio;
 use App\Repository\StudioRepository;
 use App\Service\Media\AnimeCoverStorage;
 use App\Service\Media\CoverUploadException;
+use App\Service\Plugin\Filler\SaturationQueue;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\RedirectResponse;
@@ -83,6 +84,7 @@ final class AnimeEditController
         private readonly TranslatorInterface $translator,
         /** post_max_size in bytes; null reads it from php.ini (0 means unlimited) */
         private readonly ?int $postMaxBytes = null,
+        private readonly ?SaturationQueue $saturationQueue = null,
     ) {
     }
 
@@ -148,8 +150,13 @@ final class AnimeEditController
             $anime->setCover(null);
         }
 
-        $this->apply($anime, $form);
+        $sourcesAdded = $this->apply($anime, $form);
         $this->entityManager->flush();
+
+        // Links the user just added may name sources no plugin has filled the record from yet.
+        if ($sourcesAdded && $anime->id !== null) {
+            $this->saturationQueue?->enqueue($anime->id);
+        }
 
         // After the flush: only now the entry no longer points at the old file.
         if ($previousCover !== null && $previousCover !== $anime->getCover()) {
@@ -234,9 +241,57 @@ final class AnimeEditController
             'episodes_count' => $anime instanceof SeriesAnime ? (string) $anime->getEpisodesCount() : '',
             'countries' => implode(', ', $anime->getCountries() ?? []),
             'sources' => array_map(static fn (AnimeSource $source): string => $source->url, $anime->getSources()->toArray()),
+            'sources_original' => array_map(static fn (AnimeSource $source): string => $source->url, $anime->getSources()->toArray()),
             'notes' => $anime->getNotes() ?? '',
             'cover_remove' => false,
+            'originals' => $this->originals($anime),
         ];
+    }
+
+    /**
+     * The values of the fields background saturation may fill, as the form is rendered (issue
+     * #1049): a scalar as a one-element list, a collection as its keys. On save only a change
+     * against them counts — see {@see unchanged()} and {@see removable()}.
+     *
+     * @return array<string, list<string>>
+     */
+    private function originals(Anime $anime): array
+    {
+        return [
+            'genres' => array_map(static fn (GenreCode $code): string => $code->value, $anime->getGenreCodes()),
+            'themes' => array_map(static fn (ThemeCode $code): string => $code->value, $anime->getThemeCodes()),
+            'studios' => array_values(array_map(static fn (Studio $studio): string => (string) $studio->id, $anime->getStudios()->toArray())),
+            'descriptions' => array_values(array_map(static fn ($description): string => (string) $description->locale, $anime->getDescriptions()->toArray())),
+            'names' => array_values(array_map(fn (AnimeName $name): string => md5($this->nameKey($name->name, $name->locale, $name->role)), $anime->getNames()->toArray())),
+            'demographic' => [$anime->getDemographic()->value ?? ''],
+            'date_premiere' => [$anime->getDatePremiere()?->format('Y-m-d') ?? ''],
+            'date_end' => [$anime->getDateEnd()?->format('Y-m-d') ?? ''],
+            'duration_minutes' => [(string) $anime->getDurationMinutes()],
+            'episodes_count' => [$anime instanceof SeriesAnime ? (string) $anime->getEpisodesCount() : ''],
+            'countries' => [implode(', ', $anime->getCountries() ?? [])],
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $form
+     *
+     * @return bool whether a scalar field was left as rendered, so the value now on the record
+     *              (possibly filled in the background) must not be overwritten by the form's
+     */
+    private function unchanged(array $form, string $field): bool
+    {
+        return $form['originals'] !== null && ($form['originals'][$field] ?? null) === [$form[$field]];
+    }
+
+    /**
+     * @param array<string, mixed> $form
+     *
+     * @return bool whether an item of a collection may be removed: it was in the form as rendered
+     *              (or the request did not carry the originals); anything added since stays
+     */
+    private function removable(array $form, string $field, string $key): bool
+    {
+        return $form['originals'] === null || \in_array($key, $form['originals'][$field] ?? [], true);
     }
 
     /** @return array<string, mixed> */
@@ -274,9 +329,23 @@ final class AnimeEditController
             'episodes_count' => $anime instanceof SeriesAnime ? $this->text($request->request->get('episodes_count')) : '',
             'countries' => $this->text($request->request->get('countries')),
             'sources' => array_map(AnimeSource::normalizeUrl(...), $this->strings($request, 'sources')),
+            'sources_original' => $request->request->has('sources_original_set') ? array_map(AnimeSource::normalizeUrl(...), $this->strings($request, 'sources_original')) : null,
             'notes' => trim((string) $request->request->get('notes', '')),
             'cover_remove' => $request->request->getBoolean('cover_remove'),
+            'originals' => $request->request->has('originals_set') ? $this->originalsFromRequest($request) : null,
         ];
+    }
+
+    /** @return array<string, list<string>> */
+    private function originalsFromRequest(Request $request): array
+    {
+        $originals = [];
+        foreach (['genres', 'themes', 'studios', 'descriptions', 'names', 'demographic', 'date_premiere', 'date_end', 'duration_minutes', 'episodes_count', 'countries'] as $field) {
+            $values = $request->request->all('originals')[$field] ?? [];
+            $originals[$field] = \is_array($values) ? array_values(array_map(static fn (mixed $v): string => \is_scalar($v) ? trim((string) $v) : '', $values)) : [];
+        }
+
+        return $originals;
     }
 
     /**
@@ -389,16 +458,20 @@ final class AnimeEditController
         return $errors;
     }
 
-    /** @param array<string, mixed> $form already validated: nothing below throws on it */
-    private function apply(Anime $anime, array $form): void
+    /**
+     * @param array<string, mixed> $form already validated: nothing below throws on it
+     *
+     * @return bool whether at least one source was added
+     */
+    private function apply(Anime $anime, array $form): bool
     {
         $anime->setTitle($form['title']);
-        $this->applyNames($anime, $form['names']);
-        $this->applyDescriptions($anime, $form['descriptions']);
+        $this->applyNames($anime, $form['names'], $form);
+        $this->applyDescriptions($anime, $form['descriptions'], $form);
 
         $genres = array_map(GenreCode::from(...), $form['genres']);
         foreach ($anime->getGenreCodes() as $code) {
-            if (!\in_array($code, $genres, true)) {
+            if (!\in_array($code, $genres, true) && $this->removable($form, 'genres', $code->value)) {
                 $anime->removeGenre($code);
             }
         }
@@ -408,7 +481,7 @@ final class AnimeEditController
 
         $themes = array_map(ThemeCode::from(...), $form['themes']);
         foreach ($anime->getThemeCodes() as $code) {
-            if (!\in_array($code, $themes, true)) {
+            if (!\in_array($code, $themes, true) && $this->removable($form, 'themes', $code->value)) {
                 $anime->removeTheme($code);
             }
         }
@@ -416,28 +489,42 @@ final class AnimeEditController
             $anime->addTheme($code);
         }
 
-        $this->applyStudios($anime, $form['studios'], $form['new_studios']);
-        $anime->setDemographic($form['demographic'] === '' ? null : Demographic::from($form['demographic']));
+        $this->applyStudios($anime, $form['studios'], $form['new_studios'], $form);
+        if (!$this->unchanged($form, 'demographic')) {
+            $anime->setDemographic($form['demographic'] === '' ? null : Demographic::from($form['demographic']));
+        }
 
         $premiere = $this->parseDate($form['date_premiere']);
         $end = $this->parseDate($form['date_end']);
-        $anime->setDatePremiereAndEnd($premiere ?: null, $end ?: null);
+        $anime->setDatePremiereAndEnd(
+            $this->unchanged($form, 'date_premiere') ? $anime->getDatePremiere() : ($premiere ?: null),
+            $this->unchanged($form, 'date_end') ? $anime->getDateEnd() : ($end ?: null),
+        );
 
         // The domain rejects a zero duration, so "0" means "not set", like an empty field.
         $duration = (int) $form['duration_minutes'];
-        $anime->setDurationMinutes($duration > 0 ? $duration : null);
-        if ($anime instanceof SeriesAnime) {
+        if (!$this->unchanged($form, 'duration_minutes')) {
+            $anime->setDurationMinutes($duration > 0 ? $duration : null);
+        }
+        if ($anime instanceof SeriesAnime && !$this->unchanged($form, 'episodes_count')) {
             $anime->setEpisodesCount($form['episodes_count'] === '' ? null : (int) $form['episodes_count']);
         }
 
         $countries = $this->parseCountries($form['countries']);
-        $anime->setCountries($countries === [] ? null : $countries);
-        $this->applySources($anime, $form['sources']);
+        if (!$this->unchanged($form, 'countries')) {
+            $anime->setCountries($countries === [] ? null : $countries);
+        }
+        $sourcesAdded = $this->applySources($anime, $form['sources'], $form['sources_original']);
         $anime->setNotes($form['notes'] === '' ? null : $form['notes']);
+
+        return $sourcesAdded;
     }
 
-    /** @param list<array{name: string, locale: string, role: string}> $rows */
-    private function applyNames(Anime $anime, array $rows): void
+    /**
+     * @param list<array{name: string, locale: string, role: string}> $rows
+     * @param array<string, mixed>                                    $form
+     */
+    private function applyNames(Anime $anime, array $rows, array $form): void
     {
         $wanted = [];
         foreach ($rows as $row) {
@@ -454,7 +541,7 @@ final class AnimeEditController
             $key = $this->nameKey($existing->name, $existing->locale, $existing->role);
             if (isset($wanted[$key])) {
                 $kept[$key] = true;
-            } else {
+            } elseif ($this->removable($form, 'names', md5($key))) {
                 $anime->removeName($existing);
             }
         }
@@ -470,8 +557,11 @@ final class AnimeEditController
         return $name."\0".($locale ?? '')."\0".$role->value;
     }
 
-    /** @param list<array{locale: string, text: string}> $rows */
-    private function applyDescriptions(Anime $anime, array $rows): void
+    /**
+     * @param list<array{locale: string, text: string}> $rows
+     * @param array<string, mixed>                      $form
+     */
+    private function applyDescriptions(Anime $anime, array $rows, array $form): void
     {
         $wanted = [];
         foreach ($rows as $row) {
@@ -482,7 +572,7 @@ final class AnimeEditController
         }
 
         foreach ($anime->getDescriptions()->toArray() as $existing) {
-            if (!isset($wanted[$existing->locale])) {
+            if (!isset($wanted[$existing->locale]) && $this->removable($form, 'descriptions', (string) $existing->locale)) {
                 $anime->removeDescription($existing->locale);
             }
         }
@@ -492,10 +582,11 @@ final class AnimeEditController
     }
 
     /**
-     * @param list<string> $ids
-     * @param list<string> $newNames
+     * @param list<string>         $ids
+     * @param list<string>         $newNames
+     * @param array<string, mixed> $form
      */
-    private function applyStudios(Anime $anime, array $ids, array $newNames): void
+    private function applyStudios(Anime $anime, array $ids, array $newNames, array $form): void
     {
         $wanted = [];
         foreach ($ids as $id) {
@@ -516,7 +607,7 @@ final class AnimeEditController
         }
 
         foreach ($anime->getStudios()->toArray() as $studio) {
-            if (!isset($wanted[spl_object_id($studio)])) {
+            if (!isset($wanted[spl_object_id($studio)]) && $this->removable($form, 'studios', (string) $studio->id)) {
                 $anime->removeStudio($studio);
             }
         }
@@ -525,24 +616,40 @@ final class AnimeEditController
         }
     }
 
-    /** @param list<string> $urls */
-    private function applySources(Anime $anime, array $urls): void
+    /**
+     * Three-way merge of the links (issue #1049): the record may have gained links in the
+     * background since the form was opened, so only a link that was in the form as rendered
+     * ($original) and was removed by the user is deleted; any other link already on the record
+     * stays. A null $original (a request that did not carry the list) keeps the old behaviour:
+     * every link missing from $urls is removed.
+     *
+     * @param list<string>      $urls     the links as posted
+     * @param list<string>|null $original the links as the form was rendered
+     *
+     * @return bool whether at least one link was added
+     */
+    private function applySources(Anime $anime, array $urls, ?array $original): bool
     {
         $wanted = array_flip(array_filter($urls, static fn (string $url): bool => $url !== ''));
+        $originalSet = $original === null ? null : array_flip($original);
 
         $present = [];
         foreach ($anime->getSources()->toArray() as $source) {
             if (isset($wanted[$source->url])) {
                 $present[$source->url] = true;
-            } else {
+            } elseif ($originalSet === null || isset($originalSet[$source->url])) {
                 $anime->removeSource($source);
             }
         }
+        $added = false;
         foreach (array_keys($wanted) as $url) {
             if (!isset($present[$url])) {
                 $anime->addSource($url);
+                $added = true;
             }
         }
+
+        return $added;
     }
 
     private function findStudio(string $id): ?Studio

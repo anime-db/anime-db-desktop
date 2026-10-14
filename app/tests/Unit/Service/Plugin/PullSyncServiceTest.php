@@ -133,6 +133,7 @@ final class PullSyncServiceTest extends TestCase
         ?AnimeSyncStateRepository $stateRepository = null,
         ?LoggerInterface $logger = null,
         ?SyncReauthTracker $reauthTracker = null,
+        ?\App\Service\Plugin\Filler\SaturationQueue $saturationQueue = null,
     ): PullSyncService {
         $bulkFillerService = new BulkFillerService(
             // Never consulted by fillNewFrom() — it works off the sync plugin instance directly.
@@ -192,7 +193,7 @@ final class PullSyncServiceTest extends TestCase
             new \App\Service\Plugin\ExternalIdResolver(new AnimeRepository($this->entityManager), new NullLogger()),
         );
 
-        return new PullSyncService($entityManager, $animeRepository, $bulkFillerService, $duplicateDetector, $deletionDetector, new \App\Service\Sync\TypeMismatchDetector(new SyncReviewService(new SyncReviewItemRepository($entityManager))), $convergenceService, new SyncTombstoneRepository($entityManager), $logger ?? new NullLogger(), $reauthTracker ?? new \App\Tests\Support\NullSyncReauthTracker());
+        return new PullSyncService($entityManager, $animeRepository, $bulkFillerService, $duplicateDetector, $deletionDetector, new \App\Service\Sync\TypeMismatchDetector(new SyncReviewService(new SyncReviewItemRepository($entityManager))), $convergenceService, new SyncTombstoneRepository($entityManager), $logger ?? new NullLogger(), $reauthTracker ?? new \App\Tests\Support\NullSyncReauthTracker(), $saturationQueue);
     }
 
     /**
@@ -608,6 +609,29 @@ final class PullSyncServiceTest extends TestCase
         $this->assertSame('Trigun', $created[0]->getTitle());
         $this->assertSame(WatchStatus::Completed, $created[0]->getWatchStatus());
         $this->assertSame('42', $created[0]->getCachedExternalId($this->pluginId));
+    }
+
+    public function testANewlyCreatedAnimeIsQueuedForSaturationIntoTheBulkQueueButAnUpdatedOneIsNot(): void
+    {
+        $existing = new TvAnime();
+        $existing->setTitle('Cowboy Bebop')->setWatchStatus(WatchStatus::Plan);
+        $existing->rememberExternalId($this->pluginId, '1');
+        $this->entityManager->persist($existing);
+        $this->entityManager->flush();
+
+        $bus = new \App\Tests\Support\RecordingSaturationBus();
+        $service = $this->newService($this->entityManager, new AnimeRepository($this->entityManager), saturationQueue: $bus->queue());
+        $sync = $this->syncFillerStub(
+            [new SyncItem('1', SyncStatus::Watching, 'Cowboy Bebop', type: null), new SyncItem('42', SyncStatus::Completed, 'Trigun', type: null)],
+            data: new PluginAnimeData(title: 'Trigun', type: ContractsAnimeType::Tv),
+            fillableFields: ['title', 'type'],
+        );
+
+        $service->pull($this->pluginId, $sync);
+
+        $created = array_values(array_filter($this->allAnime(), static fn ($a): bool => $a->getTitle() === 'Trigun'));
+        $this->assertCount(1, $created);
+        $this->assertSame([['id' => $created[0]->id, 'force' => false, 'transport' => 'saturation_bulk']], $bus->saturations());
     }
 
     /**

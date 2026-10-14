@@ -62,10 +62,24 @@ class AnimeExternalId
     #[ORM\Column(name: 'external_id', length: 255)]
     public readonly string $externalId;
 
+    /** Set once the record has been filled from this plugin; null for ids seeded or resolved lazily. */
+    #[ORM\Column(name: 'filled_at', type: 'datetime_immutable', nullable: true)]
+    private ?\DateTimeImmutable $filledAt = null;
+
     public function __construct(Anime $anime, PluginId $pluginId, string $externalId)
     {
         $this->anime = $anime;
         $this->pluginId = (string) $pluginId;
         $this->externalId = $externalId;
+    }
+
+    public function getFilledAt(): ?\DateTimeImmutable
+    {
+        return $this->filledAt;
+    }
+
+    public function markFilled(?\DateTimeImmutable $at = null): void
+    {
+        $this->filledAt = $at ?? new \DateTimeImmutable();
     }
 }

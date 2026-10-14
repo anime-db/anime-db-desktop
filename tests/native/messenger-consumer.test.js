@@ -248,7 +248,7 @@ describe('start', () => {
         await start(7700, 'test-key');
 
         const args = spawn.mock.calls[0][1];
-        expect(args.slice(-6)).toEqual(['messenger:consume', 'async', 'media', 'scheduler_downloads_poll', 'scheduler_market_refresh', 'scheduler_sync_pull']);
+        expect(args.slice(-7)).toEqual(['messenger:consume', 'saturation', 'async', 'media', 'scheduler_downloads_poll', 'scheduler_market_refresh', 'scheduler_sync_pull']);
     });
 
     test('does not spawn messenger:consume when messenger:setup-transports rejects', async () => {

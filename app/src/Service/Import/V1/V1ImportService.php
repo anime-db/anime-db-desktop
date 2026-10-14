@@ -39,6 +39,7 @@ use App\Repository\SyncTombstoneRepository;
 use App\Service\Import\Exception\InvalidV1InstallationException;
 use App\Service\Media\AnimeCoverStorage;
 use App\Service\Media\ImageNormalizer;
+use App\Service\Plugin\Filler\SaturationQueue;
 use App\Service\Sync\SyncReviewService;
 use App\Service\WsPublisher;
 use Doctrine\ORM\EntityManagerInterface;
@@ -74,6 +75,7 @@ final class V1ImportService
         private readonly TranslatorInterface $translator,
         private readonly ImageNormalizer $imageNormalizer,
         private readonly AnimeCoverStorage $coverStorage,
+        private readonly ?SaturationQueue $saturationQueue = null,
     ) {
     }
 
@@ -92,9 +94,10 @@ final class V1ImportService
         $this->resolver->reset();
 
         $storedFor = [];
+        $importedIds = [];
         try {
-            return $this->entityManager->wrapInTransaction(function () use ($records, $installationDir, &$storedFor): V1ImportResult {
-                return $this->insert($records, rtrim($installationDir, '/\\'), $storedFor);
+            $result = $this->entityManager->wrapInTransaction(function () use ($records, $installationDir, &$storedFor, &$importedIds): V1ImportResult {
+                return $this->insert($records, rtrim($installationDir, '/\\'), $storedFor, $importedIds);
             });
         } catch (\Throwable $e) {
             foreach ($storedFor as $animeId) {
@@ -103,13 +106,21 @@ final class V1ImportService
 
             throw $e;
         }
+
+        // Only after the commit: a rolled-back import leaves nothing to saturate (issue #1049).
+        foreach ($importedIds as $animeId) {
+            $this->saturationQueue?->enqueue($animeId, bulk: true);
+        }
+
+        return $result;
     }
 
     /**
      * @param list<V1AnimeRecord> $records
-     * @param list<int>           $storedFor ids of the entries whose cover directory this run may have created
+     * @param list<int>           $storedFor   ids of the entries whose cover directory this run may have created
+     * @param list<int>           $importedIds filled with the ids of the imported records
      */
-    private function insert(array $records, string $installationDir, array &$storedFor): V1ImportResult
+    private function insert(array $records, string $installationDir, array &$storedFor, array &$importedIds): V1ImportResult
     {
         // Both tables outlive an emptied catalog and hold nothing the import could merge with.
         // Cleared before the records go in, so the review items raised below are not swept away.
@@ -136,6 +147,12 @@ final class V1ImportService
         }
 
         $this->entityManager->flush();
+
+        foreach ($created as [$anime]) {
+            if ($anime->id !== null) {
+                $importedIds[] = $anime->id;
+            }
+        }
 
         [$coversImported, $coversMissing] = $this->importCovers($created, $installationDir, $storedFor);
 

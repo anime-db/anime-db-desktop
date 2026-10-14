@@ -229,6 +229,9 @@ final class BulkFillerService
      * message, same as {@see build()}, rather than downloading however many screenshots the
      * plugin returns synchronously in this request.
      *
+     * @return FillResult Failed when the plugin threw: filled_at is left untouched then, every
+     *                    other outcome sets it (NotFound only when a row for $pluginId exists)
+     *
      * @throws ExternalIdAlreadyClaimedException                when ($pluginId, $externalId)
      *                                                          already belongs to a *different*
      *                                                          Anime — the caller is expected to
@@ -256,14 +259,31 @@ final class BulkFillerService
             throw new AnimeAlreadyLinkedToDifferentExternalIdException($pluginId, $cachedExternalId, $externalId, $anime->id ?? 0);
         }
 
-        $data = $this->safeFindById($filler, $pluginId, $externalId);
+        try {
+            $data = $this->lookup->findById($filler, $pluginId, $externalId);
+        } catch (\Throwable $e) {
+            $this->logger->warning('Plugin findById() failed while filling an existing record.', [
+                'pluginId' => (string) $pluginId,
+                'exception' => $e,
+            ]);
+
+            return FillResult::Failed;
+        }
+
         if ($data === null) {
+            // The source's final answer: remembered so that a saturation run does not ask again.
+            if ($cachedExternalId !== null) {
+                $anime->markExternalIdFilled($pluginId);
+                $this->entityManager->flush();
+            }
+
             return FillResult::NotFound;
         }
 
         if ($cachedExternalId === null) {
             $anime->rememberExternalId($pluginId, $externalId);
         }
+        $anime->markExternalIdFilled($pluginId);
 
         $fields = $this->emptyFillableFields($anime, $filler);
         $this->applyMissingLocaleDescriptions($anime, $data, $fields);
@@ -323,7 +343,7 @@ final class BulkFillerService
         $anime = $this->instantiate($data->type);
         $anime->setTitle($data->title)->setWatchStatus(WatchStatus::Plan);
 
-        $this->persistAndLinkExternalId($anime, $pluginId, $externalId);
+        $this->persistAndLinkExternalId($anime, $pluginId, $externalId, filled: true);
 
         // title/type are already applied above. cover/images are excluded from merger->apply()
         // (and queued instead) unless $downloadCoverSynchronously asked for cover to be fetched
@@ -343,7 +363,7 @@ final class BulkFillerService
         $anime = new TvAnime();
         $anime->setTitle($name)->setWatchStatus(WatchStatus::Plan);
 
-        $this->persistAndLinkExternalId($anime, $pluginId, $externalId);
+        $this->persistAndLinkExternalId($anime, $pluginId, $externalId, filled: false);
 
         return $anime;
     }
@@ -361,18 +381,21 @@ final class BulkFillerService
      * around the ORM for this one conflict-prone write keeps the EntityManager open and usable
      * no matter which side of the race this call lands on.
      *
+     * @param bool $filled whether the record is being filled from the plugin (sets filled_at)
+     *
      * @throws ExternalIdAlreadyClaimedException when a concurrent create flow already claimed
      *                                           ($pluginId, $externalId)
      */
-    private function persistAndLinkExternalId(Anime $anime, PluginId $pluginId, string $externalId): void
+    private function persistAndLinkExternalId(Anime $anime, PluginId $pluginId, string $externalId, bool $filled): void
     {
         $this->entityManager->persist($anime);
         $this->entityManager->flush();
 
         $connection = $this->entityManager->getConnection();
+        $filledAt = $filled ? new \DateTimeImmutable() : null;
         $inserted = $connection->executeStatement(
-            'INSERT INTO anime_external_id (anime_id, plugin_id, external_id) VALUES (?, ?, ?) ON CONFLICT (plugin_id, external_id) DO NOTHING',
-            [$anime->id, (string) $pluginId, $externalId],
+            'INSERT INTO anime_external_id (anime_id, plugin_id, external_id, filled_at) VALUES (?, ?, ?, ?) ON CONFLICT (plugin_id, external_id) DO NOTHING',
+            [$anime->id, (string) $pluginId, $externalId, $filledAt?->format('Y-m-d H:i:s')],
         );
 
         if ($inserted === 0) {
@@ -397,6 +420,9 @@ final class BulkFillerService
         // on the very next flush() — which would also fail the UNIQUE constraint, this time with
         // nothing left to recover from.
         $entry = new AnimeExternalId($anime, $pluginId, $externalId);
+        if ($filledAt !== null) {
+            $entry->markFilled($filledAt);
+        }
         $this->entityManager->getUnitOfWork()->registerManaged(
             $entry,
             // The identifier array becomes a raw identity-map hash key (Doctrine joins it with a
@@ -405,7 +431,7 @@ final class BulkFillerService
             // below, whose 'anime' value is compared against the entity's actual property value
             // on the next flush() and must therefore be the same object reference.
             ['anime' => $anime->id, 'pluginId' => (string) $pluginId],
-            ['anime' => $anime, 'pluginId' => (string) $pluginId, 'externalId' => $externalId],
+            ['anime' => $anime, 'pluginId' => (string) $pluginId, 'externalId' => $externalId, 'filledAt' => $filledAt],
         );
         $anime->attachPersistedExternalId($entry);
     }

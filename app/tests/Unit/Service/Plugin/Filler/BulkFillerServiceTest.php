@@ -507,6 +507,96 @@ final class BulkFillerServiceTest extends TestCase
         $this->assertSame('Bleach.mkv', $reloaded->getStoragePath());
     }
 
+    private function persistedAnime(): TvAnime
+    {
+        $anime = new TvAnime();
+        $anime->setTitle('Bleach')->setWatchStatus(WatchStatus::Plan);
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+
+        return $anime;
+    }
+
+    public function testFillExistingFromPluginMarksTheRowFilled(): void
+    {
+        $pluginId = new PluginId('animedb-shikimori');
+        $filler = $this->createStub(FillerInterface::class);
+        $filler->method('findById')->willReturn(new PluginAnimeData(title: 'Bleach'));
+        $filler->method('getFillableFields')->willReturn(['title']);
+        $anime = $this->persistedAnime();
+
+        $this->assertSame(FillResult::Applied, $this->newService([(string) $pluginId => $filler])->fillExistingFromPlugin($anime, $pluginId, '104'));
+
+        $this->assertNotNull($anime->getExternalIdEntry($pluginId)?->getFilledAt());
+        $this->assertNotNull($this->entityManager->getConnection()->fetchOne('SELECT filled_at FROM anime_external_id WHERE anime_id = ?', [$anime->id]));
+    }
+
+    public function testFillExistingFromPluginMarksAnAlreadySeededRowFilled(): void
+    {
+        $pluginId = new PluginId('animedb-shikimori');
+        $filler = $this->createStub(FillerInterface::class);
+        $filler->method('findById')->willReturn(new PluginAnimeData(title: 'Bleach'));
+        $filler->method('getFillableFields')->willReturn(['title']);
+        $anime = $this->persistedAnime();
+        $anime->rememberExternalId($pluginId, '104');
+        $this->entityManager->flush();
+        $this->assertNull($anime->getExternalIdEntry($pluginId)?->getFilledAt());
+
+        $this->newService([(string) $pluginId => $filler])->fillExistingFromPlugin($anime, $pluginId, '104');
+
+        $this->assertNotNull($anime->getExternalIdEntry($pluginId)?->getFilledAt());
+    }
+
+    public function testFillExistingFromPluginReturnsFailedAndLeavesTheMarkerUnsetWhenThePluginThrows(): void
+    {
+        $pluginId = new PluginId('animedb-shikimori');
+        $filler = $this->createStub(FillerInterface::class);
+        $filler->method('findById')->willThrowException(new \RuntimeException('banned'));
+        $filler->method('getFillableFields')->willReturn(['title']);
+        $anime = $this->persistedAnime();
+        $anime->rememberExternalId($pluginId, '104');
+        $this->entityManager->flush();
+
+        $result = $this->newService([(string) $pluginId => $filler])->fillExistingFromPlugin($anime, $pluginId, '104');
+
+        $this->assertSame(FillResult::Failed, $result);
+        $this->assertNull($anime->getExternalIdEntry($pluginId)?->getFilledAt());
+    }
+
+    public function testFillExistingFromPluginMarksTheRowFilledOnNotFound(): void
+    {
+        $pluginId = new PluginId('animedb-shikimori');
+        $filler = $this->createStub(FillerInterface::class);
+        $filler->method('findById')->willReturn(null);
+        $filler->method('getFillableFields')->willReturn(['title']);
+        $anime = $this->persistedAnime();
+        $anime->rememberExternalId($pluginId, '104');
+        $this->entityManager->flush();
+
+        $result = $this->newService([(string) $pluginId => $filler])->fillExistingFromPlugin($anime, $pluginId, '104');
+
+        $this->assertSame(FillResult::NotFound, $result);
+        $this->assertNotNull($anime->getExternalIdEntry($pluginId)?->getFilledAt());
+    }
+
+    public function testFillNewFromMarksTheRowFilledButATitleOnlyCreateDoesNot(): void
+    {
+        $pluginId = new PluginId('animedb-shikimori');
+        $filler = $this->createStub(FillerInterface::class);
+        $filler->method('findById')->willReturnMap([['104', new PluginAnimeData(title: 'Bleach')], ['105', null]]);
+        $filler->method('getFillableFields')->willReturn(['title']);
+        $service = $this->newService([(string) $pluginId => $filler]);
+
+        $built = $service->fillNewFrom($filler, $pluginId, '104');
+        $titleOnly = $service->findOrCreateFromPlugin($pluginId, '105', 'Bleach 2')->anime;
+        $this->entityManager->flush();
+
+        $this->assertNotNull($built?->getExternalIdEntry($pluginId)?->getFilledAt());
+        $this->assertNull($titleOnly->getExternalIdEntry($pluginId)?->getFilledAt());
+        $this->assertSame(1, (int) $this->entityManager->getConnection()->fetchOne('SELECT COUNT(*) FROM anime_external_id WHERE anime_id = ?', [$titleOnly->id]));
+        $this->assertNull($this->entityManager->getConnection()->fetchOne('SELECT filled_at FROM anime_external_id WHERE anime_id = ?', [$titleOnly->id]));
+    }
+
     public function testFillExistingFromPluginFillsOnlyEmptyFieldsAndNeverOverwritesAlreadyFilledOnes(): void
     {
         $pluginId = new PluginId('animedb-shikimori');

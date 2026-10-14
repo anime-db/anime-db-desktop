@@ -95,13 +95,17 @@ function runSetupTransports(context) {
  * `scheduler_sync_pull` (issue #870) добавлен последним: тик App\Scheduler\SyncPullSchedule лишь
  * кладёт App\Message\SyncPullMessage в транспорт `sync`, сам pull выполняет plugins-consumer.
  *
+ * `saturation` (issue #1049, насыщение записи по ссылкам источников — интерактивные триггеры) стоит
+ * первым: прогон нужен пользователю сразу, и его не должны задерживать ни push, ни индекс. Массовая
+ * очередь `saturation_bulk` потребляется plugins-consumer.js, последней.
+ *
  * @param {import('./env').PhpContext} context
  * @param {number} backoffIdx
  */
 function spawnProcess(context, backoffIdx = 0) {
     if (stopping) return;
 
-    child = spawn(BINARY, ['php-cli', CONSOLE, 'messenger:consume', 'async', 'media', 'scheduler_downloads_poll', 'scheduler_market_refresh', 'scheduler_sync_pull'], {
+    child = spawn(BINARY, ['php-cli', CONSOLE, 'messenger:consume', 'saturation', 'async', 'media', 'scheduler_downloads_poll', 'scheduler_market_refresh', 'scheduler_sync_pull'], {
         cwd: paths.getAppRootDir(),
         env: buildEnv(context),
         stdio: ['ignore', 'pipe', 'pipe'],
