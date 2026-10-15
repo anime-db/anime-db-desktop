@@ -477,6 +477,7 @@ anime_list:
     filter_section_genres: Genres
     filter_section_themes: Themes
     filter_section_studios: Studios
+    filter_section_source: Link
     filter_section_empty: No values in the catalog for this section.
     filter_section_more_button: 'More (%count%)'
     filter_section_search_placeholder: Search studios…
@@ -575,6 +576,7 @@ anime_detail:
     open_folder_button: Open files
     path_unavailable_tooltip: Path is unavailable
     sources_heading: External sources
+    source_count_title: 'Entries with this link: %url%'
     gallery_heading: Gallery
     save_button: Save
     cancel_button: Cancel

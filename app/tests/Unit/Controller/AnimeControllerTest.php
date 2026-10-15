@@ -43,6 +43,7 @@ use App\Entity\Storage;
 use App\Entity\Studio;
 use App\Entity\TvAnime;
 use App\Entity\ValueObject\PluginId;
+use App\Repository\AnimeRepository;
 use App\Repository\DownloadRepository;
 use App\Service\AnimeViewFactory;
 use App\Service\Download\DownloadViewFactory;
@@ -87,7 +88,7 @@ final class AnimeControllerTest extends TestCase
         );
     }
 
-    private function createController(Environment $twig, ?DownloadRepository $downloads = null, ?SourceRemovalPlanner $planner = null): AnimeController
+    private function createController(Environment $twig, ?DownloadRepository $downloads = null, ?SourceRemovalPlanner $planner = null, ?AnimeRepository $animeRepository = null): AnimeController
     {
         return new AnimeController(
             $twig,
@@ -100,6 +101,7 @@ final class AnimeControllerTest extends TestCase
             $downloads ?? $this->createStub(DownloadRepository::class),
             new DownloadViewFactory(),
             $planner ?? new SourceRemovalPlanner(new SyncRegistry([], new PluginsConfigStore(''))),
+            $animeRepository ?? $this->createStub(AnimeRepository::class),
         );
     }
 
@@ -116,6 +118,33 @@ final class AnimeControllerTest extends TestCase
         );
 
         return new PluginUiAssetsResolver(new PluginAssetResolver($installedPlugins), $urlGenerator, new NullLogger());
+    }
+
+    public function testShowPassesOnlySharedSourcesWithTheirEntryCountToTemplate(): void
+    {
+        $anime = new TvAnime();
+        $anime->setTitle('Show')->setWatchStatus(WatchStatus::Plan);
+        $this->setAnimeId($anime, 1);
+        $anime->addSource('https://example.com/shared');
+        $anime->addSource('https://example.com/solo');
+        foreach ($anime->getSources() as $source) {
+            $source->useNormalizedUrl($source->url);
+        }
+
+        $repository = $this->createMock(AnimeRepository::class);
+        $repository->expects($this->once())
+            ->method('countBySourceNormalizedUrls')
+            ->with(['https://example.com/shared', 'https://example.com/solo'])
+            ->willReturn(['https://example.com/shared' => 3, 'https://example.com/solo' => 1]);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('anime/show.html.twig', $this->callback(static fn (array $params): bool => $params['source_matches'] === [0 => ['url' => 'https://example.com/shared', 'count' => 3]]))
+            ->willReturn('<html></html>');
+
+        $controller = $this->createController($twig, animeRepository: $repository);
+        $controller->show($anime);
     }
 
     public function testShowPassesFullyPopulatedReferenceFieldsToTemplate(): void
@@ -410,6 +439,7 @@ final class AnimeControllerTest extends TestCase
                 $this->createStub(DownloadRepository::class),
                 new DownloadViewFactory(),
                 new SourceRemovalPlanner(new SyncRegistry([], new PluginsConfigStore(''))),
+                $this->createStub(AnimeRepository::class),
             );
             $response = $controller->show($anime);
 
@@ -468,6 +498,7 @@ final class AnimeControllerTest extends TestCase
                 $this->createStub(DownloadRepository::class),
                 new DownloadViewFactory(),
                 new SourceRemovalPlanner(new SyncRegistry([], new PluginsConfigStore(''))),
+                $this->createStub(AnimeRepository::class),
             );
             $response = $controller->show($anime);
 

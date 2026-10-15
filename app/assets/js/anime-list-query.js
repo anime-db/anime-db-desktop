@@ -48,6 +48,9 @@
         filters.themes.forEach((value) => params.append('themes[]', value));
         filters.labels.forEach((value) => params.append('labels[]', value));
         filters.studios.forEach((value) => params.append('studios[]', value));
+        if (filters.source) {
+            params.set('source', filters.source);
+        }
 
         filters.user_rating.forEach((value) => {
             if (value === 'none') {
@@ -138,6 +141,28 @@
         return new Set([...params.getAll('labels'), ...params.getAll('labels[]')].filter((value) => /^\d+$/.test(value)));
     }
 
+    // The normalized source link is a plain scalar, applied only by following a link from the
+    // anime page — there is no panel section for it, so an empty value simply means "no filter".
+    function parseSourceFilter(params) {
+        return params.get('source') || '';
+    }
+
+    // Readable form of a stored (ASCII) link for the chip, the client counterpart of the
+    // display_url Twig filter: only %XX runs that form valid non-ASCII UTF-8 are decoded, the
+    // rest (including reserved characters) stays as stored. Display-only.
+    function displaySourceUrl(url) {
+        return url.replace(/(?:%[0-9A-Fa-f]{2})+/g, (run) => {
+            let decoded;
+            try {
+                decoded = decodeURIComponent(run);
+            } catch {
+                return run;
+            }
+
+            return /^[^\p{ASCII}]+$/u.test(decoded) && !/[\p{Cc}\p{Cf}\p{Z}]/u.test(decoded) ? decoded : run;
+        });
+    }
+
     function isTruthyFlag(rawValue) {
         return rawValue !== null && ['1', 'true', 'on', 'yes'].includes(rawValue.toLowerCase());
     }
@@ -210,6 +235,8 @@
         parseEnumSectionSet,
         parseEntityIdSet,
         parseLabelSet,
+        parseSourceFilter,
+        displaySourceUrl,
         isTruthyFlag,
         parseUserRatingSet,
         parseDatePremiereFilter,

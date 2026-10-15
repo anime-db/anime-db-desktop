@@ -62,6 +62,8 @@ final class AnimeListFilter
      * @param list<int>|null    $ids           when set (issue #199), restricts the result to
      *                                         exactly these ids and takes precedence over
      *                                         $name — see AnimeRepository::createFilteredQueryBuilder()
+     * @param string|null       $source        normalized source link (AnimeSource::$normalizedUrl);
+     *                                         matched exactly, never as a prefix or substring
      */
     public function __construct(
         public readonly array $watchStatuses = [],
@@ -84,6 +86,7 @@ final class AnimeListFilter
         public readonly ?\DateTimeImmutable $dateAddFrom = null,
         public readonly ?\DateTimeImmutable $dateAddTo = null,
         public readonly ?array $ids = null,
+        public readonly ?string $source = null,
     ) {
     }
 
@@ -138,6 +141,11 @@ final class AnimeListFilter
     public function withoutDatePremiere(): self
     {
         return $this->with(['datePremiereFrom' => null, 'datePremiereTo' => null, 'datePremiereIsNull' => false]);
+    }
+
+    public function withoutSource(): self
+    {
+        return $this->with(['source' => null]);
     }
 
     /** @param array<string, mixed> $overrides */

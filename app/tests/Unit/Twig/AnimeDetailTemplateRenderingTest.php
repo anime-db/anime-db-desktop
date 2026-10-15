@@ -185,6 +185,61 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
         $this->assertStringContainsString('app-media://anime/1/screenshot_1720273812345.webp', $html);
     }
 
+    public function testShowRendersTheSharedSourceCounterAsACatalogLinkAndKeepsTheOriginalLink(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession('/anime/1');
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $anime = $this->fullyPopulatedAnime();
+        $anime['sources'] = [
+            ['url' => 'https://Shikimori.one/animes/16498/?utm=1', 'domain' => 'Shikimori.one'],
+            ['url' => 'https://myanimelist.net/anime/16498', 'domain' => 'myanimelist.net'],
+        ];
+        $html = $twig->render('anime/show.html.twig', [
+            'anime' => $anime, 'widgets' => [], 'plugins_ui' => [], 'fillable_fields' => $this->emptyFillableFields(),
+            'downloads' => [], 'downloads_unlink_error' => null,
+            'source_matches' => [0 => ['url' => 'https://shikimori.one/animes/16498', 'count' => 2]],
+        ]);
+
+        $document = new \DOMDocument();
+        $document->loadHTML($html);
+        $xpath = new \DOMXPath($document);
+
+        $counters = $xpath->query('//a[contains(@class, "anime-detail__source-count")]');
+        $this->assertInstanceOf(\DOMNodeList::class, $counters);
+        $this->assertSame(1, $counters->length);
+        $counter = $counters->item(0);
+        $this->assertInstanceOf(\DOMElement::class, $counter);
+        $this->assertSame('(2)', $counter->textContent);
+        $this->assertSame('/?source=https://shikimori.one/animes/16498', $counter->getAttribute('href'));
+
+        // the displayed link is the stored one, not the normalized form
+        $links = $xpath->query('//a[contains(@class, "anime-detail__source-link")]');
+        $this->assertInstanceOf(\DOMNodeList::class, $links);
+        $this->assertSame(2, $links->length);
+        $first = $links->item(0);
+        $this->assertInstanceOf(\DOMElement::class, $first);
+        $this->assertSame('https://Shikimori.one/animes/16498/?utm=1', $first->getAttribute('href'));
+        $this->assertStringContainsString('Shikimori.one', (string) $xpath->evaluate('string(.//span[contains(@class, "anime-detail__source-label")])', $first));
+    }
+
+    public function testShowRendersNoCounterWithoutSharedSources(): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession('/anime/1');
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('anime/show.html.twig', [
+            'anime' => $this->fullyPopulatedAnime(), 'widgets' => [], 'plugins_ui' => [], 'fillable_fields' => $this->emptyFillableFields(),
+            'downloads' => [], 'downloads_unlink_error' => null, 'source_matches' => [],
+        ]);
+
+        $this->assertStringNotContainsString('anime-detail__source-count', $html);
+    }
+
     /**
      * Issue #830: a source favicon can fail to load for reasons unrelated to the local catalog, in
      * which case inline-handlers.js swaps it for the neutral `globe` icon fallback already sitting

@@ -2303,3 +2303,25 @@ test('removing the last filter chip moves focus to the search field', async () =
     expect(document.querySelectorAll('.anime-list__chip-remove')).toHaveLength(0);
     expect(document.activeElement).toBe(document.getElementById('anime-list-search'));
 });
+
+test('an active source filter shows a "Link: ..." chip, is sent to the list and facets requests, and removing the chip drops only source', async () => {
+    window.history.replaceState({}, '', '/?source=https%3A%2F%2Fexample.com%2F%25D0%25B0%25D0%25B1&watch_status[]=plan');
+    const calls = mockFetchQueueAll();
+    setUpDetailedTranslations();
+    await loadAndResolveFacets(calls, { watch_status: [{ value: 'plan', count: 5 }] });
+
+    const labels = Array.from(document.querySelectorAll('.anime-list__chip-label')).map((el) => el.textContent);
+    // the percent-encoded Cyrillic run is shown decoded; the ASCII reserved characters stay as stored
+    expect(labels).toContain('anime_list.filter_section_source: https://example.com/аб');
+    expect(new URL(byKind(calls, 'list')[0].url, 'http://localhost').searchParams.get('source')).toBe('https://example.com/%D0%B0%D0%B1');
+    expect(new URL(byKind(calls, 'facets')[0].url, 'http://localhost').searchParams.get('source')).toBe('https://example.com/%D0%B0%D0%B1');
+
+    const sourceChip = Array.from(document.querySelectorAll('.anime-list__chip'))
+        .find((chip) => chip.querySelector('.anime-list__chip-label').textContent.startsWith('anime_list.filter_section_source'));
+    sourceChip.querySelector('.anime-list__chip-remove').dispatchEvent(new Event('click', { bubbles: true }));
+    await flushMicrotasks();
+
+    const params = new URLSearchParams(window.location.search);
+    expect(params.has('source')).toBe(false);
+    expect(params.getAll('watch_status[]')).toEqual(['plan']);
+});

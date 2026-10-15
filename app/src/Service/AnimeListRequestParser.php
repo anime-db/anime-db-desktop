@@ -56,6 +56,9 @@ final class AnimeListRequestParser
         $name = $this->assertScalarParam($request, 'name');
         $name = \is_string($name) && $name !== '' ? $name : null;
 
+        $source = $this->assertScalarParam($request, 'source');
+        $source = \is_string($source) && $source !== '' ? $source : null;
+
         return new AnimeListFilter(
             watchStatuses: $this->parseEnumListParam($request, 'watch_status', WatchStatus::tryFrom(...)),
             types: $this->parseEnumListParam($request, 'type', AnimeType::tryFrom(...)),
@@ -76,6 +79,7 @@ final class AnimeListRequestParser
             dateEndTo: $this->parseDateParam($request, 'date_end_to'),
             dateAddFrom: $this->parseDateParam($request, 'date_add_from'),
             dateAddTo: $this->parseDateParam($request, 'date_add_to'),
+            source: $source,
         );
     }
 

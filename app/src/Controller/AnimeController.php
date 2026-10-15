@@ -28,7 +28,9 @@ declare(strict_types=1);
 namespace App\Controller;
 
 use App\Entity\Anime;
+use App\Entity\AnimeSource;
 use App\Entity\ValueObject\PluginId;
+use App\Repository\AnimeRepository;
 use App\Repository\DownloadRepository;
 use App\Service\AnimeViewFactory;
 use App\Service\Download\DownloadViewFactory;
@@ -76,6 +78,7 @@ final class AnimeController
         private readonly DownloadRepository $downloads,
         private readonly DownloadViewFactory $downloadViewFactory,
         private readonly SourceRemovalPlanner $sourceRemovalPlanner,
+        private readonly AnimeRepository $animeRepository,
     ) {
     }
 
@@ -84,6 +87,7 @@ final class AnimeController
     {
         $animeId = $anime->id ?? throw new \LogicException('Anime must be persisted before it can be shown.');
         $widgets = $this->entryWidgets->findAllActive();
+        $sourceMatches = $this->sourceMatches($anime);
 
         return new Response($this->twig->render('anime/show.html.twig', [
             'anime' => $this->viewFactory->serialize($anime),
@@ -94,7 +98,33 @@ final class AnimeController
             'downloads_unlink_error' => null,
             'delete_has_finished_downloads' => $this->downloads->hasFinishedForAnime($animeId),
             'delete_source_removal' => $this->sourceRemovalPlanner->plan($anime),
+            'source_matches' => $sourceMatches,
         ]));
+    }
+
+    /**
+     * For each source of the entry (by position in the sources list) that is shared with other
+     * entries: its normalized link and the number of entries carrying it, this one included.
+     * One query for the whole page, however many sources the entry has.
+     *
+     * @return array<int, array{url: string, count: int}>
+     */
+    private function sourceMatches(Anime $anime): array
+    {
+        $normalized = array_map(
+            static fn (AnimeSource $source): string => $source->normalizedUrl,
+            array_values($anime->getSources()->toArray()),
+        );
+        $counts = $this->animeRepository->countBySourceNormalizedUrls($normalized);
+
+        $matches = [];
+        foreach ($normalized as $index => $url) {
+            if (($counts[$url] ?? 0) > 1) {
+                $matches[$index] = ['url' => $url, 'count' => $counts[$url]];
+            }
+        }
+
+        return $matches;
     }
 
     /**

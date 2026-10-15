@@ -31,6 +31,7 @@ use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
 use App\Entity\Anime;
 use App\Entity\AnimeExternalId;
+use App\Entity\AnimeSource;
 use App\Entity\Enum\AnimeType;
 use App\Entity\Enum\GenreCode;
 use App\Entity\Enum\ThemeCode;
@@ -81,6 +82,39 @@ class AnimeRepository
             ->select('COUNT(a.id)');
 
         return (int) $qb->getQuery()->getSingleScalarResult();
+    }
+
+    /**
+     * How many catalog entries carry each of the given normalized source links, in one query
+     * regardless of how many links are asked for. DISTINCT on the anime: two links of one entry may
+     * normalize to the same value and must count once.
+     *
+     * @param list<string> $normalizedUrls
+     *
+     * @return array<string, int> normalized link => number of entries; links nobody carries are absent
+     */
+    public function countBySourceNormalizedUrls(array $normalizedUrls): array
+    {
+        $normalizedUrls = array_values(array_unique(array_filter($normalizedUrls, static fn (string $url): bool => $url !== '')));
+        if ($normalizedUrls === []) {
+            return [];
+        }
+
+        $rows = $this->entityManager->createQueryBuilder()
+            ->select('s.normalizedUrl AS url', 'COUNT(DISTINCT IDENTITY(s.anime)) AS cnt')
+            ->from(AnimeSource::class, 's')
+            ->where('s.normalizedUrl IN (:urls)')
+            ->groupBy('s.normalizedUrl')
+            ->setParameter('urls', $normalizedUrls)
+            ->getQuery()
+            ->getArrayResult();
+
+        $counts = [];
+        foreach ($rows as $row) {
+            $counts[(string) $row['url']] = (int) $row['cnt'];
+        }
+
+        return $counts;
     }
 
     public function hasAny(): bool
@@ -734,6 +768,13 @@ class AnimeRepository
             $ftsAnimeIds = $this->matchAnimeIdsByName($filter->name);
             $qb->andWhere('a.id IN (:ftsAnimeIds)')
                 ->setParameter('ftsAnimeIds', $ftsAnimeIds !== [] ? $ftsAnimeIds : [0]);
+        }
+
+        if ($filter->source !== null) {
+            // exact match on the stored normalized link; EXISTS keeps one row per anime even when
+            // several of its sources normalize to the same value
+            $qb->andWhere('EXISTS (SELECT 1 FROM '.AnimeSource::class.' src WHERE src.anime = a AND src.normalizedUrl = :source)')
+                ->setParameter('source', $filter->source);
         }
 
         if ($filter->genres !== []) {

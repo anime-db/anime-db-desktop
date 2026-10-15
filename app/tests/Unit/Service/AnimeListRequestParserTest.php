@@ -53,6 +53,26 @@ final class AnimeListRequestParserTest extends TestCase
         $this->assertSame([], $filter->watchStatuses);
     }
 
+    public function testParseFilterReadsSource(): void
+    {
+        $filter = $this->parser->parseFilter(new Request(['source' => 'https://example.com/a']));
+
+        $this->assertSame('https://example.com/a', $filter->source);
+    }
+
+    public function testParseFilterTreatsEmptySourceAsNoFilter(): void
+    {
+        $this->assertNull($this->parser->parseFilter(new Request(['source' => '']))->source);
+        $this->assertNull($this->parser->parseFilter(new Request())->source);
+    }
+
+    public function testParseFilterRejectsAnArraySource(): void
+    {
+        $this->expectException(BadRequestException::class);
+
+        $this->parser->parseFilter(new Request(['source' => ['a']]));
+    }
+
     public function testParseFilterAcceptsASingleWatchStatus(): void
     {
         $filter = $this->parser->parseFilter(new Request(['watch_status' => 'watching']));
