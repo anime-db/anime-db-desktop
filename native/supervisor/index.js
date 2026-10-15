@@ -37,6 +37,7 @@ const pluginsConsumer   = require('./plugins-consumer');
 const qbittorrent       = require('./qbittorrent');
 const safeModeState     = require('./safe-mode');
 const searchReindex     = require('./search-reindex');
+const sourceUrlsCheck   = require('./source-urls-check');
 const stagedImport      = require('./staged-import');
 
 const events = new EventEmitter();
@@ -318,6 +319,14 @@ async function start(onProgress, { safeMode = false, confirmStagedImport } = {})
     // messenger-consumer process just started above, does not fire until its own interval elapses.
     downloadsPoll.run(workerContext).catch((err) => {
         console.error('[downloads-poll] не удалось выполнить стартовый прогон поллера загрузок:', err.message);
+    });
+
+    // Every start, after the migrations (and a possible import/backup swap of data.db) and once the
+    // messenger transports exist: compares the link-rule fingerprint stored in data.db with the
+    // current one and queues a recompute of anime_source.normalized_url on a mismatch. Fired and
+    // forgotten, a failure is only logged: the next start repeats the check.
+    sourceUrlsCheck.run(workerContext).catch((err) => {
+        console.error('[source-urls-check] не удалось проверить отпечаток правил ссылок:', err.message);
     });
 
     // Fired and forgotten, not awaited (issue #440, epic #435 decision №5): a market refresh is a
