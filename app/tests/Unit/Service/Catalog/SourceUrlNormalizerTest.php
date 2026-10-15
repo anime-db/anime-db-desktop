@@ -29,11 +29,23 @@ namespace App\Tests\Unit\Service\Catalog;
 
 use App\Entity\SourceUrl;
 use App\Service\Catalog\SourceUrlNormalizer;
+use App\Service\Plugin\LinkRulesProvider;
+use App\Tests\Support\BuildsLinkRulesPlugins;
+use App\Tests\Support\TemporaryDirectories;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\LoggerInterface;
 
 final class SourceUrlNormalizerTest extends TestCase
 {
+    use BuildsLinkRulesPlugins;
+    use TemporaryDirectories;
+
+    protected function tearDown(): void
+    {
+        $this->removeTemporaryDirectories();
+    }
+
     /** @return iterable<string, array{string, string}> */
     public static function commonStepsProvider(): iterable
     {
@@ -87,5 +99,133 @@ final class SourceUrlNormalizerTest extends TestCase
         $once = SourceUrl::common('http://www.Example.org:80/a%2fb/?b=1&a=М#x');
 
         $this->assertSame($once, SourceUrl::common($once));
+    }
+
+    /**
+     * @param array<string, array<string, string>> $plugins plugin id => rules
+     */
+    private function normalizerWith(array $plugins, ?LoggerInterface $logger = null): SourceUrlNormalizer
+    {
+        foreach ($plugins as $id => $rules) {
+            $this->writeLinkRulesPlugin($id, $rules);
+        }
+
+        return new SourceUrlNormalizer(new LinkRulesProvider($this->linkRulesRegistry()), logger: $logger ?? $this->createStub(LoggerInterface::class));
+    }
+
+    public function testWithoutRulesTheResultIsTheCommonSteps(): void
+    {
+        $normalizer = $this->normalizerWith([]);
+
+        $this->assertSame('https://example.org/a', $normalizer->normalize('http://www.Example.org/a/'));
+    }
+
+    public function testFirstMatchingRuleInsideAFileWins(): void
+    {
+        $normalizer = $this->normalizerWith(['acme-rules' => [
+            'https://example\.org/a/(\d+)' => 'https://example.org/first/$1',
+            'https://example\.org/a/(\d+)(?:/.*)?' => 'https://example.org/second/$1',
+        ]]);
+
+        $this->assertSame('https://example.org/first/1', $normalizer->normalize('https://example.org/a/1'));
+        $this->assertSame('https://example.org/second/1', $normalizer->normalize('https://example.org/a/1/Name'));
+    }
+
+    public function testPluginWithLargerIdWinsOnTheSameSite(): void
+    {
+        $normalizer = $this->normalizerWith([
+            'acme-a' => ['https://example\.org/a/(\d+)' => 'https://example.org/from-a/$1'],
+            'acme-b' => ['https://example\.org/a/(\d+)' => 'https://example.org/from-b/$1'],
+        ]);
+
+        $this->assertSame('https://example.org/from-b/1', $normalizer->normalize('https://example.org/a/1'));
+    }
+
+    public function testOnlyOnePassIsMade(): void
+    {
+        $normalizer = $this->normalizerWith(['acme-rules' => [
+            'https://example\.org/a/(\d+)' => 'https://example.org/b/$1',
+            'https://example\.org/b/(\d+)' => 'https://example.org/c/$1',
+        ]]);
+
+        $this->assertSame('https://example.org/b/1', $normalizer->normalize('https://example.org/a/1'));
+    }
+
+    public function testRuleWrittenForSortedQueryMatchesAnyParameterOrder(): void
+    {
+        $normalizer = $this->normalizerWith(['acme-rules' => [
+            'https://example\.org/show\?a=(\d+)&b=2' => 'https://example.org/show/$1',
+        ]]);
+
+        $this->assertSame('https://example.org/show/7', $normalizer->normalize('https://example.org/show?b=2&a=7'));
+    }
+
+    #[DataProvider('substitutionFormsProvider')]
+    public function testBothSubstitutionFormsGiveTheSameResult(string $replacement): void
+    {
+        $normalizer = $this->normalizerWith(['acme-rules' => ['https://example\.org/a/(\d+)' => $replacement]]);
+
+        $this->assertSame('https://example.org/b/1x', $normalizer->normalize('https://example.org/a/1'));
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function substitutionFormsProvider(): iterable
+    {
+        yield 'dollar N' => ['https://example.org/b/$1x'];
+        yield 'braced N' => ['https://example.org/b/${1}x'];
+    }
+
+    public function testAlternationDoesNotMatchASubstring(): void
+    {
+        $normalizer = $this->normalizerWith(['acme-rules' => ['https://example\.org/a(?:)|https://example\.org/(b)' => 'https://example.org/hit/$1']]);
+
+        $this->assertSame('https://example.org/hit/b', $normalizer->normalize('https://example.org/b'));
+        $this->assertSame('https://example.org/b/more', $normalizer->normalize('https://example.org/b/more'));
+        $this->assertSame('https://other.example/x/https://example.org/a', $normalizer->normalize('https://other.example/x/https://example.org/a'));
+    }
+
+    public function testResultThatIsNotAnAbsoluteHttpsLinkFallsThroughToTheNextRule(): void
+    {
+        $normalizer = $this->normalizerWith(['acme-rules' => [
+            'https://example\.org/go(.*)' => 'https://$1',
+            'https://example\.org/go(/?.*)' => 'https://example.org/ok$1',
+        ]]);
+
+        // The first rule yields "https://" without a host and is skipped.
+        $this->assertSame('https://example.org/ok', $normalizer->normalize('https://example.org/go'));
+    }
+
+    public function testResultOfARuleGoesThroughTheCommonStepsAgain(): void
+    {
+        $normalizer = $this->normalizerWith(['acme-rules' => [
+            'https://example\.org/a/(\d+)' => 'https://WWW.Example.ORG/b/$1/',
+        ]]);
+
+        $this->assertSame('https://example.org/b/1', $normalizer->normalize('https://example.org/a/1'));
+    }
+
+    public function testResultLongerThanTheLimitFallsBackToTheCommonSteps(): void
+    {
+        $normalizer = $this->normalizerWith(['acme-rules' => [
+            'https://example\.org/a/(\d+)' => 'https://example.org/'.str_repeat('x', 1100).'/$1',
+        ]]);
+
+        $this->assertSame('https://example.org/a/1', $normalizer->normalize('https://example.org/a/1'));
+    }
+
+    public function testCatastrophicRuleIsSkippedWithAWarningAndTheNextRuleApplies(): void
+    {
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->atLeastOnce())->method('warning');
+        $normalizer = $this->normalizerWith(['acme-rules' => [
+            'https://example\.org/(a+)+(?:x|y)' => 'https://example.org/heavy/$1',
+            'https://example\.org/(a+)c' => 'https://example.org/light/$1',
+        ]], $logger);
+        $before = ini_get('pcre.backtrack_limit');
+
+        $result = $normalizer->normalize('https://example.org/'.str_repeat('a', 40).'c');
+
+        $this->assertSame('https://example.org/light/'.str_repeat('a', 40), $result);
+        $this->assertSame($before, ini_get('pcre.backtrack_limit'));
     }
 }

@@ -1033,6 +1033,87 @@ final class ZipPluginInstallerTest extends TestCase
         return \is_array($decoded) ? $decoded : null;
     }
 
+    private const RULES_YAML = "version: 1\nrules:\n  'https://example\\.org/a/(\\d+)': 'https://example.org/b/$1'\n";
+
+    private function rulesManifestJson(string $version = '1.0.0'): string
+    {
+        return (string) json_encode([
+            'id' => 'animedb-rules',
+            'name' => 'Rules',
+            'version' => $version,
+            'type' => 'local',
+            'link_rules' => true,
+            'require' => ['core' => '>=2.0.0', 'php' => '>=8.2'],
+        ]);
+    }
+
+    public function testInstallOfPluginWithoutCodeDoesNotPublishWorkersReload(): void
+    {
+        $zipPath = $this->createZip(['manifest.json' => $this->rulesManifestJson(), 'link-rules.yaml' => self::RULES_YAML]);
+
+        $wsPublisher = $this->createMock(WsPublisher::class);
+        $wsPublisher->expects($this->never())->method('publish');
+
+        $this->assertSame('animedb-rules', (string) $this->installer($wsPublisher)->install($zipPath));
+    }
+
+    public function testInstallOfLinkRulesPluginWithCodePublishesWorkersReload(): void
+    {
+        $zipPath = $this->createZip([
+            'manifest.json' => $this->rulesManifestJson(),
+            'link-rules.yaml' => self::RULES_YAML,
+            'src/Marker.php' => "<?php\n",
+        ]);
+
+        $wsPublisher = $this->createMock(WsPublisher::class);
+        $wsPublisher->expects($this->once())->method('publish')->with(ZipPluginInstaller::WORKERS_RELOAD_EVENT);
+
+        $this->installer($wsPublisher)->install($zipPath, trusted: true);
+    }
+
+    public function testUpdateOfPluginWithoutCodeDoesNotPublishWorkersReload(): void
+    {
+        $this->installer()->install($this->createZip(['manifest.json' => $this->rulesManifestJson(), 'link-rules.yaml' => self::RULES_YAML]));
+
+        $wsPublisher = $this->createMock(WsPublisher::class);
+        $wsPublisher->expects($this->never())->method('publish');
+
+        $this->installer($wsPublisher)->update($this->createZip(['manifest.json' => $this->rulesManifestJson('2.0.0'), 'link-rules.yaml' => self::RULES_YAML]));
+    }
+
+    public function testUpdateFromCodeToNoCodePublishesWorkersReload(): void
+    {
+        $this->installer()->install($this->createZip([
+            'manifest.json' => $this->rulesManifestJson(),
+            'link-rules.yaml' => self::RULES_YAML,
+            'src/Marker.php' => "<?php\n",
+        ]), trusted: true);
+
+        $wsPublisher = $this->createMock(WsPublisher::class);
+        $wsPublisher->expects($this->once())->method('publish')->with(ZipPluginInstaller::WORKERS_RELOAD_EVENT);
+
+        $this->installer($wsPublisher)->update($this->createZip(['manifest.json' => $this->rulesManifestJson('2.0.0'), 'link-rules.yaml' => self::RULES_YAML]));
+    }
+
+    public function testInstallRejectsInvalidLinkRulesFile(): void
+    {
+        $zipPath = $this->createZip(['manifest.json' => $this->rulesManifestJson(), 'link-rules.yaml' => "version: 2\nrules: {}\n"]);
+
+        try {
+            $this->installer()->install($zipPath);
+            $this->fail('An invalid link-rules.yaml must fail the install.');
+        } catch (PluginInstallException) {
+            $this->assertDirectoryDoesNotExist($this->pluginsDir.'/animedb-rules');
+        }
+    }
+
+    public function testInstallRejectsMissingLinkRulesFile(): void
+    {
+        $this->expectException(PluginInstallException::class);
+
+        $this->installer()->install($this->createZip(['manifest.json' => $this->rulesManifestJson()]));
+    }
+
     private function installer(
         ?WsPublisher $wsPublisher = null,
         ?string $pluginContractsVersion = null,

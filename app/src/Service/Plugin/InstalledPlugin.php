@@ -28,6 +28,7 @@ declare(strict_types=1);
 namespace App\Service\Plugin;
 
 use AnimeDb\PluginContracts\Manifest\Manifest;
+use AnimeDb\PluginContracts\Manifest\PluginType;
 use App\Entity\ValueObject\PluginId;
 
 /**
@@ -60,5 +61,21 @@ final class InstalledPlugin
         public readonly bool $compatible = true,
     ) {
         $this->id = new PluginId($manifest->id);
+    }
+
+    /**
+     * A plugin that only carries link rules: a `local` one with `link_rules` and no `src/`. It has
+     * no code to load, so it is neither loaded as a bundle nor announced to the workers.
+     */
+    public function isRulesOnly(): bool
+    {
+        return self::manifestIsRulesOnly($this->manifest, $this->installPath);
+    }
+
+    public static function manifestIsRulesOnly(Manifest $manifest, string $dir): bool
+    {
+        return $manifest->type === PluginType::Local
+            && $manifest->linkRules
+            && !is_dir($dir.\DIRECTORY_SEPARATOR.'src');
     }
 }

@@ -948,6 +948,31 @@ final class PluginControllerTest extends TestCase
         );
     }
 
+    public function testRemoveOfPluginWithoutCodeDoesNotPublishTheWorkersReloadEvent(): void
+    {
+        $dir = $this->pluginsDir.'/animedb-rules';
+        mkdir($dir, recursive: true);
+        file_put_contents($dir.'/manifest.json', (string) json_encode([
+            'id' => 'animedb-rules',
+            'name' => 'Rules',
+            'version' => '1.0.0',
+            'type' => 'local',
+            'link_rules' => true,
+            'require' => ['core' => '>=2.0.0', 'php' => '>=8.2'],
+        ]));
+        $this->registry->reconcile();
+
+        $wsPublisher = $this->createMock(WsPublisher::class);
+        $wsPublisher->expects($this->never())->method('publish');
+
+        $this->controller(wsPublisher: $wsPublisher)->remove(
+            'animedb-rules',
+            Request::create('/settings/plugins/animedb-rules/remove', 'POST', ['_token' => 'token']),
+        );
+
+        $this->assertFalse($this->registry->has(new PluginId('animedb-rules')));
+    }
+
     public function testRemoveStillRedirectsWhenPublishingTheWorkersReloadEventFails(): void
     {
         $this->writeManifest('animedb-shikimori', 'Shikimori');
