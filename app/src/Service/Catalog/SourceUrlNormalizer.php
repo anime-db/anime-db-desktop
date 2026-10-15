@@ -63,8 +63,18 @@ final class SourceUrlNormalizer
      */
     public function normalize(string $url): string
     {
+        return $this->normalizeWith($url, $this->rules?->rules() ?? []);
+    }
+
+    /**
+     * {@see self::normalize()} by the given rules instead of the provider's: a bulk run takes one
+     * snapshot and applies it to every row.
+     *
+     * @param array<string, string> $rules expression => replacement, in order of application
+     */
+    public function normalizeWith(string $url, array $rules): string
+    {
         $common = SourceUrl::common($url);
-        $rules = $this->rules?->rules() ?? [];
         if ($rules === []) {
             return $common;
         }
