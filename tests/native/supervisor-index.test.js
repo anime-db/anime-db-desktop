@@ -41,6 +41,10 @@ jest.mock('../../native/supervisor/frankenphp', () => ({
 jest.mock('../../native/supervisor/downloads-poll', () => ({
     run: jest.fn(() => Promise.resolve()),
 }));
+jest.mock('../../native/supervisor/source-urls-check', () => ({
+    COMMAND: 'app:source-urls:check',
+    run: jest.fn(() => Promise.resolve()),
+}));
 jest.mock('../../native/supervisor/market-refresh', () => ({
     run: jest.fn(() => Promise.resolve()),
 }));
@@ -110,6 +114,7 @@ const cacheInvalidation = require('../../native/supervisor/cache-invalidation');
 const downloadsPoll     = require('../../native/supervisor/downloads-poll');
 const frankenphp        = require('../../native/supervisor/frankenphp');
 const importApply       = require('../../native/supervisor/import-apply');
+const sourceUrlsCheck   = require('../../native/supervisor/source-urls-check');
 const marketRefresh     = require('../../native/supervisor/market-refresh');
 const meilisearch       = require('../../native/supervisor/meilisearch');
 const messengerConsumer = require('../../native/supervisor/messenger-consumer');
@@ -143,6 +148,7 @@ describe('supervisor.start', () => {
         pluginReconcile.run.mockResolvedValue(undefined);
         marketRefresh.run.mockResolvedValue(undefined);
         downloadsPoll.run.mockResolvedValue(undefined);
+        sourceUrlsCheck.run.mockResolvedValue(undefined);
         migrations.run.mockResolvedValue(undefined);
         stagedImport.decide.mockResolvedValue({ verdict: 'skip' });
         importApply.apply.mockResolvedValue({ applied: true, error: null });
@@ -690,6 +696,60 @@ describe('supervisor.start', () => {
             pluginReconcile.run.mockRejectedValue(new Error('boom'));
 
             await expect(supervisor.start(jest.fn())).resolves.toMatchObject({ frankenphpPort: 8000 });
+        });
+    });
+
+    describe('source link rule set check', () => {
+        test('runs after the catalog import, the plugin reconcile and the messenger consumer start', async () => {
+            cacheInvalidation.hasBuildChanged.mockReturnValue(true);
+            stagedImport.decide.mockResolvedValue({ verdict: 'apply' });
+            const callOrder = [];
+            importApply.apply.mockImplementation(() => {
+                callOrder.push('importApply.apply');
+                return Promise.resolve({ applied: true, error: null });
+            });
+            pluginReconcile.run.mockImplementation(() => {
+                callOrder.push('pluginReconcile.run');
+                return Promise.resolve();
+            });
+            sourceUrlsCheck.run.mockImplementation(() => {
+                callOrder.push('sourceUrlsCheck.run');
+                return Promise.resolve();
+            });
+            frankenphp.start.mockImplementation(() => {
+                callOrder.push('frankenphp.start');
+                return Promise.resolve({ httpPort: 8000, wsPort: 8001 });
+            });
+            messengerConsumer.start.mockImplementation(() => {
+                callOrder.push('messengerConsumer.start');
+                return Promise.resolve();
+            });
+
+            await supervisor.start(jest.fn());
+
+            expect(callOrder).toEqual([
+                'importApply.apply', 'pluginReconcile.run',
+                'frankenphp.start', 'messengerConsumer.start', 'sourceUrlsCheck.run',
+            ]);
+        });
+
+        test('cleans up an orphaned check process from a previous session', async () => {
+            await supervisor.start(jest.fn());
+
+            expect(phpCommand.killOrphan).toHaveBeenCalledWith('app:source-urls:check');
+        });
+
+        test('runs on every start, even when nothing was imported and the build is unchanged', async () => {
+            await supervisor.start(jest.fn());
+
+            expect(sourceUrlsCheck.run).toHaveBeenCalledTimes(1);
+        });
+
+        test('does not fail startup when the check errors out', async () => {
+            sourceUrlsCheck.run.mockRejectedValue(new Error('boom'));
+
+            await expect(supervisor.start(jest.fn())).resolves.toMatchObject({ frankenphpPort: 8000 });
+            expect(frankenphp.start).toHaveBeenCalledTimes(1);
         });
     });
 

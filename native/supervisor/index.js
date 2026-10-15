@@ -37,6 +37,7 @@ const pluginsConsumer   = require('./plugins-consumer');
 const qbittorrent       = require('./qbittorrent');
 const safeModeState     = require('./safe-mode');
 const searchReindex     = require('./search-reindex');
+const sourceUrlsCheck   = require('./source-urls-check');
 const stagedImport      = require('./staged-import');
 
 const events = new EventEmitter();
@@ -136,6 +137,9 @@ let queuedPluginId = null;
  * после миграций, но зачистка сироты этого одноразового вызова здесь же, до первого дочернего
  * процесса текущего сеанса.
  *
+ * `app:source-urls:check` (source-urls-check.js) — тот же принцип: запускается на каждом старте
+ * после messenger-consumer, но зачистка сироты этого одноразового вызова здесь же.
+ *
  * `app:queue:purge` (issue #707, import-apply.js) — тот же принцип: запускается только на APPLY-
  * вердикте импорта, до старта FrankenPHP, но зачистка сироты этого одноразового вызова здесь же.
  *
@@ -184,6 +188,7 @@ async function start(onProgress, { safeMode = false, confirmStagedImport } = {})
         phpCommand.killOrphan('app:catalog:import-v1'),
         phpCommand.killOrphan('app:downloads:poll'),
         phpCommand.killOrphan('app:queue:purge'),
+        phpCommand.killOrphan(sourceUrlsCheck.COMMAND),
         pluginsConsumer.killOrphan(),
         qbittorrent.killOrphan(),
         stagedImport.killOrphan(),
@@ -302,6 +307,18 @@ async function start(onProgress, { safeMode = false, confirmStagedImport } = {})
     const workerContext = { ...phpContext, appPort: frankenphpPort };
 
     await messengerConsumer.start(workerContext);
+
+    // Compares the link rule set fingerprint with the stored one on every start, after the catalog
+    // import and the plugin reconcile: those can swap data.db or change the rule set. Runs only
+    // after messengerConsumer.start(), whose messenger:setup-transports creates the queue table
+    // (the doctrine transport has auto_setup=0): the command dispatches the recompute message on
+    // mismatch, which fails on a clean profile without that table. The consumer picks the message
+    // up either way. A failure is only logged, the next start repeats the check.
+    try {
+        await sourceUrlsCheck.run(phpContext);
+    } catch (err) {
+        console.error('[source-urls-check] не удалось проверить отпечаток набора правил ссылок:', err.message);
+    }
 
     // Starts alongside messenger-consumer, under the same splash step above (issue #701, part 1
     // of #684) — a second long-lived `messenger:consume` worker dedicated to the `plugins`
