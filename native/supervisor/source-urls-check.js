@@ -23,6 +23,8 @@
 
 const phpCommand = require('./php-command');
 
+// Must match the name in SourceUrlsCheckCommandRegistrationTest (app/tests/Unit/Command/), which
+// fails when the command is renamed or unregistered in the application.
 const COMMAND = 'app:source-urls:check';
 
 /**
