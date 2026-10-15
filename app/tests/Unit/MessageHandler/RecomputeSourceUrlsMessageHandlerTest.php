@@ -30,7 +30,6 @@ namespace App\Tests\Unit\MessageHandler;
 use App\Entity\Enum\WatchStatus;
 use App\Entity\MovieAnime;
 use App\EventListener\AnimeSourceNormalizedUrlListener;
-use App\Message\IndexAnimeMessage;
 use App\Message\RecomputeSourceUrlsMessage;
 use App\MessageHandler\RecomputeSourceUrlsMessageHandler;
 use App\Service\Catalog\SourceUrlNormalizer;
@@ -87,7 +86,7 @@ final class RecomputeSourceUrlsMessageHandlerTest extends TestCase
         $this->assertSame([], $this->dispatched);
     }
 
-    public function testRecomputeDoesNotTouchDateUpdateNorQueueIndexing(): void
+    public function testRecomputeDoesNotTouchDateUpdate(): void
     {
         $this->writeLinkRulesPlugin('acme-rules', ['^https://old\.example/(\d+)$' => 'https://new.example/$1']);
         $this->addAnime('https://old.example/1');
@@ -98,21 +97,22 @@ final class RecomputeSourceUrlsMessageHandlerTest extends TestCase
 
         $this->assertSame(['1000', '1000'], array_map('strval', $this->connection->fetchFirstColumn('SELECT date_update FROM anime')));
         $this->assertSame(['https://new.example/1', 'https://new.example/2'], $this->connection->fetchFirstColumn('SELECT normalized_url FROM anime_source ORDER BY id'));
-        $this->assertSame([], array_filter($this->dispatched, static fn (object $message): bool => $message instanceof IndexAnimeMessage));
     }
 
-    public function testSecondRunChangesNothing(): void
+    public function testOnlyChangedRowsAreWrittenAndSecondRunWritesNothing(): void
     {
         $this->writeLinkRulesPlugin('acme-rules', ['^https://old\.example/(\d+)$' => 'https://new.example/$1']);
         $provider = new LinkRulesProvider($this->linkRulesRegistry());
-        $this->addAnime('https://old.example/1');
+        $this->addAnime('https://old.example/1', 'https://other.example/x');
+        $this->connection->executeStatement("UPDATE anime_source SET normalized_url = url WHERE url = 'https://other.example/x'");
+        $updates = $this->countUpdates();
         $handler = $this->handler($provider);
 
         $handler(new RecomputeSourceUrlsMessage());
-        $before = $this->connection->fetchAllAssociative('SELECT * FROM anime_source');
-        $handler(new RecomputeSourceUrlsMessage());
+        $this->assertSame(1, $updates->count);
 
-        $this->assertSame($before, $this->connection->fetchAllAssociative('SELECT * FROM anime_source'));
+        $handler(new RecomputeSourceUrlsMessage());
+        $this->assertSame(1, $updates->count);
         $this->assertSame($provider->fingerprint(), $this->store()->get());
         $this->assertSame([], $this->dispatched);
     }
@@ -185,6 +185,25 @@ final class RecomputeSourceUrlsMessageHandlerTest extends TestCase
             return 1;
         });
         $this->connection->executeStatement('CREATE TRIGGER test_hook AFTER UPDATE ON anime_source BEGIN SELECT test_hook(); END');
+    }
+
+    /**
+     * Counts every `UPDATE anime_source` row, whether or not the value actually changes.
+     */
+    private function countUpdates(): \stdClass
+    {
+        $counter = new \stdClass();
+        $counter->count = 0;
+        $native = $this->connection->getNativeConnection();
+        \assert($native instanceof \PDO);
+        $native->sqliteCreateFunction('test_count', static function () use ($counter): int {
+            ++$counter->count;
+
+            return 1;
+        });
+        $this->connection->executeStatement('CREATE TRIGGER test_count AFTER UPDATE ON anime_source BEGIN SELECT test_count(); END');
+
+        return $counter;
     }
 
     private function addAnime(string ...$urls): void
