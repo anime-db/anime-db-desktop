@@ -107,6 +107,7 @@
             genres: new Set(),
             themes: new Set(),
             studios: new Set(),
+            source: '',
         };
     }
 
@@ -120,6 +121,7 @@
             genres: new Set(filters.genres),
             themes: new Set(filters.themes),
             studios: new Set(filters.studios),
+            source: filters.source,
         };
     }
 
@@ -131,7 +133,8 @@
             && filters.labels.size === 0
             && filters.genres.size === 0
             && filters.themes.size === 0
-            && filters.studios.size === 0;
+            && filters.studios.size === 0
+            && filters.source === '';
     }
 
     function setsEqual(a, b) {
@@ -150,7 +153,8 @@
             && setsEqual(a.labels, b.labels)
             && setsEqual(a.genres, b.genres)
             && setsEqual(a.themes, b.themes)
-            && setsEqual(a.studios, b.studios);
+            && setsEqual(a.studios, b.studios)
+            && a.source === b.source;
     }
 
     // Every entry across every section counts as one — this is what both the "Filters · N"
@@ -162,6 +166,9 @@
         });
         if (appliedFilters.date_premiere !== null) {
             entries.push({ sectionKey: 'date_premiere', value: appliedFilters.date_premiere });
+        }
+        if (appliedFilters.source !== '') {
+            entries.push({ sectionKey: 'source', value: appliedFilters.source });
         }
 
         return entries;
@@ -268,7 +275,10 @@
     }
 
     function removeAppliedValue(sectionKey, value) {
-        if (sectionKey === 'date_premiere') {
+        if (sectionKey === 'source') {
+            appliedFilters.source = '';
+            pendingFilters.source = '';
+        } else if (sectionKey === 'date_premiere') {
             appliedFilters.date_premiere = null;
             if (pendingFilters.date_premiere === value) {
                 pendingFilters.date_premiere = null;
@@ -332,6 +342,7 @@
         appliedFilters.labels = window.AnimeListQuery.parseLabelSet(urlParams);
         appliedFilters.user_rating = window.AnimeListQuery.parseUserRatingSet(urlParams);
         appliedFilters.date_premiere = window.AnimeListQuery.parseDatePremiereFilter(urlParams);
+        appliedFilters.source = window.AnimeListQuery.parseSourceFilter(urlParams);
         pendingFilters = cloneFilters(appliedFilters);
 
         if (forceRefresh || !isFiltersEmpty(appliedFilters)) {

@@ -89,6 +89,10 @@
     // Chips only carry a section + raw value/id, so an entity chip (label/studio) resolves its
     // display name back out of the last facets response rather than a bucket it never kept.
     function resolveValueName(sectionKey, value, catalogue, lastFacets) {
+        if (sectionKey === 'source') {
+            return window.AnimeListQuery.displaySourceUrl(value);
+        }
+
         const config = FACET_SECTIONS[sectionKey];
         if (config.kind === 'entity') {
             const buckets = (lastFacets && lastFacets[config.facetKey]) || [];

@@ -115,12 +115,16 @@
 
                         <ul class="anime-detail__source-list">
                             {% for source in anime.sources %}
-                                <li>
+                                <li class="d-flex align-items-center gap-2">
                                     <a class="anime-detail__source-link" href="{{ source.url }}" target="_blank" rel="noopener noreferrer" title="{{ source.domain|display_host }}">
                                         <img src="https://{{ source.domain }}/favicon.ico" alt="" class="anime-detail__source-icon" loading="lazy">
                                         <span class="anime-detail__source-fallback" hidden>{{ icon('globe') }}</span>
                                         <span class="anime-detail__source-label">{{ bidi_isolate((source.domain starts with 'www.' ? source.domain|slice(4) : source.domain)|display_host) }}</span>
                                     </a>
+                                    {% set match = source_matches[loop.index0] ?? null %}
+                                    {% if match is not null %}
+                                        <a class="anime-detail__source-count" href="{{ path('home_index', {source: match.url}) }}" title="{{ 'anime_detail.source_count_title'|trans({'%url%': match.url|display_url}) }}">({{ match.count }})</a>
+                                    {% endif %}
                                 </li>
                             {% endfor %}
                         </ul>

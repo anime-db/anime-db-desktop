@@ -477,6 +477,7 @@ anime_list:
     filter_section_genres: Жанры
     filter_section_themes: Темы
     filter_section_studios: Студии
+    filter_section_source: Ссылка
     filter_section_empty: В каталоге нет значений для этой секции.
     filter_section_more_button: 'Ещё (%count%)'
     filter_section_search_placeholder: Поиск по студиям…
@@ -575,6 +576,7 @@ anime_detail:
     open_folder_button: Перейти к файлам
     path_unavailable_tooltip: Путь не доступен
     sources_heading: Внешние источники
+    source_count_title: 'Записи с этой ссылкой: %url%'
     gallery_heading: Галерея
     save_button: Сохранить
     cancel_button: Отмена
