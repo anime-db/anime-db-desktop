@@ -83,10 +83,10 @@ final class AnimeRepositorySourceTest extends TestCase
     }
 
     /** @param array<string, string> $sources raw url => normalized url */
-    private function persistAnime(string $title, array $sources): void
+    private function persistAnime(string $title, array $sources, WatchStatus $status = WatchStatus::Plan): void
     {
         $anime = new TvAnime();
-        $anime->setTitle($title)->setWatchStatus(WatchStatus::Plan);
+        $anime->setTitle($title)->setWatchStatus($status);
         foreach ($sources as $url => $normalized) {
             $source = new AnimeSource($anime, $url);
             $source->useNormalizedUrl($normalized);
@@ -138,8 +138,8 @@ final class AnimeRepositorySourceTest extends TestCase
 
     public function testFacetsCarryNoSourceFacet(): void
     {
-        $this->persistAnime('A', ['https://example.com/a' => 'https://example.com/a']);
-        $this->persistAnime('B', ['https://example.com/b' => 'https://example.com/b']);
+        $this->persistAnime('A', ['https://example.com/a' => 'https://example.com/a'], WatchStatus::Plan);
+        $this->persistAnime('B', ['https://example.com/b' => 'https://example.com/b'], WatchStatus::Watching);
 
         $facets = $this->repository->facetsByFilter(new AnimeListFilter(source: 'https://example.com/a'));
 
@@ -148,6 +148,10 @@ final class AnimeRepositorySourceTest extends TestCase
             array_keys(get_object_vars($facets)),
         );
         $this->assertSame(2, $facets->catalogTotal);
+        // the source filter narrows the buckets: only entry A's status remains
+        $this->assertCount(1, $facets->watchStatuses);
+        $this->assertSame('plan', $facets->watchStatuses[0]->value);
+        $this->assertSame(1, $facets->watchStatuses[0]->count);
     }
 
     public function testCountBySourceNormalizedUrlsCountsEntriesNotLinks(): void

@@ -200,7 +200,7 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
         $html = $twig->render('anime/show.html.twig', [
             'anime' => $anime, 'widgets' => [], 'plugins_ui' => [], 'fillable_fields' => $this->emptyFillableFields(),
             'downloads' => [], 'downloads_unlink_error' => null,
-            'source_matches' => [0 => ['url' => 'https://shikimori.one/animes/16498', 'count' => 2]],
+            'source_matches' => [1 => ['url' => 'https://myanimelist.net/anime/16498', 'count' => 2]],
         ]);
 
         $document = new \DOMDocument();
@@ -213,7 +213,15 @@ final class AnimeDetailTemplateRenderingTest extends KernelTestCase
         $counter = $counters->item(0);
         $this->assertInstanceOf(\DOMElement::class, $counter);
         $this->assertSame('(2)', $counter->textContent);
-        $this->assertSame('/?source=https://shikimori.one/animes/16498', $counter->getAttribute('href'));
+        $this->assertSame('/?source=https://myanimelist.net/anime/16498', $counter->getAttribute('href'));
+
+        // the counter sits in the same <li> as its own source, and the first source has none
+        $own = $xpath->query('//li[a[contains(@class, "anime-detail__source-link")][@href="https://myanimelist.net/anime/16498"]]/a[contains(@class, "anime-detail__source-count")]');
+        $this->assertInstanceOf(\DOMNodeList::class, $own);
+        $this->assertSame(1, $own->length);
+        $other = $xpath->query('//li[a[contains(@class, "anime-detail__source-link")][starts-with(@href, "https://Shikimori.one")]]/a[contains(@class, "anime-detail__source-count")]');
+        $this->assertInstanceOf(\DOMNodeList::class, $other);
+        $this->assertSame(0, $other->length);
 
         // the displayed link is the stored one, not the normalized form
         $links = $xpath->query('//a[contains(@class, "anime-detail__source-link")]');

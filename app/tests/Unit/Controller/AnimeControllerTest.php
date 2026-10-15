@@ -125,8 +125,8 @@ final class AnimeControllerTest extends TestCase
         $anime = new TvAnime();
         $anime->setTitle('Show')->setWatchStatus(WatchStatus::Plan);
         $this->setAnimeId($anime, 1);
-        $anime->addSource('https://example.com/shared');
         $anime->addSource('https://example.com/solo');
+        $anime->addSource('https://example.com/shared');
         foreach ($anime->getSources() as $source) {
             $source->useNormalizedUrl($source->url);
         }
@@ -134,13 +134,13 @@ final class AnimeControllerTest extends TestCase
         $repository = $this->createMock(AnimeRepository::class);
         $repository->expects($this->once())
             ->method('countBySourceNormalizedUrls')
-            ->with(['https://example.com/shared', 'https://example.com/solo'])
+            ->with(['https://example.com/solo', 'https://example.com/shared'])
             ->willReturn(['https://example.com/shared' => 3, 'https://example.com/solo' => 1]);
 
         $twig = $this->createMock(Environment::class);
         $twig->expects($this->once())
             ->method('render')
-            ->with('anime/show.html.twig', $this->callback(static fn (array $params): bool => $params['source_matches'] === [0 => ['url' => 'https://example.com/shared', 'count' => 3]]))
+            ->with('anime/show.html.twig', $this->callback(static fn (array $params): bool => $params['source_matches'] === [1 => ['url' => 'https://example.com/shared', 'count' => 3]]))
             ->willReturn('<html></html>');
 
         $controller = $this->createController($twig, animeRepository: $repository);
