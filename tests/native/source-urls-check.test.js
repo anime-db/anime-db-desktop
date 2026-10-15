@@ -41,4 +41,10 @@ describe('run', () => {
         expect(mockRun).toHaveBeenCalledWith('app:source-urls:check', [], CONTEXT, expect.any(Number));
         expect(mockRun.mock.calls[0][3]).toBeGreaterThan(0);
     });
+
+    test('returns the php-command promise so callers can await and catch its failure', async () => {
+        mockRun.mockReturnValue(Promise.reject(new Error('boom')));
+
+        await expect(run(CONTEXT)).rejects.toThrow('boom');
+    });
 });

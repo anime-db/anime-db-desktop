@@ -700,7 +700,7 @@ describe('supervisor.start', () => {
     });
 
     describe('source link rule set check', () => {
-        test('runs after the catalog import and the plugin reconcile, before starting frankenphp', async () => {
+        test('runs after the catalog import, the plugin reconcile and the messenger consumer start', async () => {
             cacheInvalidation.hasBuildChanged.mockReturnValue(true);
             stagedImport.decide.mockResolvedValue({ verdict: 'apply' });
             const callOrder = [];
@@ -728,9 +728,15 @@ describe('supervisor.start', () => {
             await supervisor.start(jest.fn());
 
             expect(callOrder).toEqual([
-                'importApply.apply', 'pluginReconcile.run', 'sourceUrlsCheck.run',
-                'frankenphp.start', 'messengerConsumer.start',
+                'importApply.apply', 'pluginReconcile.run',
+                'frankenphp.start', 'messengerConsumer.start', 'sourceUrlsCheck.run',
             ]);
+        });
+
+        test('cleans up an orphaned check process from a previous session', async () => {
+            await supervisor.start(jest.fn());
+
+            expect(phpCommand.killOrphan).toHaveBeenCalledWith('app:source-urls:check');
         });
 
         test('runs on every start, even when nothing was imported and the build is unchanged', async () => {
