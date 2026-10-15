@@ -171,6 +171,18 @@ final class MigrationDataIntegrityCheckerTest extends TestCase
         $this->assertStringContainsString('normalized_url', implode("\n", $violations));
     }
 
+    public function testVerifySourceNormalizedUrlReportsAColumnThatJustCopiesTheUrl(): void
+    {
+        $pdo = $this->fromTemplate();
+        $animeId = self::$templateFixture['animeId'];
+
+        $pdo->exec('UPDATE anime_source SET normalized_url = url');
+
+        $violations = $this->checker->verifySourceNormalizedUrl($pdo, $animeId);
+        $this->assertCount(1, $violations);
+        $this->assertStringContainsString('normalized_url', implode("\n", $violations));
+    }
+
     public function testVerifyCascadeDeleteReportsAMissingCascade(): void
     {
         $pdo = $this->fromTemplate();

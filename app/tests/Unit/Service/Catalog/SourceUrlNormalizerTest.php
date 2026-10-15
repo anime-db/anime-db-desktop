@@ -88,11 +88,4 @@ final class SourceUrlNormalizerTest extends TestCase
 
         $this->assertSame($once, SourceUrl::common($once));
     }
-
-    public function testOverlongResultFallsBackToTheCommonSteps(): void
-    {
-        $url = 'https://example.org/'.str_repeat('a', 1100);
-
-        $this->assertSame(SourceUrl::common($url), (new SourceUrlNormalizer())->normalize($url));
-    }
 }

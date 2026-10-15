@@ -38,14 +38,12 @@ use App\Entity\SourceUrl;
  */
 final class SourceUrlNormalizer
 {
-    /** Common steps, then (later) site rules, then the length limit. */
+    /**
+     * Common steps; site rules and the length-limit fallback to the common result arrive together
+     * with the first site rule.
+     */
     public function normalize(string $url): string
     {
-        $common = SourceUrl::common($url);
-
-        // Site rules are applied to $common here.
-        $result = $common;
-
-        return \strlen($result) > SourceUrl::MAX_LENGTH ? $common : $result;
+        return SourceUrl::common($url);
     }
 }

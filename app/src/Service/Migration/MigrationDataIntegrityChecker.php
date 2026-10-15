@@ -41,7 +41,11 @@ final class MigrationDataIntegrityChecker
         'anime_image', 'anime_source', 'anime_external_id', 'anime_description', 'anime_plugin_data',
     ];
 
-    private const FIXTURE_SOURCE_URL = 'https://example.test/cowboy-bebop';
+    /** Deliberately not in normalized form: a backfill that merely copies `url` must be detected. */
+    private const FIXTURE_SOURCE_URL = 'http://www.Example.test/cowboy-bebop/?b=2&a=1#x';
+
+    /** Hardcoded on purpose, not computed by SourceUrl::common(), so the expectation is not a tautology. */
+    private const FIXTURE_SOURCE_NORMALIZED_URL = 'https://example.test/cowboy-bebop?a=1&b=2';
 
     /** `downloads`, seeded right after Version20260809000000 creates it. */
     public const MID_FIXTURE_TABLES = ['downloads'];
@@ -242,7 +246,7 @@ final class MigrationDataIntegrityChecker
 
     /**
      * Checks that Version20261012000000 backfilled `anime_source.normalized_url` of the seeded row
-     * with the common normalization steps (the fixture url is already in that form).
+     * with the common normalization steps (the fixture url is not in normalized form).
      *
      * @return list<string>
      */
@@ -251,10 +255,10 @@ final class MigrationDataIntegrityChecker
         $statement = $pdo->prepare('SELECT normalized_url FROM anime_source WHERE anime_id = ?');
         $statement->execute([$animeId]);
         $actual = $statement->fetchColumn();
-        if ($actual !== self::FIXTURE_SOURCE_URL) {
+        if ($actual !== self::FIXTURE_SOURCE_NORMALIZED_URL) {
             return [\sprintf(
                 "anime_source: expected normalized_url '%s', found %s",
-                self::FIXTURE_SOURCE_URL,
+                self::FIXTURE_SOURCE_NORMALIZED_URL,
                 $actual === false ? 'no row' : "'{$actual}'",
             )];
         }
