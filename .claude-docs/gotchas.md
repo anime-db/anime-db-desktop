@@ -513,11 +513,3 @@ Symfony при наличии параметра `%count%` прогоняет с
 ## Перерисовка части страницы роняет фокус клавиатуры на `body`
 
 `replaceChildren()`/`outerHTML`/htmx-замена удаляют сфокусированный элемент, и следующий Tab начинается с шапки. htmx возвращает фокус только элементу с тем же `id`. В JS оборачивай перерисовку в `window.FocusRestore.run(container, render, fallback)` (`app/assets/js/focus-restore.js`): элементам даётся `data-focus-key`, после перерисовки фокус идёт на элемент с тем же ключом, иначе на `fallback`; если фокус был вне контейнера — ничего не трогается. Формы правки на месте в карточке (`anime/_editable.html.twig`, `_notes.html.twig`) указывают в `data-focus-return` id кнопок значения (первый найденный получает фокус после htmx-замены), а кнопка «Отмена» помечена `data-inline-cancel` — на неё нажимает Escape.
-
-## Нормализованная ссылка источника (`anime_source.normalized_url`)
-
-- Вторая форма ссылки — **только для сравнения**; `AnimeSource::$url` не меняется. Общие шаги (схема, хост, кодирование, сортировка параметров, хвостовой `/`) — `App\Entity\CommonUrlNormalizer`: без зависимостей, их использует и `Anime::hasSource()`. Правила плагинов (`link-rules.yaml`) применяет только сервис `SourceUrlNormalizer`; в дедупликацию они **не попадают**, иначе сохранённые данные зависели бы от набора плагинов.
-- Колонку заполняет листенер `prePersist`. Пересчёт (`RecomputeSourceUrlsMessageHandler`) — массовый DBAL `UPDATE`, **не через ORM**: через ORM `AnimeAggregateTouchListener` обновил бы `date_update` всех записей и поставил бы индексацию каждой.
-- Отпечаток набора правил лежит в `app_meta` внутри `data.db` (переезжает с бэкапом/импортом). Версия нормализатора (`SourceUrlNormalizer::VERSION`) входит в хеш: меняешь общие шаги — подними её.
-- Проверка отпечатка: `app:source-urls:check` на каждом старте (supervisor) и в конце `InstalledPluginsRegistry::reconcile()` в `try/catch` (сбой не откатывает установку плагина). Сообщение идёт на транспорт `source_urls` с коротким `redeliver_timeout`; его читает `plugins-consumer.js`.
-- Плагин с `link_rules` и без `src/` — штатный «плагин без кода»: `PluginLoader` не пишет ошибку, `workers.reload` не публикуется (перезапуск воркеров убил бы пересчёт посреди пачки). Признак — `InstalledPlugin::isCodeless()`.

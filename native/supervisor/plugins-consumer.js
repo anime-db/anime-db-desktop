@@ -87,7 +87,7 @@ function buildEnv(context) {
 function spawnProcess(context, backoffIdx = 0) {
     if (stopping) return;
 
-    child = spawn(BINARY, ['php-cli', CONSOLE, 'messenger:consume', 'plugins', 'sync', 'saturation_bulk', 'source_urls'], {
+    child = spawn(BINARY, ['php-cli', CONSOLE, 'messenger:consume', 'plugins', 'sync', 'saturation_bulk'], {
         cwd: paths.getAppRootDir(),
         env: buildEnv(context),
         stdio: ['ignore', 'pipe', 'pipe'],

@@ -41,9 +41,6 @@ jest.mock('../../native/supervisor/frankenphp', () => ({
 jest.mock('../../native/supervisor/downloads-poll', () => ({
     run: jest.fn(() => Promise.resolve()),
 }));
-jest.mock('../../native/supervisor/source-urls-check', () => ({
-    run: jest.fn(() => Promise.resolve()),
-}));
 jest.mock('../../native/supervisor/market-refresh', () => ({
     run: jest.fn(() => Promise.resolve()),
 }));
@@ -111,7 +108,6 @@ jest.mock('../../native/supervisor/import-apply', () => ({
 
 const cacheInvalidation = require('../../native/supervisor/cache-invalidation');
 const downloadsPoll     = require('../../native/supervisor/downloads-poll');
-const sourceUrlsCheck   = require('../../native/supervisor/source-urls-check');
 const frankenphp        = require('../../native/supervisor/frankenphp');
 const importApply       = require('../../native/supervisor/import-apply');
 const marketRefresh     = require('../../native/supervisor/market-refresh');
@@ -147,7 +143,6 @@ describe('supervisor.start', () => {
         pluginReconcile.run.mockResolvedValue(undefined);
         marketRefresh.run.mockResolvedValue(undefined);
         downloadsPoll.run.mockResolvedValue(undefined);
-        sourceUrlsCheck.run.mockResolvedValue(undefined);
         migrations.run.mockResolvedValue(undefined);
         stagedImport.decide.mockResolvedValue({ verdict: 'skip' });
         importApply.apply.mockResolvedValue({ applied: true, error: null });
@@ -593,25 +588,6 @@ describe('supervisor.start', () => {
 
         test('does not fail startup when the downloads poll errors out', async () => {
             downloadsPoll.run.mockRejectedValue(new Error('app:downloads:poll завершился с кодом 1'));
-
-            await expect(supervisor.start(jest.fn())).resolves.toMatchObject({ frankenphpPort: 8000 });
-        });
-    });
-
-    describe('source-urls-check startup trigger', () => {
-        test('runs the fingerprint check on every start, after the migrations and the messenger consumers', async () => {
-            const callOrder = [];
-            migrations.run.mockImplementation(() => { callOrder.push('migrations.run'); return Promise.resolve(); });
-            pluginsConsumer.start.mockImplementation(() => { callOrder.push('pluginsConsumer.start'); return Promise.resolve(); });
-            sourceUrlsCheck.run.mockImplementation(() => { callOrder.push('sourceUrlsCheck.run'); return Promise.resolve(); });
-
-            await supervisor.start(jest.fn());
-
-            expect(callOrder).toEqual(['migrations.run', 'pluginsConsumer.start', 'sourceUrlsCheck.run']);
-        });
-
-        test('does not fail startup when the check errors out', async () => {
-            sourceUrlsCheck.run.mockRejectedValue(new Error('app:source-urls:check завершился с кодом 1'));
 
             await expect(supervisor.start(jest.fn())).resolves.toMatchObject({ frankenphpPort: 8000 });
         });
