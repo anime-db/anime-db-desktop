@@ -621,6 +621,29 @@ final class ZipPluginInstaller
     }
 
     /**
+     * @throws PluginInstallException if the plugin declares `link_rules` and its rules file is
+     *                                missing, unreadable or invalid
+     */
+    private function assertLinkRulesAreValid(Manifest $manifest, string $pluginRoot): void
+    {
+        if (!$manifest->linkRules) {
+            return;
+        }
+
+        $path = $pluginRoot.\DIRECTORY_SEPARATOR.LinkRulesFileParser::FILE_NAME;
+        $contents = is_file($path) ? file_get_contents($path) : false;
+        if ($contents === false) {
+            throw new PluginInstallException(\sprintf('The plugin declares link_rules but "%s" is missing or unreadable.', LinkRulesFileParser::FILE_NAME));
+        }
+
+        try {
+            $this->linkRulesParser->parse($contents);
+        } catch (\InvalidArgumentException $exception) {
+            throw new PluginInstallException(\sprintf('Invalid "%s": %s', LinkRulesFileParser::FILE_NAME, $exception->getMessage()), 0, $exception);
+        }
+    }
+
+    /**
      * Validates the unpacked archive's `translations/native/` directory, if any, before anything
      * is moved into place (issue #647) — the same "fail before committing" philosophy as
      * {@see self::assertNoSyntaxErrors()} just below. This is the one piece of validation
@@ -648,25 +671,6 @@ final class ZipPluginInstaller
      *                                `*.json` file inside it cannot be read or does not decode to
      *                                a JSON object
      */
-    private function assertLinkRulesAreValid(Manifest $manifest, string $pluginRoot): void
-    {
-        if (!$manifest->linkRules) {
-            return;
-        }
-
-        $path = $pluginRoot.\DIRECTORY_SEPARATOR.LinkRulesFileParser::FILE_NAME;
-        $contents = is_file($path) ? file_get_contents($path) : false;
-        if ($contents === false) {
-            throw new PluginInstallException(\sprintf('The plugin declares link_rules but "%s" is missing or unreadable.', LinkRulesFileParser::FILE_NAME));
-        }
-
-        try {
-            $this->linkRulesParser->parse($contents);
-        } catch (\InvalidArgumentException $exception) {
-            throw new PluginInstallException(\sprintf('Invalid "%s": %s', LinkRulesFileParser::FILE_NAME, $exception->getMessage()), 0, $exception);
-        }
-    }
-
     private function assertNativeTranslationsAreReadable(Manifest $manifest, string $pluginRoot): void
     {
         if ($manifest->type !== PluginType::Translation) {
