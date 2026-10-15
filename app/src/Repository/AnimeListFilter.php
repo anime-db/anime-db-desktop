@@ -143,11 +143,6 @@ final class AnimeListFilter
         return $this->with(['datePremiereFrom' => null, 'datePremiereTo' => null, 'datePremiereIsNull' => false]);
     }
 
-    public function withoutSource(): self
-    {
-        return $this->with(['source' => null]);
-    }
-
     /** @param array<string, mixed> $overrides */
     private function with(array $overrides): self
     {
