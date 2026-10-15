@@ -36,6 +36,7 @@ use AnimeDb\PluginContracts\Manifest\ManifestValidationError;
 use AnimeDb\PluginContracts\Manifest\PluginType;
 use AnimeDb\PluginContracts\Manifest\PluginUi;
 use App\Entity\ValueObject\PluginId;
+use App\Service\Catalog\SourceUrlsRecomputeScheduler;
 use App\Service\Plugin\Exception\InstalledPluginsRegistryException;
 use App\Service\Plugin\Exception\InvalidInstalledPluginException;
 use App\Service\Translation\NativeTranslationsOverlayWriter;
@@ -137,6 +138,13 @@ final class InstalledPluginsRegistry
          */
         #[Autowire(lazy: true)]
         private readonly ?NativeTranslationsOverlayWriter $overlayWriter = null,
+        /**
+         * Queues the recompute of source link comparison forms after the plugin set changed (issue
+         * #1058). Lazy for the same reason as `$overlayWriter`: it depends on LinkRulesProvider,
+         * which depends on this registry. `null` skips the check.
+         */
+        #[Autowire(lazy: true)]
+        private readonly ?SourceUrlsRecomputeScheduler $sourceUrlsScheduler = null,
     ) {
     }
 
@@ -230,6 +238,17 @@ final class InstalledPluginsRegistry
             // writeIndex() failure above.
             $this->overlayWriter?->write();
         });
+
+        // Outside the synchronized() callback and guarded: unlike the overlay write above, a failure
+        // here must not roll back the install/update/removal that called reconcile(); the next
+        // start-up check picks the changed rule set up.
+        try {
+            $this->sourceUrlsScheduler?->checkAndSchedule();
+        } catch (\Throwable $exception) {
+            $this->logger->error('Could not queue the recompute of source links after the plugin set changed.', [
+                'exception' => $exception,
+            ]);
+        }
     }
 
     /**

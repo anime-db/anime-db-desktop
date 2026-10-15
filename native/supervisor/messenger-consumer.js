@@ -99,13 +99,16 @@ function runSetupTransports(context) {
  * первым: прогон нужен пользователю сразу, и его не должны задерживать ни push, ни индекс. Массовая
  * очередь `saturation_bulk` потребляется plugins-consumer.js, последней.
  *
+ * `source_urls` (issue #1058, пересчёт anime_source.normalized_url после смены набора правил ссылок)
+ * стоит последним: это фоновая работа с наименьшим приоритетом.
+ *
  * @param {import('./env').PhpContext} context
  * @param {number} backoffIdx
  */
 function spawnProcess(context, backoffIdx = 0) {
     if (stopping) return;
 
-    child = spawn(BINARY, ['php-cli', CONSOLE, 'messenger:consume', 'saturation', 'async', 'media', 'scheduler_downloads_poll', 'scheduler_market_refresh', 'scheduler_sync_pull'], {
+    child = spawn(BINARY, ['php-cli', CONSOLE, 'messenger:consume', 'saturation', 'async', 'media', 'scheduler_downloads_poll', 'scheduler_market_refresh', 'scheduler_sync_pull', 'source_urls'], {
         cwd: paths.getAppRootDir(),
         env: buildEnv(context),
         stdio: ['ignore', 'pipe', 'pipe'],

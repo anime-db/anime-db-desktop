@@ -104,6 +104,18 @@ framework:
                     queue_name: saturation_bulk
                     redeliver_timeout: 900
 
+            # Recompute of anime_source.normalized_url after the link rule set changed (issue #1058,
+            # App\Message\RecomputeSourceUrlsMessage). Listed last in the `async` consumer
+            # (native/supervisor/messenger-consumer.js): background work of the lowest priority.
+            # Not the doctrine default of 3600s: stopping the consumer is routine and kills it in the
+            # middle of a batch, and the interrupted message would only come back an hour later.
+            # The recompute is idempotent, so a redelivery after a long run is harmless.
+            source_urls:
+                dsn: '%env(MESSENGER_TRANSPORT_DSN)%'
+                options:
+                    queue_name: source_urls
+                    redeliver_timeout: 300
+
         routing:
             'App\Message\ScanStorageMessage': async
             'App\Message\IndexAnimeMessage': async
@@ -118,3 +130,4 @@ framework:
             'App\Message\RunPluginBackgroundTaskMessage': plugins
             # The transport is always chosen at dispatch (TransportNamesStamp); this is only a default.
             'App\Message\SaturateAnimeMessage': saturation
+            'App\Message\RecomputeSourceUrlsMessage': source_urls

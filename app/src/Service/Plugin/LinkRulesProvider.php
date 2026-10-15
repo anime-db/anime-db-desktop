@@ -66,6 +66,17 @@ final class LinkRulesProvider
     }
 
     /**
+     * The rules and their fingerprint read together, once: for work over many rows, which must not
+     * re-read the rule files per row.
+     */
+    public function snapshot(): LinkRulesSnapshot
+    {
+        [$fingerprint, $rules] = $this->load();
+
+        return new LinkRulesSnapshot($fingerprint, $rules);
+    }
+
+    /**
      * Hash of the ids and versions of the plugins with rules, the content of their rule files and
      * {@see SourceUrlNormalizer::VERSION}.
      */
