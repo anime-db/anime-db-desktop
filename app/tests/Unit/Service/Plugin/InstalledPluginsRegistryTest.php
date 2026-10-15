@@ -177,6 +177,46 @@ final class InstalledPluginsRegistryTest extends TestCase
         $this->assertNull($registry->all()[0]->manifest->ui);
     }
 
+    public function testReconcileRoundTripsTheLinkRulesFlag(): void
+    {
+        $this->writeLinkRulesManifest('animedb-rules');
+
+        (new InstalledPluginsRegistry($this->pluginsDir, $this->configStore(), new NullLogger()))->reconcile();
+        $registry = new InstalledPluginsRegistry($this->pluginsDir, $this->configStore(), new NullLogger());
+
+        $this->assertTrue($registry->all()[0]->manifest->linkRules);
+    }
+
+    public function testReadIndexParsesAnEntryWrittenBeforeTheLinkRulesFlagExisted(): void
+    {
+        $this->writeLinkRulesManifest('animedb-rules');
+        (new InstalledPluginsRegistry($this->pluginsDir, $this->configStore(), new NullLogger()))->reconcile();
+
+        $indexPath = $this->pluginsDir.'/installed-plugins.php';
+        $entries = require $indexPath;
+        unset($entries['animedb-rules']['manifest']['link_rules']);
+        file_put_contents($indexPath, "<?php\n\nreturn ".var_export($entries, true).";\n");
+
+        $registry = new InstalledPluginsRegistry($this->pluginsDir, $this->configStore(), new NullLogger());
+
+        $this->assertCount(1, $registry->all());
+        $this->assertFalse($registry->all()[0]->manifest->linkRules);
+    }
+
+    private function writeLinkRulesManifest(string $pluginId): void
+    {
+        $dir = $this->pluginsDir.'/'.$pluginId;
+        mkdir($dir, recursive: true);
+        file_put_contents($dir.'/manifest.json', (string) json_encode([
+            'id' => $pluginId,
+            'name' => ucfirst($pluginId),
+            'version' => '1.0.0',
+            'type' => 'local',
+            'link_rules' => true,
+            'require' => ['core' => '>=2.0.0', 'php' => '>=8.2'],
+        ]));
+    }
+
     public function testReconcileAcceptsLocalPluginType(): void
     {
         $dir = $this->pluginsDir.'/animedb-onboarding';

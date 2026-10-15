@@ -32,12 +32,23 @@ use App\Entity\SourceUrl;
 use App\Entity\TvAnime;
 use App\EventListener\AnimeSourceNormalizedUrlListener;
 use App\Service\Catalog\SourceUrlNormalizer;
+use App\Service\Plugin\LinkRulesProvider;
+use App\Tests\Support\BuildsLinkRulesPlugins;
+use App\Tests\Support\TemporaryDirectories;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Event\PrePersistEventArgs;
 use PHPUnit\Framework\TestCase;
 
 final class AnimeSourceTest extends TestCase
 {
+    use BuildsLinkRulesPlugins;
+    use TemporaryDirectories;
+
+    protected function tearDown(): void
+    {
+        $this->removeTemporaryDirectories();
+    }
+
     public function testConstructorSetsFields(): void
     {
         $anime = new TvAnime();
@@ -102,6 +113,38 @@ final class AnimeSourceTest extends TestCase
 
         $this->assertSame('https://example.org/a?x=1&y=2', $source->normalizedUrl);
         $this->assertSame('http://www.Example.org/a/?y=2&x=1', $source->url);
+    }
+
+    private function installAnidbRules(): SourceUrlNormalizer
+    {
+        $this->writeLinkRulesPlugin('acme-rules', ['https://anidb\.net/a(\d+)' => 'https://anidb.net/anime/$1']);
+
+        return new SourceUrlNormalizer(new LinkRulesProvider($this->linkRulesRegistry()));
+    }
+
+    public function testListenerAppliesInstalledRulesToANewSource(): void
+    {
+        $listener = new AnimeSourceNormalizedUrlListener($this->installAnidbRules());
+        $short = new AnimeSource(new TvAnime(), 'https://anidb.net/a959');
+        $long = new AnimeSource(new TvAnime(), 'https://anidb.net/anime/959');
+
+        foreach ([$short, $long] as $source) {
+            $listener->prePersist(new PrePersistEventArgs($source, $this->createStub(EntityManagerInterface::class)));
+        }
+
+        $this->assertSame('https://anidb.net/anime/959', $short->normalizedUrl);
+        $this->assertSame('https://anidb.net/anime/959', $long->normalizedUrl);
+        $this->assertSame('https://anidb.net/a959', $short->url);
+    }
+
+    public function testAddSourceIgnoresInstalledRules(): void
+    {
+        $this->installAnidbRules();
+
+        $anime = new TvAnime();
+        $anime->addSource('https://anidb.net/a959')->addSource('https://anidb.net/anime/959');
+
+        $this->assertCount(2, $anime->getSources());
     }
 
     public function testNormalizeUrlEncodesNonAsciiAndIsIdempotent(): void

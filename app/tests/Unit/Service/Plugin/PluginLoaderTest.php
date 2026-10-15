@@ -89,6 +89,28 @@ final class PluginLoaderTest extends TestCase
         $this->assertSame([], $this->loader(logger: $logger)->pluginBundles());
     }
 
+    public function testLocalPluginWithLinkRulesAndWithoutSrcIsNotAnError(): void
+    {
+        $pluginId = 'acme-'.uniqid();
+        $this->writeLocalManifest($pluginId, linkRules: true);
+
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->never())->method('error');
+
+        $this->assertSame([], $this->loader(logger: $logger)->pluginBundles());
+    }
+
+    public function testLocalPluginWithoutLinkRulesAndWithoutSrcIsStillAnError(): void
+    {
+        $pluginId = 'acme-'.uniqid();
+        $this->writeLocalManifest($pluginId);
+
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->once())->method('error')->with($this->stringContains('src/'));
+
+        $this->assertSame([], $this->loader(logger: $logger)->pluginBundles());
+    }
+
     public function testIntegrationBundlesLoadsPluginWithoutBundleClassWithoutErrorLog(): void
     {
         $pluginId = 'acme-'.uniqid();
@@ -365,7 +387,7 @@ final class PluginLoaderTest extends TestCase
         ]));
     }
 
-    private function writeLocalManifest(string $pluginId): void
+    private function writeLocalManifest(string $pluginId, bool $linkRules = false): void
     {
         $dir = $this->pluginsDir.'/'.$pluginId;
         mkdir($dir, recursive: true);
@@ -374,7 +396,7 @@ final class PluginLoaderTest extends TestCase
             'name' => ucfirst($pluginId),
             'version' => '1.0.0',
             'type' => 'local',
-            'features' => ['widget' => true],
+            ...($linkRules ? ['link_rules' => true] : ['features' => ['widget' => true]]),
             'require' => ['core' => '>=2.0.0', 'php' => '>=8.2'],
         ]));
     }

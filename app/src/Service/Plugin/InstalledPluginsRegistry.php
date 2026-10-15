@@ -316,6 +316,7 @@ final class InstalledPluginsRegistry
             'locales' => $manifest->locales,
             'updateUrl' => $manifest->updateUrl,
             'ui' => $manifest->ui !== null ? ['css' => $manifest->ui->css, 'js' => $manifest->ui->js] : null,
+            'link_rules' => $manifest->linkRules,
         ];
     }
 
@@ -336,6 +337,8 @@ final class InstalledPluginsRegistry
         // a CLI invocation against an older AppData — has no "ui" key at all, and direct access
         // would fail parsing for every installed plugin at once.
         $ui = $data['ui'] ?? null;
+        // Same reasoning for "link_rules": an index written before the field existed has no key.
+        $linkRules = $data['link_rules'] ?? null;
 
         return new Manifest(
             id: $data['id'],
@@ -353,6 +356,7 @@ final class InstalledPluginsRegistry
             locales: $data['locales'],
             updateUrl: $data['updateUrl'],
             ui: \is_array($ui) ? new PluginUi(css: $ui['css'] ?? [], js: $ui['js'] ?? []) : null,
+            linkRules: $linkRules === true,
         );
     }
 

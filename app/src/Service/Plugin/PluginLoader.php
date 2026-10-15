@@ -238,6 +238,10 @@ final class PluginLoader
         $srcDir = $plugin->installPath.\DIRECTORY_SEPARATOR.'src';
 
         if (!is_dir($srcDir)) {
+            if ($plugin->isRulesOnly()) {
+                return null;
+            }
+
             $this->logger->error('Skipping code plugin without a src/ directory.', [
                 'pluginId' => (string) $plugin->id,
                 'installPath' => $plugin->installPath,

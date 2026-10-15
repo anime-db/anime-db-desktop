@@ -159,6 +159,7 @@ final class ZipPluginInstaller
         private readonly ?string $pluginContractsVersion = null,
         private readonly ManifestParser $manifestParser = new ManifestParser(),
         private readonly LoggerInterface $logger = new NullLogger(),
+        private readonly LinkRulesFileParser $linkRulesParser = new LinkRulesFileParser(),
     ) {
     }
 
@@ -184,15 +185,18 @@ final class ZipPluginInstaller
      */
     public function install(string $zipPath, bool $trusted = false): PluginId
     {
-        $pluginId = $this->registry->synchronized(fn (): PluginId => $this->doInstall($zipPath, $trusted));
+        [$pluginId, $needsReload] = $this->registry->synchronized(fn (): array => $this->doInstall($zipPath, $trusted));
 
         // Deliberately outside the lock and the try/catch inside doInstall(): the install is
         // already complete at this point (moved into place, registry re-synced, cache warm-up
         // passed), so a failure to publish this best-effort notification must not roll it back —
         // see the class docblock. There is also no reason to keep holding the exclusive plugin
         // filesystem lock for a notification that touches neither the index nor a plugin directory.
+        // A plugin without code (link rules only) has nothing for the workers to reload.
         try {
-            $this->wsPublisher->publish(self::WORKERS_RELOAD_EVENT, ['pluginId' => (string) $pluginId]);
+            if ($needsReload) {
+                $this->wsPublisher->publish(self::WORKERS_RELOAD_EVENT, ['pluginId' => (string) $pluginId]);
+            }
         } catch (\Throwable $exception) {
             $this->logger->warning('Failed to publish {event} for plugin {pluginId}: {message}', [
                 'event' => self::WORKERS_RELOAD_EVENT,
@@ -211,12 +215,15 @@ final class ZipPluginInstaller
      * loser sees {@see PluginAlreadyInstalledException} from the checks below once the winner's
      * whole operation has already finished, rather than both passing the check and one deleting
      * the other's freshly installed directory (issue #420).
+     *
+     * @return array{PluginId, bool} the plugin id and whether the workers have to be reloaded
      */
-    private function doInstall(string $zipPath, bool $trusted): PluginId
+    private function doInstall(string $zipPath, bool $trusted): array
     {
         $tmpDir = $this->createTmpDir();
         $moveStarted = false;
         $targetDir = null;
+        $needsReload = true;
 
         try {
             $this->extract($zipPath, $tmpDir);
@@ -225,6 +232,7 @@ final class ZipPluginInstaller
             $this->assertCoreVersionCompatible($manifest);
             $this->assertPluginContractsCompatible($manifest);
             $this->assertNativeTranslationsAreReadable($manifest, $pluginRoot);
+            $this->assertLinkRulesAreValid($manifest, $pluginRoot);
             if (!$trusted) {
                 $this->assertNoSyntaxErrors($pluginRoot);
             }
@@ -235,6 +243,7 @@ final class ZipPluginInstaller
                 throw new PluginAlreadyInstalledException($pluginId);
             }
 
+            $needsReload = !InstalledPlugin::manifestIsRulesOnly($manifest, $pluginRoot);
             $moveStarted = true;
             $this->move($pluginRoot, $targetDir);
 
@@ -251,7 +260,7 @@ final class ZipPluginInstaller
             $this->cleanupStagingDirectory($tmpDir);
         }
 
-        return $pluginId;
+        return [$pluginId, $needsReload];
     }
 
     /**
@@ -324,14 +333,17 @@ final class ZipPluginInstaller
      */
     public function update(string $zipPath, bool $trusted = false): PluginId
     {
-        $pluginId = $this->registry->synchronized(fn (): PluginId => $this->doUpdate($zipPath, $trusted));
+        [$pluginId, $needsReload] = $this->registry->synchronized(fn (): array => $this->doUpdate($zipPath, $trusted));
 
         // Deliberately outside the lock and the try/catch inside doUpdate(): the update is
         // already complete at this point (new version moved into place, registry re-synced,
         // cache warm-up passed), so a failure to publish this best-effort notification must not
         // roll it back — see the class docblock.
+        // A plugin without code (link rules only) has nothing for the workers to reload.
         try {
-            $this->wsPublisher->publish(self::WORKERS_RELOAD_EVENT, ['pluginId' => (string) $pluginId]);
+            if ($needsReload) {
+                $this->wsPublisher->publish(self::WORKERS_RELOAD_EVENT, ['pluginId' => (string) $pluginId]);
+            }
         } catch (\Throwable $exception) {
             $this->logger->warning('Failed to publish {event} for plugin {pluginId}: {message}', [
                 'event' => self::WORKERS_RELOAD_EVENT,
@@ -347,14 +359,17 @@ final class ZipPluginInstaller
     /**
      * The mutating body of {@see self::update()}, run under {@see InstalledPluginsRegistry::synchronized()}
      * — same rationale as {@see self::doInstall()}.
+     *
+     * @return array{PluginId, bool} the plugin id and whether the workers have to be reloaded
      */
-    private function doUpdate(string $zipPath, bool $trusted): PluginId
+    private function doUpdate(string $zipPath, bool $trusted): array
     {
         $tmpDir = $this->createTmpDir();
         $targetDir = null;
         $backupDir = null;
         $backedUp = false;
         $newVersionInPlace = false;
+        $needsReload = true;
 
         try {
             $this->extract($zipPath, $tmpDir);
@@ -363,6 +378,7 @@ final class ZipPluginInstaller
             $this->assertCoreVersionCompatible($manifest);
             $this->assertPluginContractsCompatible($manifest);
             $this->assertNativeTranslationsAreReadable($manifest, $pluginRoot);
+            $this->assertLinkRulesAreValid($manifest, $pluginRoot);
             if (!$trusted) {
                 $this->assertNoSyntaxErrors($pluginRoot);
             }
@@ -372,6 +388,11 @@ final class ZipPluginInstaller
             if (!$this->registry->has($pluginId) && !is_dir($targetDir)) {
                 throw new PluginNotInstalledException($pluginId);
             }
+
+            // The previous version may have had code that the workers still run.
+            $previous = $this->registry->get($pluginId);
+            $needsReload = !InstalledPlugin::manifestIsRulesOnly($manifest, $pluginRoot)
+                || ($previous !== null && !$previous->isRulesOnly());
 
             $backupDir = $this->stagingRootDir().\DIRECTORY_SEPARATOR.'anime-db-plugin-update-backup-'.bin2hex(random_bytes(8));
             $this->move($targetDir, $backupDir);
@@ -395,7 +416,7 @@ final class ZipPluginInstaller
 
         $this->cleanupStagingDirectory($backupDir);
 
-        return $pluginId;
+        return [$pluginId, $needsReload];
     }
 
     /**
@@ -627,6 +648,25 @@ final class ZipPluginInstaller
      *                                `*.json` file inside it cannot be read or does not decode to
      *                                a JSON object
      */
+    private function assertLinkRulesAreValid(Manifest $manifest, string $pluginRoot): void
+    {
+        if (!$manifest->linkRules) {
+            return;
+        }
+
+        $path = $pluginRoot.\DIRECTORY_SEPARATOR.LinkRulesFileParser::FILE_NAME;
+        $contents = is_file($path) ? file_get_contents($path) : false;
+        if ($contents === false) {
+            throw new PluginInstallException(\sprintf('The plugin declares link_rules but "%s" is missing or unreadable.', LinkRulesFileParser::FILE_NAME));
+        }
+
+        try {
+            $this->linkRulesParser->parse($contents);
+        } catch (\InvalidArgumentException $exception) {
+            throw new PluginInstallException(\sprintf('Invalid "%s": %s', LinkRulesFileParser::FILE_NAME, $exception->getMessage()), 0, $exception);
+        }
+    }
+
     private function assertNativeTranslationsAreReadable(Manifest $manifest, string $pluginRoot): void
     {
         if ($manifest->type !== PluginType::Translation) {

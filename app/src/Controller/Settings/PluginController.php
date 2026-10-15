@@ -229,10 +229,16 @@ final class PluginController
             throw new NotFoundHttpException(\sprintf('Unknown plugin "%s".', $pluginId));
         }
 
+        // A plugin without code (link rules only) has nothing for the workers to reload.
+        $removed = $this->installedPlugins->get($id);
+        $needsReload = $removed === null || !$removed->isRulesOnly();
+
         $this->remover->remove($id);
 
         try {
-            $this->wsPublisher->publish(ZipPluginInstaller::WORKERS_RELOAD_EVENT, ['pluginId' => (string) $id]);
+            if ($needsReload) {
+                $this->wsPublisher->publish(ZipPluginInstaller::WORKERS_RELOAD_EVENT, ['pluginId' => (string) $id]);
+            }
         } catch (\Throwable $exception) {
             $this->logger->warning('Failed to publish {event} for plugin {pluginId}: {message}', [
                 'event' => ZipPluginInstaller::WORKERS_RELOAD_EVENT,
