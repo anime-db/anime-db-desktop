@@ -34,6 +34,7 @@ use Doctrine\ORM\Mapping as ORM;
  */
 #[ORM\Entity]
 #[ORM\Index(name: 'IDX_ANIME_SOURCE_ANIME', fields: ['anime'])]
+#[ORM\Index(name: 'IDX_ANIME_SOURCE_NORMALIZED_URL', fields: ['normalizedUrl'])]
 class AnimeSource
 {
     #[ORM\Id, ORM\GeneratedValue, ORM\Column]
@@ -46,12 +47,24 @@ class AnimeSource
     #[ORM\Column(length: 512)]
     public readonly string $url;
 
+    /**
+     * Comparison form of {@see $url} (see App\Service\Catalog\SourceUrlNormalizer); filled on persist by
+     * AnimeSourceNormalizedUrlListener and never shown to the user.
+     */
+    #[ORM\Column(name: 'normalized_url', length: SourceUrl::MAX_LENGTH, options: ['default' => ''])]
+    public private(set) string $normalizedUrl = '';
+
     public const MAX_URL_LENGTH = 512;
 
     public function __construct(Anime $anime, string $url)
     {
         $this->anime = $anime;
         $this->url = $url;
+    }
+
+    public function useNormalizedUrl(string $normalizedUrl): void
+    {
+        $this->normalizedUrl = $normalizedUrl;
     }
 
     /**
@@ -88,26 +101,5 @@ class AnimeSource
         return mb_strlen($url) <= self::MAX_URL_LENGTH
             && filter_var($url, \FILTER_VALIDATE_URL) !== false
             && \in_array(parse_url($url, \PHP_URL_SCHEME), ['http', 'https'], true);
-    }
-
-    /**
-     * Comparison key: scheme and `www.` ignored, host lower-cased, no trailing slash. Falls back
-     * to the raw url when it cannot be parsed, so unusual legacy values still compare by identity.
-     */
-    public static function key(string $url): string
-    {
-        $parts = parse_url($url);
-        if ($parts === false || !isset($parts['host'])) {
-            return $url;
-        }
-
-        $key = preg_replace('/^www\./', '', strtolower($parts['host']))
-            .(isset($parts['port']) ? ':'.$parts['port'] : '')
-            .($parts['path'] ?? '');
-        if (isset($parts['query'])) {
-            $key .= '?'.$parts['query'];
-        }
-
-        return rtrim($key, '/');
     }
 }

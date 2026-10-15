@@ -157,6 +157,20 @@ final class MigrationDataIntegrityCheckerTest extends TestCase
         $this->assertStringContainsString('no row', $violation);
     }
 
+    public function testVerifySourceNormalizedUrlReportsAnUnfilledColumn(): void
+    {
+        $pdo = $this->fromTemplate();
+        $animeId = self::$templateFixture['animeId'];
+
+        $this->assertSame([], $this->checker->verifySourceNormalizedUrl($pdo, $animeId));
+
+        $pdo->exec("UPDATE anime_source SET normalized_url = ''");
+
+        $violations = $this->checker->verifySourceNormalizedUrl($pdo, $animeId);
+        $this->assertCount(1, $violations);
+        $this->assertStringContainsString('normalized_url', implode("\n", $violations));
+    }
+
     public function testVerifyCascadeDeleteReportsAMissingCascade(): void
     {
         $pdo = $this->fromTemplate();

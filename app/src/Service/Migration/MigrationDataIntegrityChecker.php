@@ -41,6 +41,8 @@ final class MigrationDataIntegrityChecker
         'anime_image', 'anime_source', 'anime_external_id', 'anime_description', 'anime_plugin_data',
     ];
 
+    private const FIXTURE_SOURCE_URL = 'https://example.test/cowboy-bebop';
+
     /** `downloads`, seeded right after Version20260809000000 creates it. */
     public const MID_FIXTURE_TABLES = ['downloads'];
 
@@ -83,7 +85,7 @@ final class MigrationDataIntegrityChecker
         $pdo->exec("INSERT INTO anime_labels (anime_id, label_id) VALUES ({$animeId}, 1)");
         $pdo->exec("INSERT INTO anime_themes (anime_id, theme_code) VALUES ({$animeId}, 'mecha')");
         $pdo->exec("INSERT INTO anime_image (anime_id, source) VALUES ({$animeId}, 'cover.jpg')");
-        $pdo->exec("INSERT INTO anime_source (anime_id, url) VALUES ({$animeId}, 'https://example.test/cowboy-bebop')");
+        $pdo->exec("INSERT INTO anime_source (anime_id, url) VALUES ({$animeId}, '".self::FIXTURE_SOURCE_URL."')");
         $pdo->exec("INSERT INTO anime_external_id (anime_id, plugin_id, external_id) VALUES ({$animeId}, 'mal', '1')");
         $pdo->exec("INSERT INTO anime_description (anime_id, locale, description) VALUES ({$animeId}, 'en', 'Bounty hunters in space.')");
         $pdo->exec("INSERT INTO anime_plugin_data (anime_id, plugin_id, payload) VALUES ({$animeId}, 'mal', '{}')");
@@ -236,6 +238,28 @@ final class MigrationDataIntegrityChecker
         }
 
         return $violations;
+    }
+
+    /**
+     * Checks that Version20261012000000 backfilled `anime_source.normalized_url` of the seeded row
+     * with the common normalization steps (the fixture url is already in that form).
+     *
+     * @return list<string>
+     */
+    public function verifySourceNormalizedUrl(\PDO $pdo, int $animeId): array
+    {
+        $statement = $pdo->prepare('SELECT normalized_url FROM anime_source WHERE anime_id = ?');
+        $statement->execute([$animeId]);
+        $actual = $statement->fetchColumn();
+        if ($actual !== self::FIXTURE_SOURCE_URL) {
+            return [\sprintf(
+                "anime_source: expected normalized_url '%s', found %s",
+                self::FIXTURE_SOURCE_URL,
+                $actual === false ? 'no row' : "'{$actual}'",
+            )];
+        }
+
+        return [];
     }
 
     /**
