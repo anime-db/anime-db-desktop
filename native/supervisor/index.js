@@ -37,6 +37,7 @@ const pluginsConsumer   = require('./plugins-consumer');
 const qbittorrent       = require('./qbittorrent');
 const safeModeState     = require('./safe-mode');
 const searchReindex     = require('./search-reindex');
+const sourceUrlsCheck   = require('./source-urls-check');
 const stagedImport      = require('./staged-import');
 
 const events = new EventEmitter();
@@ -291,6 +292,16 @@ async function start(onProgress, { safeMode = false, confirmStagedImport } = {})
         } catch (err) {
             console.error('[plugin-reconcile] не удалось пересобрать индекс установленных плагинов:', err.message);
         }
+    }
+
+    // Compares the link rule set fingerprint with the stored one on every start, after the catalog
+    // import and the plugin reconcile above: those can swap data.db or change the rule set, and a
+    // check placed right after the migrations would miss an imported catalog until the next start.
+    // The command queues the recompute itself; a failure is only logged, the next start repeats it.
+    try {
+        await sourceUrlsCheck.run(phpContext);
+    } catch (err) {
+        console.error('[source-urls-check] не удалось проверить отпечаток набора правил ссылок:', err.message);
     }
 
     if (onProgress) onProgress(2, TOTAL_STEPS, 'splash.step_frankenphp');
