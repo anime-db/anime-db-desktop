@@ -41,6 +41,12 @@ final class MigrationDataIntegrityChecker
         'anime_image', 'anime_source', 'anime_external_id', 'anime_description', 'anime_plugin_data',
     ];
 
+    /** Deliberately not in normalized form: a backfill that merely copies `url` must be detected. */
+    private const FIXTURE_SOURCE_URL = 'http://www.Example.test/cowboy-bebop/?b=2&a=1#x';
+
+    /** Hardcoded on purpose, not computed by SourceUrl::common(), so the expectation is not a tautology. */
+    private const FIXTURE_SOURCE_NORMALIZED_URL = 'https://example.test/cowboy-bebop?a=1&b=2';
+
     /** `downloads`, seeded right after Version20260809000000 creates it. */
     public const MID_FIXTURE_TABLES = ['downloads'];
 
@@ -83,7 +89,7 @@ final class MigrationDataIntegrityChecker
         $pdo->exec("INSERT INTO anime_labels (anime_id, label_id) VALUES ({$animeId}, 1)");
         $pdo->exec("INSERT INTO anime_themes (anime_id, theme_code) VALUES ({$animeId}, 'mecha')");
         $pdo->exec("INSERT INTO anime_image (anime_id, source) VALUES ({$animeId}, 'cover.jpg')");
-        $pdo->exec("INSERT INTO anime_source (anime_id, url) VALUES ({$animeId}, 'https://example.test/cowboy-bebop')");
+        $pdo->exec("INSERT INTO anime_source (anime_id, url) VALUES ({$animeId}, '".self::FIXTURE_SOURCE_URL."')");
         $pdo->exec("INSERT INTO anime_external_id (anime_id, plugin_id, external_id) VALUES ({$animeId}, 'mal', '1')");
         $pdo->exec("INSERT INTO anime_description (anime_id, locale, description) VALUES ({$animeId}, 'en', 'Bounty hunters in space.')");
         $pdo->exec("INSERT INTO anime_plugin_data (anime_id, plugin_id, payload) VALUES ({$animeId}, 'mal', '{}')");
@@ -236,6 +242,28 @@ final class MigrationDataIntegrityChecker
         }
 
         return $violations;
+    }
+
+    /**
+     * Checks that Version20261012000000 backfilled `anime_source.normalized_url` of the seeded row
+     * with the common normalization steps (the fixture url is not in normalized form).
+     *
+     * @return list<string>
+     */
+    public function verifySourceNormalizedUrl(\PDO $pdo, int $animeId): array
+    {
+        $statement = $pdo->prepare('SELECT normalized_url FROM anime_source WHERE anime_id = ?');
+        $statement->execute([$animeId]);
+        $actual = $statement->fetchColumn();
+        if ($actual !== self::FIXTURE_SOURCE_NORMALIZED_URL) {
+            return [\sprintf(
+                "anime_source: expected normalized_url '%s', found %s",
+                self::FIXTURE_SOURCE_NORMALIZED_URL,
+                $actual === false ? 'no row' : "'{$actual}'",
+            )];
+        }
+
+        return [];
     }
 
     /**

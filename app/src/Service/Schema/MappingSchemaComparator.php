@@ -53,9 +53,10 @@ final class MappingSchemaComparator
      * Tables that are absent from the mapping by design: `doctrine_migration_versions` is the
      * bookkeeping table of the migrations bundle, created by the bundle rather than by a migration
      * or an entity; `scan_run` is the storage scan journal, written and read through DBAL only;
-     * `notification_once_key` holds the keys of the once-only notifications, also DBAL only.
+     * `notification_once_key` holds the keys of the once-only notifications, also DBAL only;
+     * `app_meta` is a key-value table for application bookkeeping, also DBAL only.
      */
-    private const UNMAPPED_TABLES = ['doctrine_migration_versions', 'scan_run', 'notification_once_key', 'plugin_sync_state'];
+    private const UNMAPPED_TABLES = ['doctrine_migration_versions', 'scan_run', 'notification_once_key', 'plugin_sync_state', 'app_meta'];
 
     /**
      * Indexes absent from the mapping by design, as `table.index`: the partial unique index of the

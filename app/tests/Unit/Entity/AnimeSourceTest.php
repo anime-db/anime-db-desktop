@@ -28,7 +28,12 @@ declare(strict_types=1);
 namespace App\Tests\Unit\Entity;
 
 use App\Entity\AnimeSource;
+use App\Entity\SourceUrl;
 use App\Entity\TvAnime;
+use App\EventListener\AnimeSourceNormalizedUrlListener;
+use App\Service\Catalog\SourceUrlNormalizer;
+use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\ORM\Event\PrePersistEventArgs;
 use PHPUnit\Framework\TestCase;
 
 final class AnimeSourceTest extends TestCase
@@ -62,10 +67,10 @@ final class AnimeSourceTest extends TestCase
         $this->assertSame($valid, AnimeSource::isValidUrl($url));
     }
 
-    public function testKeyIgnoresSchemeWwwCaseAndTrailingSlash(): void
+    public function testCommonFormIgnoresSchemeWwwCaseAndTrailingSlash(): void
     {
-        $this->assertSame(AnimeSource::key('https://example.org/x'), AnimeSource::key('http://www.Example.org/x/'));
-        $this->assertNotSame(AnimeSource::key('https://a.org/1'), AnimeSource::key('https://b.org/1'));
+        $this->assertSame(SourceUrl::common('https://example.org/x'), SourceUrl::common('http://www.Example.org/x/'));
+        $this->assertNotSame(SourceUrl::common('https://a.org/1'), SourceUrl::common('https://b.org/1'));
     }
 
     public function testAnimeAddSourceIsIdempotentByKey(): void
@@ -76,6 +81,29 @@ final class AnimeSourceTest extends TestCase
         $this->assertCount(1, $anime->getSources());
     }
 
+    public function testAnimeAddSourceIgnoresQueryParameterOrder(): void
+    {
+        $anime = new TvAnime();
+        $anime->addSource('https://example.org/a?x=1&y=2')->addSource('https://example.org/a?y=2&x=1');
+
+        $this->assertCount(1, $anime->getSources());
+        $first = $anime->getSources()->first();
+        $this->assertInstanceOf(AnimeSource::class, $first);
+        $this->assertSame('https://example.org/a?x=1&y=2', $first->url);
+    }
+
+    public function testListenerFillsNormalizedUrlAndKeepsTheDisplayedUrl(): void
+    {
+        $source = new AnimeSource(new TvAnime(), 'http://www.Example.org/a/?y=2&x=1');
+        $this->assertSame('', $source->normalizedUrl);
+
+        $listener = new AnimeSourceNormalizedUrlListener(new SourceUrlNormalizer());
+        $listener->prePersist(new PrePersistEventArgs($source, $this->createStub(EntityManagerInterface::class)));
+
+        $this->assertSame('https://example.org/a?x=1&y=2', $source->normalizedUrl);
+        $this->assertSame('http://www.Example.org/a/?y=2&x=1', $source->url);
+    }
+
     public function testNormalizeUrlEncodesNonAsciiAndIsIdempotent(): void
     {
         $encoded = 'https://ja.wikipedia.org/wiki/%E8%91%AC%E9%80%81%E3%81%AE%E3%83%95%E3%83%AA%E3%83%BC%E3%83%AC%E3%83%B3';
@@ -84,7 +112,7 @@ final class AnimeSourceTest extends TestCase
         $this->assertSame($encoded, $raw);
         $this->assertTrue(AnimeSource::isValidUrl($raw));
         $this->assertSame($encoded, AnimeSource::normalizeUrl($encoded));
-        $this->assertSame(AnimeSource::key($encoded), AnimeSource::key($raw));
+        $this->assertSame(SourceUrl::common($encoded), SourceUrl::common($raw));
     }
 
     public function testNormalizeUrlKeepsSpaceInvalid(): void
@@ -107,7 +135,7 @@ final class AnimeSourceTest extends TestCase
         $this->assertSame($expected, $lower);
         $this->assertTrue(AnimeSource::isValidUrl($upper));
         $this->assertTrue(AnimeSource::isValidUrl($lower));
-        $this->assertSame(AnimeSource::key($upper), AnimeSource::key($lower));
+        $this->assertSame(SourceUrl::common($upper), SourceUrl::common($lower));
     }
 
     public function testNormalizeUrlLowercasesTheScheme(): void

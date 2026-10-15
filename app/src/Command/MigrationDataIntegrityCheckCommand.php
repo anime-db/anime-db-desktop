@@ -141,6 +141,7 @@ final class MigrationDataIntegrityCheckCommand extends Command
             $violations = [...$violations, ...$this->checker->verifyCounts($pdo, $fixture['counts'])];
             $violations = [...$violations, ...$this->checker->verifyIds($pdo, 'anime_name', $fixture['nameIds'])];
             $violations = [...$violations, ...$this->checker->verifyFtsSync($pdo, $fixture['names'], $fixture['animeId'])];
+            $violations = [...$violations, ...$this->checker->verifySourceNormalizedUrl($pdo, $fixture['animeId'])];
             $violations = [...$violations, ...$this->checker->verifyCascadeDelete($pdo, $fixture['animeId'])];
         } finally {
             $filesystem->remove($workDir);
