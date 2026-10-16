@@ -279,6 +279,37 @@ class AppSettingsProvider
     }
 
     /**
+     * The ordered plugin ids whose descriptions win over later ones (issue #1069), one list for
+     * all locales. The priority counts as configured only when the saved list is non-empty:
+     * a missing key, a malformed value and an empty list all read as an empty list.
+     *
+     * @return list<string>
+     */
+    public function getDescriptionSourcePriority(): array
+    {
+        $ids = $this->configStore->read()['descriptionSourcePriority'] ?? null;
+        if (!\is_array($ids)) {
+            return [];
+        }
+
+        return array_values(array_unique(array_filter($ids, static fn (mixed $id): bool => \is_string($id) && $id !== '')));
+    }
+
+    /**
+     * @param list<string> $pluginIds
+     */
+    public function setDescriptionSourcePriority(array $pluginIds): void
+    {
+        $ids = array_values(array_unique($pluginIds));
+
+        $this->configStore->update(static function (array $config) use ($ids): array {
+            $config['descriptionSourcePriority'] = $ids;
+
+            return $config;
+        });
+    }
+
+    /**
      * @param array<mixed> $sections
      *
      * @return list<string>

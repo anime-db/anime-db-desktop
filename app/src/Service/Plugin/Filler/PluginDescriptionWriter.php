@@ -31,6 +31,7 @@ use App\Entity\Anime;
 use App\Entity\AnimeDescription;
 use App\Entity\DescriptionText;
 use App\Entity\ValueObject\PluginId;
+use App\Service\AppSettingsProvider;
 use Doctrine\ORM\EntityManagerInterface;
 
 /**
@@ -41,7 +42,15 @@ use Doctrine\ORM\EntityManagerInterface;
  *  2. no row / empty text           - T is written, source = P;
  *  3. source NULL, text equals T    - only source = P is set (attribution; the text stays as stored);
  *  4. source NULL, text differs     - never touched: it may be hand-written text of unknown origin;
- *  5. anything else                 - not touched (the slot for source priority).
+ *  5. no source priority configured - not touched;
+ *  6. source = P                    - the text is updated (the source refreshed its own text);
+ *  7. P ranked strictly above source - the text is replaced, source = P;
+ *  8. anything else                 - not touched.
+ *
+ * The priority is {@see AppSettingsProvider::getDescriptionSourcePriority()}: one ordered list of
+ * plugin ids for all locales, configured only when it is non-empty. A plugin outside the list is
+ * ranked below every listed one, and two unranked plugins never replace each other (rule 7 needs
+ * P itself to be ranked).
  *
  * Texts are compared in their {@see DescriptionText::normalize()} form and T is stored normalized.
  *
@@ -53,8 +62,10 @@ use Doctrine\ORM\EntityManagerInterface;
  */
 class PluginDescriptionWriter
 {
-    public function __construct(private readonly EntityManagerInterface $entityManager)
-    {
+    public function __construct(
+        private readonly EntityManagerInterface $entityManager,
+        private readonly ?AppSettingsProvider $settings = null,
+    ) {
     }
 
     public function write(Anime $anime, PluginId $pluginId, string $locale, string $text): void
@@ -88,7 +99,31 @@ class PluginDescriptionWriter
             $this->update($anime, $row, $text, $source);
         } elseif ($row->source === null && $current === $text) {
             $this->update($anime, $row, $row->description, $source);
+        } elseif ($row->source !== null && $current !== $text && $this->mayReplace($row->source, $source)) {
+            $this->update($anime, $row, $text, $source);
         }
+    }
+
+    /**
+     * Rules 5-8 for a row with a known source that is not manual and has text.
+     */
+    private function mayReplace(string $rowSource, string $source): bool
+    {
+        $priority = $this->settings?->getDescriptionSourcePriority() ?? [];
+        if ($priority === []) {
+            return false;
+        }
+        if ($rowSource === $source) {
+            return true;
+        }
+
+        $rank = array_search($source, $priority, true);
+        if ($rank === false) {
+            return false;
+        }
+        $rowRank = array_search($rowSource, $priority, true);
+
+        return $rowRank === false || $rank < $rowRank;
     }
 
     private function insert(Anime $anime, string $locale, string $text, string $source): void

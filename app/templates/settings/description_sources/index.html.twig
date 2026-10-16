@@ -1,0 +1,54 @@
+{#
+ # AnimeDb package.
+ #
+ # @author    Peter Gribanov <info@peter-gribanov.ru>
+ # @copyright Copyright (c) 2026, Peter Gribanov
+ # @license   https://www.gnu.org/licenses/gpl-3.0.html GPL-3.0-or-later
+ #
+ # This program is free software: you can redistribute it and/or modify
+ # it under the terms of the GNU General Public License as published by
+ # the Free Software Foundation, either version 3 of the License, or
+ # (at your option) any later version.
+ #
+ # This program is distributed in the hope that it will be useful,
+ # but WITHOUT ANY WARRANTY; without even the implied warranty of
+ # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ # GNU General Public License for more details.
+ #
+ # You should have received a copy of the GNU General Public License
+ # along with this program. If not, see <https://www.gnu.org/licenses/>.
+ #}
+{% extends 'settings/_layout.html.twig' %}
+
+{% block title %}{{ 'settings_description_sources.title'|trans }}{% endblock %}
+
+{% block settings_content %}
+    <div class="py-4">
+        <h1 class="mb-3">{{ 'settings_description_sources.heading'|trans }}</h1>
+        <p class="text-body-secondary">{{ 'settings_description_sources.intro'|trans }}</p>
+
+        {% if saved %}
+            <p class="alert alert-success">{{ 'settings_description_sources.save_success'|trans }}</p>
+        {% endif %}
+
+        <form method="post" action="{{ path('settings_description_sources_save') }}" class="mb-4">
+            <input type="hidden" name="_token" value="{{ csrf_token('settings_description_sources') }}">
+
+            {% if items is empty %}
+                <p class="text-body-secondary">{{ 'settings_description_sources.empty'|trans }}</p>
+            {% else %}
+                <ol class="list-group list-group-numbered mb-3">
+                    {% for item in items %}
+                        <li class="list-group-item d-flex align-items-center gap-2">
+                            <input type="hidden" name="order[]" value="{{ item.id }}">
+                            <span class="me-auto">{{ item.name }}</span>
+                            <button type="submit" name="move" value="{{ item.id }}:up" class="btn btn-outline-secondary btn-sm"{% if loop.first %} disabled{% endif %} aria-label="{{ 'settings_description_sources.move_up'|trans }}" title="{{ 'settings_description_sources.move_up'|trans }}">{{ icon('chevron-up') }}</button>
+                            <button type="submit" name="move" value="{{ item.id }}:down" class="btn btn-outline-secondary btn-sm"{% if loop.last %} disabled{% endif %} aria-label="{{ 'settings_description_sources.move_down'|trans }}" title="{{ 'settings_description_sources.move_down'|trans }}">{{ icon('chevron-down') }}</button>
+                        </li>
+                    {% endfor %}
+                </ol>
+                <button type="submit" class="btn btn-primary">{{ 'settings_description_sources.save_button'|trans }}</button>
+            {% endif %}
+        </form>
+    </div>
+{% endblock %}

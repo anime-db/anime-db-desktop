@@ -148,12 +148,23 @@ settings_nav:
     item_labels: Tags
     item_sync_review: Requires attention
     item_backup: Export and import
+    item_description_sources: Description sources
     item_search_index: Search index
     item_market: Market
     item_plugins_installed: Installed
     item_plugins_install: Install from ZIP
     item_plugin_widgets: Widgets
     item_proxy: Proxy and incoming connections
+
+settings_description_sources:
+    title: Description sources — Settings — AnimeDB
+    heading: Description sources
+    intro: 'The order of plugins decides whose description stays in a record: a plugin higher in the list replaces the description of one below it. One list applies to all languages; a plugin outside the list ranks below all listed ones. Until the list is saved, descriptions only fill languages that are still empty. Saving recalculates nothing: the rules apply the next time a plugin writes to a record.'
+    save_success: The source order is saved.
+    empty: There are no plugins whose descriptions can be ranked.
+    move_up: Move up
+    move_down: Move down
+    save_button: Save
 
 settings_search_index:
     title: Search index — Settings — AnimeDB
@@ -677,6 +688,8 @@ anime_edit:
     field_role: Role
     field_descriptions: Descriptions
     field_description_text: Description text
+    description_source_manual: manual
+    description_source_plugin: 'from %name%'
     field_genres: Genres
     field_themes: Themes
     field_studios: Studios
