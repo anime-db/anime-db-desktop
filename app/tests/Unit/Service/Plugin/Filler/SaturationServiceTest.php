@@ -136,7 +136,7 @@ final class SaturationServiceTest extends TestCase
             $bulk,
             $this->entityManager,
             new NullLogger(),
-            new DescriptionRecalculationPlanner($registry, $resolver, new AppSettingsProvider(new AppConfigStore(sys_get_temp_dir().'/anime-saturation-test-'.uniqid().'.json')), $this->entityManager),
+            new DescriptionRecalculationPlanner($registry, $resolver, new AppSettingsProvider(new AppConfigStore(sys_get_temp_dir().'/anime-saturation-test-'.uniqid().'.json')), $this->entityManager, $repository),
         );
     }
 
@@ -260,7 +260,7 @@ final class SaturationServiceTest extends TestCase
             new CachedFillerLookup(new ArrayAdapter()),
         );
 
-        (new SaturationService($registry, $resolver = new ExternalIdResolver($repository, new NullLogger()), $bulk, $this->entityManager, new NullLogger(), new DescriptionRecalculationPlanner($registry, $resolver, $settings, $this->entityManager)))->saturate($anime, force: true);
+        (new SaturationService($registry, $resolver = new ExternalIdResolver($repository, new NullLogger()), $bulk, $this->entityManager, new NullLogger(), new DescriptionRecalculationPlanner($registry, $resolver, $settings, $this->entityManager, $repository)))->saturate($anime, force: true);
 
         $row = $this->entityManager->getConnection()->fetchAssociative('SELECT description, source FROM anime_description WHERE anime_id = ?', [$anime->id]);
         $this->assertSame(['description' => 'New text', 'source' => 'plugin-a'], $row);

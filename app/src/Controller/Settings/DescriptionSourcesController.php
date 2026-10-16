@@ -72,15 +72,17 @@ final class DescriptionSourcesController
         }
 
         $queued = null;
+        $ids = [];
         if ($this->settings->getDescriptionSourcePriority() !== []) {
-            $queued = 0;
-            foreach ($this->planner->eligibleAnimeIds() as $animeId) {
+            $ids = $this->planner->eligibleAnimeIds();
+            foreach ($ids as $animeId) {
                 $this->queue->enqueue($animeId, bulk: true, descriptionsOnly: true);
-                ++$queued;
             }
+            $queued = \count($ids);
         }
 
-        return $this->render($this->candidates->list(), false, $queued);
+        // Nothing changed for the estimate since the pass above, so it is not recalculated.
+        return $this->render($this->candidates->list(), false, $queued, $queued === null ? null : \count($ids));
     }
 
     #[Route('/settings/description-sources', name: 'settings_description_sources_save', methods: ['POST'])]
@@ -134,14 +136,14 @@ final class DescriptionSourcesController
     }
 
     /** @param list<array{id: string, name: string}> $items */
-    private function render(array $items, bool $saved, ?int $queued = null): Response
+    private function render(array $items, bool $saved, ?int $queued = null, ?int $applyCount = null): Response
     {
         return new Response($this->twig->render('settings/description_sources/index.html.twig', [
             'items' => $items,
             'saved' => $saved,
             'queued' => $queued,
             // Null while no priority is saved: there is nothing to recalculate, and no estimate to run.
-            'apply_count' => $this->settings->getDescriptionSourcePriority() === [] ? null : \count($this->planner->eligibleAnimeIds()),
+            'apply_count' => $applyCount ?? ($this->settings->getDescriptionSourcePriority() === [] ? null : \count($this->planner->eligibleAnimeIds())),
         ]));
     }
 }

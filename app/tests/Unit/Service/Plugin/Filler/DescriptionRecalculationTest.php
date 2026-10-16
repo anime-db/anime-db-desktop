@@ -166,7 +166,7 @@ final class DescriptionRecalculationTest extends TestCase
             $repository,
             new CachedFillerLookup(new ArrayAdapter()),
         );
-        $planner = new DescriptionRecalculationPlanner($registry, $resolver, $settings, $this->entityManager);
+        $planner = new DescriptionRecalculationPlanner($registry, $resolver, $settings, $this->entityManager, $repository);
 
         return [new SaturationService($registry, $resolver, $bulk, $this->entityManager, new NullLogger(), $planner), $planner];
     }
@@ -305,7 +305,7 @@ final class DescriptionRecalculationTest extends TestCase
 
     public function testASyncPluginWithTheFillerFeatureOffIsNotCalledButOthersAre(): void
     {
-        $anime = $this->anime(['ru' => ['Q text', 'plugin-q']], ['plugin-p', 'plugin-q']);
+        $anime = $this->anime(['ru' => ['Hand', null]], ['plugin-p', 'plugin-q']);
 
         $this->service(
             ['plugin-p' => $this->filler('p', 'P text'), 'plugin-q' => $this->filler('q', 'Q text')],
@@ -313,8 +313,7 @@ final class DescriptionRecalculationTest extends TestCase
             ['plugin-p' => ['features' => ['filler' => false]]],
         )->saturate($anime, false, null, true);
 
-        $this->assertSame([], $this->calls);
-        $this->assertSame('Q text', $this->rows($anime)['ru'][0]);
+        $this->assertSame(['q:1'], $this->calls);
     }
 
     public function testAnIdDerivedFromTheLinksIsUsedWhenThereIsNoStoredRow(): void
@@ -355,6 +354,8 @@ final class DescriptionRecalculationTest extends TestCase
 
         $this->assertSame([$replaceable->id, $derived->id], $planner->eligibleAnimeIds());
         $this->assertSame([], $this->calls, 'the estimate asks no plugin');
+        // A later write in the same unit of work must not pick up an id the estimate derived.
+        $this->entityManager->flush();
         $this->assertSame(0, (int) $this->entityManager->getConnection()->fetchOne('SELECT COUNT(*) FROM anime_external_id WHERE anime_id = ?', [$derived->id]), 'the estimate stores no id');
     }
 

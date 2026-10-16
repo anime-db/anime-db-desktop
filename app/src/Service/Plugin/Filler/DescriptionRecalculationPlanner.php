@@ -27,9 +27,11 @@ declare(strict_types=1);
 
 namespace App\Service\Plugin\Filler;
 
+use AnimeDb\PluginContracts\ExternalIdResolutionInterface;
 use App\Entity\Anime;
 use App\Entity\AnimeDescription;
 use App\Entity\ValueObject\PluginId;
+use App\Repository\AnimeRepository;
 use App\Service\AppSettingsProvider;
 use App\Service\Plugin\ExternalIdResolver;
 use App\Service\Plugin\FillerRegistry;
@@ -53,15 +55,19 @@ class DescriptionRecalculationPlanner
         private readonly ExternalIdResolver $externalIdResolver,
         private readonly AppSettingsProvider $settings,
         private readonly EntityManagerInterface $entityManager,
+        private readonly AnimeRepository $animeRepository,
     ) {
     }
 
     /**
      * The plugins to call for $anime, in priority order.
      *
+     * With $readOnly (the estimate) nothing is claimed, logged or dispatched: a link-derived id
+     * counts only when no other record holds it, and the record is left untouched.
+     *
      * @return list<array{pluginId: PluginId, externalId: string}>
      */
-    public function plan(Anime $anime): array
+    public function plan(Anime $anime, bool $readOnly = false): array
     {
         $priority = $this->settings->getDescriptionSourcePriority();
         if ($priority === []) {
@@ -76,7 +82,9 @@ class DescriptionRecalculationPlanner
             }
 
             $pluginId = new PluginId($rawId);
-            $externalId = $anime->getCachedExternalId($pluginId) ?? $this->externalIdResolver->resolve($anime, $pluginId, $fillers[$rawId]);
+            $externalId = $readOnly
+                ? $this->peekExternalId($anime, $pluginId, $fillers[$rawId])
+                : $this->externalIdResolver->resolve($anime, $pluginId, $fillers[$rawId]);
             if ($externalId !== null) {
                 $plan[] = ['pluginId' => $pluginId, 'externalId' => $externalId];
             }
@@ -109,15 +117,33 @@ class DescriptionRecalculationPlanner
         foreach (array_chunk($candidates, self::CHUNK_SIZE) as $chunk) {
             $records = $this->entityManager->getRepository(Anime::class)->findBy(['id' => $chunk]);
             foreach ($records as $anime) {
-                if ($anime->id !== null && $this->plan($anime) !== []) {
+                if ($anime->id !== null && $this->plan($anime, readOnly: true) !== []) {
                     $eligible[] = $anime->id;
                 }
-                // plan() may cache a link-derived id in memory only; the estimate must not persist it.
+                // Defence in depth and memory: the estimate must never leave a record in the unit of work.
                 $this->entityManager->detach($anime);
             }
         }
 
         return $eligible;
+    }
+
+    /** The id {@see ExternalIdResolver::resolve()} would return, without its side effects. */
+    private function peekExternalId(Anime $anime, PluginId $pluginId, ExternalIdResolutionInterface $plugin): ?string
+    {
+        $cached = $anime->getCachedExternalId($pluginId);
+        if ($cached !== null) {
+            return $cached;
+        }
+
+        $externalId = $plugin->resolveExternalId(array_map(static fn ($source): string => $source->url, $anime->getSources()->toArray()));
+        if ($externalId === null) {
+            return null;
+        }
+
+        $owner = $this->animeRepository->resolve($pluginId, $externalId);
+
+        return $owner === null || $owner === $anime || ($owner->id !== null && $owner->id === $anime->id) ? $externalId : null;
     }
 
     /** @param list<string> $priority */

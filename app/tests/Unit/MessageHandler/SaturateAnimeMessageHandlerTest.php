@@ -134,7 +134,7 @@ final class SaturateAnimeMessageHandlerTest extends TestCase
             ),
             $this->entityManager,
             new NullLogger(),
-            new DescriptionRecalculationPlanner($registry, $resolver, $settings, $this->entityManager),
+            new DescriptionRecalculationPlanner($registry, $resolver, $settings, $this->entityManager, $repository),
         );
         $bus = $this->createStub(MessageBusInterface::class);
         $bus->method('dispatch')->willReturnCallback(function (object $message, array $stamps = []): Envelope {
