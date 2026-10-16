@@ -31,6 +31,10 @@
             <p class="alert alert-success">{{ 'settings_description_sources.save_success'|trans }}</p>
         {% endif %}
 
+        {% if queued is not null %}
+            <p class="alert alert-success">{{ 'settings_description_sources.apply_queued'|trans({'%count%': queued}) }}</p>
+        {% endif %}
+
         <form method="post" action="{{ path('settings_description_sources_save') }}" class="mb-4">
             <input type="hidden" name="_token" value="{{ csrf_token('settings_description_sources') }}">
 
@@ -50,5 +54,13 @@
                 <button type="submit" class="btn btn-primary">{{ 'settings_description_sources.save_button'|trans }}</button>
             {% endif %}
         </form>
+
+        {% if apply_count is not null %}
+            <form method="post" action="{{ path('settings_description_sources_apply') }}" class="mb-4">
+                <input type="hidden" name="_token" value="{{ csrf_token('settings_description_sources_apply') }}">
+                <p class="text-body-secondary">{{ 'settings_description_sources.apply_hint'|trans }}</p>
+                <button type="submit" class="btn btn-outline-primary">{{ 'settings_description_sources.apply_button'|trans({'%count%': apply_count}) }}</button>
+            </form>
+        {% endif %}
     </div>
 {% endblock %}

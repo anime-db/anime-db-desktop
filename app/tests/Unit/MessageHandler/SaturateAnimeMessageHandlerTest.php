@@ -37,11 +37,14 @@ use App\Message\SaturateAnimeMessage;
 use App\MessageHandler\SaturateAnimeMessageHandler;
 use App\Repository\AnimeRepository;
 use App\Repository\StudioRepository;
+use App\Service\AppConfigStore;
+use App\Service\AppSettingsProvider;
 use App\Service\JobLock\JobLockService;
 use App\Service\JobLock\ProcessLivenessChecker;
 use App\Service\Plugin\ExternalIdResolver;
 use App\Service\Plugin\Filler\BulkFillerService;
 use App\Service\Plugin\Filler\CachedFillerLookup;
+use App\Service\Plugin\Filler\DescriptionRecalculationPlanner;
 use App\Service\Plugin\Filler\PluginAnimeDataMerger;
 use App\Service\Plugin\Filler\PluginMediaDownloaderInterface;
 use App\Service\Plugin\Filler\SaturationQueue;
@@ -97,12 +100,12 @@ final class SaturateAnimeMessageHandlerTest extends TestCase
     private function filler(): FillerInterface
     {
         $filler = $this->createStub(FillerInterface::class);
-        $filler->method('getFillableFields')->willReturn(['title']);
+        $filler->method('getFillableFields')->willReturn(['title', 'descriptions']);
         $filler->method('resolveExternalId')->willReturn('104');
         $filler->method('findById')->willReturnCallback(function (string $id): PluginAnimeData {
             $this->fillerCalls[] = ['id' => $id, 'locked' => $this->lock->isLocked('saturate:'.$this->currentId)];
 
-            return new PluginAnimeData(title: 'Bleach');
+            return new PluginAnimeData(title: 'Bleach', descriptions: ['ru' => 'Plugin text']);
         });
 
         return $filler;
@@ -114,9 +117,12 @@ final class SaturateAnimeMessageHandlerTest extends TestCase
     {
         $registry = new FillerRegistry(['animedb-shikimori' => $this->filler()], new PluginsConfigStore(sys_get_temp_dir().'/anime-saturate-handler-'.uniqid().'.json'));
         $repository = new AnimeRepository($this->entityManager);
+        $resolver = new ExternalIdResolver($repository, new NullLogger());
+        $settings = new AppSettingsProvider(new AppConfigStore(sys_get_temp_dir().'/anime-saturate-handler-'.uniqid().'.json'));
+        $settings->setDescriptionSourcePriority(['animedb-shikimori']);
         $saturation = new SaturationService(
             $registry,
-            new ExternalIdResolver($repository, new NullLogger()),
+            $resolver,
             new BulkFillerService(
                 $registry,
                 new PluginAnimeDataMerger(new StudioRepository($this->entityManager), $this->entityManager, $this->createStub(PluginMediaDownloaderInterface::class), new NullLogger()),
@@ -128,6 +134,7 @@ final class SaturateAnimeMessageHandlerTest extends TestCase
             ),
             $this->entityManager,
             new NullLogger(),
+            new DescriptionRecalculationPlanner($registry, $resolver, $settings, $this->entityManager),
         );
         $bus = $this->createStub(MessageBusInterface::class);
         $bus->method('dispatch')->willReturnCallback(function (object $message, array $stamps = []): Envelope {
@@ -225,6 +232,40 @@ final class SaturateAnimeMessageHandlerTest extends TestCase
 
         $this->assertSame([], $this->dispatched);
         $this->assertSame([], $this->fillerCalls);
+        $this->assertFalse($this->lock->isLocked('saturate:'.$id));
+    }
+
+    public function testBusyLockRequeuesARecalculationIntoTheSameTransportKeepingItsMode(): void
+    {
+        $id = $this->persistAnime();
+        $this->assertTrue($this->lock->acquire('saturate:'.$id));
+
+        $message = new SaturateAnimeMessage($id, false, SaturateAnimeMessage::TRANSPORT_BULK, true);
+        $this->handler()($message);
+
+        $this->assertCount(1, $this->dispatched);
+        [$requeued, $stamps] = $this->dispatched[0];
+        $this->assertEquals($message, $requeued);
+        $this->assertInstanceOf(SaturateAnimeMessage::class, $requeued);
+        $this->assertTrue($requeued->descriptionsOnly);
+        $names = array_values(array_filter($stamps, static fn (object $s): bool => $s instanceof TransportNamesStamp));
+        $this->assertSame(['saturation_bulk'], $names[0]->getTransportNames());
+        $delays = array_values(array_filter($stamps, static fn (object $s): bool => $s instanceof DelayStamp));
+        $this->assertSame(30000, $delays[0]->getDelay());
+        $this->assertSame([], $this->fillerCalls);
+    }
+
+    public function testARecalculationRunsUnderTheLockAndReleasesIt(): void
+    {
+        $id = $this->persistAnime();
+        $anime = $this->entityManager->find(TvAnime::class, $id);
+        $anime?->setDescription('ru', 'Hand written', null);
+        $this->entityManager->flush();
+
+        $this->handler()(new SaturateAnimeMessage($id, false, SaturateAnimeMessage::TRANSPORT_BULK, true));
+
+        $this->assertSame([['id' => '104', 'locked' => true]], $this->fillerCalls);
+        $this->assertSame([], $this->dispatched);
         $this->assertFalse($this->lock->isLocked('saturate:'.$id));
     }
 }

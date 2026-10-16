@@ -42,6 +42,7 @@ use App\Service\AppSettingsProvider;
 use App\Service\Plugin\ExternalIdResolver;
 use App\Service\Plugin\Filler\BulkFillerService;
 use App\Service\Plugin\Filler\CachedFillerLookup;
+use App\Service\Plugin\Filler\DescriptionRecalculationPlanner;
 use App\Service\Plugin\Filler\PluginAnimeDataMerger;
 use App\Service\Plugin\Filler\PluginDescriptionWriter;
 use App\Service\Plugin\Filler\PluginMediaDownloaderInterface;
@@ -126,12 +127,16 @@ final class SaturationServiceTest extends TestCase
             new CachedFillerLookup(new ArrayAdapter()),
         );
 
+        $registry = new FillerRegistry($fillers, new PluginsConfigStore(sys_get_temp_dir().'/anime-saturation-test-'.uniqid().'.json'));
+        $resolver = new ExternalIdResolver($repository, new NullLogger());
+
         return new SaturationService(
-            new FillerRegistry($fillers, new PluginsConfigStore(sys_get_temp_dir().'/anime-saturation-test-'.uniqid().'.json')),
-            new ExternalIdResolver($repository, new NullLogger()),
+            $registry,
+            $resolver,
             $bulk,
             $this->entityManager,
             new NullLogger(),
+            new DescriptionRecalculationPlanner($registry, $resolver, new AppSettingsProvider(new AppConfigStore(sys_get_temp_dir().'/anime-saturation-test-'.uniqid().'.json')), $this->entityManager),
         );
     }
 
@@ -255,7 +260,7 @@ final class SaturationServiceTest extends TestCase
             new CachedFillerLookup(new ArrayAdapter()),
         );
 
-        (new SaturationService($registry, new ExternalIdResolver($repository, new NullLogger()), $bulk, $this->entityManager, new NullLogger()))->saturate($anime, force: true);
+        (new SaturationService($registry, $resolver = new ExternalIdResolver($repository, new NullLogger()), $bulk, $this->entityManager, new NullLogger(), new DescriptionRecalculationPlanner($registry, $resolver, $settings, $this->entityManager)))->saturate($anime, force: true);
 
         $row = $this->entityManager->getConnection()->fetchAssociative('SELECT description, source FROM anime_description WHERE anime_id = ?', [$anime->id]);
         $this->assertSame(['description' => 'New text', 'source' => 'plugin-a'], $row);

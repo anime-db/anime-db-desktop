@@ -37,6 +37,11 @@ namespace App\Message;
  *
  * $force is set only by the explicit "fill from links" button: every recognising filler is called
  * regardless of its filled_at marker.
+ *
+ * $descriptionsOnly (issue #1070) switches the run to the description recalculation: only the
+ * descriptions are written, filled_at stays. It has a default and comes last; since the messenger
+ * unserializes the object natively (no constructor, so no defaults), {@see __unserialize()} fills in
+ * what a message queued in the earlier shape lacks, and that message stays an ordinary saturation.
  */
 final readonly class SaturateAnimeMessage
 {
@@ -47,7 +52,17 @@ final readonly class SaturateAnimeMessage
         public int $animeId,
         public bool $force = false,
         public string $transport = self::TRANSPORT,
+        public bool $descriptionsOnly = false,
     ) {
+    }
+
+    /** @param array<string, mixed> $data */
+    public function __unserialize(array $data): void
+    {
+        $this->animeId = (int) ($data['animeId'] ?? 0);
+        $this->force = (bool) ($data['force'] ?? false);
+        $this->transport = (string) ($data['transport'] ?? self::TRANSPORT);
+        $this->descriptionsOnly = (bool) ($data['descriptionsOnly'] ?? false);
     }
 
     public static function jobKey(int $animeId): string

@@ -28,7 +28,9 @@ declare(strict_types=1);
 namespace App\Controller\Settings;
 
 use App\Service\AppSettingsProvider;
+use App\Service\Plugin\Filler\DescriptionRecalculationPlanner;
 use App\Service\Plugin\Filler\DescriptionSourceCandidates;
+use App\Service\Plugin\Filler\SaturationQueue;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
@@ -41,12 +43,16 @@ use Twig\Environment;
  * The "description sources" settings screen (issue #1069): one ordered list of plugins for all
  * locales. The up/down buttons only re-render the list in the new order; "Save" is the sole write,
  * and it stores the setting and nothing else - no message goes to the bus, no saturation starts.
+ * The recalculation of the catalog's descriptions (issue #1070) starts only from "Apply to the
+ * catalog", and only when a priority has been saved.
  */
 final class DescriptionSourcesController
 {
     public function __construct(
         private readonly DescriptionSourceCandidates $candidates,
         private readonly AppSettingsProvider $settings,
+        private readonly DescriptionRecalculationPlanner $planner,
+        private readonly SaturationQueue $queue,
         private readonly CsrfTokenManagerInterface $csrfTokenManager,
         private readonly Environment $twig,
     ) {
@@ -56,6 +62,25 @@ final class DescriptionSourcesController
     public function index(): Response
     {
         return $this->render($this->candidates->list(), false);
+    }
+
+    #[Route('/settings/description-sources/apply', name: 'settings_description_sources_apply', methods: ['POST'])]
+    public function apply(Request $request): Response
+    {
+        if (!$this->csrfTokenManager->isTokenValid(new CsrfToken('settings_description_sources_apply', (string) $request->request->get('_token', '')))) {
+            throw new BadRequestHttpException('Invalid CSRF token.');
+        }
+
+        $queued = null;
+        if ($this->settings->getDescriptionSourcePriority() !== []) {
+            $queued = 0;
+            foreach ($this->planner->eligibleAnimeIds() as $animeId) {
+                $this->queue->enqueue($animeId, bulk: true, descriptionsOnly: true);
+                ++$queued;
+            }
+        }
+
+        return $this->render($this->candidates->list(), false, $queued);
     }
 
     #[Route('/settings/description-sources', name: 'settings_description_sources_save', methods: ['POST'])]
@@ -109,11 +134,14 @@ final class DescriptionSourcesController
     }
 
     /** @param list<array{id: string, name: string}> $items */
-    private function render(array $items, bool $saved): Response
+    private function render(array $items, bool $saved, ?int $queued = null): Response
     {
         return new Response($this->twig->render('settings/description_sources/index.html.twig', [
             'items' => $items,
             'saved' => $saved,
+            'queued' => $queued,
+            // Null while no priority is saved: there is nothing to recalculate, and no estimate to run.
+            'apply_count' => $this->settings->getDescriptionSourcePriority() === [] ? null : \count($this->planner->eligibleAnimeIds()),
         ]));
     }
 }
