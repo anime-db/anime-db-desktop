@@ -74,7 +74,7 @@ final class PluginCacheDirectoriesTest extends TestCase
         $this->cacheFile('plugin-two');
         $this->registry->reconcile();
 
-        (new PluginRemover($this->registry, new PluginCacheDirectories($this->cacheDir, new NullLogger())))->remove(new PluginId('plugin-one'));
+        (new PluginRemover($this->registry, new PluginCacheDirectories($this->cacheDir, new NullLogger()), \Doctrine\DBAL\DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]), new NullLogger()))->remove(new PluginId('plugin-one'));
 
         $this->assertDirectoryDoesNotExist($this->cacheDir.'/plugin-one');
         $this->assertFileExists($this->cacheDir.'/plugin-two/dump.bin');
@@ -103,7 +103,7 @@ final class PluginCacheDirectoriesTest extends TestCase
                 $this->markTestSkipped('Filesystem permissions are not enforced here (running as root).');
             }
 
-            (new PluginRemover($this->registry, new PluginCacheDirectories($this->cacheDir, $logger)))->remove(new PluginId('plugin-one'));
+            (new PluginRemover($this->registry, new PluginCacheDirectories($this->cacheDir, $logger), \Doctrine\DBAL\DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]), new NullLogger()))->remove(new PluginId('plugin-one'));
 
             $this->assertFalse($this->registry->has(new PluginId('plugin-one')));
             $this->assertDirectoryDoesNotExist($this->pluginsDir.'/plugin-one');

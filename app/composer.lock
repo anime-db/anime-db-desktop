@@ -4,20 +4,20 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "eca1a4fccddaa656535e3d781085c425",
+    "content-hash": "fede1624c7d505f5a748a2b514fc914d",
     "packages": [
         {
             "name": "anime-db/plugin-contracts",
-            "version": "v0.26.4",
+            "version": "v0.27.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/anime-db/anime-db-plugin-contracts.git",
-                "reference": "624b7d68dfcd9932c3c3f8bb107f38e600acb105"
+                "reference": "659e9424e155c5abb4d9377dafdcb27e3f2060f2"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/anime-db/anime-db-plugin-contracts/zipball/624b7d68dfcd9932c3c3f8bb107f38e600acb105",
-                "reference": "624b7d68dfcd9932c3c3f8bb107f38e600acb105",
+                "url": "https://api.github.com/repos/anime-db/anime-db-plugin-contracts/zipball/659e9424e155c5abb4d9377dafdcb27e3f2060f2",
+                "reference": "659e9424e155c5abb4d9377dafdcb27e3f2060f2",
                 "shasum": ""
             },
             "require": {
@@ -63,9 +63,9 @@
             "homepage": "https://github.com/anime-db/anime-db-plugin-contracts",
             "support": {
                 "issues": "https://github.com/anime-db/anime-db-plugin-contracts/issues",
-                "source": "https://github.com/anime-db/anime-db-plugin-contracts/tree/v0.26.4"
+                "source": "https://github.com/anime-db/anime-db-plugin-contracts/tree/v0.27.0"
             },
-            "time": "2026-10-15T06:21:35+00:00"
+            "time": "2026-10-16T06:27:29+00:00"
         },
         {
             "name": "composer/semver",

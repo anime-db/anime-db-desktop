@@ -65,7 +65,7 @@ final class PluginRemoverTest extends TestCase
         $this->registry->reconcile();
         $this->assertTrue($this->registry->has(new PluginId('animedb-shikimori')));
 
-        (new PluginRemover($this->registry, new \App\Service\Plugin\PluginCacheDirectories(sys_get_temp_dir().'/anime-plugin-cache-unused', new NullLogger())))->remove(new PluginId('animedb-shikimori'));
+        (new PluginRemover($this->registry, new \App\Service\Plugin\PluginCacheDirectories(sys_get_temp_dir().'/anime-plugin-cache-unused', new NullLogger()), \Doctrine\DBAL\DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]), new NullLogger()))->remove(new PluginId('animedb-shikimori'));
 
         $this->assertDirectoryDoesNotExist($this->pluginsDir.'/animedb-shikimori');
         $this->assertFalse($this->registry->has(new PluginId('animedb-shikimori')));
@@ -77,7 +77,7 @@ final class PluginRemoverTest extends TestCase
         $this->installFixture('animedb-anilist');
         $this->registry->reconcile();
 
-        (new PluginRemover($this->registry, new \App\Service\Plugin\PluginCacheDirectories(sys_get_temp_dir().'/anime-plugin-cache-unused', new NullLogger())))->remove(new PluginId('animedb-shikimori'));
+        (new PluginRemover($this->registry, new \App\Service\Plugin\PluginCacheDirectories(sys_get_temp_dir().'/anime-plugin-cache-unused', new NullLogger()), \Doctrine\DBAL\DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]), new NullLogger()))->remove(new PluginId('animedb-shikimori'));
 
         $this->assertFalse($this->registry->has(new PluginId('animedb-shikimori')));
         $this->assertTrue($this->registry->has(new PluginId('animedb-anilist')));
@@ -88,7 +88,7 @@ final class PluginRemoverTest extends TestCase
     {
         $this->registry->reconcile();
 
-        (new PluginRemover($this->registry, new \App\Service\Plugin\PluginCacheDirectories(sys_get_temp_dir().'/anime-plugin-cache-unused', new NullLogger())))->remove(new PluginId('animedb-unknown'));
+        (new PluginRemover($this->registry, new \App\Service\Plugin\PluginCacheDirectories(sys_get_temp_dir().'/anime-plugin-cache-unused', new NullLogger()), \Doctrine\DBAL\DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]), new NullLogger()))->remove(new PluginId('animedb-unknown'));
 
         $this->assertFalse($this->registry->has(new PluginId('animedb-unknown')));
     }
@@ -127,9 +127,41 @@ final class PluginRemoverTest extends TestCase
         $registryWithWriter->reconcile();
         $this->assertFileExists($overlayDir.'/kk.json');
 
-        (new PluginRemover($registryWithWriter, new \App\Service\Plugin\PluginCacheDirectories(sys_get_temp_dir().'/anime-plugin-cache-unused', new NullLogger())))->remove(new PluginId('lang-kazakh'));
+        (new PluginRemover($registryWithWriter, new \App\Service\Plugin\PluginCacheDirectories(sys_get_temp_dir().'/anime-plugin-cache-unused', new NullLogger()), \Doctrine\DBAL\DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]), new NullLogger()))->remove(new PluginId('lang-kazakh'));
 
         $this->assertFileDoesNotExist($overlayDir.'/kk.json');
+    }
+
+    public function testRemoveDeletesOnlyThatPluginsRecordFolderLedgerRowsAndKeepsTheFiles(): void
+    {
+        $this->installFixture('animedb-shikimori');
+        $connection = \Doctrine\DBAL\DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]);
+        $connection->executeStatement('CREATE TABLE record_folder_file (id INTEGER PRIMARY KEY AUTOINCREMENT, anime_id INTEGER NOT NULL, plugin_id VARCHAR(128) NOT NULL, file_name VARCHAR(255) NOT NULL, sha256 VARCHAR(64) NOT NULL, written_at INTEGER NOT NULL)');
+        $connection->insert('record_folder_file', ['anime_id' => 1, 'plugin_id' => 'animedb-shikimori', 'file_name' => 'info.html', 'sha256' => 'a', 'written_at' => 1]);
+        $connection->insert('record_folder_file', ['anime_id' => 2, 'plugin_id' => 'animedb-shikimori', 'file_name' => 'info.html', 'sha256' => 'b', 'written_at' => 1]);
+        $connection->insert('record_folder_file', ['anime_id' => 1, 'plugin_id' => 'other-plugin', 'file_name' => 'info.html', 'sha256' => 'c', 'written_at' => 1]);
+        $written = $this->rootDir.'/info.html';
+        file_put_contents($written, 'kept');
+
+        (new PluginRemover($this->registry, new \App\Service\Plugin\PluginCacheDirectories(sys_get_temp_dir().'/anime-plugin-cache-unused', new NullLogger()), $connection, new NullLogger()))->remove(new PluginId('animedb-shikimori'));
+
+        $this->assertSame(['other-plugin'], $connection->fetchFirstColumn('SELECT plugin_id FROM record_folder_file'));
+        $this->assertFileExists($written);
+    }
+
+    public function testRemoveStillReconcilesWhenTheLedgerCleanupFails(): void
+    {
+        $this->installFixture('animedb-shikimori');
+        $this->registry->reconcile();
+        $connection = $this->createMock(\Doctrine\DBAL\Connection::class);
+        $connection->method('executeStatement')->willThrowException(new \RuntimeException('database is locked'));
+        $logger = $this->createMock(\Psr\Log\LoggerInterface::class);
+        $logger->expects($this->once())->method('error');
+
+        (new PluginRemover($this->registry, new \App\Service\Plugin\PluginCacheDirectories(sys_get_temp_dir().'/anime-plugin-cache-unused', new NullLogger()), $connection, $logger))->remove(new PluginId('animedb-shikimori'));
+
+        $this->assertDirectoryDoesNotExist($this->pluginsDir.'/animedb-shikimori');
+        $this->assertFalse($this->registry->has(new PluginId('animedb-shikimori')));
     }
 
     private function installFixture(string $pluginId): void
