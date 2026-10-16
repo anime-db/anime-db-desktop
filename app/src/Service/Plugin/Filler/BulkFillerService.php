@@ -223,9 +223,9 @@ final class BulkFillerService
      * would otherwise overwrite outright that are still empty on $anime. Collection fields
      * (alternative names, genres, ...) already merge rather than overwrite (see that class's
      * own docblock), so they are always included — with two exceptions carved out below:
-     * 'descriptions' merges by (anime, locale), not by (anime, plugin, locale), so a locale
-     * $anime already has non-empty text for is left untouched rather than overwritten by the
-     * plugin's own text for that same locale; 'images' is queued through the async `media`
+     * 'descriptions' go through {@see PluginDescriptionWriter}, which leaves a locale $anime already
+     * has non-empty text for untouched and records the plugin as the source of what it writes or
+     * recognizes (issue #1068); 'images' is queued through the async `media`
      * message, same as {@see build()}, rather than downloading however many screenshots the
      * plugin returns synchronously in this request.
      *
@@ -286,9 +286,7 @@ final class BulkFillerService
         $anime->markExternalIdFilled($pluginId);
 
         $fields = $this->emptyFillableFields($anime, $filler);
-        $this->applyMissingLocaleDescriptions($anime, $data, $fields);
-
-        $result = $this->merger->apply($anime, $data, array_diff($fields, ['descriptions', 'images']));
+        $result = $this->merger->apply($anime, $pluginId, $data, array_diff($fields, ['images']));
         $this->dispatchMediaDownloads($anime, $data, $fields, includeCover: false);
         $this->entityManager->flush();
 
@@ -297,38 +295,6 @@ final class BulkFillerService
             $result->unapplied !== [] => FillResult::ImageRejected,
             default => FillResult::Applied,
         };
-    }
-
-    /**
-     * 'descriptions' is excluded from the generic {@see PluginAnimeDataMerger::apply()} call in
-     * {@see fillExistingFromPlugin()} because that merger's own applyDescriptions() merges by
-     * locale key alone (Anime::setDescription() upserts), overwriting an already-filled-in
-     * locale's text outright — exactly the "only empty fields" contract this method promises
-     * that the generic path cannot keep for this one field. A locale $anime has no text for yet
-     * is still filled in, same as the generic path would have done.
-     *
-     * @param string[] $fields the same emptyFillableFields() result fillExistingFromPlugin()
-     *                         passes everywhere else — checked here only for whether 'descriptions'
-     *                         is in it at all (the filler might not declare it fillable)
-     */
-    private function applyMissingLocaleDescriptions(Anime $anime, PluginAnimeData $data, array $fields): void
-    {
-        if (!\in_array('descriptions', $fields, true)) {
-            return;
-        }
-
-        $existingLocales = [];
-        foreach ($anime->getDescriptions() as $description) {
-            if ($description->description !== '') {
-                $existingLocales[$description->locale] = true;
-            }
-        }
-
-        foreach ($data->descriptions ?? [] as $locale => $text) {
-            if (!isset($existingLocales[(string) $locale])) {
-                $anime->setDescription((string) $locale, $text);
-            }
-        }
     }
 
     /**
@@ -350,7 +316,7 @@ final class BulkFillerService
         // right away — see findOrCreateFromPlugin()'s docblock for when that happens.
         $fields = array_diff($filler->getFillableFields(), ['title', 'type']);
         $excludedFromMerge = $downloadCoverSynchronously ? ['images'] : ['cover', 'images'];
-        $result = $this->merger->apply($anime, $data, array_diff($fields, $excludedFromMerge));
+        $result = $this->merger->apply($anime, $pluginId, $data, array_diff($fields, $excludedFromMerge));
 
         $coverStillNeedsQueueing = !$downloadCoverSynchronously || \in_array('cover', $result->unapplied, true);
         $this->dispatchMediaDownloads($anime, $data, $fields, $coverStillNeedsQueueing);

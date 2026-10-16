@@ -42,6 +42,7 @@ use App\Entity\Enum\ThemeCode;
 use App\Entity\Enum\WatchStatus;
 use App\Entity\MovieAnime;
 use App\Entity\TvAnime;
+use App\Entity\ValueObject\PluginId;
 use App\Repository\StudioRepository;
 use App\Service\Plugin\Filler\PluginAnimeDataMerger;
 use App\Service\Plugin\Filler\PluginMediaDownloaderInterface;
@@ -119,7 +120,7 @@ final class PluginAnimeDataMergerTest extends TestCase
 
         $data = new PluginAnimeData(title: 'Bleach: Memories of Nobody');
 
-        $result = $this->newMerger()->apply($anime, $data, ['title']);
+        $result = $this->newMerger()->apply($anime, new PluginId('test-plugin'), $data, ['title']);
 
         $this->assertSame('Bleach: Memories of Nobody', $anime->getTitle());
         $this->assertSame([], $result->unapplied);
@@ -138,7 +139,7 @@ final class PluginAnimeDataMergerTest extends TestCase
             ],
         );
 
-        $this->newMerger()->apply($anime, $data, ['alternativeNames']);
+        $this->newMerger()->apply($anime, new PluginId('test-plugin'), $data, ['alternativeNames']);
 
         $names = array_map(static fn ($n): string => $n->name, $anime->getNames()->toArray());
         $this->assertSame(['Existing Synonym', 'New Synonym'], $names);
@@ -159,7 +160,7 @@ final class PluginAnimeDataMergerTest extends TestCase
             alternativeNames: [new ContractsAnimeName('Frieren', 'de', ContractsNameRole::Official)],
         );
 
-        $this->newMerger()->apply($anime, $data, ['alternativeNames']);
+        $this->newMerger()->apply($anime, new PluginId('test-plugin'), $data, ['alternativeNames']);
 
         $locales = array_map(static fn ($n) => $n->locale, $anime->getNames()->toArray());
         $this->assertSame(['en', 'de'], $locales);
@@ -175,7 +176,7 @@ final class PluginAnimeDataMergerTest extends TestCase
             alternativeNames: [new ContractsAnimeName('bleach', 'en', ContractsNameRole::Official)],
         );
 
-        $this->newMerger()->apply($anime, $data, ['alternativeNames']);
+        $this->newMerger()->apply($anime, new PluginId('test-plugin'), $data, ['alternativeNames']);
 
         $this->assertCount(1, $anime->getNames());
     }
@@ -194,7 +195,7 @@ final class PluginAnimeDataMergerTest extends TestCase
             alternativeNames: [new ContractsAnimeName('Solo Leveling', 'en', ContractsNameRole::Official)],
         );
 
-        $this->newMerger()->apply($anime, $data, ['alternativeNames']);
+        $this->newMerger()->apply($anime, new PluginId('test-plugin'), $data, ['alternativeNames']);
 
         // array_values(): the evicted entry leaves a gap in the collection's internal keys,
         // so the surviving row is not necessarily at index 0.
@@ -218,7 +219,7 @@ final class PluginAnimeDataMergerTest extends TestCase
             alternativeNames: [new ContractsAnimeName('Solo Leveling', null, ContractsNameRole::Synonym)],
         );
 
-        $this->newMerger()->apply($anime, $data, ['alternativeNames']);
+        $this->newMerger()->apply($anime, new PluginId('test-plugin'), $data, ['alternativeNames']);
 
         $names = $anime->getNames()->toArray();
         $this->assertCount(2, $names);
@@ -248,7 +249,7 @@ final class PluginAnimeDataMergerTest extends TestCase
             alternativeNames: [new ContractsAnimeName('Bleach', $rawLocale, ContractsNameRole::Official)],
         );
 
-        $this->newMerger()->apply($anime, $data, ['alternativeNames']);
+        $this->newMerger()->apply($anime, new PluginId('test-plugin'), $data, ['alternativeNames']);
 
         $this->assertSame($expectedLocale, $anime->getNames()->toArray()[0]->locale);
     }
@@ -271,7 +272,7 @@ final class PluginAnimeDataMergerTest extends TestCase
             alternativeNames: [new ContractsAnimeName('Bleach', 'ru-RU', ContractsNameRole::Official)],
         );
 
-        $this->newMerger()->apply($anime, $data, ['alternativeNames']);
+        $this->newMerger()->apply($anime, new PluginId('test-plugin'), $data, ['alternativeNames']);
 
         $names = $anime->getNames()->toArray();
         $this->assertCount(1, $names);
@@ -281,11 +282,11 @@ final class PluginAnimeDataMergerTest extends TestCase
     public function testApplyMergesDescriptionsByLocaleWithoutLosingOtherLocales(): void
     {
         $anime = $this->newAnime();
-        $anime->setDescription('en', 'English summary');
+        $anime->setDescription('en', 'English summary', null);
 
         $data = new PluginAnimeData(title: 'Bleach', descriptions: ['ru' => 'Русское описание']);
 
-        $this->newMerger()->apply($anime, $data, ['descriptions']);
+        $this->newMerger()->apply($anime, new PluginId('test-plugin'), $data, ['descriptions']);
 
         $this->assertSame('English summary', $anime->getSummary('en'));
         $this->assertSame('Русское описание', $anime->getSummary('ru'));
@@ -298,7 +299,7 @@ final class PluginAnimeDataMergerTest extends TestCase
 
         $data = new PluginAnimeData(title: 'Bleach', genres: [ContractsGenreCode::Action, ContractsGenreCode::Comedy]);
 
-        $this->newMerger()->apply($anime, $data, ['genres']);
+        $this->newMerger()->apply($anime, new PluginId('test-plugin'), $data, ['genres']);
 
         $this->assertSame([GenreCode::Comedy, GenreCode::Action], $anime->getGenreCodes());
     }
@@ -309,7 +310,7 @@ final class PluginAnimeDataMergerTest extends TestCase
 
         $data = new PluginAnimeData(title: 'Bleach', themes: [ContractsThemeCode::Isekai]);
 
-        $this->newMerger()->apply($anime, $data, ['themes']);
+        $this->newMerger()->apply($anime, new PluginId('test-plugin'), $data, ['themes']);
 
         $this->assertSame([ThemeCode::Isekai], $anime->getThemeCodes());
     }
@@ -321,7 +322,7 @@ final class PluginAnimeDataMergerTest extends TestCase
 
         $data = new PluginAnimeData(title: 'Bleach', demographic: ContractsDemographic::Shounen);
 
-        $this->newMerger()->apply($anime, $data, ['demographic']);
+        $this->newMerger()->apply($anime, new PluginId('test-plugin'), $data, ['demographic']);
 
         $this->assertSame(Demographic::Shounen, $anime->getDemographic());
     }
@@ -332,12 +333,12 @@ final class PluginAnimeDataMergerTest extends TestCase
         $merger = $this->newMerger();
 
         $first = $this->newAnime();
-        $merger->apply($first, $data, ['studios']);
+        $merger->apply($first, new PluginId('test-plugin'), $data, ['studios']);
         $this->entityManager->persist($first);
         $this->entityManager->flush();
 
         $second = $this->newAnime();
-        $merger->apply($second, $data, ['studios']);
+        $merger->apply($second, new PluginId('test-plugin'), $data, ['studios']);
 
         $this->assertSame(
             $first->getStudios()->toArray()[0]->id,
@@ -351,11 +352,11 @@ final class PluginAnimeDataMergerTest extends TestCase
         $merger = $this->newMerger();
 
         $first = $this->newAnime();
-        $merger->apply($first, $data, ['studios']);
+        $merger->apply($first, new PluginId('test-plugin'), $data, ['studios']);
         $this->entityManager->persist($first);
 
         $second = $this->newAnime();
-        $merger->apply($second, $data, ['studios']);
+        $merger->apply($second, new PluginId('test-plugin'), $data, ['studios']);
         $this->entityManager->persist($second);
 
         $this->entityManager->flush();
@@ -374,7 +375,7 @@ final class PluginAnimeDataMergerTest extends TestCase
 
         $data = new PluginAnimeData(title: 'Bleach', countries: ['JP', 'US']);
 
-        $this->newMerger()->apply($anime, $data, ['countries']);
+        $this->newMerger()->apply($anime, new PluginId('test-plugin'), $data, ['countries']);
 
         $this->assertSame(['JP', 'US'], $anime->getCountries());
     }
@@ -390,7 +391,7 @@ final class PluginAnimeDataMergerTest extends TestCase
             durationMinutes: 24,
         );
 
-        $this->newMerger()->apply($anime, $data, ['datePremiere', 'dateEnd', 'durationMinutes']);
+        $this->newMerger()->apply($anime, new PluginId('test-plugin'), $data, ['datePremiere', 'dateEnd', 'durationMinutes']);
 
         $this->assertEquals(new \DateTimeImmutable('2004-10-05'), $anime->getDatePremiere());
         $this->assertEquals(new \DateTimeImmutable('2005-03-27'), $anime->getDateEnd());
@@ -404,7 +405,7 @@ final class PluginAnimeDataMergerTest extends TestCase
 
         $data = new PluginAnimeData(title: 'Bleach', durationMinutes: null);
 
-        $this->newMerger()->apply($anime, $data, ['durationMinutes']);
+        $this->newMerger()->apply($anime, new PluginId('test-plugin'), $data, ['durationMinutes']);
 
         $this->assertSame(24, $anime->getDurationMinutes());
     }
@@ -430,7 +431,7 @@ final class PluginAnimeDataMergerTest extends TestCase
                 && $context['storedDatePremiere']->format('Y-m-d') === '2020-06-01'),
         );
 
-        $result = $this->newMerger(logger: $logger)->apply($anime, $data, ['dateEnd']);
+        $result = $this->newMerger(logger: $logger)->apply($anime, new PluginId('test-plugin'), $data, ['dateEnd']);
 
         $this->assertNull($anime->getDateEnd());
         $this->assertEquals(new \DateTimeImmutable('2020-06-01'), $anime->getDatePremiere());
@@ -449,7 +450,7 @@ final class PluginAnimeDataMergerTest extends TestCase
 
         $data = new PluginAnimeData(title: 'Bleach', datePremiere: new \DateTimeImmutable('2020-06-01'));
 
-        $result = $this->newMerger()->apply($anime, $data, ['datePremiere']);
+        $result = $this->newMerger()->apply($anime, new PluginId('test-plugin'), $data, ['datePremiere']);
 
         $this->assertNull($anime->getDatePremiere());
         $this->assertEquals(new \DateTimeImmutable('2020-01-01'), $anime->getDateEnd());
@@ -473,7 +474,7 @@ final class PluginAnimeDataMergerTest extends TestCase
             durationMinutes: 24,
         );
 
-        $result = $this->newMerger()->apply($anime, $data, ['datePremiere', 'dateEnd', 'durationMinutes']);
+        $result = $this->newMerger()->apply($anime, new PluginId('test-plugin'), $data, ['datePremiere', 'dateEnd', 'durationMinutes']);
 
         $this->assertNull($anime->getDatePremiere());
         $this->assertNull($anime->getDateEnd());
@@ -506,11 +507,11 @@ final class PluginAnimeDataMergerTest extends TestCase
 
         $forward = $this->newAnime();
         $forward->setDatePremiereAndEnd(new \DateTimeImmutable('2020-01-01'), new \DateTimeImmutable('2020-06-01'));
-        $forwardResult = $merger->apply($forward, $data, ['datePremiere', 'dateEnd']);
+        $forwardResult = $merger->apply($forward, new PluginId('test-plugin'), $data, ['datePremiere', 'dateEnd']);
 
         $backward = $this->newAnime();
         $backward->setDatePremiereAndEnd(new \DateTimeImmutable('2020-01-01'), new \DateTimeImmutable('2020-06-01'));
-        $backwardResult = $merger->apply($backward, $data, ['dateEnd', 'datePremiere']);
+        $backwardResult = $merger->apply($backward, new PluginId('test-plugin'), $data, ['dateEnd', 'datePremiere']);
 
         $this->assertEquals(new \DateTimeImmutable('2021-01-01'), $forward->getDatePremiere());
         $this->assertEquals(new \DateTimeImmutable('2021-06-01'), $forward->getDateEnd());
@@ -535,10 +536,10 @@ final class PluginAnimeDataMergerTest extends TestCase
         );
 
         $forward = $this->newAnime();
-        $forwardResult = $this->newMerger()->apply($forward, $data, ['datePremiere', 'dateEnd']);
+        $forwardResult = $this->newMerger()->apply($forward, new PluginId('test-plugin'), $data, ['datePremiere', 'dateEnd']);
 
         $backward = $this->newAnime();
-        $backwardResult = $this->newMerger()->apply($backward, $data, ['dateEnd', 'datePremiere']);
+        $backwardResult = $this->newMerger()->apply($backward, new PluginId('test-plugin'), $data, ['dateEnd', 'datePremiere']);
 
         $this->assertNull($forward->getDatePremiere());
         $this->assertNull($forward->getDateEnd());
@@ -554,7 +555,7 @@ final class PluginAnimeDataMergerTest extends TestCase
 
         $data = new PluginAnimeData(title: 'Bleach', episodesCount: 366);
 
-        $this->newMerger()->apply($anime, $data, ['episodesCount']);
+        $this->newMerger()->apply($anime, new PluginId('test-plugin'), $data, ['episodesCount']);
 
         $this->assertSame(366, $anime->getEpisodesCount());
     }
@@ -568,7 +569,7 @@ final class PluginAnimeDataMergerTest extends TestCase
 
         // MovieAnime has no setEpisodesCount() at all — reaching for it would be a fatal error,
         // so simply not throwing here already proves the field was skipped.
-        $this->newMerger()->apply($anime, $data, ['episodesCount']);
+        $this->newMerger()->apply($anime, new PluginId('test-plugin'), $data, ['episodesCount']);
 
         $this->addToAssertionCount(1);
     }
@@ -581,7 +582,7 @@ final class PluginAnimeDataMergerTest extends TestCase
         $data = new PluginAnimeData(title: 'Bleach', cover: 'https://example.test/cover.jpg');
 
         $result = $this->newMerger(['https://example.test/cover.jpg' => 'abc123.jpg'])
-            ->apply($anime, $data, ['cover']);
+            ->apply($anime, new PluginId('test-plugin'), $data, ['cover']);
 
         $this->assertSame('abc123.jpg', $anime->getCover());
         $this->assertSame([], $result->unapplied);
@@ -600,7 +601,7 @@ final class PluginAnimeDataMergerTest extends TestCase
 
         $data = new PluginAnimeData(title: 'Bleach', cover: 'https://example.test/broken.jpg');
 
-        $result = $this->newMerger()->apply($anime, $data, ['cover']);
+        $result = $this->newMerger()->apply($anime, new PluginId('test-plugin'), $data, ['cover']);
 
         $this->assertSame('existing.jpg', $anime->getCover());
         $this->assertSame(['cover'], $result->unapplied);
@@ -613,7 +614,7 @@ final class PluginAnimeDataMergerTest extends TestCase
         $data = new PluginAnimeData(title: 'Bleach', cover: 'https://example.test/cover.jpg');
 
         $result = $this->newMerger(['https://example.test/cover.jpg' => 'abc123.jpg'])
-            ->apply($anime, $data, ['cover']);
+            ->apply($anime, new PluginId('test-plugin'), $data, ['cover']);
 
         $this->assertNull($anime->getCover());
         // Not-yet-persisted is a "nothing was attempted" skip, not a rejection - see applyCover()'s docblock.
@@ -634,7 +635,7 @@ final class PluginAnimeDataMergerTest extends TestCase
         $result = $this->newMerger([
             'https://example.test/1.jpg' => 'existing.jpg',
             'https://example.test/2.jpg' => 'new.jpg',
-        ])->apply($anime, $data, ['images']);
+        ])->apply($anime, new PluginId('test-plugin'), $data, ['images']);
 
         $sources = array_map(static fn ($image): string => $image->source, $anime->getImages()->toArray());
         $this->assertSame(['existing.jpg', 'new.jpg'], $sources);
@@ -657,7 +658,7 @@ final class PluginAnimeDataMergerTest extends TestCase
 
         $result = $this->newMerger([
             'https://example.test/1.jpg' => 'new.jpg',
-        ])->apply($anime, $data, ['images']);
+        ])->apply($anime, new PluginId('test-plugin'), $data, ['images']);
 
         $sources = array_map(static fn ($image): string => $image->source, $anime->getImages()->toArray());
         $this->assertSame(['new.jpg'], $sources);
@@ -671,7 +672,7 @@ final class PluginAnimeDataMergerTest extends TestCase
 
         $data = new PluginAnimeData(title: 'Bleach', images: ['https://example.test/broken.jpg']);
 
-        $result = $this->newMerger()->apply($anime, $data, ['images']);
+        $result = $this->newMerger()->apply($anime, new PluginId('test-plugin'), $data, ['images']);
 
         $this->assertCount(0, $anime->getImages());
         $this->assertSame(['images'], $result->unapplied);
@@ -684,7 +685,7 @@ final class PluginAnimeDataMergerTest extends TestCase
 
         $data = new PluginAnimeData(title: 'Bleach', images: []);
 
-        $result = $this->newMerger()->apply($anime, $data, ['images']);
+        $result = $this->newMerger()->apply($anime, new PluginId('test-plugin'), $data, ['images']);
 
         $this->assertSame([], $result->unapplied);
     }
@@ -695,7 +696,7 @@ final class PluginAnimeDataMergerTest extends TestCase
 
         $data = new PluginAnimeData(title: 'Bleach');
 
-        $result = $this->newMerger()->apply($anime, $data, ['type']);
+        $result = $this->newMerger()->apply($anime, new PluginId('test-plugin'), $data, ['type']);
 
         $this->assertSame('Placeholder', $anime->getTitle());
         $this->assertSame([], $result->unapplied);
@@ -713,7 +714,7 @@ final class PluginAnimeDataMergerTest extends TestCase
         $anime->addSource('https://example.org/a');
 
         $data = new PluginAnimeData(title: 'Bleach', externalUrls: ['https://anidb.net/anime/1', 'https://example.org/b']);
-        $this->newMerger()->apply($anime, $data, ['externalUrls']);
+        $this->newMerger()->apply($anime, new PluginId('test-plugin'), $data, ['externalUrls']);
 
         $this->assertSame(['https://example.org/a', 'https://anidb.net/anime/1', 'https://example.org/b'], $this->sourceUrls($anime));
     }
@@ -728,7 +729,7 @@ final class PluginAnimeDataMergerTest extends TestCase
             'http://www.Example.org/x/',
             'https://example.org/x',
         ]);
-        $this->newMerger()->apply($anime, $data, ['externalUrls']);
+        $this->newMerger()->apply($anime, new PluginId('test-plugin'), $data, ['externalUrls']);
 
         $this->assertSame(['https://myanimelist.net/anime/1', 'http://www.Example.org/x/'], $this->sourceUrls($anime));
     }
@@ -741,7 +742,7 @@ final class PluginAnimeDataMergerTest extends TestCase
         $logger->expects($this->never())->method('warning');
 
         $data = new PluginAnimeData(title: 'Bleach', externalUrls: ['https://пример.рф/a', 'https://xn--e1afmkfd.xn--p1ai/a']);
-        $this->newMerger([], $logger)->apply($anime, $data, ['externalUrls']);
+        $this->newMerger([], $logger)->apply($anime, new PluginId('test-plugin'), $data, ['externalUrls']);
 
         $this->assertSame(['https://xn--e1afmkfd.xn--p1ai/a'], $this->sourceUrls($anime));
     }
@@ -753,7 +754,7 @@ final class PluginAnimeDataMergerTest extends TestCase
         $logger->expects($this->never())->method('warning');
 
         $data = new PluginAnimeData(title: 'Bleach', externalUrls: ['https://пример.рф/a']);
-        $this->newMerger([], $logger)->apply($anime, $data, ['externalUrls']);
+        $this->newMerger([], $logger)->apply($anime, new PluginId('test-plugin'), $data, ['externalUrls']);
 
         $this->assertSame(['https://xn--e1afmkfd.xn--p1ai/a'], $this->sourceUrls($anime));
     }
@@ -763,7 +764,7 @@ final class PluginAnimeDataMergerTest extends TestCase
         $anime = $this->newAnime();
 
         $data = new PluginAnimeData(title: 'Bleach', externalUrls: ['https://myanimelist.net/anime/5114', 'https://shikimori.io/animes/5114']);
-        $this->newMerger()->apply($anime, $data, ['externalUrls']);
+        $this->newMerger()->apply($anime, new PluginId('test-plugin'), $data, ['externalUrls']);
 
         $this->assertSame(['https://myanimelist.net/anime/5114', 'https://shikimori.io/animes/5114'], $this->sourceUrls($anime));
     }
@@ -782,7 +783,7 @@ final class PluginAnimeDataMergerTest extends TestCase
             'https://example.org/a b',
             'https://example.org/ok',
         ]);
-        $this->newMerger([], $logger)->apply($anime, $data, ['externalUrls']);
+        $this->newMerger([], $logger)->apply($anime, new PluginId('test-plugin'), $data, ['externalUrls']);
 
         $this->assertSame(['https://example.org/ok'], $this->sourceUrls($anime));
     }
@@ -792,7 +793,7 @@ final class PluginAnimeDataMergerTest extends TestCase
         $encoded = 'https://ja.wikipedia.org/wiki/%E8%91%AC%E9%80%81%E3%81%AE%E3%83%95%E3%83%AA%E3%83%BC%E3%83%AC%E3%83%B3';
         $anime = $this->newAnime();
         $data = new PluginAnimeData(title: 'Frieren', externalUrls: ['https://ja.wikipedia.org/wiki/葬送のフリーレン', $encoded]);
-        $this->newMerger()->apply($anime, $data, ['externalUrls']);
+        $this->newMerger()->apply($anime, new PluginId('test-plugin'), $data, ['externalUrls']);
 
         $this->assertSame([$encoded], $this->sourceUrls($anime));
     }
@@ -807,7 +808,7 @@ final class PluginAnimeDataMergerTest extends TestCase
         for ($i = 1; $i <= 51; ++$i) {
             $urls[] = 'https://example.org/'.$i;
         }
-        $this->newMerger([], $logger)->apply($anime, new PluginAnimeData(title: 'Bleach', externalUrls: $urls), ['externalUrls']);
+        $this->newMerger([], $logger)->apply($anime, new PluginId('test-plugin'), new PluginAnimeData(title: 'Bleach', externalUrls: $urls), ['externalUrls']);
 
         $this->assertCount(50, $anime->getSources());
     }
@@ -819,7 +820,7 @@ final class PluginAnimeDataMergerTest extends TestCase
         $ok = $prefix.str_repeat('a', 512 - \strlen($prefix));
         $tooLong = $ok.'a';
 
-        $this->newMerger()->apply($anime, new PluginAnimeData(title: 'Bleach', externalUrls: [$tooLong, $ok]), ['externalUrls']);
+        $this->newMerger()->apply($anime, new PluginId('test-plugin'), new PluginAnimeData(title: 'Bleach', externalUrls: [$tooLong, $ok]), ['externalUrls']);
 
         $this->assertSame([$ok], $this->sourceUrls($anime));
     }
@@ -836,7 +837,7 @@ final class PluginAnimeDataMergerTest extends TestCase
         $logger = $this->createMock(LoggerInterface::class);
         $logger->expects($this->never())->method('warning');
 
-        $this->newMerger([], $logger)->apply($anime, new PluginAnimeData(title: 'Bleach', externalUrls: $urls), ['externalUrls']);
+        $this->newMerger([], $logger)->apply($anime, new PluginId('test-plugin'), new PluginAnimeData(title: 'Bleach', externalUrls: $urls), ['externalUrls']);
 
         $this->assertCount(51, $anime->getSources());
     }
@@ -848,7 +849,7 @@ final class PluginAnimeDataMergerTest extends TestCase
 
         /** @var PluginAnimeData $data */
         $data = (new \ReflectionClass(PluginAnimeData::class))->newInstanceWithoutConstructor();
-        $this->newMerger()->apply($anime, $data, ['externalUrls']);
+        $this->newMerger()->apply($anime, new PluginId('test-plugin'), $data, ['externalUrls']);
 
         $this->assertSame(['https://example.org/a'], $this->sourceUrls($anime));
     }

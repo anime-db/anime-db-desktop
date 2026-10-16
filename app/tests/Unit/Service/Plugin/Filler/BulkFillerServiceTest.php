@@ -688,7 +688,7 @@ final class BulkFillerServiceTest extends TestCase
 
         $anime = new TvAnime();
         $anime->setTitle('Bleach')->setWatchStatus(WatchStatus::Plan);
-        $anime->setDescription('ru', 'Пользовательское описание.'); // already filled by the user — must survive
+        $anime->setDescription('ru', 'Пользовательское описание.', null); // already filled by the user — must survive
         $this->entityManager->persist($anime);
         $this->entityManager->flush();
 
@@ -704,6 +704,65 @@ final class BulkFillerServiceTest extends TestCase
         }
         $this->assertSame('Пользовательское описание.', $byLocale['ru']);
         $this->assertSame('Plugin summary.', $byLocale['en']);
+    }
+
+    /** @return array<string, array{0: string, 1: ?string}> locale => [text, source], straight from the table */
+    private function descriptionRows(Anime $anime): array
+    {
+        $rows = [];
+        foreach ($this->entityManager->getConnection()->fetchAllAssociative('SELECT locale, description, source FROM anime_description WHERE anime_id = ?', [$anime->id]) as $row) {
+            $rows[$row['locale']] = [$row['description'], $row['source']];
+        }
+        ksort($rows);
+
+        return $rows;
+    }
+
+    public function testFillNewFromRecordsThePluginAsTheSourceOfEveryDescriptionLocale(): void
+    {
+        $pluginId = new PluginId('animedb-shikimori');
+        $filler = $this->createStub(FillerInterface::class);
+        $filler->method('findById')->willReturn(new PluginAnimeData(title: 'Bleach', descriptions: ['ru' => "Русское\r\nописание ", 'en' => 'English']));
+        $filler->method('getFillableFields')->willReturn(['title', 'descriptions']);
+
+        $anime = $this->newService([])->fillNewFrom($filler, $pluginId, '104');
+        $this->entityManager->flush();
+
+        $this->assertNotNull($anime);
+        $this->assertSame(['en' => ['English', 'animedb-shikimori'], 'ru' => ["Русское\nописание", 'animedb-shikimori']], $this->descriptionRows($anime));
+    }
+
+    public function testFillExistingFromPluginWritesDescriptionsOnlyWhereTheRulesAllow(): void
+    {
+        $pluginId = new PluginId('animedb-shikimori');
+        $data = new PluginAnimeData(title: 'Bleach', descriptions: [
+            'en' => 'New en', 'ru' => 'Новый', 'de' => 'Neu', 'fr' => 'Nouveau', 'es' => 'Nuevo', 'it' => 'Dup',
+        ]);
+        $filler = $this->createStub(FillerInterface::class);
+        $filler->method('findById')->with('104')->willReturn($data);
+        $filler->method('getFillableFields')->willReturn(['title', 'descriptions']);
+
+        $anime = new TvAnime();
+        $anime->setTitle('Bleach')->setWatchStatus(WatchStatus::Plan);
+        $anime->setDescription('ru', '', null);                    // empty, unknown source: filled
+        $anime->setDescription('de', 'Hand-written', null);        // unknown source, different text: untouched
+        $anime->setDescription('fr', 'Mine', 'manual');            // manual: untouched
+        $anime->setDescription('es', '', 'manual');                // manual, empty: untouched
+        $anime->setDescription('it', 'Dup', null);                 // unknown source, same text: attributed
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+
+        $result = $this->newService([(string) $pluginId => $filler])->fillExistingFromPlugin($anime, $pluginId, '104');
+
+        $this->assertSame(FillResult::Applied, $result);
+        $this->assertSame([
+            'de' => ['Hand-written', null],
+            'en' => ['New en', 'animedb-shikimori'],
+            'es' => ['', 'manual'],
+            'fr' => ['Mine', 'manual'],
+            'it' => ['Dup', 'animedb-shikimori'],
+            'ru' => ['Новый', 'animedb-shikimori'],
+        ], $this->descriptionRows($anime));
     }
 
     /**

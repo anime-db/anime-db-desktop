@@ -28,8 +28,10 @@ declare(strict_types=1);
 namespace App\Controller;
 
 use App\Entity\Anime;
+use App\Entity\AnimeDescription;
 use App\Entity\AnimeName;
 use App\Entity\AnimeSource;
+use App\Entity\DescriptionText;
 use App\Entity\Enum\AnimeNameRole;
 use App\Entity\Enum\Demographic;
 use App\Entity\Enum\GenreCode;
@@ -253,7 +255,9 @@ final class AnimeEditController
      * #1049): a scalar as a one-element list, a collection as its keys. On save only a change
      * against them counts — see {@see unchanged()} and {@see removable()}.
      *
-     * @return array<string, list<string>>
+     * 'descriptions' is the exception: a map of locale => hash of the normalized text (issue #1068).
+     *
+     * @return array<string, array<int|string, string>>
      */
     private function originals(Anime $anime): array
     {
@@ -261,7 +265,7 @@ final class AnimeEditController
             'genres' => array_map(static fn (GenreCode $code): string => $code->value, $anime->getGenreCodes()),
             'themes' => array_map(static fn (ThemeCode $code): string => $code->value, $anime->getThemeCodes()),
             'studios' => array_values(array_map(static fn (Studio $studio): string => (string) $studio->id, $anime->getStudios()->toArray())),
-            'descriptions' => array_values(array_map(static fn ($description): string => (string) $description->locale, $anime->getDescriptions()->toArray())),
+            'descriptions' => $this->descriptionHashes($anime),
             'names' => array_values(array_map(fn (AnimeName $name): string => md5($this->nameKey($name->name, $name->locale, $name->role)), $anime->getNames()->toArray())),
             'demographic' => [$anime->getDemographic()->value ?? ''],
             'date_premiere' => [$anime->getDatePremiere()?->format('Y-m-d') ?? ''],
@@ -270,6 +274,17 @@ final class AnimeEditController
             'episodes_count' => [$anime instanceof SeriesAnime ? (string) $anime->getEpisodesCount() : ''],
             'countries' => [implode(', ', $anime->getCountries() ?? [])],
         ];
+    }
+
+    /** @return array<string, string> locale => hash of the normalized text */
+    private function descriptionHashes(Anime $anime): array
+    {
+        $hashes = [];
+        foreach ($anime->getDescriptions() as $description) {
+            $hashes[(string) $description->locale] = DescriptionText::hash($description->description);
+        }
+
+        return $hashes;
     }
 
     /**
@@ -291,7 +306,14 @@ final class AnimeEditController
      */
     private function removable(array $form, string $field, string $key): bool
     {
-        return $form['originals'] === null || \in_array($key, $form['originals'][$field] ?? [], true);
+        if ($form['originals'] === null) {
+            return true;
+        }
+
+        // The descriptions originals are a locale => hash map, every other field's a list of keys.
+        return $field === 'descriptions'
+            ? \array_key_exists($key, $form['originals'][$field] ?? [])
+            : \in_array($key, $form['originals'][$field] ?? [], true);
     }
 
     /** @return array<string, mixed> */
@@ -336,13 +358,14 @@ final class AnimeEditController
         ];
     }
 
-    /** @return array<string, list<string>> */
+    /** @return array<string, array<int|string, string>> */
     private function originalsFromRequest(Request $request): array
     {
         $originals = [];
         foreach (['genres', 'themes', 'studios', 'descriptions', 'names', 'demographic', 'date_premiere', 'date_end', 'duration_minutes', 'episodes_count', 'countries'] as $field) {
             $values = $request->request->all('originals')[$field] ?? [];
-            $originals[$field] = \is_array($values) ? array_values(array_map(static fn (mixed $v): string => \is_scalar($v) ? trim((string) $v) : '', $values)) : [];
+            $values = \is_array($values) ? array_map(static fn (mixed $v): string => \is_scalar($v) ? trim((string) $v) : '', $values) : [];
+            $originals[$field] = $field === 'descriptions' ? $values : array_values($values);
         }
 
         return $originals;
@@ -566,8 +589,9 @@ final class AnimeEditController
         $wanted = [];
         foreach ($rows as $row) {
             $locale = LocaleNormalizer::normalize($row['locale']);
-            if ($row['text'] !== '' && $locale !== null) {
-                $wanted[$locale] = $row['text'];
+            $text = DescriptionText::normalize($row['text']);
+            if ($text !== '' && $locale !== null) {
+                $wanted[$locale] = $text;
             }
         }
 
@@ -576,9 +600,38 @@ final class AnimeEditController
                 $anime->removeDescription($existing->locale);
             }
         }
+
+        // Only a text the user changed is written, and it is attributed to them (issue #1068).
+        $originals = $form['originals']['descriptions'] ?? null;
         foreach ($wanted as $locale => $text) {
-            $anime->setDescription((string) $locale, $text);
+            $locale = (string) $locale;
+            if (!$this->descriptionChanged($anime, $locale, $text, $originals)) {
+                continue;
+            }
+            $anime->setDescription($locale, $text, AnimeDescription::SOURCE_MANUAL);
         }
+    }
+
+    /**
+     * Against the text as the form was rendered when the request carries it, so a background
+     * replacement that happened while the form was open does not look like the user's edit; against
+     * the stored text otherwise (no originals, or a locale the form did not render).
+     *
+     * @param array<int|string, string>|null $originals locale => hash of the normalized text
+     */
+    private function descriptionChanged(Anime $anime, string $locale, string $text, ?array $originals): bool
+    {
+        if ($originals !== null && isset($originals[$locale])) {
+            return DescriptionText::hash($text) !== $originals[$locale];
+        }
+
+        foreach ($anime->getDescriptions() as $existing) {
+            if ($existing->locale === $locale) {
+                return DescriptionText::normalize($existing->description) !== $text;
+            }
+        }
+
+        return true;
     }
 
     /**

@@ -222,7 +222,7 @@
             {# Fields background saturation may fill, as rendered: only a change against them overwrites the record on save. #}
             {% if form.originals|default(null) is not null %}
                 <input type="hidden" name="originals_set" value="1">
-                {% for field, values in form.originals %}{% for value in values %}<input type="hidden" name="originals[{{ field }}][]" value="{{ value }}">{% endfor %}{% endfor %}
+                {% for field, values in form.originals %}{% for key, value in values %}<input type="hidden" name="originals[{{ field }}][{{ key }}]" value="{{ value }}">{% endfor %}{% endfor %}
             {% endif %}
 
             <div class="mb-3" data-control="cover-size-limit">

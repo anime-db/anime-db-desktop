@@ -267,6 +267,27 @@ final class MigrationDataIntegrityChecker
     }
 
     /**
+     * The fixture `anime_description` row is inserted before the `source` column exists, so after
+     * the whole chain its origin must read as unknown (issue #1068).
+     *
+     * @return list<string>
+     */
+    public function verifyDescriptionSource(\PDO $pdo, int $animeId): array
+    {
+        $statement = $pdo->prepare('SELECT source FROM anime_description WHERE anime_id = ?');
+        $statement->execute([$animeId]);
+        $actual = $statement->fetchColumn();
+        if ($actual !== null) {
+            return [\sprintf(
+                'anime_description: expected source NULL, found %s',
+                $actual === false ? 'no row' : "'{$actual}'",
+            )];
+        }
+
+        return [];
+    }
+
+    /**
      * Deletes the fixture `anime` row and checks that every child table it seeded is empty
      * afterwards, proving "PRAGMA foreign_keys = ON" and the ON DELETE CASCADE constraints
      * declared by the migrations still hold at the end of the chain.

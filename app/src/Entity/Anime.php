@@ -540,7 +540,7 @@ abstract class Anime implements AggregateRootInterface
 
         $summary = trim($record->summary ?? '');
         if ($summary !== '') {
-            $self->setDescription('ru', $summary);
+            $self->setDescription('ru', $summary, null);
         }
 
         foreach ($resolver->resolveStudios($record) as $studio) {
@@ -818,17 +818,32 @@ abstract class Anime implements AggregateRootInterface
      * already-persisted anime (e.g. PluginAnimeDataMerger::applyDescriptions() updating
      * an existing description) would violate that constraint before the old row is gone.
      */
-    public function setDescription(string $locale, string $text): self
+    public function setDescription(string $locale, string $text, ?string $source): self
     {
         foreach ($this->descriptions as $description) {
             if ($description->locale === $locale) {
                 $description->description = $text;
+                $description->source = $source;
 
                 return $this;
             }
         }
 
-        $this->descriptions->add(new AnimeDescription($this, $locale, $text));
+        $this->descriptions->add(new AnimeDescription($this, $locale, $text, $source));
+
+        return $this;
+    }
+
+    /**
+     * Adds an AnimeDescription row that was inserted directly through the connection (and loaded
+     * back as a managed entity), so the in-memory collection matches the table without cascade
+     * persist scheduling a second INSERT.
+     */
+    public function attachPersistedDescription(AnimeDescription $description): self
+    {
+        if (!$this->descriptions->contains($description)) {
+            $this->descriptions->add($description);
+        }
 
         return $this;
     }

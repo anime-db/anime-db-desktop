@@ -433,7 +433,7 @@ class SampleAnimeSeeder
         }
 
         foreach ($sample['descriptions'] as $locale => $text) {
-            $anime->setDescription($locale, $text);
+            $anime->setDescription($locale, $text, null);
         }
 
         return $anime;

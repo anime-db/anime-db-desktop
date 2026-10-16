@@ -1,0 +1,143 @@
+<?php
+
+/**
+ * AnimeDb package.
+ *
+ * @author    Peter Gribanov <info@peter-gribanov.ru>
+ * @copyright Copyright (c) 2026, Peter Gribanov
+ * @license   https://www.gnu.org/licenses/gpl-3.0.html GPL-3.0-or-later
+ */
+
+/*
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+
+declare(strict_types=1);
+
+namespace App\Service\Plugin\Filler;
+
+use App\Entity\Anime;
+use App\Entity\AnimeDescription;
+use App\Entity\DescriptionText;
+use App\Entity\ValueObject\PluginId;
+use Doctrine\ORM\EntityManagerInterface;
+
+/**
+ * The one write policy for a description text that came from a plugin (issue #1068). For a plugin
+ * P that returned text T for locale L, the current row (text, source) is judged in this order:
+ *
+ *  1. source is `manual`            - never touched, even when its text is empty;
+ *  2. no row / empty text           - T is written, source = P;
+ *  3. source NULL, text equals T    - only source = P is set (attribution; the text stays as stored);
+ *  4. source NULL, text differs     - never touched: it may be hand-written text of unknown origin;
+ *  5. anything else                 - not touched (the slot for source priority).
+ *
+ * Texts are compared in their {@see DescriptionText::normalize()} form and T is stored normalized.
+ *
+ * The decision is made on the row as the entity holds it (the snapshot), but a persisted row is
+ * written with a conditional UPDATE on that snapshot's source and text, and a missing locale with
+ * `INSERT ... ON CONFLICT DO NOTHING`: another writer (the edit form, a concurrent fill) that got
+ * in between turns this write into a no-op instead of overwriting it, and a lost insert race never
+ * closes the EntityManager.
+ */
+class PluginDescriptionWriter
+{
+    public function __construct(private readonly EntityManagerInterface $entityManager)
+    {
+    }
+
+    public function write(Anime $anime, PluginId $pluginId, string $locale, string $text): void
+    {
+        $text = DescriptionText::normalize($text);
+        if ($text === '') {
+            return;
+        }
+        $source = (string) $pluginId;
+
+        $row = null;
+        foreach ($anime->getDescriptions() as $description) {
+            if ($description->locale === $locale) {
+                $row = $description;
+                break;
+            }
+        }
+
+        if ($row === null) {
+            $this->insert($anime, $locale, $text, $source);
+
+            return;
+        }
+
+        if ($row->source === AnimeDescription::SOURCE_MANUAL) {
+            return;
+        }
+
+        $current = DescriptionText::normalize($row->description);
+        if ($current === '') {
+            $this->update($anime, $row, $text, $source);
+        } elseif ($row->source === null && $current === $text) {
+            $this->update($anime, $row, $row->description, $source);
+        }
+    }
+
+    private function insert(Anime $anime, string $locale, string $text, string $source): void
+    {
+        if ($anime->id === null) {
+            $anime->setDescription($locale, $text, $source);
+
+            return;
+        }
+
+        $connection = $this->entityManager->getConnection();
+        $inserted = $connection->executeStatement(
+            'INSERT INTO anime_description (anime_id, locale, description, source) VALUES (?, ?, ?, ?) ON CONFLICT (anime_id, locale) DO NOTHING',
+            [$anime->id, $locale, $text, $source],
+        );
+        if ($inserted === 0) {
+            return;
+        }
+
+        $id = (int) $connection->lastInsertId();
+        $entity = $this->entityManager->find(AnimeDescription::class, $id);
+        if ($entity !== null) {
+            $anime->attachPersistedDescription($entity);
+        }
+    }
+
+    private function update(Anime $anime, AnimeDescription $row, string $text, string $source): void
+    {
+        if ($anime->id === null || $row->id === null) {
+            $row->description = $text;
+            $row->source = $source;
+
+            return;
+        }
+
+        $updated = $this->entityManager->getConnection()->executeStatement(
+            'UPDATE anime_description SET description = ?, source = ? WHERE id = ? AND source IS ? AND description = ?',
+            [$text, $source, $row->id, $row->source, $row->description],
+        );
+        if ($updated === 0) {
+            return;
+        }
+
+        // Keep the managed entity in line with the row so the next flush() sees no change.
+        $row->description = $text;
+        $row->source = $source;
+        $unitOfWork = $this->entityManager->getUnitOfWork();
+        $oid = spl_object_id($row);
+        $unitOfWork->setOriginalEntityProperty($oid, 'description', $text);
+        $unitOfWork->setOriginalEntityProperty($oid, 'source', $source);
+    }
+}
