@@ -86,7 +86,7 @@ final class SaturateAnimeMessageHandler
                 return;
             }
 
-            $this->saturation->saturate($anime, $message->force, fn () => $this->jobLockService->heartbeat($key));
+            $this->saturation->saturate($anime, $message->force, fn () => $this->jobLockService->heartbeat($key), $message->descriptionsOnly);
         } catch (\Throwable $e) {
             $this->logger->error('Saturation of anime #{animeId} failed.', ['animeId' => $message->animeId, 'exception' => $e]);
         } finally {

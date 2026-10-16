@@ -28,9 +28,12 @@ declare(strict_types=1);
 namespace App\Tests\Unit\Controller\Settings;
 
 use App\Controller\Settings\DescriptionSourcesController;
+use App\Message\SaturateAnimeMessage;
 use App\Service\AppConfigStore;
 use App\Service\AppSettingsProvider;
+use App\Service\Plugin\Filler\DescriptionRecalculationPlanner;
 use App\Service\Plugin\Filler\DescriptionSourceCandidates;
+use App\Tests\Support\RecordingSaturationBus;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
@@ -58,8 +61,13 @@ final class DescriptionSourcesControllerTest extends TestCase
         }
     }
 
+    private RecordingSaturationBus $bus;
+
     private function controller(bool $csrfValid = true): DescriptionSourcesController
     {
+        $this->bus = new RecordingSaturationBus();
+        $planner = $this->createStub(DescriptionRecalculationPlanner::class);
+        $planner->method('eligibleAnimeIds')->willReturn([4, 9]);
         $candidates = $this->createStub(DescriptionSourceCandidates::class);
         $candidates->method('list')->willReturn([
             ['id' => 'animedb-a', 'name' => 'A'],
@@ -75,7 +83,7 @@ final class DescriptionSourcesControllerTest extends TestCase
             return '';
         });
 
-        return new DescriptionSourcesController($candidates, new AppSettingsProvider(new AppConfigStore($this->configPath)), $csrf, $twig);
+        return new DescriptionSourcesController($candidates, new AppSettingsProvider(new AppConfigStore($this->configPath)), $planner, $this->bus->queue(), $csrf, $twig);
     }
 
     /** @return list<string> */
@@ -135,5 +143,67 @@ final class DescriptionSourcesControllerTest extends TestCase
         $this->expectException(BadRequestHttpException::class);
 
         $this->controller(csrfValid: false)->save(new Request([], ['_token' => 'bad', 'order' => ['animedb-a']]));
+    }
+
+    public function testSavingNeverQueuesARecalculation(): void
+    {
+        $this->controller()->save(new Request([], ['_token' => 't', 'order' => ['animedb-c', 'animedb-a', 'animedb-b']]));
+
+        $this->assertSame([], $this->bus->dispatched);
+    }
+
+    public function testTheApplyButtonIsOfferedOnlyForASavedNonEmptyPriority(): void
+    {
+        $controller = $this->controller();
+        $controller->index();
+        $this->assertNull($this->rendered['apply_count'], 'never saved');
+
+        (new AppSettingsProvider(new AppConfigStore($this->configPath)))->setDescriptionSourcePriority([]);
+        $controller->index();
+        $this->assertNull($this->rendered['apply_count'], 'saved empty');
+
+        (new AppSettingsProvider(new AppConfigStore($this->configPath)))->setDescriptionSourcePriority(['animedb-b']);
+        $controller->index();
+        $this->assertSame(2, $this->rendered['apply_count']);
+    }
+
+    public function testApplyQueuesTheEstimatedRecordsIntoTheBulkTransportAsRecalculations(): void
+    {
+        (new AppSettingsProvider(new AppConfigStore($this->configPath)))->setDescriptionSourcePriority(['animedb-b']);
+        $controller = $this->controller();
+
+        $controller->apply(new Request([], ['_token' => 't']));
+
+        $this->assertSame([4, 9], array_column($this->bus->saturations(), 'id'));
+        $this->assertSame(['saturation_bulk', 'saturation_bulk'], array_column($this->bus->saturations(), 'transport'));
+        foreach ($this->bus->dispatched as [$message]) {
+            $this->assertInstanceOf(SaturateAnimeMessage::class, $message);
+            $this->assertTrue($message->descriptionsOnly);
+            $this->assertFalse($message->force);
+        }
+        $this->assertSame(2, $this->rendered['queued']);
+    }
+
+    public function testApplyWithoutAPriorityQueuesNothing(): void
+    {
+        $controller = $this->controller();
+
+        $controller->apply(new Request([], ['_token' => 't']));
+
+        $this->assertSame([], $this->bus->dispatched);
+        $this->assertNull($this->rendered['queued']);
+    }
+
+    public function testApplyRejectsAnInvalidCsrfToken(): void
+    {
+        (new AppSettingsProvider(new AppConfigStore($this->configPath)))->setDescriptionSourcePriority(['animedb-b']);
+        $controller = $this->controller(false);
+
+        try {
+            $controller->apply(new Request([], ['_token' => 'bad']));
+            $this->fail('Expected a BadRequestHttpException.');
+        } catch (BadRequestHttpException) {
+            $this->assertSame([], $this->bus->dispatched);
+        }
     }
 }

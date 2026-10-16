@@ -159,12 +159,15 @@ settings_nav:
 settings_description_sources:
     title: Description sources — Settings — AnimeDB
     heading: Description sources
-    intro: 'The order of plugins decides whose description stays in a record: a plugin higher in the list replaces the description of one below it. One list applies to all languages; a plugin outside the list ranks below all listed ones. Until the list is saved, descriptions only fill languages that are still empty. Saving recalculates nothing: the rules apply the next time a plugin writes to a record.'
+    intro: 'The order of plugins decides whose description stays in a record: a plugin higher in the list replaces the description of one below it. One list applies to all languages; a plugin outside the list ranks below all listed ones. Until the list is saved, descriptions only fill languages that are still empty. Saving recalculates nothing: the rules apply the next time a plugin writes to a record, or when you apply the order to the catalog below.'
     save_success: The source order is saved.
     empty: There are no plugins whose descriptions can be ranked.
     move_up: Move up
     move_down: Move down
     save_button: Save
+    apply_button: 'Apply to the catalog (%count%)'
+    apply_hint: 'Records to check are recalculated only when you apply the order to the catalog; saving it does not start anything.'
+    apply_queued: 'Queued records: %count%'
 
 settings_search_index:
     title: Search index — Settings — AnimeDB

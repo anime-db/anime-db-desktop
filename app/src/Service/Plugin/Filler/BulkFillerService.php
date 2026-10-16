@@ -298,6 +298,53 @@ final class BulkFillerService
     }
 
     /**
+     * The "descriptions only" counterpart of {@see fillExistingFromPlugin()} (issue #1070): asks the
+     * plugin by the known $externalId and passes only its descriptions through the write policy,
+     * locale by locale. No other field is written and filled_at is left as it is, whatever the
+     * outcome; a plugin that does not return the record changes nothing.
+     *
+     * @throws ExternalIdAlreadyClaimedException                see {@see fillExistingFromPlugin()}
+     * @throws AnimeAlreadyLinkedToDifferentExternalIdException see {@see fillExistingFromPlugin()}
+     */
+    public function fillDescriptionsFromPlugin(Anime $anime, PluginId $pluginId, string $externalId): FillResult
+    {
+        $filler = $this->fillerRegistry->findByPluginId($pluginId);
+        if ($filler === null) {
+            return FillResult::NotFound;
+        }
+
+        $owner = $this->animeRepository->resolve($pluginId, $externalId);
+        if ($owner !== null && $owner !== $anime) {
+            throw new ExternalIdAlreadyClaimedException($pluginId, $externalId, $owner->id ?? 0);
+        }
+
+        $cachedExternalId = $anime->getCachedExternalId($pluginId);
+        if ($cachedExternalId !== null && $cachedExternalId !== $externalId) {
+            throw new AnimeAlreadyLinkedToDifferentExternalIdException($pluginId, $cachedExternalId, $externalId, $anime->id ?? 0);
+        }
+
+        try {
+            $data = $this->lookup->findById($filler, $pluginId, $externalId);
+        } catch (\Throwable $e) {
+            $this->logger->warning('Plugin findById() failed while recalculating descriptions of a record.', [
+                'pluginId' => (string) $pluginId,
+                'exception' => $e,
+            ]);
+
+            return FillResult::Failed;
+        }
+
+        if ($data === null) {
+            return FillResult::NotFound;
+        }
+
+        $this->merger->apply($anime, $pluginId, $data, ['descriptions']);
+        $this->entityManager->flush();
+
+        return FillResult::Applied;
+    }
+
+    /**
      * @throws ExternalIdAlreadyClaimedException when a concurrent create flow already
      *                                           claimed ($pluginId, $externalId) — see that
      *                                           exception's docblock for why this is caught

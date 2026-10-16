@@ -49,6 +49,11 @@ use Psr\Log\LoggerInterface;
  * Nothing but still-empty fields is written and no title search happens: see
  * {@see BulkFillerService::fillExistingFromPlugin()}. A filler that throws is logged and counted as
  * called; a closed EntityManager aborts the run, since nothing can be flushed any more.
+ *
+ * With $descriptionsOnly (issue #1070) the run is the description recalculation instead: the
+ * plugins come from {@see DescriptionRecalculationPlanner} (ranked ones that can still improve on
+ * a stored row, filled_at ignored), each is called once in priority order, and only its
+ * descriptions are written, through the usual write policy. filled_at and every other field stay.
  */
 final class SaturationService
 {
@@ -58,6 +63,7 @@ final class SaturationService
         private readonly BulkFillerService $bulkFiller,
         private readonly EntityManagerInterface $entityManager,
         private readonly LoggerInterface $logger,
+        private readonly DescriptionRecalculationPlanner $planner,
     ) {
     }
 
@@ -66,8 +72,12 @@ final class SaturationService
      *
      * @return int the number of plugin calls made
      */
-    public function saturate(Anime $anime, bool $force = false, ?\Closure $afterCall = null): int
+    public function saturate(Anime $anime, bool $force = false, ?\Closure $afterCall = null, bool $descriptionsOnly = false): int
     {
+        if ($descriptionsOnly) {
+            return $this->recalculateDescriptions($anime, $afterCall);
+        }
+
         $called = [];
 
         do {
@@ -117,5 +127,35 @@ final class SaturationService
         $this->logger->info('Saturation of anime #{animeId} finished after {calls} plugin call(s).', ['animeId' => $anime->id, 'calls' => \count($called)]);
 
         return \count($called);
+    }
+
+    /** @param ?\Closure(): void $afterCall */
+    private function recalculateDescriptions(Anime $anime, ?\Closure $afterCall): int
+    {
+        $calls = 0;
+        foreach ($this->planner->plan($anime) as $item) {
+            if (!$this->entityManager->isOpen()) {
+                $this->logger->warning('EntityManager is closed, aborting description recalculation of anime #{animeId}.', ['animeId' => $anime->id]);
+
+                return $calls;
+            }
+            ++$calls;
+            try {
+                $this->bulkFiller->fillDescriptionsFromPlugin($anime, $item['pluginId'], $item['externalId']);
+            } catch (\Throwable $e) {
+                $this->logger->warning('Description recalculation of anime #{animeId} from plugin {pluginId} failed.', [
+                    'animeId' => $anime->id,
+                    'pluginId' => (string) $item['pluginId'],
+                    'exception' => $e,
+                ]);
+            }
+            if ($afterCall !== null) {
+                $afterCall();
+            }
+        }
+
+        $this->logger->info('Description recalculation of anime #{animeId} finished after {calls} plugin call(s).', ['animeId' => $anime->id, 'calls' => $calls]);
+
+        return $calls;
     }
 }

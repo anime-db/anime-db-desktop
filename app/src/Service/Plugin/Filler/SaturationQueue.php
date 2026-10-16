@@ -43,9 +43,9 @@ final class SaturationQueue
     ) {
     }
 
-    public function enqueue(int $animeId, bool $force = false, bool $bulk = false, int $delaySeconds = 0): void
+    public function enqueue(int $animeId, bool $force = false, bool $bulk = false, int $delaySeconds = 0, bool $descriptionsOnly = false): void
     {
-        $this->dispatch(new SaturateAnimeMessage($animeId, $force, $bulk ? SaturateAnimeMessage::TRANSPORT_BULK : SaturateAnimeMessage::TRANSPORT), $delaySeconds);
+        $this->dispatch(new SaturateAnimeMessage($animeId, $force, $bulk ? SaturateAnimeMessage::TRANSPORT_BULK : SaturateAnimeMessage::TRANSPORT, $descriptionsOnly), $delaySeconds);
     }
 
     /** Re-queues $message into the transport it was queued into, optionally delayed. */
