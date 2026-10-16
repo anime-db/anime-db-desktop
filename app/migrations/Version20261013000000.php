@@ -31,32 +31,24 @@ use Doctrine\DBAL\Schema\Schema;
 use Doctrine\Migrations\AbstractMigration;
 
 /**
- * Ledger of the files plugins wrote into a record folder (issue #1065).
+ * Description origin (issue #1068): `anime_description.source` holds the plugin id that wrote the
+ * text, `manual` for a text the user changed in the edit form, or NULL when unknown. Existing rows
+ * get NULL — their origin cannot be recovered offline.
  */
 final class Version20261013000000 extends AbstractMigration
 {
     public function getDescription(): string
     {
-        return 'Add the record_folder_file table (issue #1065)';
+        return 'Add anime_description.source (issue #1068)';
     }
 
     public function up(Schema $schema): void
     {
-        $this->addSql('CREATE TABLE record_folder_file (
-            id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-            anime_id INTEGER NOT NULL,
-            plugin_id VARCHAR(128) NOT NULL,
-            file_name VARCHAR(255) NOT NULL,
-            sha256 VARCHAR(64) NOT NULL,
-            written_at INTEGER NOT NULL,
-            FOREIGN KEY (anime_id) REFERENCES anime (id) ON DELETE CASCADE
-        )');
-        $this->addSql('CREATE UNIQUE INDEX UNIQ_RECORD_FOLDER_FILE_PLUGIN_ANIME_NAME ON record_folder_file (plugin_id, anime_id, file_name)');
-        $this->addSql('CREATE INDEX IDX_RECORD_FOLDER_FILE_ANIME ON record_folder_file (anime_id)');
+        $this->addSql('ALTER TABLE anime_description ADD COLUMN source VARCHAR(128) DEFAULT NULL');
     }
 
     public function down(Schema $schema): void
     {
-        $this->addSql('DROP TABLE record_folder_file');
+        $this->addSql('ALTER TABLE anime_description DROP COLUMN source');
     }
 }

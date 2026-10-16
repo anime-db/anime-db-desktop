@@ -45,6 +45,7 @@ use App\Entity\LocaleNormalizer;
 use App\Entity\NameNormalizer;
 use App\Entity\SeriesAnime;
 use App\Entity\Studio;
+use App\Entity\ValueObject\PluginId;
 use App\Repository\StudioRepository;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Log\LoggerInterface;
@@ -83,12 +84,16 @@ final class PluginAnimeDataMerger
 
     private const EXTERNAL_URLS_MAX_COUNT = 50;
 
+    private readonly PluginDescriptionWriter $descriptionWriter;
+
     public function __construct(
         private readonly StudioRepository $studioRepository,
         private readonly EntityManagerInterface $entityManager,
         private readonly PluginMediaDownloaderInterface $mediaDownloader,
         private readonly LoggerInterface $logger,
+        ?PluginDescriptionWriter $descriptionWriter = null,
     ) {
+        $this->descriptionWriter = $descriptionWriter ?? new PluginDescriptionWriter($entityManager);
     }
 
     /**
@@ -102,7 +107,7 @@ final class PluginAnimeDataMerger
      *                     pair is reported separately from the 'cover'/'images' download failures
      *                     $unapplied carries
      */
-    public function apply(Anime $anime, PluginAnimeData $data, array $fields): MergeResult
+    public function apply(Anime $anime, PluginId $pluginId, PluginAnimeData $data, array $fields): MergeResult
     {
         // Handled once, together, regardless of where 'datePremiere'/'dateEnd' sit in $fields —
         // see applyDatePremiereAndEnd() for why the pair cannot be applied field-by-field below.
@@ -117,7 +122,7 @@ final class PluginAnimeDataMerger
             $applied = match ($field) {
                 'title' => $anime->setTitle($data->title),
                 'alternativeNames' => $this->applyAlternativeNames($anime, $data->alternativeNames ?? []),
-                'descriptions' => $this->applyDescriptions($anime, $data->descriptions ?? []),
+                'descriptions' => $this->applyDescriptions($anime, $pluginId, $data->descriptions ?? []),
                 'genres' => $this->applyGenres($anime, $data->genres ?? []),
                 'themes' => $this->applyThemes($anime, $data->themes ?? []),
                 'demographic' => $this->applyDemographic($anime, $data->demographic),
@@ -234,16 +239,16 @@ final class PluginAnimeDataMerger
     }
 
     /**
-     * setDescription() already merges by locale key (metadata['descriptions'][$locale] = $text),
-     * leaving other locales untouched — the union rule for this field is already the schema's
-     * built-in behavior, nothing extra to do here.
+     * Each locale goes through {@see PluginDescriptionWriter}, which decides per row whether the
+     * plugin's text may be written (a missing or empty locale) or only attributed, and never
+     * replaces a text that already has content.
      *
      * @param array<string, string> $descriptions locale => text
      */
-    private function applyDescriptions(Anime $anime, array $descriptions): void
+    private function applyDescriptions(Anime $anime, PluginId $pluginId, array $descriptions): void
     {
         foreach ($descriptions as $locale => $text) {
-            $anime->setDescription((string) $locale, $text);
+            $this->descriptionWriter->write($anime, $pluginId, (string) $locale, $text);
         }
     }
 

@@ -137,7 +137,7 @@ final class AnimeEditControllerTest extends TestCase
     {
         $anime = $this->persistTv(static function (TvAnime $anime): void {
             $anime->addName('Frieren', 'en', AnimeNameRole::Synonym);
-            $anime->setDescription('en', 'An elf mage.');
+            $anime->setDescription('en', 'An elf mage.', null);
             $anime->addGenre(GenreCode::Action);
             $anime->setEpisodesCount(28);
         });
@@ -208,8 +208,8 @@ final class AnimeEditControllerTest extends TestCase
     public function testEditingTheDescriptionOfAnExistingLocaleDoesNotHitTheUniqueIndex(): void
     {
         $anime = $this->persistTv(static function (TvAnime $anime): void {
-            $anime->setDescription('en', 'Old text.');
-            $anime->setDescription('ru', 'Старый текст.');
+            $anime->setDescription('en', 'Old text.', null);
+            $anime->setDescription('ru', 'Старый текст.', null);
         });
 
         $this->controller()->update($anime, $this->post([
@@ -226,7 +226,7 @@ final class AnimeEditControllerTest extends TestCase
     public function testDescriptionLocalesAreAddedAndRemoved(): void
     {
         $anime = $this->persistTv(static function (TvAnime $anime): void {
-            $anime->setDescription('en', 'English.');
+            $anime->setDescription('en', 'English.', null);
         });
 
         $this->controller()->update($anime, $this->post([
@@ -234,6 +234,107 @@ final class AnimeEditControllerTest extends TestCase
         ]));
 
         $this->assertSame(['ru' => 'Русский.'], $this->descriptions($this->reload($anime)));
+    }
+
+    /** @return array<string, array{0: string, 1: ?string}> locale => [text, source], straight from the table */
+    private function descriptionRows(Anime $anime): array
+    {
+        $rows = [];
+        foreach ($this->entityManager->getConnection()->fetchAllAssociative('SELECT locale, description, source FROM anime_description WHERE anime_id = ?', [$anime->id]) as $row) {
+            $rows[$row['locale']] = [$row['description'], $row['source']];
+        }
+
+        return $rows;
+    }
+
+    public function testTheRenderedFormCarriesAHashOfTheNormalizedTextPerDescriptionLocale(): void
+    {
+        $anime = $this->persistTv(static function (TvAnime $anime): void {
+            $anime->setDescription('en', "Line one\r\nLine two ", null);
+        });
+
+        $this->controller()->edit($anime);
+
+        $this->assertSame(['en' => hash('sha256', "Line one\nLine two")], $this->renderedParams()['form']['originals']['descriptions']);
+    }
+
+    public function testSavingWithoutTouchingTheDescriptionDoesNotWriteItEvenWhenTheTextareaSentCrlf(): void
+    {
+        $anime = $this->persistTv(static function (TvAnime $anime): void {
+            $anime->setDescription('en', "Line one\nLine two", 'plugin-p');
+        });
+
+        $this->controller()->update($anime, $this->post([
+            'originals_set' => '1',
+            'originals' => ['descriptions' => ['en' => hash('sha256', "Line one\nLine two")]],
+            'descriptions' => [['locale' => 'en', 'text' => "Line one\r\nLine two"]],
+        ]));
+
+        $this->assertSame(['en' => ["Line one\nLine two", 'plugin-p']], $this->descriptionRows($anime));
+    }
+
+    public function testATextReplacedInTheBackgroundWhileTheFormWasOpenSurvivesAnUntouchedSave(): void
+    {
+        // The form was rendered when the text was A; the background fill replaced it with B.
+        $anime = $this->persistTv(static function (TvAnime $anime): void {
+            $anime->setDescription('en', 'Text B', 'plugin-p');
+        });
+
+        $this->controller()->update($anime, $this->post([
+            'originals_set' => '1',
+            'originals' => ['descriptions' => ['en' => hash('sha256', 'Text A')]],
+            'descriptions' => [['locale' => 'en', 'text' => 'Text A']],
+        ]));
+
+        $this->assertSame(['en' => ['Text B', 'plugin-p']], $this->descriptionRows($anime));
+    }
+
+    public function testAChangedDescriptionIsStoredNormalizedAsManual(): void
+    {
+        $anime = $this->persistTv(static function (TvAnime $anime): void {
+            $anime->setDescription('en', 'Old', 'plugin-p');
+        });
+
+        $this->controller()->update($anime, $this->post([
+            'originals_set' => '1',
+            'originals' => ['descriptions' => ['en' => hash('sha256', 'Old')]],
+            'descriptions' => [['locale' => 'en', 'text' => "  New\r\ntext \r\n"]],
+        ]));
+
+        $this->assertSame(['en' => ["New\ntext", 'manual']], $this->descriptionRows($anime));
+    }
+
+    public function testWithoutOriginalsAnEqualNormalizedDescriptionIsNotWrittenAndADifferentOneIsManual(): void
+    {
+        $anime = $this->persistTv(static function (TvAnime $anime): void {
+            $anime->setDescription('en', "Same\nText", 'plugin-p');
+            $anime->setDescription('ru', 'Старый', 'plugin-p');
+        });
+
+        $this->controller()->update($anime, $this->post([
+            'descriptions' => [
+                ['locale' => 'en', 'text' => "Same\r\nText"],
+                ['locale' => 'ru', 'text' => 'Новый'],
+            ],
+        ]));
+
+        $this->assertSame(['en' => ["Same\nText", 'plugin-p'], 'ru' => ['Новый', 'manual']], $this->descriptionRows($anime));
+    }
+
+    public function testOnlyALocaleThatWasInTheFormIsRemovedWhenItIsNotSentBack(): void
+    {
+        $anime = $this->persistTv(static function (TvAnime $anime): void {
+            $anime->setDescription('en', 'English.', null);
+            $anime->setDescription('ru', 'Появилось позже.', 'plugin-p'); // appeared after the form was rendered
+        });
+
+        $this->controller()->update($anime, $this->post([
+            'originals_set' => '1',
+            'originals' => ['descriptions' => ['en' => hash('sha256', 'English.')]],
+            'descriptions' => [],
+        ]));
+
+        $this->assertSame(['ru' => ['Появилось позже.', 'plugin-p']], $this->descriptionRows($anime));
     }
 
     public function testGenresAndThemesAreAddedAndRemoved(): void
@@ -393,7 +494,7 @@ final class AnimeEditControllerTest extends TestCase
             $anime->setEpisodesCount(12);
             $anime->setDurationMinutes(24);
             $anime->setCountries(['JP']);
-            $anime->setDescription('en', 'Background text');
+            $anime->setDescription('en', 'Background text', null);
             $anime->addGenre(GenreCode::from('adventure'));
         });
 

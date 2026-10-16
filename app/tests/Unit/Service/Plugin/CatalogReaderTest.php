@@ -246,7 +246,7 @@ final class CatalogReaderTest extends TestCase
         $studio->rename('Sunrise');
         $anime = new MovieAnime();
         $anime->setTitle('Cowboy Bebop')->setWatchStatus(WatchStatus::Watching);
-        $anime->setDescription('en', 'English text')->setDescription('ru', 'Русский текст');
+        $anime->setDescription('en', 'English text', null)->setDescription('ru', 'Русский текст', null);
         $anime->setDatePremiere(new \DateTimeImmutable('1998-04-03'));
         $anime->setDateEnd(new \DateTimeImmutable('1999-04-24'));
         $anime->setDurationMinutes(24);

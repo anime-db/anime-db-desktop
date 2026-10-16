@@ -54,8 +54,19 @@ class AnimeDescription
     #[ORM\Column(type: 'text')]
     public string $description;
 
-    public function __construct(Anime $anime, string $locale, string $description)
+    /**
+     * Origin of the text (issue #1068): a plugin id, {@see self::SOURCE_MANUAL} for a text the user
+     * changed in the edit form, null when unknown (rows from before the column existed, v1 import,
+     * demo data).
+     */
+    #[ORM\Column(length: 128, nullable: true)]
+    public ?string $source;
+
+    public const SOURCE_MANUAL = 'manual';
+
+    public function __construct(Anime $anime, string $locale, string $description, ?string $source = null)
     {
+        $this->source = $source;
         $this->anime = $anime;
         $this->locale = $locale;
         $this->description = $description;

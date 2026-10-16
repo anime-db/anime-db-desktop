@@ -75,13 +75,13 @@ final class AnimeDescriptionPersistenceTest extends TestCase
         $anime = new MovieAnime();
         $anime->setTitle('Round trip');
         $anime->setWatchStatus(WatchStatus::Plan);
-        $anime->setDescription('ru', 'Original text');
+        $anime->setDescription('ru', 'Original text', null);
 
         $this->entityManager->persist($anime);
         $this->entityManager->flush();
         $id = $anime->id;
 
-        $anime->setDescription('ru', 'Updated text');
+        $anime->setDescription('ru', 'Updated text', null);
         $this->entityManager->flush();
 
         $this->entityManager->clear();

@@ -267,7 +267,7 @@ final class AnimeAggregateTouchListenerTest extends TestCase
         // the Anime's own insert so setup triggers no dispatch.
         $anime = new MovieAnime();
         $anime->setTitle('Cowboy Bebop')->setWatchStatus(WatchStatus::Plan);
-        $anime->setDescription('en', 'A bounty hunting crew.');
+        $anime->setDescription('en', 'A bounty hunting crew.', null);
         $this->entityManager->persist($anime);
         $this->entityManager->flush();
         $animeId = $this->requireId($anime);
@@ -282,7 +282,7 @@ final class AnimeAggregateTouchListenerTest extends TestCase
             ->with($this->equalTo(new IndexAnimeMessage($animeId)))
             ->willReturn(new Envelope(new IndexAnimeMessage($animeId)));
 
-        $anime->setDescription('en', 'A bounty hunting crew chasing criminals across the solar system.');
+        $anime->setDescription('en', 'A bounty hunting crew chasing criminals across the solar system.', null);
         $this->entityManager->flush();
 
         $this->assertGreaterThan($before, $this->readDateUpdateFromDb($animeId));
@@ -303,7 +303,7 @@ final class AnimeAggregateTouchListenerTest extends TestCase
             ->with($this->equalTo(new IndexAnimeMessage($animeId)))
             ->willReturn(new Envelope(new IndexAnimeMessage($animeId)));
 
-        $anime->setDescription('en', 'A bounty hunting crew.');
+        $anime->setDescription('en', 'A bounty hunting crew.', null);
         $this->entityManager->flush();
 
         $this->assertGreaterThan($before, $this->readDateUpdateFromDb($animeId));

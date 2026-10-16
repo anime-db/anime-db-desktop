@@ -75,7 +75,7 @@ final class AnimeTest extends TestCase
     public function testSetDescriptionIsReadByGetSummary(): void
     {
         $anime = new MovieAnime();
-        $anime->setDescription('ru', 'Описание');
+        $anime->setDescription('ru', 'Описание', null);
 
         $this->assertSame('Описание', $anime->getSummary('ru'));
     }
@@ -340,8 +340,8 @@ final class AnimeTest extends TestCase
     public function testGetSummaryReturnsPreferredLocale(): void
     {
         $anime = new MovieAnime();
-        $anime->setDescription('ru', 'Описание');
-        $anime->setDescription('en', 'Description');
+        $anime->setDescription('ru', 'Описание', null);
+        $anime->setDescription('en', 'Description', null);
 
         $this->assertSame('Описание', $anime->getSummary('ru'));
     }
@@ -349,8 +349,8 @@ final class AnimeTest extends TestCase
     public function testGetSummaryFallsBackToEnglish(): void
     {
         $anime = new MovieAnime();
-        $anime->setDescription('en', 'Description');
-        $anime->setDescription('de', 'Beschreibung');
+        $anime->setDescription('en', 'Description', null);
+        $anime->setDescription('de', 'Beschreibung', null);
 
         $this->assertSame('Description', $anime->getSummary('ru'));
     }
@@ -358,7 +358,7 @@ final class AnimeTest extends TestCase
     public function testGetSummaryFallsBackToAnyAvailableLocale(): void
     {
         $anime = new MovieAnime();
-        $anime->setDescription('de', 'Beschreibung');
+        $anime->setDescription('de', 'Beschreibung', null);
 
         $this->assertSame('Beschreibung', $anime->getSummary('ru'));
     }

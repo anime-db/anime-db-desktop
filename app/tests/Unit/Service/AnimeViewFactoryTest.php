@@ -53,7 +53,7 @@ final class AnimeViewFactoryTest extends TestCase
     {
         $anime = new MovieAnime();
         $anime->setTitle('A Silent Voice')->setWatchStatus(WatchStatus::Plan);
-        $anime->setDescription('ru', 'Описание')->setDescription('en', 'Description');
+        $anime->setDescription('ru', 'Описание', null)->setDescription('en', 'Description', null);
 
         $view = $this->createViewFactory('ru')->serialize($anime);
 
@@ -64,7 +64,7 @@ final class AnimeViewFactoryTest extends TestCase
     {
         $anime = new MovieAnime();
         $anime->setTitle('A Silent Voice')->setWatchStatus(WatchStatus::Plan);
-        $anime->setDescription('en', 'Description');
+        $anime->setDescription('en', 'Description', null);
 
         $view = $this->createViewFactory('de')->serialize($anime);
 
