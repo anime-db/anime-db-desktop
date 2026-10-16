@@ -152,7 +152,7 @@ final class PluginControllerTest extends TestCase
             $this->registry,
             $settingsPages ?? $this->settingsPages(),
             $installer ?? $this->installer(),
-            $remover ?? new PluginRemover($this->registry, new \App\Service\Plugin\PluginCacheDirectories(sys_get_temp_dir().'/anime-plugin-cache-unused', new NullLogger())),
+            $remover ?? new PluginRemover($this->registry, new \App\Service\Plugin\PluginCacheDirectories(sys_get_temp_dir().'/anime-plugin-cache-unused', new NullLogger()), \Doctrine\DBAL\DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]), new NullLogger()),
             $translationCoverage ?? new TranslationCoverageService($this->registry, $this->rootDir),
             $wsPublisher ?? $this->createStub(WsPublisher::class),
             $csrfTokenManager ?? $this->alwaysValidCsrf(),

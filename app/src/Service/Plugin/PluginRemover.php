@@ -29,6 +29,7 @@ namespace App\Service\Plugin;
 
 use App\Entity\ValueObject\PluginId;
 use Doctrine\DBAL\Connection;
+use Psr\Log\LoggerInterface;
 
 /**
  * Removes an installed plugin's directory from `%app.plugins_dir%` and re-syncs
@@ -62,7 +63,8 @@ final class PluginRemover
     public function __construct(
         private readonly InstalledPluginsRegistry $registry,
         private readonly PluginCacheDirectories $cacheDirectories,
-        private readonly ?Connection $connection = null,
+        private readonly Connection $connection,
+        private readonly LoggerInterface $logger,
     ) {
     }
 
@@ -78,10 +80,20 @@ final class PluginRemover
             // installed, and the startup cleanup picks it up later.
             $this->cacheDirectories->remove($id);
 
-            // The record folder ledger of the plugin (issue #1065); the files themselves stay on disk.
-            $this->connection?->executeStatement('DELETE FROM record_folder_file WHERE plugin_id = ?', [(string) $id]);
-
             $this->registry->reconcile();
+
+            // The record folder ledger of the plugin (issue #1065); the files themselves stay on disk.
+            // After the reconcile and never throws (failures are logged): the plugin is already gone
+            // from disk and the registry, so a locked or unreachable database must not turn the
+            // finished removal into an error.
+            try {
+                $this->connection->executeStatement('DELETE FROM record_folder_file WHERE plugin_id = ?', [(string) $id]);
+            } catch (\Throwable $exception) {
+                $this->logger->error('Removing the record folder ledger rows of a removed plugin failed.', [
+                    'pluginId' => (string) $id,
+                    'exception' => $exception,
+                ]);
+            }
         });
     }
 }

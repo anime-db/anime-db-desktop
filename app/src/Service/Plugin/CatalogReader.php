@@ -132,7 +132,11 @@ final class CatalogReader implements CatalogReaderInterface
         );
     }
 
-    /** The description in the request locale (same source as the record page), null when the record has none. */
+    /**
+     * The description in the locale of the current HTTP request (same source as the record page), null when the
+     * record has none. Outside a request (Messenger worker, console) there is no locale to read, so it falls back
+     * to {@see self::DEFAULT_LOCALE}.
+     */
     private function description(Anime $anime): ?string
     {
         $summary = $anime->getSummary($this->requestStack->getCurrentRequest()?->getLocale() ?? self::DEFAULT_LOCALE);

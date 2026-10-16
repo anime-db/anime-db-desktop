@@ -67,7 +67,7 @@ final class PluginDeactivateCommandTest extends TestCase
         $registry = new InstalledPluginsRegistry($pluginsDir, new PluginsConfigStore($pluginsDir.'/plugins.json'), new NullLogger());
         $registry->reconcile();
 
-        $command = new PluginDeactivateCommand(new PluginRemover($registry, new \App\Service\Plugin\PluginCacheDirectories(sys_get_temp_dir().'/anime-plugin-cache-unused', new NullLogger())));
+        $command = new PluginDeactivateCommand(new PluginRemover($registry, new \App\Service\Plugin\PluginCacheDirectories(sys_get_temp_dir().'/anime-plugin-cache-unused', new NullLogger()), \Doctrine\DBAL\DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]), new NullLogger()));
         $tester = new CommandTester($command);
 
         $exitCode = $tester->execute(['pluginId' => 'animedb-shikimori']);

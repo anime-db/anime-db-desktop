@@ -29,6 +29,7 @@ namespace App\Tests\Unit\Service\Plugin\DependencyInjection\Compiler;
 
 use AnimeDb\PluginContracts\Folder\RecordFolderWriterInterface;
 use AnimeDb\Plugins\FakeVendor\FakeRecordFolderWriterConsumer;
+use AnimeDb\Plugins\FakeVendorTwo\FakeIntegrationService;
 use AnimeDb\Plugins\FakeVendorTwo\FakeRecordFolderWriterConsumerTwo;
 use App\Service\Folder\RecordFolderWriter;
 use App\Service\Plugin\DependencyInjection\Compiler\RecordFolderWriterScopePass;
@@ -100,10 +101,12 @@ final class RecordFolderWriterScopePassTest extends TestCase
 
         $container = new ContainerBuilder();
         $container->register(FakeRecordFolderWriterConsumer::class, FakeRecordFolderWriterConsumer::class);
+        $container->register(FakeIntegrationService::class, FakeIntegrationService::class);
 
         $this->pass()->process($container);
 
         $this->assertArrayHasKey(RecordFolderWriterInterface::class, $container->getDefinition(FakeRecordFolderWriterConsumer::class)->getBindings());
+        $this->assertArrayNotHasKey(RecordFolderWriterInterface::class, $container->getDefinition(FakeIntegrationService::class)->getBindings());
     }
 
     private function pass(): RecordFolderWriterScopePass
