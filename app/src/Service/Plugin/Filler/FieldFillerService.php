@@ -93,7 +93,7 @@ final class FieldFillerService
             return FillResult::NotFound;
         }
 
-        $result = $this->merger->apply($anime, $data, [$field]);
+        $result = $this->merger->apply($anime, $pluginId, $data, [$field]);
         $this->entityManager->flush();
 
         return match (true) {
