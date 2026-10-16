@@ -102,6 +102,24 @@ final class PluginDescriptionWriterTest extends TestCase
         $this->assertSame(['ru' => ['Text', 'plugin-p']], $this->rows($anime));
     }
 
+    public function testInsertAndFillBumpDateUpdateOnFlush(): void
+    {
+        foreach ([null, ''] as $text) {
+            $anime = $this->animeWith($text, null);
+            $this->entityManager->clear();
+            $anime = $this->entityManager->find(Anime::class, $anime->id);
+            $this->assertNotNull($anime);
+            $before = new \DateTimeImmutable('2020-01-01');
+            (new \ReflectionProperty(Anime::class, 'dateUpdate'))->setValue($anime, $before);
+            $this->entityManager->getUnitOfWork()->setOriginalEntityProperty(spl_object_id($anime), 'dateUpdate', $before);
+
+            $this->writer->write($anime, new PluginId('plugin-p'), 'ru', 'Text');
+            $this->entityManager->flush();
+
+            $this->assertGreaterThan($before, $anime->getDateUpdate());
+        }
+    }
+
     public function testPluginTextIsStoredNormalized(): void
     {
         $anime = $this->animeWith(null, null);

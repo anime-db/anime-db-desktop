@@ -113,6 +113,8 @@ class PluginDescriptionWriter
         if ($entity !== null) {
             $anime->attachPersistedDescription($entity);
         }
+        // The row bypassed the UnitOfWork, so AnimeAggregateTouchListener cannot see it (issue #888).
+        $anime->touchDateUpdate();
     }
 
     private function update(Anime $anime, AnimeDescription $row, string $text, string $source): void
@@ -139,5 +141,7 @@ class PluginDescriptionWriter
         $oid = spl_object_id($row);
         $unitOfWork->setOriginalEntityProperty($oid, 'description', $text);
         $unitOfWork->setOriginalEntityProperty($oid, 'source', $source);
+        // The change set is cleared above, so the listener cannot see it (issue #888).
+        $anime->touchDateUpdate();
     }
 }
