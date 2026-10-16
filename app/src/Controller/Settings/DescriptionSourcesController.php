@@ -95,6 +95,14 @@ final class DescriptionSourcesController
             return $this->render(array_values(array_map(static fn (string $id): array => $known[$id], $order)), false);
         }
 
+        // Previously ranked ids that are not candidates right now (e.g. a disabled filler without stored
+        // descriptions) keep their rank, so re-enabling the plugin does not demote it below everyone.
+        foreach ($this->settings->getDescriptionSourcePriority() as $id) {
+            if (!isset($known[$id]) && !\in_array($id, $order, true)) {
+                $order[] = $id;
+            }
+        }
+
         $this->settings->setDescriptionSourcePriority($order);
 
         return $this->render($this->candidates->list(), true);

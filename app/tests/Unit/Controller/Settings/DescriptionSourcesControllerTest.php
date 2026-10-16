@@ -105,6 +105,15 @@ final class DescriptionSourcesControllerTest extends TestCase
         $this->assertSame(['animedb-b', 'animedb-a', 'animedb-c'], $this->saved());
     }
 
+    public function testSaveKeepsRankedIdsThatAreNotCandidatesAnymore(): void
+    {
+        (new AppSettingsProvider(new AppConfigStore($this->configPath)))->setDescriptionSourcePriority(['animedb-off', 'animedb-b']);
+
+        $this->controller()->save(new Request([], ['_token' => 't', 'order' => ['animedb-c', 'animedb-b', 'animedb-a']]));
+
+        $this->assertSame(['animedb-c', 'animedb-b', 'animedb-a', 'animedb-off'], $this->saved());
+    }
+
     public function testMoveReordersTheListWithoutSaving(): void
     {
         $this->controller()->save(new Request([], ['_token' => 't', 'order' => ['animedb-a', 'animedb-b', 'animedb-c'], 'move' => 'animedb-b:up']));
