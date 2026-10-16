@@ -42,10 +42,12 @@ use App\Entity\AnimeSource;
 use App\Entity\Enum\GenreCode;
 use App\Entity\Enum\ThemeCode;
 use App\Entity\SeriesAnime;
+use App\Entity\Studio;
 use App\Entity\ValueObject\PluginId;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\Persistence\ManagerRegistry;
 use Psr\Log\LoggerInterface;
+use Symfony\Component\HttpFoundation\RequestStack;
 
 /**
  * Read-only projection of a catalog record's current state, scoped to a single plugin — see
@@ -87,11 +89,14 @@ use Psr\Log\LoggerInterface;
  */
 final class CatalogReader implements CatalogReaderInterface
 {
+    private const DEFAULT_LOCALE = 'en';
+
     public function __construct(
         private readonly PluginId $pluginId,
         private readonly ManagerRegistry $managerRegistry,
         private readonly ?\Closure $resolverFactory,
         private readonly LoggerInterface $logger,
+        private readonly RequestStack $requestStack,
     ) {
     }
 
@@ -118,7 +123,25 @@ final class CatalogReader implements CatalogReaderInterface
             episodesCount: $entity instanceof SeriesAnime ? $entity->getEpisodesCount() : null,
             sources: array_map(static fn (AnimeSource $source): string => $source->url, $entity->getSources()->toArray()),
             externalId: $this->resolveExternalId($entity),
+            description: $this->description($entity),
+            datePremiere: $entity->getDatePremiere(),
+            dateEnd: $entity->getDateEnd(),
+            durationMinutes: $entity->getDurationMinutes(),
+            studios: array_map(static fn (Studio $studio): string => $studio->name, $entity->getStudios()->toArray()),
+            countries: $entity->getCountries() ?? [],
         );
+    }
+
+    /**
+     * The description in the locale of the current HTTP request (same source as the record page), null when the
+     * record has none. Outside a request (Messenger worker, console) there is no locale to read, so it falls back
+     * to {@see self::DEFAULT_LOCALE}.
+     */
+    private function description(Anime $anime): ?string
+    {
+        $summary = $anime->getSummary($this->requestStack->getCurrentRequest()?->getLocale() ?? self::DEFAULT_LOCALE);
+
+        return $summary === '' ? null : $summary;
     }
 
     private function resolveExternalId(Anime $anime): ?string
