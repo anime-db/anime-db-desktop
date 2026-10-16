@@ -37,10 +37,13 @@ use App\Entity\TvAnime;
 use App\Entity\ValueObject\PluginId;
 use App\Repository\AnimeRepository;
 use App\Repository\StudioRepository;
+use App\Service\AppConfigStore;
+use App\Service\AppSettingsProvider;
 use App\Service\Plugin\ExternalIdResolver;
 use App\Service\Plugin\Filler\BulkFillerService;
 use App\Service\Plugin\Filler\CachedFillerLookup;
 use App\Service\Plugin\Filler\PluginAnimeDataMerger;
+use App\Service\Plugin\Filler\PluginDescriptionWriter;
 use App\Service\Plugin\Filler\PluginMediaDownloaderInterface;
 use App\Service\Plugin\Filler\SaturationService;
 use App\Service\Plugin\FillerRegistry;
@@ -223,6 +226,41 @@ final class SaturationServiceTest extends TestCase
         $this->service(['plugin-a' => $this->filler('a', 'a.example')])->saturate($anime, force: true);
 
         $this->assertSame(['a:9'], $this->calls);
+    }
+
+    public function testForcedSaturationReplacesALowerRankedDescription(): void
+    {
+        $configPath = sys_get_temp_dir().'/anime-saturation-priority-'.uniqid().'.json';
+        $settings = new AppSettingsProvider(new AppConfigStore($configPath));
+        $settings->setDescriptionSourcePriority(['plugin-a', 'plugin-b']);
+
+        $anime = $this->anime('https://a.example/1');
+        $anime->setDescription('ru', 'Old text', 'plugin-b');
+        $this->entityManager->flush();
+
+        $filler = $this->createStub(FillerInterface::class);
+        $filler->method('getFillableFields')->willReturn(['descriptions']);
+        $filler->method('resolveExternalId')->willReturn('1');
+        $filler->method('findById')->willReturn(new PluginAnimeData(title: 'x', descriptions: ['ru' => 'New text']));
+        $fillers = ['plugin-a' => $filler];
+        $repository = new AnimeRepository($this->entityManager);
+        $registry = new FillerRegistry($fillers, new PluginsConfigStore(sys_get_temp_dir().'/anime-saturation-test-'.uniqid().'.json'));
+        $bulk = new BulkFillerService(
+            $registry,
+            new PluginAnimeDataMerger(new StudioRepository($this->entityManager), $this->entityManager, $this->createStub(PluginMediaDownloaderInterface::class), new NullLogger(), new PluginDescriptionWriter($this->entityManager, $settings)),
+            $this->entityManager,
+            new NullLogger(),
+            $this->createStub(MessageBusInterface::class),
+            $repository,
+            new CachedFillerLookup(new ArrayAdapter()),
+        );
+
+        (new SaturationService($registry, new ExternalIdResolver($repository, new NullLogger()), $bulk, $this->entityManager, new NullLogger()))->saturate($anime, force: true);
+
+        $row = $this->entityManager->getConnection()->fetchAssociative('SELECT description, source FROM anime_description WHERE anime_id = ?', [$anime->id]);
+        $this->assertSame(['description' => 'New text', 'source' => 'plugin-a'], $row);
+        @unlink($configPath);
+        @unlink($configPath.'.lock');
     }
 
     public function testIdConflictIsLoggedTheMarkerStaysUnsetAndTheOtherPluginsRun(): void

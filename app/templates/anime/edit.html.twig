@@ -50,7 +50,7 @@
     </div>
 {% endmacro %}
 
-{% macro description_row(index, row, errors) %}
+{% macro description_row(index, row, errors, source = null) %}
     {% import _self as m %}
     <div class="anime-edit__row" data-rows-item>
         <div class="anime-edit__row-fields">
@@ -58,6 +58,9 @@
             <textarea name="descriptions[{{ index }}][text]" rows="3" class="form-control{{ m.invalid_class(errors, 'descriptions.' ~ index) }}" aria-label="{{ 'anime_edit.field_description_text'|trans }}"{{ m.field_attrs(errors, 'descriptions.' ~ index) }}>{{ row.text }}</textarea>
             <button type="button" class="btn btn-outline-secondary" data-rows-remove aria-label="{{ 'anime_edit.remove_button'|trans }}" title="{{ 'anime_edit.remove_button'|trans }}">{{ icon('x-lg') }}</button>
         </div>
+        {% if source is not null %}
+            <div class="form-text anime-edit__description-source">{% if source.kind == 'manual' %}{{ 'anime_edit.description_source_manual'|trans }}{% else %}{{ 'anime_edit.description_source_plugin'|trans({'%name%': source.name}) }}{% endif %}</div>
+        {% endif %}
         {{ m.field_error(errors, 'descriptions.' ~ index) }}
     </div>
 {% endmacro %}
@@ -125,7 +128,7 @@
             <fieldset class="mb-3" data-control="repeatable-rows">
                 <legend class="form-label">{{ 'anime_edit.field_descriptions'|trans }}</legend>
                 <div data-rows-list>
-                    {% for row in form.descriptions %}{{ m.description_row(loop.index0, row, errors) }}{% endfor %}
+                    {% for row in form.descriptions %}{{ m.description_row(loop.index0, row, errors, description_sources[row.locale] ?? null) }}{% endfor %}
                 </div>
                 <template data-rows-template>{{ m.description_row('__INDEX__', {locale: '', text: ''}, {}) }}</template>
                 <button type="button" class="btn btn-outline-secondary btn-sm" data-rows-add>{{ 'anime_edit.add_locale_button'|trans }}</button>

@@ -34,12 +34,15 @@ use App\Entity\AnimeDescription;
 use App\Entity\Enum\WatchStatus;
 use App\Entity\TvAnime;
 use App\Entity\ValueObject\PluginId;
+use App\Service\AppConfigStore;
+use App\Service\AppSettingsProvider;
 use App\Service\Plugin\Filler\PluginDescriptionWriter;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\EntityManager;
 use Doctrine\ORM\ORMSetup;
 use Doctrine\ORM\Tools\SchemaTool;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 final class PluginDescriptionWriterTest extends TestCase
@@ -47,8 +50,31 @@ final class PluginDescriptionWriterTest extends TestCase
     private EntityManager $entityManager;
     private PluginDescriptionWriter $writer;
 
+    private string $configPath;
+
+    protected function tearDown(): void
+    {
+        foreach ([$this->configPath, $this->configPath.'.lock', $this->configPath.'.tmp'] as $file) {
+            if (is_file($file)) {
+                unlink($file);
+            }
+        }
+    }
+
+    /** @param ?list<string> $priority null = never saved */
+    private function writerWithPriority(?array $priority): PluginDescriptionWriter
+    {
+        $settings = new AppSettingsProvider(new AppConfigStore($this->configPath));
+        if ($priority !== null) {
+            $settings->setDescriptionSourcePriority($priority);
+        }
+
+        return new PluginDescriptionWriter($this->entityManager, $settings);
+    }
+
     protected function setUp(): void
     {
+        $this->configPath = sys_get_temp_dir().'/description-writer-'.bin2hex(random_bytes(6)).'.json';
         if (!Type::hasType(UnixTimestampType::NAME)) {
             Type::addType(UnixTimestampType::NAME, UnixTimestampType::class);
         }
@@ -242,5 +268,79 @@ final class PluginDescriptionWriterTest extends TestCase
 
         $this->assertSame(['ru' => ["A\nB", 'plugin-p']], $this->rows($anime));
         $this->assertInstanceOf(AnimeDescription::class, $anime->getDescriptions()->first());
+    }
+
+    /** @return iterable<string, array{0: ?list<string>, 1: ?string, 2: ?string, 3: string, 4: string, 5: ?string}> */
+    public static function priorityMatrix(): iterable
+    {
+        // priority, row source, row text(null = NULL source case uses 'Old'), plugin, expected text, expected source
+        yield 'never saved, same source' => [null, 'plugin-p', 'Old', 'plugin-p', 'Old', 'plugin-p'];
+        yield 'saved empty, same source' => [[], 'plugin-p', 'Old', 'plugin-p', 'Old', 'plugin-p'];
+        yield 'never saved, other source' => [null, 'plugin-q', 'Old', 'plugin-p', 'Old', 'plugin-q'];
+        yield 'configured, same source updates' => [['plugin-p'], 'plugin-p', 'Old', 'plugin-p', 'New', 'plugin-p'];
+        yield 'configured, higher plugin replaces' => [['plugin-p', 'plugin-q'], 'plugin-q', 'Old', 'plugin-p', 'New', 'plugin-p'];
+        yield 'configured, lower plugin does not' => [['plugin-p', 'plugin-q'], 'plugin-p', 'Old', 'plugin-q', 'Old', 'plugin-p'];
+        yield 'ranked replaces unranked' => [['plugin-p'], 'plugin-u', 'Old', 'plugin-p', 'New', 'plugin-p'];
+        yield 'unranked does not replace ranked' => [['plugin-p'], 'plugin-p', 'Old', 'plugin-u', 'Old', 'plugin-p'];
+        yield 'unranked does not replace unranked' => [['plugin-p'], 'plugin-u1', 'Old', 'plugin-u2', 'Old', 'plugin-u1'];
+        yield 'manual is protected' => [['plugin-p'], 'manual', 'Old', 'plugin-p', 'Old', 'manual'];
+        yield 'manual empty is protected' => [['plugin-p'], 'manual', '', 'plugin-p', '', 'manual'];
+        yield 'NULL with other text is protected' => [['plugin-p'], null, 'Old', 'plugin-p', 'Old', null];
+    }
+
+    /** @param ?list<string> $priority */
+    #[DataProvider('priorityMatrix')]
+    public function testSourcePriorityRules(?array $priority, ?string $rowSource, string $rowText, string $plugin, string $expectedText, ?string $expectedSource): void
+    {
+        $anime = $this->animeWith($rowText, $rowSource);
+
+        $this->writerWithPriority($priority)->write($anime, new PluginId($plugin), 'ru', "New\r\n");
+
+        $this->assertSame(['ru' => [$expectedText, $expectedSource]], $this->rows($anime));
+    }
+
+    public function testUpdatedTextIsStoredNormalized(): void
+    {
+        $anime = $this->animeWith('Old', 'plugin-p');
+
+        $this->writerWithPriority(['plugin-p'])->write($anime, new PluginId('plugin-p'), 'ru', "  A\r\nB  ");
+
+        $this->assertSame(['ru' => ["A\nB", 'plugin-p']], $this->rows($anime));
+    }
+
+    public function testNullRowWithEqualTextIsAttributedWithoutPriority(): void
+    {
+        $anime = $this->animeWith('Same', null);
+
+        $this->writerWithPriority(null)->write($anime, new PluginId('plugin-p'), 'ru', 'Same');
+
+        $this->assertSame(['ru' => ['Same', 'plugin-p']], $this->rows($anime));
+    }
+
+    public function testOnePriorityListAppliesToEachLocaleBySource(): void
+    {
+        $anime = $this->animeWith('Old ru', 'plugin-q', 'ru');
+        $anime->setDescription('en', 'Old en', 'plugin-p');
+        $anime->setDescription('de', 'Old de', 'manual');
+        $this->entityManager->flush();
+        $writer = $this->writerWithPriority(['plugin-p', 'plugin-q']);
+
+        foreach (['ru', 'en', 'de'] as $locale) {
+            $writer->write($anime, new PluginId('plugin-p'), $locale, 'New '.$locale);
+        }
+
+        $rows = $this->rows($anime);
+        ksort($rows);
+        $this->assertSame(['de' => ['Old de', 'manual'], 'en' => ['New en', 'plugin-p'], 'ru' => ['New ru', 'plugin-p']], $rows);
+    }
+
+    public function testReplacementIsSkippedWhenTheRowBecameManualAfterTheSnapshot(): void
+    {
+        $anime = $this->animeWith('Old', 'plugin-q');
+        $this->entityManager->getConnection()->executeStatement("UPDATE anime_description SET description = 'Mine', source = 'manual' WHERE anime_id = ?", [$anime->id]);
+
+        $this->writerWithPriority(['plugin-p', 'plugin-q'])->write($anime, new PluginId('plugin-p'), 'ru', 'New');
+
+        $this->assertSame(['ru' => ['Mine', 'manual']], $this->rows($anime));
     }
 }

@@ -45,6 +45,8 @@ use App\Message\IndexAnimeMessage;
 use App\Repository\StudioRepository;
 use App\Service\Media\AnimeCoverStorage;
 use App\Service\Media\ImageNormalizer;
+use App\Service\Plugin\InstalledPluginsRegistry;
+use App\Service\Plugin\PluginsConfigStore;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\EntityManager;
@@ -52,6 +54,7 @@ use Doctrine\ORM\Events;
 use Doctrine\ORM\ORMSetup;
 use Doctrine\ORM\Tools\SchemaTool;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -256,6 +259,41 @@ final class AnimeEditControllerTest extends TestCase
         $this->controller()->edit($anime);
 
         $this->assertSame(['en' => hash('sha256', "Line one\nLine two")], $this->renderedParams()['form']['originals']['descriptions']);
+    }
+
+    public function testTheRenderedFormCaptionsEachDescriptionWithItsSource(): void
+    {
+        $dir = sys_get_temp_dir().'/anime-edit-sources-'.uniqid();
+        mkdir($dir.'/animedb-shikimori', recursive: true);
+        file_put_contents($dir.'/animedb-shikimori/manifest.json', json_encode([
+            'id' => 'animedb-shikimori',
+            'name' => 'Shikimori',
+            'version' => '1.0.0',
+            'type' => 'integration',
+            'features' => ['filler' => true],
+            'require' => ['core' => '>=2.0.0', 'php' => '>=8.2'],
+        ]));
+        $configPath = $dir.'/plugins.json';
+        $installed = new InstalledPluginsRegistry($dir, new PluginsConfigStore($configPath), new NullLogger());
+        $installed->reconcile();
+
+        $anime = $this->persistTv(static function (TvAnime $anime): void {
+            $anime->setDescription('ru', 'A', 'animedb-shikimori');
+            $anime->setDescription('en', 'B', 'animedb-removed');
+            $anime->setDescription('de', 'C', 'manual');
+            $anime->setDescription('fr', 'D', null);
+        });
+
+        $this->controller(installedPlugins: $installed)->edit($anime);
+
+        $this->assertEquals([
+            'ru' => ['kind' => 'plugin', 'name' => 'Shikimori'],
+            'en' => ['kind' => 'plugin', 'name' => 'animedb-removed'],
+            'de' => ['kind' => 'manual', 'name' => ''],
+        ], $this->renderedParams()['description_sources']);
+        $this->assertArrayNotHasKey('fr', $this->renderedParams()['description_sources']);
+
+        (new \Symfony\Component\Filesystem\Filesystem())->remove($dir);
     }
 
     public function testSavingWithoutTouchingTheDescriptionDoesNotWriteItEvenWhenTheTextareaSentCrlf(): void
@@ -1002,7 +1040,7 @@ final class AnimeEditControllerTest extends TestCase
         return $this->rendered ?? throw new \LogicException('The form was not rendered.');
     }
 
-    private function controller(?\App\Tests\Support\RecordingSaturationBus $bus = null): AnimeEditController
+    private function controller(?\App\Tests\Support\RecordingSaturationBus $bus = null, ?InstalledPluginsRegistry $installedPlugins = null): AnimeEditController
     {
         $csrf = $this->createStub(CsrfTokenManagerInterface::class);
         $csrf->method('isTokenValid')->willReturnCallback(
@@ -1022,6 +1060,6 @@ final class AnimeEditControllerTest extends TestCase
         $translator = $this->createStub(TranslatorInterface::class);
         $translator->method('trans')->willReturnArgument(0);
 
-        return new AnimeEditController($this->entityManager, $csrf, $urls, $twig, new StudioRepository($this->entityManager), new AnimeCoverStorage(new ImageNormalizer(), $this->mediaDir), $translator, 1048576, $bus?->queue());
+        return new AnimeEditController($this->entityManager, $csrf, $urls, $twig, new StudioRepository($this->entityManager), new AnimeCoverStorage(new ImageNormalizer(), $this->mediaDir), $translator, 1048576, $bus?->queue(), $installedPlugins);
     }
 }

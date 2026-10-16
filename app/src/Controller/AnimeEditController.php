@@ -40,10 +40,13 @@ use App\Entity\Enum\WatchStatus;
 use App\Entity\LocaleNormalizer;
 use App\Entity\SeriesAnime;
 use App\Entity\Studio;
+use App\Entity\ValueObject\Exception\InvalidPluginIdException;
+use App\Entity\ValueObject\PluginId;
 use App\Repository\StudioRepository;
 use App\Service\Media\AnimeCoverStorage;
 use App\Service\Media\CoverUploadException;
 use App\Service\Plugin\Filler\SaturationQueue;
+use App\Service\Plugin\InstalledPluginsRegistry;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\RedirectResponse;
@@ -87,6 +90,7 @@ final class AnimeEditController
         /** post_max_size in bytes; null reads it from php.ini (0 means unlimited) */
         private readonly ?int $postMaxBytes = null,
         private readonly ?SaturationQueue $saturationQueue = null,
+        private readonly ?InstalledPluginsRegistry $installedPlugins = null,
     ) {
     }
 
@@ -189,6 +193,7 @@ final class AnimeEditController
             'is_series' => $anime instanceof SeriesAnime,
             'form' => $form,
             'errors' => $errors,
+            'description_sources' => $this->descriptionSources($anime),
             'genre_choices' => array_column(GenreCode::cases(), 'value'),
             'theme_choices' => array_column(ThemeCode::cases(), 'value'),
             'demographic_choices' => array_column(Demographic::cases(), 'value'),
@@ -215,6 +220,40 @@ final class AnimeEditController
         uasort($choices, static fn (array $a, array $b): int => strcmp($a['name'], $b['name']));
 
         return array_values($choices);
+    }
+
+    /**
+     * The origin caption of each stored description, by locale (issue #1069): a plugin row carries
+     * the plugin's manifest name (its id once the plugin is removed), a hand-written one is
+     * `manual`, and a row of unknown origin (source NULL) has no caption at all.
+     *
+     * @return array<string, array{kind: string, name: string}>
+     */
+    private function descriptionSources(Anime $anime): array
+    {
+        $sources = [];
+        foreach ($anime->getDescriptions() as $description) {
+            if ($description->source === null) {
+                continue;
+            }
+            if ($description->source === AnimeDescription::SOURCE_MANUAL) {
+                $sources[(string) $description->locale] = ['kind' => 'manual', 'name' => ''];
+
+                continue;
+            }
+            $sources[(string) $description->locale] = ['kind' => 'plugin', 'name' => $this->pluginName($description->source)];
+        }
+
+        return $sources;
+    }
+
+    private function pluginName(string $pluginId): string
+    {
+        try {
+            return $this->installedPlugins?->get(new PluginId($pluginId))?->manifest->name ?? $pluginId;
+        } catch (InvalidPluginIdException) {
+            return $pluginId;
+        }
     }
 
     /** @return array<string, mixed> */

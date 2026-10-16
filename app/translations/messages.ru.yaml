@@ -148,12 +148,23 @@ settings_nav:
     item_labels: Метки
     item_sync_review: Требует внимания
     item_backup: Экспорт и импорт
+    item_description_sources: Источники описаний
     item_search_index: Поисковый индекс
     item_market: Маркет
     item_plugins_installed: Установленные
     item_plugins_install: Установка из ZIP
     item_plugin_widgets: Виджеты
     item_proxy: Прокси и входящие соединения
+
+settings_description_sources:
+    title: Источники описаний — Настройки — AnimeDB
+    heading: Источники описаний
+    intro: 'Порядок плагинов, от которого зависит, чьё описание остаётся в записи: плагин выше в списке заменяет описание плагина ниже. Один список действует для всех языков; плагин вне списка считается ниже всех. Пока список не сохранён, описания только дозаполняются в пустые языки. Сохранение ничего не пересчитывает: правила применяются при следующей записи из плагина.'
+    save_success: Порядок источников сохранён.
+    empty: Нет плагинов, чьи описания можно ранжировать.
+    move_up: Выше
+    move_down: Ниже
+    save_button: Сохранить
 
 settings_search_index:
     title: Поисковый индекс — Настройки — AnimeDB
@@ -677,6 +688,8 @@ anime_edit:
     field_role: Роль
     field_descriptions: Описания
     field_description_text: Текст описания
+    description_source_manual: вручную
+    description_source_plugin: 'из %name%'
     field_genres: Жанры
     field_themes: Темы
     field_studios: Студии
