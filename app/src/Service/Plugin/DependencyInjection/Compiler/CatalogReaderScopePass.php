@@ -204,6 +204,7 @@ final class CatalogReaderScopePass implements CompilerPassInterface
                     new Reference('doctrine'),
                     $resolverServiceId !== null ? new ServiceClosureArgument(new Reference($resolverServiceId)) : null,
                     new Reference(LoggerInterface::class),
+                    new Reference('request_stack'),
                 ])
                 ->setPublic(false));
         }

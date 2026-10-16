@@ -132,6 +132,23 @@ final class PluginRemoverTest extends TestCase
         $this->assertFileDoesNotExist($overlayDir.'/kk.json');
     }
 
+    public function testRemoveDeletesOnlyThatPluginsRecordFolderLedgerRowsAndKeepsTheFiles(): void
+    {
+        $this->installFixture('animedb-shikimori');
+        $connection = \Doctrine\DBAL\DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]);
+        $connection->executeStatement('CREATE TABLE record_folder_file (id INTEGER PRIMARY KEY AUTOINCREMENT, anime_id INTEGER NOT NULL, plugin_id VARCHAR(128) NOT NULL, file_name VARCHAR(255) NOT NULL, sha256 VARCHAR(64) NOT NULL, written_at INTEGER NOT NULL)');
+        $connection->insert('record_folder_file', ['anime_id' => 1, 'plugin_id' => 'animedb-shikimori', 'file_name' => 'info.html', 'sha256' => 'a', 'written_at' => 1]);
+        $connection->insert('record_folder_file', ['anime_id' => 2, 'plugin_id' => 'animedb-shikimori', 'file_name' => 'info.html', 'sha256' => 'b', 'written_at' => 1]);
+        $connection->insert('record_folder_file', ['anime_id' => 1, 'plugin_id' => 'other-plugin', 'file_name' => 'info.html', 'sha256' => 'c', 'written_at' => 1]);
+        $written = $this->rootDir.'/info.html';
+        file_put_contents($written, 'kept');
+
+        (new PluginRemover($this->registry, new \App\Service\Plugin\PluginCacheDirectories(sys_get_temp_dir().'/anime-plugin-cache-unused', new NullLogger()), $connection))->remove(new PluginId('animedb-shikimori'));
+
+        $this->assertSame(['other-plugin'], $connection->fetchFirstColumn('SELECT plugin_id FROM record_folder_file'));
+        $this->assertFileExists($written);
+    }
+
     private function installFixture(string $pluginId): void
     {
         $dir = $this->pluginsDir.'/'.$pluginId;

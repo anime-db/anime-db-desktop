@@ -28,6 +28,7 @@ declare(strict_types=1);
 namespace App\Service\Plugin;
 
 use App\Entity\ValueObject\PluginId;
+use Doctrine\DBAL\Connection;
 
 /**
  * Removes an installed plugin's directory from `%app.plugins_dir%` and re-syncs
@@ -42,6 +43,9 @@ use App\Entity\ValueObject\PluginId;
  * native side restart into a known-good, pre-plugin state instead of looping on a broken one.
  *
  * Also deletes the plugin's `plugin-cache/<id>/` directory ({@see PluginCacheDirectories}).
+ *
+ * Also deletes the plugin's rows of the record folder ledger (`record_folder_file`), leaving the
+ * files it wrote untouched.
  *
  * A no-op (besides the reconcile) when the plugin id is not currently installed — the caller may
  * race with a manual removal or an already-completed rollback, and idempotency here means it does
@@ -58,6 +62,7 @@ final class PluginRemover
     public function __construct(
         private readonly InstalledPluginsRegistry $registry,
         private readonly PluginCacheDirectories $cacheDirectories,
+        private readonly ?Connection $connection = null,
     ) {
     }
 
@@ -72,6 +77,9 @@ final class PluginRemover
             // Never throws (failures are logged): a leftover cache must not keep the plugin
             // installed, and the startup cleanup picks it up later.
             $this->cacheDirectories->remove($id);
+
+            // The record folder ledger of the plugin (issue #1065); the files themselves stay on disk.
+            $this->connection?->executeStatement('DELETE FROM record_folder_file WHERE plugin_id = ?', [(string) $id]);
 
             $this->registry->reconcile();
         });

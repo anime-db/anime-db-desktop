@@ -40,6 +40,7 @@ use App\Entity\Enum\AnimeNameRole;
 use App\Entity\Enum\GenreCode;
 use App\Entity\Enum\WatchStatus;
 use App\Entity\MovieAnime;
+use App\Entity\Studio;
 use App\Entity\TvAnime;
 use App\Entity\ValueObject\PluginId;
 use App\Service\Plugin\CatalogReader;
@@ -51,6 +52,8 @@ use Doctrine\ORM\Tools\SchemaTool;
 use Doctrine\Persistence\ManagerRegistry;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\RequestStack;
 
 /**
  * Exercises CatalogReader against a real EntityManager/SQLite connection (same setup as
@@ -211,6 +214,7 @@ final class CatalogReaderTest extends TestCase
                 throw new \RuntimeException('boom');
             },
             new NullLogger(),
+            new RequestStack(),
         );
 
         $view = $reader->read(new ContractAnimeId($id));
@@ -236,6 +240,58 @@ final class CatalogReaderTest extends TestCase
         self::assertSame('vendor-two-id', $secondView?->externalId);
     }
 
+    public function testReadFillsDescriptionDatesDurationStudiosAndCountries(): void
+    {
+        $studio = new Studio();
+        $studio->rename('Sunrise');
+        $anime = new MovieAnime();
+        $anime->setTitle('Cowboy Bebop')->setWatchStatus(WatchStatus::Watching);
+        $anime->setDescription('en', 'English text')->setDescription('ru', 'Русский текст');
+        $anime->setDatePremiere(new \DateTimeImmutable('1998-04-03'));
+        $anime->setDateEnd(new \DateTimeImmutable('1999-04-24'));
+        $anime->setDurationMinutes(24);
+        $anime->addStudio($studio);
+        $anime->setCountries(['JP']);
+        $this->entityManager->persist($studio);
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+        $id = $this->requireId($anime);
+
+        $requests = new RequestStack();
+        $request = new Request();
+        $request->setLocale('ru');
+        $requests->push($request);
+        $reader = new CatalogReader(new PluginId('fake-vendor'), $this->registry(), null, new NullLogger(), $requests);
+
+        $view = $reader->read(new ContractAnimeId($id));
+
+        self::assertNotNull($view);
+        self::assertSame('Русский текст', $view->description);
+        self::assertSame('1998-04-03', $view->datePremiere?->format('Y-m-d'));
+        self::assertSame('1999-04-24', $view->dateEnd?->format('Y-m-d'));
+        self::assertSame(24, $view->durationMinutes);
+        self::assertSame(['Sunrise'], $view->studios);
+        self::assertSame(['JP'], $view->countries);
+        self::assertSame('English text', $this->newReader('fake-vendor')->read(new ContractAnimeId($id))?->description);
+    }
+
+    public function testReadLeavesNewFieldsEmptyWhenTheRecordHasNone(): void
+    {
+        $anime = new MovieAnime();
+        $anime->setTitle('Cowboy Bebop')->setWatchStatus(WatchStatus::Watching);
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+
+        $view = $this->newReader('fake-vendor')->read(new ContractAnimeId($this->requireId($anime)));
+
+        self::assertNotNull($view);
+        self::assertNull($view->description);
+        self::assertNull($view->datePremiere);
+        self::assertNull($view->durationMinutes);
+        self::assertSame([], $view->studios);
+        self::assertSame([], $view->countries);
+    }
+
     private function newReader(string $pluginId, ?ExternalIdResolutionInterface $resolver = null): CatalogReader
     {
         return new CatalogReader(
@@ -243,6 +299,7 @@ final class CatalogReaderTest extends TestCase
             $this->registry(),
             $resolver !== null ? static fn (): ExternalIdResolutionInterface => $resolver : null,
             new NullLogger(),
+            new RequestStack(),
         );
     }
 

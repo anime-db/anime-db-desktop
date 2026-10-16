@@ -32,6 +32,7 @@ use App\Service\Plugin\DependencyInjection\Compiler\CatalogReaderScopePass;
 use App\Service\Plugin\DependencyInjection\Compiler\OwnManifestScopePass;
 use App\Service\Plugin\DependencyInjection\Compiler\PluginCacheDirectoryScopePass;
 use App\Service\Plugin\DependencyInjection\Compiler\PluginDataStoreScopePass;
+use App\Service\Plugin\DependencyInjection\Compiler\RecordFolderWriterScopePass;
 use App\Service\Plugin\DependencyInjection\Compiler\SettingsStoreScopePass;
 use App\Service\Plugin\DependencyInjection\Compiler\TagPluginServicesPass;
 use App\Service\Plugin\InstalledPluginsRegistry;
@@ -153,6 +154,9 @@ class Kernel extends BaseKernel
      * that pass's `app.filler`/`app.sync`/`app.search_by_plugin` tags to pick each plugin's
      * external-id resolver, so it must run once those tags already exist.
      *
+     * {@see RecordFolderWriterScopePass} (issue #1065) hands `RecordFolderWriterInterface` to `local`
+     * plugins only and fails the build for any other type.
+     *
      * {@see BackgroundTaskQueueScopePass} (issue #702, part 2 of 3 for #684) does the same
      * `app.filler`/`app.sync`/`app.settings_page`-style scoping for
      * `AnimeDb\PluginContracts\Background\BackgroundTaskQueueInterface`; `TagPluginServicesPass`
@@ -185,6 +189,7 @@ class Kernel extends BaseKernel
         $container->addCompilerPass(new OwnManifestScopePass($this->installedPluginsRegistry()));
         $container->addCompilerPass(new CatalogReaderScopePass($this->installedPluginsRegistry()));
         $container->addCompilerPass(new BackgroundTaskQueueScopePass($this->installedPluginsRegistry()));
+        $container->addCompilerPass(new RecordFolderWriterScopePass($this->installedPluginsRegistry()));
     }
 
     private function pluginLoader(): PluginLoader
