@@ -34,15 +34,11 @@ namespace App\Entity;
  * this project's Symfony 8.1 / Doctrine ORM 3.6 / PHP 8.4+.
  *
  * $recordedEvents is deliberately not a mapped Doctrine property — it is transient in-memory
- * state, released by {@see \App\EventListener\DomainEventListener} from Doctrine's
- * postPersist/postUpdate hooks. Those hooks fire after the INSERT/UPDATE has been executed but
- * still INSIDE the open, not yet committed transaction (UnitOfWork::commit() runs
- * executeInserts()/executeUpdates() between beginTransaction() and the final commit), so a
- * released event does NOT mean the change is committed — the transaction may still roll back.
- * A subscriber must therefore not do anything that survives a rollback (write through another
- * connection such as enqueueing a job into a separate queue.db, call an external service, send a
- * notification): either do that from an application service after flush(), or make the consumer
- * tolerate a missing entity, as IndexAnimeMessageHandler and PushSyncMessageHandler do.
+ * state. {@see \App\EventListener\DomainEventListener} takes the factories of inserted/updated
+ * aggregates in onFlush and builds the events in postFlush; the
+ * {@see \App\DomainEvent\DomainEventPublisher} hands them to subscribers only after flush() has
+ * returned (outside a transaction) or the outer transaction has committed, so a subscriber never
+ * sees a change that may still roll back.
  *
  * A caller that calls recordThat() but whose change turns out to be a no-op (nothing for Doctrine
  * to flush) is responsible for not calling it in the first place — this trait does not
@@ -51,8 +47,8 @@ namespace App\Entity;
  * recordThat() takes a factory rather than a built event: a domain event is a DTO carrying the
  * entity's id, but on the create path (e.g. AnimeNewController) the id is only assigned by
  * Doctrine's INSERT during flush(), which happens strictly after the domain method that calls
- * recordThat() returns. Deferring construction to releaseEvents() — called from postPersist/
- * postUpdate, always after the INSERT/UPDATE — lets the factory read the id once it actually exists.
+ * recordThat() returns. Deferring construction to postFlush — always after the
+ * INSERT/UPDATE — lets the factory read the id once it actually exists.
  */
 trait AggregateRootTrait
 {
@@ -65,12 +61,18 @@ trait AggregateRootTrait
         $this->recordedEvents[] = $eventFactory;
     }
 
-    /** @return list<object> */
-    public function releaseEvents(): array
+    /** @return list<\Closure(): object> */
+    public function releaseEventFactories(): array
     {
         $factories = $this->recordedEvents;
         $this->recordedEvents = [];
 
-        return array_map(static fn (\Closure $factory): object => $factory(), $factories);
+        return $factories;
+    }
+
+    /** @return list<object> */
+    public function releaseEvents(): array
+    {
+        return array_map(static fn (\Closure $factory): object => $factory(), $this->releaseEventFactories());
     }
 }

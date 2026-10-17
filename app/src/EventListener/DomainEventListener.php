@@ -27,64 +27,52 @@ declare(strict_types=1);
 
 namespace App\EventListener;
 
+use App\DomainEvent\DomainEventPublisher;
 use App\Entity\AggregateRootInterface;
 use Doctrine\Bundle\DoctrineBundle\Attribute\AsDoctrineListener;
-use Doctrine\ORM\Event\PostPersistEventArgs;
-use Doctrine\ORM\Event\PostUpdateEventArgs;
+use Doctrine\ORM\Event\OnFlushEventArgs;
+use Doctrine\ORM\Event\PostFlushEventArgs;
 use Doctrine\ORM\Events;
-use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
 /**
- * The infrastructure half of the minimal domain-event mechanism (issue #371):
- * AggregateRootInterface::releaseEvents() (see AggregateRootTrait) is drained here, once per
- * entity per flush, and each recorded event is published through the regular Symfony event
- * dispatcher for an application-level listener to react to — e.g. WatchProgressChangedManuallyEvent
- * driving the sync push trigger, see App\EventSubscriber\WatchProgressPushSubscriber.
+ * The Doctrine half of the domain-event mechanism (issue #371): collects what the aggregate roots
+ * recorded via {@see \App\Entity\AggregateRootTrait} and passes it to the
+ * {@see DomainEventPublisher}, which hands it to subscribers once the data is final (after
+ * flush() returned / after the outer commit) — never from inside Doctrine's hooks.
  *
- * postPersist/postUpdate rather than preUpdate/onFlush (the old AnimeSyncPushListener's hook):
- * a freshly-inserted entity only gets its id from the INSERT, so events whose factories read the
- * id can only be built once post* has run (see AnimeSearchIndexListener, the same
- * postPersist/postUpdate pairing used for the same reason).
+ * onFlush takes the event factories of the inserted/updated aggregates (replacing, not adding to,
+ * what the publisher holds); postFlush builds the events — an INSERT has assigned the ids by then.
  *
- * Caveat: post* does NOT mean committed. UnitOfWork::commit() runs beginTransaction(), then
- * executeInserts()/executeUpdates() (where these hooks fire), and only afterwards commit(), so the
- * events are dispatched inside the still-open transaction, which may yet roll back. A subscriber
- * must not do anything that survives a rollback (write through another connection such as
- * enqueueing a job into a separate queue.db, call an external service, send a notification):
- * either move that to an application service after flush(), or make the consumer tolerate a
- * missing entity, as IndexAnimeMessageHandler and PushSyncMessageHandler do.
- *
- * A plain Doctrine event listener (fires for every entity) rather than an #[AsEntityListener]
- * tied to a specific entity: it depends on AggregateRootInterface, not on Anime, so it works for
- * any aggregate root that records domain events, not just the anime hierarchy.
+ * A plain Doctrine event listener (fires for every entity): it depends on AggregateRootInterface,
+ * not on Anime, so it works for any aggregate root that records domain events.
  */
-#[AsDoctrineListener(event: Events::postPersist)]
-#[AsDoctrineListener(event: Events::postUpdate)]
+#[AsDoctrineListener(event: Events::onFlush)]
+#[AsDoctrineListener(event: Events::postFlush)]
 final class DomainEventListener
 {
     public function __construct(
-        private readonly EventDispatcherInterface $eventDispatcher,
+        private readonly DomainEventPublisher $publisher,
     ) {
     }
 
-    public function postPersist(PostPersistEventArgs $args): void
+    public function onFlush(OnFlushEventArgs $args): void
     {
-        $this->releaseAndDispatch($args->getObject());
-    }
+        $unitOfWork = $args->getObjectManager()->getUnitOfWork();
 
-    public function postUpdate(PostUpdateEventArgs $args): void
-    {
-        $this->releaseAndDispatch($args->getObject());
-    }
-
-    private function releaseAndDispatch(object $entity): void
-    {
-        if (!$entity instanceof AggregateRootInterface) {
-            return;
+        $factories = [];
+        foreach ([$unitOfWork->getScheduledEntityInsertions(), $unitOfWork->getScheduledEntityUpdates()] as $entities) {
+            foreach ($entities as $entity) {
+                if ($entity instanceof AggregateRootInterface) {
+                    $factories = [...$factories, ...$entity->releaseEventFactories()];
+                }
+            }
         }
 
-        foreach ($entity->releaseEvents() as $event) {
-            $this->eventDispatcher->dispatch($event);
-        }
+        $this->publisher->collect($factories);
+    }
+
+    public function postFlush(PostFlushEventArgs $args): void
+    {
+        $this->publisher->promote();
     }
 }

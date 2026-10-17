@@ -45,7 +45,7 @@
 
 ## Doctrine-листенер → диспатч сообщения
 
-**Образец:** `AnimeSearchIndexListener` (`postPersist`/`postUpdate`, реакция на любой insert/update), `DomainEventListener` (тот же хук, но диспатчит не `Message`, а доменные события, накопленные агрегатом через `AggregateRootInterface`/`AggregateRootTrait::releaseEvents()` — см. [sync.md](sync.md)).
+**Образец:** `AnimeSearchIndexListener` (`postPersist`/`postUpdate`, реакция на любой insert/update), `DomainEventListener` (`onFlush`/`postFlush`: собирает доменные события, накопленные агрегатом через `AggregateRootInterface`/`AggregateRootTrait`, и отдаёт их `DomainEventPublisher`; подписчики получают событие только после возврата `flush()` вне транзакции или после коммита внешней транзакции, а не в `postPersist`/`postUpdate` — см. [sync.md](sync.md)).
 
 1. Листенер `app/src/EventListener/<Name>Listener.php` с `#[AsDoctrineListener(event: Events::...)]`.
    - Реакция на изменение **конкретного поля** — `preUpdate` + `PreUpdateEventArgs::hasChangedField('...')` (единственный event с changeset). Реакция на любой insert/update — `postPersist`/`postUpdate`.
