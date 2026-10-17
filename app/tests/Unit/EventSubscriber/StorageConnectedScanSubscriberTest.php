@@ -31,24 +31,21 @@ use App\Event\StorageConnected;
 use App\EventSubscriber\StorageConnectedScanSubscriber;
 use App\Message\ScanStorageMessage;
 use PHPUnit\Framework\TestCase;
-use Symfony\Component\Cache\Adapter\FilesystemAdapter;
+use Symfony\Component\Cache\Adapter\ArrayAdapter;
+use Symfony\Component\Clock\MockClock;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\MessageBusInterface;
 
 final class StorageConnectedScanSubscriberTest extends TestCase
 {
-    private string $cacheDir;
+    private MockClock $clock;
+    private ArrayAdapter $cache;
 
     protected function setUp(): void
     {
-        $this->cacheDir = sys_get_temp_dir().'/storage-connected-test-'.uniqid();
-    }
-
-    protected function tearDown(): void
-    {
-        (new FilesystemAdapter('test', 0, $this->cacheDir))->clear();
-        @rmdir($this->cacheDir.'/test');
-        @rmdir($this->cacheDir);
+        $this->clock = new MockClock();
+        // CacheItem::expiresAfter() reads the real time, so the mock clock starts at "now". One pool shared by every subscriber instance stands for the file-backed cache across console processes.
+        $this->cache = new ArrayAdapter(clock: $this->clock);
     }
 
     /** @param list<object> $dispatched */
@@ -61,8 +58,7 @@ final class StorageConnectedScanSubscriberTest extends TestCase
             return new Envelope($message);
         });
 
-        // A fresh adapter instance over the same directory stands for a separate OS process.
-        return new StorageConnectedScanSubscriber($bus, new FilesystemAdapter('test', 0, $this->cacheDir));
+        return new StorageConnectedScanSubscriber($bus, $this->cache);
     }
 
     public function testQueuesScanOfTheConnectedStorage(): void
@@ -75,13 +71,29 @@ final class StorageConnectedScanSubscriberTest extends TestCase
         $this->assertSame(3, $dispatched[0]->storageId);
     }
 
-    public function testRepeatedEventForTheSameStorageFromAnotherProcessQueuesNoSecondScan(): void
+    public function testRepeatedEventWithinTheIntervalQueuesNoSecondScan(): void
     {
         $dispatched = [];
         $this->createSubscriber($dispatched)->onStorageConnected(new StorageConnected(3));
+        $this->clock->sleep(StorageConnectedScanSubscriber::MIN_INTERVAL_SECONDS - 1);
         $this->createSubscriber($dispatched)->onStorageConnected(new StorageConnected(3));
 
         $this->assertCount(1, $dispatched);
+    }
+
+    public function testEventAfterTheIntervalQueuesScanAgain(): void
+    {
+        $dispatched = [];
+        $this->createSubscriber($dispatched)->onStorageConnected(new StorageConnected(3));
+        $this->clock->sleep(StorageConnectedScanSubscriber::MIN_INTERVAL_SECONDS + 1);
+        $this->createSubscriber($dispatched)->onStorageConnected(new StorageConnected(3));
+
+        $this->assertCount(2, $dispatched);
+    }
+
+    public function testIntervalIsTenMinutes(): void
+    {
+        $this->assertSame(600, StorageConnectedScanSubscriber::MIN_INTERVAL_SECONDS);
     }
 
     public function testOtherStorageIsNotLimitedByTheFirstOne(): void
@@ -94,15 +106,29 @@ final class StorageConnectedScanSubscriberTest extends TestCase
         $this->assertEquals(new ScanStorageMessage(4), $dispatched[1]);
     }
 
-    public function testLimitIsKeptInTheCacheForTenMinutesUnderAPsr6SafeKeyPerStorage(): void
+    public function testCacheKeyIsPsr6SafeAndPerStorage(): void
     {
-        $dispatched = [];
-        $this->createSubscriber($dispatched)->onStorageConnected(new StorageConnected(3));
-
-        $this->assertSame(600, StorageConnectedScanSubscriber::MIN_INTERVAL_SECONDS);
         $key = StorageConnectedScanSubscriber::cacheKey(3);
+
         $this->assertMatchesRegularExpression('/^[A-Za-z0-9_.]+$/', $key);
         $this->assertNotSame($key, StorageConnectedScanSubscriber::cacheKey(4));
-        $this->assertTrue((new FilesystemAdapter('test', 0, $this->cacheDir))->getItem($key)->isHit());
+    }
+
+    public function testFailedDispatchLeavesNoMarkerSoNextEventTriesAgain(): void
+    {
+        $failing = $this->createStub(MessageBusInterface::class);
+        $failing->method('dispatch')->willThrowException(new \RuntimeException('transport down'));
+
+        try {
+            (new StorageConnectedScanSubscriber($failing, $this->cache))->onStorageConnected(new StorageConnected(3));
+            $this->fail('The dispatch failure must propagate.');
+        } catch (\RuntimeException) {
+        }
+
+        $this->assertFalse($this->cache->getItem(StorageConnectedScanSubscriber::cacheKey(3))->isHit());
+
+        $dispatched = [];
+        $this->createSubscriber($dispatched)->onStorageConnected(new StorageConnected(3));
+        $this->assertCount(1, $dispatched);
     }
 }

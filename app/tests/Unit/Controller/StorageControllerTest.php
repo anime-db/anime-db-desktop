@@ -51,7 +51,6 @@ use App\Service\Storage\Scan\ScanRunJournal;
 use App\Service\Storage\Scan\ScanRunStatus;
 use App\Service\Storage\StorageAvailabilityService;
 use App\Service\Storage\StorageMarkerService;
-use App\Service\WsPublisher;
 use App\Tests\Support\CreatesInMemoryEntityManager;
 use App\Tests\Support\RunsMigrations;
 use Doctrine\DBAL\DriverManager;
@@ -162,7 +161,6 @@ final class StorageControllerTest extends TestCase
         ?AppSettingsProvider $settings = null,
         ?ScanRunJournal $journal = null,
         ?AnimeRepository $animes = null,
-        ?WsPublisher $wsPublisher = null,
     ): StorageController {
         if ($csrfTokenManager === null) {
             $csrfTokenManager = $this->createStub(CsrfTokenManagerInterface::class);
@@ -208,7 +206,6 @@ final class StorageControllerTest extends TestCase
             $settings ?? $this->createSettings(),
             $journal ?? $this->createJournal($jobLockService),
             new ScanItemResolver($animes ?? $this->createStub(AnimeRepository::class)),
-            $wsPublisher ?? $this->createStub(WsPublisher::class),
         );
     }
 
@@ -721,39 +718,6 @@ final class StorageControllerTest extends TestCase
      * be touched either: forget() runs before remove()/flush() in delete(), so leaving the marker
      * file in place proves forget() itself was skipped, not just that it happened to no-op.
      */
-    public function testDeletePublishesStorageChanged(): void
-    {
-        $storage = new Storage('Main folder', 'D:\\Anime', StorageType::Folder);
-        $this->setStorageId($storage, 42);
-
-        $wsPublisher = $this->createMock(WsPublisher::class);
-        $wsPublisher->expects($this->once())->method('publish')->with('storage.changed', ['id' => 42]);
-
-        $this->createController(wsPublisher: $wsPublisher)->delete(
-            $storage,
-            Request::create('/storage/42/delete', 'POST', ['_token' => 'token']),
-        );
-    }
-
-    public function testDeleteRejectedForUnfinishedDownloadsDoesNotPublishStorageChanged(): void
-    {
-        $storage = new Storage('Main folder', 'D:\\Anime', StorageType::Folder);
-        $this->setStorageId($storage, 42);
-
-        $downloads = $this->createStub(DownloadRepository::class);
-        $downloads->method('hasUnfinishedDownloadsForTargetStorage')->willReturn(true);
-        $storages = $this->createStub(StorageRepository::class);
-        $storages->method('findAllOrderedByName')->willReturn([$storage]);
-
-        $wsPublisher = $this->createMock(WsPublisher::class);
-        $wsPublisher->expects($this->never())->method('publish');
-
-        $this->createController(storages: $storages, downloads: $downloads, wsPublisher: $wsPublisher)->delete(
-            $storage,
-            Request::create('/storage/42/delete', 'POST', ['_token' => 'token']),
-        );
-    }
-
     public function testDeleteRejectsStorageWithUnfinishedDownloads(): void
     {
         $dir = $this->makeDir();

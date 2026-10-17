@@ -66,10 +66,11 @@ final class StorageConnectedScanSubscriber implements EventSubscriberInterface
             return;
         }
 
+        $this->messageBus->dispatch(new ScanStorageMessage($event->storageId));
+
+        // Marked only after a successful dispatch: a failed queueing must not suppress the scan for the whole interval.
         $item->set(true)->expiresAfter(self::MIN_INTERVAL_SECONDS);
         $this->cache->save($item);
-
-        $this->messageBus->dispatch(new ScanStorageMessage($event->storageId));
     }
 
     /** PSR-6 forbids `{}()/\@:` in keys, so the key is built from a prefix and the integer id only. */

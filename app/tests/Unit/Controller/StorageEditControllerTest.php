@@ -34,7 +34,6 @@ use App\Repository\DownloadRepository;
 use App\Service\AppConfigStore;
 use App\Service\AppSettingsProvider;
 use App\Service\Storage\StorageMarkerService;
-use App\Service\WsPublisher;
 use Doctrine\ORM\EntityManagerInterface;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\RedirectResponse;
@@ -97,7 +96,6 @@ final class StorageEditControllerTest extends TestCase
         ?Environment $twig = null,
         ?DownloadRepository $downloads = null,
         ?AppSettingsProvider $settings = null,
-        ?WsPublisher $wsPublisher = null,
     ): StorageEditController {
         if ($csrfTokenManager === null) {
             $csrfTokenManager = $this->createStub(CsrfTokenManagerInterface::class);
@@ -128,7 +126,6 @@ final class StorageEditControllerTest extends TestCase
             $twig ?? $this->createStub(Environment::class),
             $downloads,
             $settings ?? $this->createSettings(),
-            $wsPublisher ?? $this->createStub(WsPublisher::class),
         );
     }
 
@@ -187,38 +184,6 @@ final class StorageEditControllerTest extends TestCase
         $this->assertSame('/storage', $response->getTargetUrl());
         $this->assertSame('New name', $storage->getName());
         $this->assertSame(StorageType::ExternalR, $storage->getType());
-    }
-
-    public function testUpdatePublishesStorageChanged(): void
-    {
-        $storage = new Storage('Old name', sys_get_temp_dir(), StorageType::Folder);
-        $this->setStorageId($storage, 5);
-
-        $wsPublisher = $this->createMock(WsPublisher::class);
-        $wsPublisher->expects($this->once())->method('publish')->with('storage.changed', ['id' => 5]);
-
-        $this->createController(wsPublisher: $wsPublisher)->update($storage, Request::create('/storage/5/edit', 'POST', [
-            'name' => 'New name',
-            'path' => sys_get_temp_dir(),
-            'type' => 'folder',
-            '_token' => 'token',
-        ]));
-    }
-
-    public function testUpdateWithInvalidNameDoesNotPublishStorageChanged(): void
-    {
-        $storage = new Storage('Old name', sys_get_temp_dir(), StorageType::Folder);
-        $this->setStorageId($storage, 5);
-
-        $wsPublisher = $this->createMock(WsPublisher::class);
-        $wsPublisher->expects($this->never())->method('publish');
-
-        $this->createController(wsPublisher: $wsPublisher)->update($storage, Request::create('/storage/5/edit', 'POST', [
-            'name' => '',
-            'path' => sys_get_temp_dir(),
-            'type' => 'folder',
-            '_token' => 'token',
-        ]));
     }
 
     public function testUpdateWritesMarkerWhenNewTypeIsWritable(): void
