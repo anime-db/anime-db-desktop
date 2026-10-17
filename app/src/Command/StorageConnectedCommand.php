@@ -41,7 +41,7 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 /**
  * One-shot console command for the native layer (issue #1079): reports that a storage became
  * available by dispatching the core event {@see StorageConnected}. Fails without dispatching when
- * no storage has the given id.
+ * no storage has the given id or the storage is not scannable.
  */
 #[AsCommand(name: 'app:storage:connected', description: 'Report that a storage has become available')]
 final class StorageConnectedCommand extends Command
@@ -67,6 +67,12 @@ final class StorageConnectedCommand extends Command
         $storageId = $storage?->id;
         if ($storageId === null) {
             $io->error(\sprintf('Storage "%s" not found.', $rawId));
+
+            return Command::FAILURE;
+        }
+
+        if (!$storage->isScannable()) {
+            $io->error(\sprintf('Storage "%s" is not scannable.', $rawId));
 
             return Command::FAILURE;
         }

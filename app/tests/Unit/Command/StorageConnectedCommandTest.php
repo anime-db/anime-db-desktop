@@ -78,6 +78,26 @@ final class StorageConnectedCommandTest extends TestCase
         $this->assertSame([], $received);
     }
 
+    public function testFailsWithoutDispatchingForNonScannableStorage(): void
+    {
+        $storage = new Storage('Disc', null, StorageType::Video);
+        (new \ReflectionProperty(Storage::class, 'id'))->setValue($storage, 7);
+
+        $entityManager = $this->createStub(EntityManagerInterface::class);
+        $entityManager->method('find')->willReturn($storage);
+
+        $received = [];
+        $dispatcher = new EventDispatcher();
+        $dispatcher->addListener(StorageConnected::class, static function (StorageConnected $event) use (&$received): void {
+            $received[] = $event->storageId;
+        });
+
+        $tester = new CommandTester(new StorageConnectedCommand($entityManager, $dispatcher));
+
+        $this->assertSame(Command::FAILURE, $tester->execute(['id' => '7']));
+        $this->assertSame([], $received);
+    }
+
     public function testFailsForNonNumericId(): void
     {
         $entityManager = $this->createMock(EntityManagerInterface::class);
