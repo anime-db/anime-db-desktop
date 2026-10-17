@@ -36,6 +36,7 @@ use AnimeDb\PluginContracts\Sync\SyncItem;
 use AnimeDb\PluginContracts\Sync\SyncStatus;
 use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
+use App\DomainEvent\DomainEventPublisher;
 use App\Entity\Anime;
 use App\Entity\AnimeSyncState;
 use App\Entity\Enum\SyncReviewItemKind;
@@ -43,6 +44,7 @@ use App\Entity\Enum\WatchStatus;
 use App\Entity\SyncReviewItem;
 use App\Entity\TvAnime;
 use App\Entity\ValueObject\PluginId;
+use App\Event\WatchProgressChangedManuallyEvent;
 use App\EventListener\DomainEventListener;
 use App\Repository\AnimeRepository;
 use App\Repository\AnimeSyncStateRepository;
@@ -79,8 +81,8 @@ use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Symfony\Component\Cache\Adapter\ArrayAdapter;
+use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Messenger\MessageBusInterface;
-use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
 /**
  * Verifies the pull() core logic (issue #257): an already-known SyncItem updates its local
@@ -404,19 +406,17 @@ final class PullSyncServiceTest extends TestCase
         $this->entityManager->persist($anime);
         $this->entityManager->flush();
 
-        $eventDispatcher = $this->createMock(EventDispatcherInterface::class);
-        $eventDispatcher->expects($this->never())->method('dispatch');
-        $this->entityManager->getEventManager()->addEventListener(
-            [Events::postPersist, Events::postUpdate],
-            new DomainEventListener($eventDispatcher),
-        );
+        $received = [];
+        $publisher = $this->watchDomainEvents($received);
 
         $sync = $this->createMock(SyncInterface::class);
         $sync->expects($this->once())->method('pull')->willReturn([new SyncItem('1', SyncStatus::Watching, 'Cowboy Bebop', type: null)]);
 
         $this->service->pull($this->pluginId, $sync);
+        $publisher->dispatchReady();
 
         $this->assertSame(WatchStatus::Watching, $anime->getWatchStatus());
+        $this->assertSame([], $received);
     }
 
     /**
@@ -746,17 +746,15 @@ final class PullSyncServiceTest extends TestCase
             fillableFields: ['title', 'type'],
         );
 
-        $eventDispatcher = $this->createMock(EventDispatcherInterface::class);
-        $eventDispatcher->expects($this->never())->method('dispatch');
-        $this->entityManager->getEventManager()->addEventListener(
-            [Events::postPersist, Events::postUpdate],
-            new DomainEventListener($eventDispatcher),
-        );
+        $received = [];
+        $publisher = $this->watchDomainEvents($received);
 
         $this->service->pull($pluginId, $sync);
+        $publisher->dispatchReady();
 
         $all = $this->allAnime();
         $this->assertSame(WatchStatus::Watching, $all[0]->getWatchStatus());
+        $this->assertSame([], $received);
     }
 
     /**
@@ -1636,5 +1634,27 @@ final class PullSyncServiceTest extends TestCase
             ->orderBy('a.id', 'ASC')
             ->getQuery()
             ->getResult();
+    }
+
+    /**
+     * Wires the domain-event listener to the test entity manager and collects every delivered
+     * WatchProgressChangedManuallyEvent into $received (call dispatchReady() on the result).
+     *
+     * @param list<WatchProgressChangedManuallyEvent> $received
+     */
+    private function watchDomainEvents(array &$received): DomainEventPublisher
+    {
+        $received = [];
+        $dispatcher = new EventDispatcher();
+        $dispatcher->addListener(WatchProgressChangedManuallyEvent::class, static function (WatchProgressChangedManuallyEvent $event) use (&$received): void {
+            $received[] = $event;
+        });
+        $publisher = new DomainEventPublisher($dispatcher, new NullLogger());
+        $this->entityManager->getEventManager()->addEventListener(
+            [Events::onFlush, Events::postFlush],
+            new DomainEventListener($publisher),
+        );
+
+        return $publisher;
     }
 }

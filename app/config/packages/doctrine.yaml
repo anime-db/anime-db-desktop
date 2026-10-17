@@ -5,6 +5,9 @@ doctrine:
             default:
                 url: '%env(resolve:DATABASE_URL)%'
                 driver: pdo_sqlite
+                # Releases/drops the core's domain events on the outermost commit/rollback. Only on
+                # `default`: the `queue` connection (Messenger) must not touch them.
+                wrapper_class: App\Doctrine\DomainEventConnection
             # Dedicated connection for the Messenger `async` transport (data/queue.db) — kept
             # separate from the main data.db because queue data is disposable (unlike user data)
             # and a separate SQLite file avoids lock contention between the FrankenPHP HTTP

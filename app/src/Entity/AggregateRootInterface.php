@@ -34,6 +34,13 @@ namespace App\Entity;
  */
 interface AggregateRootInterface
 {
+    /**
+     * Drains the recorded event factories without building the events.
+     *
+     * @return list<\Closure(): object>
+     */
+    public function releaseEventFactories(): array;
+
     /** @return list<object> */
     public function releaseEvents(): array;
 }

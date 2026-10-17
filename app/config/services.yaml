@@ -252,6 +252,15 @@ services:
         tags:
             - { name: 'doctrine.middleware' }
 
+    # Hands out the core's domain events once flush() has returned outside a transaction. The
+    # original manager is re-created (not shared) so ManagerRegistry::resetManager(), which resets
+    # this decorated service, gets a fresh open one underneath it — see DomainEventConnectionPass.
+    App\Doctrine\DomainEventEntityManager:
+        decorates: doctrine.orm.default_entity_manager
+        lazy: true
+        arguments:
+            $wrapped: '@.inner'
+
     # FrameworkBundle only aliases Symfony\Contracts\Translation\TranslatorInterface for
     # autowiring, not TranslatorBagInterface::getCatalogue() (needed by TranslationController,
     # issue #87) — add it explicitly so the interface stays autowireable.

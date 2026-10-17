@@ -27,6 +27,7 @@ declare(strict_types=1);
 
 namespace App;
 
+use App\DomainEvent\DomainEventConnectionPass;
 use App\Service\Plugin\DependencyInjection\Compiler\BackgroundTaskQueueScopePass;
 use App\Service\Plugin\DependencyInjection\Compiler\CatalogReaderScopePass;
 use App\Service\Plugin\DependencyInjection\Compiler\OwnManifestScopePass;
@@ -182,6 +183,7 @@ class Kernel extends BaseKernel
         // InstalledVersions::getPrettyVersion() call on this process reads (issue #561).
         $container->setParameter('app.plugin_contracts_version', $this->pluginContractsVersion());
 
+        $container->addCompilerPass(new DomainEventConnectionPass());
         $container->addCompilerPass(new TagPluginServicesPass($this->installedPluginsRegistry(), $this->pluginLoaderLogger()));
         $container->addCompilerPass(new PluginDataStoreScopePass($this->installedPluginsRegistry()));
         $container->addCompilerPass(new PluginCacheDirectoryScopePass($this->installedPluginsRegistry()));
