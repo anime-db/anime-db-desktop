@@ -24,6 +24,7 @@
 const { ipcMain } = require('electron');
 const phpCommand = require('../supervisor/php-command');
 const supervisor  = require('../supervisor');
+const storageWatcher = require('../storage-watcher');
 
 const COMMAND = 'app:catalog:stage';
 
@@ -65,7 +66,14 @@ async function startImport(_event, archivePath) {
         return { ok: false, code: null };
     }
 
-    const { code } = await phpCommand.run(COMMAND, [archivePath], context, TIMEOUT_MS, { rejectOnNonZero: false });
+    // The catalog is being replaced: no storage signals until it is done (baseline is rebuilt on resume).
+    storageWatcher.getWatcher().pause();
+    let code;
+    try {
+        ({ code } = await phpCommand.run(COMMAND, [archivePath], context, TIMEOUT_MS, { rejectOnNonZero: false }));
+    } finally {
+        if (code !== 0) storageWatcher.getWatcher().resume();
+    }
 
     if (code === 0) {
         require('../lifecycle').relaunch();

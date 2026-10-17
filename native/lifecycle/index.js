@@ -39,6 +39,7 @@ const tray             = require('../tray');
 const wsClient         = require('../ws-client');
 const proxy            = require('../proxy');
 const firewall         = require('../firewall');
+const storageWatcher   = require('../storage-watcher');
 const theme            = require('../theme');
 const paths            = require('../paths');
 const { logCrash }     = require('../crash-log');
@@ -251,6 +252,11 @@ if (!gotLock) {
             shell.configure(frankenphpPort);
             wsClient.connect(wsPort);
 
+            // Not awaited: the first poll only builds the baseline and must not delay the window.
+            storageWatcher.getWatcher().start().catch((err) => {
+                console.error('[storage-watcher] не удалось запустить опрос хранилищ:', err);
+            });
+
             await new Promise(r => setTimeout(r, 400));
             splash.close();
 
@@ -305,6 +311,11 @@ if (!gotLock) {
                         );
                     });
                 }
+                if (event === storageWatcher.STORAGE_CHANGED_EVENT) {
+                    storageWatcher.getWatcher().refresh().catch((err) => {
+                        console.error('[storage-watcher] не удалось обновить список хранилищ:', err);
+                    });
+                }
                 if (event === supervisor.WORKERS_RELOAD_EVENT) {
                     // reloadForPlugin() never rejects (see supervisor/index.js#performReload) —
                     // this catch is only a defensive backstop.
@@ -355,6 +366,7 @@ if (!gotLock) {
         quitting = true;
         event.preventDefault();
         wsClient.disconnect();
+        storageWatcher.getWatcher().stop();
         supervisor.stop().then(() => app.exit(0));
     });
 
