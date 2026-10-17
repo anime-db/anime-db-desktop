@@ -36,6 +36,12 @@ jest.mock('../../native/supervisor', () => ({
 const mockRelaunch = jest.fn();
 jest.mock('../../native/lifecycle', () => ({ relaunch: (...args) => mockRelaunch(...args) }));
 
+const mockPause = jest.fn();
+const mockResume = jest.fn();
+jest.mock('../../native/storage-watcher', () => ({
+    getWatcher: () => ({ pause: (...args) => mockPause(...args), resume: (...args) => mockResume(...args) }),
+}));
+
 const { startImport } = require('../../native/catalog-import');
 
 const CONTEXT = { appPort: 8000, qbittorrentPort: 9999, meiliPort: 7700, meiliKey: 'test-key' };
@@ -82,5 +88,44 @@ describe('startImport', () => {
 
         expect(outcome).toEqual({ ok: false, code: 3 });
         expect(mockRelaunch).not.toHaveBeenCalled();
+    });
+
+    test('pauses the storage watcher and keeps it paused on success (the app relaunches)', async () => {
+        mockGetWorkerContext.mockReturnValue(CONTEXT);
+        mockRun.mockResolvedValue({ code: 0 });
+
+        await startImport(null, '/path/to/archive.zip');
+
+        expect(mockPause).toHaveBeenCalledTimes(1);
+        expect(mockResume).not.toHaveBeenCalled();
+        expect(mockRelaunch).toHaveBeenCalledTimes(1);
+    });
+
+    test('resumes the storage watcher when app:catalog:stage exits non-zero', async () => {
+        mockGetWorkerContext.mockReturnValue(CONTEXT);
+        mockRun.mockResolvedValue({ code: 3 });
+
+        await startImport(null, '/path/to/archive.zip');
+
+        expect(mockPause).toHaveBeenCalledTimes(1);
+        expect(mockResume).toHaveBeenCalledTimes(1);
+    });
+
+    test('resumes the storage watcher and rethrows when the command run rejects', async () => {
+        mockGetWorkerContext.mockReturnValue(CONTEXT);
+        mockRun.mockRejectedValue(new Error('spawn failed'));
+
+        await expect(startImport(null, '/path/to/archive.zip')).rejects.toThrow('spawn failed');
+
+        expect(mockResume).toHaveBeenCalledTimes(1);
+        expect(mockRelaunch).not.toHaveBeenCalled();
+    });
+
+    test('does not touch the storage watcher when the worker is not up', async () => {
+        mockGetWorkerContext.mockReturnValue(null);
+
+        await startImport(null, '/path/to/archive.zip');
+
+        expect(mockPause).not.toHaveBeenCalled();
     });
 });

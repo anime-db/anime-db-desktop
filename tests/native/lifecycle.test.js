@@ -79,6 +79,10 @@ jest.mock('../../native/firewall', () => ({
     applyIncomingConnections:      jest.fn(() => Promise.resolve()),
     FIREWALL_RULE_CHANGED_EVENT:   'firewall.rule.changed',
 }));
+jest.mock('../../native/storage-watcher', () => {
+    const watcher = { start: jest.fn(() => Promise.resolve()), stop: jest.fn(), refresh: jest.fn(() => Promise.resolve()) };
+    return { getWatcher: () => watcher, STORAGE_CHANGED_EVENT: 'storage.changed' };
+});
 jest.mock('../../native/theme', () => ({
     applyThemeSource:            jest.fn(),
     registerThemeUpdateHandler:  jest.fn(),
@@ -599,6 +603,19 @@ describe('locale-aware text', () => {
             'Incompatible data version',
             expect.stringContaining('/fake/userData'),
         );
+    });
+});
+
+describe('storage watcher wiring', () => {
+    test('starts the watcher after the backend is up and re-reads the list on storage.changed', async () => {
+        const { wsClientHandlers } = loadLifecycle();
+        await new Promise((r) => setTimeout(r, 500));
+        const watcher = require('../../native/storage-watcher').getWatcher();
+
+        expect(watcher.start).toHaveBeenCalledTimes(1);
+        wsClientHandlers['backend-event']({ event: 'storage.changed', data: {} });
+
+        expect(watcher.refresh).toHaveBeenCalledTimes(1);
     });
 });
 

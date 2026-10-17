@@ -26,6 +26,7 @@ const fs = require('fs');
 const path = require('path');
 const paths = require('../paths');
 const supervisor = require('../supervisor');
+const storageWatcher = require('../storage-watcher');
 const { restoreBackup } = require('../supervisor/migrations');
 const searchReindex = require('../supervisor/search-reindex');
 
@@ -75,6 +76,8 @@ async function startRestore(_event, name) {
         return { ok: false };
     }
 
+    // The app relaunches on every path below, so the watcher stays paused until then.
+    storageWatcher.getWatcher().pause();
     await supervisor.stop();
 
     let ok = true;

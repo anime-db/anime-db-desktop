@@ -188,6 +188,8 @@ async function start(onProgress, { safeMode = false, confirmStagedImport } = {})
         phpCommand.killOrphan('app:catalog:import-v1'),
         phpCommand.killOrphan('app:downloads:poll'),
         phpCommand.killOrphan('app:queue:purge'),
+        phpCommand.killOrphan('app:storage:list'),
+        phpCommand.killOrphan('app:storage:connected'),
         phpCommand.killOrphan(sourceUrlsCheck.COMMAND),
         pluginsConsumer.killOrphan(),
         qbittorrent.killOrphan(),

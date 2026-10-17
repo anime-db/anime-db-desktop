@@ -362,6 +362,8 @@ describe('supervisor.start', () => {
         expect(phpCommand.killOrphan).toHaveBeenCalledWith('app:plugin:reconcile');
         expect(phpCommand.killOrphan).toHaveBeenCalledWith('app:downloads:poll');
         expect(phpCommand.killOrphan).toHaveBeenCalledWith('app:queue:purge');
+        expect(phpCommand.killOrphan).toHaveBeenCalledWith('app:storage:list');
+        expect(phpCommand.killOrphan).toHaveBeenCalledWith('app:storage:connected');
     });
 
     // issue #701: plugins-consumer shares frankenphp.exe with messenger-consumer, so its orphan
