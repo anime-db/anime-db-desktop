@@ -41,6 +41,18 @@ use PHPUnit\Framework\TestCase;
 
 final class AnimeFieldProjectorTest extends TestCase
 {
+    private string $timezone;
+
+    protected function setUp(): void
+    {
+        $this->timezone = date_default_timezone_get();
+    }
+
+    protected function tearDown(): void
+    {
+        date_default_timezone_set($this->timezone);
+    }
+
     /** @return iterable<string, array{string, mixed, mixed, AnimeField, mixed, mixed}> */
     public static function vocabularyFields(): iterable
     {
@@ -125,6 +137,19 @@ final class AnimeFieldProjectorTest extends TestCase
         self::assertSame([$field->value], array_keys($projected));
         self::assertEquals($expectedBefore, $projected[$field->value]->before);
         self::assertEquals($expectedAfter, $projected[$field->value]->after);
+    }
+
+    public function testCalendarDayOfALocalMidnightDateSurvivesNormalizationToUtc(): void
+    {
+        date_default_timezone_set('Europe/Moscow');
+        $local = \DateTimeImmutable::createFromFormat('!Y-m-d', '2009-04-05');
+        self::assertInstanceOf(\DateTimeImmutable::class, $local);
+        // The snapshot normalizer renders dates in UTC: 2009-04-04T21:00:00+00:00.
+        $normalized = $local->setTimezone(new \DateTimeZone('UTC'))->format(\DATE_ATOM);
+
+        $projected = (new AnimeFieldProjector())->projectChanges(['datePremiere' => new FieldChange(null, $normalized)]);
+
+        self::assertEquals(new \DateTimeImmutable('2009-04-05T00:00:00+00:00'), $projected[AnimeField::DatePremiere->value]->after);
     }
 
     public function testEveryCaseOfTheVocabularyHasAnInternalField(): void

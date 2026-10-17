@@ -202,7 +202,7 @@ final class AnimeFieldProjector
 
         try {
             return new \DateTimeImmutable(
-                (new \DateTimeImmutable($raw))->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d').'T00:00:00+00:00',
+                (new \DateTimeImmutable($raw))->setTimezone(new \DateTimeZone(date_default_timezone_get()))->format('Y-m-d').'T00:00:00+00:00',
             );
         } catch (\Exception) {
             return null;
