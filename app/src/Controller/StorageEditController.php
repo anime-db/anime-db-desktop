@@ -34,6 +34,7 @@ use App\Entity\Storage;
 use App\Repository\DownloadRepository;
 use App\Service\AppSettingsProvider;
 use App\Service\Storage\StorageMarkerService;
+use App\Service\WsPublisher;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -81,6 +82,7 @@ final class StorageEditController
         private readonly Environment $twig,
         private readonly DownloadRepository $downloads,
         private readonly AppSettingsProvider $settings,
+        private readonly WsPublisher $wsPublisher,
     ) {
     }
 
@@ -163,6 +165,8 @@ final class StorageEditController
         if ($type->isWritable()) {
             $this->markerService->reconcile($storage);
         }
+
+        $this->wsPublisher->publish(StorageController::STORAGE_CHANGED_EVENT, ['id' => $storageId]);
 
         return new RedirectResponse($this->urlGenerator->generate('storage_index'));
     }

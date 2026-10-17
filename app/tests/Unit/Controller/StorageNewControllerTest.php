@@ -31,6 +31,7 @@ use App\Controller\StorageNewController;
 use App\Entity\Enum\StorageType;
 use App\Entity\Storage;
 use App\Service\Storage\StorageMarkerService;
+use App\Service\WsPublisher;
 use Doctrine\ORM\EntityManagerInterface;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\RedirectResponse;
@@ -73,6 +74,7 @@ final class StorageNewControllerTest extends TestCase
         ?CsrfTokenManagerInterface $csrfTokenManager = null,
         ?UrlGeneratorInterface $urlGenerator = null,
         ?Environment $twig = null,
+        ?WsPublisher $wsPublisher = null,
     ): StorageNewController {
         if ($csrfTokenManager === null) {
             $csrfTokenManager = $this->createStub(CsrfTokenManagerInterface::class);
@@ -96,6 +98,7 @@ final class StorageNewControllerTest extends TestCase
             $csrfTokenManager,
             $urlGenerator,
             $twig ?? $this->createStub(Environment::class),
+            $wsPublisher ?? $this->createStub(WsPublisher::class),
         );
     }
 
@@ -185,6 +188,38 @@ final class StorageNewControllerTest extends TestCase
 
         $this->assertInstanceOf(RedirectResponse::class, $response);
         $this->assertSame('/storage/11/scan-prompt', $response->getTargetUrl());
+    }
+
+    public function testCreatePublishesStorageChanged(): void
+    {
+        $persistedStorage = null;
+        $wsPublisher = $this->createMock(WsPublisher::class);
+        $wsPublisher->expects($this->once())->method('publish')->with('storage.changed', ['id' => 11]);
+
+        $controller = $this->createController(
+            entityManager: $this->entityManagerAssigningId(11, $persistedStorage),
+            wsPublisher: $wsPublisher,
+        );
+
+        $controller->create(Request::create('/storage/new', 'POST', [
+            'name' => 'Main folder',
+            'path' => $this->makeDir(),
+            'type' => 'folder',
+            '_token' => 'token',
+        ]));
+    }
+
+    public function testCreateWithInvalidNameDoesNotPublishStorageChanged(): void
+    {
+        $wsPublisher = $this->createMock(WsPublisher::class);
+        $wsPublisher->expects($this->never())->method('publish');
+
+        $this->createController(wsPublisher: $wsPublisher)->create(Request::create('/storage/new', 'POST', [
+            'name' => '',
+            'path' => $this->makeDir(),
+            'type' => 'folder',
+            '_token' => 'token',
+        ]));
     }
 
     public function testNewPrefillsThePathFromTheQuery(): void

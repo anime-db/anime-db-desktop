@@ -33,6 +33,7 @@ use App\Entity\Exception\InvalidPathException;
 use App\Entity\Storage;
 use App\Service\Storage\StorageMarkerResult;
 use App\Service\Storage\StorageMarkerService;
+use App\Service\WsPublisher;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -60,6 +61,7 @@ final class StorageNewController
         private readonly CsrfTokenManagerInterface $csrfTokenManager,
         private readonly UrlGeneratorInterface $urlGenerator,
         private readonly Environment $twig,
+        private readonly WsPublisher $wsPublisher,
     ) {
     }
 
@@ -111,6 +113,8 @@ final class StorageNewController
         }
 
         $storageId = $storage->id ?? throw new \LogicException('Storage must be assigned an id right after flush().');
+
+        $this->wsPublisher->publish(StorageController::STORAGE_CHANGED_EVENT, ['id' => $storageId]);
 
         return new RedirectResponse($this->urlGenerator->generate('storage_scan_prompt', ['id' => $storageId]));
     }

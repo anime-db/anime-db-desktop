@@ -40,6 +40,7 @@ use App\Service\Storage\Scan\ScanRunJournal;
 use App\Service\Storage\Scan\ScanRunStatus;
 use App\Service\Storage\StorageAvailabilityService;
 use App\Service\Storage\StorageMarkerService;
+use App\Service\WsPublisher;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\RedirectResponse;
@@ -78,6 +79,12 @@ use Twig\Environment;
  */
 final class StorageController
 {
+    /**
+     * WebSocket event published after a storage is created, edited or deleted (issue #1079), so the
+     * native layer re-reads the storage list. Keep in sync with native/ consumers.
+     */
+    public const string STORAGE_CHANGED_EVENT = 'storage.changed';
+
     public function __construct(
         private readonly StorageRepository $storages,
         private readonly MessageBusInterface $messageBus,
@@ -92,6 +99,7 @@ final class StorageController
         private readonly AppSettingsProvider $settings,
         private readonly ScanRunJournal $scanRuns,
         private readonly ScanItemResolver $scanItemResolver,
+        private readonly WsPublisher $wsPublisher,
     ) {
     }
 
@@ -251,6 +259,8 @@ final class StorageController
         // One flush keeps unlink and delete atomic: the UnitOfWork runs entity updates before deletions.
         $this->entityManager->remove($storage);
         $this->entityManager->flush();
+
+        $this->wsPublisher->publish(self::STORAGE_CHANGED_EVENT, ['id' => $storageId]);
 
         return new RedirectResponse($this->urlGenerator->generate('storage_index'));
     }
