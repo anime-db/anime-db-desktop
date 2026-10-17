@@ -32,6 +32,7 @@ use App\Entity\ValueObject\PluginId;
 use App\Message\RefreshMarketSnapshotMessage;
 use App\Service\AppConfigStore;
 use App\Service\Market\MarketAssetDownloader;
+use App\Service\Market\MarketPluginInstaller;
 use App\Service\Market\MarketRefreshService;
 use App\Service\Market\MarketSnapshot;
 use App\Service\Market\MarketSnapshotCache;
@@ -144,8 +145,7 @@ final class MarketControllerTest extends TestCase
     ): MarketController {
         return new MarketController(
             $snapshotCache,
-            $assetDownloader,
-            $this->installer(),
+            new MarketPluginInstaller($snapshotCache, $assetDownloader, $this->installer(), self::CORE_VERSION),
             $this->installedPlugins,
             self::CORE_VERSION,
             $pluginContractsVersion,
