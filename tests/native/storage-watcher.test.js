@@ -183,20 +183,56 @@ describe('storage watcher', () => {
         t.watcher.stop();
     });
 
-    test('pause suppresses signals and resume rebuilds the baseline', async () => {
+    test('pause stops polling and suppresses signals', async () => {
         const t = setup({ availability: { '/mnt/a': false } });
         await t.watcher.start();
         await flush();
         t.state.available['/mnt/a'] = true;
+        await t.tick(); // first confirmation of the transition
+        t.watcher.pause();
+        const calls = t.access.mock.calls.length;
         await t.tick();
+        await t.tick();
+        await t.tick();
+        expect(t.access).toHaveBeenCalledTimes(calls);
+        expect(t.connected).not.toHaveBeenCalled();
+        t.watcher.stop();
+    });
+
+    test('resume rebuilds the baseline and then signals a real transition once', async () => {
+        const t = setup({ availability: { '/mnt/a': false } });
+        await t.watcher.start();
+        await flush();
         t.watcher.pause();
         await t.tick();
+        t.watcher.resume();
+        await t.tick(); // baseline (unavailable)
+        t.state.available['/mnt/a'] = true;
         await t.tick();
         expect(t.connected).not.toHaveBeenCalled();
-        t.watcher.resume();
-        await t.tick(); // baseline (available)
         await t.tick();
+        expect(t.connected).toHaveBeenCalledTimes(1);
+        expect(t.connected).toHaveBeenCalledWith('1');
         await t.tick();
+        expect(t.connected).toHaveBeenCalledTimes(1);
+        t.watcher.stop();
+    });
+
+    test('pause during a pending poll gives no signal when the check settles', async () => {
+        const t = setup({ availability: { '/mnt/a': false } });
+        await t.watcher.start();
+        await flush();
+        t.state.available['/mnt/a'] = true;
+        await t.tick(); // first confirmation of the transition
+        let settle;
+        t.access.mockImplementationOnce(() => new Promise((resolve) => { settle = resolve; }));
+        jest.advanceTimersByTime(15000); // poll started, access still pending
+        await flush();
+        t.watcher.pause();
+        settle();
+        await flush();
+        await t.watcher.idle();
+        await flush();
         expect(t.connected).not.toHaveBeenCalled();
         t.watcher.stop();
     });

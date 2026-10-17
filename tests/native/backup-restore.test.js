@@ -53,6 +53,12 @@ jest.mock('../../native/supervisor/search-reindex', () => ({
 const mockRelaunch = jest.fn();
 jest.mock('../../native/lifecycle', () => ({ relaunch: (...args) => mockRelaunch(...args) }));
 
+const mockPause = jest.fn();
+const mockResume = jest.fn();
+jest.mock('../../native/storage-watcher', () => ({
+    getWatcher: () => ({ pause: (...args) => mockPause(...args), resume: (...args) => mockResume(...args) }),
+}));
+
 const { startRestore } = require('../../native/backup-restore');
 
 afterEach(() => {
@@ -184,5 +190,25 @@ describe('startRestore', () => {
 
         expect(outcome).toEqual({ ok: true });
         expect(mockRelaunch).toHaveBeenCalledTimes(1);
+    });
+
+    test('pauses the storage watcher before stopping the supervisor and never resumes it', async () => {
+        fs.existsSync.mockReturnValue(true);
+        const order = [];
+        mockPause.mockImplementation(() => { order.push('pause'); });
+        mockStop.mockImplementation(async () => { order.push('stop'); });
+
+        await startRestore(null, 'data-1.2.3-20260101-000000.db');
+
+        expect(order).toEqual(['pause', 'stop']);
+        expect(mockResume).not.toHaveBeenCalled();
+    });
+
+    test('does not pause the storage watcher when the backup file is missing', async () => {
+        fs.existsSync.mockReturnValue(false);
+
+        await startRestore(null, 'missing.db');
+
+        expect(mockPause).not.toHaveBeenCalled();
     });
 });
