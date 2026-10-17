@@ -121,6 +121,20 @@ namespace App\Tests\Unit\EventDispatcher {
             $dispatcher->dispatch(new AnimeAddedEvent(new AnimeId(1)));
         }
 
+        public function testPluginListenerFailureOutsideTheIsolatedEventsPropagates(): void
+        {
+            $next = new RecordingListener();
+            $dispatcher = $this->dispatcher(\stdClass::class, [new FailingListener(), $next]);
+
+            try {
+                $dispatcher->dispatch(new \stdClass());
+                self::fail('The plugin listener failure must reach the caller for a non-isolated event.');
+            } catch (\RuntimeException $e) {
+                self::assertSame('plugin listener failure', $e->getMessage());
+            }
+            self::assertSame([], $next->received);
+        }
+
         /** @param list<object> $listeners */
         private function dispatcher(string $eventClass, array $listeners, ?ManagerRegistry $registry = null, ?LoggerInterface $logger = null): PluginIsolatingEventDispatcher
         {

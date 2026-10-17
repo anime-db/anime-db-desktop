@@ -214,6 +214,24 @@ final class CatalogPluginEventsSubscriberTest extends TestCase
         $plain->setTitle('Another title');
         $this->entityManager->flush();
 
+        self::assertNotSame([], $this->delivered());
+        self::assertContainsOnlyInstancesOf(AnimeChangedEvent::class, $this->delivered());
+    }
+
+    public function testMovingToAnotherStorageGivesNoUnlinked(): void
+    {
+        $from = new Storage('Disk A', '/tmp/a', StorageType::Folder);
+        $to = new Storage('Disk B', '/tmp/b', StorageType::Folder);
+        $this->entityManager->persist($from);
+        $this->entityManager->persist($to);
+        $anime = $this->record(static fn (MovieAnime $anime) => $anime->setStorage($from)->setStoragePath('Folder'));
+        $this->events = [];
+
+        $anime->setStorage($to)->setTitle('Moved');
+        $this->entityManager->flush();
+
+        self::assertNotSame([], $this->delivered());
+        self::assertInstanceOf(AnimeChangedEvent::class, $this->first());
         foreach ($this->delivered() as $event) {
             self::assertNotInstanceOf(AnimeFilesChangedEvent::class, $event);
         }

@@ -30,6 +30,7 @@ use App\Controller\AnimeNewController;
 use App\Controller\AnimeSearchPluginsController;
 use App\Controller\StorageScanConfirmController;
 use App\EventDispatcher\PluginIsolatingEventDispatcher;
+use App\EventSubscriber\CatalogPluginEventsSubscriber;
 use App\MessageHandler\ScanStorageMessageHandler;
 use App\Service\Download\DownloadCompletionPoller;
 use App\Service\Storage\ManualLinkService;
@@ -53,6 +54,7 @@ final class PluginIsolationWiringTest extends KernelTestCase
         yield 'DownloadCompletionPoller' => [DownloadCompletionPoller::class];
         yield 'ScanStorageMessageHandler' => [ScanStorageMessageHandler::class];
         yield 'ManualLinkService' => [ManualLinkService::class];
+        yield 'CatalogPluginEventsSubscriber' => [CatalogPluginEventsSubscriber::class];
     }
 
     /** @param class-string $class */
