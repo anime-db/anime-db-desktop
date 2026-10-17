@@ -31,6 +31,8 @@ use App\Doctrine\DomainEventConnection;
 use App\Doctrine\DomainEventEntityManager;
 use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
+use App\DomainEvent\Catalog\AnimeChangeCollector;
+use App\DomainEvent\Catalog\AnimeSnapshotNormalizer;
 use App\DomainEvent\DomainEventPublisher;
 use App\DomainEvent\DomainEventSafetyNetSubscriber;
 use App\Entity\Enum\WatchStatus;
@@ -119,7 +121,7 @@ final class DomainEventFlowTest extends TestCase
         $this->rawEntityManager = new EntityManager($this->connection, $config);
         $this->rawEntityManager->getEventManager()->addEventListener(
             [Events::onFlush, Events::postFlush],
-            new DomainEventListener($this->publisher),
+            new DomainEventListener($this->publisher, new AnimeChangeCollector(new AnimeSnapshotNormalizer())),
         );
         $this->entityManager = new DomainEventEntityManager($this->rawEntityManager, $this->publisher);
 

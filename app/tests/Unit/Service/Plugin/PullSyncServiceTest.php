@@ -36,6 +36,8 @@ use AnimeDb\PluginContracts\Sync\SyncItem;
 use AnimeDb\PluginContracts\Sync\SyncStatus;
 use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
+use App\DomainEvent\Catalog\AnimeChangeCollector;
+use App\DomainEvent\Catalog\AnimeSnapshotNormalizer;
 use App\DomainEvent\DomainEventPublisher;
 use App\Entity\Anime;
 use App\Entity\AnimeSyncState;
@@ -1652,7 +1654,7 @@ final class PullSyncServiceTest extends TestCase
         $publisher = new DomainEventPublisher($dispatcher, new NullLogger());
         $this->entityManager->getEventManager()->addEventListener(
             [Events::onFlush, Events::postFlush],
-            new DomainEventListener($publisher),
+            new DomainEventListener($publisher, new AnimeChangeCollector(new AnimeSnapshotNormalizer())),
         );
 
         return $publisher;
