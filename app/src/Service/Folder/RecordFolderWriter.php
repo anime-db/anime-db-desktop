@@ -38,6 +38,7 @@ use App\Entity\Anime;
 use App\Entity\RecordFolderFile;
 use App\Entity\ValueObject\PluginId;
 use App\Service\Storage\StorageMarkerService;
+use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\Persistence\ManagerRegistry;
 
@@ -68,12 +69,35 @@ final class RecordFolderWriter implements RecordFolderWriterInterface
 
     private const string RESERVED_NAMES = '/\A(?:con|prn|aux|nul|com[1-9]|lpt[1-9])\z/';
 
+    /** How long an unreachable storage root is remembered, in seconds. */
+    public const int UNAVAILABLE_TTL = 60;
+
+    /**
+     * Storage id => time (unix seconds) until which its root is known to be unreachable. Static on
+     * purpose: a writer is created per plugin, and the answer is about the storage, not the plugin.
+     *
+     * @var array<int, int>
+     */
+    private static array $unavailableUntil = [];
+
+    /** @var \Closure(): int */
+    private readonly \Closure $clock;
+
+    /** @param (\Closure(): int)|null $clock current unix time; a seam for tests */
     public function __construct(
         private readonly PluginId $pluginId,
         private readonly ManagerRegistry $registry,
         private readonly StorageMarkerService $markers,
         private readonly string $mediaDir,
+        ?\Closure $clock = null,
     ) {
+        $this->clock = $clock ?? static fn (): int => time();
+    }
+
+    /** Forgets every remembered unreachable storage root. */
+    public static function forgetUnavailableStorages(): void
+    {
+        self::$unavailableUntil = [];
     }
 
     public function write(AnimeId $anime, string $fileName, string $contents, bool $overwrite = false): void
@@ -161,10 +185,23 @@ final class RecordFolderWriter implements RecordFolderWriterInterface
             throw new StorageNotWritableException('The storage type does not allow writing.');
         }
 
+        $storageId = $storage->id;
+        $now = ($this->clock)();
+        if ($storageId !== null && (self::$unavailableUntil[$storageId] ?? 0) > $now) {
+            throw new StorageUnavailableException('Storage root is not available');
+        }
+
         $rootPath = $storage->getPath();
         $root = $rootPath !== null && is_dir($rootPath) ? realpath($rootPath) : false;
         if ($root === false) {
+            if ($storageId !== null) {
+                self::$unavailableUntil[$storageId] = $now + self::UNAVAILABLE_TTL;
+            }
+
             throw new StorageUnavailableException('Storage root is not available');
+        }
+        if ($storageId !== null) {
+            unset(self::$unavailableUntil[$storageId]);
         }
 
         // Strictly `=== id`, a missing marker is refused too (as in DownloadIncomingRelocator).
@@ -234,21 +271,36 @@ final class RecordFolderWriter implements RecordFolderWriterInterface
         if (is_dir($path)) {
             throw new ForeignFileException(\sprintf('"%s" is a folder.', $fileName));
         }
-        if (!$overwrite && file_exists($path)) {
-            $current = is_link($path) ? false : @hash_file('sha256', $path);
-            if ($current === false || ($current !== $row?->sha256 && $current !== $newHash)) {
+
+        $current = file_exists($path) ? (is_link($path) ? false : @hash_file('sha256', $path)) : null;
+        // Identical bytes are never rewritten, `$overwrite` or not: a rename moves the folder's mtime.
+        if ($current !== $newHash) {
+            if (!$overwrite && $current !== null && ($current === false || $current !== $row?->sha256)) {
                 throw new ForeignFileException(\sprintf('"%s" already exists with other content.', $fileName));
             }
+
+            $this->writeAtomically($folder, $path, $contents);
         }
 
-        $this->writeAtomically($folder, $path, $contents);
-
         $now = new \DateTimeImmutable();
+        try {
+            $this->recordRow($entityManager, $row, $anime->value, $fileName, $newHash, $now);
+        } catch (UniqueConstraintViolationException) {
+            // A concurrent writer inserted the same ledger row; the failed flush closed the
+            // EntityManager, so the retry runs on a fresh one (as in PluginDataStore).
+            $this->registry->resetManager();
+            $entityManager = $this->entityManager();
+            $this->recordRow($entityManager, $this->findRow($entityManager, $anime->value, $fileName), $anime->value, $fileName, $newHash, $now);
+        }
+    }
+
+    private function recordRow(EntityManagerInterface $entityManager, ?RecordFolderFile $row, int $animeId, string $fileName, string $hash, \DateTimeImmutable $now): void
+    {
         if ($row === null) {
-            $reference = $entityManager->getReference(Anime::class, $anime->value) ?? throw new \LogicException('No anime reference.');
-            $entityManager->persist(new RecordFolderFile($reference, $this->pluginId, $fileName, $newHash, $now));
+            $reference = $entityManager->getReference(Anime::class, $animeId) ?? throw new \LogicException('No anime reference.');
+            $entityManager->persist(new RecordFolderFile($reference, $this->pluginId, $fileName, $hash, $now));
         } else {
-            $row->record($newHash, $now);
+            $row->record($hash, $now);
         }
         $entityManager->flush();
     }

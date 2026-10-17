@@ -27,10 +27,13 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Service\Plugin\DependencyInjection\Compiler;
 
+use AnimeDb\PluginContracts\Folder\RecordFolderIndexInterface;
 use AnimeDb\PluginContracts\Folder\RecordFolderWriterInterface;
+use AnimeDb\Plugins\FakeVendor\FakeRecordFolderIndexConsumer;
 use AnimeDb\Plugins\FakeVendor\FakeRecordFolderWriterConsumer;
 use AnimeDb\Plugins\FakeVendorTwo\FakeIntegrationService;
 use AnimeDb\Plugins\FakeVendorTwo\FakeRecordFolderWriterConsumerTwo;
+use App\Service\Folder\RecordFolderIndex;
 use App\Service\Folder\RecordFolderWriter;
 use App\Service\Plugin\DependencyInjection\Compiler\RecordFolderWriterScopePass;
 use App\Service\Plugin\Exception\WriterRequiresLocalPluginException;
@@ -49,6 +52,7 @@ final class RecordFolderWriterScopePassTest extends TestCase
     {
         require_once __DIR__.'/../../../../../Fixtures/Plugin/RecordFolderWriterScopePass/FakeRecordFolderWriterConsumer.php';
         require_once __DIR__.'/../../../../../Fixtures/Plugin/RecordFolderWriterScopePass/FakeRecordFolderWriterConsumerTwo.php';
+        require_once __DIR__.'/../../../../../Fixtures/Plugin/RecordFolderWriterScopePass/FakeRecordFolderIndexConsumer.php';
 
         $this->pluginsDir = sys_get_temp_dir().'/anime-record-folder-writer-scope-test-'.uniqid();
         mkdir($this->pluginsDir, recursive: true);
@@ -107,6 +111,32 @@ final class RecordFolderWriterScopePassTest extends TestCase
 
         $this->assertArrayHasKey(RecordFolderWriterInterface::class, $container->getDefinition(FakeRecordFolderWriterConsumer::class)->getBindings());
         $this->assertArrayNotHasKey(RecordFolderWriterInterface::class, $container->getDefinition(FakeIntegrationService::class)->getBindings());
+    }
+
+    public function testLocalPluginGetsTheSharedIndex(): void
+    {
+        $this->writeManifest('fake-vendor', 'local');
+
+        $container = new ContainerBuilder();
+        $container->register(FakeRecordFolderIndexConsumer::class, FakeRecordFolderIndexConsumer::class);
+
+        $this->pass()->process($container);
+
+        $reference = $container->getDefinition(FakeRecordFolderIndexConsumer::class)->getBindings()[RecordFolderIndexInterface::class]->getValues()[0];
+        $this->assertInstanceOf(Reference::class, $reference);
+        $this->assertSame(RecordFolderIndex::class, (string) $reference);
+    }
+
+    public function testIntegrationPluginAskingForTheIndexFailsTheBuild(): void
+    {
+        $this->writeManifest('fake-vendor', 'integration');
+
+        $container = new ContainerBuilder();
+        $container->register(FakeRecordFolderIndexConsumer::class, FakeRecordFolderIndexConsumer::class);
+
+        $this->expectException(WriterRequiresLocalPluginException::class);
+
+        $this->pass()->process($container);
     }
 
     private function pass(): RecordFolderWriterScopePass
