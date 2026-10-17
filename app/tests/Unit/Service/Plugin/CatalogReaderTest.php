@@ -54,6 +54,7 @@ use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RequestStack;
+use Symfony\Component\Translation\Translator;
 
 /**
  * Exercises CatalogReader against a real EntityManager/SQLite connection (same setup as
@@ -273,6 +274,23 @@ final class CatalogReaderTest extends TestCase
         self::assertSame(['Sunrise'], $view->studios);
         self::assertSame(['JP'], $view->countries);
         self::assertSame('English text', $this->newReader('fake-vendor')->read(new ContractAnimeId($id))?->description);
+    }
+
+    public function testDescriptionOutsideARequestFollowsTheTranslatorLocale(): void
+    {
+        $anime = new MovieAnime();
+        $anime->setTitle('Cowboy Bebop')->setWatchStatus(WatchStatus::Watching);
+        $anime->setDescription('en', 'English text', null)->setDescription('ru', 'Русский текст', null);
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+        $id = $this->requireId($anime);
+        $translator = new Translator('ru');
+        $reader = new CatalogReader(new PluginId('fake-vendor'), $this->registry(), null, new NullLogger(), new RequestStack(), $translator);
+
+        self::assertSame('Русский текст', $reader->read(new ContractAnimeId($id))?->description);
+
+        $translator->setLocale('en');
+        self::assertSame('English text', $reader->read(new ContractAnimeId($id))->description);
     }
 
     public function testReadLeavesNewFieldsEmptyWhenTheRecordHasNone(): void

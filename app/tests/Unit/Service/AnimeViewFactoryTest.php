@@ -35,6 +35,7 @@ use App\Service\AnimeViewFactory;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RequestStack;
+use Symfony\Component\Translation\Translator;
 
 final class AnimeViewFactoryTest extends TestCase
 {
@@ -56,6 +57,17 @@ final class AnimeViewFactoryTest extends TestCase
         $anime->setDescription('ru', 'Описание', null)->setDescription('en', 'Description', null);
 
         $view = $this->createViewFactory('ru')->serialize($anime);
+
+        $this->assertSame('Описание', $view['summary']);
+    }
+
+    public function testSerializeOutsideARequestUsesTheTranslatorLocale(): void
+    {
+        $anime = new MovieAnime();
+        $anime->setTitle('A Silent Voice')->setWatchStatus(WatchStatus::Plan);
+        $anime->setDescription('ru', 'Описание', null)->setDescription('en', 'Description', null);
+
+        $view = (new AnimeViewFactory(new RequestStack(), null, new Translator('ru')))->serialize($anime);
 
         $this->assertSame('Описание', $view['summary']);
     }

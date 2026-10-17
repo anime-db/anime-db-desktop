@@ -27,9 +27,11 @@ declare(strict_types=1);
 
 namespace App\Service\Plugin\DependencyInjection\Compiler;
 
+use AnimeDb\PluginContracts\Folder\RecordFolderIndexInterface;
 use AnimeDb\PluginContracts\Folder\RecordFolderWriterInterface;
 use AnimeDb\PluginContracts\Manifest\PluginType;
 use App\Entity\ValueObject\PluginId;
+use App\Service\Folder\RecordFolderIndex;
 use App\Service\Folder\RecordFolderWriter;
 use App\Service\Plugin\Exception\WriterRequiresLocalPluginException;
 use App\Service\Plugin\InstalledPluginsRegistry;
@@ -41,6 +43,9 @@ use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\Reference;
 
 /**
+ * Also hands {@see RecordFolderIndexInterface} to `local` plugins (issue #1075) under the same
+ * `assertLocal()` check; unlike the writer it is one shared {@see RecordFolderIndex} service.
+ *
  * Gives every plugin service that type-hints {@see RecordFolderWriterInterface} in its constructor
  * a {@see RecordFolderWriter} bound to *that plugin's own* id (issue #1065) — the same mechanics as
  * {@see PluginDataStoreScopePass}: the plugin never names its own id, so the host supplies the
@@ -84,16 +89,24 @@ final class RecordFolderWriterScopePass implements CompilerPassInterface
                 continue;
             }
 
-            if (!class_exists($class) || !$this->wantsRecordFolderWriter($class)) {
+            if (!class_exists($class)) {
                 continue;
             }
 
-            $this->assertLocal($pluginId, $class);
+            $bindings = [];
+            if ($this->wantsConstructorType($class, RecordFolderWriterInterface::class)) {
+                $this->assertLocal($pluginId, $class);
+                $bindings[RecordFolderWriterInterface::class] = new Reference($this->recordFolderWriterServiceId($container, $pluginId));
+            }
+            if ($this->wantsConstructorType($class, RecordFolderIndexInterface::class)) {
+                $this->assertLocal($pluginId, $class);
+                // One shared service: the index keeps nothing of its own per plugin.
+                $bindings[RecordFolderIndexInterface::class] = new Reference(RecordFolderIndex::class);
+            }
 
-            $definition->setBindings([
-                ...$definition->getBindings(),
-                RecordFolderWriterInterface::class => new Reference($this->recordFolderWriterServiceId($container, $pluginId)),
-            ]);
+            if ($bindings !== []) {
+                $definition->setBindings([...$definition->getBindings(), ...$bindings]);
+            }
         }
     }
 
@@ -129,8 +142,11 @@ final class RecordFolderWriterScopePass implements CompilerPassInterface
         return null;
     }
 
-    /** @param class-string $class */
-    private function wantsRecordFolderWriter(string $class): bool
+    /**
+     * @param class-string $class
+     * @param class-string $interface
+     */
+    private function wantsConstructorType(string $class, string $interface): bool
     {
         $constructor = (new \ReflectionClass($class))->getConstructor();
         if ($constructor === null) {
@@ -139,7 +155,7 @@ final class RecordFolderWriterScopePass implements CompilerPassInterface
 
         foreach ($constructor->getParameters() as $parameter) {
             $type = $parameter->getType();
-            if ($type instanceof \ReflectionNamedType && $type->getName() === RecordFolderWriterInterface::class) {
+            if ($type instanceof \ReflectionNamedType && $type->getName() === $interface) {
                 return true;
             }
         }

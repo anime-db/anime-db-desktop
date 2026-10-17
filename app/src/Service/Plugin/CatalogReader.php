@@ -48,6 +48,7 @@ use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\Persistence\ManagerRegistry;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpFoundation\RequestStack;
+use Symfony\Contracts\Translation\TranslatorInterface;
 
 /**
  * Read-only projection of a catalog record's current state, scoped to a single plugin — see
@@ -97,6 +98,7 @@ final class CatalogReader implements CatalogReaderInterface
         private readonly ?\Closure $resolverFactory,
         private readonly LoggerInterface $logger,
         private readonly RequestStack $requestStack,
+        private readonly ?TranslatorInterface $translator = null,
     ) {
     }
 
@@ -134,12 +136,13 @@ final class CatalogReader implements CatalogReaderInterface
 
     /**
      * The description in the locale of the current HTTP request (same source as the record page), null when the
-     * record has none. Outside a request (Messenger worker, console) there is no locale to read, so it falls back
-     * to {@see self::DEFAULT_LOCALE}.
+     * record has none. Outside a request (Messenger worker, console) it takes the locale the translator was set to
+     * (a worker sets it for every message, see {@see \App\EventSubscriber\WorkerLocaleSubscriber}), and only
+     * without one falls back to {@see self::DEFAULT_LOCALE}.
      */
     private function description(Anime $anime): ?string
     {
-        $summary = $anime->getSummary($this->requestStack->getCurrentRequest()?->getLocale() ?? self::DEFAULT_LOCALE);
+        $summary = $anime->getSummary($this->requestStack->getCurrentRequest()?->getLocale() ?? $this->translator?->getLocale() ?? self::DEFAULT_LOCALE);
 
         return $summary === '' ? null : $summary;
     }

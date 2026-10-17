@@ -39,6 +39,7 @@ use App\Entity\Storage;
 use App\Entity\Studio;
 use App\Service\Plugin\Filler\SaturationAvailability;
 use Symfony\Component\HttpFoundation\RequestStack;
+use Symfony\Contracts\Translation\TranslatorInterface;
 
 /**
  * Turns an Anime entity into a plain array for Twig. Twig's strict_variables is enabled in
@@ -54,6 +55,7 @@ final class AnimeViewFactory
     public function __construct(
         private readonly RequestStack $requestStack,
         private readonly ?SaturationAvailability $saturationAvailability = null,
+        private readonly ?TranslatorInterface $translator = null,
     ) {
     }
 
@@ -143,11 +145,12 @@ final class AnimeViewFactory
 
     /**
      * Same locale source as the {% trans %} tags in the templates (app.request.locale,
-     * negotiated by LocaleSubscriber from the Accept-Language header, issue #87).
+     * negotiated by LocaleSubscriber from the Accept-Language header, issue #87). Outside a request
+     * the translator's locale, which a worker sets for every message (WorkerLocaleSubscriber).
      */
     private function resolveLocale(): string
     {
-        return $this->requestStack->getCurrentRequest()?->getLocale() ?? self::DEFAULT_LOCALE;
+        return $this->requestStack->getCurrentRequest()?->getLocale() ?? $this->translator?->getLocale() ?? self::DEFAULT_LOCALE;
     }
 
     /**

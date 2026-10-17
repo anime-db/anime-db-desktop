@@ -46,6 +46,8 @@ use App\Service\Storage\StorageMarkerService;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\EntityManager;
+use Doctrine\ORM\Event\PrePersistEventArgs;
+use Doctrine\ORM\Events;
 use Doctrine\ORM\ORMSetup;
 use Doctrine\ORM\Tools\SchemaTool;
 use Doctrine\Persistence\ManagerRegistry;
@@ -78,6 +80,8 @@ final class RecordFolderWriterTest extends TestCase
         $this->entityManager = new EntityManager($connection, $config);
         (new SchemaTool($this->entityManager))->createSchema($this->entityManager->getMetadataFactory()->getAllMetadata());
         $this->markers = new StorageMarkerService($this->entityManager);
+
+        RecordFolderWriter::forgetUnavailableStorages();
 
         $base = sys_get_temp_dir().'/anime-record-folder-writer-test-'.uniqid();
         $this->root = $base.'/storage';
@@ -244,6 +248,102 @@ final class RecordFolderWriterTest extends TestCase
 
         self::assertSame('theirs', file_get_contents($this->root.'/Record/info.html'));
         self::assertSame([hash('sha256', 'theirs')], $this->ledger('fake-vendor'));
+    }
+
+    public function testIdenticalBytesAreNotRewrittenEvenWithOverwrite(): void
+    {
+        $id = $this->linkedRecord();
+        $path = $this->root.'/Record/info.html';
+        file_put_contents($path, 'same');
+        touch($path, 1_000_000_000);
+        $inode = fileinode($path);
+
+        $this->writer()->write($id, 'info.html', 'same', true);
+
+        clearstatcache();
+        self::assertSame(1_000_000_000, filemtime($path));
+        self::assertSame($inode, fileinode($path));
+        self::assertSame([hash('sha256', 'same')], $this->ledger('fake-vendor'));
+    }
+
+    public function testIdenticalBytesUpdateTheLedgerRowOfAnEarlierWrite(): void
+    {
+        $id = $this->linkedRecord();
+        $this->writer()->write($id, 'info.html', 'one');
+        $path = $this->root.'/Record/info.html';
+        touch($path, 1_000_000_000);
+
+        $this->writer()->write($id, 'info.html', 'one');
+
+        clearstatcache();
+        self::assertSame(1_000_000_000, filemtime($path));
+        self::assertSame([hash('sha256', 'one')], $this->ledger('fake-vendor'));
+    }
+
+    public function testUnreachableRootIsRememberedForSixtySecondsAcrossWriters(): void
+    {
+        $id = $this->linkedRecord();
+        $now = 1_000_000;
+        $clock = static function () use (&$now): int {
+            return $now;
+        };
+        rename($this->root, $this->root.'-gone');
+
+        try {
+            $this->writer(clock: $clock)->write($id, 'info.html', 'x');
+            self::fail('The root is unreachable.');
+        } catch (StorageUnavailableException) {
+        }
+
+        // The root is back, but a second writer (another plugin) still answers from the memory.
+        rename($this->root.'-gone', $this->root);
+        $now += RecordFolderWriter::UNAVAILABLE_TTL - 1;
+        try {
+            $this->writer('other-vendor', $clock)->write($id, 'info.html', 'x');
+            self::fail('The unavailability must still be remembered.');
+        } catch (StorageUnavailableException) {
+        }
+        self::assertSame([], $this->folderEntries());
+
+        ++$now;
+        $this->writer(clock: $clock)->write($id, 'info.html', 'x');
+
+        self::assertSame('x', file_get_contents($this->root.'/Record/info.html'));
+    }
+
+    public function testUniqueConstraintViolationIsRetriedOnAFreshEntityManager(): void
+    {
+        $id = $this->linkedRecord();
+        $connection = $this->entityManager->getConnection();
+        $fired = false;
+        $this->entityManager->getEventManager()->addEventListener(Events::prePersist, new class($connection, $fired) {
+            public function __construct(private readonly \Doctrine\DBAL\Connection $connection, private bool &$fired)
+            {
+            }
+
+            public function prePersist(PrePersistEventArgs $args): void
+            {
+                if ($args->getObject() instanceof RecordFolderFile && !$this->fired) {
+                    $this->fired = true;
+                    $this->connection->executeStatement(
+                        "INSERT INTO record_folder_file (anime_id, plugin_id, file_name, sha256, written_at) VALUES (1, 'fake-vendor', 'info.html', 'stale', 1)",
+                    );
+                }
+            }
+        });
+        $fresh = new EntityManager($connection, $this->entityManager->getConfiguration());
+        $registry = $this->createMock(ManagerRegistry::class);
+        $registry->method('getManagerForClass')->willReturnCallback(fn (): EntityManager => $this->entityManager->isOpen() ? $this->entityManager : $fresh);
+        $registry->expects(self::once())->method('resetManager');
+
+        (new RecordFolderWriter(new PluginId('fake-vendor'), $registry, $this->markers, $this->mediaDir))->write($id, 'info.html', 'one');
+
+        self::assertTrue($fired);
+        self::assertFalse($this->entityManager->isOpen());
+        self::assertSame([hash('sha256', 'one')], array_map(
+            static fn (RecordFolderFile $row): string => $row->sha256,
+            $fresh->getRepository(RecordFolderFile::class)->findAll(),
+        ));
     }
 
     public function testTheLedgerIsPerPlugin(): void
@@ -439,12 +539,13 @@ final class RecordFolderWriterTest extends TestCase
         self::assertSame([], $this->folderEntries());
     }
 
-    private function writer(string $pluginId = 'fake-vendor'): RecordFolderWriter
+    /** @param (\Closure(): int)|null $clock */
+    private function writer(string $pluginId = 'fake-vendor', ?\Closure $clock = null): RecordFolderWriter
     {
         $registry = $this->createMock(ManagerRegistry::class);
         $registry->method('getManagerForClass')->willReturn($this->entityManager);
 
-        return new RecordFolderWriter(new PluginId($pluginId), $registry, $this->markers, $this->mediaDir);
+        return new RecordFolderWriter(new PluginId($pluginId), $registry, $this->markers, $this->mediaDir, $clock);
     }
 
     private function linkedRecord(StorageType $type = StorageType::Folder, bool $marker = true, string $storagePath = 'Record', ?string $cover = null, string|false $coverBytes = false): AnimeId
