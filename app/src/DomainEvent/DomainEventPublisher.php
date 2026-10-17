@@ -27,6 +27,7 @@ declare(strict_types=1);
 
 namespace App\DomainEvent;
 
+use App\DomainEvent\Catalog\AnimeEventCoalescer;
 use Psr\EventDispatcher\StoppableEventInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
@@ -74,12 +75,14 @@ final class DomainEventPublisher implements ResetInterface
      */
     private array $levels = [];
     private bool $dispatching = false;
+    private readonly AnimeEventCoalescer $coalescer;
 
     public function __construct(
         private readonly EventDispatcherInterface $eventDispatcher,
         #[Autowire(service: 'logger')]
         private readonly LoggerInterface $logger,
     ) {
+        $this->coalescer = new AnimeEventCoalescer();
     }
 
     /** @param list<\Closure(): object> $eventFactories */
@@ -159,7 +162,8 @@ final class DomainEventPublisher implements ResetInterface
                 $batch = $this->ready;
                 $this->ready = [];
 
-                foreach ($batch as $event) {
+                // The events of one record within one delivery are merged (see AnimeEventCoalescer).
+                foreach ($this->coalescer->coalesce($batch) as $event) {
                     $this->notify($event);
                 }
             }

@@ -521,3 +521,25 @@ Symfony при наличии параметра `%count%` прогоняет с
 - Запись из плагина идёт мимо ORM-flush (условный UPDATE / `INSERT ... ON CONFLICT DO NOTHING`), иначе гонка с формой закрыла бы EntityManager.
 - `originals.descriptions` в форме редактирования — карта «локаль → sha256 нормализованного текста»; строка пишется с `manual` только если текст отличается от этого хэша (без `originals` — от текущего текста в БД).
 - Приоритет источников описаний (`AppSettingsProvider::getDescriptionSourcePriority()`, #1069) считается настроенным, только если сохранён **непустой** список; пустой и несохранённый равнозначны. Правило «тот же плагин обновляет свой текст» действует лишь при настроенном приоритете. Строку `NULL` с несовпавшим текстом приоритет не заменяет никогда; экран «Источники описаний» ничего не пересчитывает и в шину не пишет.
+
+## Внутренние события записи каталога (`AnimeAdded`/`AnimeRemoved`/`AnimeChanged`, #1077)
+
+События в `App\Event\Catalog\` строит `App\DomainEvent\Catalog\AnimeChangeCollector` из UnitOfWork в
+`onFlush` (его зовёт `DomainEventListener`), выдаёт тот же publisher, что и остальные доменные события.
+
+- **Доменное и техническое поле — в константах `AnimeSnapshotNormalizer`.** Новое поле `Anime`,
+  наследника из `DiscriminatorMap` или дочерней сущности обязано попасть в один из списков, иначе
+  падает `AnimeSnapshotCompletenessTest`. Технические поля (`dateUpdate`, `filesCheckedAt`,
+  `AnimeExternalId::$filledAt`, …) события не дают; изменение только их — нет события.
+- **«До» дочерней сущности — не `getOriginalEntityData()` как есть.** После `computeChangeSet` Doctrine
+  перезаписывает его текущими значениями, старые лежат в `getEntityChangeSet()`; коллектор берёт оттуда.
+  `PersistentCollection::getSnapshot()` для детей не годится: в нём те же объекты, что и «после».
+- **Коллекции передаются в `FieldChange` целиком** (отсортированный список нормализованных элементов).
+  studios/labels — элементы вида `['name' => …]`: id новой студии в `onFlush` ещё нет.
+- **Склейка** (`AnimeEventCoalescer`) работает в пределах одной выдачи publisher'а: `Changed`+`Changed`
+  (before первого, after последнего; поле, вернувшееся к исходному, выпадает), `Added`+`Changed` → `Added`,
+  `Added`+`Removed` → ничего, `Changed`+`Removed` → `Removed`.
+- **Событий нет (ограничения):** изменение записи в обход UnitOfWork (DQL/SQL, `BulkFillerService`,
+  `PluginDescriptionWriter`, `AnimeTypeChangeService` — #1078); каскад при удалении/переименовании
+  `Label`/`Studio` по FK; восстановление каталога из архива (подмена БД — смена каталога, не правка записей);
+  `clear()` M2M-коллекции перед пересборкой (Doctrine делает snapshot после `clear()`, «до» теряется).

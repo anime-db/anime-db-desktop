@@ -27,6 +27,7 @@ declare(strict_types=1);
 
 namespace App\EventListener;
 
+use App\DomainEvent\Catalog\AnimeChangeCollector;
 use App\DomainEvent\DomainEventPublisher;
 use App\Entity\AggregateRootInterface;
 use Doctrine\Bundle\DoctrineBundle\Attribute\AsDoctrineListener;
@@ -52,12 +53,14 @@ final class DomainEventListener
 {
     public function __construct(
         private readonly DomainEventPublisher $publisher,
+        private readonly AnimeChangeCollector $animeChangeCollector,
     ) {
     }
 
     public function onFlush(OnFlushEventArgs $args): void
     {
-        $unitOfWork = $args->getObjectManager()->getUnitOfWork();
+        $entityManager = $args->getObjectManager();
+        $unitOfWork = $entityManager->getUnitOfWork();
 
         $factories = [];
         foreach ([$unitOfWork->getScheduledEntityInsertions(), $unitOfWork->getScheduledEntityUpdates()] as $entities) {
@@ -68,7 +71,8 @@ final class DomainEventListener
             }
         }
 
-        $this->publisher->collect($factories);
+        // Catalog events (AnimeAdded/AnimeRemoved/AnimeChanged) are resolved from the UnitOfWork, not recorded by the aggregate.
+        $this->publisher->collect([...$factories, ...$this->animeChangeCollector->collect($entityManager)]);
     }
 
     public function postFlush(PostFlushEventArgs $args): void
