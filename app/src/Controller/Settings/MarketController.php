@@ -32,9 +32,14 @@ use App\Entity\ValueObject\Exception\InvalidPluginIdException;
 use App\Entity\ValueObject\PluginId;
 use App\Message\RefreshMarketSnapshotMessage;
 use App\Service\AppConfigStore;
+use App\Service\Market\Exception\IncompatibleCoreSnapshotException;
+use App\Service\Market\Exception\IncompatiblePluginContractsSnapshotException;
+use App\Service\Market\Exception\MarketSnapshotUnavailableException;
 use App\Service\Market\Exception\PluginAssetDownloadException;
+use App\Service\Market\Exception\PluginNotInSnapshotException;
 use App\Service\Market\Exception\UnknownPluginVersionException;
 use App\Service\Market\MarketAssetDownloader;
+use App\Service\Market\MarketPluginInstaller;
 use App\Service\Market\MarketRefreshService;
 use App\Service\Market\MarketSnapshot;
 use App\Service\Market\MarketSnapshotCache;
@@ -174,8 +179,7 @@ final class MarketController
 
     public function __construct(
         private readonly MarketSnapshotCache $snapshotCache,
-        private readonly MarketAssetDownloader $assetDownloader,
-        private readonly ZipPluginInstaller $installer,
+        private readonly MarketPluginInstaller $marketInstaller,
         private readonly InstalledPluginsRegistry $installedPlugins,
         /**
          * The app's own core version (issue #565), or `null` when it could not be determined. Both
@@ -343,66 +347,48 @@ final class MarketController
             throw new NotFoundHttpException(\sprintf('Unknown plugin "%s".', $pluginId));
         }
 
-        $snapshot = $this->snapshotCache->load();
-        if ($snapshot === null || !$snapshot->isBuiltFor($this->coreVersion)) {
-            return $this->renderIndex(locale: $request->getLocale(), installError: 'settings_market.install_error_registry_unavailable');
-        }
+        $locale = $request->getLocale();
 
-        $plugin = $this->findPlugin($snapshot, $id);
-        if ($plugin === null) {
-            return $this->renderIndex(locale: $request->getLocale(), installError: 'settings_market.install_error_unknown_plugin');
-        }
-
-        if ($plugin->resolvedVersion === null && $plugin->incompatiblePluginContracts) {
+        try {
+            $this->marketInstaller->installOrUpdate($id, $update);
+        } catch (MarketSnapshotUnavailableException) {
+            return $this->renderIndex(locale: $locale, installError: 'settings_market.install_error_registry_unavailable');
+        } catch (PluginNotInSnapshotException) {
+            return $this->renderIndex(locale: $locale, installError: 'settings_market.install_error_unknown_plugin');
+        } catch (IncompatiblePluginContractsSnapshotException) {
             return $this->renderIndex(
-                locale: $request->getLocale(),
+                locale: $locale,
                 installError: 'settings_market.install_error_incompatible_plugin_contracts',
                 installErrorParams: ['%currentPluginContracts%' => (string) $this->pluginContractsVersion],
             );
-        }
-
-        if ($plugin->resolvedVersion === null) {
+        } catch (IncompatibleCoreSnapshotException $exception) {
             return $this->renderIndex(
-                locale: $request->getLocale(),
+                locale: $locale,
                 installError: 'settings_market.install_error_incompatible_core',
-                installErrorParams: ['%requiredCore%' => $plugin->latestVersionCore, '%currentCore%' => (string) $this->coreVersion],
+                installErrorParams: ['%requiredCore%' => $exception->requiredCore, '%currentCore%' => (string) $this->coreVersion],
             );
-        }
-
-        try {
-            $zipPath = $this->assetDownloader->downloadPluginZip($plugin->sha256, $snapshot->assetMirrors, $id, $plugin->resolvedVersion);
         } catch (UnknownPluginVersionException|PluginAssetDownloadException) {
-            return $this->renderIndex(locale: $request->getLocale(), installError: 'settings_market.install_error_download_failed');
-        }
-
-        try {
-            if ($update) {
-                $this->installer->update($zipPath, trusted: true);
-            } else {
-                $this->installer->install($zipPath, trusted: true);
-            }
+            return $this->renderIndex(locale: $locale, installError: 'settings_market.install_error_download_failed');
         } catch (IncompatiblePluginCoreVersionException $exception) {
             return $this->renderIndex(
-                locale: $request->getLocale(),
+                locale: $locale,
                 installError: 'settings_market.install_error_incompatible_core',
                 installErrorParams: ['%requiredCore%' => $exception->requiredCore, '%currentCore%' => $exception->currentCore],
             );
         } catch (PluginAlreadyInstalledException $exception) {
             return $this->renderIndex(
-                locale: $request->getLocale(),
+                locale: $locale,
                 installError: 'settings_market.install_error_already_installed',
                 installErrorParams: ['%pluginId%' => (string) $exception->pluginId],
             );
         } catch (PluginNotInstalledException) {
             // The plugin was removed by another request between rendering the "Update" button and
             // this click — not installing it here would silently second-guess that removal.
-            return $this->renderIndex(locale: $request->getLocale(), installError: 'settings_market.install_error_generic');
+            return $this->renderIndex(locale: $locale, installError: 'settings_market.install_error_generic');
         } catch (InvalidInstalledPluginException) {
-            return $this->renderIndex(locale: $request->getLocale(), installError: 'settings_market.install_error_invalid_manifest');
+            return $this->renderIndex(locale: $locale, installError: 'settings_market.install_error_invalid_manifest');
         } catch (PluginInstallException) {
-            return $this->renderIndex(locale: $request->getLocale(), installError: 'settings_market.install_error_generic');
-        } finally {
-            @unlink($zipPath);
+            return $this->renderIndex(locale: $locale, installError: 'settings_market.install_error_generic');
         }
 
         return new RedirectResponse($this->urlGenerator->generate(
@@ -562,17 +548,6 @@ final class MarketController
             'interfaceLocaleMissing' => $interfaceLocaleMissing,
             'missingFallbackLocale' => $missingFallbackLocale,
         ];
-    }
-
-    private function findPlugin(MarketSnapshot $snapshot, PluginId $id): ?MarketSnapshotPlugin
-    {
-        foreach ($snapshot->plugins as $plugin) {
-            if ($plugin->id === (string) $id) {
-                return $plugin;
-            }
-        }
-
-        return null;
     }
 
     private function assertValidCsrfToken(string $tokenId, Request $request): void

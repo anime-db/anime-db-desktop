@@ -164,9 +164,11 @@ final class ZipPluginInstaller
     }
 
     /**
-     * @param bool $trusted skips the PHP syntax check (issue #220's marketplace path — see
-     *                      the class docblock); the custom-ZIP-upload path (issue #251) leaves
-     *                      this at its default `false`
+     * @param bool $trusted              skips the PHP syntax check (issue #220's marketplace path — see
+     *                                   the class docblock); the custom-ZIP-upload path (issue #251) leaves
+     *                                   this at its default `false`
+     * @param bool $publishWorkersReload `false` skips publishing {@see self::WORKERS_RELOAD_EVENT}
+     *                                   for callers that activate the plugin themselves
      *
      * @throws InvalidInstalledPluginException             if manifest.json is missing or invalid
      * @throws IncompatiblePluginCoreVersionException      if the current core version does not satisfy
@@ -183,7 +185,7 @@ final class ZipPluginInstaller
      *                                                     compile the DI container with the new
      *                                                     plugin present
      */
-    public function install(string $zipPath, bool $trusted = false): PluginId
+    public function install(string $zipPath, bool $trusted = false, bool $publishWorkersReload = true): PluginId
     {
         [$pluginId, $needsReload] = $this->registry->synchronized(fn (): array => $this->doInstall($zipPath, $trusted));
 
@@ -194,7 +196,7 @@ final class ZipPluginInstaller
         // filesystem lock for a notification that touches neither the index nor a plugin directory.
         // A plugin without code (link rules only) has nothing for the workers to reload.
         try {
-            if ($needsReload) {
+            if ($needsReload && $publishWorkersReload) {
                 $this->wsPublisher->publish(self::WORKERS_RELOAD_EVENT, ['pluginId' => (string) $pluginId]);
             }
         } catch (\Throwable $exception) {
@@ -331,7 +333,7 @@ final class ZipPluginInstaller
      *                                                     plugin present — the previous version is
      *                                                     restored before this propagates
      */
-    public function update(string $zipPath, bool $trusted = false): PluginId
+    public function update(string $zipPath, bool $trusted = false, bool $publishWorkersReload = true): PluginId
     {
         [$pluginId, $needsReload] = $this->registry->synchronized(fn (): array => $this->doUpdate($zipPath, $trusted));
 
@@ -341,7 +343,7 @@ final class ZipPluginInstaller
         // roll it back — see the class docblock.
         // A plugin without code (link rules only) has nothing for the workers to reload.
         try {
-            if ($needsReload) {
+            if ($needsReload && $publishWorkersReload) {
                 $this->wsPublisher->publish(self::WORKERS_RELOAD_EVENT, ['pluginId' => (string) $pluginId]);
             }
         } catch (\Throwable $exception) {
