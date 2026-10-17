@@ -242,13 +242,13 @@ final class StorageController
         $this->storageMarker->forget($storage);
 
         // The FK would null storage_id behind the UnitOfWork's back and leave storage_path dangling:
-        // unlink through the ORM first so the change is seen (AnimeChanged) and both fields are cleared.
+        // unlink through the ORM so the change is seen (AnimeChanged) and both fields are cleared.
         foreach ($this->entityManager->getRepository(Anime::class)->findBy(['storage' => $storage]) as $anime) {
             $anime->setStorage(null);
             $anime->setStoragePath(null);
         }
-        $this->entityManager->flush();
 
+        // One flush keeps unlink and delete atomic: the UnitOfWork runs entity updates before deletions.
         $this->entityManager->remove($storage);
         $this->entityManager->flush();
 

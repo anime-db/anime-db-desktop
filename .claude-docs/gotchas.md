@@ -544,7 +544,7 @@ Symfony при наличии параметра `%count%` прогоняет с
   «до»/«после»; для проигранной гонки — `AnimeRemoved` со снимком). Правило выдачи у publisher'а:
   `record()` вне транзакции выдаёт сразу, внутри — копит до внешнего коммита и сбрасывает на откате.
   Записи, чьё «до» не собрано до записи, события не получат. Удаление хранилища отвязывает записи через ORM
-  (`storage`/`storagePath` → `null`, отдельный `flush()` до `remove($storage)`), иначе FK `SET NULL` обнулил бы
+  (`storage`/`storagePath` → `null`, в одном `flush()` с `remove($storage)`: UnitOfWork выполняет updates раньше deletions, и операция остаётся атомарной), иначе FK `SET NULL` обнулил бы
   `storage_id` мимо UnitOfWork, а `storage_path` остался бы висеть.
 - **Тест-гейт `CatalogWriteGateTest`:** DBAL-запись в таблицы агрегата (`anime`, `anime_name`, `anime_genres`,
   `anime_themes`, `anime_description`, `anime_source`, `anime_image`, `anime_external_id`, `anime_studios`,

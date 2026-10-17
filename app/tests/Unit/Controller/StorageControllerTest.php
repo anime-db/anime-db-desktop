@@ -283,7 +283,7 @@ final class StorageControllerTest extends TestCase
 
         $entityManager = $this->createMock(EntityManagerInterface::class);
         $entityManager->expects($this->once())->method('remove')->with($storage);
-        $entityManager->expects($this->exactly(2))->method('flush');
+        $entityManager->expects($this->once())->method('flush');
 
         $router = $this->createMock(UrlGeneratorInterface::class);
         $router->expects($this->once())
@@ -609,7 +609,7 @@ final class StorageControllerTest extends TestCase
 
         $entityManager = $this->createMock(EntityManagerInterface::class);
         $entityManager->expects($this->once())->method('remove')->with($storage);
-        $entityManager->expects($this->exactly(2))->method('flush');
+        $entityManager->expects($this->once())->method('flush');
 
         $router = $this->createMock(UrlGeneratorInterface::class);
         $router->expects($this->once())
@@ -626,7 +626,7 @@ final class StorageControllerTest extends TestCase
         $this->assertSame('/storage', $response->getTargetUrl());
     }
 
-    public function testDeleteUnlinksTheStorageAnimeThroughTheOrmBeforeRemovingTheStorage(): void
+    public function testDeleteUnlinksTheStorageAnimeThroughTheOrmAndRemovesTheStorageInOneFlush(): void
     {
         $raw = $this->createInMemoryEntityManager();
         $storage = new Storage('Main folder', $this->makeDir(), StorageType::Folder);
@@ -683,7 +683,7 @@ final class StorageControllerTest extends TestCase
 
         $entityManager = $this->createMock(EntityManagerInterface::class);
         $entityManager->expects($this->once())->method('remove')->with($storage);
-        $entityManager->expects($this->exactly(2))->method('flush');
+        $entityManager->expects($this->once())->method('flush');
 
         $controller = $this->createController(entityManager: $entityManager);
         $request = Request::create('/storage/42/delete', 'POST', ['_token' => 'token']);
