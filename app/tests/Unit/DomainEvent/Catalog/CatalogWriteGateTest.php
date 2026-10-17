@@ -30,7 +30,7 @@ namespace App\Tests\Unit\DomainEvent\Catalog;
 use PHPUnit\Framework\TestCase;
 
 /**
- * A DBAL write into a table of the Anime aggregate bypasses the UnitOfWork, so the catalog events
+ * A DBAL write into a table of the Anime aggregate (or a DQL write into its entities) bypasses the UnitOfWork, so the catalog events
  * (see AnimeChangeCollector) are not raised for it. Under app/src/ such a write is allowed only in
  * the classes below: the first three record the event explicitly through AnimeEventRecorder, the
  * rest write technical fields or serve the migration check and raise none. Catalog records are
@@ -50,6 +50,25 @@ final class CatalogWriteGateTest extends TestCase
         'anime_external_id',
         'anime_studios',
         'anime_labels',
+    ];
+
+    /** The entities of the aggregate (DQL writes name them, not tables), with every Anime subclass. */
+    private const AGGREGATE_ENTITIES = [
+        'Anime',
+        'MovieAnime',
+        'SeriesAnime',
+        'TvAnime',
+        'OvaAnime',
+        'OnaAnime',
+        'SpecialAnime',
+        'MusicAnime',
+        'AnimeName',
+        'AnimeGenre',
+        'AnimeTheme',
+        'AnimeDescription',
+        'AnimeSource',
+        'AnimeImage',
+        'AnimeExternalId',
     ];
 
     /** Paths relative to app/src/. */
@@ -78,6 +97,19 @@ final class CatalogWriteGateTest extends TestCase
         $this->assertSame($allowed, $writers, 'Remove a class from the allow list once it stops writing into the aggregate.');
     }
 
+    public function testEveryAnimeSubclassIsCoveredByTheEntityList(): void
+    {
+        $found = [];
+        foreach (glob(\dirname(__DIR__, 4).'/src/Entity/*.php') ?: [] as $file) {
+            $class = 'App\\Entity\\'.basename($file, '.php');
+            if (class_exists($class) && is_a($class, \App\Entity\Anime::class, true)) {
+                $found[] = basename($file, '.php');
+            }
+        }
+
+        $this->assertSame([], array_diff($found, self::AGGREGATE_ENTITIES), 'Add the new Anime subclass to AGGREGATE_ENTITIES.');
+    }
+
     /** @return iterable<string, array{string}> */
     public static function forbiddenWrites(): iterable
     {
@@ -88,6 +120,18 @@ final class CatalogWriteGateTest extends TestCase
         yield 'Connection::insert' => ['$connection->insert(\'anime_genres\', [\'anime_id\' => 1]);'];
         yield 'Connection::update' => ['$connection->update("anime", [\'title\' => \'x\'], [\'id\' => 1]);'];
         yield 'Connection::delete' => ['$connection->delete(\'anime_external_id\', [\'anime_id\' => 1]);'];
+        yield 'DQL update, single quotes' => ['$em->createQuery(\'UPDATE App\\Entity\\Anime a SET a.title = 1\')->execute();'];
+        yield 'DQL update, escaped backslashes' => ['$em->createQuery("UPDATE App\\\\Entity\\\\AnimeName n SET n.name = 1")->execute();'];
+        yield 'DQL update of a subclass' => ['$em->createQuery(\'update App\\Entity\\TvAnime a SET a.title = 1\')->execute();'];
+        yield 'DQL delete' => ['$em->createQuery(\'DELETE App\\Entity\\AnimeGenre g\')->execute();'];
+        yield 'DQL delete from' => ['$em->createQuery(\'DELETE FROM App\\Entity\\AnimeTheme t WHERE t.id = 1\')->execute();'];
+        yield 'DQL leading backslash' => ['$em->createQuery(\'UPDATE \\App\\Entity\\AnimeDescription d SET d.description = 1\')->execute();'];
+        yield 'DQL with a class constant' => ['$em->createQuery(\'UPDATE \'.AnimeSource::class.\' s SET s.url = 1\')->execute();'];
+        yield 'DQL with a qualified class constant' => ['$em->createQuery(\'DELETE \'.\\App\\Entity\\AnimeImage::class)->execute();'];
+        yield 'QueryBuilder update' => ['$em->createQueryBuilder()->update(Anime::class, \'a\')->set(\'a.title\', 1)->getQuery()->execute();'];
+        yield 'QueryBuilder delete' => ['$em->createQueryBuilder()->delete(AnimeExternalId::class, \'e\')->getQuery()->execute();'];
+        yield 'QueryBuilder update of a subclass' => ['$qb->update(\\App\\Entity\\MovieAnime::class, \'a\');'];
+        yield 'QueryBuilder with a literal class name' => ['$qb->delete(\'App\\Entity\\AnimeName\', \'n\');'];
     }
 
     #[\PHPUnit\Framework\Attributes\DataProvider('forbiddenWrites')]
@@ -105,6 +149,10 @@ final class CatalogWriteGateTest extends TestCase
         yield 'table outside the aggregate' => ['$connection->executeStatement(\'UPDATE anime_sync_state SET last_status = 1\');'];
         yield 'plugin data' => ['$connection->insert(\'anime_plugin_data\', [\'anime_id\' => 1]);'];
         yield 'select' => ['$connection->fetchOne(\'SELECT id FROM anime WHERE id = 1\');'];
+        yield 'DQL select' => ['$em->createQuery(\'SELECT a FROM App\\Entity\\Anime a\')->getResult();'];
+        yield 'DQL update outside the aggregate' => ['$em->createQuery(\'UPDATE App\\Entity\\AnimeSyncState s SET s.x = 1\')->execute();'];
+        yield 'QueryBuilder update outside the aggregate' => ['$qb->update(Notification::class, \'n\');'];
+        yield 'QueryBuilder select' => ['$qb->select(\'a\')->from(Anime::class, \'a\');'];
         yield 'comment' => ['// UPDATE anime SET title = 1'];
     }
 
@@ -124,9 +172,15 @@ final class CatalogWriteGateTest extends TestCase
     private function violations(string $root, array $allowed): array
     {
         $tables = implode('|', self::AGGREGATE_TABLES);
+        $entities = implode('|', self::AGGREGATE_ENTITIES);
         $patterns = [
             '/\b(?:INSERT\s+(?:OR\s+\w+\s+)?INTO|REPLACE\s+INTO|UPDATE|DELETE\s+FROM)\s+["`\[]?(?:'.$tables.')(?![\w])/i',
             '/->\s*(?:insert|update|delete)\(\s*[\'"](?:'.$tables.')[\'"]/',
+            // DQL in a string: the entity is named by its FQCN (any number of backslashes, escaped or not).
+            '/\b(?:UPDATE|DELETE(?:\s+FROM)?)\s+\\\\*App\\\\+Entity\\\\+(?:'.$entities.')(?![\w])/i',
+            // DQL assembled with a class constant, and QueryBuilder::update()/delete() with an entity.
+            '/\b(?:UPDATE|DELETE(?:\s+FROM)?)\s*[\'"]\s*\.\s*[\w\\\\]*?(?<![\w])(?:'.$entities.')::class/i',
+            '/->\s*(?:update|delete)\(\s*(?:\\\\?(?:\w+\\\\)*(?:'.$entities.')::class|[\'"]\\\\*App\\\\+Entity\\\\+(?:'.$entities.')[\'"])/',
         ];
 
         $violations = [];

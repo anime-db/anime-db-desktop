@@ -27,6 +27,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Service;
 
+use App\DomainEvent\DomainEventSafetyNetSubscriber;
 use App\Entity\Anime;
 use App\Entity\Download;
 use App\Entity\Enum\AnimeType;
@@ -153,6 +154,8 @@ final class AnimeTypeChangeServiceTest extends TestCase
         $probe = new CatalogEventProbe($this->entityManager);
 
         $this->service(probe: $probe)->change($anime, AnimeType::Movie, true);
+        $this->assertCount(0, $probe->changed(), 'No flush follows the DBAL write: the event waits for the safety net.');
+        (new DomainEventSafetyNetSubscriber($probe->publisher))->drain();
 
         $this->assertCount(1, $probe->changed());
         $event = $probe->changed()[0];

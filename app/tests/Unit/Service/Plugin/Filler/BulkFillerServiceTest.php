@@ -518,6 +518,7 @@ final class BulkFillerServiceTest extends TestCase
         $probe = new CatalogEventProbe($this->entityManager);
 
         $anime = $this->newService([(string) $pluginId => $filler], probe: $probe)->fillNewFromPlugin($pluginId, 'Bleach', '104');
+        $probe->publisher->dispatchReady();
 
         $this->assertNotNull($anime);
         $this->assertCount(1, $probe->changed());
@@ -537,6 +538,7 @@ final class BulkFillerServiceTest extends TestCase
         $probe = new CatalogEventProbe($this->entityManager);
         $service = $this->newService([(string) $pluginId => $filler], probe: $probe);
         $winner = $service->fillNewFromPlugin($pluginId, 'Bleach', '104');
+        $probe->publisher->dispatchReady();
         $probe->events = [];
 
         try {
@@ -544,6 +546,7 @@ final class BulkFillerServiceTest extends TestCase
             $this->fail('The lost race must be reported.');
         } catch (ExternalIdAlreadyClaimedException) {
         }
+        $probe->publisher->dispatchReady();
 
         $this->assertSame([], $probe->changed());
         $this->assertCount(1, $probe->removed());

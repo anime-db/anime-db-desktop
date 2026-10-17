@@ -44,6 +44,7 @@ final class AnimeEventRecorderTest extends TestCase
 {
     private DomainEventConnection $connection;
     private AnimeEventRecorder $recorder;
+    private DomainEventPublisher $publisher;
     /** @var list<object> */
     private array $delivered = [];
 
@@ -60,15 +61,18 @@ final class AnimeEventRecorderTest extends TestCase
         $dispatcher->addListener(\App\Event\Catalog\AnimeRemoved::class, function (object $event): void {
             $this->delivered[] = $event;
         });
-        $publisher = new DomainEventPublisher($dispatcher, new NullLogger());
-        $this->connection->setDomainEventPublisher($publisher);
+        $this->publisher = new DomainEventPublisher($dispatcher, new NullLogger());
+        $this->connection->setDomainEventPublisher($this->publisher);
 
-        $this->recorder = new AnimeEventRecorder($publisher, new AnimeSnapshotNormalizer(), new EntityManager($this->connection, $config));
+        $this->recorder = new AnimeEventRecorder($this->publisher, new AnimeSnapshotNormalizer(), new EntityManager($this->connection, $config));
     }
 
-    public function testWithoutATransactionTheEventIsDeliveredAtOnce(): void
+    public function testWithoutATransactionTheEventWaitsForTheNearestDelivery(): void
     {
         $this->recorder->recordChanged(7, ['title' => ['A', 'B']]);
+        $this->assertCount(0, $this->delivered);
+
+        $this->publisher->dispatchReady();
 
         $this->assertCount(1, $this->delivered);
         $this->assertInstanceOf(AnimeChanged::class, $this->delivered[0]);
@@ -99,6 +103,7 @@ final class AnimeEventRecorderTest extends TestCase
 
         // Nothing is left behind for the next delivery either.
         $this->recorder->recordChanged(8, ['title' => ['A', 'C']]);
+        $this->publisher->dispatchReady();
         $this->assertCount(1, $this->delivered);
         $this->assertInstanceOf(AnimeChanged::class, $this->delivered[0]);
         $this->assertSame(8, $this->delivered[0]->animeId);
@@ -115,6 +120,7 @@ final class AnimeEventRecorderTest extends TestCase
     {
         $snapshot = new AnimeSnapshot(['title' => 'A']);
         $this->recorder->recordRemoved(7, $snapshot);
+        $this->publisher->dispatchReady();
 
         $this->assertInstanceOf(\App\Event\Catalog\AnimeRemoved::class, $this->delivered[0]);
         $this->assertSame($snapshot, $this->delivered[0]->snapshot);

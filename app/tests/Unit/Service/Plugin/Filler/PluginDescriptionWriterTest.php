@@ -365,6 +365,7 @@ final class PluginDescriptionWriterTest extends TestCase
         $writer = new PluginDescriptionWriter($this->entityManager, null, $probe->recorder);
 
         $writer->write($anime, new PluginId('animedb-shikimori'), 'ja', 'Japanese text');
+        $probe->publisher->dispatchReady();
 
         $this->assertCount(1, $probe->changed());
         $change = $probe->changed()[0];
@@ -384,6 +385,7 @@ final class PluginDescriptionWriterTest extends TestCase
         $writer = new PluginDescriptionWriter($this->entityManager, null, $probe->recorder);
 
         $writer->write($anime, new PluginId('animedb-shikimori'), 'en', 'Fresh text');
+        $probe->publisher->dispatchReady();
 
         $this->assertCount(1, $probe->changed());
         $changes = $probe->changed()[0]->changes;

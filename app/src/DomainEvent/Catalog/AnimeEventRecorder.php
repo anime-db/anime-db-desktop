@@ -38,9 +38,10 @@ use Doctrine\ORM\EntityManagerInterface;
 /**
  * Explicit recording of catalog events for the writes that bypass the UnitOfWork (DBAL statements
  * with a known "before" and "after"), which {@see AnimeChangeCollector} cannot see. The caller
- * records right after its write succeeded; the delivery rules are the publisher's: outside a
- * transaction the event is delivered at once, inside one it waits for the outermost commit and is
- * dropped on a rollback. Values are given in the normalized form of {@see AnimeSnapshotNormalizer}.
+ * records right after its write succeeded; the delivery rules are the publisher's: the event is
+ * never delivered at once — outside a transaction it waits for the nearest delivery point (the
+ * next flush() return, which merges it with that flush's events, or the safety net), inside one
+ * for the outermost commit, and it is dropped on a rollback. Values are given in the normalized form of {@see AnimeSnapshotNormalizer}.
  *
  * Not covered by any event: the FK cascade of a Label/Studio removal or rename, and replacing the
  * whole catalog database (restoring from an archive).
