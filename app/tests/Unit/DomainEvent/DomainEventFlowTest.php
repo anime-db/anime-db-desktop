@@ -186,6 +186,23 @@ final class DomainEventFlowTest extends TestCase
         self::assertSame([], $this->log);
     }
 
+    public function testEventsOfARolledBackSavepointAreDroppedButTheOuterOnesSurvive(): void
+    {
+        $this->entityManager->wrapInTransaction(function (): void {
+            $this->entityManager->persist($this->plannedAnime('Outer'));
+            $this->entityManager->flush();
+
+            // A bare savepoint: wrapInTransaction() would also close the entity manager.
+            $this->connection->beginTransaction();
+            $this->entityManager->persist($this->plannedAnime('Inner'));
+            $this->entityManager->flush();
+            $this->connection->rollBack();
+        });
+
+        // Exactly one event: the outer flush's; the savepoint's one is gone.
+        self::assertSame(['event(tx=none)'], $this->log);
+    }
+
     public function testSubscriberFlushingAfterRemovedCollectionItemsDoesNotLoseManyToManyRows(): void
     {
         $studios = [$this->studio('S1'), $this->studio('S2')];
@@ -263,10 +280,10 @@ final class DomainEventFlowTest extends TestCase
             self::fail('The commit must fail.');
         } catch (\Throwable) {
         }
-        self::assertFalse($this->publisher->hasReady());
         if ($this->connection->isTransactionActive()) {
             $this->connection->rollBack();
         }
+        self::assertFalse($this->publisher->hasReady());
         $this->rawEntityManager->clear();
         self::assertSame([], $this->log);
 

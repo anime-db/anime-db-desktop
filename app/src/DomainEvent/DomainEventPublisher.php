@@ -66,6 +66,13 @@ final class DomainEventPublisher implements ResetInterface
     private array $current = [];
     /** @var list<object> */
     private array $ready = [];
+    /**
+     * Events promoted inside an open transaction, one list per nesting level (index 0 is level 1):
+     * a savepoint that rolls back must take only its own events with it.
+     *
+     * @var list<list<object>>
+     */
+    private array $levels = [];
     private bool $dispatching = false;
 
     public function __construct(
@@ -90,18 +97,54 @@ final class DomainEventPublisher implements ResetInterface
         foreach ($factories as $factory) {
             $events[] = $factory();
         }
-        $this->ready = [...$this->ready, ...$events];
+
+        $top = array_key_last($this->levels);
+        if ($top === null) {
+            $this->ready = [...$this->ready, ...$events];
+        } else {
+            $this->levels[$top] = [...$this->levels[$top], ...$events];
+        }
     }
 
     public function hasReady(): bool
     {
-        return $this->ready !== [];
+        return $this->ready !== [] || array_filter($this->levels) !== [];
+    }
+
+    /** A (nested) transaction began: the events promoted from now on belong to its level. */
+    public function enterLevel(): void
+    {
+        $this->levels[] = [];
+    }
+
+    /** The innermost level committed: its events now belong to the parent level (or are ready at level 0). */
+    public function commitLevel(): void
+    {
+        $events = array_pop($this->levels);
+        if ($events === null || $events === []) {
+            return;
+        }
+
+        $top = array_key_last($this->levels);
+        if ($top === null) {
+            $this->ready = [...$this->ready, ...$events];
+        } else {
+            $this->levels[$top] = [...$this->levels[$top], ...$events];
+        }
+    }
+
+    /** The innermost level rolled back (or failed to commit): drop only its events. */
+    public function rollBackLevel(): void
+    {
+        array_pop($this->levels);
+        $this->current = [];
     }
 
     public function discard(): void
     {
         $this->current = [];
         $this->ready = [];
+        $this->levels = [];
     }
 
     public function dispatchReady(): void
