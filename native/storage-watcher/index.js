@@ -26,6 +26,8 @@ const fs = require('fs');
 const POLL_INTERVAL_MS = 15 * 1000;
 const LIST_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 const ACCESS_TIMEOUT_MS = 5 * 1000;
+/** access() runs in the libuv pool (4 threads by default); keep spare threads for the rest of the main process. */
+const MAX_CONCURRENT_CHECKS = 2;
 /** Consecutive identical observations needed to accept a change of state. */
 const CONFIRMATIONS = 2;
 
@@ -75,6 +77,7 @@ class Tracker {
  * @param {(path: string) => Promise<void>} [deps.access]
  * @param {string} [deps.platform]
  * @param {number} [deps.timeoutMs]
+ * @param {number} [deps.maxConcurrent]
  * @param {(...args: any[]) => void} [deps.log]
  */
 function createStorageWatcher({
@@ -83,15 +86,21 @@ function createStorageWatcher({
     access = (p) => fs.promises.access(p),
     platform = process.platform,
     timeoutMs = ACCESS_TIMEOUT_MS,
+    maxConcurrent = MAX_CONCURRENT_CHECKS,
     log = (...args) => console.error('[storage-watcher]', ...args),
 }) {
     /** @type {Map<string, {path: string, tracker: Tracker}>} */
     let storages = new Map();
     /** @type {Map<string, Tracker>} */
     let letters = new Map();
-    /** Roots whose previous check has not settled yet; cleared only when the access promise settles. */
+    /**
+     * Checks whose access() has not settled yet; cleared only when the access promise settles (a timeout
+     * does not free the entry), so its size is the number of operations occupying libuv threads.
+     */
     const inFlight = new Set();
     let generation = 0;
+    /** Index of the first candidate skipped by the concurrency limit in the last poll. */
+    let cursor = 0;
     let running = false;
     let paused = false;
     let pollTimer = null;
@@ -101,9 +110,10 @@ function createStorageWatcher({
 
     /**
      * @returns {Promise<boolean>|null} null when the previous check of this root is still pending
+     *   or the limit of concurrent checks is reached; it will be retried on a later poll
      */
     function check(key, path) {
-        if (inFlight.has(key)) return null;
+        if (inFlight.has(key) || inFlight.size >= maxConcurrent) return null;
         inFlight.add(key);
         const probe = Promise.resolve()
             .then(() => access(path))
@@ -153,32 +163,57 @@ function createStorageWatcher({
     async function poll() {
         if (!running || paused) return;
         const gen = generation;
-        const tasks = [];
         const connectedNow = [];
         let newVolume = false;
 
+        // Roots of known storages first, then drive letters.
+        const candidates = [];
         for (const [id, entry] of storages) {
-            const result = check(`storage:${id}`, entry.path);
-            if (!result) continue;
-            tasks.push(result.then((ok) => {
-                if (gen !== generation) return;
-                if (entry.tracker.observe(ok)) connectedNow.push(id);
-            }));
+            candidates.push({
+                key: `storage:${id}`,
+                path: entry.path,
+                onResult: (ok) => { if (entry.tracker.observe(ok)) connectedNow.push(id); },
+            });
         }
-
         if (platform === 'win32') {
             for (const letter of DRIVE_LETTERS) {
-                const result = check(`letter:${letter}`, `${letter}:\\`);
-                if (!result) continue;
-                tasks.push(result.then((ok) => {
-                    if (gen !== generation) return;
-                    if (!letters.has(letter)) letters.set(letter, new Tracker());
-                    if (letters.get(letter).observe(ok)) newVolume = true;
-                }));
+                candidates.push({
+                    key: `letter:${letter}`,
+                    path: `${letter}:\\`,
+                    onResult: (ok) => {
+                        if (!letters.has(letter)) letters.set(letter, new Tracker());
+                        if (letters.get(letter).observe(ok)) newVolume = true;
+                    },
+                });
             }
         }
 
-        await Promise.all(tasks);
+        // `maxConcurrent` lanes take candidates in turn, starting where the previous poll was cut off by
+        // the limit. A candidate that cannot start (its key or the limit is busy) is not observed and is
+        // left for a later poll.
+        const total = candidates.length;
+        let next = total > 0 ? cursor % total : 0;
+        let taken = 0;
+        let firstLimited = null;
+        const lane = async () => {
+            while (taken < total) {
+                const index = next;
+                next = (next + 1) % total;
+                taken += 1;
+                const candidate = candidates[index];
+                const limited = !inFlight.has(candidate.key) && inFlight.size >= maxConcurrent;
+                const result = check(candidate.key, candidate.path);
+                if (!result) {
+                    if (limited && firstLimited === null) firstLimited = index;
+                    continue;
+                }
+                const ok = await result;
+                if (gen === generation) candidate.onResult(ok);
+            }
+        };
+        await Promise.all(Array.from({ length: Math.max(1, maxConcurrent) }, lane));
+        if (firstLimited !== null) cursor = firstLimited;
+        else cursor = 0;
         if (gen !== generation || !running || paused) return;
 
         const ids = new Set(connectedNow);
@@ -192,6 +227,7 @@ function createStorageWatcher({
 
     function resetState() {
         generation += 1;
+        cursor = 0;
         for (const entry of storages.values()) entry.tracker = new Tracker();
         letters = new Map();
     }
@@ -274,4 +310,5 @@ module.exports = {
     POLL_INTERVAL_MS,
     LIST_REFRESH_INTERVAL_MS,
     ACCESS_TIMEOUT_MS,
+    MAX_CONCURRENT_CHECKS,
 };

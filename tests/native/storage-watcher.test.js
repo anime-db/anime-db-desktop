@@ -23,7 +23,7 @@
 
 const { createStorageWatcher } = require('../../native/storage-watcher');
 
-const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
+const flush = async () => { for (let i = 0; i < 5000; i++) await Promise.resolve(); };
 
 function setup({ platform = 'linux', list = [{ id: 1, path: '/mnt/a' }], availability = {} } = {}) {
     const state = { available: { ...availability }, hang: new Set() };
@@ -145,8 +145,64 @@ describe('storage watcher', () => {
         await t.tick();
         await t.tick();
         expect(t.access.mock.calls.filter((c) => c[0] === 'Z:\\')).toHaveLength(1);
-        expect(t.access.mock.calls.filter((c) => c[0] === 'A:\\')).toHaveLength(3);
+        expect(t.access.mock.calls.filter((c) => c[0] === 'A:\\')).toHaveLength(2);
         t.watcher.stop();
+    });
+
+    describe('concurrent check limit', () => {
+        function setupHanging({ list, platform = 'linux' }) {
+            const pending = new Map();
+            let active = 0;
+            let maxActive = 0;
+            const access = jest.fn((p) => new Promise((resolve) => {
+                active++; maxActive = Math.max(maxActive, active);
+                pending.set(p, () => { active--; pending.delete(p); resolve(); });
+            }));
+            const watcher = createStorageWatcher({
+                listStorages: () => Promise.resolve(list), connected: jest.fn(), access, platform, timeoutMs: 1000, log: jest.fn(),
+            });
+            const tick = async (ms = 15000) => { jest.advanceTimersByTime(ms); await flush(); };
+            return { access, watcher, tick, pending, getMax: () => maxActive };
+        }
+
+        test('never more than 2 checks in flight, however many storages and letters', async () => {
+            const list = Array.from({ length: 6 }, (_, i) => ({ id: i + 1, path: `/mnt/${i}` }));
+            const t = setupHanging({ list, platform: 'win32' });
+            await t.watcher.start();
+            await flush();
+            await t.tick();
+            await t.tick();
+            expect(t.getMax()).toBe(2);
+            expect(t.access.mock.calls.map((c) => c[0])).toEqual(['/mnt/0', '/mnt/1']);
+            t.watcher.stop();
+        });
+
+        test('a settled check frees its slot and the next path is checked on the next poll', async () => {
+            const list = [{ id: 1, path: '/mnt/0' }, { id: 2, path: '/mnt/1' }, { id: 3, path: '/mnt/2' }];
+            const t = setupHanging({ list });
+            await t.watcher.start();
+            await flush();
+            await t.tick(1000);
+            expect(t.access.mock.calls.map((c) => c[0])).toEqual(['/mnt/0', '/mnt/1']);
+            t.pending.get('/mnt/0')();
+            await flush();
+            await t.tick();
+            expect(t.access.mock.calls.map((c) => c[0])).toEqual(['/mnt/0', '/mnt/1', '/mnt/2']);
+            expect(t.getMax()).toBe(2);
+            t.watcher.stop();
+        });
+
+        test('a timeout without the operation finishing does not free the slot', async () => {
+            const list = [{ id: 1, path: '/mnt/0' }, { id: 2, path: '/mnt/1' }, { id: 3, path: '/mnt/2' }];
+            const t = setupHanging({ list });
+            await t.watcher.start();
+            await flush();
+            await t.tick(1000);
+            await t.tick();
+            await t.tick();
+            expect(t.access.mock.calls.map((c) => c[0])).toEqual(['/mnt/0', '/mnt/1']);
+            t.watcher.stop();
+        });
     });
 
     test('non-windows: drive letters are not checked', async () => {
