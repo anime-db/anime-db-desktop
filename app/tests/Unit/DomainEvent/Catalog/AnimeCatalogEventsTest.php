@@ -36,6 +36,7 @@ use App\DomainEvent\Catalog\AnimeSnapshotNormalizer;
 use App\DomainEvent\DomainEventPublisher;
 use App\Entity\Anime;
 use App\Entity\Enum\AnimeNameRole;
+use App\Entity\Enum\Demographic;
 use App\Entity\Enum\GenreCode;
 use App\Entity\Enum\StorageType;
 use App\Entity\Enum\ThemeCode;
@@ -50,6 +51,7 @@ use App\Entity\ValueObject\Rating;
 use App\Event\Catalog\AnimeAdded;
 use App\Event\Catalog\AnimeChanged;
 use App\Event\Catalog\AnimeRemoved;
+use App\Event\Catalog\FieldChange;
 use App\EventListener\DomainEventListener;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Types\Type;
@@ -132,7 +134,8 @@ final class AnimeCatalogEventsTest extends TestCase
         $anime->setTitle('Series')->setWatchStatus(WatchStatus::Plan);
         $anime->setEpisodesCount(12)->setWatchedEpisodes(3)->setUserRating(new Rating(4))->setNotes('note')
             ->setCountries(['JP'])->setStorage($storage)->setStoragePath('Series')->setCover('c.jpg')
-            ->setDatePremiere(new \DateTimeImmutable('2020-01-02T03:04:05+00:00'));
+            ->setDatePremiere(new \DateTimeImmutable('2020-01-02T03:04:05+00:00'))
+            ->setDateEnd(new \DateTimeImmutable('2020-03-04T05:06:07+00:00'))->setDurationMinutes(24)->setDemographic(Demographic::Seinen);
         $anime->addName('Alt', 'en', AnimeNameRole::Synonym)->addGenre(GenreCode::Action)->addTheme(ThemeCode::Mecha)
             ->addStudio($studio)->addLabel($label)->setDescription('en', 'text', 'src')
             ->addSource('https://example.com/a')->addImage('i.jpg')->rememberExternalId(new PluginId('some-plugin'), '42');
@@ -152,30 +155,72 @@ final class AnimeCatalogEventsTest extends TestCase
         $event = $delivered[0];
         self::assertInstanceOf(AnimeRemoved::class, $event);
         self::assertSame($id, $event->animeId);
-        $fields = $event->snapshot->fields;
-        self::assertSame('tv', $fields['type']);
-        self::assertSame('Series', $fields['title']);
-        self::assertSame(12, $fields['episodesCount']);
-        self::assertSame(3, $fields['watchedEpisodes']);
-        self::assertSame(4, $fields['userRating']);
-        self::assertSame('watching', $fields['watchStatus']);
-        self::assertSame('note', $fields['notes']);
-        self::assertSame(['JP'], $fields['countries']);
-        self::assertSame('2020-01-02T03:04:05+00:00', $fields['datePremiere']);
-        self::assertSame($storage->id, $fields['storage']);
-        self::assertSame('Series', $fields['storagePath']);
-        self::assertSame([['name' => 'Studio A']], $fields['studios']);
-        self::assertSame([['name' => 'Fav']], $fields['labels']);
-        self::assertSame([['name' => 'Alt', 'locale' => 'en', 'role' => 'synonym']], $fields['names']);
-        self::assertSame([['code' => 'action']], $fields['genres']);
-        self::assertSame([['code' => 'mecha']], $fields['themes']);
-        self::assertSame([['locale' => 'en', 'description' => 'text', 'source' => 'src']], $fields['descriptions']);
-        self::assertSame([['url' => 'https://example.com/a']], $fields['sources']);
-        self::assertSame([['source' => 'i.jpg']], $fields['images']);
-        self::assertSame([['pluginId' => 'some-plugin', 'externalId' => '42']], $fields['externalIds']);
-        foreach (['id', 'dateAdd', 'dateUpdate', 'normalizedTitle', 'filesCheckedAt'] as $technical) {
-            self::assertArrayNotHasKey($technical, $fields);
-        }
+        self::assertSame([
+            'type' => 'tv',
+            'title' => 'Series',
+            'datePremiere' => '2020-01-02T03:04:05+00:00',
+            'dateEnd' => '2020-03-04T05:06:07+00:00',
+            'durationMinutes' => 24,
+            'watchStatus' => 'watching',
+            'userRating' => 4,
+            'notes' => 'note',
+            'countries' => ['JP'],
+            'cover' => 'c.jpg',
+            'storage' => $storage->id,
+            'storagePath' => 'Series',
+            'demographic' => 'seinen',
+            'episodesCount' => 12,
+            'watchedEpisodes' => 3,
+            'names' => [['name' => 'Alt', 'locale' => 'en', 'role' => 'synonym']],
+            'genres' => [['code' => 'action']],
+            'themes' => [['code' => 'mecha']],
+            'studios' => [['name' => 'Studio A']],
+            'labels' => [['name' => 'Fav']],
+            'descriptions' => [['locale' => 'en', 'description' => 'text', 'source' => 'src']],
+            'sources' => [['url' => 'https://example.com/a']],
+            'externalIds' => [['pluginId' => 'some-plugin', 'externalId' => '42']],
+            'images' => [['source' => 'i.jpg']],
+        ], $event->snapshot->fields);
+    }
+
+    public function testRemoveOfTypeWithoutEpisodesHasNoEpisodeKeys(): void
+    {
+        $anime = $this->persistMovie('Film', static fn (Anime $a) => $a->setDurationMinutes(95)->setDemographic(Demographic::Shounen));
+        $id = $anime->id;
+        $this->events = [];
+
+        $this->entityManager->remove($anime);
+        $this->entityManager->flush();
+
+        $delivered = $this->delivered();
+        self::assertCount(1, $delivered);
+        $event = $delivered[0];
+        self::assertInstanceOf(AnimeRemoved::class, $event);
+        self::assertSame($id, $event->animeId);
+        self::assertSame([
+            'type' => 'movie',
+            'title' => 'Film',
+            'datePremiere' => null,
+            'dateEnd' => null,
+            'durationMinutes' => 95,
+            'watchStatus' => 'plan',
+            'userRating' => null,
+            'notes' => null,
+            'countries' => null,
+            'cover' => null,
+            'storage' => null,
+            'storagePath' => null,
+            'demographic' => 'shounen',
+            'names' => [],
+            'genres' => [],
+            'themes' => [],
+            'studios' => [],
+            'labels' => [],
+            'descriptions' => [],
+            'sources' => [],
+            'externalIds' => [],
+            'images' => [],
+        ], $event->snapshot->fields);
     }
 
     public function testScalarAndSubclassFieldsChange(): void
@@ -216,22 +261,50 @@ final class AnimeCatalogEventsTest extends TestCase
                 ->rememberExternalId(new PluginId('some-plugin'), '1');
         });
 
-        $anime->addName('Two', null, AnimeNameRole::Short)->addGenre(GenreCode::Drama)->addTheme(ThemeCode::Music)
+        // The name is replaced (its fields are readonly), the description is edited in place.
+        $old = $anime->getNames()->first();
+        self::assertNotFalse($old);
+        $anime->removeName($old);
+        $anime->addName('Uno', 'es', AnimeNameRole::Official)->addName('Two', null, AnimeNameRole::Short)
+            ->addGenre(GenreCode::Drama)->addTheme(ThemeCode::Music)
             ->setDescription('en', 'new', 'src')->addSource('https://example.com/b')->addImage('b.jpg')
             ->rememberExternalId(new PluginId('other-plugin'), '2');
         $this->entityManager->flush();
 
         $changes = $this->singleChange($anime);
         self::assertEqualsCanonicalizing(['names', 'genres', 'themes', 'descriptions', 'sources', 'externalIds', 'images'], array_keys($changes));
-        self::assertSame([['code' => 'action']], $changes['genres']->before);
-        self::assertSame([['code' => 'action'], ['code' => 'drama']], $changes['genres']->after);
-        // The description was edited in place: "before" must keep the old text, not the already modified object's.
-        self::assertSame([['locale' => 'en', 'description' => 'old', 'source' => null]], $changes['descriptions']->before);
-        self::assertSame([['locale' => 'en', 'description' => 'new', 'source' => 'src']], $changes['descriptions']->after);
-        self::assertCount(1, $changes['images']->before);
-        self::assertCount(2, $changes['images']->after);
-        self::assertCount(1, $changes['externalIds']->before);
-        self::assertCount(2, $changes['externalIds']->after);
+        $actual = array_map(static fn (FieldChange $c): array => [$c->before, $c->after], $changes);
+        ksort($actual);
+        self::assertSame([
+            'descriptions' => [
+                [['locale' => 'en', 'description' => 'old', 'source' => null]],
+                [['locale' => 'en', 'description' => 'new', 'source' => 'src']],
+            ],
+            'externalIds' => [
+                [['pluginId' => 'some-plugin', 'externalId' => '1']],
+                [['pluginId' => 'other-plugin', 'externalId' => '2'], ['pluginId' => 'some-plugin', 'externalId' => '1']],
+            ],
+            'genres' => [
+                [['code' => 'action']],
+                [['code' => 'action'], ['code' => 'drama']],
+            ],
+            'images' => [
+                [['source' => 'a.jpg']],
+                [['source' => 'a.jpg'], ['source' => 'b.jpg']],
+            ],
+            'names' => [
+                [['name' => 'One', 'locale' => 'en', 'role' => 'synonym']],
+                [['name' => 'Two', 'locale' => null, 'role' => 'short'], ['name' => 'Uno', 'locale' => 'es', 'role' => 'official']],
+            ],
+            'sources' => [
+                [['url' => 'https://example.com/a']],
+                [['url' => 'https://example.com/a'], ['url' => 'https://example.com/b']],
+            ],
+            'themes' => [
+                [['code' => 'mecha']],
+                [['code' => 'mecha'], ['code' => 'music']],
+            ],
+        ], $actual);
     }
 
     public function testRemovedChildAppearsInBeforeOnly(): void
@@ -358,7 +431,7 @@ final class AnimeCatalogEventsTest extends TestCase
         return $studio;
     }
 
-    /** @return array<string, \App\Event\Catalog\FieldChange> */
+    /** @return array<string, FieldChange> */
     private function singleChange(Anime $anime): array
     {
         $delivered = $this->delivered();
