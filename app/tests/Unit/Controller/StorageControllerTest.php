@@ -28,8 +28,16 @@ declare(strict_types=1);
 namespace App\Tests\Unit\Controller;
 
 use App\Controller\StorageController;
+use App\Doctrine\DomainEventEntityManager;
+use App\DomainEvent\Catalog\AnimeChangeCollector;
+use App\DomainEvent\Catalog\AnimeSnapshotNormalizer;
+use App\DomainEvent\DomainEventPublisher;
 use App\Entity\Enum\StorageType;
+use App\Entity\Enum\WatchStatus;
 use App\Entity\Storage;
+use App\Entity\TvAnime;
+use App\Event\Catalog\AnimeChanged;
+use App\EventListener\DomainEventListener;
 use App\Message\ScanStorageMessage;
 use App\Repository\AnimeRepository;
 use App\Repository\DownloadRepository;
@@ -43,11 +51,15 @@ use App\Service\Storage\Scan\ScanRunJournal;
 use App\Service\Storage\Scan\ScanRunStatus;
 use App\Service\Storage\StorageAvailabilityService;
 use App\Service\Storage\StorageMarkerService;
+use App\Tests\Support\CreatesInMemoryEntityManager;
 use App\Tests\Support\RunsMigrations;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\ORM\Events;
 use PHPUnit\Framework\TestCase;
 use Psr\Clock\ClockInterface;
+use Psr\Log\NullLogger;
+use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
@@ -59,6 +71,7 @@ use Twig\Environment;
 
 final class StorageControllerTest extends TestCase
 {
+    use CreatesInMemoryEntityManager;
     use RunsMigrations;
 
     /** @var list<string> */
@@ -270,7 +283,7 @@ final class StorageControllerTest extends TestCase
 
         $entityManager = $this->createMock(EntityManagerInterface::class);
         $entityManager->expects($this->once())->method('remove')->with($storage);
-        $entityManager->expects($this->once())->method('flush');
+        $entityManager->expects($this->exactly(2))->method('flush');
 
         $router = $this->createMock(UrlGeneratorInterface::class);
         $router->expects($this->once())
@@ -596,7 +609,7 @@ final class StorageControllerTest extends TestCase
 
         $entityManager = $this->createMock(EntityManagerInterface::class);
         $entityManager->expects($this->once())->method('remove')->with($storage);
-        $entityManager->expects($this->once())->method('flush');
+        $entityManager->expects($this->exactly(2))->method('flush');
 
         $router = $this->createMock(UrlGeneratorInterface::class);
         $router->expects($this->once())
@@ -613,6 +626,54 @@ final class StorageControllerTest extends TestCase
         $this->assertSame('/storage', $response->getTargetUrl());
     }
 
+    public function testDeleteUnlinksTheStorageAnimeThroughTheOrmBeforeRemovingTheStorage(): void
+    {
+        $raw = $this->createInMemoryEntityManager();
+        $storage = new Storage('Main folder', $this->makeDir(), StorageType::Folder);
+        $raw->persist($storage);
+        $linked = [];
+        foreach (['Bleach', 'Naruto'] as $path) {
+            $anime = new TvAnime();
+            $anime->setTitle($path)->setWatchStatus(WatchStatus::Plan)->setStorage($storage)->setStoragePath($path);
+            $raw->persist($anime);
+            $linked[$path] = $anime;
+        }
+        $other = new TvAnime();
+        $other->setTitle('Unlinked')->setWatchStatus(WatchStatus::Plan);
+        $raw->persist($other);
+        $raw->flush();
+        $storageId = $storage->id;
+
+        $events = [];
+        $dispatcher = new EventDispatcher();
+        $dispatcher->addListener(AnimeChanged::class, static function (AnimeChanged $event) use (&$events): void {
+            $events[$event->animeId] = $event;
+        });
+        $publisher = new DomainEventPublisher($dispatcher, new NullLogger());
+        $raw->getEventManager()->addEventListener(
+            [Events::onFlush, Events::postFlush],
+            new DomainEventListener($publisher, new AnimeChangeCollector(new AnimeSnapshotNormalizer())),
+        );
+
+        $controller = $this->createController(entityManager: new DomainEventEntityManager($raw, $publisher));
+        $controller->delete($storage, Request::create('/storage/'.$storageId.'/delete', 'POST', ['_token' => 'token']));
+
+        $this->assertCount(2, $events);
+        foreach (['Bleach', 'Naruto'] as $path) {
+            $event = $events[(int) $linked[$path]->id];
+            $this->assertEqualsCanonicalizing(['storage', 'storagePath'], array_keys($event->changes));
+            $this->assertSame($storageId, $event->changes['storage']->before);
+            $this->assertNull($event->changes['storage']->after);
+            $this->assertSame($path, $event->changes['storagePath']->before);
+            $this->assertNull($event->changes['storagePath']->after);
+        }
+        $this->assertArrayNotHasKey((int) $other->id, $events);
+
+        $connection = $raw->getConnection();
+        $this->assertSame(0, (int) $connection->fetchOne('SELECT COUNT(*) FROM storage'));
+        $this->assertSame(2, (int) $connection->fetchOne('SELECT COUNT(*) FROM anime WHERE storage_id IS NULL AND storage_path IS NULL AND title != ?', ['Unlinked']));
+    }
+
     public function testDeleteRemovesMarkerFile(): void
     {
         $dir = $this->makeDir();
@@ -622,7 +683,7 @@ final class StorageControllerTest extends TestCase
 
         $entityManager = $this->createMock(EntityManagerInterface::class);
         $entityManager->expects($this->once())->method('remove')->with($storage);
-        $entityManager->expects($this->once())->method('flush');
+        $entityManager->expects($this->exactly(2))->method('flush');
 
         $controller = $this->createController(entityManager: $entityManager);
         $request = Request::create('/storage/42/delete', 'POST', ['_token' => 'token']);

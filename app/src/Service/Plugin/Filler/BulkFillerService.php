@@ -30,6 +30,7 @@ namespace App\Service\Plugin\Filler;
 use AnimeDb\PluginContracts\Filler\FillerInterface;
 use AnimeDb\PluginContracts\Filler\PluginAnimeData;
 use AnimeDb\PluginContracts\Model\AnimeType as ContractsAnimeType;
+use App\DomainEvent\Catalog\AnimeEventRecorder;
 use App\Entity\Anime;
 use App\Entity\AnimeExternalId;
 use App\Entity\Enum\AnimeType;
@@ -83,6 +84,7 @@ final class BulkFillerService
         private readonly MessageBusInterface $messageBus,
         private readonly AnimeRepository $animeRepository,
         private readonly CachedFillerLookup $lookup,
+        private readonly ?AnimeEventRecorder $recorder = null,
     ) {
     }
 
@@ -394,6 +396,11 @@ final class BulkFillerService
      * around the ORM for this one conflict-prone write keeps the EntityManager open and usable
      * no matter which side of the race this call lands on.
      *
+     * Both DBAL writes bypass the UnitOfWork, so they are recorded explicitly through
+     * {@see AnimeEventRecorder}: the link as `AnimeChanged` of `externalIds`, the deletion of the
+     * record that lost the race as `AnimeRemoved` with a snapshot (the flush above already
+     * announced it as `AnimeAdded`).
+     *
      * @param bool $filled whether the record is being filled from the plugin (sets filled_at)
      *
      * @throws ExternalIdAlreadyClaimedException when a concurrent create flow already claimed
@@ -404,6 +411,8 @@ final class BulkFillerService
         $this->entityManager->persist($anime);
         $this->entityManager->flush();
 
+        $animeId = $anime->id ?? throw new \LogicException('A flushed anime has no id.');
+        $externalIdsBefore = $this->recorder?->children($anime, 'externalIds');
         $connection = $this->entityManager->getConnection();
         $filledAt = $filled ? new \DateTimeImmutable() : null;
         $inserted = $connection->executeStatement(
@@ -421,7 +430,11 @@ final class BulkFillerService
                 'SELECT anime_id FROM anime_external_id WHERE plugin_id = ? AND external_id = ?',
                 [(string) $pluginId, $externalId],
             );
-            $connection->delete('anime', ['id' => $anime->id]);
+            $snapshot = $this->recorder?->snapshot($anime);
+            $connection->delete('anime', ['id' => $animeId]);
+            if ($this->recorder !== null && $snapshot !== null) {
+                $this->recorder->recordRemoved($animeId, $snapshot);
+            }
             $this->entityManager->detach($anime);
 
             throw new ExternalIdAlreadyClaimedException($pluginId, $externalId, $winnerId);
@@ -447,6 +460,12 @@ final class BulkFillerService
             ['anime' => $anime, 'pluginId' => (string) $pluginId, 'externalId' => $externalId, 'filledAt' => $filledAt],
         );
         $anime->attachPersistedExternalId($entry);
+
+        if ($this->recorder !== null && $externalIdsBefore !== null) {
+            $this->recorder->recordChanged($animeId, [
+                'externalIds' => [$externalIdsBefore, $this->recorder->children($anime, 'externalIds')],
+            ]);
+        }
     }
 
     /**

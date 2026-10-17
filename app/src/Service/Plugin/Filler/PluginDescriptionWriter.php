@@ -27,6 +27,7 @@ declare(strict_types=1);
 
 namespace App\Service\Plugin\Filler;
 
+use App\DomainEvent\Catalog\AnimeEventRecorder;
 use App\Entity\Anime;
 use App\Entity\AnimeDescription;
 use App\Entity\DescriptionText;
@@ -59,12 +60,16 @@ use Doctrine\ORM\EntityManagerInterface;
  * `INSERT ... ON CONFLICT DO NOTHING`: another writer (the edit form, a concurrent fill) that got
  * in between turns this write into a no-op instead of overwriting it, and a lost insert race never
  * closes the EntityManager.
+ *
+ * Both writes bypass the UnitOfWork, so the successful ones record `AnimeChanged` of the
+ * `descriptions` field through {@see AnimeEventRecorder}; a write that changed no row records nothing.
  */
 class PluginDescriptionWriter
 {
     public function __construct(
         private readonly EntityManagerInterface $entityManager,
         private readonly ?AppSettingsProvider $settings = null,
+        private readonly ?AnimeEventRecorder $recorder = null,
     ) {
     }
 
@@ -134,6 +139,8 @@ class PluginDescriptionWriter
             return;
         }
 
+        $animeId = $anime->id;
+        $before = $this->recorder?->children($anime, 'descriptions');
         $connection = $this->entityManager->getConnection();
         $inserted = $connection->executeStatement(
             'INSERT INTO anime_description (anime_id, locale, description, source) VALUES (?, ?, ?, ?) ON CONFLICT (anime_id, locale) DO NOTHING',
@@ -150,6 +157,12 @@ class PluginDescriptionWriter
         }
         // The row bypassed the UnitOfWork, so AnimeAggregateTouchListener cannot see it (issue #888).
         $anime->touchDateUpdate();
+
+        if ($this->recorder !== null && $before !== null) {
+            $this->recorder->recordChanged($animeId, [
+                'descriptions' => [$before, $this->recorder->sort([...$before, ['locale' => $locale, 'description' => $text, 'source' => $source]])],
+            ]);
+        }
     }
 
     private function update(Anime $anime, AnimeDescription $row, string $text, string $source): void
@@ -161,6 +174,8 @@ class PluginDescriptionWriter
             return;
         }
 
+        $animeId = $anime->id;
+        $before = $this->recorder?->children($anime, 'descriptions');
         $updated = $this->entityManager->getConnection()->executeStatement(
             'UPDATE anime_description SET description = ?, source = ? WHERE id = ? AND source IS ? AND description = ?',
             [$text, $source, $row->id, $row->source, $row->description],
@@ -178,5 +193,11 @@ class PluginDescriptionWriter
         $unitOfWork->setOriginalEntityProperty($oid, 'source', $source);
         // The change set is cleared above, so the listener cannot see it (issue #888).
         $anime->touchDateUpdate();
+
+        if ($this->recorder !== null && $before !== null) {
+            $this->recorder->recordChanged($animeId, [
+                'descriptions' => [$before, $this->recorder->children($anime, 'descriptions')],
+            ]);
+        }
     }
 }

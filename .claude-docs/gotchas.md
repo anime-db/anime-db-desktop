@@ -539,7 +539,17 @@ Symfony при наличии параметра `%count%` прогоняет с
 - **Склейка** (`AnimeEventCoalescer`) работает в пределах одной выдачи publisher'а: `Changed`+`Changed`
   (before первого, after последнего; поле, вернувшееся к исходному, выпадает), `Added`+`Changed` → `Added`,
   `Added`+`Removed` → ничего, `Changed`+`Removed` → `Removed`.
-- **Событий нет (ограничения):** изменение записи в обход UnitOfWork (DQL/SQL, `BulkFillerService`,
-  `PluginDescriptionWriter`, `AnimeTypeChangeService` — #1078); каскад при удалении/переименовании
-  `Label`/`Studio` по FK; восстановление каталога из архива (подмена БД — смена каталога, не правка записей);
-  `clear()` M2M-коллекции перед пересборкой (Doctrine делает snapshot после `clear()`, «до» теряется).
+- **Пути в обход UnitOfWork пишут событие явно (#1078).** `PluginDescriptionWriter`, `AnimeTypeChangeService`
+  и `BulkFillerService` после своей DBAL-записи зовут `AnimeEventRecorder` (`AnimeChanged` с известными
+  «до»/«после»; для проигранной гонки — `AnimeRemoved` со снимком). Правило выдачи у publisher'а:
+  `record()` вне транзакции выдаёт сразу, внутри — копит до внешнего коммита и сбрасывает на откате.
+  Записи, чьё «до» не собрано до записи, события не получат. Удаление хранилища отвязывает записи через ORM
+  (`storage`/`storagePath` → `null`, отдельный `flush()` до `remove($storage)`), иначе FK `SET NULL` обнулил бы
+  `storage_id` мимо UnitOfWork, а `storage_path` остался бы висеть.
+- **Тест-гейт `CatalogWriteGateTest`:** DBAL-запись в таблицы агрегата (`anime`, `anime_name`, `anime_genres`,
+  `anime_themes`, `anime_description`, `anime_source`, `anime_image`, `anime_external_id`, `anime_studios`,
+  `anime_labels`; не маской `anime_*`) из `app/src/` разрешена только классам из его списка. Новый обходной путь
+  добавляется в список вместе с явной записью события; удаление записей каталога — только `EntityManager::remove()`.
+- **Событий нет (ограничения):** каскад при удалении/переименовании `Label`/`Studio` по FK; восстановление каталога
+  из архива (подмена БД — смена каталога, не правка записей); `clear()` M2M-коллекции перед пересборкой (Doctrine
+  делает snapshot после `clear()`, «до» теряется).

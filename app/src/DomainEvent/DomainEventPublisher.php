@@ -109,6 +109,22 @@ final class DomainEventPublisher implements ResetInterface
         }
     }
 
+    /**
+     * Takes an event whose change is already final in the database (a write that bypassed the
+     * UnitOfWork): outside a transaction it is delivered at once, inside one it waits for the
+     * outermost commit and is dropped with its level on a rollback.
+     */
+    public function record(object $event): void
+    {
+        $top = array_key_last($this->levels);
+        if ($top === null) {
+            $this->ready[] = $event;
+            $this->dispatchReady();
+        } else {
+            $this->levels[$top][] = $event;
+        }
+    }
+
     public function hasReady(): bool
     {
         return $this->ready !== [] || array_filter($this->levels) !== [];
