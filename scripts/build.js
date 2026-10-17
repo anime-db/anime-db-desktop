@@ -81,6 +81,20 @@ function writeBuildId(buildIdOutPath = buildIdPath) {
     fs.writeFileSync(buildIdOutPath, id, 'utf8');
 }
 
+/**
+ * Generates build/installer-plugins.nsh (the installer's plugin selection page) from the signed
+ * plugin registry. Needs vendor/ (composer install) and the final package.json version (the core
+ * version plugins are checked against). A non-zero exit — registry not fresh — throws and fails
+ * the build. The Symfony cache the run creates is removed afterwards so it is not packaged.
+ */
+function generateInstallerPlugins(run = execSync, appPath = appDir) {
+    try {
+        run('php bin/console app:installer:plugins --env=prod', { cwd: appPath, stdio: 'inherit' });
+    } finally {
+        fs.rmSync(path.join(appPath, 'var', 'cache'), { recursive: true, force: true });
+    }
+}
+
 function main() {
     syncVersionFromTag();
     writeBuildId();
@@ -89,6 +103,8 @@ function main() {
 
     fs.rmSync(path.join(appDir, 'var', 'cache'), { recursive: true, force: true });
     fs.rmSync(path.join(appDir, 'var', 'log'), { recursive: true, force: true });
+
+    generateInstallerPlugins();
 
     // Фронтенд-ассеты собираются отдельным скриптом, потому что их нужно уметь собрать и без
     // остальной части этого шага: `npm start` зовёт только его. Тащить сюда весь prebuild
@@ -100,4 +116,4 @@ if (require.main === module) {
     main();
 }
 
-module.exports = { syncVersionFromTag, writeBuildId };
+module.exports = { syncVersionFromTag, writeBuildId, generateInstallerPlugins, main };
