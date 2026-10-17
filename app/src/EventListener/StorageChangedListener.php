@@ -27,8 +27,9 @@ declare(strict_types=1);
 
 namespace App\EventListener;
 
+use App\DomainEvent\DomainEventPublisher;
 use App\Entity\Storage;
-use App\Service\WsPublisher;
+use App\Event\StorageChanged;
 use Doctrine\Bundle\DoctrineBundle\Attribute\AsDoctrineListener;
 use Doctrine\ORM\Event\PostPersistEventArgs;
 use Doctrine\ORM\Event\PostRemoveEventArgs;
@@ -37,11 +38,14 @@ use Doctrine\ORM\Event\PreRemoveEventArgs;
 use Doctrine\ORM\Events;
 
 /**
- * Publishes `storage.changed` over WebSocket whenever a {@see Storage} row is created, updated or
+ * Records a {@see StorageChanged} domain event whenever a {@see Storage} row is created, updated or
  * removed (issue #1079). It hooks the entity lifecycle rather than the controllers because storages
  * also change outside them: a drive-letter move found by `StorageMarkerService::relocateIfMarkerMoved()`,
  * manual links, preset downloads storages and the v1 import — native's storage list would go stale
  * after each of those.
+ *
+ * The hooks fire inside the still-open transaction, so nothing is published from here: the event goes
+ * to {@see DomainEventPublisher::record()}, which delivers it after the commit and drops it on a rollback.
  */
 #[AsDoctrineListener(event: Events::postPersist)]
 #[AsDoctrineListener(event: Events::postUpdate)]
@@ -49,8 +53,6 @@ use Doctrine\ORM\Events;
 #[AsDoctrineListener(event: Events::postRemove)]
 final class StorageChangedListener
 {
-    public const string EVENT = 'storage.changed';
-
     /**
      * Ids of the Storage being removed, keyed by spl_object_id: the ORM nulls the entity id
      * before postRemove fires, so it has to be remembered in preRemove.
@@ -60,7 +62,7 @@ final class StorageChangedListener
     private array $removingIds = [];
 
     public function __construct(
-        private readonly WsPublisher $wsPublisher,
+        private readonly DomainEventPublisher $publisher,
     ) {
     }
 
@@ -98,7 +100,7 @@ final class StorageChangedListener
             return;
         }
 
-        $this->wsPublisher->publish(self::EVENT, ['id' => $id]);
+        $this->publisher->record(new StorageChanged($id));
     }
 
     private function publish(object $entity): void
@@ -107,7 +109,7 @@ final class StorageChangedListener
             return;
         }
 
-        $this->wsPublisher->publish(self::EVENT, ['id' => $this->requireId($entity)]);
+        $this->publisher->record(new StorageChanged($this->requireId($entity)));
     }
 
     private function requireId(Storage $storage): int
