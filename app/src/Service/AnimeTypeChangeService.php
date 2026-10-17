@@ -27,6 +27,7 @@ declare(strict_types=1);
 
 namespace App\Service;
 
+use App\DomainEvent\Catalog\AnimeEventRecorder;
 use App\Entity\Anime;
 use App\Entity\Enum\AnimeType;
 use App\Message\IndexAnimeMessage;
@@ -53,6 +54,9 @@ use Symfony\Component\Messenger\MessageBusInterface;
  * entity passed in is detached, load it again to see the new type), `date_update` is raised and the
  * entry is queued for re-indexing. Sync is not involved: a pull never changes a type, the type of
  * the source is only compared with it elsewhere.
+ *
+ * Because the UnitOfWork does not see the UPDATE, `AnimeChanged` for the changed fields is recorded
+ * through {@see AnimeEventRecorder}; the "before" values are read before the entity manager is cleared.
  */
 final class AnimeTypeChangeService
 {
@@ -61,6 +65,7 @@ final class AnimeTypeChangeService
         private readonly SyncRegistry $syncRegistry,
         private readonly JobLockService $jobLockService,
         private readonly MessageBusInterface $bus,
+        private readonly ?AnimeEventRecorder $recorder = null,
     ) {
     }
 
@@ -80,6 +85,9 @@ final class AnimeTypeChangeService
             return AnimeTypeChangeOutcome::SyncRunning;
         }
 
+        $fields = ['type', 'episodesCount', 'watchedEpisodes', 'datePremiere', 'dateEnd'];
+        $before = $this->recorder?->scalarFields($anime, $fields);
+
         $this->entityManager->getConnection()->executeStatement(
             'UPDATE anime SET type = ?, episodes_count = ?, watched_episodes = ?, date_premiere = ?, date_end = ?, date_update = ? WHERE id = ?',
             [
@@ -93,6 +101,21 @@ final class AnimeTypeChangeService
             ],
         );
         $this->entityManager->clear();
+
+        if ($this->recorder !== null && $before !== null) {
+            $after = [
+                'type' => $change->to->value,
+                'episodesCount' => $change->episodesCount,
+                'watchedEpisodes' => $change->watchedEpisodes,
+                'datePremiere' => $this->recorder->normalizeValue($change->datePremiere),
+                'dateEnd' => $this->recorder->normalizeValue($change->dateEnd),
+            ];
+            $changes = [];
+            foreach ($fields as $field) {
+                $changes[$field] = [$before[$field], $after[$field]];
+            }
+            $this->recorder->recordChanged($animeId, $changes);
+        }
 
         $this->bus->dispatch(new IndexAnimeMessage($animeId));
 

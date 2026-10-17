@@ -50,6 +50,7 @@ use App\Service\Plugin\Filler\PluginAnimeDataMerger;
 use App\Service\Plugin\Filler\PluginMediaDownloaderInterface;
 use App\Service\Plugin\FillerRegistry;
 use App\Service\Plugin\PluginsConfigStore;
+use App\Tests\Support\CatalogEventProbe;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\EntityManager;
@@ -91,7 +92,7 @@ final class BulkFillerServiceTest extends TestCase
     /**
      * @param iterable<string, FillerInterface> $fillers
      */
-    private function newService(iterable $fillers, ?LoggerInterface $logger = null, ?MessageBusInterface $messageBus = null, ?CachedFillerLookup $lookup = null): BulkFillerService
+    private function newService(iterable $fillers, ?LoggerInterface $logger = null, ?MessageBusInterface $messageBus = null, ?CachedFillerLookup $lookup = null, ?CatalogEventProbe $probe = null): BulkFillerService
     {
         return new BulkFillerService(
             new FillerRegistry($fillers, new PluginsConfigStore(sys_get_temp_dir().'/anime-bulk-filler-test-'.uniqid().'.json')),
@@ -106,6 +107,7 @@ final class BulkFillerServiceTest extends TestCase
             $messageBus ?? $this->createMock(MessageBusInterface::class),
             $this->animeRepository,
             $lookup ?? new CachedFillerLookup(new ArrayAdapter()),
+            $probe?->recorder,
         );
     }
 
@@ -505,6 +507,54 @@ final class BulkFillerServiceTest extends TestCase
         /** @var Anime $reloaded */
         $reloaded = $this->entityManager->find(Anime::class, $winner?->id);
         $this->assertSame('Bleach.mkv', $reloaded->getStoragePath());
+    }
+
+    public function testLinkingTheExternalIdRecordsAChangeOfTheExternalIds(): void
+    {
+        $pluginId = new PluginId('animedb-shikimori');
+        $filler = $this->createStub(FillerInterface::class);
+        $filler->method('findById')->willReturn(new PluginAnimeData(title: 'Bleach'));
+        $filler->method('getFillableFields')->willReturn(['title']);
+        $probe = new CatalogEventProbe($this->entityManager);
+
+        $anime = $this->newService([(string) $pluginId => $filler], probe: $probe)->fillNewFromPlugin($pluginId, 'Bleach', '104');
+        $probe->publisher->dispatchReady();
+
+        $this->assertNotNull($anime);
+        $this->assertCount(1, $probe->changed());
+        $event = $probe->changed()[0];
+        $this->assertSame($anime->id, $event->animeId);
+        $this->assertSame([], $event->changes['externalIds']->before);
+        $this->assertSame([['pluginId' => 'animedb-shikimori', 'externalId' => '104']], $event->changes['externalIds']->after);
+        $this->assertSame([], $probe->removed());
+    }
+
+    public function testALostRaceRecordsRemovedWithASnapshotOfTheDeletedRecord(): void
+    {
+        $pluginId = new PluginId('animedb-shikimori');
+        $filler = $this->createStub(FillerInterface::class);
+        $filler->method('findById')->willReturn(new PluginAnimeData(title: 'Bleach'));
+        $filler->method('getFillableFields')->willReturn(['title']);
+        $probe = new CatalogEventProbe($this->entityManager);
+        $service = $this->newService([(string) $pluginId => $filler], probe: $probe);
+        $winner = $service->fillNewFromPlugin($pluginId, 'Bleach', '104');
+        $probe->publisher->dispatchReady();
+        $probe->events = [];
+
+        try {
+            $service->fillNewFromPlugin($pluginId, 'Bleach again', '104');
+            $this->fail('The lost race must be reported.');
+        } catch (ExternalIdAlreadyClaimedException) {
+        }
+        $probe->publisher->dispatchReady();
+
+        $this->assertSame([], $probe->changed());
+        $this->assertCount(1, $probe->removed());
+        $removed = $probe->removed()[0];
+        $this->assertNotSame($winner?->id, $removed->animeId);
+        $this->assertSame('Bleach', $removed->snapshot->fields['title']);
+        $this->assertSame([], $removed->snapshot->fields['externalIds']);
+        $this->assertSame(0, (int) $this->entityManager->getConnection()->fetchOne('SELECT COUNT(*) FROM anime WHERE id = ?', [$removed->animeId]));
     }
 
     private function persistedAnime(): TvAnime

@@ -37,6 +37,7 @@ use App\Entity\ValueObject\PluginId;
 use App\Service\AppConfigStore;
 use App\Service\AppSettingsProvider;
 use App\Service\Plugin\Filler\PluginDescriptionWriter;
+use App\Tests\Support\CatalogEventProbe;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\EntityManager;
@@ -342,5 +343,84 @@ final class PluginDescriptionWriterTest extends TestCase
         $this->writerWithPriority(['plugin-p', 'plugin-q'])->write($anime, new PluginId('plugin-p'), 'ru', 'New');
 
         $this->assertSame(['ru' => ['Mine', 'manual']], $this->rows($anime));
+    }
+
+    private function persistedAnimeWithDescription(?string $text = null, ?string $source = null): Anime
+    {
+        $anime = new TvAnime();
+        $anime->setTitle('Bleach')->setWatchStatus(WatchStatus::Plan);
+        if ($text !== null) {
+            $anime->setDescription('en', $text, $source);
+        }
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+
+        return $anime;
+    }
+
+    public function testInsertRecordsAChangeOfTheDescriptions(): void
+    {
+        $anime = $this->persistedAnimeWithDescription('Russian text', null);
+        $probe = new CatalogEventProbe($this->entityManager);
+        $writer = new PluginDescriptionWriter($this->entityManager, null, $probe->recorder);
+
+        $writer->write($anime, new PluginId('animedb-shikimori'), 'ja', 'Japanese text');
+        $probe->publisher->dispatchReady();
+
+        $this->assertCount(1, $probe->changed());
+        $change = $probe->changed()[0];
+        $this->assertSame($anime->id, $change->animeId);
+        $this->assertSame(['descriptions'], array_keys($change->changes));
+        $this->assertSame([['locale' => 'en', 'description' => 'Russian text', 'source' => null]], $change->changes['descriptions']->before);
+        $this->assertSame([
+            ['locale' => 'en', 'description' => 'Russian text', 'source' => null],
+            ['locale' => 'ja', 'description' => 'Japanese text', 'source' => 'animedb-shikimori'],
+        ], $change->changes['descriptions']->after);
+    }
+
+    public function testUpdateRecordsAChangeOfTheDescriptions(): void
+    {
+        $anime = $this->persistedAnimeWithDescription('', null);
+        $probe = new CatalogEventProbe($this->entityManager);
+        $writer = new PluginDescriptionWriter($this->entityManager, null, $probe->recorder);
+
+        $writer->write($anime, new PluginId('animedb-shikimori'), 'en', 'Fresh text');
+        $probe->publisher->dispatchReady();
+
+        $this->assertCount(1, $probe->changed());
+        $changes = $probe->changed()[0]->changes;
+        $this->assertSame([['locale' => 'en', 'description' => '', 'source' => null]], $changes['descriptions']->before);
+        $this->assertSame([['locale' => 'en', 'description' => 'Fresh text', 'source' => 'animedb-shikimori']], $changes['descriptions']->after);
+    }
+
+    public function testAnInsertRejectedByOnConflictRecordsNothing(): void
+    {
+        $anime = $this->persistedAnimeWithDescription();
+        $probe = new CatalogEventProbe($this->entityManager);
+        $writer = new PluginDescriptionWriter($this->entityManager, null, $probe->recorder);
+        // Another writer got the locale in between: the entity does not know the row yet.
+        $this->entityManager->getConnection()->executeStatement(
+            'INSERT INTO anime_description (anime_id, locale, description, source) VALUES (?, ?, ?, ?)',
+            [$anime->id, 'en', 'Taken', 'manual'],
+        );
+
+        $writer->write($anime, new PluginId('animedb-shikimori'), 'en', 'Late text');
+
+        $this->assertSame([], $probe->events);
+        $this->assertSame(['Taken', 'manual'], $this->rows($anime)['en']);
+    }
+
+    public function testAnUpdateThatTouchedNoRowRecordsNothing(): void
+    {
+        $anime = $this->persistedAnimeWithDescription('', null);
+        $probe = new CatalogEventProbe($this->entityManager);
+        $writer = new PluginDescriptionWriter($this->entityManager, null, $probe->recorder);
+        // Another writer changed the row: the conditional UPDATE no longer matches.
+        $this->entityManager->getConnection()->executeStatement('UPDATE anime_description SET description = ? WHERE anime_id = ?', ['Changed elsewhere', $anime->id]);
+
+        $writer->write($anime, new PluginId('animedb-shikimori'), 'en', 'Fresh text');
+
+        $this->assertSame([], $probe->events);
+        $this->assertSame(['Changed elsewhere', null], $this->rows($anime)['en']);
     }
 }

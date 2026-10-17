@@ -32,6 +32,7 @@ use App\Doctrine\DomainEventEntityManager;
 use App\Doctrine\Type\RatingType;
 use App\Doctrine\Type\UnixTimestampType;
 use App\DomainEvent\Catalog\AnimeChangeCollector;
+use App\DomainEvent\Catalog\AnimeEventRecorder;
 use App\DomainEvent\Catalog\AnimeSnapshotNormalizer;
 use App\DomainEvent\DomainEventPublisher;
 use App\Entity\Anime;
@@ -53,6 +54,7 @@ use App\Event\Catalog\AnimeChanged;
 use App\Event\Catalog\AnimeRemoved;
 use App\Event\Catalog\FieldChange;
 use App\EventListener\DomainEventListener;
+use App\Service\Plugin\Filler\PluginDescriptionWriter;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\EntityManager;
@@ -68,6 +70,7 @@ use Symfony\Component\EventDispatcher\EventDispatcher;
 final class AnimeCatalogEventsTest extends TestCase
 {
     private DomainEventEntityManager $entityManager;
+    private DomainEventPublisher $publisher;
     /** @var list<object> */
     private array $events = [];
 
@@ -96,7 +99,7 @@ final class AnimeCatalogEventsTest extends TestCase
                 $this->events[] = $event;
             });
         }
-        $publisher = new DomainEventPublisher($dispatcher, new NullLogger());
+        $this->publisher = $publisher = new DomainEventPublisher($dispatcher, new NullLogger());
         $connection->setDomainEventPublisher($publisher);
 
         $raw = new EntityManager($connection, $config);
@@ -120,6 +123,44 @@ final class AnimeCatalogEventsTest extends TestCase
         self::assertInstanceOf(AnimeAdded::class, $this->events[0]);
         self::assertSame($anime->id, $this->events[0]->animeId);
         self::assertNotNull($anime->id);
+    }
+
+    public function testARecordedEventOutsideATransactionWaitsForTheNextFlush(): void
+    {
+        $anime = new MovieAnime();
+        $anime->setTitle('Recorded')->setWatchStatus(WatchStatus::Plan);
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+        $this->events = [];
+
+        $recorder = new AnimeEventRecorder($this->publisher, new AnimeSnapshotNormalizer(), $this->entityManager);
+        $recorder->recordChanged((int) $anime->id, ['notes' => [null, 'x']]);
+        self::assertCount(0, $this->events);
+
+        $this->entityManager->flush();
+        self::assertCount(1, $this->events);
+    }
+
+    public function testADescriptionWrittenByDbalAndAFieldChangedByTheFlushArriveAsOneEvent(): void
+    {
+        $anime = new MovieAnime();
+        $anime->setTitle('Merged')->setWatchStatus(WatchStatus::Plan);
+        $this->entityManager->persist($anime);
+        $this->entityManager->flush();
+        $this->events = [];
+
+        $recorder = new AnimeEventRecorder($this->publisher, new AnimeSnapshotNormalizer(), $this->entityManager);
+        $writer = new PluginDescriptionWriter($this->entityManager, null, $recorder);
+
+        $anime->setNotes('changed by the merger');
+        $writer->write($anime, new PluginId('animedb-shikimori'), 'en', 'From plugin');
+        self::assertCount(0, $this->events, 'A half-built record must not reach subscribers.');
+        $this->entityManager->flush();
+
+        $delivered = $this->delivered();
+        self::assertCount(1, $delivered);
+        self::assertInstanceOf(AnimeChanged::class, $delivered[0]);
+        self::assertEqualsCanonicalizing(['descriptions', 'notes'], array_keys($delivered[0]->changes));
     }
 
     public function testRemoveGivesSnapshotWithEveryDomainField(): void

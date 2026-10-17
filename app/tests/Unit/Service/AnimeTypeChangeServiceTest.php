@@ -27,6 +27,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Service;
 
+use App\DomainEvent\DomainEventSafetyNetSubscriber;
 use App\Entity\Anime;
 use App\Entity\Download;
 use App\Entity\Enum\AnimeType;
@@ -43,6 +44,7 @@ use App\Message\SyncSeedMessage;
 use App\Service\AnimeTypeChangeOutcome;
 use App\Service\AnimeTypeChangeService;
 use App\Tests\Support\BuildsAnimeDeleteService;
+use App\Tests\Support\CatalogEventProbe;
 use App\Tests\Support\CreatesInMemoryEntityManager;
 use Doctrine\ORM\EntityManager;
 use PHPUnit\Framework\TestCase;
@@ -66,7 +68,7 @@ final class AnimeTypeChangeServiceTest extends TestCase
     }
 
     /** @param list<string> $activeSyncs */
-    private function service(?\App\Service\JobLock\JobLockService $jobLock = null, array $activeSyncs = []): AnimeTypeChangeService
+    private function service(?\App\Service\JobLock\JobLockService $jobLock = null, array $activeSyncs = [], ?CatalogEventProbe $probe = null): AnimeTypeChangeService
     {
         $bus = $this->createStub(MessageBusInterface::class);
         $bus->method('dispatch')->willReturnCallback(function (object $message): Envelope {
@@ -80,6 +82,7 @@ final class AnimeTypeChangeServiceTest extends TestCase
             $this->newSyncRegistryWithActive($activeSyncs),
             $jobLock ?? $this->newJobLockService(),
             $bus,
+            $probe?->recorder,
         );
     }
 
@@ -143,6 +146,38 @@ final class AnimeTypeChangeServiceTest extends TestCase
         $reloaded = $this->entityManager->find(Anime::class, $id);
         $this->assertInstanceOf(MovieAnime::class, $reloaded);
         $this->assertSame(WatchStatus::Watching, $reloaded->getWatchStatus());
+    }
+
+    public function testSeriesToMovieRecordsAChangeOfTheChangedFields(): void
+    {
+        $anime = $this->persistSeries();
+        $probe = new CatalogEventProbe($this->entityManager);
+
+        $this->service(probe: $probe)->change($anime, AnimeType::Movie, true);
+        $this->assertCount(0, $probe->changed(), 'No flush follows the DBAL write: the event waits for the safety net.');
+        (new DomainEventSafetyNetSubscriber($probe->publisher))->drain();
+
+        $this->assertCount(1, $probe->changed());
+        $event = $probe->changed()[0];
+        $this->assertSame($anime->id, $event->animeId);
+        $premiere = (new \DateTimeImmutable('1996-01-08'))->setTimezone(new \DateTimeZone('UTC'))->format(\DATE_ATOM);
+        $end = (new \DateTimeImmutable('2010-07-04'))->setTimezone(new \DateTimeZone('UTC'))->format(\DATE_ATOM);
+        $this->assertEquals([
+            'type' => [$anime->getType()->value, 'movie'],
+            'episodesCount' => [1150, null],
+            'watchedEpisodes' => [1149, null],
+            'dateEnd' => [$end, $premiere],
+        ], array_map(static fn ($change): array => [$change->before, $change->after], $event->changes));
+    }
+
+    public function testNothingIsRecordedWhenTheChangeIsRefused(): void
+    {
+        $anime = $this->persistSeries();
+        $probe = new CatalogEventProbe($this->entityManager);
+
+        $this->service(probe: $probe)->change($anime, AnimeType::Movie, false);
+
+        $this->assertSame([], $probe->events);
     }
 
     public function testEmptyPremiereTakesTheFormerEnd(): void

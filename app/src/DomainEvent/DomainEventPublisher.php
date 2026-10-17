@@ -75,6 +75,8 @@ final class DomainEventPublisher implements ResetInterface
      */
     private array $levels = [];
     private bool $dispatching = false;
+    /** Between onFlush and postFlush: the commit inside that flush must not deliver anything yet. */
+    private bool $flushing = false;
     private readonly AnimeEventCoalescer $coalescer;
 
     public function __construct(
@@ -89,10 +91,12 @@ final class DomainEventPublisher implements ResetInterface
     public function collect(array $eventFactories): void
     {
         $this->current = $eventFactories;
+        $this->flushing = true;
     }
 
     public function promote(): void
     {
+        $this->flushing = false;
         $factories = $this->current;
         $this->current = [];
 
@@ -106,6 +110,25 @@ final class DomainEventPublisher implements ResetInterface
             $this->ready = [...$this->ready, ...$events];
         } else {
             $this->levels[$top] = [...$this->levels[$top], ...$events];
+        }
+    }
+
+    /**
+     * Takes an event whose change is already final in the database (a write that bypassed the
+     * UnitOfWork). It is never delivered at once: the write may happen in the middle of a change of
+     * the same record that is still pending in the EntityManager, and a subscriber must not see
+     * the half-built state. Outside a transaction the event goes to the "ready" buffer and waits
+     * for the nearest delivery point (the return of a decorated flush(), the outermost commit or
+     * the safety net), where it is merged with the events of that flush; inside one it waits for
+     * the outermost commit and is dropped with its level on a rollback.
+     */
+    public function record(object $event): void
+    {
+        $top = array_key_last($this->levels);
+        if ($top === null) {
+            $this->ready[] = $event;
+        } else {
+            $this->levels[$top][] = $event;
         }
     }
 
@@ -141,6 +164,7 @@ final class DomainEventPublisher implements ResetInterface
     {
         array_pop($this->levels);
         $this->current = [];
+        $this->flushing = false;
     }
 
     public function discard(): void
@@ -148,11 +172,14 @@ final class DomainEventPublisher implements ResetInterface
         $this->current = [];
         $this->ready = [];
         $this->levels = [];
+        $this->flushing = false;
     }
 
     public function dispatchReady(): void
     {
-        if ($this->dispatching) {
+        // The commit of a flush runs before its postFlush promotes the flush's own events: delivering
+        // now would split what the decorated flush() delivers together (see record()).
+        if ($this->dispatching || $this->flushing) {
             return;
         }
 

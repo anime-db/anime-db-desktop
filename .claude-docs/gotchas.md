@@ -539,7 +539,24 @@ Symfony при наличии параметра `%count%` прогоняет с
 - **Склейка** (`AnimeEventCoalescer`) работает в пределах одной выдачи publisher'а: `Changed`+`Changed`
   (before первого, after последнего; поле, вернувшееся к исходному, выпадает), `Added`+`Changed` → `Added`,
   `Added`+`Removed` → ничего, `Changed`+`Removed` → `Removed`.
-- **Событий нет (ограничения):** изменение записи в обход UnitOfWork (DQL/SQL, `BulkFillerService`,
-  `PluginDescriptionWriter`, `AnimeTypeChangeService` — #1078); каскад при удалении/переименовании
-  `Label`/`Studio` по FK; восстановление каталога из архива (подмена БД — смена каталога, не правка записей);
-  `clear()` M2M-коллекции перед пересборкой (Doctrine делает snapshot после `clear()`, «до» теряется).
+- **Пути в обход UnitOfWork пишут событие явно (#1078).** `PluginDescriptionWriter`, `AnimeTypeChangeService`
+  и `BulkFillerService` после своей DBAL-записи зовут `AnimeEventRecorder` (`AnimeChanged` с известными
+  «до»/«после»; для проигранной гонки — `AnimeRemoved` со снимком). Правило выдачи у publisher'а:
+  `record()` никогда не выдаёт сразу: вне транзакции событие ложится в `ready` и уходит на ближайшей точке выдачи (возврат `flush()` через декоратор EM, где склеивается с событиями этого flush; внешний коммит; страховочная разрядка `kernel.terminate`/`console.terminate`/события воркера), внутри транзакции — копится до внешнего коммита и сбрасывается на откате. Сразу выдавать нельзя: DBAL-запись идёт посреди сборки той же записи в EM, и подписчик увидел бы недособранное состояние.
+  Записи, чьё «до» не собрано до записи, события не получат. Удаление хранилища отвязывает записи через ORM
+  (`storage`/`storagePath` → `null`, в одном `flush()` с `remove($storage)`: UnitOfWork выполняет updates раньше deletions, и операция остаётся атомарной), иначе FK `SET NULL` обнулил бы
+  `storage_id` мимо UnitOfWork, а `storage_path` остался бы висеть.
+- **Тест-гейт `CatalogWriteGateTest`:** DBAL-запись в таблицы агрегата (`anime`, `anime_name`, `anime_genres`,
+  `anime_themes`, `anime_description`, `anime_source`, `anime_image`, `anime_external_id`, `anime_studios`,
+  `anime_labels`; не маской `anime_*`) из `app/src/` разрешена только классам из его списка. Новый обходной путь
+  добавляется в список вместе с явной записью события; удаление записей каталога — только `EntityManager::remove()`.
+  Гейт ловит и DQL-записи в сущности агрегата (`Anime` и все подклассы, `AnimeName`, `AnimeGenre`, `AnimeTheme`,
+  `AnimeDescription`, `AnimeSource`, `AnimeImage`, `AnimeExternalId`): `createQuery('UPDATE|DELETE App\Entity\…')`
+  (в т.ч. с экранированными `\\` и с `Foo::class` в конкатенации) и `->update()/->delete()` QueryBuilder с `Foo::class`
+  или литералом FQCN. Новый подкласс `Anime` обязан попасть в `AGGREGATE_ENTITIES` — это проверяет отдельный тест.
+  **Не ловится статически:** имя таблицы/сущности, вынесенное в переменную или константу, SQL/DQL, собранный из
+  частей (`sprintf`, интерполяция), псевдоним сущности без полного пространства имён, запись через `bulk`-методы
+  репозиториев без литерала.
+- **Событий нет (ограничения):** каскад при удалении/переименовании `Label`/`Studio` по FK; восстановление каталога
+  из архива (подмена БД — смена каталога, не правка записей); `clear()` M2M-коллекции перед пересборкой (Doctrine
+  делает snapshot после `clear()`, «до» теряется).
