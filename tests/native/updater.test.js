@@ -78,6 +78,26 @@ describe('install ordering', () => {
         s.updater.stop();
     });
 
+    test('install-on-quit is off for the whole installNow() and install() runs once, after stopApp() resolves', async () => {
+        const s = setup();
+        s.autoUpdater.autoInstallOnAppQuit = true;
+        s.autoUpdater.install.mockImplementation(() => {
+            s.calls.push(`install:${s.autoUpdater.autoInstallOnAppQuit}`);
+            return true;
+        });
+
+        const done = s.updater.installNow();
+        expect(s.autoUpdater.autoInstallOnAppQuit).toBe(false);
+        expect(s.autoUpdater.install).not.toHaveBeenCalled();
+
+        s.stopResolve();
+        await done;
+
+        expect(s.autoUpdater.install).toHaveBeenCalledTimes(1);
+        expect(s.autoUpdater.install).toHaveBeenCalledWith(true, true);
+        expect(s.calls).toEqual(['stop:start', 'stop:end', 'install:false', 'exit']);
+    });
+
     test('a failed stopApp() does not install and disables install-on-quit before exit', async () => {
         const s = setup();
         s.stopApp.mockImplementation(() => Promise.reject(new Error('stop failed')));

@@ -110,6 +110,8 @@ function createUpdater({
     async function installNow() {
         if (installing) return;
         installing = true;
+        // Штатная установка на 'quit' не должна стартовать инсталлятор раньше install() ниже.
+        autoUpdater.autoInstallOnAppQuit = false;
         try {
             await stopApp();
             // install() синхронен и сам помечает, что установка уже запущена, поэтому событие

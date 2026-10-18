@@ -151,6 +151,9 @@ function confirmStagedImport(info) {
 
 let quitting   = false;
 let mainWindow = null;
+// Промис идущей остановки: повторный выход во время неё не должен ни повторно останавливать,
+// ни вызывать app.exit() раньше, чем остановка завершится.
+let stopping   = null;
 
 /**
  * Graceful-остановка без выхода из процесса — общая часть цепочки before-quit и установки
@@ -159,11 +162,13 @@ let mainWindow = null;
  * @returns {Promise<void>}
  */
 function stopApp() {
+    if (stopping) return stopping;
     quitting = true;
     updater.stop();
     wsClient.disconnect();
     storageWatcher.getWatcher().stop();
-    return supervisor.stop();
+    stopping = supervisor.stop();
+    return stopping;
 }
 
 updater.init(stopApp);
@@ -384,6 +389,8 @@ if (!gotLock) {
 
     app.on('before-quit', (event) => {
         event.preventDefault();
+        // Остановка уже идёт — выход завершит тот, кто её начал.
+        if (stopping) return;
         stopApp().then(() => app.exit(0));
     });
 
