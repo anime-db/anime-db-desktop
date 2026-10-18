@@ -135,7 +135,9 @@ final class PluginsInstallSelectedCommandTest extends TestCase
      */
     private function stdout(CommandTester $tester): array
     {
-        return json_decode($tester->getDisplay(), true, flags: \JSON_THROW_ON_ERROR);
+        $lines = array_values(array_filter(array_map('trim', explode("\n", $tester->getDisplay()))));
+
+        return json_decode((string) end($lines), true, flags: \JSON_THROW_ON_ERROR);
     }
 
     /**
@@ -364,7 +366,7 @@ final class PluginsInstallSelectedCommandTest extends TestCase
         $this->assertContains('error', array_column($this->logger->logs, 'level'));
     }
 
-    public function testStdoutIsPureJsonEvenWithRefusals(): void
+    public function testStdoutHoldsOnlyJsonLinesEvenWithRefusals(): void
     {
         $this->select(['animedb-a', 'animedb-b']);
 
@@ -376,6 +378,21 @@ final class PluginsInstallSelectedCommandTest extends TestCase
             return $id;
         });
 
-        $this->assertSame('{"installed":["animedb-b"]}', trim($tester->getDisplay()));
+        $this->assertSame(['installed' => ['animedb-b']], $this->stdout($tester));
+        foreach (array_filter(array_map('trim', explode("\n", $tester->getDisplay()))) as $line) {
+            $this->assertStringStartsWith('{"installed":', $line);
+        }
+    }
+
+    public function testAccumulatedListIsPrintedAfterEveryInstalledId(): void
+    {
+        $this->select(['animedb-a', 'animedb-b']);
+
+        $tester = $this->runCommand(static fn (PluginId $id): PluginId => $id);
+
+        $this->assertSame(
+            ['{"installed":["animedb-a"]}', '{"installed":["animedb-a","animedb-b"]}', '{"installed":["animedb-a","animedb-b"]}'],
+            array_values(array_filter(array_map('trim', explode("\n", $tester->getDisplay())))),
+        );
     }
 }

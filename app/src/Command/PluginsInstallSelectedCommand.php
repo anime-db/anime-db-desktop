@@ -87,7 +87,15 @@ final class PluginsInstallSelectedCommand extends Command
         try {
             $remaining = $this->readSelection();
             foreach ($remaining as $index => $entry) {
-                if (!$this->process($entry, $installed)) {
+                $before = \count($installed);
+                $processed = $this->process($entry, $installed);
+                if (\count($installed) > $before) {
+                    // Print the accumulated list right away: if the process is killed by a timeout, the
+                    // supervisor still learns which plugins are already on disk (it takes the last line).
+                    $output->writeln(json_encode(['installed' => $installed], \JSON_THROW_ON_ERROR));
+                }
+
+                if (!$processed) {
                     continue;
                 }
 

@@ -68,6 +68,11 @@ test('run still returns the installed ids when the command exits non-zero', asyn
     spy.mockRestore();
 });
 
+test('run keeps the installed ids when the command is killed by a timeout', async () => {
+    phpCommand.run.mockResolvedValue({ code: null, stdout: '{"installed":["animedb-a"]}', stderr: '' });
+    await expect(installSelected.run(CONTEXT)).resolves.toEqual(['animedb-a']);
+});
+
 test('run rejects when stdout holds no installed list', async () => {
     phpCommand.run.mockResolvedValue({ code: 0, stdout: '', stderr: '' });
     await expect(installSelected.run(CONTEXT)).rejects.toThrow();
