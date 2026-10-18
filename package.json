@@ -62,6 +62,10 @@
             "createDesktopShortcut": true,
             "createStartMenuShortcut": true,
             "runAfterFinish": true,
+            "installerLanguages": [
+                "en_US",
+                "ru_RU"
+            ],
             "include": "build/installer.nsh",
             "license": "build/license.txt"
         },
