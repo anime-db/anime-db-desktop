@@ -203,11 +203,15 @@ describe('checkReleaseBuildFlag', () => {
     });
 
     test('reports releaseBuild false on a tag build', () => {
-        expect(checkReleaseBuildFlag(app({ version: '1.2.3', releaseBuild: false }), 'tag', 'v1.2.3')).toHaveLength(1);
+        expect(checkReleaseBuildFlag(app({ version: '1.2.3', releaseBuild: false }), 'tag', 'v1.2.3')).toEqual([
+            'releaseBuild is false in the packaged package.json: expected true on tag build v1.2.3, the auto-updater would be disabled',
+        ]);
     });
 
     test('reports a missing releaseBuild on a tag build', () => {
-        expect(checkReleaseBuildFlag(app({ version: '1.2.3' }), 'tag', 'v1.2.3')).toHaveLength(1);
+        expect(checkReleaseBuildFlag(app({ version: '1.2.3' }), 'tag', 'v1.2.3')).toEqual([
+            'releaseBuild is undefined in the packaged package.json: expected true on tag build v1.2.3, the auto-updater would be disabled',
+        ]);
     });
 
     test('reports a version that differs from the tag', () => {
@@ -217,10 +221,17 @@ describe('checkReleaseBuildFlag', () => {
     });
 
     test('reports releaseBuild true on a non-tag build', () => {
-        expect(checkReleaseBuildFlag(app({ version: '0.0.1', releaseBuild: true }), 'branch', 'master')).toHaveLength(1);
+        expect(checkReleaseBuildFlag(app({ version: '0.0.1', releaseBuild: true }), 'branch', 'master')).toEqual(['releaseBuild is true in the packaged package.json: expected false on a non-tag build']);
     });
 
     test('reports a missing releaseBuild on a non-tag build', () => {
-        expect(checkReleaseBuildFlag(app({ version: '0.0.1' }), 'branch', 'master')).toHaveLength(1);
+        expect(checkReleaseBuildFlag(app({ version: '0.0.1' }), 'branch', 'master')).toEqual(['releaseBuild is undefined in the packaged package.json: expected false on a non-tag build']);
+    });
+
+    test('reports both problems on a tag build with releaseBuild false and a wrong version', () => {
+        expect(checkReleaseBuildFlag(app({ version: '1.2.2', releaseBuild: false }), 'tag', 'v1.2.3')).toEqual([
+            'releaseBuild is false in the packaged package.json: expected true on tag build v1.2.3, the auto-updater would be disabled',
+            'version "1.2.2" in the packaged package.json does not match tag v1.2.3',
+        ]);
     });
 });
