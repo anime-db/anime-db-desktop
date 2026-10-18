@@ -47,15 +47,21 @@
 ; The list of plugins comes from build/installer-plugins.nsh, generated at build time by
 ; "bin/console app:installer:plugins" from the signed plugin registry (see scripts/build.js). When
 ; that file declares no plugins, ANIMEDB_PLUGINS_PAGE is not defined and none of the code below is
-; compiled in.
-!include /NONFATAL "installer-plugins.nsh"
+; compiled in. A missing file is always a build error (the generator was skipped), so the include
+; is deliberately fatal.
+!include "${BUILD_RESOURCES_DIR}\installer-plugins.nsh"
 
+; electron-builder compiles this file twice, for the installer and for the uninstaller (where
+; BUILD_UNINSTALLER is defined). The page functions are installer-only: in the uninstaller pass they
+; would be unreferenced (warning 6010, an error with warningsAsErrors).
+!ifndef BUILD_UNINSTALLER
 !ifdef ANIMEDB_PLUGINS_PAGE
 
 !include LogicLib.nsh
 !include nsDialogs.nsh
 
-; English is declared first so that it is the fallback for every other installer language.
+; English is declared first so that it is the fallback at runtime. Only the languages listed in
+; "nsis.installerLanguages" (package.json) are loaded, so every loaded language has a value here.
 LangString AnimedbPluginsTitle 1033 "Plugins"
 LangString AnimedbPluginsTitle 1049 "Плагины"
 LangString AnimedbPluginsSubtitle 1033 "Choose plugins to install on first launch of AnimeDB. You can change this later in the app's plugin settings."
@@ -113,4 +119,5 @@ FunctionEnd
   ${EndIf}
 !macroend
 
+!endif
 !endif
