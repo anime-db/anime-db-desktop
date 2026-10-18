@@ -67,7 +67,7 @@ jobs:
           # прогон идёт только по тегу — ровно тот слепой угол, из-за которого релизная сборка
           # пять дней была сломана (issue #535). Поэтому список явный и сверяется с `require`
           # из app/composer.json тестом tests/scripts/build-workflow-extensions.test.js.
-          extensions: apcu, zip, ctype, iconv, gd, intl, mbstring, openssl, pdo_sqlite
+          extensions: apcu, zip, ctype, iconv, gd, intl, mbstring, openssl, pdo_sqlite, sodium
           ini-values: apc.enable_cli=1
 
       - name: Install PHP dependencies

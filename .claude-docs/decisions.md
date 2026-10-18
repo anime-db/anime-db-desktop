@@ -1020,3 +1020,10 @@ SIGUSR2) `capture.js` кладёт рядом со снимками `<тема>/
 - **Очистка учёта:** строки записи уходят каскадом по `anime_id`, строки плагина удаляет `PluginRemover` — после `reconcile()`, ошибка БД только логируется и не ломает уже выполненное удаление. Файлы на диске не удаляются никогда.
 - **Локаль `AnimeView::description`** берётся из текущего HTTP-запроса. Вне запроса (Messenger-воркер, консоль) её нет, и возвращается описание в `en` (с обычным fallback `getSummary`). Сохранённой локали интерфейса в приложении нет — это принятое ограничение.
 - **Нового события нет.** Запись — по кнопке в виджете плагина. Запись файла двигает mtime папки, и следующий скан шлёт `FilesAdded` всем плагинам: принятый шум, не чинить.
+
+## ext-sodium в Windows-рантайме (issue #1082)
+
+- **Проверка подписи реестра плагинов стоит на `sodium`** (`PluginRegistrySignatureVerifier`), а Windows-сборка FrankenPHP грузит его только как отдельную DLL. До #1082 её не было в курируемом наборе — Linux-сборка грузит `sodium` всегда, поэтому CI был зелёным, а маркет на Windows ловил `Error` при обращении к `SODIUM_CRYPTO_SIGN_BYTES`.
+- **Состав:** `ext/php_sodium.dll` → `libsodium.dll` (1.0.22, ISC) → только системные DLL и VC runtime (`objdump -p` на архиве v1.12.4). Обе — в `FRANKENPHP_FILES`, `extension=sodium` — в `php.ini.template` и `REQUIRED_INI_DIRECTIVES` (дописывается в существующий `php.ini`), `ext-sodium` — в `require` `app/composer.json` и в `extensions` всех workflow с пином PHP.
+- **Страж:** `PluginRegistrySignatureVerifierTest` в группе `runtime-parity` — гоняется под поставляемым `frankenphp.exe`, и шаг проверки загрузки расширений в `runtime-parity.yml` перечисляет `sodium`.
+- **Код проверки подписи не менялся:** чинилась поставка расширения, а не обработка его отсутствия.

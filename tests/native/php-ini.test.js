@@ -55,6 +55,7 @@ describe('renderPhpIni', () => {
         expect(ini).toContain('extension=openssl');
         expect(ini).toContain('extension=mbstring');
         expect(ini).toContain('extension=gd');
+        expect(ini).toContain('extension=sodium');
         expect(ini).toContain('opcache.enable=1');
     });
 
@@ -158,6 +159,16 @@ describe('ensurePhpIni', () => {
         expect(updated).toContain('post_max_size = 64M');
         expect(updated).not.toContain('upload_max_filesize = 16M');
         expect(updated).not.toContain('post_max_size = 16M');
+    });
+
+    test('appends extension=sodium to a pre-existing file that predates it (issue #1082)', () => {
+        const partial = ['extension_dir = "/fake/ext"', 'extension=intl', 'extension=gd', ''].join('\n');
+        fs.writeFileSync(iniPath, partial, 'utf8');
+
+        ensurePhpIni({ iniPath, iniDir: tmpDir, extensionDir: '/fake/ext' });
+
+        const updated = fs.readFileSync(iniPath, 'utf8');
+        expect((updated.match(/^extension=sodium$/gm) || []).length).toBe(1);
     });
 
     test('appends memory_limit to a pre-existing file that predates the directive', () => {

@@ -28,6 +28,7 @@
         "ext-mbstring": "*",
         "ext-openssl": "*",
         "ext-pdo_sqlite": "*",
+        "ext-sodium": "*",
         "ext-zip": "*",
         "anime-db/plugin-contracts": "^0.27.1",
         "doctrine/doctrine-bundle": "^3.2",

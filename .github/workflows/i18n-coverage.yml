@@ -85,7 +85,7 @@ jobs:
           php-version: '8.5'
           tools: composer
           coverage: none
-          extensions: apcu, gd, intl
+          extensions: apcu, gd, intl, sodium
           ini-values: apc.enable_cli=1
 
       - name: Install dependencies

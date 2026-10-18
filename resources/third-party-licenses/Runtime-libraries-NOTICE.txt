@@ -29,3 +29,12 @@ watcher  —  libwatcher-c.dll
   Copyright 2022 github.com/e-dant
   MIT License. Full text: texts/watcher-MIT.txt
   Corresponding source: https://github.com/e-dant/watcher
+
+--------------------------------------------------------------------------------
+libsodium  —  libsodium.dll
+
+  Copyright (c) 2013-2026 Frank Denis and the libsodium authors
+  Version 1.0.22, read from the PE version resource of the shipped DLL.
+  Used by the PHP extension ext/php_sodium.dll.
+  ISC License. Full text: texts/libsodium-ISC.txt
+  Corresponding source: https://github.com/jedisct1/libsodium
