@@ -517,6 +517,21 @@ describe('re-entrant stop', () => {
         expect(app.exit).toHaveBeenCalledTimes(2);
     });
 
+    test('a rejected stop disables install-on-quit before app.exit(0)', async () => {
+        const { app, supervisor, appHandlers } = loadLifecycle();
+        const updater = require('../../native/updater');
+        await new Promise((r) => setTimeout(r, 500));
+        supervisor.stop.mockImplementationOnce(() => Promise.reject(new Error('boom')));
+        const order = [];
+        updater.disableInstallOnQuit.mockImplementation(() => order.push('disable'));
+        app.exit.mockImplementation(() => order.push('exit'));
+
+        appHandlers['before-quit']({ preventDefault: jest.fn() });
+        await new Promise((r) => setTimeout(r, 0));
+
+        expect(order).toEqual(['disable', 'exit']);
+    });
+
     test('before-quit does not exit while an update install is in progress', async () => {
         const { app, supervisor, appHandlers } = loadLifecycle();
         await new Promise((r) => setTimeout(r, 500));

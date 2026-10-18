@@ -99,6 +99,7 @@ function createUpdater({
     let timer = null;
     let started = false;
     let installing = false;
+    let installBlocked = false;
 
     const t = (key, params) => i18n.t(key, locale(), params);
 
@@ -108,12 +109,19 @@ function createUpdater({
      * autoUpdater.quitAndInstall() не используется: он спавнит инсталлятор синхронно, до stop().
      */
     async function installNow() {
-        if (installing) return;
+        // Установка заблокирована: идёт relaunch() или остановка не удалась. Обновление останется скачанным.
+        if (installing || installBlocked) return;
         installing = true;
         // Штатная установка на 'quit' (в т.ч. после неудачной остановки) не должна стартовать инсталлятор раньше install() ниже.
         autoUpdater.autoInstallOnAppQuit = false;
         try {
             await stopApp();
+            // Установка могла быть заблокирована, пока шла остановка: install() не вызываем, выход доводим штатно.
+            if (installBlocked) {
+                installing = false;
+                exitApp();
+                return;
+            }
             // install() синхронен и сам помечает, что установка уже запущена, поэтому событие
             // 'quit' от exitApp() ниже второй раз инсталлятор не стартует.
             if (!autoUpdater.install(true, true)) {
@@ -174,7 +182,11 @@ function createUpdater({
     /** Фоновая проверка: ошибки только в лог. */
     async function backgroundCheck() {
         try {
-            await autoUpdater.checkForUpdates();
+            const result = await autoUpdater.checkForUpdates();
+            // Ошибка загрузки (autoDownload) приходит отклонённым downloadPromise — без обработчика это unhandledRejection.
+            if (result && result.downloadPromise) {
+                result.downloadPromise.catch(err => logger.error(err));
+            }
         } catch (err) {
             logger.error(err);
         }
@@ -190,6 +202,12 @@ function createUpdater({
         shownDuringManual = false;
         try {
             const result = await autoUpdater.checkForUpdates();
+            if (result && result.downloadPromise) {
+                result.downloadPromise.catch(err => {
+                    logger.error(err);
+                    return showInfo(t('updater.error', { message: err && err.message ? err.message : String(err) }), 'error');
+                });
+            }
             const info = result && result.updateInfo;
             if (!result || !result.isUpdateAvailable || !info) {
                 await showInfo(t('updater.up_to_date'));
@@ -226,8 +244,9 @@ function createUpdater({
         timer = null;
     }
 
-    /** Путь relaunch(): новый экземпляр не должен быть убит инсталлятором при выходе. */
+    /** Путь relaunch() и неудачной остановки: установка при выходе блокируется (иначе инсталлятор убил бы новый экземпляр). */
     function disableInstallOnQuit() {
+        installBlocked = true;
         if (started) autoUpdater.autoInstallOnAppQuit = false;
     }
 
