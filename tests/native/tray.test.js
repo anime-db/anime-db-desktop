@@ -86,3 +86,14 @@ test('the "Open" entry shows the main window and the "Quit" entry runs onQuit', 
     expect(fakeWindow.show).toHaveBeenCalledTimes(1);
     expect(onQuit).toHaveBeenCalledTimes(1);
 });
+
+test('the "Check for updates" entry appears only when a handler is given and runs it', () => {
+    app.getLocale.mockReturnValue('en-US');
+    const onCheck = jest.fn();
+
+    tray.create(fakeWindow, jest.fn(), onCheck);
+
+    const [menuTemplate] = mockTray.setContextMenu.mock.calls[0];
+    menuTemplate.find((item) => item.label === 'Check for updates').click();
+    expect(onCheck).toHaveBeenCalledTimes(1);
+});

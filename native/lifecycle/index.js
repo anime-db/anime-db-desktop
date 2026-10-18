@@ -36,6 +36,7 @@ const safeModeState    = require('../supervisor/safe-mode');
 const { createWindow } = require('../window');
 const { createSplash } = require('../window/splash');
 const tray             = require('../tray');
+const updater          = require('../updater');
 const wsClient         = require('../ws-client');
 const proxy            = require('../proxy');
 const firewall         = require('../firewall');
@@ -151,6 +152,22 @@ function confirmStagedImport(info) {
 let quitting   = false;
 let mainWindow = null;
 
+/**
+ * Graceful-остановка без выхода из процесса — общая часть цепочки before-quit и установки
+ * обновления (инсталлятор должен стартовать строго после неё).
+ *
+ * @returns {Promise<void>}
+ */
+function stopApp() {
+    quitting = true;
+    updater.stop();
+    wsClient.disconnect();
+    storageWatcher.getWatcher().stop();
+    return supervisor.stop();
+}
+
+updater.init(stopApp);
+
 function onQuit() {
     quitting = true;
     app.quit();
@@ -167,6 +184,8 @@ function onQuit() {
  */
 function relaunch() {
     quitting = true;
+    // Инсталлятор при выходе убил бы новый экземпляр посреди применения импорта/восстановления.
+    updater.disableInstallOnQuit();
     app.relaunch();
     app.quit();
 }
@@ -280,7 +299,8 @@ if (!gotLock) {
                 }
             });
 
-            tray.create(mainWindow, onQuit);
+            tray.create(mainWindow, onQuit, () => updater.checkManually());
+            updater.start();
 
             const notificationDelivery = notifications.createNotificationDelivery({
                 getWindow: () => mainWindow,
@@ -363,11 +383,8 @@ if (!gotLock) {
     });
 
     app.on('before-quit', (event) => {
-        quitting = true;
         event.preventDefault();
-        wsClient.disconnect();
-        storageWatcher.getWatcher().stop();
-        supervisor.stop().then(() => app.exit(0));
+        stopApp().then(() => app.exit(0));
     });
 
     /**

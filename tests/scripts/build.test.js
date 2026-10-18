@@ -29,7 +29,7 @@ jest.mock('child_process', () => ({ execSync: jest.fn() }));
 jest.mock('../../scripts/build-assets', () => ({ main: jest.fn() }));
 
 const { execSync } = require('child_process');
-const { syncVersionFromTag, writeBuildId, generateInstallerPlugins, main } = require('../../scripts/build');
+const { syncVersionFromTag, stampReleaseBuildFlag, writeBuildId, generateInstallerPlugins, main } = require('../../scripts/build');
 
 function writePackageJson(version) {
     const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'build-test-')), 'package.json');
@@ -197,5 +197,37 @@ describe('main', () => {
 
         expect(() => main(sandbox)).toThrow('registry is not fresh');
         expect(buildAssets).not.toHaveBeenCalled();
+    });
+});
+
+describe('stampReleaseBuildFlag', () => {
+    const read = (file) => JSON.parse(fs.readFileSync(file, 'utf8'));
+
+    test('writes true for a "vX.Y.Z" tag build into package.json', () => {
+        const pkgPath = writePackageJson('0.0.1');
+        stampReleaseBuildFlag('v1.2.3', 'tag', pkgPath);
+        expect(read(pkgPath).releaseBuild).toBe(true);
+    });
+
+    test.each([
+        ['master', 'branch'],
+        [undefined, undefined],
+        ['v1.0.0-rc1', 'tag'],
+    ])('writes false for ref %s (%s)', (ref, type) => {
+        const pkgPath = writePackageJson('0.0.1');
+        stampReleaseBuildFlag(ref, type, pkgPath);
+        expect(read(pkgPath).releaseBuild).toBe(false);
+    });
+
+    test('resets a stale true flag on a non-release build', () => {
+        const pkgPath = writePackageJson('0.0.1');
+        stampReleaseBuildFlag('v1.2.3', 'tag', pkgPath);
+        stampReleaseBuildFlag('main', 'branch', pkgPath);
+        expect(read(pkgPath).releaseBuild).toBe(false);
+    });
+
+    test('the flag lives in package.json, which build.files never excludes', () => {
+        const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'package.json'), 'utf8'));
+        expect(pkg.build.files.filter((e) => /^!?package\.json$/.test(e) && e.startsWith('!'))).toEqual([]);
     });
 });
