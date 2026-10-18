@@ -62,6 +62,24 @@ describe('checkDependencyClosure', () => {
         expect(checkDependencyClosure(appDir)).toEqual([]);
     });
 
+    test('resolves a dependency that exists only in the nested node_modules of its dependent', () => {
+        const appDir = appWith({ updater: '1' });
+        writePkg(path.join(appDir, 'node_modules', 'updater'), { dependencies: { runtime: '1' } });
+        writePkg(path.join(appDir, 'node_modules', 'runtime'), { dependencies: { 'only-nested': '1' } });
+        writePkg(path.join(appDir, 'node_modules', 'runtime', 'node_modules', 'only-nested'), {});
+
+        expect(checkDependencyClosure(appDir)).toEqual([]);
+    });
+
+    test('does not resolve a dependency from the nested node_modules of another package', () => {
+        const appDir = appWith({ updater: '1', other: '1' });
+        writePkg(path.join(appDir, 'node_modules', 'updater'), { dependencies: { x: '1' } });
+        writePkg(path.join(appDir, 'node_modules', 'other'), { dependencies: { x: '1' } });
+        writePkg(path.join(appDir, 'node_modules', 'other', 'node_modules', 'x'), {});
+
+        expect(checkDependencyClosure(appDir)).toEqual(['x (required by updater) is not in the packaged app']);
+    });
+
     test('reports a missing hoisted transitive dependency', () => {
         const appDir = appWith({ updater: '1' });
         writePkg(path.join(appDir, 'node_modules', 'updater'), { dependencies: { 'fs-extra': '1' } });
@@ -123,14 +141,31 @@ describe('checkUpdateMetadata', () => {
     });
 
     test('reports a missing installer and blockmap', () => {
-        expect(checkUpdateMetadata(dist(yml(installer), []))).toHaveLength(2);
+        expect(checkUpdateMetadata(dist(yml(installer), []))).toEqual([
+            `installer "${installer}" named in latest.yml is not in ${tmp}`,
+            `blockmap "${installer}.blockmap" is not in ${tmp}`,
+        ]);
+    });
+
+    test('reports a missing blockmap next to an existing installer', () => {
+        expect(checkUpdateMetadata(dist(yml(installer), [installer]))).toEqual([`blockmap "${installer}.blockmap" is not in ${tmp}`]);
+    });
+
+    test('reports latest.yml without a path entry', () => {
+        expect(checkUpdateMetadata(dist('version: 0.2.0\nsha512: x\n', [installer, `${installer}.blockmap`]))).toEqual(['latest.yml has no "path" entry']);
+    });
+
+    test.each([
+        ['single', `'${installer}'`],
+        ['double', `"${installer}"`],
+    ])('reads a path in %s quotes', (_, quoted) => {
+        expect(checkUpdateMetadata(dist(`version: 0.2.0\npath: ${quoted}\nsha512: x\n`, [installer, `${installer}.blockmap`]))).toEqual([]);
     });
 
     test('reports an installer name with spaces', () => {
         const spaced = 'AnimeDB Setup 0.2.0.exe';
         const problems = checkUpdateMetadata(dist(yml(spaced), [spaced, `${spaced}.blockmap`]));
 
-        expect(problems).toHaveLength(1);
-        expect(problems[0]).toContain('contains whitespace');
+        expect(problems).toEqual([`installer name "${spaced}" contains whitespace: GitHub renames such assets and the download would 404`]);
     });
 });
