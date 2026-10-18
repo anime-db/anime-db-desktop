@@ -76,14 +76,21 @@ Var AnimedbPluginsPageShown
 ; start and kept on uninstall, unlike ${isUpdated} or plugins.json, which do not mark a first
 ; install reliably), no earlier selection file, not a silent run, and only for the current user
 ; (in the "all users" mode $APPDATA points at ProgramData while the app reads the user profile).
+; The mode is detected by comparing $APPDATA with the user's APPDATA environment variable: this
+; include is parsed before the electron-builder templates, so template variables such as the
+; install mode one are not declared yet here (makensis -WX turns that into a build failure).
 Function animedbPluginsPageCreate
   StrCpy $AnimedbPluginsPageShown ""
   ${If} ${Silent}
     Abort
   ${EndIf}
-  ${If} $installMode != "CurrentUser"
+  Push $R0
+  ReadEnvStr $R0 APPDATA
+  ${If} $R0 != $APPDATA
+    Pop $R0
     Abort
   ${EndIf}
+  Pop $R0
   ${If} ${FileExists} "$APPDATA\anime-db-desktop\data.db"
     Abort
   ${EndIf}
