@@ -28,8 +28,17 @@ declare(strict_types=1);
 namespace App\Tests\Unit\Service\Market;
 
 use App\Service\Market\PluginRegistrySignatureVerifier;
+use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
+/**
+ * Marked {@see Group} `runtime-parity` (issue #1082): the verifier is built on ext-sodium, which the
+ * Linux interpreter always loads but the shipped Windows runtime only loads because
+ * `scripts/download-bins.js` ships `ext/php_sodium.dll` and `php.ini` enables it. Without that, every
+ * signature check throws `Error` on Windows while staying green here — running this class under the
+ * packaged interpreter is what catches a regression in that delivery.
+ */
+#[Group('runtime-parity')]
 final class PluginRegistrySignatureVerifierTest extends TestCase
 {
     public function testAcceptsSignatureFromTrustedKey(): void

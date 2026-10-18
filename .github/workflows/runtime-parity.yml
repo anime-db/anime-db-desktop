@@ -24,6 +24,9 @@ on:
       - 'app/tests/Unit/Service/Plugin/PluginsConfigStoreConcurrencyTest.php'
       - 'app/tests/Unit/Service/Plugin/ZipPluginInstallerConcurrencyTest.php'
       - 'app/tests/Unit/Service/Plugin/ZipPluginInstallerTest.php'
+      # PluginRegistrySignatureVerifierTest (issue #1082) — проверка подписи реестра стоит на
+      # ext-sodium; в поставке он грузится только из ext/php_sodium.dll, на Linux — всегда.
+      - 'app/tests/Unit/Service/Market/PluginRegistrySignatureVerifierTest.php'
       # ImageNormalizerTest (issue #503) — исход зависит от сборки libgd/libwebp: локально и на
       # Linux-раннере это shared libgd 2.3.3, в поставке — GD bundled (2.1.0 compatible). На этой
       # разнице стоят три утверждения теста: анимированный WebP не декодируется целиком (в отличие
@@ -37,6 +40,7 @@ on:
       - 'app/src/Service/Media/**'
       - 'app/src/Service/AppConfigStore.php'
       - 'app/src/Service/LocaleEndonymResolver.php'
+      - 'app/src/Service/Market/PluginRegistrySignatureVerifier.php'
       # Состав группы, платформенные требования и сам этот файл.
       - 'app/phpunit.xml.dist'
       - 'app/composer.json'
@@ -91,7 +95,7 @@ jobs:
           # `require` из app/composer.json и это можно было проверять машинно
           # (tests/scripts/build-workflow-extensions.test.js). Ровно то, о чём абзац выше: опора на
           # умолчания раннера держится, пока умолчания не изменятся.
-          extensions: apcu, gd, intl, zip, openssl, pdo_sqlite, ctype, iconv, mbstring
+          extensions: apcu, gd, intl, zip, openssl, pdo_sqlite, ctype, iconv, mbstring, sodium
           ini-values: apc.enable_cli=1
 
       - name: Install dependencies
@@ -160,7 +164,7 @@ jobs:
         working-directory: app
         run: |
           ../bin/frankenphp/frankenphp.exe php-cli -r '
-            foreach (["intl", "zip", "pdo_sqlite", "openssl", "mbstring", "gd"] as $extension) {
+            foreach (["intl", "zip", "pdo_sqlite", "openssl", "mbstring", "gd", "sodium"] as $extension) {
                 if (!extension_loaded($extension)) {
                     fwrite(STDERR, "missing extension: $extension\n");
                     exit(1);

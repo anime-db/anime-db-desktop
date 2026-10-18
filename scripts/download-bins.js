@@ -56,7 +56,9 @@ MCowBQYDK2VwAyEALmmMkE5+6zKiMwmlKYc1/SAb4oFlg0ueTV0szzySnI0=
 // (intl → ICU, pdo_sqlite → libsqlite3.dll, openssl → libssl-3-x64.dll → libcrypto-3-x64.dll,
 // mbstring → only php8ts.dll and OS-provided DLLs, same as zip, gd → only php8ts.dll and
 // OS-provided DLLs, same as mbstring — its image codecs are linked into the DLL itself, not
-// shipped as separate libwebp/libpng/libjpeg DLLs). ctype/iconv/json/xml have no ext/php_*.dll in
+// shipped as separate libwebp/libpng/libjpeg DLLs, sodium → libsodium.dll, which itself imports only
+// OS-provided DLLs and the VC runtime; sodium backs the plugin registry signature check, issue
+// #1082). ctype/iconv/json/xml have no ext/php_*.dll in
 // the archive — this PHP build compiles them in statically, so they need no `extension=` line.
 // See .claude-docs/decisions.md for the curated-set-vs-full-archive tradeoff and why the
 // extension list isn't just check-platform-reqs output.
@@ -75,12 +77,14 @@ const FRANKENPHP_FILES = [
     'libsqlite3.dll',
     'libssl-3-x64.dll',
     'libcrypto-3-x64.dll',
+    'libsodium.dll',
     'ext/php_intl.dll',
     'ext/php_zip.dll',
     'ext/php_pdo_sqlite.dll',
     'ext/php_openssl.dll',
     'ext/php_mbstring.dll',
     'ext/php_gd.dll',
+    'ext/php_sodium.dll',
 ];
 
 // License files the upstream archive ships under a redistribution obligation: `license.txt` is the

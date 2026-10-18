@@ -9,6 +9,7 @@ extension=pdo_sqlite
 extension=openssl
 extension=mbstring
 extension=gd
+extension=sodium
 
 [Date]
 date.timezone = {{TIMEZONE}}
