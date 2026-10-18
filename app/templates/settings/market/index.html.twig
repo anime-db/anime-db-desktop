@@ -28,6 +28,10 @@
 
         {% include 'settings/market/_refresh_area.html.twig' with {'state': 'idle'} %}
 
+        {% if pendingInstallerPlugins|default([]) is not empty %}
+            <p class="alert alert-info" data-installer-plugins-pending>{{ 'settings_market.installer_pending'|trans({'%plugins%': pendingInstallerPlugins|join(', ')}) }}</p>
+        {% endif %}
+
         {% if featureFilter == 'filler' %}
             <p class="alert alert-info">
                 {{ 'settings_market.filter_filler_banner'|trans }}

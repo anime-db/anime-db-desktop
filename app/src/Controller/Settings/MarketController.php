@@ -38,6 +38,7 @@ use App\Service\Market\Exception\MarketSnapshotUnavailableException;
 use App\Service\Market\Exception\PluginAssetDownloadException;
 use App\Service\Market\Exception\PluginNotInSnapshotException;
 use App\Service\Market\Exception\UnknownPluginVersionException;
+use App\Service\Market\InstallerPluginsSelection;
 use App\Service\Market\MarketAssetDownloader;
 use App\Service\Market\MarketPluginInstaller;
 use App\Service\Market\MarketRefreshService;
@@ -198,6 +199,7 @@ final class MarketController
         private readonly TranslationCoverageService $translationCoverage,
         private readonly NearestBuiltInLocale $nearestBuiltInLocale,
         private readonly MarketUpdateResolver $updateResolver,
+        private readonly InstallerPluginsSelection $installerSelection,
     ) {
     }
 
@@ -454,7 +456,31 @@ final class MarketController
             // Only rendered when the snapshot is ready (see the template): a filter banner over
             // the "not ready yet" placeholder would claim a filtered view that was never computed.
             'featureFilter' => $snapshotReady ? $featureFilter : null,
+            'pendingInstallerPlugins' => $this->pendingInstallerPlugins(),
         ]));
+    }
+
+    /**
+     * Ids from the installer's selection file that are not installed yet — the banner shows only
+     * what is still left in the file; final refusals never reach the UI (they are only logged by
+     * `app:plugins:install-selected` and dropped from the file).
+     *
+     * @return list<string>
+     */
+    private function pendingInstallerPlugins(): array
+    {
+        $pending = [];
+        foreach ($this->installerSelection->readIds() as $id) {
+            try {
+                if (!$this->installedPlugins->has(new PluginId($id))) {
+                    $pending[] = $id;
+                }
+            } catch (InvalidPluginIdException) {
+                continue;
+            }
+        }
+
+        return $pending;
     }
 
     /**

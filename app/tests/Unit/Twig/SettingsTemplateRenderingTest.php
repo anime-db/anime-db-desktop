@@ -889,7 +889,10 @@ final class SettingsTemplateRenderingTest extends KernelTestCase
         $this->assertStringNotContainsString('Load catalog', $html);
     }
 
-    private function renderMarketIndexForRegistry(bool $registryUnavailable): string
+    /**
+     * @param list<string> $pendingInstallerPlugins
+     */
+    private function renderMarketIndexForRegistry(bool $registryUnavailable, array $pendingInstallerPlugins = []): string
     {
         self::bootKernel();
         $this->pushRequestWithSession();
@@ -909,7 +912,19 @@ final class SettingsTemplateRenderingTest extends KernelTestCase
             'installError' => null,
             'installErrorParams' => [],
             'featureFilter' => null,
+            'pendingInstallerPlugins' => $pendingInstallerPlugins,
         ]);
+    }
+
+    public function testMarketIndexShowsTheInstallerPluginsBannerOnlyWhenSomethingIsPending(): void
+    {
+        $this->assertStringNotContainsString('data-installer-plugins-pending', $this->renderMarketIndexForRegistry(false));
+
+        $html = $this->renderMarketIndexForRegistry(false, ['animedb-anidb', 'animedb-folder-info']);
+
+        $this->assertStringContainsString('data-installer-plugins-pending', $html);
+        $this->assertStringContainsString('animedb-anidb, animedb-folder-info', $html);
+        $this->assertStringContainsString('Plugins chosen in the installer', $html);
     }
 
     /**

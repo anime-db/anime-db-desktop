@@ -31,6 +31,7 @@ use App\Controller\Settings\MarketController;
 use App\Entity\ValueObject\PluginId;
 use App\Message\RefreshMarketSnapshotMessage;
 use App\Service\AppConfigStore;
+use App\Service\Market\InstallerPluginsSelection;
 use App\Service\Market\MarketAssetDownloader;
 use App\Service\Market\MarketPluginInstaller;
 use App\Service\Market\MarketRefreshService;
@@ -84,6 +85,7 @@ final class MarketControllerTest extends TestCase
     private string $pluginsDir;
     private string $snapshotCachePath;
     private string $configPath;
+    private string $installerSelectionPath;
     private InstalledPluginsRegistry $installedPlugins;
 
     protected function setUp(): void
@@ -94,6 +96,7 @@ final class MarketControllerTest extends TestCase
 
         $this->snapshotCachePath = $this->rootDir.'/market-snapshot-cache.json';
         $this->configPath = $this->rootDir.'/config.json';
+        $this->installerSelectionPath = $this->rootDir.'/installer-plugins.json';
 
         $this->installedPlugins = new InstalledPluginsRegistry(
             $this->pluginsDir,
@@ -157,6 +160,7 @@ final class MarketControllerTest extends TestCase
             $translationCoverage ?? new TranslationCoverageService($this->installedPlugins, $this->rootDir),
             new NearestBuiltInLocale(),
             new MarketUpdateResolver($snapshotCache, self::CORE_VERSION),
+            new InstallerPluginsSelection($this->installerSelectionPath),
         );
     }
 
@@ -273,6 +277,46 @@ final class MarketControllerTest extends TestCase
             'features' => ['filler' => true],
             'require' => ['core' => '>=2.0.0', 'php' => '>=8.2'],
         ];
+    }
+
+    public function testIndexPassesTheStillPendingInstallerPluginsToTheTemplate(): void
+    {
+        file_put_contents($this->installerSelectionPath, (string) json_encode(['plugins' => ['animedb-have', 'animedb-want', 'Not A Slug', 7]]));
+        $dir = $this->pluginsDir.'/animedb-have';
+        mkdir($dir, recursive: true);
+        file_put_contents($dir.'/manifest.json', (string) json_encode($this->manifest('animedb-have')));
+        $this->installedPlugins->reconcile();
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('settings/market/index.html.twig', $this->callback(static function (array $params): bool {
+                self::assertSame(['animedb-want'], $params['pendingInstallerPlugins']);
+
+                return true;
+            }))
+            ->willReturn('<html></html>');
+
+        $controller = $this->controller($this->snapshotCacheServing(null), $this->assetDownloaderServingPluginZip(), $twig);
+
+        $controller->index(Request::create('/settings/market'));
+    }
+
+    public function testIndexPassesNoPendingInstallerPluginsWithoutTheSelectionFile(): void
+    {
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('settings/market/index.html.twig', $this->callback(static function (array $params): bool {
+                self::assertSame([], $params['pendingInstallerPlugins']);
+
+                return true;
+            }))
+            ->willReturn('<html></html>');
+
+        $controller = $this->controller($this->snapshotCacheServing(null), $this->assetDownloaderServingPluginZip(), $twig);
+
+        $controller->index(Request::create('/settings/market'));
     }
 
     public function testIndexRendersPluginsWithResolvedVersionAndInstalledFlag(): void

@@ -33,6 +33,7 @@ const migrations        = require('./migrations');
 const oauthCallback     = require('./oauth-callback');
 const phpCommand        = require('./php-command');
 const pluginReconcile   = require('./plugin-reconcile');
+const pluginsInstallSelected = require('./plugins-install-selected');
 const pluginsConsumer   = require('./plugins-consumer');
 const qbittorrent       = require('./qbittorrent');
 const safeModeState     = require('./safe-mode');
@@ -98,8 +99,22 @@ let currentFrankenphpPort = null;
  * @type {Promise<void> | null}
  */
 let reloadInFlight = null;
-/** @type {string | null} */
-let queuedPluginId = null;
+/**
+ * Ids of the signals that arrived while a restart was in flight, merged into one extra run. Every
+ * id is a rollback target of that run: the plugin is already on disk and must not stay there if
+ * its activation fails.
+ *
+ * @type {string[]}
+ */
+let queuedPluginIds = [];
+
+/** How often the selection file written by the installer is retried while it still exists. */
+const INSTALL_SELECTED_INTERVAL_MS = 60 * 60 * 1000;
+
+/** @type {NodeJS.Timeout | null} */
+let installSelectedTimer = null;
+/** @type {Promise<void> | null} */
+let installSelectedInFlight = null;
 
 /**
  * Запускает все дочерние процессы и возвращает занятые ими порты.
@@ -181,6 +196,7 @@ async function start(onProgress, { safeMode = false, confirmStagedImport } = {})
         messengerConsumer.killOrphan(),
         migrations.killOrphan(),
         phpCommand.killOrphan('app:market:refresh'),
+        phpCommand.killOrphan(pluginsInstallSelected.COMMAND),
         phpCommand.killOrphan('messenger:setup-transports'),
         phpCommand.killOrphan('app:search:reindex'),
         phpCommand.killOrphan('app:plugin:reconcile'),
@@ -345,7 +361,7 @@ async function start(onProgress, { safeMode = false, confirmStagedImport } = {})
     // above. Any failure (offline, unreachable mirror) is just logged — the storefront's own
     // render-fallback (MarketController, issue #440) and the existing cached snapshot, if any,
     // cover the user-facing side.
-    marketRefresh.run(workerContext).catch((err) => {
+    const marketRefreshDone = marketRefresh.run(workerContext).catch((err) => {
         console.error('[market-refresh] не удалось обновить снимок маркета:', err.message);
     });
 
@@ -371,6 +387,14 @@ async function start(onProgress, { safeMode = false, confirmStagedImport } = {})
 
     liveContext = { phpContext, frankenphpPort, wsPort };
 
+    // Plugins chosen in the installer (see installSelectedPlugins): once the live context exists and
+    // the startup market refresh has produced the snapshot they are installed from. Not awaited —
+    // the window must not wait on downloads. The hourly timer retries while the file still exists.
+    marketRefreshDone.then(() => installSelectedPlugins());
+    clearInterval(installSelectedTimer);
+    installSelectedTimer = setInterval(() => { installSelectedPlugins(); }, INSTALL_SELECTED_INTERVAL_MS);
+    installSelectedTimer.unref();
+
     return { frankenphpPort, wsPort, meiliPort, qbittorrentPort, importFailed };
 }
 
@@ -391,8 +415,20 @@ async function start(onProgress, { safeMode = false, confirmStagedImport } = {})
  * @returns {Promise<void>} never rejects — see performReload()'s own doc for why
  */
 function reloadForPlugin(pluginId) {
+    return reloadForPlugins([pluginId]);
+}
+
+/**
+ * Same as reloadForPlugin(), for a batch of plugins activated by one restart: all ids are rollback
+ * targets if the restart fails. Goes through the same reloadInFlight queue, so a signal from a
+ * manual install never restarts the processes concurrently with a batch activation (and vice versa).
+ *
+ * @param {string[]} pluginIds
+ * @returns {Promise<void>} never rejects
+ */
+function reloadForPlugins(pluginIds) {
     if (reloadInFlight) {
-        queuedPluginId = pluginId;
+        queuedPluginIds = [...new Set([...queuedPluginIds, ...pluginIds])];
         return reloadInFlight;
     }
 
@@ -401,17 +437,43 @@ function reloadForPlugin(pluginId) {
     // awaiting reloadForPlugin() sees the fully-settled end state, and any signal arriving while
     // the coalesced run itself is in flight correctly joins it instead of starting a third,
     // overlapping run.
-    reloadInFlight = performReload(pluginId).finally(() => {
+    reloadInFlight = performReload(pluginIds).finally(() => {
         reloadInFlight = null;
-        if (queuedPluginId !== null) {
-            const next = queuedPluginId;
-            queuedPluginId = null;
-            return reloadForPlugin(next);
+        if (queuedPluginIds.length > 0) {
+            const next = queuedPluginIds;
+            queuedPluginIds = [];
+            return reloadForPlugins(next);
         }
         return undefined;
     });
 
     return reloadInFlight;
+}
+
+/**
+ * Installs the plugins left in the installer's selection file and activates what was installed
+ * with a single restart. A no-op without the file or while the previous run is still going. Never
+ * rejects: a failure is logged and the next tick (or the next app start) repeats it.
+ *
+ * @returns {Promise<void>}
+ */
+function installSelectedPlugins() {
+    if (installSelectedInFlight || !liveContext || !pluginsInstallSelected.hasSelection()) {
+        return installSelectedInFlight || Promise.resolve();
+    }
+
+    installSelectedInFlight = (async () => {
+        const installed = await pluginsInstallSelected.run({ ...liveContext.phpContext, appPort: liveContext.frankenphpPort });
+        if (installed.length > 0) {
+            await reloadForPlugins(installed);
+        }
+    })().catch((err) => {
+        console.error('[plugins-install-selected] не удалось установить плагины, выбранные в установщике:', err.message);
+    }).finally(() => {
+        installSelectedInFlight = null;
+    });
+
+    return installSelectedInFlight;
 }
 
 /**
@@ -439,10 +501,10 @@ function reloadForPlugin(pluginId) {
  * calls stop() on all three again (idempotent — see frankenphp.js#stop) so any respawn timer
  * already scheduled sees `stopping === true` and no-ops instead of firing (issue #424).
  *
- * @param {string} pluginId
+ * @param {string[]} pluginIds  rollback targets: every one is removed if the restart fails
  * @returns {Promise<void>}
  */
-async function performReload(pluginId) {
+async function performReload(pluginIds) {
     if (!liveContext) {
         console.error(`[supervisor] "${WORKERS_RELOAD_EVENT}" получен до завершения запуска — пропущен.`);
         return;
@@ -462,10 +524,12 @@ async function performReload(pluginId) {
         await messengerConsumer.start({ ...phpContext, appPort: started.httpPort });
         await pluginsConsumer.start({ ...phpContext, appPort: started.httpPort });
 
-        events.emit('plugin-activated', { pluginId });
+        for (const pluginId of pluginIds) {
+            events.emit('plugin-activated', { pluginId });
+        }
         return;
     } catch (err) {
-        console.error(`[supervisor] активация плагина "${pluginId}" не удалась, откат:`, err.message);
+        console.error(`[supervisor] активация плагинов "${pluginIds.join('", "')}" не удалась, откат:`, err.message);
     }
 
     try {
@@ -473,10 +537,12 @@ async function performReload(pluginId) {
         currentFrankenphpPort = null;
         await Promise.all([messengerConsumer.stop(), pluginsConsumer.stop()]);
 
-        try {
-            await phpCommand.run('app:plugin:deactivate', [pluginId], phpContext, PLUGIN_DEACTIVATE_TIMEOUT_MS);
-        } catch (removeErr) {
-            console.error(`[supervisor] не удалось убрать плагин "${pluginId}" из реестра:`, removeErr.message);
+        for (const pluginId of pluginIds) {
+            try {
+                await phpCommand.run('app:plugin:deactivate', [pluginId], phpContext, PLUGIN_DEACTIVATE_TIMEOUT_MS);
+            } catch (removeErr) {
+                console.error(`[supervisor] не удалось убрать плагин "${pluginId}" из реестра:`, removeErr.message);
+            }
         }
 
         cacheInvalidation.invalidateCache();
@@ -496,7 +562,9 @@ async function performReload(pluginId) {
         console.error('[supervisor] процессы переведены в stopping — backoff-респаун остановлен.');
     }
 
-    events.emit('plugin-activation-failed', { pluginId });
+    for (const pluginId of pluginIds) {
+        events.emit('plugin-activation-failed', { pluginId });
+    }
 }
 
 /**
@@ -507,6 +575,8 @@ async function performReload(pluginId) {
  * @returns {Promise<void>}
  */
 async function stop() {
+    clearInterval(installSelectedTimer);
+    installSelectedTimer = null;
     await Promise.all([messengerConsumer.stop(), pluginsConsumer.stop()]);
     await frankenphp.stop();
     currentFrankenphpPort = null;
@@ -541,4 +611,4 @@ function getWorkerContext() {
     return liveContext ? { ...liveContext.phpContext, appPort: liveContext.frankenphpPort } : null;
 }
 
-module.exports = { start, stop, killSync, reloadForPlugin, getWorkerContext, events, TOTAL_STEPS, WORKERS_RELOAD_EVENT };
+module.exports = { start, stop, killSync, reloadForPlugin, reloadForPlugins, getWorkerContext, events, TOTAL_STEPS, WORKERS_RELOAD_EVENT };

@@ -44,6 +44,7 @@ jest.mock('../../native/paths', () => ({
     getMarketRegistryCachePath: jest.fn(() => '/fake/userData/market-registry-cache.json'),
     getMarketSnapshotCachePath: jest.fn(() => '/fake/userData/market-snapshot-cache.json'),
     getMarketRefreshLockPath:   jest.fn(() => '/fake/userData/market-refresh.lock'),
+    getInstallerPluginsPath:    jest.fn(() => '/fake/userData/installer-plugins.json'),
     getBackupsDir:        jest.fn(() => '/fake/userData/backups'),
     getFfprobeBinPath:    jest.fn(() => '/fake/bin/ffprobe/ffprobe.exe'),
 }));
@@ -65,6 +66,7 @@ describe('buildCommonEnv', () => {
         expect(env.MARKET_REGISTRY_CACHE_PATH).toBe('/fake/userData/market-registry-cache.json');
         expect(env.MARKET_SNAPSHOT_CACHE_PATH).toBe('/fake/userData/market-snapshot-cache.json');
         expect(env.MARKET_REFRESH_LOCK_PATH).toBe('/fake/userData/market-refresh.lock');
+        expect(env.INSTALLER_PLUGINS_PATH).toBe('/fake/userData/installer-plugins.json');
         expect(env.QBITTORRENT_URL).toBe('http://127.0.0.1:9999');
         // No oauthCallbackOrigin/oauthCallbackFixedPort set on CONTEXT — this is the fallback path
         // (fixed port 41813 busy, issue #871), which reproduces the pre-#871 behavior exactly:

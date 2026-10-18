@@ -55,6 +55,8 @@ module.exports = {
     getConfigPath:         () => path.join(userDataDir(), 'config.json'),
     getPluginsConfigPath:  () => path.join(userDataDir(), 'plugins.json'),
     getPluginsDir:         () => path.join(userDataDir(), 'plugins'),
+    // Written by the installer (its plugin selection), read and removed by app:plugins:install-selected.
+    getInstallerPluginsPath: () => path.join(userDataDir(), 'installer-plugins.json'),
     getNativeTranslationsDir:        () => path.join(__dirname, 'translations'),
     getNativeTranslationsOverlayDir: () => path.join(userDataDir(), 'native-translations'),
     getStatePath:          () => path.join(userDataDir(), 'state.json'),
