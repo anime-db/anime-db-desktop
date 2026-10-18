@@ -130,7 +130,7 @@ describe('checkUpdateMetadata', () => {
         return tmp;
     }
 
-    const yml = (name) => `version: 0.2.0\nfiles:\n  - url: ${name}\n    sha512: x\npath: ${name}\nsha512: x\n`;
+    const yml = (name, legacyPath = name) => `version: 0.2.0\nfiles:\n  - url: ${name}\n    sha512: x\n    size: 1\npath: ${legacyPath}\nsha512: x\n`;
 
     test('passes when latest.yml names an installer that exists with its blockmap', () => {
         expect(checkUpdateMetadata(dist(yml(installer), [installer, `${installer}.blockmap`]))).toEqual([]);
@@ -151,15 +151,31 @@ describe('checkUpdateMetadata', () => {
         expect(checkUpdateMetadata(dist(yml(installer), [installer]))).toEqual([`blockmap "${installer}.blockmap" is not in ${tmp}`]);
     });
 
-    test('reports latest.yml without a path entry', () => {
-        expect(checkUpdateMetadata(dist('version: 0.2.0\nsha512: x\n', [installer, `${installer}.blockmap`]))).toEqual(['latest.yml has no "path" entry']);
+    test('reports latest.yml that names no installer', () => {
+        expect(checkUpdateMetadata(dist('version: 0.2.0\nsha512: x\n', [installer, `${installer}.blockmap`]))).toEqual([
+            'latest.yml names no installer: neither files[].url with an .exe nor "path"',
+        ]);
+    });
+
+    test('checks files[].url, which electron-updater downloads, not the legacy path', () => {
+        const stale = 'AnimeDB-Setup-0.1.0.exe';
+
+        expect(checkUpdateMetadata(dist(yml(installer, stale), [stale, `${stale}.blockmap`]))).toEqual([
+            `latest.yml is inconsistent: "path" ${stale} is not among files[].url (${installer})`,
+            `installer "${installer}" named in latest.yml is not in ${tmp}`,
+            `blockmap "${installer}.blockmap" is not in ${tmp}`,
+        ]);
+    });
+
+    test('falls back to the legacy path when latest.yml has no files', () => {
+        expect(checkUpdateMetadata(dist(`version: 0.2.0\npath: ${installer}\nsha512: x\n`, [installer]))).toEqual([`blockmap "${installer}.blockmap" is not in ${tmp}`]);
     });
 
     test.each([
         ['single', `'${installer}'`],
         ['double', `"${installer}"`],
     ])('reads a path in %s quotes', (_, quoted) => {
-        expect(checkUpdateMetadata(dist(`version: 0.2.0\npath: ${quoted}\nsha512: x\n`, [installer, `${installer}.blockmap`]))).toEqual([]);
+        expect(checkUpdateMetadata(dist(`version: 0.2.0\nfiles:\n  - url: ${quoted}\npath: ${quoted}\nsha512: x\n`, [installer, `${installer}.blockmap`]))).toEqual([]);
     });
 
     test('reports an installer name with spaces', () => {

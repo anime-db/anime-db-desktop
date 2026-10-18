@@ -37,8 +37,8 @@
  *    machine does not have. Resolution here therefore never leaves the packaged tree.
  *
  * 2. Update metadata. electron-updater reads latest.yml of the newest release and downloads the
- *    file named in it, so latest.yml must exist and name an installer that exists in dist/ along
- *    with its blockmap. A silently missing latest.yml would publish a green release that no
+ *    installer named in its files[].url (the top-level `path` is a legacy fallback), so latest.yml
+ *    must exist and name an installer that exists in dist/ along with its blockmap. A silently missing latest.yml would publish a green release that no
  *    installed copy can see.
  */
 
@@ -135,20 +135,34 @@ function checkUpdateMetadata(distDir) {
     if (!fs.existsSync(latest)) {
         return ['latest.yml is missing: installed copies would not see this release'];
     }
-    const match = fs.readFileSync(latest, 'utf8').match(/^path:\s*['"]?([^'"\r\n]+?)['"]?\s*$/m);
-    if (match === null) {
-        return ['latest.yml has no "path" entry'];
-    }
-    const installer = match[1];
+    const yml = fs.readFileSync(latest, 'utf8');
+    const unquote = (value) => value.trim().replace(/^(['"])(.*)\1$/, '$2');
+    // electron-updater 6 downloads what files[].url names (Provider.getFileList, NsisUpdater picks
+    // the first .exe there); the top-level `path` is only a fallback for metadata without `files`.
+    // latest.yml is written by electron-builder in a fixed shape, so a line match is enough here
+    // and keeps this script free of a YAML dependency.
+    const urls = [...yml.matchAll(/^\s+-\s+url:(.+)$/gm)].map((m) => unquote(m[1]));
+    const pathMatch = yml.match(/^path:(.+)$/m);
+    const legacyPath = pathMatch === null ? null : unquote(pathMatch[1]);
+
     const problems = [];
-    if (/\s/.test(installer)) {
-        problems.push(`installer name "${installer}" contains whitespace: GitHub renames such assets and the download would 404`);
+    const installers = urls.length > 0 ? urls.filter((url) => url.endsWith('.exe')) : [legacyPath].filter((p) => p !== null);
+    if (installers.length === 0) {
+        return ['latest.yml names no installer: neither files[].url with an .exe nor "path"'];
     }
-    if (!fs.existsSync(path.join(distDir, installer))) {
-        problems.push(`installer "${installer}" named in latest.yml is not in ${distDir}`);
+    if (urls.length > 0 && legacyPath !== null && !urls.includes(legacyPath)) {
+        problems.push(`latest.yml is inconsistent: "path" ${legacyPath} is not among files[].url (${urls.join(', ')})`);
     }
-    if (!fs.existsSync(path.join(distDir, `${installer}.blockmap`))) {
-        problems.push(`blockmap "${installer}.blockmap" is not in ${distDir}`);
+    for (const installer of installers) {
+        if (/\s/.test(installer)) {
+            problems.push(`installer name "${installer}" contains whitespace: GitHub renames such assets and the download would 404`);
+        }
+        if (!fs.existsSync(path.join(distDir, installer))) {
+            problems.push(`installer "${installer}" named in latest.yml is not in ${distDir}`);
+        }
+        if (!fs.existsSync(path.join(distDir, `${installer}.blockmap`))) {
+            problems.push(`blockmap "${installer}.blockmap" is not in ${distDir}`);
+        }
     }
     return problems;
 }
