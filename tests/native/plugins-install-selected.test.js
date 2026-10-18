@@ -61,6 +61,13 @@ test('run rejects on a non-zero exit code and on a timeout', async () => {
     await expect(installSelected.run(CONTEXT)).rejects.toThrow('timeout');
 });
 
+test('run still returns the installed ids when the command exits non-zero', async () => {
+    phpCommand.run.mockResolvedValue({ code: 1, stdout: '{"installed":["animedb-a"]}', stderr: 'boom' });
+    const spy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    await expect(installSelected.run(CONTEXT)).resolves.toEqual(['animedb-a']);
+    spy.mockRestore();
+});
+
 test('run rejects when stdout holds no installed list', async () => {
     phpCommand.run.mockResolvedValue({ code: 0, stdout: '', stderr: '' });
     await expect(installSelected.run(CONTEXT)).rejects.toThrow();

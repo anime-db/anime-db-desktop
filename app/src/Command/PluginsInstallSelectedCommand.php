@@ -99,7 +99,7 @@ final class PluginsInstallSelectedCommand extends Command
                 // Nothing left (or nothing to begin with, e.g. `{"plugins": []}`): the file must go.
                 $this->selection->write([]);
             }
-        } catch (\RuntimeException $e) {
+        } catch (\Throwable $e) {
             $this->logger->error('Installing the plugins chosen in the installer failed.', ['exception' => $e]);
             $output->writeln(json_encode(['installed' => $installed], \JSON_THROW_ON_ERROR));
 
@@ -164,6 +164,12 @@ final class PluginsInstallSelectedCommand extends Command
             $this->logger->warning('Dropped a plugin from the installer selection: it cannot be installed.', ['plugin' => (string) $id, 'exception' => $e]);
 
             return true;
+        } catch (\Throwable $e) {
+            // An unforeseen failure for one id must neither lose the ids installed before it (they are
+            // printed for the supervisor to activate) nor stop the remaining ones; retried next run.
+            $this->logger->error('Failed to install a plugin from the installer selection.', ['plugin' => (string) $id, 'exception' => $e]);
+
+            return false;
         }
 
         $installed[] = (string) $id;

@@ -390,10 +390,15 @@ async function start(onProgress, { safeMode = false, confirmStagedImport } = {})
     // Plugins chosen in the installer (see installSelectedPlugins): once the live context exists and
     // the startup market refresh has produced the snapshot they are installed from. Not awaited —
     // the window must not wait on downloads. The hourly timer retries while the file still exists.
-    marketRefreshDone.then(() => installSelectedPlugins());
+    // Not in safe mode: the registry reads as empty there, and that mode exists to recover from a
+    // plugin breaking the bootstrap, not to install more of them.
     clearInterval(installSelectedTimer);
-    installSelectedTimer = setInterval(() => { installSelectedPlugins(); }, INSTALL_SELECTED_INTERVAL_MS);
-    installSelectedTimer.unref();
+    installSelectedTimer = null;
+    if (!safeMode) {
+        marketRefreshDone.then(() => installSelectedPlugins());
+        installSelectedTimer = setInterval(() => { installSelectedPlugins(); }, INSTALL_SELECTED_INTERVAL_MS);
+        installSelectedTimer.unref();
+    }
 
     return { frankenphpPort, wsPort, meiliPort, qbittorrentPort, importFailed };
 }

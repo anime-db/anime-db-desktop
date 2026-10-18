@@ -805,6 +805,15 @@ describe('supervisor.start', () => {
             expect(pluginsConsumer.start).toHaveBeenCalledWith(expect.objectContaining({ safeMode: true }));
         });
 
+        test('does not install the installer-selected plugins in safe mode', async () => {
+            pluginsInstallSelected.hasSelection.mockReturnValue(true);
+
+            await supervisor.start(jest.fn(), { safeMode: true });
+            await new Promise((resolve) => setImmediate(resolve));
+
+            expect(pluginsInstallSelected.run).not.toHaveBeenCalled();
+        });
+
         test('defaults to safeMode:false when no options are given', async () => {
             await supervisor.start(jest.fn());
 

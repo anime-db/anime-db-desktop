@@ -56,17 +56,35 @@ function hasSelection() {
 async function run(context) {
     const result = await phpCommand.run(COMMAND, [], context, TIMEOUT_MS, { rejectOnNonZero: false });
 
-    if (result.code !== 0) {
-        throw new Error(`${COMMAND} exited with ${result.code === null ? 'a timeout' : `code ${result.code}`}`);
+    // The command prints `installed` even when it fails midway: those plugins are already on disk and
+    // must still be activated, so the output is parsed first and the failure reported afterwards.
+    const failure = result.code === 0
+        ? null
+        : new Error(`${COMMAND} exited with ${result.code === null ? 'a timeout' : `code ${result.code}`}`);
+
+    const jsonLine = String(result.stdout || '').split('\n').map((line) => line.trim()).filter((line) => line.startsWith('{')).pop();
+    let installed = [];
+    try {
+        const parsed = JSON.parse(jsonLine === undefined ? '' : jsonLine);
+        if (parsed && Array.isArray(parsed.installed)) {
+            installed = parsed.installed.filter((id) => typeof id === 'string');
+        } else if (failure === null) {
+            throw new Error(`${COMMAND} printed no "installed" list`);
+        }
+    } catch (err) {
+        if (failure === null) {
+            throw err;
+        }
     }
 
-    const jsonLine = result.stdout.split('\n').map((line) => line.trim()).filter((line) => line.startsWith('{')).pop();
-    const parsed = JSON.parse(jsonLine === undefined ? '' : jsonLine);
-    if (!parsed || !Array.isArray(parsed.installed)) {
-        throw new Error(`${COMMAND} printed no "installed" list`);
+    if (failure !== null) {
+        if (installed.length === 0) {
+            throw failure;
+        }
+        console.error(`[plugins-install-selected] ${failure.message}; activating the plugins installed before it`);
     }
 
-    return parsed.installed.filter((id) => typeof id === 'string');
+    return installed;
 }
 
 module.exports = { COMMAND, hasSelection, run };

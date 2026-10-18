@@ -469,6 +469,11 @@ final class MarketController
      */
     private function pendingInstallerPlugins(): array
     {
+        // Safe mode: the registry reports nothing as installed and the supervisor installs nothing.
+        if (($_SERVER['SAFE_MODE'] ?? null) === '1') {
+            return [];
+        }
+
         $pending = [];
         foreach ($this->installerSelection->readIds() as $id) {
             try {

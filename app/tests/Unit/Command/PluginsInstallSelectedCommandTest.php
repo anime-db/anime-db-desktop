@@ -228,6 +228,23 @@ final class PluginsInstallSelectedCommandTest extends TestCase
         $this->assertCount(2, array_filter($this->logger->logs, static fn (array $log): bool => $log['level'] === 'warning'));
     }
 
+    public function testUnforeseenFailureOnLaterIdKeepsEarlierInstalledIdsInStdout(): void
+    {
+        $this->select(['animedb-a', 'animedb-b', 'animedb-c']);
+
+        $tester = $this->runCommand(static function (PluginId $id): PluginId {
+            if ((string) $id === 'animedb-b') {
+                throw new \LogicException('boom');
+            }
+
+            return $id;
+        });
+
+        $this->assertSame(['installed' => ['animedb-a', 'animedb-c']], $this->stdout($tester));
+        $this->assertSame(['animedb-b'], array_values($this->selectionOnDisk() ?? []));
+        $this->assertSame(Command::SUCCESS, $tester->getStatusCode());
+    }
+
     public function testAlreadyInstalledDuringTheRunIsDroppedAndNotReportedAsInstalled(): void
     {
         $this->select(['animedb-race', 'animedb-ok']);
